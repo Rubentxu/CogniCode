@@ -26,7 +26,7 @@ import {
 
 const ALL_KINDS = inspectableObjectTypeSchema.options;
 
-// Sanity: the spec locks exactly 10 variants. If this fails, the backend
+// Sanity: the spec locks exactly 11 variants. If this fails, the backend
 // has added a new kind and the map MUST be updated before any consumer
 // will compile.
 const EXPECTED_KINDS: readonly InspectableObjectType[] = [
@@ -40,6 +40,7 @@ const EXPECTED_KINDS: readonly InspectableObjectType[] = [
   "quality_issue",
   "rule",
   "route",
+  "investigation",
 ];
 
 const ALLOWED_TOOLS: readonly SuggestedTool[] = [
@@ -54,7 +55,7 @@ const ALLOWED_TOOLS: readonly SuggestedTool[] = [
 // ---------------------------------------------------------------------------
 
 describe("SUGGESTED_QUESTIONS — exhaustiveness", () => {
-  it("covers all 10 InspectableObjectType variants", () => {
+  it("covers all 11 InspectableObjectType variants", () => {
     expect(ALL_KINDS).toEqual(EXPECTED_KINDS);
     // The map must declare a key for every variant the schema enumerates.
     for (const kind of EXPECTED_KINDS) {

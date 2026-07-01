@@ -22,9 +22,10 @@ import { Command } from "cmdk";
 import { useApp, useAppDispatch } from "../state/context";
 import { useSpotter } from "../hooks/useSpotter";
 import { useWorkspaceList } from "../hooks/useWorkspace";
-import type { SpotterResult } from "../api/types";
+import type { SpotterResult, SpotterSearchResult } from "../api/schemas";
 import { kindDefaultView } from "../api/kindDefaultView";
 import { IntentFooter, chipsFromResult } from "./Spotter/IntentFooter";
+import type { ViewSpecSummary } from "../api/schemas";
 
 /** Debounce window for the search input. Tuned for ~50 WPM typing. */
 const DEBOUNCE_MS = 200;
@@ -50,7 +51,7 @@ function useDebounced<T>(value: T, delayMs: number): T {
 
 /**
  * Compute the available kind filters from the latest result set.
- * `all` is always present; each unique `object.object_type` becomes
+ * `all` is always present; each unique `kind` becomes
  * a chip. The list is stable across keystrokes (we still recompute
  * each render — cheap, and the order is deterministic because the
  * backend already returns results sorted by score).
@@ -61,12 +62,12 @@ function useDebounced<T>(value: T, delayMs: number): T {
  * hotfix). Once results arrive, the chips reflect the real kinds.
  */
 function kindsFromResults(
-  results: ReadonlyArray<SpotterResult>,
+  results: ReadonlyArray<SpotterSearchResult>,
   spotterKind: string | null = null,
 ): KindFilter[] {
   const seen = new Set<string>();
   for (const r of results) {
-    seen.add(r.object.object_type);
+    seen.add(r.kind);
   }
   if (spotterKind && !seen.has(spotterKind)) {
     seen.add(spotterKind);
@@ -135,7 +136,7 @@ export function Spotter() {
   const debouncedQuery = useDebounced(rawQuery, DEBOUNCE_MS);
 
   /** Tracks the currently-highlighted result via Command.List onChange. */
-  const [highlightedResult, setHighlightedResult] = useState<SpotterResult | null>(null);
+  const [highlightedResult, setHighlightedResult] = useState<SpotterSearchResult | null>(null);
 
   /**
    * Set by IntentFooter chip click or Cmd+N when a result is highlighted.
@@ -177,7 +178,7 @@ export function Spotter() {
   const filteredResults = useMemo(() => {
     if (!data) return [];
     if (kind === ALL_KINDS) return data;
-    return data.filter((r) => r.object.object_type === kind);
+    return data.filter((r) => r.kind === kind);
   }, [data, kind]);
 
   const grouped = useMemo(() => groupByKind(filteredResults), [filteredResults]);
@@ -284,7 +285,12 @@ export function Spotter() {
             aria-busy={isValidating}
             onChange={(value) => {
               // cmdk sets the value to the highlighted item's `value` prop
-              const found = filteredResults.find((r) => r.object.id === value);
+              const found = filteredResults.find((r) => {
+                if (r.kind === "viewspec") {
+                  return (r.result as ViewSpecSummary).id === value;
+                }
+                return (r.result as SpotterResult).object.id === value;
+              });
               setHighlightedResult(found ?? null);
             }}
           >
@@ -304,20 +310,22 @@ export function Spotter() {
               >
                 {items.map((hit) => (
                   <Command.Item
-                    key={hit.object.id}
-                    value={hit.object.id}
+                    key={hit.id}
+                    value={hit.id}
                     onSelect={() => {
-                      const defaultView = kindDefaultView(hit.object.object_type);
+                      const defaultView = kindDefaultView(hit.object_type);
                       // If the highlighted result is the one we're selecting AND the
                       // user previously picked a chip (Cmd+N), use that viewId.
                       const viewId =
-                        highlightedResult?.object.id === hit.object.id && pendingViewId
-                          ? pendingViewId
+                        highlightedResult && "object" in highlightedResult
+                          ? (highlightedResult.result as SpotterResult).object.id === hit.id && pendingViewId
+                            ? pendingViewId
+                            : defaultView
                           : defaultView;
                       dispatch({
                         type: "SELECT_OBJECT",
                         payload: {
-                          objectId: hit.object.id,
+                          objectId: hit.id,
                           viewId,
                         },
                       });
@@ -327,9 +335,9 @@ export function Spotter() {
                         payload: { open: false },
                       });
                     }}
-                    data-testid={`spotter-item-${hit.object.id}`}
-                    data-family={hit.object.object_type}
-                    data-view-id={kindDefaultView(hit.object.object_type)}
+                    data-testid={`spotter-item-${hit.id}`}
+                    data-family={hit.object_type}
+                    data-view-id={kindDefaultView(hit.object_type)}
                     className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
                   >
                     <span
@@ -337,19 +345,19 @@ export function Spotter() {
                       className="inline-flex h-4 w-4 flex-none items-center justify-center font-mono text-xs"
                       style={{ color: "var(--color-text-muted)" }}
                     >
-                      {kindGlyph(hit.object.object_type)}
+                      {kindGlyph(hit.object_type)}
                     </span>
                     <span
                       className="min-w-0 flex-1 truncate"
                       style={{ color: "var(--color-text-primary)" }}
                     >
-                      {hit.object.label}
+                      {hit.label}
                     </span>
                     <span
                       className="truncate text-xs"
                       style={{ color: "var(--color-text-muted)" }}
                     >
-                      {hit.object.subtitle}
+                      {hit.subtitle}
                     </span>
                     <span
                       aria-hidden="true"
@@ -497,20 +505,58 @@ function EmptyState({ query, loading, error, hasWorkspace }: EmptyStateProps) {
 
 interface Group {
   kind: string;
-  items: SpotterResult[];
+  items: NormalizedHit[];
 }
 
 /**
- * Group results by `object.object_type` for the cmdk `Group`
- * headings. The returned order is insertion order (which is the
+ * Normalize a SpotterSearchResult into a shape the rendering code expects.
+ * Viewspec hits have a different structure than other families.
+ */
+interface NormalizedHit {
+  id: string;
+  object_type: string;
+  label: string;
+  subtitle: string;
+  score: number;
+  available_views: Array<{ id: string; title: string | null }>;
+}
+
+function normalizeHit(hit: SpotterSearchResult): NormalizedHit {
+  if (hit.kind === "viewspec") {
+    const spec = hit.result as ViewSpecSummary;
+    return {
+      id: spec.id,
+      object_type: "viewspec",
+      label: spec.title,
+      subtitle: spec.view_kind,
+      score: 0,
+      available_views: [],
+    };
+  }
+  // symbol, file, saved_exploration, quality_issue, rule, investigation, scope
+  const result = hit.result as SpotterResult;
+  return {
+    id: result.object.id,
+    object_type: result.object.object_type,
+    label: result.object.label,
+    subtitle: result.object.subtitle,
+    score: result.score,
+    available_views: result.object.available_views ?? [],
+  };
+}
+
+/**
+ * Group results by `kind` for the cmdk `Group` headings.
+ * The returned order is insertion order (which is the
  * backend's score-sorted order); cmdk preserves it.
  */
-function groupByKind(results: ReadonlyArray<SpotterResult>): Group[] {
-  const map = new Map<string, SpotterResult[]>();
+function groupByKind(results: ReadonlyArray<SpotterSearchResult>): Group[] {
+  const map = new Map<string, NormalizedHit[]>();
   for (const r of results) {
-    const list = map.get(r.object.object_type) ?? [];
-    list.push(r);
-    map.set(r.object.object_type, list);
+    const normalized = normalizeHit(r);
+    const list = map.get(r.kind) ?? [];
+    list.push(normalized);
+    map.set(r.kind, list);
   }
   return Array.from(map.entries()).map(([kind, items]) => ({ kind, items }));
 }
@@ -535,6 +581,12 @@ function kindGlyph(kind: string): string {
       return "!";
     case "rule":
       return "§";
+    case "viewspec":
+      return "◈";
+    case "investigation":
+      return "◎";
+    case "saved_exploration":
+      return "◐";
     default:
       return "•";
   }

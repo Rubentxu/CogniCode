@@ -2,24 +2,27 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { IntentFooter, chipsFromResult } from "./IntentFooter";
-import type { SpotterResult } from "../../api/types";
+import type { SpotterResult, SpotterSearchResult } from "../../api/schemas";
 
-function makeResult(viewIds: string[]): SpotterResult {
+function makeSearchResult(viewIds: string[]): SpotterSearchResult {
   return {
-    object: {
-      id: "test:1",
-      label: "test-label",
-      object_type: "symbol",
-      available_views: viewIds.map((id, i) => ({
-        id,
-        title: `View ${id}`,
-        applies_to: "symbol",
-        view_kind: id,
-      })) as never,
-    },
-    score: 1.0,
-    matched_field: "label",
-  } as SpotterResult;
+    kind: "symbol",
+    result: {
+      object: {
+        id: "test:1",
+        label: "test-label",
+        object_type: "symbol",
+        available_views: viewIds.map((id, i) => ({
+          id,
+          title: `View ${id}`,
+          applies_to: "symbol",
+          view_kind: id,
+        })) as never,
+      },
+      score: 1.0,
+      matched_field: "label",
+    } as SpotterResult,
+  };
 }
 
 describe("chipsFromResult", () => {
@@ -28,7 +31,7 @@ describe("chipsFromResult", () => {
   });
 
   it("dedupes by viewId", () => {
-    const result = makeResult(["call-graph", "call-graph", "source"]);
+    const result = makeSearchResult(["call-graph", "call-graph", "source"]);
     const chips = chipsFromResult(result);
     expect(chips).toHaveLength(4); // 2 unique + 2 placeholders
     const ids = chips.map((c) => c.viewId);
@@ -36,7 +39,7 @@ describe("chipsFromResult", () => {
   });
 
   it("always includes the two placeholders", () => {
-    const result = makeResult(["overview"]);
+    const result = makeSearchResult(["overview"]);
     const chips = chipsFromResult(result);
     expect(chips.find((c) => c.viewId === "c4-context")).toBeDefined();
     expect(chips.find((c) => c.viewId === "add-to-investigation")).toBeDefined();
@@ -52,7 +55,7 @@ describe("IntentFooter", () => {
   });
 
   it("renders one chip per available view plus placeholders", () => {
-    const result = makeResult(["overview", "call-graph", "source"]);
+    const result = makeSearchResult(["overview", "call-graph", "source"]);
     render(<IntentFooter result={result} onPick={() => {}} />);
     expect(screen.getByTestId("spotter-intent-overview")).toBeInTheDocument();
     expect(screen.getByTestId("spotter-intent-call-graph")).toBeInTheDocument();
@@ -64,7 +67,7 @@ describe("IntentFooter", () => {
   it("calls onPick with viewId when chip clicked", async () => {
     const user = userEvent.setup();
     const onPick = vi.fn();
-    const result = makeResult(["call-graph"]);
+    const result = makeSearchResult(["call-graph"]);
     render(<IntentFooter result={result} onPick={onPick} />);
     await user.click(screen.getByTestId("spotter-intent-call-graph"));
     expect(onPick).toHaveBeenCalledWith("call-graph");
@@ -73,14 +76,14 @@ describe("IntentFooter", () => {
   it("does not call onPick when disabled placeholder clicked", async () => {
     const user = userEvent.setup();
     const onPick = vi.fn();
-    const result = makeResult(["overview"]);
+    const result = makeSearchResult(["overview"]);
     render(<IntentFooter result={result} onPick={onPick} />);
     await user.click(screen.getByTestId("spotter-intent-c4-context"));
     expect(onPick).not.toHaveBeenCalled();
   });
 
   it("shows Cmd+1 shortcut on first enabled chip", () => {
-    const result = makeResult(["call-graph", "source"]);
+    const result = makeSearchResult(["call-graph", "source"]);
     render(<IntentFooter result={result} onPick={() => {}} />);
     const chip = screen.getByTestId("spotter-intent-call-graph");
     expect(chip.textContent).toContain("Cmd+1");

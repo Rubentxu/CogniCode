@@ -775,12 +775,12 @@ export type ViewSpecSummary = z.infer<typeof viewSpecSummarySchema>;
  * - `saved_exploration` → `SpotterResult` (saved session hit)
  * - `quality_issue`  → `SpotterResult` (issue-rule hit)
  * - `rule`           → `SpotterResult` (quality rule hit)
- * - `route`          → `SpotterResult` (HTTP route from ingested OpenAPI/gRPC spec)
+ * - `investigation`  → `SpotterResult` (investigation hit from ADR-005 INV-1)
+ * - `scope`          → `SpotterResult` (directory scope hit grouping symbols)
  *
  * Frontend components switch on `kind` to render each variant. The
- * `useSpotter` hook unwraps `result` before returning so callers always
- * receive the flat `SpotterResult` shape (matching the original MVP
- * contract before multi-family was added in e13-wave-1).
+ * `useSpotter` hook returns the full `SpotterSearchResult[]` array so
+ * callers can render each family appropriately (e13-wave-1).
  */
 export const spotterSearchResultSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -808,7 +808,11 @@ export const spotterSearchResultSchema = z.discriminatedUnion("kind", [
     result: spotterResultSchema,
   }),
   z.object({
-    kind: z.literal("route"),
+    kind: z.literal("investigation"),
+    result: spotterResultSchema,
+  }),
+  z.object({
+    kind: z.literal("scope"),
     result: spotterResultSchema,
   }),
 ]);

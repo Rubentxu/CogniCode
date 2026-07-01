@@ -9,15 +9,14 @@
  *
  * The backend returns `SpotterSearchResult` (a discriminated union with
  * `kind` + `result` payload). This hook validates the full union and
- * unwraps `result` so callers always see the flat `SpotterResult` shape
- * — preserving the original contract before multi-family was added in
- * e13-wave-1.
+ * returns it directly so callers can switch on `kind` to render each
+ * family appropriately (e13-wave-1).
  */
 import useSWR from "swr";
 import { z } from "zod";
 
-import { spotterResultSchema, spotterSearchResultSchema } from "../api/schemas";
-import type { SpotterResult } from "../api/types";
+import { spotterSearchResultSchema } from "../api/schemas";
+import type { SpotterSearchResult } from "../api/schemas";
 import { ApiError, makeSwrFetcher } from "../api/client";
 
 /** Raw wire format — validated at the API boundary. */
@@ -25,21 +24,6 @@ const spotterWireSchema = z.array(spotterSearchResultSchema);
 type SpotterWire = z.infer<typeof spotterWireSchema>;
 
 const spotterFetcher = makeSwrFetcher(spotterWireSchema);
-
-/**
- * Unwrap the `result` field from each discriminated-union variant.
- * `ViewSpec` variants carry `ViewSpecSummary` — these are intentionally
- * dropped from the symbol-centric Spotter list for now (e13-wave-1 only
- * added the backend; UI rendering of ViewSpec hits is a future wave).
- */
-function unwrapResults(wire: SpotterWire): SpotterResult[] {
-  const out: SpotterResult[] = [];
-  for (const hit of wire) {
-    if (hit.kind === "viewspec") continue; // not rendered in the symbol list yet
-    out.push(hit.result as SpotterResult);
-  }
-  return out;
-}
 
 export type UseSpotterArgs = {
   workspaceId: string | null;
@@ -56,8 +40,8 @@ export type UseSpotterArgs = {
  *   share a single in-flight request.
  *
  * The backend returns `SpotterSearchResult[]` (discriminated union).
- * We parse the full union and unwrap to `SpotterResult[]` so callers
- * receive the flat shape that the component expects.
+ * We return the full union so callers can switch on `kind` to render
+ * each family appropriately (investigation, scope, viewspec, etc.).
  */
 export function useSpotter(
   { workspaceId, q, kind }: UseSpotterArgs,
@@ -65,7 +49,7 @@ export function useSpotter(
   const trimmed = q.trim();
   const enabled = Boolean(workspaceId) && trimmed.length > 0;
 
-  async function fetcher(key: string | [string, RequestOpts["query"]]): Promise<SpotterResult[]> {
+  async function fetcher(key: string | [string, RequestOpts["query"]]): Promise<SpotterSearchResult[]> {
     const wire = typeof key === "string"
       ? await (async () => {
           // Single-arg path — build URL from base + key
@@ -74,10 +58,10 @@ export function useSpotter(
         })()
       : await spotterFetcher(key);
 
-    return unwrapResults(wire);
+    return wire;
   }
 
-  return useSWR<SpotterResult[], ApiError>(
+  return useSWR<SpotterSearchResult[], ApiError>(
     enabled
       ? [
           `/workspaces/${encodeURIComponent(workspaceId!)}/spotter`,
@@ -92,4 +76,4 @@ export function useSpotter(
   );
 }
 
-export type SpotterResults = SpotterResult[];
+export type SpotterResults = SpotterSearchResult[];

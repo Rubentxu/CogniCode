@@ -49,7 +49,7 @@ pub struct ViewSpecSummary {
     pub updated_at: String,
 }
 
-/// Discriminated union of 6 result families for universal Spotter search.
+/// Discriminated union of 8 result families for universal Spotter search.
 /// The frontend switches on `kind` to render each variant appropriately.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "result")]
@@ -72,6 +72,12 @@ pub enum SpotterSearchResult {
     /// A quality rule hit (derived from matching issues).
     #[serde(rename = "rule")]
     Rule(SpotterResult),
+    /// An investigation hit (title match on persisted investigations).
+    #[serde(rename = "investigation")]
+    Investigation(SpotterResult),
+    /// A scope hit — directory grouping derived from symbol file paths.
+    #[serde(rename = "scope")]
+    Scope(SpotterResult),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
