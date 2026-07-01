@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-29 (E20-1 closed — PASS, PR #86, v0.36.0)
+Last updated: 2026-07-01 (E21-1 closed — PR #90, all 3 PRs complete)
 
 ## Active
 
@@ -51,7 +51,7 @@ Last updated: 2026-06-29 (E20-1 closed — PASS, PR #86, v0.36.0)
 
 | Change | Goal | ADR | Priority | Status |
 |--------|------|-----|----------|--------|
-| `e21-1-investigation-entity` | Investigation entity + PostgreSQL tables + API | ADR-005 | HIGH | PR1✅ PR2✅ (PR3 pending) |
+| `e21-1-investigation-entity` | Investigation entity + PostgreSQL tables + API | ADR-005 | HIGH | PR1✅ PR2✅ PR3✅ |
 | `e21-2-pin-evidence` | "Pin as evidence" action on panes + views | ADR-005 | HIGH | |
 | `e21-3-evidence-pack-view` | `ViewKind::EvidencePack` executor | ADR-005 | MEDIUM | |
 | `e21-4-composed-narrative` | `ViewKind::ComposedNarrative` with embedded objects + diagrams | ADR-005 | MEDIUM | |
@@ -61,8 +61,7 @@ Last updated: 2026-06-29 (E20-1 closed — PASS, PR #86, v0.36.0)
 **E21-1 PR details** (branch `feat/e21-1-investigation-entity`):
 - PR1 ✅: PostgreSQL schema (m0013) + repo methods (`save_investigation_tx`, `load_investigation`, etc.)
 - PR2 ✅: Domain entity + InvestigationStore trait + PostgresInvestigationStore + InvestigationService facade + REST API
-- PR3 🔲: Explorer UI pane + ViewSpec integration (pending)
-- **Debt**: m0014 migration needed for `exploration_sessions.investigation_id` column
+- PR3 ✅: InvestigationBoard UI (InvestigationsSection) + investigation_id wiring + integration tests + useInvestigations hook
 
 #### Execution order
 
@@ -74,11 +73,30 @@ E18 (UX foundation)  ──→  E20 (diagrams)  ──→  E21 (investigations)
 
 E18 and E19 can start in parallel. E20 depends on E19 (C4 levels inform diagram content). E21 depends on E18 + E20 (UX foundation + diagram artifacts).
 
-## Session Handover 2026-06-30
+## Session Handover 2026-07-01
 
-**E21-1 PR1 + PR2 completed**. Branch `feat/e21-1-investigation-entity` has 2 commits:
+**E21-1 PR3 completed — all 3 PRs done**. Branch `feat/e21-1-investigation-entity`:
 - d76ace4 ✅: Schema + repo methods (merged to main)
-- 9113671 ✅: Domain + Store + Service + REST API (committed, needs PR + review)
+- 9113671 ✅: Domain + Store + Service + REST API (merged to main)
+- d099d17 ✅: m0014 migration + exploration_sessions.investigation_id column
+- 00dcd31 ✅: investigation_id wiring through DTOs + integration tests
+- 4a5ef04 ✅: InvestigationBoard UI (InvestigationsSection) + useInvestigations hook
+
+**PR #90**: All 5 commits ready for merge review.
+
+**Frontend changes**:
+- `InvestigationDto`, `InvestigationStatus`, `EvidenceDto`, `ArtifactDto` schemas + types
+- `useInvestigations` hook: list/create/update/delete investigations
+- `useInvestigation` hook: get single investigation
+- `InvestigationsSection` → InvestigationBoard: shows active/completed investigations, "New Investigation" form, delete action, templates as fallback
+- `saveExplorationSession` updated to accept optional `investigation_id` (ADR-005 INV-1)
+- `LandingWorkbench` passes `workspaceId` to `InvestigationsSection`
+
+**Remaining E21 work** (not in this PR):
+- E21-2: "Pin as evidence" action on panes
+- E21-3: `ViewKind::EvidencePack` executor
+- E21-4: `ViewKind::ComposedNarrative`
+- E21-6: Artifacts embedded in investigations
 
 **Architecture stack** (ADR-005 INV-1):
 ```
@@ -100,10 +118,12 @@ PostgreSQL tables (m0013)
 - `time` crate added to workspace + cognicode-explorer dependencies
 
 **Open debts**:
-- m0014 migration: add `investigation_id` column to `exploration_sessions` table
-- PR3: Explorer UI pane + ViewSpec integration
+- E21-2: "Pin as evidence" action on panes
+- E21-3: `ViewKind::EvidencePack` executor
+- E21-4: `ViewKind::ComposedNarrative`
+- E21-6: Artifacts embedded in investigations
 
-**Tests**: 1386 core + 723 explorer lib tests passing.
+**Tests**: 1386 core + 723 explorer lib tests passing. 865 vitest passing.
 
 ---
 
