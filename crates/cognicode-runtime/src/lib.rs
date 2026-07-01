@@ -140,6 +140,20 @@ impl Runtime {
         let quality = quality_repo_arc(self.pg_repo.as_ref());
         #[cfg(not(feature = "postgres"))]
         let quality = quality_repo_arc();
+
+        // Investigation facade — wired from postgres when available (ADR-005 INV-1)
+        #[cfg(feature = "postgres")]
+        let investigation: Option<Arc<dyn cognicode_explorer::facades::InvestigationFacade>> =
+            if let Some(ref repo) = self.pg_repo {
+                Some(cognicode_explorer::facades::investigation::new_investigation_service_from_postgres(
+                    repo.pool(),
+                ))
+            } else {
+                None
+            };
+        #[cfg(not(feature = "postgres"))]
+        let investigation: Option<Arc<dyn cognicode_explorer::facades::InvestigationFacade>> = None;
+
         let search: Arc<dyn cognicode_explorer::facades::SearchService> =
             Arc::new(cognicode_explorer::facades::search::SearchServiceImpl::new(
                 self.symbol_repo.clone(),
@@ -148,6 +162,7 @@ impl Runtime {
                 None, // view_spec_store
                 quality.clone(), // quality_repo — wired from PG (PR #55)
                 Some(persistence.clone()), // persistence — for SavedExploration search
+                investigation, // investigation — wired from PG (e13-wave-1)
             ));
 
         // View facade.

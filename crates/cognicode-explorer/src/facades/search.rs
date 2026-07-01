@@ -100,6 +100,7 @@ impl SearchService for SearchServiceImpl {
         let quality = self.quality.clone();
         let view_spec_store = self.view_spec_store.clone();
         let persistence = self.persistence.clone();
+        let investigation = self.investigation.clone();
         let workspace_id_owned = workspace_id.map(|s| s.to_string());
         let query_for_blocking = query.to_string();
         let kind_filter = kind.map(|s| s.to_string());
@@ -294,6 +295,52 @@ impl SearchService for SearchServiceImpl {
             results
         };
 
+        // 7) Investigation hits
+        let investigation_results: Vec<SpotterSearchResult> = {
+            let mut results = Vec::new();
+            if let (Some(ref ws_id), Some(ref inv_facade)) = (workspace_id_owned.clone(), investigation.clone()) {
+                let q = query_lower.clone();
+                let vr_clone = view_registry.clone();
+                match inv_facade.list_investigations(ws_id).await {
+                    Ok(investigations) => {
+                        for inv in investigations {
+                            if inv.title.to_lowercase().contains(&q) {
+                                results.push(SpotterSearchResult::Investigation(SpotterResult {
+                                    object: InspectableObjectSummary {
+                                        id: format!("investigation:{}", inv.id),
+                                        object_type: InspectableObjectType::Investigation,
+                                        label: inv.title.clone(),
+                                        subtitle: format!("{} evidence | {}", inv.evidence.len(), inv.status),
+                                        properties: Vec::new(),
+                                        available_views: vr_clone.list_for(InspectableObjectType::Investigation),
+                                    },
+                                    score: 0.8,
+                                    match_type: "investigation".to_string(),
+                                }));
+                            }
+                        }
+                    }
+                    Err(_) => {}
+                }
+            }
+            results
+        };
+
+        // 8) Scope hits — derived by grouping symbols by parent directory
+        let scope_results: Vec<SpotterSearchResult> = {
+            let repo_clone = repo.clone();
+            let vr_clone = view_registry.clone();
+            let q = query_lower.clone();
+            let handle = tokio::task::spawn_blocking(move || {
+                derive_scope_results(&repo_clone, &vr_clone, &q)
+            });
+            match handle.await {
+                Ok(Ok(results)) => results,
+                Ok(Err(e)) => return Err(e),
+                Err(e) => return Err(ExplorerError::Anyhow(anyhow::anyhow!("join error: {}", e))),
+            }
+        };
+
         // Build symbol SpotterSearchResults
         let symbol_hits: Vec<SpotterSearchResult> = symbol_spotter_results
             .into_iter()
@@ -307,6 +354,8 @@ impl SearchService for SearchServiceImpl {
         all_hits.extend(exploration_results);
         all_hits.extend(issue_results);
         all_hits.extend(rule_results);
+        all_hits.extend(investigation_results);
+        all_hits.extend(scope_results);
         all_hits.extend(viewspec_results);
 
         // Apply kind filter if specified
@@ -319,6 +368,8 @@ impl SearchService for SearchServiceImpl {
                     SpotterSearchResult::SavedExploration(_) => "saved_exploration",
                     SpotterSearchResult::QualityIssue(_) => "quality_issue",
                     SpotterSearchResult::Rule(_) => "rule",
+                    SpotterSearchResult::Investigation(_) => "investigation",
+                    SpotterSearchResult::Scope(_) => "scope",
                 };
                 kind_str.eq_ignore_ascii_case(k)
             });
@@ -1029,4 +1080,148 @@ fn derive_file_results(
     }
 
     Ok(results)
+}
+
+/// Derive scope results by grouping symbols by parent directory and filtering by query.
+/// Parent directory is the path up to and including the last `/`.
+/// Root-level files (no `/`) are excluded.
+fn derive_scope_results(
+    repo: &Arc<dyn SymbolRepository>,
+    view_registry: &Arc<ViewRegistry>,
+    query: &str,
+) -> ExplorerResult<Vec<SpotterSearchResult>> {
+    let all_symbols = repo.all_symbols()?;
+    let mut scope_map: std::collections::BTreeMap<String, Vec<ResolvedSymbol>> =
+        std::collections::BTreeMap::new();
+
+    for sym in all_symbols {
+        // Only consider files with a directory component (exclude root files)
+        if let Some(last_slash) = sym.file.rfind('/') {
+            let parent_dir = &sym.file[..=last_slash]; // include the trailing `/`
+            let parent_dir_lower = parent_dir.to_lowercase();
+            if parent_dir_lower.contains(query) {
+                scope_map.entry(parent_dir.to_string()).or_default().push(sym);
+            }
+        }
+    }
+
+    let mut results: Vec<SpotterSearchResult> = Vec::new();
+    for (dir_path, symbols) in scope_map {
+        let symbol_count = symbols.len();
+        results.push(SpotterSearchResult::Scope(SpotterResult {
+            object: InspectableObjectSummary {
+                id: format!("scope:{}", dir_path),
+                object_type: InspectableObjectType::Scope,
+                label: dir_path.clone(),
+                subtitle: format!("{} symbols", symbol_count),
+                properties: vec![Property {
+                    key: "symbol_count".into(),
+                    value: serde_json::Value::Number(symbol_count.into()),
+                    value_type: "usize".into(),
+                    source: "SymbolRepository".into(),
+                }],
+                available_views: view_registry.list_for(InspectableObjectType::Scope),
+            },
+            score: 0.65,
+            match_type: "scope".to_string(),
+        }));
+    }
+
+    Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dto::SpotterResult;
+    use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
+    use crate::registry::ViewRegistry;
+    use cognicode_core::domain::aggregates::SymbolId;
+    use cognicode_core::domain::value_objects::SymbolKind;
+    use std::sync::Arc;
+
+    /// Mock symbol repository for testing derive_scope_results.
+    struct MockRepo {
+        symbols: Vec<ResolvedSymbol>,
+    }
+
+    impl MockRepo {
+        fn new(symbols: Vec<ResolvedSymbol>) -> Self {
+            Self { symbols }
+        }
+    }
+
+    impl SymbolRepository for MockRepo {
+        fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(self.symbols.clone())
+        }
+        fn resolve(&self, _id: &SymbolId) -> ExplorerResult<Option<ResolvedSymbol>> {
+            Ok(None)
+        }
+        fn find_symbols_by_name(&self, _name: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(vec![])
+        }
+        fn find_symbols_by_file(&self, _file: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(vec![])
+        }
+        fn graph_stats(&self) -> GraphStats {
+            GraphStats {
+                symbol_count: 0,
+                relation_count: 0,
+            }
+        }
+        fn module_list(&self) -> Vec<String> {
+            vec![]
+        }
+    }
+
+    #[test]
+    fn derive_scope_results_groups_by_parent_dir() {
+        // Symbols in a/x.rs and a/y.rs should produce one scope "a/" with 2 symbols
+        // Root file main.rs should be excluded (no directory component)
+        let symbols = vec![
+            ResolvedSymbol {
+                id: SymbolId::new("sym1"),
+                name: "func_a".into(),
+                kind: SymbolKind::Function,
+                file: "a/x.rs".into(),
+                line: 1,
+                signature: None,
+            },
+            ResolvedSymbol {
+                id: SymbolId::new("sym2"),
+                name: "func_b".into(),
+                kind: SymbolKind::Function,
+                file: "a/y.rs".into(),
+                line: 10,
+                signature: None,
+            },
+            ResolvedSymbol {
+                id: SymbolId::new("sym3"),
+                name: "main".into(),
+                kind: SymbolKind::Function,
+                file: "main.rs".into(), // root file - should be excluded
+                line: 1,
+                signature: None,
+            },
+        ];
+
+        let repo = Arc::new(MockRepo::new(symbols)) as Arc<dyn SymbolRepository>;
+        let view_registry = Arc::new(ViewRegistry::new(None));
+
+        let results = derive_scope_results(&repo, &view_registry, "a").unwrap();
+
+        // Should have exactly one scope result for "a/"
+        assert_eq!(results.len(), 1);
+
+        match &results[0] {
+            SpotterSearchResult::Scope(result) => {
+                assert_eq!(result.object.label, "a/");
+                assert_eq!(result.object.id, "scope:a/");
+                // 2 symbols from a/x.rs and a/y.rs
+                assert!(result.object.subtitle.contains("2"));
+            }
+            _ => panic!("Expected Scope variant"),
+        }
+    }
 }
