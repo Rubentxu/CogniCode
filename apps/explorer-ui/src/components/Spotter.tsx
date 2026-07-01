@@ -285,12 +285,9 @@ export function Spotter() {
             aria-busy={isValidating}
             onChange={(value) => {
               // cmdk sets the value to the highlighted item's `value` prop
-              const found = filteredResults.find((r) => {
-                if (r.kind === "viewspec") {
-                  return (r.result as ViewSpecSummary).id === value;
-                }
-                return (r.result as SpotterResult).object.id === value;
-              });
+              const found = filteredResults.find((r) =>
+                isViewSpecHit(r) ? r.result.id === value : r.result.object.id === value,
+              );
               setHighlightedResult(found ?? null);
             }}
           >
@@ -316,12 +313,11 @@ export function Spotter() {
                       const defaultView = kindDefaultView(hit.object_type);
                       // If the highlighted result is the one we're selecting AND the
                       // user previously picked a chip (Cmd+N), use that viewId.
-                      const viewId =
-                        highlightedResult && "object" in highlightedResult
-                          ? (highlightedResult.result as SpotterResult).object.id === hit.id && pendingViewId
-                            ? pendingViewId
-                            : defaultView
-                          : defaultView;
+                      const isHighlightedSpotterHit =
+                        highlightedResult !== null &&
+                        isSpotterHit(highlightedResult) &&
+                        highlightedResult.result.object.id === hit.id;
+                      const viewId = isHighlightedSpotterHit && pendingViewId ? pendingViewId : defaultView;
                       dispatch({
                         type: "SELECT_OBJECT",
                         payload: {
@@ -521,27 +517,33 @@ interface NormalizedHit {
   available_views: Array<{ id: string; title: string | null }>;
 }
 
+function isViewSpecHit(r: SpotterSearchResult): r is Extract<SpotterSearchResult, { kind: "viewspec" }> {
+  return r.kind === "viewspec";
+}
+
+function isSpotterHit(r: SpotterSearchResult): r is Extract<SpotterSearchResult, { kind: "viewspec" }> extends never ? never : Exclude<SpotterSearchResult, { kind: "viewspec" }> {
+  return r.kind !== "viewspec";
+}
+
 function normalizeHit(hit: SpotterSearchResult): NormalizedHit {
-  if (hit.kind === "viewspec") {
-    const spec = hit.result as ViewSpecSummary;
+  if (isViewSpecHit(hit)) {
     return {
-      id: spec.id,
+      id: hit.result.id,
       object_type: "viewspec",
-      label: spec.title,
-      subtitle: spec.view_kind,
+      label: hit.result.title,
+      subtitle: hit.result.view_kind,
       score: 0,
       available_views: [],
     };
   }
   // symbol, file, saved_exploration, quality_issue, rule, investigation, scope
-  const result = hit.result as SpotterResult;
   return {
-    id: result.object.id,
-    object_type: result.object.object_type,
-    label: result.object.label,
-    subtitle: result.object.subtitle,
-    score: result.score,
-    available_views: result.object.available_views ?? [],
+    id: hit.result.object.id,
+    object_type: hit.result.object.object_type,
+    label: hit.result.object.label,
+    subtitle: hit.result.object.subtitle,
+    score: hit.result.score,
+    available_views: hit.result.object.available_views ?? [],
   };
 }
 
