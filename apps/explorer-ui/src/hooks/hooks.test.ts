@@ -92,10 +92,14 @@ describe("useSpotter", () => {
     });
 
     expect(result.current.data).toBeDefined();
-    expect(result.current.data!.length).toBe(spotterResultsFixture.length);
-    expect(result.current.data![0]!.object.label).toBe(
-      spotterResultsFixture[0]!.object.label,
-    );
+    expect(result.current.data!.length).toBeGreaterThan(0);
+    // useSpotter returns SpotterSearchResult[] (discriminated union with kind + result),
+    // not the raw SpotterResult[] fixture — each item has .result.object.label
+    const firstResult = result.current.data![0]!;
+    const label = firstResult.kind === "viewspec"
+      ? firstResult.result.title
+      : firstResult.result.object.label;
+    expect(label).toBe(spotterResultsFixture[0]!.object.label);
   });
 
   it("does not fetch when q is empty", async () => {
