@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-01 (E21-2 closed — PR #90, branch feat/e21-3-e21-4-e21-6 created)
+Last updated: 2026-07-01 (e13-universal-spotter-wave1 merged — PR #92, v0.40.0)
 
 ## Active
 
@@ -97,7 +97,34 @@ E18 (UX foundation)  ──→  E20 (diagrams)  ──→  E21 (investigations)
 
 E18 and E19 can start in parallel. E20 depends on E19 (C4 levels inform diagram content). E21 depends on E18 + E20 (UX foundation + diagram artifacts).
 
+#### e13-universal-spotter-wave1 — Universal Spotter (Investigation + Scope families)
+
+| Change | Goal | Status | Branch | PR |
+|--------|------|--------|--------|-----|
+| `e13-universal-spotter-wave1` | Extend Spotter 6→8 families (+Investigation +Scope); fix frontend desync (dropped ViewSpec hits, phantom `route` variant) | ✅ DONE | `feat/e13-universal-spotter-wave1` | ✅ [PR #92](https://github.com/Rubentxu/CogniCode/pull/92) |
+
+**Branch commits** (`feat/e13-universal-spotter-wave1`):
+- `f80cf9e` — backend: `dto.rs` (Investigation+Scope variants) + `search.rs` (`derive_scope_results`, `InvestigationFacade` wiring) + `lib.rs` (wiring fix)
+- `209a0ee` — frontend: `schemas.ts` (8-family enum, route removed) + `useSpotter.ts` (ViewSpec preserved) + `Spotter.tsx` + `IntentFooter.tsx` + `suggestedQuestions.ts` + tests
+- `686bb0c` — fix: dead `_original` field, ponytail marker, scope optimization, error logging
+
+**Verification**: 724 Rust tests ✅, 855/856 vitest ✅ (1 pre-existing failure unrelated to this change)
+
+**Debt-verify**: PASS_WITH_WARNINGS — 0 criticals, 2 warnings deferred to follow-up `refactor/e13-followup-typed-accessors`:
+- WARN-A (medium): leaky discriminated-union cast in 4 frontend sites — typed accessor helpers (`idOf`, `availableViewsOf`) consolidate narrowing
+- WARN-B (low): asymmetric short-circuit in `derive_scope_results` — generalize `kind_per_family` table or drop guard
+
+**Follow-up queued**: `refactor/e13-followup-typed-accessors`
+
+**Semver**: PATCH — additive feature (8 families), no breaking changes
+
 ## Session Handover 2026-07-01
+
+**e13-universal-spotter-wave1 completed, merged, and tagged v0.40.0** (PR #92, branch `feat/e13-universal-spotter-wave1`):
+- Spotter now returns 8 families (was 6): +Investigation, +Scope
+- Frontend desync fixed: ViewSpec hits no longer dropped, phantom `route` variant removed
+- 724 Rust + 855/856 vitest passing; debt-verify PASS_WITH_WARNINGS
+- 2 medium/low warnings deferred to `refactor/e13-followup-typed-accessors`
 
 **E21-2 completed — PR #90 merged**. All evidence pinning functionality is DONE:
 - Backend: `POST /api/investigations/:id/evidence` with investigation dropdown modal
@@ -250,7 +277,7 @@ What is already implemented today:
 What is **not** implemented yet:
 
 - Lepiter-equivalent runtime (`ProjectDiary`, `ComposedNarrative`, `ExampleObject`)
-- universal Spotter (today it returns only `Symbol` and `ViewSpec`)
+- universal Spotter (today returns 8 families: Symbol, File, ViewSpec, SavedExploration, QualityIssue, Rule, Investigation, Scope)
 - contextual editor beyond the JSONata textarea
 - most catalogued `ViewKind`s as real executors (today 9 executors are wired; the catalog is much broader)
 
@@ -261,7 +288,7 @@ What is **not** implemented yet:
 | 0 | `e9-landing-perf` | PATCH | `cognicode-explorer` | Virtualise the fallback node list if large workspaces cause DOM bloat |
 | 0 | `e11-context-response-field-naming` | PATCH | `cognicode-explorer` | Harmonise `truncated_reason` vs `truncation_reason` naming without breaking the wire contract |
 | 1 | `e12-viewkind-realization` | MINOR | `cognicode-explorer`, `cognicode-core`, `cognicode-graph-algos` | Convert high-value catalogued `ViewKind`s into real executors and renderers |
-| 2 | `e13-universal-spotter` | MINOR | `cognicode-explorer`, `cognicode-core` | Expand Spotter to docs, ADRs, evidence, issues, saved explorations, narratives, examples, and more object families |
+| 2 | `e13-universal-spotter` | MINOR | `cognicode-explorer`, `cognicode-core` | Wave 1 ✅ (Investigation + Scope, 6→8 families, frontend desync fixed). Wave 2 (docs, ADR, evidence) + Wave 3 (narratives) remaining |
 | 3 | `e14-narrative-runtime` | MAJOR | `cognicode-explorer`, `cognicode-core` | Implement `ProjectDiary`, `ComposedNarrative`, and `ExampleObject` as runtime artifacts, not just catalog entries |
 | 4 | `e15-contextual-editor` | MINOR or MAJOR | `cognicode-explorer`, `cognicode-core` | Add a real contextual editor with references, completion, peek, and graph-aware edit workflows |
 | 5 | `e16-federated-runtime-objects` | MAJOR | `cognicode-explorer`, `cognicode-core`, `cognicode-graph-algos` | Make more runtime/domain objects explorable and passable to agents as structured objects |
