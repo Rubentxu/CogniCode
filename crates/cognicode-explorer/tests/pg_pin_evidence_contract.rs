@@ -3,21 +3,219 @@
 //! Tests the `POST /api/investigations/:id/evidence` REST handler
 //! with a real PostgreSQL database.
 
-#![cfg(all(test, feature = "postgres"))]
+#![cfg(all(test, feature = "postgres", feature = "multimodal"))]
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use axum::{
     body::Body,
-    http::{HeaderMap, Method, StatusCode},
+    http::{Method, StatusCode},
     Router,
 };
+use async_trait::async_trait;
 use cognicode_core::infrastructure::persistence::PostgresRepository;
 use serde_json::json;
 use sqlx::PgPool;
 use tower::ServiceExt;
 
 static UNIQ: AtomicU64 = AtomicU64::new(0);
+
+// ============================================================================
+// Mock services (required because this is an integration test in tests/)
+// ============================================================================
+
+#[derive(Clone)]
+struct MockWorkspaceService;
+#[async_trait]
+impl crate::WorkspaceService for MockWorkspaceService {
+    async fn open_workspace(
+        &self,
+        _request: crate::dto::OpenWorkspaceRequest,
+    ) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
+        Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+    }
+    fn current_workspace(&self) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
+        Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+    }
+}
+
+#[derive(Clone)]
+struct MockSearchService;
+#[async_trait]
+impl crate::SearchService for MockSearchService {
+    async fn spotter_search(
+        &self,
+        _query: &str,
+        _kind: Option<&str>,
+    ) -> crate::ExplorerResult<Vec<crate::dto::SpotterResult>> {
+        Ok(vec![])
+    }
+    async fn spotter_search_with_viewspecs(
+        &self,
+        _query: &str,
+        _kind: Option<&str>,
+        _workspace_id: Option<&str>,
+    ) -> crate::ExplorerResult<Vec<crate::dto::SpotterSearchResult>> {
+        Ok(vec![])
+    }
+    async fn inspect_object(
+        &self,
+        _object_id: &str,
+    ) -> crate::ExplorerResult<crate::dto::InspectableObjectSummary> {
+        Err(crate::error::ExplorerError::ObjectNotFound("mock".into()))
+    }
+}
+
+#[derive(Clone)]
+struct MockViewService;
+#[async_trait]
+impl crate::ViewService for MockViewService {
+    async fn available_views(
+        &self,
+        _object_id: &str,
+    ) -> crate::ExplorerResult<Vec<crate::dto::ViewDescriptorDto>> {
+        Ok(vec![])
+    }
+    async fn contextual_view(
+        &self,
+        _object_id: &str,
+        _view_id: &str,
+    ) -> crate::ExplorerResult<crate::dto::ContextualView> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn build_contextual_graph(
+        &self,
+        _focus_id: &str,
+        _level: &str,
+        _depth: u8,
+        _max_nodes: usize,
+    ) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn available_lenses(
+        &self,
+        _object_id: &str,
+    ) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
+        Ok(vec![])
+    }
+    async fn apply_lens(
+        &self,
+        _object_id: &str,
+        _lens_id: &str,
+    ) -> crate::ExplorerResult<crate::dto::LensResult> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+}
+
+#[derive(Clone)]
+struct MockGraphService;
+#[async_trait]
+impl crate::GraphService for MockGraphService {
+    async fn subgraph(
+        &self,
+        _request: crate::dto::SubgraphRequest,
+    ) -> crate::ExplorerResult<crate::dto::SubgraphResponse> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn entry_points(
+        &self,
+        _workspace_id: &str,
+    ) -> crate::ExplorerResult<Vec<crate::dto::EntryPoint>> {
+        Ok(vec![])
+    }
+    async fn landing(
+        &self,
+        _workspace_id: &str,
+    ) -> crate::ExplorerResult<crate::dto::LandingPayload> {
+        Ok(crate::dto::LandingPayload::default())
+    }
+}
+
+#[derive(Clone)]
+struct MockMoldQLService;
+#[async_trait]
+impl crate::MoldQLService for MockMoldQLService {
+    async fn execute_query(
+        &self,
+        _query: &str,
+    ) -> crate::ExplorerResult<crate::moldql::MoldQLResult> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn execute_query_with_target(
+        &self,
+        _query: &str,
+        _target: crate::moldql::compile::CompileTarget,
+    ) -> crate::ExplorerResult<crate::moldql::MoldQLResult> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+}
+
+#[derive(Clone)]
+struct MockPersistenceService {
+    sessions: Arc<Mutex<std::collections::HashMap<String, crate::dto::ExplorationSession>>>,
+}
+impl MockPersistenceService {
+    fn new() -> Self {
+        Self {
+            sessions: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        }
+    }
+}
+#[async_trait]
+impl crate::PersistenceService for MockPersistenceService {
+    async fn save_exploration_session(
+        &self,
+        _request: crate::dto::SaveExplorationSessionRequest,
+    ) -> crate::ExplorerResult<crate::dto::ExplorationSession> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn load_exploration_session(
+        &self,
+        _id: &str,
+    ) -> crate::ExplorerResult<Option<crate::dto::ExplorationSession>> {
+        Ok(None)
+    }
+    async fn list_explorations(
+        &self,
+        _workspace_id: &str,
+    ) -> crate::ExplorerResult<Vec<crate::dto::ExplorationSession>> {
+        Ok(vec![])
+    }
+    async fn delete_exploration_session(&self, _id: &str) -> crate::ExplorerResult<()> {
+        Ok(())
+    }
+    async fn save_view_spec(
+        &self,
+        _spec: &crate::dto::ViewSpec,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> crate::ExplorerResult<()> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn load_view_spec(
+        &self,
+        _id: &str,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> crate::ExplorerResult<Option<crate::dto::ViewSpec>> {
+        Ok(None)
+    }
+    async fn list_view_specs(
+        &self,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> crate::ExplorerResult<Vec<crate::dto::ViewSpec>> {
+        Ok(vec![])
+    }
+    async fn delete_view_spec(&self, _id: &str, _workspace_id: &str, _owner: &str) -> crate::ExplorerResult<bool> {
+        Ok(false)
+    }
+}
+
+// ============================================================================
+// Test database setup
+// ============================================================================
 
 /// Build a fresh per-test PostgreSQL database.
 async fn fresh_test_url() -> Option<(String, PgPool)> {
@@ -43,16 +241,13 @@ async fn fresh_test_url() -> Option<(String, PgPool)> {
 
     // Run the embedded schemas.
     let m0013 = include_str!("../../cognicode-core/src/infrastructure/persistence/m0013_investigation.sql");
-    let m0014 = include_str!("../../cognicode-core/src/infrastructure/persistence/m0014_investigation_sessions.sql");
 
-    for sql in [m0013, m0014] {
-        for stmt in sql.split(';') {
-            let stmt = stmt.trim();
-            if stmt.is_empty() {
-                continue;
-            }
-            sqlx::query(stmt).execute(&pool).await.ok()?;
+    for stmt in m0013.split(';') {
+        let stmt = stmt.trim();
+        if stmt.is_empty() {
+            continue;
         }
+        sqlx::query(stmt).execute(&pool).await.ok()?;
     }
 
     Some((test_url, pool))
@@ -65,18 +260,30 @@ fn rewrite_db_name(base: &str, db_name: &str) -> String {
 }
 
 async fn setup_app() -> (Router, PgPool) {
-    let Some((test_url, pool)) = fresh_test_url().await else {
+    let Some((_test_url, pool)) = fresh_test_url().await else {
         panic!("TEST_DATABASE_URL must be set");
     };
 
     let repo = PostgresRepository::new(pool.clone());
-    cognicode_explorer::api::router_with_state(
-        cognicode_explorer::api::ApiState::builder()
-            .with_repository(repo)
-            .build(),
+    let investigation_facade =
+        crate::facades::investigation::PostgresInvestigationStore::new(pool.clone());
+
+    let state = crate::api::ApiState::new(
+        Arc::new(MockWorkspaceService),
+        Arc::new(MockSearchService),
+        Arc::new(MockViewService),
+        Arc::new(MockPersistenceService::new()),
+        Arc::new(MockMoldQLService),
+        Arc::new(MockGraphService),
     )
-    .await
+    .with_investigation(Arc::new(investigation_facade));
+
+    crate::api::router_with_state(state).await
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL"]
@@ -158,10 +365,10 @@ async fn pin_evidence_creates_evidence_record() {
     assert_eq!(response.status(), StatusCode::OK);
 
     // Verify evidence was created
-    let evidence_rows: Vec<(String, String, String)> = sqlx::query_as(
+    let evidence_rows: Vec<(String, Option<String>, String)> = sqlx::query_as(
         r#"
         SELECT object_id, view_id, note
-        FROM evidence
+        FROM investigation_evidence
         WHERE investigation_id = $1
         ORDER BY pinned_at DESC
         LIMIT 1
@@ -175,7 +382,7 @@ async fn pin_evidence_creates_evidence_record() {
     assert_eq!(evidence_rows.len(), 1);
     let (object_id, view_id, note) = &evidence_rows[0];
     assert_eq!(object_id, "symbol:UserService:create:15");
-    assert_eq!(view_id, Some("call_graph"));
+    assert_eq!(view_id.as_deref(), Some("call_graph"));
     assert_eq!(note, "This is the main user creation function");
 }
 
@@ -302,7 +509,7 @@ async fn pin_evidence_nullable_view_id() {
 
     // Verify evidence has null view_id
     let view_id: Option<String> = sqlx::query_scalar(
-        "SELECT view_id FROM evidence WHERE investigation_id = $1 LIMIT 1",
+        "SELECT view_id FROM investigation_evidence WHERE investigation_id = $1 LIMIT 1",
     )
     .bind(&inv_id)
     .fetch_one(&pool)
