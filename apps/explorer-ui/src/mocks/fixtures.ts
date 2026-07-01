@@ -25,6 +25,7 @@ const WORKSPACE_ID = "ws-cognicode-001";
 const SYMBOL_ID = "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16";
 const FILE_ID = "file:crates/cognicode-explorer/src/lib.rs";
 const SCOPE_ID = "scope:crates/cognicode-explorer/src";
+const INVESTIGATION_ID = "investigation:550e8400-e29b-41d4-a716-446655440001";
 
 // ============================================================================
 // Workspace + spotter
@@ -102,6 +103,46 @@ export const spotterResultsFixture: SpotterResult[] = [
     match_type: "name_prefix",
   },
 ];
+
+/** e13-wave1: investigation fixture for spotter search tests */
+export const spotterInvestigationFixture: SpotterResult = {
+  object: {
+    id: INVESTIGATION_ID,
+    object_type: "investigation",
+    label: "Spotter investigation coverage",
+    subtitle: "3 evidence | active",
+    properties: [
+      { key: "goal", value: "Verify spotter returns investigation family hits", value_type: "string", source: "InvestigationFacade" },
+      { key: "status", value: "active", value_type: "string", source: "InvestigationFacade" },
+    ],
+    available_views: [
+      { id: "overview", title: "Overview", is_builtin: true, source: null },
+      { id: "evidence_pack", title: "Evidence Pack", is_builtin: true, source: null },
+    ],
+  },
+  score: 0.8,
+  match_type: "investigation",
+};
+
+/** e13-wave1: scope fixture for spotter search — distinct path from inspectableScopeFixture */
+export const spotterScopeFixture: SpotterResult = {
+  object: {
+    id: "scope:crates/cognicode-core/src",
+    object_type: "scope",
+    label: "cognicode-core",
+    subtitle: "crates/cognicode-core/src — 42 symbols",
+    properties: [
+      { key: "kind", value: "crate", value_type: "string", source: "static" },
+      { key: "symbol_count", value: 42, value_type: "number", source: "static" },
+    ],
+    available_views: [
+      { id: "overview", title: "Overview", is_builtin: true, source: null },
+      { id: "api-surface", title: "API Surface", is_builtin: true, source: null },
+    ],
+  },
+  score: 0.72,
+  match_type: "scope",
+};
 
 // ============================================================================
 // Views

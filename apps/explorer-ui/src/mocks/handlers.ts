@@ -19,7 +19,9 @@ import {
   inspectableScopeFixture,
   lensDescriptorsFixture,
   lensResultFixture,
+  spotterInvestigationFixture,
   spotterResultsFixture,
+  spotterScopeFixture,
   workspaceSummaryFixture,
   // e12a–e12e Phase 1 executor fixtures
   usageExamplesViewFixture,
@@ -239,7 +241,28 @@ export const handlers = [
         },
       }));
 
-    return HttpResponse.json([...symbolResults, ...routeResults]);
+    // e13-wave1: investigation hits — match if query is in title
+    const investigationResults =
+      spotterInvestigationFixture.object.label.toLowerCase().includes(qLower)
+        ? [
+            {
+              kind: "investigation" as const,
+              result: { ...spotterInvestigationFixture, match_type: `query:${q}` },
+            },
+          ]
+        : [];
+
+    // e13-wave1: scope hits — match if query is in scope path
+    const scopeResults = spotterScopeFixture.object.label.toLowerCase().includes(qLower)
+      ? [
+          {
+            kind: "scope" as const,
+            result: { ...spotterScopeFixture, match_type: `query:${q}` },
+          },
+        ]
+      : [];
+
+    return HttpResponse.json([...symbolResults, ...routeResults, ...investigationResults, ...scopeResults]);
   }),
 
   // -----------------------------------------------------------------------

@@ -105,6 +105,40 @@ test.describe("Spotter multi-family (e13 parity)", () => {
     await snapshot(page, "spotter-multifamily-rule.png");
   });
 
+  // e13-wave1: investigation + scope families
+
+  test("Investigation family returns investigation hits", async ({ page }) => {
+    const input = page.getByTestId("spotter-input");
+    // "spotter" matches the investigation fixture title "Spotter investigation coverage"
+    await input.fill("spotter");
+
+    const results = page.getByTestId("spotter-results");
+    await expect(results).toBeVisible({ timeout: 5_000 });
+
+    const investigationHits = results.locator('[data-family="investigation"]');
+    await expect(investigationHits.first()).toBeVisible({ timeout: 5_000 });
+    const count = await investigationHits.count();
+    expect(count).toBeGreaterThan(0);
+
+    await snapshot(page, "spotter-multifamily-investigation.png");
+  });
+
+  test("Scope family returns scope hits", async ({ page }) => {
+    const input = page.getByTestId("spotter-input");
+    // "cognicode-core" matches the scope fixture label
+    await input.fill("cognicode-core");
+
+    const results = page.getByTestId("spotter-results");
+    await expect(results).toBeVisible({ timeout: 5_000 });
+
+    const scopeHits = results.locator('[data-family="scope"]');
+    await expect(scopeHits.first()).toBeVisible({ timeout: 5_000 });
+    const count = await scopeHits.count();
+    expect(count).toBeGreaterThan(0);
+
+    await snapshot(page, "spotter-multifamily-scope.png");
+  });
+
   test("Cross-family isolation: query matching multiple families shows all", async ({ page }) => {
     // A query that matches multiple kinds. The kind filter chip lets the
     // user narrow by family. We verify the filter UI is present.
