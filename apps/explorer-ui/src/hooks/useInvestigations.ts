@@ -10,12 +10,17 @@
  * - `PUT /api/investigations/:id` — update investigation
  *   (body: `UpdateInvestigationRequestDto`)
  * - `DELETE /api/investigations/:id` — delete investigation
+ *
+ * Investigation views (ADR-005 E21-3, E21-4):
+ * - `GET /api/investigations/:id/evidence-pack` — evidence pack view
+ * - `GET /api/investigations/:id/composed-narrative` — composed narrative view
  */
 import useSWR, { mutate } from "swr";
 
 import {
   createInvestigationRequestSchema,
   investigationSchema,
+  contextualViewSchema,
   pinEvidenceRequestSchema,
   updateInvestigationRequestSchema,
 } from "../api/schemas";
@@ -27,8 +32,10 @@ import {
   makeSwrFetcher,
 } from "../api/client";
 import type {
+  AddArtifactRequestDto,
   CreateInvestigationRequestDto,
   InvestigationDto,
+  ContextualView,
   PinEvidenceRequestDto,
   UpdateInvestigationRequestDto,
 } from "../api/types";
@@ -153,3 +160,105 @@ export async function pinEvidence(
 // Re-export z for use in the file
 import { z } from "zod";
 import { apiDelete } from "../api/client";
+
+/**
+ * Add an artifact to an investigation (ADR-005 E21-6).
+ */
+export async function addInvestigationArtifact(
+  investigationId: string,
+  request: AddArtifactRequestDto,
+): Promise<void> {
+  await apiPost(`investigations/${investigationId}/artifacts`, request, z.object({ ok: z.boolean() }));
+
+  // Invalidate the investigation cache
+  mutate(`investigations/${investigationId}`);
+}
+
+/**
+ * Helper function to add a Mermaid diagram as an investigation artifact.
+ */
+export async function addMermaidArtifact(
+  investigationId: string,
+  title: string,
+  mermaidText: string,
+  generatedFrom?: string,
+): Promise<void> {
+  return addInvestigationArtifact(investigationId, {
+    kind: "mermaid",
+    title,
+    content: mermaidText,
+    generated_from: generatedFrom,
+  });
+}
+
+/**
+ * Helper function to add an SVG diagram as an investigation artifact.
+ */
+export async function addSvgArtifact(
+  investigationId: string,
+  title: string,
+  svgContent: string,
+  generatedFrom?: string,
+): Promise<void> {
+  return addInvestigationArtifact(investigationId, {
+    kind: "svg",
+    title,
+    content: svgContent,
+    generated_from: generatedFrom,
+  });
+}
+
+/**
+ * Helper function to add a draw.io export as an investigation artifact.
+ */
+export async function addDrawioArtifact(
+  investigationId: string,
+  title: string,
+  drawioContent: string,
+  generatedFrom?: string,
+): Promise<void> {
+  return addInvestigationArtifact(investigationId, {
+    kind: "drawio",
+    title,
+    content: drawioContent,
+    generated_from: generatedFrom,
+  });
+}
+
+// Re-export z for use in this file
+import { z } from "zod";
+
+const evidencePackFetcher = makeSwrFetcher(contextualViewSchema);
+const composedNarrativeFetcher = makeSwrFetcher(contextualViewSchema);
+
+/**
+ * Fetch the evidence pack view for an investigation (ADR-005 E21-3).
+ *
+ * Endpoint: `GET /api/investigations/:id/evidence-pack`
+ * Response: `ContextualView`
+ */
+export function useInvestigationEvidencePack(investigationId: string | null) {
+  return useSWR<ContextualView, ApiError>(
+    investigationId
+      ? `/investigations/${encodeURIComponent(investigationId)}/evidence-pack`
+      : null,
+    evidencePackFetcher,
+    { revalidateOnFocus: false },
+  );
+}
+
+/**
+ * Fetch the composed narrative view for an investigation (ADR-005 E21-4).
+ *
+ * Endpoint: `GET /api/investigations/:id/composed-narrative`
+ * Response: `ContextualView`
+ */
+export function useInvestigationComposedNarrative(investigationId: string | null) {
+  return useSWR<ContextualView, ApiError>(
+    investigationId
+      ? `/investigations/${encodeURIComponent(investigationId)}/composed-narrative`
+      : null,
+    composedNarrativeFetcher,
+    { revalidateOnFocus: false },
+  );
+}

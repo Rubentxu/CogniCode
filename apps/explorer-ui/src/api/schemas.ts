@@ -35,6 +35,7 @@ export const inspectableObjectTypeSchema = z.enum([
   "quality_issue",
   "rule",
   "route",
+  "investigation",
 ]);
 export type InspectableObjectType = z.infer<typeof inspectableObjectTypeSchema>;
 
@@ -44,7 +45,7 @@ export type RelationDirection = z.infer<typeof relationDirectionSchema>;
 export const findingSeveritySchema = z.enum(["info", "warning", "critical"]);
 export type FindingSeverity = z.infer<typeof findingSeveritySchema>;
 
-export const artifactFormatSchema = z.enum(["markdown", "html", "json_replay"]);
+export const artifactFormatSchema = z.enum(["markdown", "html", "json_replay", "mermaid", "svg", "drawio"]);
 export type ArtifactFormat = z.infer<typeof artifactFormatSchema>;
 
 // ============================================================================
@@ -997,10 +998,18 @@ export type UpdateInvestigationRequestDto = z.infer<
 // ADR-005 E21-2: Pin evidence to an investigation
 export const pinEvidenceRequestSchema = z.object({
   object_id: z.string(),
-  view_id: z.string().nullable().optional(),
+  view_id: z.string().nullable(),
   note: z.string(),
 });
 export type PinEvidenceRequestDto = z.infer<typeof pinEvidenceRequestSchema>;
+
+export const addArtifactRequestSchema = z.object({
+  kind: z.string(),
+  title: z.string(),
+  content: z.string(),
+  generated_from: z.string().optional(),
+});
+export type AddArtifactRequestDto = z.infer<typeof addArtifactRequestSchema>;
 
 // ============================================================================
 // Health

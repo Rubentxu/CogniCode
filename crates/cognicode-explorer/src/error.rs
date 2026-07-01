@@ -58,6 +58,11 @@ pub enum ExplorerError {
     #[error("invalid_id: {0}")]
     InvalidId(String),
 
+    /// Unsupported artifact format for the current context.
+    /// Maps to HTTP 400 with guidance on supported formats.
+    #[error("unsupported_format: {0}")]
+    UnsupportedFormat(String),
+
     #[error(transparent)]
     Anyhow(#[from] anyhow::Error),
 }

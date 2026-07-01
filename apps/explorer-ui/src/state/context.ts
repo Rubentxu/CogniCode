@@ -52,6 +52,12 @@ export type AppState = {
   activeViewId: string | null;
   /** The lens id the user has applied to the active view, if any. */
   activeLensId: string | null;
+  /**
+   * Active investigation ID (ADR-005 E21-6).
+   * Set when user pins evidence or adds artifacts to an investigation.
+   * Used by ExportMenu to auto-save artifacts.
+   */
+  activeInvestigationId: string | null;
   /** Whether the Spotter palette is open. */
   spotterOpen: boolean;
   /**
@@ -119,6 +125,7 @@ export function initialStateWithFocus(
     activeObjectId: focus.objectId,
     activeViewId: focus.viewId,
     activeLensId: focus.lensId,
+    activeInvestigationId: null,
     spotterOpen: false,
     spotterKind: null,
     activeView: null,
@@ -156,6 +163,7 @@ export type Action =
   | { type: "TOGGLE_SPOTTER" }
   | { type: "SET_SPOTTER"; payload: { open: boolean; kind?: string } }
   | { type: "SET_LANDING_TAB"; payload: { tab: LandingTabId } }
+  | { type: "SET_ACTIVE_INVESTIGATION"; payload: { investigationId: string | null } }
   | { type: "RESET" }
   | { type: "SET_PERSPECTIVE"; payload: Perspective }
   | { type: "TOGGLE_LENS_SIDEBAR" }
@@ -176,6 +184,7 @@ export const initialState: AppState = {
   activeObjectId: null,
   activeViewId: null,
   activeLensId: null,
+  activeInvestigationId: null,
   spotterOpen: false,
   spotterKind: null,
   activeView: null,

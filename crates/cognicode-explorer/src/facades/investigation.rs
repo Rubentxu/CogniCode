@@ -53,6 +53,20 @@ pub struct PinEvidenceRequest {
     pub note: String,
 }
 
+/// Request to add an artifact to an investigation (ADR-005 E21-6).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AddArtifactRequest {
+    /// The kind of artifact (e.g. "mermaid", "svg", "drawio").
+    pub kind: String,
+    /// Human-readable title for this artifact.
+    pub title: String,
+    /// The generated content.
+    pub content: String,
+    /// Optional reference to the object/view that generated this artifact.
+    pub generated_from: Option<String>,
+}
+
 /// Investigation facade trait — ISP-segregated port for investigation operations.
 #[async_trait]
 pub trait InvestigationFacade: Send + Sync {

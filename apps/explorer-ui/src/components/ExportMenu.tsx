@@ -5,16 +5,25 @@
  * the current view's blocks and opens it in draw.io.
  * Also provides "Download PNG" and "Download SVG" options that call
  * the snapshot API and trigger a browser download.
+ *
+ * ADR-005 E21-6: When an investigation is active, exports are automatically
+ * added as artifacts to that investigation.
  */
 import { useState, useRef, useEffect } from "react";
 import type { ContextualView } from "../api/types";
 import { fetchSnapshot } from "../api/client";
 import { handleOpenInDrawIo } from "../utils/drawio";
 import { downloadSnapshot } from "../utils/download";
+import {
+  addMermaidArtifact,
+  addDrawioArtifact,
+  addSvgArtifact,
+} from "../hooks/useInvestigations";
 
 export interface ExportMenuProps {
   view: ContextualView | null;
   workspaceId: string;
+  investigationId: string | null;
   onShowNotification?: (message: string) => void;
 }
 
@@ -33,7 +42,7 @@ function extractMermaidFromView(view: ContextualView | null): string | null {
   return null;
 }
 
-export function ExportMenu({ view, workspaceId, onShowNotification }: ExportMenuProps) {
+export function ExportMenu({ view, workspaceId, investigationId, onShowNotification }: ExportMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -59,6 +68,22 @@ export function ExportMenu({ view, workspaceId, onShowNotification }: ExportMenu
     }
     try {
       await handleOpenInDrawIo(mermaidText, { notify: onShowNotification });
+
+      // ADR-005 E21-6: Add Mermaid artifact to active investigation
+      if (investigationId) {
+        try {
+          await addDrawioArtifact(
+            investigationId,
+            `${view?.title || "Diagram"} - Draw.io export`,
+            mermaidText,
+            view?.object_id,
+          );
+          onShowNotification?.("Artifact added to investigation");
+        } catch (error) {
+          console.error("Failed to add artifact to investigation:", error);
+          // Non-blocking - still export to draw.io
+        }
+      }
     } catch {
       onShowNotification?.("Failed to open diagram in draw.io");
     }
@@ -78,6 +103,33 @@ export function ExportMenu({ view, workspaceId, onShowNotification }: ExportMenu
       const filename = `diagram${extension}`;
       await downloadSnapshot(blob, filename);
       onShowNotification?.(`Downloaded ${format.toUpperCase()}`);
+
+      // ADR-005 E21-6: Add artifact to active investigation
+      if (investigationId && blob) {
+        try {
+          const content = await blob.text();
+          if (format === "svg") {
+            await addSvgArtifact(
+              investigationId,
+              `${view?.title || "Diagram"} - SVG export`,
+              content,
+              view?.object_id,
+            );
+          } else {
+            // PNG: store as base64 in content
+            await addSvgArtifact(
+              investigationId,
+              `${view?.title || "Diagram"} - PNG export`,
+              `data:image/png;base64,${content}`,
+              view?.object_id,
+            );
+          }
+          onShowNotification?.("Artifact added to investigation");
+        } catch (error) {
+          console.error("Failed to add artifact to investigation:", error);
+          // Non-blocking - still download file
+        }
+      }
     } catch {
       onShowNotification?.(`Failed to download ${format.toUpperCase()}`);
     }

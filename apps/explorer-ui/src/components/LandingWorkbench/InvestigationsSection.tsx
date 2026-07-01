@@ -8,13 +8,18 @@
  * Future v2: Pin evidence, add artifacts, write narrative.
  */
 import { useState } from "react";
-import { useAppDispatch } from "../../state/context";
+import { useAppDispatch, useAppState } from "../../state/context";
 import {
   useInvestigations,
+  useInvestigationEvidencePack,
+  useInvestigationComposedNarrative,
   createInvestigation,
   deleteInvestigation,
+  addMermaidArtifact,
+  addSvgArtifact,
+  addDrawioArtifact,
 } from "../../hooks/useInvestigations";
-import type { InvestigationDto } from "../../api/types";
+import type { InvestigationDto, ArtifactDto, ContextualView } from "../../api/types";
 
 // ADR-005: investigation templates as fallback when no investigations exist
 interface InvestigationTemplate {
@@ -71,12 +76,241 @@ function statusColor(status: InvestigationDto["status"]): string {
   }
 }
 
+function ArtifactsList({
+  artifacts,
+  investigationTitle,
+}: {
+  artifacts: ArtifactDto[];
+  investigationTitle: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (artifacts.length === 0) {
+    return (
+      <div
+        data-testid="artifacts-list-empty"
+        style={{
+          padding: "12px",
+          borderRadius: 8,
+          border: "1px solid var(--color-border)",
+          backgroundColor: "var(--color-surface-overlay)",
+          fontSize: 12,
+          color: "var(--color-text-muted)",
+          textAlign: "center",
+        }}
+      >
+        No artifacts yet. Export a view (PNG, SVG, or Mermaid) to add artifacts
+        to "{investigationTitle}".
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-testid="artifacts-list"
+      style={{
+        borderRadius: 8,
+        border: "1px solid var(--color-primary)",
+        backgroundColor: "var(--color-surface-overlay)",
+        overflow: "hidden",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        data-testid="artifacts-list-toggle"
+        style={{
+          width: "100%",
+          padding: "10px 12px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          border: "none",
+          backgroundColor: "transparent",
+          cursor: "pointer",
+          fontSize: 12,
+          fontWeight: 600,
+          color: "var(--color-text-primary)",
+        }}
+      >
+        <span>
+          Artifacts ({artifacts.length}) — {investigationTitle}
+        </span>
+        <span style={{ color: "var(--color-text-muted)" }}>
+          {expanded ? "▲" : "▼"}
+        </span>
+      </button>
+
+      {expanded && (
+        <ul
+          style={{
+            listStyle: "none",
+            margin: 0,
+            padding: 0,
+            borderTop: "1px solid var(--color-border)",
+          }}
+        >
+          {artifacts.map((artifact) => (
+            <li
+              key={artifact.id}
+              data-testid={`artifact-item-${artifact.id}`}
+              style={{
+                padding: "8px 12px",
+                borderBottom: "1px solid var(--color-border)",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10,
+                  padding: "2px 6px",
+                  borderRadius: 4,
+                  backgroundColor: "var(--color-primary)",
+                  color: "var(--color-primary-foreground, #fff)",
+                  textTransform: "uppercase",
+                  fontWeight: 600,
+                  flexShrink: 0,
+                }}
+              >
+                {artifact.kind}
+              </span>
+              <span
+                style={{
+                  fontSize: 12,
+                  color: "var(--color-text-primary)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  flex: 1,
+                }}
+                title={artifact.title}
+              >
+                {artifact.title}
+              </span>
+              {artifact.generated_from && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: "var(--color-text-muted)",
+                    flexShrink: 0,
+                  }}
+                  title={`Generated from: ${artifact.generated_from}`}
+                >
+                  from: {artifact.generated_from}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Renders a ContextualView (evidence pack or composed narrative) as a list of blocks.
+ */
+function ViewBlockList({
+  view,
+  emptyMessage,
+}: {
+  view: ContextualView | undefined;
+  emptyMessage: string;
+}) {
+  if (!view) {
+    return (
+      <div
+        style={{
+          padding: "12px",
+          borderRadius: 8,
+          border: "1px solid var(--color-border)",
+          backgroundColor: "var(--color-surface-overlay)",
+          fontSize: 12,
+          color: "var(--color-text-muted)",
+          textAlign: "center",
+        }}
+      >
+        Loading view…
+      </div>
+    );
+  }
+
+  if (view.blocks.length === 0) {
+    return (
+      <div
+        style={{
+          padding: "12px",
+          borderRadius: 8,
+          border: "1px solid var(--color-border)",
+          backgroundColor: "var(--color-surface-overlay)",
+          fontSize: 12,
+          color: "var(--color-text-muted)",
+          textAlign: "center",
+        }}
+      >
+        {emptyMessage}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        borderRadius: 8,
+        border: "1px solid var(--color-primary)",
+        backgroundColor: "var(--color-surface-overlay)",
+        overflow: "hidden",
+      }}
+    >
+      {view.blocks.map((block, i) => (
+        <div
+          key={block.id}
+          data-testid={`view-block-${i}`}
+          style={{
+            padding: "10px 12px",
+            borderBottom: i < view.blocks.length - 1 ? "1px solid var(--color-border)" : "none",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: "var(--color-text-muted)",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              marginBottom: 4,
+            }}
+          >
+            {block.title}
+          </div>
+          <pre
+            style={{
+              fontSize: 11,
+              color: "var(--color-text-primary)",
+              margin: 0,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              fontFamily: "monospace",
+            }}
+          >
+            {JSON.stringify(block.body, null, 2)}
+          </pre>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function InvestigationCard({
   investigation,
   onDelete,
+  onSelect,
 }: {
   investigation: InvestigationDto;
   onDelete: (id: string) => void;
+  onSelect: (id: string) => void;
 }) {
   const timestamp = new Date(investigation.updated_at).toLocaleDateString(undefined, {
     month: "short",
@@ -94,6 +328,16 @@ function InvestigationCard({
         display: "flex",
         flexDirection: "column",
         gap: 6,
+        cursor: "pointer",
+      }}
+      onClick={() => onSelect(investigation.id)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(investigation.id);
+        }
       }}
     >
       <div
@@ -304,17 +548,46 @@ interface InvestigationsSectionProps {
 
 export function InvestigationsSection({ workspaceId }: InvestigationsSectionProps) {
   const dispatch = useAppDispatch();
+  const { activeInvestigationId } = useAppState();
   const { data: investigations, isLoading } = useInvestigations(workspaceId);
   const [showNewForm, setShowNewForm] = useState(false);
+  // ADR-005 E21-3/E21-4: active tab for selected investigation views
+  const [investigationViewTab, setInvestigationViewTab] = useState<"artifacts" | "evidence" | "narrative">("artifacts");
 
   const activeInvestigations =
     investigations?.filter((inv) => inv.status === "active" || inv.status === "draft") ?? [];
   const completedInvestigations =
     investigations?.filter((inv) => inv.status === "completed" || inv.status === "archived") ?? [];
 
+  // ADR-005 E21-6: Find the currently selected investigation
+  const selectedInvestigation = investigations?.find(
+    (inv) => inv.id === activeInvestigationId,
+  );
+
+  // ADR-005 E21-3/E21-4: Fetch views for selected investigation
+  const { data: evidencePackView } = useInvestigationEvidencePack(
+    selectedInvestigation?.id ?? null,
+  );
+  const { data: composedNarrativeView } = useInvestigationComposedNarrative(
+    selectedInvestigation?.id ?? null,
+  );
+
   const handleDelete = async (id: string) => {
     if (!window.confirm("Delete this investigation? This cannot be undone.")) return;
     await deleteInvestigation(id);
+  };
+
+  const handleSelect = (id: string) => {
+    // ADR-005 E21-6: Set active investigation for ExportMenu auto-save
+    dispatch({
+      type: "SET_ACTIVE_INVESTIGATION",
+      payload: { investigationId: id },
+    });
+    // Switch to Graph tab to start exploring
+    dispatch({
+      type: "SET_LANDING_TAB",
+      payload: { tab: "graph" },
+    });
   };
 
   const handleTemplateClick = (goal: string) => {
@@ -349,6 +622,94 @@ export function InvestigationsSection({ workspaceId }: InvestigationsSectionProp
           Focused exploration sessions with evidence and narrative.
         </p>
       </header>
+
+      {/* ADR-005 E21-3/E21-4/E21-6: Investigation detail — shown when an investigation is selected */}
+      {selectedInvestigation && (
+        <section>
+          {/* Tab strip */}
+          <div
+            style={{
+              display: "flex",
+              gap: 4,
+              marginBottom: 8,
+            }}
+          >
+            {(["artifacts", "evidence", "narrative"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                data-testid={`investigation-tab-${tab}`}
+                onClick={() => setInvestigationViewTab(tab)}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 4,
+                  border: "none",
+                  backgroundColor:
+                    investigationViewTab === tab
+                      ? "var(--color-primary)"
+                      : "var(--color-surface-overlay)",
+                  color:
+                    investigationViewTab === tab
+                      ? "var(--color-primary-foreground, #fff)"
+                      : "var(--color-text-muted)",
+                  fontSize: 11,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  textTransform: "capitalize",
+                }}
+              >
+                {tab === "evidence" ? "Evidence Pack" : tab}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content */}
+          {investigationViewTab === "artifacts" && (
+            <>
+              <ArtifactsList
+                artifacts={selectedInvestigation.artifacts}
+                investigationTitle={selectedInvestigation.title}
+              />
+              <button
+                type="button"
+                data-testid="start-exploring-button"
+                onClick={() => {
+                  dispatch({
+                    type: "SET_LANDING_TAB",
+                    payload: { tab: "graph" },
+                  });
+                }}
+                style={{
+                  marginTop: 8,
+                  padding: "6px 12px",
+                  borderRadius: 4,
+                  border: "none",
+                  backgroundColor: "var(--color-primary)",
+                  color: "var(--color-primary-foreground, #fff)",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                Start Exploring →
+              </button>
+            </>
+          )}
+
+          {investigationViewTab === "evidence" && (
+            <ViewBlockList
+              view={evidencePackView}
+              emptyMessage="No evidence pinned to this investigation."
+            />
+          )}
+
+          {investigationViewTab === "narrative" && (
+            <ViewBlockList
+              view={composedNarrativeView}
+              emptyMessage="No narrative written yet."
+            />
+          )}
+        </section>
+      )}
 
       {/* New investigation form */}
       {showNewForm ? (
@@ -412,6 +773,7 @@ export function InvestigationsSection({ workspaceId }: InvestigationsSectionProp
                 key={inv.id}
                 investigation={inv}
                 onDelete={handleDelete}
+                onSelect={handleSelect}
               />
             ))}
           </div>
@@ -445,6 +807,7 @@ export function InvestigationsSection({ workspaceId }: InvestigationsSectionProp
                 key={inv.id}
                 investigation={inv}
                 onDelete={handleDelete}
+                onSelect={handleSelect}
               />
             ))}
           </div>

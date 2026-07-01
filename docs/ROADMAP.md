@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-01 (E21-1 closed — PR #90, all 3 PRs complete)
+Last updated: 2026-07-01 (E21-2 closed — PR #90, branch feat/e21-3-e21-4-e21-6 created)
 
 ## Active
 
@@ -52,16 +52,40 @@ Last updated: 2026-07-01 (E21-1 closed — PR #90, all 3 PRs complete)
 | Change | Goal | ADR | Priority | Status |
 |--------|------|-----|----------|--------|
 | `e21-1-investigation-entity` | Investigation entity + PostgreSQL tables + API | ADR-005 | HIGH | PR1✅ PR2✅ PR3✅ |
-| `e21-2-pin-evidence` | "Pin as evidence" action on panes + views | ADR-005 | HIGH | |
-| `e21-3-evidence-pack-view` | `ViewKind::EvidencePack` executor | ADR-005 | MEDIUM | |
-| `e21-4-composed-narrative` | `ViewKind::ComposedNarrative` with embedded objects + diagrams | ADR-005 | MEDIUM | |
-| `e21-5-investigation-board` | Investigation board on landing page | ADR-005 | LOW | |
-| `e21-6-artifacts-in-investigation` | Mermaid/draw.io/SVG artifacts embedded in investigations | ADR-003+005 | MEDIUM | |
+| `e21-2-pin-evidence` | "Pin as evidence" action on panes + views | ADR-005 | HIGH | ✅ PR #90 |
+| `e21-3-evidence-pack-view` | `ViewKind::EvidencePack` executor | ADR-005 | MEDIUM | 🔄 Branch: feat/e21-3-e21-4-e21-6 |
+| `e21-4-composed-narrative` | `ViewKind::ComposedNarrative` with embedded objects + diagrams | ADR-005 | MEDIUM | 🔄 Branch: feat/e21-3-e21-4-e21-6 |
+| `e21-5-investigation-board` | Investigation board on landing page | ADR-005 | LOW | ✅ PR #88 |
+| `e21-6-artifacts-in-investigation` | Mermaid/draw.io/SVG artifacts embedded in investigations | ADR-003+005 | MEDIUM | 🔄 Branch: feat/e21-3-e21-4-e21-6 |
 
 **E21-1 PR details** (branch `feat/e21-1-investigation-entity`):
 - PR1 ✅: PostgreSQL schema (m0013) + repo methods (`save_investigation_tx`, `load_investigation`, etc.)
 - PR2 ✅: Domain entity + InvestigationStore trait + PostgresInvestigationStore + InvestigationService facade + REST API
 - PR3 ✅: InvestigationBoard UI (InvestigationsSection) + investigation_id wiring + integration tests + useInvestigations hook
+
+**E21-2 PR #90** (branch `feat/e21-1-investigation-entity`):
+- ✅ Backend: `PinEvidenceRequest` type + `POST /api/investigations/:id/evidence` endpoint
+- ✅ Frontend: `pinEvidence()` hook + `PinEvidenceModal` with investigation dropdown
+- ✅ Pin button (📌) in `PaneInspector` header
+- ✅ E2E tests for Pin Evidence flow
+
+**E21-3+E21-4+E21-6** (branch `feat/e21-3-e21-4-e21-6`):
+- E21-3: `ViewKind::EvidencePack` executor
+  - Add `ViewKind::EvidencePack` to ViewKind enum
+  - EvidencePackExecutor: fetch investigation.evidence and build ContextualView
+  - REST handler: `GET /api/investigations/:id/evidence-pack`
+  - Frontend renderer for evidence_pack
+- E21-4: `ViewKind::ComposedNarrative` executor
+  - Add `ViewKind::ComposedNarrative` to ViewKind enum
+  - ComposedNarrativeExecutor: build markdown narrative from investigation
+  - REST handler: `GET /api/investigations/:id/composed-narrative`
+  - Frontend renderer with embedded diagrams (mermaid, SVG)
+- E21-6: Artifacts embedded in investigations
+  - POST `/api/investigations/:id/artifacts` endpoint
+  - Wire Mermaid export (E20-1/E20-2) to create investigation_id artifacts
+  - Wire draw.io action (E20-3) to create investigation_id artifacts
+  - Wire SVG snapshot (E20-4) to create investigation_id artifacts
+  - Frontend: Artifacts section in InvestigationBoard
 
 #### Execution order
 
@@ -75,28 +99,15 @@ E18 and E19 can start in parallel. E20 depends on E19 (C4 levels inform diagram 
 
 ## Session Handover 2026-07-01
 
-**E21-1 PR3 completed — all 3 PRs done**. Branch `feat/e21-1-investigation-entity`:
-- d76ace4 ✅: Schema + repo methods (merged to main)
-- 9113671 ✅: Domain + Store + Service + REST API (merged to main)
-- d099d17 ✅: m0014 migration + exploration_sessions.investigation_id column
-- 00dcd31 ✅: investigation_id wiring through DTOs + integration tests
-- 4a5ef04 ✅: InvestigationBoard UI (InvestigationsSection) + useInvestigations hook
+**E21-2 completed — PR #90 merged**. All evidence pinning functionality is DONE:
+- Backend: `POST /api/investigations/:id/evidence` with investigation dropdown modal
+- Frontend: `pinEvidence()` hook, PinEvidenceModal, 📌 button in PaneInspector
+- E2E tests: 5 Playwright tests for pinning evidence flow
 
-**PR #90**: All 5 commits ready for merge review.
-
-**Frontend changes**:
-- `InvestigationDto`, `InvestigationStatus`, `EvidenceDto`, `ArtifactDto` schemas + types
-- `useInvestigations` hook: list/create/update/delete investigations
-- `useInvestigation` hook: get single investigation
-- `InvestigationsSection` → InvestigationBoard: shows active/completed investigations, "New Investigation" form, delete action, templates as fallback
-- `saveExplorationSession` updated to accept optional `investigation_id` (ADR-005 INV-1)
-- `LandingWorkbench` passes `workspaceId` to `InvestigationsSection`
-
-**Remaining E21 work** (not in this PR):
-- E21-2: "Pin as evidence" action on panes
-- E21-3: `ViewKind::EvidencePack` executor
-- E21-4: `ViewKind::ComposedNarrative`
-- E21-6: Artifacts embedded in investigations
+**E21-3+E21-4+E21-6 in progress** on branch `feat/e21-3-e21-4-e21-6`:
+- Starting: EvidencePack and ComposedNarrative view executors + artifacts integration
+- Branch created from main (after E21-2 merge)
+- Next: Implement ViewKind variants and executors
 
 **Architecture stack** (ADR-005 INV-1):
 ```

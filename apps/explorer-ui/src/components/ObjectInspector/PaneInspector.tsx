@@ -58,7 +58,7 @@ export function PaneInspector({
   onScroll,
 }: PaneInspectorProps) {
   const dispatch = useAppDispatch();
-  const { navigation, viewSpecWizard } = useAppState();
+  const { navigation, viewSpecWizard, activeInvestigationId } = useAppState();
   const { showNotification } = useContext(NotificationContext);
 
   // Active pane from the navigation state (for breadcrumb + note editor).
@@ -208,7 +208,7 @@ export function PaneInspector({
               )}
             </div>
             <div className="flex items-center gap-2">
-              <ExportMenu view={display} workspaceId={workspaceId ?? ""} onShowNotification={showNotification} />
+              <ExportMenu view={display} workspaceId={workspaceId ?? ""} investigationId={activeInvestigationId} onShowNotification={showNotification} />
               <button
                 type="button"
                 onClick={() => setPinModalOpen(true)}

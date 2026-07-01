@@ -398,6 +398,7 @@ impl ExplorerMcpHandler {
             None, // view_spec_store
             quality_repo.clone(),
             None, // persistence
+            None, // investigation
         ));
 
         // Persistence facade (created before view_impl so it can be wired in).

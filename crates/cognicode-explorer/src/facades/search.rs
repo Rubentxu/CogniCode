@@ -31,6 +31,7 @@ pub struct SearchServiceImpl {
     view_spec_store: Option<Arc<dyn ViewSpecStore>>,
     quality: Option<Arc<dyn crate::ports::QualityRepository>>,
     persistence: Option<Arc<dyn PersistenceService>>,
+    investigation: Option<Arc<dyn crate::facades::InvestigationFacade>>,
 }
 
 impl SearchServiceImpl {
@@ -42,6 +43,7 @@ impl SearchServiceImpl {
         view_spec_store: Option<Arc<dyn ViewSpecStore>>,
         quality: Option<Arc<dyn crate::ports::QualityRepository>>,
         persistence: Option<Arc<dyn PersistenceService>>,
+        investigation: Option<Arc<dyn crate::facades::InvestigationFacade>>,
     ) -> Self {
         Self {
             repo,
@@ -50,6 +52,7 @@ impl SearchServiceImpl {
             view_spec_store,
             quality,
             persistence,
+            investigation,
         }
     }
 }
@@ -385,6 +388,68 @@ impl SearchService for SearchServiceImpl {
             return Err(ExplorerError::ObjectNotFound(object_id.to_string()));
         }
 
+        // Handle Investigation async path
+        if matches!(identity, ObjectIdentity::Investigation { .. }) {
+            if let Some(ref investigation) = self.investigation {
+                let investigation_id = match &identity {
+                    ObjectIdentity::Investigation { id } => id.clone(),
+                    _ => return Err(ExplorerError::ObjectNotFound(object_id.to_string())),
+                };
+                let vr = self.view_registry.clone();
+
+                if let Some(inv) = investigation.get_investigation(&investigation_id).await? {
+                    let evidence_count = inv.evidence.len();
+                    let artifact_count = inv.artifacts.len();
+                    let label = format!("{}: {}", inv.id, inv.title);
+                    let subtitle = format!(
+                        "{} evidence, {} artifacts",
+                        evidence_count, artifact_count
+                    );
+
+                    return Ok(InspectableObjectSummary {
+                        id: format!("investigation:{}", inv.id),
+                        object_type: InspectableObjectType::Investigation,
+                        label,
+                        subtitle,
+                        properties: vec![
+                            Property {
+                                key: "goal".into(),
+                                value: serde_json::Value::String(inv.goal.clone()),
+                                value_type: "string".into(),
+                                source: "InvestigationFacade".into(),
+                            },
+                            Property {
+                                key: "status".into(),
+                                value: serde_json::Value::String(inv.status.to_string()),
+                                value_type: "string".into(),
+                                source: "InvestigationFacade".into(),
+                            },
+                            Property {
+                                key: "evidence_count".into(),
+                                value: serde_json::Value::Number(evidence_count.into()),
+                                value_type: "usize".into(),
+                                source: "InvestigationFacade".into(),
+                            },
+                            Property {
+                                key: "artifact_count".into(),
+                                value: serde_json::Value::Number(artifact_count.into()),
+                                value_type: "usize".into(),
+                                source: "InvestigationFacade".into(),
+                            },
+                            Property {
+                                key: "created_at".into(),
+                                value: serde_json::Value::String(inv.created_at.to_string()),
+                                value_type: "string".into(),
+                                source: "InvestigationFacade".into(),
+                            },
+                        ],
+                        available_views: vr.list_for(InspectableObjectType::Investigation),
+                    });
+                }
+            }
+            return Err(ExplorerError::ObjectNotFound(object_id.to_string()));
+        }
+
         // Run sync inspection in a blocking thread.
         let repo = self.repo.clone();
         let search = self.search.clone();
@@ -528,6 +593,12 @@ fn inspect_object_impl(
             // Async path — handled in inspect_object before calling this
             Err(ExplorerError::Anyhow(anyhow::anyhow!(
                 "SavedExploration inspection requires async context"
+            )))
+        }
+        ObjectIdentity::Investigation { .. } => {
+            // Async path — handled in inspect_object before calling this
+            Err(ExplorerError::Anyhow(anyhow::anyhow!(
+                "Investigation inspection requires async context"
             )))
         }
     }

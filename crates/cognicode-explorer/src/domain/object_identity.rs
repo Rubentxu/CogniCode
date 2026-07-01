@@ -42,6 +42,8 @@ pub enum ObjectIdentity {
     Rule { rule_id: String },
     /// `exploration:{id}` — a saved exploration session, by session id.
     SavedExploration { id: String },
+    /// `investigation:{id}` — an investigation, by id.
+    Investigation { id: String },
 }
 
 impl ObjectIdentity {
@@ -81,6 +83,11 @@ impl ObjectIdentity {
         Self::SavedExploration { id: id.into() }
     }
 
+    /// Build an investigation identity from an investigation id.
+    pub fn new_investigation(id: impl Into<String>) -> Self {
+        Self::Investigation { id: id.into() }
+    }
+
     /// Parse an MVP id. The accepted shapes are:
     /// - `symbol:{file}:{name}:{line}` (line > 0, file + name non-empty)
     /// - `file:{path}` (path non-empty)
@@ -88,6 +95,7 @@ impl ObjectIdentity {
     /// - `issue:{id}` (id > 0)
     /// - `rule:{rule_id}` (rule_id non-empty; colons allowed)
     /// - `exploration:{id}` (id non-empty)
+    /// - `investigation:{id}` (id non-empty)
     ///
     /// Any other shape yields [`ExplorerError::ResolutionFailed`]. The path
     /// component of `file:` and `scope:` is everything after the first `:`
@@ -107,6 +115,7 @@ impl ObjectIdentity {
             "issue" => Self::parse_issue(rest, raw),
             "rule" => Self::parse_rule(rest, raw),
             "exploration" => Self::parse_exploration(rest, raw),
+            "investigation" => Self::parse_investigation(rest, raw),
             _ => Err(ExplorerError::ResolutionFailed(raw.to_string())),
         }
     }
@@ -191,8 +200,17 @@ impl ObjectIdentity {
         })
     }
 
+    fn parse_investigation(rest: &str, raw: &str) -> ExplorerResult<Self> {
+        if rest.is_empty() {
+            return Err(ExplorerError::ResolutionFailed(raw.to_string()));
+        }
+        Ok(Self::Investigation {
+            id: rest.to_string(),
+        })
+    }
+
     /// The lowercase tag used in MVP ids and on the wire:
-    /// `"symbol"`, `"file"`, `"scope"`, `"issue"`, `"rule"`, or `"exploration"`.
+    /// `"symbol"`, `"file"`, `"scope"`, `"issue"`, `"rule"`, `"exploration"`, or `"investigation"`.
     pub fn object_type_str(&self) -> &'static str {
         match self {
             Self::Symbol { .. } => "symbol",
@@ -201,6 +219,7 @@ impl ObjectIdentity {
             Self::QualityIssue { .. } => "issue",
             Self::Rule { .. } => "rule",
             Self::SavedExploration { .. } => "exploration",
+            Self::Investigation { .. } => "investigation",
         }
     }
 
@@ -213,14 +232,15 @@ impl ObjectIdentity {
     }
 
     /// The path component of a file or scope identity. Returns `None` for
-    /// symbol, issue, rule, and saved exploration identities.
+    /// symbol, issue, rule, saved exploration, and investigation identities.
     pub fn path(&self) -> Option<&str> {
         match self {
             Self::File { path } | Self::Scope { path } => Some(path.as_str()),
             Self::Symbol { .. }
             | Self::QualityIssue { .. }
             | Self::Rule { .. }
-            | Self::SavedExploration { .. } => None,
+            | Self::SavedExploration { .. }
+            | Self::Investigation { .. } => None,
         }
     }
 
@@ -255,7 +275,7 @@ impl ObjectIdentity {
     }
 
     /// Render the canonical MVP id (`symbol:...` / `file:...` /
-    /// `scope:...` / `issue:...` / `rule:...` / `exploration:...`).
+    /// `scope:...` / `issue:...` / `rule:...` / `exploration:...` / `investigation:...`).
     pub fn to_mvp_id(&self) -> String {
         match self {
             Self::Symbol { file, name, line } => format!("symbol:{file}:{name}:{line}"),
@@ -264,6 +284,7 @@ impl ObjectIdentity {
             Self::QualityIssue { id } => format!("issue:{id}"),
             Self::Rule { rule_id } => format!("rule:{rule_id}"),
             Self::SavedExploration { id } => format!("exploration:{id}"),
+            Self::Investigation { id } => format!("investigation:{id}"),
         }
     }
 
@@ -293,6 +314,7 @@ impl ObjectIdentity {
             Self::QualityIssue { id } => id.to_string(),
             Self::Rule { rule_id } => rule_id.clone(),
             Self::SavedExploration { id } => id.clone(),
+            Self::Investigation { id } => id.clone(),
         }
     }
 }

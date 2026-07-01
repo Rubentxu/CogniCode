@@ -160,7 +160,7 @@ test.describe("Pin Evidence — E21-2", () => {
     const modalBackdrop = page.getByTestId("pin-evidence-modal");
     const boundingBox = await modalBackdrop.boundingBox();
     if (boundingBox) {
-      await page.mouse.click(boundingBoxBox.x + 10, boundingBoxBox.y + 10);
+      await page.mouse.click(boundingBox.x + 10, boundingBox.y + 10);
     }
 
     // Modal should close

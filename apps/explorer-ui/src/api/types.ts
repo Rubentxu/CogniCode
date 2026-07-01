@@ -71,6 +71,7 @@ export type {
   CreateInvestigationRequestDto,
   UpdateInvestigationRequestDto,
   PinEvidenceRequestDto,
+  AddArtifactRequestDto,
   GenerateArtifactRequest,
   DecisionArtifactSummary,
   HealthResponse,

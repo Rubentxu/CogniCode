@@ -8,6 +8,9 @@ use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
 use cognicode_core::domain::traits::GraphQueryPort;
 
+// Re-export Investigation for InspectionTarget use
+pub use crate::facades::investigation::Investigation;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceSummary {
     pub id: String,
@@ -99,6 +102,8 @@ pub enum InspectableObjectType {
     Rule,
     /// A saved exploration session, addressed by its session id.
     SavedExploration,
+    /// An investigation, addressed by its investigation id.
+    Investigation,
 }
 
 /// DTO for a view descriptor — the wire-compatible shape returned in list responses.
@@ -281,6 +286,7 @@ pub enum InspectionTarget {
         rule_id: String,
     },
     SavedExploration(ExplorationSession),
+    Investigation(Investigation),
 }
 
 /// Context passed to ViewExecutor::build(). The service populates all
@@ -471,8 +477,10 @@ pub struct IndexWorkspaceRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct GenerateArtifactRequest {
     pub format: ArtifactFormat,
+    pub investigation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -481,6 +489,9 @@ pub enum ArtifactFormat {
     Markdown,
     Html,
     JsonReplay,
+    Mermaid,
+    Svg,
+    Drawio,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

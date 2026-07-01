@@ -90,6 +90,9 @@ impl PersistenceService for PersistenceServiceImpl {
                     content: body,
                 })
             }
+            crate::dto::ArtifactFormat::Mermaid | crate::dto::ArtifactFormat::Svg | crate::dto::ArtifactFormat::Drawio => {
+                Err(ExplorerError::UnsupportedFormat(format!("{:?}", request.format)))
+            }
         }
     }
 

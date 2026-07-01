@@ -17,7 +17,7 @@ use crate::dto::{
     OpenWorkspaceRequest, SaveExplorationSessionRequest, SubgraphResponse,
 };
 use crate::facades::investigation::{
-    CreateInvestigationRequest, Evidence, Investigation, PinEvidenceRequest,
+    CreateInvestigationRequest, Evidence, Investigation, PinEvidenceRequest, AddArtifactRequest,
     UpdateInvestigationRequest,
 };
 use crate::error::{ExplorerError, ExplorerResult};
@@ -565,6 +565,17 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/api/investigations/:id", delete(delete_investigation))
         // Pin evidence — ADR-005 E21-2
         .route("/api/investigations/:id/evidence", post(pin_evidence))
+        .route("/api/investigations/:id/artifacts", post(add_investigation_artifact))
+        // Evidence Pack view — ADR-005 E21-3
+        .route(
+            "/api/investigations/:id/evidence-pack",
+            get(get_investigation_evidence_pack),
+        )
+        // Composed Narrative view — ADR-005 E21-4
+        .route(
+            "/api/investigations/:id/composed-narrative",
+            get(get_investigation_composed_narrative),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -1474,6 +1485,88 @@ async fn pin_evidence(
     Ok(Json(serde_json::json!({ "ok": true })).into_response())
 }
 
+/// POST /api/investigations/:id/artifacts — add an artifact to an investigation (ADR-005 E21-6).
+async fn add_investigation_artifact(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Json(request): Json<AddArtifactRequest>,
+) -> Result<Response, ApiError> {
+    let investigation = state
+        .investigation
+        .as_ref()
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
+        .get_investigation(&id)
+        .await?
+        .ok_or_else(|| {
+            ApiError(ExplorerError::NotFound(format!("investigation {} not found", id)))
+        })?;
+
+    let artifact = cognicode_core::domain::investigation::Artifact {
+        id: format!(
+            "art_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ),
+        kind: request.kind,
+        title: request.title,
+        content: request.content,
+        generated_from: request.generated_from,
+    };
+
+    // Update the investigation with the new artifact
+    let mut updated_investigation = investigation.clone();
+    updated_investigation.artifacts.push(artifact);
+
+    state
+        .investigation
+        .as_ref()
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
+        .update_investigation(updated_investigation)
+        .await?;
+
+    Ok(Json(serde_json::json!({ "ok": true })).into_response())
+}
+
+/// GET /api/investigations/:id/evidence-pack — get evidence pack view for an investigation (ADR-005 E21-3).
+async fn get_investigation_evidence_pack(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    let investigation = state
+        .investigation
+        .as_ref()
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
+        .get_investigation(&id)
+        .await?
+        .ok_or_else(|| {
+            ApiError(ExplorerError::NotFound(format!("investigation {} not found", id)))
+        })?;
+
+    let view = crate::domain::views::build_evidence_pack(&investigation);
+    Ok(Json(view).into_response())
+}
+
+/// GET /api/investigations/:id/composed-narrative — get composed narrative view for an investigation (ADR-005 E21-4).
+async fn get_investigation_composed_narrative(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    let investigation = state
+        .investigation
+        .as_ref()
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
+        .get_investigation(&id)
+        .await?
+        .ok_or_else(|| {
+            ApiError(ExplorerError::NotFound(format!("investigation {} not found", id)))
+        })?;
+
+    let view = crate::domain::views::build_investigation_narrative(&investigation);
+    Ok(Json(view).into_response())
+}
+
 struct ApiError(ExplorerError);
 
 impl IntoResponse for ApiError {
@@ -1489,6 +1582,7 @@ impl IntoResponse for ApiError {
             ExplorerError::InvalidInput(_) => StatusCode::BAD_REQUEST,
             ExplorerError::InvalidQuery(_) => StatusCode::BAD_REQUEST,
             ExplorerError::InvalidId(_) => StatusCode::BAD_REQUEST,
+            ExplorerError::UnsupportedFormat(_) => StatusCode::BAD_REQUEST,
             ExplorerError::Conflict(_) => StatusCode::CONFLICT,
             ExplorerError::FeatureDisabled(_) => StatusCode::SERVICE_UNAVAILABLE,
             ExplorerError::GraphNotReady => StatusCode::SERVICE_UNAVAILABLE,
