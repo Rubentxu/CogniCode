@@ -81,6 +81,12 @@ const SCHEMA_SQL_ROUTES: &str = include_str!("m0012_route_nodes_protocol_edges.s
 #[cfg(feature = "postgres")]
 const SCHEMA_SQL_INVESTIGATION: &str = include_str!("m0013_investigation.sql");
 
+/// Adds `investigation_id` column to `exploration_sessions` table,
+/// linking a session to an active investigation (ADR-005 INV-1).
+#[cfg(feature = "postgres")]
+const SCHEMA_SQL_INVESTIGATION_SESSIONS: &str =
+    include_str!("m0014_investigation_sessions.sql");
+
 /// PostgreSQL-backed implementation of the async [`Repository`]
 /// trait. Owns its [`PgPool`]; consumers that want shared
 /// ownership can wrap in `Arc<PostgresRepository>`.
@@ -187,6 +193,15 @@ pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
         .execute(&self.pool)
         .await
         .map_err(|e| RepositoryError::Store(format!("investigation migration: {e}")))?;
+
+    // 7. Link exploration_sessions to investigations — adds
+    //    `investigation_id` column (ADR-005 INV-1).
+    sqlx::raw_sql(SCHEMA_SQL_INVESTIGATION_SESSIONS)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!(
+            "investigation sessions migration: {e}"
+        )))?;
 
     Ok(())
 }
@@ -789,7 +804,8 @@ pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
                     events::text AS events, \
                     navigation_mode, \
                     panes::text AS panes, \
-                    created_at::text AS created_at \
+                    created_at::text AS created_at, \
+                    investigation_id \
              FROM exploration_sessions \
              WHERE id = $1 AND workspace_id = $2 \
              LIMIT 1",
@@ -813,7 +829,8 @@ pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
                     events::text AS events, \
                     navigation_mode, \
                     panes::text AS panes, \
-                    created_at::text AS created_at \
+                    created_at::text AS created_at, \
+                    investigation_id \
              FROM exploration_sessions \
              WHERE workspace_id = $1 \
              ORDER BY created_at DESC, id DESC",
@@ -1120,12 +1137,14 @@ pub struct ViewSpecRow {
 
 /// Row-mapping struct used by [`PostgresRepository`]'s
 /// `exploration_sessions` queries. Mirrors the 7 columns of the
-/// `exploration_sessions` table.
+/// `exploration_sessions` table plus the optional `investigation_id`
+/// column (ADR-005 INV-1).
 ///
 /// `events` and `panes` are JSONB columns scanned as raw
 /// `serde_json::Value` so the caller can project them through
 /// `serde_json::from_str::<Vec<_>>` for the domain type.
 /// `created_at` is read as RFC 3339 (PG `TIMESTAMPTZ` → String).
+/// `investigation_id` is NULL when no investigation is linked.
 #[cfg(feature = "postgres")]
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct ExplorationSessionRow {
@@ -1135,6 +1154,9 @@ pub struct ExplorationSessionRow {
     pub navigation_mode: String,
     pub panes: serde_json::Value,
     pub created_at: String,
+    /// Optional FK to an active investigation (ADR-005 INV-1).
+    /// NULL when the session has no linked investigation.
+    pub investigation_id: Option<String>,
 }
 
 // Investigation entity row types — ADR-005 INV-1.
