@@ -770,17 +770,19 @@ pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
         events_json: &str,
         navigation_mode: &str,
         panes_json: &str,
+        investigation_id: Option<&str>,
     ) -> Result<(), RepositoryError> {
         sqlx::query(
             "INSERT INTO exploration_sessions \
-                (id, workspace_id, events, navigation_mode, panes) \
-             VALUES ($1, $2, $3::jsonb, $4, $5::jsonb)",
+                (id, workspace_id, events, navigation_mode, panes, investigation_id) \
+             VALUES ($1, $2, $3::jsonb, $4, $5::jsonb, $6)",
         )
         .bind(id)
         .bind(workspace_id)
         .bind(events_json)
         .bind(navigation_mode)
         .bind(panes_json)
+        .bind(investigation_id)
         .execute(&self.pool)
         .await
         .map_err(|e| RepositoryError::Store(format!("save_exploration_session: {e}")))?;

@@ -437,6 +437,10 @@ pub struct ExplorationSession {
     /// NO #[serde(default)] — this is a breaking change (Decision 13).
     pub panes: Vec<PaneSnapshot>,
     pub created_at: String,
+    /// Optional FK to an active investigation (ADR-005 INV-1).
+    /// `#[serde(default)]` so older sessions deserialize with None.
+    #[serde(default)]
+    pub investigation_id: Option<String>,
 }
 
 fn default_pane_stack_navigation() -> String {
@@ -450,6 +454,10 @@ pub struct SaveExplorationSessionRequest {
     pub navigation_mode: String,
     /// Pane snapshots (ADR-040 Wave 3). NO #[serde(default)].
     pub panes: Vec<PaneSnapshot>,
+    /// Optional FK to an active investigation (ADR-005 INV-1).
+    /// `#[serde(default)]` so omitting the field defaults to None.
+    #[serde(default)]
+    pub investigation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2022,6 +2030,7 @@ mod exploration_session_tests {
             navigation_mode: "pane-stack".into(),
             panes: vec![],
             created_at: "2026-06-15T00:00:00Z".into(),
+            investigation_id: None,
         };
         let json = serde_json::to_string(&session).unwrap();
         let deser: ExplorationSession = serde_json::from_str(&json).unwrap();
@@ -2051,6 +2060,7 @@ mod exploration_session_tests {
                 }),
             }],
             created_at: "2026-06-20T00:00:00Z".into(),
+            investigation_id: None,
         };
         let json = serde_json::to_string(&session).unwrap();
         let deser: ExplorationSession = serde_json::from_str(&json).unwrap();
@@ -2069,6 +2079,7 @@ mod exploration_session_tests {
             events: vec![],
             navigation_mode: "pane-stack".into(),
             panes: vec![],
+            investigation_id: None,
         };
         assert!(request.events.is_empty());
     }

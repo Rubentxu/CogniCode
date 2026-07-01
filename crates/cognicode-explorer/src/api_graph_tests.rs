@@ -214,6 +214,7 @@ impl PersistenceService for MockPersistenceService {
             navigation_mode: request.navigation_mode,
             panes: request.panes,
             created_at: chrono::Utc::now().to_rfc3339(),
+            investigation_id: None,
         };
         self.sessions.lock().unwrap().insert(id, session.clone());
         Ok(session)
