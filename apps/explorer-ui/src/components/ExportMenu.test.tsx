@@ -23,6 +23,7 @@ vi.mock("../utils/drawio", () => ({
 
 vi.mock("../api/client", () => ({
   fetchSnapshot: vi.fn().mockResolvedValue(new Blob(["fake-image-data"], { type: "image/png" })),
+  makeSwrFetcher: vi.fn().mockReturnValue(vi.fn()),
 }));
 
 const mockViewWithMermaid: ContextualView = {
