@@ -18,7 +18,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 
 use crate::moldql::parser;
-use crate::moldql::{Direction, ExploreQuery, FindQuery, MoldQLQuery, ParseError, TargetType};
+use crate::moldql::{MoldQLQuery, ParseError};
 
 /// Regex for pattern 1: `symbols where <condition>`
 static RE_SYMBOLS_WHERE: OnceLock<Regex> = OnceLock::new();
@@ -49,10 +49,7 @@ pub fn lower_intent(query: &str) -> Option<Result<MoldQLQuery, ParseError>> {
     if let Some(captures) = re_symbols_where().captures(query) {
         let condition = &captures[1];
         let rewritten = format!("FIND symbols WHERE {condition}");
-        return Some(parser::parse(&rewritten).map_err(|e| {
-            // Preserve original parse error for diagnostics
-            e
-        }));
+        return Some(parser::parse(&rewritten));
     }
 
     // Pattern 2: calls from '<id>' [depth N]
@@ -61,10 +58,7 @@ pub fn lower_intent(query: &str) -> Option<Result<MoldQLQuery, ParseError>> {
         let depth = captures.get(2).map(|m| m.as_str()).unwrap_or("1");
         let depth: u32 = depth.parse().unwrap_or(1);
         let rewritten = format!("EXPLORE {id} THROUGH callees DEPTH {depth}");
-        return Some(parser::parse(&rewritten).map_err(|e| {
-            // Preserve original parse error for diagnostics
-            e
-        }));
+        return Some(parser::parse(&rewritten));
     }
 
     // No pattern matched — fall through to parse()
