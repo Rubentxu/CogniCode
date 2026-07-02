@@ -1,6 +1,8 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import yaml from "@rollup/plugin-yaml";
+import path from "path";
 
 /**
  * Vitest config — separate from vite.config.ts so the dev server (port 5173)
@@ -10,7 +12,15 @@ import tailwindcss from "@tailwindcss/vite";
  * Zod schemas, and the useReducer are the regression surfaces.
  */
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), yaml()],
+  resolve: {
+    alias: {
+      "@scaffold-assets": path.resolve(
+        __dirname,
+        "../../crates/cognicode-explorer/assets",
+      ),
+    },
+  },
   test: {
     globals: true,
     environment: "jsdom",

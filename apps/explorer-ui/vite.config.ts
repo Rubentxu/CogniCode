@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import yaml from "@rollup/plugin-yaml";
+import path from "path";
 
 // WASM plugin — required for cognicode_graph_wasm module.
 // Add to package.json devDependencies: "vite-plugin-wasm": "^3.3.0"
@@ -14,6 +16,8 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    // Handles YAML imports for scaffold registry.
+    yaml(),
     // Handles .wasm imports — Vite serves them as URLs.
     // NOTE: If you see a build error about missing vite-plugin-wasm,
     // run: npm install -D vite-plugin-wasm
@@ -65,4 +69,18 @@ export default defineConfig({
    * No PostCSS config required (CSS-first @theme block).
    */
   envPrefix: "VITE_",
+
+  /**
+   * Alias for scaffold registry assets — points to the Rust crate's
+   * assets directory so the same YAML file is consumed by both Rust
+   * (include_str!) and TypeScript (import).
+   */
+  resolve: {
+    alias: {
+      "@scaffold-assets": path.resolve(
+        __dirname,
+        "../../crates/cognicode-explorer/assets",
+      ),
+    },
+  },
 });
