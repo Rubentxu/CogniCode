@@ -1,0 +1,13 @@
+# --- SDDK companion ignore (v3.3) ---
+# Mirrors the SDDK Local-Only Artifact Policy for tools that read .ignore
+# instead of consulting .gitignore directly.
+#
+# These paths are developer-local workflow artifacts. They must never appear
+# in git diffs, PRs, or code reviews. They are intentionally excluded from
+# version control per user decision (2026-06-24).
+
+sddk/
+openspec/changes/
+docs/ROADMAP.md
+plans/
+sdd/

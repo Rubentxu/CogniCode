@@ -54,8 +54,16 @@ impl MoldQLServiceImpl {
 #[async_trait]
 impl MoldQLService for MoldQLServiceImpl {
     async fn execute_query(&self, query: &str) -> ExplorerResult<MoldQLResult> {
-        let ast = crate::moldql::parser::parse(query)
-            .map_err(|e| ExplorerError::ResolutionFailed(e.to_string()))?;
+        let ast = match crate::moldql::lower_intent(query) {
+            Some(Ok(ast)) => ast,
+            Some(Err(e)) => {
+                return Err(ExplorerError::ResolutionFailed(format!(
+                    "intent query `{query}` invalid: {e}"
+                )));
+            }
+            None => crate::moldql::parser::parse(query)
+                .map_err(|e| ExplorerError::ResolutionFailed(e.to_string()))?,
+        };
 
         let view = self.build_moldql_view();
         MoldQLExecutor::new(&view).execute(ast)
@@ -66,8 +74,16 @@ impl MoldQLService for MoldQLServiceImpl {
         query: &str,
         target: crate::moldql::compile::CompileTarget,
     ) -> ExplorerResult<MoldQLResult> {
-        let ast = crate::moldql::parser::parse(query)
-            .map_err(|e| ExplorerError::ResolutionFailed(e.to_string()))?;
+        let ast = match crate::moldql::lower_intent(query) {
+            Some(Ok(ast)) => ast,
+            Some(Err(e)) => {
+                return Err(ExplorerError::ResolutionFailed(format!(
+                    "intent query `{query}` invalid: {e}"
+                )));
+            }
+            None => crate::moldql::parser::parse(query)
+                .map_err(|e| ExplorerError::ResolutionFailed(e.to_string()))?,
+        };
 
         let view = self.build_moldql_view();
         MoldQLExecutor::new(&view).execute_with_target(ast, target)
