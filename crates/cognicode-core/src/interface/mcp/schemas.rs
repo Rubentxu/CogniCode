@@ -2461,7 +2461,7 @@ pub struct ViewDescriptor {
     pub source: Option<String>,
 }
 
-/// Full ViewSpec with all 10 fields.
+/// Full ViewSpec with all 13 fields.
 /// Mirrors cognicode_explorer::dto::ViewSpec (with String timestamps).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewSpec {
@@ -2480,6 +2480,12 @@ pub struct ViewSpec {
     /// ISO-8601 UTC timestamp.
     pub updated_at: String,
     pub owner: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed_object_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed_view_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applies_when: Option<String>,
 }
 
 /// Input for list_view_specs (empty for v1).

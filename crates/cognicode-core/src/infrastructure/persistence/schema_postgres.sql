@@ -81,6 +81,10 @@ CREATE TABLE IF NOT EXISTS view_specs (
     props          TEXT NOT NULL DEFAULT '{}',
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Provenance and applicability (viewspec-context-metadata-v1):
+    seed_object_id TEXT,
+    seed_view_id   TEXT,
+    applies_when   TEXT,
 
     PRIMARY KEY (id)
 );

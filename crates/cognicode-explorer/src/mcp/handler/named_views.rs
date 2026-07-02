@@ -289,6 +289,9 @@ impl ToolHandler for ViewSaveHandler {
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             owner: owner.clone(),
+            seed_object_id: None,
+            seed_view_id: None,
+            applies_when: None,
         };
 
         match persistence

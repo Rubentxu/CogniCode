@@ -654,6 +654,9 @@ impl NamedView {
             created_at: self.created_at.clone(),
             updated_at: self.created_at.clone(),
             owner: self.owner.clone(),
+            seed_object_id: None,
+            seed_view_id: None,
+            applies_when: None,
         }
     }
 }
@@ -1154,6 +1157,8 @@ pub enum ViewSpecError {
     EmptyQuery,
     /// `id` was not a valid UUID.
     InvalidUuid,
+    /// `applies_when` was set to an empty string.
+    EmptyPredicate,
 }
 
 impl std::fmt::Display for ViewSpecError {
@@ -1164,6 +1169,7 @@ impl std::fmt::Display for ViewSpecError {
             ViewSpecError::UnknownAppliesTo => write!(f, "applies_to is not a valid object type"),
             ViewSpecError::EmptyQuery => write!(f, "data_source query must not be empty"),
             ViewSpecError::InvalidUuid => write!(f, "id must be a valid UUID"),
+            ViewSpecError::EmptyPredicate => write!(f, "applies_when must not be an empty string"),
         }
     }
 }
@@ -1503,6 +1509,15 @@ pub struct ViewSpec {
     /// The user who owns this spec. Used for ownership checks and Spotter display.
     #[serde(default)]
     pub owner: String,
+    /// Origin metadata: the object that seeded this ViewSpec creation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed_object_id: Option<String>,
+    /// Origin metadata: the view active when the user invoked "Save as ViewSpec".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed_view_id: Option<String>,
+    /// Optional MoldQL predicate that narrows when this ViewSpec applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applies_when: Option<String>,
 }
 
 impl ViewSpec {
@@ -1523,6 +1538,10 @@ impl ViewSpec {
         // Validate id is a valid UUID (basic format check without adding uuid dep)
         if !is_valid_uuid_format(&self.id) {
             return Err(ViewSpecError::InvalidUuid);
+        }
+        // applies_when = Some("") is a validation error (empty predicate)
+        if self.applies_when.as_deref() == Some("") {
+            return Err(ViewSpecError::EmptyPredicate);
         }
         Ok(())
     }
@@ -1878,6 +1897,9 @@ mod view_spec_tests {
             created_at: "2026-06-12T00:00:00Z".to_string(),
             updated_at: "2026-06-12T00:00:00Z".to_string(),
             owner: "test-user".to_string(),
+            seed_object_id: None,
+            seed_view_id: None,
+            applies_when: None,
         };
         let json = serde_json::to_string(&vs).expect("serialize");
         let back: ViewSpec = serde_json::from_str(&json).expect("deserialize");
@@ -1906,6 +1928,9 @@ mod view_spec_tests {
             created_at: "2026-06-12T00:00:00Z".to_string(),
             updated_at: "2026-06-12T00:00:00Z".to_string(),
             owner: "test-user".to_string(),
+            seed_object_id: None,
+            seed_view_id: None,
+            applies_when: None,
         };
         let err = vs.validate().expect_err("validate must fail");
         assert_eq!(err, ViewSpecError::EmptyTitle);
@@ -1927,6 +1952,9 @@ mod view_spec_tests {
             created_at: "2026-06-12T00:00:00Z".to_string(),
             updated_at: "2026-06-12T00:00:00Z".to_string(),
             owner: "test-user".to_string(),
+            seed_object_id: None,
+            seed_view_id: None,
+            applies_when: None,
         };
         let err = vs.validate().expect_err("validate must fail");
         assert_eq!(err, ViewSpecError::TitleTooLong);
@@ -1948,6 +1976,9 @@ mod view_spec_tests {
             created_at: "2026-06-12T00:00:00Z".to_string(),
             updated_at: "2026-06-12T00:00:00Z".to_string(),
             owner: "test-user".to_string(),
+            seed_object_id: None,
+            seed_view_id: None,
+            applies_when: None,
         };
         let err = vs.validate().expect_err("validate must fail");
         assert_eq!(err, ViewSpecError::EmptyQuery);
@@ -1969,9 +2000,36 @@ mod view_spec_tests {
             created_at: "2026-06-12T00:00:00Z".to_string(),
             updated_at: "2026-06-12T00:00:00Z".to_string(),
             owner: "test-user".to_string(),
+            seed_object_id: None,
+            seed_view_id: None,
+            applies_when: None,
         };
         let err = vs.validate().expect_err("validate must fail");
         assert_eq!(err, ViewSpecError::InvalidUuid);
+    }
+
+    #[test]
+    fn validate_rejects_empty_applies_when_predicate() {
+        let vs = ViewSpec {
+            id: "a1b2c3d4-e5f6-4789-a123-456789abcdef".to_string(),
+            title: "Valid".to_string(),
+            applies_to: InspectableObjectType::Symbol,
+            view_kind: ViewKind::CallGraph,
+            data_source: DataSource::Moldql {
+                query: "symbols".to_string(),
+            },
+            transform: None,
+            renderer_kind: RendererKind::Graph,
+            props: serde_json::Value::Null,
+            created_at: "2026-06-12T00:00:00Z".to_string(),
+            updated_at: "2026-06-12T00:00:00Z".to_string(),
+            owner: "test-user".to_string(),
+            seed_object_id: None,
+            seed_view_id: None,
+            applies_when: Some("".to_string()),
+        };
+        let err = vs.validate().expect_err("validate must fail");
+        assert_eq!(err, ViewSpecError::EmptyPredicate);
     }
 
     #[test]
@@ -1990,6 +2048,9 @@ mod view_spec_tests {
             created_at: "2026-06-12T00:00:00Z".to_string(),
             updated_at: "2026-06-12T00:00:00Z".to_string(),
             owner: "test-user".to_string(),
+            seed_object_id: None,
+            seed_view_id: None,
+            applies_when: None,
         };
         vs.validate().expect("valid ViewSpec must pass");
     }

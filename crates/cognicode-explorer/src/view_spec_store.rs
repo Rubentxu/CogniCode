@@ -67,6 +67,9 @@ impl ViewSpecStore for PostgresViewSpecStore {
                 transform_json.as_deref(),
                 &renderer_kind_to_string(&spec.renderer_kind),
                 &props_json,
+                spec.seed_object_id.as_deref(),
+                spec.seed_view_id.as_deref(),
+                spec.applies_when.as_deref(),
             )
             .await
             .map_err(|e| match e {
@@ -135,6 +138,28 @@ impl ViewSpecStore for PostgresViewSpecStore {
                     .filter_map(|row| view_spec_row_to_view_spec(row).ok())
                     .collect()
             })
+    }
+
+    async fn update(
+        &self,
+        id: &str,
+        workspace_id: &str,
+        owner: &str,
+        seed_object_id: Option<&str>,
+        seed_view_id: Option<&str>,
+        applies_when: Option<&str>,
+    ) -> Result<bool, ViewSpecStoreError> {
+        self.repo
+            .update_view_spec(
+                id,
+                workspace_id,
+                owner,
+                seed_object_id,
+                seed_view_id,
+                applies_when,
+            )
+            .await
+            .map_err(|e| ViewSpecStoreError::Store(e.to_string()))
     }
 }
 
@@ -226,5 +251,8 @@ fn view_spec_row_to_view_spec(
         created_at: row.created_at,
         updated_at: row.updated_at,
         owner: row.owner,
+        seed_object_id: row.seed_object_id,
+        seed_view_id: row.seed_view_id,
+        applies_when: row.applies_when,
     })
 }

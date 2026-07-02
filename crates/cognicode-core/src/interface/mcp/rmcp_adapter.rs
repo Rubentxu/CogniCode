@@ -1232,7 +1232,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     .with_meta(cognicode_meta("stable", "composite", false, false, 2000)),
                     Tool::new(
                         "list_view_specs",
-                        "List all ViewSpecs visible to the current workspace (built-in + persisted runtime). Returns descriptors (id, title, is_builtin, source). Use read_view_spec to fetch the full 10-field JSON for any spec.",
+                        "List all ViewSpecs visible to the current workspace (built-in + persisted runtime). Returns descriptors (id, title, is_builtin, source). Use read_view_spec to fetch the full 13-field JSON for any spec.",
                         Arc::new(serde_json::json!({
                             "type": "object",
                             "properties": {}
@@ -1241,7 +1241,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     .with_meta(cognicode_meta("stable", "view", false, false, 100)),
                     Tool::new(
                         "read_view_spec",
-                        "Read a full ViewSpec by id (built-in kebab id like 'overview', 'call-graph'; or runtime UUID). Returns the complete 10-field ViewSpec JSON. Built-in specs synthesize with empty data_source/transform/props — use list_view_specs for discovery.",
+                        "Read a full ViewSpec by id (built-in kebab id like 'overview', 'call-graph'; or runtime UUID). Returns the complete 13-field ViewSpec JSON. Built-in specs synthesize with empty data_source/transform/props — use list_view_specs for discovery.",
                         Arc::new(serde_json::json!({
                             "type": "object",
                             "properties": {
