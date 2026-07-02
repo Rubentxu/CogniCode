@@ -120,6 +120,20 @@ pub trait ViewSpecStore: Send + Sync + 'static {
         workspace_id: &str,
         applies_to: InspectableObjectType,
     ) -> Result<Vec<ViewSpec>, ViewSpecStoreError>;
+
+    /// Update a view spec's provenance fields (seed_object_id, seed_view_id,
+    /// applies_when) in-place without touching other columns.
+    /// Returns `Ok(true)` if a row was updated, `Ok(false)` if no matching
+    /// row existed.
+    async fn update(
+        &self,
+        id: &str,
+        workspace_id: &str,
+        owner: &str,
+        seed_object_id: Option<&str>,
+        seed_view_id: Option<&str>,
+        applies_when: Option<&str>,
+    ) -> Result<bool, ViewSpecStoreError>;
 }
 
 /// A provider of one view's metadata.

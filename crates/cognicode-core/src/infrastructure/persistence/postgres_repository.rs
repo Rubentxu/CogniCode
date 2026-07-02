@@ -86,6 +86,12 @@ const SCHEMA_SQL_INVESTIGATION: &str = include_str!("m0013_investigation.sql");
 #[cfg(feature = "postgres")]
 const SCHEMA_SQL_INVESTIGATION_SESSIONS: &str = include_str!("m0014_investigation_sessions.sql");
 
+/// ViewSpec provenance DDL — adds seed_object_id, seed_view_id, and
+/// applies_when columns to the view_specs table
+/// (viewspec-context-metadata-v1, CRITICAL-1 fix).
+#[cfg(feature = "postgres")]
+const SCHEMA_SQL_VIEWSPEC_PROVENANCE: &str = include_str!("m0015_viewspec_provenance.sql");
+
 /// PostgreSQL-backed implementation of the async [`Repository`]
 /// trait. Owns its [`PgPool`]; consumers that want shared
 /// ownership can wrap in `Arc<PostgresRepository>`.
@@ -201,6 +207,13 @@ impl PostgresRepository {
             .map_err(|e| {
                 RepositoryError::Store(format!("investigation sessions migration: {e}"))
             })?;
+
+        // 8. ViewSpec provenance columns — seed_object_id, seed_view_id,
+        //    applies_when (viewspec-context-metadata-v1 CRITICAL-1).
+        sqlx::raw_sql(SCHEMA_SQL_VIEWSPEC_PROVENANCE)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("viewspec provenance migration: {e}")))?;
 
         Ok(())
     }
@@ -1013,10 +1026,42 @@ impl PostgresRepository {
         .map_err(|e| RepositoryError::Store(format!("delete_view_spec: {e}")))?;
         Ok(result.rows_affected() > 0)
     }
+
+    /// Update a view spec's provenance fields (seed_object_id, seed_view_id,
+    /// applies_when) in-place without touching the other columns.
+    /// Returns `Ok(true)` if a row was updated, `Ok(false)` if no matching
+    /// row existed.
+    pub async fn update_view_spec(
+        &self,
+        id: &str,
+        workspace_id: &str,
+        owner: &str,
+        seed_object_id: Option<&str>,
+        seed_view_id: Option<&str>,
+        applies_when: Option<&str>,
+    ) -> Result<bool, RepositoryError> {
+        let result = sqlx::query(
+            "UPDATE view_specs \
+             SET seed_object_id = $4, \
+                 seed_view_id = $5, \
+                 applies_when = $6, \
+                 updated_at = now() \
+             WHERE id = $1 AND workspace_id = $2 AND owner = $3",
+        )
+        .bind(id)
+        .bind(workspace_id)
+        .bind(owner)
+        .bind(seed_object_id)
+        .bind(seed_view_id)
+        .bind(applies_when)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("update_view_spec: {e}")))?;
+        Ok(result.rows_affected() > 0)
+    }
 }
 
-/// Row-mapping struct used by [`PostgresRepository`]'s queries.
-/// The id and complexity columns are intentionally NOT selected
+/// Row-mapping struct used by [`PostgresRepository`]'s queries./// The id and complexity columns are intentionally NOT selected
 /// because they do not participate in the [`Symbol`] aggregate.
 #[cfg(feature = "postgres")]
 #[derive(Debug, sqlx::FromRow)]

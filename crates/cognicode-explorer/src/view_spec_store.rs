@@ -139,6 +139,28 @@ impl ViewSpecStore for PostgresViewSpecStore {
                     .collect()
             })
     }
+
+    async fn update(
+        &self,
+        id: &str,
+        workspace_id: &str,
+        owner: &str,
+        seed_object_id: Option<&str>,
+        seed_view_id: Option<&str>,
+        applies_when: Option<&str>,
+    ) -> Result<bool, ViewSpecStoreError> {
+        self.repo
+            .update_view_spec(
+                id,
+                workspace_id,
+                owner,
+                seed_object_id,
+                seed_view_id,
+                applies_when,
+            )
+            .await
+            .map_err(|e| ViewSpecStoreError::Store(e.to_string()))
+    }
 }
 
 // ---------------------------------------------------------------------------
