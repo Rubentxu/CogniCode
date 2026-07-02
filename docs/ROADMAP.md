@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-01 (E21 COMPLETE, e13-wave1 PR #92 v0.40.0. Session: PRs #93-97 merged — CI fix, typed-accessors, test fixtures, test mock fixes. Vitest 871 pass. Playwright E2E blocked by service-worker registration in headless CI.)
+Last updated: 2026-07-01 (continuación sesión — ROADMAP actualizado. PRs #93-97 merged, Vitest 871 pass, postgres_quality_write_integration 8/8, typed-accessor fix, MSW fixture fix.)
 
 ## Active
 
@@ -114,7 +114,7 @@ E18 and E19 can start in parallel. E20 depends on E19 (C4 levels inform diagram 
 - WARN-A (medium): leaky discriminated-union cast in 4 frontend sites — typed accessor helpers (`idOf`, `availableViewsOf`) consolidate narrowing
 - WARN-B (low): asymmetric short-circuit in `derive_scope_results` — generalize `kind_per_family` table or drop guard
 
-**Follow-up queued**: `refactor/e13-followup-typed-accessors`
+**Follow-up queued**: `refactor/e13-followup-typed-accessors` — ✅ DONE (commit c783d77)
 
 **Semver**: PATCH — additive feature (8 families), no breaking changes
 
@@ -123,7 +123,7 @@ E18 and E19 can start in parallel. E20 depends on E19 (C4 levels inform diagram 
 **e13-universal-spotter-wave1 completed, merged, and tagged v0.40.0** (PR #92, branch `feat/e13-universal-spotter-wave1`):
 - Spotter now returns 8 families (was 6): +Investigation, +Scope
 - Frontend desync fixed: ViewSpec hits no longer dropped, phantom `route` variant removed
-- 724 Rust + 855/856 vitest passing; debt-verify PASS_WITH_WARNINGS
+- 724 Rust + 871 vitest passing; debt-verify PASS_WITH_WARNINGS
 - 2 medium/low warnings deferred to `refactor/e13-followup-typed-accessors`
 
 **E21-2 completed — PR #90 merged**. All evidence pinning functionality is DONE:
@@ -157,7 +157,32 @@ PostgreSQL tables (m0013)
 
 **Open debts**: None — E21 milestone COMPLETE (PR #90 + PR #91).
 
-**Tests**: 1386 core + 723 explorer lib tests passing. 865 vitest passing.
+**Tests**: 1386 core + 724 explorer lib tests passing. 871 vitest passing.
+
+---
+
+## Session Handover 2026-07-01 (continuación)
+
+**Fixes merged this continuation**:
+
+- `postgres_quality_write_integration` 8/8: `extract_env` helper usaba `serde_json::to_value(result)` (serializaba el struct) en vez de extraer y parsear el texto interno; además faltaba `workspace_id` en cada item del payload de issues
+- `Spotter.tsx`: `isSpotterHit` tenía return type malformado (`Extract<X> extends never ? ...`) — arreglado a `Exclude<>` limpio
+- `IntentFooter.tsx`: documentado por qué `result.result as SpotterResult` es seguro en el branch no-viewspec
+- MSW fixture (`inspectableObjectFixture`): agregadas `evidence` y `ownership-map` a `available_views` — desbloquea 2 tests en `view-tabs-coverage.spec.ts` que antes hacían skip
+
+**Test suite**: 871 vitest ✅, 724 Rust lib tests ✅, `postgres_quality_write_integration` 8/8 ✅
+
+**Commits**:
+- `c783d77` — fix(explorer): typed-accessor return type + test helper
+- `39ff851` — fix(fixtures): add evidence + ownership-map to Symbol available_views
+
+**Debt-verify follow-ups completados**:
+- e13-wave1 WARN-A: typed-accessor (`isSpotterHit` return type) ✅ DONE
+
+**Remaining deferred**:
+- `e13-wave2-universal-spotter` — bloqueado por puertos de arquitectura ausentes (DocRepository, ADR index, evidence store). Requiere SDD antes de implementar
+- Bug #4 fixture fix parcial: `evidence` + `ownership-map` agregados; 2 de 11 skipped tests re-habilitados. Los otros 9 siguen skipped (views sin fixture data de body)
+- Bug #5 mobile-320px: marcado `.fixme` en `responsive-full.spec.ts`. Requiere auditoría visual + fix UI
 
 ---
 
@@ -295,7 +320,7 @@ What is **not** implemented yet:
 | 0 | `e9-landing-perf` | PATCH | `cognicode-explorer` | Virtualise the fallback node list if large workspaces cause DOM bloat |
 | 0 | `e11-context-response-field-naming` | PATCH | `cognicode-explorer` | Harmonise `truncated_reason` vs `truncation_reason` naming without breaking the wire contract |
 | 1 | `e12-viewkind-realization` | MINOR | `cognicode-explorer`, `cognicode-core`, `cognicode-graph-algos` | Convert high-value catalogued `ViewKind`s into real executors and renderers |
-| 2 | `e13-universal-spotter` | MINOR | `cognicode-explorer`, `cognicode-core` | Wave 1 ✅ (Investigation + Scope, 6→8 families, frontend desync fixed). Wave 2 (docs, ADR, evidence) + Wave 3 (narratives) remaining |
+| 2 | `e13-universal-spotter` | MINOR | `cognicode-explorer`, `cognicode-core` | Wave 1 ✅ (Investigation + Scope, 6→8 families, frontend desync fixed). Typed-accessor WARN-A ✅. Wave 2 (DocRepository, ADR index, evidence store ports — bloqueado, requiere SDD). Wave 3 (narratives) remaining |
 | 3 | `e14-narrative-runtime` | MAJOR | `cognicode-explorer`, `cognicode-core` | Implement `ProjectDiary`, `ComposedNarrative`, and `ExampleObject` as runtime artifacts, not just catalog entries |
 | 4 | `e15-contextual-editor` | MINOR or MAJOR | `cognicode-explorer`, `cognicode-core` | Add a real contextual editor with references, completion, peek, and graph-aware edit workflows |
 | 5 | `e16-federated-runtime-objects` | MAJOR | `cognicode-explorer`, `cognicode-core`, `cognicode-graph-algos` | Make more runtime/domain objects explorable and passable to agents as structured objects |
