@@ -84,8 +84,7 @@ const SCHEMA_SQL_INVESTIGATION: &str = include_str!("m0013_investigation.sql");
 /// Adds `investigation_id` column to `exploration_sessions` table,
 /// linking a session to an active investigation (ADR-005 INV-1).
 #[cfg(feature = "postgres")]
-const SCHEMA_SQL_INVESTIGATION_SESSIONS: &str =
-    include_str!("m0014_investigation_sessions.sql");
+const SCHEMA_SQL_INVESTIGATION_SESSIONS: &str = include_str!("m0014_investigation_sessions.sql");
 
 /// PostgreSQL-backed implementation of the async [`Repository`]
 /// trait. Owns its [`PgPool`]; consumers that want shared
@@ -127,84 +126,84 @@ impl PostgresRepository {
         &self.pool
     }
 
-/// Execute the embedded schema DDL.
-///
-/// Runs five DDL blocks in order:
-/// 1. Base schema (`schema_postgres.sql`) — legacy named_views, view_specs.
-/// 2. Pipeline schema (`m0010_pipeline_schema.sql`) — graph_nodes,
-///    graph_edges, scan_manifest, graph_reports, VIEWs, trigger.
-/// 3. Multimodal schema (`m0009_graph_nodes_edges.sql`) — only when
-///    the `multimodal` feature is on.
-/// 4. Quality schema (`m0011_quality.sql`) — issues, baselines, rules.
-///    Backed by the `QualityRepository` port. Added in 2026-06-25 as
-///    part of the Postgres-canonical quality stack rebuild.
-/// 5. Routes schema (`m0012_route_nodes_protocol_edges.sql`) —
-///    api_routes + api_route_edges. Added in cycle e15.5 for
-///    cross-service protocol edge ingestion. Backed by the
-///    `EdgeEmitter` port in `cognicode-explorer/src/ports/edge_emitter.rs`.
-///
-/// All blocks are idempotent (`IF NOT EXISTS` / `CREATE OR REPLACE`).
-pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
-    // 1. Base schema
-    sqlx::raw_sql(SCHEMA_SQL)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| RepositoryError::Store(format!("migration: {e}")))?;
-
-    // 2. Pipeline schema (always loaded — graph_nodes/graph_edges
-    //    are the canonical graph store for the ingest pipeline)
-    sqlx::raw_sql(SCHEMA_SQL_PIPELINE)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| RepositoryError::Store(format!("pipeline migration: {e}")))?;
-
-    // 3. Multimodal DDL (optional — adds multimodal-specific
-    //    indexes/constraints on top of the base graph tables)
-    #[cfg(feature = "multimodal")]
-    {
-        sqlx::raw_sql(SCHEMA_SQL_MULTIMODAL)
+    /// Execute the embedded schema DDL.
+    ///
+    /// Runs five DDL blocks in order:
+    /// 1. Base schema (`schema_postgres.sql`) — legacy named_views, view_specs.
+    /// 2. Pipeline schema (`m0010_pipeline_schema.sql`) — graph_nodes,
+    ///    graph_edges, scan_manifest, graph_reports, VIEWs, trigger.
+    /// 3. Multimodal schema (`m0009_graph_nodes_edges.sql`) — only when
+    ///    the `multimodal` feature is on.
+    /// 4. Quality schema (`m0011_quality.sql`) — issues, baselines, rules.
+    ///    Backed by the `QualityRepository` port. Added in 2026-06-25 as
+    ///    part of the Postgres-canonical quality stack rebuild.
+    /// 5. Routes schema (`m0012_route_nodes_protocol_edges.sql`) —
+    ///    api_routes + api_route_edges. Added in cycle e15.5 for
+    ///    cross-service protocol edge ingestion. Backed by the
+    ///    `EdgeEmitter` port in `cognicode-explorer/src/ports/edge_emitter.rs`.
+    ///
+    /// All blocks are idempotent (`IF NOT EXISTS` / `CREATE OR REPLACE`).
+    pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
+        // 1. Base schema
+        sqlx::raw_sql(SCHEMA_SQL)
             .execute(&self.pool)
             .await
-            .map_err(|e| RepositoryError::Store(format!("multimodal migration: {e}")))?;
+            .map_err(|e| RepositoryError::Store(format!("migration: {e}")))?;
+
+        // 2. Pipeline schema (always loaded — graph_nodes/graph_edges
+        //    are the canonical graph store for the ingest pipeline)
+        sqlx::raw_sql(SCHEMA_SQL_PIPELINE)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("pipeline migration: {e}")))?;
+
+        // 3. Multimodal DDL (optional — adds multimodal-specific
+        //    indexes/constraints on top of the base graph tables)
+        #[cfg(feature = "multimodal")]
+        {
+            sqlx::raw_sql(SCHEMA_SQL_MULTIMODAL)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| RepositoryError::Store(format!("multimodal migration: {e}")))?;
+        }
+
+        // 4. Quality schema (issues + baselines + rules). Always
+        //    loaded when the `postgres` feature is on — backs the
+        //    `QualityRepository` port introduced alongside this
+        //    migration in PR #54.
+        sqlx::raw_sql(SCHEMA_SQL_QUALITY)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("quality migration: {e}")))?;
+
+        // 5. Routes schema (api_routes + api_route_edges). Always loaded
+        //    when the `postgres` feature is on. Backs the `EdgeEmitter`
+        //    port added in cycle e15.5. Pure additive migration — no
+        //    ALTER on existing tables.
+        sqlx::raw_sql(SCHEMA_SQL_ROUTES)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("routes migration: {e}")))?;
+
+        // 6. Investigation entity (investigations + evidence + artifacts).
+        //    Always loaded when `postgres` feature is on. Backs the
+        //    Investigation entity from ADR-005 Phase INV-1.
+        sqlx::raw_sql(SCHEMA_SQL_INVESTIGATION)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("investigation migration: {e}")))?;
+
+        // 7. Link exploration_sessions to investigations — adds
+        //    `investigation_id` column (ADR-005 INV-1).
+        sqlx::raw_sql(SCHEMA_SQL_INVESTIGATION_SESSIONS)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                RepositoryError::Store(format!("investigation sessions migration: {e}"))
+            })?;
+
+        Ok(())
     }
-
-    // 4. Quality schema (issues + baselines + rules). Always
-    //    loaded when the `postgres` feature is on — backs the
-    //    `QualityRepository` port introduced alongside this
-    //    migration in PR #54.
-    sqlx::raw_sql(SCHEMA_SQL_QUALITY)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| RepositoryError::Store(format!("quality migration: {e}")))?;
-
-    // 5. Routes schema (api_routes + api_route_edges). Always loaded
-    //    when the `postgres` feature is on. Backs the `EdgeEmitter`
-    //    port added in cycle e15.5. Pure additive migration — no
-    //    ALTER on existing tables.
-    sqlx::raw_sql(SCHEMA_SQL_ROUTES)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| RepositoryError::Store(format!("routes migration: {e}")))?;
-
-    // 6. Investigation entity (investigations + evidence + artifacts).
-    //    Always loaded when `postgres` feature is on. Backs the
-    //    Investigation entity from ADR-005 Phase INV-1.
-    sqlx::raw_sql(SCHEMA_SQL_INVESTIGATION)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| RepositoryError::Store(format!("investigation migration: {e}")))?;
-
-    // 7. Link exploration_sessions to investigations — adds
-    //    `investigation_id` column (ADR-005 INV-1).
-    sqlx::raw_sql(SCHEMA_SQL_INVESTIGATION_SESSIONS)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| RepositoryError::Store(format!(
-            "investigation sessions migration: {e}"
-        )))?;
-
-    Ok(())
-}
 
     /// Insert a single call-graph edge into the `call_edges` table.
     ///
@@ -872,12 +871,16 @@ pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
         transform: Option<&str>,
         renderer_kind: &str,
         props: &str,
+        seed_object_id: Option<&str>,
+        seed_view_id: Option<&str>,
+        applies_when: Option<&str>,
     ) -> Result<(), RepositoryError> {
         let result = sqlx::query(
             "INSERT INTO view_specs \
                 (id, workspace_id, owner, title, applies_to, view_kind, \
-                 data_source, transform, renderer_kind, props) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                 data_source, transform, renderer_kind, props, \
+                 seed_object_id, seed_view_id, applies_when) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
         )
         .bind(id)
         .bind(workspace_id)
@@ -889,6 +892,9 @@ pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
         .bind(transform)
         .bind(renderer_kind)
         .bind(props)
+        .bind(seed_object_id)
+        .bind(seed_view_id)
+        .bind(applies_when)
         .execute(&self.pool)
         .await;
 
@@ -921,7 +927,8 @@ pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
             "SELECT id, workspace_id, owner, title, applies_to, view_kind, \
                     data_source, transform, renderer_kind, props, \
                     created_at::text AS created_at, \
-                    updated_at::text AS updated_at \
+                    updated_at::text AS updated_at, \
+                    seed_object_id, seed_view_id, applies_when \
              FROM view_specs \
              WHERE id = $1 AND workspace_id = $2 AND owner = $3 \
              LIMIT 1",
@@ -947,7 +954,8 @@ pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
             "SELECT id, workspace_id, owner, title, applies_to, view_kind, \
                     data_source, transform, renderer_kind, props, \
                     created_at::text AS created_at, \
-                    updated_at::text AS updated_at \
+                    updated_at::text AS updated_at, \
+                    seed_object_id, seed_view_id, applies_when \
              FROM view_specs \
              WHERE workspace_id = $1 AND owner = $2 \
              ORDER BY created_at DESC, id DESC",
@@ -971,7 +979,8 @@ pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
             "SELECT id, workspace_id, owner, title, applies_to, view_kind, \
                     data_source, transform, renderer_kind, props, \
                     created_at::text AS created_at, \
-                    updated_at::text AS updated_at \
+                    updated_at::text AS updated_at, \
+                    seed_object_id, seed_view_id, applies_when \
              FROM view_specs \
              WHERE workspace_id = $1 AND applies_to = $2 \
              ORDER BY title ASC, id ASC",
@@ -1114,7 +1123,7 @@ pub struct NamedViewRow {
 }
 
 /// Row-mapping struct used by [`PostgresRepository`]'s
-/// `view_specs` queries. Mirrors the 12 columns of the
+/// `view_specs` queries. Mirrors the 15 columns of the
 /// `view_specs` table.
 ///
 /// `created_at` and `updated_at` are read as RFC 3339 (PG
@@ -1135,6 +1144,9 @@ pub struct ViewSpecRow {
     pub props: String,
     pub created_at: String,
     pub updated_at: String,
+    pub seed_object_id: Option<String>,
+    pub seed_view_id: Option<String>,
+    pub applies_when: Option<String>,
 }
 
 /// Row-mapping struct used by [`PostgresRepository`]'s
@@ -1921,13 +1933,17 @@ impl PostgresRepository {
             .bind(&investigation.id)
             .execute(&mut *tx)
             .await
-            .map_err(|e| RepositoryError::Store(format!("save_investigation delete evidence: {e}")))?;
+            .map_err(|e| {
+                RepositoryError::Store(format!("save_investigation delete evidence: {e}"))
+            })?;
 
         sqlx::query("DELETE FROM investigation_artifacts WHERE investigation_id = $1")
             .bind(&investigation.id)
             .execute(&mut *tx)
             .await
-            .map_err(|e| RepositoryError::Store(format!("save_investigation delete artifacts: {e}")))?;
+            .map_err(|e| {
+                RepositoryError::Store(format!("save_investigation delete artifacts: {e}"))
+            })?;
 
         // Re-insert evidence.
         for ev in evidence {
@@ -1944,7 +1960,9 @@ impl PostgresRepository {
             .bind(&ev.pinned_at)
             .execute(&mut *tx)
             .await
-            .map_err(|e| RepositoryError::Store(format!("save_investigation insert evidence: {e}")))?;
+            .map_err(|e| {
+                RepositoryError::Store(format!("save_investigation insert evidence: {e}"))
+            })?;
         }
 
         // Re-insert artifacts.
@@ -1962,7 +1980,9 @@ impl PostgresRepository {
             .bind(&art.generated_from)
             .execute(&mut *tx)
             .await
-            .map_err(|e| RepositoryError::Store(format!("save_investigation insert artifact: {e}")))?;
+            .map_err(|e| {
+                RepositoryError::Store(format!("save_investigation insert artifact: {e}"))
+            })?;
         }
 
         tx.commit()
@@ -2081,11 +2101,9 @@ impl PostgresRepository {
         investigation_id: &str,
         evidence: &InvestigationEvidenceRow,
     ) -> Result<(), RepositoryError> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| RepositoryError::Store(format!("add_investigation_evidence begin: {e}")))?;
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            RepositoryError::Store(format!("add_investigation_evidence begin: {e}"))
+        })?;
 
         // Insert the evidence row.
         sqlx::query(
@@ -2112,7 +2130,9 @@ impl PostgresRepository {
         .bind(investigation_id)
         .execute(&mut *tx)
         .await
-        .map_err(|e| RepositoryError::Store(format!("add_investigation_evidence update ts: {e}")))?;
+        .map_err(|e| {
+            RepositoryError::Store(format!("add_investigation_evidence update ts: {e}"))
+        })?;
 
         tx.commit()
             .await

@@ -1370,6 +1370,9 @@ pub async fn handle_read_view_spec(
             created_at: now.clone(),
             updated_at: now,
             owner: MCP_DEFAULT_OWNER.into(),
+            seed_object_id: None,
+            seed_view_id: None,
+            applies_when: None,
         };
         return Ok(ReadViewSpecOutput { view });
     }
@@ -1412,6 +1415,9 @@ pub async fn handle_read_view_spec(
                 created_at: row.created_at,
                 updated_at: row.updated_at,
                 owner: row.owner,
+                seed_object_id: row.seed_object_id,
+                seed_view_id: row.seed_view_id,
+                applies_when: row.applies_when,
             };
             Ok(ReadViewSpecOutput { view })
         }
@@ -1629,6 +1635,9 @@ mod tests {
             props: "{}".into(),
             created_at: "2024-01-01T00:00:00Z".into(),
             updated_at: "2024-01-01T00:00:00Z".into(),
+            seed_object_id: None,
+            seed_view_id: None,
+            applies_when: None,
         };
 
         let ctx = test_ctx_with_mock_view_spec_repo(vec![mock_spec.clone()]);
@@ -1670,6 +1679,9 @@ mod tests {
             props: r#"{"depth":3}"#.into(),
             created_at: "2024-06-01T12:00:00Z".into(),
             updated_at: "2024-06-15T08:30:00Z".into(),
+            seed_object_id: None,
+            seed_view_id: None,
+            applies_when: None,
         };
 
         let ctx = test_ctx_with_mock_view_spec_repo(vec![mock_spec.clone()]);

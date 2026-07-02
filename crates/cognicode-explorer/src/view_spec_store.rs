@@ -67,6 +67,9 @@ impl ViewSpecStore for PostgresViewSpecStore {
                 transform_json.as_deref(),
                 &renderer_kind_to_string(&spec.renderer_kind),
                 &props_json,
+                spec.seed_object_id.as_deref(),
+                spec.seed_view_id.as_deref(),
+                spec.applies_when.as_deref(),
             )
             .await
             .map_err(|e| match e {
@@ -226,5 +229,8 @@ fn view_spec_row_to_view_spec(
         created_at: row.created_at,
         updated_at: row.updated_at,
         owner: row.owner,
+        seed_object_id: row.seed_object_id,
+        seed_view_id: row.seed_view_id,
+        applies_when: row.applies_when,
     })
 }

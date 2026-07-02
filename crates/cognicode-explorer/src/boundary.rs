@@ -136,6 +136,9 @@ mod boundary_tests {
             created_at: "2024-01-01T00:00:00Z".to_string(),
             updated_at: "2024-01-02T00:00:00Z".to_string(),
             owner: "alice".to_string(),
+            seed_object_id: None,
+            seed_view_id: None,
+            applies_when: None,
         };
 
         let core: core_schema::ViewSpec = original.clone().into();
@@ -183,6 +186,9 @@ mod boundary_tests {
                     created_at: "2024-01-01T00:00:00Z".to_string(),
                     updated_at: "2024-01-01T00:00:00Z".to_string(),
                     owner: "tester".to_string(),
+                    seed_object_id: None,
+                    seed_view_id: None,
+                    applies_when: None,
                 };
 
                 let core: core_schema::ViewSpec = spec.clone().into();
