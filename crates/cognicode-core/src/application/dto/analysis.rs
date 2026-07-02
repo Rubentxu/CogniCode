@@ -188,6 +188,27 @@ pub struct HotPathDto {
 // Dead Code Detection
 // ============================================================================
 
+/// Confidence scores for relation candidate heuristics
+pub const CONFIDENCE_SAME_FILE: f64 = 0.7;
+pub const CONFIDENCE_SAME_COMMUNITY: f64 = 0.5;
+pub const CONFIDENCE_NAME_MATCH: f64 = 0.3;
+
+/// A candidate symbol that might have a missing relation to a dead symbol
+///
+/// Returned by `suggest_relation_candidates` to help users discover
+/// potentially missing call edges.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelationCandidate {
+    /// Fully qualified symbol ID of the candidate
+    pub symbol_id: String,
+    /// Confidence score (0.7 = same file, 0.5 = same community, 0.3 = name match)
+    pub confidence: f64,
+    /// Reason string: "same_file" | "same_community" | "name_match"
+    pub reason: String,
+    /// Direction of the suggested relation (always "incoming" for v1)
+    pub direction: String,
+}
+
 /// Reason why a symbol is considered dead code
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum DeadCodeReason {
