@@ -1,0 +1,153 @@
+# Wave 1 MoldQL scaffold definitions for the Moldable View Runtime.
+#
+# Each scaffold is a declarative recipe for a contextual view that can be
+# launched from an inspected object. Phase 1 focuses on core MoldQL-powered
+# views; viewspec-based custom views are deferred (ViewSpec is not yet in
+# the InspectableObjectType enum).
+#
+# Schema:
+#   id          – unique scaffold identifier ( kebab-case )
+#   object_type – which InspectableObjectType this scaffold applies to
+#   intent      – one-line semantic intent (imperative mood, e.g. "Find callers")
+#   label       – short display label for UI pickers
+#   description – richer explanation shown in hover / help text
+#   query_template – MoldQL query string; {{object_id}} is substituted at runtime
+#   view_kind   – ViewKind enum variant name (snake_case)
+#   renderer_kind – RendererKind enum variant name (snake_case)
+#   applies_when – always null for Phase 1 (future: conditional eligibility)
+#   produces_relation_candidates – always false for Phase 1 (future: edge suggestions)
+
+scaffolds:
+
+  # ---------------------------------------------------------------------------
+  # symbol
+  # ---------------------------------------------------------------------------
+
+  - id: focus_on_symbol
+    object_type: symbol
+    intent: "Focus on a symbol and show its immediate context"
+    label: "Focus"
+    description: >
+      Centers the view on the selected symbol, showing its definition,
+      doc comments, and immediate邻居 (callers/callees in the same file).
+    query_template: "symbols where id = '{{object_id}}'"
+    view_kind: vertical_slice
+    renderer_kind: composite
+    applies_when: null
+    produces_relation_candidates: false
+
+  - id: callers_and_callees
+    object_type: symbol
+    intent: "Show who calls this symbol and what it calls"
+    label: "Callers & Callees"
+    description: >
+      Displays the direct callers (symbols that invoke this one) and callees
+      (symbols this one invokes) as a bidirectional call-graph slice.
+    query_template: "calls from '{{object_id}}' depth 1"
+    view_kind: call_graph
+    renderer_kind: graph
+    applies_when: null
+    produces_relation_candidates: false
+
+  - id: symbol_usages
+    object_type: symbol
+    intent: "Find all usages of this symbol across the codebase"
+    label: "All Usages"
+    description: >
+      Returns every reference to this symbol — invocations, assignments,
+      type annotations, and imports — grouped by file.
+    query_template: "symbols where name = (symbols where id = '{{object_id}}' . name)"
+    view_kind: semantic_search_results
+    renderer_kind: table
+    applies_when: null
+    produces_relation_candidates: false
+
+  # ---------------------------------------------------------------------------
+  # file
+  # ---------------------------------------------------------------------------
+
+  - id: file_symbols
+    object_type: file
+    intent: "List all symbols defined in this file"
+    label: "Symbols in File"
+    description: >
+      Enumerates every function, struct, enum, trait, and constant declared
+      in the file, with their kind and line range.
+    query_template: "symbols where file = '{{object_id}}'"
+    view_kind: source_view
+    renderer_kind: tree
+    applies_when: null
+    produces_relation_candidates: false
+
+  - id: file_dependencies
+    object_type: file
+    intent: "Show what this file imports and what imports it"
+    label: "File Dependencies"
+    description: >
+      Renders the import graph for this file: outgoing edges (imports/uses)
+      and incoming edges (who else imports this module or its definitions).
+    query_template: "edges where source.file = '{{object_id}}' or target.file = '{{object_id}}'"
+    view_kind: dependency_graph
+    renderer_kind: graph
+    applies_when: null
+    produces_relation_candidates: false
+
+  # ---------------------------------------------------------------------------
+  # scope
+  # ---------------------------------------------------------------------------
+
+  - id: scope_symbols
+    object_type: scope
+    intent: "Show all symbols defined within this scope"
+    label: "Scope Symbols"
+    description: >
+      Returns every symbol whose file path falls within this directory
+      or module scope, optionally filtered by kind.
+    query_template: "symbols where scope = '{{object_id}}'"
+    view_kind: module_tree
+    renderer_kind: tree
+    applies_when: null
+    produces_relation_candidates: false
+
+  - id: scope_subscopes
+    object_type: scope
+    intent: "Navigate into child scopes and nested modules"
+    label: "Sub-scopes"
+    description: >
+      Lists the direct child directories and sub-modules, recursively
+      showing their nesting depth to support drill-down navigation.
+    query_template: "scopes where parent = '{{object_id}}'"
+    view_kind: module_tree
+    renderer_kind: tree
+    applies_when: null
+    produces_relation_candidates: false
+
+  # ---------------------------------------------------------------------------
+  # investigation
+  # ---------------------------------------------------------------------------
+
+  - id: investigation_traces
+    object_type: investigation
+    intent: "Replay the navigation traces of an investigation"
+    label: "Navigation Traces"
+    description: >
+      Renders the ordered sequence of objects inspected during an
+      investigation as a navigable breadcrumb trail.
+    query_template: "investigation '{{object_id}}' . traces"
+    view_kind: composed_narrative
+    renderer_kind: tree
+    applies_when: null
+    produces_relation_candidates: false
+
+  - id: investigation_evidence
+    object_type: investigation
+    intent: "Show all evidence attached to an investigation"
+    label: "Evidence"
+    description: >
+      Displays every evidence block, finding, and artifact that was
+      captured or created during this investigation session.
+    query_template: "investigation '{{object_id}}' . evidence"
+    view_kind: evidence_view
+    renderer_kind: markdown
+    applies_when: null
+    produces_relation_candidates: false

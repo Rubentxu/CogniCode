@@ -16,6 +16,7 @@ pub mod mcp;
 pub mod moldql;
 pub mod ports;
 pub mod registry;
+pub mod scaffold;
 pub mod session;
 #[cfg(feature = "postgres")]
 pub mod view_spec_store;
@@ -51,3 +52,4 @@ pub use ports::{
     RelationTargetWithMetadata, ResolvedSymbol, RuleSummary, SearchHit, SearchRepository,
     SourceReader, SymbolRepository,
 };
+pub use scaffold::{Scaffold, ScaffoldRegistry, registry};
