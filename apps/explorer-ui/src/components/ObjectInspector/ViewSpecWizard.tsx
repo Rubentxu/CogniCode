@@ -37,6 +37,7 @@ import type {
 } from "../../api/schemas";
 import { useWizardDraft } from "../../hooks/useWizardDraft";
 import { Blocks } from "./ViewBlock";
+import { ScaffoldPicker, type ScaffoldSelection } from "./ScaffoldPicker";
 import { TransformStep } from "./TransformStep";
 
 // ============================================================================
@@ -44,6 +45,7 @@ import { TransformStep } from "./TransformStep";
 // ============================================================================
 
 const STEPS = [
+  { id: "scaffold", label: "Scaffold" },
   { id: "view-kind", label: "View Kind" },
   { id: "renderer", label: "Renderer" },
   { id: "data-source", label: "Data Source" },
@@ -59,6 +61,8 @@ type StepId = (typeof STEPS)[number]["id"];
 
 interface WizardState {
   step: StepId;
+  /** The selected scaffold id, or null if custom query. */
+  scaffoldId: string | null;
   // Form fields
   viewKind: ViewKind | null;
   rendererKind: RendererKind | null;
@@ -72,6 +76,7 @@ interface WizardState {
 
 type WizardAction =
   | { type: "SET_STEP"; step: StepId }
+  | { type: "SET_SCAFFOLD"; selection: ScaffoldSelection }
   | { type: "SET_VIEW_KIND"; viewKind: ViewKind }
   | { type: "SET_RENDERER_KIND"; rendererKind: RendererKind }
   | { type: "SET_QUERY"; query: string }
@@ -85,6 +90,14 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
   switch (action.type) {
     case "SET_STEP":
       return { ...state, step: action.step };
+    case "SET_SCAFFOLD":
+      return {
+        ...state,
+        scaffoldId: action.selection.scaffoldId,
+        viewKind: action.selection.viewKind,
+        rendererKind: action.selection.rendererKind,
+        query: action.selection.query,
+      };
     case "SET_VIEW_KIND":
       return { ...state, viewKind: action.viewKind };
     case "SET_RENDERER_KIND":
@@ -100,14 +113,15 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
     case "SET_TRANSFORM_PREVIEW_INPUT":
       return { ...state, transformPreviewInput: action.input };
     case "RESTORE":
-      return { ...action.state, step: "view-kind" };
+      return { ...action.state, step: "scaffold" };
     default:
       return state;
   }
 }
 
 const initialState: WizardState = {
-  step: "view-kind",
+  step: "scaffold",
+  scaffoldId: null,
   viewKind: null,
   rendererKind: null,
   query: "",
@@ -291,6 +305,8 @@ export function ViewSpecWizard({
           : "";
         return {
           ...initialState,
+          step: "scaffold",
+          scaffoldId: null, // Edit mode: not from a scaffold
           viewKind: editSpec.view_kind as ViewKind,
           rendererKind: editSpec.renderer_kind as RendererKind,
           query,
@@ -542,6 +558,21 @@ export function ViewSpecWizard({
         <div className="flex flex-1 overflow-hidden">
           {/* Step content */}
           <div className="flex-1 overflow-y-auto p-6">
+            {state.step === "scaffold" && (
+              <ScaffoldPicker
+                objectType={objectType}
+                objectId={objectId}
+                onSelect={(selection) => {
+                  dispatch({ type: "SET_SCAFFOLD", selection });
+                  // Advance to data-source after scaffold selection
+                  dispatch({ type: "SET_STEP", step: "data-source" });
+                }}
+                onCustomQuery={() => {
+                  // Skip to view-kind for custom MoldQL
+                  dispatch({ type: "SET_STEP", step: "view-kind" });
+                }}
+              />
+            )}
             {state.step === "view-kind" && (
               <ViewKindStep
                 selected={state.viewKind}
