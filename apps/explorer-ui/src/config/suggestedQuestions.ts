@@ -43,6 +43,8 @@ export interface SuggestedQuestion {
   readonly requiresGraph: boolean;
   readonly verb: InvestigationVerb;
   readonly isComingSoon?: boolean;
+  /** Optional reference to a scaffold in the registry. */
+  readonly scaffoldId?: string;
 }
 
 /** Uppercase label for each InvestigationVerb, e.g. "trace" → "TRACE" */
