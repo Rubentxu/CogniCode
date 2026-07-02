@@ -243,3 +243,68 @@ pg_test!(
         assert_eq!(row.applies_when, None);
     }
 );
+
+// Test: update_view_spec changes applies_when WITHOUT touching seed_object_id/seed_view_id.
+pg_test!(
+    viewspec_update_preserves_seed_fields,
+    |_url: String, pool: PgPool| {
+        let repo = PostgresRepository::from_pool(pool);
+
+        let id = "44444444-4444-4444-4444-444444444444";
+        let workspace_id = "test-workspace";
+        let owner = "test-owner";
+        let title = "Update Test View";
+        let applies_to = "symbol";
+        let view_kind = "call_graph";
+        let data_source = json!({"type": "moldql", "query": "calls from 'Foo'"});
+        let renderer_kind = "graph";
+        let props = json!({"max_depth": 3});
+        let seed_object_id = "sym:UserService::create".to_string();
+        let seed_view_id = "vertical_slice".to_string();
+
+        // Save with seed fields populated.
+        repo.save_view_spec(
+            id,
+            workspace_id,
+            owner,
+            title,
+            applies_to,
+            view_kind,
+            &data_source.to_string(),
+            None,
+            renderer_kind,
+            &props.to_string(),
+            Some(&seed_object_id),
+            Some(&seed_view_id),
+            None,
+        )
+        .await
+        .expect("save_view_spec must succeed");
+
+        // Update only applies_when.
+        let new_applies_when = "kind = 'function'".to_string();
+        let updated = repo
+            .update_view_spec(
+                id,
+                workspace_id,
+                owner,
+                None,
+                None,
+                Some(&new_applies_when),
+            )
+            .await
+            .expect("update_view_spec must succeed");
+        assert!(updated, "update_view_spec should report one row updated");
+
+        // Load it back and verify seed fields are UNCHANGED.
+        let row = repo
+            .load_view_spec(id, workspace_id, owner)
+            .await
+            .expect("load_view_spec must succeed")
+            .expect("view spec must exist after update");
+
+        assert_eq!(row.seed_object_id, Some(seed_object_id.clone()));
+        assert_eq!(row.seed_view_id, Some(seed_view_id.clone()));
+        assert_eq!(row.applies_when, Some(new_applies_when));
+    }
+);
