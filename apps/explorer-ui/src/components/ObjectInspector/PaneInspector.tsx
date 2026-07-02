@@ -11,6 +11,8 @@ import { useObject } from "../../hooks/useObject";
 import { useAvailableViews, useViews } from "../../hooks/useViews";
 import { useAsk } from "../../hooks/useAsk";
 import { useWorkspaceList } from "../../hooks/useWorkspace";
+import { useAffordance } from "../../hooks/useAffordance";
+import { AffordanceCards } from "./AffordanceCards";
 import { LoadingTier } from "../LoadingTier";
 import { detectViewport, type ShellViewport } from "../viewport";
 import { ViewTabs } from "./ViewTabs";
@@ -113,6 +115,9 @@ export function PaneInspector({
     isValidating: isViewValidating,
     error: viewError,
   } = useViews(objectId, viewId);
+
+  // Affordance matrix — typed overview affordances for the current object type
+  const { data: affordances } = useAffordance(object?.object_type ?? null);
 
   // Cache view in reducer
   useEffect(() => {
@@ -329,6 +334,20 @@ export function PaneInspector({
                   }
                 />
               )
+            ) : affordances && affordances.length > 0 ? (
+              <AffordanceCards
+                objectId={objectId}
+                objectLabel={object?.label ?? objectId}
+                affordances={affordances}
+                onSelectAffordance={(aff) => {
+                  // scaffold_id takes precedence; fall back to view_kind.
+                  const viewToSelect = aff.scaffold_id ?? aff.view_kind;
+                  dispatch({
+                    type: "SELECT_OBJECT",
+                    payload: { objectId, viewId: viewToSelect },
+                  });
+                }}
+              />
             ) : (
               <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
                 No view loaded.

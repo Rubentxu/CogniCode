@@ -31,6 +31,7 @@ use crate::domain::trace_mermaid::{
     call_graph_to_mermaid, impact_radius_to_mermaid,
     vertical_slice_to_mermaid, TraceEmitContext, TraceMermaidViewKind,
 };
+use crate::affordance;
 #[cfg(feature = "multimodal")]
 use crate::domain::trace_mermaid::decision_trace_to_mermaid;
 #[cfg(feature = "multimodal")]
@@ -522,6 +523,7 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/api/workspaces/:workspace_id/drift", get(drift_handler))
         .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
+        .route("/api/affordances/:object_type", get(affordances_by_type_handler))
         .route("/api/objects/:object_id/views", get(available_views))
         .route(
             "/api/objects/:object_id/views/:view_id",
@@ -576,6 +578,7 @@ pub fn router_with_state(state: ApiState) -> Router {
             "/api/investigations/:id/composed-narrative",
             get(get_investigation_composed_narrative),
         )
+        .route("/api/objects/:object_id/affordances", get(affordances_handler))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -604,6 +607,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/workspaces/:workspace_id/drift", get(drift_handler))
         .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
+        .route("/api/affordances/:object_type", get(affordances_by_type_handler))
         .route("/api/objects/:object_id/views", get(available_views))
         .route(
             "/api/objects/:object_id/views/:view_id",
@@ -653,6 +657,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/investigations/:id", get(get_investigation))
         .route("/api/investigations/:id", put(update_investigation))
         .route("/api/investigations/:id", delete(delete_investigation))
+        .route("/api/objects/:object_id/affordances", get(affordances_handler))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -1262,6 +1267,21 @@ async fn available_views(
     Path(object_id): Path<String>,
 ) -> Result<Response, ApiError> {
     Ok(Json(state.view.available_views(&object_id).await?).into_response())
+}
+
+async fn affordances_handler(
+    Path(object_id): Path<String>,
+) -> Result<Response, ApiError> {
+    let object_type = object_id.split(':').next().unwrap_or(&object_id);
+    let affordances = affordance::get_affordances(object_type);
+    Ok(Json(affordances).into_response())
+}
+
+async fn affordances_by_type_handler(
+    Path(object_type): Path<String>,
+) -> Result<Response, ApiError> {
+    let affordances = affordance::get_affordances(&object_type);
+    Ok(Json(affordances).into_response())
 }
 
 async fn contextual_view(
