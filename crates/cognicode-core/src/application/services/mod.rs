@@ -9,4 +9,5 @@ pub mod graph_insights;
 pub mod impact_analysis;
 pub mod lsp_proxy_service;
 pub mod refactor_service;
+pub mod relation_candidates;
 pub mod search_ranker;

@@ -2,7 +2,7 @@
 
 use crate::application::dto::{
     AnalysisMetadata, DeadCodeEntry, DeadCodeReason, DeadCodeResult, GraphCoverageMetrics,
-    GraphStatsDto, ModuleDependenciesResult, ModuleDependency, ModuleDependencyGraph, SymbolDto,
+    GraphStatsDto, ModuleDependenciesResult, ModuleDependency, ModuleDependencyGraph, RelationCandidate, SymbolDto,
 };
 use crate::application::error::{AppError, AppResult};
 use crate::domain::aggregates::CallGraph;
@@ -1053,6 +1053,24 @@ impl AnalysisService {
                 analysis_time_ms: start.elapsed().as_millis() as u64,
             },
         }
+    }
+
+    /// Suggests potential relation candidates for a symbol that appears dead.
+    ///
+    /// A symbol is considered a candidate for missing relations if it has no callers.
+    /// This method uses three heuristics to find candidate symbols that might be
+    /// the missing callers:
+    ///
+    /// 1. **Same file** (confidence 0.7): Other symbols in the same source file
+    /// 2. **Same community** (confidence 0.5): Symbols in the same community via Label Propagation
+    /// 3. **Name match** (confidence 0.3): Symbols sharing tokenized name components
+    ///
+    /// Returns an empty vec if the symbol already has callers (not dead).
+    pub fn suggest_relation_candidates(&self, symbol_id: &str) -> Vec<RelationCandidate> {
+        use crate::application::services::relation_candidates::CandidateFinder;
+
+        let graph = self.get_project_graph();
+        CandidateFinder::find_candidates(&graph, symbol_id)
     }
 
     /// Detects module-level dependencies and cycles in the call graph.

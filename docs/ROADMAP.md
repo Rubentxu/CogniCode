@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-01 (continuación sesión — ROADMAP actualizado. PRs #93-97 merged, Vitest 871 pass, postgres_quality_write_integration 8/8, typed-accessor fix, MSW fixture fix.)
+Last updated: 2026-07-02 (continuación sesión — PRs #102, #103 merged. moldql-intent-syntax-v1 shipped, typed-overview-affordance-matrix-v1 shipped, v0.43.0 + v0.44.0 tags.)
 
 ## Active
 
@@ -183,6 +183,26 @@ PostgreSQL tables (m0013)
 - `e13-wave2-universal-spotter` — bloqueado por puertos de arquitectura ausentes (DocRepository, ADR index, evidence store). Requiere SDD antes de implementar
 - Bug #4 fixture fix parcial: `evidence` + `ownership-map` agregados; 2 de 11 skipped tests re-habilitados. Los otros 9 siguen skipped (views sin fixture data de body)
 - Bug #5 mobile-320px: marcado `.fixme` en `responsive-full.spec.ts`. Requiere auditoría visual + fix UI
+
+---
+
+## Session Handover 2026-07-02
+
+**moldql-intent-syntax-v1 completed, merged, tagged v0.44.0** (PR #103, branch `feat/moldql-intent-syntax-v1`):
+- New module `src/moldql/intent.rs`: `lower_intent()` lowering/translation layer
+- Pattern 1: `symbols where <cond>` → `FIND symbols WHERE <cond>`
+- Pattern 2: `calls from '<id>' [depth N]` → `EXPLORE <id> THROUGH callees [DEPTH N]`
+- Wired into `facades/moldql.rs` before `parser::parse()`
+- 15 unit tests + 9 integration tests
+- verify: PASS_WITH_WARNINGS, debt-verify: PASS_WITH_WARNINGS
+- 0 critical, 2 warnings (facade match duplication, integration test coverage), 4 suggestions
+
+**typed-overview-affordance-matrix-v1 completed, merged, tagged v0.43.0** (PR #102, branch `feat/typed-overview-affordance-matrix-v1`):
+- Affordance matrix: static `AffordanceMatrix` per `InspectableObjectType`
+- `GET /api/affordances/:object_type` endpoint
+- `AffordanceCards` component in `PaneInspector` (empty state → quick-nav cards)
+- `useAffordance` hook + Zod schemas
+- 7 unit tests passing
 
 ---
 
