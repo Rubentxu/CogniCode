@@ -668,4 +668,37 @@ mod tests {
         let modules = repo.module_list();
         assert_eq!(modules, vec!["src/bar".to_string(), "src/foo".to_string()]);
     }
+
+    // =========================================================================
+    // Phase A.3 — node_properties delegation (ADR-008)
+    // =========================================================================
+
+    /// Verifies that `node_properties` returns `None` when `pg_repo` is `None`
+    /// (the no-delegation path). The delegation path (when `pg_repo` is `Some`)
+    /// requires a real `PostgresRepository` with an active database connection,
+    /// which is tested via integration tests in `cognicode-core`.
+    #[tokio::test]
+    #[cfg(feature = "ownership")]
+    async fn node_properties_returns_none_when_pg_repo_is_none() {
+        let repo = CallGraphRepository::new(Arc::new(build_graph()));
+        // pg_repo is None by default when constructed via new()
+        let id = SymbolId::new("src/a.rs:alpha:1");
+        let result = repo.node_properties(&id);
+        assert!(
+            result.is_none(),
+            "node_properties must return None when pg_repo is None"
+        );
+    }
+
+    /// Verifies that `node_properties` with a `pg_repo = None` returns None
+    /// even when called from within a Tokio runtime context (no panic).
+    #[tokio::test]
+    #[cfg(feature = "ownership")]
+    async fn node_properties_none_pg_repo_returns_none_in_runtime() {
+        let repo = CallGraphRepository::new(Arc::new(build_graph()));
+        let id = SymbolId::new("src/missing.rs:ghost:99");
+        // Should return None, not panic
+        let result = repo.node_properties(&id);
+        assert!(result.is_none(), "node_properties must return None when pg_repo is None");
+    }
 }
