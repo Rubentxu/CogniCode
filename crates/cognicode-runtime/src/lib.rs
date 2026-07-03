@@ -170,7 +170,7 @@ impl Runtime {
         let investigation: Option<Arc<dyn cognicode_explorer::facades::InvestigationFacade>> = None;
 
         // Graph repository for multimodal search (Doc/Decision/Evidence families)
-        #[cfg(feature = "multimodal")]
+        #[cfg(all(feature = "multimodal", feature = "postgres"))]
         let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> =
             if let Some(ref pg) = self.pg_repo {
                 Some(Arc::new(cognicode_explorer::adapters::PgGraphRepository::new(
@@ -179,6 +179,8 @@ impl Runtime {
             } else {
                 None
             };
+        #[cfg(not(all(feature = "multimodal", feature = "postgres")))]
+        let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> = None;
 
         let search: Arc<dyn cognicode_explorer::facades::SearchService> =
             Arc::new(cognicode_explorer::facades::search::SearchServiceImpl::new(

@@ -39,6 +39,8 @@
 
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 use std::collections::HashMap;
+#[cfg(all(feature = "multimodal", feature = "postgres"))]
+use std::str::FromStr;
 
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
@@ -215,8 +217,34 @@ impl GraphRepository for PgGraphRepository {
         Ok(Vec::new())
     }
 
-    // ---- T4 (graph-repository-write) surface ----
+    fn edges_by_kind(&self, _node: &NodeId, _kinds: &[EdgeKind]) -> GraphResult<Vec<GraphEdge>> {
+        // Stub: full edges_by_kind implementation is deferred to
+        // a follow-up that wires into `find_graph_edges`. The trait
+        // method is required so the impl compiles; the runtime
+        // surface (MCP `graph_search`) does not call this path yet.
+        Ok(Vec::new())
+    }
 
+    fn rationale_subgraph(
+        &self,
+        _focus: &NodeId,
+        _max_depth: u32,
+        _max_nodes: usize,
+    ) -> GraphResult<(Vec<GraphNode>, Vec<GraphEdge>, bool)> {
+        // Stub: rationale traversal is deferred to a follow-up.
+        // Returning empty results keeps the trait impl complete.
+        Ok((Vec::new(), Vec::new(), false))
+    }
+}
+
+// ---- T4 (graph-repository-write) surface ----
+// Moved out of the `impl GraphRepository` block because `upsert_nodes`
+// and `upsert_edges` are write methods NOT part of the read-only port.
+// They are inherent methods on `PgGraphRepository` and are called
+// directly from the ingest pipeline (not through the trait object).
+
+#[cfg(all(feature = "multimodal", feature = "postgres"))]
+impl PgGraphRepository {
     fn upsert_nodes(&self, nodes: Vec<GraphNode>) -> GraphResult<usize> {
         // Empty input is a no-op (T4 contract).
         if nodes.is_empty() {
@@ -380,6 +408,7 @@ impl GraphRepository for PgGraphRepository {
 
 /// A row from `graph_nodes` that can be directly scanned by sqlx.
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[derive(sqlx::FromRow)]
 struct GraphNodeRow {
     id: String,
     kind: String,
@@ -406,11 +435,19 @@ impl GraphNodeRow {
             })
             .unwrap_or_default();
 
+        // Fallback for unknown kinds: use Symbol(Unknown) so we never
+        // lose the node from the graph. The `from_str` failure means
+        // the kind string in the DB doesn't match any known variant
+        // — this is a data integrity issue, not a fatal error.
+        let kind = NodeKind::from_str(&self.kind).unwrap_or_else(|_| {
+            NodeKind::Symbol(cognicode_core::domain::value_objects::symbol_kind::SymbolKind::Unknown)
+        });
+
         GraphNode {
             id: NodeId(self.id),
-            kind: NodeKind::from_str(&self.kind).unwrap_or_else(|_| NodeKind::Unknown),
+            kind,
             label: self.label,
-            source_path: self.source_path,
+            source_path: self.source_path.map(std::path::PathBuf::from),
             properties: props,
             created_at: DateTime::parse_from_rfc3339(&self.created_at)
                 .map(|dt| dt.with_timezone(&Utc))
