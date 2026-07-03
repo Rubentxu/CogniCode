@@ -142,4 +142,57 @@ pub trait GraphQueryPort: Send + Sync {
 
     /// BFS traversal of callers up to `max_depth`.
     fn traverse_callers(&self, id: &SymbolId, max_depth: u8) -> Vec<CallEntry>;
+
+    /// Return arbitrary key-value properties attached to this node, or `None`
+    /// if no properties are stored. Used by the ownership attribution feature
+    /// to surface `codeowners`, `last_author`, and `author_email`.
+    fn node_properties(&self, _id: &SymbolId) -> Option<std::collections::HashMap<String, String>> {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Stub type used to verify the default implementation of `node_properties`.
+    struct StubGraphQueryPort;
+
+    impl GraphQueryPort for StubGraphQueryPort {
+        fn callers(&self, _id: &SymbolId) -> Vec<RelationTarget> {
+            Vec::new()
+        }
+        fn callees(&self, _id: &SymbolId) -> Vec<RelationTarget> {
+            Vec::new()
+        }
+        fn fan_in(&self, _id: &SymbolId) -> usize {
+            0
+        }
+        fn fan_out(&self, _id: &SymbolId) -> usize {
+            0
+        }
+        fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<CallerWithMetadata> {
+            Vec::new()
+        }
+        fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<CalleeWithMetadata> {
+            Vec::new()
+        }
+        fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<RelationTargetWithMetadata> {
+            Vec::new()
+        }
+        fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+            Vec::new()
+        }
+        fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+            Vec::new()
+        }
+        // Intentionally NOT overriding node_properties — uses default.
+    }
+
+    #[test]
+    fn node_properties_default_returns_none() {
+        let stub = StubGraphQueryPort;
+        let fake_id = SymbolId::new("fake");
+        assert!(stub.node_properties(&fake_id).is_none());
+    }
 }

@@ -25,6 +25,9 @@ postgres = ["dep:sqlx"]
 # `#[cfg(feature = "multimodal")]` so the default build is unchanged.
 # Off by default.
 multimodal = []
+# `ownership` enables CODEOWNERS parsing and git-blame authorship enrichment.
+# Pulls in `gix` (blame support) as an optional dependency.
+ownership = ["dep:gix"]
 
 [dependencies]
 # Proc macros for tool definitions
@@ -148,6 +151,9 @@ sqlx = { workspace = true, optional = true }
 
 # Rig-core (optional)
 rig-core = { workspace = true, optional = true }
+
+# Git blame — gated behind the `ownership` feature.
+gix = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio-test.workspace = true

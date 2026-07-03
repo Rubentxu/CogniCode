@@ -9,6 +9,8 @@ This directory holds the architecture decision records (ADRs) for the CogniCode 
 | [ADR-003](./ADR-003-diagram-representations.md) | Diagram Representations — draw.io as Derived View | PROPOSED | 2026-06-28 |
 | [ADR-004](./ADR-004-c4-investigation-model.md) | C4 Investigation Model | PROPOSED | 2026-06-28 |
 | [ADR-005](./ADR-005-investigation-mode.md) | Investigation Mode — Knowledge Artifacts | PROPOSED | 2026-06-28 |
+| [ADR-006](./ADR-006-functional-gtoolkit-parity.md) | Functional GToolkit Parity through MoldQL, ViewSpecs | PROPOSED | 2026-07-02 |
+| [ADR-007](./ADR-007-node-properties-graph-query-port.md) | node_properties() on GraphQueryPort | PROPOSED | 2026-07-03 |
 
 ## Format
 
