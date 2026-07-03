@@ -70,6 +70,10 @@ pub async fn run_scan(
         .count();
     report_progress(on_progress, ScanStage::Scan, scan_done, total, 0);
 
+    // ── Stage 1b: Parse CODEOWNERS (ownership feature) ─────────────
+    #[cfg(feature = "ownership")]
+    let codeowners = crate::application::ingest::CodeOwnersMap::parse(root);
+
     // ── Stage 2: Extract (streaming) ───────────────────────────────
     let to_extract: Vec<_> = changes
         .into_iter()
@@ -81,7 +85,7 @@ pub async fn run_scan(
     let mut rx = extract_streaming(to_extract);
     let mut results: Vec<_> = Vec::new();
     let mut received = 0;
-    while let Some(result) = rx.recv().await {
+    while let Some(mut result) = rx.recv().await {
         received += 1;
         if let Some(err) = &result.error {
             failed_files.push(FailedFile {
@@ -89,6 +93,11 @@ pub async fn run_scan(
                 error: err.clone(),
             });
         }
+
+        // ── Stage 2b: Enrich with blame (ownership feature) ──────────
+        #[cfg(feature = "ownership")]
+        crate::application::ingest::enrich_with_blame(&mut result, root, &codeowners);
+
         results.push(result);
         report_progress(
             on_progress,
