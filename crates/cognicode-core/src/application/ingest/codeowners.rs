@@ -1,7 +1,7 @@
 //! CODEOWNERS parser — reads `.github/CODEOWNERS` and matches file paths
 //! to owner handles using gitignore-style glob patterns.
 //!
-//! Feature-gated behind `ownership` (pulls in `gix` for blame support).
+//! Feature-gated behind `ownership`.
 
 #[cfg(feature = "ownership")]
 pub struct CodeOwnersMap {

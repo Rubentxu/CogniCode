@@ -1,7 +1,7 @@
 //! Git blame enrichment — attaches `last_author`, `author_email`, and
 //! `codeowners` to symbol nodes based on `git blame` of the symbol's first line.
 //!
-//! Feature-gated behind `ownership` (pulls in `gix` for repository discovery).
+//! Feature-gated behind `ownership`. Uses `git` CLI via std::process::Command.
 
 use crate::application::ingest::codeowners::CodeOwnersMap;
 use crate::application::ingest::types::ExtractionResult;

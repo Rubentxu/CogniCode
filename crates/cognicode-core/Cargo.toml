@@ -26,8 +26,8 @@ postgres = ["dep:sqlx"]
 # Off by default.
 multimodal = []
 # `ownership` enables CODEOWNERS parsing and git-blame authorship enrichment.
-# Pulls in `gix` (blame support) as an optional dependency.
-ownership = ["dep:gix"]
+# Uses `git` CLI via std::process::Command — no external git library needed.
+ownership = []
 
 [dependencies]
 # Proc macros for tool definitions
@@ -151,9 +151,6 @@ sqlx = { workspace = true, optional = true }
 
 # Rig-core (optional)
 rig-core = { workspace = true, optional = true }
-
-# Git blame — gated behind the `ownership` feature.
-gix = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio-test.workspace = true
