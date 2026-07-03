@@ -33,6 +33,10 @@ pub struct SearchServiceImpl {
     quality: Option<Arc<dyn crate::ports::QualityRepository>>,
     persistence: Option<Arc<dyn PersistenceService>>,
     investigation: Option<Arc<dyn crate::facades::InvestigationFacade>>,
+    /// Graph repository for multimodal search (Doc/Decision/Evidence families).
+    /// `None` when multimodal feature is disabled or graph is not wired.
+    #[cfg(feature = "multimodal")]
+    graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
 }
 
 impl SearchServiceImpl {
@@ -45,6 +49,7 @@ impl SearchServiceImpl {
         quality: Option<Arc<dyn crate::ports::QualityRepository>>,
         persistence: Option<Arc<dyn PersistenceService>>,
         investigation: Option<Arc<dyn crate::facades::InvestigationFacade>>,
+        #[cfg(feature = "multimodal")] graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
     ) -> Self {
         Self {
             repo,
@@ -54,6 +59,8 @@ impl SearchServiceImpl {
             quality,
             persistence,
             investigation,
+            #[cfg(feature = "multimodal")]
+            graph_repo,
         }
     }
 }
@@ -105,6 +112,10 @@ impl SearchService for SearchServiceImpl {
         let workspace_id_owned = workspace_id.map(|s| s.to_string());
         let query_for_blocking = query.to_string();
         let kind_filter = kind.map(|s| s.to_string());
+
+        // Graph repo for multimodal search (Doc/Decision/Evidence families)
+        #[cfg(feature = "multimodal")]
+        let graph_repo = self.graph_repo.clone();
 
         // 1) Symbol hits via spawn_blocking
         let symbol_spotter_results = {
@@ -345,6 +356,84 @@ impl SearchService for SearchServiceImpl {
             Vec::new()
         };
 
+        // 9-11) Graph families (Doc, Decision, Evidence) — multimodal only
+        #[cfg(feature = "multimodal")]
+        let graph_results: Vec<SpotterSearchResult> = {
+            let mut results = Vec::new();
+            if let Some(ref graph) = graph_repo {
+                let vr_clone = view_registry.clone();
+                let q = query_for_blocking.clone();
+                let k = kind_filter.clone();
+
+                // Doc hits
+                if k.as_ref().map(|kk| kk.eq_ignore_ascii_case("doc")).unwrap_or(true) {
+                    let doc_nodes = graph.search_paginated(&q, &[cognicode_core::domain::value_objects::node_kind::NodeKind::Doc], SPOTTER_RESULT_LIMIT, None);
+                    if let Ok(page) = doc_nodes {
+                        for node in page.items {
+                            results.push(SpotterSearchResult::Doc(SpotterResult {
+                                object: InspectableObjectSummary {
+                                    id: format!("doc:{}", node.id),
+                                    object_type: InspectableObjectType::Doc,
+                                    label: node.label.clone(),
+                                    subtitle: node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| "Graph node".to_string()),
+                                    properties: Vec::new(),
+                                    available_views: vr_clone.list_for(InspectableObjectType::Doc),
+                                },
+                                score: 0.75,
+                                match_type: "doc".to_string(),
+                            }));
+                        }
+                    }
+                }
+
+                // Decision hits
+                if k.as_ref().map(|kk| kk.eq_ignore_ascii_case("decision")).unwrap_or(true) {
+                    let decision_nodes = graph.search_paginated(&q, &[cognicode_core::domain::value_objects::node_kind::NodeKind::Decision], SPOTTER_RESULT_LIMIT, None);
+                    if let Ok(page) = decision_nodes {
+                        for node in page.items {
+                            results.push(SpotterSearchResult::Decision(SpotterResult {
+                                object: InspectableObjectSummary {
+                                    id: format!("decision:{}", node.id),
+                                    object_type: InspectableObjectType::DecisionArtifact,
+                                    label: node.label.clone(),
+                                    subtitle: node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| "Decision artifact".to_string()),
+                                    properties: Vec::new(),
+                                    available_views: vr_clone.list_for(InspectableObjectType::DecisionArtifact),
+                                },
+                                score: 0.75,
+                                match_type: "decision".to_string(),
+                            }));
+                        }
+                    }
+                }
+
+                // Evidence hits
+                if k.as_ref().map(|kk| kk.eq_ignore_ascii_case("evidence")).unwrap_or(true) {
+                    let evidence_nodes = graph.search_paginated(&q, &[cognicode_core::domain::value_objects::node_kind::NodeKind::Evidence], SPOTTER_RESULT_LIMIT, None);
+                    if let Ok(page) = evidence_nodes {
+                        for node in page.items {
+                            results.push(SpotterSearchResult::Evidence(SpotterResult {
+                                object: InspectableObjectSummary {
+                                    id: format!("evidence:{}", node.id),
+                                    object_type: InspectableObjectType::Evidence,
+                                    label: node.label.clone(),
+                                    subtitle: node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| "Evidence node".to_string()),
+                                    properties: Vec::new(),
+                                    available_views: vr_clone.list_for(InspectableObjectType::Evidence),
+                                },
+                                score: 0.75,
+                                match_type: "evidence".to_string(),
+                            }));
+                        }
+                    }
+                }
+            }
+            results
+        };
+
+        #[cfg(not(feature = "multimodal"))]
+        let graph_results: Vec<SpotterSearchResult> = Vec::new();
+
         // Build symbol SpotterSearchResults
         let symbol_hits: Vec<SpotterSearchResult> = symbol_spotter_results
             .into_iter()
@@ -361,6 +450,7 @@ impl SearchService for SearchServiceImpl {
         all_hits.extend(investigation_results);
         all_hits.extend(scope_results);
         all_hits.extend(viewspec_results);
+        all_hits.extend(graph_results);
 
         // Apply kind filter if specified
         if let Some(k) = kind {
@@ -374,6 +464,9 @@ impl SearchService for SearchServiceImpl {
                     SpotterSearchResult::Rule(_) => "rule",
                     SpotterSearchResult::Investigation(_) => "investigation",
                     SpotterSearchResult::Scope(_) => "scope",
+                    SpotterSearchResult::Doc(_) => "doc",
+                    SpotterSearchResult::Decision(_) => "decision",
+                    SpotterSearchResult::Evidence(_) => "evidence",
                 };
                 kind_str.eq_ignore_ascii_case(k)
             });
@@ -655,6 +748,39 @@ fn inspect_object_impl(
             Err(ExplorerError::Anyhow(anyhow::anyhow!(
                 "Investigation inspection requires async context"
             )))
+        }
+        ObjectIdentity::Doc { id } => {
+            // Graph path — requires graph_repo, wired in Phase 4
+            Ok(InspectableObjectSummary {
+                id: format!("doc:{id}"),
+                object_type: InspectableObjectType::Doc,
+                label: format!("Document {id}"),
+                subtitle: "Graph document node".to_string(),
+                properties: vec![],
+                available_views: view_registry.list_for(InspectableObjectType::Doc),
+            })
+        }
+        ObjectIdentity::Decision { id } => {
+            // Graph path — requires graph_repo, wired in Phase 4
+            Ok(InspectableObjectSummary {
+                id: format!("decision:{id}"),
+                object_type: InspectableObjectType::DecisionArtifact,
+                label: format!("Decision {id}"),
+                subtitle: "Decision artifact".to_string(),
+                properties: vec![],
+                available_views: view_registry.list_for(InspectableObjectType::DecisionArtifact),
+            })
+        }
+        ObjectIdentity::Evidence { id } => {
+            // Graph path — requires graph_repo, wired in Phase 4
+            Ok(InspectableObjectSummary {
+                id: format!("evidence:{id}"),
+                object_type: InspectableObjectType::Evidence,
+                label: format!("Evidence {id}"),
+                subtitle: "Evidence node".to_string(),
+                properties: vec![],
+                available_views: view_registry.list_for(InspectableObjectType::Evidence),
+            })
         }
     }
 }

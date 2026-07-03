@@ -100,4 +100,52 @@ pub trait GraphRepository: Send + Sync {
         max_depth: u32,
         max_nodes: usize,
     ) -> GraphResult<(Vec<GraphNode>, Vec<GraphEdge>, bool)>;
+
+    /// Find nodes of a given kind with pagination support.
+    ///
+    /// Default implementation delegates to `find_nodes_by_kind` and wraps
+    /// the result in a [`SearchPage`] without real pagination
+    /// (`next_cursor = None`, `raw_total = items.len()`).
+    fn find_nodes_by_kind_paginated(
+        &self,
+        kind: &NodeKind,
+        limit: usize,
+        cursor: Option<&str>,
+    ) -> GraphResult<SearchPage> {
+        let items = self.find_nodes_by_kind(kind)?;
+        let raw_total = items.len() as u64;
+        Ok(SearchPage {
+            items,
+            raw_total,
+            next_cursor: None,
+            raw_rank: 0.0,
+            item_ranks: Vec::new(),
+        })
+    }
+
+    /// FTS5-backed search with pagination support.
+    ///
+    /// Default implementation delegates to `search`. The cursor format
+    /// is opaque; implementations that override this method should handle
+    /// the cursor encoding. An empty `query` MUST return an empty page
+    /// (no errors).
+    fn search_paginated(
+        &self,
+        query: &str,
+        kinds: &[NodeKind],
+        limit: usize,
+        cursor: Option<&str>,
+    ) -> GraphResult<SearchPage> {
+        // Empty query → empty page (contract).
+        if query.is_empty() {
+            return Ok(SearchPage {
+                items: Vec::new(),
+                raw_total: 0,
+                next_cursor: None,
+                raw_rank: 0.0,
+                item_ranks: Vec::new(),
+            });
+        }
+        self.search(query, kinds, limit, cursor)
+    }
 }

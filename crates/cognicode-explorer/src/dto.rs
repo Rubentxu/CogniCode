@@ -49,7 +49,7 @@ pub struct ViewSpecSummary {
     pub updated_at: String,
 }
 
-/// Discriminated union of 8 result families for universal Spotter search.
+/// Discriminated union of 11 result families for universal Spotter search.
 /// The frontend switches on `kind` to render each variant appropriately.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "result")]
@@ -78,6 +78,15 @@ pub enum SpotterSearchResult {
     /// A scope hit — directory grouping derived from symbol file paths.
     #[serde(rename = "scope")]
     Scope(SpotterResult),
+    /// A document node hit from the graph (Doc kind).
+    #[serde(rename = "doc")]
+    Doc(SpotterResult),
+    /// A decision artifact hit from the graph (Decision kind).
+    #[serde(rename = "decision")]
+    Decision(SpotterResult),
+    /// An evidence node hit from the graph (Evidence kind).
+    #[serde(rename = "evidence")]
+    Evidence(SpotterResult),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +119,8 @@ pub enum InspectableObjectType {
     SavedExploration,
     /// An investigation, addressed by its investigation id.
     Investigation,
+    /// A document node from the graph (Doc kind).
+    Doc,
 }
 
 /// DTO for a view descriptor — the wire-compatible shape returned in list responses.

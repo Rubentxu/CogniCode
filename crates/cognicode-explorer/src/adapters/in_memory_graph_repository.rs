@@ -193,6 +193,143 @@ impl GraphRepository for InMemoryGraphRepository {
         Ok(results)
     }
 
+    fn find_nodes_by_kind_paginated(
+        &self,
+        kind: &NodeKind,
+        limit: usize,
+        cursor: Option<&str>,
+    ) -> GraphResult<SearchPage> {
+        let all_nodes: Vec<GraphNode> = self
+            .nodes
+            .iter()
+            .filter(|n| &n.kind == kind)
+            .cloned()
+            .collect();
+
+        let raw_total = all_nodes.len() as u64;
+
+        // Apply cursor offset. The cursor format is "<offset>".
+        let offset: usize = cursor.and_then(|c| c.parse::<usize>().ok()).unwrap_or(0);
+        if offset > all_nodes.len() {
+            return Ok(SearchPage {
+                items: Vec::new(),
+                raw_total,
+                next_cursor: None,
+                raw_rank: 0.0,
+                item_ranks: Vec::new(),
+            });
+        }
+
+        let end = (offset + limit).min(all_nodes.len());
+        let page_items: Vec<GraphNode> = all_nodes[offset..end].to_vec();
+        let next_cursor = if end < all_nodes.len() {
+            Some(end.to_string())
+        } else {
+            None
+        };
+
+        Ok(SearchPage {
+            items: page_items,
+            raw_total,
+            next_cursor,
+            raw_rank: 0.0,
+            item_ranks: Vec::new(),
+        })
+    }
+
+    fn search_paginated(
+        &self,
+        query: &str,
+        kinds: &[NodeKind],
+        limit: usize,
+        cursor: Option<&str>,
+    ) -> GraphResult<SearchPage> {
+        // Empty query → empty page (contract).
+        if query.is_empty() {
+            return Ok(SearchPage {
+                items: Vec::new(),
+                raw_total: 0,
+                next_cursor: None,
+                raw_rank: 0.0,
+                item_ranks: Vec::new(),
+            });
+        }
+        let q = query.to_ascii_lowercase();
+        let allowed: Option<HashSet<&'static str>> = if kinds.is_empty() {
+            None
+        } else {
+            Some(kinds.iter().map(|k| k.as_str()).collect())
+        };
+
+        // Score each candidate by the simple formula:
+        //   1.0 if label contains the query, 0.5 if any property does.
+        let mut scored: Vec<(f64, &GraphNode)> = self
+            .nodes
+            .iter()
+            .filter_map(|n| {
+                if let Some(allowed) = allowed.as_ref() {
+                    if !allowed.contains(n.kind.as_str()) {
+                        return None;
+                    }
+                }
+                let label_hit = n.label.to_ascii_lowercase().contains(&q);
+                let prop_hit = n
+                    .properties
+                    .values()
+                    .any(|v| v.to_ascii_lowercase().contains(&q));
+                if label_hit {
+                    Some((1.0, n))
+                } else if prop_hit {
+                    Some((0.5, n))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Stable sort: higher score first, then by id for determinism.
+        scored.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.1.id.as_str().cmp(b.1.id.as_str()))
+        });
+
+        let raw_total = scored.len() as u64;
+
+        // Apply cursor offset.
+        let offset: usize = cursor.and_then(|c| c.parse::<usize>().ok()).unwrap_or(0);
+        if offset > scored.len() {
+            return Ok(SearchPage {
+                items: Vec::new(),
+                raw_total,
+                next_cursor: None,
+                raw_rank: 0.0,
+                item_ranks: Vec::new(),
+            });
+        }
+
+        let end = (offset + limit).min(scored.len());
+        let page_items: Vec<GraphNode> = scored[offset..end]
+            .iter()
+            .map(|(_, n)| (*n).clone())
+            .collect();
+        let item_ranks: Vec<f64> = scored[offset..end].iter().map(|(s, _)| *s).collect();
+        let next_cursor = if end < scored.len() {
+            Some(end.to_string())
+        } else {
+            None
+        };
+        let raw_rank = item_ranks.first().copied().unwrap_or(0.0);
+
+        Ok(SearchPage {
+            items: page_items,
+            raw_total,
+            next_cursor,
+            raw_rank,
+            item_ranks,
+        })
+    }
+
     fn rationale_subgraph(
         &self,
         focus: &NodeId,
@@ -294,4 +431,124 @@ impl GraphRepository for InMemoryGraphRepository {
 #[allow(dead_code)]
 fn _graph_error_compiles(err: GraphError) -> String {
     format!("{err}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cognicode_core::domain::value_objects::node_kind::NodeKind;
+    use std::collections::HashMap;
+
+    fn make_node(id: &str, kind: NodeKind, label: &str) -> GraphNode {
+        GraphNode {
+            id: NodeId(id.to_string()),
+            kind,
+            label: label.to_string(),
+            source_path: None,
+            properties: HashMap::new(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn find_nodes_by_kind_paginated_returns_first_page() {
+        let nodes: Vec<GraphNode> = (1..=25)
+            .map(|i| make_node(&format!("doc:{i}"), NodeKind::Doc, &format!("Doc {i}")))
+            .collect();
+        let repo = InMemoryGraphRepository::new(nodes, Vec::new());
+
+        let result = repo.find_nodes_by_kind_paginated(&NodeKind::Doc, 10, None);
+        assert!(result.is_ok());
+        let page = result.unwrap();
+        assert_eq!(page.items.len(), 10);
+        assert_eq!(page.raw_total, 25);
+        assert!(page.next_cursor.is_some());
+        assert_eq!(page.next_cursor.unwrap(), "10");
+    }
+
+    #[test]
+    fn find_nodes_by_kind_paginated_cursor_advance_no_overlap() {
+        let nodes: Vec<GraphNode> = (1..=25)
+            .map(|i| make_node(&format!("doc:{i}"), NodeKind::Doc, &format!("Doc {i}")))
+            .collect();
+        let repo = InMemoryGraphRepository::new(nodes, Vec::new());
+
+        // First page
+        let page1 = repo.find_nodes_by_kind_paginated(&NodeKind::Doc, 10, None).unwrap();
+        let cursor = page1.next_cursor.clone();
+
+        // Second page using cursor
+        let page2 = repo.find_nodes_by_kind_paginated(&NodeKind::Doc, 10, cursor.as_deref()).unwrap();
+
+        assert_eq!(page2.items.len(), 10);
+        // No overlap: first page has items 1-10, second has 11-20
+        let page1_ids: Vec<_> = page1.items.iter().map(|n| n.id.as_str()).collect();
+        let page2_ids: Vec<_> = page2.items.iter().map(|n| n.id.as_str()).collect();
+        for id in &page1_ids {
+            assert!(!page2_ids.contains(id), "Found overlap: {id}");
+        }
+    }
+
+    #[test]
+    fn find_nodes_by_kind_paginated_kind_filter() {
+        let nodes = vec![
+            make_node("doc:1", NodeKind::Doc, "Design Doc"),
+            make_node("dec:1", NodeKind::Decision, "ADR 1"),
+            make_node("ev:1", NodeKind::Evidence, "Evidence 1"),
+        ];
+        let repo = InMemoryGraphRepository::new(nodes, Vec::new());
+
+        let result = repo.find_nodes_by_kind_paginated(&NodeKind::Decision, 10, None).unwrap();
+        assert_eq!(result.items.len(), 1);
+        assert_eq!(result.items[0].id.as_str(), "dec:1");
+    }
+
+    #[test]
+    fn search_paginated_basic_query() {
+        let nodes = vec![
+            make_node("doc:1", NodeKind::Doc, "Getting Started Guide"),
+            make_node("doc:2", NodeKind::Doc, "API Reference"),
+            make_node("doc:3", NodeKind::Doc, "Developer Guide"),
+        ];
+        let repo = InMemoryGraphRepository::new(nodes, Vec::new());
+
+        let result = repo.search_paginated("guide", &[NodeKind::Doc], 10, None).unwrap();
+        assert_eq!(result.items.len(), 2); // "Getting Started Guide" and "Developer Guide"
+    }
+
+    #[test]
+    fn search_paginated_cursor_pagination() {
+        let nodes: Vec<GraphNode> = (1..=15)
+            .map(|i| make_node(&format!("doc:{i}"), NodeKind::Doc, &format!("Document {i}")))
+            .collect();
+        let repo = InMemoryGraphRepository::new(nodes, Vec::new());
+
+        // First page of 5
+        let page1 = repo.search_paginated("document", &[NodeKind::Doc], 5, None).unwrap();
+        assert_eq!(page1.items.len(), 5);
+        let cursor = page1.next_cursor.clone();
+
+        // Second page
+        let page2 = repo.search_paginated("document", &[NodeKind::Doc], 5, cursor.as_deref()).unwrap();
+        assert_eq!(page2.items.len(), 5);
+
+        // No overlap
+        let ids1: Vec<_> = page1.items.iter().map(|n| n.id.as_str()).collect();
+        let ids2: Vec<_> = page2.items.iter().map(|n| n.id.as_str()).collect();
+        for id in &ids1 {
+            assert!(!ids2.contains(id), "Overlap found: {id}");
+        }
+    }
+
+    #[test]
+    fn search_paginated_empty_query_returns_empty_page() {
+        let nodes = vec![make_node("doc:1", NodeKind::Doc, "Test Doc")];
+        let repo = InMemoryGraphRepository::new(nodes, Vec::new());
+
+        let result = repo.search_paginated("", &[NodeKind::Doc], 10, None).unwrap();
+        assert!(result.items.is_empty());
+        assert_eq!(result.raw_total, 0);
+        assert!(result.next_cursor.is_none());
+    }
 }

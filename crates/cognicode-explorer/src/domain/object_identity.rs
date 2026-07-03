@@ -44,6 +44,12 @@ pub enum ObjectIdentity {
     SavedExploration { id: String },
     /// `investigation:{id}` — an investigation, by id.
     Investigation { id: String },
+    /// `doc:{id}` — a document node from the graph, by node id.
+    Doc { id: String },
+    /// `decision:{id}` — a decision artifact node from the graph, by node id.
+    Decision { id: String },
+    /// `evidence:{id}` — an evidence node from the graph, by node id.
+    Evidence { id: String },
 }
 
 impl ObjectIdentity {
@@ -88,6 +94,21 @@ impl ObjectIdentity {
         Self::Investigation { id: id.into() }
     }
 
+    /// Build a document identity from a node id.
+    pub fn new_doc(id: impl Into<String>) -> Self {
+        Self::Doc { id: id.into() }
+    }
+
+    /// Build a decision identity from a node id.
+    pub fn new_decision(id: impl Into<String>) -> Self {
+        Self::Decision { id: id.into() }
+    }
+
+    /// Build an evidence identity from a node id.
+    pub fn new_evidence(id: impl Into<String>) -> Self {
+        Self::Evidence { id: id.into() }
+    }
+
     /// Parse an MVP id. The accepted shapes are:
     /// - `symbol:{file}:{name}:{line}` (line > 0, file + name non-empty)
     /// - `file:{path}` (path non-empty)
@@ -116,6 +137,9 @@ impl ObjectIdentity {
             "rule" => Self::parse_rule(rest, raw),
             "exploration" => Self::parse_exploration(rest, raw),
             "investigation" => Self::parse_investigation(rest, raw),
+            "doc" => Self::parse_doc(rest, raw),
+            "decision" => Self::parse_decision(rest, raw),
+            "evidence" => Self::parse_evidence(rest, raw),
             _ => Err(ExplorerError::ResolutionFailed(raw.to_string())),
         }
     }
@@ -209,8 +233,36 @@ impl ObjectIdentity {
         })
     }
 
+    fn parse_doc(rest: &str, raw: &str) -> ExplorerResult<Self> {
+        if rest.is_empty() {
+            return Err(ExplorerError::ResolutionFailed(raw.to_string()));
+        }
+        Ok(Self::Doc {
+            id: rest.to_string(),
+        })
+    }
+
+    fn parse_decision(rest: &str, raw: &str) -> ExplorerResult<Self> {
+        if rest.is_empty() {
+            return Err(ExplorerError::ResolutionFailed(raw.to_string()));
+        }
+        Ok(Self::Decision {
+            id: rest.to_string(),
+        })
+    }
+
+    fn parse_evidence(rest: &str, raw: &str) -> ExplorerResult<Self> {
+        if rest.is_empty() {
+            return Err(ExplorerError::ResolutionFailed(raw.to_string()));
+        }
+        Ok(Self::Evidence {
+            id: rest.to_string(),
+        })
+    }
+
     /// The lowercase tag used in MVP ids and on the wire:
-    /// `"symbol"`, `"file"`, `"scope"`, `"issue"`, `"rule"`, `"exploration"`, or `"investigation"`.
+    /// `"symbol"`, `"file"`, `"scope"`, `"issue"`, `"rule"`, `"exploration"`,
+    /// `"investigation"`, `"doc"`, `"decision"`, or `"evidence"`.
     pub fn object_type_str(&self) -> &'static str {
         match self {
             Self::Symbol { .. } => "symbol",
@@ -220,6 +272,9 @@ impl ObjectIdentity {
             Self::Rule { .. } => "rule",
             Self::SavedExploration { .. } => "exploration",
             Self::Investigation { .. } => "investigation",
+            Self::Doc { .. } => "doc",
+            Self::Decision { .. } => "decision",
+            Self::Evidence { .. } => "evidence",
         }
     }
 
@@ -232,7 +287,8 @@ impl ObjectIdentity {
     }
 
     /// The path component of a file or scope identity. Returns `None` for
-    /// symbol, issue, rule, saved exploration, and investigation identities.
+    /// symbol, issue, rule, saved exploration, investigation, and graph
+    /// node (doc/decision/evidence) identities.
     pub fn path(&self) -> Option<&str> {
         match self {
             Self::File { path } | Self::Scope { path } => Some(path.as_str()),
@@ -240,7 +296,10 @@ impl ObjectIdentity {
             | Self::QualityIssue { .. }
             | Self::Rule { .. }
             | Self::SavedExploration { .. }
-            | Self::Investigation { .. } => None,
+            | Self::Investigation { .. }
+            | Self::Doc { .. }
+            | Self::Decision { .. }
+            | Self::Evidence { .. } => None,
         }
     }
 
@@ -274,8 +333,24 @@ impl ObjectIdentity {
         matches!(self, Self::SavedExploration { .. })
     }
 
+    /// `true` for the doc variant.
+    pub fn is_doc(&self) -> bool {
+        matches!(self, Self::Doc { .. })
+    }
+
+    /// `true` for the decision variant.
+    pub fn is_decision(&self) -> bool {
+        matches!(self, Self::Decision { .. })
+    }
+
+    /// `true` for the evidence variant.
+    pub fn is_evidence(&self) -> bool {
+        matches!(self, Self::Evidence { .. })
+    }
+
     /// Render the canonical MVP id (`symbol:...` / `file:...` /
-    /// `scope:...` / `issue:...` / `rule:...` / `exploration:...` / `investigation:...`).
+    /// `scope:...` / `issue:...` / `rule:...` / `exploration:...` /
+    /// `investigation:...` / `doc:...` / `decision:...` / `evidence:...`).
     pub fn to_mvp_id(&self) -> String {
         match self {
             Self::Symbol { file, name, line } => format!("symbol:{file}:{name}:{line}"),
@@ -285,6 +360,9 @@ impl ObjectIdentity {
             Self::Rule { rule_id } => format!("rule:{rule_id}"),
             Self::SavedExploration { id } => format!("exploration:{id}"),
             Self::Investigation { id } => format!("investigation:{id}"),
+            Self::Doc { id } => format!("doc:{id}"),
+            Self::Decision { id } => format!("decision:{id}"),
+            Self::Evidence { id } => format!("evidence:{id}"),
         }
     }
 
@@ -307,6 +385,8 @@ impl ObjectIdentity {
     /// - Issue → the string form of the primary key.
     /// - Rule → the rule id verbatim.
     /// - SavedExploration → the session id verbatim.
+    /// - Investigation → the investigation id verbatim.
+    /// - Doc / Decision / Evidence → the node id verbatim.
     pub fn natural_key(&self) -> String {
         match self {
             Self::Symbol { file, name, line } => format!("{file}:{name}:{line}"),
@@ -315,6 +395,7 @@ impl ObjectIdentity {
             Self::Rule { rule_id } => rule_id.clone(),
             Self::SavedExploration { id } => id.clone(),
             Self::Investigation { id } => id.clone(),
+            Self::Doc { id } | Self::Decision { id } | Self::Evidence { id } => id.clone(),
         }
     }
 }

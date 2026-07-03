@@ -36,6 +36,7 @@ export const inspectableObjectTypeSchema = z.enum([
   "rule",
   "route",
   "investigation",
+  "doc",
 ]);
 export type InspectableObjectType = z.infer<typeof inspectableObjectTypeSchema>;
 
@@ -777,6 +778,9 @@ export type ViewSpecSummary = z.infer<typeof viewSpecSummarySchema>;
  * - `rule`           → `SpotterResult` (quality rule hit)
  * - `investigation`  → `SpotterResult` (investigation hit from ADR-005 INV-1)
  * - `scope`          → `SpotterResult` (directory scope hit grouping symbols)
+ * - `doc`            → `SpotterResult` (document node from graph)
+ * - `decision`       → `SpotterResult` (decision artifact from graph)
+ * - `evidence`       → `SpotterResult` (evidence node from graph)
  *
  * Frontend components switch on `kind` to render each variant. The
  * `useSpotter` hook returns the full `SpotterSearchResult[]` array so
@@ -813,6 +817,18 @@ export const spotterSearchResultSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("scope"),
+    result: spotterResultSchema,
+  }),
+  z.object({
+    kind: z.literal("doc"),
+    result: spotterResultSchema,
+  }),
+  z.object({
+    kind: z.literal("decision"),
+    result: spotterResultSchema,
+  }),
+  z.object({
+    kind: z.literal("evidence"),
     result: spotterResultSchema,
   }),
 ]);

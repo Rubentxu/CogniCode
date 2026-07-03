@@ -39,6 +39,8 @@
 
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 use std::collections::HashMap;
+#[cfg(all(feature = "multimodal", feature = "postgres"))]
+use std::str::FromStr;
 
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
@@ -52,6 +54,9 @@ use cognicode_core::domain::value_objects::node_kind::NodeKind;
 use cognicode_core::domain::value_objects::provenance::Provenance;
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 use cognicode_core::domain::{GraphError, GraphResult, SearchPage};
+
+#[cfg(all(feature = "multimodal", feature = "postgres"))]
+use chrono::{DateTime, Utc};
 
 /// Adapter that backs the `GraphRepository` port with a
 /// PostgreSQL pool. Constructed via [`PgGraphRepository::new`]
@@ -74,51 +79,172 @@ impl PgGraphRepository {
 
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 impl GraphRepository for PgGraphRepository {
-    /// PG-backed read methods. The implementation mirrors the
-    /// existing [`PostgresRepository::find_graph_nodes`] /
-    /// `find_graph_edges` family but the explorer-graph
-    /// port-level `SearchPage` shape (with the FTS5
-    /// `ts_rank_cd` payload) is what the MCP `graph_search`
-    /// tool surfaces.
+    /// PG-backed read methods. Delegates to `PostgresRepository::find_graph_nodes`
+    /// for kind-filtered queries and runs direct FTS5 SQL for search.
     fn search(
         &self,
-        _query: &str,
-        _node_kinds: &[NodeKind],
-        _limit: usize,
-        _cursor: Option<&str>,
+        query: &str,
+        node_kinds: &[NodeKind],
+        limit: usize,
+        cursor: Option<&str>,
     ) -> GraphResult<SearchPage> {
-        // The full FTS5 search surface lives in the existing
-        // `PostgresRepository` (see `find_graph_nodes`). Wiring
-        // it through the new port is a follow-up that the
-        // `graph_search` tool's MCP dispatch path picks up via
-        // a different seam (the `ExplorerService`). For V1, the
-        // T4 surface focuses on the write path — the read
-        // methods here are stubs that return empty pages so
-        // the adapter compiles + links without dragging in the
-        // existing FTS5 plumbing.
-        Ok(SearchPage {
-            items: Vec::new(),
-            raw_total: 0,
-            next_cursor: None,
-            raw_rank: 0.0,
-            item_ranks: Vec::new(),
+        // Empty query → empty page (contract).
+        if query.is_empty() {
+            return Ok(SearchPage {
+                items: Vec::new(),
+                raw_total: 0,
+                next_cursor: None,
+                raw_rank: 0.0,
+                item_ranks: Vec::new(),
+            });
+        }
+
+        let pool = self.pool.clone();
+        let query = query.to_string();
+        let kinds: Vec<String> = node_kinds.iter().map(|k| k.to_string()).collect();
+        let limit_i64 = limit as i64;
+
+        futures_executor_block_on(async move {
+            // Build the FTS5 query. We search in label and properties.
+            // Cursor is offset-based for simplicity: "OFFSET $2 LIMIT $1".
+            let offset: i64 = cursor.and_then(|c| c.parse::<i64>().ok()).unwrap_or(0);
+
+            let items = if kinds.is_empty() {
+                // No kind filter — search all node kinds
+                sqlx::query_as::<_, GraphNodeRow>(
+                    "SELECT id, kind, label, source_path, properties, \
+                            created_at::text AS created_at, \
+                            updated_at::text AS updated_at \
+                     FROM graph_nodes \
+                     WHERE to_tsvector('english', label || ' ' || COALESCE(properties->>'title', '') || ' ' || COALESCE(properties->>'description', '')) @@ plainto_tsquery('english', $1) \
+                     ORDER BY ts_rank_cd(to_tsvector('english', label || ' ' || COALESCE(properties->>'title', '') || ' ' || COALESCE(properties->>'description', '')), plainto_tsquery('english', $1)) DESC, \
+                            id \
+                     LIMIT $2 OFFSET $3",
+                )
+                .bind(&query)
+                .bind(limit_i64)
+                .bind(offset)
+                .fetch_all(&pool)
+                .await
+                .map_err(|e| GraphError::Storage(format!("pg_graph_repository search: {e}")))?
+            } else {
+                // Kind filter — search only within specified kinds
+                let kinds_array = kinds.join(",");
+                sqlx::query_as::<_, GraphNodeRow>(
+                    &format!(
+                        "SELECT id, kind, label, source_path, properties, \
+                                created_at::text AS created_at, \
+                                updated_at::text AS updated_at \
+                         FROM graph_nodes \
+                         WHERE to_tsvector('english', label || ' ' || COALESCE(properties->>'title', '') || ' ' || COALESCE(properties->>'description', '')) @@ plainto_tsquery('english', $1) \
+                         AND kind = ANY($4::text[]) \
+                         ORDER BY ts_rank_cd(to_tsvector('english', label || ' ' || COALESCE(properties->>'title', '') || ' ' || COALESCE(properties->>'description', '')), plainto_tsquery('english', $1)) DESC, \
+                                id \
+                         LIMIT $2 OFFSET $3"
+                    ),
+                )
+                .bind(&query)
+                .bind(limit_i64)
+                .bind(offset)
+                .bind(&kinds_array)
+                .fetch_all(&pool)
+                .await
+                .map_err(|e| GraphError::Storage(format!("pg_graph_repository search with kinds: {e}")))?
+            };
+
+            let raw_total = items.len() as u64;
+            let nodes: Vec<GraphNode> = items.into_iter().map(|r| r.into_graph_node()).collect();
+            let next_cursor = if nodes.len() as i64 == limit_i64 {
+                Some((offset + limit_i64).to_string())
+            } else {
+                None
+            };
+
+            Ok(SearchPage {
+                items: nodes,
+                raw_total,
+                next_cursor,
+                raw_rank: 0.0,
+                item_ranks: Vec::new(),
+            })
         })
     }
 
-    fn find_nodes_by_kind(&self, _kind: &NodeKind) -> GraphResult<Vec<GraphNode>> {
-        Ok(Vec::new())
+    fn find_nodes_by_kind(&self, kind: &NodeKind) -> GraphResult<Vec<GraphNode>> {
+        let pool = self.pool.clone();
+        let kind_str = kind.to_string();
+
+        futures_executor_block_on(async move {
+            let rows: Vec<GraphNodeRow> = sqlx::query_as(
+                "SELECT id, kind, label, source_path, properties, \
+                        created_at::text AS created_at, \
+                        updated_at::text AS updated_at \
+                 FROM graph_nodes \
+                 WHERE kind = $1 \
+                 ORDER BY id",
+            )
+            .bind(&kind_str)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| GraphError::Storage(format!("pg_graph_repository find_nodes_by_kind: {e}")))?;
+
+            Ok(rows.into_iter().map(|r| r.into_graph_node()).collect())
+        })
     }
 
-    fn get_node(&self, _id: &NodeId) -> GraphResult<Option<GraphNode>> {
-        Ok(None)
+    fn get_node(&self, id: &NodeId) -> GraphResult<Option<GraphNode>> {
+        let pool = self.pool.clone();
+        let id_str = id.as_str().to_string();
+
+        futures_executor_block_on(async move {
+            let row: Option<GraphNodeRow> = sqlx::query_as(
+                "SELECT id, kind, label, source_path, properties, \
+                        created_at::text AS created_at, \
+                        updated_at::text AS updated_at \
+                 FROM graph_nodes \
+                 WHERE id = $1",
+            )
+            .bind(&id_str)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| GraphError::Storage(format!("pg_graph_repository get_node: {e}")))?;
+
+            Ok(row.map(|r| r.into_graph_node()))
+        })
     }
 
     fn find_outgoing_edges(&self, _id: &NodeId) -> GraphResult<Vec<GraphEdge>> {
         Ok(Vec::new())
     }
 
-    // ---- T4 (graph-repository-write) surface ----
+    fn edges_by_kind(&self, _node: &NodeId, _kinds: &[EdgeKind]) -> GraphResult<Vec<GraphEdge>> {
+        // Stub: full edges_by_kind implementation is deferred to
+        // a follow-up that wires into `find_graph_edges`. The trait
+        // method is required so the impl compiles; the runtime
+        // surface (MCP `graph_search`) does not call this path yet.
+        Ok(Vec::new())
+    }
 
+    fn rationale_subgraph(
+        &self,
+        _focus: &NodeId,
+        _max_depth: u32,
+        _max_nodes: usize,
+    ) -> GraphResult<(Vec<GraphNode>, Vec<GraphEdge>, bool)> {
+        // Stub: rationale traversal is deferred to a follow-up.
+        // Returning empty results keeps the trait impl complete.
+        Ok((Vec::new(), Vec::new(), false))
+    }
+}
+
+// ---- T4 (graph-repository-write) surface ----
+// Moved out of the `impl GraphRepository` block because `upsert_nodes`
+// and `upsert_edges` are write methods NOT part of the read-only port.
+// They are inherent methods on `PgGraphRepository` and are called
+// directly from the ingest pipeline (not through the trait object).
+
+#[cfg(all(feature = "multimodal", feature = "postgres"))]
+impl PgGraphRepository {
     fn upsert_nodes(&self, nodes: Vec<GraphNode>) -> GraphResult<usize> {
         // Empty input is a no-op (T4 contract).
         if nodes.is_empty() {
@@ -273,6 +399,63 @@ impl GraphRepository for PgGraphRepository {
             Ok::<usize, GraphError>(inserted)
         });
         new_rows
+    }
+}
+
+// ============================================================================
+// Helper types for PG row scanning
+// ============================================================================
+
+/// A row from `graph_nodes` that can be directly scanned by sqlx.
+#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[derive(sqlx::FromRow)]
+struct GraphNodeRow {
+    id: String,
+    kind: String,
+    label: String,
+    source_path: Option<String>,
+    properties: serde_json::Value,
+    created_at: String,
+    updated_at: String,
+}
+
+#[cfg(all(feature = "multimodal", feature = "postgres"))]
+impl GraphNodeRow {
+    fn into_graph_node(self) -> GraphNode {
+        use std::collections::HashMap;
+        let props: HashMap<String, String> = self
+            .properties
+            .as_object()
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(k, v)| {
+                        v.as_str().map(|s| (k.clone(), s.to_string()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Fallback for unknown kinds: use Symbol(Unknown) so we never
+        // lose the node from the graph. The `from_str` failure means
+        // the kind string in the DB doesn't match any known variant
+        // — this is a data integrity issue, not a fatal error.
+        let kind = NodeKind::from_str(&self.kind).unwrap_or_else(|_| {
+            NodeKind::Symbol(cognicode_core::domain::value_objects::symbol_kind::SymbolKind::Unknown)
+        });
+
+        GraphNode {
+            id: NodeId(self.id),
+            kind,
+            label: self.label,
+            source_path: self.source_path.map(std::path::PathBuf::from),
+            properties: props,
+            created_at: DateTime::parse_from_rfc3339(&self.created_at)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: DateTime::parse_from_rfc3339(&self.updated_at)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+        }
     }
 }
 
