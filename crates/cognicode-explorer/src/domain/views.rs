@@ -2382,8 +2382,28 @@ impl ViewDescriptor for OwnershipMapExecutor {
 impl ViewExecutor for OwnershipMapExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Symbol(symbol) => Ok(build_ownership_map_placeholder(Some(&symbol.name))),
-            InspectionTarget::Scope { path, .. } => Ok(build_ownership_map_placeholder(Some(path))),
+            InspectionTarget::Symbol(symbol) => {
+                // Try to get real ownership data from graph_query
+                if let Some(props) = ctx.graph_query.and_then(|gq| gq.node_properties(&symbol.id)) {
+                    if has_ownership_data(&props) {
+                        return Ok(build_ownership_map_with_properties(
+                            &symbol.name,
+                            symbol.file.as_str(),
+                            &props,
+                        ));
+                    }
+                }
+                Ok(build_ownership_map_placeholder(Some(&symbol.name)))
+            }
+            InspectionTarget::Scope { path, symbols, .. } => {
+                // Try to aggregate ownership data across member symbols
+                if let Some(props) = aggregate_scope_ownership(ctx.graph_query, symbols) {
+                    if has_ownership_data(&props) {
+                        return Ok(build_ownership_map_with_properties(path, "", &props));
+                    }
+                }
+                Ok(build_ownership_map_placeholder(Some(path)))
+            }
             InspectionTarget::Issue(issue) => Ok(build_ownership_map(issue)),
             _ => Ok(build_ownership_map_placeholder(None)),
         }
@@ -2446,6 +2466,78 @@ pub fn build_ownership_map(issue: &QualityIssue) -> ContextualView {
         renderer_kind: RendererKind::Table,
         ..Default::default()
     }
+}
+
+/// Check if the properties map contains any ownership attribution data.
+fn has_ownership_data(props: &std::collections::HashMap<String, String>) -> bool {
+    props.contains_key("codeowners")
+        || props.contains_key("last_author")
+        || props.contains_key("author_email")
+}
+
+/// Extract ownership data as a JSON row from a properties map.
+fn ownership_real_row(props: &std::collections::HashMap<String, String>) -> serde_json::Value {
+    json!({
+        "node": props.get("codeowners").cloned().unwrap_or_default(),
+        "file": "",
+        "severity": "",
+        "rule_id": "",
+        "status": "",
+        "last_author": props.get("last_author").cloned().unwrap_or_default(),
+        "author_email": props.get("author_email").cloned().unwrap_or_default(),
+    })
+}
+
+/// Build an ownership map view with real ownership data from node properties.
+fn build_ownership_map_with_properties(
+    target_name: &str,
+    _file: &str,
+    props: &std::collections::HashMap<String, String>,
+) -> ContextualView {
+    let node_label = props
+        .get("codeowners")
+        .cloned()
+        .unwrap_or_else(|| target_name.to_string());
+
+    let row = ownership_real_row(props);
+
+    let blocks = vec![ViewBlock {
+        id: "ownership_data".into(),
+        title: "Ownership".into(),
+        body: json!({
+            "columns": ["node", "file", "severity", "rule_id", "status", "last_author", "author_email"],
+            "rows": vec![row],
+        }),
+    }];
+
+    ContextualView {
+        object_id: format!("ownership:{}", target_name),
+        view_id: "ownership-map".into(),
+        title: "Ownership Map".into(),
+        blocks,
+        relations: Vec::new(),
+        evidence: Vec::new(),
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Table,
+        ..Default::default()
+    }
+}
+
+/// Aggregate ownership data across multiple symbols in a scope.
+/// Uses the first symbol's ownership data that has ownership fields.
+fn aggregate_scope_ownership(
+    graph_query: Option<&dyn GraphQueryPort>,
+    symbols: &[ResolvedSymbol],
+) -> Option<std::collections::HashMap<String, String>> {
+    let gq = graph_query?;
+    for sym in symbols {
+        if let Some(props) = gq.node_properties(&sym.id) {
+            if has_ownership_data(&props) {
+                return Some(props);
+            }
+        }
+    }
+    None
 }
 
 /// Build a placeholder ownership map row for targets without ownership data.
@@ -2816,7 +2908,10 @@ mod tests {
     use crate::error::ExplorerResult;
     use crate::ports::source_reader::SourceReader;
     use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
-    use cognicode_core::domain::aggregates::SymbolId;
+    use cognicode_core::domain::aggregates::{CallEntry, SymbolId};
+    use cognicode_core::domain::traits::graph_query_port::{
+        CallerWithMetadata, CalleeWithMetadata, GraphQueryPort, RelationTargetWithMetadata,
+    };
     use cognicode_core::domain::value_objects::SymbolKind;
     use std::collections::HashMap;
     use std::sync::Mutex;
@@ -4551,6 +4646,176 @@ mod tests {
         assert_eq!(rows.len(), 1);
         let node_val = rows[0].get("node").unwrap();
         assert!(node_val.as_str().unwrap().contains("ownership unavailable"));
+    }
+
+    // =========================================================================
+    // Phase 6.1/6.2 — OwnershipMap with real node_properties (RED until GREEN)
+    // =========================================================================
+
+    /// Mock GraphQueryPort that returns ownership properties for node_properties.
+    /// All other methods return empty defaults.
+    struct MockGraphQueryPortWithOwnership {
+        properties: HashMap<String, String>,
+    }
+
+    impl MockGraphQueryPortWithOwnership {
+        fn new(ownership_props: HashMap<String, String>) -> Self {
+            Self {
+                properties: ownership_props,
+            }
+        }
+    }
+
+    impl GraphQueryPort for MockGraphQueryPortWithOwnership {
+        fn callers(&self, _id: &SymbolId) -> Vec<RelationTarget> {
+            Vec::new()
+        }
+        fn callees(&self, _id: &SymbolId) -> Vec<RelationTarget> {
+            Vec::new()
+        }
+        fn fan_in(&self, _id: &SymbolId) -> usize {
+            0
+        }
+        fn fan_out(&self, _id: &SymbolId) -> usize {
+            0
+        }
+        fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<CallerWithMetadata> {
+            Vec::new()
+        }
+        fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<CalleeWithMetadata> {
+            Vec::new()
+        }
+        fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<RelationTargetWithMetadata> {
+            Vec::new()
+        }
+        fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+            Vec::new()
+        }
+        fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+            Vec::new()
+        }
+        fn node_properties(&self, _id: &SymbolId) -> Option<HashMap<String, String>> {
+            Some(self.properties.clone())
+        }
+    }
+
+    /// Phase 6.1 RED — ownership_map_symbol_with_properties_renders_real_row.
+    ///
+    /// When `graph_query.node_properties()` returns ownership data, the view
+    /// must render a real row (NOT "ownership unavailable").
+    #[tokio::test]
+    async fn ownership_map_symbol_with_properties_renders_real_row() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let target = InspectionTarget::Symbol(sym);
+        let mut ownership_props = HashMap::new();
+        ownership_props.insert("codeowners".to_string(), "alice".to_string());
+        ownership_props.insert("last_author".to_string(), "Alice".to_string());
+        ownership_props.insert("author_email".to_string(), "alice@x".to_string());
+
+        let mock_gq = MockGraphQueryPortWithOwnership::new(ownership_props);
+        let ctx = ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: Some(&mock_gq as &dyn GraphQueryPort),
+        };
+
+        let executor = OwnershipMapExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "ownership-map");
+
+        // Must render real ownership data, NOT "ownership unavailable"
+        let block = &view.blocks[0];
+        let rows = block.body.get("rows").unwrap().as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+
+        // Check that the row has the expected ownership values
+        assert_eq!(
+            row.get("node").unwrap().as_str().unwrap(),
+            "alice",
+            "node should be codeowners value 'alice'"
+        );
+        assert_eq!(
+            row.get("last_author").unwrap().as_str().unwrap(),
+            "Alice",
+            "last_author should be 'Alice'"
+        );
+        assert_eq!(
+            row.get("author_email").unwrap().as_str().unwrap(),
+            "alice@x",
+            "author_email should be 'alice@x'"
+        );
+
+        // Must NOT contain "ownership unavailable"
+        let node_val = row.get("node").unwrap();
+        assert!(
+            !node_val.as_str().unwrap().contains("ownership unavailable"),
+            "Real ownership data must be rendered, not placeholder"
+        );
+    }
+
+    /// Phase 6.2 RED — ownership_map_scope_aggregates_member_symbols.
+    ///
+    /// When `graph_query.node_properties()` returns ownership data for any member
+    /// symbol, the scope view must render a real row.
+    #[tokio::test]
+    async fn ownership_map_scope_aggregates_member_symbols() {
+        let sym1 = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let sym2 = make_resolved("src/lib.rs", "bar", 10, SymbolKind::Function);
+        let target = InspectionTarget::Scope {
+            path: "src/lib.rs".to_string(),
+            files: vec!["src/lib.rs".to_string()],
+            symbols: vec![sym1, sym2],
+        };
+
+        let mut ownership_props = HashMap::new();
+        ownership_props.insert("codeowners".to_string(), "bob".to_string());
+        ownership_props.insert("last_author".to_string(), "Bob".to_string());
+        ownership_props.insert("author_email".to_string(), "bob@x".to_string());
+
+        let mock_gq = MockGraphQueryPortWithOwnership::new(ownership_props);
+        let ctx = ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: Some(&mock_gq as &dyn GraphQueryPort),
+        };
+
+        let executor = OwnershipMapExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "ownership-map");
+
+        // Must render real ownership data, NOT "ownership unavailable"
+        let block = &view.blocks[0];
+        let rows = block.body.get("rows").unwrap().as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+
+        // Check that the row has the expected ownership values
+        assert_eq!(
+            row.get("node").unwrap().as_str().unwrap(),
+            "bob",
+            "node should be codeowners value 'bob'"
+        );
+        assert_eq!(
+            row.get("last_author").unwrap().as_str().unwrap(),
+            "Bob",
+            "last_author should be 'Bob'"
+        );
+
+        // Must NOT contain "ownership unavailable"
+        let node_val = row.get("node").unwrap();
+        assert!(
+            !node_val.as_str().unwrap().contains("ownership unavailable"),
+            "Real ownership data must be rendered, not placeholder"
+        );
     }
 }
 

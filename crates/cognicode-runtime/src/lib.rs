@@ -6,10 +6,9 @@ use std::sync::Arc;
 use anyhow::Result;
 use tracing_subscriber::EnvFilter;
 
+use cognicode_core::infrastructure::graph::graph_cache::GraphCache;
 #[cfg(feature = "postgres")]
-use cognicode_core::infrastructure::{
-    graph::graph_cache::GraphCache, persistence::PostgresRepository,
-};
+use cognicode_core::infrastructure::persistence::PostgresRepository;
 
 pub struct Runtime {
     pub symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository>,
@@ -64,9 +63,19 @@ impl Runtime {
 
         let symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository> =
             if let Some(ref g) = graph {
-                Arc::new(cognicode_explorer::adapters::CallGraphRepository::new(
-                    g.clone(),
-                ))
+                #[cfg(not(feature = "ownership"))]
+                {
+                    Arc::new(cognicode_explorer::adapters::CallGraphRepository::new(
+                        g.clone(),
+                    ))
+                }
+                #[cfg(feature = "ownership")]
+                {
+                    Arc::new(cognicode_explorer::adapters::CallGraphRepository::new_with_pg_repo(
+                        g.clone(),
+                        pg_repo.clone(),
+                    ))
+                }
             } else {
                 return Err(anyhow::anyhow!(
                     "cognicode-runtime requires --postgres <URL> or DATABASE_URL to be set. \
@@ -94,8 +103,14 @@ impl Runtime {
         use cognicode_core::domain::traits::GraphQueryPort;
 
         // Create the GraphQueryPort from the CallGraph (may be None).
+        #[cfg(not(feature = "ownership"))]
         let graph_query: Option<Arc<dyn GraphQueryPort>> = self.graph.clone().map(|g| {
             Arc::new(cognicode_explorer::adapters::CallGraphRepository::new(g))
+                as Arc<dyn GraphQueryPort>
+        });
+        #[cfg(feature = "ownership")]
+        let graph_query: Option<Arc<dyn GraphQueryPort>> = self.graph.clone().map(|g| {
+            Arc::new(cognicode_explorer::adapters::CallGraphRepository::new_with_pg_repo(g, self.pg_repo.clone()))
                 as Arc<dyn GraphQueryPort>
         });
 
@@ -258,6 +273,8 @@ impl Runtime {
             quality_write,
             #[cfg(feature = "multimodal")]
             edge_emitter,
+            #[cfg(feature = "ownership")]
+            self.pg_repo.clone(),
         )
     }
 }

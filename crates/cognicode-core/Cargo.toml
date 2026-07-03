@@ -25,6 +25,9 @@ postgres = ["dep:sqlx"]
 # `#[cfg(feature = "multimodal")]` so the default build is unchanged.
 # Off by default.
 multimodal = []
+# `ownership` enables CODEOWNERS parsing and git-blame authorship enrichment.
+# Uses `git` CLI via std::process::Command — no external git library needed.
+ownership = []
 
 [dependencies]
 # Proc macros for tool definitions

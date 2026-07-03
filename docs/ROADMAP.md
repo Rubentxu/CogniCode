@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-02 (continuación sesión — PRs #102, #103 merged. moldql-intent-syntax-v1 shipped, typed-overview-affordance-matrix-v1 shipped, v0.43.0 + v0.44.0 tags.)
+Last updated: 2026-07-02 (continuación sesión — PR #104 merged, relation-candidates-v1 shipped v0.45.0. e12f-ownership-map: explore + propose + spec + design completos, pendiente tasks.)
 
 ## Active
 
@@ -204,6 +204,12 @@ PostgreSQL tables (m0013)
 - `useAffordance` hook + Zod schemas
 - 7 unit tests passing
 
+**relation-candidates-v1 completed, merged, tagged v0.45.0** (PR #104, branch `feat/relation-candidates-v1`):
+- `AnalysisService::find_dead_code()` + `candidates_for_reverse_edge()`
+- reverse_edges type-blind HashMap fixed: `HashMap<SymbolId, HashSet<SymbolId>>` (was `HashMap<SymbolId, HashSet<SymbolId>>` without generic)
+- 4 unit tests passing
+- Verdict: PASS
+
 ---
 
 ## Session Handover 2026-06-29
@@ -275,7 +281,9 @@ Closed before resuming new cycles:
 
 | Change | Tag | Closed | PR | Notes |
 |--------|-----|--------|----|----|
-| `moldql-intent-syntax-v1` | — | 2026-07-02 | — | MoldQL intent lowering layer: lowercase `symbols where` and `calls from` patterns translated to MoldQL AST before canonical parser. 15 unit + 9 integration tests. Verdict PASS_WITH_WARNINGS (2 warnings, 4 suggestions). Debt audit: duplicated facade match block (extract helper), integration test duplication. |
+| `typed-overview-affordance-matrix-v1` | v0.43.0 | 2026-07-02 | [#102](https://github.com/Rubentxu/CogniCode/pull/102) | Affordance matrix per InspectableObjectType. `GET /api/affordances/:object_type`. `AffordanceCards` in PaneInspector. 7 unit tests. Verdict PASS_WITH_WARNINGS. |
+| `moldql-intent-syntax-v1` | v0.44.0 | 2026-07-02 | [#103](https://github.com/Rubentxu/CogniCode/pull/103) | MoldQL intent lowering layer: lowercase `symbols where` and `calls from` patterns translated to MoldQL AST before canonical parser. 15 unit + 9 integration tests. Verdict PASS_WITH_WARNINGS. |
+| `relation-candidates-v1` | v0.45.0 | 2026-07-02 | [#104](https://github.com/Rubentxu/CogniCode/pull/104) | `AnalysisService::find_dead_code()` + `candidates_for_reverse_edge()`. reverse_edges type-blind HashMap fixed. 4 unit tests. Verdict PASS. |
 | `e10-landing-real-data` | v0.25.0 | 2026-06-25 | [#60](https://github.com/Rubentxu/CogniCode/pull/60) | Landing backend now returns real semantic workspace seeds instead of empty stubs: `entry_points`, `hot_paths`, `god_nodes`, `nodes`, and `edges`. Implemented entirely through the Explorer seam (`GraphService` over `all_symbols()` + `GraphQueryPort`) without injecting `WorkspaceSession` into `ApiState`. `apply_landing_cap(total_entry_points)` now runs on real data, so the E8/E8b banner can activate on wide workspaces. 3 new landing integration tests; `api_graph_tests` 59/59 green; frontend vitest 671/671 unchanged. |
 | `e8b-landing-payload-truncation` | v0.24.2 | 2026-06-25 | [#59](https://github.com/Rubentxu/CogniCode/pull/59) | Backend `LandingPayload` DTO: `+truncated: bool`, `+truncated_reason: Option<String>`. `LANDING_NODE_CAP = 50` constant. `apply_landing_cap(total)` pure helper as single source of truth. `landing_handler` calls `apply_landing_cap(0)` (handler still returns empty stubs; data wiring deferred to `e10-landing-real-data`). 9 new tests in `api_landing_truncation.rs` (5 helper boundary + 4 DTO serde), strict TDD. Banner remains dormant in production until `e10` wires real `entry_points` data through the `Graph` facade. |
 | `e8-graphlanding-affordances` | v0.24.1 | 2026-06-25 | [#56](https://github.com/Rubentxu/CogniCode/pull/56) + [#57](https://github.com/Rubentxu/CogniCode/pull/57) + [#58](https://github.com/Rubentxu/CogniCode/pull/58) + [snapshot re-baseline `78b12eb`](https://github.com/Rubentxu/CogniCode/commit/78b12eb) | GraphLanding: truncation banner (dormant, awaiting `e8b`), canvas a11y (`role="application"` + `aria-label` + `tabIndex={0}`), node-list fallback of buttons, `selectObject` memoized via `useCallback`. Artifact endpoint: `/explorations/` → `/api/exploration-sessions/` aligned with ADR-040 Wave 3 (fixes pre-existing `generateArtifact` test failure). E2E: `page.route` → `addInitScript` for MSW compatibility; 24 visual-regression snapshots re-baselined. |
@@ -291,7 +299,7 @@ Follow-ups explicitly queued by cycles closed today. Each will need its own prop
 | `refactor/e13-followup-typed-accessors` | e13-wave1 | PATCH | ✅ DONE PR #94 — type predicates for discriminated union |
 | `impl/e13-investigation-scope-integration-test` | e13-wave1 | PATCH | ✅ DONE PR #95 — MSW fixtures + E2E coverage |
 | `e13-wave2-universal-spotter` | ADR-002 Phase 2 | MINOR | Add doc/ADR/evidence families to Spotter. Needs new ports: DocRepository, ADR index, evidence store. **Blocked until ports exist.** |
-| `e12f-ownership-map` | ADR-002 Phase 1 | MINOR | OwnershipMap deferred: no ownership/author attribution in graph. Needs git blame or author annotation as node property. |
+| `e12f-ownership-map` | ADR-002 Phase 1 | MINOR | **ACTIVE — explore+propose+spec+design DONE**. OwnershipMap deferred: no ownership/author attribution in graph. Needs git blame (gix) + CODEOWNERS parsing. Pending: tasks + implement. |
 | `e12g-risk-map` | ADR-002 Phase 1 | MINOR | RiskMap deferred: needs quality/hotspots data wired to graph. |
 | `e12h-decision-trace` | ADR-002 Phase 1 | MINOR | DecisionTrace deferred: needs ADR/doc infrastructure. |
 

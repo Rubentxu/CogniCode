@@ -16,6 +16,15 @@ pub mod service;
 pub mod types;
 pub mod watcher;
 
+#[cfg(feature = "ownership")]
+pub mod codeowners;
+#[cfg(feature = "ownership")]
+pub use codeowners::CodeOwnersMap;
+#[cfg(feature = "ownership")]
+pub mod blame;
+#[cfg(feature = "ownership")]
+pub use blame::enrich_with_blame;
+
 pub use analyzer::{AnalysisSummary, run_analyze};
 pub use cluster::run_cluster;
 pub use controller::{

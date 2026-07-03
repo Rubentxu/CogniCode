@@ -1796,6 +1796,62 @@ impl PostgresRepository {
         .map_err(|e| RepositoryError::Store(format!("get_graph_node: {e}")))?;
         Ok(row.map(GraphNodeRow::into_graph_node))
     }
+
+    /// Return the `properties` JSONB map for a node, or `None` if the
+    /// node does not exist. Used by the ownership attribution feature
+    /// (e12f) to surface `codeowners`, `last_author`, and `author_email`
+    /// via `GraphQueryPort::node_properties`.
+    ///
+    /// Requires the `postgres` feature. Returns `Ok(None)` when the
+    /// `multimodal` feature is not enabled (the `graph_nodes` table
+    /// exists but `GraphNodeRow` type is not available without it).
+    ///
+    /// # Errors
+    /// Returns `RepositoryError::Store` if the SQL query fails.
+    pub async fn node_properties(
+        &self,
+        id: &SymbolId,
+    ) -> Result<Option<HashMap<String, String>>, RepositoryError> {
+        #[cfg(all(feature = "postgres", feature = "multimodal"))]
+        {
+            let row: Option<GraphNodeRow> = sqlx::query_as(
+                "SELECT id, kind, label, source_path, properties, \
+                        created_at::text AS created_at, \
+                        updated_at::text AS updated_at \
+                 FROM graph_nodes \
+                 WHERE id = $1 \
+                 LIMIT 1",
+            )
+            .bind(id.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("node_properties: {e}")))?;
+
+            let Some(row) = row else {
+                return Ok(None);
+            };
+
+            // Deserialize JSONB -> HashMap<String, String>.
+            // JSONB objects with string values map directly.
+            let props_map = if let serde_json::Value::Object(map) = row.properties {
+                map.into_iter()
+                    .filter_map(|(k, v)| {
+                        v.as_str().map(|s| (k, s.to_string()))
+                    })
+                    .collect()
+            } else {
+                HashMap::new()
+            };
+            Ok(Some(props_map))
+        }
+
+        #[cfg(not(all(feature = "postgres", feature = "multimodal")))]
+        {
+            // Without postgres+multimodal, we can't query graph_nodes.
+            let _ = id;
+            Ok(None)
+        }
+    }
 }
 
 /// Row struct for the `graph_reports` table.
@@ -4027,5 +4083,57 @@ mod tests {
             .await
             .expect("get_unknown");
         assert!(unknown.is_none());
+    });
+
+    // -----------------------------------------------------------------
+    // node_properties — Phase 2 (ownership feature)
+    // -----------------------------------------------------------------
+
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    pg_test!(node_properties_returns_jsonb_map, |pool: PgPool| {
+        use crate::domain::aggregates::SymbolId;
+        use std::collections::HashMap;
+
+        let repo = PostgresRepository::from_pool(pool);
+
+        // Insert a graph_nodes row with properties JSONB directly.
+        let node_id = "src/lib.rs:foo:1";
+        let props = serde_json::json!({
+            "codeowners": "alice",
+            "last_author": "alice@x"
+        });
+        sqlx::query(
+            "INSERT INTO graph_nodes (id, kind, label, source_path, properties) \
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(node_id)
+        .bind("Symbol")
+        .bind("foo")
+        .bind("src/lib.rs")
+        .bind(&props)
+        .execute(&pool)
+        .await
+        .expect("insert with properties");
+
+        // Query via node_properties — should deserialize JSONB to HashMap.
+        let result = repo
+            .node_properties(&SymbolId::new(node_id))
+            .await
+            .expect("node_properties must not error");
+        let props_map = result.expect("node_properties must return Some");
+        assert_eq!(props_map.get("codeowners"), Some(&"alice".to_string()));
+        assert_eq!(props_map.get("last_author"), Some(&"alice@x".to_string()));
+    });
+
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    pg_test!(node_properties_returns_none_for_missing_node, |pool: PgPool| {
+        use crate::domain::aggregates::SymbolId;
+
+        let repo = PostgresRepository::from_pool(pool);
+        let result = repo
+            .node_properties(&SymbolId::new("does:not:exist"))
+            .await
+            .expect("node_properties must not error");
+        assert!(result.is_none(), "expected None for missing node");
     });
 }

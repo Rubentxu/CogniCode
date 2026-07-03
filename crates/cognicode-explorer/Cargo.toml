@@ -32,6 +32,10 @@ test-utils = []
 # (`SourceExtractor`, `DocsSourceAdapter`), and the multimodal MCP
 # tools (`docs_ingest`, `graph_search`). Off by default.
 multimodal = ["cognicode-core/multimodal"]
+# `ownership` enables CODEOWNERS/git-blame ownership attribution.
+# When enabled, CallGraphRepository delegates node_properties() to
+# PostgresRepository so OwnershipMapExecutor can render real ownership data.
+ownership = ["cognicode-core/ownership", "cognicode-core/postgres", "cognicode-core/multimodal"]
 
 [dependencies]
 cognicode-core.workspace = true
