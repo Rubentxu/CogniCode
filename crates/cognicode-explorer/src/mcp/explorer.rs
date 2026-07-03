@@ -365,9 +365,9 @@ impl ExplorerMcpHandler {
     /// * `symbol_repo` — Symbol resolution port.
     /// * `source_reader` — Source file read port.
     /// * `quality_repo` — Optional `QualityRepository` port backing the
-///   quality-MCP tools (`find_quality_issues`, `quality_gate`) and the
-///   internal lenses that surface quality findings. Wired from
-///   `cognicode-runtime` via `PostgresQualityRepository` (PG-canonical).
+    ///   quality-MCP tools (`find_quality_issues`, `quality_gate`) and the
+    ///   internal lenses that surface quality findings. Wired from
+    ///   `cognicode-runtime` via `PostgresQualityRepository` (PG-canonical).
     #[allow(clippy::too_many_arguments)]
     pub fn with_graph(
         symbol_repo: Arc<dyn SymbolRepository>,
@@ -379,10 +379,17 @@ impl ExplorerMcpHandler {
         quality_repo: Option<Arc<dyn crate::ports::QualityRepository>>,
         quality_write: Option<Arc<dyn crate::ports::QualityWritePort>>,
         #[cfg(feature = "multimodal")] edge_emitter: Option<Arc<dyn crate::ports::EdgeEmitter>>,
+        #[cfg(feature = "ownership")] pg_repo: Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
     ) -> Self {
         // GraphQueryPort may be None when no call graph is loaded.
+        #[cfg(not(feature = "ownership"))]
         let graph_query: Option<Arc<dyn GraphQueryPort>> = graph.as_ref().map(|g| {
             Arc::new(crate::adapters::CallGraphRepository::new(g.clone()))
+                as Arc<dyn GraphQueryPort>
+        });
+        #[cfg(feature = "ownership")]
+        let graph_query: Option<Arc<dyn GraphQueryPort>> = graph.as_ref().map(|g| {
+            Arc::new(crate::adapters::CallGraphRepository::new_with_pg_repo(g.clone(), pg_repo.clone()))
                 as Arc<dyn GraphQueryPort>
         });
 

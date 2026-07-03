@@ -2382,8 +2382,28 @@ impl ViewDescriptor for OwnershipMapExecutor {
 impl ViewExecutor for OwnershipMapExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Symbol(symbol) => Ok(build_ownership_map_placeholder(Some(&symbol.name))),
-            InspectionTarget::Scope { path, .. } => Ok(build_ownership_map_placeholder(Some(path))),
+            InspectionTarget::Symbol(symbol) => {
+                // Try to get real ownership data from graph_query
+                if let Some(props) = ctx.graph_query.and_then(|gq| gq.node_properties(&symbol.id)) {
+                    if has_ownership_data(&props) {
+                        return Ok(build_ownership_map_with_properties(
+                            &symbol.name,
+                            symbol.file.as_str(),
+                            &props,
+                        ));
+                    }
+                }
+                Ok(build_ownership_map_placeholder(Some(&symbol.name)))
+            }
+            InspectionTarget::Scope { path, symbols, .. } => {
+                // Try to aggregate ownership data across member symbols
+                if let Some(props) = aggregate_scope_ownership(ctx.graph_query, symbols) {
+                    if has_ownership_data(&props) {
+                        return Ok(build_ownership_map_with_properties(path, "", &props));
+                    }
+                }
+                Ok(build_ownership_map_placeholder(Some(path)))
+            }
             InspectionTarget::Issue(issue) => Ok(build_ownership_map(issue)),
             _ => Ok(build_ownership_map_placeholder(None)),
         }
@@ -2446,6 +2466,78 @@ pub fn build_ownership_map(issue: &QualityIssue) -> ContextualView {
         renderer_kind: RendererKind::Table,
         ..Default::default()
     }
+}
+
+/// Check if the properties map contains any ownership attribution data.
+fn has_ownership_data(props: &std::collections::HashMap<String, String>) -> bool {
+    props.contains_key("codeowners")
+        || props.contains_key("last_author")
+        || props.contains_key("author_email")
+}
+
+/// Extract ownership data as a JSON row from a properties map.
+fn ownership_real_row(props: &std::collections::HashMap<String, String>) -> serde_json::Value {
+    json!({
+        "node": props.get("codeowners").cloned().unwrap_or_default(),
+        "file": "",
+        "severity": "",
+        "rule_id": "",
+        "status": "",
+        "last_author": props.get("last_author").cloned().unwrap_or_default(),
+        "author_email": props.get("author_email").cloned().unwrap_or_default(),
+    })
+}
+
+/// Build an ownership map view with real ownership data from node properties.
+fn build_ownership_map_with_properties(
+    target_name: &str,
+    _file: &str,
+    props: &std::collections::HashMap<String, String>,
+) -> ContextualView {
+    let node_label = props
+        .get("codeowners")
+        .cloned()
+        .unwrap_or_else(|| target_name.to_string());
+
+    let row = ownership_real_row(props);
+
+    let blocks = vec![ViewBlock {
+        id: "ownership_data".into(),
+        title: "Ownership".into(),
+        body: json!({
+            "columns": ["node", "file", "severity", "rule_id", "status", "last_author", "author_email"],
+            "rows": vec![row],
+        }),
+    }];
+
+    ContextualView {
+        object_id: format!("ownership:{}", target_name),
+        view_id: "ownership-map".into(),
+        title: "Ownership Map".into(),
+        blocks,
+        relations: Vec::new(),
+        evidence: Vec::new(),
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Table,
+        ..Default::default()
+    }
+}
+
+/// Aggregate ownership data across multiple symbols in a scope.
+/// Uses the first symbol's ownership data that has ownership fields.
+fn aggregate_scope_ownership(
+    graph_query: Option<&dyn GraphQueryPort>,
+    symbols: &[ResolvedSymbol],
+) -> Option<std::collections::HashMap<String, String>> {
+    let gq = graph_query?;
+    for sym in symbols {
+        if let Some(props) = gq.node_properties(&sym.id) {
+            if has_ownership_data(&props) {
+                return Some(props);
+            }
+        }
+    }
+    None
 }
 
 /// Build a placeholder ownership map row for targets without ownership data.

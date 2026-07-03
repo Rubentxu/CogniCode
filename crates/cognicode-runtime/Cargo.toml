@@ -27,3 +27,5 @@ default = ["postgres"]
 postgres = ["cognicode-explorer/postgres"]
 # Multimodal: enables OpenAPI/GraphQL/gRPC/tRPC ingestion (cycle e15.5)
 multimodal = ["cognicode-explorer/multimodal"]
+# Ownership: enables CODEOWNERS/git-blame ownership attribution
+ownership = ["cognicode-explorer/ownership"]

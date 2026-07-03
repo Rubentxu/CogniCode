@@ -15,14 +15,49 @@ use cognicode_core::domain::value_objects::{DependencyType, Provenance};
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
 
+#[cfg(feature = "ownership")]
+use tokio::runtime::Handle;
+
 /// Adapter that exposes a `CallGraph` through the explorer port.
 pub struct CallGraphRepository {
     graph: Arc<CallGraph>,
+    /// Optional reference to PostgresRepository for reading node properties
+    /// (ownership attribution). Only populated when the `ownership` feature is
+    /// enabled and a PG connection is available at construction time.
+    #[cfg(feature = "ownership")]
+    pg_repo: Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
 }
 
 impl CallGraphRepository {
+    /// Creates a new CallGraphRepository.
+    /// When `ownership` feature is enabled, `pg_repo` defaults to `None`.
+    /// Use `with_pg_repo()` to set it after construction if needed.
     pub fn new(graph: Arc<CallGraph>) -> Self {
-        Self { graph }
+        Self {
+            graph,
+            #[cfg(feature = "ownership")]
+            pg_repo: None,
+        }
+    }
+
+    /// Creates a new CallGraphRepository with an optional PostgresRepository.
+    #[cfg(feature = "ownership")]
+    pub fn new_with_pg_repo(
+        graph: Arc<CallGraph>,
+        pg_repo: Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
+    ) -> Self {
+        Self { graph, pg_repo }
+    }
+
+    /// Set the PostgresRepository reference for ownership attribution.
+    /// Used when the PG repo is not available at construction time.
+    #[cfg(feature = "ownership")]
+    pub fn with_pg_repo(
+        mut self,
+        pg_repo: Arc<cognicode_core::infrastructure::persistence::PostgresRepository>,
+    ) -> Self {
+        self.pg_repo = Some(pg_repo);
+        self
     }
 
     /// Borrow the underlying graph — used by the integration test that needs
@@ -50,6 +85,20 @@ impl CallGraphRepository {
     pub fn from_graph(graph: CallGraph) -> Self {
         Self {
             graph: Arc::new(graph),
+            #[cfg(feature = "ownership")]
+            pg_repo: None,
+        }
+    }
+
+    /// Wrap an existing graph with optional PostgresRepository.
+    #[cfg(feature = "ownership")]
+    pub fn from_graph_with_pg_repo(
+        graph: CallGraph,
+        pg_repo: Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
+    ) -> Self {
+        Self {
+            graph: Arc::new(graph),
+            pg_repo,
         }
     }
 }
@@ -231,13 +280,42 @@ impl GraphQueryPort for CallGraphRepository {
     fn traverse_callers(&self, id: &SymbolId, max_depth: u8) -> Vec<CallEntry> {
         self.graph.traverse_callers(id, max_depth)
     }
+
+    /// Delegate node properties to PostgresRepository when available (ADR-008).
+    /// This allows OwnershipMapExecutor to read ownership attribution data
+    /// (codeowners, last_author, author_email) stored in PostgreSQL.
+    #[cfg(feature = "ownership")]
+    fn node_properties(&self, id: &SymbolId) -> Option<std::collections::HashMap<String, String>> {
+        let pg_repo = self.pg_repo.as_ref()?;
+        // Use block_on to synchronously wait for the async PostgresRepository method.
+        // This is safe because ViewExecutor::build() is always called from an async
+        // context (via #[async_trait]), so a runtime is always available.
+        Handle::current()
+            .block_on(pg_repo.node_properties(id))
+            .ok()
+            .flatten()
+    }
 }
 
 /// Convenience constructor used by the binary that wants to fail loudly
 /// when the graph has not been indexed yet.
+#[cfg(not(feature = "ownership"))]
 pub fn repository_from_graph(graph: Option<Arc<CallGraph>>) -> ExplorerResult<CallGraphRepository> {
     match graph {
         Some(g) => Ok(CallGraphRepository::new(g)),
+        None => Err(ExplorerError::GraphNotReady),
+    }
+}
+
+/// Convenience constructor used by the binary that wants to fail loudly
+/// when the graph has not been indexed yet.
+#[cfg(feature = "ownership")]
+pub fn repository_from_graph(
+    graph: Option<Arc<CallGraph>>,
+    pg_repo: Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
+) -> ExplorerResult<CallGraphRepository> {
+    match graph {
+        Some(g) => Ok(CallGraphRepository::new_with_pg_repo(g, pg_repo)),
         None => Err(ExplorerError::GraphNotReady),
     }
 }
@@ -366,7 +444,10 @@ mod tests {
 
     #[test]
     fn repository_from_graph_errors_when_none() {
+        #[cfg(not(feature = "ownership"))]
         let result = repository_from_graph(None);
+        #[cfg(feature = "ownership")]
+        let result = repository_from_graph(None, None);
         assert!(result.is_err());
         match result.err() {
             Some(ExplorerError::GraphNotReady) => {}
