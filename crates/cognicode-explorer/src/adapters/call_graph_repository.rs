@@ -15,8 +15,10 @@ use cognicode_core::domain::value_objects::{DependencyType, Provenance};
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
 
-#[cfg(feature = "ownership")]
-use tokio::runtime::Handle;
+    #[cfg(feature = "ownership")]
+    use tokio::runtime::Handle;
+    #[cfg(feature = "ownership")]
+    use tokio::task::spawn_blocking;
 
 /// Adapter that exposes a `CallGraph` through the explorer port.
 pub struct CallGraphRepository {
@@ -284,16 +286,19 @@ impl GraphQueryPort for CallGraphRepository {
     /// Delegate node properties to PostgresRepository when available (ADR-008).
     /// This allows OwnershipMapExecutor to read ownership attribution data
     /// (codeowners, last_author, author_email) stored in PostgreSQL.
+    ///
+    /// Uses `spawn_blocking` to avoid blocking a Tokio worker thread.
+    /// The closure runs on a dedicated blocking thread; we get a fresh
+    /// `Handle::current()` inside the closure since we're not on a worker.
     #[cfg(feature = "ownership")]
     fn node_properties(&self, id: &SymbolId) -> Option<std::collections::HashMap<String, String>> {
-        let pg_repo = self.pg_repo.as_ref()?;
-        // Use block_on to synchronously wait for the async PostgresRepository method.
-        // This is safe because ViewExecutor::build() is always called from an async
-        // context (via #[async_trait]), so a runtime is always available.
-        Handle::current()
-            .block_on(pg_repo.node_properties(id))
-            .ok()
-            .flatten()
+        let pg_repo = self.pg_repo.as_ref()?.clone();
+        let id = id.clone();
+        let handle = spawn_blocking(move || {
+            let rt = Handle::current();
+            rt.block_on(async move { pg_repo.node_properties(&id).await })
+        });
+        Handle::current().block_on(handle).ok()?.ok()?
     }
 }
 
