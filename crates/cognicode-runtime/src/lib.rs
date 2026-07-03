@@ -169,6 +169,17 @@ impl Runtime {
         #[cfg(not(feature = "postgres"))]
         let investigation: Option<Arc<dyn cognicode_explorer::facades::InvestigationFacade>> = None;
 
+        // Graph repository for multimodal search (Doc/Decision/Evidence families)
+        #[cfg(feature = "multimodal")]
+        let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> =
+            if let Some(ref pg) = self.pg_repo {
+                Some(Arc::new(cognicode_explorer::adapters::PgGraphRepository::new(
+                    pg.pool().clone(),
+                )))
+            } else {
+                None
+            };
+
         let search: Arc<dyn cognicode_explorer::facades::SearchService> =
             Arc::new(cognicode_explorer::facades::search::SearchServiceImpl::new(
                 self.symbol_repo.clone(),
@@ -178,6 +189,8 @@ impl Runtime {
                 quality.clone(), // quality_repo — wired from PG (PR #55)
                 Some(persistence.clone()), // persistence — for SavedExploration search
                 investigation, // investigation — wired from PG (e13-wave-1)
+                #[cfg(feature = "multimodal")]
+                graph_repo,
             ));
 
         // View facade.

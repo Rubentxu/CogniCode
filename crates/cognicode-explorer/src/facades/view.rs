@@ -65,6 +65,9 @@ impl ViewServiceImpl {
             ObjectIdentity::Rule { .. } => InspectableObjectType::Rule,
             ObjectIdentity::SavedExploration { .. } => InspectableObjectType::SavedExploration,
             ObjectIdentity::Investigation { .. } => InspectableObjectType::Investigation,
+            ObjectIdentity::Doc { .. } => InspectableObjectType::Doc,
+            ObjectIdentity::Decision { .. } => InspectableObjectType::DecisionArtifact,
+            ObjectIdentity::Evidence { .. } => InspectableObjectType::Evidence,
         };
         Ok(self.view_registry.list_for(object_type))
     }
@@ -144,6 +147,13 @@ impl ViewServiceImpl {
                     "Investigation view resolution requires investigation facade (not wired)".into(),
                 ))
             }
+            // Doc/Decision/Evidence require graph_repo wired to ViewService.
+            // Resolution happens in SearchServiceImpl which has graph access.
+            ObjectIdentity::Doc { .. } | ObjectIdentity::Decision { .. } | ObjectIdentity::Evidence { .. } => {
+                Err(ExplorerError::FeatureDisabled(
+                    "Doc/Decision/Evidence resolution requires graph repository (not wired in ViewService)".into(),
+                ))
+            }
         }
     }
 
@@ -157,6 +167,9 @@ impl ViewServiceImpl {
             ObjectIdentity::Rule { .. } => crate::dto::InspectableObjectType::Rule,
             ObjectIdentity::SavedExploration { .. } => crate::dto::InspectableObjectType::SavedExploration,
             ObjectIdentity::Investigation { .. } => crate::dto::InspectableObjectType::Investigation,
+            ObjectIdentity::Doc { .. } => crate::dto::InspectableObjectType::Doc,
+            ObjectIdentity::Decision { .. } => crate::dto::InspectableObjectType::DecisionArtifact,
+            ObjectIdentity::Evidence { .. } => crate::dto::InspectableObjectType::Evidence,
         };
         Ok(self.lens_registry.applicable_to(&object_type))
     }

@@ -406,6 +406,8 @@ impl ExplorerMcpHandler {
             quality_repo.clone(),
             None, // persistence
             None, // investigation
+            #[cfg(feature = "multimodal")]
+            None, // graph_repo — wired from runtime when available
         ));
 
         // Persistence facade (created before view_impl so it can be wired in).
