@@ -26,6 +26,10 @@ pub mod postgres_edge_emitter;
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 pub mod pg_graph_repository;
 
+/// Graph-shaped quality hotspot adapter combining fan-in with weighted issue counts.
+/// Used by the `RiskMap` view.
+pub mod quality_graph_repository;
+
 pub use call_graph_repository::CallGraphRepository;
 pub use fs_source_reader::FsSourceReader;
 #[cfg(feature = "multimodal")]
@@ -36,3 +40,4 @@ pub use pg_graph_repository::PgGraphRepository;
 pub use postgres_edge_emitter::PostgresEdgeEmitter;
 #[cfg(feature = "postgres")]
 pub use postgres_quality::PostgresQualityRepository;
+pub use quality_graph_repository::{HotspotNode, QualityGraphRepository, RelEdge, TraversalFilter};

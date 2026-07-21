@@ -403,6 +403,23 @@ pub struct ViewBlock {
     pub body: serde_json::Value,
 }
 
+/// Lightweight diagnostic emitted by view executors to surface edge-case
+/// conditions that do not prevent the view from rendering but the caller
+/// should be aware of (e.g., a relation target could not be resolved).
+///
+/// Stored in `ContextualView.findings` so the field is always present
+/// (retro-compatibility with views that never emit diagnostics).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "detail")]
+pub enum ViewDiagnostic {
+    /// A graph relation target referenced in the view could not be resolved.
+    RelationUnresolved {
+        relation_type: String,
+        target_object_id: String,
+        reason: String,
+    },
+}
+
 // ============================================================================
 // ExplorationSession — semantic exploration history (ADR-016 Fase 3)
 // ============================================================================

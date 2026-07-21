@@ -428,6 +428,11 @@ impl ViewRegistry {
                     &crate::domain::views::COMPOSED_NARRATIVE_EXECUTOR
                         as &dyn crate::domain::views::ViewExecutor,
                 ),
+                (
+                    "risk_map",
+                    &crate::domain::views::RISK_MAP_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
             ])
         });
         real.get(id).copied().or_else(|| {
