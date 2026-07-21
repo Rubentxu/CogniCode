@@ -32,7 +32,7 @@ use cognicode_explorer::mcp::{
     McpContext, TOOL_FIND_DEAD_CODE, TOOL_FIND_INTERSECTION, TOOL_HOTSPOTS,
 };
 use cognicode_explorer::session::SessionRegistry;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 // ============================================================================
 // Fixture builders
@@ -209,17 +209,10 @@ impl ViewService for CannedLensService {
             "mock".into(),
         ))
     }
-    async fn available_lenses(
-        &self,
-        _object_id: &str,
-    ) -> ExplorerResult<Vec<LensDescriptor>> {
+    async fn available_lenses(&self, _object_id: &str) -> ExplorerResult<Vec<LensDescriptor>> {
         Ok(vec![])
     }
-    async fn apply_lens(
-        &self,
-        object_id: &str,
-        lens_id: &str,
-    ) -> ExplorerResult<LensResult> {
+    async fn apply_lens(&self, object_id: &str, lens_id: &str) -> ExplorerResult<LensResult> {
         let findings = self
             .canned
             .get(&(object_id.to_string(), lens_id.to_string()))
@@ -330,7 +323,13 @@ async fn lens_find_dead_code_lists_all_dead_symbols() {
     }
     // The 5 live symbols (main, alpha, beta, gamma, delta) should NOT
     // appear in the dead list.
-    for live_id in ["main.rs:main", "a.rs:alpha", "b.rs:beta", "c.rs:gamma", "d.rs:delta"] {
+    for live_id in [
+        "main.rs:main",
+        "a.rs:alpha",
+        "b.rs:beta",
+        "c.rs:gamma",
+        "d.rs:delta",
+    ] {
         assert!(
             !json_text.contains(&format!("\"symbol_id\": \"{live_id}\"")),
             "live symbol `{live_id}` should NOT appear in dead list: {json_text}"
@@ -689,11 +688,7 @@ fn handlers_declare_non_empty_arg_schemas() {
         let required = schema
             .get("required")
             .and_then(|v| v.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| v.as_str())
-                    .collect::<Vec<_>>()
-            })
+            .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
             .unwrap_or_default();
         for key in expected_required_keys {
             assert!(

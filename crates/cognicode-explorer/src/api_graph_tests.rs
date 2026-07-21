@@ -1340,8 +1340,10 @@ impl SymbolRepository for LandingRepo {
         Ok(vec![
             self.resolve(&SymbolId::new("src/a.rs:alpha:1"))?.unwrap(),
             self.resolve(&SymbolId::new("src/b.rs:beta:2"))?.unwrap(),
-            self.resolve(&SymbolId::new("src/core.rs:core:10"))?.unwrap(),
-            self.resolve(&SymbolId::new("src/helper.rs:helper:20"))?.unwrap(),
+            self.resolve(&SymbolId::new("src/core.rs:core:10"))?
+                .unwrap(),
+            self.resolve(&SymbolId::new("src/helper.rs:helper:20"))?
+                .unwrap(),
         ])
     }
 
@@ -1572,9 +1574,21 @@ impl SymbolRepository for WideLandingRepo {
             signature: None,
         }))
     }
-    fn find_symbols_by_name(&self, _name: &str) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> { Ok(Vec::new()) }
-    fn find_symbols_by_file(&self, _file: &str) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> { Ok(Vec::new()) }
-    fn module_list(&self) -> Vec<String> { vec!["wide.rs".into()] }
+    fn find_symbols_by_name(
+        &self,
+        _name: &str,
+    ) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> {
+        Ok(Vec::new())
+    }
+    fn find_symbols_by_file(
+        &self,
+        _file: &str,
+    ) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> {
+        Ok(Vec::new())
+    }
+    fn module_list(&self) -> Vec<String> {
+        vec!["wide.rs".into()]
+    }
     fn all_symbols(&self) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> {
         Ok((0..75)
             .map(|i| ResolvedSymbol {
@@ -1587,21 +1601,44 @@ impl SymbolRepository for WideLandingRepo {
             })
             .collect())
     }
-    fn graph_stats(&self) -> GraphStats { GraphStats { symbol_count: 75, relation_count: 0 } }
+    fn graph_stats(&self) -> GraphStats {
+        GraphStats {
+            symbol_count: 75,
+            relation_count: 0,
+        }
+    }
 }
 
 struct WideLandingGraphQueryPort;
 
 impl GraphQueryPort for WideLandingGraphQueryPort {
-    fn callers(&self, _id: &SymbolId) -> Vec<RelationTarget> { Vec::new() }
-    fn callees(&self, _id: &SymbolId) -> Vec<RelationTarget> { Vec::new() }
-    fn fan_in(&self, _id: &SymbolId) -> usize { 0 }
-    fn fan_out(&self, _id: &SymbolId) -> usize { 0 }
-    fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<CallerWithMetadata> { Vec::new() }
-    fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<CalleeWithMetadata> { Vec::new() }
-    fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<RelationTargetWithMetadata> { Vec::new() }
-    fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> { Vec::new() }
-    fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> { Vec::new() }
+    fn callers(&self, _id: &SymbolId) -> Vec<RelationTarget> {
+        Vec::new()
+    }
+    fn callees(&self, _id: &SymbolId) -> Vec<RelationTarget> {
+        Vec::new()
+    }
+    fn fan_in(&self, _id: &SymbolId) -> usize {
+        0
+    }
+    fn fan_out(&self, _id: &SymbolId) -> usize {
+        0
+    }
+    fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<CallerWithMetadata> {
+        Vec::new()
+    }
+    fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<CalleeWithMetadata> {
+        Vec::new()
+    }
+    fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<RelationTargetWithMetadata> {
+        Vec::new()
+    }
+    fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+        Vec::new()
+    }
+    fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+        Vec::new()
+    }
 }
 
 fn wide_landing_app() -> axum::Router {
@@ -1649,7 +1686,10 @@ async fn landing_handler_truncates_when_entry_points_exceed_cap() {
     let json: serde_json::Value = serde_json::from_slice(&body).expect("json");
     assert_eq!(json["truncated"], true);
     assert_eq!(json["truncated_reason"], "node_cap");
-    assert_eq!(json["entry_points"].as_array().unwrap().len(), crate::dto::LANDING_NODE_CAP);
+    assert_eq!(
+        json["entry_points"].as_array().unwrap().len(),
+        crate::dto::LANDING_NODE_CAP
+    );
 }
 
 fn wide_app() -> axum::Router {
@@ -2292,10 +2332,7 @@ async fn trace_mermaid_returns_200_with_call_graph() {
         .await
         .expect("body");
     let text = std::str::from_utf8(&body).expect("valid UTF-8");
-    assert!(
-        text.contains("flowchart TD"),
-        "should contain flowchart TD"
-    );
+    assert!(text.contains("flowchart TD"), "should contain flowchart TD");
     assert!(
         text.contains("subgraph call_graph"),
         "should contain call_graph subgraph"
@@ -2316,10 +2353,7 @@ async fn trace_mermaid_returns_200_with_impact_radius() {
         .await
         .expect("body");
     let text = std::str::from_utf8(&body).expect("valid UTF-8");
-    assert!(
-        text.contains("flowchart TD"),
-        "should contain flowchart TD"
-    );
+    assert!(text.contains("flowchart TD"), "should contain flowchart TD");
     assert!(
         text.contains("subgraph impact_radius"),
         "should contain impact_radius subgraph"
@@ -2340,10 +2374,7 @@ async fn trace_mermaid_returns_200_with_vertical_slice() {
         .await
         .expect("body");
     let text = std::str::from_utf8(&body).expect("valid UTF-8");
-    assert!(
-        text.contains("flowchart TD"),
-        "should contain flowchart TD"
-    );
+    assert!(text.contains("flowchart TD"), "should contain flowchart TD");
     assert!(
         text.contains("subgraph vertical_slice"),
         "should contain vertical_slice subgraph"
@@ -2386,8 +2417,7 @@ async fn trace_mermaid_returns_404_for_symbol_not_found() {
     let response = app.oneshot(req).await.expect("response");
     // Symbol not found should return 404 or 400
     assert!(
-        response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::BAD_REQUEST,
+        response.status() == StatusCode::NOT_FOUND || response.status() == StatusCode::BAD_REQUEST,
         "expected 404 or 400, got {}",
         response.status()
     );

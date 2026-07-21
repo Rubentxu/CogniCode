@@ -91,11 +91,7 @@ pub trait InvestigationFacade: Send + Sync {
     async fn delete_investigation(&self, id: &str) -> ExplorerResult<()>;
 
     /// Add a single evidence item to an existing investigation.
-    async fn add_evidence(
-        &self,
-        investigation_id: &str,
-        evidence: Evidence,
-    ) -> ExplorerResult<()>;
+    async fn add_evidence(&self, investigation_id: &str, evidence: Evidence) -> ExplorerResult<()>;
 }
 
 /// Wrapper that adapts `InvestigationService<S>` from core to the
@@ -111,7 +107,9 @@ impl<S: cognicode_core::domain::investigation_store::InvestigationStore + 'stati
 {
     pub fn new(store: S) -> Self {
         Self {
-            inner: cognicode_core::application::investigation_service::InvestigationService::new(store),
+            inner: cognicode_core::application::investigation_service::InvestigationService::new(
+                store,
+            ),
         }
     }
 }
@@ -160,11 +158,7 @@ impl<S: cognicode_core::domain::investigation_store::InvestigationStore + 'stati
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!(e.to_string())))
     }
 
-    async fn add_evidence(
-        &self,
-        investigation_id: &str,
-        evidence: Evidence,
-    ) -> ExplorerResult<()> {
+    async fn add_evidence(&self, investigation_id: &str, evidence: Evidence) -> ExplorerResult<()> {
         self.inner
             .add_evidence(investigation_id, evidence)
             .await
@@ -177,6 +171,7 @@ impl<S: cognicode_core::domain::investigation_store::InvestigationStore + 'stati
 pub fn new_investigation_service_from_postgres(
     pool: &sqlx::PgPool,
 ) -> Arc<dyn InvestigationFacade> {
-    let store = cognicode_core::infrastructure::persistence::PostgresInvestigationStore::new(pool.clone());
+    let store =
+        cognicode_core::infrastructure::persistence::PostgresInvestigationStore::new(pool.clone());
     Arc::new(InvestigationServiceImpl::new(store))
 }

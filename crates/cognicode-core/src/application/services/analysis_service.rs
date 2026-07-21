@@ -2,7 +2,8 @@
 
 use crate::application::dto::{
     AnalysisMetadata, DeadCodeEntry, DeadCodeReason, DeadCodeResult, GraphCoverageMetrics,
-    GraphStatsDto, ModuleDependenciesResult, ModuleDependency, ModuleDependencyGraph, RelationCandidate, SymbolDto,
+    GraphStatsDto, ModuleDependenciesResult, ModuleDependency, ModuleDependencyGraph,
+    RelationCandidate, SymbolDto,
 };
 use crate::application::error::{AppError, AppResult};
 use crate::domain::aggregates::CallGraph;

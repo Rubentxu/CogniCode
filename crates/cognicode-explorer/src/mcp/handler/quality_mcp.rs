@@ -24,7 +24,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use rmcp::model::CallToolResult;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
@@ -270,9 +270,7 @@ impl ToolHandler for FindQualityIssuesHandler {
 /// callers fall back to other sources or accept empty results.
 /// This is intentionally best-effort: aggregation across an entire
 /// workspace requires cooperation from the port, which is a v2 concern.
-fn list_known_files(
-    _q: &Arc<dyn crate::ports::QualityRepository>,
-) -> Result<Vec<String>, ()> {
+fn list_known_files(_q: &Arc<dyn crate::ports::QualityRepository>) -> Result<Vec<String>, ()> {
     // v1: QualityRepository doesn't expose a file index. The
     // aggregation path returns an empty file list, so the handler
     // will produce an empty issues array — callers should narrow by
@@ -546,17 +544,11 @@ mod tests {
                 .flat_map(|(_, v)| v.clone())
                 .collect())
         }
-        fn issues_at_line(
-            &self,
-            file: &str,
-            line: u32,
-        ) -> ExplorerResult<Vec<QualityIssue>> {
+        fn issues_at_line(&self, file: &str, line: u32) -> ExplorerResult<Vec<QualityIssue>> {
             Ok(self
                 .by_file
                 .get(file)
-                .map(|v| {
-                    v.iter().filter(|i| i.line == line).cloned().collect()
-                })
+                .map(|v| v.iter().filter(|i| i.line == line).cloned().collect())
                 .unwrap_or_default())
         }
         fn issue_by_id(&self, _id: i64) -> ExplorerResult<Option<QualityIssue>> {
@@ -599,7 +591,13 @@ mod tests {
         }
     }
 
-    fn make_issue(id: i64, severity: &str, category: &str, file: &str, status: &str) -> QualityIssue {
+    fn make_issue(
+        id: i64,
+        severity: &str,
+        category: &str,
+        file: &str,
+        status: &str,
+    ) -> QualityIssue {
         QualityIssue {
             id,
             rule_id: format!("R{id}"),
@@ -749,15 +747,33 @@ mod tests {
         let q = MockQuality::new()
             .with_file(
                 "src/auth/a.rs",
-                vec![make_issue(1, "warning", "complexity", "src/auth/a.rs", "open")],
+                vec![make_issue(
+                    1,
+                    "warning",
+                    "complexity",
+                    "src/auth/a.rs",
+                    "open",
+                )],
             )
             .with_file(
                 "src/auth/b.rs",
-                vec![make_issue(2, "critical", "complexity", "src/auth/b.rs", "open")],
+                vec![make_issue(
+                    2,
+                    "critical",
+                    "complexity",
+                    "src/auth/b.rs",
+                    "open",
+                )],
             )
             .with_file(
                 "src/other/c.rs",
-                vec![make_issue(3, "warning", "complexity", "src/other/c.rs", "open")],
+                vec![make_issue(
+                    3,
+                    "warning",
+                    "complexity",
+                    "src/other/c.rs",
+                    "open",
+                )],
             );
         let result = q.issues_for_scope("src/auth").unwrap();
         assert_eq!(result.len(), 2);

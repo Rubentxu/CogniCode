@@ -167,7 +167,10 @@ fn contextual_response_accepts_deprecated_truncation_reason_alias() {
     }"#;
     let resp: ContextualGraphResponse =
         serde_json::from_str(json).expect("parse old truncationReason field");
-    assert_eq!(resp.truncated_reason, Some("max_nodes_exceeded".to_string()));
+    assert_eq!(
+        resp.truncated_reason,
+        Some("max_nodes_exceeded".to_string())
+    );
 }
 
 #[test]

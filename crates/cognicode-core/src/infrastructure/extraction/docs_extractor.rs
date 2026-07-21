@@ -121,8 +121,17 @@ pub fn parse_markdown(text: &str, source_path: &Path, file_stem: &str) -> Vec<Ex
             last.potential_node = last.potential_node.clone().with_property("status", status);
         }
         for line in body.lines() {
+            // Try body line (symbol citation)
             if let Some(cites) = classify_body_line(line, file_stem) {
-                last.potential_edges.push(cites.into_edge(&source_id));
+                last.potential_edges
+                    .push(CitesCandidate::Body(cites).into_edge(&source_id));
+            }
+            // Try doc link (cross-ADR/cross-doc citation)
+            if let Some(target) = extract_link_target(line) {
+                if let Some(doc_cites) = classify_doc_link(&target) {
+                    last.potential_edges
+                        .push(CitesCandidate::Doc(doc_cites).into_edge(&source_id));
+                }
             }
         }
         body.clear();
@@ -144,7 +153,13 @@ pub fn parse_markdown(text: &str, source_path: &Path, file_stem: &str) -> Vec<Ex
                 // trailing body between this heading and the
                 // next is attached to THIS node by the heading
                 // arm above (or the EOF flush below).
-                if let Some((label, line, lvl)) = current_heading.take() {
+                //
+                // Use replace() to atomically swap in the new state
+                // while getting the old state. If current_heading
+                // was None (already consumed by previous heading end),
+                // we still need to emit this heading's node.
+                let prev_heading = std::mem::replace(&mut current_heading, None);
+                if let Some((label, line, lvl)) = prev_heading {
                     let body = std::mem::take(&mut current_body);
                     let node = build_heading_node(
                         &label,
@@ -156,11 +171,19 @@ pub fn parse_markdown(text: &str, source_path: &Path, file_stem: &str) -> Vec<Ex
                         &body,
                         &mut status_lines,
                     );
-                    let edges = body
+                    let mut edges: Vec<GraphEdge> = body
                         .lines()
                         .filter_map(|line| classify_body_line(line, file_stem))
-                        .map(|cites| cites.into_edge(&node.id))
+                        .map(|cites| CitesCandidate::Body(cites).into_edge(&node.id))
                         .collect();
+                    // Also check for doc links (cross-ADR/cross-doc citations)
+                    for line in body.lines() {
+                        if let Some(target) = extract_link_target(line) {
+                            if let Some(doc_cites) = classify_doc_link(&target) {
+                                edges.push(CitesCandidate::Doc(doc_cites).into_edge(&node.id));
+                            }
+                        }
+                    }
                     nodes.push(ExtractedNode::with_edges(node, edges));
                 }
             }
@@ -270,6 +293,59 @@ pub fn parse_markdown(text: &str, source_path: &Path, file_stem: &str) -> Vec<Ex
     if nodes.is_empty() && !text.trim().is_empty() {
         let node = build_fallback_node(text, file_stem, source_path, is_adr, &mut status_lines);
         nodes.push(ExtractedNode::new(node));
+    }
+
+    // ---- Phase 4.2: Emit Decision→Doc Justifies edge for ADRs ----
+    // When an ADR has multiple headings (nodes.len() >= 2), we need to
+    // emit a Justifies edge from the first Decision node to a file-level
+    // Doc node. The Doc node represents the ADR document itself, and
+    // the Decision (H1 heading) justifies why this decision was made.
+    if is_adr && nodes.len() >= 2 {
+        // Find the first Decision node
+        if let Some(first_decision_idx) = nodes
+            .iter()
+            .position(|n| n.potential_node.kind == NodeKind::Decision)
+        {
+            // Check if a Doc node already exists; if not, create a file-level Doc node
+            let doc_idx = if let Some(idx) = nodes
+                .iter()
+                .position(|n| n.potential_node.kind == NodeKind::Doc)
+            {
+                idx
+            } else {
+                // Create a file-level Doc node for the ADR
+                let doc_id_str = format!("doc:{}#intro", file_stem);
+                let now = Utc::now();
+                let doc_label = source_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| file_stem.to_string());
+                let doc_node = GraphNode::builder(NodeId::new(doc_id_str), NodeKind::Doc)
+                    .label(doc_label)
+                    .source_path(source_path.to_path_buf())
+                    .created_at(now)
+                    .updated_at(now)
+                    .property("file_level", "adr_doc")
+                    .build();
+                nodes.push(ExtractedNode::new(doc_node));
+                nodes.len() - 1 // Return the index of the newly created node
+            };
+
+            // Add Justifies edge from first Decision to the Doc node
+            let decision_id = nodes[first_decision_idx].potential_node.id.clone();
+            let doc_id = nodes[doc_idx].potential_node.id.clone();
+            let justifies_edge = GraphEdge::new(
+                decision_id,
+                doc_id,
+                EdgeKind::Justifies,
+                Provenance::Extracted,
+                1.0,
+            )
+            .expect("GraphEdge creation should not fail for valid inputs");
+            nodes[first_decision_idx]
+                .potential_edges
+                .push(justifies_edge);
+        }
     }
 
     nodes
@@ -583,20 +659,80 @@ fn slugify(s: &str) -> String {
     }
 }
 
+/// Strip paired markdown emphasis markers from both ends of a string.
+/// Handles `**bold**`, `*italic*`, `_underline_`, and plain text.
+#[cfg(feature = "multimodal")]
+fn strip_md_marker(s: &str) -> String {
+    let s = s.trim();
+    let chars: Vec<char> = s.chars().collect();
+    let len = chars.len();
+
+    // Check for paired markers: **, __
+    if len >= 4 {
+        let start_marker: String = chars[0..2].iter().collect();
+        if matches!(start_marker.as_str(), "**" | "__") {
+            let end_marker: String = chars[len - 2..len].iter().collect();
+            if end_marker == start_marker {
+                return chars[2..len - 2]
+                    .iter()
+                    .collect::<String>()
+                    .trim()
+                    .to_string();
+            }
+        }
+    }
+    // Check for single markers: *, _
+    if len >= 2 {
+        let start_marker = chars[0];
+        if matches!(start_marker, '*' | '_') {
+            let end_marker = chars[len - 1];
+            if end_marker == start_marker {
+                return chars[1..len - 1]
+                    .iter()
+                    .collect::<String>()
+                    .trim()
+                    .to_string();
+            }
+        }
+    }
+    s.to_string()
+}
+
 /// Extract the value of the canonical `Status: <value>` line in
 /// an ADR's body. Matches the first `Status:` line (case
-/// insensitive) and returns the trimmed remainder. Returns
-/// `None` when no `Status:` line is present.
+/// insensitive) and returns the trimmed remainder, lowercased.
+/// Handles bold markdown (`**Status**:`), italic (`_Status_:`,
+/// `*Status*:`), and plain `Status:` forms.
+///
+/// When the status label is bold/italic (e.g., `**Status**:`),
+/// pulldown_cmark emits the label and value as separate text nodes,
+/// so we also check for the "Status\n: value" pattern.
+///
+/// Returns `None` when no `Status:` line is present.
 #[cfg(feature = "multimodal")]
 fn extract_status(body: &str) -> Option<String> {
-    for line in body.lines() {
+    let lines: Vec<&str> = body.lines().collect();
+    for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
-        if let Some(rest) = trimmed
-            .to_ascii_lowercase()
-            .strip_prefix("status:")
-            .map(|s| s.to_string())
-        {
-            return Some(rest.trim().to_string());
+        // Strip leading markdown markers: **, _, *
+        let stripped = strip_md_marker(trimmed);
+        let stripped_lower = stripped.to_ascii_lowercase();
+
+        // Case 1: "status:" or "status: value" on same line
+        if let Some(rest) = stripped_lower.strip_prefix("status:") {
+            return Some(rest.trim().to_lowercase());
+        }
+
+        // Case 2: bold/italic label on its own line, value on next line
+        // e.g., "Status" followed by ": ACCEPTED"
+        if stripped_lower == "status" {
+            // Check if next line starts with ':'
+            if i + 1 < lines.len() {
+                let next_line = lines[i + 1].trim_start();
+                if let Some(rest) = next_line.strip_prefix(':') {
+                    return Some(rest.trim().to_lowercase());
+                }
+            }
         }
     }
     None
@@ -624,6 +760,48 @@ impl BodyCites {
             self.tier.confidence(),
         )
         .expect("body-derived Cites edge must satisfy GraphEdge invariants")
+    }
+}
+
+/// Internal: a Cites candidate for a markdown link to another
+/// document (ADR or doc). The `into_edge` materialises a
+/// `GraphEdge` once the source `NodeId` is known.
+#[cfg(feature = "multimodal")]
+struct DocCites {
+    /// The target NodeId (e.g. `decision:adr-002-foo#bar`).
+    target: NodeId,
+    /// The confidence tier (always `ConfidenceTier::LinkExact` = 0.9).
+    tier: ConfidenceTier,
+}
+
+#[cfg(feature = "multimodal")]
+impl DocCites {
+    fn into_edge(self, source: &NodeId) -> GraphEdge {
+        GraphEdge::new(
+            source.clone(),
+            self.target,
+            EdgeKind::Cites,
+            self.tier.provenance(),
+            self.tier.confidence(),
+        )
+        .expect("doc-derived Cites edge must satisfy GraphEdge invariants")
+    }
+}
+
+/// Unified Cites candidate for either a body line or a doc link.
+#[cfg(feature = "multimodal")]
+enum CitesCandidate {
+    Body(BodyCites),
+    Doc(DocCites),
+}
+
+#[cfg(feature = "multimodal")]
+impl CitesCandidate {
+    fn into_edge(self, source: &NodeId) -> GraphEdge {
+        match self {
+            CitesCandidate::Body(c) => c.into_edge(source),
+            CitesCandidate::Doc(d) => d.into_edge(source),
+        }
     }
 }
 
@@ -690,6 +868,137 @@ fn looks_like_symbol_id(s: &str) -> bool {
     }
 }
 
+/// Classify a markdown link target that points to another `.md` file.
+/// Returns `Some(DocCites)` if the target is a relative `.md` path
+/// (e.g., `./ADR-002-foo.md` or `./architecture.md#section`),
+/// `None` otherwise.
+///
+/// The returned `DocCites` has:
+/// - For ADR links (`ADR-NNN-*.md`): target `decision:<stem>#<heading>`
+/// - For doc links: target `doc:<stem>#<anchor>`
+/// - Confidence: 0.9 (`ConfidenceTier::LinkExact`)
+#[cfg(feature = "multimodal")]
+fn classify_doc_link(target: &str) -> Option<DocCites> {
+    // Skip http(s):// URLs and autolinks
+    if target.starts_with("http://") || target.starts_with("https://") || target.starts_with('<') {
+        return None;
+    }
+
+    // Must be a relative path containing .md or .markdown (case insensitive)
+    // Handle URLs with #anchor suffixes like "./architecture.md#section"
+    let target_lower = target.to_ascii_lowercase();
+    let has_md = target_lower.contains(".md") || target_lower.contains(".markdown");
+    if !has_md {
+        return None;
+    }
+
+    // Extract the path, stripping leading `./` or `.\`
+    let path = target.trim_start_matches("./").trim_start_matches(".\\");
+
+    // Split off any #anchor
+    let (stem, anchor) = if let Some(pos) = path.find('#') {
+        (&path[..pos], Some(&path[pos + 1..]))
+    } else {
+        (path, None)
+    };
+
+    // Compute the file_stem (remove extension)
+    let file_stem = if let Some(pos) = stem.rfind('/') {
+        &stem[pos + 1..]
+    } else {
+        stem
+    };
+    let file_stem = if let Some(pos) = file_stem.rfind('\\') {
+        &file_stem[pos + 1..]
+    } else {
+        file_stem
+    };
+    // Remove .md/.markdown extension
+    let file_stem = file_stem
+        .strip_suffix(".md")
+        .or_else(|| file_stem.strip_suffix(".markdown"))
+        .unwrap_or(file_stem);
+
+    // Determine if it's an ADR based on naming pattern (adr-NNN-*.md)
+    let is_adr = file_stem.to_ascii_lowercase().starts_with("adr-");
+
+    // Build the target NodeId
+    let target_id = if is_adr {
+        // For ADRs: decision:<stem>#<heading> where heading = file_stem
+        let slug = slugify(file_stem);
+        format!("decision:{}#{}", file_stem.to_lowercase(), slug)
+    } else {
+        // For docs: doc:<stem>#<anchor> or doc:<stem>#<stem>
+        let slug = if let Some(anchor) = anchor {
+            slugify(anchor)
+        } else {
+            slugify(file_stem)
+        };
+        format!("doc:{}#{}", file_stem.to_lowercase(), slug)
+    };
+
+    Some(DocCites {
+        target: NodeId::new(target_id),
+        tier: ConfidenceTier::LinkExact,
+    })
+}
+
+/// Parse a markdown link `[text](target)` from a line, returning
+/// the target string if found. Handles both inline `[text](url)` form
+/// and the case where the URL was pushed to body as a separate line
+/// after the link closed.
+#[cfg(feature = "multimodal")]
+fn extract_link_target(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+
+    // Case 1: inline markdown link [text](url)
+    if let Some(open_pos) = trimmed.find("](") {
+        // The URL starts after "](", at position open_pos + 2
+        let url_start = open_pos + 2;
+        // Find the closing ")" - it must exist after the URL start
+        if let Some(close_pos) = trimmed[url_start..].find(')') {
+            // close_pos is relative to url_start, so absolute position is url_start + close_pos
+            let url_end = url_start + close_pos;
+            if url_end < trimmed.len() {
+                return Some(trimmed[url_start..url_end].to_string());
+            }
+        }
+    }
+
+    // Case 2: URL on its own line (after link close event)
+    // Detected by: contains .md/.markdown before any #anchor, starts with . or /
+    let trimmed_lower = trimmed.to_ascii_lowercase();
+    if let Some(md_pos) = trimmed_lower.find(".md") {
+        let before_md = &trimmed[..md_pos];
+        let after_md = &trimmed[md_pos + 3..];
+        // .md must be followed by nothing, '/', '#', or '?' (end or anchor/query)
+        if after_md.is_empty()
+            || after_md.starts_with('/')
+            || after_md.starts_with('#')
+            || after_md.starts_with('?')
+        {
+            if trimmed.starts_with('.') || trimmed.starts_with('/') {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    if let Some(md_pos) = trimmed_lower.find(".markdown") {
+        let before_md = &trimmed[..md_pos];
+        let after_md = &trimmed[md_pos + 9..];
+        if after_md.is_empty()
+            || after_md.starts_with('/')
+            || after_md.starts_with('#')
+            || after_md.starts_with('?')
+        {
+            if trimmed.starts_with('.') || trimmed.starts_with('/') {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    None
+}
+
 // ============================================================================
 // Tests (T12 + T13 RED gates).
 // ============================================================================
@@ -732,6 +1041,252 @@ mod tests {
                 .get("heading_level")
                 .map(String::as_str),
             Some("h1")
+        );
+    }
+
+    // ---- Phase 2: Bold-Markdown Status Extraction RED tests ----
+
+    /// `**Status**: ACCEPTED` (bold markdown) MUST produce
+    /// `status == "accepted"` on the Decision node.
+    #[test]
+    fn bold_status_accepted_is_lowercased() {
+        let text = "# ADR-0007: Adopt GraphQL\n\n**Status**: ACCEPTED\n\n## Context\n";
+        let nodes = parse(text);
+        let first = &nodes[0];
+        assert_eq!(
+            first
+                .potential_node
+                .properties
+                .get("status")
+                .map(String::as_str),
+            Some("accepted"),
+            "bold **Status**: ACCEPTED should normalize to accepted"
+        );
+    }
+
+    /// `_Status_: proposed` (italic markdown) MUST produce
+    /// `status == "proposed"` on the Decision node.
+    #[test]
+    fn italic_status_proposed_is_lowercased() {
+        let text = "# ADR-0008: New Feature\n\n_Status_: proposed\n\n## Context\n";
+        let nodes = parse(text);
+        let first = &nodes[0];
+        assert_eq!(
+            first
+                .potential_node
+                .properties
+                .get("status")
+                .map(String::as_str),
+            Some("proposed"),
+            "italic _Status_: proposed should normalize to proposed"
+        );
+    }
+
+    /// `*Status*: superseded` (another italic variant) MUST produce
+    /// `status == "superseded"` on the Decision node.
+    #[test]
+    fn asterisk_status_superseded_is_lowercased() {
+        let text = "# ADR-0009: Old Approach\n\n*Status*: superseded\n\n## Context\n";
+        let nodes = parse(text);
+        let first = &nodes[0];
+        assert_eq!(
+            first
+                .potential_node
+                .properties
+                .get("status")
+                .map(String::as_str),
+            Some("superseded"),
+            "asterisk *Status*: superseded should normalize to superseded"
+        );
+    }
+
+    /// `**Status**: Superseded` (mixed case) MUST produce
+    /// `status == "superseded"` (lowercased).
+    #[test]
+    fn bold_status_mixed_case_is_normalised() {
+        let text = "# ADR-0010: Superseded\n\n**Status**: Superseded\n\n## Context\n";
+        let nodes = parse(text);
+        let first = &nodes[0];
+        assert_eq!(
+            first
+                .potential_node
+                .properties
+                .get("status")
+                .map(String::as_str),
+            Some("superseded"),
+            "**Status**: Superseded should normalize to lowercase"
+        );
+    }
+
+    // ---- Phase 3: Cross-Document ADR Citations RED tests ----
+
+    /// `[ADR-002](./ADR-002-moldable-exploration-parity-program.md)`
+    /// in a body line MUST emit a `Cites` edge to
+    /// `decision:adr-002-moldable-exploration-parity-program#<heading>`
+    /// with confidence 0.9.
+    #[test]
+    fn cross_adr_link_emits_decision_cites_edge() {
+        let text = "# ADR-0005: References\n\nSee [ADR-002](./ADR-002-moldable-exploration-parity-program.md) for details.\n";
+        let nodes = parse(text);
+        assert!(!nodes.is_empty());
+        let edges = &nodes[0].potential_edges;
+        let adr_edge = edges.iter().find(|e| {
+            e.kind == EdgeKind::Cites && e.target.as_str().starts_with("decision:adr-002")
+        });
+        assert!(
+            adr_edge.is_some(),
+            "expected a Cites edge to decision:adr-002..., got: {:?}",
+            edges
+        );
+        let edge = adr_edge.unwrap();
+        assert!((edge.confidence - 0.9).abs() < 1e-9);
+        assert_eq!(edge.provenance, Provenance::Extracted);
+    }
+
+    /// `[Architecture](./architecture.md#context)` in a body line
+    /// MUST emit a `Cites` edge to `doc:architecture#context`
+    /// with confidence 0.9.
+    #[test]
+    fn cross_doc_link_with_anchor_emits_doc_cites_edge() {
+        let text = "# Overview\n\nSee [Architecture](./architecture.md#context) for context.\n";
+        let nodes = parse(text);
+        assert!(!nodes.is_empty());
+        let edges = &nodes[0].potential_edges;
+        let doc_edge = edges.iter().find(|e| {
+            e.kind == EdgeKind::Cites && e.target.as_str().starts_with("doc:architecture#")
+        });
+        assert!(
+            doc_edge.is_some(),
+            "expected a Cites edge to doc:architecture#..., got: {:?}",
+            edges
+        );
+        let edge = doc_edge.unwrap();
+        assert!((edge.confidence - 0.9).abs() < 1e-9);
+    }
+
+    /// `[spec](https://example.com)` (external URL) MUST NOT
+    /// emit any edge.
+    #[test]
+    fn external_url_link_emits_no_edge() {
+        let text = "# Overview\n\nSee [spec](https://example.com) for details.\n";
+        let nodes = parse(text);
+        assert!(!nodes.is_empty());
+        let edges = &nodes[0].potential_edges;
+        // No Cites edges expected for external URLs
+        assert!(
+            edges.iter().all(|e| e.kind != EdgeKind::Cites),
+            "external URL should not produce Cites edge, got: {:?}",
+            edges
+        );
+    }
+
+    /// `[bar](src/foo.rs:bar:1)` (symbol-shaped link) MUST
+    /// still produce a Cites edge to `src/foo.rs:bar:1` with
+    /// confidence 0.9 (no regression).
+    #[test]
+    fn symbol_shaped_link_still_resolves() {
+        let text = "# Overview\n\nsee [bar](src/foo.rs:bar:1) for details.\n";
+        let nodes = parse(text);
+        assert!(!nodes.is_empty());
+        let edges = &nodes[0].potential_edges;
+        let sym_edge = edges
+            .iter()
+            .find(|e| e.target.as_str() == "src/foo.rs:bar:1");
+        assert!(
+            sym_edge.is_some(),
+            "symbol-shaped link should still resolve, got: {:?}",
+            edges
+        );
+        let edge = sym_edge.unwrap();
+        assert_eq!(edge.kind, EdgeKind::Cites);
+        assert!((edge.confidence - 0.9).abs() < 1e-9);
+    }
+
+    // ---- Phase 4: Decision→Doc Justifies Edge test ----
+
+    /// An ADR file with multiple headings MUST emit exactly one `Justifies` edge
+    /// (confidence 1.0) from the Decision node to the file-level Doc node.
+    /// The Justifies edge connects decision:<stem>#<heading> → doc:<stem>#intro.
+    #[test]
+    fn adr_emits_one_justifies_edge() {
+        let text = "# ADR-0007: Adopt GraphQL\n\n**Status**: ACCEPTED\n\n## Context\nWe evaluated REST vs GraphQL.\n";
+        let nodes = parse(text);
+
+        // Should have 3 nodes: Decision (H1), Decision (H2), and Doc (file-level)
+        assert!(
+            nodes.len() >= 3,
+            "expected at least 3 nodes, got {}",
+            nodes.len()
+        );
+
+        // The first node should be a Decision (H1 in ADR file)
+        let first_node = nodes.first().expect("nodes should not be empty");
+        assert_eq!(
+            first_node.potential_node.kind,
+            NodeKind::Decision,
+            "first node should be Decision"
+        );
+
+        // Find the Doc node (file-level)
+        let doc_node = nodes
+            .iter()
+            .find(|n| n.potential_node.kind == NodeKind::Doc);
+        assert!(doc_node.is_some(), "expected a Doc node, got: {:?}", nodes);
+
+        // Collect all edges
+        let all_edges: Vec<&GraphEdge> = nodes
+            .iter()
+            .flat_map(|n| n.potential_edges.iter())
+            .collect();
+
+        // Find Justifies edges
+        let justifies_edges: Vec<&&GraphEdge> = all_edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Justifies)
+            .collect();
+
+        // Exactly one Justifies edge expected
+        assert_eq!(
+            justifies_edges.len(),
+            1,
+            "expected exactly one Justifies edge, got: {:?}",
+            justifies_edges
+        );
+
+        let justifies = justifies_edges[0];
+        assert!(
+            (justifies.confidence - 1.0).abs() < 1e-9,
+            "Justifies edge confidence should be 1.0"
+        );
+        assert_eq!(justifies.provenance, Provenance::Extracted);
+
+        // The target should be the Doc node
+        let doc_id = doc_node.unwrap().potential_node.id.as_str();
+        assert_eq!(
+            justifies.target.as_str(),
+            doc_id,
+            "Justifies edge target should be the Doc node"
+        );
+    }
+
+    /// A plain Markdown file (no ADR marker) MUST NOT emit any Justifies edge.
+    #[test]
+    fn plain_markdown_emits_no_justifies_edge() {
+        let text = "# Overview\n\nSome text.\n\n## Authentication\nLogin flow.\n";
+        let nodes = parse(text);
+        assert!(!nodes.is_empty());
+
+        // Collect all edges across all nodes
+        let all_edges: Vec<&GraphEdge> = nodes
+            .iter()
+            .flat_map(|n| n.potential_edges.iter())
+            .collect();
+
+        // No Justifies edges expected for plain markdown
+        assert!(
+            all_edges.iter().all(|e| e.kind != EdgeKind::Justifies),
+            "plain markdown should not produce Justifies edge, got: {:?}",
+            all_edges
         );
     }
 
@@ -942,5 +1497,134 @@ mod tests {
         assert_send_sync::<Box<dyn SourceExtractor + Send + Sync>>();
         assert_send_sync::<DocsExtractor>();
         let _boxed: Box<dyn SourceExtractor + Send + Sync> = Box::new(DocsExtractor::new());
+    }
+
+    // ---- Phase 6: Corpus Regression Fixture ----
+
+    /// Ingest the real ADR corpus (`docs/adr/ADR-00*.md`) and assert:
+    /// - All 8 ADRs produce at least one Decision node with non-empty status
+    /// - ADR-005's References section produces ≥3 cross-ADR Cites edges
+    /// - Total Justifies edges equals 8 (one per ADR file)
+    #[tokio::test]
+    async fn docs_extractor_corpus_regression() {
+        let adr_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent() // cognicode-core
+            .unwrap()
+            .parent() // crates
+            .unwrap()
+            .join("docs/adr");
+
+        if !adr_dir.exists() {
+            eprintln!("SKIP: docs/adr/ not found at {:?}", adr_dir);
+            return;
+        }
+
+        let extractor = DocsExtractor::new();
+        let nodes = extractor
+            .extract(SourcePath::Directory(adr_dir.clone()))
+            .await
+            .expect("extract ADR corpus");
+
+        // Collect Decision nodes and their statuses
+        let decision_nodes: Vec<_> = nodes
+            .iter()
+            .filter(|n| n.potential_node.kind == NodeKind::Decision)
+            .collect();
+
+        // Assert: at least 8 Decision nodes (one per ADR file, some ADRs have multiple headings)
+        assert!(
+            decision_nodes.len() >= 8,
+            "expected at least 8 Decision nodes, got {}",
+            decision_nodes.len()
+        );
+
+        // Assert: at least one Decision node per ADR has a non-empty status
+        // (H1 headings have status; H2 headings like "Context" may not)
+        let nodes_with_status: Vec<_> = decision_nodes
+            .iter()
+            .filter(|n| {
+                n.potential_node
+                    .properties
+                    .get("status")
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        assert!(
+            nodes_with_status.len() >= 8,
+            "expected at least 8 Decision nodes with non-empty status, got {}",
+            nodes_with_status.len()
+        );
+
+        // Collect all Cites edges
+        let all_cites: Vec<_> = nodes
+            .iter()
+            .flat_map(|n| n.potential_edges.iter())
+            .filter(|e| e.kind == EdgeKind::Cites)
+            .collect();
+
+        // Assert: ADR-005 emits ≥3 cross-ADR Cites edges
+        // ADR-005 contains references to ADR-002, ADR-003, ADR-004
+        let adr005_cites = all_cites
+            .iter()
+            .filter(|e| {
+                e.target.as_str().contains("adr-002")
+                    || e.target.as_str().contains("adr-003")
+                    || e.target.as_str().contains("adr-004")
+            })
+            .count();
+
+        assert!(
+            adr005_cites >= 3,
+            "ADR-005 should emit at least 3 cross-ADR Cites edges, got {}",
+            adr005_cites
+        );
+
+        // Assert: total Justifies edges equals number of ADR files (8)
+        let all_justifies: Vec<_> = nodes
+            .iter()
+            .flat_map(|n| n.potential_edges.iter())
+            .filter(|e| e.kind == EdgeKind::Justifies)
+            .collect();
+
+        assert_eq!(
+            all_justifies.len(),
+            8,
+            "expected exactly 8 Justifies edges (one per ADR), got {}",
+            all_justifies.len()
+        );
+    }
+
+    /// `**Status**: DRAFT-WIP` does not crash — unknown status is
+    /// lowercased and stored verbatim.
+    #[test]
+    fn unknown_status_does_not_crash() {
+        let text =
+            "# ADR-0099: Experimental\n\n**Status**: DRAFT-WIP\n\nSome experimental decision.\n";
+        let nodes = parse(text);
+        assert!(
+            !nodes.is_empty(),
+            "parse should not crash on unknown status"
+        );
+
+        let decision_node = nodes
+            .iter()
+            .find(|n| n.potential_node.kind == NodeKind::Decision);
+        assert!(
+            decision_node.is_some(),
+            "ADR with unknown status should produce a Decision node"
+        );
+
+        let status = decision_node
+            .unwrap()
+            .potential_node
+            .properties
+            .get("status");
+        assert_eq!(
+            status.map(String::as_str),
+            Some("draft-wip"),
+            "status should be lowercased"
+        );
     }
 }

@@ -1835,9 +1835,7 @@ impl PostgresRepository {
             // JSONB objects with string values map directly.
             let props_map = if let serde_json::Value::Object(map) = row.properties {
                 map.into_iter()
-                    .filter_map(|(k, v)| {
-                        v.as_str().map(|s| (k, s.to_string()))
-                    })
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_string())))
                     .collect()
             } else {
                 HashMap::new()
@@ -4111,7 +4109,7 @@ mod tests {
         .bind("foo")
         .bind("src/lib.rs")
         .bind(&props)
-        .execute(&pool)
+        .execute(repo.pool())
         .await
         .expect("insert with properties");
 
@@ -4126,14 +4124,17 @@ mod tests {
     });
 
     #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
-    pg_test!(node_properties_returns_none_for_missing_node, |pool: PgPool| {
-        use crate::domain::aggregates::SymbolId;
+    pg_test!(
+        node_properties_returns_none_for_missing_node,
+        |pool: PgPool| {
+            use crate::domain::aggregates::SymbolId;
 
-        let repo = PostgresRepository::from_pool(pool);
-        let result = repo
-            .node_properties(&SymbolId::new("does:not:exist"))
-            .await
-            .expect("node_properties must not error");
-        assert!(result.is_none(), "expected None for missing node");
-    });
+            let repo = PostgresRepository::from_pool(pool);
+            let result = repo
+                .node_properties(&SymbolId::new("does:not:exist"))
+                .await
+                .expect("node_properties must not error");
+            assert!(result.is_none(), "expected None for missing node");
+        }
+    );
 }

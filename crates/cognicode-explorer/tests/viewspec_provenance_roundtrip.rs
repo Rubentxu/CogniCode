@@ -284,14 +284,7 @@ pg_test!(
         // Update only applies_when.
         let new_applies_when = "kind = 'function'".to_string();
         let updated = repo
-            .update_view_spec(
-                id,
-                workspace_id,
-                owner,
-                None,
-                None,
-                Some(&new_applies_when),
-            )
+            .update_view_spec(id, workspace_id, owner, None, None, Some(&new_applies_when))
             .await
             .expect("update_view_spec must succeed");
         assert!(updated, "update_view_spec should report one row updated");

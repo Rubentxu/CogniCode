@@ -15,10 +15,10 @@ use cognicode_core::domain::value_objects::{DependencyType, Provenance};
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
 
-    #[cfg(feature = "ownership")]
-    use tokio::runtime::Handle;
-    #[cfg(feature = "ownership")]
-    use tokio::task::spawn_blocking;
+#[cfg(feature = "ownership")]
+use tokio::runtime::Handle;
+#[cfg(feature = "ownership")]
+use tokio::task::spawn_blocking;
 
 /// Adapter that exposes a `CallGraph` through the explorer port.
 pub struct CallGraphRepository {
@@ -704,6 +704,9 @@ mod tests {
         let id = SymbolId::new("src/missing.rs:ghost:99");
         // Should return None, not panic
         let result = repo.node_properties(&id);
-        assert!(result.is_none(), "node_properties must return None when pg_repo is None");
+        assert!(
+            result.is_none(),
+            "node_properties must return None when pg_repo is None"
+        );
     }
 }

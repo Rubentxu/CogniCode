@@ -27,15 +27,15 @@ static RE_SYMBOLS_WHERE: OnceLock<Regex> = OnceLock::new();
 static RE_CALLS_FROM: OnceLock<Regex> = OnceLock::new();
 
 fn re_symbols_where() -> &'static Regex {
-    RE_SYMBOLS_WHERE.get_or_init(|| {
-        Regex::new(r"^symbols\s+where\s+(.+)$").expect("regex is valid")
-    })
+    RE_SYMBOLS_WHERE
+        .get_or_init(|| Regex::new(r"^symbols\s+where\s+(.+)$").expect("regex is valid"))
 }
 
 fn re_calls_from() -> &'static Regex {
     RE_CALLS_FROM.get_or_init(|| {
         // Matches: calls from 'id' depth N  or  calls from "id" depth N  or  calls from id depth N
-        Regex::new("^calls\\s+from\\s+['\"]?([^'\"\\s]+)['\"]?(?:\\s+depth\\s+(\\d+))?$").expect("regex is valid")
+        Regex::new("^calls\\s+from\\s+['\"]?([^'\"\\s]+)['\"]?(?:\\s+depth\\s+(\\d+))?$")
+            .expect("regex is valid")
     })
 }
 
@@ -104,7 +104,10 @@ mod tests {
         // WHEN lower_intent is called
         // THEN it returns None
         let result = lower_intent("symbols where");
-        assert!(result.is_none(), "expected None for malformed pattern, got {result:?}");
+        assert!(
+            result.is_none(),
+            "expected None for malformed pattern, got {result:?}"
+        );
     }
 
     // =========================================================================
@@ -119,8 +122,12 @@ mod tests {
         // AND object_ref is `sym:42`
         // AND direction is Direction::Callees
         // AND depth is 3
-        let Some(Ok(MoldQLQuery::Explore(explore))) = lower_intent("calls from 'sym:42' depth 3") else {
-            panic!("expected Some(Ok(Explore)), got {:?}", lower_intent("calls from 'sym:42' depth 3"));
+        let Some(Ok(MoldQLQuery::Explore(explore))) = lower_intent("calls from 'sym:42' depth 3")
+        else {
+            panic!(
+                "expected Some(Ok(Explore)), got {:?}",
+                lower_intent("calls from 'sym:42' depth 3")
+            );
         };
         assert_eq!(explore.object_ref, "sym:42");
         assert_eq!(explore.depth, 3);
@@ -133,7 +140,10 @@ mod tests {
         // THEN it returns a MoldQLQuery::Explore AST
         // AND depth is 1
         let Some(Ok(MoldQLQuery::Explore(explore))) = lower_intent("calls from 'sym:42'") else {
-            panic!("expected Some(Ok(Explore)), got {:?}", lower_intent("calls from 'sym:42'"));
+            panic!(
+                "expected Some(Ok(Explore)), got {:?}",
+                lower_intent("calls from 'sym:42'")
+            );
         };
         assert_eq!(explore.depth, 1, "depth should default to 1");
     }
@@ -141,8 +151,13 @@ mod tests {
     #[test]
     fn test_calls_from_quoted_id() {
         // Verify quoted ID is handled
-        let Some(Ok(MoldQLQuery::Explore(explore))) = lower_intent("calls from 'symbol:src/a.rs:a:1' depth 2") else {
-            panic!("expected Some(Ok(Explore)), got {:?}", lower_intent("calls from 'symbol:src/a.rs:a:1' depth 2"));
+        let Some(Ok(MoldQLQuery::Explore(explore))) =
+            lower_intent("calls from 'symbol:src/a.rs:a:1' depth 2")
+        else {
+            panic!(
+                "expected Some(Ok(Explore)), got {:?}",
+                lower_intent("calls from 'symbol:src/a.rs:a:1' depth 2")
+            );
         };
         assert_eq!(explore.object_ref, "symbol:src/a.rs:a:1");
     }
@@ -158,7 +173,10 @@ mod tests {
         // THEN it returns None
         // AND the canonical parse() function handles this input
         let result = lower_intent("FIND symbols WHERE fan_out > 5");
-        assert!(result.is_none(), "uppercase should return None, got {result:?}");
+        assert!(
+            result.is_none(),
+            "uppercase should return None, got {result:?}"
+        );
     }
 
     #[test]
@@ -166,7 +184,10 @@ mod tests {
         // Any lowercase pattern not matching the two supported forms should
         // return None so the facade falls through to parse()
         let result = lower_intent("symbols in scope src/");
-        assert!(result.is_none(), "unrecognized pattern should return None, got {result:?}");
+        assert!(
+            result.is_none(),
+            "unrecognized pattern should return None, got {result:?}"
+        );
     }
 
     // =========================================================================

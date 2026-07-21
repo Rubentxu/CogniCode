@@ -22,12 +22,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use cognicode_core::domain::aggregates::CallEntry;
 use cognicode_core::domain::aggregates::{CallGraph, Symbol, SymbolId};
 use cognicode_core::domain::traits::{
     CalleeWithMetadata, CallerWithMetadata, GraphQueryPort, RelationTarget,
     RelationTargetWithMetadata,
 };
-use cognicode_core::domain::aggregates::CallEntry;
 use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
 use cognicode_explorer::dto::{
     ContextualGraphResponse, ContextualView, DesignFinding, FindingSeverity,
@@ -44,7 +44,7 @@ use cognicode_explorer::ports::quality_repository::{
 };
 use cognicode_explorer::session::SessionRegistry;
 use rmcp::model::CallToolResult;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 // ============================================================================
 // Helpers (mirror internal_mcp_integration.rs)
@@ -208,17 +208,15 @@ impl MockView {
                 .map(|(t, sev, c)| (t.to_string(), sev.to_string(), c))
                 .collect(),
         );
-        self.summaries.insert(lens_id.to_string(), summary.to_string());
+        self.summaries
+            .insert(lens_id.to_string(), summary.to_string());
         self
     }
 }
 
 #[async_trait]
 impl ViewService for MockView {
-    async fn available_views(
-        &self,
-        _object_id: &str,
-    ) -> ExplorerResult<Vec<ViewDescriptorDto>> {
+    async fn available_views(&self, _object_id: &str) -> ExplorerResult<Vec<ViewDescriptorDto>> {
         Ok(vec![])
     }
     async fn contextual_view(
@@ -237,17 +235,10 @@ impl ViewService for MockView {
     ) -> ExplorerResult<ContextualGraphResponse> {
         Err(ExplorerError::FeatureDisabled("mock".into()))
     }
-    async fn available_lenses(
-        &self,
-        _object_id: &str,
-    ) -> ExplorerResult<Vec<LensDescriptor>> {
+    async fn available_lenses(&self, _object_id: &str) -> ExplorerResult<Vec<LensDescriptor>> {
         Ok(vec![])
     }
-    async fn apply_lens(
-        &self,
-        object_id: &str,
-        lens_id: &str,
-    ) -> ExplorerResult<LensResult> {
+    async fn apply_lens(&self, object_id: &str, lens_id: &str) -> ExplorerResult<LensResult> {
         let summary = self
             .summaries
             .get(lens_id)
@@ -470,21 +461,17 @@ async fn build_context_happy_path_all_ports_wired() {
         &main_id,
         make_symbol_summary(&main_id, "main", "main.rs", 1),
     ));
-    let view = Arc::new(
-        MockView::new().with_lens(
-            &main_id,
-            "lens_find_dead_code",
-            "no dead code found",
-            vec![("helper is reachable", "Info", 0.9)],
-        ),
-    );
+    let view = Arc::new(MockView::new().with_lens(
+        &main_id,
+        "lens_find_dead_code",
+        "no dead code found",
+        vec![("helper is reachable", "Info", 0.9)],
+    ));
     let graph_query = Arc::new(MockGraph::new(graph));
-    let quality = Arc::new(
-        MockQuality::new().with(
-            "main.rs",
-            vec![issue(1, "warning", "main.rs", "unused parameter `x`", 5)],
-        ),
-    );
+    let quality = Arc::new(MockQuality::new().with(
+        "main.rs",
+        vec![issue(1, "warning", "main.rs", "unused parameter `x`", 5)],
+    ));
 
     let ctx = McpContext::builder()
         .with_session_registry(SessionRegistry::new())
@@ -514,23 +501,29 @@ async fn build_context_happy_path_all_ports_wired() {
     assert_eq!(payload["json"]["label"].as_str(), Some("main"));
     assert_eq!(payload["json"]["object_type"].as_str(), Some("symbol"));
     assert_eq!(payload["summary"].as_str(), Some("# main"));
-    assert!(payload["markdown"]["body"]
-        .as_str()
-        .unwrap()
-        .contains("# main"));
+    assert!(
+        payload["markdown"]["body"]
+            .as_str()
+            .unwrap()
+            .contains("# main")
+    );
 
     // Lenses
     let lenses = &payload["json"]["lenses"];
-    assert!(lenses["requested"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|v| v.as_str() == Some("lens_find_dead_code")));
-    assert!(lenses["applied"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|v| v.as_str() == Some("lens_find_dead_code")));
+    assert!(
+        lenses["requested"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v.as_str() == Some("lens_find_dead_code"))
+    );
+    assert!(
+        lenses["applied"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v.as_str() == Some("lens_find_dead_code"))
+    );
 
     // Quality
     let q = &payload["json"]["quality"];
@@ -550,9 +543,7 @@ async fn build_context_happy_path_all_ports_wired() {
     );
 
     // Metadata — all sources consulted
-    let consulted = payload["metadata"]["sources_consulted"]
-        .as_array()
-        .unwrap();
+    let consulted = payload["metadata"]["sources_consulted"].as_array().unwrap();
     assert!(consulted.iter().any(|v| v.as_str() == Some("search")));
     assert!(consulted.iter().any(|v| v.as_str() == Some("lenses")));
     assert!(consulted.iter().any(|v| v.as_str() == Some("quality")));
@@ -597,7 +588,10 @@ async fn build_context_degrades_without_view() {
     // Lenses: requested but applied is empty
     assert!(payload["json"]["lenses"]["requested"].is_array());
     assert_eq!(
-        payload["json"]["lenses"]["applied"].as_array().unwrap().len(),
+        payload["json"]["lenses"]["applied"]
+            .as_array()
+            .unwrap()
+            .len(),
         0
     );
 
@@ -608,9 +602,7 @@ async fn build_context_degrades_without_view() {
     assert!(payload["json"]["graph"].is_object());
 
     // sources_skipped mentions "ViewService"
-    let skipped = payload["metadata"]["sources_skipped"]
-        .as_array()
-        .unwrap();
+    let skipped = payload["metadata"]["sources_skipped"].as_array().unwrap();
     let skipped_text: Vec<&str> = skipped.iter().filter_map(|v| v.as_str()).collect();
     assert!(
         skipped_text.iter().any(|s| s.contains("ViewService")),
@@ -647,9 +639,7 @@ async fn build_context_degrades_without_quality() {
     assert!(payload["json"]["quality"].is_null());
     assert!(payload["json"]["graph"].is_null());
 
-    let skipped = payload["metadata"]["sources_skipped"]
-        .as_array()
-        .unwrap();
+    let skipped = payload["metadata"]["sources_skipped"].as_array().unwrap();
     let skipped_text: Vec<&str> = skipped.iter().filter_map(|v| v.as_str()).collect();
     assert!(
         skipped_text.iter().any(|s| s.contains("quality")),
@@ -685,9 +675,7 @@ async fn build_context_rejects_missing_object_id() {
         .build();
     let registry = build_registry();
 
-    let result = registry
-        .dispatch(TOOL_BUILD_CONTEXT, &ctx, json!({}))
-        .await;
+    let result = registry.dispatch(TOOL_BUILD_CONTEXT, &ctx, json!({})).await;
     assert_eq!(
         err_code(&result),
         "invalid_args",
@@ -705,11 +693,7 @@ async fn build_context_returns_service_error_when_inspect_fails() {
     let registry = build_registry();
 
     let result = registry
-        .dispatch(
-            TOOL_BUILD_CONTEXT,
-            &ctx,
-            json!({ "object_id": "any" }),
-        )
+        .dispatch(TOOL_BUILD_CONTEXT, &ctx, json!({ "object_id": "any" }))
         .await;
     assert_eq!(
         err_code(&result),
@@ -726,11 +710,7 @@ async fn build_context_rejects_when_search_unavailable() {
     let registry = build_registry();
 
     let result = registry
-        .dispatch(
-            TOOL_BUILD_CONTEXT,
-            &ctx,
-            json!({ "object_id": "any" }),
-        )
+        .dispatch(TOOL_BUILD_CONTEXT, &ctx, json!({ "object_id": "any" }))
         .await;
     assert_eq!(
         err_code(&result),
@@ -768,10 +748,12 @@ async fn build_context_includes_source_stub_when_requested() {
     let payload = ok_payload(&result);
 
     assert_eq!(payload["json"]["include_source"].as_bool(), Some(true));
-    assert!(payload["markdown"]["body"]
-        .as_str()
-        .unwrap()
-        .contains("## Source (stub)"));
+    assert!(
+        payload["markdown"]["body"]
+            .as_str()
+            .unwrap()
+            .contains("## Source (stub)")
+    );
 }
 
 #[tokio::test]
@@ -809,12 +791,8 @@ async fn build_context_honors_custom_lenses() {
         .await;
     let payload = ok_payload(&result);
 
-    let requested = payload["json"]["lenses"]["requested"]
-        .as_array()
-        .unwrap();
+    let requested = payload["json"]["lenses"]["requested"].as_array().unwrap();
     assert_eq!(requested.len(), 2);
-    let applied = payload["json"]["lenses"]["applied"]
-        .as_array()
-        .unwrap();
+    let applied = payload["json"]["lenses"]["applied"].as_array().unwrap();
     assert_eq!(applied.len(), 2);
 }

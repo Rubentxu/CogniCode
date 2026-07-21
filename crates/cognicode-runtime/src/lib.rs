@@ -71,10 +71,12 @@ impl Runtime {
                 }
                 #[cfg(feature = "ownership")]
                 {
-                    Arc::new(cognicode_explorer::adapters::CallGraphRepository::new_with_pg_repo(
-                        g.clone(),
-                        pg_repo.clone(),
-                    ))
+                    Arc::new(
+                        cognicode_explorer::adapters::CallGraphRepository::new_with_pg_repo(
+                            g.clone(),
+                            pg_repo.clone(),
+                        ),
+                    )
                 }
             } else {
                 return Err(anyhow::anyhow!(
@@ -110,8 +112,12 @@ impl Runtime {
         });
         #[cfg(feature = "ownership")]
         let graph_query: Option<Arc<dyn GraphQueryPort>> = self.graph.clone().map(|g| {
-            Arc::new(cognicode_explorer::adapters::CallGraphRepository::new_with_pg_repo(g, self.pg_repo.clone()))
-                as Arc<dyn GraphQueryPort>
+            Arc::new(
+                cognicode_explorer::adapters::CallGraphRepository::new_with_pg_repo(
+                    g,
+                    self.pg_repo.clone(),
+                ),
+            ) as Arc<dyn GraphQueryPort>
         });
 
         // Workspace resolver — maps workspace_id → root_path.
@@ -158,24 +164,29 @@ impl Runtime {
 
         // Investigation facade — wired from postgres when available (ADR-005 INV-1)
         #[cfg(feature = "postgres")]
-        let investigation: Option<Arc<dyn cognicode_explorer::facades::InvestigationFacade>> =
-            if let Some(ref repo) = self.pg_repo {
-                Some(cognicode_explorer::facades::investigation::new_investigation_service_from_postgres(
+        let investigation: Option<
+            Arc<dyn cognicode_explorer::facades::InvestigationFacade>,
+        > = if let Some(ref repo) = self.pg_repo {
+            Some(
+                cognicode_explorer::facades::investigation::new_investigation_service_from_postgres(
                     repo.pool(),
-                ))
-            } else {
-                None
-            };
+                ),
+            )
+        } else {
+            None
+        };
         #[cfg(not(feature = "postgres"))]
-        let investigation: Option<Arc<dyn cognicode_explorer::facades::InvestigationFacade>> = None;
+        let investigation: Option<
+            Arc<dyn cognicode_explorer::facades::InvestigationFacade>,
+        > = None;
 
         // Graph repository for multimodal search (Doc/Decision/Evidence families)
         #[cfg(all(feature = "multimodal", feature = "postgres"))]
         let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> =
             if let Some(ref pg) = self.pg_repo {
-                Some(Arc::new(cognicode_explorer::adapters::PgGraphRepository::new(
-                    pg.pool().clone(),
-                )))
+                Some(Arc::new(
+                    cognicode_explorer::adapters::PgGraphRepository::new(pg.pool().clone()),
+                ))
             } else {
                 None
             };
@@ -187,10 +198,10 @@ impl Runtime {
                 self.symbol_repo.clone(),
                 None, // search_repo
                 view_registry_for_search,
-                None, // view_spec_store
-                quality.clone(), // quality_repo — wired from PG (PR #55)
+                None,                      // view_spec_store
+                quality.clone(),           // quality_repo — wired from PG (PR #55)
                 Some(persistence.clone()), // persistence — for SavedExploration search
-                investigation, // investigation — wired from PG (e13-wave-1)
+                investigation,             // investigation — wired from PG (e13-wave-1)
                 #[cfg(feature = "multimodal")]
                 graph_repo,
             ));

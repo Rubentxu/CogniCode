@@ -19,13 +19,13 @@ use std::sync::Arc;
 
 use cognicode_core::infrastructure::persistence::PostgresRepository;
 use cognicode_explorer::adapters::PostgresQualityRepository;
-use cognicode_explorer::mcp::handler::quality_mcp::register_quality_mcp_handlers;
 use cognicode_explorer::mcp::handler::ToolHandlerRegistry;
+use cognicode_explorer::mcp::handler::quality_mcp::register_quality_mcp_handlers;
 use cognicode_explorer::mcp::{McpContext, TOOL_INGEST_QUALITY_ISSUES};
 use cognicode_explorer::ports::quality_repository::{NewIssue, QualityWritePort, UpsertSummary};
 use cognicode_explorer::session::SessionRegistry;
 use rmcp::model::CallToolResult;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 // ============================================================================
 // DB setup helpers (mirrors postgres_quality_integration.rs)
@@ -147,9 +147,19 @@ async fn insert_single_issue_returns_inserted_one() {
             message: "too complex".into(),
             status: "open".into(),
         }];
-        let summary = adapter.insert_issues(&issues).expect("insert should succeed");
-        assert_eq!(summary, UpsertSummary { inserted: 1, updated: 0 });
-    }).await else {
+        let summary = adapter
+            .insert_issues(&issues)
+            .expect("insert should succeed");
+        assert_eq!(
+            summary,
+            UpsertSummary {
+                inserted: 1,
+                updated: 0
+            }
+        );
+    })
+    .await
+    else {
         eprintln!("TEST_DATABASE_URL unset — skipping");
         return;
     };
@@ -172,12 +182,30 @@ async fn insert_duplicate_natural_key_returns_updated_one() {
             message: "updated message".into(),
             status: "resolved".into(),
         };
-        let first = adapter.insert_issues(&[make_issue()]).expect("first insert succeeds");
-        assert_eq!(first, UpsertSummary { inserted: 1, updated: 0 });
+        let first = adapter
+            .insert_issues(&[make_issue()])
+            .expect("first insert succeeds");
+        assert_eq!(
+            first,
+            UpsertSummary {
+                inserted: 1,
+                updated: 0
+            }
+        );
 
-        let second = adapter.insert_issues(&[make_issue()]).expect("second insert succeeds");
-        assert_eq!(second, UpsertSummary { inserted: 0, updated: 1 });
-    }).await else {
+        let second = adapter
+            .insert_issues(&[make_issue()])
+            .expect("second insert succeeds");
+        assert_eq!(
+            second,
+            UpsertSummary {
+                inserted: 0,
+                updated: 1
+            }
+        );
+    })
+    .await
+    else {
         eprintln!("TEST_DATABASE_URL unset — skipping");
         return;
     };
@@ -202,10 +230,14 @@ async fn insert_batch_of_100_in_single_transaction() {
                 status: "open".into(),
             })
             .collect();
-        let summary = adapter.insert_issues(&issues).expect("batch insert succeeds");
+        let summary = adapter
+            .insert_issues(&issues)
+            .expect("batch insert succeeds");
         assert_eq!(summary.inserted, 100);
         assert_eq!(summary.updated, 0);
-    }).await else {
+    })
+    .await
+    else {
         eprintln!("TEST_DATABASE_URL unset — skipping");
         return;
     };
@@ -234,7 +266,9 @@ async fn delete_existing_returns_true() {
             .delete_issue("ws-1", "R001", "src/main.rs", 10)
             .expect("delete should not error");
         assert!(deleted, "existing issue should be deleted");
-    }).await else {
+    })
+    .await
+    else {
         eprintln!("TEST_DATABASE_URL unset — skipping");
         return;
     };
@@ -251,7 +285,9 @@ async fn delete_nonexistent_returns_false() {
             .delete_issue("ws-none", "NO_SUCH", "no/such.rs", 999)
             .expect("delete should not error");
         assert!(!deleted, "nonexistent issue should return false");
-    }).await else {
+    })
+    .await
+    else {
         eprintln!("TEST_DATABASE_URL unset — skipping");
         return;
     };
@@ -295,7 +331,9 @@ async fn ingest_quality_issues_mcp_tool_dispatches_to_port() {
         assert_eq!(payload["inserted"].as_u64(), Some(1));
         assert_eq!(payload["updated"].as_u64(), Some(0));
         assert_eq!(payload["workspace_id"].as_str(), Some("ws-tool-test"));
-    }).await else {
+    })
+    .await
+    else {
         eprintln!("TEST_DATABASE_URL unset — skipping");
         return;
     };
@@ -369,15 +407,21 @@ async fn concurrent_inserts_with_same_key_resolve_to_update() {
             tokio::task::spawn_blocking(move || adapter2.insert_issues(&[issue2]))
         );
 
-        let r1 = r1.expect("first task should not panic").expect("first insert should not error");
-        let r2 = r2.expect("second task should not panic").expect("second insert should not error");
+        let r1 = r1
+            .expect("first task should not panic")
+            .expect("first insert should not error");
+        let r2 = r2
+            .expect("second task should not panic")
+            .expect("second insert should not error");
 
         // One inserted, one updated — order indeterminate
         let total_inserted = r1.inserted + r2.inserted;
         let total_updated = r1.updated + r2.updated;
         assert_eq!(total_inserted, 1, "exactly one row should be inserted");
         assert_eq!(total_updated, 1, "exactly one row should be updated");
-    }).await else {
+    })
+    .await
+    else {
         eprintln!("TEST_DATABASE_URL unset — skipping");
         return;
     };

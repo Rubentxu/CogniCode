@@ -243,9 +243,7 @@ pub fn impact_radius_to_mermaid(ctx: &TraceEmitContext, symbol: &str) -> String 
             let entry_id = sanitize_id(entry.symbol_id.as_str());
             lines.push(format!(
                 "        {}[\"{}\\n({})\"]",
-                entry_id,
-                entry.symbol_name,
-                depth_label
+                entry_id, entry.symbol_name, depth_label
             ));
 
             // BFS tree edge: connect to nodes at previous depth (or center for depth 1)
@@ -324,7 +322,10 @@ pub fn vertical_slice_to_mermaid(ctx: &TraceEmitContext, entry_point: &str) -> S
     let entries = graph_query.traverse_callees(&symbol_id, 4);
 
     let mut lines = vec!["flowchart TD".to_string()];
-    lines.push(format!("    subgraph vertical_slice[\"vertical_slice: {}\"]", sanitize_id(entry_point)));
+    lines.push(format!(
+        "    subgraph vertical_slice[\"vertical_slice: {}\"]",
+        sanitize_id(entry_point)
+    ));
     lines.push("        direction TD".to_string());
 
     // Center node (entry point)
@@ -415,11 +416,17 @@ mod tests {
                 traverse_callees_result: vec![],
             }
         }
-        fn with_callers(mut self, callers: Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>) -> Self {
+        fn with_callers(
+            mut self,
+            callers: Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>,
+        ) -> Self {
             self.callers_result = callers;
             self
         }
-        fn with_callees(mut self, callees: Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>) -> Self {
+        fn with_callees(
+            mut self,
+            callees: Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>,
+        ) -> Self {
             self.callees_result = callees;
             self
         }
@@ -434,17 +441,43 @@ mod tests {
     }
 
     impl GraphQueryPort for MockGraphQueryPort {
-        fn callers(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
+        fn callers(
+            &self,
+            _id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
             self.callers_result.clone()
         }
-        fn callees(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
+        fn callees(
+            &self,
+            _id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
             self.callees_result.clone()
         }
-        fn fan_in(&self, _id: &SymbolId) -> usize { 0 }
-        fn fan_out(&self, _id: &SymbolId) -> usize { 0 }
-        fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> { vec![] }
-        fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> { vec![] }
-        fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata> { vec![] }
+        fn fan_in(&self, _id: &SymbolId) -> usize {
+            0
+        }
+        fn fan_out(&self, _id: &SymbolId) -> usize {
+            0
+        }
+        fn callers_with_metadata(
+            &self,
+            _id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
+            vec![]
+        }
+        fn callees_with_metadata(
+            &self,
+            _id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
+            vec![]
+        }
+        fn dependencies_with_metadata(
+            &self,
+            _id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata>
+        {
+            vec![]
+        }
         fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
             self.traverse_callees_result.clone()
         }
@@ -453,7 +486,10 @@ mod tests {
         }
     }
 
-    fn make_relation_target(id: &str, name: &str) -> cognicode_core::domain::traits::graph_query_port::RelationTarget {
+    fn make_relation_target(
+        id: &str,
+        name: &str,
+    ) -> cognicode_core::domain::traits::graph_query_port::RelationTarget {
         cognicode_core::domain::traits::graph_query_port::RelationTarget {
             id: SymbolId::new(id.to_string()),
             name: name.to_string(),
@@ -496,9 +532,7 @@ mod tests {
             make_relation_target("caller:1", "caller_one"),
             make_relation_target("caller:2", "caller_two"),
         ];
-        let callees = vec![
-            make_relation_target("callee:1", "callee_one"),
-        ];
+        let callees = vec![make_relation_target("callee:1", "callee_one")];
 
         let mock_gq = MockGraphQueryPort::new()
             .with_callers(callers)
@@ -566,8 +600,7 @@ mod tests {
             make_call_entry("caller:2", "indirect_caller", 2),
         ];
 
-        let mock_gq = MockGraphQueryPort::new()
-            .with_traverse_callers(entries);
+        let mock_gq = MockGraphQueryPort::new().with_traverse_callers(entries);
 
         let target = make_target_symbol("target_fn");
         let inspection_target = InspectionTarget::Symbol(target);
@@ -649,8 +682,7 @@ mod tests {
             make_call_entry("repo:1", "user_repository", 3),
         ];
 
-        let mock_gq = MockGraphQueryPort::new()
-            .with_traverse_callees(entries);
+        let mock_gq = MockGraphQueryPort::new().with_traverse_callees(entries);
 
         let target = make_target_symbol("handle_request");
         let inspection_target = InspectionTarget::Symbol(target);

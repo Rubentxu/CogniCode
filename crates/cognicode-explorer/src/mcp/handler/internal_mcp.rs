@@ -20,13 +20,11 @@ use cognicode_core::domain::aggregates::CallGraph;
 use cognicode_core::domain::services::CycleDetector;
 use rmcp::model::CallToolResult;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
-use crate::mcp::{
-    TOOL_FIND_DEAD_CODE_V2, TOOL_FIND_CYCLES, TOOL_HEALTH_DASHBOARD, McpContext,
-};
+use crate::mcp::{McpContext, TOOL_FIND_CYCLES, TOOL_FIND_DEAD_CODE_V2, TOOL_HEALTH_DASHBOARD};
 
 // ============================================================================
 // require_graph — shared guard (re-exported from graph_analyze for convenience)
@@ -424,7 +422,10 @@ impl ToolHandler for HealthDashboardHandler {
 
         if stale > symbol_count / 2 {
             findings.push(HealthFinding {
-                title: format!("Many stale symbols: {}/{} have no connections", stale, symbol_count),
+                title: format!(
+                    "Many stale symbols: {}/{} have no connections",
+                    stale, symbol_count
+                ),
                 severity: "warning".to_string(),
             });
         }
@@ -570,12 +571,10 @@ mod tests {
             },
             edges: HealthEdges { total: 250 },
             health_score: 0.72,
-            findings: vec![
-                HealthFinding {
-                    title: "Elevated dead-code rate: 15.0%".to_string(),
-                    severity: "warning".to_string(),
-                },
-            ],
+            findings: vec![HealthFinding {
+                title: "Elevated dead-code rate: 15.0%".to_string(),
+                severity: "warning".to_string(),
+            }],
         };
         let json = serde_json::to_value(&result).unwrap();
         assert_eq!(json["symbols"]["total"], 100);
@@ -594,7 +593,11 @@ mod tests {
     fn health_score_max_is_one() {
         // No issues → score should be 1.0
         let result = HealthDashboardResult {
-            symbols: HealthSymbols { total: 100, indexed: 100, stale: 0 },
+            symbols: HealthSymbols {
+                total: 100,
+                indexed: 100,
+                stale: 0,
+            },
             edges: HealthEdges { total: 200 },
             health_score: 1.0,
             findings: vec![],
@@ -606,15 +609,17 @@ mod tests {
     fn health_score_min_is_zero() {
         // All symbols dead, many cycles → score should be near 0
         let result = HealthDashboardResult {
-            symbols: HealthSymbols { total: 100, indexed: 0, stale: 100 },
+            symbols: HealthSymbols {
+                total: 100,
+                indexed: 0,
+                stale: 100,
+            },
             edges: HealthEdges { total: 0 },
             health_score: 0.0,
-            findings: vec![
-                HealthFinding {
-                    title: "High dead-code rate: 100.0%".to_string(),
-                    severity: "critical".to_string(),
-                },
-            ],
+            findings: vec![HealthFinding {
+                title: "High dead-code rate: 100.0%".to_string(),
+                severity: "critical".to_string(),
+            }],
         };
         assert_eq!(result.health_score, 0.0);
     }

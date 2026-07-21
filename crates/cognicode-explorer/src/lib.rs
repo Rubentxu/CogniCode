@@ -4,6 +4,7 @@
 //! contextual views, evidence blocks, exploration paths, and decision artifacts.
 
 pub mod adapters;
+pub mod affordance;
 pub mod api;
 pub mod ask;
 pub mod boundary;
@@ -17,7 +18,6 @@ pub mod moldql;
 pub mod ports;
 pub mod registry;
 pub mod scaffold;
-pub mod affordance;
 pub mod session;
 #[cfg(feature = "postgres")]
 pub mod view_spec_store;

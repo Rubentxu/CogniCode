@@ -186,7 +186,9 @@ impl GraphRepository for PgGraphRepository {
             .bind(&kind_str)
             .fetch_all(&pool)
             .await
-            .map_err(|e| GraphError::Storage(format!("pg_graph_repository find_nodes_by_kind: {e}")))?;
+            .map_err(|e| {
+                GraphError::Storage(format!("pg_graph_repository find_nodes_by_kind: {e}"))
+            })?;
 
             Ok(rows.into_iter().map(|r| r.into_graph_node()).collect())
         })
@@ -428,9 +430,7 @@ impl GraphNodeRow {
             .as_object()
             .map(|obj| {
                 obj.iter()
-                    .filter_map(|(k, v)| {
-                        v.as_str().map(|s| (k.clone(), s.to_string()))
-                    })
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
                     .collect()
             })
             .unwrap_or_default();
@@ -440,7 +440,9 @@ impl GraphNodeRow {
         // the kind string in the DB doesn't match any known variant
         // — this is a data integrity issue, not a fatal error.
         let kind = NodeKind::from_str(&self.kind).unwrap_or_else(|_| {
-            NodeKind::Symbol(cognicode_core::domain::value_objects::symbol_kind::SymbolKind::Unknown)
+            NodeKind::Symbol(
+                cognicode_core::domain::value_objects::symbol_kind::SymbolKind::Unknown,
+            )
         });
 
         GraphNode {

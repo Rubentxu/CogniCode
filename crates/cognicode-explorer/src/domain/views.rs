@@ -6,8 +6,7 @@
 use serde_json::json;
 
 use crate::dto::{
-    ContextualView, EvidenceBlock, LineRange, RelationDirection,
-    TypedRelation, ViewBlock,
+    ContextualView, EvidenceBlock, LineRange, RelationDirection, TypedRelation, ViewBlock,
 };
 use crate::ports::quality_repository::{QualityIssue, QualityRepository, RuleSummary};
 use crate::ports::source_reader::SourceReader;
@@ -16,9 +15,9 @@ use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepo
 use crate::domain::evidence::build_evidence_blocks;
 use crate::facades::investigation::Investigation;
 use cognicode_core::domain::aggregates::SymbolId;
+use cognicode_core::domain::investigation::Evidence;
 use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 use cognicode_core::domain::value_objects::Provenance;
-use cognicode_core::domain::investigation::Evidence;
 
 /// Build the Overview view: identity + call graph metrics + signature for callables.
 pub fn build_overview<'a>(
@@ -336,7 +335,10 @@ pub fn build_symbol_quality_view(
             relation_type: "FOUND_AT".to_string(),
             direction: RelationDirection::Incoming,
             target_object_id: format!("issue:{}", i.id),
-            target_label: format!("{}: {} ({} L{})", i.severity, i.rule_id, i.file_path, i.line),
+            target_label: format!(
+                "{}: {} ({} L{})",
+                i.severity, i.rule_id, i.file_path, i.line
+            ),
             evidence_ids: vec![evidence_id.clone()],
             provenance: None,
             confidence: None,
@@ -506,7 +508,10 @@ pub fn build_scope_quality_view(
             relation_type: "FOUND_IN".to_string(),
             direction: RelationDirection::Outgoing,
             target_object_id: format!("issue:{}", i.id),
-            target_label: format!("{}: {} ({} L{})", i.severity, i.rule_id, i.file_path, i.line),
+            target_label: format!(
+                "{}: {} ({} L{})",
+                i.severity, i.rule_id, i.file_path, i.line
+            ),
             evidence_ids: vec![evidence_id.clone()],
             provenance: None,
             confidence: None,
@@ -708,7 +713,10 @@ pub fn build_rule_detail(rule_id: &str, quality: Option<&dyn QualityRepository>)
             relation_type: "APPLIES_TO".to_string(),
             direction: RelationDirection::Outgoing,
             target_object_id: format!("issue:{}", i.id),
-            target_label: format!("{}: {} ({} L{})", i.severity, i.rule_id, i.file_path, i.line),
+            target_label: format!(
+                "{}: {} ({} L{})",
+                i.severity, i.rule_id, i.file_path, i.line
+            ),
             evidence_ids: vec![evidence_id.clone()],
             provenance: None,
             confidence: None,
@@ -1230,13 +1238,15 @@ fn other_scope(current_scope: &str, other_file: &str) -> String {
 //   ViewDescriptor  — metadata-only, object-safe (no async, no build)
 //   ViewExecutor    — ViewDescriptor + async build()
 
-use crate::dto::{ExplorationSession};
+use crate::dto::ExplorationSession;
 use crate::error::ExplorerResult;
 use async_trait::async_trait;
 
 // Re-export InspectionTarget and ViewContext so existing code can import them
 // from domain::views rather than dto. These are defined in dto.rs.
-pub use crate::dto::{InspectionTarget, ViewContext, InspectableObjectType, RendererKind, ViewKind};
+pub use crate::dto::{
+    InspectableObjectType, InspectionTarget, RendererKind, ViewContext, ViewKind,
+};
 
 /// Metadata-only trait for listing consumers (e.g., available_views).
 /// All methods resolve through the vtable — no downcast needed.
@@ -1601,9 +1611,7 @@ impl ViewDescriptor for ApiSurfaceExecutor {
 impl ViewExecutor for ApiSurfaceExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match &ctx.target {
-            InspectionTarget::Scope { path, symbols, .. } => {
-                Ok(build_api_surface(path, symbols))
-            }
+            InspectionTarget::Scope { path, symbols, .. } => Ok(build_api_surface(path, symbols)),
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
                 view_id: "api-surface".into(),
@@ -1677,9 +1685,7 @@ impl ViewDescriptor for TestSliceExecutor {
 impl ViewExecutor for TestSliceExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match &ctx.target {
-            InspectionTarget::Symbol(symbol) => {
-                Ok(build_test_slice(symbol, ctx.graph_query))
-            }
+            InspectionTarget::Symbol(symbol) => Ok(build_test_slice(symbol, ctx.graph_query)),
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
                 view_id: "test-slice".into(),
@@ -1937,7 +1943,9 @@ impl ViewDescriptor for ChangeImpactStoryExecutor {
 impl ViewExecutor for ChangeImpactStoryExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match &ctx.target {
-            InspectionTarget::Symbol(symbol) => Ok(build_change_impact_story(symbol, ctx.graph_query)),
+            InspectionTarget::Symbol(symbol) => {
+                Ok(build_change_impact_story(symbol, ctx.graph_query))
+            }
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
                 view_id: "change-impact-story".into(),
@@ -1989,29 +1997,39 @@ fn build_change_impact_story(
         .unwrap_or_default();
 
     let upstream_rows: serde_json::Value = serde_json::json!(
-        upstream.iter().map(|e| json!({
-            "name": e.name,
-            "file": e.file,
-            "line": e.line,
-            "depth": e.depth,
-            "relationship": if e.depth == 1 { "direct caller" } else { "transitive caller" }
-        })).collect::<Vec<_>>()
+        upstream
+            .iter()
+            .map(|e| json!({
+                "name": e.name,
+                "file": e.file,
+                "line": e.line,
+                "depth": e.depth,
+                "relationship": if e.depth == 1 { "direct caller" } else { "transitive caller" }
+            }))
+            .collect::<Vec<_>>()
     );
 
     let downstream_rows: serde_json::Value = serde_json::json!(
-        downstream.iter().map(|e| json!({
-            "name": e.name,
-            "file": e.file,
-            "line": e.line,
-            "depth": e.depth,
-            "relationship": if e.depth == 1 { "direct callee" } else { "transitive callee" }
-        })).collect::<Vec<_>>()
+        downstream
+            .iter()
+            .map(|e| json!({
+                "name": e.name,
+                "file": e.file,
+                "line": e.line,
+                "depth": e.depth,
+                "relationship": if e.depth == 1 { "direct callee" } else { "transitive callee" }
+            }))
+            .collect::<Vec<_>>()
     );
 
     let blocks = vec![
         ViewBlock {
             id: "upstream".into(),
-            title: format!("Upstream — Who is affected by changes to `{}` ({})", symbol.name, upstream.len()),
+            title: format!(
+                "Upstream — Who is affected by changes to `{}` ({})",
+                symbol.name,
+                upstream.len()
+            ),
             body: json!({
                 "columns": ["name", "file", "line", "depth", "relationship"],
                 "rows": upstream_rows,
@@ -2019,7 +2037,11 @@ fn build_change_impact_story(
         },
         ViewBlock {
             id: "downstream".into(),
-            title: format!("Downstream — What `{}` affects ({})", symbol.name, downstream.len()),
+            title: format!(
+                "Downstream — What `{}` affects ({})",
+                symbol.name,
+                downstream.len()
+            ),
             body: json!({
                 "columns": ["name", "file", "line", "depth", "relationship"],
                 "rows": downstream_rows,
@@ -2037,7 +2059,10 @@ fn build_change_impact_story(
             start: symbol.line,
             end: symbol.line,
         }),
-        source_tool_or_query: format!("GraphQueryPort::traverse_callers/traverse_callees (max_depth={})", MAX_DEPTH),
+        source_tool_or_query: format!(
+            "GraphQueryPort::traverse_callers/traverse_callees (max_depth={})",
+            MAX_DEPTH
+        ),
         confidence: None,
         freshness: Some("unknown".into()),
         provenance: None,
@@ -2144,11 +2169,12 @@ impl ViewExecutor for QualityExecutor {
             } => Ok(build_scope_quality_view(path, ctx.quality)),
             InspectionTarget::Issue(issue) => Ok(build_issue_detail(issue)),
             InspectionTarget::Rule { rule_id } => Ok(build_rule_detail(rule_id, ctx.quality)),
-            InspectionTarget::SavedExploration(_)
-            | InspectionTarget::Investigation(_) => Err(crate::error::ExplorerError::ViewNotAvailable {
-                object_id: format!("{:?}", ctx.target),
-                view_id: "quality".into(),
-            }),
+            InspectionTarget::SavedExploration(_) | InspectionTarget::Investigation(_) => {
+                Err(crate::error::ExplorerError::ViewNotAvailable {
+                    object_id: format!("{:?}", ctx.target),
+                    view_id: "quality".into(),
+                })
+            }
         }
     }
 }
@@ -2384,7 +2410,10 @@ impl ViewExecutor for OwnershipMapExecutor {
         match ctx.target {
             InspectionTarget::Symbol(symbol) => {
                 // Try to get real ownership data from graph_query
-                if let Some(props) = ctx.graph_query.and_then(|gq| gq.node_properties(&symbol.id)) {
+                if let Some(props) = ctx
+                    .graph_query
+                    .and_then(|gq| gq.node_properties(&symbol.id))
+                {
                     if has_ownership_data(&props) {
                         return Ok(build_ownership_map_with_properties(
                             &symbol.name,
@@ -2859,7 +2888,9 @@ impl ViewDescriptor for EvidencePackExecutor {
 impl ViewExecutor for EvidencePackExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Investigation(investigation) => Ok(build_evidence_pack(investigation)),
+            InspectionTarget::Investigation(investigation) => {
+                Ok(build_evidence_pack(investigation))
+            }
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
                 view_id: "evidence-pack".into(),
@@ -2879,7 +2910,10 @@ impl ViewDescriptor for ComposedNarrativeExecutor {
         "Composed Narrative"
     }
     fn applies_to(&self) -> &'static [InspectableObjectType] {
-        &[InspectableObjectType::SavedExploration, InspectableObjectType::Investigation]
+        &[
+            InspectableObjectType::SavedExploration,
+            InspectableObjectType::Investigation,
+        ]
     }
     fn view_kind(&self) -> ViewKind {
         ViewKind::ComposedNarrative
@@ -2893,7 +2927,9 @@ impl ViewExecutor for ComposedNarrativeExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
             InspectionTarget::SavedExploration(session) => Ok(build_composed_narrative(session)),
-            InspectionTarget::Investigation(investigation) => Ok(build_investigation_narrative(investigation)),
+            InspectionTarget::Investigation(investigation) => {
+                Ok(build_investigation_narrative(investigation))
+            }
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
                 view_id: "composed-narrative".into(),
@@ -2910,7 +2946,7 @@ mod tests {
     use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
     use cognicode_core::domain::aggregates::{CallEntry, SymbolId};
     use cognicode_core::domain::traits::graph_query_port::{
-        CallerWithMetadata, CalleeWithMetadata, GraphQueryPort, RelationTargetWithMetadata,
+        CalleeWithMetadata, CallerWithMetadata, GraphQueryPort, RelationTargetWithMetadata,
     };
     use cognicode_core::domain::value_objects::SymbolKind;
     use std::collections::HashMap;
@@ -4563,11 +4599,26 @@ mod tests {
         assert_eq!(rows_arr.len(), 1);
 
         let row = &rows_arr[0];
-        assert_eq!(row.get("node").expect("node"), &serde_json::json!("Issue #42"));
-        assert_eq!(row.get("file").expect("file"), &serde_json::json!("src/lib.rs"));
-        assert_eq!(row.get("severity").expect("severity"), &serde_json::json!("critical"));
-        assert_eq!(row.get("rule_id").expect("rule_id"), &serde_json::json!("RUST-LINT-001"));
-        assert_eq!(row.get("status").expect("status"), &serde_json::json!("open"));
+        assert_eq!(
+            row.get("node").expect("node"),
+            &serde_json::json!("Issue #42")
+        );
+        assert_eq!(
+            row.get("file").expect("file"),
+            &serde_json::json!("src/lib.rs")
+        );
+        assert_eq!(
+            row.get("severity").expect("severity"),
+            &serde_json::json!("critical")
+        );
+        assert_eq!(
+            row.get("rule_id").expect("rule_id"),
+            &serde_json::json!("RUST-LINT-001")
+        );
+        assert_eq!(
+            row.get("status").expect("status"),
+            &serde_json::json!("open")
+        );
     }
 
     #[tokio::test]

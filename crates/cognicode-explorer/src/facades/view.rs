@@ -17,8 +17,8 @@ use crate::dto::{
 use crate::dto::{ContextualView, ViewDescriptorDto, ViewSpec};
 use crate::dto::{InspectableObjectType, InspectionTarget, ViewContext};
 use crate::error::{ExplorerError, ExplorerResult};
-use crate::facades::{LensExecutor, ViewService};
 use crate::facades::PersistenceService;
+use crate::facades::{LensExecutor, ViewService};
 use crate::ports::quality_repository::QualityRepository;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
@@ -165,8 +165,12 @@ impl ViewServiceImpl {
             ObjectIdentity::Scope { .. } => crate::dto::InspectableObjectType::Scope,
             ObjectIdentity::QualityIssue { .. } => crate::dto::InspectableObjectType::QualityIssue,
             ObjectIdentity::Rule { .. } => crate::dto::InspectableObjectType::Rule,
-            ObjectIdentity::SavedExploration { .. } => crate::dto::InspectableObjectType::SavedExploration,
-            ObjectIdentity::Investigation { .. } => crate::dto::InspectableObjectType::Investigation,
+            ObjectIdentity::SavedExploration { .. } => {
+                crate::dto::InspectableObjectType::SavedExploration
+            }
+            ObjectIdentity::Investigation { .. } => {
+                crate::dto::InspectableObjectType::Investigation
+            }
             ObjectIdentity::Doc { .. } => crate::dto::InspectableObjectType::Doc,
             ObjectIdentity::Decision { .. } => crate::dto::InspectableObjectType::DecisionArtifact,
             ObjectIdentity::Evidence { .. } => crate::dto::InspectableObjectType::Evidence,

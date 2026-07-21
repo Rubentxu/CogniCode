@@ -43,9 +43,7 @@ use sqlx::Row;
 #[cfg(feature = "postgres")]
 use crate::error::{ExplorerError, ExplorerResult};
 #[cfg(feature = "postgres")]
-use crate::ports::edge_emitter::{
-    ApiRoute, ApiRouteEdge, BatchStats, EdgeEmitter,
-};
+use crate::ports::edge_emitter::{ApiRoute, ApiRouteEdge, BatchStats, EdgeEmitter};
 
 // Internal helper — converts any error into `ExplorerError::Anyhow`.
 // Used by every method so SQL errors propagate as a single error
@@ -313,10 +311,7 @@ impl EdgeEmitter for PostgresEdgeEmitter {
         Ok(row.map(ApiRoute::from))
     }
 
-    async fn find_routes_by_spec_hash(
-        &self,
-        spec_hash: &str,
-    ) -> ExplorerResult<Vec<ApiRoute>> {
+    async fn find_routes_by_spec_hash(&self, spec_hash: &str) -> ExplorerResult<Vec<ApiRoute>> {
         let rows = sqlx::query_as::<_, RouteRow>(
             r#"
             SELECT id, protocol, method, path, handler_symbol, spec_source,
@@ -334,10 +329,7 @@ impl EdgeEmitter for PostgresEdgeEmitter {
         Ok(rows.into_iter().map(ApiRoute::from).collect())
     }
 
-    async fn find_routes_by_handler(
-        &self,
-        handler_symbol: &str,
-    ) -> ExplorerResult<Vec<ApiRoute>> {
+    async fn find_routes_by_handler(&self, handler_symbol: &str) -> ExplorerResult<Vec<ApiRoute>> {
         let rows = sqlx::query_as::<_, RouteRow>(
             r#"
             SELECT id, protocol, method, path, handler_symbol, spec_source,

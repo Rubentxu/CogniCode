@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 use crate::application::dto::{
-    RelationCandidate, CONFIDENCE_NAME_MATCH, CONFIDENCE_SAME_COMMUNITY, CONFIDENCE_SAME_FILE,
+    CONFIDENCE_NAME_MATCH, CONFIDENCE_SAME_COMMUNITY, CONFIDENCE_SAME_FILE, RelationCandidate,
 };
 use crate::application::services::community_detector::CommunityDetector;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
@@ -51,7 +51,11 @@ impl CandidateFinder {
                 // Check if this uppercase starts a new segment
                 // Split if: (prev was lowercase) OR (prev was uppercase AND next is lowercase)
                 // First char (i==0) never splits
-                let prev_is_upper = if i > 0 { chars[i - 1].is_uppercase() } else { false };
+                let prev_is_upper = if i > 0 {
+                    chars[i - 1].is_uppercase()
+                } else {
+                    false
+                };
                 let should_split = i > 0 && (!prev_is_upper || next_is_lower);
 
                 if should_split && !current.is_empty() {
@@ -215,9 +219,11 @@ impl CandidateFinder {
     fn dedup(mut candidates: Vec<RelationCandidate>) -> Vec<RelationCandidate> {
         // Sort by symbol_id and then by confidence descending
         candidates.sort_by(|a, b| {
-            a.symbol_id
-                .cmp(&b.symbol_id)
-                .then_with(|| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal))
+            a.symbol_id.cmp(&b.symbol_id).then_with(|| {
+                b.confidence
+                    .partial_cmp(&a.confidence)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
         });
 
         // Keep only the first occurrence of each symbol_id (highest confidence due to sort)
@@ -229,8 +235,8 @@ impl CandidateFinder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::Symbol;
     use crate::domain::SymbolKind;
+    use crate::domain::aggregates::Symbol;
     use crate::domain::value_objects::{DependencyType, Location};
 
     fn sym(name: &str, file: &str) -> Symbol {
@@ -294,7 +300,11 @@ mod tests {
             .filter(|c| c.reason == "same_file")
             .collect();
         assert!(!same_file.is_empty());
-        assert!(same_file.iter().all(|c| c.confidence == CONFIDENCE_SAME_FILE));
+        assert!(
+            same_file
+                .iter()
+                .all(|c| c.confidence == CONFIDENCE_SAME_FILE)
+        );
     }
 
     #[test]

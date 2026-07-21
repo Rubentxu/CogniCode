@@ -9,8 +9,8 @@ use cognicode_core::domain::aggregates::SymbolId;
 use cognicode_core::domain::traits::GraphQueryPort;
 
 use crate::dto::{
-    DriftFinding, DriftKind, DriftReport, ExpectedArchitecture,
-    ExpectedContainer, GodNodeEntry, GraphEdge, GraphNode, SubgraphResponse,
+    DriftFinding, DriftKind, DriftReport, ExpectedArchitecture, ExpectedContainer, GodNodeEntry,
+    GraphEdge, GraphNode, SubgraphResponse,
 };
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::GraphService;
@@ -232,7 +232,10 @@ impl GraphService for GraphServiceImpl {
         &self,
         limit: usize,
     ) -> ExplorerResult<(Vec<ResolvedSymbol>, usize)> {
-        let all = self.symbol_repo.all_symbols().map_err(map_repo_unavailable)?;
+        let all = self
+            .symbol_repo
+            .all_symbols()
+            .map_err(map_repo_unavailable)?;
         let Some(graph_query) = self.graph_query() else {
             return Ok((Vec::new(), 0));
         };
@@ -253,7 +256,10 @@ impl GraphService for GraphServiceImpl {
         limit: usize,
         min_fan_in: usize,
     ) -> ExplorerResult<Vec<ResolvedSymbol>> {
-        let all = self.symbol_repo.all_symbols().map_err(map_repo_unavailable)?;
+        let all = self
+            .symbol_repo
+            .all_symbols()
+            .map_err(map_repo_unavailable)?;
         let Some(graph_query) = self.graph_query() else {
             return Ok(Vec::new());
         };
@@ -277,7 +283,10 @@ impl GraphService for GraphServiceImpl {
     }
 
     async fn landing_god_nodes(&self, limit: usize) -> ExplorerResult<Vec<GodNodeEntry>> {
-        let all = self.symbol_repo.all_symbols().map_err(map_repo_unavailable)?;
+        let all = self
+            .symbol_repo
+            .all_symbols()
+            .map_err(map_repo_unavailable)?;
         let symbol_count = all.len().max(1) as f64;
         let Some(graph_query) = self.graph_query() else {
             return Ok(Vec::new());
@@ -393,7 +402,8 @@ impl GraphServiceImpl {
                                         };
                                         let container_id = format!("container:{}", member_path);
                                         container_ids.insert(container_id.clone());
-                                        container_toml_paths.insert(container_id.clone(), member_toml_path.clone());
+                                        container_toml_paths
+                                            .insert(container_id.clone(), member_toml_path.clone());
 
                                         // Extract package name and map to container_id
                                         if let Some(package_name) = member_toml
@@ -491,7 +501,8 @@ impl GraphServiceImpl {
                                         source: container_id.clone(),
                                         target: target_container_id.clone(),
                                         relation: EdgeKind::DependsOn.as_str().to_string(),
-                                        style_class: crate::api::edge_style_class_for("depends_on").to_string(),
+                                        style_class: crate::api::edge_style_class_for("depends_on")
+                                            .to_string(),
                                     });
                                 }
                             }
@@ -1416,7 +1427,10 @@ dependency_rules:
             .filter(|f| f.kind == DriftKind::BoundaryViolation)
             .collect();
         assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].rule_id, Some("no-crates-to-crates".to_string()));
+        assert_eq!(
+            violations[0].rule_id,
+            Some("no-crates-to-crates".to_string())
+        );
         assert_eq!(violations[0].severity, "error");
     }
 
@@ -1499,7 +1513,11 @@ dependency_rules:
             .iter()
             .filter(|f| f.kind == DriftKind::BoundaryViolation)
             .collect();
-        assert!(violations.is_empty(), "Expected no violations, got: {:#?}", violations);
+        assert!(
+            violations.is_empty(),
+            "Expected no violations, got: {:#?}",
+            violations
+        );
     }
 
     // =========================================================================
@@ -1546,7 +1564,11 @@ containers:
             .unwrap();
 
         // Should have no findings (container matches)
-        assert!(report.findings.is_empty(), "Expected no findings, got: {:#?}", report.findings);
+        assert!(
+            report.findings.is_empty(),
+            "Expected no findings, got: {:#?}",
+            report.findings
+        );
         assert_eq!(report.boundary_violations, 0);
     }
 

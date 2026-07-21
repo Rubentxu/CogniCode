@@ -14,10 +14,10 @@ use std::sync::Arc;
 use cognicode_core::domain::aggregates::CallGraph;
 use cognicode_core::domain::traits::GraphQueryPort;
 
+use crate::domain::snapshot::SnapshotService;
 use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
 };
-use crate::domain::snapshot::SnapshotService;
 use crate::ports::{EdgeEmitter, QualityRepository, QualityWritePort};
 use crate::session::SessionRegistry;
 

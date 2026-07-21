@@ -12,9 +12,9 @@ use async_trait::async_trait;
 use sqlx::PgPool;
 
 #[cfg(feature = "postgres")]
-use crate::domain::investigation::Investigation;
-#[cfg(feature = "postgres")]
 use crate::domain::investigation::Evidence;
+#[cfg(feature = "postgres")]
+use crate::domain::investigation::Investigation;
 #[cfg(feature = "postgres")]
 use crate::domain::investigation_store::{InvestigationStore, StoreError};
 #[cfg(feature = "postgres")]

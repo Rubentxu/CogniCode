@@ -28,9 +28,7 @@ use std::sync::Arc;
 
 use cognicode_core::infrastructure::persistence::PostgresRepository;
 use cognicode_explorer::adapters::PostgresQualityRepository;
-use cognicode_explorer::ports::quality_repository::{
-    IssueFilter, QualityRepository,
-};
+use cognicode_explorer::ports::quality_repository::{IssueFilter, QualityRepository};
 
 /// A minimal admin connection URL (database-less). Used to create /
 /// drop the per-test database. Computed from `TEST_DATABASE_URL` by
@@ -65,10 +63,13 @@ where
 
     // Create the per-test database via an admin pool.
     let admin_pool = sqlx::PgPool::connect(&admin).await.ok()?;
-    sqlx::query(&format!("DROP DATABASE IF EXISTS \"{}\"", url.rsplit('/').next().unwrap()))
-        .execute(&admin_pool)
-        .await
-        .ok()?;
+    sqlx::query(&format!(
+        "DROP DATABASE IF EXISTS \"{}\"",
+        url.rsplit('/').next().unwrap()
+    ))
+    .execute(&admin_pool)
+    .await
+    .ok()?;
     sqlx::query(&format!(
         "CREATE DATABASE \"{}\"",
         url.rsplit('/').next().unwrap()
@@ -114,7 +115,9 @@ async fn seed_issue(
     // path: just skip the test (return 0) — the tests above are
     // the ones that actually exercise the adapter. This helper is
     // reserved for future test expansion.
-    let _ = (rule_id, severity, category, file_path, line, status, adapter);
+    let _ = (
+        rule_id, severity, category, file_path, line, status, adapter,
+    );
     0
 }
 
@@ -146,7 +149,16 @@ async fn issues_for_file_filters_by_exact_path() {
 #[tokio::test]
 async fn issues_for_workspace_returns_seeded_rows() {
     let Some(()) = with_test_db("issues_for_workspace", |adapter| async move {
-        let _id = seed_issue(&adapter, "S107", "critical", "complexity", "src/a.rs", 10, "open").await;
+        let _id = seed_issue(
+            &adapter,
+            "S107",
+            "critical",
+            "complexity",
+            "src/a.rs",
+            10,
+            "open",
+        )
+        .await;
         let filter = IssueFilter::default();
         let result = adapter
             .issues_for_workspace(None, &filter)
@@ -199,9 +211,7 @@ async fn open_issues_count_returns_zero_for_empty_db() {
 #[tokio::test]
 async fn issue_by_id_returns_none_for_missing_id() {
     let Some(()) = with_test_db("issue_by_id_missing", |adapter| async move {
-        let result = adapter
-            .issue_by_id(99_999)
-            .expect("query should succeed");
+        let result = adapter.issue_by_id(99_999).expect("query should succeed");
         assert!(result.is_none(), "missing id should return None");
     })
     .await

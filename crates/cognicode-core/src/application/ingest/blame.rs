@@ -56,8 +56,10 @@ pub fn enrich_with_blame(
         };
 
         // Set blame properties on the node
-        node.properties.insert("last_author".to_string(), author_name);
-        node.properties.insert("author_email".to_string(), author_email);
+        node.properties
+            .insert("last_author".to_string(), author_name);
+        node.properties
+            .insert("author_email".to_string(), author_email);
 
         // Set CODEOWNERS property
         let owners = codeowners.owners_for(&rel_path_str);
@@ -129,7 +131,11 @@ mod tests {
             .current_dir(dir)
             .output()
             .unwrap();
-        assert!(output.status.success(), "git init failed: {:?}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "git init failed: {:?}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     fn make_commit(dir: &std::path::Path) {
@@ -144,15 +150,24 @@ mod tests {
         // Commit with -c flag to override user.name/email
         let commit_output = std::process::Command::new("git")
             .args([
-                "-C", &dir.to_string_lossy(),
-                "-c", "user.name=Test User",
-                "-c", "user.email=test@example.com",
-                "commit", "-m", "initial commit",
+                "-C",
+                &dir.to_string_lossy(),
+                "-c",
+                "user.name=Test User",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-m",
+                "initial commit",
             ])
             .current_dir(dir)
             .output()
             .unwrap();
-        assert!(commit_output.status.success(), "git commit failed: {:?}", String::from_utf8_lossy(&commit_output.stderr));
+        assert!(
+            commit_output.status.success(),
+            "git commit failed: {:?}",
+            String::from_utf8_lossy(&commit_output.stderr)
+        );
     }
 
     #[test]
@@ -167,13 +182,17 @@ mod tests {
         let mut result = ExtractionResult::ok(
             root.join("src/main.rs"),
             "abc123".to_string(),
-            vec![crate::domain::aggregates::GraphNode::builder(
-                "test-node",
-                crate::domain::value_objects::NodeKind::Symbol(crate::domain::value_objects::SymbolKind::Function),
-            )
-            .source_path(root.join("src/main.rs"))
-            .property("line", "1")
-            .build()],
+            vec![
+                crate::domain::aggregates::GraphNode::builder(
+                    "test-node",
+                    crate::domain::value_objects::NodeKind::Symbol(
+                        crate::domain::value_objects::SymbolKind::Function,
+                    ),
+                )
+                .source_path(root.join("src/main.rs"))
+                .property("line", "1")
+                .build(),
+            ],
             vec![],
         );
 
@@ -199,13 +218,17 @@ mod tests {
         let mut result = ExtractionResult::ok(
             root.join("src/main.rs"),
             "abc123".to_string(),
-            vec![crate::domain::aggregates::GraphNode::builder(
-                "test-node",
-                crate::domain::value_objects::NodeKind::Symbol(crate::domain::value_objects::SymbolKind::Function),
-            )
-            .source_path(root.join("src/main.rs"))
-            .property("line", "1")
-            .build()],
+            vec![
+                crate::domain::aggregates::GraphNode::builder(
+                    "test-node",
+                    crate::domain::value_objects::NodeKind::Symbol(
+                        crate::domain::value_objects::SymbolKind::Function,
+                    ),
+                )
+                .source_path(root.join("src/main.rs"))
+                .property("line", "1")
+                .build(),
+            ],
             vec![],
         );
 
@@ -243,13 +266,17 @@ mod tests {
         let mut result = ExtractionResult::ok(
             root.join("src/main.rs"),
             "abc123".to_string(),
-            vec![crate::domain::aggregates::GraphNode::builder(
-                "test-node",
-                crate::domain::value_objects::NodeKind::Symbol(crate::domain::value_objects::SymbolKind::Function),
-            )
-            .source_path(root.join("src/main.rs"))
-            .property("line", "1")
-            .build()],
+            vec![
+                crate::domain::aggregates::GraphNode::builder(
+                    "test-node",
+                    crate::domain::value_objects::NodeKind::Symbol(
+                        crate::domain::value_objects::SymbolKind::Function,
+                    ),
+                )
+                .source_path(root.join("src/main.rs"))
+                .property("line", "1")
+                .build(),
+            ],
             vec![],
         );
 
@@ -282,13 +309,17 @@ mod tests {
         let mut result = ExtractionResult::ok(
             root.join("src/main.rs"),
             "abc123".to_string(),
-            vec![crate::domain::aggregates::GraphNode::builder(
-                "test-node",
-                crate::domain::value_objects::NodeKind::Symbol(crate::domain::value_objects::SymbolKind::Function),
-            )
-            .source_path(root.join("src/main.rs"))
-            .property("line", "1") // First line attribution
-            .build()],
+            vec![
+                crate::domain::aggregates::GraphNode::builder(
+                    "test-node",
+                    crate::domain::value_objects::NodeKind::Symbol(
+                        crate::domain::value_objects::SymbolKind::Function,
+                    ),
+                )
+                .source_path(root.join("src/main.rs"))
+                .property("line", "1") // First line attribution
+                .build(),
+            ],
             vec![],
         );
 
