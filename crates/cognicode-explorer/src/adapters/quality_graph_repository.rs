@@ -109,12 +109,6 @@ impl<'a> QualityGraphRepository<'a> {
                     view_id: "risk_map".into(),
                 });
             }
-            InspectionTarget::NarrativeArtifact(_) => {
-                return Err(ExplorerError::ViewNotAvailable {
-                    object_id: format!("{:?}", target),
-                    view_id: "risk_map".into(),
-                });
-            }
         };
 
         // Collect hotspots with risk scores.
@@ -237,8 +231,13 @@ mod tests {
         fn issues_for_scope(&self, _scope_prefix: &str) -> ExplorerResult<Vec<QualityIssue>> {
             Ok(self.issues.clone())
         }
-        fn issues_at_line(&self, _file: &str, _line: u32) -> ExplorerResult<Vec<QualityIssue>> {
-            Ok(self.issues.clone())
+        fn issues_at_line(&self, file: &str, line: u32) -> ExplorerResult<Vec<QualityIssue>> {
+            Ok(self
+                .issues
+                .iter()
+                .filter(|i| i.file_path == file && i.line == line)
+                .cloned()
+                .collect())
         }
         fn issue_by_id(&self, _id: i64) -> ExplorerResult<Option<QualityIssue>> {
             Ok(None)
@@ -268,29 +267,53 @@ mod tests {
         }
     }
 
-    /// Mock GraphQueryPort that returns configurable fan-in/fan-out.
+    /// Mock GraphQueryPort that returns configurable fan-in/fan-out, callers/callees, and metadata.
     struct MockGraphQueryPort {
         fan_in_map: std::collections::HashMap<SymbolId, usize>,
+        callers_map: std::collections::HashMap<SymbolId, Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>>,
+        callees_map: std::collections::HashMap<SymbolId, Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>>,
+        callers_metadata_map: std::collections::HashMap<SymbolId, Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata>>,
+        callees_metadata_map: std::collections::HashMap<SymbolId, Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata>>,
     }
 
     impl MockGraphQueryPort {
         fn new() -> Self {
             Self {
                 fan_in_map: std::collections::HashMap::new(),
+                callers_map: std::collections::HashMap::new(),
+                callees_map: std::collections::HashMap::new(),
+                callers_metadata_map: std::collections::HashMap::new(),
+                callees_metadata_map: std::collections::HashMap::new(),
             }
         }
         fn with_fan_in(mut self, id: SymbolId, fan_in: usize) -> Self {
             self.fan_in_map.insert(id, fan_in);
             self
         }
+        fn with_callers(mut self, id: SymbolId, callers: Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>) -> Self {
+            self.callers_map.insert(id, callers);
+            self
+        }
+        fn with_callees(mut self, id: SymbolId, callees: Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>) -> Self {
+            self.callees_map.insert(id, callees);
+            self
+        }
+        fn with_callers_metadata(mut self, id: SymbolId, metadata: Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata>) -> Self {
+            self.callers_metadata_map.insert(id, metadata);
+            self
+        }
+        fn with_callees_metadata(mut self, id: SymbolId, metadata: Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata>) -> Self {
+            self.callees_metadata_map.insert(id, metadata);
+            self
+        }
     }
 
     impl GraphQueryPort for MockGraphQueryPort {
-        fn callers(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
-            Vec::new()
+        fn callers(&self, id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
+            self.callers_map.get(id).cloned().unwrap_or_default()
         }
-        fn callees(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
-            Vec::new()
+        fn callees(&self, id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
+            self.callees_map.get(id).cloned().unwrap_or_default()
         }
         fn fan_in(&self, id: &SymbolId) -> usize {
             self.fan_in_map.get(id).copied().unwrap_or(0)
@@ -300,15 +323,15 @@ mod tests {
         }
         fn callers_with_metadata(
             &self,
-            _id: &SymbolId,
+            id: &SymbolId,
         ) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
-            Vec::new()
+            self.callers_metadata_map.get(id).cloned().unwrap_or_default()
         }
         fn callees_with_metadata(
             &self,
-            _id: &SymbolId,
+            id: &SymbolId,
         ) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
-            Vec::new()
+            self.callees_metadata_map.get(id).cloned().unwrap_or_default()
         }
         fn dependencies_with_metadata(
             &self,
@@ -542,69 +565,47 @@ mod tests {
         let caller_id = SymbolId::new("caller1");
         let callee_id = SymbolId::new("callee1");
 
-        struct FancyGraphQueryPort;
-        impl GraphQueryPort for FancyGraphQueryPort {
-            fn callers(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
-                vec![
-                    cognicode_core::domain::traits::graph_query_port::RelationTarget {
-                        id: caller_id.clone(),
-                        name: "caller1".into(),
-                        kind: cognicode_core::domain::value_objects::SymbolKind::Function,
-                        file: "src/lib.rs".into(),
-                        line: 10,
-                        signature: None,
-                    },
-                ]
-            }
-            fn callees(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
-                vec![
-                    cognicode_core::domain::traits::graph_query_port::RelationTarget {
-                        id: callee_id.clone(),
-                        name: "callee1".into(),
-                        kind: cognicode_core::domain::value_objects::SymbolKind::Function,
-                        file: "src/lib.rs".into(),
-                        line: 50,
-                        signature: None,
-                    },
-                ]
-            }
-            fn fan_in(&self, _id: &SymbolId) -> usize {
-                1
-            }
-            fn fan_out(&self, _id: &SymbolId) -> usize {
-                1
-            }
-            fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
-                vec![
-                    cognicode_core::domain::traits::graph_query_port::CallerWithMetadata {
-                        caller_id: caller_id.clone(),
-                        provenance: Provenance::Extracted,
-                        confidence: 0.95,
-                    },
-                ]
-            }
-            fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
-                vec![
-                    cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata {
-                        callee_id: callee_id.clone(),
-                        dependency_type: cognicode_core::domain::value_objects::DependencyType::Calls,
-                        provenance: Provenance::Inferred,
-                        confidence: 0.87,
-                    },
-                ]
-            }
-            fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata> {
-                Vec::new()
-            }
-            fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
-                Vec::new()
-            }
-            fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
-                Vec::new()
-            }
-        }
+        let callers = vec![
+            cognicode_core::domain::traits::graph_query_port::RelationTarget {
+                id: caller_id.clone(),
+                name: "caller1".into(),
+                kind: cognicode_core::domain::value_objects::SymbolKind::Function,
+                file: "src/lib.rs".into(),
+                line: 10,
+                signature: None,
+            },
+        ];
+        let callees = vec![
+            cognicode_core::domain::traits::graph_query_port::RelationTarget {
+                id: callee_id.clone(),
+                name: "callee1".into(),
+                kind: cognicode_core::domain::value_objects::SymbolKind::Function,
+                file: "src/lib.rs".into(),
+                line: 50,
+                signature: None,
+            },
+        ];
+        let callers_meta = vec![
+            cognicode_core::domain::traits::graph_query_port::CallerWithMetadata {
+                caller_id: caller_id.clone(),
+                provenance: Provenance::Extracted,
+                confidence: 0.95,
+            },
+        ];
+        let callees_meta = vec![
+            cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata {
+                callee_id: callee_id.clone(),
+                dependency_type: cognicode_core::domain::value_objects::DependencyType::Calls,
+                provenance: Provenance::Inferred,
+                confidence: 0.87,
+            },
+        ];
 
-        let graph = FancyGraphQueryPort;
+        let graph = MockGraphQueryPort::new()
+            .with_callers(target_id.clone(), callers)
+            .with_callees(target_id.clone(), callees)
+            .with_callers_metadata(target_id.clone(), callers_meta)
+            .with_callees_metadata(target_id.clone(), callees_meta);
         let repo = QualityGraphRepository::new(None, &graph);
         let filter = TraversalFilter::default();
 
@@ -616,14 +617,14 @@ mod tests {
         let incoming = edges.iter().find(|e| e.target_id == target_id).unwrap();
         assert_eq!(incoming.source_id, caller_id);
         assert_eq!(incoming.source_name, "caller1");
-        assert_eq!(incoming.provenance, "extracted");
+        assert_eq!(incoming.provenance, "Extracted");
         assert_eq!(incoming.confidence, 0.95);
 
         // Check outgoing edge (callee)
         let outgoing = edges.iter().find(|e| e.source_id == target_id).unwrap();
         assert_eq!(outgoing.target_id, callee_id);
         assert_eq!(outgoing.target_name, "callee1");
-        assert_eq!(outgoing.provenance, "inferred");
+        assert_eq!(outgoing.provenance, "Inferred");
         assert_eq!(outgoing.confidence, 0.87);
     }
 
@@ -632,69 +633,47 @@ mod tests {
         let target_id = SymbolId::new("target");
         let caller_id = SymbolId::new("caller1");
 
-        struct FunkyGraphQueryPort;
-        impl GraphQueryPort for FunkyGraphQueryPort {
-            fn callers(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
-                vec![
-                    cognicode_core::domain::traits::graph_query_port::RelationTarget {
-                        id: caller_id.clone(),
-                        name: "caller1".into(),
-                        kind: cognicode_core::domain::value_objects::SymbolKind::Function,
-                        file: "src/lib.rs".into(),
-                        line: 10,
-                        signature: None,
-                    },
-                ]
-            }
-            fn callees(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
-                vec![
-                    cognicode_core::domain::traits::graph_query_port::RelationTarget {
-                        id: SymbolId::new("other"),
-                        name: "other".into(),
-                        kind: cognicode_core::domain::value_objects::SymbolKind::Function,
-                        file: "src/lib.rs".into(),
-                        line: 50,
-                        signature: None,
-                    },
-                ]
-            }
-            fn fan_in(&self, _id: &SymbolId) -> usize {
-                1
-            }
-            fn fan_out(&self, _id: &SymbolId) -> usize {
-                1
-            }
-            fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
-                vec![
-                    cognicode_core::domain::traits::graph_query_port::CallerWithMetadata {
-                        caller_id: caller_id.clone(),
-                        provenance: Provenance::Extracted,
-                        confidence: 0.9,
-                    },
-                ]
-            }
-            fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
-                vec![
-                    cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata {
-                        callee_id: SymbolId::new("other"),
-                        dependency_type: cognicode_core::domain::value_objects::DependencyType::Calls,
-                        provenance: Provenance::Inferred,
-                        confidence: 0.8,
-                    },
-                ]
-            }
-            fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata> {
-                Vec::new()
-            }
-            fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
-                Vec::new()
-            }
-            fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
-                Vec::new()
-            }
-        }
+        let callers = vec![
+            cognicode_core::domain::traits::graph_query_port::RelationTarget {
+                id: caller_id.clone(),
+                name: "caller1".into(),
+                kind: cognicode_core::domain::value_objects::SymbolKind::Function,
+                file: "src/lib.rs".into(),
+                line: 10,
+                signature: None,
+            },
+        ];
+        let callees = vec![
+            cognicode_core::domain::traits::graph_query_port::RelationTarget {
+                id: SymbolId::new("other"),
+                name: "other".into(),
+                kind: cognicode_core::domain::value_objects::SymbolKind::Function,
+                file: "src/lib.rs".into(),
+                line: 50,
+                signature: None,
+            },
+        ];
+        let callers_meta = vec![
+            cognicode_core::domain::traits::graph_query_port::CallerWithMetadata {
+                caller_id: caller_id.clone(),
+                provenance: Provenance::Extracted,
+                confidence: 0.9,
+            },
+        ];
+        let callees_meta = vec![
+            cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata {
+                callee_id: SymbolId::new("other"),
+                dependency_type: cognicode_core::domain::value_objects::DependencyType::Calls,
+                provenance: Provenance::Inferred,
+                confidence: 0.8,
+            },
+        ];
 
-        let graph = FunkyGraphQueryPort;
+        let graph = MockGraphQueryPort::new()
+            .with_callers(target_id.clone(), callers)
+            .with_callees(target_id.clone(), callees)
+            .with_callers_metadata(target_id.clone(), callers_meta)
+            .with_callees_metadata(target_id.clone(), callees_meta);
         let repo = QualityGraphRepository::new(None, &graph);
         let filter = TraversalFilter {
             incoming_only: true,
