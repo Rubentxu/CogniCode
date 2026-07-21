@@ -1667,6 +1667,7 @@ impl IntoResponse for ApiError {
             ExplorerError::FeatureDisabled(_) => StatusCode::SERVICE_UNAVAILABLE,
             ExplorerError::GraphNotReady => StatusCode::SERVICE_UNAVAILABLE,
             ExplorerError::GraphUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            ExplorerError::QualityUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             ExplorerError::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,
             ExplorerError::Anyhow(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };

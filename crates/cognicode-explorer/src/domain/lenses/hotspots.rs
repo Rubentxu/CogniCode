@@ -113,12 +113,22 @@ impl Lens for HotspotsLens {
     }
 }
 
+/// Compute risk score from fan-in and weighted issue count.
+///
+/// Formula: `risk = fan_in * 0.4 + weighted_issue_count * 0.6`
+///
+/// Exposed as a public helper so `QualityGraphRepository` and other
+/// adapters can compute risk without duplicating the formula.
+pub fn compute_risk(fan_in: u32, weighted_issue_count: f32) -> f32 {
+    fan_in as f32 * 0.4 + weighted_issue_count * 0.6
+}
+
 fn symbol_risk(symbol: &ResolvedSymbol, ctx: &LensContext) -> (f32, f32) {
     let fan_in = ctx
         .graph_query
         .as_ref()
         .map(|gq| gq.fan_in(&symbol.id))
-        .unwrap_or(0) as f32;
+        .unwrap_or(0);
     let weighted_issues: f32 = match &ctx.quality_repo {
         Some(q) => q
             .issues_at_line(&symbol.file, symbol.line)
@@ -128,7 +138,7 @@ fn symbol_risk(symbol: &ResolvedSymbol, ctx: &LensContext) -> (f32, f32) {
             .sum(),
         None => 0.0,
     };
-    let risk = fan_in * 0.4 + weighted_issues * 0.6;
+    let risk = compute_risk(fan_in as u32, weighted_issues);
     (risk, weighted_issues)
 }
 

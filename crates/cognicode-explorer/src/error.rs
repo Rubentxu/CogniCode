@@ -63,6 +63,11 @@ pub enum ExplorerError {
     #[error("unsupported_format: {0}")]
     UnsupportedFormat(String),
 
+    /// Quality data was requested but the quality repository is not wired.
+    /// Maps to HTTP 503.
+    #[error("quality_unavailable: {0}")]
+    QualityUnavailable(String),
+
     #[error(transparent)]
     Anyhow(#[from] anyhow::Error),
 }
