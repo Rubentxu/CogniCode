@@ -1438,7 +1438,8 @@ impl ViewExecutor for OverviewExecutor {
             InspectionTarget::Issue(_)
             | InspectionTarget::Rule { .. }
             | InspectionTarget::SavedExploration(_)
-            | InspectionTarget::Investigation(_) => {
+            | InspectionTarget::Investigation(_)
+            | InspectionTarget::Decision { .. } => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "overview".into(),
@@ -2171,7 +2172,7 @@ impl ViewExecutor for QualityExecutor {
             } => Ok(build_scope_quality_view(path, ctx.quality)),
             InspectionTarget::Issue(issue) => Ok(build_issue_detail(issue)),
             InspectionTarget::Rule { rule_id } => Ok(build_rule_detail(rule_id, ctx.quality)),
-            InspectionTarget::SavedExploration(_) | InspectionTarget::Investigation(_) => {
+            InspectionTarget::SavedExploration(_) | InspectionTarget::Investigation(_) | InspectionTarget::Decision { .. } => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "quality".into(),
@@ -2428,7 +2429,8 @@ impl ViewExecutor for RiskMapExecutor {
             InspectionTarget::Issue(_)
             | InspectionTarget::Rule { .. }
             | InspectionTarget::SavedExploration(_)
-            | InspectionTarget::Investigation(_) => {
+            | InspectionTarget::Investigation(_)
+            | InspectionTarget::Decision { .. } => {
                 return Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "risk_map".into(),
@@ -2630,6 +2632,7 @@ pub static CHANGE_IMPACT_STORY_EXECUTOR: ChangeImpactStoryExecutor = ChangeImpac
 pub static OWNERSHIP_MAP_EXECUTOR: OwnershipMapExecutor = OwnershipMapExecutor;
 pub static COMPOSED_NARRATIVE_EXECUTOR: ComposedNarrativeExecutor = ComposedNarrativeExecutor;
 pub static RISK_MAP_EXECUTOR: RiskMapExecutor = RiskMapExecutor;
+pub static ARCHITECTURE_RATIONALE_EXECUTOR: ArchitectureRationaleExecutor = ArchitectureRationaleExecutor;
 
 /// Ownership Map capability — applies to Issue (QualityIssue).
 ///
@@ -2893,6 +2896,281 @@ impl ViewExecutor for ArchitectureDriftExecutor {
         Err(crate::error::ExplorerError::NotImplemented(
             "Architecture drift requires the /api/workspaces/{id}/drift endpoint".into(),
         ))
+    }
+}
+
+// ============================================================================
+// Architecture Rationale — Decision artifact rationale with evidence and code
+// ============================================================================
+
+/// Build the Architecture Rationale view for a Decision artifact.
+///
+/// When `graph_repo` is wired (multimodal feature), fetches the decision node
+/// and its rationale subgraph (Justifies, Cites, Resolves, CorroboratedBy edges).
+/// Otherwise, returns a graceful placeholder with the decision id.
+#[cfg(feature = "multimodal")]
+pub fn build_rationale_view(
+    decision_id: &str,
+    graph_repo: Option<&dyn cognicode_core::domain::ports::GraphRepository>,
+) -> ContextualView {
+    use cognicode_core::domain::aggregates::generic_graph::NodeId;
+    use cognicode_core::domain::ports::GraphRepository;
+
+    let mvp = format!("decision:{decision_id}");
+
+    let Some(repo) = graph_repo else {
+        // Graceful degradation: no graph repo wired
+        let blocks = vec![ViewBlock {
+            id: "rationale_unavailable".into(),
+            title: "Architecture Rationale".into(),
+            body: json!({
+                "message": "Graph repository not wired. Rationale requires multimodal feature.",
+                "decision_id": decision_id,
+            }),
+        }];
+        return ContextualView {
+            object_id: mvp,
+            view_id: "architecture_rationale".into(),
+            title: "Architecture Rationale".into(),
+            view_kind: ViewKind::ArchitectureRationale,
+            blocks,
+            relations: Vec::new(),
+            evidence: Vec::new(),
+            findings: Vec::new(),
+            renderer_kind: RendererKind::Markdown,
+        };
+    };
+
+    // Fetch the decision node
+    let node_id = NodeId::new(decision_id.to_string());
+    let decision_node = match repo.get_node(&node_id) {
+        Ok(Some(node)) => node,
+        Ok(None) => {
+            let blocks = vec![ViewBlock {
+                id: "not_found".into(),
+                title: "Decision Not Found".into(),
+                body: json!({
+                    "message": format!("Decision '{}' not found in graph", decision_id),
+                }),
+            }];
+            return ContextualView {
+                object_id: mvp,
+                view_id: "architecture_rationale".into(),
+                title: "Architecture Rationale".into(),
+                view_kind: ViewKind::ArchitectureRationale,
+                blocks,
+                relations: Vec::new(),
+                evidence: Vec::new(),
+                findings: Vec::new(),
+                renderer_kind: RendererKind::Markdown,
+            };
+        }
+        Err(e) => {
+            let blocks = vec![ViewBlock {
+                id: "error".into(),
+                title: "Error".into(),
+                body: json!({
+                    "message": format!("Failed to fetch decision: {}", e),
+                }),
+            }];
+            return ContextualView {
+                object_id: mvp,
+                view_id: "architecture_rationale".into(),
+                title: "Architecture Rationale".into(),
+                view_kind: ViewKind::ArchitectureRationale,
+                blocks,
+                relations: Vec::new(),
+                evidence: Vec::new(),
+                findings: Vec::new(),
+                renderer_kind: RendererKind::Markdown,
+            };
+        }
+    };
+
+    // Fetch rationale subgraph: Justifies, Cites, Resolves, CorroboratedBy edges
+    let (nodes, edges, truncated) = match repo.rationale_subgraph(&node_id, 3, 100) {
+        Ok((nodes, edges, truncated)) => (nodes, edges, truncated),
+        Err(e) => {
+            let blocks = vec![ViewBlock {
+                id: "error".into(),
+                title: "Error".into(),
+                body: json!({
+                    "message": format!("Failed to fetch rationale subgraph: {}", e),
+                }),
+            }];
+            return ContextualView {
+                object_id: mvp,
+                view_id: "architecture_rationale".into(),
+                title: "Architecture Rationale".into(),
+                view_kind: ViewKind::ArchitectureRationale,
+                blocks,
+                relations: Vec::new(),
+                evidence: Vec::new(),
+                findings: Vec::new(),
+                renderer_kind: RendererKind::Markdown,
+            };
+        }
+    };
+
+    // Build evidence block for the rationale
+    let evidence_id = "evidence:architecture_rationale".to_string();
+    let evidence = vec![EvidenceBlock {
+        id: evidence_id.clone(),
+        kind: "architecture_rationale".into(),
+        title: format!("Architecture Rationale: {}", decision_node.label),
+        file: decision_node.source_path.map(|p| p.to_string_lossy().to_string()),
+        line_range: None,
+        source_tool_or_query: "GraphRepository::rationale_subgraph".into(),
+        confidence: Some(1.0),
+        freshness: Some("unknown".into()),
+        provenance: None,
+    }];
+
+    // Build typed relations from edges
+    let relations: Vec<TypedRelation> = edges
+        .iter()
+        .map(|e| TypedRelation {
+            relation_type: format!("{:?}", e.kind),
+            direction: if e.source == decision_node.id {
+                RelationDirection::Outgoing
+            } else {
+                RelationDirection::Incoming
+            },
+            target_object_id: if e.source == decision_node.id {
+                e.target.to_string()
+            } else {
+                e.source.to_string()
+            },
+            target_label: "related node".to_string(),
+            evidence_ids: vec![evidence_id.clone()],
+            provenance: None,
+            confidence: None,
+        })
+        .collect();
+
+    // Build blocks: decision info, related nodes, edges summary
+    let related_nodes_json: serde_json::Value = serde_json::json!(nodes
+        .iter()
+        .filter(|n| n.id != decision_node.id)
+        .map(|n| json!({
+            "id": n.id.to_string(),
+            "kind": format!("{:?}", n.kind),
+            "label": n.label,
+        }))
+        .collect::<Vec<_>>());
+
+    let blocks = vec![
+        ViewBlock {
+            id: "decision_identity".into(),
+            title: "Decision".into(),
+            body: json!({
+                "id": decision_node.id.to_string(),
+                "label": decision_node.label,
+                "kind": format!("{:?}", decision_node.kind),
+                "properties": decision_node.properties,
+            }),
+        },
+        ViewBlock {
+            id: "rationale_graph".into(),
+            title: format!("Related nodes ({}{})", nodes.len() - 1, if truncated { "+" } else { "" }),
+            body: json!({
+                "total_nodes": nodes.len(),
+                "truncated": truncated,
+                "related": related_nodes_json,
+            }),
+        },
+        ViewBlock {
+            id: "edges_summary".into(),
+            title: format!("Connections ({})", edges.len()),
+            body: json!({
+                "count": edges.len(),
+                "edge_kinds": edges.iter().map(|e| format!("{:?}", e.kind)).collect::<Vec<_>>(),
+            }),
+        },
+    ];
+
+    ContextualView {
+        object_id: mvp,
+        view_id: "architecture_rationale".into(),
+        title: "Architecture Rationale".into(),
+        view_kind: ViewKind::ArchitectureRationale,
+        blocks,
+        relations,
+        evidence,
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Markdown,
+    }
+}
+
+/// Non-multimodal fallback: returns a placeholder view.
+#[cfg(not(feature = "multimodal"))]
+pub fn build_rationale_view(decision_id: &str) -> ContextualView {
+    let mvp = format!("decision:{decision_id}");
+    let blocks = vec![ViewBlock {
+        id: "rationale_unavailable".into(),
+        title: "Architecture Rationale".into(),
+        body: json!({
+            "message": "Graph repository not wired. Rationale requires multimodal feature.",
+            "decision_id": decision_id,
+        }),
+    }];
+    ContextualView {
+        object_id: mvp,
+        view_id: "architecture_rationale".into(),
+        title: "Architecture Rationale".into(),
+        view_kind: ViewKind::ArchitectureRationale,
+        blocks,
+        relations: Vec::new(),
+        evidence: Vec::new(),
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Markdown,
+    }
+}
+
+/// Architecture Rationale capability — applies to Decision.
+///
+/// Shows why a structure exists using ADRs, decisions, evidence, and related code.
+/// Delegates to `build_rationale_view` which fetches the rationale subgraph
+/// when graph_repo is available, or gracefully degrades otherwise.
+pub struct ArchitectureRationaleExecutor;
+impl ViewDescriptor for ArchitectureRationaleExecutor {
+    fn id(&self) -> &'static str {
+        "architecture_rationale"
+    }
+    fn title(&self) -> &'static str {
+        "Architecture Rationale"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::DecisionArtifact]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::ArchitectureRationale
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Markdown
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for ArchitectureRationaleExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match ctx.target {
+            InspectionTarget::Decision { id } => {
+                #[cfg(feature = "multimodal")]
+                {
+                    Ok(build_rationale_view(id, ctx.graph_repo))
+                }
+                #[cfg(not(feature = "multimodal"))]
+                {
+                    let _ = ctx;
+                    Ok(build_rationale_view(id))
+                }
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "architecture_rationale".into(),
+            }),
+        }
     }
 }
 
