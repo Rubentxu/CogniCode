@@ -60,7 +60,7 @@ use crate::domain::value_objects::provenance::Provenance;
 
 #[cfg(feature = "multimodal")]
 use super::docs_confidence_rules::{
-    ConfidenceTier, heading_confidence, score_heading, score_link, sym_short_name,
+    ConfidenceTier, score_link, sym_short_name,
 };
 
 // ============================================================================
@@ -101,6 +101,57 @@ pub fn parse_markdown(text: &str, source_path: &Path, file_stem: &str) -> Vec<Ex
     let mut code_text_buf: Option<String> = None;
     let mut in_link: Option<String> = None;
 
+    // ---- Deferred-heading node building for code fence language ----
+    // Code blocks appear AFTER their heading ends in the event stream
+    // (heading ends → body text → code fence). We defer building
+    // the heading node until the NEXT heading starts (or EOF) so we
+    // can attach `code_block_lang` from any fences in the body.
+    let mut pending_heading: Option<(String, usize, HeadingLevel)> = None;
+    let mut pending_code_lang: Option<String> = None;
+
+    /// Build and push a deferred heading node.
+    fn build_and_push_node(
+        nodes: &mut Vec<ExtractedNode>,
+        label: &str,
+        line: usize,
+        lvl: HeadingLevel,
+        body: &str,
+        file_stem: &str,
+        source_path: &Path,
+        is_adr: bool,
+        status_lines: &mut Vec<String>,
+        code_lang: Option<String>,
+    ) {
+        let mut node = build_heading_node(
+            label,
+            line,
+            lvl,
+            file_stem,
+            source_path,
+            is_adr,
+            body,
+            status_lines,
+        );
+        // Attach code fence language if present
+        if let Some(lang) = code_lang {
+            node = node.with_property("code_block_lang", lang);
+        }
+        let mut edges: Vec<GraphEdge> = body
+            .lines()
+            .filter_map(|line| classify_body_line(line, file_stem))
+            .map(|cites| CitesCandidate::Body(cites).into_edge(&node.id))
+            .collect();
+        // Also check for doc links (cross-ADR/cross-doc citations)
+        for line in body.lines() {
+            if let Some(target) = extract_link_target(line) {
+                if let Some(doc_cites) = classify_doc_link(&target) {
+                    edges.push(CitesCandidate::Doc(doc_cites).into_edge(&node.id));
+                }
+            }
+        }
+        nodes.push(ExtractedNode::with_edges(node, edges));
+    }
+
     /// Flush the accumulated `body` to the most recently
     /// emitted node by appending edges AND capturing any
     /// ADR-specific metadata (`Status:` line). If no node
@@ -140,51 +191,41 @@ pub fn parse_markdown(text: &str, source_path: &Path, file_stem: &str) -> Vec<Ex
     for (event_offset, event) in parser.enumerate() {
         match event {
             Event::Start(Tag::Heading { level, .. }) => {
-                // Open a new heading — first, flush any
-                // trailing body text from the previous heading
-                // onto the previously emitted node.
-                flush_trailing_body(&mut nodes, &mut current_body, file_stem);
-                current_heading = Some((String::new(), event_offset, level));
-            }
-            Event::End(TagEnd::Heading(_)) => {
-                // The heading is complete; emit a node with
-                // whatever body has been accumulated so far.
-                // The body buffer is NOT reset here — the
-                // trailing body between this heading and the
-                // next is attached to THIS node by the heading
-                // arm above (or the EOF flush below).
-                //
-                // Use replace() to atomically swap in the new state
-                // while getting the old state. If current_heading
-                // was None (already consumed by previous heading end),
-                // we still need to emit this heading's node.
-                let prev_heading = std::mem::replace(&mut current_heading, None);
-                if let Some((label, line, lvl)) = prev_heading {
+                // Open a new heading — first, flush any pending
+                // node from the previous heading (with its body and
+                // any code fence language), then start new heading.
+                if let Some((label, line, lvl)) = pending_heading.take() {
                     let body = std::mem::take(&mut current_body);
-                    let node = build_heading_node(
+                    build_and_push_node(
+                        &mut nodes,
                         &label,
                         line,
                         lvl,
+                        &body,
                         file_stem,
                         source_path,
                         is_adr,
-                        &body,
                         &mut status_lines,
+                        pending_code_lang.take(),
                     );
-                    let mut edges: Vec<GraphEdge> = body
-                        .lines()
-                        .filter_map(|line| classify_body_line(line, file_stem))
-                        .map(|cites| CitesCandidate::Body(cites).into_edge(&node.id))
-                        .collect();
-                    // Also check for doc links (cross-ADR/cross-doc citations)
-                    for line in body.lines() {
-                        if let Some(target) = extract_link_target(line) {
-                            if let Some(doc_cites) = classify_doc_link(&target) {
-                                edges.push(CitesCandidate::Doc(doc_cites).into_edge(&node.id));
-                            }
-                        }
-                    }
-                    nodes.push(ExtractedNode::with_edges(node, edges));
+                }
+                current_heading = Some((String::new(), event_offset, level));
+            }
+            Event::End(TagEnd::Heading(_)) => {
+                // The heading is complete; defer emitting the node
+                // until we see the next heading (or EOF) so we can
+                // attach `code_block_lang` from any fenced code
+                // blocks that appear in the body.
+                //
+                // Use take() to atomically consume current_heading
+                // and start fresh.
+                let prev_heading = current_heading.take();
+                if let Some((label, line, lvl)) = prev_heading {
+                    // Store for deferred building; body will be
+                    // accumulated in current_body until next heading.
+                    pending_heading = Some((label, line, lvl));
+                    // Code lang from any previous heading's fences
+                    // stays in pending_code_lang for now.
                 }
             }
             Event::Text(text) | Event::Code(text) => {
@@ -234,8 +275,17 @@ pub fn parse_markdown(text: &str, source_path: &Path, file_stem: &str) -> Vec<Ex
                     current_body.push('\n');
                 }
             }
-            Event::Start(Tag::CodeBlock(_)) => {
+            Event::Start(Tag::CodeBlock(kind)) => {
                 code_text_buf = Some(String::new());
+                // Capture fenced code block language for `code_block_lang` property.
+                // `CodeBlockKind::Fenced(lang)` has the info string (may be empty).
+                // `CodeBlockKind::Indented` is an indented code block (no language).
+                if let pulldown_cmark::CodeBlockKind::Fenced(ref lang) = kind {
+                    let lang_str = lang.to_string();
+                    if !lang_str.is_empty() {
+                        pending_code_lang = Some(lang_str);
+                    }
+                }
             }
             Event::End(TagEnd::CodeBlock) => {
                 if let Some(buf) = code_text_buf.take() {
@@ -258,31 +308,35 @@ pub fn parse_markdown(text: &str, source_path: &Path, file_stem: &str) -> Vec<Ex
         }
     }
 
-    // Flush any trailing body to the last emitted node. This
-    // covers two cases:
-    //   1. A heading is still open (no closing `End(Heading)`).
+    // Flush any pending heading node at EOF. This handles:
+    //   1. A heading that ended but whose body content (including
+    //      code fences) appears after the heading in the event stream.
     //   2. The last heading closed, then trailing paragraphs
     //      accumulated in `current_body`.
-    if current_heading.take().is_some() {
-        // A heading is still open at EOF — emit it with the
-        // body that was accumulated so far.
+    if let Some((label, line, lvl)) = pending_heading.take() {
+        // Build the pending node with its accumulated body and code lang
         let body = std::mem::take(&mut current_body);
-        if let Some((label, line, lvl)) = None::<(String, usize, HeadingLevel)> {
-            let _ = (label, line, lvl);
-        }
-        // The `current_heading.take()` above consumed the open
-        // heading without emitting a node. Re-create the
-        // heading from the buffer:
-        // (degenerate case: the heading's label is empty)
+        build_and_push_node(
+            &mut nodes,
+            &label,
+            line,
+            lvl,
+            &body,
+            file_stem,
+            source_path,
+            is_adr,
+            &mut status_lines,
+            pending_code_lang.take(),
+        );
+    } else if current_heading.take().is_some() {
+        // Heading still open but no pending (shouldn't happen with
+        // deferred building, but handle for completeness).
+        let body = std::mem::take(&mut current_body);
         if !body.is_empty() {
-            // No heading to attach to — fall back to a node-less
-            // body flush is impossible. Instead, emit a fallback
-            // file-level node (handled by the `if nodes.is_empty()`
-            // branch below).
+            flush_trailing_body(&mut nodes, &mut current_body, file_stem);
         }
     } else {
-        // Heading already closed; just flush the trailing body
-        // to the most recent node.
+        // No pending heading; just flush trailing body to most recent node.
         flush_trailing_body(&mut nodes, &mut current_body, file_stem);
     }
 
@@ -291,7 +345,7 @@ pub fn parse_markdown(text: &str, source_path: &Path, file_stem: &str) -> Vec<Ex
     // fallback file-level node so the file is never silently
     // dropped.
     if nodes.is_empty() && !text.trim().is_empty() {
-        let node = build_fallback_node(text, file_stem, source_path, is_adr, &mut status_lines);
+        let node = build_fallback_node(text, file_stem, source_path, is_adr, &status_lines);
         nodes.push(ExtractedNode::new(node));
     }
 
@@ -847,7 +901,7 @@ fn classify_body_line(line: &str, file_stem: &str) -> Option<BodyCites> {
     let scoring_text = link_text
         .filter(|t| !t.is_empty())
         .unwrap_or_else(|| sym_short_name(&target));
-    let (tier, _) = score_link(&scoring_text, &[target.clone()]);
+    let (tier, _) = score_link(&scoring_text, std::slice::from_ref(&target));
     if matches!(tier, ConfidenceTier::Unresolved) {
         return None;
     }
@@ -969,7 +1023,7 @@ fn extract_link_target(line: &str) -> Option<String> {
     // Detected by: contains .md/.markdown before any #anchor, starts with . or /
     let trimmed_lower = trimmed.to_ascii_lowercase();
     if let Some(md_pos) = trimmed_lower.find(".md") {
-        let before_md = &trimmed[..md_pos];
+        let _before_md = &trimmed[..md_pos];
         let after_md = &trimmed[md_pos + 3..];
         // .md must be followed by nothing, '/', '#', or '?' (end or anchor/query)
         if after_md.is_empty()
@@ -983,7 +1037,7 @@ fn extract_link_target(line: &str) -> Option<String> {
         }
     }
     if let Some(md_pos) = trimmed_lower.find(".markdown") {
-        let before_md = &trimmed[..md_pos];
+        let _before_md = &trimmed[..md_pos];
         let after_md = &trimmed[md_pos + 9..];
         if after_md.is_empty()
             || after_md.starts_with('/')
@@ -1626,5 +1680,70 @@ mod tests {
             Some("draft-wip"),
             "status should be lowercased"
         );
+    }
+
+    // ---- Scenario 3: Code fence with language is preserved ----
+
+    /// A fenced code block with a language info string MUST produce
+    /// a `code_block_lang` property on the Doc node.
+    #[test]
+    fn code_fence_language_recorded_in_metadata() {
+        let text = "# Heading\n\n```rust\nfn main() {}\n```\n";
+        let nodes = parse(text);
+        assert!(!nodes.is_empty(), "expected at least one node");
+        let first = &nodes[0];
+        assert_eq!(
+            first.potential_node
+                .properties
+                .get("code_block_lang")
+                .map(String::as_str),
+            Some("rust"),
+            "fenced code block language should be recorded as code_block_lang"
+        );
+    }
+
+    /// A fenced code block with no language (empty info string) MUST NOT
+    /// produce a `code_block_lang` property.
+    #[test]
+    fn code_fence_no_language_not_recorded() {
+        let text = "# Heading\n\n```\nsome text\n```\n";
+        let nodes = parse(text);
+        assert!(!nodes.is_empty(), "expected at least one node");
+        let first = &nodes[0];
+        assert!(
+            first.potential_node.properties.get("code_block_lang").is_none(),
+            "empty info string should not produce code_block_lang"
+        );
+    }
+
+    // ---- Scenario 5: Missing status leaves no property ----
+
+    /// An ADR body with NO `Status:` line MUST NOT set a `status`
+    /// property on the Decision node, and extraction MUST succeed.
+    #[test]
+    fn missing_status_leaves_no_property() {
+        let text = "# ADR-0010: No Status Line\n\n## Context\nWe made a decision but never wrote the status.\n";
+        let nodes = parse(text);
+        assert!(!nodes.is_empty(), "parse should succeed without status");
+
+        let decision_nodes: Vec<_> = nodes
+            .iter()
+            .filter(|n| n.potential_node.kind == NodeKind::Decision)
+            .collect();
+
+        // At least one Decision node should exist
+        assert!(
+            !decision_nodes.is_empty(),
+            "ADR should produce at least one Decision node"
+        );
+
+        // No Decision node should have a status property
+        for node in decision_nodes {
+            assert!(
+                node.potential_node.properties.get("status").is_none(),
+                "missing Status: should leave no status property, got: {:?}",
+                node.potential_node.properties.get("status")
+            );
+        }
     }
 }
