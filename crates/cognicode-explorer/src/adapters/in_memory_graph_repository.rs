@@ -565,4 +565,222 @@ mod tests {
         assert_eq!(result.raw_total, 0);
         assert!(result.next_cursor.is_none());
     }
+
+    // -------------------------------------------------------------------------
+    // rationale_subgraph tests — BFS over Justifies/Cites/Resolves/CorroboratedBy
+    // -------------------------------------------------------------------------
+
+    /// Scenario 3 CRITICAL: BFS with non-empty subgraph returns nodes AND edges.
+    /// Graph: A(Decision) --Justifies--> D(Decision) --Cites--> X(Doc)
+    ///         D --CorroboratedBy--> Y(Evidence)
+    ///         Z(Decision) --Justifies--> D
+    /// When calling rationale_subgraph on "A" with depth=2, we expect:
+    /// - Nodes: A, D (direct), X (via D->X), Y (via D->Y)
+    /// - Edges: A->D (Justifies), D->X (Cites), D->Y (CorroboratedBy)
+    /// Note: Z->D is NOT included because BFS from A never visits Z (Z is not reachable from A)
+    #[test]
+    fn rationale_subgraph_bfs_with_edges() {
+        use cognicode_core::domain::value_objects::Provenance;
+
+        let nodes = vec![
+            make_node("A", NodeKind::Decision, "Decision A"),
+            make_node("D", NodeKind::Decision, "Decision D"),
+            make_node("X", NodeKind::Doc, "Doc X"),
+            make_node("Y", NodeKind::Evidence, "Evidence Y"),
+            make_node("Z", NodeKind::Decision, "Decision Z"),
+        ];
+        let edges = vec![
+            GraphEdge {
+                source: NodeId::new("A"),
+                target: NodeId::new("D"),
+                kind: EdgeKind::Justifies,
+                provenance: Provenance::Manual,
+                confidence: 0.9,
+                metadata: HashMap::new(),
+            },
+            GraphEdge {
+                source: NodeId::new("D"),
+                target: NodeId::new("X"),
+                kind: EdgeKind::Cites,
+                provenance: Provenance::Extracted,
+                confidence: 0.8,
+                metadata: HashMap::new(),
+            },
+            GraphEdge {
+                source: NodeId::new("D"),
+                target: NodeId::new("Y"),
+                kind: EdgeKind::CorroboratedBy,
+                provenance: Provenance::Tested,
+                confidence: 0.7,
+                metadata: HashMap::new(),
+            },
+            GraphEdge {
+                source: NodeId::new("Z"),
+                target: NodeId::new("D"),
+                kind: EdgeKind::Justifies,
+                provenance: Provenance::Inferred,
+                confidence: 0.5,
+                metadata: HashMap::new(),
+            },
+        ];
+        let repo = InMemoryGraphRepository::new(nodes, edges);
+
+        let result = repo
+            .rationale_subgraph(&NodeId::new("A"), 2, 100)
+            .expect("rationale_subgraph should succeed");
+
+        let (subgraph_nodes, subgraph_edges, truncated) = result;
+
+        // Focus node A is always included
+        assert!(
+            subgraph_nodes.iter().any(|n| n.id.as_str() == "A"),
+            "Focus node A should be in subgraph"
+        );
+        // D is reachable via A->D (depth 1)
+        assert!(
+            subgraph_nodes.iter().any(|n| n.id.as_str() == "D"),
+            "D should be in subgraph (A->D)"
+        );
+        // X is reachable via A->D->X (depth 2)
+        assert!(
+            subgraph_nodes.iter().any(|n| n.id.as_str() == "X"),
+            "X should be in subgraph (A->D->X)"
+        );
+        // Y is reachable via A->D->Y (depth 2)
+        assert!(
+            subgraph_nodes.iter().any(|n| n.id.as_str() == "Y"),
+            "Y should be in subgraph (A->D->Y)"
+        );
+        // Z is NOT reachable from A (incoming edge only), so should NOT be included
+        assert!(
+            !subgraph_nodes.iter().any(|n| n.id.as_str() == "Z"),
+            "Z should NOT be in subgraph (only reachable via incoming edge from Z->D)"
+        );
+
+        // Edges should be non-empty
+        assert!(
+            !subgraph_edges.is_empty(),
+            "Edges should be non-empty for BFS with edges"
+        );
+
+        // Verify specific edges are present
+        assert!(
+            subgraph_edges
+                .iter()
+                .any(|e| e.source.as_str() == "A" && e.target.as_str() == "D"),
+            "A->D Justifies edge should be present"
+        );
+        assert!(
+            subgraph_edges
+                .iter()
+                .any(|e| e.source.as_str() == "D" && e.target.as_str() == "X"),
+            "D->X Cites edge should be present"
+        );
+        assert!(
+            subgraph_edges
+                .iter()
+                .any(|e| e.source.as_str() == "D" && e.target.as_str() == "Y"),
+            "D->Y CorroboratedBy edge should be present"
+        );
+
+        // Z->D should NOT be present (Z not in node set)
+        assert!(
+            !subgraph_edges
+                .iter()
+                .any(|e| e.source.as_str() == "Z" && e.target.as_str() == "D"),
+            "Z->D edge should NOT be present (Z not reachable from A)"
+        );
+
+        // Should not be truncated
+        assert!(!truncated, "Should not be truncated with max_nodes=100");
+    }
+
+    /// Scenario 6 partial: focus-only BFS with max_nodes=1 returns only focus node, no edges.
+    /// When max_nodes=1, BFS cannot expand beyond the focus node, so edges should be empty.
+    #[test]
+    fn rationale_subgraph_focus_only_no_edges() {
+        use cognicode_core::domain::value_objects::Provenance;
+
+        let nodes = vec![
+            make_node("A", NodeKind::Decision, "Decision A"),
+            make_node("D", NodeKind::Decision, "Decision D"),
+        ];
+        let edges = vec![GraphEdge {
+            source: NodeId::new("A"),
+            target: NodeId::new("D"),
+            kind: EdgeKind::Justifies,
+            provenance: Provenance::Manual,
+            confidence: 0.9,
+            metadata: HashMap::new(),
+        }];
+        let repo = InMemoryGraphRepository::new(nodes, edges);
+
+        // max_nodes=1 means only the focus node can be in the result
+        let result = repo
+            .rationale_subgraph(&NodeId::new("A"), 2, 1)
+            .expect("rationale_subgraph should succeed");
+
+        let (subgraph_nodes, subgraph_edges, truncated) = result;
+
+        // Focus node should be present
+        assert_eq!(
+            subgraph_nodes.len(),
+            1,
+            "Only focus node should be present with max_nodes=1"
+        );
+        assert_eq!(
+            subgraph_nodes[0].id.as_str(),
+            "A",
+            "Focus node A should be the only node"
+        );
+
+        // Edges should be empty because BFS couldn't expand
+        assert!(
+            subgraph_edges.is_empty(),
+            "Edges should be empty when BFS cannot expand (max_nodes=1)"
+        );
+
+        // Should not be truncated (natural limit reached, not max_nodes truncation)
+        // Note: truncated=true when we hit max_nodes during expansion, not when
+        // the natural limit (max_depth or queue empty) is reached
+        assert!(
+            !truncated,
+            "Should not be truncated when natural limit reached with max_nodes=1"
+        );
+    }
+
+    /// Scenario 5 partial: rationale_subgraph returns Ok(empty) when no graph data.
+    /// This is the fallback behavior - both nodes and edges empty, truncated=false.
+    #[test]
+    fn rationale_subgraph_empty_graph_returns_empty() {
+        let nodes = vec![make_node("A", NodeKind::Decision, "Decision A")];
+        let repo = InMemoryGraphRepository::new(nodes, Vec::new());
+
+        let result = repo
+            .rationale_subgraph(&NodeId::new("A"), 2, 100)
+            .expect("rationale_subgraph should succeed even with empty edges");
+
+        let (subgraph_nodes, subgraph_edges, truncated) = result;
+
+        // Focus node should still be present (always included)
+        assert_eq!(
+            subgraph_nodes.len(),
+            1,
+            "Focus node should be present even with empty edges"
+        );
+        assert_eq!(
+            subgraph_nodes[0].id.as_str(),
+            "A",
+            "Focus node A should be present"
+        );
+
+        // Edges should be empty
+        assert!(
+            subgraph_edges.is_empty(),
+            "Edges should be empty when no edges in graph"
+        );
+
+        // Should not be truncated
+        assert!(!truncated, "Should not be truncated with empty edges");
+    }
 }
