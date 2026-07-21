@@ -30,9 +30,9 @@ pub use call_graph_repository::CallGraphRepository;
 pub use fs_source_reader::FsSourceReader;
 #[cfg(feature = "multimodal")]
 pub use in_memory_graph_repository::InMemoryGraphRepository;
-#[cfg(feature = "postgres")]
-pub use postgres_quality::PostgresQualityRepository;
-#[cfg(feature = "postgres")]
-pub use postgres_edge_emitter::PostgresEdgeEmitter;
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 pub use pg_graph_repository::PgGraphRepository;
+#[cfg(feature = "postgres")]
+pub use postgres_edge_emitter::PostgresEdgeEmitter;
+#[cfg(feature = "postgres")]
+pub use postgres_quality::PostgresQualityRepository;

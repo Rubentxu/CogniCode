@@ -3,8 +3,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
-use axum::http::header;
 use axum::http::StatusCode;
+use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
@@ -12,32 +12,34 @@ use serde::Deserialize;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
+use crate::affordance;
+use crate::domain::c4_mermaid::{self, C4Level};
+use crate::domain::snapshot::{
+    SnapshotError as SnapshotRenderError, SnapshotFormat, SnapshotService,
+};
+use crate::domain::snapshot_dispatch::SnapshotViewKind;
+#[cfg(feature = "multimodal")]
+use crate::domain::trace_mermaid::decision_trace_to_mermaid;
+use crate::domain::trace_mermaid::{
+    TraceEmitContext, TraceMermaidViewKind, call_graph_to_mermaid, impact_radius_to_mermaid,
+    vertical_slice_to_mermaid,
+};
 use crate::dto::{
     GenerateArtifactRequest, GodNodeEntry, InspectionTarget, LANDING_NODE_CAP, LandingPayload,
     OpenWorkspaceRequest, SaveExplorationSessionRequest, SubgraphResponse,
 };
+use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::investigation::{
-    CreateInvestigationRequest, Evidence, Investigation, PinEvidenceRequest, AddArtifactRequest,
+    AddArtifactRequest, CreateInvestigationRequest, Evidence, Investigation, PinEvidenceRequest,
     UpdateInvestigationRequest,
 };
-use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::{
     GraphService, InvestigationFacade, MoldQLService, PersistenceService, SearchService,
     SubgraphDirection as FacadeSubgraphDirection, ViewService, WorkspaceService,
 };
-use crate::ports::symbol_repository::ResolvedSymbol;
-use crate::domain::c4_mermaid::{self, C4Level};
-use crate::domain::trace_mermaid::{
-    call_graph_to_mermaid, impact_radius_to_mermaid,
-    vertical_slice_to_mermaid, TraceEmitContext, TraceMermaidViewKind,
-};
-use crate::affordance;
-#[cfg(feature = "multimodal")]
-use crate::domain::trace_mermaid::decision_trace_to_mermaid;
 #[cfg(feature = "multimodal")]
 use crate::ports::graph_repository::GraphRepository;
-use crate::domain::snapshot::{SnapshotError as SnapshotRenderError, SnapshotFormat, SnapshotService};
-use crate::domain::snapshot_dispatch::SnapshotViewKind;
+use crate::ports::symbol_repository::ResolvedSymbol;
 
 // ============================================================================
 // Style-class taxonomy
@@ -126,7 +128,10 @@ pub fn edge_style_class_for(relation: &str) -> &'static str {
 }
 
 fn resolved_symbol_to_mvp(resolved: &ResolvedSymbol) -> String {
-    format!("symbol:{}:{}:{}", resolved.file, resolved.name, resolved.line)
+    format!(
+        "symbol:{}:{}:{}",
+        resolved.file, resolved.name, resolved.line
+    )
 }
 
 fn resolved_symbol_to_graph_node(resolved: &ResolvedSymbol) -> crate::dto::GraphNode {
@@ -488,12 +493,18 @@ impl ApiState {
 
     /// Wire a snapshot rendering service for diagram export.
     pub fn with_snapshot(self, snapshot: Arc<SnapshotService>) -> Self {
-        Self { snapshot: Some(snapshot), ..self }
+        Self {
+            snapshot: Some(snapshot),
+            ..self
+        }
     }
 
     /// Wire an investigation service (ADR-005 INV-1).
     pub fn with_investigation(self, investigation: Arc<dyn InvestigationFacade>) -> Self {
-        Self { investigation: Some(investigation), ..self }
+        Self {
+            investigation: Some(investigation),
+            ..self
+        }
     }
 }
 
@@ -523,7 +534,10 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/api/workspaces/:workspace_id/drift", get(drift_handler))
         .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
-        .route("/api/affordances/:object_type", get(affordances_by_type_handler))
+        .route(
+            "/api/affordances/:object_type",
+            get(affordances_by_type_handler),
+        )
         .route("/api/objects/:object_id/views", get(available_views))
         .route(
             "/api/objects/:object_id/views/:view_id",
@@ -567,7 +581,10 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/api/investigations/:id", delete(delete_investigation))
         // Pin evidence — ADR-005 E21-2
         .route("/api/investigations/:id/evidence", post(pin_evidence))
-        .route("/api/investigations/:id/artifacts", post(add_investigation_artifact))
+        .route(
+            "/api/investigations/:id/artifacts",
+            post(add_investigation_artifact),
+        )
         // Evidence Pack view — ADR-005 E21-3
         .route(
             "/api/investigations/:id/evidence-pack",
@@ -578,7 +595,10 @@ pub fn router_with_state(state: ApiState) -> Router {
             "/api/investigations/:id/composed-narrative",
             get(get_investigation_composed_narrative),
         )
-        .route("/api/objects/:object_id/affordances", get(affordances_handler))
+        .route(
+            "/api/objects/:object_id/affordances",
+            get(affordances_handler),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -607,7 +627,10 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/workspaces/:workspace_id/drift", get(drift_handler))
         .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
-        .route("/api/affordances/:object_type", get(affordances_by_type_handler))
+        .route(
+            "/api/affordances/:object_type",
+            get(affordances_by_type_handler),
+        )
         .route("/api/objects/:object_id/views", get(available_views))
         .route(
             "/api/objects/:object_id/views/:view_id",
@@ -657,7 +680,10 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/investigations/:id", get(get_investigation))
         .route("/api/investigations/:id", put(update_investigation))
         .route("/api/investigations/:id", delete(delete_investigation))
-        .route("/api/objects/:object_id/affordances", get(affordances_handler))
+        .route(
+            "/api/objects/:object_id/affordances",
+            get(affordances_handler),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -810,13 +836,25 @@ async fn landing_handler(
     let mut entry_points = Vec::with_capacity(entry_point_symbols.len());
     for sym in &entry_point_symbols {
         let mvp_id = resolved_symbol_to_mvp(sym);
-        entry_points.push(state.search.inspect_object(&mvp_id).await.map_err(ApiError)?);
+        entry_points.push(
+            state
+                .search
+                .inspect_object(&mvp_id)
+                .await
+                .map_err(ApiError)?,
+        );
     }
 
     let mut hot_paths = Vec::with_capacity(hot_path_symbols.len());
     for sym in &hot_path_symbols {
         let mvp_id = resolved_symbol_to_mvp(sym);
-        hot_paths.push(state.search.inspect_object(&mvp_id).await.map_err(ApiError)?);
+        hot_paths.push(
+            state
+                .search
+                .inspect_object(&mvp_id)
+                .await
+                .map_err(ApiError)?,
+        );
     }
 
     // Deduplicate landing nodes by canonical symbol id, then render them as
@@ -831,7 +869,11 @@ async fn landing_handler(
     }
     for god in &god_nodes {
         if seen.insert(god.id.clone())
-            && let Some(sym) = state.graph.resolve_symbol(&god.id).await.map_err(ApiError)?
+            && let Some(sym) = state
+                .graph
+                .resolve_symbol(&god.id)
+                .await
+                .map_err(ApiError)?
         {
             selected_symbols.push(sym);
         }
@@ -985,7 +1027,8 @@ async fn mermaid_handler(
         StatusCode::OK,
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
         mermaid,
-    ).into_response())
+    )
+        .into_response())
 }
 
 // ============================================================================
@@ -1004,8 +1047,7 @@ pub struct TraceMermaidQuery {
 impl TraceMermaidQuery {
     /// Parse and validate the view_kind.
     pub fn validated(&self) -> Result<TraceMermaidViewKind, ExplorerError> {
-        TraceMermaidViewKind::from_str(&self.view_kind)
-            .map_err(|e| ExplorerError::InvalidQuery(e))
+        TraceMermaidViewKind::from_str(&self.view_kind).map_err(|e| ExplorerError::InvalidQuery(e))
     }
 }
 
@@ -1021,10 +1063,11 @@ async fn trace_mermaid_handler(
 ) -> Result<Response, ApiError> {
     let view_kind = q.validated().map_err(ApiError)?;
 
-    let graph_query = state
-        .graph
-        .graph_query()
-        .ok_or_else(|| ApiError(ExplorerError::GraphUnavailable("call graph not loaded".to_string())))?;
+    let graph_query = state.graph.graph_query().ok_or_else(|| {
+        ApiError(ExplorerError::GraphUnavailable(
+            "call graph not loaded".to_string(),
+        ))
+    })?;
 
     // Resolve the target symbol
     let resolved = state
@@ -1057,7 +1100,8 @@ async fn trace_mermaid_handler(
         StatusCode::OK,
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
         mermaid,
-    ).into_response())
+    )
+        .into_response())
 }
 
 // ============================================================================
@@ -1104,7 +1148,10 @@ async fn snapshot_handler(
     let (format, view_kind) = q.validated().map_err(SnapshotApiError::from)?;
 
     // Require snapshot service to be wired
-    let snapshot = state.snapshot.as_ref().ok_or(SnapshotApiError::FeatureDisabled)?;
+    let snapshot = state
+        .snapshot
+        .as_ref()
+        .ok_or(SnapshotApiError::FeatureDisabled)?;
 
     // Emit Mermaid text based on view_kind
     let mermaid = emit_mermaid_for_snapshot(&state, &view_kind, q.target.as_deref())
@@ -1137,7 +1184,8 @@ async fn snapshot_handler(
             ),
         ],
         bytes,
-    ).into_response())
+    )
+        .into_response())
 }
 
 /// Emit Mermaid text for a given snapshot view kind using the shared dispatch.
@@ -1163,14 +1211,16 @@ async fn emit_mermaid_for_snapshot(
         }
         SE::EmissionFailed(msg) => ExplorerError::InvalidQuery(msg),
         SE::MermaidEmpty => ExplorerError::InvalidQuery("mermaid text is empty".to_string()),
-        SE::SizeLimitExceeded { size } => {
-            ExplorerError::InvalidQuery(format!("mermaid text exceeds 1 MB size limit ({size} bytes)"))
+        SE::SizeLimitExceeded { size } => ExplorerError::InvalidQuery(format!(
+            "mermaid text exceeds 1 MB size limit ({size} bytes)"
+        )),
+        SE::Timeout(dur) => ExplorerError::InvalidQuery(format!("render timed out after {dur:?}")),
+        SE::GraphServiceNotWired => {
+            ExplorerError::InvalidQuery("graph service not wired".to_string())
         }
-        SE::Timeout(dur) => {
-            ExplorerError::InvalidQuery(format!("render timed out after {dur:?}"))
+        SE::WorkspaceNotWired => {
+            ExplorerError::InvalidQuery("workspace service not wired".to_string())
         }
-        SE::GraphServiceNotWired => ExplorerError::InvalidQuery("graph service not wired".to_string()),
-        SE::WorkspaceNotWired => ExplorerError::InvalidQuery("workspace service not wired".to_string()),
         SE::MmdcNotFound | SE::RenderFailed(_) => ExplorerError::InvalidQuery(se.to_string()),
     })
 }
@@ -1269,9 +1319,7 @@ async fn available_views(
     Ok(Json(state.view.available_views(&object_id).await?).into_response())
 }
 
-async fn affordances_handler(
-    Path(object_id): Path<String>,
-) -> Result<Response, ApiError> {
+async fn affordances_handler(Path(object_id): Path<String>) -> Result<Response, ApiError> {
     let object_type = object_id.split(':').next().unwrap_or(&object_id);
     let affordances = affordance::get_affordances(object_type);
     Ok(Json(affordances).into_response())
@@ -1478,7 +1526,10 @@ async fn pin_evidence(
         .get_investigation(&id)
         .await?
         .ok_or_else(|| {
-            ApiError(ExplorerError::NotFound(format!("investigation {} not found", id)))
+            ApiError(ExplorerError::NotFound(format!(
+                "investigation {} not found",
+                id
+            )))
         })?;
 
     let evidence = Evidence {
@@ -1518,7 +1569,10 @@ async fn add_investigation_artifact(
         .get_investigation(&id)
         .await?
         .ok_or_else(|| {
-            ApiError(ExplorerError::NotFound(format!("investigation {} not found", id)))
+            ApiError(ExplorerError::NotFound(format!(
+                "investigation {} not found",
+                id
+            )))
         })?;
 
     let artifact = cognicode_core::domain::investigation::Artifact {
@@ -1561,7 +1615,10 @@ async fn get_investigation_evidence_pack(
         .get_investigation(&id)
         .await?
         .ok_or_else(|| {
-            ApiError(ExplorerError::NotFound(format!("investigation {} not found", id)))
+            ApiError(ExplorerError::NotFound(format!(
+                "investigation {} not found",
+                id
+            )))
         })?;
 
     let view = crate::domain::views::build_evidence_pack(&investigation);
@@ -1580,7 +1637,10 @@ async fn get_investigation_composed_narrative(
         .get_investigation(&id)
         .await?
         .ok_or_else(|| {
-            ApiError(ExplorerError::NotFound(format!("investigation {} not found", id)))
+            ApiError(ExplorerError::NotFound(format!(
+                "investigation {} not found",
+                id
+            )))
         })?;
 
     let view = crate::domain::views::build_investigation_narrative(&investigation);

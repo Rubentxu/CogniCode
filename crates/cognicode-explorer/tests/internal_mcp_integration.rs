@@ -27,7 +27,7 @@ use cognicode_explorer::mcp::{
 };
 use cognicode_explorer::session::SessionRegistry;
 use rmcp::model::CallToolResult;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Extract the JSON payload from a `CallToolResult` and assert its shape.
 /// Both `ok_envelope` and `err_envelope` produce a JSON object with
@@ -390,9 +390,7 @@ async fn find_cycles_detects_mutual_cycle() {
     let ctx = ctx_with_graph(g);
     let registry = build_registry();
 
-    let result = registry
-        .dispatch(TOOL_FIND_CYCLES, &ctx, json!({}))
-        .await;
+    let result = registry.dispatch(TOOL_FIND_CYCLES, &ctx, json!({})).await;
     let payload = ok_payload(&result);
 
     // Mutual e↔f cycle is the only SCC of size >= 2.
@@ -450,9 +448,7 @@ async fn find_cycles_no_cycles_in_dag() {
     let ctx = ctx_with_graph(g);
     let registry = build_registry();
 
-    let result = registry
-        .dispatch(TOOL_FIND_CYCLES, &ctx, json!({}))
-        .await;
+    let result = registry.dispatch(TOOL_FIND_CYCLES, &ctx, json!({})).await;
     let payload = ok_payload(&result);
 
     assert_eq!(
@@ -469,9 +465,7 @@ async fn find_cycles_rejects_when_graph_unavailable() {
         .build();
     let registry = build_registry();
 
-    let result = registry
-        .dispatch(TOOL_FIND_CYCLES, &ctx, json!({}))
-        .await;
+    let result = registry.dispatch(TOOL_FIND_CYCLES, &ctx, json!({})).await;
     assert_eq!(
         err_code(&result),
         "graph_unavailable",

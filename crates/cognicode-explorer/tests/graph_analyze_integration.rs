@@ -22,8 +22,8 @@ use std::sync::Arc;
 use cognicode_core::domain::aggregates::{CallGraph, Symbol, SymbolId};
 use cognicode_core::domain::services::ExtractionContext;
 use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
-use cognicode_explorer::mcp::handler::register_graph_analyze_handlers;
 use cognicode_explorer::mcp::handler::ToolHandlerRegistry;
+use cognicode_explorer::mcp::handler::register_graph_analyze_handlers;
 use cognicode_explorer::mcp::{
     McpContext, TOOL_GRAPH_ALL_SIMPLE_PATHS, TOOL_GRAPH_COMMUNITIES,
     TOOL_GRAPH_COMMUNITY_GOD_NODES, TOOL_GRAPH_FEEDBACK_ARC_SET, TOOL_GRAPH_GOD_NODES,
@@ -44,15 +44,12 @@ fn build_chain_fixture() -> CallGraph {
     let names = ["a", "b", "c", "d", "e"];
     let mut ids: Vec<SymbolId> = Vec::new();
     for name in &names {
-        let sym = Symbol::new(
-            *name,
-            SymbolKind::Function,
-            Location::new("chain.rs", 1, 0),
-        );
+        let sym = Symbol::new(*name, SymbolKind::Function, Location::new("chain.rs", 1, 0));
         ids.push(g.add_symbol(sym));
     }
     for w in ids.windows(2) {
-        g.add_dependency(&w[0], &w[1], DependencyType::Calls).unwrap();
+        g.add_dependency(&w[0], &w[1], DependencyType::Calls)
+            .unwrap();
     }
     g
 }
@@ -64,19 +61,27 @@ fn build_communities_fixture() -> CallGraph {
     let mut g = CallGraph::new();
     // Cluster 1
     let x1 = g.add_symbol(Symbol::new(
-        "x1", SymbolKind::Function, Location::new("c1.rs", 1, 0),
+        "x1",
+        SymbolKind::Function,
+        Location::new("c1.rs", 1, 0),
     ));
     let x2 = g.add_symbol(Symbol::new(
-        "x2", SymbolKind::Function, Location::new("c1.rs", 2, 0),
+        "x2",
+        SymbolKind::Function,
+        Location::new("c1.rs", 2, 0),
     ));
     g.add_dependency(&x1, &x2, DependencyType::Calls).unwrap();
 
     // Cluster 2
     let y1 = g.add_symbol(Symbol::new(
-        "y1", SymbolKind::Function, Location::new("c2.rs", 1, 0),
+        "y1",
+        SymbolKind::Function,
+        Location::new("c2.rs", 1, 0),
     ));
     let y2 = g.add_symbol(Symbol::new(
-        "y2", SymbolKind::Function, Location::new("c2.rs", 2, 0),
+        "y2",
+        SymbolKind::Function,
+        Location::new("c2.rs", 2, 0),
     ));
     g.add_dependency(&y1, &y2, DependencyType::Calls).unwrap();
 
@@ -91,13 +96,19 @@ fn build_communities_fixture() -> CallGraph {
 fn build_cycle_fixture() -> CallGraph {
     let mut g = CallGraph::new();
     let p = g.add_symbol(Symbol::new(
-        "p", SymbolKind::Function, Location::new("cycle.rs", 1, 0),
+        "p",
+        SymbolKind::Function,
+        Location::new("cycle.rs", 1, 0),
     ));
     let q = g.add_symbol(Symbol::new(
-        "q", SymbolKind::Function, Location::new("cycle.rs", 2, 0),
+        "q",
+        SymbolKind::Function,
+        Location::new("cycle.rs", 2, 0),
     ));
     let r = g.add_symbol(Symbol::new(
-        "r", SymbolKind::Function, Location::new("cycle.rs", 3, 0),
+        "r",
+        SymbolKind::Function,
+        Location::new("cycle.rs", 3, 0),
     ));
     g.add_dependency(&p, &q, DependencyType::Calls).unwrap();
     g.add_dependency(&q, &r, DependencyType::Calls).unwrap();
@@ -110,21 +121,33 @@ fn build_cycle_fixture() -> CallGraph {
 fn build_diamond_fixture() -> CallGraph {
     let mut g = CallGraph::new();
     let start = g.add_symbol(Symbol::new(
-        "start", SymbolKind::Function, Location::new("diamond.rs", 1, 0),
+        "start",
+        SymbolKind::Function,
+        Location::new("diamond.rs", 1, 0),
     ));
     let mid1 = g.add_symbol(Symbol::new(
-        "mid1", SymbolKind::Function, Location::new("diamond.rs", 2, 0),
+        "mid1",
+        SymbolKind::Function,
+        Location::new("diamond.rs", 2, 0),
     ));
     let mid2 = g.add_symbol(Symbol::new(
-        "mid2", SymbolKind::Function, Location::new("diamond.rs", 3, 0),
+        "mid2",
+        SymbolKind::Function,
+        Location::new("diamond.rs", 3, 0),
     ));
     let end = g.add_symbol(Symbol::new(
-        "end", SymbolKind::Function, Location::new("diamond.rs", 4, 0),
+        "end",
+        SymbolKind::Function,
+        Location::new("diamond.rs", 4, 0),
     ));
-    g.add_dependency(&start, &mid1, DependencyType::Calls).unwrap();
-    g.add_dependency(&start, &mid2, DependencyType::Calls).unwrap();
-    g.add_dependency(&mid1, &end, DependencyType::Calls).unwrap();
-    g.add_dependency(&mid2, &end, DependencyType::Calls).unwrap();
+    g.add_dependency(&start, &mid1, DependencyType::Calls)
+        .unwrap();
+    g.add_dependency(&start, &mid2, DependencyType::Calls)
+        .unwrap();
+    g.add_dependency(&mid1, &end, DependencyType::Calls)
+        .unwrap();
+    g.add_dependency(&mid2, &end, DependencyType::Calls)
+        .unwrap();
     g
 }
 
@@ -781,21 +804,14 @@ fn handlers_declare_non_empty_arg_schemas() {
         (TOOL_GRAPH_SURPRISING_CONNECTIONS, vec!["subgraph"]),
         (TOOL_GRAPH_TRANSITIVE_REDUCTION, vec!["subgraph"]),
         (TOOL_GRAPH_FEEDBACK_ARC_SET, vec!["subgraph"]),
-        (
-            TOOL_GRAPH_ALL_SIMPLE_PATHS,
-            vec!["subgraph", "from", "to"],
-        ),
+        (TOOL_GRAPH_ALL_SIMPLE_PATHS, vec!["subgraph", "from", "to"]),
     ] {
         let handler = registry.get(name).unwrap();
         let schema = handler.arg_schema();
         let required = schema
             .get("required")
             .and_then(|v| v.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| v.as_str())
-                    .collect::<Vec<_>>()
-            })
+            .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
             .unwrap_or_default();
         for key in expected_required_keys {
             assert!(
@@ -826,11 +842,7 @@ fn subgraph_schema_requires_root() {
         let subgraph_required = subgraph
             .and_then(|s| s.get("required"))
             .and_then(|r| r.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| v.as_str())
-                    .collect::<Vec<_>>()
-            })
+            .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
             .unwrap_or_default();
         assert!(
             subgraph_required.contains(&"root"),

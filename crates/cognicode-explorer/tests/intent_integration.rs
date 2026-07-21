@@ -24,7 +24,10 @@ async fn lower_intent_symbols_where_parses() {
     let result = lower_intent(query);
 
     // THEN it returns Some(Ok(ast)) with a Find query
-    assert!(result.is_some(), "lowering should return Some for intent query");
+    assert!(
+        result.is_some(),
+        "lowering should return Some for intent query"
+    );
     let ast = result.unwrap();
     assert!(ast.is_ok(), "lowering should produce valid AST: {:?}", ast);
 }
@@ -41,7 +44,10 @@ async fn lower_intent_calls_from_with_depth_parses() {
     let result = lower_intent(query);
 
     // THEN it returns Some(Ok(ast)) with an Explore query
-    assert!(result.is_some(), "lowering should return Some for intent query");
+    assert!(
+        result.is_some(),
+        "lowering should return Some for intent query"
+    );
     let ast = result.unwrap();
     assert!(ast.is_ok(), "lowering should produce valid AST: {:?}", ast);
 }
@@ -105,7 +111,10 @@ async fn uppercase_intent_returns_none() {
     let result = lower_intent(query);
 
     // THEN it returns None (case-sensitive matching)
-    assert!(result.is_none(), "uppercase should not match lowering pattern");
+    assert!(
+        result.is_none(),
+        "uppercase should not match lowering pattern"
+    );
 }
 
 /// Test that unrecognized lowercase patterns return None.

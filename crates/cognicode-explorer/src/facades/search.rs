@@ -49,7 +49,9 @@ impl SearchServiceImpl {
         quality: Option<Arc<dyn crate::ports::QualityRepository>>,
         persistence: Option<Arc<dyn PersistenceService>>,
         investigation: Option<Arc<dyn crate::facades::InvestigationFacade>>,
-        #[cfg(feature = "multimodal")] graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
+        #[cfg(feature = "multimodal")] graph_repo: Option<
+            Arc<dyn cognicode_core::domain::ports::GraphRepository>,
+        >,
     ) -> Self {
         Self {
             repo,
@@ -148,7 +150,9 @@ impl SearchService for SearchServiceImpl {
         // 3) ViewSpec hits (async)
         let viewspec_results: Vec<SpotterSearchResult> = {
             let mut results: Vec<SpotterSearchResult> = Vec::new();
-            if let (Some(ref ws_id), Some(ref store)) = (workspace_id_owned.clone(), view_spec_store) {
+            if let (Some(ref ws_id), Some(ref store)) =
+                (workspace_id_owned.clone(), view_spec_store)
+            {
                 let query_lower = query_lower.clone();
                 if let Ok(all_specs) = store
                     .list_for_workspace(ws_id, InspectableObjectType::Symbol)
@@ -178,7 +182,8 @@ impl SearchService for SearchServiceImpl {
         // 4) Saved exploration hits
         let exploration_results: Vec<SpotterSearchResult> = {
             let mut results: Vec<SpotterSearchResult> = Vec::new();
-            if let (Some(ref ws_id), Some(ref persist)) = (workspace_id_owned.clone(), persistence) {
+            if let (Some(ref ws_id), Some(ref persist)) = (workspace_id_owned.clone(), persistence)
+            {
                 let q = query_lower.clone();
                 let vr_clone = view_registry.clone();
                 match persist.list_explorations(ws_id).await {
@@ -191,22 +196,24 @@ impl SearchService for SearchServiceImpl {
                                 .unwrap_or_else(|| "empty".to_string());
                             let label = format!("{} → {}", session.id, first_object);
                             let subtitle = format!("{} event(s)", session.events.len());
-                            let matches =
-                                label.to_lowercase().contains(&q) || session.id.to_lowercase().contains(&q);
+                            let matches = label.to_lowercase().contains(&q)
+                                || session.id.to_lowercase().contains(&q);
                             if matches {
-                                results.push(SpotterSearchResult::SavedExploration(SpotterResult {
-                                    object: InspectableObjectSummary {
-                                        id: format!("exploration:{}", session.id),
-                                        object_type: InspectableObjectType::SavedExploration,
-                                        label,
-                                        subtitle,
-                                        properties: Vec::new(),
-                                        available_views: vr_clone
-                                            .list_for(InspectableObjectType::SavedExploration),
+                                results.push(SpotterSearchResult::SavedExploration(
+                                    SpotterResult {
+                                        object: InspectableObjectSummary {
+                                            id: format!("exploration:{}", session.id),
+                                            object_type: InspectableObjectType::SavedExploration,
+                                            label,
+                                            subtitle,
+                                            properties: Vec::new(),
+                                            available_views: vr_clone
+                                                .list_for(InspectableObjectType::SavedExploration),
+                                        },
+                                        score: 0.8,
+                                        match_type: "exploration".to_string(),
                                     },
-                                    score: 0.8,
-                                    match_type: "exploration".to_string(),
-                                }));
+                                ));
                             }
                         }
                     }
@@ -219,7 +226,9 @@ impl SearchService for SearchServiceImpl {
         // 5) Quality issue hits — in-memory substring filter
         let issue_results: Vec<SpotterSearchResult> = {
             let mut results: Vec<SpotterSearchResult> = Vec::new();
-            if let (Some(ref ws_id), Some(ref q_repo)) = (workspace_id_owned.clone(), quality.clone()) {
+            if let (Some(ref ws_id), Some(ref q_repo)) =
+                (workspace_id_owned.clone(), quality.clone())
+            {
                 let q = query_lower.clone();
                 let vr_clone = view_registry.clone();
                 let filter = crate::ports::quality_repository::IssueFilter {
@@ -264,7 +273,9 @@ impl SearchService for SearchServiceImpl {
         // 6) Rule hits — derived from issues that matched
         let rule_results: Vec<SpotterSearchResult> = {
             let mut results: Vec<SpotterSearchResult> = Vec::new();
-            if let (Some(ref ws_id), Some(ref q_repo)) = (workspace_id_owned.clone(), quality.clone()) {
+            if let (Some(ref ws_id), Some(ref q_repo)) =
+                (workspace_id_owned.clone(), quality.clone())
+            {
                 let q = query_lower.clone();
                 let vr_clone = view_registry.clone();
                 let filter = crate::ports::quality_repository::IssueFilter {
@@ -293,7 +304,8 @@ impl SearchService for SearchServiceImpl {
                                         label: format!("Rule {}", rule_id),
                                         subtitle: format!("{} open finding(s)", summary.open_count),
                                         properties: Vec::new(),
-                                        available_views: vr_clone.list_for(InspectableObjectType::Rule),
+                                        available_views: vr_clone
+                                            .list_for(InspectableObjectType::Rule),
                                     },
                                     score: 0.7,
                                     match_type: "rule".to_string(),
@@ -310,7 +322,9 @@ impl SearchService for SearchServiceImpl {
         // 7) Investigation hits
         let investigation_results: Vec<SpotterSearchResult> = {
             let mut results = Vec::new();
-            if let (Some(ref ws_id), Some(ref inv_facade)) = (workspace_id_owned.clone(), investigation.clone()) {
+            if let (Some(ref ws_id), Some(ref inv_facade)) =
+                (workspace_id_owned.clone(), investigation.clone())
+            {
                 let q = query_lower.clone();
                 let vr_clone = view_registry.clone();
                 match inv_facade.list_investigations(ws_id).await {
@@ -322,9 +336,14 @@ impl SearchService for SearchServiceImpl {
                                         id: format!("investigation:{}", inv.id),
                                         object_type: InspectableObjectType::Investigation,
                                         label: inv.title.clone(),
-                                        subtitle: format!("{} evidence | {}", inv.evidence.len(), inv.status),
+                                        subtitle: format!(
+                                            "{} evidence | {}",
+                                            inv.evidence.len(),
+                                            inv.status
+                                        ),
                                         properties: Vec::new(),
-                                        available_views: vr_clone.list_for(InspectableObjectType::Investigation),
+                                        available_views: vr_clone
+                                            .list_for(InspectableObjectType::Investigation),
                                     },
                                     score: 0.8,
                                     match_type: "investigation".to_string(),
@@ -340,7 +359,10 @@ impl SearchService for SearchServiceImpl {
 
         // 8) Scope hits — derived by grouping symbols by parent directory
         // Short-circuit: skip if kind is set and is not "scope"
-        let scope_results: Vec<SpotterSearchResult> = if kind.map(|k| k.eq_ignore_ascii_case("scope")).unwrap_or(true) {
+        let scope_results: Vec<SpotterSearchResult> = if kind
+            .map(|k| k.eq_ignore_ascii_case("scope"))
+            .unwrap_or(true)
+        {
             let repo_clone = repo.clone();
             let vr_clone = view_registry.clone();
             let q = query_lower.clone();
@@ -366,8 +388,16 @@ impl SearchService for SearchServiceImpl {
                 let k = kind_filter.clone();
 
                 // Doc hits
-                if k.as_ref().map(|kk| kk.eq_ignore_ascii_case("doc")).unwrap_or(true) {
-                    let doc_nodes = graph.search_paginated(&q, &[cognicode_core::domain::value_objects::node_kind::NodeKind::Doc], SPOTTER_RESULT_LIMIT, None);
+                if k.as_ref()
+                    .map(|kk| kk.eq_ignore_ascii_case("doc"))
+                    .unwrap_or(true)
+                {
+                    let doc_nodes = graph.search_paginated(
+                        &q,
+                        &[cognicode_core::domain::value_objects::node_kind::NodeKind::Doc],
+                        SPOTTER_RESULT_LIMIT,
+                        None,
+                    );
                     if let Ok(page) = doc_nodes {
                         for node in page.items {
                             results.push(SpotterSearchResult::Doc(SpotterResult {
@@ -375,7 +405,11 @@ impl SearchService for SearchServiceImpl {
                                     id: format!("doc:{}", node.id),
                                     object_type: InspectableObjectType::Doc,
                                     label: node.label.clone(),
-                                    subtitle: node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| "Graph node".to_string()),
+                                    subtitle: node
+                                        .source_path
+                                        .as_ref()
+                                        .map(|p| p.to_string_lossy().into_owned())
+                                        .unwrap_or_else(|| "Graph node".to_string()),
                                     properties: Vec::new(),
                                     available_views: vr_clone.list_for(InspectableObjectType::Doc),
                                 },
@@ -387,8 +421,16 @@ impl SearchService for SearchServiceImpl {
                 }
 
                 // Decision hits
-                if k.as_ref().map(|kk| kk.eq_ignore_ascii_case("decision")).unwrap_or(true) {
-                    let decision_nodes = graph.search_paginated(&q, &[cognicode_core::domain::value_objects::node_kind::NodeKind::Decision], SPOTTER_RESULT_LIMIT, None);
+                if k.as_ref()
+                    .map(|kk| kk.eq_ignore_ascii_case("decision"))
+                    .unwrap_or(true)
+                {
+                    let decision_nodes = graph.search_paginated(
+                        &q,
+                        &[cognicode_core::domain::value_objects::node_kind::NodeKind::Decision],
+                        SPOTTER_RESULT_LIMIT,
+                        None,
+                    );
                     if let Ok(page) = decision_nodes {
                         for node in page.items {
                             results.push(SpotterSearchResult::Decision(SpotterResult {
@@ -396,9 +438,14 @@ impl SearchService for SearchServiceImpl {
                                     id: format!("decision:{}", node.id),
                                     object_type: InspectableObjectType::DecisionArtifact,
                                     label: node.label.clone(),
-                                    subtitle: node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| "Decision artifact".to_string()),
+                                    subtitle: node
+                                        .source_path
+                                        .as_ref()
+                                        .map(|p| p.to_string_lossy().into_owned())
+                                        .unwrap_or_else(|| "Decision artifact".to_string()),
                                     properties: Vec::new(),
-                                    available_views: vr_clone.list_for(InspectableObjectType::DecisionArtifact),
+                                    available_views: vr_clone
+                                        .list_for(InspectableObjectType::DecisionArtifact),
                                 },
                                 score: 0.75,
                                 match_type: "decision".to_string(),
@@ -408,8 +455,16 @@ impl SearchService for SearchServiceImpl {
                 }
 
                 // Evidence hits
-                if k.as_ref().map(|kk| kk.eq_ignore_ascii_case("evidence")).unwrap_or(true) {
-                    let evidence_nodes = graph.search_paginated(&q, &[cognicode_core::domain::value_objects::node_kind::NodeKind::Evidence], SPOTTER_RESULT_LIMIT, None);
+                if k.as_ref()
+                    .map(|kk| kk.eq_ignore_ascii_case("evidence"))
+                    .unwrap_or(true)
+                {
+                    let evidence_nodes = graph.search_paginated(
+                        &q,
+                        &[cognicode_core::domain::value_objects::node_kind::NodeKind::Evidence],
+                        SPOTTER_RESULT_LIMIT,
+                        None,
+                    );
                     if let Ok(page) = evidence_nodes {
                         for node in page.items {
                             results.push(SpotterSearchResult::Evidence(SpotterResult {
@@ -417,9 +472,14 @@ impl SearchService for SearchServiceImpl {
                                     id: format!("evidence:{}", node.id),
                                     object_type: InspectableObjectType::Evidence,
                                     label: node.label.clone(),
-                                    subtitle: node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| "Evidence node".to_string()),
+                                    subtitle: node
+                                        .source_path
+                                        .as_ref()
+                                        .map(|p| p.to_string_lossy().into_owned())
+                                        .unwrap_or_else(|| "Evidence node".to_string()),
                                     properties: Vec::new(),
-                                    available_views: vr_clone.list_for(InspectableObjectType::Evidence),
+                                    available_views: vr_clone
+                                        .list_for(InspectableObjectType::Evidence),
                                 },
                                 score: 0.75,
                                 match_type: "evidence".to_string(),
@@ -523,7 +583,9 @@ impl SearchService for SearchServiceImpl {
                                 },
                                 Property {
                                     key: "created_at".into(),
-                                    value: serde_json::Value::String(session.created_at.to_string()),
+                                    value: serde_json::Value::String(
+                                        session.created_at.to_string(),
+                                    ),
                                     value_type: "string".into(),
                                     source: "PersistenceService".into(),
                                 },
@@ -549,10 +611,8 @@ impl SearchService for SearchServiceImpl {
                     let evidence_count = inv.evidence.len();
                     let artifact_count = inv.artifacts.len();
                     let label = format!("{}: {}", inv.id, inv.title);
-                    let subtitle = format!(
-                        "{} evidence, {} artifacts",
-                        evidence_count, artifact_count
-                    );
+                    let subtitle =
+                        format!("{} evidence, {} artifacts", evidence_count, artifact_count);
 
                     return Ok(InspectableObjectSummary {
                         id: format!("investigation:{}", inv.id),
@@ -1230,7 +1290,10 @@ fn derive_scope_results(
             let parent_dir = &sym.file[..=last_slash]; // include the trailing `/`
             let parent_dir_lower = parent_dir.to_lowercase();
             if parent_dir_lower.contains(query) {
-                scope_map.entry(parent_dir.to_string()).or_default().push(sym);
+                scope_map
+                    .entry(parent_dir.to_string())
+                    .or_default()
+                    .push(sym);
             }
         }
     }

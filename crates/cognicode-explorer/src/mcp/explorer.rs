@@ -29,6 +29,7 @@ use cognicode_core::domain::traits::GraphQueryPort;
 pub use super::context::McpContext;
 pub use super::error::ToolError;
 pub use super::handler::{ToolHandler, ToolHandlerRegistry};
+use crate::domain::snapshot::SnapshotService;
 use crate::facades::LensExecutor;
 use crate::facades::graph::GraphServiceImpl;
 use crate::facades::moldql::MoldQLServiceImpl;
@@ -41,7 +42,6 @@ use crate::facades::{
 };
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::SymbolRepository;
-use crate::domain::snapshot::SnapshotService;
 use crate::session::SessionRegistry;
 
 /// Sentinel value for `max_depth` when none is supplied.
@@ -379,7 +379,9 @@ impl ExplorerMcpHandler {
         quality_repo: Option<Arc<dyn crate::ports::QualityRepository>>,
         quality_write: Option<Arc<dyn crate::ports::QualityWritePort>>,
         #[cfg(feature = "multimodal")] edge_emitter: Option<Arc<dyn crate::ports::EdgeEmitter>>,
-        #[cfg(feature = "ownership")] pg_repo: Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
+        #[cfg(feature = "ownership")] pg_repo: Option<
+            Arc<cognicode_core::infrastructure::persistence::PostgresRepository>,
+        >,
     ) -> Self {
         // GraphQueryPort may be None when no call graph is loaded.
         #[cfg(not(feature = "ownership"))]
@@ -389,8 +391,10 @@ impl ExplorerMcpHandler {
         });
         #[cfg(feature = "ownership")]
         let graph_query: Option<Arc<dyn GraphQueryPort>> = graph.as_ref().map(|g| {
-            Arc::new(crate::adapters::CallGraphRepository::new_with_pg_repo(g.clone(), pg_repo.clone()))
-                as Arc<dyn GraphQueryPort>
+            Arc::new(crate::adapters::CallGraphRepository::new_with_pg_repo(
+                g.clone(),
+                pg_repo.clone(),
+            )) as Arc<dyn GraphQueryPort>
         });
 
         // Workspace facade.
@@ -651,10 +655,10 @@ pub const TOOL_NAMES: &[&str] = &[
     TOOL_FIND_DEAD_CODE_V2,
     TOOL_FIND_INTERSECTION,
     TOOL_HOTSPOTS,
-        TOOL_FIND_QUALITY_ISSUES,
-        TOOL_QUALITY_GATE,
-        TOOL_INGEST_QUALITY_ISSUES,
-        TOOL_BUILD_CONTEXT,
+    TOOL_FIND_QUALITY_ISSUES,
+    TOOL_QUALITY_GATE,
+    TOOL_INGEST_QUALITY_ISSUES,
+    TOOL_BUILD_CONTEXT,
 ];
 
 /// Names of tools that are only available with the `multimodal` feature.

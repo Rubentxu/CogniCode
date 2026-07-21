@@ -15,11 +15,11 @@ pub mod events;
 pub mod federation;
 // Hexagonal "driven" ports for the Generic Graph Layer (multimodal).
 // Hidden on default builds so the byte-level surface is unchanged.
+pub mod investigation;
+pub mod investigation_store;
 #[cfg(feature = "multimodal")]
 pub mod ports;
 pub mod services;
-pub mod investigation;
-pub mod investigation_store;
 pub mod traits;
 pub mod value_objects;
 

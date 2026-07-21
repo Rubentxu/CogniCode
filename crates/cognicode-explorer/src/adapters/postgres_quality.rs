@@ -42,8 +42,8 @@ use cognicode_core::infrastructure::persistence::PostgresRepository;
 use crate::error::ExplorerResult;
 #[cfg(feature = "postgres")]
 use crate::ports::quality_repository::{
-    IssueFilter, NewIssue, QualityGateSummary, QualityIssue, QualityRepository,
-    QualityWritePort, RuleSummary, UpsertSummary,
+    IssueFilter, NewIssue, QualityGateSummary, QualityIssue, QualityRepository, QualityWritePort,
+    RuleSummary, UpsertSummary,
 };
 
 #[cfg(feature = "postgres")]
@@ -140,7 +140,9 @@ impl QualityRepository for PostgresQualityRepository {
             .fetch_all(pool)
             .await
         })
-        .map_err(|e| crate::error::ExplorerError::Anyhow(anyhow::anyhow!("issues_for_file: {e}")))?;
+        .map_err(|e| {
+            crate::error::ExplorerError::Anyhow(anyhow::anyhow!("issues_for_file: {e}"))
+        })?;
         Ok(rows.into_iter().map(QualityIssue::from).collect())
     }
 
@@ -163,7 +165,9 @@ impl QualityRepository for PostgresQualityRepository {
             .fetch_all(pool)
             .await
         })
-        .map_err(|e| crate::error::ExplorerError::Anyhow(anyhow::anyhow!("issues_for_scope: {e}")))?;
+        .map_err(|e| {
+            crate::error::ExplorerError::Anyhow(anyhow::anyhow!("issues_for_scope: {e}"))
+        })?;
         Ok(rows.into_iter().map(QualityIssue::from).collect())
     }
 
@@ -283,11 +287,13 @@ impl QualityRepository for PostgresQualityRepository {
         let ws = workspace_id.map(|s| s.to_string());
         let count: i64 = block_on(async move {
             if let Some(ref w) = ws {
-                sqlx::query(r#"SELECT COUNT(*) FROM issues WHERE workspace_id = $1 AND status = 'open'"#)
-                    .bind(w)
-                    .fetch_one(&pool)
-                    .await?
-                    .try_get::<i64, _>(0)
+                sqlx::query(
+                    r#"SELECT COUNT(*) FROM issues WHERE workspace_id = $1 AND status = 'open'"#,
+                )
+                .bind(w)
+                .fetch_one(&pool)
+                .await?
+                .try_get::<i64, _>(0)
             } else {
                 sqlx::query(r#"SELECT COUNT(*) FROM issues WHERE status = 'open'"#)
                     .fetch_one(&pool)
@@ -295,7 +301,9 @@ impl QualityRepository for PostgresQualityRepository {
                     .try_get::<i64, _>(0)
             }
         })
-        .map_err(|e| crate::error::ExplorerError::Anyhow(anyhow::anyhow!("open_issues_count: {e}")))?;
+        .map_err(|e| {
+            crate::error::ExplorerError::Anyhow(anyhow::anyhow!("open_issues_count: {e}"))
+        })?;
         Ok(count.max(0) as usize)
     }
 
@@ -353,8 +361,9 @@ impl QualityRepository for PostgresQualityRepository {
         for b in &binds {
             query = query.bind(b);
         }
-        let rows = block_on(async move { query.fetch_all(&self.pool).await })
-            .map_err(|e| crate::error::ExplorerError::Anyhow(anyhow::anyhow!("issues_for_workspace: {e}")))?;
+        let rows = block_on(async move { query.fetch_all(&self.pool).await }).map_err(|e| {
+            crate::error::ExplorerError::Anyhow(anyhow::anyhow!("issues_for_workspace: {e}"))
+        })?;
         Ok(rows.into_iter().map(QualityIssue::from).collect())
     }
 }
@@ -387,11 +396,13 @@ impl QualityWritePort for PostgresQualityRepository {
                     .push_bind(&i.message)
                     .push_bind(&i.status);
             });
-            qb.push(" ON CONFLICT (workspace_id, rule_id, file_path, line) DO UPDATE SET \
+            qb.push(
+                " ON CONFLICT (workspace_id, rule_id, file_path, line) DO UPDATE SET \
                      severity = EXCLUDED.severity, category = EXCLUDED.category, \
                      message = EXCLUDED.message, status = EXCLUDED.status, \
                      updated_at = now() \
-                     RETURNING (xmax = 0) AS inserted");
+                     RETURNING (xmax = 0) AS inserted",
+            );
 
             let rows = qb.build().fetch_all(&mut *tx).await?;
 

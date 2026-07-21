@@ -33,10 +33,9 @@ use cognicode_core::domain::traits::GraphQueryPort;
 
 use crate::dto::{
     ContextualGraphResponse, ContextualView, DecisionArtifactSummary, DriftReport,
-    ExplorationSession, GenerateArtifactRequest, GodNodeEntry, GraphNode,
-    InspectableObjectSummary, LensDescriptor, LensResult, SpotterResult,
-    SpotterSearchResult, SubgraphResponse, ViewDescriptorDto, ViewSpec,
-    WorkspaceSummary,
+    ExplorationSession, GenerateArtifactRequest, GodNodeEntry, GraphNode, InspectableObjectSummary,
+    LensDescriptor, LensResult, SpotterResult, SpotterSearchResult, SubgraphResponse,
+    ViewDescriptorDto, ViewSpec, WorkspaceSummary,
 };
 use crate::error::ExplorerResult;
 use crate::moldql::MoldQLResult;

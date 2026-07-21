@@ -165,8 +165,7 @@ impl SnapshotService {
         }
 
         // 3. Check mmdc exists
-        which::which("mmdc")
-            .map_err(|_| SnapshotError::MmdcNotFound)?;
+        which::which("mmdc").map_err(|_| SnapshotError::MmdcNotFound)?;
 
         // 4. Acquire concurrency permit
         let _permit = self.permits.acquire().await.expect("semaphore closed");
@@ -194,8 +193,10 @@ impl SnapshotService {
             .map_err(|e| SnapshotError::RenderFailed(format!("failed to write temp file: {e}")))?;
         let input_path = input_file.path().to_owned();
 
-        let output_file = tempfile::NamedTempFile::with_suffix(&format!(".{output_ext}"))
-            .map_err(|e| SnapshotError::RenderFailed(format!("failed to create output temp file: {e}")))?;
+        let output_file =
+            tempfile::NamedTempFile::with_suffix(&format!(".{output_ext}")).map_err(|e| {
+                SnapshotError::RenderFailed(format!("failed to create output temp file: {e}"))
+            })?;
         let output_path = output_file.path().to_owned();
 
         // Build mmdc command
@@ -269,7 +270,12 @@ mod tests {
     fn snapshot_format_parse_unknown() {
         let result = SnapshotFormat::parse("jpg");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("unknown snapshot format"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("unknown snapshot format")
+        );
     }
 
     #[test]
@@ -305,8 +311,7 @@ mod tests {
 
     #[test]
     fn snapshot_service_with_timeout() {
-        let svc = SnapshotService::new()
-            .with_timeout(Duration::from_secs(60));
+        let svc = SnapshotService::new().with_timeout(Duration::from_secs(60));
         let _ = svc;
     }
 
@@ -334,6 +339,8 @@ mod tests {
         // Create text larger than 1 MB
         let large_text = "x".repeat(1024 * 1024 + 1);
         let result = svc.render(&large_text, SnapshotFormat::Png).await;
-        assert!(matches!(result, Err(SnapshotError::SizeLimitExceeded { size }) if size > 1024 * 1024));
+        assert!(
+            matches!(result, Err(SnapshotError::SizeLimitExceeded { size }) if size > 1024 * 1024)
+        );
     }
 }

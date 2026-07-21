@@ -41,10 +41,7 @@
 /// assert!(!path_matches("/pets/{id}", "/pets"));
 /// ```
 pub fn path_matches(pattern: &str, query: &str) -> bool {
-    let pattern_parts: Vec<&str> = pattern
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .collect();
+    let pattern_parts: Vec<&str> = pattern.split('/').filter(|s| !s.is_empty()).collect();
     let query_parts: Vec<&str> = query.split('/').filter(|s| !s.is_empty()).collect();
 
     if pattern_parts.len() != query_parts.len() {
@@ -233,11 +230,11 @@ pub(crate) mod handlers {
     use serde_json::Value;
     use sha2::{Digest, Sha256};
 
+    use crate::mcp::McpContext;
     use crate::mcp::envelope::{err_envelope, ok_envelope};
     use crate::mcp::handler::ToolHandler;
-    use crate::mcp::McpContext;
     use crate::ports::edge_emitter::{
-        ApiRoute, ApiRouteEdge, EdgeEmitter, EDGE_KIND_HTTP_CALLS, PROTOCOL_HTTP,
+        ApiRoute, ApiRouteEdge, EDGE_KIND_HTTP_CALLS, EdgeEmitter, PROTOCOL_HTTP,
     };
 
     // Tool name imported from explorer.rs
@@ -245,9 +242,7 @@ pub(crate) mod handlers {
 
     /// Register both `IngestOpenApiHandler` and `TraceRouteHandler`
     /// into the given registry.
-    pub(crate) fn register_handlers(
-        registry: &mut crate::mcp::handler::ToolHandlerRegistry,
-    ) {
+    pub(crate) fn register_handlers(registry: &mut crate::mcp::handler::ToolHandlerRegistry) {
         registry.register(IngestOpenApiHandler);
         registry.register(TraceRouteHandler);
     }
@@ -311,7 +306,12 @@ pub(crate) mod handlers {
 
     /// Build the canonical route id: `route:HTTP:{METHOD}:{path}`.
     fn make_route_id(method: &str, path: &str) -> String {
-        format!("route:{}:{}:{}", PROTOCOL_HTTP.to_uppercase(), method.to_uppercase(), path)
+        format!(
+            "route:{}:{}:{}",
+            PROTOCOL_HTTP.to_uppercase(),
+            method.to_uppercase(),
+            path
+        )
     }
 
     /// Compute SHA256 hex of `bytes`.
@@ -337,9 +337,7 @@ pub(crate) mod handlers {
 
     /// Extract all routes from an OpenAPI spec.
     /// Returns Vec of `(method, path, operation_id, summary)`.
-    fn extract_routes(
-        spec: &oas3::Spec,
-    ) -> Vec<(String, String, Option<String>, Option<String>)> {
+    fn extract_routes(spec: &oas3::Spec) -> Vec<(String, String, Option<String>, Option<String>)> {
         spec.operations()
             .map(|(path, method, op)| {
                 (
@@ -512,7 +510,13 @@ pub(crate) mod handlers {
             let routes: Vec<ApiRoute> = raw_routes
                 .iter()
                 .map(|(method, path, _, _)| {
-                    build_api_route(method, path, spec_path, &spec_hash, args.framework.as_deref())
+                    build_api_route(
+                        method,
+                        path,
+                        spec_path,
+                        &spec_hash,
+                        args.framework.as_deref(),
+                    )
                 })
                 .collect();
 

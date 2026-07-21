@@ -37,8 +37,8 @@ pub mod internal_mcp;
 pub mod lens_mcp;
 // `quality_mcp` is `pub` for the same reason — integration tests need
 // to register the handlers into a fresh registry.
-pub mod quality_mcp;
 mod named_views;
+pub mod quality_mcp;
 mod search;
 mod sessions;
 /// Snapshot export handler (multimodal).
@@ -165,11 +165,11 @@ pub use impact::register_impact_handlers;
 pub use ingest::register_ingest_handlers;
 pub use internal_mcp::register_internal_mcp_handlers;
 pub use lens_mcp::register_lens_mcp_handlers;
-pub use quality_mcp::register_quality_mcp_handlers;
 pub use named_views::register_named_views_handlers;
-#[cfg(feature = "multimodal")]
-pub use snapshot::register_snapshot_handlers;
+pub use quality_mcp::register_quality_mcp_handlers;
 pub use search::register_search_handlers;
 pub use sessions::register_session_handlers;
+#[cfg(feature = "multimodal")]
+pub use snapshot::register_snapshot_handlers;
 pub use views::register_view_handlers;
 pub use workspace::register_workspace_handlers;

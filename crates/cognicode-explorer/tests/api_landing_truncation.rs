@@ -104,7 +104,10 @@ fn landing_payload_serializes_with_truncated_true_and_reason() {
     payload.truncated_reason = Some("node_cap".to_string());
     let json = serde_json::to_value(&payload).expect("serialize LandingPayload");
     assert_eq!(json["truncated"], serde_json::Value::Bool(true));
-    assert_eq!(json["truncated_reason"], serde_json::Value::String("node_cap".into()));
+    assert_eq!(
+        json["truncated_reason"],
+        serde_json::Value::String("node_cap".into())
+    );
 }
 
 #[test]

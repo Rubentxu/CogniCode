@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use cognicode_core::domain::aggregates::SymbolId;
 use rmcp::model::CallToolResult;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::dto::{InspectableObjectSummary, LensResult};
 use crate::mcp::envelope::{err_envelope, ok_envelope};
@@ -107,7 +107,7 @@ struct ContextLensFindingDto {
 }
 
 /// Lens slice — findings from the requested lenses.
-#[derive(Debug,Serialize)]
+#[derive(Debug, Serialize)]
 struct LensSliceDto {
     requested: Vec<String>,
     applied: Vec<String>,
@@ -259,15 +259,11 @@ impl ToolHandler for BuildContextHandler {
         };
 
         // Apply lenses
-        let lenses_arg = args
-            .lenses
-            .clone()
-            .unwrap_or_else(default_lenses);
+        let lenses_arg = args.lenses.clone().unwrap_or_else(default_lenses);
         let (lens_slice, lenses_skipped) = apply_lenses(ctx, &args.object_id, &lenses_arg).await;
 
         // Quality at file (only if applicable + quality wired)
-        let (quality_slice, quality_skipped) =
-            pull_quality(ctx, &object_summary).await;
+        let (quality_slice, quality_skipped) = pull_quality(ctx, &object_summary).await;
 
         // Graph neighbors (only if graph_query wired + symbol-shaped)
         let (graph_slice, graph_skipped) =
@@ -591,10 +587,7 @@ fn render_markdown(json: &BuildContextJson) -> String {
 
     // Graph neighbors
     if let Some(g) = &json.graph {
-        out.push_str(&format!(
-            "\n## Graph (depth ≤ {})\n\n",
-            json.depth
-        ));
+        out.push_str(&format!("\n## Graph (depth ≤ {})\n\n", json.depth));
         out.push_str(&format!(
             "- **Callers**: {} (`{}`)\n",
             g.caller_count,
@@ -636,9 +629,7 @@ fn render_markdown(json: &BuildContextJson) -> String {
 // ============================================================================
 
 /// Register the context-builder handler into the registry.
-pub fn register_context_builder_handlers(
-    registry: &mut crate::mcp::handler::ToolHandlerRegistry,
-) {
+pub fn register_context_builder_handlers(registry: &mut crate::mcp::handler::ToolHandlerRegistry) {
     registry.register(BuildContextHandler);
 }
 

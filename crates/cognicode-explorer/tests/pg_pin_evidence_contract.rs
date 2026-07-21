@@ -5,15 +5,15 @@
 
 #![cfg(all(test, feature = "postgres", feature = "multimodal"))]
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
+use async_trait::async_trait;
 use axum::{
+    Router,
     body::Body,
     http::{Method, StatusCode},
-    Router,
 };
-use async_trait::async_trait;
 use cognicode_core::infrastructure::persistence::PostgresRepository;
 use serde_json::json;
 use sqlx::PgPool;
@@ -33,10 +33,14 @@ impl crate::WorkspaceService for MockWorkspaceService {
         &self,
         _request: crate::dto::OpenWorkspaceRequest,
     ) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
-        Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        Err(crate::error::ExplorerError::WorkspaceNotFound(
+            "mock".into(),
+        ))
     }
     fn current_workspace(&self) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
-        Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        Err(crate::error::ExplorerError::WorkspaceNotFound(
+            "mock".into(),
+        ))
     }
 }
 
@@ -208,7 +212,12 @@ impl crate::PersistenceService for MockPersistenceService {
     ) -> crate::ExplorerResult<Vec<crate::dto::ViewSpec>> {
         Ok(vec![])
     }
-    async fn delete_view_spec(&self, _id: &str, _workspace_id: &str, _owner: &str) -> crate::ExplorerResult<bool> {
+    async fn delete_view_spec(
+        &self,
+        _id: &str,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> crate::ExplorerResult<bool> {
         Ok(false)
     }
 }
@@ -240,7 +249,8 @@ async fn fresh_test_url() -> Option<(String, PgPool)> {
     let pool = sqlx::PgPool::connect(&test_url).await.ok()?;
 
     // Run the embedded schemas.
-    let m0013 = include_str!("../../cognicode-core/src/infrastructure/persistence/m0013_investigation.sql");
+    let m0013 =
+        include_str!("../../cognicode-core/src/infrastructure/persistence/m0013_investigation.sql");
 
     for stmt in m0013.split(';') {
         let stmt = stmt.trim();
@@ -256,7 +266,8 @@ async fn fresh_test_url() -> Option<(String, PgPool)> {
 fn rewrite_db_name(base: &str, db_name: &str) -> String {
     use regex::Regex;
     let re = Regex::new(r"^postgres://([^@]+)@([^/]+)(/[^?]*)?").unwrap();
-    re.replace(base, format!(r"postgres://$1@$2/{}", db_name)).to_string()
+    re.replace(base, format!(r"postgres://$1@$2/{}", db_name))
+        .to_string()
 }
 
 async fn setup_app() -> (Router, PgPool) {
@@ -415,13 +426,12 @@ async fn pin_evidence_updates_investigation_updated_at() {
     .unwrap();
 
     // Get initial updated_at as string
-    let initial_updated: String = sqlx::query_scalar(
-        "SELECT updated_at::text FROM investigations WHERE id = $1",
-    )
-    .bind(&inv_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let initial_updated: String =
+        sqlx::query_scalar("SELECT updated_at::text FROM investigations WHERE id = $1")
+            .bind(&inv_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
 
     // Wait a bit to ensure updated_at would change
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
@@ -446,13 +456,12 @@ async fn pin_evidence_updates_investigation_updated_at() {
         .unwrap();
 
     // Verify updated_at was updated
-    let updated_after: String = sqlx::query_scalar(
-        "SELECT updated_at::text FROM investigations WHERE id = $1",
-    )
-    .bind(&inv_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let updated_after: String =
+        sqlx::query_scalar("SELECT updated_at::text FROM investigations WHERE id = $1")
+            .bind(&inv_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
 
     assert_ne!(initial_updated, updated_after);
     assert!(updated_after > initial_updated);

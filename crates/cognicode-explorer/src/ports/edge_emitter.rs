@@ -165,17 +165,11 @@ pub trait EdgeEmitter: Send + Sync {
 
     /// Return every route whose `spec_hash` matches — used by the
     /// idempotent re-ingest short-circuit.
-    async fn find_routes_by_spec_hash(
-        &self,
-        spec_hash: &str,
-    ) -> ExplorerResult<Vec<ApiRoute>>;
+    async fn find_routes_by_spec_hash(&self, spec_hash: &str) -> ExplorerResult<Vec<ApiRoute>>;
 
     /// Return every route whose `handler_symbol` matches — used by
     /// the trace-route tool's "reverse" direction (handler → routes).
-    async fn find_routes_by_handler(
-        &self,
-        handler_symbol: &str,
-    ) -> ExplorerResult<Vec<ApiRoute>>;
+    async fn find_routes_by_handler(&self, handler_symbol: &str) -> ExplorerResult<Vec<ApiRoute>>;
 }
 
 /// Counts from a batch upsert operation.
@@ -193,10 +187,7 @@ pub struct BatchStats {
 impl BatchStats {
     /// Total number of rows touched (created + updated) in this batch.
     pub fn total_touched(&self) -> usize {
-        self.routes_created
-            + self.routes_updated
-            + self.edges_created
-            + self.edges_updated
+        self.routes_created + self.routes_updated + self.edges_created + self.edges_updated
     }
 }
 

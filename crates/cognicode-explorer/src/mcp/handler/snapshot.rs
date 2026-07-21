@@ -7,16 +7,16 @@
 //! `SnapshotService` which requires `mmdc` (Mermaid CLI) to be installed.
 
 use async_trait::async_trait;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use rmcp::model::CallToolResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::domain::snapshot::{SnapshotError, SnapshotFormat, SnapshotService};
 use crate::domain::snapshot_dispatch::SnapshotViewKind;
+use crate::mcp::McpContext;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
-use crate::mcp::McpContext;
 
 #[cfg(feature = "multimodal")]
 use crate::mcp::TOOL_EXPORT_SNAPSHOT;
@@ -117,22 +117,18 @@ impl ToolHandler for ExportSnapshotHandler {
         let format = match SnapshotFormat::parse(&args.format) {
             Ok(f) => f,
             Err(e) => {
-                return err_envelope(
-                    TOOL_EXPORT_SNAPSHOT,
-                    "invalid_format",
-                    &e.to_string(),
-                );
+                return err_envelope(TOOL_EXPORT_SNAPSHOT, "invalid_format", &e.to_string());
             }
         };
 
         // Get Mermaid text
-        let mermaid_text = match emit_mermaid_for_snapshot(ctx, view_kind, args.target.as_deref()).await
-        {
-            Ok(text) => text,
-            Err(msg) => {
-                return err_envelope(TOOL_EXPORT_SNAPSHOT, "mermaid_error", &msg);
-            }
-        };
+        let mermaid_text =
+            match emit_mermaid_for_snapshot(ctx, view_kind, args.target.as_deref()).await {
+                Ok(text) => text,
+                Err(msg) => {
+                    return err_envelope(TOOL_EXPORT_SNAPSHOT, "mermaid_error", &msg);
+                }
+            };
 
         // Render to PNG/SVG via SnapshotService
         let snapshot_svc = match ctx.snapshot.as_ref() {
@@ -197,18 +193,23 @@ fn snapshot_error_to_code_and_msg(err: SnapshotError) -> (&'static str, String) 
     use SnapshotError::*;
     match err {
         MermaidEmpty => ("empty_input", err.to_string()),
-        SizeLimitExceeded { size } => {
-            ("size_limit_exceeded", format!("mermaid text exceeds 1 MB size limit ({size} bytes)"))
-        }
+        SizeLimitExceeded { size } => (
+            "size_limit_exceeded",
+            format!("mermaid text exceeds 1 MB size limit ({size} bytes)"),
+        ),
         MmdcNotFound => (
             "mmdc_not_found",
-            "mmdc not found — install mermaid-cli: npm install -g @mermaid-js/mermaid-cli".to_string(),
+            "mmdc not found — install mermaid-cli: npm install -g @mermaid-js/mermaid-cli"
+                .to_string(),
         ),
         RenderFailed(msg) => ("render_failed", format!("mmdc render failed: {msg}")),
         Timeout(dur) => ("timeout", format!("render timed out after {dur:?}")),
         GraphServiceNotWired => ("internal_error", "graph service not wired".to_string()),
         WorkspaceNotWired => ("internal_error", "workspace service not wired".to_string()),
-        TargetRequiredForTrace => ("invalid_input", "target is required for trace view kinds".to_string()),
+        TargetRequiredForTrace => (
+            "invalid_input",
+            "target is required for trace view kinds".to_string(),
+        ),
         EmissionFailed(msg) => ("emission_failed", format!("mermaid emission failed: {msg}")),
     }
 }
@@ -233,7 +234,7 @@ mod tests {
 
     use crate::mcp::handler::ToolHandlerRegistry;
     use rmcp::model::CallToolResult;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     // ------------------------------------------------------------------------
     // Helpers
@@ -289,12 +290,36 @@ mod tests {
 
     #[test]
     fn snapshot_view_kind_is_trace_kind() {
-        assert!(!SnapshotViewKind::from_str("c4_context").unwrap().is_trace_kind());
-        assert!(!SnapshotViewKind::from_str("c4_container").unwrap().is_trace_kind());
-        assert!(!SnapshotViewKind::from_str("c4_component").unwrap().is_trace_kind());
-        assert!(SnapshotViewKind::from_str("call_graph").unwrap().is_trace_kind());
-        assert!(SnapshotViewKind::from_str("impact_radius").unwrap().is_trace_kind());
-        assert!(SnapshotViewKind::from_str("vertical_slice").unwrap().is_trace_kind());
+        assert!(
+            !SnapshotViewKind::from_str("c4_context")
+                .unwrap()
+                .is_trace_kind()
+        );
+        assert!(
+            !SnapshotViewKind::from_str("c4_container")
+                .unwrap()
+                .is_trace_kind()
+        );
+        assert!(
+            !SnapshotViewKind::from_str("c4_component")
+                .unwrap()
+                .is_trace_kind()
+        );
+        assert!(
+            SnapshotViewKind::from_str("call_graph")
+                .unwrap()
+                .is_trace_kind()
+        );
+        assert!(
+            SnapshotViewKind::from_str("impact_radius")
+                .unwrap()
+                .is_trace_kind()
+        );
+        assert!(
+            SnapshotViewKind::from_str("vertical_slice")
+                .unwrap()
+                .is_trace_kind()
+        );
     }
 
     // ------------------------------------------------------------------------
@@ -322,20 +347,39 @@ mod tests {
         let schema_obj = schema.as_object().expect("schema should be an object");
 
         // Check properties exist
-        let props = schema_obj.get("properties").expect("schema should have properties");
+        let props = schema_obj
+            .get("properties")
+            .expect("schema should have properties");
         let props_obj = props.as_object().expect("properties should be an object");
 
-        assert!(props_obj.contains_key("view_kind"), "should have view_kind property");
-        assert!(props_obj.contains_key("format"), "should have format property");
+        assert!(
+            props_obj.contains_key("view_kind"),
+            "should have view_kind property"
+        );
+        assert!(
+            props_obj.contains_key("format"),
+            "should have format property"
+        );
         // target is optional for C4 view kinds
-        assert!(props_obj.contains_key("target"), "should have target property");
+        assert!(
+            props_obj.contains_key("target"),
+            "should have target property"
+        );
 
         // Check required fields
-        let required = schema_obj.get("required").expect("schema should have required");
+        let required = schema_obj
+            .get("required")
+            .expect("schema should have required");
         let required_arr = required.as_array().expect("required should be an array");
         let required_strs: Vec<_> = required_arr.iter().filter_map(|v| v.as_str()).collect();
-        assert!(required_strs.contains(&"view_kind"), "view_kind should be required");
-        assert!(required_strs.contains(&"format"), "format should be required");
+        assert!(
+            required_strs.contains(&"view_kind"),
+            "view_kind should be required"
+        );
+        assert!(
+            required_strs.contains(&"format"),
+            "format should be required"
+        );
     }
 
     // ------------------------------------------------------------------------

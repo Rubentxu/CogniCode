@@ -17,8 +17,8 @@
 //! Mermaid requires alphanumeric identifiers. Special characters (`:`, `/`, `(`, `)`, etc.)
 //! are replaced with underscores. Duplicated IDs receive numeric suffixes (`_2`, `_3`).
 
-use std::fmt::{self, Write};
 use crate::dto::{GraphEdge, GraphNode};
+use std::fmt::{self, Write};
 
 /// C4 diagram levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,7 +62,10 @@ impl fmt::Display for C4ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnknownLevel(s) => {
-                write!(f, "unknown C4 level: {s} (expected: context, container, component)")
+                write!(
+                    f,
+                    "unknown C4 level: {s} (expected: context, container, component)"
+                )
             }
         }
     }
@@ -86,11 +89,7 @@ pub use super::mermaid_util::{deduplicate_ids, sanitize_id};
 /// - Person/external actors use `C4Context` notation; containers/components use
 ///   the appropriate `C4Container`/`C4Component` notation.
 /// - `part_of` and `depends_on` edges are rendered as `Rel_U`, `Rel_D` variants.
-pub fn c4_to_mermaid(
-    nodes: &[GraphNode],
-    edges: &[GraphEdge],
-    level: C4Level,
-) -> String {
+pub fn c4_to_mermaid(nodes: &[GraphNode], edges: &[GraphEdge], level: C4Level) -> String {
     if nodes.is_empty() {
         return format!(
             "%% {}\n%% No nodes at this level — nothing to render\n",
@@ -111,7 +110,7 @@ pub fn c4_to_mermaid(
     let id_to_sanitised: std::collections::HashMap<&str, &str> = all_ids
         .iter()
         .zip(id_map.iter())
-        .map(|(orig, san)| ( *orig, san.as_str()))
+        .map(|(orig, san)| (*orig, san.as_str()))
         .collect();
 
     // Filter to only nodes that appear in non-self-loop edges OR are at context level
@@ -157,10 +156,7 @@ pub fn c4_to_mermaid(
                 // At context level, system/person nodes
                 match style_class.as_str() {
                     "node-system" => {
-                        lines.push(format!(
-                            "System({}, \"{}\", \"\")",
-                            sanitised_id, label
-                        ));
+                        lines.push(format!("System({}, \"{}\", \"\")", sanitised_id, label));
                     }
                     "node-container" => {
                         lines.push(format!(
@@ -170,57 +166,47 @@ pub fn c4_to_mermaid(
                     }
                     _ => {
                         // Generic node
-                        lines.push(format!(
-                            "System_Ext({}, \"{}\", \"\")",
-                            sanitised_id, label
-                        ));
+                        lines.push(format!("System_Ext({}, \"{}\", \"\")", sanitised_id, label));
                     }
                 }
             }
-            C4Level::Container => {
-                match style_class.as_str() {
-                    "node-system" => {
-                        lines.push(format!(
-                            "System({}, \"{}\", \"\")",
-                            sanitised_id, label
-                        ));
-                    }
-                    "node-container" => {
-                        lines.push(format!(
-                            "Container({}, \"{}\", \"\", \"\")",
-                            sanitised_id, label
-                        ));
-                    }
-                    "node-component" => {
-                        lines.push(format!(
-                            "Component({}, \"{}\", \"\", \"\")",
-                            sanitised_id, label
-                        ));
-                    }
-                    _ => {
-                        lines.push(format!(
-                            "Container({}, \"{}\", \"\", \"\")",
-                            sanitised_id, label
-                        ));
-                    }
+            C4Level::Container => match style_class.as_str() {
+                "node-system" => {
+                    lines.push(format!("System({}, \"{}\", \"\")", sanitised_id, label));
                 }
-            }
-            C4Level::Component => {
-                match kind.as_str() {
-                    "function" | "method" | "fn" => {
-                        lines.push(format!(
-                            "Component({}, \"{}\", \"\", \"\")",
-                            sanitised_id, label
-                        ));
-                    }
-                    _ => {
-                        lines.push(format!(
-                            "Component({}, \"{}\", \"\", \"\")",
-                            sanitised_id, label
-                        ));
-                    }
+                "node-container" => {
+                    lines.push(format!(
+                        "Container({}, \"{}\", \"\", \"\")",
+                        sanitised_id, label
+                    ));
                 }
-            }
+                "node-component" => {
+                    lines.push(format!(
+                        "Component({}, \"{}\", \"\", \"\")",
+                        sanitised_id, label
+                    ));
+                }
+                _ => {
+                    lines.push(format!(
+                        "Container({}, \"{}\", \"\", \"\")",
+                        sanitised_id, label
+                    ));
+                }
+            },
+            C4Level::Component => match kind.as_str() {
+                "function" | "method" | "fn" => {
+                    lines.push(format!(
+                        "Component({}, \"{}\", \"\", \"\")",
+                        sanitised_id, label
+                    ));
+                }
+                _ => {
+                    lines.push(format!(
+                        "Component({}, \"{}\", \"\", \"\")",
+                        sanitised_id, label
+                    ));
+                }
+            },
         }
     }
 
@@ -246,10 +232,7 @@ pub fn c4_to_mermaid(
             _ => "Rel",
         };
 
-        lines.push(format!(
-            "{}({}, {}, \"\")",
-            rel_tag, src_san, tgt_san
-        ));
+        lines.push(format!("{}({}, {}, \"\")", rel_tag, src_san, tgt_san));
     }
 
     lines.join("\n")

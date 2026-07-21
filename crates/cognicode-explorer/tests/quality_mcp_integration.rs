@@ -23,15 +23,13 @@ use async_trait::async_trait;
 use cognicode_explorer::error::ExplorerResult;
 use cognicode_explorer::mcp::handler::ToolHandlerRegistry;
 use cognicode_explorer::mcp::handler::quality_mcp::register_quality_mcp_handlers;
-use cognicode_explorer::mcp::{
-    McpContext, TOOL_FIND_QUALITY_ISSUES, TOOL_QUALITY_GATE,
-};
+use cognicode_explorer::mcp::{McpContext, TOOL_FIND_QUALITY_ISSUES, TOOL_QUALITY_GATE};
 use cognicode_explorer::ports::quality_repository::{
     IssueFilter, QualityGateSummary, QualityIssue, QualityRepository, RuleSummary,
 };
 use cognicode_explorer::session::SessionRegistry;
 use rmcp::model::CallToolResult;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 // ============================================================================
 // Test fixtures
@@ -226,25 +224,23 @@ async fn find_quality_issues_returns_empty_when_no_files_known() {
 
 #[tokio::test]
 async fn find_quality_issues_aggregates_across_files() {
-    let q = Arc::new(
-        InMemoryQuality::new().with_files(&[
-            (
-                "src/auth/a.rs",
-                vec![
-                    issue(1, "critical", "complexity", "src/auth/a.rs", "open"),
-                    issue(2, "warning", "complexity", "src/auth/a.rs", "open"),
-                ],
-            ),
-            (
-                "src/auth/b.rs",
-                vec![issue(3, "critical", "duplication", "src/auth/b.rs", "open")],
-            ),
-            (
-                "src/other/c.rs",
-                vec![issue(4, "info", "naming", "src/other/c.rs", "resolved")],
-            ),
-        ]),
-    );
+    let q = Arc::new(InMemoryQuality::new().with_files(&[
+        (
+            "src/auth/a.rs",
+            vec![
+                issue(1, "critical", "complexity", "src/auth/a.rs", "open"),
+                issue(2, "warning", "complexity", "src/auth/a.rs", "open"),
+            ],
+        ),
+        (
+            "src/auth/b.rs",
+            vec![issue(3, "critical", "duplication", "src/auth/b.rs", "open")],
+        ),
+        (
+            "src/other/c.rs",
+            vec![issue(4, "info", "naming", "src/other/c.rs", "resolved")],
+        ),
+    ]));
     let ctx = ctx_with_quality(q);
     let registry = build_registry();
 
@@ -281,7 +277,10 @@ async fn find_quality_issues_applies_severity_filter() {
         .await;
     let payload = ok_payload(&result);
 
-    assert_eq!(payload["filters_applied"]["severity"].as_str(), Some("critical"));
+    assert_eq!(
+        payload["filters_applied"]["severity"].as_str(),
+        Some("critical")
+    );
     assert_eq!(payload["total"].as_u64(), Some(0));
 }
 
@@ -300,7 +299,10 @@ async fn find_quality_issues_applies_category_filter() {
         .await;
     let payload = ok_payload(&result);
 
-    assert_eq!(payload["filters_applied"]["category"].as_str(), Some("complexity"));
+    assert_eq!(
+        payload["filters_applied"]["category"].as_str(),
+        Some("complexity")
+    );
 }
 
 #[tokio::test]
@@ -331,11 +333,7 @@ async fn find_quality_issues_applies_status_filter() {
     let registry = build_registry();
 
     let result = registry
-        .dispatch(
-            TOOL_FIND_QUALITY_ISSUES,
-            &ctx,
-            json!({ "status": "open" }),
-        )
+        .dispatch(TOOL_FIND_QUALITY_ISSUES, &ctx, json!({ "status": "open" }))
         .await;
     let payload = ok_payload(&result);
 
@@ -349,11 +347,7 @@ async fn find_quality_issues_respects_limit() {
     let registry = build_registry();
 
     let result = registry
-        .dispatch(
-            TOOL_FIND_QUALITY_ISSUES,
-            &ctx,
-            json!({ "limit": 25 }),
-        )
+        .dispatch(TOOL_FIND_QUALITY_ISSUES, &ctx, json!({ "limit": 25 }))
         .await;
     let payload = ok_payload(&result);
 
@@ -416,9 +410,7 @@ async fn quality_gate_returns_snapshot() {
     let ctx = ctx_with_quality(q);
     let registry = build_registry();
 
-    let result = registry
-        .dispatch(TOOL_QUALITY_GATE, &ctx, json!({}))
-        .await;
+    let result = registry.dispatch(TOOL_QUALITY_GATE, &ctx, json!({})).await;
     let payload = ok_payload(&result);
 
     assert_eq!(payload["rating"].as_str(), Some("B"));
@@ -426,10 +418,7 @@ async fn quality_gate_returns_snapshot() {
     assert_eq!(payload["blockers"].as_u64(), Some(1));
     assert_eq!(payload["criticals"].as_u64(), Some(4));
     assert_eq!(payload["debt_minutes"].as_u64(), Some(240));
-    assert_eq!(
-        payload["last_run"].as_str(),
-        Some("2026-06-24T10:00:00Z")
-    );
+    assert_eq!(payload["last_run"].as_str(), Some("2026-06-24T10:00:00Z"));
     assert_eq!(payload["open_issues_count"].as_u64(), Some(18));
 }
 
@@ -439,9 +428,7 @@ async fn quality_gate_returns_zeros_when_empty() {
     let ctx = ctx_with_quality(q);
     let registry = build_registry();
 
-    let result = registry
-        .dispatch(TOOL_QUALITY_GATE, &ctx, json!({}))
-        .await;
+    let result = registry.dispatch(TOOL_QUALITY_GATE, &ctx, json!({})).await;
     let payload = ok_payload(&result);
 
     assert!(payload["rating"].is_null());
@@ -469,11 +456,7 @@ async fn quality_gate_ignores_unknown_workspace_id() {
     let registry = build_registry();
 
     let result = registry
-        .dispatch(
-            TOOL_QUALITY_GATE,
-            &ctx,
-            json!({ "workspace_id": "ws-xyz" }),
-        )
+        .dispatch(TOOL_QUALITY_GATE, &ctx, json!({ "workspace_id": "ws-xyz" }))
         .await;
     let payload = ok_payload(&result);
 
@@ -488,9 +471,7 @@ async fn quality_gate_rejects_when_quality_unavailable() {
         .build();
     let registry = build_registry();
 
-    let result = registry
-        .dispatch(TOOL_QUALITY_GATE, &ctx, json!({}))
-        .await;
+    let result = registry.dispatch(TOOL_QUALITY_GATE, &ctx, json!({})).await;
     assert_eq!(
         err_code(&result),
         "quality_unavailable",

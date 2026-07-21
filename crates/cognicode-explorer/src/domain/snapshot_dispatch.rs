@@ -14,10 +14,10 @@
 
 use std::sync::Arc;
 
-use crate::domain::c4_mermaid::{c4_to_mermaid, C4Level};
+use crate::domain::c4_mermaid::{C4Level, c4_to_mermaid};
 use crate::domain::snapshot::SnapshotError;
 use crate::domain::trace_mermaid::{
-    call_graph_to_mermaid, impact_radius_to_mermaid, vertical_slice_to_mermaid, TraceEmitContext,
+    TraceEmitContext, call_graph_to_mermaid, impact_radius_to_mermaid, vertical_slice_to_mermaid,
 };
 use crate::dto::InspectionTarget;
 use crate::facades::{GraphService, WorkspaceService};
@@ -135,9 +135,7 @@ pub async fn emit_c4_mermaid(
         .as_c4_level()
         .expect("as_c4_level called on non-C4 view kind");
 
-    let workspace_info = workspace
-        .current_workspace()
-        .map_err(|e| e.to_string())?;
+    let workspace_info = workspace.current_workspace().map_err(|e| e.to_string())?;
 
     let architecture = graph_service
         .build_architecture(&workspace_info.root_path)
@@ -188,18 +186,42 @@ mod tests {
 
     #[test]
     fn snapshot_view_kind_from_str_valid() {
-        assert_eq!(SnapshotViewKind::from_str("c4_context"), Ok(SnapshotViewKind::C4Context));
-        assert_eq!(SnapshotViewKind::from_str("c4_container"), Ok(SnapshotViewKind::C4Container));
-        assert_eq!(SnapshotViewKind::from_str("c4_component"), Ok(SnapshotViewKind::C4Component));
-        assert_eq!(SnapshotViewKind::from_str("call_graph"), Ok(SnapshotViewKind::CallGraph));
-        assert_eq!(SnapshotViewKind::from_str("impact_radius"), Ok(SnapshotViewKind::ImpactRadius));
-        assert_eq!(SnapshotViewKind::from_str("vertical_slice"), Ok(SnapshotViewKind::VerticalSlice));
+        assert_eq!(
+            SnapshotViewKind::from_str("c4_context"),
+            Ok(SnapshotViewKind::C4Context)
+        );
+        assert_eq!(
+            SnapshotViewKind::from_str("c4_container"),
+            Ok(SnapshotViewKind::C4Container)
+        );
+        assert_eq!(
+            SnapshotViewKind::from_str("c4_component"),
+            Ok(SnapshotViewKind::C4Component)
+        );
+        assert_eq!(
+            SnapshotViewKind::from_str("call_graph"),
+            Ok(SnapshotViewKind::CallGraph)
+        );
+        assert_eq!(
+            SnapshotViewKind::from_str("impact_radius"),
+            Ok(SnapshotViewKind::ImpactRadius)
+        );
+        assert_eq!(
+            SnapshotViewKind::from_str("vertical_slice"),
+            Ok(SnapshotViewKind::VerticalSlice)
+        );
     }
 
     #[test]
     fn snapshot_view_kind_from_str_invalid() {
-        assert_eq!(SnapshotViewKind::from_str("invalid"), Err("invalid".to_string()));
-        assert_eq!(SnapshotViewKind::from_str("decision_trace"), Err("decision_trace".to_string()));
+        assert_eq!(
+            SnapshotViewKind::from_str("invalid"),
+            Err("invalid".to_string())
+        );
+        assert_eq!(
+            SnapshotViewKind::from_str("decision_trace"),
+            Err("decision_trace".to_string())
+        );
     }
 
     #[test]
@@ -214,9 +236,18 @@ mod tests {
 
     #[test]
     fn snapshot_view_kind_as_c4_level() {
-        assert_eq!(SnapshotViewKind::C4Context.as_c4_level(), Some(C4Level::Context));
-        assert_eq!(SnapshotViewKind::C4Container.as_c4_level(), Some(C4Level::Container));
-        assert_eq!(SnapshotViewKind::C4Component.as_c4_level(), Some(C4Level::Component));
+        assert_eq!(
+            SnapshotViewKind::C4Context.as_c4_level(),
+            Some(C4Level::Context)
+        );
+        assert_eq!(
+            SnapshotViewKind::C4Container.as_c4_level(),
+            Some(C4Level::Container)
+        );
+        assert_eq!(
+            SnapshotViewKind::C4Component.as_c4_level(),
+            Some(C4Level::Component)
+        );
         assert_eq!(SnapshotViewKind::CallGraph.as_c4_level(), None);
         assert_eq!(SnapshotViewKind::ImpactRadius.as_c4_level(), None);
         assert_eq!(SnapshotViewKind::VerticalSlice.as_c4_level(), None);

@@ -475,11 +475,15 @@ mod tests {
         let repo = InMemoryGraphRepository::new(nodes, Vec::new());
 
         // First page
-        let page1 = repo.find_nodes_by_kind_paginated(&NodeKind::Doc, 10, None).unwrap();
+        let page1 = repo
+            .find_nodes_by_kind_paginated(&NodeKind::Doc, 10, None)
+            .unwrap();
         let cursor = page1.next_cursor.clone();
 
         // Second page using cursor
-        let page2 = repo.find_nodes_by_kind_paginated(&NodeKind::Doc, 10, cursor.as_deref()).unwrap();
+        let page2 = repo
+            .find_nodes_by_kind_paginated(&NodeKind::Doc, 10, cursor.as_deref())
+            .unwrap();
 
         assert_eq!(page2.items.len(), 10);
         // No overlap: first page has items 1-10, second has 11-20
@@ -499,7 +503,9 @@ mod tests {
         ];
         let repo = InMemoryGraphRepository::new(nodes, Vec::new());
 
-        let result = repo.find_nodes_by_kind_paginated(&NodeKind::Decision, 10, None).unwrap();
+        let result = repo
+            .find_nodes_by_kind_paginated(&NodeKind::Decision, 10, None)
+            .unwrap();
         assert_eq!(result.items.len(), 1);
         assert_eq!(result.items[0].id.as_str(), "dec:1");
     }
@@ -513,7 +519,9 @@ mod tests {
         ];
         let repo = InMemoryGraphRepository::new(nodes, Vec::new());
 
-        let result = repo.search_paginated("guide", &[NodeKind::Doc], 10, None).unwrap();
+        let result = repo
+            .search_paginated("guide", &[NodeKind::Doc], 10, None)
+            .unwrap();
         assert_eq!(result.items.len(), 2); // "Getting Started Guide" and "Developer Guide"
     }
 
@@ -525,12 +533,16 @@ mod tests {
         let repo = InMemoryGraphRepository::new(nodes, Vec::new());
 
         // First page of 5
-        let page1 = repo.search_paginated("document", &[NodeKind::Doc], 5, None).unwrap();
+        let page1 = repo
+            .search_paginated("document", &[NodeKind::Doc], 5, None)
+            .unwrap();
         assert_eq!(page1.items.len(), 5);
         let cursor = page1.next_cursor.clone();
 
         // Second page
-        let page2 = repo.search_paginated("document", &[NodeKind::Doc], 5, cursor.as_deref()).unwrap();
+        let page2 = repo
+            .search_paginated("document", &[NodeKind::Doc], 5, cursor.as_deref())
+            .unwrap();
         assert_eq!(page2.items.len(), 5);
 
         // No overlap
@@ -546,7 +558,9 @@ mod tests {
         let nodes = vec![make_node("doc:1", NodeKind::Doc, "Test Doc")];
         let repo = InMemoryGraphRepository::new(nodes, Vec::new());
 
-        let result = repo.search_paginated("", &[NodeKind::Doc], 10, None).unwrap();
+        let result = repo
+            .search_paginated("", &[NodeKind::Doc], 10, None)
+            .unwrap();
         assert!(result.items.is_empty());
         assert_eq!(result.raw_total, 0);
         assert!(result.next_cursor.is_none());

@@ -91,7 +91,9 @@ macro_rules! pg_test {
 }
 
 /// Build a canonical exploration session payload.
-fn build_session_payload(workspace_id: &str) -> (String, String, String, String, String, Option<String>) {
+fn build_session_payload(
+    workspace_id: &str,
+) -> (String, String, String, String, String, Option<String>) {
     let id = format!("session:{}", Utc::now().timestamp_millis());
     let events = serde_json::to_string(&json!([
         {"object_id": "sym:UserService::create", "view_id": "call_graph", "ts": "2026-06-24T10:00:00Z"},
@@ -103,7 +105,14 @@ fn build_session_payload(workspace_id: &str) -> (String, String, String, String,
         {"object_id": "sym:UserService", "view_id": "call_graph"}
     ]))
     .unwrap();
-    (id, workspace_id.to_string(), events, navigation_mode, panes, None)
+    (
+        id,
+        workspace_id.to_string(),
+        events,
+        navigation_mode,
+        panes,
+        None,
+    )
 }
 
 // =================================================================
@@ -115,12 +124,20 @@ pg_test!(
     save_and_load_exploration_session,
     |_url: String, pool: PgPool| {
         let repo = PostgresRepository::from_pool(pool);
-        let (id, workspace_id, events, navigation_mode, panes, investigation_id) = build_session_payload("ws-1");
+        let (id, workspace_id, events, navigation_mode, panes, investigation_id) =
+            build_session_payload("ws-1");
 
         // Save the session.
-        repo.save_exploration_session(&id, &workspace_id, &events, &navigation_mode, &panes, investigation_id.as_deref())
-            .await
-            .expect("save_exploration_session must succeed");
+        repo.save_exploration_session(
+            &id,
+            &workspace_id,
+            &events,
+            &navigation_mode,
+            &panes,
+            investigation_id.as_deref(),
+        )
+        .await
+        .expect("save_exploration_session must succeed");
 
         // Load it back.
         let row = repo
@@ -154,14 +171,28 @@ pg_test!(
         // Save 3 sessions for ws-1 and 1 for ws-2.
         for i in 0..3 {
             let (id, ws_id, events, nav, panes, investigation_id) = build_session_payload("ws-1");
-            repo.save_exploration_session(&id, &ws_id, &events, &nav, &panes, investigation_id.as_deref())
-                .await
-                .expect("save must succeed");
-        }
-        let (id2, ws2, events2, nav2, panes2, investigation_id2) = build_session_payload("ws-2");
-        repo.save_exploration_session(&id2, &ws2, &events2, &nav2, &panes2, investigation_id2.as_deref())
+            repo.save_exploration_session(
+                &id,
+                &ws_id,
+                &events,
+                &nav,
+                &panes,
+                investigation_id.as_deref(),
+            )
             .await
             .expect("save must succeed");
+        }
+        let (id2, ws2, events2, nav2, panes2, investigation_id2) = build_session_payload("ws-2");
+        repo.save_exploration_session(
+            &id2,
+            &ws2,
+            &events2,
+            &nav2,
+            &panes2,
+            investigation_id2.as_deref(),
+        )
+        .await
+        .expect("save must succeed");
 
         // List for ws-1.
         let ws1_rows = repo
@@ -211,9 +242,16 @@ pg_test!(
 pg_test!(parallel_isolation_first, |_url: String, pool: PgPool| {
     let repo = PostgresRepository::from_pool(pool);
     let (id, ws_id, events, nav, panes, investigation_id) = build_session_payload("ws-isolated");
-    repo.save_exploration_session(&id, &ws_id, &events, &nav, &panes, investigation_id.as_deref())
-        .await
-        .expect("save must succeed");
+    repo.save_exploration_session(
+        &id,
+        &ws_id,
+        &events,
+        &nav,
+        &panes,
+        investigation_id.as_deref(),
+    )
+    .await
+    .expect("save must succeed");
     let rows = repo
         .list_exploration_sessions(&ws_id)
         .await
@@ -245,7 +283,8 @@ pg_test!(
     |_url: String, pool: PgPool| {
         let repo = PostgresRepository::from_pool(pool);
         let inv_id = format!("investigation:{}", Utc::now().timestamp_millis());
-        let (id, workspace_id, events, navigation_mode, panes, _) = build_session_payload("ws-investigated");
+        let (id, workspace_id, events, navigation_mode, panes, _) =
+            build_session_payload("ws-investigated");
 
         // Save with an investigation_id.
         repo.save_exploration_session(
@@ -281,18 +320,12 @@ pg_test!(
     session_without_investigation_id_has_null,
     |_url: String, pool: PgPool| {
         let repo = PostgresRepository::from_pool(pool);
-        let (id, workspace_id, events, navigation_mode, panes, _) = build_session_payload("ws-no-investigation");
+        let (id, workspace_id, events, navigation_mode, panes, _) =
+            build_session_payload("ws-no-investigation");
 
-        repo.save_exploration_session(
-            &id,
-            &workspace_id,
-            &events,
-            &navigation_mode,
-            &panes,
-            None,
-        )
-        .await
-        .expect("save must succeed");
+        repo.save_exploration_session(&id, &workspace_id, &events, &navigation_mode, &panes, None)
+            .await
+            .expect("save must succeed");
 
         let row = repo
             .load_exploration_session(&id, &workspace_id)

@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use cognicode_core::domain::aggregates::SymbolId;
 use rmcp::model::CallToolResult;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::dto::LensResult;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
@@ -219,9 +219,7 @@ fn compute_dead_from_entries(
 
     g.symbol_ids()
         .filter_map(|(id, sym)| {
-            if !live.contains(id)
-                && (sym.kind().is_callable() || sym.kind().is_type_definition())
-            {
+            if !live.contains(id) && (sym.kind().is_callable() || sym.kind().is_type_definition()) {
                 Some(id.clone())
             } else {
                 None
@@ -245,8 +243,7 @@ fn resolve_entry_points(
         let mut matched = false;
         for (id, _) in g.symbol_ids() {
             let id_str = id.to_string();
-            let is_match = id_str == *needle
-                || id_str.split(':').any(|seg| seg == needle.as_str());
+            let is_match = id_str == *needle || id_str.split(':').any(|seg| seg == needle.as_str());
             if is_match && !resolved.contains(&id_str) {
                 resolved.push(id_str);
                 matched = true;
@@ -549,9 +546,7 @@ impl ToolHandler for HotspotsHandler {
             g.symbol_ids()
                 .filter_map(|(id, _)| {
                     let id_str = id.to_string();
-                    if id_str == needle
-                        || id_str.split(':').any(|seg| seg == needle)
-                    {
+                    if id_str == needle || id_str.split(':').any(|seg| seg == needle) {
                         Some(id.clone())
                     } else {
                         None
