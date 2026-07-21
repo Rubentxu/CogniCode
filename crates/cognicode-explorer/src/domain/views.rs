@@ -5400,6 +5400,116 @@ mod tests {
             "Real ownership data must be rendered, not placeholder"
         );
     }
+
+    // -------------------------------------------------------------------------
+    // ArchitectureRationaleExecutor tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn architecture_rationale_executor_descriptor_metadata() {
+        let exec = &super::ARCHITECTURE_RATIONALE_EXECUTOR;
+        assert_eq!(exec.id(), "architecture_rationale");
+        assert_eq!(exec.title(), "Architecture Rationale");
+        assert!(exec
+            .applies_to()
+            .contains(&crate::dto::InspectableObjectType::DecisionArtifact));
+        assert_eq!(exec.view_kind(), crate::dto::ViewKind::ArchitectureRationale);
+        assert_eq!(exec.renderer_kind(), crate::dto::RendererKind::Markdown);
+    }
+
+    #[tokio::test]
+    async fn architecture_rationale_executor_handles_decision() {
+        let target = super::InspectionTarget::Decision {
+            id: "ADR-001".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+        };
+
+        let executor = super::ArchitectureRationaleExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "architecture_rationale");
+        assert_eq!(view.title, "Architecture Rationale");
+        assert_eq!(view.view_kind, crate::dto::ViewKind::ArchitectureRationale);
+        assert_eq!(view.renderer_kind, crate::dto::RendererKind::Markdown);
+        // Should have at least one block (the placeholder when no graph_repo)
+        assert!(!view.blocks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn architecture_rationale_executor_rejects_symbol() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let target = super::InspectionTarget::Symbol(sym);
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+        };
+
+        let executor = super::ArchitectureRationaleExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::ExplorerError::ViewNotAvailable { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn architecture_rationale_executor_rejects_file() {
+        let target = super::InspectionTarget::File {
+            path: "src/lib.rs".to_string(),
+            symbols: Vec::new(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+        };
+
+        let executor = super::ArchitectureRationaleExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::ExplorerError::ViewNotAvailable { .. }
+        ));
+    }
+
+    #[test]
+    fn architecture_rationale_view_id_and_title() {
+        // Test the non-multimodal fallback path directly
+        let view = super::build_rationale_view("ADR-042");
+        assert_eq!(view.view_id, "architecture_rationale");
+        assert_eq!(view.title, "Architecture Rationale");
+        assert_eq!(view.view_kind, crate::dto::ViewKind::ArchitectureRationale);
+        assert_eq!(view.renderer_kind, crate::dto::RendererKind::Markdown);
+    }
+
+    #[test]
+    fn architecture_rationale_fallback_shows_decision_id() {
+        let view = super::build_rationale_view("ADR-999");
+        // Should have a block with the decision_id
+        let block = view.blocks.first().expect("should have at least one block");
+        assert_eq!(block.id, "rationale_unavailable");
+        let body = &block.body;
+        assert_eq!(
+            body.get("decision_id").unwrap().as_str().unwrap(),
+            "ADR-999"
+        );
+    }
 }
 
 // ============================================================================
