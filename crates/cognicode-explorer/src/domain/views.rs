@@ -6,12 +6,14 @@
 use serde_json::json;
 
 use crate::dto::{
-    ContextualView, EvidenceBlock, LineRange, RelationDirection, TypedRelation, ViewBlock,
+    ContextualView, DesignFinding, EvidenceBlock, FindingSeverity, LineRange, RelationDirection,
+    TypedRelation, ViewBlock, ViewDiagnostic,
 };
 use crate::ports::quality_repository::{QualityIssue, QualityRepository, RuleSummary};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
 
+use crate::adapters::QualityGraphRepository;
 use crate::domain::evidence::build_evidence_blocks;
 use crate::facades::investigation::Investigation;
 use cognicode_core::domain::aggregates::SymbolId;
@@ -2359,6 +2361,257 @@ impl ViewExecutor for HotspotsExecutor {
     }
 }
 
+// ============================================================================
+// Phase 2 PR 2 — RiskMap capability
+// ============================================================================
+
+/// Environment variable name for the multimodal quality feature flag.
+/// When set to "false" (case-insensitive), weighted issue count enrichment
+/// is skipped and only topology-based fan-in contributes to risk scoring.
+pub const COGNICODE_MULTIMODAL_QUALITY: &str = "COGNICODE_MULTIMODAL_QUALITY";
+
+/// Default limit for ranked hotspots returned by the RiskMap view.
+pub const RISK_MAP_HOTSPOT_LIMIT: usize = 5;
+
+/// Returns true when multimodal quality enrichment is enabled.
+///
+/// Reads the `COGNICODE_MULTIMODAL_QUALITY` environment variable.
+/// Defaults to `true` when the variable is unset or has any value other
+/// than "false" (case-insensitive).
+fn is_multimodal_quality_enabled() -> bool {
+    std::env::var(COGNICODE_MULTIMODAL_QUALITY)
+        .map(|v| !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(true)
+}
+
+/// RiskMap capability — applies to Symbol, File, Scope.
+///
+/// Combines graph topology (fan-in) with quality data (weighted issue count)
+/// into a ranked risk map. When multimodal quality enrichment is disabled,
+/// falls back to fan-in-only scoring.
+pub struct RiskMapExecutor;
+impl ViewDescriptor for RiskMapExecutor {
+    fn id(&self) -> &'static str {
+        "risk_map"
+    }
+    fn title(&self) -> &'static str {
+        "Risk Map"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[
+            InspectableObjectType::Symbol,
+            InspectableObjectType::File,
+            InspectableObjectType::Scope,
+        ]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::RiskMap
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Graph
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for RiskMapExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        use crate::adapters::{HotspotNode, QualityGraphRepository};
+        use crate::domain::lenses::hotspots::compute_risk;
+
+        let multimodal_enabled = is_multimodal_quality_enabled();
+
+        // Determine the inspection target symbols for the risk map.
+        let target_symbols: Vec<&ResolvedSymbol> = match ctx.target {
+            InspectionTarget::Symbol(s) => vec![s],
+            InspectionTarget::File { symbols, .. } => symbols.iter().collect(),
+            InspectionTarget::Scope { symbols, .. } => symbols.iter().collect(),
+            InspectionTarget::Issue(_)
+            | InspectionTarget::Rule { .. }
+            | InspectionTarget::SavedExploration(_)
+            | InspectionTarget::Investigation(_) => {
+                return Err(crate::error::ExplorerError::ViewNotAvailable {
+                    object_id: format!("{:?}", ctx.target),
+                    view_id: "risk_map".into(),
+                });
+            }
+        };
+
+        let object_id = match ctx.target {
+            InspectionTarget::Symbol(s) => mvp_id(s),
+            InspectionTarget::File { path, .. } => format!("file:{path}"),
+            InspectionTarget::Scope { path, .. } => format!("scope:{path}"),
+            _ => unreachable!(),
+        };
+
+        // Build the hotspot list:
+        // - multimodal enabled + quality available → use rank_hotspots with quality
+        // - multimodal disabled → compute topology-only hotspots (fan_in * 0.4, weighted = 0)
+        // - multimodal enabled + quality unavailable → rank_hotspots returns error → propagate
+        let hotspots: Vec<HotspotNode> = if multimodal_enabled {
+            // Use quality-aware ranking (may fail with QualityUnavailable).
+            let qgr = QualityGraphRepository::new(ctx.quality, ctx.graph_query);
+            qgr.rank_hotspots(ctx.target, RISK_MAP_HOTSPOT_LIMIT)?
+        } else {
+            // Topology-only path: fan_in * 0.4, no weighted issues.
+            let mut nodes: Vec<HotspotNode> = target_symbols
+                .iter()
+                .map(|s| {
+                    let fan_in = ctx
+                        .graph_query
+                        .map(|g| g.fan_in(&s.id) as u32)
+                        .unwrap_or(0);
+                    let risk = compute_risk(fan_in, 0.0);
+                    let object_id = format!("symbol:{}:{}:{}", s.file, s.name, s.line);
+                    HotspotNode {
+                        object_id: object_id.clone(),
+                        label: format!("{} at {}:{}", s.name, s.file, s.line),
+                        file: s.file.clone(),
+                        line: s.line,
+                        fan_in,
+                        weighted_issue_count: 0.0,
+                        risk,
+                    }
+                })
+                .collect();
+            nodes.sort_by(|a, b| {
+                b.risk
+                    .partial_cmp(&a.risk)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.label.cmp(&b.label))
+            });
+            nodes.truncate(RISK_MAP_HOTSPOT_LIMIT);
+            nodes
+        };
+
+        // Build TypedRelation edges from traverse_from for each hotspot.
+        // Collect diagnostics for unresolvable relations.
+        let mut relations: Vec<TypedRelation> = Vec::new();
+        let mut findings: Vec<DesignFinding> = Vec::new();
+        let mut diagnostics: Vec<ViewDiagnostic> = Vec::new();
+
+        let qgr = QualityGraphRepository::new(ctx.quality, ctx.graph_query);
+
+        for hotspot in &hotspots {
+            let symbol_id = hotspot
+                .object_id
+                .strip_prefix("symbol:")
+                .map(|s| cognicode_core::domain::aggregates::SymbolId::new(s.to_string()));
+
+            if let Some(id) = symbol_id {
+                let edges = qgr
+                    .traverse_from(&id, Default::default())
+                    .unwrap_or_default();
+                for edge in edges {
+                    // Attempt to resolve the target name from the graph query port.
+                    let target_label = if !edge.target_name.is_empty() {
+                        edge.target_name.clone()
+                    } else if ctx.graph_query.is_some() {
+                        // Try to look up the target's display name via the repo.
+                        ctx.repo
+                            .resolve(&edge.target_id)
+                            .ok()
+                            .flatten()
+                            .map(|s| format!("{} at {}:{}", s.name, s.file, s.line))
+                            .unwrap_or_else(|| {
+                                // Emit a diagnostic instead of omitting the relation entirely.
+                                let detail = format!(
+                                    "target symbol '{}' could not be resolved for relation",
+                                    edge.target_id
+                                );
+                                diagnostics.push(ViewDiagnostic::RelationUnresolved {
+                                    relation_type: "RISK_EDGE".to_string(),
+                                    target_object_id: edge.target_id.to_string(),
+                                    reason: detail.clone(),
+                                });
+                                format!("unresolved:{}", edge.target_id)
+                            })
+                    } else {
+                        diagnostics.push(ViewDiagnostic::RelationUnresolved {
+                            relation_type: "RISK_EDGE".to_string(),
+                            target_object_id: edge.target_id.to_string(),
+                            reason: "graph_query not available".to_string(),
+                        });
+                        format!("unresolved:{}", edge.target_id)
+                    };
+
+                    relations.push(TypedRelation {
+                        relation_type: "RISK_EDGE".to_string(),
+                        direction: RelationDirection::Outgoing,
+                        target_object_id: format!("{}", edge.target_id),
+                        target_label,
+                        evidence_ids: vec![],
+                        provenance: Some(edge.provenance.clone()),
+                        confidence: Some(edge.confidence),
+                    });
+                }
+            }
+        }
+
+        let evidence_id = "evidence:risk_map".to_string();
+        let evidence = vec![EvidenceBlock {
+            id: evidence_id.clone(),
+            kind: "risk_map".into(),
+            title: "Risk Map".into(),
+            file: None,
+            line_range: None,
+            source_tool_or_query: "QualityGraphRepository::rank_hotspots + traverse_from".into(),
+            confidence: Some(1.0),
+            freshness: Some("unknown".into()),
+            provenance: None,
+        }];
+
+        let blocks = vec![
+            ViewBlock {
+                id: "hotspots".into(),
+                title: format!("Top {} hotspots", hotspots.len()),
+                body: json!({
+                    "count": hotspots.len(),
+                    "items": hotspots.iter().map(|h| json!({
+                        "object_id": h.object_id,
+                        "label": h.label,
+                        "fan_in": h.fan_in,
+                        "weighted_issue_count": h.weighted_issue_count,
+                        "risk": h.risk,
+                    })).collect::<Vec<_>>(),
+                }),
+            },
+        ];
+
+        // Add diagnostics as findings (retro-compatible DesignFinding shape).
+        for diag in &diagnostics {
+            if let ViewDiagnostic::RelationUnresolved {
+                relation_type,
+                target_object_id,
+                reason,
+            } = diag
+            {
+                findings.push(DesignFinding {
+                    id: format!("diag:{}", target_object_id),
+                    lens_id: "risk_map".to_string(),
+                    title: format!("Unresolved relation: {}", relation_type),
+                    hypothesis: reason.clone(),
+                    severity: FindingSeverity::Info,
+                    confidence: 0.5,
+                    object_ids: vec![target_object_id.clone()],
+                    evidence_ids: vec![],
+                });
+            }
+        }
+
+        Ok(ContextualView {
+            object_id,
+            view_id: "risk_map".into(),
+            title: "Risk Map".into(),
+            view_kind: ViewKind::RiskMap,
+            blocks,
+            relations,
+            evidence,
+            findings,
+            renderer_kind: RendererKind::Graph,
+        })
+    }
+}
+
 // Static executor instances — referenced by the registry's get_executor() via &'static dyn ViewExecutor.
 pub static OVERVIEW_EXECUTOR: OverviewExecutor = OverviewExecutor;
 pub static CALLGRAPH_EXECUTOR: CallGraphExecutor = CallGraphExecutor;
@@ -2376,6 +2629,7 @@ pub static DEBUG_SLICE_EXECUTOR: DebugSliceExecutor = DebugSliceExecutor;
 pub static CHANGE_IMPACT_STORY_EXECUTOR: ChangeImpactStoryExecutor = ChangeImpactStoryExecutor;
 pub static OWNERSHIP_MAP_EXECUTOR: OwnershipMapExecutor = OwnershipMapExecutor;
 pub static COMPOSED_NARRATIVE_EXECUTOR: ComposedNarrativeExecutor = ComposedNarrativeExecutor;
+pub static RISK_MAP_EXECUTOR: RiskMapExecutor = RiskMapExecutor;
 
 /// Ownership Map capability — applies to Issue (QualityIssue).
 ///
@@ -5055,5 +5309,68 @@ mod view_seam_tests {
             executor.is_none(),
             "get_executor for unknown id must return None"
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // RiskMapExecutor tests (Phase 2 PR 2)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn risk_map_executor_descriptor_metadata() {
+        let exec = &super::RISK_MAP_EXECUTOR;
+        assert_eq!(exec.id(), "risk_map");
+        assert_eq!(exec.title(), "Risk Map");
+        assert!(exec.applies_to().contains(&crate::dto::InspectableObjectType::Symbol));
+        assert!(exec.applies_to().contains(&crate::dto::InspectableObjectType::File));
+        assert!(exec.applies_to().contains(&crate::dto::InspectableObjectType::Scope));
+        assert_eq!(exec.view_kind(), crate::dto::ViewKind::RiskMap);
+        assert_eq!(exec.renderer_kind(), crate::dto::RendererKind::Graph);
+    }
+
+    // risk_map_executor_view_id_and_kind requires MockRepo/MockReader from the outer
+    // tests module — tested via integration tests in integration_tests/risk_map.rs instead.
+
+    #[test]
+    fn risk_map_compute_risk_fan_in_only() {
+        // When quality is unavailable, fan-in only contributes to risk (non-zero when fan_in > 0).
+        use crate::domain::lenses::hotspots::compute_risk;
+
+        // fan_in=10, weighted=0 → risk = 10 * 0.4 + 0 * 0.6 = 4.0
+        let risk = compute_risk(10, 0.0);
+        assert!(risk > 0.0, "fan_in-only risk must be non-zero when fan_in > 0");
+        assert_eq!(risk, 4.0);
+
+        // fan_in=0, weighted=0 → risk = 0.0
+        let risk_zero = compute_risk(0, 0.0);
+        assert_eq!(risk_zero, 0.0);
+    }
+
+    #[test]
+    fn risk_map_view_diagnostic_serializable() {
+        // ViewDiagnostic::RelationUnresolved must serialize to JSON for inclusion in findings.
+        use crate::dto::ViewDiagnostic;
+
+        let diag = ViewDiagnostic::RelationUnresolved {
+            relation_type: "RISK_EDGE".into(),
+            target_object_id: "symbol:missing:42".into(),
+            reason: "target symbol not found".into(),
+        };
+
+        // Verify it serializes to JSON without panic.
+        let json = serde_json::to_string(&diag).unwrap();
+        assert!(json.contains("RelationUnresolved"));
+        assert!(json.contains("RISK_EDGE"));
+        assert!(json.contains("symbol:missing:42"));
+    }
+
+    #[test]
+    fn risk_map_executor_get_executor_from_registry() {
+        // Verify the registry returns the RiskMapExecutor by id.
+        let registry = crate::registry::ViewRegistry::new(None);
+        let executor = registry.get_executor("risk_map");
+        assert!(executor.is_some(), "get_executor(\"risk_map\") must return Some");
+        let exec = executor.unwrap();
+        assert_eq!(exec.id(), "risk_map");
+        assert_eq!(exec.title(), "Risk Map");
     }
 }

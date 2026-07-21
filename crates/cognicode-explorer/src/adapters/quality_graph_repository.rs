@@ -69,7 +69,7 @@ pub struct TraversalFilter {
 /// Read-only adapter combining quality data with graph topology for risk views.
 pub struct QualityGraphRepository<'a> {
     quality: Option<&'a dyn QualityRepository>,
-    graph: &'a dyn GraphQueryPort,
+    graph: Option<&'a dyn GraphQueryPort>,
 }
 
 impl<'a> QualityGraphRepository<'a> {
@@ -77,11 +77,14 @@ impl<'a> QualityGraphRepository<'a> {
     ///
     /// `quality` may be `None` — the adapter degrades gracefully by computing
     /// fan-in-only risk scores (quality signals are absent but the view still works).
-    pub fn new(quality: Option<&'a dyn QualityRepository>, graph: &'a dyn GraphQueryPort) -> Self {
-        Self {
-            quality,
-            graph,
-        }
+    ///
+    /// `graph` may also be `None` — in this case the adapter computes topology-only
+    /// hotspot ranking (fan-in only, weighted_issue_count = 0.0).
+    pub fn new(
+        quality: Option<&'a dyn QualityRepository>,
+        graph: Option<&'a dyn GraphQueryPort>,
+    ) -> Self {
+        Self { quality, graph }
     }
 
     /// Rank all symbols in `target` by risk score descending, returning up to `limit` hotspots.
@@ -114,7 +117,7 @@ impl<'a> QualityGraphRepository<'a> {
         // Collect hotspots with risk scores.
         let mut hotspots: Vec<HotspotNode> = Vec::new();
         for symbol in symbols {
-            let fan_in = self.graph.fan_in(&symbol.id) as u32;
+            let fan_in = self.graph.map(|g| g.fan_in(&symbol.id) as u32).unwrap_or(0);
             let weighted_issues = self
                 .quality
                 .ok_or_else(|| {
@@ -157,8 +160,7 @@ impl<'a> QualityGraphRepository<'a> {
     /// Traverse edges from `symbol_id` and return enriched relation edges.
     ///
     /// Preserves `provenance` and `confidence` from the graph layer.
-    /// Returns `ExplorerError::QualityUnavailable` when quality data is requested
-    /// but the quality repository is not wired.
+    /// Returns an empty vector when the graph is not wired.
     pub fn traverse_from(
         &self,
         symbol_id: &SymbolId,
@@ -166,10 +168,15 @@ impl<'a> QualityGraphRepository<'a> {
     ) -> ExplorerResult<Vec<RelEdge>> {
         let mut edges = Vec::new();
 
+        let graph = match self.graph {
+            Some(g) => g,
+            None => return Ok(edges), // No graph wired — topology-only path
+        };
+
         // Gather incoming edges (callers).
         if !filter.outgoing_only {
-            let caller_meta = self.graph.callers_with_metadata(symbol_id);
-            let caller_targets = self.graph.callers(symbol_id);
+            let caller_meta = graph.callers_with_metadata(symbol_id);
+            let caller_targets = graph.callers(symbol_id);
             for (meta, target) in caller_meta.iter().zip(caller_targets.iter()) {
                 edges.push(RelEdge {
                     source_id: meta.caller_id.clone(),
@@ -184,8 +191,8 @@ impl<'a> QualityGraphRepository<'a> {
 
         // Gather outgoing edges (callees).
         if !filter.incoming_only {
-            let callee_meta = self.graph.callees_with_metadata(symbol_id);
-            let callee_targets = self.graph.callees(symbol_id);
+            let callee_meta = graph.callees_with_metadata(symbol_id);
+            let callee_targets = graph.callees(symbol_id);
             for (meta, target) in callee_meta.iter().zip(callee_targets.iter()) {
                 edges.push(RelEdge {
                     source_id: symbol_id.clone(),
@@ -404,7 +411,7 @@ mod tests {
             .with_fan_in(sym_a.id.clone(), 10) // 10 * 0.4 = 4.0
             .with_fan_in(sym_b.id.clone(), 5); // 5 * 0.4 = 2.0
 
-        let repo = QualityGraphRepository::new(Some(&quality), &graph);
+        let repo = QualityGraphRepository::new(Some(&quality), Some(&graph));
         let target = InspectionTarget::Scope {
             path: "src".into(),
             files: vec!["src/lib.rs".into()],
@@ -434,7 +441,7 @@ mod tests {
             .with_fan_in(sym_b.id.clone(), 2)
             .with_fan_in(sym_c.id.clone(), 1);
 
-        let repo = QualityGraphRepository::new(Some(&quality), &graph);
+        let repo = QualityGraphRepository::new(Some(&quality), Some(&graph));
         let target = InspectionTarget::Scope {
             path: "src".into(),
             files: vec!["src/lib.rs".into()],
@@ -459,7 +466,7 @@ mod tests {
             .with_fan_in(sym_a.id.clone(), 10)
             .with_fan_in(sym_b.id.clone(), 5);
 
-        let repo = QualityGraphRepository::new(Some(&quality), &graph);
+        let repo = QualityGraphRepository::new(Some(&quality), Some(&graph));
         let target = InspectionTarget::Scope {
             path: "src".into(),
             files: vec!["src/lib.rs".into()],
@@ -497,7 +504,7 @@ mod tests {
             .with_fan_in(sym_a.id.clone(), 10)
             .with_fan_in(sym_b.id.clone(), 5);
 
-        let repo = QualityGraphRepository::new(Some(&quality), &graph);
+        let repo = QualityGraphRepository::new(Some(&quality), Some(&graph));
         let target = InspectionTarget::Scope {
             path: "src".into(),
             files: vec!["src/lib.rs".into()],
@@ -519,7 +526,7 @@ mod tests {
 
         // No quality repository wired
         let graph = MockGraphQueryPort::new().with_fan_in(sym_a.id.clone(), 10);
-        let repo = QualityGraphRepository::new(None, &graph);
+        let repo = QualityGraphRepository::new(None, Some(&graph));
         let target = InspectionTarget::Symbol(sym_a);
 
         let err = repo.rank_hotspots(&target, 5).unwrap_err();
@@ -543,7 +550,7 @@ mod tests {
 
         let quality = MockQualityRepository::new(issues);
         let graph = MockGraphQueryPort::new().with_fan_in(sym.id.clone(), 7);
-        let repo = QualityGraphRepository::new(Some(&quality), &graph);
+        let repo = QualityGraphRepository::new(Some(&quality), Some(&graph));
         let target = InspectionTarget::Symbol(sym.clone());
 
         let hotspots = repo.rank_hotspots(&target, 5).unwrap();
@@ -606,7 +613,7 @@ mod tests {
             .with_callees(target_id.clone(), callees)
             .with_callers_metadata(target_id.clone(), callers_meta)
             .with_callees_metadata(target_id.clone(), callees_meta);
-        let repo = QualityGraphRepository::new(None, &graph);
+        let repo = QualityGraphRepository::new(None, Some(&graph));
         let filter = TraversalFilter::default();
 
         let edges = repo.traverse_from(&target_id, filter).unwrap();
@@ -674,7 +681,7 @@ mod tests {
             .with_callees(target_id.clone(), callees)
             .with_callers_metadata(target_id.clone(), callers_meta)
             .with_callees_metadata(target_id.clone(), callees_meta);
-        let repo = QualityGraphRepository::new(None, &graph);
+        let repo = QualityGraphRepository::new(None, Some(&graph));
         let filter = TraversalFilter {
             incoming_only: true,
             ..Default::default()
