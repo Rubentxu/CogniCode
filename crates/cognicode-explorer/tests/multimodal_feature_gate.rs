@@ -29,11 +29,12 @@ use cognicode_explorer::ports::graph_repository::GraphRepository;
 /// implementable) on the default build. The trait method `search`
 /// is callable, returning an empty page for an empty query.
 #[cfg(feature = "multimodal")]
-#[test]
-fn graph_repository_default_build_compiles_and_search_works() {
+#[tokio::test]
+async fn graph_repository_default_build_compiles_and_search_works() {
     let repo = InMemoryGraphRepository::empty();
     let page = repo
         .search("hello", &[], 50, None)
+        .await
         .expect("search must succeed");
     assert!(page.items.is_empty());
     assert_eq!(page.raw_total, 0);
@@ -92,14 +93,16 @@ async fn multimodal_roundtrip_ingest_query() {
     let repo: Arc<dyn GraphRepository> = Arc::new(repo);
 
     // `find_nodes_by_kind` for each multimodal variant.
-    let docs = repo.find_nodes_by_kind(&NodeKind::Doc).expect("find_docs");
+    let docs = repo.find_nodes_by_kind(&NodeKind::Doc).await.expect("find_docs");
     assert_eq!(docs.len(), 1);
     let decisions = repo
         .find_nodes_by_kind(&NodeKind::Decision)
+        .await
         .expect("find_decisions");
     assert_eq!(decisions.len(), 1);
     let issues = repo
         .find_nodes_by_kind(&NodeKind::Issue)
+        .await
         .expect("find_issues");
     assert_eq!(issues.len(), 1);
 
@@ -108,6 +111,7 @@ async fn multimodal_roundtrip_ingest_query() {
     // return exactly 1 match.
     let page = repo
         .search("ADR", &[NodeKind::Decision], 50, None)
+        .await
         .expect("search");
     assert_eq!(page.items.len(), 1);
     assert_eq!(page.raw_total, 1);

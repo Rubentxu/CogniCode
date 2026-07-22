@@ -2632,6 +2632,7 @@ pub static CHANGE_IMPACT_STORY_EXECUTOR: ChangeImpactStoryExecutor = ChangeImpac
 pub static OWNERSHIP_MAP_EXECUTOR: OwnershipMapExecutor = OwnershipMapExecutor;
 pub static COMPOSED_NARRATIVE_EXECUTOR: ComposedNarrativeExecutor = ComposedNarrativeExecutor;
 pub static RISK_MAP_EXECUTOR: RiskMapExecutor = RiskMapExecutor;
+pub static DECISION_GRAPH_EXECUTOR: DecisionGraphExecutor = DecisionGraphExecutor;
 pub static ARCHITECTURE_RATIONALE_EXECUTOR: ArchitectureRationaleExecutor = ArchitectureRationaleExecutor;
 
 /// Ownership Map capability — applies to Issue (QualityIssue).
@@ -2958,7 +2959,7 @@ fn contextual_view_error(object_id: &str, view_id: &str, title: &str, message: &
 /// and its rationale subgraph (Justifies, Cites, Resolves, CorroboratedBy edges).
 /// Otherwise, returns a graceful placeholder with the decision id.
 #[cfg(feature = "multimodal")]
-pub fn build_rationale_view(
+pub async fn build_rationale_view(
     decision_id: &str,
     graph_repo: Option<&dyn cognicode_core::domain::ports::GraphRepository>,
 ) -> ContextualView {
@@ -2979,7 +2980,7 @@ pub fn build_rationale_view(
 
     // Fetch the decision node
     let node_id = NodeId::new(decision_id.to_string());
-    let decision_node = match repo.get_node(&node_id) {
+    let decision_node = match repo.get_node(&node_id).await {
         Ok(Some(node)) => node,
         Ok(None) => {
             return contextual_view_error(
@@ -3000,7 +3001,7 @@ pub fn build_rationale_view(
     };
 
     // Fetch rationale subgraph: Justifies, Cites, Resolves, CorroboratedBy edges
-    let (nodes, edges, truncated) = match repo.rationale_subgraph(&node_id, RATIONALE_SUBGRAPH_MAX_DEPTH, RATIONALE_SUBGRAPH_MAX_NODES) {
+    let (nodes, edges, truncated) = match repo.rationale_subgraph(&node_id, RATIONALE_SUBGRAPH_MAX_DEPTH, RATIONALE_SUBGRAPH_MAX_NODES).await {
         Ok((nodes, edges, truncated)) => (nodes, edges, truncated),
         Err(e) => {
             return contextual_view_error(
@@ -3127,6 +3128,57 @@ pub fn build_rationale_view(decision_id: &str) -> ContextualView {
     }
 }
 
+fn with_decision_graph_identity(mut view: ContextualView) -> ContextualView {
+    view.view_id = "decision_graph".into();
+    view.title = "Decision Graph".into();
+    view.view_kind = ViewKind::DecisionGraph;
+    view
+}
+
+/// Decision Graph capability — decision-centric affordance alias over the same
+/// rationale topology used by ArchitectureRationale.
+pub struct DecisionGraphExecutor;
+impl ViewDescriptor for DecisionGraphExecutor {
+    fn id(&self) -> &'static str {
+        "decision-graph"
+    }
+    fn title(&self) -> &'static str {
+        "Decision Graph"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::DecisionArtifact]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::DecisionGraph
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Markdown
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for DecisionGraphExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match ctx.target {
+            InspectionTarget::Decision { id } => {
+                #[cfg(feature = "multimodal")]
+                {
+                    Ok(with_decision_graph_identity(build_rationale_view(id, ctx.graph_repo).await))
+                }
+                #[cfg(not(feature = "multimodal"))]
+                {
+                    let _ = ctx;
+                    Ok(with_decision_graph_identity(build_rationale_view(id)))
+                }
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "decision_graph".into(),
+            }),
+        }
+    }
+}
+
 /// Architecture Rationale capability — applies to Decision.
 ///
 /// Shows why a structure exists using ADRs, decisions, evidence, and related code.
@@ -3158,7 +3210,7 @@ impl ViewExecutor for ArchitectureRationaleExecutor {
             InspectionTarget::Decision { id } => {
                 #[cfg(feature = "multimodal")]
                 {
-                    Ok(build_rationale_view(id, ctx.graph_repo))
+                    Ok(build_rationale_view(id, ctx.graph_repo).await)
                 }
                 #[cfg(not(feature = "multimodal"))]
                 {
@@ -5446,6 +5498,53 @@ mod tests {
     // -------------------------------------------------------------------------
     // ArchitectureRationaleExecutor tests
     // -------------------------------------------------------------------------
+
+    #[test]
+    fn decision_graph_executor_descriptor_metadata() {
+        let exec = &super::DECISION_GRAPH_EXECUTOR;
+        assert_eq!(exec.id(), "decision-graph");
+        assert_eq!(exec.title(), "Decision Graph");
+        assert!(exec
+            .applies_to()
+            .contains(&crate::dto::InspectableObjectType::DecisionArtifact));
+        assert_eq!(exec.view_kind(), crate::dto::ViewKind::DecisionGraph);
+        assert_eq!(exec.renderer_kind(), crate::dto::RendererKind::Markdown);
+    }
+
+    #[tokio::test]
+    async fn decision_graph_executor_handles_decision() {
+        let target = super::InspectionTarget::Decision {
+            id: "ADR-001".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
+        };
+
+        let executor = super::DecisionGraphExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "decision_graph");
+        assert_eq!(view.title, "Decision Graph");
+        assert_eq!(view.view_kind, crate::dto::ViewKind::DecisionGraph);
+        assert_eq!(view.renderer_kind, crate::dto::RendererKind::Markdown);
+        assert!(!view.blocks.is_empty());
+    }
+
+    #[test]
+    #[cfg(not(feature = "multimodal"))]
+    fn decision_graph_retags_rationale_identity() {
+        let view = super::with_decision_graph_identity(super::build_rationale_view("ADR-042"));
+        assert_eq!(view.view_id, "decision_graph");
+        assert_eq!(view.title, "Decision Graph");
+        assert_eq!(view.view_kind, crate::dto::ViewKind::DecisionGraph);
+    }
 
     #[test]
     fn architecture_rationale_executor_descriptor_metadata() {

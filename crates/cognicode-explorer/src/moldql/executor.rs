@@ -68,9 +68,9 @@ impl<'a> MoldQLExecutor<'a> {
     }
 
     /// Run the query, returning a structured result.
-    pub fn execute(&self, query: MoldQLQuery) -> ExplorerResult<MoldQLResult> {
+    pub async fn execute(&self, query: MoldQLQuery) -> ExplorerResult<MoldQLResult> {
         match query {
-            MoldQLQuery::Find(find) => self.execute_find(&find),
+            MoldQLQuery::Find(find) => self.execute_find(&find).await,
             MoldQLQuery::Explore(explore) => self.execute_explore(&explore),
             // ExplorerQL primitives. The executor compiles the query
             // and then dispatches the compiled plan to the right
@@ -125,7 +125,7 @@ impl<'a> MoldQLExecutor<'a> {
     // FIND
     // -------------------------------------------------------------------
 
-    fn execute_find(&self, find: &crate::moldql::ast::FindQuery) -> ExplorerResult<MoldQLResult> {
+    async fn execute_find(&self, find: &crate::moldql::ast::FindQuery) -> ExplorerResult<MoldQLResult> {
         let query_str = render_find(find);
         let items = match find.target {
             TargetType::Symbols => self.find_symbols(find)?,
@@ -138,7 +138,7 @@ impl<'a> MoldQLExecutor<'a> {
             // `FeatureDisabled` so callers see the right
             // error code (no panic, no silent empty list).
             #[cfg(feature = "multimodal")]
-            TargetType::Decisions | TargetType::Docs => self.find_multimodal_nodes(find)?,
+            TargetType::Decisions | TargetType::Docs => self.find_multimodal_nodes(find).await?,
         };
         let total = items.len();
         Ok(MoldQLResult {
@@ -551,7 +551,7 @@ impl<'a> MoldQLExecutor<'a> {
     /// to `NodeKind` and queries the `GraphRepository`. Returns
     /// `FeatureDisabled` when the graph repo is not wired.
     #[cfg(feature = "multimodal")]
-    fn find_multimodal_nodes(
+    async fn find_multimodal_nodes(
         &self,
         find: &crate::moldql::ast::FindQuery,
     ) -> ExplorerResult<Vec<MoldQLItem>> {
@@ -566,7 +566,7 @@ impl<'a> MoldQLExecutor<'a> {
                 "multimodal FIND targets require a GraphRepository".to_string(),
             )
         })?;
-        let nodes = graph_repo.find_nodes_by_kind(&kind)?;
+        let nodes = graph_repo.find_nodes_by_kind(&kind).await?;
         let items: Vec<MoldQLItem> = nodes
             .into_iter()
             .filter(|n| {

@@ -351,4 +351,12 @@ mod tests {
             "symbol should have Vertical Slice affordance, got {labels:?}"
         );
     }
+
+    #[test]
+    fn decision_artifact_defaults_to_decision_graph() {
+        let affs = get_affordances("decision_artifact");
+        assert!(!affs.is_empty());
+        assert_eq!(affs[0].view_kind, "decision_graph");
+        assert_eq!(affs[0].label, "Decision Graph");
+    }
 }

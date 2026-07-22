@@ -435,7 +435,7 @@ impl ViewRegistry {
                 ),
                 (
                     "decision-graph",
-                    &crate::domain::views::ARCHITECTURE_RATIONALE_EXECUTOR
+                    &crate::domain::views::DECISION_GRAPH_EXECUTOR
                         as &dyn crate::domain::views::ViewExecutor,
                 ),
                 (

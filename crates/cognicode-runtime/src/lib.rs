@@ -190,9 +190,8 @@ impl Runtime {
             } else {
                 None
             };
-        #[cfg(not(all(feature = "multimodal", feature = "postgres")))]
-        #[allow(clippy::type_complexity)]
-        let graph_repo: Option<Arc<dyn std::any::Any + Send + Sync>> = None;
+        #[cfg(all(feature = "multimodal", not(feature = "postgres")))]
+        let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> = None;
 
         let search: Arc<dyn cognicode_explorer::facades::SearchService> =
             Arc::new(cognicode_explorer::facades::search::SearchServiceImpl::new(
