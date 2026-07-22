@@ -233,6 +233,7 @@ describe("Shell", () => {
     await waitFor(() => {
       expect(screen.getByTestId("health-chip")).toBeInTheDocument();
     });
+    expect(screen.getByTestId("context-rail")).toBeInTheDocument();
   });
 
   it("renders the skip link as the first focusable element", () => {
@@ -279,6 +280,7 @@ describe("Shell", () => {
     render(<ShellHarness viewport="small" />);
     // Bottom sheet should be present
     expect(screen.getByTestId("bottom-sheet")).toBeInTheDocument();
+    expect(screen.queryByTestId("context-rail")).not.toBeInTheDocument();
     // Graph/landing zone should eventually render (InteractiveGraph or LandingWorkbench via Suspense)
     await waitFor(() => {
       const hasGraph =
@@ -370,6 +372,77 @@ describe("Shell", () => {
       "data-viewport",
       "ultrawide",
     );
+  });
+});
+
+// E27.1: StartRail moved to shell level — tests for rail, zones, and TopBar IDs
+describe("Shell — StartRail and shell zones (E27.1)", () => {
+  it("renders start-rail at shell level (outside landing/workbench switch)", async () => {
+    render(<ShellHarness viewport="desktop" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("start-rail")).toBeInTheDocument();
+    });
+  });
+
+  it("renders all 4 landing tabs with correct data-testids", async () => {
+    render(<ShellHarness viewport="desktop" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("landing-tab-start")).toBeInTheDocument();
+      expect(screen.getByTestId("landing-tab-investigations")).toBeInTheDocument();
+      expect(screen.getByTestId("landing-tab-resume")).toBeInTheDocument();
+      expect(screen.getByTestId("landing-tab-graph")).toBeInTheDocument();
+    });
+  });
+
+  it("StartRail tablist has correct ARIA roles", async () => {
+    render(<ShellHarness viewport="desktop" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("start-rail")).toBeInTheDocument();
+    });
+    // Query within the start-rail container
+    const container = screen.getByTestId("start-rail");
+    const tablist = container.querySelector('[role="tablist"]');
+    expect(tablist).not.toBeNull();
+    expect(tablist).toHaveAttribute("aria-label", "Workbench entry rail");
+    const tabs = container.querySelectorAll('[role="tab"]');
+    expect(tabs).toHaveLength(4);
+  });
+
+  it("active tab has aria-selected=true, others false", async () => {
+    // Default state: graph tab is active
+    render(<ShellHarness viewport="desktop" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("start-rail")).toBeInTheDocument();
+    });
+    const startTab = screen.getByTestId("landing-tab-start");
+    const graphTab = screen.getByTestId("landing-tab-graph");
+    expect(startTab).toHaveAttribute("aria-selected", "false");
+    expect(graphTab).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("renders shell-zone-left, shell-zone-center, shell-zone-right on desktop", async () => {
+    render(<ShellHarness viewport="desktop" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("shell-zone-left")).toBeInTheDocument();
+      expect(screen.getByTestId("shell-zone-center")).toBeInTheDocument();
+      expect(screen.getByTestId("shell-zone-right")).toBeInTheDocument();
+    });
+  });
+
+  it("TopBar IDs remain available after extraction", async () => {
+    render(<ShellHarness viewport="desktop" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("spotter-trigger")).toBeInTheDocument();
+      expect(screen.getByTestId("context-rail")).toBeInTheDocument();
+    });
+  });
+
+  it("start-rail persists when landing-workbench is present", async () => {
+    render(<ShellHarness viewport="desktop" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("start-rail")).toBeInTheDocument();
+      expect(screen.getByTestId("landing-workbench")).toBeInTheDocument();
+    });
   });
 });
 

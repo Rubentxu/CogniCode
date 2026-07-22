@@ -8,14 +8,9 @@
 import { type ReactNode } from "react";
 
 import { detectViewport, type ShellViewport } from "./viewport";
-import { HealthProbe } from "./HealthProbe";
 import { SkipLink } from "./SkipLink";
-import { PerspectiveToggle } from "./PerspectiveToggle";
-import { ScanBar } from "./ScanBar";
-import { ShareExplorationButton } from "./ShareExplorationButton";
-import { LensSidebarToggle } from "./LensSidebarToggle";
+import { TopBar } from "./TopBar";
 import { LensPanelSidebar } from "./LensPanel/LensPanelSidebar";
-import { ViewSpecWizardTrigger } from "./ViewSpecWizardTrigger";
 import type { WorkspaceSummary } from "../api/types";
 
 export interface ShellLayoutProps {
@@ -37,6 +32,10 @@ export interface ShellLayoutProps {
    * In desktop viewport: right zone of the 2-zone grid.
    */
   secondaryContent: ReactNode;
+  /** Tertiary content — ContextRail or other side panel (rightmost zone). */
+  tertiaryContent?: ReactNode;
+  /** Shell left zone — StartRail (rendered outside the landing/workbench switch). */
+  leftZone?: ReactNode;
   onSpotterOpen: () => void;
   /** e15.5 — opens the MCP Tools modal (optional) */
   onMcpToolsOpen?: () => void;
@@ -48,6 +47,8 @@ export function ShellLayout({
   workspace: _workspace,
   children,
   secondaryContent,
+  tertiaryContent,
+  leftZone,
   onSpotterOpen,
   onMcpToolsOpen,
 }: ShellLayoutProps) {
@@ -64,73 +65,7 @@ export function ShellLayout({
       style={{ backgroundColor: "var(--color-surface)" }}
     >
       <SkipLink targetId="app-main" />
-      {/* Top bar */}
-      <header
-        className="flex items-center justify-between gap-3 px-4 py-2"
-        style={{
-          backgroundColor: "var(--color-surface-raised)",
-          borderBottom: "1px solid var(--color-border)",
-        }}
-      >
-        <div className="flex items-center gap-2">
-          <h1
-            className="text-sm font-semibold"
-            style={{ color: "var(--color-text-primary)" }}
-          >
-            CogniCode Explorer
-          </h1>
-          <HealthProbe showFullScreenOnError={false} />
-          <ScanBar />
-          <PerspectiveToggle />
-        </div>
-        <div className="flex items-center gap-2">
-          <ShareExplorationButton />
-          <ViewSpecWizardTrigger />
-          <LensSidebarToggle />
-          {onMcpToolsOpen && (
-            <button
-              type="button"
-              onClick={onMcpToolsOpen}
-              aria-label="Open MCP tools"
-              data-testid="mcp-tools-trigger"
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs"
-              style={{
-                backgroundColor: "var(--color-surface-overlay)",
-                color: "var(--color-text-secondary)",
-                border: "1px solid var(--color-border)",
-              }}
-            >
-              <span aria-hidden="true">⚙</span>
-              <span>MCP Tools</span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onSpotterOpen}
-            aria-label="Open Spotter search"
-            data-testid="spotter-trigger"
-            className="flex items-center gap-2 rounded-md px-2 py-1 text-xs"
-            style={{
-              backgroundColor: "var(--color-surface-overlay)",
-              color: "var(--color-text-secondary)",
-              border: "1px solid var(--color-border)",
-            }}
-          >
-            <span aria-hidden="true">⌕</span>
-            <span>Search</span>
-            <span
-              aria-hidden="true"
-              className="rounded px-1 font-mono text-xs"
-              style={{
-                backgroundColor: "var(--color-surface)",
-                color: "var(--color-text-muted)",
-              }}
-            >
-              ⌘K
-            </span>
-          </button>
-        </div>
-      </header>
+      <TopBar onSpotterOpen={onSpotterOpen} onMcpToolsOpen={onMcpToolsOpen} />
       <main
         id="app-main"
         tabIndex={-1}
@@ -144,6 +79,8 @@ export function ShellLayout({
             {/* Bottom sheet — PaneStackView slides up from bottom */}
             <div
               data-testid="bottom-sheet"
+              role="complementary"
+              aria-label="Active panes"
               className="absolute left-0 right-0 top-1/2 z-20"
               style={{
                 bottom: 0,
@@ -157,16 +94,29 @@ export function ShellLayout({
             </div>
           </div>
         ) : (
-          /* Desktop / Tablet / Ultrawide: 2-zone grid + optional lens sidebar */
+          /* Desktop / Tablet / Ultrawide: 3-zone workbench + optional lens sidebar */
           <div className="flex h-full">
             <div
               className="grid h-full flex-1"
-              style={{ gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr)" }}
+              style={{
+                gridTemplateColumns: leftZone
+                  ? tertiaryContent
+                    ? "minmax(0,1.3fr) minmax(0,1fr) 20rem"
+                    : "minmax(0,1.4fr) minmax(0,1fr)"
+                  : tertiaryContent
+                    ? "minmax(0,1.3fr) minmax(0,1fr) 20rem"
+                    : "minmax(0,1.4fr) minmax(0,1fr)",
+              }}
             >
-              {/* Left — InteractiveGraph (primary) */}
-              {children}
-              {/* Right — PaneStackView (secondary) */}
-              {secondaryContent}
+              {/* Shell left zone */}
+              {leftZone && (
+                <div data-testid="shell-zone-left">{leftZone}</div>
+              )}
+              {/* Center zone — InteractiveGraph (primary) */}
+              <div data-testid="shell-zone-center">{children}</div>
+              {/* Right zone — PaneStackView (secondary) */}
+              <div data-testid="shell-zone-right">{secondaryContent}</div>
+              {tertiaryContent}
             </div>
             <LensPanelSidebar />
           </div>

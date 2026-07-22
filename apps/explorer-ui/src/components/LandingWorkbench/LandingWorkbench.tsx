@@ -13,7 +13,7 @@
  * ARIA: implements the WAI-ARIA Tabs pattern with roving focus
  * (arrow keys move between tabs, Home/End jump to first/last).
  */
-import { useCallback, useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef } from "react";
 import { useAppDispatch, useAppState } from "../../state/context";
 import { isGraphPerspective } from "../../state/c4Levels";
 import type { LandingTabId } from "../../state/slices/landingWorkbench";
@@ -26,17 +26,36 @@ export interface LandingWorkbenchProps {
   workspaceId: string;
 }
 
-const TABS: ReadonlyArray<{ id: LandingTabId; label: string }> = [
-  { id: "start", label: "Start From" },
-  { id: "investigations", label: "Investigations" },
-  { id: "resume", label: "Resume" },
-  { id: "graph", label: "Graph" },
-];
+const TAB_COPY = {
+  start: {
+    eyebrow: "Entry",
+    title: "Begin from a meaningful object",
+    description:
+      "Choose a precise entry point. Start calm, then deepen through panes and representations.",
+  },
+  investigations: {
+    eyebrow: "Continuity",
+    title: "Work through live investigations",
+    description:
+      "Use investigations as the durable thread that connects evidence, artifacts, and architectural reasoning.",
+  },
+  resume: {
+    eyebrow: "Recent work",
+    title: "Resume an existing exploration",
+    description:
+      "Pick up a previous path without reconstructing the full context from memory.",
+  },
+  graph: {
+    eyebrow: "Map",
+    title: "Step back to the broadest system view",
+    description:
+      "Use the graph when you need orientation, topology, and large-scale relationships before drilling back in.",
+  },
+} as const;
 
 export function LandingWorkbench({ workspaceId }: LandingWorkbenchProps) {
   const dispatch = useAppDispatch();
   const { landingWorkbench, perspective } = useAppState();
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const previousTabRef = useRef<LandingTabId>(landingWorkbench.activeTab);
 
   // C4 perspective: stash previous tab, force Graph. Restore on exit.
@@ -55,41 +74,7 @@ export function LandingWorkbench({ workspaceId }: LandingWorkbenchProps) {
     }
   }, [perspective, landingWorkbench.activeTab, dispatch]);
 
-  const onKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>) => {
-      const ids = TABS.map((t) => t.id);
-      const currentIndex = ids.indexOf(landingWorkbench.activeTab);
-      const safeIndex = currentIndex < 0 ? 0 : currentIndex;
-
-      let computed: number;
-      switch (event.key) {
-        case "ArrowRight":
-          computed = (safeIndex + 1) % ids.length;
-          break;
-        case "ArrowLeft":
-          computed = (safeIndex - 1 + ids.length) % ids.length;
-          break;
-        case "Home":
-          computed = 0;
-          break;
-        case "End":
-          computed = ids.length - 1;
-          break;
-        default:
-          return;
-      }
-      event.preventDefault();
-      const nextId = ids[computed];
-      if (nextId) {
-        dispatch({ type: "SET_LANDING_TAB", payload: { tab: nextId } });
-        const btn = containerRef.current?.querySelector<HTMLButtonElement>(
-          `[data-tab-id="${nextId}"]`,
-        );
-        btn?.focus();
-      }
-    },
-    [landingWorkbench.activeTab, dispatch],
-  );
+  const copy = TAB_COPY[landingWorkbench.activeTab];
 
   return (
     <div
@@ -98,58 +83,49 @@ export function LandingWorkbench({ workspaceId }: LandingWorkbenchProps) {
       className="flex h-full flex-col"
       style={{ backgroundColor: "var(--color-surface)" }}
     >
-      <div
-        ref={containerRef}
-        role="tablist"
-        aria-label="Landing workbench tabs"
-        onKeyDown={onKeyDown}
-        className="flex items-center gap-1 border-b px-4 py-2"
-        style={{ borderColor: "var(--color-border)" }}
-      >
-        {TABS.map((tab) => {
-          const isActive = tab.id === landingWorkbench.activeTab;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              tabIndex={isActive ? 0 : -1}
-              data-testid={`landing-tab-${tab.id}`}
-              data-tab-id={tab.id}
-              onClick={() =>
-                dispatch({ type: "SET_LANDING_TAB", payload: { tab: tab.id } })
-              }
-              className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
-              style={{
-                backgroundColor: isActive
-                  ? "var(--color-primary)"
-                  : "var(--color-surface-overlay)",
-                color: isActive
-                  ? "var(--color-primary-foreground)"
-                  : "var(--color-text-secondary)",
-              }}
+      <div className="flex flex-1 overflow-hidden md:min-h-0">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div
+            className="border-b px-6 py-5"
+            style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface)" }}
+          >
+            <p
+              className="text-[11px] font-semibold uppercase tracking-[0.08em]"
+              style={{ color: "var(--color-text-muted)" }}
             >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-      <div
-        role="tabpanel"
-        aria-labelledby={`landing-tab-${landingWorkbench.activeTab}`}
-        className="flex-1 overflow-auto"
-      >
-        {landingWorkbench.activeTab === "start" && <StartFromSection />}
-        {landingWorkbench.activeTab === "investigations" && (
-          <InvestigationsSection workspaceId={workspaceId} />
-        )}
-        {landingWorkbench.activeTab === "resume" && (
-          <ResumeSection workspaceId={workspaceId} />
-        )}
-        {landingWorkbench.activeTab === "graph" && (
-          <GraphLanding workspaceId={workspaceId} />
-        )}
+              {copy.eyebrow}
+            </p>
+            <h2
+              className="mt-2 text-lg font-semibold"
+              style={{ color: "var(--color-text-primary)" }}
+            >
+              {copy.title}
+            </h2>
+            <p
+              className="mt-2 max-w-[72ch] text-sm leading-6"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              {copy.description}
+            </p>
+          </div>
+
+          <div
+            role="tabpanel"
+            aria-labelledby={`landing-tab-${landingWorkbench.activeTab}`}
+            className="flex-1 overflow-auto"
+          >
+            {landingWorkbench.activeTab === "start" && <StartFromSection />}
+            {landingWorkbench.activeTab === "investigations" && (
+              <InvestigationsSection workspaceId={workspaceId} />
+            )}
+            {landingWorkbench.activeTab === "resume" && (
+              <ResumeSection workspaceId={workspaceId} />
+            )}
+            {landingWorkbench.activeTab === "graph" && (
+              <GraphLanding workspaceId={workspaceId} />
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -25,8 +25,10 @@ import { useSubgraph } from "../hooks/useSubgraph";
 import { useArchitecture } from "../hooks/useArchitecture";
 import { useStaleDataHold } from "../hooks/useStaleDataHold";
 import { LandingWorkbench } from "./LandingWorkbench/LandingWorkbench";
+import { StartRail } from "./StartRail";
 import type { ShellViewport } from "./viewport";
 import { McpToolsModal } from "./McpToolsModal";
+import { ContextRail } from "./ContextRail";
 
 // `React.lazy` keeps the cytoscape + elkjs chunk out of the
 // initial bundle.
@@ -150,6 +152,8 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
                   <PaneStackView />
                 </ErrorBoundary>
               }
+              tertiaryContent={<ContextRail />}
+              leftZone={<StartRail />}
             >
               <ErrorBoundary label="InteractiveGraph">
                 <Suspense fallback={GRAPH_LOADING}>
