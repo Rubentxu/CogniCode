@@ -82,6 +82,9 @@ export function ContextRail() {
         </section>
 
         <section>
+          {/* E27.3-pending: This section is a structural stub. Real knowledge
+              content (ADRs/evidence/decisions linked to the active object)
+              is deferred to E27.3. */}
           <h3 className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--color-text-muted)" }}>
             Knowledge
           </h3>

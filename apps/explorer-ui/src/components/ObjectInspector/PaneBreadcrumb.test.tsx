@@ -4,7 +4,7 @@
  * Verifies:
  * - Renders when fromObjectId is set; hidden when absent.
  * - Click on From label dispatches SELECT_OBJECT.
- * - 'n to add note' hint is visible.
+ * - No hardcoded shortcut hint (per spec: "It MUST NOT contain a hardcoded shortcut hint").
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
@@ -72,11 +72,16 @@ describe("PaneBreadcrumb", () => {
     expect(screen.getByTestId("pane-breadcrumb")).toBeInTheDocument();
   });
 
-  it("shows 'n to add note' hint", () => {
+  it("does not render a hardcoded shortcut hint (per spec)", () => {
     renderWithContext(
       <PaneBreadcrumb fromObjectId="from-obj" viaViewKind="call_graph" workspaceId="ws1" />,
     );
-    expect(screen.getByText("n to add note")).toBeInTheDocument();
+    // The spec requires no hardcoded hint string like "n to add note".
+    // Breadcrumb should only show "From <label> · Via <view>".
+    const breadcrumb = screen.getByTestId("pane-breadcrumb");
+    expect(breadcrumb).toHaveTextContent("From");
+    expect(breadcrumb).toHaveTextContent("Via");
+    expect(breadcrumb).not.toHaveTextContent("n to add note");
   });
 
   it("From label resolves to object label", () => {
@@ -102,7 +107,7 @@ describe("PaneBreadcrumb", () => {
     }
     render(
       <AppContext.Provider value={{ state, dispatch }}>
-        <PaneBreadcrumb fromObjectId="from-obj" viaViewKind="call_graph" />
+        <PaneBreadcrumb fromObjectId="from-obj" viaViewKind="call_graph" workspaceId="ws1" />
       </AppContext.Provider>,
     );
     fireEvent.click(screen.getByTestId("pane-breadcrumb-from"));
