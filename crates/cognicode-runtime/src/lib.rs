@@ -190,7 +190,7 @@ impl Runtime {
             } else {
                 None
             };
-        #[cfg(not(all(feature = "multimodal", feature = "postgres")))]
+        #[cfg(all(feature = "multimodal", not(feature = "postgres")))]
         let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> = None;
 
         let search: Arc<dyn cognicode_explorer::facades::SearchService> =
@@ -203,7 +203,7 @@ impl Runtime {
                 Some(persistence.clone()), // persistence — for SavedExploration search
                 investigation,             // investigation — wired from PG (e13-wave-1)
                 #[cfg(feature = "multimodal")]
-                graph_repo,
+                graph_repo.clone(),
             ));
 
         // View facade.
@@ -216,6 +216,8 @@ impl Runtime {
                 graph_query.clone(),
                 view_registry.clone(),
                 Some(persistence.clone()), // persistence — for SavedExploration view resolution
+                #[cfg(feature = "multimodal")]
+                graph_repo.clone(),
             ));
         let view: Arc<dyn cognicode_explorer::facades::ViewService> = view_impl.clone();
         let lens_executor: Arc<dyn cognicode_explorer::facades::LensExecutor> = view_impl;

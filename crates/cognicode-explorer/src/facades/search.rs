@@ -392,12 +392,14 @@ impl SearchService for SearchServiceImpl {
                     .map(|kk| kk.eq_ignore_ascii_case("doc"))
                     .unwrap_or(true)
                 {
-                    let doc_nodes = graph.search_paginated(
-                        &q,
-                        &[cognicode_core::domain::value_objects::node_kind::NodeKind::Doc],
-                        SPOTTER_RESULT_LIMIT,
-                        None,
-                    );
+                    let doc_nodes = graph
+                        .search_paginated(
+                            &q,
+                            &[cognicode_core::domain::value_objects::node_kind::NodeKind::Doc],
+                            SPOTTER_RESULT_LIMIT,
+                            None,
+                        )
+                        .await;
                     if let Ok(page) = doc_nodes {
                         for node in page.items {
                             results.push(SpotterSearchResult::Doc(SpotterResult {
@@ -425,12 +427,14 @@ impl SearchService for SearchServiceImpl {
                     .map(|kk| kk.eq_ignore_ascii_case("decision"))
                     .unwrap_or(true)
                 {
-                    let decision_nodes = graph.search_paginated(
-                        &q,
-                        &[cognicode_core::domain::value_objects::node_kind::NodeKind::Decision],
-                        SPOTTER_RESULT_LIMIT,
-                        None,
-                    );
+                    let decision_nodes = graph
+                        .search_paginated(
+                            &q,
+                            &[cognicode_core::domain::value_objects::node_kind::NodeKind::Decision],
+                            SPOTTER_RESULT_LIMIT,
+                            None,
+                        )
+                        .await;
                     if let Ok(page) = decision_nodes {
                         for node in page.items {
                             results.push(SpotterSearchResult::Decision(SpotterResult {
@@ -459,12 +463,14 @@ impl SearchService for SearchServiceImpl {
                     .map(|kk| kk.eq_ignore_ascii_case("evidence"))
                     .unwrap_or(true)
                 {
-                    let evidence_nodes = graph.search_paginated(
-                        &q,
-                        &[cognicode_core::domain::value_objects::node_kind::NodeKind::Evidence],
-                        SPOTTER_RESULT_LIMIT,
-                        None,
-                    );
+                    let evidence_nodes = graph
+                        .search_paginated(
+                            &q,
+                            &[cognicode_core::domain::value_objects::node_kind::NodeKind::Evidence],
+                            SPOTTER_RESULT_LIMIT,
+                            None,
+                        )
+                        .await;
                     if let Ok(page) = evidence_nodes {
                         for node in page.items {
                             results.push(SpotterSearchResult::Evidence(SpotterResult {

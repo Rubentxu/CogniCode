@@ -40,6 +40,8 @@
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 use std::collections::HashMap;
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
+use std::collections::{HashSet, VecDeque};
+#[cfg(all(feature = "multimodal", feature = "postgres"))]
 use std::str::FromStr;
 
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
@@ -55,6 +57,8 @@ use cognicode_core::domain::value_objects::provenance::Provenance;
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 use cognicode_core::domain::{GraphError, GraphResult, SearchPage};
 
+#[cfg(all(feature = "multimodal", feature = "postgres"))]
+use async_trait::async_trait;
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 use chrono::{DateTime, Utc};
 
@@ -78,10 +82,11 @@ impl PgGraphRepository {
 }
 
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[async_trait]
 impl GraphRepository for PgGraphRepository {
     /// PG-backed read methods. Delegates to `PostgresRepository::find_graph_nodes`
     /// for kind-filtered queries and runs direct FTS5 SQL for search.
-    fn search(
+    async fn search(
         &self,
         query: &str,
         node_kinds: &[NodeKind],
@@ -104,8 +109,7 @@ impl GraphRepository for PgGraphRepository {
         let kinds: Vec<String> = node_kinds.iter().map(|k| k.to_string()).collect();
         let limit_i64 = limit as i64;
 
-        futures_executor_block_on(async move {
-            // Build the FTS5 query. We search in label and properties.
+        // Build the FTS5 query. We search in label and properties.
             // Cursor is offset-based for simplicity: "OFFSET $2 LIMIT $1".
             let offset: i64 = cursor.and_then(|c| c.parse::<i64>().ok()).unwrap_or(0);
 
@@ -167,59 +171,54 @@ impl GraphRepository for PgGraphRepository {
                 raw_rank: 0.0,
                 item_ranks: Vec::new(),
             })
-        })
     }
 
-    fn find_nodes_by_kind(&self, kind: &NodeKind) -> GraphResult<Vec<GraphNode>> {
+    async fn find_nodes_by_kind(&self, kind: &NodeKind) -> GraphResult<Vec<GraphNode>> {
         let pool = self.pool.clone();
         let kind_str = kind.to_string();
 
-        futures_executor_block_on(async move {
-            let rows: Vec<GraphNodeRow> = sqlx::query_as(
-                "SELECT id, kind, label, source_path, properties, \
-                        created_at::text AS created_at, \
-                        updated_at::text AS updated_at \
-                 FROM graph_nodes \
-                 WHERE kind = $1 \
-                 ORDER BY id",
-            )
-            .bind(&kind_str)
-            .fetch_all(&pool)
-            .await
-            .map_err(|e| {
-                GraphError::Storage(format!("pg_graph_repository find_nodes_by_kind: {e}"))
-            })?;
+        let rows: Vec<GraphNodeRow> = sqlx::query_as(
+            "SELECT id, kind, label, source_path, properties, \
+                    created_at::text AS created_at, \
+                    updated_at::text AS updated_at \
+             FROM graph_nodes \
+             WHERE kind = $1 \
+             ORDER BY id",
+        )
+        .bind(&kind_str)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| {
+            GraphError::Storage(format!("pg_graph_repository find_nodes_by_kind: {e}"))
+        })?;
 
-            Ok(rows.into_iter().map(|r| r.into_graph_node()).collect())
-        })
+        Ok(rows.into_iter().map(|r| r.into_graph_node()).collect())
     }
 
-    fn get_node(&self, id: &NodeId) -> GraphResult<Option<GraphNode>> {
+    async fn get_node(&self, id: &NodeId) -> GraphResult<Option<GraphNode>> {
         let pool = self.pool.clone();
         let id_str = id.as_str().to_string();
 
-        futures_executor_block_on(async move {
-            let row: Option<GraphNodeRow> = sqlx::query_as(
-                "SELECT id, kind, label, source_path, properties, \
-                        created_at::text AS created_at, \
-                        updated_at::text AS updated_at \
-                 FROM graph_nodes \
-                 WHERE id = $1",
-            )
-            .bind(&id_str)
-            .fetch_optional(&pool)
-            .await
-            .map_err(|e| GraphError::Storage(format!("pg_graph_repository get_node: {e}")))?;
+        let row: Option<GraphNodeRow> = sqlx::query_as(
+            "SELECT id, kind, label, source_path, properties, \
+                    created_at::text AS created_at, \
+                    updated_at::text AS updated_at \
+             FROM graph_nodes \
+             WHERE id = $1",
+        )
+        .bind(&id_str)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| GraphError::Storage(format!("pg_graph_repository get_node: {e}")))?;
 
-            Ok(row.map(|r| r.into_graph_node()))
-        })
+        Ok(row.map(|r| r.into_graph_node()))
     }
 
-    fn find_outgoing_edges(&self, _id: &NodeId) -> GraphResult<Vec<GraphEdge>> {
+    async fn find_outgoing_edges(&self, _id: &NodeId) -> GraphResult<Vec<GraphEdge>> {
         Ok(Vec::new())
     }
 
-    fn edges_by_kind(&self, _node: &NodeId, _kinds: &[EdgeKind]) -> GraphResult<Vec<GraphEdge>> {
+    async fn edges_by_kind(&self, _node: &NodeId, _kinds: &[EdgeKind]) -> GraphResult<Vec<GraphEdge>> {
         // Stub: full edges_by_kind implementation is deferred to
         // a follow-up that wires into `find_graph_edges`. The trait
         // method is required so the impl compiles; the runtime
@@ -227,15 +226,108 @@ impl GraphRepository for PgGraphRepository {
         Ok(Vec::new())
     }
 
-    fn rationale_subgraph(
+    async fn rationale_subgraph(
         &self,
-        _focus: &NodeId,
-        _max_depth: u32,
-        _max_nodes: usize,
+        focus: &NodeId,
+        max_depth: u32,
+        max_nodes: usize,
     ) -> GraphResult<(Vec<GraphNode>, Vec<GraphEdge>, bool)> {
-        // Stub: rationale traversal is deferred to a follow-up.
-        // Returning empty results keeps the trait impl complete.
-        Ok((Vec::new(), Vec::new(), false))
+        let pool = self.pool.clone();
+        let focus_id = focus.as_str().to_string();
+        let focus_node = self.get_node(focus).await?.unwrap_or_else(|| GraphNode {
+            id: focus.clone(),
+            kind: NodeKind::Doc,
+            label: focus.0.clone(),
+            source_path: None,
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+
+        let rationale_kinds = vec![
+            EdgeKind::Justifies.to_string(),
+            EdgeKind::Cites.to_string(),
+            EdgeKind::Resolves.to_string(),
+            EdgeKind::CorroboratedBy.to_string(),
+        ];
+
+        let mut nodes = vec![focus_node];
+        let mut edges = Vec::new();
+        let mut visited: HashSet<String> = HashSet::from([focus_id.clone()]);
+        let mut queue: VecDeque<(String, u32)> = VecDeque::from([(focus_id.clone(), 0)]);
+        let mut truncated = false;
+
+        while let Some((current, depth)) = queue.pop_front() {
+            if depth >= max_depth {
+                continue;
+            }
+
+            let edge_rows: Vec<GraphEdgeRow> = sqlx::query_as(
+                "SELECT source_id, target_id, kind, provenance, confidence, metadata \
+                 FROM graph_edges \
+                 WHERE source_id = $1 AND kind = ANY($2::text[]) \
+                 ORDER BY target_id",
+            )
+            .bind(&current)
+            .bind(&rationale_kinds)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| {
+                GraphError::Storage(format!(
+                    "pg_graph_repository rationale_subgraph edges: {e}"
+                ))
+            })?;
+
+            for row in edge_rows {
+                let edge = row.into_graph_edge()?;
+
+                if nodes.len() >= max_nodes && !visited.contains(edge.target.as_str()) {
+                    truncated = true;
+                    break;
+                }
+
+                let is_new = visited.insert(edge.target.as_str().to_string());
+                if is_new {
+                    let target_row: Option<GraphNodeRow> = sqlx::query_as(
+                        "SELECT id, kind, label, source_path, properties, \
+                                created_at::text AS created_at, \
+                                updated_at::text AS updated_at \
+                         FROM graph_nodes \
+                         WHERE id = $1",
+                    )
+                    .bind(edge.target.as_str())
+                    .fetch_optional(&pool)
+                    .await
+                    .map_err(|e| {
+                        GraphError::Storage(format!(
+                            "pg_graph_repository rationale_subgraph target_node: {e}"
+                        ))
+                    })?;
+
+                    nodes.push(target_row.map(GraphNodeRow::into_graph_node).unwrap_or_else(|| {
+                        GraphNode {
+                            id: edge.target.clone(),
+                            kind: NodeKind::Doc,
+                            label: edge.target.as_str().to_string(),
+                            source_path: None,
+                            properties: HashMap::new(),
+                            created_at: Utc::now(),
+                            updated_at: Utc::now(),
+                        }
+                    }));
+                }
+
+                edges.push(edge.clone());
+                if is_new {
+                    queue.push_back((edge.target.as_str().to_string(), depth + 1));
+                }
+            }
+        }
+
+        let kept: HashSet<&NodeId> = nodes.iter().map(|n| &n.id).collect();
+        edges.retain(|e| kept.contains(&e.source) && kept.contains(&e.target));
+
+        Ok((nodes, edges, truncated))
     }
 }
 
@@ -247,7 +339,7 @@ impl GraphRepository for PgGraphRepository {
 
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 impl PgGraphRepository {
-    fn upsert_nodes(&self, nodes: Vec<GraphNode>) -> GraphResult<usize> {
+    async fn upsert_nodes(&self, nodes: Vec<GraphNode>) -> GraphResult<usize> {
         // Empty input is a no-op (T4 contract).
         if nodes.is_empty() {
             return Ok(0);
@@ -263,69 +355,58 @@ impl PgGraphRepository {
             }
         }
 
-        // Run the upsert in a single transaction. We use a
-        // synchronous (blocking) task via `tokio::task::spawn_blocking`
-        // because the call site is async but the SQL is
-        // short — the cost of a transaction is dominated by
-        // the network round-trip, not the loop. The `tokio`
-        // runtime is implicit (the function is `async` and
-        // the caller is on the runtime).
         let pool = self.pool.clone();
-        let nodes_for_task = nodes.clone();
-        let new_rows = futures_executor_block_on(async move {
-            let mut tx = pool.begin().await.map_err(|e| {
-                GraphError::Storage(format!("pg_graph_repository: upsert_nodes begin: {e}"))
+        let mut tx = pool.begin().await.map_err(|e| {
+            GraphError::Storage(format!("pg_graph_repository: upsert_nodes begin: {e}"))
+        })?;
+        let mut inserted: usize = 0;
+        for node in &nodes {
+            let id = node.id.as_str().to_string();
+            let kind = node.kind.to_string();
+            let label = node.label.clone();
+            let source_path = node
+                .source_path
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned());
+            let properties_json = serde_json::Value::Object(
+                node.properties
+                    .iter()
+                    .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                    .collect::<serde_json::Map<String, serde_json::Value>>(),
+            );
+            let result = sqlx::query(
+                "INSERT INTO graph_nodes (id, kind, label, source_path, properties, created_at, updated_at) \
+                 VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) \
+                 ON CONFLICT (id, kind) DO UPDATE SET \
+                   label = EXCLUDED.label, \
+                   source_path = EXCLUDED.source_path, \
+                   properties = EXCLUDED.properties, \
+                   updated_at = NOW() \
+                 RETURNING (xmax = 0) AS was_inserted",
+            )
+            .bind(&id)
+            .bind(&kind)
+            .bind(&label)
+            .bind(&source_path)
+            .bind(&properties_json)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| {
+                GraphError::Storage(format!("pg_graph_repository: upsert_nodes insert: {e}"))
             })?;
-            let mut inserted: usize = 0;
-            for node in &nodes_for_task {
-                let id = node.id.as_str().to_string();
-                let kind = node.kind.to_string();
-                let label = node.label.clone();
-                let source_path = node
-                    .source_path
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().into_owned());
-                let properties_json = serde_json::Value::Object(
-                    node.properties
-                        .iter()
-                        .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
-                        .collect::<serde_json::Map<String, serde_json::Value>>(),
-                );
-                let result = sqlx::query(
-                    "INSERT INTO graph_nodes (id, kind, label, source_path, properties, created_at, updated_at) \
-                     VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) \
-                     ON CONFLICT (id, kind) DO UPDATE SET \
-                       label = EXCLUDED.label, \
-                       source_path = EXCLUDED.source_path, \
-                       properties = EXCLUDED.properties, \
-                       updated_at = NOW() \
-                     RETURNING (xmax = 0) AS was_inserted",
-                )
-                .bind(&id)
-                .bind(&kind)
-                .bind(&label)
-                .bind(&source_path)
-                .bind(&properties_json)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| {
-                    GraphError::Storage(format!("pg_graph_repository: upsert_nodes insert: {e}"))
-                })?;
-                use sqlx::Row as _;
-                let was_inserted: bool = result.try_get("was_inserted").unwrap_or(false);
-                if was_inserted {
-                    inserted += 1;
-                }
+            use sqlx::Row as _;
+            let was_inserted: bool = result.try_get("was_inserted").unwrap_or(false);
+            if was_inserted {
+                inserted += 1;
             }
-            tx.commit().await.map_err(|e| {
-                GraphError::Storage(format!("pg_graph_repository: upsert_nodes commit: {e}"))
-            })?;
-            Ok::<usize, GraphError>(inserted)
-        });
-        new_rows
+        }
+        tx.commit().await.map_err(|e| {
+            GraphError::Storage(format!("pg_graph_repository: upsert_nodes commit: {e}"))
+        })?;
+        Ok(inserted)
     }
 
-    fn upsert_edges(&self, edges: Vec<GraphEdge>) -> GraphResult<usize> {
+    async fn upsert_edges(&self, edges: Vec<GraphEdge>) -> GraphResult<usize> {
         if edges.is_empty() {
             return Ok(0);
         }
@@ -351,56 +432,52 @@ impl PgGraphRepository {
         }
 
         let pool = self.pool.clone();
-        let edges_for_task = edges.clone();
-        let new_rows = futures_executor_block_on(async move {
-            let mut tx = pool.begin().await.map_err(|e| {
-                GraphError::Storage(format!("pg_graph_repository: upsert_edges begin: {e}"))
+        let mut tx = pool.begin().await.map_err(|e| {
+            GraphError::Storage(format!("pg_graph_repository: upsert_edges begin: {e}"))
+        })?;
+        let mut inserted: usize = 0;
+        for edge in &edges {
+            let source = edge.source.as_str().to_string();
+            let target = edge.target.as_str().to_string();
+            let kind = edge.kind.to_string();
+            let provenance = edge.provenance.to_string();
+            let confidence = edge.confidence;
+            let metadata_json = serde_json::Value::Object(
+                edge.metadata
+                    .iter()
+                    .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                    .collect::<serde_json::Map<String, serde_json::Value>>(),
+            );
+            let result = sqlx::query(
+                "INSERT INTO graph_edges (source, target, kind, provenance, confidence, metadata) \
+                 VALUES ($1, $2, $3, $4, $5, $6) \
+                 ON CONFLICT (source, target, kind) DO UPDATE SET \
+                   provenance = EXCLUDED.provenance, \
+                   confidence = EXCLUDED.confidence, \
+                   metadata = EXCLUDED.metadata \
+                 RETURNING (xmax = 0) AS was_inserted",
+            )
+            .bind(&source)
+            .bind(&target)
+            .bind(&kind)
+            .bind(&provenance)
+            .bind(confidence)
+            .bind(&metadata_json)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| {
+                GraphError::Storage(format!("pg_graph_repository: upsert_edges insert: {e}"))
             })?;
-            let mut inserted: usize = 0;
-            for edge in &edges_for_task {
-                let source = edge.source.as_str().to_string();
-                let target = edge.target.as_str().to_string();
-                let kind = edge.kind.to_string();
-                let provenance = edge.provenance.to_string();
-                let confidence = edge.confidence;
-                let metadata_json = serde_json::Value::Object(
-                    edge.metadata
-                        .iter()
-                        .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
-                        .collect::<serde_json::Map<String, serde_json::Value>>(),
-                );
-                let result = sqlx::query(
-                    "INSERT INTO graph_edges (source, target, kind, provenance, confidence, metadata) \
-                     VALUES ($1, $2, $3, $4, $5, $6) \
-                     ON CONFLICT (source, target, kind) DO UPDATE SET \
-                       provenance = EXCLUDED.provenance, \
-                       confidence = EXCLUDED.confidence, \
-                       metadata = EXCLUDED.metadata \
-                     RETURNING (xmax = 0) AS was_inserted",
-                )
-                .bind(&source)
-                .bind(&target)
-                .bind(&kind)
-                .bind(&provenance)
-                .bind(confidence)
-                .bind(&metadata_json)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| {
-                    GraphError::Storage(format!("pg_graph_repository: upsert_edges insert: {e}"))
-                })?;
-                use sqlx::Row as _;
-                let was_inserted: bool = result.try_get("was_inserted").unwrap_or(false);
-                if was_inserted {
-                    inserted += 1;
-                }
+            use sqlx::Row as _;
+            let was_inserted: bool = result.try_get("was_inserted").unwrap_or(false);
+            if was_inserted {
+                inserted += 1;
             }
-            tx.commit().await.map_err(|e| {
-                GraphError::Storage(format!("pg_graph_repository: upsert_edges commit: {e}"))
-            })?;
-            Ok::<usize, GraphError>(inserted)
-        });
-        new_rows
+        }
+        tx.commit().await.map_err(|e| {
+            GraphError::Storage(format!("pg_graph_repository: upsert_edges commit: {e}"))
+        })?;
+        Ok(inserted)
     }
 }
 
@@ -461,15 +538,48 @@ impl GraphNodeRow {
     }
 }
 
-/// Run a future synchronously on the current thread. Used to
-/// keep the `upsert_*` method bodies short (the trait is `fn`
-/// not `async fn`, so the SQL has to be driven from a sync
-/// context). On the call site (the MCP handler) the runtime
-/// is multi-threaded, so this block-on just borrows a thread
-/// for the duration of the transaction.
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
-fn futures_executor_block_on<F: std::future::Future>(fut: F) -> F::Output {
-    tokio::runtime::Handle::current().block_on(fut)
+#[derive(sqlx::FromRow)]
+struct GraphEdgeRow {
+    source_id: String,
+    target_id: String,
+    kind: String,
+    provenance: String,
+    /// confidence is REAL (FLOAT4) in PostgreSQL → decoded as f32.
+    /// Conversion to f64 happens inside into_graph_edge() when
+    /// constructing the domain GraphEdge.
+    confidence: f32,
+    metadata: serde_json::Value,
+}
+
+#[cfg(all(feature = "multimodal", feature = "postgres"))]
+impl GraphEdgeRow {
+    fn into_graph_edge(self) -> GraphResult<GraphEdge> {
+        let kind = EdgeKind::from_str(&self.kind).map_err(|e| {
+            GraphError::Storage(format!("pg_graph_repository edge kind parse '{}': {e}", self.kind))
+        })?;
+        let provenance = Provenance::from_str(&self.provenance).unwrap_or(Provenance::Extracted);
+        let metadata: HashMap<String, String> = self
+            .metadata
+            .as_object()
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mut edge = GraphEdge::new(
+            NodeId(self.source_id),
+            NodeId(self.target_id),
+            kind,
+            provenance,
+            self.confidence as f64,
+        )
+        .map_err(|e| GraphError::Storage(format!("pg_graph_repository graph edge invalid: {e}")))?;
+        edge.metadata = metadata;
+        Ok(edge)
+    }
 }
 
 // ============================================================================

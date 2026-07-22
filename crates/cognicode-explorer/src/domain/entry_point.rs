@@ -262,7 +262,7 @@ impl EntryPoint {
     /// | `SearchResult`    | `SemanticSearchResults`       |
     /// | `SavedExploration`| `ComposedNarrative`           |
     /// | `ViewSpec`        | (uses the spec's own kind)    |
-    /// | `Decision`        | `ArchitectureRationale`       |
+    /// | `Decision`        | `DecisionGraph`               |
     /// | `Doc`             | `DocCodeAlignment`            |
     /// | `Issue`           | `DeadCodeCandidates`          |
     /// | `Evidence`        | `EvidenceView`                |
@@ -285,7 +285,7 @@ impl EntryPoint {
             // ViewSpec: deferred; caller must supply the spec's own view_kind
             // For the resolver output, we return a safe fallback
             EntryPoint::ViewSpec { .. } => ViewKind::CallGraph,
-            EntryPoint::Decision { .. } => ViewKind::ArchitectureRationale,
+            EntryPoint::Decision { .. } => ViewKind::DecisionGraph,
             EntryPoint::Doc { .. } => ViewKind::DocCodeAlignment,
             EntryPoint::Issue { .. } => ViewKind::DeadCodeCandidates,
             EntryPoint::Evidence { .. } => ViewKind::EvidenceView,
@@ -593,9 +593,9 @@ mod tests {
     }
 
     #[test]
-    fn default_view_kind_decision_is_architecture_rationale() {
+    fn default_view_kind_decision_is_decision_graph() {
         let ep = EntryPoint::parse("ADR-008").unwrap();
-        assert_eq!(ep.default_view_kind(), ViewKind::ArchitectureRationale);
+        assert_eq!(ep.default_view_kind(), ViewKind::DecisionGraph);
     }
 
     #[test]

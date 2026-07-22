@@ -304,6 +304,8 @@ pub enum InspectionTarget {
     },
     SavedExploration(ExplorationSession),
     Investigation(Investigation),
+    /// A decision artifact from the graph, addressed by its decision id.
+    Decision { id: String },
 }
 
 /// Context passed to ViewExecutor::build(). The service populates all
@@ -316,6 +318,10 @@ pub struct ViewContext<'a> {
     /// Optional graph query port for traversal and navigation queries.
     /// `None` when no call graph is wired.
     pub graph_query: Option<&'a dyn GraphQueryPort>,
+    /// Optional graph repository for multimodal entities (Decision/Doc/Evidence).
+    /// `None` when multimodal feature is not enabled or no graph repo is wired.
+    #[cfg(feature = "multimodal")]
+    pub graph_repo: Option<&'a dyn cognicode_core::domain::ports::GraphRepository>,
 }
 
 // ============================================================================

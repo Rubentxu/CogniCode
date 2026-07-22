@@ -433,6 +433,16 @@ impl ViewRegistry {
                     &crate::domain::views::RISK_MAP_EXECUTOR
                         as &dyn crate::domain::views::ViewExecutor,
                 ),
+                (
+                    "decision-graph",
+                    &crate::domain::views::DECISION_GRAPH_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
+                (
+                    "architecture_rationale",
+                    &crate::domain::views::ARCHITECTURE_RATIONALE_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
             ])
         });
         real.get(id).copied().or_else(|| {

@@ -1438,7 +1438,8 @@ impl ViewExecutor for OverviewExecutor {
             InspectionTarget::Issue(_)
             | InspectionTarget::Rule { .. }
             | InspectionTarget::SavedExploration(_)
-            | InspectionTarget::Investigation(_) => {
+            | InspectionTarget::Investigation(_)
+            | InspectionTarget::Decision { .. } => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "overview".into(),
@@ -2171,7 +2172,7 @@ impl ViewExecutor for QualityExecutor {
             } => Ok(build_scope_quality_view(path, ctx.quality)),
             InspectionTarget::Issue(issue) => Ok(build_issue_detail(issue)),
             InspectionTarget::Rule { rule_id } => Ok(build_rule_detail(rule_id, ctx.quality)),
-            InspectionTarget::SavedExploration(_) | InspectionTarget::Investigation(_) => {
+            InspectionTarget::SavedExploration(_) | InspectionTarget::Investigation(_) | InspectionTarget::Decision { .. } => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "quality".into(),
@@ -2428,7 +2429,8 @@ impl ViewExecutor for RiskMapExecutor {
             InspectionTarget::Issue(_)
             | InspectionTarget::Rule { .. }
             | InspectionTarget::SavedExploration(_)
-            | InspectionTarget::Investigation(_) => {
+            | InspectionTarget::Investigation(_)
+            | InspectionTarget::Decision { .. } => {
                 return Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "risk_map".into(),
@@ -2630,6 +2632,8 @@ pub static CHANGE_IMPACT_STORY_EXECUTOR: ChangeImpactStoryExecutor = ChangeImpac
 pub static OWNERSHIP_MAP_EXECUTOR: OwnershipMapExecutor = OwnershipMapExecutor;
 pub static COMPOSED_NARRATIVE_EXECUTOR: ComposedNarrativeExecutor = ComposedNarrativeExecutor;
 pub static RISK_MAP_EXECUTOR: RiskMapExecutor = RiskMapExecutor;
+pub static DECISION_GRAPH_EXECUTOR: DecisionGraphExecutor = DecisionGraphExecutor;
+pub static ARCHITECTURE_RATIONALE_EXECUTOR: ArchitectureRationaleExecutor = ArchitectureRationaleExecutor;
 
 /// Ownership Map capability — applies to Issue (QualityIssue).
 ///
@@ -2893,6 +2897,332 @@ impl ViewExecutor for ArchitectureDriftExecutor {
         Err(crate::error::ExplorerError::NotImplemented(
             "Architecture drift requires the /api/workspaces/{id}/drift endpoint".into(),
         ))
+    }
+}
+
+// ============================================================================
+// Architecture Rationale — Decision artifact rationale with evidence and code
+// ============================================================================
+
+/// Constants for rationale subgraph traversal.
+const RATIONALE_SUBGRAPH_MAX_DEPTH: u32 = 3;
+const RATIONALE_SUBGRAPH_MAX_NODES: usize = 100;
+
+/// Helper to build a placeholder ContextualView when a decision is unavailable.
+fn decision_unavailable_for(
+    object_id: &str,
+    view_id: &str,
+    title: &str,
+    message: &str,
+) -> ContextualView {
+    let blocks = vec![ViewBlock {
+        id: format!("{}_unavailable", view_id),
+        title: title.into(),
+        body: json!({ "message": message }),
+    }];
+    ContextualView {
+        object_id: object_id.into(),
+        view_id: view_id.into(),
+        title: title.into(),
+        view_kind: ViewKind::ArchitectureRationale,
+        blocks,
+        relations: Vec::new(),
+        evidence: Vec::new(),
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Markdown,
+    }
+}
+
+/// Helper to build an error ContextualView for a given view_id.
+fn contextual_view_error(object_id: &str, view_id: &str, title: &str, message: &str) -> ContextualView {
+    let blocks = vec![ViewBlock {
+        id: "error".into(),
+        title: title.into(),
+        body: json!({ "message": message }),
+    }];
+    ContextualView {
+        object_id: object_id.into(),
+        view_id: view_id.into(),
+        title: title.into(),
+        view_kind: ViewKind::ArchitectureRationale,
+        blocks,
+        relations: Vec::new(),
+        evidence: Vec::new(),
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Markdown,
+    }
+}
+
+/// Build the Architecture Rationale view for a Decision artifact.
+///
+/// When `graph_repo` is wired (multimodal feature), fetches the decision node
+/// and its rationale subgraph (Justifies, Cites, Resolves, CorroboratedBy edges).
+/// Otherwise, returns a graceful placeholder with the decision id.
+#[cfg(feature = "multimodal")]
+pub async fn build_rationale_view(
+    decision_id: &str,
+    graph_repo: Option<&dyn cognicode_core::domain::ports::GraphRepository>,
+) -> ContextualView {
+    use cognicode_core::domain::aggregates::generic_graph::NodeId;
+    use cognicode_core::domain::ports::GraphRepository;
+
+    let mvp = format!("decision:{decision_id}");
+
+    let Some(repo) = graph_repo else {
+        // Graceful degradation: no graph repo wired
+        return decision_unavailable_for(
+            &mvp,
+            "architecture_rationale",
+            "Architecture Rationale",
+            "Graph repository not wired. Rationale requires multimodal feature.",
+        );
+    };
+
+    // Fetch the decision node
+    let node_id = NodeId::new(decision_id.to_string());
+    let decision_node = match repo.get_node(&node_id).await {
+        Ok(Some(node)) => node,
+        Ok(None) => {
+            return contextual_view_error(
+                &mvp,
+                "architecture_rationale",
+                "Decision Not Found",
+                &format!("Decision '{}' not found in graph", decision_id),
+            );
+        }
+        Err(e) => {
+            return contextual_view_error(
+                &mvp,
+                "architecture_rationale",
+                "Error",
+                &format!("Failed to fetch decision: {}", e),
+            );
+        }
+    };
+
+    // Fetch rationale subgraph: Justifies, Cites, Resolves, CorroboratedBy edges
+    let (nodes, edges, truncated) = match repo.rationale_subgraph(&node_id, RATIONALE_SUBGRAPH_MAX_DEPTH, RATIONALE_SUBGRAPH_MAX_NODES).await {
+        Ok((nodes, edges, truncated)) => (nodes, edges, truncated),
+        Err(e) => {
+            return contextual_view_error(
+                &mvp,
+                "architecture_rationale",
+                "Error",
+                &format!("Failed to fetch rationale subgraph: {}", e),
+            );
+        }
+    };
+
+    // Build evidence block for the rationale
+    let evidence_id = "evidence:architecture_rationale".to_string();
+    let evidence = vec![EvidenceBlock {
+        id: evidence_id.clone(),
+        kind: "architecture_rationale".into(),
+        title: format!("Architecture Rationale: {}", decision_node.label),
+        file: decision_node.source_path.map(|p| p.to_string_lossy().to_string()),
+        line_range: None,
+        source_tool_or_query: "GraphRepository::rationale_subgraph".into(),
+        confidence: Some(1.0),
+        freshness: Some("unknown".into()),
+        provenance: None,
+    }];
+
+    // Build typed relations from edges
+    let relations: Vec<TypedRelation> = edges
+        .iter()
+        .map(|e| TypedRelation {
+            relation_type: format!("{:?}", e.kind),
+            direction: if e.source == decision_node.id {
+                RelationDirection::Outgoing
+            } else {
+                RelationDirection::Incoming
+            },
+            target_object_id: if e.source == decision_node.id {
+                e.target.to_string()
+            } else {
+                e.source.to_string()
+            },
+            target_label: "related node".to_string(),
+            evidence_ids: vec![evidence_id.clone()],
+            provenance: None,
+            confidence: None,
+        })
+        .collect();
+
+    // Build blocks: decision info, related nodes, edges summary
+    let related_nodes_json: serde_json::Value = serde_json::json!(nodes
+        .iter()
+        .filter(|n| n.id != decision_node.id)
+        .map(|n| json!({
+            "id": n.id.to_string(),
+            "kind": format!("{:?}", n.kind),
+            "label": n.label,
+        }))
+        .collect::<Vec<_>>());
+
+    let blocks = vec![
+        ViewBlock {
+            id: "decision_identity".into(),
+            title: "Decision".into(),
+            body: json!({
+                "id": decision_node.id.to_string(),
+                "label": decision_node.label,
+                "kind": format!("{:?}", decision_node.kind),
+                "properties": decision_node.properties,
+            }),
+        },
+        ViewBlock {
+            id: "rationale_graph".into(),
+            title: format!("Related nodes ({}{})", nodes.len() - 1, if truncated { "+" } else { "" }),
+            body: json!({
+                "total_nodes": nodes.len(),
+                "truncated": truncated,
+                "related": related_nodes_json,
+            }),
+        },
+        ViewBlock {
+            id: "edges_summary".into(),
+            title: format!("Connections ({})", edges.len()),
+            body: json!({
+                "count": edges.len(),
+                "edge_kinds": edges.iter().map(|e| format!("{:?}", e.kind)).collect::<Vec<_>>(),
+            }),
+        },
+    ];
+
+    ContextualView {
+        object_id: mvp,
+        view_id: "architecture_rationale".into(),
+        title: "Architecture Rationale".into(),
+        view_kind: ViewKind::ArchitectureRationale,
+        blocks,
+        relations,
+        evidence,
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Markdown,
+    }
+}
+
+/// Non-multimodal fallback: returns a placeholder view.
+#[cfg(not(feature = "multimodal"))]
+pub fn build_rationale_view(decision_id: &str) -> ContextualView {
+    let mvp = format!("decision:{decision_id}");
+    let blocks = vec![ViewBlock {
+        id: "rationale_unavailable".into(),
+        title: "Architecture Rationale".into(),
+        body: json!({
+            "message": "Graph repository not wired. Rationale requires multimodal feature.",
+            "decision_id": decision_id,
+        }),
+    }];
+    ContextualView {
+        object_id: mvp,
+        view_id: "architecture_rationale".into(),
+        title: "Architecture Rationale".into(),
+        view_kind: ViewKind::ArchitectureRationale,
+        blocks,
+        relations: Vec::new(),
+        evidence: Vec::new(),
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Markdown,
+    }
+}
+
+fn with_decision_graph_identity(mut view: ContextualView) -> ContextualView {
+    view.view_id = "decision_graph".into();
+    view.title = "Decision Graph".into();
+    view.view_kind = ViewKind::DecisionGraph;
+    view
+}
+
+/// Decision Graph capability — decision-centric affordance alias over the same
+/// rationale topology used by ArchitectureRationale.
+pub struct DecisionGraphExecutor;
+impl ViewDescriptor for DecisionGraphExecutor {
+    fn id(&self) -> &'static str {
+        "decision-graph"
+    }
+    fn title(&self) -> &'static str {
+        "Decision Graph"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::DecisionArtifact]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::DecisionGraph
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Markdown
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for DecisionGraphExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match ctx.target {
+            InspectionTarget::Decision { id } => {
+                #[cfg(feature = "multimodal")]
+                {
+                    Ok(with_decision_graph_identity(build_rationale_view(id, ctx.graph_repo).await))
+                }
+                #[cfg(not(feature = "multimodal"))]
+                {
+                    let _ = ctx;
+                    Ok(with_decision_graph_identity(build_rationale_view(id)))
+                }
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "decision_graph".into(),
+            }),
+        }
+    }
+}
+
+/// Architecture Rationale capability — applies to Decision.
+///
+/// Shows why a structure exists using ADRs, decisions, evidence, and related code.
+/// Delegates to `build_rationale_view` which fetches the rationale subgraph
+/// when graph_repo is available, or gracefully degrades otherwise.
+pub struct ArchitectureRationaleExecutor;
+impl ViewDescriptor for ArchitectureRationaleExecutor {
+    fn id(&self) -> &'static str {
+        "architecture_rationale"
+    }
+    fn title(&self) -> &'static str {
+        "Architecture Rationale"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::DecisionArtifact]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::ArchitectureRationale
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Markdown
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for ArchitectureRationaleExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match ctx.target {
+            InspectionTarget::Decision { id } => {
+                #[cfg(feature = "multimodal")]
+                {
+                    Ok(build_rationale_view(id, ctx.graph_repo).await)
+                }
+                #[cfg(not(feature = "multimodal"))]
+                {
+                    let _ = ctx;
+                    Ok(build_rationale_view(id))
+                }
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "architecture_rationale".into(),
+            }),
+        }
     }
 }
 
@@ -3198,13 +3528,19 @@ mod tests {
     use crate::error::ExplorerResult;
     use crate::ports::source_reader::SourceReader;
     use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
+    use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
     use cognicode_core::domain::aggregates::{CallEntry, SymbolId};
+    use cognicode_core::domain::ports::graph_repository::GraphRepository;
+    use cognicode_core::domain::ports::GraphResult;
     use cognicode_core::domain::traits::graph_query_port::{
         CalleeWithMetadata, CallerWithMetadata, GraphQueryPort, RelationTargetWithMetadata,
     };
+    use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
+    use cognicode_core::domain::value_objects::node_kind::NodeKind;
     use cognicode_core::domain::value_objects::SymbolKind;
     use std::collections::HashMap;
     use std::sync::Mutex;
+    use async_trait::async_trait;
 
     fn make_resolved(file: &str, name: &str, line: u32, kind: SymbolKind) -> ResolvedSymbol {
         ResolvedSymbol {
@@ -3311,6 +3647,131 @@ mod tests {
                 .map(|(i, l)| ((i + 1) as u32, l.to_string()))
                 .filter(|(n, _)| *n >= start && *n <= end)
                 .collect())
+        }
+    }
+
+    /// Hand-rolled mock graph repository for rationale_subgraph tests.
+    /// No mockall to keep dev-dependencies slim.
+    struct MockGraphRepo {
+        nodes: HashMap<String, GraphNode>,
+        edges: Vec<GraphEdge>,
+    }
+
+    impl MockGraphRepo {
+        fn new() -> Self {
+            Self {
+                nodes: HashMap::new(),
+                edges: Vec::new(),
+            }
+        }
+
+        fn with_node(&mut self, node: GraphNode) -> &mut Self {
+            self.nodes.insert(node.id.as_str().to_string(), node);
+            self
+        }
+
+        fn with_edge(&mut self, edge: GraphEdge) -> &mut Self {
+            self.edges.push(edge);
+            self
+        }
+    }
+
+    #[async_trait]
+    impl GraphRepository for MockGraphRepo {
+        async fn search(
+            &self,
+            _query: &str,
+            _node_kinds: &[NodeKind],
+            _limit: usize,
+            _cursor: Option<&str>,
+        ) -> GraphResult<cognicode_core::domain::ports::graph_repository::SearchPage> {
+            Ok(cognicode_core::domain::ports::graph_repository::SearchPage {
+                items: Vec::new(),
+                raw_total: 0,
+                next_cursor: None,
+                raw_rank: 0.0,
+                item_ranks: Vec::new(),
+            })
+        }
+
+        async fn find_nodes_by_kind(&self, _kind: &NodeKind) -> GraphResult<Vec<GraphNode>> {
+            Ok(Vec::new())
+        }
+
+        async fn get_node(&self, id: &NodeId) -> GraphResult<Option<GraphNode>> {
+            Ok(self.nodes.get(id.as_str()).cloned())
+        }
+
+        async fn find_outgoing_edges(&self, _id: &NodeId) -> GraphResult<Vec<GraphEdge>> {
+            Ok(Vec::new())
+        }
+
+        async fn edges_by_kind(
+            &self,
+            _node: &NodeId,
+            _kinds: &[EdgeKind],
+        ) -> GraphResult<Vec<GraphEdge>> {
+            Ok(Vec::new())
+        }
+
+        async fn rationale_subgraph(
+            &self,
+            focus: &NodeId,
+            _max_depth: u32,
+            _max_nodes: usize,
+        ) -> GraphResult<(Vec<GraphNode>, Vec<GraphEdge>, bool)> {
+            let focus_node = self.nodes.get(focus.as_str()).cloned();
+            let Some(node) = focus_node else {
+                return Ok((Vec::new(), Vec::new(), false));
+            };
+            let outgoing: Vec<GraphEdge> = self
+                .edges
+                .iter()
+                .filter(|e| e.source == *focus)
+                .cloned()
+                .collect();
+            let related_ids: std::collections::HashSet<String> = outgoing
+                .iter()
+                .map(|e| e.target.as_str().to_string())
+                .collect();
+            let related_nodes: Vec<GraphNode> = related_ids
+                .iter()
+                .filter_map(|id| self.nodes.get(id).cloned())
+                .collect();
+            let mut nodes = vec![node];
+            nodes.extend(related_nodes);
+            Ok((nodes, outgoing, false))
+        }
+
+        async fn find_nodes_by_kind_paginated(
+            &self,
+            _kind: &NodeKind,
+            _limit: usize,
+            _cursor: Option<&str>,
+        ) -> GraphResult<cognicode_core::domain::ports::graph_repository::SearchPage> {
+            Ok(cognicode_core::domain::ports::graph_repository::SearchPage {
+                items: Vec::new(),
+                raw_total: 0,
+                next_cursor: None,
+                raw_rank: 0.0,
+                item_ranks: Vec::new(),
+            })
+        }
+
+        async fn search_paginated(
+            &self,
+            _query: &str,
+            _kinds: &[NodeKind],
+            _limit: usize,
+            _cursor: Option<&str>,
+        ) -> GraphResult<cognicode_core::domain::ports::graph_repository::SearchPage> {
+            Ok(cognicode_core::domain::ports::graph_repository::SearchPage {
+                items: Vec::new(),
+                raw_total: 0,
+                next_cursor: None,
+                raw_rank: 0.0,
+                item_ranks: Vec::new(),
+            })
         }
     }
 
@@ -4112,6 +4573,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4148,6 +4611,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4175,6 +4640,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4198,6 +4665,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4230,6 +4699,8 @@ mod tests {
             reader: &MockReader::new(reader_content),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4256,6 +4727,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4287,6 +4760,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4311,6 +4786,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4338,6 +4815,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4380,6 +4859,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -4415,6 +4896,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4442,6 +4925,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -4475,6 +4960,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4507,6 +4994,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -4550,6 +5039,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let registry = crate::registry::ViewRegistry::new(None);
@@ -4589,6 +5080,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -4885,6 +5378,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -4912,6 +5407,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -4939,6 +5436,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -5024,6 +5523,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: Some(&mock_gq as &dyn GraphQueryPort),
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -5089,6 +5590,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: Some(&mock_gq as &dyn GraphQueryPort),
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -5121,6 +5624,397 @@ mod tests {
             !node_val.as_str().unwrap().contains("ownership unavailable"),
             "Real ownership data must be rendered, not placeholder"
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // ArchitectureRationaleExecutor tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn decision_graph_executor_descriptor_metadata() {
+        let exec = &super::DECISION_GRAPH_EXECUTOR;
+        assert_eq!(exec.id(), "decision-graph");
+        assert_eq!(exec.title(), "Decision Graph");
+        assert!(exec
+            .applies_to()
+            .contains(&crate::dto::InspectableObjectType::DecisionArtifact));
+        assert_eq!(exec.view_kind(), crate::dto::ViewKind::DecisionGraph);
+        assert_eq!(exec.renderer_kind(), crate::dto::RendererKind::Markdown);
+    }
+
+    #[tokio::test]
+    async fn decision_graph_executor_handles_decision() {
+        let target = super::InspectionTarget::Decision {
+            id: "ADR-001".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
+        };
+
+        let executor = super::DecisionGraphExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "decision_graph");
+        assert_eq!(view.title, "Decision Graph");
+        assert_eq!(view.view_kind, crate::dto::ViewKind::DecisionGraph);
+        assert_eq!(view.renderer_kind, crate::dto::RendererKind::Markdown);
+        assert!(!view.blocks.is_empty());
+    }
+
+    #[test]
+    #[cfg(not(feature = "multimodal"))]
+    fn decision_graph_retags_rationale_identity() {
+        let view = super::with_decision_graph_identity(super::build_rationale_view("ADR-042"));
+        assert_eq!(view.view_id, "decision_graph");
+        assert_eq!(view.title, "Decision Graph");
+        assert_eq!(view.view_kind, crate::dto::ViewKind::DecisionGraph);
+    }
+
+    #[test]
+    fn architecture_rationale_executor_descriptor_metadata() {
+        let exec = &super::ARCHITECTURE_RATIONALE_EXECUTOR;
+        assert_eq!(exec.id(), "architecture_rationale");
+        assert_eq!(exec.title(), "Architecture Rationale");
+        assert!(exec
+            .applies_to()
+            .contains(&crate::dto::InspectableObjectType::DecisionArtifact));
+        assert_eq!(exec.view_kind(), crate::dto::ViewKind::ArchitectureRationale);
+        assert_eq!(exec.renderer_kind(), crate::dto::RendererKind::Markdown);
+    }
+
+    #[tokio::test]
+    async fn architecture_rationale_executor_handles_decision() {
+        let target = super::InspectionTarget::Decision {
+            id: "ADR-001".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
+        };
+
+        let executor = super::ArchitectureRationaleExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "architecture_rationale");
+        assert_eq!(view.title, "Architecture Rationale");
+        assert_eq!(view.view_kind, crate::dto::ViewKind::ArchitectureRationale);
+        assert_eq!(view.renderer_kind, crate::dto::RendererKind::Markdown);
+        // Should have at least one block (the placeholder when no graph_repo)
+        assert!(!view.blocks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn architecture_rationale_executor_rejects_symbol() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let target = super::InspectionTarget::Symbol(sym);
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
+        };
+
+        let executor = super::ArchitectureRationaleExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::ExplorerError::ViewNotAvailable { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn architecture_rationale_executor_rejects_file() {
+        let target = super::InspectionTarget::File {
+            path: "src/lib.rs".to_string(),
+            symbols: Vec::new(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
+        };
+
+        let executor = super::ArchitectureRationaleExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::ExplorerError::ViewNotAvailable { .. }
+        ));
+    }
+
+    #[test]
+    #[cfg(not(feature = "multimodal"))]
+    fn architecture_rationale_view_id_and_title() {
+        // Test the non-multimodal fallback path directly
+        let view = super::build_rationale_view("ADR-042");
+        assert_eq!(view.view_id, "architecture_rationale");
+        assert_eq!(view.title, "Architecture Rationale");
+        assert_eq!(view.view_kind, crate::dto::ViewKind::ArchitectureRationale);
+        assert_eq!(view.renderer_kind, crate::dto::RendererKind::Markdown);
+    }
+
+    #[test]
+    #[cfg(not(feature = "multimodal"))]
+    fn architecture_rationale_fallback_shows_decision_id() {
+        let view = super::build_rationale_view("ADR-999");
+        // Should have a block with the decision_id
+        let block = view.blocks.first().expect("should have at least one block");
+        assert_eq!(block.id, "rationale_unavailable");
+        let body = &block.body;
+        assert_eq!(
+            body.get("decision_id").unwrap().as_str().unwrap(),
+            "ADR-999"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // DecisionGraphExecutor direct tests — rationale_subgraph behavior
+    // -------------------------------------------------------------------------
+
+    /// Empty graph: decision exists in repo but has no rationale edges.
+    /// Must return a valid view with only the focus node and zero edges.
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn decision_graph_empty_graph_shows_focus_only() {
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+        use chrono::Utc;
+
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("ADR-001".to_string()),
+            kind: NodeKind::Decision,
+            label: "ADR-001".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/adr/ADR-001.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        // No edges added — empty graph scenario
+
+        let target = super::InspectionTarget::Decision {
+            id: "ADR-001".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = super::DecisionGraphExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok(), "empty graph should not error");
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "decision_graph");
+        // Decision node + rationale_graph block
+        let block_ids: Vec<&str> = view.blocks.iter().map(|b| b.id.as_str()).collect();
+        assert!(block_ids.contains(&"rationale_graph"), "must have rationale_graph block");
+        // Edges summary should show 0 connections
+        let edges_block = view.blocks.iter().find(|b| b.id == "edges_summary");
+        assert!(edges_block.is_some());
+        let count = edges_block
+            .unwrap()
+            .body
+            .get("count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1);
+        assert_eq!(count, 0, "empty graph should have 0 edges");
+    }
+
+    /// Focus-only behavior: decision has no outgoing rationale edges.
+    /// Shape must still be valid — one node (the focus), zero edges.
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn decision_graph_focus_only_no_edges() {
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+        use chrono::Utc;
+
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("ADR-002".to_string()),
+            kind: NodeKind::Decision,
+            label: "ADR-002".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/adr/ADR-002.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        // Node exists but no edges
+
+        let target = super::InspectionTarget::Decision {
+            id: "ADR-002".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = super::DecisionGraphExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        // Shape check: view_id is preserved
+        assert_eq!(view.view_id, "decision_graph");
+        assert_eq!(view.title, "Decision Graph");
+        assert_eq!(view.view_kind, super::ViewKind::DecisionGraph);
+        // The rationale_graph block must report 1 node (focus only)
+        let rationale_block = view.blocks.iter().find(|b| b.id == "rationale_graph");
+        assert!(rationale_block.is_some());
+        let total = rationale_block
+            .unwrap()
+            .body
+            .get("total_nodes")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1);
+        assert_eq!(total, 1, "focus-only should have exactly 1 node (the focus itself)");
+    }
+
+    /// Unsupported target: DecisionGraphExecutor only accepts DecisionArtifact.
+    /// Passing a Symbol must return ViewNotAvailable.
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn decision_graph_executor_rejects_symbol() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let target = super::InspectionTarget::Symbol(sym);
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
+        };
+
+        let executor = super::DecisionGraphExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::ExplorerError::ViewNotAvailable { .. }
+        ));
+    }
+
+    /// Shape-equality scenario: decision with multiple rationale edges
+    /// must preserve decision identity in the returned view.
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn decision_graph_shape_equality_preserves_identity() {
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+        use chrono::Utc;
+
+        let decision_id = "ADR-042";
+        let decision_node_id = NodeId::new(decision_id.to_string());
+
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: decision_node_id.clone(),
+            kind: NodeKind::Decision,
+            label: "ADR-042: Use PostgreSQL".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/adr/ADR-042.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_node(GraphNode {
+            id: NodeId::new("doc-1".to_string()),
+            kind: NodeKind::Doc,
+            label: "PostgreSQL vs SQLite".to_string(),
+            source_path: None,
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_edge(
+            GraphEdge::new(
+                decision_node_id.clone(),
+                NodeId::new("doc-1".to_string()),
+                EdgeKind::Justifies,
+                Provenance::Extracted,
+                0.95,
+            )
+            .unwrap(),
+        );
+
+        let target = super::InspectionTarget::Decision {
+            id: decision_id.to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = super::DecisionGraphExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+
+        // Identity block must carry the correct decision id and label
+        let identity_block = view.blocks.iter().find(|b| b.id == "decision_identity");
+        assert!(identity_block.is_some(), "must have decision_identity block");
+        let body = &identity_block.unwrap().body;
+        // The id in the block is the raw node id (without "decision:" prefix)
+        // The "decision:" prefix is only on the view's object_id
+        assert_eq!(
+            body.get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+            decision_id,
+            "id must match the raw decision node id"
+        );
+        assert_eq!(
+            body.get("label")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+            "ADR-042: Use PostgreSQL",
+            "label must be preserved from graph node"
+        );
+
+        // ViewKind and renderer_kind must be DecisionGraph / Markdown
+        assert_eq!(view.view_kind, super::ViewKind::DecisionGraph);
+        assert_eq!(view.renderer_kind, super::RendererKind::Markdown);
+
+        // Relations must reflect the single justifies edge
+        assert_eq!(view.relations.len(), 1);
+        assert_eq!(view.relations[0].relation_type, "Justifies");
     }
 }
 

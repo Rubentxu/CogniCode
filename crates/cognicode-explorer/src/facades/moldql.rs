@@ -66,7 +66,7 @@ impl MoldQLService for MoldQLServiceImpl {
         };
 
         let view = self.build_moldql_view();
-        MoldQLExecutor::new(&view).execute(ast)
+        MoldQLExecutor::new(&view).execute(ast).await
     }
 
     async fn execute_query_with_target(

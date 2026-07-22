@@ -17,11 +17,21 @@
 //!
 //! Gated behind the `multimodal` Cargo feature. Default builds
 //! do not include this module and the trait is not exported.
+//!
+//! ## Async Migration (ADR-NNN)
+//!
+//! This trait was migrated from synchronous to asynchronous to eliminate
+//! `tokio::runtime::Handle::current().block_on` anti-patterns in the PG
+//! adapter. See design obs #4419 for the full rationale. The migration
+//! preserves `Send + Sync` and all method signatures verbatim; only the
+//! calling convention changed from sync `fn` to `async fn` with `#[async_trait]`.
 
 use crate::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
 use crate::domain::ports::graph_error::GraphResult;
 use crate::domain::value_objects::edge_kind::EdgeKind;
 use crate::domain::value_objects::node_kind::NodeKind;
+
+use async_trait::async_trait;
 
 /// One page of a search result. The cursor is opaque (a base64
 /// string the tool passes back unchanged); the page's `items` are
@@ -54,6 +64,7 @@ pub struct SearchPage {
 }
 
 /// Read-only port for the Generic Graph Layer.
+#[async_trait]
 pub trait GraphRepository: Send + Sync {
     /// FTS5-backed search across `graph_nodes`. Returns at most
     /// `limit` items, paginated by the opaque `cursor` (start at
@@ -62,7 +73,7 @@ pub trait GraphRepository: Send + Sync {
     /// When `node_kinds` is non-empty, only nodes whose kind
     /// appears in the filter are returned. An empty `query` MUST
     /// return an empty page (no errors).
-    fn search(
+    async fn search(
         &self,
         query: &str,
         node_kinds: &[NodeKind],
@@ -72,19 +83,19 @@ pub trait GraphRepository: Send + Sync {
 
     /// Find all nodes of a given kind. Used by ExplorerQL
     /// `FIND decisions` / `FIND docs` (T20) dispatch.
-    fn find_nodes_by_kind(&self, kind: &NodeKind) -> GraphResult<Vec<GraphNode>>;
+    async fn find_nodes_by_kind(&self, kind: &NodeKind) -> GraphResult<Vec<GraphNode>>;
 
     /// Find a single node by its `NodeId`. Returns `Ok(None)` when
     /// the id is not in the index.
-    fn get_node(&self, id: &NodeId) -> GraphResult<Option<GraphNode>>;
+    async fn get_node(&self, id: &NodeId) -> GraphResult<Option<GraphNode>>;
 
     /// Find all edges whose source equals `id`.
-    fn find_outgoing_edges(&self, id: &NodeId) -> GraphResult<Vec<GraphEdge>>;
+    async fn find_outgoing_edges(&self, id: &NodeId) -> GraphResult<Vec<GraphEdge>>;
 
     /// Find edges from `node` that match any of the given `kinds`.
     /// Edges are deduplicated on `(source, target, kind)`, keeping the
     /// highest confidence for duplicate tuples.
-    fn edges_by_kind(&self, node: &NodeId, kinds: &[EdgeKind]) -> GraphResult<Vec<GraphEdge>>;
+    async fn edges_by_kind(&self, node: &NodeId, kinds: &[EdgeKind]) -> GraphResult<Vec<GraphEdge>>;
 
     /// BFS traversal of the multimodal sub-graph from `focus`, following
     /// only multimodal edges (Justifies, Cites, Resolves, CorroboratedBy).
@@ -94,7 +105,7 @@ pub trait GraphRepository: Send + Sync {
     /// exceeded `max_nodes`. The traversal is bounded by `max_depth`
     /// and `max_nodes`. When truncation kicks in, edges with missing
     /// endpoints are dropped.
-    fn rationale_subgraph(
+    async fn rationale_subgraph(
         &self,
         focus: &NodeId,
         max_depth: u32,
@@ -106,13 +117,13 @@ pub trait GraphRepository: Send + Sync {
     /// Default implementation delegates to `find_nodes_by_kind` and wraps
     /// the result in a [`SearchPage`] without real pagination
     /// (`next_cursor = None`, `raw_total = items.len()`).
-    fn find_nodes_by_kind_paginated(
+    async fn find_nodes_by_kind_paginated(
         &self,
         kind: &NodeKind,
         limit: usize,
         cursor: Option<&str>,
     ) -> GraphResult<SearchPage> {
-        let items = self.find_nodes_by_kind(kind)?;
+        let items = self.find_nodes_by_kind(kind).await?;
         let raw_total = items.len() as u64;
         Ok(SearchPage {
             items,
@@ -129,7 +140,7 @@ pub trait GraphRepository: Send + Sync {
     /// is opaque; implementations that override this method should handle
     /// the cursor encoding. An empty `query` MUST return an empty page
     /// (no errors).
-    fn search_paginated(
+    async fn search_paginated(
         &self,
         query: &str,
         kinds: &[NodeKind],
@@ -146,6 +157,6 @@ pub trait GraphRepository: Send + Sync {
                 item_ranks: Vec::new(),
             });
         }
-        self.search(query, kinds, limit, cursor)
+        self.search(query, kinds, limit, cursor).await
     }
 }
