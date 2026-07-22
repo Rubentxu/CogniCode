@@ -4390,6 +4390,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4426,6 +4428,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4453,6 +4457,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4476,6 +4482,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4508,6 +4516,8 @@ mod tests {
             reader: &MockReader::new(reader_content),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4534,6 +4544,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4565,6 +4577,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4589,6 +4603,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4616,6 +4632,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4658,6 +4676,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -4693,6 +4713,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4720,6 +4742,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -4753,6 +4777,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -4785,6 +4811,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -4828,6 +4856,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let registry = crate::registry::ViewRegistry::new(None);
@@ -4867,6 +4897,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -5163,6 +5195,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -5190,6 +5224,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -5217,6 +5253,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -5302,6 +5340,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: Some(&mock_gq as &dyn GraphQueryPort),
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -5367,6 +5407,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: Some(&mock_gq as &dyn GraphQueryPort),
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -5428,6 +5470,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let executor = super::ArchitectureRationaleExecutor;
@@ -5452,6 +5496,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let executor = super::ArchitectureRationaleExecutor;
@@ -5476,6 +5522,8 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         };
 
         let executor = super::ArchitectureRationaleExecutor;
