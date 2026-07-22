@@ -92,15 +92,17 @@ export function PaneStackView() {
             key={pane.id}
             role="tab"
             aria-selected={pane.id === activePaneId}
+            aria-controls={`pane-panel-${pane.id}`}
             data-pane-tab={pane.id}
             data-testid={`pane-tab-${pane.id}`}
-            className={`truncate rounded-t-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              pane.id === activePaneId
-                ? "border-b-2"
-                : "hover:bg-black/5"
-            }`}
+            id={`pane-tab-${pane.id}`}
+            className={`rounded-t-md px-3 py-1.5 text-left transition-colors ${
+               pane.id === activePaneId
+                 ? "border-b-2"
+                 : "hover:bg-black/5"
+             }`}
             style={{
-              maxWidth: "160px",
+              maxWidth: "220px",
               borderBottomColor:
                 pane.id === activePaneId
                   ? "var(--color-primary)"
@@ -117,8 +119,12 @@ export function PaneStackView() {
             onClick={() => handleActivate(pane.id)}
             title={pane.objectId}
           >
-            {pane.objectId.split(":").pop()?.split("/").pop()?.slice(0, 30) ??
-              pane.objectId}
+            <div className="truncate text-xs font-medium">
+              {pane.objectId.split(":").pop()?.split("/").pop()?.slice(0, 30) ?? pane.objectId}
+            </div>
+            <div className="truncate text-[10px]" style={{ color: "var(--color-text-muted)" }}>
+              {pane.viaViewKind ? `via ${pane.viaViewKind}` : pane.kind}
+            </div>
           </button>
         ))}
       </div>
@@ -136,6 +142,9 @@ export function PaneStackView() {
               key={pane.id}
               data-pane-id={pane.id}
               data-testid={`pane-${pane.id}`}
+              id={`pane-panel-${pane.id}`}
+              role="tabpanel"
+              aria-labelledby={`pane-tab-${pane.id}`}
               className={`flex-shrink-0 snap-start ${
                 isActive ? "" : "opacity-50"
               }`}

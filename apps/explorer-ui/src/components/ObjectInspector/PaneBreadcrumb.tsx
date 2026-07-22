@@ -45,28 +45,36 @@ export function PaneBreadcrumb({ fromObjectId, viaViewKind, workspaceId }: PaneB
   return (
     <div
       data-testid="pane-breadcrumb"
-      className="flex items-center gap-2 px-4 py-1 text-xs"
-      style={{ color: "var(--color-text-muted)" }}
+      className="flex items-center gap-2 border-b px-4 py-2 text-xs"
+      style={{
+        color: "var(--color-text-muted)",
+        borderColor: "var(--color-border)",
+        backgroundColor: "var(--color-surface-raised)",
+      }}
     >
+      <span className="font-medium" style={{ color: "var(--color-text-secondary)" }}>
+        From
+      </span>
       <span>
-        From:{" "}
         <button
           type="button"
           onClick={handleFromClick}
-          className="cursor-pointer underline hover:text-blue-500"
+          className="cursor-pointer underline decoration-transparent transition-colors hover:decoration-current"
           title={`Navigate to ${fromLabel}`}
           data-testid="pane-breadcrumb-from"
+          style={{ color: "var(--color-text-primary)" }}
         >
           {fromLabel}
         </button>
       </span>
       <span>·</span>
-      <span>
-        Via: <span data-testid="pane-breadcrumb-via">{viewTitle}</span>
+      <span className="font-medium" style={{ color: "var(--color-text-secondary)" }}>
+        Via
       </span>
-      <span className="ml-auto text-[10px]" style={{ color: "var(--color-text-muted)" }}>
-        n to add note
+      <span data-testid="pane-breadcrumb-via" style={{ color: "var(--color-text-primary)" }}>
+        {viewTitle}
       </span>
+
     </div>
   );
 }
