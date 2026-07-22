@@ -180,7 +180,7 @@ impl GraphRepository for PgGraphRepository {
         let rows: Vec<GraphNodeRow> = sqlx::query_as(
             "SELECT id, kind, label, source_path, properties, \
                     created_at::text AS created_at, \
-                    updated_at::text AS created_at \
+                    updated_at::text AS updated_at \
              FROM graph_nodes \
              WHERE kind = $1 \
              ORDER BY id",
@@ -202,7 +202,7 @@ impl GraphRepository for PgGraphRepository {
         let row: Option<GraphNodeRow> = sqlx::query_as(
             "SELECT id, kind, label, source_path, properties, \
                     created_at::text AS created_at, \
-                    updated_at::text AS created_at \
+                    updated_at::text AS updated_at \
              FROM graph_nodes \
              WHERE id = $1",
         )
@@ -291,7 +291,7 @@ impl GraphRepository for PgGraphRepository {
                     let target_row: Option<GraphNodeRow> = sqlx::query_as(
                         "SELECT id, kind, label, source_path, properties, \
                                 created_at::text AS created_at, \
-                                updated_at::text AS created_at \
+                                updated_at::text AS updated_at \
                          FROM graph_nodes \
                          WHERE id = $1",
                     )
