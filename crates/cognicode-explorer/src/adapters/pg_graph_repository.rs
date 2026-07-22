@@ -40,6 +40,8 @@
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 use std::collections::HashMap;
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
+use std::collections::{HashSet, VecDeque};
+#[cfg(all(feature = "multimodal", feature = "postgres"))]
 use std::str::FromStr;
 
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
@@ -229,13 +231,108 @@ impl GraphRepository for PgGraphRepository {
 
     fn rationale_subgraph(
         &self,
-        _focus: &NodeId,
-        _max_depth: u32,
-        _max_nodes: usize,
+        focus: &NodeId,
+        max_depth: u32,
+        max_nodes: usize,
     ) -> GraphResult<(Vec<GraphNode>, Vec<GraphEdge>, bool)> {
-        // Stub: rationale traversal is deferred to a follow-up.
-        // Returning empty results keeps the trait impl complete.
-        Ok((Vec::new(), Vec::new(), false))
+        let pool = self.pool.clone();
+        let focus_id = focus.as_str().to_string();
+        let focus_node = self.get_node(focus)?.unwrap_or_else(|| GraphNode {
+            id: focus.clone(),
+            kind: NodeKind::Doc,
+            label: focus.0.clone(),
+            source_path: None,
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+
+        futures_executor_block_on(async move {
+            let rationale_kinds = vec![
+                EdgeKind::Justifies.to_string(),
+                EdgeKind::Cites.to_string(),
+                EdgeKind::Resolves.to_string(),
+                EdgeKind::CorroboratedBy.to_string(),
+            ];
+
+            let mut nodes = vec![focus_node];
+            let mut edges = Vec::new();
+            let mut visited: HashSet<String> = HashSet::from([focus_id.clone()]);
+            let mut queue: VecDeque<(String, u32)> = VecDeque::from([(focus_id.clone(), 0)]);
+            let mut truncated = false;
+
+            while let Some((current, depth)) = queue.pop_front() {
+                if depth >= max_depth {
+                    continue;
+                }
+
+                let edge_rows: Vec<GraphEdgeRow> = sqlx::query_as(
+                    "SELECT source_id, target_id, kind, provenance, confidence, metadata \
+                     FROM graph_edges \
+                     WHERE source_id = $1 AND kind = ANY($2::text[]) \
+                     ORDER BY target_id",
+                )
+                .bind(&current)
+                .bind(&rationale_kinds)
+                .fetch_all(&pool)
+                .await
+                .map_err(|e| {
+                    GraphError::Storage(format!(
+                        "pg_graph_repository rationale_subgraph edges: {e}"
+                    ))
+                })?;
+
+                for row in edge_rows {
+                    let edge = row.into_graph_edge()?;
+
+                    if nodes.len() >= max_nodes && !visited.contains(edge.target.as_str()) {
+                        truncated = true;
+                        break;
+                    }
+
+                    let is_new = visited.insert(edge.target.as_str().to_string());
+                    if is_new {
+                        let target_row: Option<GraphNodeRow> = sqlx::query_as(
+                            "SELECT id, kind, label, source_path, properties, \
+                                    created_at::text AS created_at, \
+                                    updated_at::text AS updated_at \
+                             FROM graph_nodes \
+                             WHERE id = $1",
+                        )
+                        .bind(edge.target.as_str())
+                        .fetch_optional(&pool)
+                        .await
+                        .map_err(|e| {
+                            GraphError::Storage(format!(
+                                "pg_graph_repository rationale_subgraph target_node: {e}"
+                            ))
+                        })?;
+
+                        nodes.push(target_row.map(GraphNodeRow::into_graph_node).unwrap_or_else(|| {
+                            GraphNode {
+                                id: edge.target.clone(),
+                                kind: NodeKind::Doc,
+                                label: edge.target.as_str().to_string(),
+                                source_path: None,
+                                properties: HashMap::new(),
+                                created_at: Utc::now(),
+                                updated_at: Utc::now(),
+                            }
+                        }));
+                    }
+
+                    edges.push(edge.clone());
+                    if is_new {
+                        queue.push_back((edge.target.as_str().to_string(), depth + 1));
+                    }
+                }
+            }
+
+            let kept: HashSet<&NodeId> = nodes.iter().map(|n| &n.id).collect();
+            edges.retain(|e| kept.contains(&e.source) && kept.contains(&e.target));
+
+            Ok((nodes, edges, truncated))
+        })
     }
 }
 
@@ -461,15 +558,60 @@ impl GraphNodeRow {
     }
 }
 
+#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[derive(sqlx::FromRow)]
+struct GraphEdgeRow {
+    source_id: String,
+    target_id: String,
+    kind: String,
+    provenance: String,
+    confidence: f64,
+    metadata: serde_json::Value,
+}
+
+#[cfg(all(feature = "multimodal", feature = "postgres"))]
+impl GraphEdgeRow {
+    fn into_graph_edge(self) -> GraphResult<GraphEdge> {
+        let kind = EdgeKind::from_str(&self.kind).map_err(|e| {
+            GraphError::Storage(format!("pg_graph_repository edge kind parse '{}': {e}", self.kind))
+        })?;
+        let provenance = Provenance::from_str(&self.provenance).unwrap_or(Provenance::Extracted);
+        let metadata: HashMap<String, String> = self
+            .metadata
+            .as_object()
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mut edge = GraphEdge::new(
+            NodeId(self.source_id),
+            NodeId(self.target_id),
+            kind,
+            provenance,
+            self.confidence,
+        )
+        .map_err(|e| GraphError::Storage(format!("pg_graph_repository graph edge invalid: {e}")))?;
+        edge.metadata = metadata;
+        Ok(edge)
+    }
+}
+
 /// Run a future synchronously on the current thread. Used to
 /// keep the `upsert_*` method bodies short (the trait is `fn`
 /// not `async fn`, so the SQL has to be driven from a sync
-/// context). On the call site (the MCP handler) the runtime
-/// is multi-threaded, so this block-on just borrows a thread
-/// for the duration of the transaction.
+/// context).
+///
+/// Uses `futures::executor::block_on` instead of
+/// `tokio::runtime::Handle::current().block_on` because the
+/// latter panics when called from within an existing Tokio
+/// runtime (e.g. inside `#[tokio::test]`). `futures::block_on`
+/// creates a single-threaded executor that works in any context.
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 fn futures_executor_block_on<F: std::future::Future>(fut: F) -> F::Output {
-    tokio::runtime::Handle::current().block_on(fut)
+    futures::executor::block_on(fut)
 }
 
 // ============================================================================

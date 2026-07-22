@@ -72,6 +72,9 @@ serde_yaml.workspace = true
 # `async-trait` is always needed — the facade traits use `#[async_trait]`.
 # It is NOT optional because the proc macro must always be available.
 async-trait.workspace = true
+# `futures` provides `futures::executor::block_on` which is safe to call
+# from within a Tokio runtime (unlike `tokio::runtime::Handle::current().block_on`).
+futures = "0.3"
 
 # OpenAPI 3.1 parser for cycle e15.5 (`cognicode_ingest_openapi`).
 # Default-features=false keeps the dep tree lean (no YAML support;
