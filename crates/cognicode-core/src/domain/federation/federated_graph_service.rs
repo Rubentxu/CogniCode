@@ -19,6 +19,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use crate::domain::aggregates::generic_graph::{GraphEdge, NodeId};
 use crate::domain::federation::federated_node::FederatedNode;
 use crate::domain::federation::federated_node_id::FederatedNodeId;
@@ -166,7 +167,7 @@ impl FederatedGraphService {
             futures.push((space_id.clone(), per_offset, async move {
                 let per_cursor = per_offset.to_string();
                 let r: GraphResult<SearchPage> =
-                    repo.search(query, node_kinds, limit, Some(&per_cursor));
+                    repo.search(query, node_kinds, limit, Some(&per_cursor)).await;
                 r
             }));
             space_ids_in_order.push(space_id.clone());
@@ -251,7 +252,7 @@ impl FederatedGraphService {
             Some(r) => r.clone(),
             None => return Ok(None),
         };
-        let node = repo.get_node(&local_id)?;
+        let node = repo.get_node(&local_id).await?;
         Ok(node.map(|n| FederatedNode::new(n, space_id)))
     }
 
@@ -264,7 +265,7 @@ impl FederatedGraphService {
             Some(r) => r.clone(),
             None => return Ok(Vec::new()),
         };
-        repo.find_outgoing_edges(&local_id)
+        repo.find_outgoing_edges(&local_id).await
     }
 
     /// Borrow the repo for a given space. Test-only accessor —
@@ -313,8 +314,9 @@ mod tests {
         }
     }
 
+    #[async_trait]
     impl GraphRepository for MockRepo {
-        fn search(
+        async fn search(
             &self,
             query: &str,
             _node_kinds: &[NodeKind],
@@ -353,19 +355,19 @@ mod tests {
             })
         }
 
-        fn find_nodes_by_kind(&self, _kind: &NodeKind) -> GraphResult<Vec<GraphNode>> {
+        async fn find_nodes_by_kind(&self, _kind: &NodeKind) -> GraphResult<Vec<GraphNode>> {
             Ok(Vec::new())
         }
 
-        fn get_node(&self, id: &NodeId) -> GraphResult<Option<GraphNode>> {
+        async fn get_node(&self, id: &NodeId) -> GraphResult<Option<GraphNode>> {
             Ok(self.nodes.iter().find(|n| &n.id == id).cloned())
         }
 
-        fn find_outgoing_edges(&self, _id: &NodeId) -> GraphResult<Vec<GraphEdge>> {
+        async fn find_outgoing_edges(&self, _id: &NodeId) -> GraphResult<Vec<GraphEdge>> {
             Ok(Vec::new())
         }
 
-        fn edges_by_kind(
+        async fn edges_by_kind(
             &self,
             _node: &NodeId,
             _kinds: &[crate::domain::value_objects::edge_kind::EdgeKind],
@@ -373,7 +375,7 @@ mod tests {
             Ok(Vec::new())
         }
 
-        fn rationale_subgraph(
+        async fn rationale_subgraph(
             &self,
             _focus: &NodeId,
             _max_depth: u32,

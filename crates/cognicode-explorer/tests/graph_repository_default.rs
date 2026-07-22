@@ -5,6 +5,8 @@
 //! - Returns `next_cursor = None` (no real pagination in default impl)
 
 #[cfg(feature = "multimodal")]
+use async_trait::async_trait;
+#[cfg(feature = "multimodal")]
 use cognicode_core::domain::aggregates::generic_graph::{GraphNode, NodeId};
 #[cfg(feature = "multimodal")]
 use cognicode_core::domain::ports::graph_repository::GraphRepository;
@@ -27,8 +29,9 @@ impl MockGraphRepository {
 }
 
 #[cfg(feature = "multimodal")]
+#[async_trait]
 impl GraphRepository for MockGraphRepository {
-    fn search(
+    async fn search(
         &self,
         _query: &str,
         _node_kinds: &[NodeKind],
@@ -48,7 +51,7 @@ impl GraphRepository for MockGraphRepository {
         )
     }
 
-    fn find_nodes_by_kind(
+    async fn find_nodes_by_kind(
         &self,
         kind: &NodeKind,
     ) -> cognicode_core::domain::GraphResult<Vec<GraphNode>> {
@@ -60,11 +63,11 @@ impl GraphRepository for MockGraphRepository {
             .collect())
     }
 
-    fn get_node(&self, _id: &NodeId) -> cognicode_core::domain::GraphResult<Option<GraphNode>> {
+    async fn get_node(&self, _id: &NodeId) -> cognicode_core::domain::GraphResult<Option<GraphNode>> {
         Ok(None)
     }
 
-    fn find_outgoing_edges(
+    async fn find_outgoing_edges(
         &self,
         _id: &NodeId,
     ) -> cognicode_core::domain::GraphResult<
@@ -73,7 +76,7 @@ impl GraphRepository for MockGraphRepository {
         Ok(Vec::new())
     }
 
-    fn edges_by_kind(
+    async fn edges_by_kind(
         &self,
         _node: &NodeId,
         _kinds: &[cognicode_core::domain::value_objects::edge_kind::EdgeKind],
@@ -83,7 +86,7 @@ impl GraphRepository for MockGraphRepository {
         Ok(Vec::new())
     }
 
-    fn rationale_subgraph(
+    async fn rationale_subgraph(
         &self,
         _focus: &NodeId,
         _max_depth: u32,
@@ -111,8 +114,8 @@ fn make_node(id: &str, kind: NodeKind, label: &str) -> GraphNode {
 }
 
 #[cfg(feature = "multimodal")]
-#[test]
-fn default_find_nodes_by_kind_paginated_returns_raw_total_equals_items_len() {
+#[tokio::test]
+async fn default_find_nodes_by_kind_paginated_returns_raw_total_equals_items_len() {
     let nodes = vec![
         make_node("doc:1", NodeKind::Doc, "Design Doc 1"),
         make_node("doc:2", NodeKind::Doc, "Design Doc 2"),
@@ -120,7 +123,7 @@ fn default_find_nodes_by_kind_paginated_returns_raw_total_equals_items_len() {
     ];
     let repo = Arc::new(MockGraphRepository::new(nodes));
 
-    let result = repo.find_nodes_by_kind_paginated(&NodeKind::Doc, 10, None);
+    let result = repo.find_nodes_by_kind_paginated(&NodeKind::Doc, 10, None).await;
     assert!(result.is_ok(), "Expected Ok, got {:?}", result);
 
     let page = result.unwrap();
@@ -129,15 +132,15 @@ fn default_find_nodes_by_kind_paginated_returns_raw_total_equals_items_len() {
 }
 
 #[cfg(feature = "multimodal")]
-#[test]
-fn default_find_nodes_by_kind_paginated_returns_none_cursor() {
+#[tokio::test]
+async fn default_find_nodes_by_kind_paginated_returns_none_cursor() {
     let nodes = vec![
         make_node("doc:1", NodeKind::Doc, "Design Doc 1"),
         make_node("doc:2", NodeKind::Doc, "Design Doc 2"),
     ];
     let repo = Arc::new(MockGraphRepository::new(nodes));
 
-    let result = repo.find_nodes_by_kind_paginated(&NodeKind::Doc, 10, None);
+    let result = repo.find_nodes_by_kind_paginated(&NodeKind::Doc, 10, None).await;
     assert!(result.is_ok());
 
     let page = result.unwrap();
@@ -148,8 +151,8 @@ fn default_find_nodes_by_kind_paginated_returns_none_cursor() {
 }
 
 #[cfg(feature = "multimodal")]
-#[test]
-fn default_find_nodes_by_kind_paginated_respects_kind_filter() {
+#[tokio::test]
+async fn default_find_nodes_by_kind_paginated_respects_kind_filter() {
     let nodes = vec![
         make_node("doc:1", NodeKind::Doc, "Design Doc"),
         make_node("dec:1", NodeKind::Decision, "ADR 1"),
@@ -157,7 +160,7 @@ fn default_find_nodes_by_kind_paginated_respects_kind_filter() {
     ];
     let repo = Arc::new(MockGraphRepository::new(nodes));
 
-    let result = repo.find_nodes_by_kind_paginated(&NodeKind::Decision, 10, None);
+    let result = repo.find_nodes_by_kind_paginated(&NodeKind::Decision, 10, None).await;
     assert!(result.is_ok());
 
     let page = result.unwrap();
@@ -166,13 +169,13 @@ fn default_find_nodes_by_kind_paginated_respects_kind_filter() {
 }
 
 #[cfg(feature = "multimodal")]
-#[test]
-fn default_search_paginated_empty_query_returns_empty_page() {
+#[tokio::test]
+async fn default_search_paginated_empty_query_returns_empty_page() {
     let nodes = vec![make_node("doc:1", NodeKind::Doc, "Design Doc")];
     let repo = Arc::new(MockGraphRepository::new(nodes));
 
     // Empty query should return empty page per contract
-    let result = repo.search_paginated("", &[NodeKind::Doc], 10, None);
+    let result = repo.search_paginated("", &[NodeKind::Doc], 10, None).await;
     assert!(result.is_ok());
 
     let page = result.unwrap();
