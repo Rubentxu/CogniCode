@@ -4,7 +4,9 @@
 //! - Returns `SearchPage` with `raw_total == items.len()`
 //! - Returns `next_cursor = None` (no real pagination in default impl)
 
+#[cfg(feature = "multimodal")]
 use cognicode_core::domain::aggregates::generic_graph::{GraphNode, NodeId};
+#[cfg(feature = "multimodal")]
 use cognicode_core::domain::ports::graph_repository::GraphRepository;
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
 use std::collections::HashMap;
@@ -12,16 +14,19 @@ use std::sync::Arc;
 
 /// A mock `GraphRepository` that only implements the base methods
 /// (not the paginated variants), relying on the default implementations.
+#[cfg(feature = "multimodal")]
 struct MockGraphRepository {
     nodes: Vec<GraphNode>,
 }
 
+#[cfg(feature = "multimodal")]
 impl MockGraphRepository {
     fn new(nodes: Vec<GraphNode>) -> Self {
         Self { nodes }
     }
 }
 
+#[cfg(feature = "multimodal")]
 impl GraphRepository for MockGraphRepository {
     fn search(
         &self,
@@ -92,6 +97,7 @@ impl GraphRepository for MockGraphRepository {
     }
 }
 
+#[cfg(feature = "multimodal")]
 fn make_node(id: &str, kind: NodeKind, label: &str) -> GraphNode {
     GraphNode {
         id: NodeId(id.to_string()),
@@ -104,6 +110,7 @@ fn make_node(id: &str, kind: NodeKind, label: &str) -> GraphNode {
     }
 }
 
+#[cfg(feature = "multimodal")]
 #[test]
 fn default_find_nodes_by_kind_paginated_returns_raw_total_equals_items_len() {
     let nodes = vec![
@@ -121,6 +128,7 @@ fn default_find_nodes_by_kind_paginated_returns_raw_total_equals_items_len() {
     assert_eq!(page.raw_total, 3, "Expected raw_total == 3 (items.len())");
 }
 
+#[cfg(feature = "multimodal")]
 #[test]
 fn default_find_nodes_by_kind_paginated_returns_none_cursor() {
     let nodes = vec![
@@ -139,6 +147,7 @@ fn default_find_nodes_by_kind_paginated_returns_none_cursor() {
     );
 }
 
+#[cfg(feature = "multimodal")]
 #[test]
 fn default_find_nodes_by_kind_paginated_respects_kind_filter() {
     let nodes = vec![
@@ -156,6 +165,7 @@ fn default_find_nodes_by_kind_paginated_respects_kind_filter() {
     assert_eq!(page.items[0].kind, NodeKind::Decision);
 }
 
+#[cfg(feature = "multimodal")]
 #[test]
 fn default_search_paginated_empty_query_returns_empty_page() {
     let nodes = vec![make_node("doc:1", NodeKind::Doc, "Design Doc")];
