@@ -32,9 +32,14 @@ pub struct ViewServiceImpl {
     graph_query: Option<Arc<dyn GraphQueryPort>>,
     view_registry: Arc<ViewRegistry>,
     persistence: Option<Arc<dyn PersistenceService>>,
+    /// Graph repository for multimodal entities (Decision/Doc/Evidence).
+    /// `None` when multimodal feature is disabled or graph is not wired.
+    #[cfg(feature = "multimodal")]
+    graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
 }
 
 impl ViewServiceImpl {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         repo: Arc<dyn SymbolRepository>,
         reader: Arc<dyn SourceReader>,
@@ -43,6 +48,9 @@ impl ViewServiceImpl {
         graph_query: Option<Arc<dyn GraphQueryPort>>,
         view_registry: Arc<ViewRegistry>,
         persistence: Option<Arc<dyn PersistenceService>>,
+        #[cfg(feature = "multimodal")] graph_repo: Option<
+            Arc<dyn cognicode_core::domain::ports::GraphRepository>,
+        >,
     ) -> Self {
         Self {
             repo,
@@ -52,6 +60,8 @@ impl ViewServiceImpl {
             graph_query,
             view_registry,
             persistence,
+            #[cfg(feature = "multimodal")]
+            graph_repo,
         }
     }
 
@@ -148,11 +158,30 @@ impl ViewServiceImpl {
                 ))
             }
             // Doc/Decision/Evidence require graph_repo wired to ViewService.
-            // Resolution happens in SearchServiceImpl which has graph access.
-            ObjectIdentity::Doc { .. } | ObjectIdentity::Decision { .. } | ObjectIdentity::Evidence { .. } => {
+            // Doc and Evidence are resolved in SearchServiceImpl which has graph access.
+            // Decision can be resolved here since we now have graph_repo wired.
+            ObjectIdentity::Doc { .. } | ObjectIdentity::Evidence { .. } => {
                 Err(ExplorerError::FeatureDisabled(
-                    "Doc/Decision/Evidence resolution requires graph repository (not wired in ViewService)".into(),
+                    "Doc/Evidence resolution requires graph repository (not wired in ViewService)".into(),
                 ))
+            }
+            ObjectIdentity::Decision { id } => {
+                #[cfg(feature = "multimodal")]
+                {
+                    // Decision requires graph_repo to be wired
+                    let _graph_repo = self.graph_repo.as_ref().ok_or_else(|| {
+                        ExplorerError::FeatureDisabled(
+                            "Decision resolution requires graph repository (not wired in ViewService)".into(),
+                        )
+                    })?;
+                    Ok(InspectionTarget::Decision { id: id.clone() })
+                }
+                #[cfg(not(feature = "multimodal"))]
+                {
+                    Err(ExplorerError::FeatureDisabled(
+                        "Decision resolution requires multimodal feature".into(),
+                    ))
+                }
             }
         }
     }
@@ -386,6 +415,8 @@ impl ViewService for ViewServiceImpl {
             reader: self.reader.as_ref(),
             quality: self.quality.as_ref().map(|q| q.as_ref()),
             graph_query: self.graph_query.as_ref().map(|g| g.as_ref()),
+            #[cfg(feature = "multimodal")]
+            graph_repo: self.graph_repo.as_ref().map(|g| g.as_ref()),
         };
 
         // AD-2: stamp descriptor metadata onto DTO at single seam
@@ -604,6 +635,8 @@ mod view_service_tests {
             crate::domain::lens::default_registry(),
             None,
             view_registry,
+            None,
+            #[cfg(feature = "multimodal")]
             None,
         )
     }

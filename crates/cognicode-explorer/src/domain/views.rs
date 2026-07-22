@@ -2903,6 +2903,55 @@ impl ViewExecutor for ArchitectureDriftExecutor {
 // Architecture Rationale — Decision artifact rationale with evidence and code
 // ============================================================================
 
+/// Constants for rationale subgraph traversal.
+const RATIONALE_SUBGRAPH_MAX_DEPTH: u32 = 3;
+const RATIONALE_SUBGRAPH_MAX_NODES: usize = 100;
+
+/// Helper to build a placeholder ContextualView when a decision is unavailable.
+fn decision_unavailable_for(
+    object_id: &str,
+    view_id: &str,
+    title: &str,
+    message: &str,
+) -> ContextualView {
+    let blocks = vec![ViewBlock {
+        id: format!("{}_unavailable", view_id),
+        title: title.into(),
+        body: json!({ "message": message }),
+    }];
+    ContextualView {
+        object_id: object_id.into(),
+        view_id: view_id.into(),
+        title: title.into(),
+        view_kind: ViewKind::ArchitectureRationale,
+        blocks,
+        relations: Vec::new(),
+        evidence: Vec::new(),
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Markdown,
+    }
+}
+
+/// Helper to build an error ContextualView for a given view_id.
+fn contextual_view_error(object_id: &str, view_id: &str, title: &str, message: &str) -> ContextualView {
+    let blocks = vec![ViewBlock {
+        id: "error".into(),
+        title: title.into(),
+        body: json!({ "message": message }),
+    }];
+    ContextualView {
+        object_id: object_id.into(),
+        view_id: view_id.into(),
+        title: title.into(),
+        view_kind: ViewKind::ArchitectureRationale,
+        blocks,
+        relations: Vec::new(),
+        evidence: Vec::new(),
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Markdown,
+    }
+}
+
 /// Build the Architecture Rationale view for a Decision artifact.
 ///
 /// When `graph_repo` is wired (multimodal feature), fetches the decision node
@@ -2920,25 +2969,12 @@ pub fn build_rationale_view(
 
     let Some(repo) = graph_repo else {
         // Graceful degradation: no graph repo wired
-        let blocks = vec![ViewBlock {
-            id: "rationale_unavailable".into(),
-            title: "Architecture Rationale".into(),
-            body: json!({
-                "message": "Graph repository not wired. Rationale requires multimodal feature.",
-                "decision_id": decision_id,
-            }),
-        }];
-        return ContextualView {
-            object_id: mvp,
-            view_id: "architecture_rationale".into(),
-            title: "Architecture Rationale".into(),
-            view_kind: ViewKind::ArchitectureRationale,
-            blocks,
-            relations: Vec::new(),
-            evidence: Vec::new(),
-            findings: Vec::new(),
-            renderer_kind: RendererKind::Markdown,
-        };
+        return decision_unavailable_for(
+            &mvp,
+            "architecture_rationale",
+            "Architecture Rationale",
+            "Graph repository not wired. Rationale requires multimodal feature.",
+        );
     };
 
     // Fetch the decision node
@@ -2946,69 +2982,33 @@ pub fn build_rationale_view(
     let decision_node = match repo.get_node(&node_id) {
         Ok(Some(node)) => node,
         Ok(None) => {
-            let blocks = vec![ViewBlock {
-                id: "not_found".into(),
-                title: "Decision Not Found".into(),
-                body: json!({
-                    "message": format!("Decision '{}' not found in graph", decision_id),
-                }),
-            }];
-            return ContextualView {
-                object_id: mvp,
-                view_id: "architecture_rationale".into(),
-                title: "Architecture Rationale".into(),
-                view_kind: ViewKind::ArchitectureRationale,
-                blocks,
-                relations: Vec::new(),
-                evidence: Vec::new(),
-                findings: Vec::new(),
-                renderer_kind: RendererKind::Markdown,
-            };
+            return contextual_view_error(
+                &mvp,
+                "architecture_rationale",
+                "Decision Not Found",
+                &format!("Decision '{}' not found in graph", decision_id),
+            );
         }
         Err(e) => {
-            let blocks = vec![ViewBlock {
-                id: "error".into(),
-                title: "Error".into(),
-                body: json!({
-                    "message": format!("Failed to fetch decision: {}", e),
-                }),
-            }];
-            return ContextualView {
-                object_id: mvp,
-                view_id: "architecture_rationale".into(),
-                title: "Architecture Rationale".into(),
-                view_kind: ViewKind::ArchitectureRationale,
-                blocks,
-                relations: Vec::new(),
-                evidence: Vec::new(),
-                findings: Vec::new(),
-                renderer_kind: RendererKind::Markdown,
-            };
+            return contextual_view_error(
+                &mvp,
+                "architecture_rationale",
+                "Error",
+                &format!("Failed to fetch decision: {}", e),
+            );
         }
     };
 
     // Fetch rationale subgraph: Justifies, Cites, Resolves, CorroboratedBy edges
-    let (nodes, edges, truncated) = match repo.rationale_subgraph(&node_id, 3, 100) {
+    let (nodes, edges, truncated) = match repo.rationale_subgraph(&node_id, RATIONALE_SUBGRAPH_MAX_DEPTH, RATIONALE_SUBGRAPH_MAX_NODES) {
         Ok((nodes, edges, truncated)) => (nodes, edges, truncated),
         Err(e) => {
-            let blocks = vec![ViewBlock {
-                id: "error".into(),
-                title: "Error".into(),
-                body: json!({
-                    "message": format!("Failed to fetch rationale subgraph: {}", e),
-                }),
-            }];
-            return ContextualView {
-                object_id: mvp,
-                view_id: "architecture_rationale".into(),
-                title: "Architecture Rationale".into(),
-                view_kind: ViewKind::ArchitectureRationale,
-                blocks,
-                relations: Vec::new(),
-                evidence: Vec::new(),
-                findings: Vec::new(),
-                renderer_kind: RendererKind::Markdown,
-            };
+            return contextual_view_error(
+                &mvp,
+                "architecture_rationale",
+                "Error",
+                &format!("Failed to fetch rationale subgraph: {}", e),
+            );
         }
     };
 
@@ -5537,6 +5537,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "multimodal"))]
     fn architecture_rationale_view_id_and_title() {
         // Test the non-multimodal fallback path directly
         let view = super::build_rationale_view("ADR-042");
@@ -5547,6 +5548,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "multimodal"))]
     fn architecture_rationale_fallback_shows_decision_id() {
         let view = super::build_rationale_view("ADR-999");
         // Should have a block with the decision_id

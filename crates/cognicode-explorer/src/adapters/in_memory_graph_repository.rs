@@ -749,6 +749,59 @@ mod tests {
         );
     }
 
+    /// Scenario 4: max_depth=0 returns only the focus node, no edges.
+    /// When max_depth=0, the BFS never expands beyond the focus node because
+    /// depth >= max_depth immediately, so edges should be empty.
+    #[test]
+    fn rationale_subgraph_max_depth_zero_returns_focus_only() {
+        use cognicode_core::domain::value_objects::Provenance;
+
+        let nodes = vec![
+            make_node("A", NodeKind::Decision, "Decision A"),
+            make_node("D", NodeKind::Decision, "Decision D"),
+        ];
+        let edges = vec![GraphEdge {
+            source: NodeId::new("A"),
+            target: NodeId::new("D"),
+            kind: EdgeKind::Justifies,
+            provenance: Provenance::Manual,
+            confidence: 0.9,
+            metadata: HashMap::new(),
+        }];
+        let repo = InMemoryGraphRepository::new(nodes, edges);
+
+        // max_depth=0 means no expansion beyond the focus node
+        let result = repo
+            .rationale_subgraph(&NodeId::new("A"), 0, 100)
+            .expect("rationale_subgraph should succeed");
+
+        let (subgraph_nodes, subgraph_edges, truncated) = result;
+
+        // Focus node should be present
+        assert_eq!(
+            subgraph_nodes.len(),
+            1,
+            "Only focus node should be present with max_depth=0"
+        );
+        assert_eq!(
+            subgraph_nodes[0].id.as_str(),
+            "A",
+            "Focus node A should be the only node"
+        );
+
+        // Edges should be empty because BFS couldn't expand (depth >= max_depth)
+        assert!(
+            subgraph_edges.is_empty(),
+            "Edges should be empty when max_depth=0"
+        );
+
+        // Should not be truncated
+        assert!(
+            !truncated,
+            "Should not be truncated with max_depth=0 and sufficient max_nodes"
+        );
+    }
+
     /// Scenario 5 partial: rationale_subgraph returns Ok(empty) when no graph data.
     /// This is the fallback behavior - both nodes and edges empty, truncated=false.
     #[test]
