@@ -545,7 +545,10 @@ struct GraphEdgeRow {
     target_id: String,
     kind: String,
     provenance: String,
-    confidence: f64,
+    /// confidence is REAL (FLOAT4) in PostgreSQL → decoded as f32.
+    /// Conversion to f64 happens inside into_graph_edge() when
+    /// constructing the domain GraphEdge.
+    confidence: f32,
     metadata: serde_json::Value,
 }
 
@@ -571,7 +574,7 @@ impl GraphEdgeRow {
             NodeId(self.target_id),
             kind,
             provenance,
-            self.confidence,
+            self.confidence as f64,
         )
         .map_err(|e| GraphError::Storage(format!("pg_graph_repository graph edge invalid: {e}")))?;
         edge.metadata = metadata;
