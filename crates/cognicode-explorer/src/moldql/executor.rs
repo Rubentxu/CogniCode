@@ -1113,14 +1113,14 @@ mod tests {
         }
     }
 
-    fn run_find(view: &MoldQLView, q: &str) -> MoldQLResult {
+    async fn run_find(view: &MoldQLView, q: &str) -> MoldQLResult {
         let ast = crate::moldql::parser::parse(q).expect("parse ok");
-        view.executor().execute(ast).expect("execute ok")
+        view.executor().execute(ast).await.expect("execute ok")
     }
 
-    fn run_explore(view: &MoldQLView, q: &str) -> MoldQLResult {
+    async fn run_explore(view: &MoldQLView, q: &str) -> MoldQLResult {
         let ast = crate::moldql::parser::parse(q).expect("parse ok");
-        view.executor().execute(ast).expect("execute ok")
+        view.executor().execute(ast).await.expect("execute ok")
     }
 
     // -- Tests ---------------------------------------------------------------
@@ -1131,23 +1131,23 @@ mod tests {
         Arc::new(repo)
     }
 
-    #[test]
-    fn find_symbols_no_filter_returns_all_sorted() {
+    #[tokio::test]
+    async fn find_symbols_no_filter_returns_all_sorted() {
         let repo = make_repo(|r| {
             r.with_sym("alpha", "src/a.rs", 1);
             r.with_sym("beta", "src/b.rs", 5);
             r.with_sym("gamma", "src/c.rs", 3);
         });
         let view = build_view(repo.clone());
-        let r = run_find(&view, "FIND symbols");
+        let r = run_find(&view, "FIND symbols").await;
         assert_eq!(r.total, 3);
         assert_eq!(r.items[0].label, "alpha at src/a.rs:1");
         assert_eq!(r.items[1].label, "beta at src/b.rs:5");
         assert_eq!(r.items[2].label, "gamma at src/c.rs:3");
     }
 
-    #[test]
-    fn find_symbols_with_fan_in_filter() {
+    #[tokio::test]
+    async fn find_symbols_with_fan_in_filter() {
         let repo = make_repo(|r| {
             r.with_sym("alpha", "src/a.rs", 1);
             r.with_sym("beta", "src/b.rs", 5);
@@ -1162,40 +1162,40 @@ mod tests {
             );
         });
         let view = build_view(repo.clone());
-        let r = run_find(&view, "FIND symbols WHERE fan_in >= 2");
+        let r = run_find(&view, "FIND symbols WHERE fan_in >= 2").await;
         assert_eq!(r.total, 1);
         assert_eq!(r.items[0].label, "alpha at src/a.rs:1");
     }
 
-    #[test]
-    fn find_files_in_scope() {
+    #[tokio::test]
+    async fn find_files_in_scope() {
         let repo = make_repo(|r| {
             r.with_sym("alpha", "src/foo/a.rs", 1);
             r.with_sym("beta", "src/foo/b.rs", 2);
             r.with_sym("gamma", "src/bar/c.rs", 3);
         });
         let view = build_view(repo.clone());
-        let r = run_find(&view, "FIND files IN SCOPE src/foo");
+        let r = run_find(&view, "FIND files IN SCOPE src/foo").await;
         assert_eq!(r.total, 2);
         let labels: Vec<&str> = r.items.iter().map(|i| i.label.as_str()).collect();
         assert!(labels.contains(&"src/foo/a.rs"));
         assert!(labels.contains(&"src/foo/b.rs"));
     }
 
-    #[test]
-    fn find_files_does_not_bleed_scope_prefix() {
+    #[tokio::test]
+    async fn find_files_does_not_bleed_scope_prefix() {
         let repo = make_repo(|r| {
             r.with_sym("a", "src/x.rs", 1);
             r.with_sym("b", "src_extra/y.rs", 1);
         });
         let view = build_view(repo.clone());
-        let r = run_find(&view, "FIND files IN SCOPE src");
+        let r = run_find(&view, "FIND files IN SCOPE src").await;
         assert_eq!(r.total, 1);
         assert_eq!(r.items[0].label, "src/x.rs");
     }
 
-    #[test]
-    fn find_symbols_multi_condition_and() {
+    #[tokio::test]
+    async fn find_symbols_multi_condition_and() {
         let repo = make_repo(|r| {
             r.with_sym("alpha", "src/a.rs", 1);
             r.with_sym("beta", "src/b.rs", 5);
@@ -1209,25 +1209,26 @@ mod tests {
         let r = run_find(
             &view,
             "FIND symbols WHERE fan_in >= 2 AND kind = \"function\"",
-        );
+        )
+        .await;
         assert_eq!(r.total, 1);
         assert_eq!(r.items[0].label, "alpha at src/a.rs:1");
     }
 
-    #[test]
-    fn find_symbols_contains_operator() {
+    #[tokio::test]
+    async fn find_symbols_contains_operator() {
         let repo = make_repo(|r| {
             r.with_sym("alpha_main", "src/a.rs", 1);
             r.with_sym("beta", "src/b.rs", 1);
         });
         let view = build_view(repo.clone());
-        let r = run_find(&view, "FIND symbols WHERE name ~ \"main\"");
+        let r = run_find(&view, "FIND symbols WHERE name ~ \"main\"").await;
         assert_eq!(r.total, 1);
         assert!(r.items[0].label.starts_with("alpha_main"));
     }
 
-    #[test]
-    fn explore_callers_bfs_dedup_depth() {
+    #[tokio::test]
+    async fn explore_callers_bfs_dedup_depth() {
         let repo = make_repo(|r| {
             // a is called by b, c, x, y; chain b -> a (a calls b? no — b calls a)
             // Layout: b calls a, c calls b, x calls a, y calls a
@@ -1243,7 +1244,7 @@ mod tests {
         });
         let view = build_view(repo.clone());
         // BFS: depth 0 = [a]; depth 1 = [x, y] (callers of a).
-        let r = run_explore(&view, "EXPLORE symbol:src/a.rs:a:1 THROUGH callers DEPTH 3");
+        let r = run_explore(&view, "EXPLORE symbol:src/a.rs:a:1 THROUGH callers DEPTH 3").await;
         // a (seed) + x + y = 3 items; b and c are callees, not callers.
         assert_eq!(r.total, 3);
         let labels: Vec<String> = r.items.iter().map(|i| i.label.clone()).collect();
@@ -1252,21 +1253,21 @@ mod tests {
         assert!(labels.iter().any(|l| l.starts_with("y at")));
     }
 
-    #[test]
-    fn explore_callees_depth_zero_returns_seed_only() {
+    #[tokio::test]
+    async fn explore_callees_depth_zero_returns_seed_only() {
         let repo = make_repo(|r| {
             r.with_sym("a", "src/a.rs", 1);
             r.with_sym("b", "src/b.rs", 1);
             r.with_callee(&r.sid("a", "src/a.rs", 1), &r.sid("b", "src/b.rs", 1));
         });
         let view = build_view(repo.clone());
-        let r = run_explore(&view, "EXPLORE symbol:src/a.rs:a:1 THROUGH callees DEPTH 0");
+        let r = run_explore(&view, "EXPLORE symbol:src/a.rs:a:1 THROUGH callees DEPTH 0").await;
         assert_eq!(r.total, 1);
         assert_eq!(r.items[0].label, "a at src/a.rs:1");
     }
 
-    #[test]
-    fn explore_depth_clamped_to_five() {
+    #[tokio::test]
+    async fn explore_depth_clamped_to_five() {
         let repo = make_repo(|r| {
             // 6-deep chain: a -> b -> c -> d -> e -> f -> g
             r.with_sym("a", "src/a.rs", 1);
@@ -1287,43 +1288,45 @@ mod tests {
         let r = run_explore(
             &view,
             "EXPLORE symbol:src/a.rs:a:1 THROUGH callees DEPTH 99",
-        );
+        )
+        .await;
         // a (depth 0) + 5 callees (b..f) = 6, g is at depth 6 and beyond cap.
         assert_eq!(r.total, 6);
         let labels: Vec<String> = r.items.iter().map(|i| i.label.clone()).collect();
         assert!(!labels.iter().any(|l| l.starts_with("g at")));
     }
 
-    #[test]
-    fn explore_unknown_symbol_yields_empty() {
+    #[tokio::test]
+    async fn explore_unknown_symbol_yields_empty() {
         let repo = make_repo(|_| {});
         let view = build_view(repo.clone());
         let r = run_explore(
             &view,
             "EXPLORE symbol:src/missing.rs:ghost:1 THROUGH callers DEPTH 1",
-        );
+        )
+        .await;
         // Unknown symbol → empty items, no error.
         assert_eq!(r.total, 0);
     }
 
-    #[test]
-    fn find_quality_condition_degrades_when_no_backend() {
+    #[tokio::test]
+    async fn find_quality_condition_degrades_when_no_backend() {
         let repo = make_repo(|r| {
             r.with_sym("alpha", "src/a.rs", 1);
         });
         let view = build_view(repo.clone());
 
         // No quality repo wired → quality.critical == 0 → strict `> 0` fails
-        let r = run_find(&view, "FIND symbols WHERE quality.critical > 0");
+        let r = run_find(&view, "FIND symbols WHERE quality.critical > 0").await;
         assert_eq!(r.total, 0);
 
         // `== 0` should still pass for the same reason.
-        let r = run_find(&view, "FIND symbols WHERE quality.critical == 0");
+        let r = run_find(&view, "FIND symbols WHERE quality.critical == 0").await;
         assert_eq!(r.total, 1);
     }
 
-    #[test]
-    fn find_files_with_quality_filter_when_backend_wired() {
+    #[tokio::test]
+    async fn find_files_with_quality_filter_when_backend_wired() {
         // Two issues for `src/a.rs` (one critical, one major) plus an
         // issue for `src/b.rs` (info). The filter `issue_count > 0`
         // should match `src/a.rs` and `src/b.rs` (both have at least
@@ -1368,7 +1371,7 @@ mod tests {
         let quality_arc: Arc<dyn crate::ports::QualityRepository> = Arc::new(quality);
         let view = build_view_with_quality(repo.clone(), quality_arc);
 
-        let r = run_find(&view, "FIND files WHERE issue_count > 0");
+        let r = run_find(&view, "FIND files WHERE issue_count > 0").await;
         let labels: Vec<&str> = r.items.iter().map(|i| i.label.as_str()).collect();
         assert_eq!(r.total, 2);
         assert!(labels.contains(&"src/a.rs"));
@@ -1376,7 +1379,7 @@ mod tests {
         assert!(!labels.contains(&"src/c.rs"));
 
         // quality.critical > 0 must match only `src/a.rs`.
-        let r = run_find(&view, "FIND files WHERE quality.critical > 0");
+        let r = run_find(&view, "FIND files WHERE quality.critical > 0").await;
         let labels: Vec<&str> = r.items.iter().map(|i| i.label.as_str()).collect();
         assert_eq!(r.total, 1);
         assert!(labels.contains(&"src/a.rs"));
@@ -1426,22 +1429,22 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn find_scopes_target() {
+    #[tokio::test]
+    async fn find_scopes_target() {
         let repo = make_repo(|r| {
             r.with_sym("a", "src/foo/a.rs", 1);
             r.with_sym("b", "src/bar/b.rs", 1);
         });
         let view = build_view(repo.clone());
-        let r = run_find(&view, "FIND scopes");
+        let r = run_find(&view, "FIND scopes").await;
         assert_eq!(r.total, 2);
         let labels: Vec<&str> = r.items.iter().map(|i| i.label.as_str()).collect();
         assert!(labels.contains(&"src/foo"));
         assert!(labels.contains(&"src/bar"));
     }
 
-    #[test]
-    fn apply_lens_sets_detail() {
+    #[tokio::test]
+    async fn apply_lens_sets_detail() {
         let repo = make_repo(|r| {
             r.with_sym("a", "src/a.rs", 1);
             r.with_sym("b", "src/b.rs", 1);
@@ -1449,7 +1452,7 @@ mod tests {
             r.with_caller(&r.sid("a", "src/a.rs", 1), &r.sid("b", "src/b.rs", 1));
         });
         let view = build_view(repo.clone());
-        let r = run_find(&view, "FIND symbols WHERE fan_in >= 1 APPLY hotspots");
+        let r = run_find(&view, "FIND symbols WHERE fan_in >= 1 APPLY hotspots").await;
         assert_eq!(r.total, 1);
         let detail = r.items[0].detail.as_deref().expect("lens applied");
         assert!(
@@ -1458,14 +1461,14 @@ mod tests {
         );
     }
 
-    #[test]
-    fn apply_unknown_lens_does_not_kill_query() {
+    #[tokio::test]
+    async fn apply_unknown_lens_does_not_kill_query() {
         let repo = make_repo(|r| {
             r.with_sym("a", "src/a.rs", 1);
         });
         let view = build_view(repo.clone());
 
-        let r = run_find(&view, "FIND symbols APPLY does-not-exist");
+        let r = run_find(&view, "FIND symbols APPLY does-not-exist").await;
         assert_eq!(r.total, 1);
         // Detail is set to the lens id (graceful degradation).
         assert_eq!(r.items[0].detail.as_deref(), Some("does-not-exist"));
@@ -1486,68 +1489,68 @@ mod tests {
     // compile → run pipeline and produce a result envelope.
     // ========================================================================
 
-    fn run_explorerql(view: &MoldQLView, q: &str) -> MoldQLResult {
+    async fn run_explorerql(view: &MoldQLView, q: &str) -> MoldQLResult {
         let ast = crate::moldql::parser::parse(q).expect("parse ok");
-        view.executor().execute(ast).expect("execute ok")
+        view.executor().execute(ast).await.expect("execute ok")
     }
 
-    #[test]
-    fn execute_path_uses_compile_then_run() {
+    #[tokio::test]
+    async fn execute_path_uses_compile_then_run() {
         let repo = make_repo(|r| {
             r.with_sym("a", "src/a.rs", 1);
             r.with_sym("b", "src/b.rs", 1);
         });
         let view = build_view(repo);
-        let r = run_explorerql(&view, "PATH FROM a TO b");
+        let r = run_explorerql(&view, "PATH FROM a TO b").await;
         // The petgraph plan is wired through; for the MVP the
         // executor returns an empty `MoldQLResult` (the plan is
         // captured in the query field).
         assert!(r.query.contains("Bfs"));
     }
 
-    #[test]
-    fn execute_neighbors_emits_plan() {
+    #[tokio::test]
+    async fn execute_neighbors_emits_plan() {
         let repo = make_repo(|r| {
             r.with_sym("a", "src/a.rs", 1);
         });
         let view = build_view(repo);
-        let r = run_explorerql(&view, "NEIGHBORS a DEPTH 1");
+        let r = run_explorerql(&view, "NEIGHBORS a DEPTH 1").await;
         assert!(r.query.contains("DualRadius"));
     }
 
-    #[test]
-    fn execute_subgraph_emits_dual_radius_plan() {
+    #[tokio::test]
+    async fn execute_subgraph_emits_dual_radius_plan() {
         let repo = make_repo(|r| {
             r.with_sym("a", "src/a.rs", 1);
         });
         let view = build_view(repo);
-        let r = run_explorerql(&view, "SUBGRAPH ROOT a");
+        let r = run_explorerql(&view, "SUBGRAPH ROOT a").await;
         assert!(r.query.contains("DualRadius"));
     }
 
-    #[test]
-    fn execute_cluster_scc_emits_detect_cycles_plan() {
+    #[tokio::test]
+    async fn execute_cluster_scc_emits_detect_cycles_plan() {
         let repo = make_repo(|r| {
             r.with_sym("a", "src/a.rs", 1);
         });
         let view = build_view(repo);
-        let r = run_explorerql(&view, "CLUSTER");
+        let r = run_explorerql(&view, "CLUSTER").await;
         assert!(r.query.contains("DetectCycles"));
     }
 
-    #[test]
-    fn execute_explain_emits_explain_path_plan() {
+    #[tokio::test]
+    async fn execute_explain_emits_explain_path_plan() {
         let repo = make_repo(|r| {
             r.with_sym("a", "src/a.rs", 1);
             r.with_sym("b", "src/b.rs", 1);
         });
         let view = build_view(repo);
-        let r = run_explorerql(&view, "EXPLAIN FROM a TO b");
+        let r = run_explorerql(&view, "EXPLAIN FROM a TO b").await;
         assert!(r.query.contains("ExplainPath"));
     }
 
-    #[test]
-    fn execute_boolean_and_routes_through_compile() {
+    #[tokio::test]
+    async fn execute_boolean_and_routes_through_compile() {
         let repo = make_repo(|r| {
             r.with_sym("a", "src/a.rs", 1);
             r.with_sym("b", "src/b.rs", 1);
@@ -1558,10 +1561,13 @@ mod tests {
         // returns NotImplemented. The test asserts the executor
         // does NOT crash and that the failure is a clean error
         // envelope (not a panic).
-        let r = view.executor().execute(
-            crate::moldql::parser::parse("PATH FROM a TO b AND PATH FROM a TO b")
-                .expect("parse ok"),
-        );
+        let r = view
+            .executor()
+            .execute(
+                crate::moldql::parser::parse("PATH FROM a TO b AND PATH FROM a TO b")
+                    .expect("parse ok"),
+            )
+            .await;
         match r {
             Ok(moldql_result) => {
                 // If set algebra is later implemented, the result is
