@@ -374,10 +374,6 @@ impl GraphRepository for InMemoryGraphRepository {
             if depth >= max_depth {
                 continue;
             }
-            if nodes.len() >= max_nodes {
-                truncated = true;
-                break;
-            }
 
             for e in self.edges.iter() {
                 if &e.source != &current {
@@ -740,12 +736,11 @@ mod tests {
             "Edges should be empty when BFS cannot expand (max_nodes=1)"
         );
 
-        // Should not be truncated (natural limit reached, not max_nodes truncation)
-        // Note: truncated=true when we hit max_nodes during expansion, not when
-        // the natural limit (max_depth or queue empty) is reached
+        // truncated=true because we hit max_nodes during expansion - we wanted to
+        // add D but couldn't fit it within max_nodes=1
         assert!(
-            !truncated,
-            "Should not be truncated when natural limit reached with max_nodes=1"
+            truncated,
+            "Should be truncated when max_nodes=1 prevents edge expansion"
         );
     }
 
