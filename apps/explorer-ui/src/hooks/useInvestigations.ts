@@ -176,52 +176,61 @@ export async function addInvestigationArtifact(
 
 /**
  * Helper function to add a Mermaid diagram as an investigation artifact.
+ * ADR-010 E24.1: provenance captures the source view context.
  */
 export async function addMermaidArtifact(
   investigationId: string,
   title: string,
   mermaidText: string,
   generatedFrom?: string,
+  provenance?: AddArtifactRequestDto["provenance"],
 ): Promise<void> {
   return addInvestigationArtifact(investigationId, {
     kind: "mermaid",
     title,
     content: mermaidText,
     generated_from: generatedFrom,
+    provenance,
   });
 }
 
 /**
  * Helper function to add an SVG diagram as an investigation artifact.
+ * ADR-010 E24.1: provenance captures the source view context.
  */
 export async function addSvgArtifact(
   investigationId: string,
   title: string,
   svgContent: string,
   generatedFrom?: string,
+  provenance?: AddArtifactRequestDto["provenance"],
 ): Promise<void> {
   return addInvestigationArtifact(investigationId, {
     kind: "svg",
     title,
     content: svgContent,
     generated_from: generatedFrom,
+    provenance,
   });
 }
 
 /**
  * Helper function to add a draw.io export as an investigation artifact.
+ * ADR-010 E24.1: provenance captures the source view context.
  */
 export async function addDrawioArtifact(
   investigationId: string,
   title: string,
   drawioContent: string,
   generatedFrom?: string,
+  provenance?: AddArtifactRequestDto["provenance"],
 ): Promise<void> {
   return addInvestigationArtifact(investigationId, {
     kind: "drawio",
     title,
     content: drawioContent,
     generated_from: generatedFrom,
+    provenance,
   });
 }
 
