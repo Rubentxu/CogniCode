@@ -365,6 +365,16 @@ fn real_executors() -> &'static ViewExecutorMap {
                 &crate::domain::views::EVIDENCE_OVERVIEW_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
             ),
+            (
+                "doc_code_alignment",
+                &crate::domain::views::DOC_CODE_ALIGNMENT_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "concept_map",
+                &crate::domain::views::CONCEPT_MAP_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
         ])
     })
 }

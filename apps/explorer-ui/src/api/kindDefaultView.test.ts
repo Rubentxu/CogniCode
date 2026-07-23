@@ -14,10 +14,8 @@ describe("kindDefaultView", () => {
     expect(kindDefaultView("symbol")).toBe("call-graph");
   });
 
-  it("maps route|use_case|event → vertical_slice", () => {
+  it("maps route → vertical_slice", () => {
     expect(kindDefaultView("route")).toBe("vertical_slice");
-    expect(kindDefaultView("use_case")).toBe("vertical_slice");
-    expect(kindDefaultView("event")).toBe("vertical_slice");
   });
 
   it("maps file|scope → overview", () => {
@@ -25,8 +23,15 @@ describe("kindDefaultView", () => {
     expect(kindDefaultView("scope")).toBe("overview");
   });
 
-  it("maps decision_artifact|evidence → evidence", () => {
-    expect(kindDefaultView("decision_artifact")).toBe("evidence");
+  it("maps doc → doc_code_alignment", () => {
+    expect(kindDefaultView("doc")).toBe("doc_code_alignment");
+  });
+
+  it("maps decision_artifact → doc_code_alignment", () => {
+    expect(kindDefaultView("decision_artifact")).toBe("doc_code_alignment");
+  });
+
+  it("maps evidence → evidence", () => {
     expect(kindDefaultView("evidence")).toBe("evidence");
   });
 
@@ -38,6 +43,10 @@ describe("kindDefaultView", () => {
   it("maps quality_issue|rule → quality", () => {
     expect(kindDefaultView("quality_issue")).toBe("quality");
     expect(kindDefaultView("rule")).toBe("quality");
+  });
+
+  it("maps investigation → overview", () => {
+    expect(kindDefaultView("investigation")).toBe("overview");
   });
 
   it("falls back to overview for unknown kinds", () => {
