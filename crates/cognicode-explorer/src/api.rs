@@ -596,6 +596,11 @@ pub fn router_with_state(state: ApiState) -> Router {
             "/api/investigations/:id/composed-narrative",
             get(get_investigation_composed_narrative),
         )
+        // ADR-010 E24.1: Regenerate diagram artifact
+        .route(
+            "/api/investigations/:id/artifacts/:aid/regenerate",
+            post(regenerate_artifact),
+        )
         .route(
             "/api/objects/:object_id/affordances",
             get(affordances_handler),
@@ -1624,8 +1629,74 @@ async fn get_investigation_composed_narrative(
             )))
         })?;
 
-    let view = crate::domain::views::build_investigation_narrative(&investigation);
+        let view = crate::domain::views::build_investigation_narrative(&investigation);
     Ok(Json(view).into_response())
+}
+
+/// POST /api/investigations/:id/artifacts/:aid/regenerate — ADR-010 E24.1.
+/// Regenerates a diagram artifact from its provenance and persists the new content.
+async fn regenerate_artifact(
+    State(state): State<ApiState>,
+    Path((id, aid)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    use crate::domain::diagram_regen::DiagramRegenerator;
+
+    let facade = state
+        .investigation
+        .as_ref()
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?;
+
+    // Fetch the investigation to locate the artifact.
+    let mut investigation = facade
+        .get_investigation(&id)
+        .await?
+        .ok_or_else(|| {
+            ApiError(ExplorerError::NotFound(format!("investigation {} not found", id)))
+        })?;
+
+    // Find the artifact by id.
+    let artifact_idx = investigation
+        .artifacts
+        .iter()
+        .position(|a| a.id == aid)
+        .ok_or_else(|| {
+            ApiError(ExplorerError::NotFound(format!(
+                "artifact {} not found in investigation {}",
+                aid, id
+            )))
+        })?;
+
+    let provenance = investigation.artifacts[artifact_idx]
+        .provenance
+        .as_ref()
+        .ok_or_else(|| {
+            ApiError(ExplorerError::InvalidInput(
+                "artifact does not have provenance metadata — cannot regenerate".into(),
+            ))
+        })?
+        .clone();
+
+    // Regenerate using the dispatch table.
+    let graph_svc: &dyn GraphService = &*state.graph;
+    let workspace_svc: &dyn WorkspaceService = &*state.workspace;
+    let new_content = DiagramRegenerator::regenerate(&provenance, graph_svc, workspace_svc)
+        .await
+        .map_err(|e| ApiError(ExplorerError::InvalidInput(e.to_string())))?;
+
+    // Update the artifact content and persist.
+    investigation.artifacts[artifact_idx].content = new_content.clone();
+    investigation.updated_at = time::OffsetDateTime::now_utc();
+    facade
+        .update_investigation(investigation.clone())
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "artifact_id": aid,
+        "content": new_content,
+    }))
+    .into_response())
 }
 
 struct ApiError(ExplorerError);
