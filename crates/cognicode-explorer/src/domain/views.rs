@@ -2257,6 +2257,87 @@ impl ViewExecutor for EvidenceExecutor {
 
 /// DocSource capability — applies to Doc.
 /// Fetches the Doc node from graph_repo and renders its content and metadata.
+/// Shared helper for DocSource and EvidenceOverview executors.
+///
+/// Fetches the node from graph_repo, builds identity + properties blocks,
+/// and wraps them in a ContextualView.
+async fn build_node_source_view(
+    ctx: &ViewContext<'_>,
+    id: &str,
+    mvp_prefix: &str,
+    view_id: &str,
+    evidence_kind: &str,
+    evidence_title_prefix: &str,
+    identity_block_id: &str,
+    identity_block_title: &str,
+    renderer_kind: RendererKind,
+) -> ExplorerResult<ContextualView> {
+    use cognicode_core::domain::aggregates::generic_graph::NodeId;
+    use cognicode_core::domain::ports::GraphRepository;
+
+    let mvp = format!("{mvp_prefix}:{id}");
+    let Some(repo) = ctx.graph_repo else {
+        return Err(crate::error::ExplorerError::FeatureDisabled(
+            "graph repository not wired".into(),
+        ));
+    };
+    let node_id = NodeId::new(id.to_string());
+    let node = match repo.get_node(&node_id).await {
+        Ok(Some(n)) => n,
+        Ok(None) => {
+            return Err(crate::error::ExplorerError::NotFound(format!(
+                "{mvp_prefix} '{id}' not found in graph"
+            )));
+        }
+        Err(e) => {
+            return Err(crate::error::ExplorerError::NotFound(format!(
+                "Failed to fetch {mvp_prefix}: {e}"
+            )));
+        }
+    };
+    let evidence_id = format!("evidence:{evidence_kind}");
+    let evidence = vec![EvidenceBlock {
+        id: evidence_id.clone(),
+        kind: evidence_kind.into(),
+        title: format!("{evidence_title_prefix}: {}", node.label),
+        file: node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+        line_range: None,
+        source_tool_or_query: "GraphRepository::get_node".into(),
+        confidence: Some(1.0),
+        freshness: Some("unknown".into()),
+        provenance: None,
+    }];
+    let properties_json: serde_json::Value =
+        serde_json::to_value(&node.properties).unwrap_or_else(|_| serde_json::json!({}));
+    let blocks = vec![
+        ViewBlock {
+            id: identity_block_id.into(),
+            title: identity_block_title.into(),
+            body: json!({
+                "id": id,
+                "label": node.label,
+                "source_path": node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+            }),
+        },
+        ViewBlock {
+            id: format!("{}_properties", identity_block_id),
+            title: "Properties".into(),
+            body: properties_json,
+        },
+    ];
+    Ok(ContextualView {
+        object_id: mvp,
+        view_id: view_id.into(),
+        title: node.label,
+        blocks,
+        relations: Vec::new(),
+        evidence,
+        findings: Vec::new(),
+        renderer_kind,
+        ..Default::default()
+    })
+}
+
 pub struct DocSourceExecutor;
 impl ViewDescriptor for DocSourceExecutor {
     fn id(&self) -> &'static str {
@@ -2283,69 +2364,18 @@ impl ViewExecutor for DocSourceExecutor {
             InspectionTarget::Doc { id } => {
                 #[cfg(feature = "multimodal")]
                 {
-                    use cognicode_core::domain::aggregates::generic_graph::NodeId;
-                    use cognicode_core::domain::ports::GraphRepository;
-                    let mvp = format!("doc:{id}");
-                    let Some(repo) = ctx.graph_repo else {
-                        return Err(crate::error::ExplorerError::FeatureDisabled(
-                            "graph repository not wired".into(),
-                        ));
-                    };
-                    let node_id = NodeId::new(id.to_string());
-                    let node = match repo.get_node(&node_id).await {
-                        Ok(Some(n)) => n,
-                        Ok(None) => {
-                            return Err(crate::error::ExplorerError::NotFound(format!(
-                                "Doc '{id}' not found in graph"
-                            )));
-                        }
-                        Err(e) => {
-                            return Err(crate::error::ExplorerError::NotFound(format!(
-                                "Failed to fetch doc: {e}"
-                            )));
-                        }
-                    };
-                    let evidence_id = "evidence:doc_source".to_string();
-                    let evidence = vec![EvidenceBlock {
-                        id: evidence_id.clone(),
-                        kind: "doc_source".into(),
-                        title: format!("Doc source: {}", node.label),
-                        file: node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
-                        line_range: None,
-                        source_tool_or_query: "GraphRepository::get_node".into(),
-                        confidence: Some(1.0),
-                        freshness: Some("unknown".into()),
-                        provenance: None,
-                    }];
-                    let properties_json: serde_json::Value = serde_json::to_value(&node.properties)
-                        .unwrap_or_else(|_| serde_json::json!({}));
-                    let blocks = vec![
-                        ViewBlock {
-                            id: "doc_identity".into(),
-                            title: "Document".into(),
-                            body: json!({
-                                "id": id,
-                                "label": node.label,
-                                "source_path": node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
-                            }),
-                        },
-                        ViewBlock {
-                            id: "doc_properties".into(),
-                            title: "Properties".into(),
-                            body: properties_json,
-                        },
-                    ];
-                    Ok(ContextualView {
-                        object_id: mvp,
-                        view_id: "doc-source".into(),
-                        title: node.label,
-                        blocks,
-                        relations: Vec::new(),
-                        evidence,
-                        findings: Vec::new(),
-                        renderer_kind: RendererKind::Code,
-                        ..Default::default()
-                    })
+                    build_node_source_view(
+                        ctx,
+                        id,
+                        "doc",
+                        "doc-source",
+                        "doc_source",
+                        "Doc source",
+                        "doc_identity",
+                        "Document",
+                        RendererKind::Code,
+                    )
+                    .await
                 }
                 #[cfg(not(feature = "multimodal"))]
                 {
@@ -2391,69 +2421,18 @@ impl ViewExecutor for EvidenceOverviewExecutor {
             InspectionTarget::Evidence { id } => {
                 #[cfg(feature = "multimodal")]
                 {
-                    use cognicode_core::domain::aggregates::generic_graph::NodeId;
-                    use cognicode_core::domain::ports::GraphRepository;
-                    let mvp = format!("evidence:{id}");
-                    let Some(repo) = ctx.graph_repo else {
-                        return Err(crate::error::ExplorerError::FeatureDisabled(
-                            "graph repository not wired".into(),
-                        ));
-                    };
-                    let node_id = NodeId::new(id.to_string());
-                    let node = match repo.get_node(&node_id).await {
-                        Ok(Some(n)) => n,
-                        Ok(None) => {
-                            return Err(crate::error::ExplorerError::NotFound(format!(
-                                "Evidence '{id}' not found in graph"
-                            )));
-                        }
-                        Err(e) => {
-                            return Err(crate::error::ExplorerError::NotFound(format!(
-                                "Failed to fetch evidence: {e}"
-                            )));
-                        }
-                    };
-                    let evidence_id = "evidence:evidence_overview".to_string();
-                    let evidence = vec![EvidenceBlock {
-                        id: evidence_id.clone(),
-                        kind: "evidence_overview".into(),
-                        title: format!("Evidence overview: {}", node.label),
-                        file: node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
-                        line_range: None,
-                        source_tool_or_query: "GraphRepository::get_node".into(),
-                        confidence: Some(1.0),
-                        freshness: Some("unknown".into()),
-                        provenance: None,
-                    }];
-                    let properties_json: serde_json::Value = serde_json::to_value(&node.properties)
-                        .unwrap_or_else(|_| serde_json::json!({}));
-                    let blocks = vec![
-                        ViewBlock {
-                            id: "evidence_identity".into(),
-                            title: "Evidence".into(),
-                            body: json!({
-                                "id": id,
-                                "label": node.label,
-                                "source_path": node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
-                            }),
-                        },
-                        ViewBlock {
-                            id: "evidence_properties".into(),
-                            title: "Properties".into(),
-                            body: properties_json,
-                        },
-                    ];
-                    Ok(ContextualView {
-                        object_id: mvp,
-                        view_id: "evidence-overview".into(),
-                        title: node.label,
-                        blocks,
-                        relations: Vec::new(),
-                        evidence,
-                        findings: Vec::new(),
-                        renderer_kind: RendererKind::Table,
-                        ..Default::default()
-                    })
+                    build_node_source_view(
+                        ctx,
+                        id,
+                        "evidence",
+                        "evidence-overview",
+                        "evidence_overview",
+                        "Evidence overview",
+                        "evidence_identity",
+                        "Evidence",
+                        RendererKind::Table,
+                    )
+                    .await
                 }
                 #[cfg(not(feature = "multimodal"))]
                 {
