@@ -188,6 +188,47 @@ impl InvestigationStore for PostgresInvestigationStore {
             .await
             .map_err(|e| StoreError::Transaction(e.to_string()))
     }
+
+    async fn add_artifact(
+        &self,
+        investigation_id: &str,
+        mut artifact: crate::domain::investigation::Artifact,
+    ) -> Result<crate::domain::investigation::Artifact, StoreError> {
+        let repo = PostgresRepository::from_pool(self.pool.clone());
+
+        // Verify the investigation exists before adding artifact.
+        repo.load_investigation(investigation_id)
+            .await
+            .map_err(|e| StoreError::Transaction(e.to_string()))?
+            .ok_or_else(|| StoreError::NotFound(investigation_id.to_string()))?;
+
+        // Server-side stamp provenance.created_at (spec: "server-stamped").
+        if let Some(ref mut prov) = artifact.provenance {
+            prov.created_at = time::OffsetDateTime::now_utc();
+        }
+
+        let provenance_json = artifact
+            .provenance
+            .as_ref()
+            .map(|p| serde_json::to_value(p).ok())
+            .flatten();
+
+        let artifact_row = crate::infrastructure::persistence::InvestigationArtifactRow {
+            id: artifact.id.clone(),
+            investigation_id: investigation_id.to_string(),
+            kind: artifact.kind.clone(),
+            title: artifact.title.clone(),
+            content: artifact.content.clone(),
+            generated_from: artifact.generated_from.clone(),
+            provenance: provenance_json,
+        };
+
+        repo.add_investigation_artifact(investigation_id, &artifact_row)
+            .await
+            .map_err(|e| StoreError::Transaction(e.to_string()))?;
+
+        Ok(artifact)
+    }
 }
 
 /// Convert an [`InvestigationRow`] to an [`Investigation`] domain entity.

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use time::OffsetDateTime;
 
-use crate::domain::investigation::{Evidence, Investigation};
+use crate::domain::investigation::{Artifact, Evidence, Investigation};
 use crate::domain::investigation_store::{InvestigationStore, StoreError};
 
 /// Errors that can occur during investigation operations.
@@ -105,6 +105,22 @@ impl<S: InvestigationStore> InvestigationService<S> {
     ) -> InvestigationResult<()> {
         self.store
             .add_evidence(investigation_id, evidence)
+            .await
+            .map_err(InvestigationError::from)
+    }
+
+    /// Add a single artifact to an existing investigation (ADR-010 E24.1).
+    ///
+    /// Returns `Err(InvestigationError::NotFound)` when the investigation
+    /// does not exist. The returned Artifact carries the server-stamped
+    /// provenance.created_at.
+    pub async fn add_artifact(
+        &self,
+        investigation_id: &str,
+        artifact: Artifact,
+    ) -> InvestigationResult<Artifact> {
+        self.store
+            .add_artifact(investigation_id, artifact)
             .await
             .map_err(InvestigationError::from)
     }
@@ -240,6 +256,21 @@ mod tests {
             // Mock always succeeds — evidence is not stored in the mock.
             Ok(())
         }
+
+        async fn add_artifact(
+            &self,
+            investigation_id: &str,
+            artifact: Artifact,
+        ) -> Result<Artifact, StoreError> {
+            // Check the investigation exists first.
+            let invs = self.investigations.lock().unwrap();
+            if !invs.iter().any(|i| i.id == investigation_id) {
+                return Err(StoreError::NotFound(investigation_id.to_string()));
+            }
+            drop(invs);
+            // Mock always succeeds — returns the artifact as-is.
+            Ok(artifact)
+        }
     }
 
     #[tokio::test]
@@ -374,5 +405,60 @@ mod tests {
 
         let result = service.delete_investigation("nonexistent").await;
         assert!(matches!(result, Err(InvestigationError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_add_artifact_ok() {
+        let investigation = Investigation {
+            id: "inv-001".to_string(),
+            workspace_id: "ws-001".to_string(),
+            title: "Test".to_string(),
+            goal: "Goal".to_string(),
+            status: Status::Active,
+            entry_point: None,
+            panes: vec![],
+            evidence: vec![],
+            artifacts: vec![],
+            narrative: "".to_string(),
+            related_adrs: vec![],
+            created_at: OffsetDateTime::now_utc(),
+            updated_at: OffsetDateTime::now_utc(),
+        };
+
+        let store = MockStore::new(vec![investigation]);
+        let service = InvestigationService::new(store);
+
+        let artifact = Artifact {
+            id: "art-001".to_string(),
+            kind: "mermaid".to_string(),
+            title: "Call Graph".to_string(),
+            content: "graph TD".to_string(),
+            generated_from: Some("symbol:main.rs".to_string()),
+            provenance: None,
+        };
+
+        let result = service.add_artifact("inv-001", artifact.clone()).await;
+        assert!(result.is_ok());
+        let returned = result.unwrap();
+        assert_eq!(returned.id, "art-001");
+        assert_eq!(returned.kind, "mermaid");
+    }
+
+    #[tokio::test]
+    async fn test_add_artifact_not_found() {
+        let store = MockStore::new(Vec::new());
+        let service = InvestigationService::new(store);
+
+        let artifact = Artifact {
+            id: "art-001".to_string(),
+            kind: "mermaid".to_string(),
+            title: "Call Graph".to_string(),
+            content: "graph TD".to_string(),
+            generated_from: None,
+            provenance: None,
+        };
+
+        let result = service.add_artifact("inv:nonexistent", artifact).await;
+        assert!(matches!(result, Err(InvestigationError::Store(StoreError::NotFound(_)))));
     }
 }
