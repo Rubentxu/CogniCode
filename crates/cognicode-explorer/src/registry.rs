@@ -245,10 +245,133 @@ impl crate::domain::views::ViewExecutor for ProviderExecutorAdapter {
 }
 
 // ============================================================================
-// ViewRegistry service
+// REAL_EXECUTORS — single module-level OnceLock shared by list_for and get_executor
 // ============================================================================
 
 use std::sync::Arc;
+
+type ViewExecutorMap = std::collections::HashMap<
+    &'static str,
+    &'static dyn crate::domain::views::ViewExecutor,
+>;
+
+static REAL_EXECUTORS: OnceLock<ViewExecutorMap> = OnceLock::new();
+
+fn real_executors() -> &'static ViewExecutorMap {
+    REAL_EXECUTORS.get_or_init(|| {
+        std::collections::HashMap::from([
+            (
+                "overview",
+                &crate::domain::views::OVERVIEW_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "call-graph",
+                &crate::domain::views::CALLGRAPH_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "source",
+                &crate::domain::views::SOURCE_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "quality",
+                &crate::domain::views::QUALITY_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "evidence",
+                &crate::domain::views::EVIDENCE_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "symbols",
+                &crate::domain::views::SYMBOLS_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "dependencies",
+                &crate::domain::views::DEPENDENCIES_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "hotspots",
+                &crate::domain::views::HOTSPOTS_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "architecture-drift",
+                &crate::domain::views::ARCHITECTURE_DRIFT_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "usage-examples",
+                &crate::domain::views::USAGE_EXAMPLES_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "api-surface",
+                &crate::domain::views::API_SURFACE_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "test-slice",
+                &crate::domain::views::TEST_SLICE_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "debug-slice",
+                &crate::domain::views::DEBUG_SLICE_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "change-impact-story",
+                &crate::domain::views::CHANGE_IMPACT_STORY_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "ownership-map",
+                &crate::domain::views::OWNERSHIP_MAP_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "composed-narrative",
+                &crate::domain::views::COMPOSED_NARRATIVE_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "risk_map",
+                &crate::domain::views::RISK_MAP_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "decision-graph",
+                &crate::domain::views::DECISION_GRAPH_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "architecture_rationale",
+                &crate::domain::views::ARCHITECTURE_RATIONALE_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "doc-source",
+                &crate::domain::views::DOC_SOURCE_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+            (
+                "evidence-overview",
+                &crate::domain::views::EVIDENCE_OVERVIEW_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            ),
+        ])
+    })
+}
+
+// ============================================================================
+// ViewRegistry service
+// ============================================================================
 
 /// Service-level registry for discovering built-in and (Phase 2+) runtime views.
 ///
@@ -283,121 +406,7 @@ impl ViewRegistry {
         }
 
         // Access REAL_EXECUTORS to get all registered executors
-        static REAL_EXECUTORS: OnceLock<
-            std::collections::HashMap<
-                &'static str,
-                &'static dyn crate::domain::views::ViewExecutor,
-            >,
-        > = OnceLock::new();
-        let real_map = REAL_EXECUTORS.get_or_init(|| {
-            std::collections::HashMap::from([
-                (
-                    "overview",
-                    &crate::domain::views::OVERVIEW_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "call-graph",
-                    &crate::domain::views::CALLGRAPH_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "source",
-                    &crate::domain::views::SOURCE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "quality",
-                    &crate::domain::views::QUALITY_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "evidence",
-                    &crate::domain::views::EVIDENCE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "symbols",
-                    &crate::domain::views::SYMBOLS_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "dependencies",
-                    &crate::domain::views::DEPENDENCIES_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "hotspots",
-                    &crate::domain::views::HOTSPOTS_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "architecture-drift",
-                    &crate::domain::views::ARCHITECTURE_DRIFT_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "usage-examples",
-                    &crate::domain::views::USAGE_EXAMPLES_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "api-surface",
-                    &crate::domain::views::API_SURFACE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "test-slice",
-                    &crate::domain::views::TEST_SLICE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "debug-slice",
-                    &crate::domain::views::DEBUG_SLICE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "change-impact-story",
-                    &crate::domain::views::CHANGE_IMPACT_STORY_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "ownership-map",
-                    &crate::domain::views::OWNERSHIP_MAP_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "composed-narrative",
-                    &crate::domain::views::COMPOSED_NARRATIVE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "risk_map",
-                    &crate::domain::views::RISK_MAP_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "decision-graph",
-                    &crate::domain::views::DECISION_GRAPH_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "architecture_rationale",
-                    &crate::domain::views::ARCHITECTURE_RATIONALE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "doc-source",
-                    &crate::domain::views::DOC_SOURCE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "evidence-overview",
-                    &crate::domain::views::EVIDENCE_OVERVIEW_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-            ])
-        });
+        let real_map = real_executors();
 
         // Collect ids already provided so we skip duplicates
         // Clone to owned Strings so the borrow chain is broken before we mutate descriptors
@@ -438,121 +447,7 @@ impl ViewRegistry {
         id: &str,
     ) -> Option<&'static dyn crate::domain::views::ViewExecutor> {
         // Phase 3: all 8 real executors take priority over provider adapters.
-        static REAL_EXECUTORS: OnceLock<
-            std::collections::HashMap<
-                &'static str,
-                &'static dyn crate::domain::views::ViewExecutor,
-            >,
-        > = OnceLock::new();
-        let real = REAL_EXECUTORS.get_or_init(|| {
-            std::collections::HashMap::from([
-                (
-                    "overview",
-                    &crate::domain::views::OVERVIEW_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "call-graph",
-                    &crate::domain::views::CALLGRAPH_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "source",
-                    &crate::domain::views::SOURCE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "quality",
-                    &crate::domain::views::QUALITY_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "evidence",
-                    &crate::domain::views::EVIDENCE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "symbols",
-                    &crate::domain::views::SYMBOLS_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "dependencies",
-                    &crate::domain::views::DEPENDENCIES_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "hotspots",
-                    &crate::domain::views::HOTSPOTS_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "architecture-drift",
-                    &crate::domain::views::ARCHITECTURE_DRIFT_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "usage-examples",
-                    &crate::domain::views::USAGE_EXAMPLES_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "api-surface",
-                    &crate::domain::views::API_SURFACE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "test-slice",
-                    &crate::domain::views::TEST_SLICE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "debug-slice",
-                    &crate::domain::views::DEBUG_SLICE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "change-impact-story",
-                    &crate::domain::views::CHANGE_IMPACT_STORY_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "ownership-map",
-                    &crate::domain::views::OWNERSHIP_MAP_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "composed-narrative",
-                    &crate::domain::views::COMPOSED_NARRATIVE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "risk_map",
-                    &crate::domain::views::RISK_MAP_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "decision-graph",
-                    &crate::domain::views::DECISION_GRAPH_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "architecture_rationale",
-                    &crate::domain::views::ARCHITECTURE_RATIONALE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "doc-source",
-                    &crate::domain::views::DOC_SOURCE_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-                (
-                    "evidence-overview",
-                    &crate::domain::views::EVIDENCE_OVERVIEW_EXECUTOR
-                        as &dyn crate::domain::views::ViewExecutor,
-                ),
-            ])
-        });
+        let real = real_executors();
         real.get(id).copied().or_else(|| {
             // Fall back to provider adapters for any ids not covered by Phase 2 executors.
             static EXECUTORS: OnceLock<
