@@ -5,7 +5,6 @@
 
 pub mod call_graph_repository;
 pub mod fs_source_reader;
-#[cfg(feature = "multimodal")]
 pub mod in_memory_graph_repository;
 /// PG-backed adapter for the `QualityRepository` port. Compiled
 /// only when the `postgres` feature is enabled; without it, the
@@ -22,11 +21,8 @@ pub mod postgres_quality;
 pub mod postgres_edge_emitter;
 
 /// PG-backed adapter for the `GraphRepository` port (read+write).
-/// Compiled only when both `multimodal` and `postgres` features are enabled.
-/// Note: full un-gating to just `postgres` awaits the follow-up that moves
-/// `NodeKind::Doc/Decision/Evidence` and `EdgeKind::Justifies/Cites/Resolves/CorroboratedBy`
-/// out of the `multimodal` gate in `cognicode-core` domain types.
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+/// Compiled only when the `postgres` feature is enabled.
+#[cfg(feature = "postgres")]
 pub mod pg_graph_repository;
 
 /// Graph-shaped quality hotspot adapter combining fan-in with weighted issue counts.
@@ -35,9 +31,8 @@ pub mod quality_graph_repository;
 
 pub use call_graph_repository::CallGraphRepository;
 pub use fs_source_reader::FsSourceReader;
-#[cfg(feature = "multimodal")]
 pub use in_memory_graph_repository::InMemoryGraphRepository;
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 pub use pg_graph_repository::PgGraphRepository;
 #[cfg(feature = "postgres")]
 pub use postgres_edge_emitter::PostgresEdgeEmitter;

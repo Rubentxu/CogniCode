@@ -118,6 +118,12 @@ impl<'a> QualityGraphRepository<'a> {
                     view_id: "risk_map".into(),
                 });
             }
+            InspectionTarget::Doc { .. } | InspectionTarget::Evidence { .. } => {
+                return Err(ExplorerError::ViewNotAvailable {
+                    object_id: format!("{:?}", target),
+                    view_id: "risk_map".into(),
+                });
+            }
         };
 
         // Collect hotspots with risk scores.

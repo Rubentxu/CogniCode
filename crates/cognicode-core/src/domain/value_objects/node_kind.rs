@@ -9,15 +9,16 @@
 //! `System` are C4-model architectural node kinds added by the
 //! `c4-architecture-nodes` change.
 //!
-//! All non-`Symbol` variants are gated behind the `multimodal` Cargo
-//! feature so the default build is byte-for-byte unchanged.
+//! Decision, Doc, and Evidence are available in the default (no-feature) build
+//! to support the knowledge-layer read path. Issue, Component, Container, System,
+//! and Route remain behind `multimodal` (write-extraction gates).
 //!
 //! ```text
 //! NodeKind = Symbol(SymbolKind)
-//!          | Decision     #[cfg(feature = "multimodal")]
-//!          | Doc          #[cfg(feature = "multimodal")]
+//!          | Decision     (default build — knowledge read)
+//!          | Doc          (default build — knowledge read)
+//!          | Evidence     (default build — knowledge read)
 //!          | Issue        #[cfg(feature = "multimodal")]
-//!          | Evidence     #[cfg(feature = "multimodal")]
 //!          | Component    #[cfg(feature = "multimodal")]
 //!          | Container    #[cfg(feature = "multimodal")]
 //!          | System       #[cfg(feature = "multimodal")]
@@ -52,17 +53,14 @@ pub enum NodeKindParseError {
 pub enum NodeKind {
     /// A code symbol — wraps the legacy 22-variant `SymbolKind`.
     Symbol(SymbolKind),
-    /// A documented decision (ADR / RFC). Multimodal.
-    #[cfg(feature = "multimodal")]
+    /// A documented decision (ADR / RFC). Available in the default build.
     Decision,
-    /// A documentation node (markdown, MDX, plain text). Multimodal.
-    #[cfg(feature = "multimodal")]
+    /// A documentation node (markdown, MDX, plain text). Available in the default build.
     Doc,
     /// An issue tracker artifact (Linear / GitHub issue). Multimodal.
     #[cfg(feature = "multimodal")]
     Issue,
-    /// An evidence node (e.g. benchmark result, fuzzer finding). Multimodal.
-    #[cfg(feature = "multimodal")]
+    /// An evidence node (e.g. benchmark result, fuzzer finding). Available in the default build.
     Evidence,
     /// A C4-model component (grouping of related symbols). Multimodal.
     #[cfg(feature = "multimodal")]
@@ -96,13 +94,10 @@ impl FromStr for NodeKind {
             "symbol" => SymbolKind::from_str(s)
                 .map(NodeKind::Symbol)
                 .map_err(|_| NodeKindParseError::Unknown(s.to_string())),
-            #[cfg(feature = "multimodal")]
             "decision" => Ok(NodeKind::Decision),
-            #[cfg(feature = "multimodal")]
             "doc" => Ok(NodeKind::Doc),
             #[cfg(feature = "multimodal")]
             "issue" => Ok(NodeKind::Issue),
-            #[cfg(feature = "multimodal")]
             "evidence" => Ok(NodeKind::Evidence),
             #[cfg(feature = "multimodal")]
             "component" => Ok(NodeKind::Component),
@@ -124,13 +119,10 @@ impl NodeKind {
     pub fn as_str(&self) -> &'static str {
         match self {
             NodeKind::Symbol(_) => "symbol",
-            #[cfg(feature = "multimodal")]
             NodeKind::Decision => "decision",
-            #[cfg(feature = "multimodal")]
             NodeKind::Doc => "doc",
             #[cfg(feature = "multimodal")]
             NodeKind::Issue => "issue",
-            #[cfg(feature = "multimodal")]
             NodeKind::Evidence => "evidence",
             #[cfg(feature = "multimodal")]
             NodeKind::Component => "component",
@@ -144,16 +136,10 @@ impl NodeKind {
     }
 
     /// Returns `true` if this kind is a multimodal (non-code) node.
-    #[cfg(feature = "multimodal")]
+    /// Decision, Doc, and Evidence are available in the default build but
+    /// are still semantically "multimodal" kinds (not code symbols).
     pub fn is_multimodal(&self) -> bool {
         !matches!(self, NodeKind::Symbol(_))
-    }
-
-    /// Returns `true` if this kind is a multimodal (non-code) node.
-    /// Without the `multimodal` feature, no kind is multimodal.
-    #[cfg(not(feature = "multimodal"))]
-    pub fn is_multimodal(&self) -> bool {
-        false
     }
 }
 
@@ -189,25 +175,16 @@ mod tests {
         assert_ne!(parsed, kind);
     }
 
-    /// The four multimodal variants must exist and round-trip through
-    /// JSON when the `multimodal` feature is enabled. Phase 1 of the
-    /// C4 architecture change adds three more (`Component`,
-    /// `Container`, `System`) for a total of 7. Phase 2 (e15.5) adds
-    /// `Route` for API route ingestion.
+    /// Decision, Doc, and Evidence are always available (knowledge-layer read path).
+    /// Issue, Component, Container, System, Route require the `multimodal` feature.
     #[test]
-    #[cfg(feature = "multimodal")]
-    fn node_kind_multimodal_variants() {
-        for kind in [
-            NodeKind::Decision,
-            NodeKind::Doc,
-            NodeKind::Issue,
-            NodeKind::Evidence,
-            NodeKind::Component,
-            NodeKind::Container,
-            NodeKind::System,
-            NodeKind::Route,
-        ] {
-            assert!(kind.is_multimodal());
+    fn node_kind_knowledge_variants() {
+        // Decision, Doc, Evidence are always available.
+        for kind in [NodeKind::Decision, NodeKind::Doc, NodeKind::Evidence] {
+            assert!(
+                kind.is_multimodal(),
+                "{kind:?} should be multimodal"
+            );
             let json = serde_json::to_string(&kind).expect("serialize");
             let parsed: NodeKind = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(parsed, kind);
@@ -218,13 +195,23 @@ mod tests {
         assert!(!sym.is_multimodal());
     }
 
-    /// Without the `multimodal` feature, only `NodeKind::Symbol` is
-    /// constructable; `is_multimodal` always returns `false`.
+    /// The remaining multimodal-only variants (Issue, Component, Container, System, Route)
+    /// are only tested when the `multimodal` feature is enabled.
     #[test]
-    #[cfg(not(feature = "multimodal"))]
-    fn node_kind_symbol_only_without_feature() {
-        let kind = NodeKind::Symbol(SymbolKind::Module);
-        assert!(!kind.is_multimodal());
+    #[cfg(feature = "multimodal")]
+    fn node_kind_multimodal_only_variants() {
+        for kind in [
+            NodeKind::Issue,
+            NodeKind::Component,
+            NodeKind::Container,
+            NodeKind::System,
+            NodeKind::Route,
+        ] {
+            assert!(kind.is_multimodal());
+            let json = serde_json::to_string(&kind).expect("serialize");
+            let parsed: NodeKind = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(parsed, kind);
+        }
     }
 
     /// `Display` must produce a stable, kebab-case identifier for every
@@ -235,12 +222,13 @@ mod tests {
             format!("{}", NodeKind::Symbol(SymbolKind::Function)),
             "symbol"
         );
+        // Knowledge-layer variants: always available.
+        assert_eq!(format!("{}", NodeKind::Decision), "decision");
+        assert_eq!(format!("{}", NodeKind::Doc), "doc");
+        assert_eq!(format!("{}", NodeKind::Evidence), "evidence");
         #[cfg(feature = "multimodal")]
         {
-            assert_eq!(format!("{}", NodeKind::Decision), "decision");
-            assert_eq!(format!("{}", NodeKind::Doc), "doc");
             assert_eq!(format!("{}", NodeKind::Issue), "issue");
-            assert_eq!(format!("{}", NodeKind::Evidence), "evidence");
             assert_eq!(format!("{}", NodeKind::Component), "component");
             assert_eq!(format!("{}", NodeKind::Container), "container");
             assert_eq!(format!("{}", NodeKind::System), "system");
@@ -255,13 +243,33 @@ mod tests {
         let sym = NodeKind::Symbol(SymbolKind::Class);
         assert_eq!(sym.as_str(), format!("{}", sym));
 
+        // Knowledge-layer variants: always available.
+        assert_eq!(
+            NodeKind::Decision.as_str(),
+            format!("{}", NodeKind::Decision)
+        );
+        assert_eq!(NodeKind::Doc.as_str(), format!("{}", NodeKind::Doc));
+        assert_eq!(
+            NodeKind::Evidence.as_str(),
+            format!("{}", NodeKind::Evidence)
+        );
+
         #[cfg(feature = "multimodal")]
         {
+            assert_eq!(NodeKind::Issue.as_str(), format!("{}", NodeKind::Issue));
             assert_eq!(
-                NodeKind::Decision.as_str(),
-                format!("{}", NodeKind::Decision)
+                NodeKind::Component.as_str(),
+                format!("{}", NodeKind::Component)
             );
-            assert_eq!(NodeKind::Doc.as_str(), format!("{}", NodeKind::Doc));
+            assert_eq!(
+                NodeKind::Container.as_str(),
+                format!("{}", NodeKind::Container)
+            );
+            assert_eq!(
+                NodeKind::System.as_str(),
+                format!("{}", NodeKind::System)
+            );
+            assert_eq!(NodeKind::Route.as_str(), format!("{}", NodeKind::Route));
         }
     }
 
@@ -279,12 +287,13 @@ mod tests {
         use std::collections::HashSet;
         let mut set: HashSet<NodeKind> = HashSet::new();
         set.insert(NodeKind::Symbol(SymbolKind::Function));
+        // Knowledge-layer variants: always available.
+        set.insert(NodeKind::Decision);
+        set.insert(NodeKind::Doc);
+        set.insert(NodeKind::Evidence);
         #[cfg(feature = "multimodal")]
         {
-            set.insert(NodeKind::Decision);
-            set.insert(NodeKind::Doc);
             set.insert(NodeKind::Issue);
-            set.insert(NodeKind::Evidence);
             set.insert(NodeKind::Component);
             set.insert(NodeKind::Container);
             set.insert(NodeKind::System);
@@ -292,11 +301,12 @@ mod tests {
         }
         // The Symbol is already present; inserting it again is a no-op.
         set.insert(NodeKind::Symbol(SymbolKind::Function));
-        // 1 Symbol + 8 multimodal = 9 total under the feature.
+        // 1 Symbol + 3 always-on + 5 multimodal = 9 total under the feature,
+        // 1 Symbol + 3 always-on = 4 total without.
         #[cfg(feature = "multimodal")]
         assert_eq!(set.len(), 9);
         #[cfg(not(feature = "multimodal"))]
-        assert_eq!(set.len(), 1);
+        assert_eq!(set.len(), 4);
     }
 
     /// `NodeKind::Route` is multimodal, parses from "route", and emits "route"

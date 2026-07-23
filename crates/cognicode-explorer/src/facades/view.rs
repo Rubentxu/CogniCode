@@ -408,7 +408,6 @@ impl ViewService for ViewServiceImpl {
             reader: self.reader.as_ref(),
             quality: self.quality.as_ref().map(|q| q.as_ref()),
             graph_query: self.graph_query.as_ref().map(|g| g.as_ref()),
-            #[cfg(feature = "multimodal")]
             graph_repo: self.graph_repo.as_ref().map(|g| g.as_ref()),
         };
 

@@ -1439,7 +1439,9 @@ impl ViewExecutor for OverviewExecutor {
             | InspectionTarget::Rule { .. }
             | InspectionTarget::SavedExploration(_)
             | InspectionTarget::Investigation(_)
-            | InspectionTarget::Decision { .. } => {
+            | InspectionTarget::Decision { .. }
+            | InspectionTarget::Doc { .. }
+            | InspectionTarget::Evidence { .. } => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "overview".into(),
@@ -2174,7 +2176,9 @@ impl ViewExecutor for QualityExecutor {
             InspectionTarget::Rule { rule_id } => Ok(build_rule_detail(rule_id, ctx.quality)),
             InspectionTarget::SavedExploration(_)
             | InspectionTarget::Investigation(_)
-            | InspectionTarget::Decision { .. } => {
+            | InspectionTarget::Decision { .. }
+            | InspectionTarget::Doc { .. }
+            | InspectionTarget::Evidence { .. } => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "quality".into(),
@@ -2432,7 +2436,9 @@ impl ViewExecutor for RiskMapExecutor {
             | InspectionTarget::Rule { .. }
             | InspectionTarget::SavedExploration(_)
             | InspectionTarget::Investigation(_)
-            | InspectionTarget::Decision { .. } => {
+            | InspectionTarget::Decision { .. }
+            | InspectionTarget::Doc { .. }
+            | InspectionTarget::Evidence { .. } => {
                 return Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "risk_map".into(),
@@ -4599,7 +4605,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4637,7 +4642,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4666,7 +4670,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4691,7 +4694,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4725,7 +4727,6 @@ mod tests {
             reader: &MockReader::new(reader_content),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4753,7 +4754,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4786,7 +4786,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4812,7 +4811,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4841,7 +4839,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4885,7 +4882,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4922,7 +4918,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4951,7 +4946,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4986,7 +4980,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5020,7 +5013,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5065,7 +5057,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5106,7 +5097,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5404,7 +5394,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5433,7 +5422,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5462,7 +5450,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5549,7 +5536,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: Some(&mock_gq as &dyn GraphQueryPort),
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5616,7 +5602,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: Some(&mock_gq as &dyn GraphQueryPort),
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5680,7 +5665,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5731,7 +5715,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5757,7 +5740,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5783,7 +5765,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5951,7 +5932,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tracing::warn;
 
+use crate::domain::knowledge::{project_decision, project_doc, project_evidence};
 use crate::domain::object_identity::ObjectIdentity;
 use crate::domain::views::scope_contains_file;
 use crate::dto::{
@@ -111,8 +112,7 @@ impl SearchService for SearchServiceImpl {
         let query_for_blocking = query.to_string();
         let kind_filter = kind.map(|s| s.to_string());
 
-        // Graph repo for multimodal search (Doc/Decision/Evidence families)
-        #[cfg(feature = "multimodal")]
+        // Graph repo for Doc/Decision/Evidence families
         let graph_repo = self.graph_repo.clone();
 
         // 1) Symbol hits via spawn_blocking
@@ -374,8 +374,7 @@ impl SearchService for SearchServiceImpl {
             Vec::new()
         };
 
-        // 9-11) Graph families (Doc, Decision, Evidence) — multimodal only
-        #[cfg(feature = "multimodal")]
+        // 9-11) Graph families (Doc, Decision, Evidence) — now available in default build
         let graph_results: Vec<SpotterSearchResult> = {
             let mut results = Vec::new();
             if let Some(ref graph) = graph_repo {
@@ -492,9 +491,6 @@ impl SearchService for SearchServiceImpl {
             }
             results
         };
-
-        #[cfg(not(feature = "multimodal"))]
-        let graph_results: Vec<SpotterSearchResult> = Vec::new();
 
         // Build symbol SpotterSearchResults
         let symbol_hits: Vec<SpotterSearchResult> = symbol_spotter_results
@@ -658,6 +654,45 @@ impl SearchService for SearchServiceImpl {
                 }
             }
             return Err(ExplorerError::ObjectNotFound(object_id.to_string()));
+        }
+
+        // Handle Doc/Decision/Evidence async path — queries graph_repo
+        if matches!(
+            identity,
+            ObjectIdentity::Doc { .. }
+                | ObjectIdentity::Decision { .. }
+                | ObjectIdentity::Evidence { .. }
+        ) {
+            if let Some(ref graph_repo) = self.graph_repo {
+                let id = match &identity {
+                    ObjectIdentity::Doc { id } => id.clone(),
+                    ObjectIdentity::Decision { id } => id.clone(),
+                    ObjectIdentity::Evidence { id } => id.clone(),
+                    _ => return Err(ExplorerError::ObjectNotFound(object_id.to_string())),
+                };
+
+                let summary = match &identity {
+                    ObjectIdentity::Doc { .. } => {
+                        project_doc(graph_repo.as_ref(), &id).await
+                    }
+                    ObjectIdentity::Decision { .. } => {
+                        project_decision(graph_repo.as_ref(), &id).await
+                    }
+                    ObjectIdentity::Evidence { .. } => {
+                        project_evidence(graph_repo.as_ref(), &id).await
+                    }
+                    _ => None,
+                };
+
+                if let Some(mut s) = summary {
+                    // Enrich with available views from registry
+                    s.available_views =
+                        self.view_registry.list_for(s.object_type.clone());
+                    return Ok(s);
+                }
+            }
+            // graph_repo not wired or projection returned None — fall through to
+            // stub (sync path) for a graceful placeholder response
         }
 
         // Run sync inspection in a blocking thread.

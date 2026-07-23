@@ -37,42 +37,42 @@
 //! `ExplorerResult`) — the adapter wraps upstream failures in
 //! `GraphError::Storage` / `GraphError::InvalidInput`.
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use std::collections::HashMap;
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use std::collections::{HashSet, VecDeque};
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use std::str::FromStr;
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::ports::GraphRepository;
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::value_objects::provenance::Provenance;
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::{GraphError, GraphResult, SearchPage};
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use async_trait::async_trait;
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use chrono::{DateTime, Utc};
 
 /// Adapter that backs the `GraphRepository` port with a
 /// PostgreSQL pool. Constructed via [`PgGraphRepository::new`]
 /// from a `sqlx::PgPool`. Cloning the adapter is cheap (the
 /// pool itself is an `Arc`).
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 #[derive(Clone)]
 pub struct PgGraphRepository {
     pool: sqlx::PgPool,
 }
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 impl PgGraphRepository {
     /// Build a new adapter over the given PG pool. The pool is
     /// shared (cloned) across clones of the adapter.
@@ -81,7 +81,7 @@ impl PgGraphRepository {
     }
 }
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 #[async_trait]
 impl GraphRepository for PgGraphRepository {
     /// PG-backed read methods. Delegates to `PostgresRepository::find_graph_nodes`
@@ -339,7 +339,7 @@ impl GraphRepository for PgGraphRepository {
 // They are inherent methods on `PgGraphRepository` and are called
 // directly from the ingest pipeline (not through the trait object).
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 impl PgGraphRepository {
     async fn upsert_nodes(&self, nodes: Vec<GraphNode>) -> GraphResult<usize> {
         // Empty input is a no-op (T4 contract).
@@ -488,7 +488,7 @@ impl PgGraphRepository {
 // ============================================================================
 
 /// A row from `graph_nodes` that can be directly scanned by sqlx.
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 #[derive(sqlx::FromRow)]
 struct GraphNodeRow {
     id: String,
@@ -500,7 +500,7 @@ struct GraphNodeRow {
     updated_at: String,
 }
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 impl GraphNodeRow {
     fn into_graph_node(self) -> GraphNode {
         use std::collections::HashMap;
@@ -540,7 +540,7 @@ impl GraphNodeRow {
     }
 }
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 #[derive(sqlx::FromRow)]
 struct GraphEdgeRow {
     source_id: String,
@@ -554,7 +554,7 @@ struct GraphEdgeRow {
     metadata: serde_json::Value,
 }
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 impl GraphEdgeRow {
     fn into_graph_edge(self) -> GraphResult<GraphEdge> {
         let kind = EdgeKind::from_str(&self.kind).map_err(|e| {
