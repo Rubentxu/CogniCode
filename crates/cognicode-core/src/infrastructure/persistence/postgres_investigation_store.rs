@@ -106,6 +106,7 @@ impl InvestigationStore for PostgresInvestigationStore {
                     title: a.title.clone(),
                     content: a.content.clone(),
                     generated_from: a.generated_from.clone(),
+                    provenance: a.provenance.as_ref().map(|p| serde_json::to_value(p).ok()).flatten(),
                 },
             )
             .collect();
@@ -248,12 +249,18 @@ async fn row_to_investigation(
 
     let artifacts: Vec<_> = artifact_rows
         .into_iter()
-        .map(|r| crate::domain::investigation::Artifact {
-            id: r.id,
-            kind: r.kind,
-            title: r.title,
-            content: r.content,
-            generated_from: r.generated_from,
+        .map(|r| {
+            let provenance = r
+                .provenance
+                .and_then(|v| serde_json::from_value::<crate::domain::investigation::DiagramProvenance>(v).ok());
+            crate::domain::investigation::Artifact {
+                id: r.id,
+                kind: r.kind,
+                title: r.title,
+                content: r.content,
+                generated_from: r.generated_from,
+                provenance,
+            }
         })
         .collect();
 

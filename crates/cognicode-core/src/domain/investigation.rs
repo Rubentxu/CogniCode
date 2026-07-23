@@ -1,10 +1,44 @@
-//! Investigation domain entity — ADR-005 Phase INV-1.
+//! Investigation domain entity — ADR-005 Phase INV-1 + ADR-010 E24.1.
 //!
 //! An Investigation is a focused exploration session that tracks evidence,
 //! artifacts, and narrative as the user investigates a code intelligence question.
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+
+/// Export format for diagram artifacts — ADR-010 R2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportFormat {
+    Mermaid,
+    Svg,
+    Png,
+    Drawio,
+}
+
+/// Provenance metadata for a diagram artifact — ADR-010 R1–R2.
+/// Carries the structured source that generated this diagram.
+/// `view_kind` is stored as a snake_case string tag validated at the
+/// explorer boundary (ViewKind enum lives in cognicode-explorer, which
+/// cannot be depended on by cognicode-core).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct DiagramProvenance {
+    /// The object this diagram was generated from (e.g. `symbol:path:name:line`).
+    pub object_id: String,
+    /// The view kind that generated this diagram (e.g. `call_graph`, `c4_component`).
+    pub view_kind: String,
+    /// ViewSpec id if the diagram was generated from a custom ViewSpec.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec_id: Option<String>,
+    /// MoldQL query id if the diagram was generated from a query.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query_id: Option<String>,
+    /// The export format used to produce this artifact.
+    pub export_format: ExportFormat,
+    /// When this artifact was generated (server-stamped at persist time).
+    pub created_at: OffsetDateTime,
+}
 
 /// Snapshot of a single pane's state at save time (ADR-040 Wave 3).
 /// `pane_id` is the frontend-generated id; `object_id` and `view_id`
@@ -96,7 +130,12 @@ pub struct Artifact {
     /// The generated content.
     pub content: String,
     /// Optional reference to the object/view that generated this artifact.
+    /// Retained for backward compatibility with pre-E24.1 rows.
     pub generated_from: Option<String>,
+    /// Structured provenance metadata — ADR-010 R1–R2.
+    /// None for pre-E24.1 rows or for artifacts without a structured source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<DiagramProvenance>,
 }
 
 /// Investigation aggregate root.

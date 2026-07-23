@@ -1588,6 +1588,7 @@ async fn add_investigation_artifact(
         title: request.title,
         content: request.content,
         generated_from: request.generated_from,
+        provenance: None,
     };
 
     // Update the investigation with the new artifact
