@@ -7,8 +7,8 @@
 //! a `GraphQueryPort`. When quality data is not available, `rank_hotspots`
 //! returns fan-in-only hotspots (still ranked, still useful).
 
-use crate::domain::lenses::hotspots::compute_risk;
 use crate::domain::lens::severity_weight;
+use crate::domain::lenses::hotspots::compute_risk;
 use crate::dto::InspectionTarget;
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::ports::quality_repository::QualityRepository;
@@ -127,9 +127,7 @@ impl<'a> QualityGraphRepository<'a> {
             let weighted_issues = self
                 .quality
                 .ok_or_else(|| {
-                    ExplorerError::QualityUnavailable(
-                        "quality repository not wired".to_string(),
-                    )
+                    ExplorerError::QualityUnavailable("quality repository not wired".to_string())
                 })?
                 .issues_at_line(&symbol.file, symbol.line)
                 .unwrap_or_default()
@@ -255,7 +253,10 @@ mod tests {
         fn issue_by_id(&self, _id: i64) -> ExplorerResult<Option<QualityIssue>> {
             Ok(None)
         }
-        fn rule_summary(&self, _rule_id: &str) -> ExplorerResult<crate::ports::quality_repository::RuleSummary> {
+        fn rule_summary(
+            &self,
+            _rule_id: &str,
+        ) -> ExplorerResult<crate::ports::quality_repository::RuleSummary> {
             Ok(crate::ports::quality_repository::RuleSummary {
                 rule_id: String::new(),
                 description: String::new(),
@@ -283,10 +284,22 @@ mod tests {
     /// Mock GraphQueryPort that returns configurable fan-in/fan-out, callers/callees, and metadata.
     struct MockGraphQueryPort {
         fan_in_map: std::collections::HashMap<SymbolId, usize>,
-        callers_map: std::collections::HashMap<SymbolId, Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>>,
-        callees_map: std::collections::HashMap<SymbolId, Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>>,
-        callers_metadata_map: std::collections::HashMap<SymbolId, Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata>>,
-        callees_metadata_map: std::collections::HashMap<SymbolId, Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata>>,
+        callers_map: std::collections::HashMap<
+            SymbolId,
+            Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>,
+        >,
+        callees_map: std::collections::HashMap<
+            SymbolId,
+            Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>,
+        >,
+        callers_metadata_map: std::collections::HashMap<
+            SymbolId,
+            Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata>,
+        >,
+        callees_metadata_map: std::collections::HashMap<
+            SymbolId,
+            Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata>,
+        >,
     }
 
     impl MockGraphQueryPort {
@@ -303,29 +316,51 @@ mod tests {
             self.fan_in_map.insert(id, fan_in);
             self
         }
-        fn with_callers(mut self, id: SymbolId, callers: Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>) -> Self {
+        fn with_callers(
+            mut self,
+            id: SymbolId,
+            callers: Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>,
+        ) -> Self {
             self.callers_map.insert(id, callers);
             self
         }
-        fn with_callees(mut self, id: SymbolId, callees: Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>) -> Self {
+        fn with_callees(
+            mut self,
+            id: SymbolId,
+            callees: Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>,
+        ) -> Self {
             self.callees_map.insert(id, callees);
             self
         }
-        fn with_callers_metadata(mut self, id: SymbolId, metadata: Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata>) -> Self {
+        fn with_callers_metadata(
+            mut self,
+            id: SymbolId,
+            metadata: Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata>,
+        ) -> Self {
             self.callers_metadata_map.insert(id, metadata);
             self
         }
-        fn with_callees_metadata(mut self, id: SymbolId, metadata: Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata>) -> Self {
+        fn with_callees_metadata(
+            mut self,
+            id: SymbolId,
+            metadata: Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata>,
+        ) -> Self {
             self.callees_metadata_map.insert(id, metadata);
             self
         }
     }
 
     impl GraphQueryPort for MockGraphQueryPort {
-        fn callers(&self, id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
+        fn callers(
+            &self,
+            id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
             self.callers_map.get(id).cloned().unwrap_or_default()
         }
-        fn callees(&self, id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
+        fn callees(
+            &self,
+            id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget> {
             self.callees_map.get(id).cloned().unwrap_or_default()
         }
         fn fan_in(&self, id: &SymbolId) -> usize {
@@ -338,18 +373,25 @@ mod tests {
             &self,
             id: &SymbolId,
         ) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
-            self.callers_metadata_map.get(id).cloned().unwrap_or_default()
+            self.callers_metadata_map
+                .get(id)
+                .cloned()
+                .unwrap_or_default()
         }
         fn callees_with_metadata(
             &self,
             id: &SymbolId,
         ) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
-            self.callees_metadata_map.get(id).cloned().unwrap_or_default()
+            self.callees_metadata_map
+                .get(id)
+                .cloned()
+                .unwrap_or_default()
         }
         fn dependencies_with_metadata(
             &self,
             _id: &SymbolId,
-        ) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata> {
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata>
+        {
             Vec::new()
         }
         fn traverse_callees(

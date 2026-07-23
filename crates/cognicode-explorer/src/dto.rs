@@ -305,7 +305,9 @@ pub enum InspectionTarget {
     SavedExploration(ExplorationSession),
     Investigation(Investigation),
     /// A decision artifact from the graph, addressed by its decision id.
-    Decision { id: String },
+    Decision {
+        id: String,
+    },
 }
 
 /// Context passed to ViewExecutor::build(). The service populates all

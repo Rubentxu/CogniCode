@@ -33,9 +33,8 @@ pub struct SearchServiceImpl {
     quality: Option<Arc<dyn crate::ports::QualityRepository>>,
     persistence: Option<Arc<dyn PersistenceService>>,
     investigation: Option<Arc<dyn crate::facades::InvestigationFacade>>,
-    /// Graph repository for multimodal search (Doc/Decision/Evidence families).
-    /// `None` when multimodal feature is disabled or graph is not wired.
-    #[cfg(feature = "multimodal")]
+    /// Graph repository for Doc/Decision/Evidence families.
+    /// `None` when postgres feature is absent or graph is not wired.
     graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
 }
 
@@ -49,9 +48,7 @@ impl SearchServiceImpl {
         quality: Option<Arc<dyn crate::ports::QualityRepository>>,
         persistence: Option<Arc<dyn PersistenceService>>,
         investigation: Option<Arc<dyn crate::facades::InvestigationFacade>>,
-        #[cfg(feature = "multimodal")] graph_repo: Option<
-            Arc<dyn cognicode_core::domain::ports::GraphRepository>,
-        >,
+        graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
     ) -> Self {
         Self {
             repo,
@@ -61,7 +58,6 @@ impl SearchServiceImpl {
             quality,
             persistence,
             investigation,
-            #[cfg(feature = "multimodal")]
             graph_repo,
         }
     }

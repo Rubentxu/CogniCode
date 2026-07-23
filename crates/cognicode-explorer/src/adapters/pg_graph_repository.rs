@@ -110,12 +110,12 @@ impl GraphRepository for PgGraphRepository {
         let limit_i64 = limit as i64;
 
         // Build the FTS5 query. We search in label and properties.
-            // Cursor is offset-based for simplicity: "OFFSET $2 LIMIT $1".
-            let offset: i64 = cursor.and_then(|c| c.parse::<i64>().ok()).unwrap_or(0);
+        // Cursor is offset-based for simplicity: "OFFSET $2 LIMIT $1".
+        let offset: i64 = cursor.and_then(|c| c.parse::<i64>().ok()).unwrap_or(0);
 
-            let items = if kinds.is_empty() {
-                // No kind filter — search all node kinds
-                sqlx::query_as::<_, GraphNodeRow>(
+        let items = if kinds.is_empty() {
+            // No kind filter — search all node kinds
+            sqlx::query_as::<_, GraphNodeRow>(
                     "SELECT id, kind, label, source_path, properties, \
                             created_at::text AS created_at, \
                             updated_at::text AS updated_at \
@@ -131,10 +131,10 @@ impl GraphRepository for PgGraphRepository {
                 .fetch_all(&pool)
                 .await
                 .map_err(|e| GraphError::Storage(format!("pg_graph_repository search: {e}")))?
-            } else {
-                // Kind filter — search only within specified kinds
-                let kinds_array = kinds.join(",");
-                sqlx::query_as::<_, GraphNodeRow>(
+        } else {
+            // Kind filter — search only within specified kinds
+            let kinds_array = kinds.join(",");
+            sqlx::query_as::<_, GraphNodeRow>(
                     &format!(
                         "SELECT id, kind, label, source_path, properties, \
                                 created_at::text AS created_at, \
@@ -154,23 +154,23 @@ impl GraphRepository for PgGraphRepository {
                 .fetch_all(&pool)
                 .await
                 .map_err(|e| GraphError::Storage(format!("pg_graph_repository search with kinds: {e}")))?
-            };
+        };
 
-            let raw_total = items.len() as u64;
-            let nodes: Vec<GraphNode> = items.into_iter().map(|r| r.into_graph_node()).collect();
-            let next_cursor = if nodes.len() as i64 == limit_i64 {
-                Some((offset + limit_i64).to_string())
-            } else {
-                None
-            };
+        let raw_total = items.len() as u64;
+        let nodes: Vec<GraphNode> = items.into_iter().map(|r| r.into_graph_node()).collect();
+        let next_cursor = if nodes.len() as i64 == limit_i64 {
+            Some((offset + limit_i64).to_string())
+        } else {
+            None
+        };
 
-            Ok(SearchPage {
-                items: nodes,
-                raw_total,
-                next_cursor,
-                raw_rank: 0.0,
-                item_ranks: Vec::new(),
-            })
+        Ok(SearchPage {
+            items: nodes,
+            raw_total,
+            next_cursor,
+            raw_rank: 0.0,
+            item_ranks: Vec::new(),
+        })
     }
 
     async fn find_nodes_by_kind(&self, kind: &NodeKind) -> GraphResult<Vec<GraphNode>> {
@@ -188,9 +188,7 @@ impl GraphRepository for PgGraphRepository {
         .bind(&kind_str)
         .fetch_all(&pool)
         .await
-        .map_err(|e| {
-            GraphError::Storage(format!("pg_graph_repository find_nodes_by_kind: {e}"))
-        })?;
+        .map_err(|e| GraphError::Storage(format!("pg_graph_repository find_nodes_by_kind: {e}")))?;
 
         Ok(rows.into_iter().map(|r| r.into_graph_node()).collect())
     }
@@ -218,7 +216,11 @@ impl GraphRepository for PgGraphRepository {
         Ok(Vec::new())
     }
 
-    async fn edges_by_kind(&self, _node: &NodeId, _kinds: &[EdgeKind]) -> GraphResult<Vec<GraphEdge>> {
+    async fn edges_by_kind(
+        &self,
+        _node: &NodeId,
+        _kinds: &[EdgeKind],
+    ) -> GraphResult<Vec<GraphEdge>> {
         // Stub: full edges_by_kind implementation is deferred to
         // a follow-up that wires into `find_graph_edges`. The trait
         // method is required so the impl compiles; the runtime
@@ -273,9 +275,7 @@ impl GraphRepository for PgGraphRepository {
             .fetch_all(&pool)
             .await
             .map_err(|e| {
-                GraphError::Storage(format!(
-                    "pg_graph_repository rationale_subgraph edges: {e}"
-                ))
+                GraphError::Storage(format!("pg_graph_repository rationale_subgraph edges: {e}"))
             })?;
 
             for row in edge_rows {
@@ -304,17 +304,19 @@ impl GraphRepository for PgGraphRepository {
                         ))
                     })?;
 
-                    nodes.push(target_row.map(GraphNodeRow::into_graph_node).unwrap_or_else(|| {
-                        GraphNode {
-                            id: edge.target.clone(),
-                            kind: NodeKind::Doc,
-                            label: edge.target.as_str().to_string(),
-                            source_path: None,
-                            properties: HashMap::new(),
-                            created_at: Utc::now(),
-                            updated_at: Utc::now(),
-                        }
-                    }));
+                    nodes.push(
+                        target_row
+                            .map(GraphNodeRow::into_graph_node)
+                            .unwrap_or_else(|| GraphNode {
+                                id: edge.target.clone(),
+                                kind: NodeKind::Doc,
+                                label: edge.target.as_str().to_string(),
+                                source_path: None,
+                                properties: HashMap::new(),
+                                created_at: Utc::now(),
+                                updated_at: Utc::now(),
+                            }),
+                    );
                 }
 
                 edges.push(edge.clone());
@@ -556,7 +558,10 @@ struct GraphEdgeRow {
 impl GraphEdgeRow {
     fn into_graph_edge(self) -> GraphResult<GraphEdge> {
         let kind = EdgeKind::from_str(&self.kind).map_err(|e| {
-            GraphError::Storage(format!("pg_graph_repository edge kind parse '{}': {e}", self.kind))
+            GraphError::Storage(format!(
+                "pg_graph_repository edge kind parse '{}': {e}",
+                self.kind
+            ))
         })?;
         let provenance = Provenance::from_str(&self.provenance).unwrap_or(Provenance::Extracted);
         let metadata: HashMap<String, String> = self

@@ -5,18 +5,12 @@
 //! the PostgreSQL adapter) implement the trait; domain + service
 //! code depend on the trait, not on the concrete adapters.
 //!
-//! Every module in this tree is feature-gated behind the
-//! `multimodal` Cargo feature. The default build of `cognicode-core`
-//! has no `ports` symbol and no `GraphRepository` / `GraphError`
-//! items, so the byte-level shape of the public surface is
-//! unchanged for default-feature consumers.
+//! The `ports` module and its contents (`GraphRepository`, `GraphError`,
+//! `GraphResult`, `SearchPage`) are available in the default build.
+//! The `multimodal` feature gates the WRITE/exTRACTION path only.
 
-#[cfg(feature = "multimodal")]
 pub mod graph_error;
-#[cfg(feature = "multimodal")]
 pub mod graph_repository;
 
-#[cfg(feature = "multimodal")]
 pub use graph_error::{GraphError, GraphResult};
-#[cfg(feature = "multimodal")]
 pub use graph_repository::{GraphRepository, SearchPage};

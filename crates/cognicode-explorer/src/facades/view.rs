@@ -32,9 +32,8 @@ pub struct ViewServiceImpl {
     graph_query: Option<Arc<dyn GraphQueryPort>>,
     view_registry: Arc<ViewRegistry>,
     persistence: Option<Arc<dyn PersistenceService>>,
-    /// Graph repository for multimodal entities (Decision/Doc/Evidence).
-    /// `None` when multimodal feature is disabled or graph is not wired.
-    #[cfg(feature = "multimodal")]
+    /// Graph repository for Doc/Decision/Evidence families.
+    /// `None` when postgres feature is absent or graph is not wired.
     graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
 }
 
@@ -48,9 +47,7 @@ impl ViewServiceImpl {
         graph_query: Option<Arc<dyn GraphQueryPort>>,
         view_registry: Arc<ViewRegistry>,
         persistence: Option<Arc<dyn PersistenceService>>,
-        #[cfg(feature = "multimodal")] graph_repo: Option<
-            Arc<dyn cognicode_core::domain::ports::GraphRepository>,
-        >,
+        graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
     ) -> Self {
         Self {
             repo,
@@ -60,7 +57,6 @@ impl ViewServiceImpl {
             graph_query,
             view_registry,
             persistence,
-            #[cfg(feature = "multimodal")]
             graph_repo,
         }
     }
@@ -144,25 +140,22 @@ impl ViewServiceImpl {
             // For now, return a feature-disabled error since the view service
             // doesn't have persistence wired. The spotter shows saved exploration
             // summaries without needing to resolve them to InspectionTarget.
-            ObjectIdentity::SavedExploration { .. } => {
-                Err(ExplorerError::FeatureDisabled(
-                    "SavedExploration view resolution requires persistence (not wired)".into(),
-                ))
-            }
+            ObjectIdentity::SavedExploration { .. } => Err(ExplorerError::FeatureDisabled(
+                "SavedExploration view resolution requires persistence (not wired)".into(),
+            )),
             // Investigation requires async investigation facade.
             // Handled in SearchServiceImpl::inspect_object; this returns a
             // feature-disabled error since the view service doesn't have it wired.
-            ObjectIdentity::Investigation { .. } => {
-                Err(ExplorerError::FeatureDisabled(
-                    "Investigation view resolution requires investigation facade (not wired)".into(),
-                ))
-            }
+            ObjectIdentity::Investigation { .. } => Err(ExplorerError::FeatureDisabled(
+                "Investigation view resolution requires investigation facade (not wired)".into(),
+            )),
             // Doc/Decision/Evidence require graph_repo wired to ViewService.
             // Doc and Evidence are resolved in SearchServiceImpl which has graph access.
             // Decision can be resolved here since we now have graph_repo wired.
             ObjectIdentity::Doc { .. } | ObjectIdentity::Evidence { .. } => {
                 Err(ExplorerError::FeatureDisabled(
-                    "Doc/Evidence resolution requires graph repository (not wired in ViewService)".into(),
+                    "Doc/Evidence resolution requires graph repository (not wired in ViewService)"
+                        .into(),
                 ))
             }
             ObjectIdentity::Decision { id } => {
@@ -636,7 +629,6 @@ mod view_service_tests {
             None,
             view_registry,
             None,
-            #[cfg(feature = "multimodal")]
             None,
         )
     }

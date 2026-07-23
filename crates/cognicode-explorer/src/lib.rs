@@ -46,7 +46,9 @@ pub use domain::lens::{Lens, LensContext, LensRegistry};
 pub use dto::{DesignFinding, FindingSeverity, LensDescriptor, LensResult};
 pub use error::{ExplorerError, ExplorerResult};
 pub use facades::investigation::Investigation;
-pub use facades::{GraphService, MoldQLService, PersistenceService, ViewService, WorkspaceService, SearchService};
+pub use facades::{
+    GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
+};
 pub use mcp::ExplorerMcpHandler;
 pub use moldql::{MoldQLExecutor, MoldQLItem, MoldQLQuery, MoldQLResult, ParseError};
 pub use ports::{

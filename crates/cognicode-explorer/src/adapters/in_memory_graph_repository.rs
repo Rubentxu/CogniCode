@@ -164,7 +164,11 @@ impl GraphRepository for InMemoryGraphRepository {
             .collect())
     }
 
-    async fn edges_by_kind(&self, node: &NodeId, kinds: &[EdgeKind]) -> GraphResult<Vec<GraphEdge>> {
+    async fn edges_by_kind(
+        &self,
+        node: &NodeId,
+        kinds: &[EdgeKind],
+    ) -> GraphResult<Vec<GraphEdge>> {
         // Empty kinds short-circuit: no kind to match → no edges.
         if kinds.is_empty() {
             return Ok(Vec::new());
@@ -460,7 +464,9 @@ mod tests {
             .collect();
         let repo = InMemoryGraphRepository::new(nodes, Vec::new());
 
-        let result = repo.find_nodes_by_kind_paginated(&NodeKind::Doc, 10, None).await;
+        let result = repo
+            .find_nodes_by_kind_paginated(&NodeKind::Doc, 10, None)
+            .await;
         assert!(result.is_ok());
         let page = result.unwrap();
         assert_eq!(page.items.len(), 10);

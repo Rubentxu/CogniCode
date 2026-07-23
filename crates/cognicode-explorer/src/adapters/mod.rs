@@ -21,8 +21,11 @@ pub mod postgres_quality;
 #[cfg(feature = "postgres")]
 pub mod postgres_edge_emitter;
 
-/// PG-backed adapter for the `GraphRepository` port (multimodal).
+/// PG-backed adapter for the `GraphRepository` port (read+write).
 /// Compiled only when both `multimodal` and `postgres` features are enabled.
+/// Note: full un-gating to just `postgres` awaits the follow-up that moves
+/// `NodeKind::Doc/Decision/Evidence` and `EdgeKind::Justifies/Cites/Resolves/CorroboratedBy`
+/// out of the `multimodal` gate in `cognicode-core` domain types.
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 pub mod pg_graph_repository;
 
