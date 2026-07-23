@@ -59,9 +59,7 @@ use crate::domain::value_objects::node_kind::NodeKind;
 use crate::domain::value_objects::provenance::Provenance;
 
 #[cfg(feature = "multimodal")]
-use super::docs_confidence_rules::{
-    ConfidenceTier, score_link, sym_short_name,
-};
+use super::docs_confidence_rules::{ConfidenceTier, score_link, sym_short_name};
 
 // ============================================================================
 // Pure parsing function (T12 surface).
@@ -1693,7 +1691,8 @@ mod tests {
         assert!(!nodes.is_empty(), "expected at least one node");
         let first = &nodes[0];
         assert_eq!(
-            first.potential_node
+            first
+                .potential_node
                 .properties
                 .get("code_block_lang")
                 .map(String::as_str),
@@ -1711,7 +1710,11 @@ mod tests {
         assert!(!nodes.is_empty(), "expected at least one node");
         let first = &nodes[0];
         assert!(
-            first.potential_node.properties.get("code_block_lang").is_none(),
+            first
+                .potential_node
+                .properties
+                .get("code_block_lang")
+                .is_none(),
             "empty info string should not produce code_block_lang"
         );
     }

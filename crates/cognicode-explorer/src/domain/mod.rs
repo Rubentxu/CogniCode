@@ -7,6 +7,7 @@
 pub mod c4_mermaid;
 pub mod entry_point;
 pub mod evidence;
+pub mod knowledge;
 pub mod lens;
 pub mod lenses;
 pub mod mermaid_util;

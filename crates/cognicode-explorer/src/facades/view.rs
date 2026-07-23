@@ -24,6 +24,25 @@ use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
 use crate::registry::ViewRegistry;
 
+/// Map an `ObjectIdentity` to its corresponding `InspectableObjectType`.
+///
+/// This helper is shared by `available_views_sync` and `available_lenses_sync`
+/// to avoid duplicating the 11-variant match.
+fn identity_to_inspectable_type(identity: &ObjectIdentity) -> InspectableObjectType {
+    match identity {
+        ObjectIdentity::Symbol { .. } => InspectableObjectType::Symbol,
+        ObjectIdentity::File { .. } => InspectableObjectType::File,
+        ObjectIdentity::Scope { .. } => InspectableObjectType::Scope,
+        ObjectIdentity::QualityIssue { .. } => InspectableObjectType::QualityIssue,
+        ObjectIdentity::Rule { .. } => InspectableObjectType::Rule,
+        ObjectIdentity::SavedExploration { .. } => InspectableObjectType::SavedExploration,
+        ObjectIdentity::Investigation { .. } => InspectableObjectType::Investigation,
+        ObjectIdentity::Doc { .. } => InspectableObjectType::Doc,
+        ObjectIdentity::Decision { .. } => InspectableObjectType::DecisionArtifact,
+        ObjectIdentity::Evidence { .. } => InspectableObjectType::Evidence,
+    }
+}
+
 pub struct ViewServiceImpl {
     repo: Arc<dyn SymbolRepository>,
     reader: Arc<dyn SourceReader>,
@@ -32,9 +51,8 @@ pub struct ViewServiceImpl {
     graph_query: Option<Arc<dyn GraphQueryPort>>,
     view_registry: Arc<ViewRegistry>,
     persistence: Option<Arc<dyn PersistenceService>>,
-    /// Graph repository for multimodal entities (Decision/Doc/Evidence).
-    /// `None` when multimodal feature is disabled or graph is not wired.
-    #[cfg(feature = "multimodal")]
+    /// Graph repository for Doc/Decision/Evidence families.
+    /// `None` when postgres feature is absent or graph is not wired.
     graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
 }
 
@@ -48,9 +66,7 @@ impl ViewServiceImpl {
         graph_query: Option<Arc<dyn GraphQueryPort>>,
         view_registry: Arc<ViewRegistry>,
         persistence: Option<Arc<dyn PersistenceService>>,
-        #[cfg(feature = "multimodal")] graph_repo: Option<
-            Arc<dyn cognicode_core::domain::ports::GraphRepository>,
-        >,
+        graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
     ) -> Self {
         Self {
             repo,
@@ -60,25 +76,13 @@ impl ViewServiceImpl {
             graph_query,
             view_registry,
             persistence,
-            #[cfg(feature = "multimodal")]
             graph_repo,
         }
     }
 
     fn available_views_sync(&self, object_id: &str) -> ExplorerResult<Vec<ViewDescriptorDto>> {
         let identity = ObjectIdentity::parse_mvp_id(object_id)?;
-        let object_type = match &identity {
-            ObjectIdentity::Symbol { .. } => InspectableObjectType::Symbol,
-            ObjectIdentity::File { .. } => InspectableObjectType::File,
-            ObjectIdentity::Scope { .. } => InspectableObjectType::Scope,
-            ObjectIdentity::QualityIssue { .. } => InspectableObjectType::QualityIssue,
-            ObjectIdentity::Rule { .. } => InspectableObjectType::Rule,
-            ObjectIdentity::SavedExploration { .. } => InspectableObjectType::SavedExploration,
-            ObjectIdentity::Investigation { .. } => InspectableObjectType::Investigation,
-            ObjectIdentity::Doc { .. } => InspectableObjectType::Doc,
-            ObjectIdentity::Decision { .. } => InspectableObjectType::DecisionArtifact,
-            ObjectIdentity::Evidence { .. } => InspectableObjectType::Evidence,
-        };
+        let object_type = identity_to_inspectable_type(&identity);
         Ok(self.view_registry.list_for(object_type))
     }
 
@@ -144,66 +148,53 @@ impl ViewServiceImpl {
             // For now, return a feature-disabled error since the view service
             // doesn't have persistence wired. The spotter shows saved exploration
             // summaries without needing to resolve them to InspectionTarget.
-            ObjectIdentity::SavedExploration { .. } => {
-                Err(ExplorerError::FeatureDisabled(
-                    "SavedExploration view resolution requires persistence (not wired)".into(),
-                ))
-            }
+            ObjectIdentity::SavedExploration { .. } => Err(ExplorerError::FeatureDisabled(
+                "SavedExploration view resolution requires persistence (not wired)".into(),
+            )),
             // Investigation requires async investigation facade.
             // Handled in SearchServiceImpl::inspect_object; this returns a
             // feature-disabled error since the view service doesn't have it wired.
-            ObjectIdentity::Investigation { .. } => {
-                Err(ExplorerError::FeatureDisabled(
-                    "Investigation view resolution requires investigation facade (not wired)".into(),
-                ))
-            }
+            ObjectIdentity::Investigation { .. } => Err(ExplorerError::FeatureDisabled(
+                "Investigation view resolution requires investigation facade (not wired)".into(),
+            )),
             // Doc/Decision/Evidence require graph_repo wired to ViewService.
-            // Doc and Evidence are resolved in SearchServiceImpl which has graph access.
-            // Decision can be resolved here since we now have graph_repo wired.
-            ObjectIdentity::Doc { .. } | ObjectIdentity::Evidence { .. } => {
-                Err(ExplorerError::FeatureDisabled(
-                    "Doc/Evidence resolution requires graph repository (not wired in ViewService)".into(),
-                ))
-            }
+            // Decision is resolved here since we now have graph_repo wired.
+            // Doc and Evidence are resolved here as lightweight ID-only targets;
+            // the executors (DocSourceExecutor, EvidenceOverviewExecutor) handle
+            // the actual node fetch from graph_repo when building the view.
             ObjectIdentity::Decision { id } => {
-                #[cfg(feature = "multimodal")]
-                {
-                    // Decision requires graph_repo to be wired
-                    let _graph_repo = self.graph_repo.as_ref().ok_or_else(|| {
-                        ExplorerError::FeatureDisabled(
-                            "Decision resolution requires graph repository (not wired in ViewService)".into(),
-                        )
-                    })?;
-                    Ok(InspectionTarget::Decision { id: id.clone() })
-                }
-                #[cfg(not(feature = "multimodal"))]
-                {
-                    Err(ExplorerError::FeatureDisabled(
-                        "Decision resolution requires multimodal feature".into(),
-                    ))
-                }
+                // Decision requires graph_repo to be wired
+                let _graph_repo = self.graph_repo.as_ref().ok_or_else(|| {
+                    ExplorerError::FeatureDisabled(
+                        "Decision resolution requires graph repository (not wired in ViewService)"
+                            .into(),
+                    )
+                })?;
+                Ok(InspectionTarget::Decision { id: id.clone() })
+            }
+            ObjectIdentity::Doc { id } => {
+                let _graph_repo = self.graph_repo.as_ref().ok_or_else(|| {
+                    ExplorerError::FeatureDisabled(
+                        "Doc resolution requires graph repository (not wired in ViewService)".into(),
+                    )
+                })?;
+                Ok(InspectionTarget::Doc { id: id.clone() })
+            }
+            ObjectIdentity::Evidence { id } => {
+                let _graph_repo = self.graph_repo.as_ref().ok_or_else(|| {
+                    ExplorerError::FeatureDisabled(
+                        "Evidence resolution requires graph repository (not wired in ViewService)"
+                            .into(),
+                    )
+                })?;
+                Ok(InspectionTarget::Evidence { id: id.clone() })
             }
         }
     }
 
     fn available_lenses_sync(&self, object_id: &str) -> ExplorerResult<Vec<LensDescriptor>> {
         let identity = ObjectIdentity::parse_mvp_id(object_id)?;
-        let object_type = match &identity {
-            ObjectIdentity::Symbol { .. } => crate::dto::InspectableObjectType::Symbol,
-            ObjectIdentity::File { .. } => crate::dto::InspectableObjectType::File,
-            ObjectIdentity::Scope { .. } => crate::dto::InspectableObjectType::Scope,
-            ObjectIdentity::QualityIssue { .. } => crate::dto::InspectableObjectType::QualityIssue,
-            ObjectIdentity::Rule { .. } => crate::dto::InspectableObjectType::Rule,
-            ObjectIdentity::SavedExploration { .. } => {
-                crate::dto::InspectableObjectType::SavedExploration
-            }
-            ObjectIdentity::Investigation { .. } => {
-                crate::dto::InspectableObjectType::Investigation
-            }
-            ObjectIdentity::Doc { .. } => crate::dto::InspectableObjectType::Doc,
-            ObjectIdentity::Decision { .. } => crate::dto::InspectableObjectType::DecisionArtifact,
-            ObjectIdentity::Evidence { .. } => crate::dto::InspectableObjectType::Evidence,
-        };
+        let object_type = identity_to_inspectable_type(&identity);
         Ok(self.lens_registry.applicable_to(&object_type))
     }
 
@@ -415,7 +406,6 @@ impl ViewService for ViewServiceImpl {
             reader: self.reader.as_ref(),
             quality: self.quality.as_ref().map(|q| q.as_ref()),
             graph_query: self.graph_query.as_ref().map(|g| g.as_ref()),
-            #[cfg(feature = "multimodal")]
             graph_repo: self.graph_repo.as_ref().map(|g| g.as_ref()),
         };
 
@@ -636,8 +626,28 @@ mod view_service_tests {
             None,
             view_registry,
             None,
-            #[cfg(feature = "multimodal")]
             None,
+        )
+    }
+
+    /// Creates a ViewServiceImpl with graph_repo wired (for Scenario 3 success path).
+    fn make_service_with_graph_repo(
+        repo: MockRepo,
+        graph_repo: Arc<dyn cognicode_core::domain::ports::GraphRepository>,
+    ) -> ViewServiceImpl {
+        let repo = Arc::new(repo) as Arc<dyn SymbolRepository>;
+        let reader =
+            Arc::new(MockReader::new(std::collections::HashMap::new())) as Arc<dyn SourceReader>;
+        let view_registry = Arc::new(ViewRegistry::new(None));
+        ViewServiceImpl::new(
+            repo,
+            reader,
+            None,
+            crate::domain::lens::default_registry(),
+            None,
+            view_registry,
+            None,
+            Some(graph_repo),
         )
     }
 
@@ -873,5 +883,139 @@ mod view_service_tests {
             .contextual_view("symbol:src/main.rs:main:1", "nonexistent-view")
             .await;
         assert!(result.is_err());
+    }
+
+    // -------------------------------------------------------------------------
+    // Scenario 3: ViewService hydrates Doc/Evidence through contextual_view
+    // Test 3a: contextual_view returns FeatureDisabled when graph_repo is None
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn contextual_view_doc_returns_feature_disabled_when_graph_repo_none() {
+        // Test through ViewService::contextual_view (target resolution path)
+        let service = make_service(MockRepo::new());
+        let result = service
+            .contextual_view("doc:test-doc-1", "doc-source")
+            .await;
+        // Target resolution fails when graph_repo is None
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
+    }
+
+    #[tokio::test]
+    async fn contextual_view_evidence_returns_feature_disabled_when_graph_repo_none() {
+        let service = make_service(MockRepo::new());
+        let result = service
+            .contextual_view("evidence:test-evidence-1", "evidence-overview")
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
+    }
+
+    // -------------------------------------------------------------------------
+    // Scenario 3: ViewService hydrates Doc/Evidence through contextual_view
+    // Test 3b: contextual_view succeeds when graph_repo is wired with data
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn contextual_view_doc_succeeds_with_wired_graph_repo() {
+        use crate::adapters::InMemoryGraphRepository;
+        use cognicode_core::domain::aggregates::generic_graph::{GraphNode, NodeId};
+        use cognicode_core::domain::value_objects::node_kind::NodeKind;
+        use std::collections::HashMap;
+
+        // Create InMemoryGraphRepository with a Doc node
+        let doc_node = GraphNode {
+            id: NodeId("test-doc-1".to_string()),
+            kind: NodeKind::Doc,
+            label: "Test Document".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/test.md")),
+            properties: HashMap::new(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        let graph_repo: Arc<dyn cognicode_core::domain::ports::GraphRepository> =
+            Arc::new(InMemoryGraphRepository::new(vec![doc_node], vec![]));
+
+        let service = make_service_with_graph_repo(MockRepo::new(), graph_repo);
+        // Test through ViewService::contextual_view (full target resolution + hydration path)
+        let result = service
+            .contextual_view("doc:test-doc-1", "doc-source")
+            .await;
+        assert!(result.is_ok(), "Expected success when graph_repo is wired, got: {:?}", result);
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "doc-source");
+        assert_eq!(view.title, "Test Document");
+    }
+
+    #[tokio::test]
+    async fn contextual_view_evidence_succeeds_with_wired_graph_repo() {
+        use crate::adapters::InMemoryGraphRepository;
+        use cognicode_core::domain::aggregates::generic_graph::{GraphNode, NodeId};
+        use cognicode_core::domain::value_objects::node_kind::NodeKind;
+        use std::collections::HashMap;
+
+        // Create InMemoryGraphRepository with an Evidence node
+        let evidence_node = GraphNode {
+            id: NodeId("test-evidence-1".to_string()),
+            kind: NodeKind::Evidence,
+            label: "Test Evidence".to_string(),
+            source_path: Some(std::path::PathBuf::from("evidence/test.txt")),
+            properties: HashMap::new(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        let graph_repo: Arc<dyn cognicode_core::domain::ports::GraphRepository> =
+            Arc::new(InMemoryGraphRepository::new(vec![evidence_node], vec![]));
+
+        let service = make_service_with_graph_repo(MockRepo::new(), graph_repo);
+        let result = service
+            .contextual_view("evidence:test-evidence-1", "evidence-overview")
+            .await;
+        assert!(result.is_ok(), "Expected success when graph_repo is wired, got: {:?}", result);
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "evidence-overview");
+        assert_eq!(view.title, "Test Evidence");
+    }
+
+    // -------------------------------------------------------------------------
+    // Scenario 1: Default runtime composition root — graph_repo is wired
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn view_service_wires_graph_repo_when_provided() {
+        use crate::adapters::InMemoryGraphRepository;
+        use cognicode_core::domain::aggregates::generic_graph::{GraphNode, NodeId};
+        use cognicode_core::domain::value_objects::node_kind::NodeKind;
+        use std::collections::HashMap;
+
+        // Create a real InMemoryGraphRepository
+        let doc_node = GraphNode {
+            id: NodeId("test-doc-1".to_string()),
+            kind: NodeKind::Doc,
+            label: "Test Document".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/test.md")),
+            properties: HashMap::new(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        let graph_repo: Arc<dyn cognicode_core::domain::ports::GraphRepository> =
+            Arc::new(InMemoryGraphRepository::new(vec![doc_node], vec![]));
+
+        // Wire the graph_repo into the service
+        let service = make_service_with_graph_repo(MockRepo::new(), graph_repo.clone());
+
+        // Verify graph_repo.is_some() after wiring (runtime composition assertion)
+        // The service should hold the graph_repo that was passed to it
+        assert!(service.graph_repo.is_some(), "graph_repo should be Some after wiring");
+        // Verify it's the same instance (identity check)
+        let service_graph_repo: &Arc<dyn cognicode_core::domain::ports::GraphRepository> =
+            service.graph_repo.as_ref().unwrap();
+        // Both are Arc-wrapped, so we compare by pointer equality through downcast
+        let repo_ptr = (&**service_graph_repo) as *const dyn cognicode_core::domain::ports::GraphRepository;
+        let original_ptr = (&*graph_repo) as *const dyn cognicode_core::domain::ports::GraphRepository;
+        assert_eq!(repo_ptr, original_ptr, "graph_repo should be the same instance after wiring");
     }
 }

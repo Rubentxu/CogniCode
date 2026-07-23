@@ -29,7 +29,8 @@ async fn fresh_test_url() -> Option<(String, PgPool)> {
         .ok()?;
 
     let pool = sqlx::PgPool::connect(&test_url).await.ok()?;
-    let repo = cognicode_core::infrastructure::persistence::PostgresRepository::from_pool(pool.clone());
+    let repo =
+        cognicode_core::infrastructure::persistence::PostgresRepository::from_pool(pool.clone());
     repo.run_migrations().await.ok()?;
 
     Some((test_url, pool))
@@ -106,7 +107,10 @@ pg_test!(
         assert!(node_ids.contains("doc-1"));
         assert!(node_ids.contains("issue-1"));
         assert!(node_ids.contains("evidence-1"));
-        assert!(!node_ids.contains("orphan"), "non-rationale edge must be excluded");
+        assert!(
+            !node_ids.contains("orphan"),
+            "non-rationale edge must be excluded"
+        );
 
         assert_eq!(edges.len(), 3, "must keep only rationale edges");
         assert!(edges.iter().any(|e| e.kind.to_string() == "justifies"));
@@ -132,8 +136,10 @@ pg_test!(
         let kept: HashSet<String> = nodes.iter().map(|n| n.id.as_str().to_string()).collect();
         assert!(kept.contains("ADR-001"));
         assert!(kept.contains("doc-1"));
-        assert!(edges.iter().all(|e| {
-            kept.contains(e.source.as_str()) && kept.contains(e.target.as_str())
-        }));
+        assert!(
+            edges
+                .iter()
+                .all(|e| { kept.contains(e.source.as_str()) && kept.contains(e.target.as_str()) })
+        );
     }
 );

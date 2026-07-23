@@ -9,9 +9,8 @@
 //! graph layer needs. Adapters can wrap upstream errors (sqlx,
 //! serde, etc.) into `Storage(String)` for transport.
 //!
-//! Gated behind the `multimodal` Cargo feature. Default builds do
-//! not include this module and `GraphError` is not exported from
-//! `cognicode_core`.
+//! Available in the default build. The `multimodal` feature gates
+//! the WRITE/exTRACTION path only; the error type is always present.
 
 use thiserror::Error;
 

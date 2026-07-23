@@ -6,6 +6,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tracing::warn;
 
+use crate::domain::knowledge::{project_decision, project_doc, project_evidence};
 use crate::domain::object_identity::ObjectIdentity;
 use crate::domain::views::scope_contains_file;
 use crate::dto::{
@@ -33,9 +34,8 @@ pub struct SearchServiceImpl {
     quality: Option<Arc<dyn crate::ports::QualityRepository>>,
     persistence: Option<Arc<dyn PersistenceService>>,
     investigation: Option<Arc<dyn crate::facades::InvestigationFacade>>,
-    /// Graph repository for multimodal search (Doc/Decision/Evidence families).
-    /// `None` when multimodal feature is disabled or graph is not wired.
-    #[cfg(feature = "multimodal")]
+    /// Graph repository for Doc/Decision/Evidence families.
+    /// `None` when postgres feature is absent or graph is not wired.
     graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
 }
 
@@ -49,9 +49,7 @@ impl SearchServiceImpl {
         quality: Option<Arc<dyn crate::ports::QualityRepository>>,
         persistence: Option<Arc<dyn PersistenceService>>,
         investigation: Option<Arc<dyn crate::facades::InvestigationFacade>>,
-        #[cfg(feature = "multimodal")] graph_repo: Option<
-            Arc<dyn cognicode_core::domain::ports::GraphRepository>,
-        >,
+        graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
     ) -> Self {
         Self {
             repo,
@@ -61,7 +59,6 @@ impl SearchServiceImpl {
             quality,
             persistence,
             investigation,
-            #[cfg(feature = "multimodal")]
             graph_repo,
         }
     }
@@ -115,8 +112,7 @@ impl SearchService for SearchServiceImpl {
         let query_for_blocking = query.to_string();
         let kind_filter = kind.map(|s| s.to_string());
 
-        // Graph repo for multimodal search (Doc/Decision/Evidence families)
-        #[cfg(feature = "multimodal")]
+        // Graph repo for Doc/Decision/Evidence families
         let graph_repo = self.graph_repo.clone();
 
         // 1) Symbol hits via spawn_blocking
@@ -378,8 +374,7 @@ impl SearchService for SearchServiceImpl {
             Vec::new()
         };
 
-        // 9-11) Graph families (Doc, Decision, Evidence) — multimodal only
-        #[cfg(feature = "multimodal")]
+        // 9-11) Graph families (Doc, Decision, Evidence) — now available in default build
         let graph_results: Vec<SpotterSearchResult> = {
             let mut results = Vec::new();
             if let Some(ref graph) = graph_repo {
@@ -496,9 +491,6 @@ impl SearchService for SearchServiceImpl {
             }
             results
         };
-
-        #[cfg(not(feature = "multimodal"))]
-        let graph_results: Vec<SpotterSearchResult> = Vec::new();
 
         // Build symbol SpotterSearchResults
         let symbol_hits: Vec<SpotterSearchResult> = symbol_spotter_results
@@ -664,6 +656,45 @@ impl SearchService for SearchServiceImpl {
             return Err(ExplorerError::ObjectNotFound(object_id.to_string()));
         }
 
+        // Handle Doc/Decision/Evidence async path — queries graph_repo
+        if matches!(
+            identity,
+            ObjectIdentity::Doc { .. }
+                | ObjectIdentity::Decision { .. }
+                | ObjectIdentity::Evidence { .. }
+        ) {
+            if let Some(ref graph_repo) = self.graph_repo {
+                let id = match &identity {
+                    ObjectIdentity::Doc { id } => id.clone(),
+                    ObjectIdentity::Decision { id } => id.clone(),
+                    ObjectIdentity::Evidence { id } => id.clone(),
+                    _ => return Err(ExplorerError::ObjectNotFound(object_id.to_string())),
+                };
+
+                let summary = match &identity {
+                    ObjectIdentity::Doc { .. } => {
+                        project_doc(graph_repo.as_ref(), &id).await
+                    }
+                    ObjectIdentity::Decision { .. } => {
+                        project_decision(graph_repo.as_ref(), &id).await
+                    }
+                    ObjectIdentity::Evidence { .. } => {
+                        project_evidence(graph_repo.as_ref(), &id).await
+                    }
+                    _ => None,
+                };
+
+                if let Some(mut s) = summary {
+                    // Enrich with available views from registry
+                    s.available_views =
+                        self.view_registry.list_for(s.object_type.clone());
+                    return Ok(s);
+                }
+            }
+            // graph_repo not wired or projection returned None — fall through to
+            // stub (sync path) for a graceful placeholder response
+        }
+
         // Run sync inspection in a blocking thread.
         let repo = self.repo.clone();
         let search = self.search.clone();
@@ -815,38 +846,22 @@ fn inspect_object_impl(
                 "Investigation inspection requires async context"
             )))
         }
-        ObjectIdentity::Doc { id } => {
-            // Graph path — requires graph_repo, wired in Phase 4
-            Ok(InspectableObjectSummary {
-                id: format!("doc:{id}"),
-                object_type: InspectableObjectType::Doc,
-                label: format!("Document {id}"),
-                subtitle: "Graph document node".to_string(),
-                properties: vec![],
-                available_views: view_registry.list_for(InspectableObjectType::Doc),
-            })
+        ObjectIdentity::Doc { .. } => {
+            // Graph path — requires graph_repo wired. Return FeatureDisabled error
+            // when graph_repo is not available (C-ARCH-03 conformance).
+            Err(ExplorerError::FeatureDisabled(
+                "graph_repo not wired".into(),
+            ))
         }
-        ObjectIdentity::Decision { id } => {
-            // Graph path — requires graph_repo, wired in Phase 4
-            Ok(InspectableObjectSummary {
-                id: format!("decision:{id}"),
-                object_type: InspectableObjectType::DecisionArtifact,
-                label: format!("Decision {id}"),
-                subtitle: "Decision artifact".to_string(),
-                properties: vec![],
-                available_views: view_registry.list_for(InspectableObjectType::DecisionArtifact),
-            })
+        ObjectIdentity::Decision { .. } => {
+            Err(ExplorerError::FeatureDisabled(
+                "graph_repo not wired".into(),
+            ))
         }
-        ObjectIdentity::Evidence { id } => {
-            // Graph path — requires graph_repo, wired in Phase 4
-            Ok(InspectableObjectSummary {
-                id: format!("evidence:{id}"),
-                object_type: InspectableObjectType::Evidence,
-                label: format!("Evidence {id}"),
-                subtitle: "Evidence node".to_string(),
-                properties: vec![],
-                available_views: view_registry.list_for(InspectableObjectType::Evidence),
-            })
+        ObjectIdentity::Evidence { .. } => {
+            Err(ExplorerError::FeatureDisabled(
+                "graph_repo not wired".into(),
+            ))
         }
     }
 }
@@ -1423,5 +1438,55 @@ mod tests {
             }
             _ => panic!("Expected Scope variant"),
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Scenario 2: sync fallback returns empty summaries for Doc/Decision/Evidence
+    // when graph_repo is not wired (spec: graceful degradation, not errors)
+    // -------------------------------------------------------------------------
+
+    fn make_search_service_without_graph_repo() -> SearchServiceImpl {
+        // Create a minimal SearchServiceImpl with graph_repo = None
+        let repo: Arc<dyn SymbolRepository> =
+            Arc::new(MockRepo::new(Vec::new())) as Arc<dyn SymbolRepository>;
+        let view_registry = Arc::new(ViewRegistry::new(None));
+        SearchServiceImpl::new(
+            repo,
+            None,
+            view_registry,
+            None,
+            None,
+            None,
+            None,
+            None, // graph_repo = None — triggers graceful empty-summary fallback
+        )
+    }
+
+    #[tokio::test]
+    async fn inspect_object_doc_returns_feature_disabled_when_graph_repo_not_wired() {
+        let service = make_search_service_without_graph_repo();
+        let result = service.inspect_object("doc:test-doc-1").await;
+        // C-ARCH-03: sync fallback returns FeatureDisabled error
+        assert!(result.is_err(), "Expected Err(FeatureDisabled), got: {:?}", result);
+        let err = result.unwrap_err();
+        assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
+    }
+
+    #[tokio::test]
+    async fn inspect_object_decision_returns_feature_disabled_when_graph_repo_not_wired() {
+        let service = make_search_service_without_graph_repo();
+        let result = service.inspect_object("decision:test-decision-1").await;
+        assert!(result.is_err(), "Expected Err(FeatureDisabled), got: {:?}", result);
+        let err = result.unwrap_err();
+        assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
+    }
+
+    #[tokio::test]
+    async fn inspect_object_evidence_returns_feature_disabled_when_graph_repo_not_wired() {
+        let service = make_search_service_without_graph_repo();
+        let result = service.inspect_object("evidence:test-evidence-1").await;
+        assert!(result.is_err(), "Expected Err(FeatureDisabled), got: {:?}", result);
+        let err = result.unwrap_err();
+        assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
     }
 }

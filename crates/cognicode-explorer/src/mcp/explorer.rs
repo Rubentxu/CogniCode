@@ -410,7 +410,6 @@ impl ExplorerMcpHandler {
             quality_repo.clone(),
             None, // persistence
             None, // investigation
-            #[cfg(feature = "multimodal")]
             None, // graph_repo — wired from runtime when available
         ));
 
@@ -434,7 +433,6 @@ impl ExplorerMcpHandler {
             graph_query.clone(),
             view_registry.clone(),
             Some(persistence.clone()),
-            #[cfg(feature = "multimodal")]
             None, // graph_repo
         ));
         let view: Arc<dyn ViewService> = view_impl.clone();

@@ -125,7 +125,10 @@ impl<'a> MoldQLExecutor<'a> {
     // FIND
     // -------------------------------------------------------------------
 
-    async fn execute_find(&self, find: &crate::moldql::ast::FindQuery) -> ExplorerResult<MoldQLResult> {
+    async fn execute_find(
+        &self,
+        find: &crate::moldql::ast::FindQuery,
+    ) -> ExplorerResult<MoldQLResult> {
         let query_str = render_find(find);
         let items = match find.target {
             TargetType::Symbols => self.find_symbols(find)?,

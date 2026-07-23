@@ -1439,7 +1439,9 @@ impl ViewExecutor for OverviewExecutor {
             | InspectionTarget::Rule { .. }
             | InspectionTarget::SavedExploration(_)
             | InspectionTarget::Investigation(_)
-            | InspectionTarget::Decision { .. } => {
+            | InspectionTarget::Decision { .. }
+            | InspectionTarget::Doc { .. }
+            | InspectionTarget::Evidence { .. } => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "overview".into(),
@@ -2172,7 +2174,11 @@ impl ViewExecutor for QualityExecutor {
             } => Ok(build_scope_quality_view(path, ctx.quality)),
             InspectionTarget::Issue(issue) => Ok(build_issue_detail(issue)),
             InspectionTarget::Rule { rule_id } => Ok(build_rule_detail(rule_id, ctx.quality)),
-            InspectionTarget::SavedExploration(_) | InspectionTarget::Investigation(_) | InspectionTarget::Decision { .. } => {
+            InspectionTarget::SavedExploration(_)
+            | InspectionTarget::Investigation(_)
+            | InspectionTarget::Decision { .. }
+            | InspectionTarget::Doc { .. }
+            | InspectionTarget::Evidence { .. } => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "quality".into(),
@@ -2240,6 +2246,185 @@ impl ViewExecutor for EvidenceExecutor {
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
                 view_id: "evidence".into(),
+            }),
+        }
+    }
+}
+
+// ============================================================================
+// Knowledge-layer — Doc and Evidence executors (D4)
+// ============================================================================
+
+/// DocSource capability — applies to Doc.
+/// Fetches the Doc node from graph_repo and renders its content and metadata.
+/// Shared helper for DocSource and EvidenceOverview executors.
+///
+/// Fetches the node from graph_repo, builds identity + properties blocks,
+/// and wraps them in a ContextualView.
+async fn build_node_source_view(
+    ctx: &ViewContext<'_>,
+    id: &str,
+    mvp_prefix: &str,
+    view_id: &str,
+    evidence_kind: &str,
+    evidence_title_prefix: &str,
+    identity_block_id: &str,
+    identity_block_title: &str,
+    renderer_kind: RendererKind,
+) -> ExplorerResult<ContextualView> {
+    use cognicode_core::domain::aggregates::generic_graph::NodeId;
+    use cognicode_core::domain::ports::GraphRepository;
+
+    let mvp = format!("{mvp_prefix}:{id}");
+    let Some(repo) = ctx.graph_repo else {
+        return Err(crate::error::ExplorerError::FeatureDisabled(
+            "graph repository not wired".into(),
+        ));
+    };
+    let node_id = NodeId::new(id.to_string());
+    let node = match repo.get_node(&node_id).await {
+        Ok(Some(n)) => n,
+        Ok(None) => {
+            return Err(crate::error::ExplorerError::NotFound(format!(
+                "{mvp_prefix} '{id}' not found in graph"
+            )));
+        }
+        Err(e) => {
+            return Err(crate::error::ExplorerError::NotFound(format!(
+                "Failed to fetch {mvp_prefix}: {e}"
+            )));
+        }
+    };
+    let evidence_id = format!("evidence:{evidence_kind}");
+    let evidence = vec![EvidenceBlock {
+        id: evidence_id.clone(),
+        kind: evidence_kind.into(),
+        title: format!("{evidence_title_prefix}: {}", node.label),
+        file: node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+        line_range: None,
+        source_tool_or_query: "GraphRepository::get_node".into(),
+        confidence: Some(1.0),
+        freshness: Some("unknown".into()),
+        provenance: None,
+    }];
+    let properties_json: serde_json::Value =
+        serde_json::to_value(&node.properties).unwrap_or_else(|_| serde_json::json!({}));
+    let blocks = vec![
+        ViewBlock {
+            id: identity_block_id.into(),
+            title: identity_block_title.into(),
+            body: json!({
+                "id": id,
+                "label": node.label,
+                "source_path": node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+            }),
+        },
+        ViewBlock {
+            id: format!("{}_properties", identity_block_id),
+            title: "Properties".into(),
+            body: properties_json,
+        },
+    ];
+    Ok(ContextualView {
+        object_id: mvp,
+        view_id: view_id.into(),
+        title: node.label,
+        blocks,
+        relations: Vec::new(),
+        evidence,
+        findings: Vec::new(),
+        renderer_kind,
+        ..Default::default()
+    })
+}
+
+pub struct DocSourceExecutor;
+impl ViewDescriptor for DocSourceExecutor {
+    fn id(&self) -> &'static str {
+        "doc-source"
+    }
+    fn title(&self) -> &'static str {
+        "Doc Source"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Doc]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::DocCodeAlignment
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Code
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for DocSourceExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match ctx.target {
+            InspectionTarget::Doc { id } => {
+                build_node_source_view(
+                    ctx,
+                    id,
+                    "doc",
+                    "doc-source",
+                    "doc_source",
+                    "Doc source",
+                    "doc_identity",
+                    "Document",
+                    RendererKind::Code,
+                )
+                .await
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "doc-source".into(),
+            }),
+        }
+    }
+}
+
+/// EvidenceOverview capability — applies to Evidence.
+/// Fetches the Evidence node from graph_repo and renders its provenance and metadata.
+pub struct EvidenceOverviewExecutor;
+impl ViewDescriptor for EvidenceOverviewExecutor {
+    fn id(&self) -> &'static str {
+        "evidence-overview"
+    }
+    fn title(&self) -> &'static str {
+        "Evidence Overview"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Evidence]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::EvidenceView
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Table
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for EvidenceOverviewExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match ctx.target {
+            InspectionTarget::Evidence { id } => {
+                build_node_source_view(
+                    ctx,
+                    id,
+                    "evidence",
+                    "evidence-overview",
+                    "evidence_overview",
+                    "Evidence overview",
+                    "evidence_identity",
+                    "Evidence",
+                    RendererKind::Table,
+                )
+                .await
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "evidence-overview".into(),
             }),
         }
     }
@@ -2430,7 +2615,9 @@ impl ViewExecutor for RiskMapExecutor {
             | InspectionTarget::Rule { .. }
             | InspectionTarget::SavedExploration(_)
             | InspectionTarget::Investigation(_)
-            | InspectionTarget::Decision { .. } => {
+            | InspectionTarget::Decision { .. }
+            | InspectionTarget::Doc { .. }
+            | InspectionTarget::Evidence { .. } => {
                 return Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "risk_map".into(),
@@ -2458,10 +2645,7 @@ impl ViewExecutor for RiskMapExecutor {
             let mut nodes: Vec<HotspotNode> = target_symbols
                 .iter()
                 .map(|s| {
-                    let fan_in = ctx
-                        .graph_query
-                        .map(|g| g.fan_in(&s.id) as u32)
-                        .unwrap_or(0);
+                    let fan_in = ctx.graph_query.map(|g| g.fan_in(&s.id) as u32).unwrap_or(0);
                     let risk = compute_risk(fan_in, 0.0);
                     let object_id = format!("symbol:{}:{}:{}", s.file, s.name, s.line);
                     HotspotNode {
@@ -2562,22 +2746,20 @@ impl ViewExecutor for RiskMapExecutor {
             provenance: None,
         }];
 
-        let blocks = vec![
-            ViewBlock {
-                id: "hotspots".into(),
-                title: format!("Top {} hotspots", hotspots.len()),
-                body: json!({
-                    "count": hotspots.len(),
-                    "items": hotspots.iter().map(|h| json!({
-                        "object_id": h.object_id,
-                        "label": h.label,
-                        "fan_in": h.fan_in,
-                        "weighted_issue_count": h.weighted_issue_count,
-                        "risk": h.risk,
-                    })).collect::<Vec<_>>(),
-                }),
-            },
-        ];
+        let blocks = vec![ViewBlock {
+            id: "hotspots".into(),
+            title: format!("Top {} hotspots", hotspots.len()),
+            body: json!({
+                "count": hotspots.len(),
+                "items": hotspots.iter().map(|h| json!({
+                    "object_id": h.object_id,
+                    "label": h.label,
+                    "fan_in": h.fan_in,
+                    "weighted_issue_count": h.weighted_issue_count,
+                    "risk": h.risk,
+                })).collect::<Vec<_>>(),
+            }),
+        }];
 
         // Add diagnostics as findings (retro-compatible DesignFinding shape).
         for diag in &diagnostics {
@@ -2633,7 +2815,10 @@ pub static OWNERSHIP_MAP_EXECUTOR: OwnershipMapExecutor = OwnershipMapExecutor;
 pub static COMPOSED_NARRATIVE_EXECUTOR: ComposedNarrativeExecutor = ComposedNarrativeExecutor;
 pub static RISK_MAP_EXECUTOR: RiskMapExecutor = RiskMapExecutor;
 pub static DECISION_GRAPH_EXECUTOR: DecisionGraphExecutor = DecisionGraphExecutor;
-pub static ARCHITECTURE_RATIONALE_EXECUTOR: ArchitectureRationaleExecutor = ArchitectureRationaleExecutor;
+pub static ARCHITECTURE_RATIONALE_EXECUTOR: ArchitectureRationaleExecutor =
+    ArchitectureRationaleExecutor;
+pub static DOC_SOURCE_EXECUTOR: DocSourceExecutor = DocSourceExecutor;
+pub static EVIDENCE_OVERVIEW_EXECUTOR: EvidenceOverviewExecutor = EvidenceOverviewExecutor;
 
 /// Ownership Map capability — applies to Issue (QualityIssue).
 ///
@@ -2934,7 +3119,12 @@ fn decision_unavailable_for(
 }
 
 /// Helper to build an error ContextualView for a given view_id.
-fn contextual_view_error(object_id: &str, view_id: &str, title: &str, message: &str) -> ContextualView {
+fn contextual_view_error(
+    object_id: &str,
+    view_id: &str,
+    title: &str,
+    message: &str,
+) -> ContextualView {
     let blocks = vec![ViewBlock {
         id: "error".into(),
         title: title.into(),
@@ -3001,7 +3191,14 @@ pub async fn build_rationale_view(
     };
 
     // Fetch rationale subgraph: Justifies, Cites, Resolves, CorroboratedBy edges
-    let (nodes, edges, truncated) = match repo.rationale_subgraph(&node_id, RATIONALE_SUBGRAPH_MAX_DEPTH, RATIONALE_SUBGRAPH_MAX_NODES).await {
+    let (nodes, edges, truncated) = match repo
+        .rationale_subgraph(
+            &node_id,
+            RATIONALE_SUBGRAPH_MAX_DEPTH,
+            RATIONALE_SUBGRAPH_MAX_NODES,
+        )
+        .await
+    {
         Ok((nodes, edges, truncated)) => (nodes, edges, truncated),
         Err(e) => {
             return contextual_view_error(
@@ -3019,7 +3216,9 @@ pub async fn build_rationale_view(
         id: evidence_id.clone(),
         kind: "architecture_rationale".into(),
         title: format!("Architecture Rationale: {}", decision_node.label),
-        file: decision_node.source_path.map(|p| p.to_string_lossy().to_string()),
+        file: decision_node
+            .source_path
+            .map(|p| p.to_string_lossy().to_string()),
         line_range: None,
         source_tool_or_query: "GraphRepository::rationale_subgraph".into(),
         confidence: Some(1.0),
@@ -3050,15 +3249,17 @@ pub async fn build_rationale_view(
         .collect();
 
     // Build blocks: decision info, related nodes, edges summary
-    let related_nodes_json: serde_json::Value = serde_json::json!(nodes
-        .iter()
-        .filter(|n| n.id != decision_node.id)
-        .map(|n| json!({
-            "id": n.id.to_string(),
-            "kind": format!("{:?}", n.kind),
-            "label": n.label,
-        }))
-        .collect::<Vec<_>>());
+    let related_nodes_json: serde_json::Value = serde_json::json!(
+        nodes
+            .iter()
+            .filter(|n| n.id != decision_node.id)
+            .map(|n| json!({
+                "id": n.id.to_string(),
+                "kind": format!("{:?}", n.kind),
+                "label": n.label,
+            }))
+            .collect::<Vec<_>>()
+    );
 
     let blocks = vec![
         ViewBlock {
@@ -3073,7 +3274,11 @@ pub async fn build_rationale_view(
         },
         ViewBlock {
             id: "rationale_graph".into(),
-            title: format!("Related nodes ({}{})", nodes.len() - 1, if truncated { "+" } else { "" }),
+            title: format!(
+                "Related nodes ({}{})",
+                nodes.len() - 1,
+                if truncated { "+" } else { "" }
+            ),
             body: json!({
                 "total_nodes": nodes.len(),
                 "truncated": truncated,
@@ -3163,7 +3368,9 @@ impl ViewExecutor for DecisionGraphExecutor {
             InspectionTarget::Decision { id } => {
                 #[cfg(feature = "multimodal")]
                 {
-                    Ok(with_decision_graph_identity(build_rationale_view(id, ctx.graph_repo).await))
+                    Ok(with_decision_graph_identity(
+                        build_rationale_view(id, ctx.graph_repo).await,
+                    ))
                 }
                 #[cfg(not(feature = "multimodal"))]
                 {
@@ -3528,19 +3735,19 @@ mod tests {
     use crate::error::ExplorerResult;
     use crate::ports::source_reader::SourceReader;
     use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
+    use async_trait::async_trait;
     use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
     use cognicode_core::domain::aggregates::{CallEntry, SymbolId};
-    use cognicode_core::domain::ports::graph_repository::GraphRepository;
     use cognicode_core::domain::ports::GraphResult;
+    use cognicode_core::domain::ports::graph_repository::GraphRepository;
     use cognicode_core::domain::traits::graph_query_port::{
         CalleeWithMetadata, CallerWithMetadata, GraphQueryPort, RelationTargetWithMetadata,
     };
+    use cognicode_core::domain::value_objects::SymbolKind;
     use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
     use cognicode_core::domain::value_objects::node_kind::NodeKind;
-    use cognicode_core::domain::value_objects::SymbolKind;
     use std::collections::HashMap;
     use std::sync::Mutex;
-    use async_trait::async_trait;
 
     fn make_resolved(file: &str, name: &str, line: u32, kind: SymbolKind) -> ResolvedSymbol {
         ResolvedSymbol {
@@ -3685,13 +3892,15 @@ mod tests {
             _limit: usize,
             _cursor: Option<&str>,
         ) -> GraphResult<cognicode_core::domain::ports::graph_repository::SearchPage> {
-            Ok(cognicode_core::domain::ports::graph_repository::SearchPage {
-                items: Vec::new(),
-                raw_total: 0,
-                next_cursor: None,
-                raw_rank: 0.0,
-                item_ranks: Vec::new(),
-            })
+            Ok(
+                cognicode_core::domain::ports::graph_repository::SearchPage {
+                    items: Vec::new(),
+                    raw_total: 0,
+                    next_cursor: None,
+                    raw_rank: 0.0,
+                    item_ranks: Vec::new(),
+                },
+            )
         }
 
         async fn find_nodes_by_kind(&self, _kind: &NodeKind) -> GraphResult<Vec<GraphNode>> {
@@ -3749,13 +3958,15 @@ mod tests {
             _limit: usize,
             _cursor: Option<&str>,
         ) -> GraphResult<cognicode_core::domain::ports::graph_repository::SearchPage> {
-            Ok(cognicode_core::domain::ports::graph_repository::SearchPage {
-                items: Vec::new(),
-                raw_total: 0,
-                next_cursor: None,
-                raw_rank: 0.0,
-                item_ranks: Vec::new(),
-            })
+            Ok(
+                cognicode_core::domain::ports::graph_repository::SearchPage {
+                    items: Vec::new(),
+                    raw_total: 0,
+                    next_cursor: None,
+                    raw_rank: 0.0,
+                    item_ranks: Vec::new(),
+                },
+            )
         }
 
         async fn search_paginated(
@@ -3765,13 +3976,15 @@ mod tests {
             _limit: usize,
             _cursor: Option<&str>,
         ) -> GraphResult<cognicode_core::domain::ports::graph_repository::SearchPage> {
-            Ok(cognicode_core::domain::ports::graph_repository::SearchPage {
-                items: Vec::new(),
-                raw_total: 0,
-                next_cursor: None,
-                raw_rank: 0.0,
-                item_ranks: Vec::new(),
-            })
+            Ok(
+                cognicode_core::domain::ports::graph_repository::SearchPage {
+                    items: Vec::new(),
+                    raw_total: 0,
+                    next_cursor: None,
+                    raw_rank: 0.0,
+                    item_ranks: Vec::new(),
+                },
+            )
         }
     }
 
@@ -4573,7 +4786,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4611,7 +4823,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4640,7 +4851,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4665,7 +4875,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4699,7 +4908,6 @@ mod tests {
             reader: &MockReader::new(reader_content),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4727,7 +4935,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4760,7 +4967,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4786,7 +4992,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4815,7 +5020,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4859,7 +5063,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4896,7 +5099,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4925,7 +5127,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4960,7 +5161,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -4994,7 +5194,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5039,7 +5238,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5080,7 +5278,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5378,7 +5575,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5407,7 +5603,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5436,7 +5631,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5523,7 +5717,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: Some(&mock_gq as &dyn GraphQueryPort),
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5590,7 +5783,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: Some(&mock_gq as &dyn GraphQueryPort),
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5635,9 +5827,10 @@ mod tests {
         let exec = &super::DECISION_GRAPH_EXECUTOR;
         assert_eq!(exec.id(), "decision-graph");
         assert_eq!(exec.title(), "Decision Graph");
-        assert!(exec
-            .applies_to()
-            .contains(&crate::dto::InspectableObjectType::DecisionArtifact));
+        assert!(
+            exec.applies_to()
+                .contains(&crate::dto::InspectableObjectType::DecisionArtifact)
+        );
         assert_eq!(exec.view_kind(), crate::dto::ViewKind::DecisionGraph);
         assert_eq!(exec.renderer_kind(), crate::dto::RendererKind::Markdown);
     }
@@ -5653,7 +5846,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5682,10 +5874,14 @@ mod tests {
         let exec = &super::ARCHITECTURE_RATIONALE_EXECUTOR;
         assert_eq!(exec.id(), "architecture_rationale");
         assert_eq!(exec.title(), "Architecture Rationale");
-        assert!(exec
-            .applies_to()
-            .contains(&crate::dto::InspectableObjectType::DecisionArtifact));
-        assert_eq!(exec.view_kind(), crate::dto::ViewKind::ArchitectureRationale);
+        assert!(
+            exec.applies_to()
+                .contains(&crate::dto::InspectableObjectType::DecisionArtifact)
+        );
+        assert_eq!(
+            exec.view_kind(),
+            crate::dto::ViewKind::ArchitectureRationale
+        );
         assert_eq!(exec.renderer_kind(), crate::dto::RendererKind::Markdown);
     }
 
@@ -5700,7 +5896,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5726,7 +5921,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5752,7 +5946,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5800,8 +5993,8 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn decision_graph_empty_graph_shows_focus_only() {
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
         use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let mut mock = MockGraphRepo::new();
         mock.with_node(GraphNode {
@@ -5835,7 +6028,10 @@ mod tests {
         assert_eq!(view.view_id, "decision_graph");
         // Decision node + rationale_graph block
         let block_ids: Vec<&str> = view.blocks.iter().map(|b| b.id.as_str()).collect();
-        assert!(block_ids.contains(&"rationale_graph"), "must have rationale_graph block");
+        assert!(
+            block_ids.contains(&"rationale_graph"),
+            "must have rationale_graph block"
+        );
         // Edges summary should show 0 connections
         let edges_block = view.blocks.iter().find(|b| b.id == "edges_summary");
         assert!(edges_block.is_some());
@@ -5853,8 +6049,8 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn decision_graph_focus_only_no_edges() {
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
         use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let mut mock = MockGraphRepo::new();
         mock.with_node(GraphNode {
@@ -5898,7 +6094,10 @@ mod tests {
             .get("total_nodes")
             .and_then(|v| v.as_i64())
             .unwrap_or(-1);
-        assert_eq!(total, 1, "focus-only should have exactly 1 node (the focus itself)");
+        assert_eq!(
+            total, 1,
+            "focus-only should have exactly 1 node (the focus itself)"
+        );
     }
 
     /// Unsupported target: DecisionGraphExecutor only accepts DecisionArtifact.
@@ -5914,7 +6113,6 @@ mod tests {
             reader: &MockReader::new(HashMap::new()),
             quality: None,
             graph_query: None,
-            #[cfg(feature = "multimodal")]
             graph_repo: None,
         };
 
@@ -5933,8 +6131,8 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn decision_graph_shape_equality_preserves_identity() {
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
         use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let decision_id = "ADR-042";
         let decision_node_id = NodeId::new(decision_id.to_string());
@@ -5989,21 +6187,20 @@ mod tests {
 
         // Identity block must carry the correct decision id and label
         let identity_block = view.blocks.iter().find(|b| b.id == "decision_identity");
-        assert!(identity_block.is_some(), "must have decision_identity block");
+        assert!(
+            identity_block.is_some(),
+            "must have decision_identity block"
+        );
         let body = &identity_block.unwrap().body;
         // The id in the block is the raw node id (without "decision:" prefix)
         // The "decision:" prefix is only on the view's object_id
         assert_eq!(
-            body.get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or(""),
+            body.get("id").and_then(|v| v.as_str()).unwrap_or(""),
             decision_id,
             "id must match the raw decision node id"
         );
         assert_eq!(
-            body.get("label")
-                .and_then(|v| v.as_str())
-                .unwrap_or(""),
+            body.get("label").and_then(|v| v.as_str()).unwrap_or(""),
             "ADR-042: Use PostgreSQL",
             "label must be preserved from graph node"
         );
@@ -6214,9 +6411,18 @@ mod view_seam_tests {
         let exec = &super::RISK_MAP_EXECUTOR;
         assert_eq!(exec.id(), "risk_map");
         assert_eq!(exec.title(), "Risk Map");
-        assert!(exec.applies_to().contains(&crate::dto::InspectableObjectType::Symbol));
-        assert!(exec.applies_to().contains(&crate::dto::InspectableObjectType::File));
-        assert!(exec.applies_to().contains(&crate::dto::InspectableObjectType::Scope));
+        assert!(
+            exec.applies_to()
+                .contains(&crate::dto::InspectableObjectType::Symbol)
+        );
+        assert!(
+            exec.applies_to()
+                .contains(&crate::dto::InspectableObjectType::File)
+        );
+        assert!(
+            exec.applies_to()
+                .contains(&crate::dto::InspectableObjectType::Scope)
+        );
         assert_eq!(exec.view_kind(), crate::dto::ViewKind::RiskMap);
         assert_eq!(exec.renderer_kind(), crate::dto::RendererKind::Graph);
     }
@@ -6231,7 +6437,10 @@ mod view_seam_tests {
 
         // fan_in=10, weighted=0 → risk = 10 * 0.4 + 0 * 0.6 = 4.0
         let risk = compute_risk(10, 0.0);
-        assert!(risk > 0.0, "fan_in-only risk must be non-zero when fan_in > 0");
+        assert!(
+            risk > 0.0,
+            "fan_in-only risk must be non-zero when fan_in > 0"
+        );
         assert_eq!(risk, 4.0);
 
         // fan_in=0, weighted=0 → risk = 0.0
@@ -6262,7 +6471,10 @@ mod view_seam_tests {
         // Verify the registry returns the RiskMapExecutor by id.
         let registry = crate::registry::ViewRegistry::new(None);
         let executor = registry.get_executor("risk_map");
-        assert!(executor.is_some(), "get_executor(\"risk_map\") must return Some");
+        assert!(
+            executor.is_some(),
+            "get_executor(\"risk_map\") must return Some"
+        );
         let exec = executor.unwrap();
         assert_eq!(exec.id(), "risk_map");
         assert_eq!(exec.title(), "Risk Map");
