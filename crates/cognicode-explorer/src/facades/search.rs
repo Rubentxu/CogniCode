@@ -1439,4 +1439,69 @@ mod tests {
             _ => panic!("Expected Scope variant"),
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Scenario 2: sync fallback returns explicit errors for Doc/Decision/Evidence
+    // when graph_repo is not wired (no postgres + no multimodal)
+    // -------------------------------------------------------------------------
+
+    fn make_search_service_without_graph_repo() -> SearchServiceImpl {
+        // Create a minimal SearchServiceImpl with graph_repo = None
+        let repo: Arc<dyn SymbolRepository> =
+            Arc::new(MockRepo::new(Vec::new())) as Arc<dyn SymbolRepository>;
+        let view_registry = Arc::new(ViewRegistry::new(None));
+        SearchServiceImpl::new(
+            repo,
+            None,
+            view_registry,
+            None,
+            None,
+            None,
+            None,
+            None, // graph_repo = None — triggers FeatureDisabled fallback
+        )
+    }
+
+    #[tokio::test]
+    async fn inspect_object_doc_returns_feature_disabled_when_graph_repo_not_wired() {
+        let service = make_search_service_without_graph_repo();
+        let result = service.inspect_object("doc:test-doc-1").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
+        // Verify the error message mentions graph repository
+        let msg = err.to_string();
+        assert!(
+            msg.contains("graph repository"),
+            "Expected error about graph repository, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn inspect_object_decision_returns_feature_disabled_when_graph_repo_not_wired() {
+        let service = make_search_service_without_graph_repo();
+        let result = service.inspect_object("decision:test-decision-1").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
+        let msg = err.to_string();
+        assert!(
+            msg.contains("graph repository"),
+            "Expected error about graph repository, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn inspect_object_evidence_returns_feature_disabled_when_graph_repo_not_wired() {
+        let service = make_search_service_without_graph_repo();
+        let result = service.inspect_object("evidence:test-evidence-1").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
+        let msg = err.to_string();
+        assert!(
+            msg.contains("graph repository"),
+            "Expected error about graph repository, got: {msg}"
+        );
+    }
 }

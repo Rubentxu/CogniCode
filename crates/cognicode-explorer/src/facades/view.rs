@@ -895,4 +895,148 @@ mod view_service_tests {
             .await;
         assert!(result.is_err());
     }
+
+    // -------------------------------------------------------------------------
+    // Scenario 3: ViewService hydrates Doc/Evidence through their executors
+    // Test 3a: DocSourceExecutor.build returns FeatureDisabled when graph_repo is None
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn doc_source_executor_build_returns_feature_disabled_when_graph_repo_none() {
+        use crate::domain::views::{ViewContext, ViewExecutor, DocSourceExecutor};
+        use crate::dto::InspectionTarget;
+
+        // Create a ViewContext with graph_repo = None
+        let ctx = ViewContext {
+            target: &InspectionTarget::Doc { id: "test-doc-1".to_string() },
+            repo: &*make_service(MockRepo::new()).repo,
+            reader: &*make_service(MockRepo::new()).reader,
+            quality: None,
+            graph_query: None,
+            graph_repo: None, // Explicitly None — triggers FeatureDisabled
+        };
+
+        let executor = DocSourceExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
+    }
+
+    #[tokio::test]
+    async fn evidence_overview_executor_build_returns_feature_disabled_when_graph_repo_none() {
+        use crate::domain::views::{ViewContext, ViewExecutor, EvidenceOverviewExecutor};
+        use crate::dto::InspectionTarget;
+
+        // Create a ViewContext with graph_repo = None
+        let ctx = ViewContext {
+            target: &InspectionTarget::Evidence { id: "test-evidence-1".to_string() },
+            repo: &*make_service(MockRepo::new()).repo,
+            reader: &*make_service(MockRepo::new()).reader,
+            quality: None,
+            graph_query: None,
+            graph_repo: None, // Explicitly None — triggers FeatureDisabled
+        };
+
+        let executor = EvidenceOverviewExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
+    }
+
+    // -------------------------------------------------------------------------
+    // Scenario 3: ViewService hydrates Doc/Evidence through their executors
+    // Test 3b: DocSourceExecutor.build succeeds when graph_repo is wired with data
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn doc_source_executor_build_succeeds_with_wired_graph_repo() {
+        use crate::domain::views::{ViewContext, ViewExecutor, DocSourceExecutor};
+        use crate::dto::InspectionTarget;
+        use crate::adapters::InMemoryGraphRepository;
+        use cognicode_core::domain::aggregates::generic_graph::{GraphNode, NodeId};
+        use cognicode_core::domain::value_objects::node_kind::NodeKind;
+        use std::collections::HashMap;
+
+        // Create InMemoryGraphRepository with a Doc node
+        let doc_node = GraphNode {
+            id: NodeId("test-doc-1".to_string()),
+            kind: NodeKind::Doc,
+            label: "Test Document".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/test.md")),
+            properties: HashMap::new(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        let graph_repo = Arc::new(InMemoryGraphRepository::new(vec![doc_node], vec![]));
+
+        let repo: Arc<dyn SymbolRepository> =
+            Arc::new(MockRepo::new()) as Arc<dyn SymbolRepository>;
+        let reader: Arc<dyn SourceReader> =
+            Arc::new(MockReader::new(HashMap::new())) as Arc<dyn SourceReader>;
+
+        // Create a ViewContext with graph_repo = Some(graph_repo)
+        let ctx = ViewContext {
+            target: &InspectionTarget::Doc { id: "test-doc-1".to_string() },
+            repo: &*repo,
+            reader: &*reader,
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(graph_repo.as_ref()),
+        };
+
+        let executor = DocSourceExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok(), "Expected success when graph_repo is wired, got: {:?}", result);
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "doc-source");
+        assert_eq!(view.title, "Test Document");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn evidence_overview_executor_build_succeeds_with_wired_graph_repo() {
+        use crate::domain::views::{ViewContext, ViewExecutor, EvidenceOverviewExecutor};
+        use crate::dto::InspectionTarget;
+        use crate::adapters::InMemoryGraphRepository;
+        use cognicode_core::domain::aggregates::generic_graph::{GraphNode, NodeId};
+        use cognicode_core::domain::value_objects::node_kind::NodeKind;
+        use std::collections::HashMap;
+
+        // Create InMemoryGraphRepository with an Evidence node
+        let evidence_node = GraphNode {
+            id: NodeId("test-evidence-1".to_string()),
+            kind: NodeKind::Evidence,
+            label: "Test Evidence".to_string(),
+            source_path: Some(std::path::PathBuf::from("evidence/test.txt")),
+            properties: HashMap::new(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        let graph_repo = Arc::new(InMemoryGraphRepository::new(vec![evidence_node], vec![]));
+
+        let repo: Arc<dyn SymbolRepository> =
+            Arc::new(MockRepo::new()) as Arc<dyn SymbolRepository>;
+        let reader: Arc<dyn SourceReader> =
+            Arc::new(MockReader::new(HashMap::new())) as Arc<dyn SourceReader>;
+
+        // Create a ViewContext with graph_repo = Some(graph_repo)
+        let ctx = ViewContext {
+            target: &InspectionTarget::Evidence { id: "test-evidence-1".to_string() },
+            repo: &*repo,
+            reader: &*reader,
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(graph_repo.as_ref()),
+        };
+
+        let executor = EvidenceOverviewExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok(), "Expected success when graph_repo is wired, got: {:?}", result);
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "evidence-overview");
+        assert_eq!(view.title, "Test Evidence");
+    }
 }
