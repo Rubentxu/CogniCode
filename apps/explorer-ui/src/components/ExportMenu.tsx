@@ -42,6 +42,28 @@ function extractMermaidFromView(view: ContextualView | null): string | null {
   return null;
 }
 
+/**
+ * Build diagram provenance for an artifact (ADR-010 E24.1).
+ * Captures the source view context at export time.
+ */
+function buildProvenance(
+  view: ContextualView | null | undefined,
+  format: "mermaid" | "svg" | "png" | "drawio",
+): AddArtifactRequestDto["provenance"] {
+  if (!view) return undefined;
+  return {
+    object_id: view.object_id,
+    view_kind: view.view_kind ?? "unknown",
+    spec_id: undefined,
+    query_id: undefined,
+    export_format: format,
+    created_at: new Date().toISOString(),
+  };
+}
+
+// ADR-010 E24.1: Import AddArtifactRequestDto for provenance typing
+import type { AddArtifactRequestDto } from "../api/schemas";
+
 export function ExportMenu({ view, workspaceId, investigationId, onShowNotification }: ExportMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -70,6 +92,7 @@ export function ExportMenu({ view, workspaceId, investigationId, onShowNotificat
       await handleOpenInDrawIo(mermaidText, { notify: onShowNotification });
 
       // ADR-005 E21-6: Add Mermaid artifact to active investigation
+      // ADR-010 E24.1: provenance captures source view context
       if (investigationId) {
         try {
           await addDrawioArtifact(
@@ -77,6 +100,7 @@ export function ExportMenu({ view, workspaceId, investigationId, onShowNotificat
             `${view?.title || "Diagram"} - Draw.io export`,
             mermaidText,
             view?.object_id,
+            buildProvenance(view, "drawio"),
           );
           onShowNotification?.("Artifact added to investigation");
         } catch (error) {
@@ -105,15 +129,18 @@ export function ExportMenu({ view, workspaceId, investigationId, onShowNotificat
       onShowNotification?.(`Downloaded ${format.toUpperCase()}`);
 
       // ADR-005 E21-6: Add artifact to active investigation
+      // ADR-010 E24.1: provenance captures source view context
       if (investigationId && blob) {
         try {
           const content = await blob.text();
+          const provenance = buildProvenance(view, format);
           if (format === "svg") {
             await addSvgArtifact(
               investigationId,
               `${view?.title || "Diagram"} - SVG export`,
               content,
               view?.object_id,
+              provenance,
             );
           } else {
             // PNG: store as base64 in content
@@ -122,6 +149,7 @@ export function ExportMenu({ view, workspaceId, investigationId, onShowNotificat
               `${view?.title || "Diagram"} - PNG export`,
               `data:image/png;base64,${content}`,
               view?.object_id,
+              provenance,
             );
           }
           onShowNotification?.("Artifact added to investigation");

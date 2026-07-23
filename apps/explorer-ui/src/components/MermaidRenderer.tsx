@@ -9,20 +9,65 @@
  * `rendererRegistry.tsx` and invoked via `registry.render("mermaid", body)`.
  */
 import React from "react";
+import type { DiagramProvenanceDto } from "../api/schemas";
 
 export interface MermaidRendererProps {
   /** Mermaid diagram definition text. */
   mermaidText: string;
   /** The ViewKind this renderer is being used for (e.g., "call_graph", "vertical_slice"). */
   viewKind?: string;
+  /** ADR-010 E24.1: Structured provenance metadata for diagram artifacts. */
+  provenance?: DiagramProvenanceDto;
+}
+
+/**
+ * Renders a provenance badge for diagram artifacts.
+ * Shows source object, view kind, format, and creation timestamp.
+ */
+export function ProvenanceBadge({ provenance }: { provenance: DiagramProvenanceDto }) {
+  const formatLabel = provenance.export_format ?? "mermaid";
+  const createdAt = provenance.created_at
+    ? new Date(provenance.created_at).toLocaleString()
+    : "unknown";
+
+  return (
+    <div
+      data-testid="diagram-provenance-badge"
+      style={{
+        display: "flex",
+        gap: "0.5rem",
+        flexWrap: "wrap" as const,
+        fontSize: "0.625rem",
+        color: "var(--color-text-muted)",
+        marginBottom: "0.5rem",
+        padding: "0.375rem 0.5rem",
+        backgroundColor: "var(--color-surface-overlay)",
+        borderRadius: "0.25rem",
+        border: "1px solid var(--color-border)",
+      }}
+    >
+      <span title="Source object">
+        <strong>Source:</strong> {provenance.object_id}
+      </span>
+      <span title="View kind">
+        <strong>View:</strong> {provenance.view_kind}
+      </span>
+      <span title="Export format">
+        <strong>Format:</strong> {formatLabel}
+      </span>
+      <span title="Created at">
+        <strong>Created:</strong> {createdAt}
+      </span>
+    </div>
+  );
 }
 
 /**
  * Renders Mermaid text as a styled code block.
  *
- * Props accepted: `{ mermaidText?: string, viewKind?: string }`.
+ * Props accepted: `{ mermaidText?: string, viewKind?: string, provenance?: DiagramProvenanceDto }`.
  */
-export function MermaidRenderer({ mermaidText, viewKind }: MermaidRendererProps): React.ReactElement {
+export function MermaidRenderer({ mermaidText, viewKind, provenance }: MermaidRendererProps): React.ReactElement {
   if (!mermaidText || mermaidText.trim() === "") {
     return (
       <div
@@ -80,6 +125,9 @@ export function MermaidRenderer({ mermaidText, viewKind }: MermaidRendererProps)
         overflow: "auto",
       }}
     >
+      {/* ADR-010 E24.1: Provenance badge when available */}
+      {provenance && <ProvenanceBadge provenance={provenance} />}
+
       <div
         style={{
           fontFamily: "monospace",

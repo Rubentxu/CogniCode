@@ -24,8 +24,10 @@ import { GraphView } from "../GraphView/GraphView";
 import { PaneBreadcrumb } from "./PaneBreadcrumb";
 import { NoteEditor } from "./NoteEditor";
 import { ExportMenu } from "../ExportMenu";
+import { ProvenanceBadge } from "../MermaidRenderer";
 import { NotificationContext } from "../Notifications/NotificationProvider";
 import { PinEvidenceModal } from "./PinEvidenceModal";
+import type { DiagramProvenanceDto } from "../../api/schemas";
 
 // Graph-shaped ViewKinds that route to GraphViewRenderer
 function isGraphViewKind(kind: string | undefined): boolean {
@@ -37,6 +39,36 @@ function isGraphViewKind(kind: string | undefined): boolean {
     kind === "seam_map" ||
     kind === "concept_map"
   );
+}
+
+/**
+ * Extract diagram provenance from an object's properties.
+ * Looks for a `provenance` property with the expected shape.
+ */
+function extractProvenanceFromProperties(
+  properties: Array<{ key: string; value: unknown }> | undefined,
+): DiagramProvenanceDto | null {
+  if (!properties) return null;
+  const provProp = properties.find((p) => p.key === "provenance");
+  if (!provProp || typeof provProp.value !== "object" || provProp.value === null) return null;
+  const prov = provProp.value as Record<string, unknown>;
+  // Validate required fields
+  if (
+    typeof prov.object_id !== "string" ||
+    typeof prov.view_kind !== "string" ||
+    typeof prov.export_format !== "string" ||
+    typeof prov.created_at !== "string"
+  ) {
+    return null;
+  }
+  return {
+    object_id: prov.object_id as string,
+    view_kind: prov.view_kind as string,
+    spec_id: typeof prov.spec_id === "string" ? prov.spec_id : undefined,
+    query_id: typeof prov.query_id === "string" ? prov.query_id : undefined,
+    export_format: prov.export_format as DiagramProvenanceDto["export_format"],
+    created_at: prov.created_at as string,
+  };
 }
 
 type PaneInspectorProps = {
@@ -286,6 +318,43 @@ export function PaneInspector({
               onDispatch={askDispatch}
             />
           )}
+
+          {/* C-1: Diagram provenance badge — rendered when artifact carries provenance metadata. */}
+          {object && (() => {
+            const provenance = extractProvenanceFromProperties(object.properties);
+            if (!provenance) return null;
+            return (
+              <div style={{ padding: "0.5rem 1rem 0" }}>
+                <ProvenanceBadge provenance={provenance} />
+                <button
+                  type="button"
+                  data-testid="reopen-source-view"
+                  onClick={() =>
+                    dispatch({
+                      type: "SELECT_OBJECT",
+                      payload: {
+                        objectId: provenance.object_id,
+                        viewId: provenance.view_kind,
+                      },
+                    })
+                  }
+                  style={{
+                    marginTop: "0.25rem",
+                    fontSize: "0.625rem",
+                    padding: "0.25rem 0.5rem",
+                    backgroundColor: "var(--color-surface-overlay)",
+                    color: "var(--color-text-muted)",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "0.25rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  Reopen source view
+                </button>
+              </div>
+            );
+          })()}
+
           {views && views.length > 0 && (
             <ViewTabs
               views={views}

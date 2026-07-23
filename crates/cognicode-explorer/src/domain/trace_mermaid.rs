@@ -21,6 +21,14 @@
 
 use std::fmt;
 
+/// Error returned by trace-to-Mermaid emitters.
+#[derive(Debug, thiserror::Error)]
+pub enum TraceMermaidError {
+    /// Decision trace is not implemented (E24.3).
+    #[error("decision_trace not implemented (E24.3)")]
+    NotImplemented,
+}
+
 // ============================================================================
 // TraceMermaidViewKind — enum for MCP + REST validation
 // ============================================================================
@@ -284,13 +292,24 @@ pub fn impact_radius_to_mermaid(ctx: &TraceEmitContext, symbol: &str) -> String 
 /// This function is only callable when the `multimodal` feature is enabled.
 /// The MCP tool and REST endpoint gate the `decision_trace` variant behind this feature.
 #[cfg(feature = "multimodal")]
-pub fn decision_trace_to_mermaid(_ctx: &TraceEmitContext, decision_id: &str) -> String {
-    // TODO: When DecisionTrace executor is implemented, extract data from ctx
-    // For now, return a placeholder that shows the expected structure
-    format!(
-        "flowchart LR\n    subgraph decision_trace[\"decision_trace: {}\"]\n        direction LR\n        subgraph adr[\"ADR\"]\n            A[ADR Metadata]\n        end\n        subgraph code[\"Code\"]\n            C[Implementation]\n        end\n        subgraph evidence[\"Evidence\"]\n            E[Supporting Evidence]\n        end\n        A --> C\n        C --> E\n    end",
-        sanitize_id(decision_id)
-    )
+pub fn decision_trace_to_mermaid(
+    _ctx: &TraceEmitContext,
+    _decision_id: &str,
+) -> Result<String, TraceMermaidError> {
+    // Real implementation deferred to E24.3 (DecisionTrace executor).
+    Err(TraceMermaidError::NotImplemented)
+}
+
+/// Non-multimodal stub for `decision_trace_to_mermaid`.
+///
+/// Always returns `Err(TraceMermaidError::NotImplemented)` regardless of inputs.
+/// The `multimodal` feature version above has the same behavior.
+#[cfg(not(feature = "multimodal"))]
+pub fn decision_trace_to_mermaid(
+    _ctx: &TraceEmitContext,
+    _decision_id: &str,
+) -> Result<String, TraceMermaidError> {
+    Err(TraceMermaidError::NotImplemented)
 }
 
 // ============================================================================
@@ -657,7 +676,7 @@ mod tests {
 
     #[cfg(feature = "multimodal")]
     #[test]
-    fn decision_trace_returns_placeholder_when_multimodal_enabled() {
+    fn decision_trace_returns_err_when_multimodal_enabled() {
         let mock_gq = MockGraphQueryPort::new();
         let target = make_target_symbol("test");
         let inspection_target = InspectionTarget::Symbol(target);
@@ -666,8 +685,21 @@ mod tests {
             target: &inspection_target,
         };
         let result = decision_trace_to_mermaid(&ctx, "decision-uuid-123");
-        assert!(result.contains("flowchart LR"));
-        assert!(result.contains("decision_trace"));
+        assert!(matches!(result, Err(TraceMermaidError::NotImplemented)));
+    }
+
+    #[cfg(not(feature = "multimodal"))]
+    #[test]
+    fn decision_trace_returns_err_when_multimodal_disabled() {
+        let mock_gq = MockGraphQueryPort::new();
+        let target = make_target_symbol("test");
+        let inspection_target = InspectionTarget::Symbol(target);
+        let ctx = TraceEmitContext {
+            graph_query: &mock_gq,
+            target: &inspection_target,
+        };
+        let result = decision_trace_to_mermaid(&ctx, "decision-uuid-123");
+        assert!(matches!(result, Err(TraceMermaidError::NotImplemented)));
     }
 
     // ------------------------------------------------------------------------
