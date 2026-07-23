@@ -163,56 +163,31 @@ impl ViewServiceImpl {
             // the executors (DocSourceExecutor, EvidenceOverviewExecutor) handle
             // the actual node fetch from graph_repo when building the view.
             ObjectIdentity::Decision { id } => {
-                #[cfg(feature = "multimodal")]
-                {
-                    // Decision requires graph_repo to be wired
-                    let _graph_repo = self.graph_repo.as_ref().ok_or_else(|| {
-                        ExplorerError::FeatureDisabled(
-                            "Decision resolution requires graph repository (not wired in ViewService)".into(),
-                        )
-                    })?;
-                    Ok(InspectionTarget::Decision { id: id.clone() })
-                }
-                #[cfg(not(feature = "multimodal"))]
-                {
-                    Err(ExplorerError::FeatureDisabled(
-                        "Decision resolution requires multimodal feature".into(),
-                    ))
-                }
+                // Decision requires graph_repo to be wired
+                let _graph_repo = self.graph_repo.as_ref().ok_or_else(|| {
+                    ExplorerError::FeatureDisabled(
+                        "Decision resolution requires graph repository (not wired in ViewService)"
+                            .into(),
+                    )
+                })?;
+                Ok(InspectionTarget::Decision { id: id.clone() })
             }
             ObjectIdentity::Doc { id } => {
-                #[cfg(feature = "multimodal")]
-                {
-                    let _graph_repo = self.graph_repo.as_ref().ok_or_else(|| {
-                        ExplorerError::FeatureDisabled(
-                            "Doc resolution requires graph repository (not wired in ViewService)".into(),
-                        )
-                    })?;
-                    Ok(InspectionTarget::Doc { id: id.clone() })
-                }
-                #[cfg(not(feature = "multimodal"))]
-                {
-                    Err(ExplorerError::FeatureDisabled(
-                        "Doc resolution requires multimodal feature".into(),
-                    ))
-                }
+                let _graph_repo = self.graph_repo.as_ref().ok_or_else(|| {
+                    ExplorerError::FeatureDisabled(
+                        "Doc resolution requires graph repository (not wired in ViewService)".into(),
+                    )
+                })?;
+                Ok(InspectionTarget::Doc { id: id.clone() })
             }
             ObjectIdentity::Evidence { id } => {
-                #[cfg(feature = "multimodal")]
-                {
-                    let _graph_repo = self.graph_repo.as_ref().ok_or_else(|| {
-                        ExplorerError::FeatureDisabled(
-                            "Evidence resolution requires graph repository (not wired in ViewService)".into(),
-                        )
-                    })?;
-                    Ok(InspectionTarget::Evidence { id: id.clone() })
-                }
-                #[cfg(not(feature = "multimodal"))]
-                {
-                    Err(ExplorerError::FeatureDisabled(
-                        "Evidence resolution requires multimodal feature".into(),
-                    ))
-                }
+                let _graph_repo = self.graph_repo.as_ref().ok_or_else(|| {
+                    ExplorerError::FeatureDisabled(
+                        "Evidence resolution requires graph repository (not wired in ViewService)"
+                            .into(),
+                    )
+                })?;
+                Ok(InspectionTarget::Evidence { id: id.clone() })
             }
         }
     }
@@ -656,7 +631,6 @@ mod view_service_tests {
     }
 
     /// Creates a ViewServiceImpl with graph_repo wired (for Scenario 3 success path).
-    #[cfg(feature = "multimodal")]
     fn make_service_with_graph_repo(
         repo: MockRepo,
         graph_repo: Arc<dyn cognicode_core::domain::ports::GraphRepository>,
@@ -946,7 +920,6 @@ mod view_service_tests {
     // -------------------------------------------------------------------------
 
     #[tokio::test]
-    #[cfg(feature = "multimodal")]
     async fn contextual_view_doc_succeeds_with_wired_graph_repo() {
         use crate::adapters::InMemoryGraphRepository;
         use cognicode_core::domain::aggregates::generic_graph::{GraphNode, NodeId};
@@ -978,7 +951,6 @@ mod view_service_tests {
     }
 
     #[tokio::test]
-    #[cfg(feature = "multimodal")]
     async fn contextual_view_evidence_succeeds_with_wired_graph_repo() {
         use crate::adapters::InMemoryGraphRepository;
         use cognicode_core::domain::aggregates::generic_graph::{GraphNode, NodeId};
@@ -1013,7 +985,6 @@ mod view_service_tests {
     // -------------------------------------------------------------------------
 
     #[test]
-    #[cfg(feature = "multimodal")]
     fn view_service_wires_graph_repo_when_provided() {
         use crate::adapters::InMemoryGraphRepository;
         use cognicode_core::domain::aggregates::generic_graph::{GraphNode, NodeId};

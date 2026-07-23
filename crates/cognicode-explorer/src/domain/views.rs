@@ -2362,28 +2362,18 @@ impl ViewExecutor for DocSourceExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
             InspectionTarget::Doc { id } => {
-                #[cfg(feature = "multimodal")]
-                {
-                    build_node_source_view(
-                        ctx,
-                        id,
-                        "doc",
-                        "doc-source",
-                        "doc_source",
-                        "Doc source",
-                        "doc_identity",
-                        "Document",
-                        RendererKind::Code,
-                    )
-                    .await
-                }
-                #[cfg(not(feature = "multimodal"))]
-                {
-                    let _ = ctx;
-                    Err(crate::error::ExplorerError::FeatureDisabled(
-                        "Doc view requires multimodal feature".into(),
-                    ))
-                }
+                build_node_source_view(
+                    ctx,
+                    id,
+                    "doc",
+                    "doc-source",
+                    "doc_source",
+                    "Doc source",
+                    "doc_identity",
+                    "Document",
+                    RendererKind::Code,
+                )
+                .await
             }
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
@@ -2419,28 +2409,18 @@ impl ViewExecutor for EvidenceOverviewExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
             InspectionTarget::Evidence { id } => {
-                #[cfg(feature = "multimodal")]
-                {
-                    build_node_source_view(
-                        ctx,
-                        id,
-                        "evidence",
-                        "evidence-overview",
-                        "evidence_overview",
-                        "Evidence overview",
-                        "evidence_identity",
-                        "Evidence",
-                        RendererKind::Table,
-                    )
-                    .await
-                }
-                #[cfg(not(feature = "multimodal"))]
-                {
-                    let _ = ctx;
-                    Err(crate::error::ExplorerError::FeatureDisabled(
-                        "Evidence view requires multimodal feature".into(),
-                    ))
-                }
+                build_node_source_view(
+                    ctx,
+                    id,
+                    "evidence",
+                    "evidence-overview",
+                    "evidence_overview",
+                    "Evidence overview",
+                    "evidence_identity",
+                    "Evidence",
+                    RendererKind::Table,
+                )
+                .await
             }
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
