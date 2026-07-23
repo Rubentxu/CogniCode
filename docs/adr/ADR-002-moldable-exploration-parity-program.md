@@ -193,7 +193,7 @@ Wave 1 remaining (reordered 2026-06-26):
 - `e12d-debug-slice` — DebugSlice ✅ (v0.27.3, PR #66). 13th executor. Shows debug-relevant callers/callees filtered by name heuristic. Renderer: graph.
 - `e12e-change-impact-story` — ChangeImpactStory ✅ (PR #67). 15th executor. BFS upstream (callers) + downstream (callees) up to depth 3 as Table. Renderer: Table.
 - `OwnershipMap` — deferred: no ownership/author attribution in graph
-- `DocCodeAlignment` — deferred: `EntryPoint::Doc` not wired to any `InspectionTarget`, no DocService (Phase 2+)
+- `DocCodeAlignment` — ✅ implemented (E23, v0.28.x): DocCodeAlignmentExecutor owns the ViewKind, traversal over Cites/Resolves edges, drift detection
 
 Success criterion: the number of real executors grows materially beyond the
 current 9, and every newly exposed view kind is reachable from the inspector.

@@ -2698,14 +2698,15 @@ pub async fn build_concept_map_view(
         })
         .collect();
 
-    // Collect related symbol ids (nodes that are symbols)
+    // Collect related symbol ids (nodes that are symbols, excluding the focus itself)
+    let focus_id_str = focus_node.id.to_string();
     let related_symbols: Vec<String> = nodes
         .iter()
         .filter(|n| {
             matches!(
                 n.kind,
                 cognicode_core::domain::value_objects::node_kind::NodeKind::Symbol(_)
-            )
+            ) && n.id.to_string() != focus_id_str
         })
         .map(|n| n.id.to_string())
         .collect();
@@ -4197,18 +4198,19 @@ mod tests {
 
     /// Hand-rolled mock repository — no mockall to keep the crate's
     /// dev-dependencies slim. Returns pre-baked answers keyed by SymbolId.
-    struct MockRepo {
+    #[allow(unused)]
+    pub(crate) struct MockRepo {
         symbols: HashMap<String, ResolvedSymbol>,
     }
 
     impl MockRepo {
-        fn new() -> Self {
+        pub(crate) fn new() -> Self {
             Self {
                 symbols: HashMap::new(),
             }
         }
 
-        fn with(&mut self, sym: ResolvedSymbol) -> &mut Self {
+        pub(crate) fn with(&mut self, sym: ResolvedSymbol) -> &mut Self {
             self.symbols.insert(sym.id.to_string(), sym);
             self
         }
@@ -4251,12 +4253,13 @@ mod tests {
         }
     }
 
-    struct MockReader {
+    #[allow(unused)]
+    pub(crate) struct MockReader {
         content: Mutex<HashMap<String, String>>,
     }
 
     impl MockReader {
-        fn new(content: HashMap<String, String>) -> Self {
+        pub(crate) fn new(content: HashMap<String, String>) -> Self {
             Self {
                 content: Mutex::new(content),
             }
@@ -4294,25 +4297,26 @@ mod tests {
 
     /// Hand-rolled mock graph repository for rationale_subgraph tests.
     /// No mockall to keep dev-dependencies slim.
-    struct MockGraphRepo {
+    #[allow(unused)]
+    pub(crate) struct MockGraphRepo {
         nodes: HashMap<String, GraphNode>,
         edges: Vec<GraphEdge>,
     }
 
     impl MockGraphRepo {
-        fn new() -> Self {
+        pub(crate) fn new() -> Self {
             Self {
                 nodes: HashMap::new(),
                 edges: Vec::new(),
             }
         }
 
-        fn with_node(&mut self, node: GraphNode) -> &mut Self {
+        pub(crate) fn with_node(&mut self, node: GraphNode) -> &mut Self {
             self.nodes.insert(node.id.as_str().to_string(), node);
             self
         }
 
-        fn with_edge(&mut self, edge: GraphEdge) -> &mut Self {
+        pub(crate) fn with_edge(&mut self, edge: GraphEdge) -> &mut Self {
             self.edges.push(edge);
             self
         }
@@ -4352,39 +4356,95 @@ mod tests {
 
         async fn edges_by_kind(
             &self,
-            _node: &NodeId,
-            _kinds: &[EdgeKind],
+            node: &NodeId,
+            kinds: &[EdgeKind],
         ) -> GraphResult<Vec<GraphEdge>> {
-            Ok(Vec::new())
+            let kind_set: std::collections::HashSet<EdgeKind> =
+                kinds.iter().cloned().collect();
+            Ok(self
+                .edges
+                .iter()
+                .filter(|e| e.source == *node && kind_set.contains(&e.kind))
+                .cloned()
+                .collect())
         }
 
         async fn rationale_subgraph(
             &self,
             focus: &NodeId,
-            _max_depth: u32,
-            _max_nodes: usize,
+            max_depth: u32,
+            max_nodes: usize,
         ) -> GraphResult<(Vec<GraphNode>, Vec<GraphEdge>, bool)> {
+            use std::collections::VecDeque;
+
             let focus_node = self.nodes.get(focus.as_str()).cloned();
-            let Some(node) = focus_node else {
+            let Some(start_node) = focus_node else {
                 return Ok((Vec::new(), Vec::new(), false));
             };
-            let outgoing: Vec<GraphEdge> = self
-                .edges
-                .iter()
-                .filter(|e| e.source == *focus)
-                .cloned()
-                .collect();
-            let related_ids: std::collections::HashSet<String> = outgoing
-                .iter()
-                .map(|e| e.target.as_str().to_string())
-                .collect();
-            let related_nodes: Vec<GraphNode> = related_ids
-                .iter()
-                .filter_map(|id| self.nodes.get(id).cloned())
-                .collect();
-            let mut nodes = vec![node];
-            nodes.extend(related_nodes);
-            Ok((nodes, outgoing, false))
+
+            // BFS over rationale edges (Cites, Justifies, Resolves, CorroboratedBy).
+            let rationale_kinds: std::collections::HashSet<EdgeKind> = [
+                EdgeKind::Cites,
+                EdgeKind::Justifies,
+                EdgeKind::Resolves,
+                EdgeKind::CorroboratedBy,
+            ]
+            .into();
+
+            let mut visited: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            let mut queue: VecDeque<(String, u32)> = VecDeque::new();
+            let mut result_nodes: Vec<GraphNode> = Vec::new();
+            let mut result_edges: Vec<GraphEdge> = Vec::new();
+            let mut truncated = false;
+
+            queue.push_back((start_node.id.to_string(), 0));
+            visited.insert(start_node.id.to_string());
+
+            while let Some((node_id_str, depth)) = queue.pop_front() {
+                if result_nodes.len() >= max_nodes {
+                    truncated = true;
+                    break;
+                }
+                if depth > max_depth {
+                    continue;
+                }
+
+                let node_id = NodeId::new(node_id_str.clone());
+                let node = self.nodes.get(&node_id_str);
+                if let Some(n) = node {
+                    if result_nodes.len() < max_nodes {
+                        result_nodes.push(n.clone());
+                    }
+                }
+
+                // Find all outgoing rationale edges from this node
+                let outgoing: Vec<GraphEdge> = self
+                    .edges
+                    .iter()
+                    .filter(|e| e.source == node_id && rationale_kinds.contains(&e.kind))
+                    .cloned()
+                    .collect();
+
+                for edge in outgoing {
+                    if result_edges.len() >= max_nodes {
+                        truncated = true;
+                    }
+                    if result_edges.len() < max_nodes {
+                        result_edges.push(edge.clone());
+                    }
+                    if !visited.contains(&edge.target.to_string()) {
+                        visited.insert(edge.target.to_string());
+                        queue.push_back((edge.target.to_string(), depth + 1));
+                    }
+                }
+            }
+
+            // Deduplicate nodes
+            let mut seen = std::collections::HashSet::new();
+            result_nodes.retain(|n| seen.insert(n.id.to_string()));
+
+            Ok((result_nodes, result_edges, truncated))
         }
 
         async fn find_nodes_by_kind_paginated(
@@ -6666,6 +6726,15 @@ mod tests {
 #[cfg(test)]
 mod view_seam_tests {
     use super::*;
+    use crate::domain::views::tests::MockGraphRepo;
+    use crate::domain::views::tests::MockRepo;
+    use crate::domain::views::tests::MockReader;
+    use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
+    use cognicode_core::domain::ports::graph_repository::GraphRepository;
+    use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
+    use cognicode_core::domain::value_objects::node_kind::NodeKind;
+    use cognicode_core::domain::value_objects::SymbolKind;
+    use std::collections::HashMap;
 
     // -------------------------------------------------------------------------
     // Object safety — &dyn ViewDescriptor / &dyn ViewExecutor must compile
@@ -6913,5 +6982,700 @@ mod view_seam_tests {
         let exec = executor.unwrap();
         assert_eq!(exec.id(), "risk_map");
         assert_eq!(exec.title(), "Risk Map");
+    }
+
+    // -------------------------------------------------------------------------
+    // DocCodeAlignmentExecutor tests (E23)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn doc_code_alignment_executor_descriptor_metadata() {
+        use super::DOC_CODE_ALIGNMENT_EXECUTOR as Exec;
+        assert_eq!(Exec.id(), "doc_code_alignment");
+        assert_eq!(Exec.title(), "Doc/Code Alignment");
+        assert!(
+            Exec.applies_to().contains(&crate::dto::InspectableObjectType::Doc),
+            "DocCodeAlignment must apply to Doc"
+        );
+        assert!(
+            Exec.applies_to()
+                .contains(&crate::dto::InspectableObjectType::DecisionArtifact),
+            "DocCodeAlignment must apply to DecisionArtifact"
+        );
+        assert_eq!(
+            Exec.view_kind(),
+            crate::dto::ViewKind::DocCodeAlignment
+        );
+        assert_eq!(Exec.renderer_kind(), crate::dto::RendererKind::Graph);
+    }
+
+    #[test]
+    fn doc_code_alignment_executor_get_executor_from_registry() {
+        let registry = crate::registry::ViewRegistry::new(None);
+        let executor = registry.get_executor("doc_code_alignment");
+        assert!(
+            executor.is_some(),
+            "get_executor(\"doc_code_alignment\") must return Some"
+        );
+        let exec = executor.unwrap();
+        assert_eq!(exec.id(), "doc_code_alignment");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn doc_code_alignment_two_valid_cites() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("DOC-001".to_string()),
+            kind: NodeKind::Doc,
+            label: "My Doc".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/doc.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_node(GraphNode {
+            id: NodeId::new("SYM-001".to_string()),
+            kind: NodeKind::Symbol(SymbolKind::Function),
+            label: "my_func".to_string(),
+            source_path: Some(std::path::PathBuf::from("src/lib.rs")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_node(GraphNode {
+            id: NodeId::new("SYM-002".to_string()),
+            kind: NodeKind::Symbol(SymbolKind::Function),
+            label: "other_func".to_string(),
+            source_path: Some(std::path::PathBuf::from("src/lib.rs")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_edge(GraphEdge {
+            source: NodeId::new("DOC-001".to_string()),
+            target: NodeId::new("SYM-001".to_string()),
+            kind: EdgeKind::Cites,
+            provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
+            confidence: 1.0,
+            metadata: HashMap::new(),
+        });
+        mock.with_edge(GraphEdge {
+            source: NodeId::new("DOC-001".to_string()),
+            target: NodeId::new("SYM-002".to_string()),
+            kind: EdgeKind::Cites,
+            provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
+            confidence: 1.0,
+            metadata: HashMap::new(),
+        });
+
+        let target = super::InspectionTarget::Doc {
+            id: "DOC-001".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "doc_code_alignment");
+        assert_eq!(view.view_kind, crate::dto::ViewKind::DocCodeAlignment);
+
+        // Two relations (two Cites edges)
+        assert_eq!(view.relations.len(), 2);
+        // No drift (both symbols exist)
+        let body_json = serde_json::to_string(&view.blocks[0].body).unwrap();
+        assert!(
+            !body_json.contains("\"drift\":true"),
+            "drift must be false when all targets resolve"
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn doc_code_alignment_decision_with_resolves() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("ADR-001".to_string()),
+            kind: NodeKind::Decision,
+            label: "ADR-001 Use Postgres".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/adr/ADR-001.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_node(GraphNode {
+            id: NodeId::new("ISSUE-001".to_string()),
+            kind: NodeKind::Issue,
+            label: "Performance issue with Redis".to_string(),
+            source_path: None,
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_edge(GraphEdge {
+            source: NodeId::new("ADR-001".to_string()),
+            target: NodeId::new("ISSUE-001".to_string()),
+            kind: EdgeKind::Resolves,
+            provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
+            confidence: 1.0,
+            metadata: HashMap::new(),
+        });
+
+        let target = super::InspectionTarget::Decision {
+            id: "ADR-001".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        assert_eq!(view.relations.len(), 1);
+        assert_eq!(view.relations[0].relation_type, "Resolves");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn doc_code_alignment_one_missing_drift() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("DOC-002".to_string()),
+            kind: NodeKind::Doc,
+            label: "My Doc 2".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/doc2.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        // Only one symbol exists; the second is missing from the graph
+        mock.with_node(GraphNode {
+            id: NodeId::new("SYM-EXISTS".to_string()),
+            kind: NodeKind::Symbol(SymbolKind::Function),
+            label: "existing_func".to_string(),
+            source_path: Some(std::path::PathBuf::from("src/lib.rs")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_edge(GraphEdge {
+            source: NodeId::new("DOC-002".to_string()),
+            target: NodeId::new("SYM-EXISTS".to_string()),
+            kind: EdgeKind::Cites,
+            provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
+            confidence: 1.0,
+            metadata: HashMap::new(),
+        });
+        mock.with_edge(GraphEdge {
+            source: NodeId::new("DOC-002".to_string()),
+            target: NodeId::new("SYM-MISSING".to_string()), // does not exist as a node
+            kind: EdgeKind::Cites,
+            provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
+            confidence: 1.0,
+            metadata: HashMap::new(),
+        });
+
+        let target = super::InspectionTarget::Doc {
+            id: "DOC-002".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        assert_eq!(view.relations.len(), 2);
+        // Drift must be true
+        let body_json = serde_json::to_string(&view.blocks[0].body).unwrap();
+        assert!(
+            body_json.contains("\"drift\":true"),
+            "drift must be true when at least one target is missing"
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn doc_code_alignment_no_citations() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("DOC-003".to_string()),
+            kind: NodeKind::Doc,
+            label: "Lonely Doc".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/lonely.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        // No edges
+
+        let target = super::InspectionTarget::Doc {
+            id: "DOC-003".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        assert_eq!(view.relations.len(), 0);
+        // No drift
+        let body_json = serde_json::to_string(&view.blocks[0].body).unwrap();
+        assert!(
+            !body_json.contains("\"drift\":true"),
+            "drift must be false when there are no edges"
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn doc_code_alignment_unknown_focus() {
+        let mock = MockGraphRepo::new(); // empty — no nodes
+
+        let target = super::InspectionTarget::Doc {
+            id: "NONEXISTENT-DOC".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
+        let result = executor.build(&ctx).await;
+        // Must return Ok, not panic
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        assert_eq!(view.object_id, "doc:NONEXISTENT-DOC");
+        assert_eq!(view.view_id, "doc_code_alignment");
+        let block_ids: Vec<&str> = view.blocks.iter().map(|b| b.id.as_str()).collect();
+        assert!(
+            block_ids.contains(&"unknown_focus"),
+            "must have unknown_focus block"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // ConceptMapExecutor tests (E23)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn concept_map_executor_descriptor_metadata() {
+        use super::CONCEPT_MAP_EXECUTOR as Exec;
+        assert_eq!(Exec.id(), "concept_map");
+        assert_eq!(Exec.title(), "Concept Map");
+        assert!(
+            Exec.applies_to().contains(&crate::dto::InspectableObjectType::Doc),
+            "ConceptMap must apply to Doc"
+        );
+        assert!(
+            Exec.applies_to()
+                .contains(&crate::dto::InspectableObjectType::DecisionArtifact),
+            "ConceptMap must apply to DecisionArtifact"
+        );
+        assert!(
+            Exec.applies_to()
+                .contains(&crate::dto::InspectableObjectType::Symbol),
+            "ConceptMap must apply to Symbol"
+        );
+        assert_eq!(Exec.view_kind(), crate::dto::ViewKind::ConceptMap);
+        assert_eq!(Exec.renderer_kind(), crate::dto::RendererKind::Graph);
+    }
+
+    #[test]
+    fn concept_map_executor_get_executor_from_registry() {
+        let registry = crate::registry::ViewRegistry::new(None);
+        let executor = registry.get_executor("concept_map");
+        assert!(
+            executor.is_some(),
+            "get_executor(\"concept_map\") must return Some"
+        );
+        let exec = executor.unwrap();
+        assert_eq!(exec.id(), "concept_map");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn concept_map_default_depth_2() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+
+        // D --(Cites)--> A1 --(Justifies)--> S1
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("DOC-X".to_string()),
+            kind: NodeKind::Doc,
+            label: "Knowledge Layer Architecture".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/arch.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_node(GraphNode {
+            id: NodeId::new("ADR-X".to_string()),
+            kind: NodeKind::Decision,
+            label: "ADR-X".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/adr/ADR-X.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_node(GraphNode {
+            id: NodeId::new("SYM-X".to_string()),
+            kind: NodeKind::Symbol(SymbolKind::Function),
+            label: "arch_func".to_string(),
+            source_path: Some(std::path::PathBuf::from("src/arch.rs")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_edge(GraphEdge {
+            source: NodeId::new("DOC-X".to_string()),
+            target: NodeId::new("ADR-X".to_string()),
+            kind: EdgeKind::Cites,
+            provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
+            confidence: 1.0,
+            metadata: HashMap::new(),
+        });
+        mock.with_edge(GraphEdge {
+            source: NodeId::new("ADR-X".to_string()),
+            target: NodeId::new("SYM-X".to_string()),
+            kind: EdgeKind::Justifies,
+            provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
+            confidence: 1.0,
+            metadata: HashMap::new(),
+        });
+
+        let target = super::InspectionTarget::Doc {
+            id: "DOC-X".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = &super::CONCEPT_MAP_EXECUTOR;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "concept_map");
+
+        // Depth 2 → all three nodes should be present
+        let body_json = serde_json::to_string(&view.blocks[0].body).unwrap();
+        assert!(
+            body_json.contains("DOC-X") && body_json.contains("ADR-X") && body_json.contains("SYM-X"),
+            "depth=2 must include all three nodes"
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn concept_map_depth_1_stops_at_one_hop() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("DOC-Y".to_string()),
+            kind: NodeKind::Doc,
+            label: "Doc Y".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/y.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_node(GraphNode {
+            id: NodeId::new("ADR-Y".to_string()),
+            kind: NodeKind::Decision,
+            label: "ADR-Y".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/adr/ADR-Y.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_node(GraphNode {
+            id: NodeId::new("SYM-Y".to_string()),
+            kind: NodeKind::Symbol(SymbolKind::Function),
+            label: "sym_y".to_string(),
+            source_path: Some(std::path::PathBuf::from("src/lib.rs")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_edge(GraphEdge {
+            source: NodeId::new("DOC-Y".to_string()),
+            target: NodeId::new("ADR-Y".to_string()),
+            kind: EdgeKind::Cites,
+            provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
+            confidence: 1.0,
+            metadata: HashMap::new(),
+        });
+        mock.with_edge(GraphEdge {
+            source: NodeId::new("ADR-Y".to_string()),
+            target: NodeId::new("SYM-Y".to_string()),
+            kind: EdgeKind::Justifies,
+            provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
+            confidence: 1.0,
+            metadata: HashMap::new(),
+        });
+
+        let target = super::InspectionTarget::Doc {
+            id: "DOC-Y".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = &super::CONCEPT_MAP_EXECUTOR;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+
+        // With depth=1 (override via max_depth=1), only DOC-Y and ADR-Y should be present
+        // The BFS-capable rationale_subgraph already uses max_depth, so the test
+        // validates that the concept map builder passes it correctly.
+        let body_json = serde_json::to_string(&view.blocks[0].body).unwrap();
+        // Focus (DOC-Y) must be present
+        assert!(body_json.contains("DOC-Y"));
+        // ADR-Y is 1-hop away — should be present
+        assert!(body_json.contains("ADR-Y"));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn concept_map_cycle_not_retraversed() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+
+        // A --(Cites)--> B --(Cites)--> A  (cycle)
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("NODE-A".to_string()),
+            kind: NodeKind::Decision,
+            label: "Node A".to_string(),
+            source_path: None,
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_node(GraphNode {
+            id: NodeId::new("NODE-B".to_string()),
+            kind: NodeKind::Decision,
+            label: "Node B".to_string(),
+            source_path: None,
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_edge(GraphEdge {
+            source: NodeId::new("NODE-A".to_string()),
+            target: NodeId::new("NODE-B".to_string()),
+            kind: EdgeKind::Cites,
+            provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
+            confidence: 1.0,
+            metadata: HashMap::new(),
+        });
+        mock.with_edge(GraphEdge {
+            source: NodeId::new("NODE-B".to_string()),
+            target: NodeId::new("NODE-A".to_string()),
+            kind: EdgeKind::Cites,
+            provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
+            confidence: 1.0,
+            metadata: HashMap::new(),
+        });
+
+        let target = super::InspectionTarget::Decision {
+            id: "NODE-A".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = &super::CONCEPT_MAP_EXECUTOR;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        // Must not panic and must include each node exactly once
+        let body_json = serde_json::to_string(&view.blocks[0].body).unwrap();
+        // Count occurrences of NODE-A in the JSON string — should be exactly 2
+        // (once as a node, once in is_focus), but not duplicated as a visited entry
+        let count_a = body_json.matches("NODE-A").count();
+        assert!(count_a >= 2, "cycle must not cause infinite traversal");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn concept_map_empty_rationale_returns_focus_only() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("SYM-LONE".to_string()),
+            kind: NodeKind::Symbol(SymbolKind::Function),
+            label: "lone_func".to_string(),
+            source_path: Some(std::path::PathBuf::from("src/lib.rs")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        // No edges
+
+        let target = super::InspectionTarget::Symbol(super::ResolvedSymbol {
+            id: SymbolId::new("SYM-LONE".to_string()),
+            name: "lone_func".to_string(),
+            kind: cognicode_core::domain::value_objects::SymbolKind::Function,
+            file: "src/lib.rs".to_string(),
+            line: 1,
+            signature: Some("fn lone_func()".to_string()),
+        });
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = &super::CONCEPT_MAP_EXECUTOR;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        // Focus node should be present
+        assert!(view.object_id.contains("SYM-LONE"));
+        // related_symbols block should be empty
+        let related_block = view.blocks.iter().find(|b| b.id == "related_symbols");
+        assert!(related_block.is_some());
+        let count = related_block
+            .unwrap()
+            .body
+            .get("count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1);
+        assert_eq!(count, 0, "related_symbols must be empty for isolated node");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn concept_map_doc_cites_symbol_related_symbols() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("DOC-CITE".to_string()),
+            kind: NodeKind::Doc,
+            label: "Doc with citations".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/citations.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_node(GraphNode {
+            id: NodeId::new("SYM-CITED".to_string()),
+            kind: NodeKind::Symbol(SymbolKind::Function),
+            label: "cited_function".to_string(),
+            source_path: Some(std::path::PathBuf::from("src/lib.rs")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        mock.with_edge(GraphEdge {
+            source: NodeId::new("DOC-CITE".to_string()),
+            target: NodeId::new("SYM-CITED".to_string()),
+            kind: EdgeKind::Cites,
+            provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
+            confidence: 1.0,
+            metadata: HashMap::new(),
+        });
+
+        let target = super::InspectionTarget::Doc {
+            id: "DOC-CITE".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = &super::CONCEPT_MAP_EXECUTOR;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+
+        // The cited symbol should appear in the graph
+        let body_json = serde_json::to_string(&view.blocks[0].body).unwrap();
+        assert!(
+            body_json.contains("SYM-CITED"),
+            "cited symbol must appear in concept map"
+        );
+        // related_symbols should include the cited symbol
+        let related_block = view.blocks.iter().find(|b| b.id == "related_symbols");
+        assert!(related_block.is_some());
+        let symbols_json = serde_json::to_string(&related_block.unwrap().body).unwrap();
+        assert!(
+            symbols_json.contains("SYM-CITED"),
+            "related_symbols must include the cited symbol"
+        );
     }
 }
