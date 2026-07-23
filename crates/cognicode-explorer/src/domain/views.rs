@@ -2350,7 +2350,9 @@ impl ViewDescriptor for DocSourceExecutor {
         &[InspectableObjectType::Doc]
     }
     fn view_kind(&self) -> ViewKind {
-        ViewKind::DocCodeAlignment
+        // DocSource shows the document's own content — a source/overview perspective.
+        // The canonical DocCodeAlignment is now owned by DocCodeAlignmentExecutor.
+        ViewKind::SourceView
     }
     fn renderer_kind(&self) -> RendererKind {
         RendererKind::Code
@@ -2378,6 +2380,437 @@ impl ViewExecutor for DocSourceExecutor {
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
                 view_id: "doc-source".into(),
+            }),
+        }
+    }
+}
+
+// ============================================================================
+// E23 Knowledge Views — DocCodeAlignment and ConceptMap
+// ============================================================================
+
+/// Build the DocCodeAlignment view: cited/resolved code from a Doc or Decision node.
+///
+/// Fetches the focus node via `GraphRepository::get_node`, enumerates outgoing
+/// `Cites` and `Resolves` edges, resolves each target, and shapes a graph block
+/// + table block with per-edge `resolved` status. The aggregate `drift` signal is
+/// embedded in the alignment_graph block body as `drift == true` iff at least one
+/// target failed resolution.
+pub async fn build_doc_code_alignment_view(
+    ctx: &ViewContext<'_>,
+    focus_id: &str,
+    mvp_prefix: &str,
+) -> ExplorerResult<ContextualView> {
+    use cognicode_core::domain::aggregates::generic_graph::NodeId;
+    use cognicode_core::domain::ports::GraphRepository;
+    use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
+
+    let Some(repo) = ctx.graph_repo else {
+        return Err(crate::error::ExplorerError::FeatureDisabled(
+            "graph repository not wired".into(),
+        ));
+    };
+
+    let mvp = format!("{mvp_prefix}:{focus_id}");
+    let node_id = NodeId::new(focus_id.to_string());
+
+    // Fetch focus node
+    let focus_node = match repo.get_node(&node_id).await {
+        Ok(Some(n)) => n,
+        Ok(None) => {
+            // Unknown focus node — return a valid view with the id and an empty marker
+            let blocks = vec![ViewBlock {
+                id: "unknown_focus".into(),
+                title: "Unknown".into(),
+                body: json!({ "message": format!("'{}' not found in graph", focus_id) }),
+            }];
+            return Ok(ContextualView {
+                object_id: mvp,
+                view_id: "doc_code_alignment".into(),
+                title: format!("{} (unknown)", focus_id),
+                view_kind: ViewKind::DocCodeAlignment,
+                blocks,
+                relations: Vec::new(),
+                evidence: Vec::new(),
+                findings: Vec::new(),
+                renderer_kind: RendererKind::Graph,
+            });
+        }
+        Err(e) => {
+            return Err(crate::error::ExplorerError::NotFound(format!(
+                "Failed to fetch {}: {}", mvp_prefix, e
+            )));
+        }
+    };
+
+    // Fetch Cites and Resolves edges
+    let edge_kinds = [EdgeKind::Cites, EdgeKind::Resolves];
+    let edges = repo
+        .edges_by_kind(&node_id, &edge_kinds)
+        .await
+        .map_err(|e| crate::error::ExplorerError::NotFound(format!("edges: {}", e)))?;
+
+    // Resolve each edge target and build relations
+    let mut relations: Vec<TypedRelation> = Vec::new();
+    let mut drift = false;
+    let mut table_rows: Vec<serde_json::Value> = Vec::new();
+    let evidence_id = "evidence:doc_code_alignment".to_string();
+
+    for edge in &edges {
+        let resolved_node = repo.get_node(&edge.target).await;
+        let (resolved, target_label) = match resolved_node {
+            Ok(Some(n)) => (true, n.label.clone()),
+            Ok(None) => {
+                drift = true;
+                (false, format!("unresolved:{}", edge.target))
+            }
+            Err(_) => {
+                drift = true;
+                (false, format!("error:{}", edge.target))
+            }
+        };
+
+        // Map edge kind to string — only Cites/Resolves are requested
+        let edge_kind_str = match &edge.kind {
+            EdgeKind::Cites => "Cites",
+            EdgeKind::Resolves => "Resolves",
+            // edges_by_kind was called with [Cites, Resolves] only; any other
+            // variant indicates a data inconsistency — surface it as "Unknown".
+            _ => "Unknown",
+        };
+
+        relations.push(TypedRelation {
+            relation_type: edge_kind_str.to_string(),
+            direction: RelationDirection::Outgoing,
+            target_object_id: edge.target.to_string(),
+            target_label,
+            evidence_ids: vec![evidence_id.clone()],
+            provenance: None,
+            confidence: Some(edge.confidence),
+        });
+
+        table_rows.push(json!({
+            "source": focus_node.label,
+            "target": edge.target.to_string(),
+            "edge_kind": edge_kind_str,
+            "resolved": resolved,
+        }));
+    }
+
+    let evidence = vec![EvidenceBlock {
+        id: evidence_id,
+        kind: "doc_code_alignment".into(),
+        title: format!("Doc/Decision alignment: {}", focus_node.label),
+        file: focus_node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+        line_range: None,
+        source_tool_or_query: "GraphRepository::edges_by_kind(Cites, Resolves)".into(),
+        confidence: Some(1.0),
+        freshness: Some("unknown".into()),
+        provenance: None,
+    }];
+
+    let blocks = vec![
+        ViewBlock {
+            id: "alignment_graph".into(),
+            title: format!("Alignment ({})", relations.len()),
+            body: json!({
+                "focus": {
+                    "id": focus_node.id.to_string(),
+                    "label": focus_node.label,
+                },
+                "drift": drift,
+                "edges": relations.iter().map(|r| json!({
+                    "source": focus_node.id.to_string(),
+                    "target": r.target_object_id,
+                    "kind": r.relation_type,
+                    "resolved": r.confidence.is_some(),
+                })).collect::<Vec<_>>(),
+            }),
+        },
+        ViewBlock {
+            id: "alignment_table".into(),
+            title: format!("Cited/Resolved ({} entries)", table_rows.len()),
+            body: json!({
+                "columns": ["source", "target", "edge_kind", "resolved"],
+                "rows": table_rows,
+            }),
+        },
+    ];
+
+    Ok(ContextualView {
+        object_id: mvp,
+        view_id: "doc_code_alignment".into(),
+        title: format!("Alignment: {}", focus_node.label),
+        view_kind: ViewKind::DocCodeAlignment,
+        blocks,
+        relations,
+        evidence,
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Graph,
+    })
+}
+
+/// DocCodeAlignment capability — applies to Doc and DecisionArtifact.
+///
+/// Fetches the focus node from graph_repo, walks its outgoing `Cites` and
+/// `Resolves` edges, and renders a graph + table showing what code each doc
+/// or decision references — flagging drift when cited targets no longer exist.
+pub struct DocCodeAlignmentExecutor;
+impl ViewDescriptor for DocCodeAlignmentExecutor {
+    fn id(&self) -> &'static str {
+        "doc_code_alignment"
+    }
+    fn title(&self) -> &'static str {
+        "Doc/Code Alignment"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[
+            InspectableObjectType::Doc,
+            InspectableObjectType::DecisionArtifact,
+        ]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::DocCodeAlignment
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Graph
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for DocCodeAlignmentExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match &ctx.target {
+            InspectionTarget::Doc { id } => {
+                build_doc_code_alignment_view(ctx, id, "doc").await
+            }
+            InspectionTarget::Decision { id } => {
+                build_doc_code_alignment_view(ctx, id, "decision").await
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "doc_code_alignment".into(),
+            }),
+        }
+    }
+}
+
+/// Constants for ConceptMap traversal.
+const CONCEPT_MAP_DEFAULT_DEPTH: u32 = 2;
+const CONCEPT_MAP_MAX_NODES: usize = 100;
+
+/// Build the ConceptMap view: rationale neighbourhood of a Doc, Decision, or Symbol.
+///
+/// Uses `GraphRepository::rationale_subgraph` (BFS over Cites, Justifies,
+/// Resolves, CorroboratedBy) starting from the focus node, bounded by
+/// `max_depth` (default 2) and `max_nodes` (default 100). Cycle-safe.
+/// The focus node's label (or title for Doc/Decision) is the concept label.
+pub async fn build_concept_map_view(
+    ctx: &ViewContext<'_>,
+    focus_id: &str,
+    mvp_prefix: &str,
+    max_depth: Option<u32>,
+    max_nodes: Option<usize>,
+) -> ExplorerResult<ContextualView> {
+    use cognicode_core::domain::aggregates::generic_graph::NodeId;
+    use cognicode_core::domain::ports::GraphRepository;
+
+    let Some(repo) = ctx.graph_repo else {
+        return Err(crate::error::ExplorerError::FeatureDisabled(
+            "graph repository not wired".into(),
+        ));
+    };
+
+    let mvp = format!("{mvp_prefix}:{focus_id}");
+    let node_id = NodeId::new(focus_id.to_string());
+    let depth = max_depth.unwrap_or(CONCEPT_MAP_DEFAULT_DEPTH);
+    let node_cap = max_nodes.unwrap_or(CONCEPT_MAP_MAX_NODES);
+
+    // Fetch focus node
+    let focus_node = match repo.get_node(&node_id).await {
+        Ok(Some(n)) => n,
+        Ok(None) => {
+            let blocks = vec![ViewBlock {
+                id: "unknown_focus".into(),
+                title: "Unknown".into(),
+                body: json!({ "message": format!("'{}' not found in graph", focus_id) }),
+            }];
+            return Ok(ContextualView {
+                object_id: mvp,
+                view_id: "concept_map".into(),
+                title: format!("{} (unknown)", focus_id),
+                view_kind: ViewKind::ConceptMap,
+                blocks,
+                relations: Vec::new(),
+                evidence: Vec::new(),
+                findings: Vec::new(),
+                renderer_kind: RendererKind::Graph,
+            });
+        }
+        Err(e) => {
+            return Err(crate::error::ExplorerError::NotFound(format!(
+                "Failed to fetch {}: {}", mvp_prefix, e
+            )));
+        }
+    };
+
+    // Traverse rationale subgraph
+    let (nodes, edges, truncated) = repo
+        .rationale_subgraph(&node_id, depth, node_cap)
+        .await
+        .map_err(|e| crate::error::ExplorerError::NotFound(format!("rationale_subgraph: {}", e)))?;
+
+    // Build evidence
+    let evidence_id = "evidence:concept_map".to_string();
+    let evidence = vec![EvidenceBlock {
+        id: evidence_id.clone(),
+        kind: "concept_map".into(),
+        title: format!("Concept Map: {}", focus_node.label),
+        file: focus_node
+            .source_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned()),
+        line_range: None,
+        source_tool_or_query: "GraphRepository::rationale_subgraph".into(),
+        confidence: Some(1.0),
+        freshness: Some("unknown".into()),
+        provenance: None,
+    }];
+
+    // Build typed relations from edges
+    let relations: Vec<TypedRelation> = edges
+        .iter()
+        .map(|e| {
+            let (source_id, target_id, direction) = if e.source == focus_node.id {
+                (e.source.to_string(), e.target.to_string(), RelationDirection::Outgoing)
+            } else {
+                (e.source.to_string(), e.target.to_string(), RelationDirection::Incoming)
+            };
+            TypedRelation {
+                relation_type: format!("{:?}", e.kind),
+                direction,
+                target_object_id: target_id,
+                target_label: "related node".to_string(),
+                evidence_ids: vec![evidence_id.clone()],
+                provenance: None,
+                confidence: Some(e.confidence),
+            }
+        })
+        .collect();
+
+    // Collect related symbol ids (nodes that are symbols)
+    let related_symbols: Vec<String> = nodes
+        .iter()
+        .filter(|n| {
+            matches!(
+                n.kind,
+                cognicode_core::domain::value_objects::node_kind::NodeKind::Symbol(_)
+            )
+        })
+        .map(|n| n.id.to_string())
+        .collect();
+
+    // Build blocks — truncated is embedded in the graph block body
+    let blocks = vec![
+        ViewBlock {
+            id: "concept_graph".into(),
+            title: format!(
+                "Concept neighbourhood ({}{})",
+                nodes.len(),
+                if truncated { "+" } else { "" }
+            ),
+            body: json!({
+                "focus_id": focus_node.id.to_string(),
+                "truncated": truncated,
+                "nodes": nodes
+                    .iter()
+                    .map(|n| json!({
+                        "id": n.id.to_string(),
+                        "label": n.label,
+                        "kind": format!("{:?}", n.kind),
+                        "is_focus": n.id == focus_node.id,
+                    }))
+                    .collect::<Vec<_>>(),
+                "edges": edges
+                    .iter()
+                    .map(|e| json!({
+                        "source": e.source.to_string(),
+                        "target": e.target.to_string(),
+                        "kind": format!("{:?}", e.kind),
+                    }))
+                    .collect::<Vec<_>>(),
+            }),
+        },
+        ViewBlock {
+            id: "related_symbols".into(),
+            title: format!("Related symbols ({})", related_symbols.len()),
+            body: json!({
+                "count": related_symbols.len(),
+                "symbols": related_symbols,
+            }),
+        },
+    ];
+
+    Ok(ContextualView {
+        object_id: mvp,
+        view_id: "concept_map".into(),
+        title: format!("Concept: {}", focus_node.label),
+        view_kind: ViewKind::ConceptMap,
+        blocks,
+        relations,
+        evidence,
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Graph,
+    })
+}
+
+/// ConceptMap capability — applies to Doc, DecisionArtifact, and Symbol.
+///
+/// Renders the rationale neighbourhood of a concept (Doc/Decision/Symbol) as a
+/// navigable graph. Anchors on existing node types — no new NodeKind introduced.
+/// Uses `rationale_subgraph` (BFS over Cites, Justifies, Resolves,
+/// CorroboratedBy) with depth ≤ 2 and node cap ≤ 100.
+pub struct ConceptMapExecutor;
+impl ViewDescriptor for ConceptMapExecutor {
+    fn id(&self) -> &'static str {
+        "concept_map"
+    }
+    fn title(&self) -> &'static str {
+        "Concept Map"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[
+            InspectableObjectType::Doc,
+            InspectableObjectType::DecisionArtifact,
+            InspectableObjectType::Symbol,
+        ]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::ConceptMap
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Graph
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for ConceptMapExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match &ctx.target {
+            InspectionTarget::Doc { id } => {
+                build_concept_map_view(ctx, id, "doc", None, None).await
+            }
+            InspectionTarget::Decision { id } => {
+                build_concept_map_view(ctx, id, "decision", None, None).await
+            }
+            InspectionTarget::Symbol(symbol) => {
+                // Symbol's mvp_id format: "symbol:file:name:line"
+                // Extract the SymbolId part for the focus id
+                build_concept_map_view(ctx, &symbol.id.to_string(), "symbol", None, None).await
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "concept_map".into(),
             }),
         }
     }
@@ -2819,6 +3252,8 @@ pub static ARCHITECTURE_RATIONALE_EXECUTOR: ArchitectureRationaleExecutor =
     ArchitectureRationaleExecutor;
 pub static DOC_SOURCE_EXECUTOR: DocSourceExecutor = DocSourceExecutor;
 pub static EVIDENCE_OVERVIEW_EXECUTOR: EvidenceOverviewExecutor = EvidenceOverviewExecutor;
+pub static DOC_CODE_ALIGNMENT_EXECUTOR: DocCodeAlignmentExecutor = DocCodeAlignmentExecutor;
+pub static CONCEPT_MAP_EXECUTOR: ConceptMapExecutor = ConceptMapExecutor;
 
 /// Ownership Map capability — applies to Issue (QualityIssue).
 ///

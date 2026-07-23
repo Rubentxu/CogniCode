@@ -146,9 +146,9 @@ This includes, at minimum:
 - `ComposedNarrative`
 - `ProjectDiary`
 - `ExampleObject`
-- `ConceptMap`
+- `ConceptMap` ✅ (closed — E23 `e23-knowledge-views`)
 - `EvidencePack`
-- `DocCodeAlignment`
+- `DocCodeAlignment` ✅ (closed — E23 `e23-knowledge-views`)
 - `OwnershipMap`
 - `RiskMap`
 - `DecisionTrace`

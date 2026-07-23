@@ -34,7 +34,8 @@ function isGraphViewKind(kind: string | undefined): boolean {
     kind === "dependency_graph" ||
     kind === "data_flow" ||
     kind === "impact_radius" ||
-    kind === "seam_map"
+    kind === "seam_map" ||
+    kind === "concept_map"
   );
 }
 
