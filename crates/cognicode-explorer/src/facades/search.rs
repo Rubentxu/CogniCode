@@ -846,37 +846,22 @@ fn inspect_object_impl(
                 "Investigation inspection requires async context"
             )))
         }
-        ObjectIdentity::Doc { id } => {
-            // Graph path — requires graph_repo wired. Return empty summary for graceful
-            // degradation (spec: empty results when graph_repo is not wired, not errors).
-            Ok(InspectableObjectSummary {
-                id: format!("doc:{id}"),
-                object_type: InspectableObjectType::Doc,
-                label: String::new(),
-                subtitle: String::new(),
-                properties: vec![],
-                available_views: view_registry.list_for(InspectableObjectType::Doc),
-            })
+        ObjectIdentity::Doc { .. } => {
+            // Graph path — requires graph_repo wired. Return FeatureDisabled error
+            // when graph_repo is not available (C-ARCH-03 conformance).
+            Err(ExplorerError::FeatureDisabled(
+                "graph_repo not wired".into(),
+            ))
         }
-        ObjectIdentity::Decision { id } => {
-            Ok(InspectableObjectSummary {
-                id: format!("decision:{id}"),
-                object_type: InspectableObjectType::DecisionArtifact,
-                label: String::new(),
-                subtitle: String::new(),
-                properties: vec![],
-                available_views: view_registry.list_for(InspectableObjectType::DecisionArtifact),
-            })
+        ObjectIdentity::Decision { .. } => {
+            Err(ExplorerError::FeatureDisabled(
+                "graph_repo not wired".into(),
+            ))
         }
-        ObjectIdentity::Evidence { id } => {
-            Ok(InspectableObjectSummary {
-                id: format!("evidence:{id}"),
-                object_type: InspectableObjectType::Evidence,
-                label: String::new(),
-                subtitle: String::new(),
-                properties: vec![],
-                available_views: view_registry.list_for(InspectableObjectType::Evidence),
-            })
+        ObjectIdentity::Evidence { .. } => {
+            Err(ExplorerError::FeatureDisabled(
+                "graph_repo not wired".into(),
+            ))
         }
     }
 }
@@ -1478,39 +1463,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn inspect_object_doc_returns_empty_summary_when_graph_repo_not_wired() {
+    async fn inspect_object_doc_returns_feature_disabled_when_graph_repo_not_wired() {
         let service = make_search_service_without_graph_repo();
         let result = service.inspect_object("doc:test-doc-1").await;
-        // Spec: graceful degradation returns empty summary, not an error
-        assert!(result.is_ok(), "Expected Ok with empty summary, got: {:?}", result);
-        let summary = result.unwrap();
-        assert_eq!(summary.object_type, InspectableObjectType::Doc);
-        assert_eq!(summary.id, "doc:test-doc-1");
-        assert!(summary.label.is_empty(), "Expected empty label");
-        assert!(summary.properties.is_empty(), "Expected empty properties");
+        // C-ARCH-03: sync fallback returns FeatureDisabled error
+        assert!(result.is_err(), "Expected Err(FeatureDisabled), got: {:?}", result);
+        let err = result.unwrap_err();
+        assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
     }
 
     #[tokio::test]
-    async fn inspect_object_decision_returns_empty_summary_when_graph_repo_not_wired() {
+    async fn inspect_object_decision_returns_feature_disabled_when_graph_repo_not_wired() {
         let service = make_search_service_without_graph_repo();
         let result = service.inspect_object("decision:test-decision-1").await;
-        assert!(result.is_ok(), "Expected Ok with empty summary, got: {:?}", result);
-        let summary = result.unwrap();
-        assert_eq!(summary.object_type, InspectableObjectType::DecisionArtifact);
-        assert_eq!(summary.id, "decision:test-decision-1");
-        assert!(summary.label.is_empty(), "Expected empty label");
-        assert!(summary.properties.is_empty(), "Expected empty properties");
+        assert!(result.is_err(), "Expected Err(FeatureDisabled), got: {:?}", result);
+        let err = result.unwrap_err();
+        assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
     }
 
     #[tokio::test]
-    async fn inspect_object_evidence_returns_empty_summary_when_graph_repo_not_wired() {
+    async fn inspect_object_evidence_returns_feature_disabled_when_graph_repo_not_wired() {
         let service = make_search_service_without_graph_repo();
         let result = service.inspect_object("evidence:test-evidence-1").await;
-        assert!(result.is_ok(), "Expected Ok with empty summary, got: {:?}", result);
-        let summary = result.unwrap();
-        assert_eq!(summary.object_type, InspectableObjectType::Evidence);
-        assert_eq!(summary.id, "evidence:test-evidence-1");
-        assert!(summary.label.is_empty(), "Expected empty label");
-        assert!(summary.properties.is_empty(), "Expected empty properties");
+        assert!(result.is_err(), "Expected Err(FeatureDisabled), got: {:?}", result);
+        let err = result.unwrap_err();
+        assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
     }
 }
