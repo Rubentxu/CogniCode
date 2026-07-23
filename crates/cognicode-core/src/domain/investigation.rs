@@ -16,6 +16,17 @@ pub enum ExportFormat {
     Drawio,
 }
 
+impl std::fmt::Display for ExportFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExportFormat::Mermaid => write!(f, "mermaid"),
+            ExportFormat::Svg => write!(f, "svg"),
+            ExportFormat::Png => write!(f, "png"),
+            ExportFormat::Drawio => write!(f, "drawio"),
+        }
+    }
+}
+
 /// Provenance metadata for a diagram artifact — ADR-010 R1–R2.
 /// Carries the structured source that generated this diagram.
 /// `view_kind` is stored as a snake_case string tag validated at the

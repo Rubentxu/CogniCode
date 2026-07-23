@@ -1093,7 +1093,10 @@ async fn trace_mermaid_handler(
         TraceMermaidViewKind::CallGraph => call_graph_to_mermaid(&trace_ctx, &q.target),
         TraceMermaidViewKind::ImpactRadius => impact_radius_to_mermaid(&trace_ctx, &q.target),
         #[cfg(feature = "multimodal")]
-        TraceMermaidViewKind::DecisionTrace => decision_trace_to_mermaid(&trace_ctx, &q.target),
+        TraceMermaidViewKind::DecisionTrace => {
+            decision_trace_to_mermaid(&trace_ctx, &q.target)
+                .map_err(|_| ApiError(ExplorerError::UnsupportedFormat("decision_trace not implemented (E24.3)".into())))?
+        }
         TraceMermaidViewKind::VerticalSlice => vertical_slice_to_mermaid(&trace_ctx, &q.target),
     };
 
@@ -1557,52 +1560,28 @@ async fn pin_evidence(
     Ok(Json(serde_json::json!({ "ok": true })).into_response())
 }
 
-/// POST /api/investigations/:id/artifacts — add an artifact to an investigation (ADR-005 E21-6).
+/// POST /api/investigations/:id/artifacts — add an artifact to an investigation (ADR-005 E21-6 + ADR-010 E24.1).
 async fn add_investigation_artifact(
     State(state): State<ApiState>,
     Path(id): Path<String>,
     Json(request): Json<AddArtifactRequest>,
 ) -> Result<Response, ApiError> {
-    let investigation = state
+    let facade = state
         .investigation
         .as_ref()
-        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
-        .get_investigation(&id)
-        .await?
-        .ok_or_else(|| {
-            ApiError(ExplorerError::NotFound(format!(
-                "investigation {} not found",
-                id
-            )))
-        })?;
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?;
 
-    let artifact = cognicode_core::domain::investigation::Artifact {
-        id: format!(
-            "art_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ),
-        kind: request.kind,
-        title: request.title,
-        content: request.content,
-        generated_from: request.generated_from,
-        provenance: None,
-    };
+    // Delegate to the layered add_artifact method (mirrors add_evidence pattern).
+    let artifact = facade.add_artifact(&id, request).await.map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("not found") {
+            ApiError(ExplorerError::NotFound(format!("investigation {} not found", id)))
+        } else {
+            ApiError(e)
+        }
+    })?;
 
-    // Update the investigation with the new artifact
-    let mut updated_investigation = investigation.clone();
-    updated_investigation.artifacts.push(artifact);
-
-    state
-        .investigation
-        .as_ref()
-        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
-        .update_investigation(updated_investigation)
-        .await?;
-
-    Ok(Json(serde_json::json!({ "ok": true })).into_response())
+    Ok(Json(serde_json::json!({ "ok": true, "artifact": artifact })).into_response())
 }
 
 /// GET /api/investigations/:id/evidence-pack — get evidence pack view for an investigation (ADR-005 E21-3).

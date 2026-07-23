@@ -1,4 +1,4 @@
-//! Investigation facade — ADR-005 Phase INV-1.
+//! Investigation facade — ADR-005 Phase INV-1 + ADR-010 E24.1.
 //!
 //! Provides a typed facade for investigation operations over the HTTP API.
 
@@ -12,6 +12,8 @@ use crate::error::{ExplorerError, ExplorerResult};
 pub use cognicode_core::domain::investigation::Evidence;
 
 // Re-export the domain types from cognicode-core.
+pub use cognicode_core::domain::investigation::Artifact;
+pub use cognicode_core::domain::investigation::DiagramProvenance;
 pub use cognicode_core::domain::investigation::Investigation;
 pub use cognicode_core::domain::investigation::Status as InvestigationStatus;
 
@@ -53,7 +55,7 @@ pub struct PinEvidenceRequest {
     pub note: String,
 }
 
-/// Request to add an artifact to an investigation (ADR-005 E21-6).
+/// Request to add an artifact to an investigation (ADR-005 E21-6 + ADR-010 E24.1).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AddArtifactRequest {
@@ -64,7 +66,12 @@ pub struct AddArtifactRequest {
     /// The generated content.
     pub content: String,
     /// Optional reference to the object/view that generated this artifact.
+    /// Retained for backward compatibility with pre-E24.1 clients.
     pub generated_from: Option<String>,
+    /// Structured provenance metadata — ADR-010 R1–R2.
+    /// Defaults to None for backward compatibility.
+    #[serde(default)]
+    pub provenance: Option<DiagramProvenance>,
 }
 
 /// Investigation facade trait — ISP-segregated port for investigation operations.
@@ -92,6 +99,14 @@ pub trait InvestigationFacade: Send + Sync {
 
     /// Add a single evidence item to an existing investigation.
     async fn add_evidence(&self, investigation_id: &str, evidence: Evidence) -> ExplorerResult<()>;
+
+    /// Add a single artifact to an existing investigation (ADR-010 E24.1).
+    /// Returns the persisted Artifact (with server-assigned id and stamped provenance.created_at).
+    async fn add_artifact(
+        &self,
+        investigation_id: &str,
+        request: AddArtifactRequest,
+    ) -> ExplorerResult<Artifact>;
 }
 
 /// Wrapper that adapts `InvestigationService<S>` from core to the
@@ -161,6 +176,33 @@ impl<S: cognicode_core::domain::investigation_store::InvestigationStore + 'stati
     async fn add_evidence(&self, investigation_id: &str, evidence: Evidence) -> ExplorerResult<()> {
         self.inner
             .add_evidence(investigation_id, evidence)
+            .await
+            .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!(e.to_string())))
+    }
+
+    async fn add_artifact(
+        &self,
+        investigation_id: &str,
+        request: AddArtifactRequest,
+    ) -> ExplorerResult<Artifact> {
+        // Build the Artifact from the request. The service will stamp provenance.created_at.
+        let artifact = Artifact {
+            id: format!(
+                "art_{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ),
+            kind: request.kind,
+            title: request.title,
+            content: request.content,
+            generated_from: request.generated_from,
+            provenance: request.provenance,
+        };
+
+        self.inner
+            .add_artifact(investigation_id, artifact)
             .await
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!(e.to_string())))
     }

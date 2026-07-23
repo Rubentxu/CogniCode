@@ -237,7 +237,14 @@ impl ToolHandler for ExportTraceMermaidHandler {
             }
             #[cfg(feature = "multimodal")]
             TraceMermaidViewKind::DecisionTrace => {
-                decision_trace_to_mermaid(&trace_ctx, &args.target)
+                return match decision_trace_to_mermaid(&trace_ctx, &args.target) {
+                    Ok(m) => ok_envelope(TOOL_EXPORT_TRACE_MERMAID, &m),
+                    Err(e) => err_envelope(
+                        TOOL_EXPORT_TRACE_MERMAID,
+                        "not_implemented",
+                        &e.to_string(),
+                    ),
+                };
             }
             TraceMermaidViewKind::VerticalSlice => {
                 vertical_slice_to_mermaid(&trace_ctx, &args.target)
@@ -696,11 +703,11 @@ mod tests {
         {
             assert_eq!(err_code(&result), "invalid_view_kind");
         }
-        // In multimodal builds, it should return a result (placeholder is fine)
+        // In multimodal builds, decision_trace_to_mermaid returns
+        // Err(TraceMermaidError::NotImplemented) (E24.3 deferred)
         #[cfg(feature = "multimodal")]
         {
-            // Should not be an error
-            assert_eq!(result.is_error, Some(false));
+            assert_eq!(err_code(&result), "not_implemented");
         }
     }
 
