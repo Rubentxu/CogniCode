@@ -24,6 +24,25 @@ use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
 use crate::registry::ViewRegistry;
 
+/// Map an `ObjectIdentity` to its corresponding `InspectableObjectType`.
+///
+/// This helper is shared by `available_views_sync` and `available_lenses_sync`
+/// to avoid duplicating the 11-variant match.
+fn identity_to_inspectable_type(identity: &ObjectIdentity) -> InspectableObjectType {
+    match identity {
+        ObjectIdentity::Symbol { .. } => InspectableObjectType::Symbol,
+        ObjectIdentity::File { .. } => InspectableObjectType::File,
+        ObjectIdentity::Scope { .. } => InspectableObjectType::Scope,
+        ObjectIdentity::QualityIssue { .. } => InspectableObjectType::QualityIssue,
+        ObjectIdentity::Rule { .. } => InspectableObjectType::Rule,
+        ObjectIdentity::SavedExploration { .. } => InspectableObjectType::SavedExploration,
+        ObjectIdentity::Investigation { .. } => InspectableObjectType::Investigation,
+        ObjectIdentity::Doc { .. } => InspectableObjectType::Doc,
+        ObjectIdentity::Decision { .. } => InspectableObjectType::DecisionArtifact,
+        ObjectIdentity::Evidence { .. } => InspectableObjectType::Evidence,
+    }
+}
+
 pub struct ViewServiceImpl {
     repo: Arc<dyn SymbolRepository>,
     reader: Arc<dyn SourceReader>,
@@ -63,18 +82,7 @@ impl ViewServiceImpl {
 
     fn available_views_sync(&self, object_id: &str) -> ExplorerResult<Vec<ViewDescriptorDto>> {
         let identity = ObjectIdentity::parse_mvp_id(object_id)?;
-        let object_type = match &identity {
-            ObjectIdentity::Symbol { .. } => InspectableObjectType::Symbol,
-            ObjectIdentity::File { .. } => InspectableObjectType::File,
-            ObjectIdentity::Scope { .. } => InspectableObjectType::Scope,
-            ObjectIdentity::QualityIssue { .. } => InspectableObjectType::QualityIssue,
-            ObjectIdentity::Rule { .. } => InspectableObjectType::Rule,
-            ObjectIdentity::SavedExploration { .. } => InspectableObjectType::SavedExploration,
-            ObjectIdentity::Investigation { .. } => InspectableObjectType::Investigation,
-            ObjectIdentity::Doc { .. } => InspectableObjectType::Doc,
-            ObjectIdentity::Decision { .. } => InspectableObjectType::DecisionArtifact,
-            ObjectIdentity::Evidence { .. } => InspectableObjectType::Evidence,
-        };
+        let object_type = identity_to_inspectable_type(&identity);
         Ok(self.view_registry.list_for(object_type))
     }
 
@@ -211,22 +219,7 @@ impl ViewServiceImpl {
 
     fn available_lenses_sync(&self, object_id: &str) -> ExplorerResult<Vec<LensDescriptor>> {
         let identity = ObjectIdentity::parse_mvp_id(object_id)?;
-        let object_type = match &identity {
-            ObjectIdentity::Symbol { .. } => crate::dto::InspectableObjectType::Symbol,
-            ObjectIdentity::File { .. } => crate::dto::InspectableObjectType::File,
-            ObjectIdentity::Scope { .. } => crate::dto::InspectableObjectType::Scope,
-            ObjectIdentity::QualityIssue { .. } => crate::dto::InspectableObjectType::QualityIssue,
-            ObjectIdentity::Rule { .. } => crate::dto::InspectableObjectType::Rule,
-            ObjectIdentity::SavedExploration { .. } => {
-                crate::dto::InspectableObjectType::SavedExploration
-            }
-            ObjectIdentity::Investigation { .. } => {
-                crate::dto::InspectableObjectType::Investigation
-            }
-            ObjectIdentity::Doc { .. } => crate::dto::InspectableObjectType::Doc,
-            ObjectIdentity::Decision { .. } => crate::dto::InspectableObjectType::DecisionArtifact,
-            ObjectIdentity::Evidence { .. } => crate::dto::InspectableObjectType::Evidence,
-        };
+        let object_type = identity_to_inspectable_type(&identity);
         Ok(self.lens_registry.applicable_to(&object_type))
     }
 
