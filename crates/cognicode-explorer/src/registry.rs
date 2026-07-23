@@ -250,6 +250,29 @@ impl crate::domain::views::ViewExecutor for ProviderExecutorAdapter {
 
 use std::sync::Arc;
 
+/// Assert that no two executors share the same `ViewKind`.
+///
+/// Panics with a diagnostic message naming both executor ids and the
+/// duplicate `ViewKind` variant when a conflict is detected.
+///
+/// This guard fires once at `real_executors()` initialization — it does NOT
+/// run on every call, only at process startup when the `OnceLock` is first
+/// populated.
+fn assert_view_kind_uniqueness(pairs: &[(&'static str, crate::dto::ViewKind)]) {
+    use std::collections::HashSet;
+    // S4: Use a simple HashSet to detect duplicates without Vec allocation.
+    // Track (kind, first_id) for the error message; duplicate ids are detected
+    // by insertion failure rather than building a full Vec map.
+    let mut seen: HashSet<&crate::dto::ViewKind> = HashSet::new();
+    for (id, kind) in pairs {
+        if !seen.insert(kind) {
+            panic!(
+                "duplicate ViewKind registration: kind={kind:?} already registered by id={id}",
+            );
+        }
+    }
+}
+
 type ViewExecutorMap = std::collections::HashMap<
     &'static str,
     &'static dyn crate::domain::views::ViewExecutor,
@@ -259,123 +282,142 @@ static REAL_EXECUTORS: OnceLock<ViewExecutorMap> = OnceLock::new();
 
 fn real_executors() -> &'static ViewExecutorMap {
     REAL_EXECUTORS.get_or_init(|| {
-        std::collections::HashMap::from([
-            (
-                "overview",
-                &crate::domain::views::OVERVIEW_EXECUTOR
+        // Declare all (id, ViewExecutor) pairs first, then derive ViewKind via the
+        // live trait method to guarantee synchronization with the trait definition.
+        struct ExecutorEntry {
+            id: &'static str,
+            executor: &'static dyn crate::domain::views::ViewExecutor,
+        }
+
+        let entries: &[ExecutorEntry] = &[
+            ExecutorEntry {
+                id: "overview",
+                executor: &crate::domain::views::OVERVIEW_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "call-graph",
-                &crate::domain::views::CALLGRAPH_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "call-graph",
+                executor: &crate::domain::views::CALLGRAPH_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "source",
-                &crate::domain::views::SOURCE_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "source",
+                executor: &crate::domain::views::SOURCE_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "quality",
-                &crate::domain::views::QUALITY_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "quality",
+                executor: &crate::domain::views::QUALITY_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "evidence",
-                &crate::domain::views::EVIDENCE_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "evidence",
+                executor: &crate::domain::views::EVIDENCE_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "symbols",
-                &crate::domain::views::SYMBOLS_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "symbols",
+                executor: &crate::domain::views::SYMBOLS_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "dependencies",
-                &crate::domain::views::DEPENDENCIES_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "dependencies",
+                executor: &crate::domain::views::DEPENDENCIES_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "hotspots",
-                &crate::domain::views::HOTSPOTS_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "hotspots",
+                executor: &crate::domain::views::HOTSPOTS_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "architecture-drift",
-                &crate::domain::views::ARCHITECTURE_DRIFT_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "architecture-drift",
+                executor: &crate::domain::views::ARCHITECTURE_DRIFT_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "usage-examples",
-                &crate::domain::views::USAGE_EXAMPLES_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "usage-examples",
+                executor: &crate::domain::views::USAGE_EXAMPLES_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "api-surface",
-                &crate::domain::views::API_SURFACE_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "api-surface",
+                executor: &crate::domain::views::API_SURFACE_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "test-slice",
-                &crate::domain::views::TEST_SLICE_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "test-slice",
+                executor: &crate::domain::views::TEST_SLICE_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "debug-slice",
-                &crate::domain::views::DEBUG_SLICE_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "debug-slice",
+                executor: &crate::domain::views::DEBUG_SLICE_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "change-impact-story",
-                &crate::domain::views::CHANGE_IMPACT_STORY_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "change-impact-story",
+                executor: &crate::domain::views::CHANGE_IMPACT_STORY_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "ownership-map",
-                &crate::domain::views::OWNERSHIP_MAP_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "ownership-map",
+                executor: &crate::domain::views::OWNERSHIP_MAP_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "composed-narrative",
-                &crate::domain::views::COMPOSED_NARRATIVE_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "composed-narrative",
+                executor: &crate::domain::views::COMPOSED_NARRATIVE_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "risk_map",
-                &crate::domain::views::RISK_MAP_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "risk_map",
+                executor: &crate::domain::views::RISK_MAP_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "decision-graph",
-                &crate::domain::views::DECISION_GRAPH_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "decision-graph",
+                executor: &crate::domain::views::DECISION_GRAPH_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "architecture_rationale",
-                &crate::domain::views::ARCHITECTURE_RATIONALE_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "architecture_rationale",
+                executor: &crate::domain::views::ARCHITECTURE_RATIONALE_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "doc-source",
-                &crate::domain::views::DOC_SOURCE_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "doc-source",
+                executor: &crate::domain::views::DOC_SOURCE_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "evidence-overview",
-                &crate::domain::views::EVIDENCE_OVERVIEW_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "evidence-overview",
+                executor: &crate::domain::views::EVIDENCE_OVERVIEW_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "doc_code_alignment",
-                &crate::domain::views::DOC_CODE_ALIGNMENT_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "doc_code_alignment",
+                executor: &crate::domain::views::DOC_CODE_ALIGNMENT_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-            (
-                "concept_map",
-                &crate::domain::views::CONCEPT_MAP_EXECUTOR
+            },
+            ExecutorEntry {
+                id: "concept_map",
+                executor: &crate::domain::views::CONCEPT_MAP_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
-            ),
-        ])
+            },
+        ];
+
+        // Build map first, then derive pairs from the live trait method.
+        let map: ViewExecutorMap =
+            std::collections::HashMap::from_iter(entries.iter().map(|e| (e.id, e.executor)));
+
+        // E23 uniqueness guard — derive ViewKind via the live trait method to catch
+        // any drift between the ExecutorEntry copy and the actual trait definition.
+        let pairs: Vec<(&str, crate::dto::ViewKind)> =
+            entries.iter().map(|e| (e.id, e.executor.view_kind())).collect();
+        assert_view_kind_uniqueness(&pairs);
+
+        map
     })
 }
 
@@ -786,5 +828,35 @@ mod tests {
         // The ViewSpecStore trait itself is Send + Sync by requirement.
         // We just verify the trait bound compiles.
         fn _accept_store<S: super::ViewSpecStore>(_: &S) {}
+    }
+
+    // --- E23 uniqueness guard: panic on duplicate ViewKind ---
+
+    /// Scenario 21: assert_view_kind_uniqueness panics when two ids share the same ViewKind.
+    #[test]
+    #[should_panic(expected = "duplicate ViewKind registration")]
+    fn assert_view_kind_uniqueness_panics_on_duplicate() {
+        let pairs = &[("a", ViewKind::CallGraph), ("b", ViewKind::CallGraph)];
+        super::assert_view_kind_uniqueness(pairs);
+    }
+
+    /// E23 positive uniqueness: every real executor has a distinct ViewKind.
+    #[test]
+    fn real_executors_view_kinds_are_distinct() {
+        let map = super::real_executors();
+        let mut ids: Vec<&str> = Vec::new();
+        let mut kinds: Vec<ViewKind> = Vec::new();
+        for (id, executor) in map.iter() {
+            ids.push(id);
+            kinds.push(executor.view_kind());
+        }
+        let unique_kinds: std::collections::HashSet<_> = kinds.iter().collect();
+        assert_eq!(
+            unique_kinds.len(),
+            kinds.len(),
+            "duplicate ViewKind across executors: ids={:?}, kinds={:?}",
+            ids,
+            kinds
+        );
     }
 }

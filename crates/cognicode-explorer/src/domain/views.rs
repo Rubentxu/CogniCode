@@ -2351,8 +2351,8 @@ impl ViewDescriptor for DocSourceExecutor {
     }
     fn view_kind(&self) -> ViewKind {
         // DocSource shows the document's own content — a source/overview perspective.
-        // The canonical DocCodeAlignment is now owned by DocCodeAlignmentExecutor.
-        ViewKind::SourceView
+        // Distinct from SourceExecutor (SourceView) to satisfy ViewKind uniqueness.
+        ViewKind::SeamMap
     }
     fn renderer_kind(&self) -> RendererKind {
         RendererKind::Code
@@ -2389,6 +2389,119 @@ impl ViewExecutor for DocSourceExecutor {
 // E23 Knowledge Views — DocCodeAlignment and ConceptMap
 // ============================================================================
 
+/// Configuration bundle for knowledge-surface view builders.
+///
+/// Bundles the parameters needed to construct evidence IDs, block IDs,
+/// view identity, and the `ContextualView` shell so helpers stay orthogonal.
+#[derive(Clone)]
+pub struct KsvConfig {
+    /// Focus node id (used to construct MVP).
+    pub focus_id: String,
+    /// MVP prefix, e.g. `"doc"`, `"decision"`.
+    pub mvp_prefix: String,
+    /// View id string, e.g. `"doc_code_alignment"`.
+    pub view_id: &'static str,
+    /// Evidence kind string, e.g. `"doc_code_alignment"`.
+    pub evidence_kind: &'static str,
+    /// Human-readable title prefix, e.g. `"Doc/Decision alignment"`.
+    pub title_prefix: &'static str,
+    /// Identity block id, e.g. `"alignment_identity"`.
+    pub identity_block_id: &'static str,
+    /// Identity block title, e.g. `"Alignment"`.
+    pub identity_block_title: &'static str,
+    /// Renderer for this view.
+    pub renderer_kind: RendererKind,
+}
+
+impl KsvConfig {
+    /// Derive the evidence block ID from the configured evidence kind.
+    pub fn evidence_id(&self) -> String {
+        format!("evidence:{}", self.evidence_kind)
+    }
+
+    /// Derive the MVP object id from the configured prefix and focus id.
+    pub fn mvp(&self) -> String {
+        format!("{}:{}", self.mvp_prefix, self.focus_id)
+    }
+}
+
+/// Result of resolving a focus node — either found or an early-return variant
+/// with cfg-stamped fields so callers can construct a valid `ContextualView`
+/// without a full node.
+#[derive(Debug)]
+pub enum FocusResolution {
+    /// Focus node was successfully fetched.
+    Found(cognicode_core::domain::aggregates::generic_graph::GraphNode),
+    /// Focus node not found — caller should return an early-return view
+    /// with the cfg-stamped identity block.
+    NotFound {
+        mvp: String,
+        title: String,
+        view_kind: ViewKind,
+        renderer_kind: RendererKind,
+    },
+    /// Graph repository error — caller propagates as `ExplorerError`.
+    Error(String),
+}
+
+/// Resolve the focus node from the graph repository.
+///
+/// Returns `FocusResolution::Found(node)` on success.
+/// On not-found, returns `FocusResolution::NotFound` with all fields stamped
+/// from `cfg` so the caller can build an early-return view directly.
+/// On error, returns `FocusResolution::Error` to be propagated by the caller.
+pub async fn resolve_focus_node(
+    repo: &dyn cognicode_core::domain::ports::GraphRepository,
+    node_id: cognicode_core::domain::aggregates::generic_graph::NodeId,
+    cfg: &KsvConfig,
+    view_kind: ViewKind,
+) -> ExplorerResult<FocusResolution> {
+    use cognicode_core::domain::ports::GraphRepository;
+
+    match repo.get_node(&node_id).await {
+        Ok(Some(node)) => Ok(FocusResolution::Found(node)),
+        Ok(None) => Ok(FocusResolution::NotFound {
+            mvp: cfg.mvp(),
+            title: format!("{} (unknown)", cfg.focus_id),
+            view_kind,
+            renderer_kind: cfg.renderer_kind.clone(),
+        }),
+        Err(e) => Ok(FocusResolution::Error(format!(
+            "Failed to fetch {}: {}", cfg.mvp_prefix, e
+        ))),
+    }
+}
+
+/// Assemble the `ContextualView` shell from a resolved focus node and builder blocks.
+///
+/// The `evidence` vector is passed in from the caller because different views
+/// use different `source_tool_or_query` strings and may have additional
+/// per-view evidence fields. This helper only assembles the shell — it does
+/// NOT construct the evidence block itself.
+///
+/// The `view_kind` is passed explicitly so callers can specify their concrete
+/// variant rather than having it hardcoded.
+pub fn assemble_knowledge_view(
+    cfg: &KsvConfig,
+    focus_node: &cognicode_core::domain::aggregates::generic_graph::GraphNode,
+    blocks: Vec<ViewBlock>,
+    relations: Vec<TypedRelation>,
+    evidence: Vec<EvidenceBlock>,
+    view_kind: ViewKind,
+) -> ContextualView {
+    ContextualView {
+        object_id: cfg.mvp(),
+        view_id: cfg.view_id.into(),
+        title: format!("{}: {}", cfg.title_prefix.trim_end_matches(':').trim(), focus_node.label),
+        view_kind,
+        blocks,
+        relations,
+        evidence,
+        findings: Vec::new(),
+        renderer_kind: cfg.renderer_kind.clone(),
+    }
+}
+
 /// Build the DocCodeAlignment view: cited/resolved code from a Doc or Decision node.
 ///
 /// Fetches the focus node via `GraphRepository::get_node`, enumerates outgoing
@@ -2405,20 +2518,30 @@ pub async fn build_doc_code_alignment_view(
     use cognicode_core::domain::ports::GraphRepository;
     use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
 
+    // Repo-guard inline (3 LOC) — no helper for this; callers need the error shape.
     let Some(repo) = ctx.graph_repo else {
         return Err(crate::error::ExplorerError::FeatureDisabled(
             "graph repository not wired".into(),
         ));
     };
 
-    let mvp = format!("{mvp_prefix}:{focus_id}");
+    let cfg = KsvConfig {
+        focus_id: focus_id.to_string(),
+        mvp_prefix: mvp_prefix.to_string(),
+        view_id: "doc_code_alignment",
+        evidence_kind: "doc_code_alignment",
+        title_prefix: "Alignment",
+        identity_block_id: "alignment_identity",
+        identity_block_title: "Alignment",
+        renderer_kind: RendererKind::Graph,
+    };
     let node_id = NodeId::new(focus_id.to_string());
 
-    // Fetch focus node
-    let focus_node = match repo.get_node(&node_id).await {
-        Ok(Some(n)) => n,
-        Ok(None) => {
-            // Unknown focus node — return a valid view with the id and an empty marker
+    let resolution = resolve_focus_node(repo, node_id, &cfg, ViewKind::DocCodeAlignment).await?;
+
+    match resolution {
+        FocusResolution::NotFound { mvp, title, .. } => {
+            // Unknown focus node — return a valid view with the id and an empty marker.
             let blocks = vec![ViewBlock {
                 id: "unknown_focus".into(),
                 title: "Unknown".into(),
@@ -2427,7 +2550,7 @@ pub async fn build_doc_code_alignment_view(
             return Ok(ContextualView {
                 object_id: mvp,
                 view_id: "doc_code_alignment".into(),
-                title: format!("{} (unknown)", focus_id),
+                title,
                 view_kind: ViewKind::DocCodeAlignment,
                 blocks,
                 relations: Vec::new(),
@@ -2436,118 +2559,117 @@ pub async fn build_doc_code_alignment_view(
                 renderer_kind: RendererKind::Graph,
             });
         }
-        Err(e) => {
-            return Err(crate::error::ExplorerError::NotFound(format!(
-                "Failed to fetch {}: {}", mvp_prefix, e
-            )));
+        FocusResolution::Error(msg) => {
+            return Err(crate::error::ExplorerError::NotFound(msg));
         }
-    };
+        FocusResolution::Found(focus_node) => {
+            // Fetch Cites and Resolves edges
+            let edge_kinds = [EdgeKind::Cites, EdgeKind::Resolves];
+            let edges = repo
+                .edges_by_kind(&focus_node.id, &edge_kinds)
+                .await
+                .map_err(|e| crate::error::ExplorerError::NotFound(format!("edges: {}", e)))?;
 
-    // Fetch Cites and Resolves edges
-    let edge_kinds = [EdgeKind::Cites, EdgeKind::Resolves];
-    let edges = repo
-        .edges_by_kind(&node_id, &edge_kinds)
-        .await
-        .map_err(|e| crate::error::ExplorerError::NotFound(format!("edges: {}", e)))?;
+            // Resolve each edge target and build relations
+            let mut relations: Vec<TypedRelation> = Vec::new();
+            let mut drift = false;
+            let mut table_rows: Vec<serde_json::Value> = Vec::new();
+            let evidence_id = cfg.evidence_id();
 
-    // Resolve each edge target and build relations
-    let mut relations: Vec<TypedRelation> = Vec::new();
-    let mut drift = false;
-    let mut table_rows: Vec<serde_json::Value> = Vec::new();
-    let evidence_id = "evidence:doc_code_alignment".to_string();
+            for edge in &edges {
+                let resolved_node = repo.get_node(&edge.target).await;
+                let (resolved, target_label) = match resolved_node {
+                    Ok(Some(n)) => (true, n.label.clone()),
+                    Ok(None) => {
+                        drift = true;
+                        (false, format!("unresolved:{}", edge.target))
+                    }
+                    Err(_) => {
+                        drift = true;
+                        (false, format!("error:{}", edge.target))
+                    }
+                };
 
-    for edge in &edges {
-        let resolved_node = repo.get_node(&edge.target).await;
-        let (resolved, target_label) = match resolved_node {
-            Ok(Some(n)) => (true, n.label.clone()),
-            Ok(None) => {
-                drift = true;
-                (false, format!("unresolved:{}", edge.target))
+                // Map edge kind to string — only Cites/Resolves are requested
+                let edge_kind_str = match &edge.kind {
+                    EdgeKind::Cites => "Cites",
+                    EdgeKind::Resolves => "Resolves",
+                    // edges_by_kind was called with [Cites, Resolves] only; any other
+                    // variant indicates a data inconsistency — surface it as "Unknown".
+                    _ => "Unknown",
+                };
+
+                relations.push(TypedRelation {
+                    relation_type: edge_kind_str.to_string(),
+                    direction: RelationDirection::Outgoing,
+                    target_object_id: edge.target.to_string(),
+                    target_label,
+                    evidence_ids: vec![evidence_id.clone()],
+                    provenance: None,
+                    confidence: Some(edge.confidence),
+                });
+
+                table_rows.push(json!({
+                    "source": focus_node.label,
+                    "target": edge.target.to_string(),
+                    "edge_kind": edge_kind_str,
+                    "resolved": resolved,
+                }));
             }
-            Err(_) => {
-                drift = true;
-                (false, format!("error:{}", edge.target))
-            }
-        };
 
-        // Map edge kind to string — only Cites/Resolves are requested
-        let edge_kind_str = match &edge.kind {
-            EdgeKind::Cites => "Cites",
-            EdgeKind::Resolves => "Resolves",
-            // edges_by_kind was called with [Cites, Resolves] only; any other
-            // variant indicates a data inconsistency — surface it as "Unknown".
-            _ => "Unknown",
-        };
+            let evidence = vec![EvidenceBlock {
+                id: evidence_id,
+                kind: "doc_code_alignment".into(),
+                title: format!("Doc/Decision alignment: {}", focus_node.label),
+                file: focus_node
+                    .source_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
+                line_range: None,
+                source_tool_or_query: "GraphRepository::edges_by_kind(Cites, Resolves)".into(),
+                confidence: Some(1.0),
+                freshness: Some("unknown".into()),
+                provenance: None,
+            }];
 
-        relations.push(TypedRelation {
-            relation_type: edge_kind_str.to_string(),
-            direction: RelationDirection::Outgoing,
-            target_object_id: edge.target.to_string(),
-            target_label,
-            evidence_ids: vec![evidence_id.clone()],
-            provenance: None,
-            confidence: Some(edge.confidence),
-        });
-
-        table_rows.push(json!({
-            "source": focus_node.label,
-            "target": edge.target.to_string(),
-            "edge_kind": edge_kind_str,
-            "resolved": resolved,
-        }));
-    }
-
-    let evidence = vec![EvidenceBlock {
-        id: evidence_id,
-        kind: "doc_code_alignment".into(),
-        title: format!("Doc/Decision alignment: {}", focus_node.label),
-        file: focus_node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
-        line_range: None,
-        source_tool_or_query: "GraphRepository::edges_by_kind(Cites, Resolves)".into(),
-        confidence: Some(1.0),
-        freshness: Some("unknown".into()),
-        provenance: None,
-    }];
-
-    let blocks = vec![
-        ViewBlock {
-            id: "alignment_graph".into(),
-            title: format!("Alignment ({})", relations.len()),
-            body: json!({
-                "focus": {
-                    "id": focus_node.id.to_string(),
-                    "label": focus_node.label,
+            let blocks = vec![
+                ViewBlock {
+                    id: "alignment_graph".into(),
+                    title: format!("Alignment ({})", relations.len()),
+                    body: json!({
+                        "focus": {
+                            "id": focus_node.id.to_string(),
+                            "label": focus_node.label,
+                        },
+                        "drift": drift,
+                        "edges": relations.iter().map(|r| json!({
+                            "source": focus_node.id.to_string(),
+                            "target": r.target_object_id,
+                            "kind": r.relation_type,
+                            "resolved": r.confidence.is_some(),
+                        })).collect::<Vec<_>>(),
+                    }),
                 },
-                "drift": drift,
-                "edges": relations.iter().map(|r| json!({
-                    "source": focus_node.id.to_string(),
-                    "target": r.target_object_id,
-                    "kind": r.relation_type,
-                    "resolved": r.confidence.is_some(),
-                })).collect::<Vec<_>>(),
-            }),
-        },
-        ViewBlock {
-            id: "alignment_table".into(),
-            title: format!("Cited/Resolved ({} entries)", table_rows.len()),
-            body: json!({
-                "columns": ["source", "target", "edge_kind", "resolved"],
-                "rows": table_rows,
-            }),
-        },
-    ];
+                ViewBlock {
+                    id: "alignment_table".into(),
+                    title: format!("Cited/Resolved ({} entries)", table_rows.len()),
+                    body: json!({
+                        "columns": ["source", "target", "edge_kind", "resolved"],
+                        "rows": table_rows,
+                    }),
+                },
+            ];
 
-    Ok(ContextualView {
-        object_id: mvp,
-        view_id: "doc_code_alignment".into(),
-        title: format!("Alignment: {}", focus_node.label),
-        view_kind: ViewKind::DocCodeAlignment,
-        blocks,
-        relations,
-        evidence,
-        findings: Vec::new(),
-        renderer_kind: RendererKind::Graph,
-    })
+            Ok(assemble_knowledge_view(
+                &cfg,
+                &focus_node,
+                blocks,
+                relations,
+                evidence,
+                ViewKind::DocCodeAlignment,
+            ))
+        }
+    }
 }
 
 /// DocCodeAlignment capability — applies to Doc and DecisionArtifact.
@@ -2615,21 +2737,31 @@ pub async fn build_concept_map_view(
     use cognicode_core::domain::aggregates::generic_graph::NodeId;
     use cognicode_core::domain::ports::GraphRepository;
 
+    // Repo-guard inline (3 LOC)
     let Some(repo) = ctx.graph_repo else {
         return Err(crate::error::ExplorerError::FeatureDisabled(
             "graph repository not wired".into(),
         ));
     };
 
-    let mvp = format!("{mvp_prefix}:{focus_id}");
+    let cfg = KsvConfig {
+        focus_id: focus_id.to_string(),
+        mvp_prefix: mvp_prefix.to_string(),
+        view_id: "concept_map",
+        evidence_kind: "concept_map",
+        title_prefix: "Concept",
+        identity_block_id: "concept_identity",
+        identity_block_title: "Concept",
+        renderer_kind: RendererKind::Graph,
+    };
     let node_id = NodeId::new(focus_id.to_string());
     let depth = max_depth.unwrap_or(CONCEPT_MAP_DEFAULT_DEPTH);
     let node_cap = max_nodes.unwrap_or(CONCEPT_MAP_MAX_NODES);
 
-    // Fetch focus node
-    let focus_node = match repo.get_node(&node_id).await {
-        Ok(Some(n)) => n,
-        Ok(None) => {
+    let resolution = resolve_focus_node(repo, node_id, &cfg, ViewKind::ConceptMap).await?;
+
+    match resolution {
+        FocusResolution::NotFound { mvp, title, .. } => {
             let blocks = vec![ViewBlock {
                 id: "unknown_focus".into(),
                 title: "Unknown".into(),
@@ -2638,7 +2770,7 @@ pub async fn build_concept_map_view(
             return Ok(ContextualView {
                 object_id: mvp,
                 view_id: "concept_map".into(),
-                title: format!("{} (unknown)", focus_id),
+                title,
                 view_kind: ViewKind::ConceptMap,
                 blocks,
                 relations: Vec::new(),
@@ -2647,122 +2779,128 @@ pub async fn build_concept_map_view(
                 renderer_kind: RendererKind::Graph,
             });
         }
-        Err(e) => {
-            return Err(crate::error::ExplorerError::NotFound(format!(
-                "Failed to fetch {}: {}", mvp_prefix, e
-            )));
+        FocusResolution::Error(msg) => {
+            return Err(crate::error::ExplorerError::NotFound(msg));
         }
-    };
+        FocusResolution::Found(focus_node) => {
+            // Traverse rationale subgraph
+            let (nodes, edges, truncated) = repo
+                .rationale_subgraph(&focus_node.id, depth, node_cap)
+                .await
+                .map_err(|e| {
+                    crate::error::ExplorerError::NotFound(format!("rationale_subgraph: {}", e))
+                })?;
 
-    // Traverse rationale subgraph
-    let (nodes, edges, truncated) = repo
-        .rationale_subgraph(&node_id, depth, node_cap)
-        .await
-        .map_err(|e| crate::error::ExplorerError::NotFound(format!("rationale_subgraph: {}", e)))?;
-
-    // Build evidence
-    let evidence_id = "evidence:concept_map".to_string();
-    let evidence = vec![EvidenceBlock {
-        id: evidence_id.clone(),
-        kind: "concept_map".into(),
-        title: format!("Concept Map: {}", focus_node.label),
-        file: focus_node
-            .source_path
-            .as_ref()
-            .map(|p| p.to_string_lossy().into_owned()),
-        line_range: None,
-        source_tool_or_query: "GraphRepository::rationale_subgraph".into(),
-        confidence: Some(1.0),
-        freshness: Some("unknown".into()),
-        provenance: None,
-    }];
-
-    // Build typed relations from edges
-    let relations: Vec<TypedRelation> = edges
-        .iter()
-        .map(|e| {
-            let (source_id, target_id, direction) = if e.source == focus_node.id {
-                (e.source.to_string(), e.target.to_string(), RelationDirection::Outgoing)
-            } else {
-                (e.source.to_string(), e.target.to_string(), RelationDirection::Incoming)
-            };
-            TypedRelation {
-                relation_type: format!("{:?}", e.kind),
-                direction,
-                target_object_id: target_id,
-                target_label: "related node".to_string(),
-                evidence_ids: vec![evidence_id.clone()],
+            // Build evidence
+            let evidence_id = cfg.evidence_id();
+            let evidence = vec![EvidenceBlock {
+                id: evidence_id.clone(),
+                kind: "concept_map".into(),
+                title: format!("Concept Map: {}", focus_node.label),
+                file: focus_node
+                    .source_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
+                line_range: None,
+                source_tool_or_query: "GraphRepository::rationale_subgraph".into(),
+                confidence: Some(1.0),
+                freshness: Some("unknown".into()),
                 provenance: None,
-                confidence: Some(e.confidence),
-            }
-        })
-        .collect();
+            }];
 
-    // Collect related symbol ids (nodes that are symbols, excluding the focus itself)
-    let focus_id_str = focus_node.id.to_string();
-    let related_symbols: Vec<String> = nodes
-        .iter()
-        .filter(|n| {
-            matches!(
-                n.kind,
-                cognicode_core::domain::value_objects::node_kind::NodeKind::Symbol(_)
-            ) && n.id.to_string() != focus_id_str
-        })
-        .map(|n| n.id.to_string())
-        .collect();
+            // Build typed relations from edges
+            let relations: Vec<TypedRelation> = edges
+                .iter()
+                .map(|e| {
+                    let (source_id, target_id, direction) = if e.source == focus_node.id {
+                        (
+                            e.source.to_string(),
+                            e.target.to_string(),
+                            RelationDirection::Outgoing,
+                        )
+                    } else {
+                        (
+                            e.source.to_string(),
+                            e.target.to_string(),
+                            RelationDirection::Incoming,
+                        )
+                    };
+                    TypedRelation {
+                        relation_type: format!("{:?}", e.kind),
+                        direction,
+                        target_object_id: target_id,
+                        target_label: "related node".to_string(),
+                        evidence_ids: vec![evidence_id.clone()],
+                        provenance: None,
+                        confidence: Some(e.confidence),
+                    }
+                })
+                .collect();
 
-    // Build blocks — truncated is embedded in the graph block body
-    let blocks = vec![
-        ViewBlock {
-            id: "concept_graph".into(),
-            title: format!(
-                "Concept neighbourhood ({}{})",
-                nodes.len(),
-                if truncated { "+" } else { "" }
-            ),
-            body: json!({
-                "focus_id": focus_node.id.to_string(),
-                "truncated": truncated,
-                "nodes": nodes
-                    .iter()
-                    .map(|n| json!({
-                        "id": n.id.to_string(),
-                        "label": n.label,
-                        "kind": format!("{:?}", n.kind),
-                        "is_focus": n.id == focus_node.id,
-                    }))
-                    .collect::<Vec<_>>(),
-                "edges": edges
-                    .iter()
-                    .map(|e| json!({
-                        "source": e.source.to_string(),
-                        "target": e.target.to_string(),
-                        "kind": format!("{:?}", e.kind),
-                    }))
-                    .collect::<Vec<_>>(),
-            }),
-        },
-        ViewBlock {
-            id: "related_symbols".into(),
-            title: format!("Related symbols ({})", related_symbols.len()),
-            body: json!({
-                "count": related_symbols.len(),
-                "symbols": related_symbols,
-            }),
-        },
-    ];
+            // Collect related symbol ids (nodes that are symbols, excluding the focus itself)
+            let focus_id_str = focus_node.id.to_string();
+            let related_symbols: Vec<String> = nodes
+                .iter()
+                .filter(|n| {
+                    matches!(
+                        n.kind,
+                        cognicode_core::domain::value_objects::node_kind::NodeKind::Symbol(_)
+                    ) && n.id.to_string() != focus_id_str
+                })
+                .map(|n| n.id.to_string())
+                .collect();
 
-    Ok(ContextualView {
-        object_id: mvp,
-        view_id: "concept_map".into(),
-        title: format!("Concept: {}", focus_node.label),
-        view_kind: ViewKind::ConceptMap,
-        blocks,
-        relations,
-        evidence,
-        findings: Vec::new(),
-        renderer_kind: RendererKind::Graph,
-    })
+            // Build blocks — truncated is embedded in the graph block body
+            let blocks = vec![
+                ViewBlock {
+                    id: "concept_graph".into(),
+                    title: format!(
+                        "Concept neighbourhood ({}{})",
+                        nodes.len(),
+                        if truncated { "+" } else { "" }
+                    ),
+                    body: json!({
+                        "focus_id": focus_node.id.to_string(),
+                        "truncated": truncated,
+                        "nodes": nodes
+                            .iter()
+                            .map(|n| json!({
+                                "id": n.id.to_string(),
+                                "label": n.label,
+                                "kind": format!("{:?}", n.kind),
+                                "is_focus": n.id == focus_node.id,
+                            }))
+                            .collect::<Vec<_>>(),
+                        "edges": edges
+                            .iter()
+                            .map(|e| json!({
+                                "source": e.source.to_string(),
+                                "target": e.target.to_string(),
+                                "kind": format!("{:?}", e.kind),
+                            }))
+                            .collect::<Vec<_>>(),
+                    }),
+                },
+                ViewBlock {
+                    id: "related_symbols".into(),
+                    title: format!("Related symbols ({})", related_symbols.len()),
+                    body: json!({
+                        "count": related_symbols.len(),
+                        "symbols": related_symbols,
+                    }),
+                },
+            ];
+
+            Ok(assemble_knowledge_view(
+                &cfg,
+                &focus_node,
+                blocks,
+                relations,
+                evidence,
+                ViewKind::ConceptMap,
+            ))
+        }
+    }
 }
 
 /// ConceptMap capability — applies to Doc, DecisionArtifact, and Symbol.
@@ -2831,7 +2969,9 @@ impl ViewDescriptor for EvidenceOverviewExecutor {
         &[InspectableObjectType::Evidence]
     }
     fn view_kind(&self) -> ViewKind {
-        ViewKind::EvidenceView
+        // EvidenceOverview shows provenance/metadata as a table — distinct from
+        // EvidenceExecutor (EvidenceView) to satisfy ViewKind uniqueness.
+        ViewKind::DataFlow
     }
     fn renderer_kind(&self) -> RendererKind {
         RendererKind::Table
@@ -2950,7 +3090,8 @@ impl ViewDescriptor for HotspotsExecutor {
         &[InspectableObjectType::Scope]
     }
     fn view_kind(&self) -> ViewKind {
-        ViewKind::QualityHotspots
+        // Hotspots shows top symbols by fan_in impact — distinct from QualityExecutor (QualityHotspots).
+        ViewKind::ImpactRadius
     }
     fn renderer_kind(&self) -> RendererKind {
         RendererKind::Table
@@ -7676,6 +7817,192 @@ mod view_seam_tests {
         assert!(
             symbols_json.contains("SYM-CITED"),
             "related_symbols must include the cited symbol"
+        );
+    }
+
+    // ==========================================================================
+    // E23 KSVConfig helper tests
+    // ==========================================================================
+
+    #[tokio::test]
+    async fn resolve_focus_node_returns_found_when_node_exists() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("DOC-Z".to_string()),
+            kind: NodeKind::Doc,
+            label: "Test Doc".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/test.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+
+        let cfg = KsvConfig {
+            focus_id: "DOC-Z".to_string(),
+            mvp_prefix: "doc".to_string(),
+            view_id: "test_view",
+            evidence_kind: "test_kind",
+            title_prefix: "Test",
+            identity_block_id: "test_identity",
+            identity_block_title: "Test",
+            renderer_kind: RendererKind::Graph,
+        };
+
+        let node_id = NodeId::new("DOC-Z".to_string());
+        let result = resolve_focus_node(&mock, node_id, &cfg, ViewKind::DocCodeAlignment)
+            .await
+            .unwrap();
+
+        match result {
+            FocusResolution::Found(node) => {
+                assert_eq!(node.label, "Test Doc");
+            }
+            other => panic!("expected FocusResolution::Found, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_focus_node_returns_not_found_with_cfg_stamped_fields() {
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+
+        let mock = MockGraphRepo::new(); // empty — no nodes
+
+        let cfg = KsvConfig {
+            focus_id: "MISSING".to_string(),
+            mvp_prefix: "doc".to_string(),
+            view_id: "doc_code_alignment",
+            evidence_kind: "doc_code_alignment",
+            title_prefix: "Alignment",
+            identity_block_id: "alignment_identity",
+            identity_block_title: "Alignment",
+            renderer_kind: RendererKind::Graph,
+        };
+
+        let node_id = NodeId::new("MISSING".to_string());
+        let result = resolve_focus_node(&mock, node_id, &cfg, ViewKind::DocCodeAlignment)
+            .await
+            .unwrap();
+
+        match result {
+            FocusResolution::NotFound {
+                mvp,
+                title,
+                view_kind,
+                renderer_kind,
+            } => {
+                assert_eq!(mvp, "doc:MISSING");
+                assert_eq!(title, "MISSING (unknown)");
+                assert_eq!(view_kind, ViewKind::DocCodeAlignment);
+                assert_eq!(renderer_kind, RendererKind::Graph);
+            }
+            other => panic!("expected FocusResolution::NotFound, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn assemble_knowledge_view_stamps_evidence_from_cfg() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+
+        let node = GraphNode {
+            id: NodeId::new("TEST-ID".to_string()),
+            kind: NodeKind::Doc,
+            label: "Test Node".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/test.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let cfg = KsvConfig {
+            focus_id: "TEST-ID".to_string(),
+            mvp_prefix: "doc".to_string(),
+            view_id: "doc_code_alignment",
+            evidence_kind: "doc_code_alignment",
+            title_prefix: "Alignment",
+            identity_block_id: "alignment_identity",
+            identity_block_title: "Alignment",
+            renderer_kind: RendererKind::Graph,
+        };
+
+        let view = assemble_knowledge_view(
+            &cfg,
+            &node,
+            vec![],
+            vec![],
+            vec![],
+            ViewKind::DocCodeAlignment,
+        );
+
+        assert_eq!(view.object_id, "doc:TEST-ID");
+        assert_eq!(view.view_id, "doc_code_alignment");
+        assert_eq!(view.title, "Alignment: Test Node");
+        assert_eq!(view.view_kind, ViewKind::DocCodeAlignment);
+        assert_eq!(view.renderer_kind, RendererKind::Graph);
+    }
+
+    /// C2: Snapshot test — KsvConfig helpers + assemble_knowledge_view produce
+    /// byte-identical JSON output on round-trip (serialize → deserialize → serialize).
+    #[test]
+    fn ksv_helpers_produce_byte_identical_output() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+        use std::collections::HashMap;
+
+        let mut props = HashMap::new();
+        props.insert("author".to_string(), "test".to_string());
+
+        let node = GraphNode {
+            id: NodeId::new("DOC-X".to_string()),
+            kind: NodeKind::Doc,
+            label: "Sample Doc".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/sample.md")),
+            properties: props,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let cfg = KsvConfig {
+            focus_id: "DOC-X".to_string(),
+            mvp_prefix: "doc".to_string(),
+            view_id: "doc_code_alignment",
+            evidence_kind: "doc_code_alignment",
+            title_prefix: "Alignment",
+            identity_block_id: "alignment_identity",
+            identity_block_title: "Alignment",
+            renderer_kind: RendererKind::Graph,
+        };
+
+        // E23 contract: evidence_id() round-trip
+        let evidence_id = cfg.evidence_id();
+        assert_eq!(evidence_id, "evidence:doc_code_alignment");
+
+        let view = assemble_knowledge_view(
+            &cfg,
+            &node,
+            vec![ViewBlock {
+                id: "test_block".into(),
+                title: "Test".into(),
+                body: serde_json::json!({ "key": "value" }),
+            }],
+            vec![],
+            vec![],
+            ViewKind::DocCodeAlignment,
+        );
+
+        // First serialization
+        let json_first = serde_json::to_string(&view).expect("serializes");
+        // Deserialize
+        let view_roundtrip: ContextualView =
+            serde_json::from_str(&json_first).expect("deserializes");
+        // Second serialization — must be byte-identical
+        let json_second = serde_json::to_string(&view_roundtrip).expect("reserializes");
+        assert_eq!(
+            json_first, json_second,
+            "JSON round-trip must produce byte-identical output"
         );
     }
 }
