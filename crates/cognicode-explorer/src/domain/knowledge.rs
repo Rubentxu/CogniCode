@@ -11,6 +11,56 @@
 
 use crate::dto::{InspectableObjectSummary, InspectableObjectType, Property};
 use crate::ports::graph_repository::GraphRepository;
+use cognicode_core::domain::aggregates::generic_graph::GraphNode;
+
+/// Generic projector for Doc/Decision/Evidence nodes.
+///
+/// - `graph`: GraphRepository to fetch the node
+/// - `id`: Node ID to look up
+/// - `kind_match`: returns `Some(label_prefix)` if node kind matches, `None` otherwise
+/// - `mvp_prefix`: Prefix for the returned id (e.g., `"doc"`, `"decision"`)
+/// - `obj_type`: The InspectableObjectType variant
+/// - `subtitle_default`: Default subtitle when source_path is absent
+/// - `extract_props`: extracts additional properties from the node into the vector
+async fn project_generic<F>(
+    graph: &dyn GraphRepository,
+    id: &str,
+    kind_match: impl FnOnce(&GraphNode) -> Option<&'static str>,
+    mvp_prefix: &str,
+    obj_type: InspectableObjectType,
+    subtitle_default: &'static str,
+    mut extract_props: F,
+) -> Option<InspectableObjectSummary>
+where
+    F: FnMut(&GraphNode, &mut Vec<Property>),
+{
+    let node = graph.get_node(&id.into()).await.ok().flatten()?;
+    let label_prefix = kind_match(&node)?;
+
+    let label = if node.label.is_empty() {
+        format!("{label_prefix} {}", id)
+    } else {
+        node.label.clone()
+    };
+
+    let subtitle = node
+        .source_path
+        .as_ref()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| subtitle_default.to_string());
+
+    let mut properties = Vec::new();
+    extract_props(&node, &mut properties);
+
+    Some(InspectableObjectSummary {
+        id: format!("{mvp_prefix}:{id}"),
+        object_type: obj_type,
+        label,
+        subtitle,
+        properties,
+        available_views: Vec::new(),
+    })
+}
 
 /// Project a `NodeKind::Doc` node into an `InspectableObjectSummary`.
 ///
@@ -21,44 +71,30 @@ pub async fn project_doc(
     graph: &dyn GraphRepository,
     id: &str,
 ) -> Option<InspectableObjectSummary> {
-    let node = graph.get_node(&id.into()).await.ok().flatten()?;
-
-    if !matches!(node.kind, cognicode_core::domain::value_objects::node_kind::NodeKind::Doc) {
-        return None;
-    }
-
-    let label = if node.label.is_empty() {
-        format!("Document {}", id)
-    } else {
-        node.label.clone()
+    let kind_match = |n: &GraphNode| {
+        matches!(n.kind, cognicode_core::domain::value_objects::node_kind::NodeKind::Doc)
+            .then_some("Document")
     };
-
-    let subtitle = node
-        .source_path
-        .as_ref()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Graph node".to_string());
-
-    let mut properties = Vec::new();
-
-    // Extract optional section from metadata.
-    if let Some(section) = node.properties.get("section") {
-        properties.push(Property {
-            key: "section".into(),
-            value: serde_json::Value::String(section.clone()),
-            value_type: "string".into(),
-            source: "graph_nodes.metadata".into(),
-        });
-    }
-
-    Some(InspectableObjectSummary {
-        id: format!("doc:{}", id),
-        object_type: InspectableObjectType::Doc,
-        label,
-        subtitle,
-        properties,
-        available_views: Vec::new(), // filled by caller with view registry
-    })
+    let extract_props = |n: &GraphNode, props: &mut Vec<Property>| {
+        if let Some(section) = n.properties.get("section") {
+            props.push(Property {
+                key: "section".into(),
+                value: serde_json::Value::String(section.clone()),
+                value_type: "string".into(),
+                source: "graph_nodes.metadata".into(),
+            });
+        }
+    };
+    project_generic(
+        graph,
+        id,
+        kind_match,
+        "doc",
+        InspectableObjectType::Doc,
+        "Graph node",
+        extract_props,
+    )
+    .await
 }
 
 /// Project a `NodeKind::Decision` node into an `InspectableObjectSummary`.
@@ -70,67 +106,31 @@ pub async fn project_decision(
     graph: &dyn GraphRepository,
     id: &str,
 ) -> Option<InspectableObjectSummary> {
-    let node = graph.get_node(&id.into()).await.ok().flatten()?;
-
-    if !matches!(
-        node.kind,
-        cognicode_core::domain::value_objects::node_kind::NodeKind::Decision
-    ) {
-        return None;
-    }
-
-    let label = if node.label.is_empty() {
-        format!("Decision {}", id)
-    } else {
-        node.label.clone()
+    let kind_match = |n: &GraphNode| {
+        matches!(n.kind, cognicode_core::domain::value_objects::node_kind::NodeKind::Decision)
+            .then_some("Decision")
     };
-
-    let subtitle = node
-        .source_path
-        .as_ref()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Decision artifact".to_string());
-
-    let mut properties = Vec::new();
-
-    // Extract optional status from metadata.
-    if let Some(status) = node.properties.get("status") {
-        properties.push(Property {
-            key: "status".into(),
-            value: serde_json::Value::String(status.clone()),
-            value_type: "string".into(),
-            source: "graph_nodes.metadata".into(),
-        });
-    }
-
-    // Extract optional date from metadata.
-    if let Some(date) = node.properties.get("date") {
-        properties.push(Property {
-            key: "date".into(),
-            value: serde_json::Value::String(date.clone()),
-            value_type: "string".into(),
-            source: "graph_nodes.metadata".into(),
-        });
-    }
-
-    // Extract optional adr_number from metadata.
-    if let Some(adr) = node.properties.get("adr_number") {
-        properties.push(Property {
-            key: "adr_number".into(),
-            value: serde_json::Value::String(adr.clone()),
-            value_type: "string".into(),
-            source: "graph_nodes.metadata".into(),
-        });
-    }
-
-    Some(InspectableObjectSummary {
-        id: format!("decision:{}", id),
-        object_type: InspectableObjectType::DecisionArtifact,
-        label,
-        subtitle,
-        properties,
-        available_views: Vec::new(),
-    })
+    let extract_props = |n: &GraphNode, props: &mut Vec<Property>| {
+        if let Some(status) = n.properties.get("status") {
+            props.push(Property { key: "status".into(), value: serde_json::Value::String(status.clone()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
+        }
+        if let Some(date) = n.properties.get("date") {
+            props.push(Property { key: "date".into(), value: serde_json::Value::String(date.clone()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
+        }
+        if let Some(adr) = n.properties.get("adr_number") {
+            props.push(Property { key: "adr_number".into(), value: serde_json::Value::String(adr.clone()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
+        }
+    };
+    project_generic(
+        graph,
+        id,
+        kind_match,
+        "decision",
+        InspectableObjectType::DecisionArtifact,
+        "Decision artifact",
+        extract_props,
+    )
+    .await
 }
 
 /// Project a `NodeKind::Evidence` node into an `InspectableObjectSummary`.
@@ -142,69 +142,33 @@ pub async fn project_evidence(
     graph: &dyn GraphRepository,
     id: &str,
 ) -> Option<InspectableObjectSummary> {
-    let node = graph.get_node(&id.into()).await.ok().flatten()?;
-
-    if !matches!(
-        node.kind,
-        cognicode_core::domain::value_objects::node_kind::NodeKind::Evidence
-    ) {
-        return None;
-    }
-
-    let label = if node.label.is_empty() {
-        format!("Evidence {}", id)
-    } else {
-        node.label.clone()
+    let kind_match = |n: &GraphNode| {
+        matches!(n.kind, cognicode_core::domain::value_objects::node_kind::NodeKind::Evidence)
+            .then_some("Evidence")
     };
-
-    let subtitle = node
-        .source_path
-        .as_ref()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Evidence node".to_string());
-
-    let mut properties = Vec::new();
-
-    // Extract source_tool from metadata.
-    if let Some(tool) = node.properties.get("source_tool") {
-        properties.push(Property {
-            key: "source_tool".into(),
-            value: serde_json::Value::String(tool.clone()),
-            value_type: "string".into(),
-            source: "graph_nodes.metadata".into(),
-        });
-    }
-
-    // Extract confidence from metadata.
-    if let Some(c) = node.properties.get("confidence") {
-        if let Ok(parsed) = c.parse::<f64>() {
-            properties.push(Property {
-                key: "confidence".into(),
-                value: serde_json::json!(parsed),
-                value_type: "number".into(),
-                source: "graph_nodes.metadata".into(),
-            });
+    let extract_props = |n: &GraphNode, props: &mut Vec<Property>| {
+        if let Some(tool) = n.properties.get("source_tool") {
+            props.push(Property { key: "source_tool".into(), value: serde_json::Value::String(tool.clone()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
         }
-    }
-
-    // Extract freshness from metadata.
-    if let Some(fresh) = node.properties.get("freshness") {
-        properties.push(Property {
-            key: "freshness".into(),
-            value: serde_json::Value::String(fresh.clone()),
-            value_type: "string".into(),
-            source: "graph_nodes.metadata".into(),
-        });
-    }
-
-    Some(InspectableObjectSummary {
-        id: format!("evidence:{}", id),
-        object_type: InspectableObjectType::Evidence,
-        label,
-        subtitle,
-        properties,
-        available_views: Vec::new(),
-    })
+        if let Some(c) = n.properties.get("confidence") {
+            if let Ok(parsed) = c.parse::<f64>() {
+                props.push(Property { key: "confidence".into(), value: serde_json::json!(parsed), value_type: "number".into(), source: "graph_nodes.metadata".into() });
+            }
+        }
+        if let Some(fresh) = n.properties.get("freshness") {
+            props.push(Property { key: "freshness".into(), value: serde_json::Value::String(fresh.clone()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
+        }
+    };
+    project_generic(
+        graph,
+        id,
+        kind_match,
+        "evidence",
+        InspectableObjectType::Evidence,
+        "Evidence node",
+        extract_props,
+    )
+    .await
 }
 
 #[cfg(test)]
