@@ -846,38 +846,22 @@ fn inspect_object_impl(
                 "Investigation inspection requires async context"
             )))
         }
-        ObjectIdentity::Doc { id } => {
-            // Graph path — requires graph_repo, wired in Phase 4
-            Ok(InspectableObjectSummary {
-                id: format!("doc:{id}"),
-                object_type: InspectableObjectType::Doc,
-                label: format!("Document {id}"),
-                subtitle: "Graph document node".to_string(),
-                properties: vec![],
-                available_views: view_registry.list_for(InspectableObjectType::Doc),
-            })
+        ObjectIdentity::Doc { .. } => {
+            // Graph path — requires graph_repo wired. Return FeatureDisabled so
+            // callers know the feature is unavailable (not a misleading empty stub).
+            Err(ExplorerError::FeatureDisabled(
+                "Doc inspection requires graph repository (not wired in default build)".into(),
+            ))
         }
-        ObjectIdentity::Decision { id } => {
-            // Graph path — requires graph_repo, wired in Phase 4
-            Ok(InspectableObjectSummary {
-                id: format!("decision:{id}"),
-                object_type: InspectableObjectType::DecisionArtifact,
-                label: format!("Decision {id}"),
-                subtitle: "Decision artifact".to_string(),
-                properties: vec![],
-                available_views: view_registry.list_for(InspectableObjectType::DecisionArtifact),
-            })
+        ObjectIdentity::Decision { .. } => {
+            Err(ExplorerError::FeatureDisabled(
+                "Decision inspection requires graph repository (not wired in default build)".into(),
+            ))
         }
-        ObjectIdentity::Evidence { id } => {
-            // Graph path — requires graph_repo, wired in Phase 4
-            Ok(InspectableObjectSummary {
-                id: format!("evidence:{id}"),
-                object_type: InspectableObjectType::Evidence,
-                label: format!("Evidence {id}"),
-                subtitle: "Evidence node".to_string(),
-                properties: vec![],
-                available_views: view_registry.list_for(InspectableObjectType::Evidence),
-            })
+        ObjectIdentity::Evidence { .. } => {
+            Err(ExplorerError::FeatureDisabled(
+                "Evidence inspection requires graph repository (not wired in default build)".into(),
+            ))
         }
     }
 }

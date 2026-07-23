@@ -150,14 +150,10 @@ impl ViewServiceImpl {
                 "Investigation view resolution requires investigation facade (not wired)".into(),
             )),
             // Doc/Decision/Evidence require graph_repo wired to ViewService.
-            // Doc and Evidence are resolved in SearchServiceImpl which has graph access.
-            // Decision can be resolved here since we now have graph_repo wired.
-            ObjectIdentity::Doc { .. } | ObjectIdentity::Evidence { .. } => {
-                Err(ExplorerError::FeatureDisabled(
-                    "Doc/Evidence resolution requires graph repository (not wired in ViewService)"
-                        .into(),
-                ))
-            }
+            // Decision is resolved here since we now have graph_repo wired.
+            // Doc and Evidence are resolved here as lightweight ID-only targets;
+            // the executors (DocSourceExecutor, EvidenceOverviewExecutor) handle
+            // the actual node fetch from graph_repo when building the view.
             ObjectIdentity::Decision { id } => {
                 #[cfg(feature = "multimodal")]
                 {
@@ -173,6 +169,40 @@ impl ViewServiceImpl {
                 {
                     Err(ExplorerError::FeatureDisabled(
                         "Decision resolution requires multimodal feature".into(),
+                    ))
+                }
+            }
+            ObjectIdentity::Doc { id } => {
+                #[cfg(feature = "multimodal")]
+                {
+                    let _graph_repo = self.graph_repo.as_ref().ok_or_else(|| {
+                        ExplorerError::FeatureDisabled(
+                            "Doc resolution requires graph repository (not wired in ViewService)".into(),
+                        )
+                    })?;
+                    Ok(InspectionTarget::Doc { id: id.clone() })
+                }
+                #[cfg(not(feature = "multimodal"))]
+                {
+                    Err(ExplorerError::FeatureDisabled(
+                        "Doc resolution requires multimodal feature".into(),
+                    ))
+                }
+            }
+            ObjectIdentity::Evidence { id } => {
+                #[cfg(feature = "multimodal")]
+                {
+                    let _graph_repo = self.graph_repo.as_ref().ok_or_else(|| {
+                        ExplorerError::FeatureDisabled(
+                            "Evidence resolution requires graph repository (not wired in ViewService)".into(),
+                        )
+                    })?;
+                    Ok(InspectionTarget::Evidence { id: id.clone() })
+                }
+                #[cfg(not(feature = "multimodal"))]
+                {
+                    Err(ExplorerError::FeatureDisabled(
+                        "Evidence resolution requires multimodal feature".into(),
                     ))
                 }
             }

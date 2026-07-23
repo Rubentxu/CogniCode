@@ -195,9 +195,13 @@ impl Runtime {
                 None
             };
         #[cfg(all(feature = "multimodal", not(feature = "postgres")))]
-        let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> = None;
+        let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> = Some(Arc::new(
+            cognicode_explorer::adapters::InMemoryGraphRepository::new(vec![], vec![]),
+        ));
         #[cfg(not(feature = "multimodal"))]
-        let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> = None;
+        let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> = Some(Arc::new(
+            cognicode_explorer::adapters::InMemoryGraphRepository::new(vec![], vec![]),
+        ));
 
         let search: Arc<dyn cognicode_explorer::facades::SearchService> =
             Arc::new(cognicode_explorer::facades::search::SearchServiceImpl::new(
