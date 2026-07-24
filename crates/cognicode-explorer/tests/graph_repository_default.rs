@@ -63,7 +63,10 @@ impl GraphRepository for MockGraphRepository {
             .collect())
     }
 
-    async fn get_node(&self, _id: &NodeId) -> cognicode_core::domain::GraphResult<Option<GraphNode>> {
+    async fn get_node(
+        &self,
+        _id: &NodeId,
+    ) -> cognicode_core::domain::GraphResult<Option<GraphNode>> {
         Ok(None)
     }
 
@@ -123,7 +126,9 @@ async fn default_find_nodes_by_kind_paginated_returns_raw_total_equals_items_len
     ];
     let repo = Arc::new(MockGraphRepository::new(nodes));
 
-    let result = repo.find_nodes_by_kind_paginated(&NodeKind::Doc, 10, None).await;
+    let result = repo
+        .find_nodes_by_kind_paginated(&NodeKind::Doc, 10, None)
+        .await;
     assert!(result.is_ok(), "Expected Ok, got {:?}", result);
 
     let page = result.unwrap();
@@ -140,7 +145,9 @@ async fn default_find_nodes_by_kind_paginated_returns_none_cursor() {
     ];
     let repo = Arc::new(MockGraphRepository::new(nodes));
 
-    let result = repo.find_nodes_by_kind_paginated(&NodeKind::Doc, 10, None).await;
+    let result = repo
+        .find_nodes_by_kind_paginated(&NodeKind::Doc, 10, None)
+        .await;
     assert!(result.is_ok());
 
     let page = result.unwrap();
@@ -160,7 +167,9 @@ async fn default_find_nodes_by_kind_paginated_respects_kind_filter() {
     ];
     let repo = Arc::new(MockGraphRepository::new(nodes));
 
-    let result = repo.find_nodes_by_kind_paginated(&NodeKind::Decision, 10, None).await;
+    let result = repo
+        .find_nodes_by_kind_paginated(&NodeKind::Decision, 10, None)
+        .await;
     assert!(result.is_ok());
 
     let page = result.unwrap();

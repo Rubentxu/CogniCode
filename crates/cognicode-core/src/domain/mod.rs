@@ -13,11 +13,11 @@ pub mod events;
 // builds so the byte-level surface is unchanged.
 #[cfg(feature = "multimodal")]
 pub mod federation;
-// Hexagonal "driven" ports for the Generic Graph Layer (multimodal).
-// Hidden on default builds so the byte-level surface is unchanged.
+// Hexagonal "driven" ports for the Generic Graph Layer.
+// `GraphRepository` / `GraphError` / `GraphResult` / `SearchPage`
+// are available in the default build (multimodal gates WRITE only).
 pub mod investigation;
 pub mod investigation_store;
-#[cfg(feature = "multimodal")]
 pub mod ports;
 pub mod services;
 pub mod traits;
@@ -29,10 +29,9 @@ pub use events::{GraphDiffCalculator, GraphEvent};
 pub use services::{ComplexityCalculator, CycleDetector, ImpactAnalyzer};
 pub use value_objects::{DependencyType, Location, SourceRange, SymbolKind};
 
-// Multimodal port re-exports — `GraphRepository`, `GraphError`,
-// `GraphResult`, `SearchPage` live in `ports`. Hidden on default
-// builds so the byte-level surface is unchanged.
-#[cfg(feature = "multimodal")]
+// Graph port re-exports — `GraphRepository`, `GraphError`,
+// `GraphResult`, `SearchPage` live in `ports`. Available in
+// the default build (multimodal gates WRITE extraction only).
 pub use ports::{GraphError, GraphRepository, GraphResult, SearchPage};
 
 // Multimodal federation re-exports — `FederatedNodeId`,

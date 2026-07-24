@@ -19,7 +19,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use crate::domain::aggregates::generic_graph::{GraphEdge, NodeId};
 use crate::domain::federation::federated_node::FederatedNode;
 use crate::domain::federation::federated_node_id::FederatedNodeId;
@@ -27,6 +26,7 @@ use crate::domain::ports::graph_error::GraphResult;
 use crate::domain::ports::graph_repository::{GraphRepository, SearchPage};
 use crate::domain::value_objects::SpaceId;
 use crate::domain::value_objects::node_kind::NodeKind;
+use async_trait::async_trait;
 
 /// One page of a federated search. Same shape as
 /// [`SearchPage`] but each `GraphNode` is wrapped in a
@@ -166,8 +166,9 @@ impl FederatedGraphService {
             let per_offset: usize = if target_space.is_some() { offset } else { 0 };
             futures.push((space_id.clone(), per_offset, async move {
                 let per_cursor = per_offset.to_string();
-                let r: GraphResult<SearchPage> =
-                    repo.search(query, node_kinds, limit, Some(&per_cursor)).await;
+                let r: GraphResult<SearchPage> = repo
+                    .search(query, node_kinds, limit, Some(&per_cursor))
+                    .await;
                 r
             }));
             space_ids_in_order.push(space_id.clone());

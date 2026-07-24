@@ -180,7 +180,11 @@ impl Runtime {
             Arc<dyn cognicode_explorer::facades::InvestigationFacade>,
         > = None;
 
-        // Graph repository for multimodal search (Doc/Decision/Evidence families)
+        // Graph repository for multimodal search (Doc/Decision/Evidence families).
+        // Read path is ungated (default build); write/exTRACTION stays behind multimodal.
+        // NOTE: PgGraphRepository impl requires multimodal domain types (NodeKind::Doc,
+        // EdgeKind::Justifies/Cites/Resolves/CorroboratedBy). Full read-path wiring with
+        // postgres-only is deferred to a follow-up that un-gates those domain types.
         #[cfg(all(feature = "multimodal", feature = "postgres"))]
         let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> =
             if let Some(ref pg) = self.pg_repo {
@@ -191,7 +195,13 @@ impl Runtime {
                 None
             };
         #[cfg(all(feature = "multimodal", not(feature = "postgres")))]
-        let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> = None;
+        let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> = Some(Arc::new(
+            cognicode_explorer::adapters::InMemoryGraphRepository::new(vec![], vec![]),
+        ));
+        #[cfg(not(feature = "multimodal"))]
+        let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> = Some(Arc::new(
+            cognicode_explorer::adapters::InMemoryGraphRepository::new(vec![], vec![]),
+        ));
 
         let search: Arc<dyn cognicode_explorer::facades::SearchService> =
             Arc::new(cognicode_explorer::facades::search::SearchServiceImpl::new(
@@ -202,7 +212,6 @@ impl Runtime {
                 quality.clone(),           // quality_repo — wired from PG (PR #55)
                 Some(persistence.clone()), // persistence — for SavedExploration search
                 investigation,             // investigation — wired from PG (e13-wave-1)
-                #[cfg(feature = "multimodal")]
                 graph_repo.clone(),
             ));
 
@@ -216,7 +225,6 @@ impl Runtime {
                 graph_query.clone(),
                 view_registry.clone(),
                 Some(persistence.clone()), // persistence — for SavedExploration view resolution
-                #[cfg(feature = "multimodal")]
                 graph_repo.clone(),
             ));
         let view: Arc<dyn cognicode_explorer::facades::ViewService> = view_impl.clone();

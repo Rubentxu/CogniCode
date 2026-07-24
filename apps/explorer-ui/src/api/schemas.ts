@@ -963,12 +963,24 @@ export const evidenceSchema = z.object({
 });
 export type EvidenceDto = z.infer<typeof evidenceSchema>;
 
+// ADR-010 E24.1: Diagram provenance DTO
+export const diagramProvenanceSchema = z.object({
+  object_id: z.string(),
+  view_kind: z.string(),
+  spec_id: z.string().nullable().optional(),
+  query_id: z.string().nullable().optional(),
+  export_format: z.enum(["mermaid", "svg", "png", "drawio"]),
+  created_at: z.string(),
+});
+export type DiagramProvenanceDto = z.infer<typeof diagramProvenanceSchema>;
+
 export const artifactSchema = z.object({
   id: z.string(),
   kind: z.string(),
   title: z.string(),
   content: z.string(),
   generated_from: z.string().nullable().optional(),
+  provenance: diagramProvenanceSchema.nullable().optional(),
 });
 export type ArtifactDto = z.infer<typeof artifactSchema>;
 
@@ -1028,6 +1040,8 @@ export const addArtifactRequestSchema = z.object({
   title: z.string(),
   content: z.string(),
   generated_from: z.string().optional(),
+  // ADR-010 E24.1: diagram provenance
+  provenance: diagramProvenanceSchema.nullable().optional(),
 });
 export type AddArtifactRequestDto = z.infer<typeof addArtifactRequestSchema>;
 

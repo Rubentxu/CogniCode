@@ -28,11 +28,9 @@ export type FeatureFlag =
   | "project_diary"
   | "example_object"
   // Catalog-only ViewKinds (ADR-002 §3 capability debt)
-  | "concept_map"
   | "evidence_pack"
   | "risk_map"
   | "decision_trace"
-  | "doc_code_alignment"
   // Cycle-specific debt
   | "lens_real_data"
   | "contextual_editor_lsp"
@@ -43,11 +41,9 @@ const DEBT_FEATURES = new Set<FeatureFlag>([
   "composed_narrative",
   "project_diary",
   "example_object",
-  "concept_map",
   "evidence_pack",
   "risk_map",
   "decision_trace",
-  "doc_code_alignment",
   "lens_real_data",
   "contextual_editor_lsp",
   "playgrounds",

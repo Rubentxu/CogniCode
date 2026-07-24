@@ -92,6 +92,11 @@ const SCHEMA_SQL_INVESTIGATION_SESSIONS: &str = include_str!("m0014_investigatio
 #[cfg(feature = "postgres")]
 const SCHEMA_SQL_VIEWSPEC_PROVENANCE: &str = include_str!("m0015_viewspec_provenance.sql");
 
+/// Diagram provenance DDL — adds nullable JSONB `provenance` column to
+/// investigation_artifacts (ADR-010 E24.1).
+#[cfg(feature = "postgres")]
+const SCHEMA_SQL_DIAGRAM_PROVENANCE: &str = include_str!("m0016_diagram_provenance.sql");
+
 /// PostgreSQL-backed implementation of the async [`Repository`]
 /// trait. Owns its [`PgPool`]; consumers that want shared
 /// ownership can wrap in `Arc<PostgresRepository>`.
@@ -214,6 +219,12 @@ impl PostgresRepository {
             .execute(&self.pool)
             .await
             .map_err(|e| RepositoryError::Store(format!("viewspec provenance migration: {e}")))?;
+
+        // 9. Diagram provenance column — ADR-010 E24.1.
+        sqlx::raw_sql(SCHEMA_SQL_DIAGRAM_PROVENANCE)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("diagram provenance migration: {e}")))?;
 
         Ok(())
     }
@@ -1262,6 +1273,8 @@ pub struct InvestigationArtifactRow {
     pub title: String,
     pub content: String,
     pub generated_from: Option<String>,
+    /// JSONB provenance metadata — ADR-010 R1–R2. None for pre-migration rows.
+    pub provenance: Option<serde_json::Value>,
 }
 
 /// Split a `file:name:line` qualified name into its components.
@@ -2068,8 +2081,8 @@ impl PostgresRepository {
         for art in artifacts {
             sqlx::query(
                 "INSERT INTO investigation_artifacts \
-                 (id, investigation_id, kind, title, content, generated_from) \
-                 VALUES ($1, $2, $3, $4, $5, $6)",
+                 (id, investigation_id, kind, title, content, generated_from, provenance) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)",
             )
             .bind(&art.id)
             .bind(&art.investigation_id)
@@ -2077,6 +2090,7 @@ impl PostgresRepository {
             .bind(&art.title)
             .bind(&art.content)
             .bind(&art.generated_from)
+            .bind(&art.provenance)
             .execute(&mut *tx)
             .await
             .map_err(|e| {
@@ -2244,7 +2258,7 @@ impl PostgresRepository {
         investigation_id: &str,
     ) -> Result<Vec<InvestigationArtifactRow>, RepositoryError> {
         let rows = sqlx::query(
-            "SELECT id, investigation_id, kind, title, content, generated_from \
+            "SELECT id, investigation_id, kind, title, content, generated_from, provenance \
              FROM investigation_artifacts WHERE investigation_id = $1",
         )
         .bind(investigation_id)
@@ -2261,8 +2275,57 @@ impl PostgresRepository {
                 title: r.get("title"),
                 content: r.get("content"),
                 generated_from: r.get("generated_from"),
+                provenance: r.get("provenance"),
             })
             .collect())
+    }
+
+    /// Add a single artifact to an investigation (ADR-010 E24.1).
+    /// Also updates the investigation's `updated_at` timestamp.
+    pub async fn add_investigation_artifact(
+        &self,
+        investigation_id: &str,
+        artifact: &InvestigationArtifactRow,
+    ) -> Result<(), RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            RepositoryError::Store(format!("add_investigation_artifact begin: {e}"))
+        })?;
+
+        // Insert the artifact row.
+        sqlx::query(
+            "INSERT INTO investigation_artifacts \
+             (id, investigation_id, kind, title, content, generated_from, provenance) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        )
+        .bind(&artifact.id)
+        .bind(&artifact.investigation_id)
+        .bind(&artifact.kind)
+        .bind(&artifact.title)
+        .bind(&artifact.content)
+        .bind(&artifact.generated_from)
+        .bind(&artifact.provenance)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            RepositoryError::Store(format!("add_investigation_artifact insert: {e}"))
+        })?;
+
+        // Update the investigation's updated_at timestamp.
+        sqlx::query(
+            "UPDATE investigations \
+             SET updated_at = now() AT TIME ZONE 'UTC' \
+             WHERE id = $1",
+        )
+        .bind(investigation_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            RepositoryError::Store(format!("add_investigation_artifact update ts: {e}"))
+        })?;
+
+        tx.commit()
+            .await
+            .map_err(|e| RepositoryError::Store(format!("add_investigation_artifact commit: {e}")))
     }
 }
 

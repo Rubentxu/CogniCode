@@ -24,14 +24,21 @@
 // are not explicitly needed here since we delegate to the types' own
 // serialization methods.
 
-use crate::dto::{ViewDescriptorDto, ViewSpec};
+use crate::dto::{ViewDescriptorDto, ViewKind, ViewSpec};
 use cognicode_core::interface::mcp::schemas as core_schema;
 
 impl From<core_schema::ViewDescriptor> for ViewDescriptorDto {
     fn from(s: core_schema::ViewDescriptor) -> Self {
+        // Parse the wire-format view_kind string back to ViewKind enum.
+        // Unknown variants deserialize to Custom via serde, preserving forward compat.
+        // S-004: avoid format!() + from_str() round-trip — use Value::String directly.
+        let wire_tag = s.view_kind;
+        let view_kind: ViewKind = serde_json::from_value(serde_json::Value::String(wire_tag.clone()))
+            .unwrap_or_else(|_| ViewKind::Custom(wire_tag));
         Self {
             id: s.id,
             title: s.title,
+            view_kind,
             is_builtin: s.is_builtin,
             source: s.source,
         }
@@ -43,6 +50,7 @@ impl From<ViewDescriptorDto> for core_schema::ViewDescriptor {
         Self {
             id: d.id,
             title: d.title,
+            view_kind: d.view_kind.to_wire_tag(),
             is_builtin: d.is_builtin,
             source: d.source,
         }
@@ -91,6 +99,7 @@ mod boundary_tests {
         let original = ViewDescriptorDto {
             id: "test-id".to_string(),
             title: "Test View".to_string(),
+            view_kind: ViewKind::CallGraph,
             is_builtin: true,
             source: None,
         };
@@ -98,6 +107,7 @@ mod boundary_tests {
         let roundtrip: ViewDescriptorDto = core.into();
         assert_eq!(original.id, roundtrip.id);
         assert_eq!(original.title, roundtrip.title);
+        assert_eq!(original.view_kind, roundtrip.view_kind);
         assert_eq!(original.is_builtin, roundtrip.is_builtin);
         assert_eq!(original.source, roundtrip.source);
     }
@@ -107,6 +117,7 @@ mod boundary_tests {
         let original = ViewDescriptorDto {
             id: "runtime-id".to_string(),
             title: "My Custom View".to_string(),
+            view_kind: ViewKind::Custom("custom_view".to_string()),
             is_builtin: false,
             source: Some("runtime".to_string()),
         };
@@ -114,6 +125,7 @@ mod boundary_tests {
         let roundtrip: ViewDescriptorDto = core.into();
         assert_eq!(original.id, roundtrip.id);
         assert_eq!(original.title, roundtrip.title);
+        assert_eq!(original.view_kind, roundtrip.view_kind);
         assert_eq!(original.is_builtin, roundtrip.is_builtin);
         assert_eq!(original.source, roundtrip.source);
     }

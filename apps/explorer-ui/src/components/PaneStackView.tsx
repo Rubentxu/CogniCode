@@ -79,6 +79,7 @@ export function PaneStackView() {
     <div data-testid="pane-stack-view" className="flex h-full flex-col">
       {/* Tab strip */}
       <div
+        data-testid="shell-tablist"
         className="flex items-center gap-0 overflow-x-auto px-1 py-1"
         style={{
           backgroundColor: "var(--color-surface-raised)",

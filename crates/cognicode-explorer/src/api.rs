@@ -435,6 +435,39 @@ async fn rationale_handler(
     Ok(Json(response).into_response())
 }
 
+/// Handler for `GET /api/decisions/:id/support-pack`.
+///
+/// Returns a `DecisionSupportPack` with five panes in stable order:
+/// decision_graph, architecture_rationale, evidence_pack, risk_map,
+/// change_impact_story. Each pane carries its own `PaneStatus` so partial
+/// failure never propagates beyond the pane.
+///
+/// Requires the `multimodal` feature.
+#[cfg(feature = "multimodal")]
+async fn get_decision_support_pack(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    use crate::domain::decision_support_pack::DecisionSupportPackBuilder;
+    use crate::ports::graph_repository::GraphRepository;
+
+    let id = validate_id(&id).map_err(ApiError)?;
+
+    let graph_repo = state.graph_repo.clone().ok_or_else(|| {
+        ExplorerError::FeatureDisabled("multimodal graph repository not wired".to_string())
+    })?;
+
+    // Get graph_query from the GraphService for RiskMap/ChangeImpactStory
+    let graph_query = state.graph.graph_query();
+
+    let pack = DecisionSupportPackBuilder::build(&id, graph_query, None, Some(graph_repo.as_ref()))
+        .await
+        .map_err(ExplorerError::from)
+        .map_err(ApiError)?;
+
+    Ok(Json(pack).into_response())
+}
+
 #[derive(Clone)]
 pub struct ApiState {
     pub workspace: Arc<dyn WorkspaceService>,
@@ -562,6 +595,15 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/api/graph/:id/subgraph", get(subgraph_handler))
         .route("/api/graph/:id/contextual", get(contextual_handler))
         .route("/api/graph/:id/rationale", get(rationale_handler))
+        // Decision support pack endpoint — E25 PR2
+        // Only mounted when the `multimodal` feature is active.
+        .route(
+            "/api/decisions/:id/support-pack",
+            #[cfg(feature = "multimodal")]
+            get(get_decision_support_pack),
+            #[cfg(not(feature = "multimodal"))]
+            get(not_found_stub),
+        )
         .route(
             "/api/workspaces/:workspace_id/architecture/mermaid",
             get(mermaid_handler),
@@ -595,6 +637,11 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route(
             "/api/investigations/:id/composed-narrative",
             get(get_investigation_composed_narrative),
+        )
+        // ADR-010 E24.1: Regenerate diagram artifact
+        .route(
+            "/api/investigations/:id/artifacts/:aid/regenerate",
+            post(regenerate_artifact),
         )
         .route(
             "/api/objects/:object_id/affordances",
@@ -660,6 +707,15 @@ pub fn router(state: ApiState) -> Router {
             "/api/graph/:id/rationale",
             #[cfg(feature = "multimodal")]
             get(rationale_handler),
+            #[cfg(not(feature = "multimodal"))]
+            get(not_found_stub),
+        )
+        // Decision support pack endpoint — E25 PR2
+        // Only mounted when the `multimodal` feature is active.
+        .route(
+            "/api/decisions/:id/support-pack",
+            #[cfg(feature = "multimodal")]
+            get(get_decision_support_pack),
             #[cfg(not(feature = "multimodal"))]
             get(not_found_stub),
         )
@@ -1093,7 +1149,10 @@ async fn trace_mermaid_handler(
         TraceMermaidViewKind::CallGraph => call_graph_to_mermaid(&trace_ctx, &q.target),
         TraceMermaidViewKind::ImpactRadius => impact_radius_to_mermaid(&trace_ctx, &q.target),
         #[cfg(feature = "multimodal")]
-        TraceMermaidViewKind::DecisionTrace => decision_trace_to_mermaid(&trace_ctx, &q.target),
+        TraceMermaidViewKind::DecisionTrace => {
+            decision_trace_to_mermaid(&trace_ctx, &q.target)
+                .map_err(|_| ApiError(ExplorerError::UnsupportedFormat("decision_trace not implemented (E24.3)".into())))?
+        }
         TraceMermaidViewKind::VerticalSlice => vertical_slice_to_mermaid(&trace_ctx, &q.target),
     };
 
@@ -1557,51 +1616,28 @@ async fn pin_evidence(
     Ok(Json(serde_json::json!({ "ok": true })).into_response())
 }
 
-/// POST /api/investigations/:id/artifacts — add an artifact to an investigation (ADR-005 E21-6).
+/// POST /api/investigations/:id/artifacts — add an artifact to an investigation (ADR-005 E21-6 + ADR-010 E24.1).
 async fn add_investigation_artifact(
     State(state): State<ApiState>,
     Path(id): Path<String>,
     Json(request): Json<AddArtifactRequest>,
 ) -> Result<Response, ApiError> {
-    let investigation = state
+    let facade = state
         .investigation
         .as_ref()
-        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
-        .get_investigation(&id)
-        .await?
-        .ok_or_else(|| {
-            ApiError(ExplorerError::NotFound(format!(
-                "investigation {} not found",
-                id
-            )))
-        })?;
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?;
 
-    let artifact = cognicode_core::domain::investigation::Artifact {
-        id: format!(
-            "art_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ),
-        kind: request.kind,
-        title: request.title,
-        content: request.content,
-        generated_from: request.generated_from,
-    };
+    // Delegate to the layered add_artifact method (mirrors add_evidence pattern).
+    let artifact = facade.add_artifact(&id, request).await.map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("not found") {
+            ApiError(ExplorerError::NotFound(format!("investigation {} not found", id)))
+        } else {
+            ApiError(e)
+        }
+    })?;
 
-    // Update the investigation with the new artifact
-    let mut updated_investigation = investigation.clone();
-    updated_investigation.artifacts.push(artifact);
-
-    state
-        .investigation
-        .as_ref()
-        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
-        .update_investigation(updated_investigation)
-        .await?;
-
-    Ok(Json(serde_json::json!({ "ok": true })).into_response())
+    Ok(Json(serde_json::json!({ "ok": true, "artifact": artifact })).into_response())
 }
 
 /// GET /api/investigations/:id/evidence-pack — get evidence pack view for an investigation (ADR-005 E21-3).
@@ -1644,8 +1680,74 @@ async fn get_investigation_composed_narrative(
             )))
         })?;
 
-    let view = crate::domain::views::build_investigation_narrative(&investigation);
+        let view = crate::domain::views::build_investigation_narrative(&investigation);
     Ok(Json(view).into_response())
+}
+
+/// POST /api/investigations/:id/artifacts/:aid/regenerate — ADR-010 E24.1.
+/// Regenerates a diagram artifact from its provenance and persists the new content.
+async fn regenerate_artifact(
+    State(state): State<ApiState>,
+    Path((id, aid)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    use crate::domain::diagram_regen::DiagramRegenerator;
+
+    let facade = state
+        .investigation
+        .as_ref()
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?;
+
+    // Fetch the investigation to locate the artifact.
+    let mut investigation = facade
+        .get_investigation(&id)
+        .await?
+        .ok_or_else(|| {
+            ApiError(ExplorerError::NotFound(format!("investigation {} not found", id)))
+        })?;
+
+    // Find the artifact by id.
+    let artifact_idx = investigation
+        .artifacts
+        .iter()
+        .position(|a| a.id == aid)
+        .ok_or_else(|| {
+            ApiError(ExplorerError::NotFound(format!(
+                "artifact {} not found in investigation {}",
+                aid, id
+            )))
+        })?;
+
+    let provenance = investigation.artifacts[artifact_idx]
+        .provenance
+        .as_ref()
+        .ok_or_else(|| {
+            ApiError(ExplorerError::InvalidInput(
+                "artifact does not have provenance metadata — cannot regenerate".into(),
+            ))
+        })?
+        .clone();
+
+    // Regenerate using the dispatch table.
+    let graph_svc: &dyn GraphService = &*state.graph;
+    let workspace_svc: &dyn WorkspaceService = &*state.workspace;
+    let new_content = DiagramRegenerator::regenerate(&provenance, graph_svc, workspace_svc)
+        .await
+        .map_err(|e| ApiError(ExplorerError::InvalidInput(e.to_string())))?;
+
+    // Update the artifact content and persist.
+    investigation.artifacts[artifact_idx].content = new_content.clone();
+    investigation.updated_at = time::OffsetDateTime::now_utc();
+    facade
+        .update_investigation(investigation.clone())
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "artifact_id": aid,
+        "content": new_content,
+    }))
+    .into_response())
 }
 
 struct ApiError(ExplorerError);

@@ -128,10 +128,13 @@ pub enum InspectableObjectType {
 /// This type lives in the explorer crate. The MCP/JSON surface uses this type
 /// directly. When crossing the explorer↔core boundary, the [`crate::boundary`]
 /// module provides the anti-corruption layer (`From` impls).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewDescriptorDto {
     pub id: String,
     pub title: String,
+    /// The semantic [`ViewKind`] of this view, enabling clients to route to the
+    /// correct renderer without inspecting the `id` string.
+    pub view_kind: ViewKind,
     /// Whether this is a built-in view (`true`) or a runtime user-defined view (`false`).
     /// Phase 4+: included so the frontend can badge runtime views.
     /// Default `true` when absent (backward compat).
@@ -305,7 +308,17 @@ pub enum InspectionTarget {
     SavedExploration(ExplorationSession),
     Investigation(Investigation),
     /// A decision artifact from the graph, addressed by its decision id.
-    Decision { id: String },
+    Decision {
+        id: String,
+    },
+    /// A documentation node from the graph, addressed by its id.
+    Doc {
+        id: String,
+    },
+    /// An evidence node from the graph, addressed by its id.
+    Evidence {
+        id: String,
+    },
 }
 
 /// Context passed to ViewExecutor::build(). The service populates all
@@ -318,9 +331,8 @@ pub struct ViewContext<'a> {
     /// Optional graph query port for traversal and navigation queries.
     /// `None` when no call graph is wired.
     pub graph_query: Option<&'a dyn GraphQueryPort>,
-    /// Optional graph repository for multimodal entities (Decision/Doc/Evidence).
-    /// `None` when multimodal feature is not enabled or no graph repo is wired.
-    #[cfg(feature = "multimodal")]
+    /// Optional graph repository for knowledge-layer entities (Decision/Doc/Evidence).
+    /// `None` when no graph repo is wired.
     pub graph_repo: Option<&'a dyn cognicode_core::domain::ports::GraphRepository>,
 }
 
@@ -1222,7 +1234,8 @@ impl From<ViewSpecError> for crate::error::ExplorerError {
 /// The `Custom(String)` variant absorbs any future / user-defined value
 /// without breaking deserialisation, preserving the original tag string
 /// for round-trip fidelity.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ViewKind {
     // Core
     VerticalSlice,
@@ -1242,6 +1255,8 @@ pub enum ViewKind {
     QualityHotspots,
     EvidenceView,
     DecisionGraph,
+    /// E25 PR3 — composite five-pane pack for DecisionArtifact targets.
+    DecisionSupportPack,
     // Architecture
     ArchitectureRationale,
     ArchitectureDrift,
@@ -1269,108 +1284,27 @@ pub enum ViewKind {
     EvidencePack,
     /// Forward-compatibility arm: any unknown tag is captured here,
     /// preserving the original string for round-trip serialization.
+    #[serde(untagged)]
     Custom(String),
 }
 
-impl Serialize for ViewKind {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            ViewKind::VerticalSlice => serializer.serialize_str("vertical_slice"),
-            ViewKind::CallGraph => serializer.serialize_str("call_graph"),
-            ViewKind::SeamMap => serializer.serialize_str("seam_map"),
-            ViewKind::DependencyGraph => serializer.serialize_str("dependency_graph"),
-            ViewKind::SourceView => serializer.serialize_str("source_view"),
-            ViewKind::DataFlow => serializer.serialize_str("data_flow"),
-            ViewKind::ImpactRadius => serializer.serialize_str("impact_radius"),
-            ViewKind::DiffView => serializer.serialize_str("diff_view"),
-            ViewKind::C4Context => serializer.serialize_str("c4_context"),
-            ViewKind::C4Container => serializer.serialize_str("c4_container"),
-            ViewKind::C4Component => serializer.serialize_str("c4_component"),
-            ViewKind::C4Code => serializer.serialize_str("c4_code"),
-            ViewKind::QualityHotspots => serializer.serialize_str("quality_hotspots"),
-            ViewKind::EvidenceView => serializer.serialize_str("evidence_view"),
-            ViewKind::DecisionGraph => serializer.serialize_str("decision_graph"),
-            ViewKind::ArchitectureRationale => serializer.serialize_str("architecture_rationale"),
-            ViewKind::ArchitectureDrift => serializer.serialize_str("architecture_drift"),
-            ViewKind::BoundaryMap => serializer.serialize_str("boundary_map"),
-            ViewKind::DependencyPressure => serializer.serialize_str("dependency_pressure"),
-            ViewKind::ChangeImpactStory => serializer.serialize_str("change_impact_story"),
-            ViewKind::OwnershipMap => serializer.serialize_str("ownership_map"),
-            ViewKind::RiskMap => serializer.serialize_str("risk_map"),
-            ViewKind::DecisionTrace => serializer.serialize_str("decision_trace"),
-            ViewKind::TestSlice => serializer.serialize_str("test_slice"),
-            ViewKind::DebugSlice => serializer.serialize_str("debug_slice"),
-            ViewKind::RefactorPlan => serializer.serialize_str("refactor_plan"),
-            ViewKind::CallersAndImplementors => {
-                serializer.serialize_str("callers_and_implementors")
-            }
-            ViewKind::UsageExamples => serializer.serialize_str("usage_examples"),
-            ViewKind::ApiSurface => serializer.serialize_str("api_surface"),
-            ViewKind::DeadCodeCandidates => serializer.serialize_str("dead_code_candidates"),
-            ViewKind::SemanticSearchResults => serializer.serialize_str("semantic_search_results"),
-            ViewKind::DocCodeAlignment => serializer.serialize_str("doc_code_alignment"),
-            ViewKind::ExampleObject => serializer.serialize_str("example_object"),
-            ViewKind::ComposedNarrative => serializer.serialize_str("composed_narrative"),
-            ViewKind::ProjectDiary => serializer.serialize_str("project_diary"),
-            ViewKind::ConceptMap => serializer.serialize_str("concept_map"),
-            ViewKind::EvidencePack => serializer.serialize_str("evidence_pack"),
-            ViewKind::Custom(s) => serializer.serialize_str(s),
-        }
+impl ViewKind {
+    /// Returns the wire-format tag string used in JSON serialization.
+    ///
+    /// Delegates to serde derive so the mapping lives in exactly one place
+    /// (the `#[serde(rename_all = "snake_case")]` attribute on the enum).
+    pub fn to_wire_tag(&self) -> String {
+        serde_json::to_string(self)
+            .ok()
+            .and_then(|s| {
+                s.strip_prefix('"')
+                    .and_then(|s| s.strip_suffix('"'))
+                    .map(str::to_string)
+            })
+            .unwrap_or_default()
     }
 }
 
-impl<'de> Deserialize<'de> for ViewKind {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        match s.as_str() {
-            "vertical_slice" => Ok(ViewKind::VerticalSlice),
-            "call_graph" => Ok(ViewKind::CallGraph),
-            "seam_map" => Ok(ViewKind::SeamMap),
-            "dependency_graph" => Ok(ViewKind::DependencyGraph),
-            "source_view" => Ok(ViewKind::SourceView),
-            "data_flow" => Ok(ViewKind::DataFlow),
-            "impact_radius" => Ok(ViewKind::ImpactRadius),
-            "diff_view" => Ok(ViewKind::DiffView),
-            "c4_context" => Ok(ViewKind::C4Context),
-            "c4_container" => Ok(ViewKind::C4Container),
-            "c4_component" => Ok(ViewKind::C4Component),
-            "c4_code" => Ok(ViewKind::C4Code),
-            "quality_hotspots" => Ok(ViewKind::QualityHotspots),
-            "evidence_view" => Ok(ViewKind::EvidenceView),
-            "decision_graph" => Ok(ViewKind::DecisionGraph),
-            "architecture_rationale" => Ok(ViewKind::ArchitectureRationale),
-            "architecture_drift" => Ok(ViewKind::ArchitectureDrift),
-            "boundary_map" => Ok(ViewKind::BoundaryMap),
-            "dependency_pressure" => Ok(ViewKind::DependencyPressure),
-            "change_impact_story" => Ok(ViewKind::ChangeImpactStory),
-            "ownership_map" => Ok(ViewKind::OwnershipMap),
-            "risk_map" => Ok(ViewKind::RiskMap),
-            "decision_trace" => Ok(ViewKind::DecisionTrace),
-            "test_slice" => Ok(ViewKind::TestSlice),
-            "debug_slice" => Ok(ViewKind::DebugSlice),
-            "refactor_plan" => Ok(ViewKind::RefactorPlan),
-            "callers_and_implementors" => Ok(ViewKind::CallersAndImplementors),
-            "usage_examples" => Ok(ViewKind::UsageExamples),
-            "api_surface" => Ok(ViewKind::ApiSurface),
-            "dead_code_candidates" => Ok(ViewKind::DeadCodeCandidates),
-            "semantic_search_results" => Ok(ViewKind::SemanticSearchResults),
-            "doc_code_alignment" => Ok(ViewKind::DocCodeAlignment),
-            "example_object" => Ok(ViewKind::ExampleObject),
-            "composed_narrative" => Ok(ViewKind::ComposedNarrative),
-            "project_diary" => Ok(ViewKind::ProjectDiary),
-            "concept_map" => Ok(ViewKind::ConceptMap),
-            "evidence_pack" => Ok(ViewKind::EvidencePack),
-            "custom" => Ok(ViewKind::Custom("custom".to_string())),
-            other => Ok(ViewKind::Custom(other.to_string())),
-        }
-    }
-}
 
 /// One first-class RendererKind — the visual rendering strategy.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -1731,11 +1665,19 @@ mod view_spec_tests {
             ViewKind::VerticalSlice,
             ViewKind::SourceView,
             ViewKind::QualityHotspots,
+            ViewKind::DecisionSupportPack,
         ] {
             let json = serde_json::to_string(&vk).expect("serialize");
             let back: ViewKind = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(vk, back, "ViewKind::{vk:?} must round-trip");
         }
+    }
+
+    #[test]
+    fn view_kind_decision_support_pack_snake_case() {
+        let vk = ViewKind::DecisionSupportPack;
+        let json = serde_json::to_string(&vk).expect("serialize");
+        assert_eq!(json, "\"decision_support_pack\"");
     }
 
     #[test]

@@ -37,42 +37,42 @@
 //! `ExplorerResult`) — the adapter wraps upstream failures in
 //! `GraphError::Storage` / `GraphError::InvalidInput`.
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use std::collections::HashMap;
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use std::collections::{HashSet, VecDeque};
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use std::str::FromStr;
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::ports::GraphRepository;
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::value_objects::provenance::Provenance;
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::{GraphError, GraphResult, SearchPage};
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use async_trait::async_trait;
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 use chrono::{DateTime, Utc};
 
 /// Adapter that backs the `GraphRepository` port with a
 /// PostgreSQL pool. Constructed via [`PgGraphRepository::new`]
 /// from a `sqlx::PgPool`. Cloning the adapter is cheap (the
 /// pool itself is an `Arc`).
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 #[derive(Clone)]
 pub struct PgGraphRepository {
     pool: sqlx::PgPool,
 }
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 impl PgGraphRepository {
     /// Build a new adapter over the given PG pool. The pool is
     /// shared (cloned) across clones of the adapter.
@@ -81,7 +81,7 @@ impl PgGraphRepository {
     }
 }
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 #[async_trait]
 impl GraphRepository for PgGraphRepository {
     /// PG-backed read methods. Delegates to `PostgresRepository::find_graph_nodes`
@@ -110,12 +110,12 @@ impl GraphRepository for PgGraphRepository {
         let limit_i64 = limit as i64;
 
         // Build the FTS5 query. We search in label and properties.
-            // Cursor is offset-based for simplicity: "OFFSET $2 LIMIT $1".
-            let offset: i64 = cursor.and_then(|c| c.parse::<i64>().ok()).unwrap_or(0);
+        // Cursor is offset-based for simplicity: "OFFSET $2 LIMIT $1".
+        let offset: i64 = cursor.and_then(|c| c.parse::<i64>().ok()).unwrap_or(0);
 
-            let items = if kinds.is_empty() {
-                // No kind filter — search all node kinds
-                sqlx::query_as::<_, GraphNodeRow>(
+        let items = if kinds.is_empty() {
+            // No kind filter — search all node kinds
+            sqlx::query_as::<_, GraphNodeRow>(
                     "SELECT id, kind, label, source_path, properties, \
                             created_at::text AS created_at, \
                             updated_at::text AS updated_at \
@@ -131,10 +131,10 @@ impl GraphRepository for PgGraphRepository {
                 .fetch_all(&pool)
                 .await
                 .map_err(|e| GraphError::Storage(format!("pg_graph_repository search: {e}")))?
-            } else {
-                // Kind filter — search only within specified kinds
-                let kinds_array = kinds.join(",");
-                sqlx::query_as::<_, GraphNodeRow>(
+        } else {
+            // Kind filter — search only within specified kinds
+            let kinds_array = kinds.join(",");
+            sqlx::query_as::<_, GraphNodeRow>(
                     &format!(
                         "SELECT id, kind, label, source_path, properties, \
                                 created_at::text AS created_at, \
@@ -154,23 +154,23 @@ impl GraphRepository for PgGraphRepository {
                 .fetch_all(&pool)
                 .await
                 .map_err(|e| GraphError::Storage(format!("pg_graph_repository search with kinds: {e}")))?
-            };
+        };
 
-            let raw_total = items.len() as u64;
-            let nodes: Vec<GraphNode> = items.into_iter().map(|r| r.into_graph_node()).collect();
-            let next_cursor = if nodes.len() as i64 == limit_i64 {
-                Some((offset + limit_i64).to_string())
-            } else {
-                None
-            };
+        let raw_total = items.len() as u64;
+        let nodes: Vec<GraphNode> = items.into_iter().map(|r| r.into_graph_node()).collect();
+        let next_cursor = if nodes.len() as i64 == limit_i64 {
+            Some((offset + limit_i64).to_string())
+        } else {
+            None
+        };
 
-            Ok(SearchPage {
-                items: nodes,
-                raw_total,
-                next_cursor,
-                raw_rank: 0.0,
-                item_ranks: Vec::new(),
-            })
+        Ok(SearchPage {
+            items: nodes,
+            raw_total,
+            next_cursor,
+            raw_rank: 0.0,
+            item_ranks: Vec::new(),
+        })
     }
 
     async fn find_nodes_by_kind(&self, kind: &NodeKind) -> GraphResult<Vec<GraphNode>> {
@@ -188,9 +188,7 @@ impl GraphRepository for PgGraphRepository {
         .bind(&kind_str)
         .fetch_all(&pool)
         .await
-        .map_err(|e| {
-            GraphError::Storage(format!("pg_graph_repository find_nodes_by_kind: {e}"))
-        })?;
+        .map_err(|e| GraphError::Storage(format!("pg_graph_repository find_nodes_by_kind: {e}")))?;
 
         Ok(rows.into_iter().map(|r| r.into_graph_node()).collect())
     }
@@ -218,7 +216,11 @@ impl GraphRepository for PgGraphRepository {
         Ok(Vec::new())
     }
 
-    async fn edges_by_kind(&self, _node: &NodeId, _kinds: &[EdgeKind]) -> GraphResult<Vec<GraphEdge>> {
+    async fn edges_by_kind(
+        &self,
+        _node: &NodeId,
+        _kinds: &[EdgeKind],
+    ) -> GraphResult<Vec<GraphEdge>> {
         // Stub: full edges_by_kind implementation is deferred to
         // a follow-up that wires into `find_graph_edges`. The trait
         // method is required so the impl compiles; the runtime
@@ -273,9 +275,7 @@ impl GraphRepository for PgGraphRepository {
             .fetch_all(&pool)
             .await
             .map_err(|e| {
-                GraphError::Storage(format!(
-                    "pg_graph_repository rationale_subgraph edges: {e}"
-                ))
+                GraphError::Storage(format!("pg_graph_repository rationale_subgraph edges: {e}"))
             })?;
 
             for row in edge_rows {
@@ -304,17 +304,19 @@ impl GraphRepository for PgGraphRepository {
                         ))
                     })?;
 
-                    nodes.push(target_row.map(GraphNodeRow::into_graph_node).unwrap_or_else(|| {
-                        GraphNode {
-                            id: edge.target.clone(),
-                            kind: NodeKind::Doc,
-                            label: edge.target.as_str().to_string(),
-                            source_path: None,
-                            properties: HashMap::new(),
-                            created_at: Utc::now(),
-                            updated_at: Utc::now(),
-                        }
-                    }));
+                    nodes.push(
+                        target_row
+                            .map(GraphNodeRow::into_graph_node)
+                            .unwrap_or_else(|| GraphNode {
+                                id: edge.target.clone(),
+                                kind: NodeKind::Doc,
+                                label: edge.target.as_str().to_string(),
+                                source_path: None,
+                                properties: HashMap::new(),
+                                created_at: Utc::now(),
+                                updated_at: Utc::now(),
+                            }),
+                    );
                 }
 
                 edges.push(edge.clone());
@@ -337,7 +339,7 @@ impl GraphRepository for PgGraphRepository {
 // They are inherent methods on `PgGraphRepository` and are called
 // directly from the ingest pipeline (not through the trait object).
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 impl PgGraphRepository {
     async fn upsert_nodes(&self, nodes: Vec<GraphNode>) -> GraphResult<usize> {
         // Empty input is a no-op (T4 contract).
@@ -486,7 +488,7 @@ impl PgGraphRepository {
 // ============================================================================
 
 /// A row from `graph_nodes` that can be directly scanned by sqlx.
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 #[derive(sqlx::FromRow)]
 struct GraphNodeRow {
     id: String,
@@ -498,7 +500,7 @@ struct GraphNodeRow {
     updated_at: String,
 }
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 impl GraphNodeRow {
     fn into_graph_node(self) -> GraphNode {
         use std::collections::HashMap;
@@ -538,7 +540,7 @@ impl GraphNodeRow {
     }
 }
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 #[derive(sqlx::FromRow)]
 struct GraphEdgeRow {
     source_id: String,
@@ -552,11 +554,14 @@ struct GraphEdgeRow {
     metadata: serde_json::Value,
 }
 
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 impl GraphEdgeRow {
     fn into_graph_edge(self) -> GraphResult<GraphEdge> {
         let kind = EdgeKind::from_str(&self.kind).map_err(|e| {
-            GraphError::Storage(format!("pg_graph_repository edge kind parse '{}': {e}", self.kind))
+            GraphError::Storage(format!(
+                "pg_graph_repository edge kind parse '{}': {e}",
+                self.kind
+            ))
         })?;
         let provenance = Provenance::from_str(&self.provenance).unwrap_or(Provenance::Extracted);
         let metadata: HashMap<String, String> = self

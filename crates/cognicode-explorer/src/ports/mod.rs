@@ -4,7 +4,6 @@
 //! them, not on concrete adapters.
 
 pub mod edge_emitter;
-#[cfg(feature = "multimodal")]
 pub mod graph_repository;
 pub mod quality_repository;
 pub mod search_repository;
@@ -16,7 +15,6 @@ pub use edge_emitter::{
     EDGE_KIND_HTTP_CALLS, EDGE_KIND_TRPC_CALLS, EdgeEmitter, PROTOCOL_GRAPHQL, PROTOCOL_GRPC,
     PROTOCOL_HTTP, PROTOCOL_TRPC,
 };
-#[cfg(feature = "multimodal")]
 pub use graph_repository::{GraphRepository, SearchPage};
 pub use quality_repository::{NewIssue, UpsertSummary};
 pub use quality_repository::{

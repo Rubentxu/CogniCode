@@ -1474,7 +1474,6 @@ fn landing_app() -> axum::Router {
         None,
         None,
         None,
-        #[cfg(feature = "multimodal")]
         None,
     ));
     let state = ApiState::new(
@@ -1656,7 +1655,6 @@ fn wide_landing_app() -> axum::Router {
         None,
         None,
         None,
-        #[cfg(feature = "multimodal")]
         None,
     ));
     let state = ApiState::new(

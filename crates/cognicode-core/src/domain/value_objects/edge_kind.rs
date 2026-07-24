@@ -10,15 +10,17 @@
 //! architectural relationship kinds added by the
 //! `c4-architecture-nodes` change.
 //!
-//! All non-`Dependency` variants are gated behind the `multimodal`
-//! Cargo feature so the default build is byte-for-byte unchanged.
+//! Cites, Justifies, Resolves, and CorroboratedBy are available in the default
+//! (no-feature) build to support the knowledge-layer read path. PartOf,
+//! DeployedAs, InSystem, and the protocol call edges remain behind `multimodal`
+//! (write-extraction gates).
 //!
 //! ```text
 //! EdgeKind = Dependency(DependencyType)
-//!          | Cites              #[cfg(feature = "multimodal")]
-//!          | Justifies          #[cfg(feature = "multimodal")]
-//!          | Resolves           #[cfg(feature = "multimodal")]
-//!          | CorroboratedBy     #[cfg(feature = "multimodal")]
+//!          | Cites              (default build — knowledge read)
+//!          | Justifies          (default build — knowledge read)
+//!          | Resolves           (default build — knowledge read)
+//!          | CorroboratedBy     (default build — knowledge read)
 //!          | PartOf             #[cfg(feature = "multimodal")]
 //!          | DeployedAs         #[cfg(feature = "multimodal")]
 //!          | InSystem           #[cfg(feature = "multimodal")]
@@ -56,20 +58,16 @@ pub enum EdgeKind {
     /// `DependencyType` (Calls, Imports, …).
     Dependency(DependencyType),
     /// `source` cites `target` (e.g. a doc references a code symbol).
-    /// Multimodal.
-    #[cfg(feature = "multimodal")]
+    /// Available in the default build.
     Cites,
     /// `source` justifies `target` (e.g. an ADR justifies an architectural choice).
-    /// Multimodal.
-    #[cfg(feature = "multimodal")]
+    /// Available in the default build.
     Justifies,
     /// `source` resolves `target` (e.g. a PR resolves an issue).
-    /// Multimodal.
-    #[cfg(feature = "multimodal")]
+    /// Available in the default build.
     Resolves,
     /// `source` is corroborated by `target` (e.g. a test result
-    /// corroborates a claim in a design doc). Multimodal.
-    #[cfg(feature = "multimodal")]
+    /// corroborates a claim in a design doc). Available in the default build.
     CorroboratedBy,
     /// `source` is part of `target` (e.g. a component is part of
     /// a container). Multimodal.
@@ -114,28 +112,31 @@ impl FromStr for EdgeKind {
     /// `DependencyType::from_str`. Without the `multimodal`
     /// feature, only the `dependency.*` strings are accepted.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // The multimodal variants take precedence on the bare
-        // string so we can never accidentally re-interpret
-        // `"cites"` as a `DependencyType` (which would silently
-        // fail). The `dependency.` prefix disambiguates the
-        // wrapper.
-        #[cfg(feature = "multimodal")]
+        // The rationale-edge variants (Cites, Justifies, Resolves, CorroboratedBy)
+        // take precedence on the bare string so we can never accidentally re-interpret
+        // them as DependencyType. The `dependency.` prefix disambiguates the wrapper.
         match s {
             "cites" => return Ok(EdgeKind::Cites),
             "justifies" => return Ok(EdgeKind::Justifies),
             "resolves" => return Ok(EdgeKind::Resolves),
             "corroborated_by" => return Ok(EdgeKind::CorroboratedBy),
-            // C4-model architecture relationships (Phase 1 — no
-            // extractor attached yet, but the strings are
-            // pre-registered for round-trip safety).
+            // C4-model and protocol edges: still require the `multimodal` feature.
+            #[cfg(feature = "multimodal")]
             "part_of" => return Ok(EdgeKind::PartOf),
+            #[cfg(feature = "multimodal")]
             "deployed_as" => return Ok(EdgeKind::DeployedAs),
+            #[cfg(feature = "multimodal")]
             "in_system" => return Ok(EdgeKind::InSystem),
+            #[cfg(feature = "multimodal")]
             "depends_on" => return Ok(EdgeKind::DependsOn),
             // Cross-service protocol edges (Phase 2 — e15.5)
+            #[cfg(feature = "multimodal")]
             "http_calls" => return Ok(EdgeKind::HttpCalls),
+            #[cfg(feature = "multimodal")]
             "graphql_calls" => return Ok(EdgeKind::GraphqlCalls),
+            #[cfg(feature = "multimodal")]
             "grpc_calls" => return Ok(EdgeKind::GrpcCalls),
+            #[cfg(feature = "multimodal")]
             "trpc_calls" => return Ok(EdgeKind::TrpcCalls),
             _ => {}
         }
@@ -163,13 +164,9 @@ impl EdgeKind {
     pub fn as_str(&self) -> String {
         match self {
             EdgeKind::Dependency(d) => format!("dependency.{}", d),
-            #[cfg(feature = "multimodal")]
             EdgeKind::Cites => "cites".to_string(),
-            #[cfg(feature = "multimodal")]
             EdgeKind::Justifies => "justifies".to_string(),
-            #[cfg(feature = "multimodal")]
             EdgeKind::Resolves => "resolves".to_string(),
-            #[cfg(feature = "multimodal")]
             EdgeKind::CorroboratedBy => "corroborated_by".to_string(),
             #[cfg(feature = "multimodal")]
             EdgeKind::PartOf => "part_of".to_string(),
@@ -192,16 +189,10 @@ impl EdgeKind {
     }
 
     /// Returns `true` if this kind is a multimodal (non-code) edge.
-    #[cfg(feature = "multimodal")]
+    /// Cites, Justifies, Resolves, and CorroboratedBy are available in the
+    /// default build but are still semantically multimodal kinds.
     pub fn is_multimodal(&self) -> bool {
         !matches!(self, EdgeKind::Dependency(_))
-    }
-
-    /// Returns `true` if this kind is a multimodal (non-code) edge.
-    /// Without the `multimodal` feature, no kind is multimodal.
-    #[cfg(not(feature = "multimodal"))]
-    pub fn is_multimodal(&self) -> bool {
-        false
     }
 }
 
@@ -237,20 +228,33 @@ mod tests {
         assert_ne!(parsed, kind);
     }
 
-    /// The four multimodal variants must exist and round-trip through
-    /// JSON when the `multimodal` feature is enabled. Phase 1 of the
-    /// C4 architecture change adds three more (`PartOf`, `DeployedAs`,
-    /// `InSystem`) for a total of 7. Phase 2 (e15.5) adds four more
-    /// cross-service protocol edges (`HttpCalls`, `GraphqlCalls`,
-    /// `GrpcCalls`, `TrpcCalls`) for a total of 11.
+    /// The four rationale edge variants (Cites, Justifies, Resolves, CorroboratedBy)
+    /// are always available. The C4-model and protocol edges still require `multimodal`.
     #[test]
-    #[cfg(feature = "multimodal")]
-    fn edge_kind_multimodal_variants() {
+    fn edge_kind_rationale_variants() {
+        // Rationale edges: always available, always multimodal.
         for kind in [
             EdgeKind::Cites,
             EdgeKind::Justifies,
             EdgeKind::Resolves,
             EdgeKind::CorroboratedBy,
+        ] {
+            assert!(kind.is_multimodal());
+            let json = serde_json::to_string(&kind).expect("serialize");
+            let parsed: EdgeKind = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(parsed, kind);
+        }
+
+        // A Dependency edge is NOT multimodal.
+        let dep = EdgeKind::Dependency(DependencyType::Calls);
+        assert!(!dep.is_multimodal());
+    }
+
+    /// C4-model and protocol edges require the `multimodal` feature.
+    #[test]
+    #[cfg(feature = "multimodal")]
+    fn edge_kind_multimodal_only_variants() {
+        for kind in [
             EdgeKind::PartOf,
             EdgeKind::DeployedAs,
             EdgeKind::InSystem,
@@ -264,19 +268,6 @@ mod tests {
             let parsed: EdgeKind = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(parsed, kind);
         }
-
-        // A Dependency edge is NOT multimodal.
-        let dep = EdgeKind::Dependency(DependencyType::Calls);
-        assert!(!dep.is_multimodal());
-    }
-
-    /// Without the `multimodal` feature, only `EdgeKind::Dependency` is
-    /// constructable; `is_multimodal` always returns `false`.
-    #[test]
-    #[cfg(not(feature = "multimodal"))]
-    fn edge_kind_dependency_only_without_feature() {
-        let kind = EdgeKind::Dependency(DependencyType::Imports);
-        assert!(!kind.is_multimodal());
     }
 
     /// `Display` must produce a stable dotted identifier for every kind.
@@ -292,12 +283,13 @@ mod tests {
             format!("{}", EdgeKind::Dependency(DependencyType::UsesGeneric)),
             "dependency.uses_generic"
         );
+        // Rationale edges: always available.
+        assert_eq!(format!("{}", EdgeKind::Cites), "cites");
+        assert_eq!(format!("{}", EdgeKind::Justifies), "justifies");
+        assert_eq!(format!("{}", EdgeKind::Resolves), "resolves");
+        assert_eq!(format!("{}", EdgeKind::CorroboratedBy), "corroborated_by");
         #[cfg(feature = "multimodal")]
         {
-            assert_eq!(format!("{}", EdgeKind::Cites), "cites");
-            assert_eq!(format!("{}", EdgeKind::Justifies), "justifies");
-            assert_eq!(format!("{}", EdgeKind::Resolves), "resolves");
-            assert_eq!(format!("{}", EdgeKind::CorroboratedBy), "corroborated_by");
             assert_eq!(format!("{}", EdgeKind::PartOf), "part_of");
             assert_eq!(format!("{}", EdgeKind::DeployedAs), "deployed_as");
             assert_eq!(format!("{}", EdgeKind::InSystem), "in_system");
@@ -316,13 +308,17 @@ mod tests {
         let dep = EdgeKind::Dependency(DependencyType::Inherits);
         assert_eq!(dep.as_str(), format!("{}", dep));
 
+        // Rationale edges: always available.
+        assert_eq!(EdgeKind::Cites.as_str(), format!("{}", EdgeKind::Cites));
+        assert_eq!(
+            EdgeKind::CorroboratedBy.as_str(),
+            format!("{}", EdgeKind::CorroboratedBy)
+        );
+
         #[cfg(feature = "multimodal")]
         {
-            assert_eq!(EdgeKind::Cites.as_str(), format!("{}", EdgeKind::Cites));
-            assert_eq!(
-                EdgeKind::CorroboratedBy.as_str(),
-                format!("{}", EdgeKind::CorroboratedBy)
-            );
+            assert_eq!(EdgeKind::PartOf.as_str(), format!("{}", EdgeKind::PartOf));
+            assert_eq!(EdgeKind::DeployedAs.as_str(), format!("{}", EdgeKind::DeployedAs));
         }
     }
 
@@ -340,12 +336,13 @@ mod tests {
         use std::collections::HashSet;
         let mut set: HashSet<EdgeKind> = HashSet::new();
         set.insert(EdgeKind::Dependency(DependencyType::Calls));
+        // Rationale edges: always available.
+        set.insert(EdgeKind::Cites);
+        set.insert(EdgeKind::Justifies);
+        set.insert(EdgeKind::Resolves);
+        set.insert(EdgeKind::CorroboratedBy);
         #[cfg(feature = "multimodal")]
         {
-            set.insert(EdgeKind::Cites);
-            set.insert(EdgeKind::Justifies);
-            set.insert(EdgeKind::Resolves);
-            set.insert(EdgeKind::CorroboratedBy);
             set.insert(EdgeKind::PartOf);
             set.insert(EdgeKind::DeployedAs);
             set.insert(EdgeKind::InSystem);
@@ -356,11 +353,13 @@ mod tests {
             set.insert(EdgeKind::TrpcCalls);
         }
         set.insert(EdgeKind::Dependency(DependencyType::Calls));
-        // 1 Dependency + 11 multimodal = 12 total under the feature.
+        // 1 Dependency + 4 rationale = 5 always-on;
+        // + 7 multimodal = 12 total under the feature,
+        // 1 Dependency + 4 rationale = 5 total without.
         #[cfg(feature = "multimodal")]
         assert_eq!(set.len(), 12);
         #[cfg(not(feature = "multimodal"))]
-        assert_eq!(set.len(), 1);
+        assert_eq!(set.len(), 5);
     }
 
     /// Cross-service protocol edges (Phase 2 — e15.5) parse from their

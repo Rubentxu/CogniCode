@@ -15,8 +15,8 @@
 //! All methods are `Send + Sync` so the trait object can be
 //! shared across MCP worker threads.
 //!
-//! Gated behind the `multimodal` Cargo feature. Default builds
-//! do not include this module and the trait is not exported.
+//! Available in the default build. The `multimodal` feature gates
+//! the WRITE/exTRACTION path only; the read port is always present.
 //!
 //! ## Async Migration (ADR-NNN)
 //!
@@ -95,7 +95,8 @@ pub trait GraphRepository: Send + Sync {
     /// Find edges from `node` that match any of the given `kinds`.
     /// Edges are deduplicated on `(source, target, kind)`, keeping the
     /// highest confidence for duplicate tuples.
-    async fn edges_by_kind(&self, node: &NodeId, kinds: &[EdgeKind]) -> GraphResult<Vec<GraphEdge>>;
+    async fn edges_by_kind(&self, node: &NodeId, kinds: &[EdgeKind])
+    -> GraphResult<Vec<GraphEdge>>;
 
     /// BFS traversal of the multimodal sub-graph from `focus`, following
     /// only multimodal edges (Justifies, Cites, Resolves, CorroboratedBy).

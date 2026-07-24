@@ -305,7 +305,10 @@ impl ToolHandler for GraphSearchHandler {
             }
         };
 
-        let page = match repo.search(&query, &parsed_kinds, limit, args.cursor.as_deref()).await {
+        let page = match repo
+            .search(&query, &parsed_kinds, limit, args.cursor.as_deref())
+            .await
+        {
             Ok(p) => p,
             Err(e) => {
                 return err_envelope(

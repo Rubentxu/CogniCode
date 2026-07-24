@@ -7,8 +7,7 @@
 //! `crate::ports::graph_repository::*` import paths continue to
 //! work without breakage.
 //!
-//! Gated behind the `multimodal` Cargo feature. On a default
-//! build the module is absent from the crate.
+//! Available in the default build. The `multimodal` feature gates
+//! the WRITE/exTRACTION path only.
 
-#[cfg(feature = "multimodal")]
 pub use cognicode_core::domain::ports::{GraphRepository, SearchPage};

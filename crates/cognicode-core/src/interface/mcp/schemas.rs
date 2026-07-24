@@ -2454,6 +2454,9 @@ pub struct SolidReport {
 pub struct ViewDescriptor {
     pub id: String,
     pub title: String,
+    /// Wire-format view kind tag (e.g. "decision_support_pack", "call_graph").
+    #[serde(default)]
+    pub view_kind: String,
     #[serde(default)]
     pub is_builtin: bool,
     /// Source tag: "runtime" for persisted specs, None for built-ins.

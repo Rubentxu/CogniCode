@@ -32,6 +32,8 @@ pub mod federation;
 mod api_graph_tests;
 #[cfg(feature = "multimodal")]
 mod api_rationale_tests;
+#[cfg(feature = "multimodal")]
+mod api_support_pack_tests;
 #[cfg(test)]
 mod dto_tests;
 
@@ -46,7 +48,9 @@ pub use domain::lens::{Lens, LensContext, LensRegistry};
 pub use dto::{DesignFinding, FindingSeverity, LensDescriptor, LensResult};
 pub use error::{ExplorerError, ExplorerResult};
 pub use facades::investigation::Investigation;
-pub use facades::{GraphService, MoldQLService, PersistenceService, ViewService, WorkspaceService, SearchService};
+pub use facades::{
+    GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
+};
 pub use mcp::ExplorerMcpHandler;
 pub use moldql::{MoldQLExecutor, MoldQLItem, MoldQLQuery, MoldQLResult, ParseError};
 pub use ports::{

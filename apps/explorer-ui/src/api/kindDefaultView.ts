@@ -5,10 +5,14 @@
  * result via Enter / click / chip. Mappings per E18-2 spec:
  *
  *   - symbol             → call-graph (drill into calls)
- *   - route|use_case|event → vertical_slice (full flow)
+ *   - route              → vertical_slice (full flow)
  *   - file|scope         → overview (broad picture first)
- *   - decision_artifact|evidence → evidence (pin it)
- *   - other (workspace, module, quality_issue, rule) → overview
+ *   - doc                → doc_code_alignment (E23: Doc/Code alignment)
+ *   - decision_artifact  → doc_code_alignment (E23: Doc/Code alignment)
+ *   - evidence           → evidence (pin it)
+ *   - workspace|module   → overview
+ *   - quality_issue|rule → quality
+ *   - investigation      → overview (default; no dedicated view kind yet)
  *
  * Falls back to "overview" for unknown kinds.
  */
@@ -17,16 +21,16 @@ import type { InspectableObjectType } from "./types";
 const KIND_TO_DEFAULT_VIEW: Readonly<Record<InspectableObjectType, string>> = {
   symbol: "call-graph",
   route: "vertical_slice",
-  use_case: "vertical_slice",
-  event: "vertical_slice",
   file: "overview",
   scope: "overview",
-  decision_artifact: "evidence",
+  doc: "doc_code_alignment",
+  decision_artifact: "doc_code_alignment",
   evidence: "evidence",
   workspace: "overview",
   module: "overview",
   quality_issue: "quality",
   rule: "quality",
+  investigation: "overview",
 };
 
 /**

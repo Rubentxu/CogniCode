@@ -9,6 +9,8 @@ use crate::interface::mcp::schemas::ViewDescriptor;
 pub struct BuiltinDescriptorRaw {
     pub id: &'static str,
     pub title: &'static str,
+    /// Wire-format view_kind tag (e.g. "call_graph", "vertical_slice").
+    pub view_kind: &'static str,
 }
 
 /// The 8 built-in view descriptors (raw data).
@@ -17,34 +19,42 @@ pub const BUILTIN_DESCRIPTORS_RAW: &[BuiltinDescriptorRaw] = &[
     BuiltinDescriptorRaw {
         id: "overview",
         title: "Overview",
+        view_kind: "vertical_slice",
     },
     BuiltinDescriptorRaw {
         id: "call-graph",
         title: "Call Graph",
+        view_kind: "call_graph",
     },
     BuiltinDescriptorRaw {
         id: "source",
         title: "Source",
+        view_kind: "source_view",
     },
     BuiltinDescriptorRaw {
         id: "quality",
         title: "Quality",
+        view_kind: "quality_hotspots",
     },
     BuiltinDescriptorRaw {
         id: "evidence",
         title: "Evidence",
+        view_kind: "evidence_view",
     },
     BuiltinDescriptorRaw {
         id: "symbols",
         title: "Symbols",
+        view_kind: "usage_examples",
     },
     BuiltinDescriptorRaw {
         id: "dependencies",
         title: "Dependencies",
+        view_kind: "dependency_graph",
     },
     BuiltinDescriptorRaw {
         id: "hotspots",
         title: "Hotspots",
+        view_kind: "quality_hotspots",
     },
 ];
 
@@ -54,6 +64,7 @@ impl BuiltinDescriptorRaw {
         ViewDescriptor {
             id: self.id.to_string(),
             title: self.title.to_string(),
+            view_kind: self.view_kind.to_string(),
             is_builtin: true,
             source: None,
         }

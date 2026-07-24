@@ -1,10 +1,10 @@
-//! Investigation store trait — ADR-005 Phase INV-1.
+//! Investigation store trait — ADR-005 Phase INV-1 + ADR-010 E24.1.
 //!
 //! Defines the port interface for investigation persistence.
 
 use async_trait::async_trait;
 
-use super::investigation::{Evidence, Investigation};
+use super::investigation::{Artifact, Evidence, Investigation};
 
 /// Errors that can occur when operating on investigations.
 #[derive(Debug, thiserror::Error)]
@@ -49,4 +49,13 @@ pub trait InvestigationStore: Send + Sync {
         investigation_id: &str,
         evidence: Evidence,
     ) -> Result<(), StoreError>;
+
+    /// Add a single artifact to an existing investigation (ADR-010 E24.1).
+    /// Returns `Err(StoreError::NotFound)` when the investigation does not exist.
+    /// The returned Artifact carries the server-assigned id and stamped created_at.
+    async fn add_artifact(
+        &self,
+        investigation_id: &str,
+        artifact: Artifact,
+    ) -> Result<Artifact, StoreError>;
 }

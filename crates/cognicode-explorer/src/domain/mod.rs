@@ -5,8 +5,13 @@
 //! are wired in by the application service.
 
 pub mod c4_mermaid;
+pub mod decision_graph_topology;
+#[cfg(feature = "multimodal")]
+pub mod decision_support_pack;
+pub mod diagram_regen;
 pub mod entry_point;
 pub mod evidence;
+pub mod knowledge;
 pub mod lens;
 pub mod lenses;
 pub mod mermaid_util;
