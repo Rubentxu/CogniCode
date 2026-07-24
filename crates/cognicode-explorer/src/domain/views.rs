@@ -4203,40 +4203,18 @@ fn pack_to_contextual_view(
     decision_id: &str,
     pack: crate::domain::decision_support_pack::DecisionSupportPack,
 ) -> ExplorerResult<ContextualView> {
-    use crate::domain::decision_support_pack::PaneStatus;
-
+    // W-003 fix: serialize each PackPane via serde_json::to_value so the wire
+    // format matches the REST endpoint (DecisionSupportPack derive). Previously
+    // this function manually constructed JSON with "message" instead of
+    // "reason", diverging silently from the REST path.
     let blocks: Vec<ViewBlock> = pack
         .panes
         .iter()
         .map(|p| {
-            let body = match (&p.status, &p.view) {
-                // Preserve the complete sub-view ContextualView with required wire fields
-                // per E25 spec: pane_id (view_id), view_kind, renderer_kind, view
-                (PaneStatus::Ok, Some(view)) => serde_json::json!({
-                    "status": "ok",
-                    "view_id": p.view_id,
-                    "view_kind": view.view_kind,
-                    "renderer_kind": view.renderer_kind,
-                    "view": view,
-                }),
-                // Degraded: sub-view built but quality is reduced
-                (PaneStatus::Degraded(msg), _) => serde_json::json!({
-                    "status": "degraded",
-                    "view_id": p.view_id,
-                    "message": msg,
-                }),
-                // Failed sub-view → "degraded" on the wire (spec: Failed is builder-crash only)
-                (PaneStatus::Failed(msg), _) => serde_json::json!({
-                    "status": "degraded",
-                    "view_id": p.view_id,
-                    "message": msg,
-                }),
-                (PaneStatus::Ok, None) => serde_json::json!({
-                    "status": "ok",
-                    "view_id": p.view_id,
-                    "message": "no view",
-                }),
-            };
+            // serde_json::to_value preserves the PackPane derive wire format:
+            // { "view_id", "title", "view": Option<ContextualView>, "status": PaneStatus }
+            // where PaneStatus serializes as { "status": "ok|degraded|failed", "reason": "..." }
+            let body = serde_json::to_value(p).unwrap_or_else(|_| serde_json::json!({}));
             ViewBlock {
                 id: p.view_id.into(),
                 title: p.title.clone(),
@@ -7020,6 +6998,82 @@ mod tests {
             err,
             crate::error::ExplorerError::ViewNotAvailable { .. }
         ));
+    }
+
+    /// W-003 wire-contract fix: PackPane must serialize with `"reason"` (REST
+    /// format), not the legacy `"message"` from the manual JSON in
+    /// `pack_to_contextual_view`.
+    #[cfg(feature = "multimodal")]
+    #[test]
+    fn pack_pane_failed_uses_reason_field() {
+        use crate::domain::decision_support_pack::{PackPane, PaneStatus};
+
+        let pane = PackPane {
+            view_id: "test_pane",
+            title: "Test pane".to_string(),
+            view: None,
+            status: PaneStatus::Failed("simulated failure".to_string()),
+        };
+        let body = serde_json::to_value(&pane).expect("serialize");
+        let obj = body.as_object().expect("body is object");
+        // W-003 invariant: PaneStatus::Failed uses content = "reason" per the
+        // serde derive (tag = "status", content = "reason"). The wire format
+        // must contain "reason", not the legacy "message" used in the old
+        // manual JSON construction in pack_to_contextual_view.
+        assert!(
+            obj["status"].get("reason").is_some()
+                || obj.get("reason").is_some(),
+            "PackPane wire format must contain 'reason' for Failed status; got: {}",
+            serde_json::to_string(&body).unwrap_or_default()
+        );
+        assert!(
+            obj["status"].get("message").is_none()
+                && obj.get("message").is_none(),
+            "PackPane wire format must NOT use legacy 'message'; got: {}",
+            serde_json::to_string(&body).unwrap_or_default()
+        );
+    }
+
+    /// W-003 wire-contract fix: PackPane with PaneStatus::Degraded also uses
+    /// `"reason"` to preserve consistency with Failed.
+    #[cfg(feature = "multimodal")]
+    #[test]
+    fn pack_pane_degraded_uses_reason_field() {
+        use crate::domain::decision_support_pack::{PackPane, PaneStatus};
+
+        let pane = PackPane {
+            view_id: "test_pane",
+            title: "Test pane".to_string(),
+            view: None,
+            status: PaneStatus::Degraded("quality reduced".to_string()),
+        };
+        let body = serde_json::to_value(&pane).expect("serialize");
+        let obj = body.as_object().expect("body is object");
+        assert!(
+            obj["status"].get("reason").is_some() || obj.get("reason").is_some(),
+            "Degraded must serialize with 'reason'; got: {}",
+            serde_json::to_string(&body).unwrap_or_default()
+        );
+    }
+
+    /// W-003 wire-contract fix: PackPane with PaneStatus::Ok has no message
+    /// field (only Ok enum tag, no payload).
+    #[cfg(feature = "multimodal")]
+    #[test]
+    fn pack_pane_ok_has_no_payload() {
+        use crate::domain::decision_support_pack::{PackPane, PaneStatus};
+
+        let pane = PackPane {
+            view_id: "test_pane",
+            title: "Test pane".to_string(),
+            view: None,
+            status: PaneStatus::Ok,
+        };
+        let body = serde_json::to_value(&pane).expect("serialize");
+        let obj = body.as_object().expect("body is object");
+        // Ok has no content — only the status tag
+        assert!(!obj.contains_key("reason"), "Ok status must not have 'reason'");
+        assert!(!obj.contains_key("message"), "Ok status must not have legacy 'message'");
     }
 
     // -------------------------------------------------------------------------
