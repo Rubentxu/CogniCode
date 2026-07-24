@@ -87,6 +87,9 @@ pub enum SpotterSearchResult {
     /// An evidence node hit from the graph (Evidence kind).
     #[serde(rename = "evidence")]
     Evidence(SpotterResult),
+    /// An ADR hit from the ADR repository (Plan 012 — knowledge layer ports).
+    #[serde(rename = "adr")]
+    Adr(SpotterResult),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,6 +124,9 @@ pub enum InspectableObjectType {
     Investigation,
     /// A document node from the graph (Doc kind).
     Doc,
+    /// An ADR (Architecture Decision Record), addressed by its id.
+    /// (Plan 012 — knowledge layer ports)
+    Adr,
 }
 
 /// DTO for a view descriptor — the wire-compatible shape returned in list responses.

@@ -3,6 +3,7 @@
 //! Adapters implement these traits; the domain and service code depend on
 //! them, not on concrete adapters.
 
+pub mod adr_repository;
 pub mod edge_emitter;
 pub mod graph_repository;
 pub mod quality_repository;
@@ -10,6 +11,7 @@ pub mod search_repository;
 pub mod source_reader;
 pub mod symbol_repository;
 
+pub use adr_repository::{AdrRepository, AdrStatus, AdrSummary, InMemoryAdrRepository};
 pub use edge_emitter::{
     ApiRoute, ApiRouteEdge, BatchStats, EDGE_KIND_GRAPHQL_CALLS, EDGE_KIND_GRPC_CALLS,
     EDGE_KIND_HTTP_CALLS, EDGE_KIND_TRPC_CALLS, EdgeEmitter, PROTOCOL_GRAPHQL, PROTOCOL_GRPC,

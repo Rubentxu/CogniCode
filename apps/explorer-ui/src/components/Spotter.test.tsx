@@ -470,4 +470,107 @@ describe("Spotter (open)", () => {
       expect(state!.activeViewId).toBe("call-graph");
     });
   });
+
+  // ============================================================================
+  // Plan 012 — knowledge layer families (doc, adr, evidence)
+  // ============================================================================
+
+  it("renders the doc glyph for kind=doc hits", async () => {
+    server.use(
+      http.get("/api/workspaces/:workspace_id/spotter", async () => {
+        await delay(50);
+        return HttpResponse.json([
+          {
+            kind: "doc",
+            result: {
+              object: {
+                id: "doc-doc-1",
+                object_type: "doc",
+                label: "Architecture overview",
+                subtitle: "docs/architecture.md",
+                properties: [],
+                available_views: [],
+              },
+              score: 0.9,
+              match_type: "exact",
+            },
+          },
+        ]);
+      }),
+    );
+    const user = userEvent.setup();
+    render(<Harness initial={{ spotterOpen: true }} />);
+    const input = screen.getByTestId("spotter-input");
+    await user.type(input, "arch");
+    const item = await screen.findByTestId("spotter-item-doc-doc-1");
+    expect(within(item).getByText("Architecture overview")).toBeInTheDocument();
+    // Doc glyph ▤ (the new addition)
+    expect(item.textContent).toContain("▤");
+  });
+
+  it("renders the adr glyph for kind=adr hits", async () => {
+    server.use(
+      http.get("/api/workspaces/:workspace_id/spotter", async () => {
+        await delay(100);
+        return HttpResponse.json([
+          {
+            kind: "adr",
+            result: {
+              object: {
+                id: "adr-ADR-001",
+                object_type: "adr",
+                label: "Knowledge layer ports",
+                subtitle: "ADR ADR-001 • 2026-07-22",
+                properties: [],
+                available_views: [],
+              },
+              score: 0.85,
+              match_type: "exact",
+            },
+          },
+        ]);
+      }),
+    );
+    const user = userEvent.setup();
+    render(<Harness initial={{ spotterOpen: true }} />);
+    const input = screen.getByTestId("spotter-input");
+    await user.type(input, "knowledge");
+    const item = await screen.findByTestId("spotter-item-adr-ADR-001");
+    expect(within(item).getByText("Knowledge layer ports")).toBeInTheDocument();
+    // Adr glyph § (the new addition)
+    expect(item.textContent).toContain("§");
+  });
+
+  it("renders the evidence glyph for kind=evidence hits", async () => {
+    server.use(
+      http.get("/api/workspaces/:workspace_id/spotter", async () => {
+        await delay(50);
+        return HttpResponse.json([
+          {
+            kind: "evidence",
+            result: {
+              object: {
+                id: "evidence-ev-1",
+                object_type: "evidence",
+                label: "Performance regression in module X",
+                subtitle: "investigations/inv-1/evidence/ev-1",
+                properties: [],
+                available_views: [],
+              },
+              score: 0.75,
+              match_type: "fuzzy",
+            },
+          },
+        ]);
+      }),
+    );
+    const user = userEvent.setup();
+    render(<Harness initial={{ spotterOpen: true }} />);
+    const input = screen.getByTestId("spotter-input");
+    await user.type(input, "perf");
+    const item = await screen.findByTestId("spotter-item-evidence-ev-1");
+    expect(within(item).getByText("Performance regression in module X")).toBeInTheDocument();
+    // Evidence glyph ▣ (pre-existing, verify it still works)
+    expect(item.textContent).toContain("▣");
+  });
 });

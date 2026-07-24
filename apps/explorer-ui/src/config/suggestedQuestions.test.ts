@@ -26,7 +26,7 @@ import {
 
 const ALL_KINDS = inspectableObjectTypeSchema.options;
 
-// Sanity: the spec locks exactly 12 variants. If this fails, the backend
+// Sanity: the spec locks exactly 13 variants. If this fails, the backend
 // has added a new kind and the map MUST be updated before any consumer
 // will compile.
 const EXPECTED_KINDS: readonly InspectableObjectType[] = [
@@ -42,6 +42,7 @@ const EXPECTED_KINDS: readonly InspectableObjectType[] = [
   "route",
   "investigation",
   "doc",
+  "adr",
 ];
 
 const ALLOWED_TOOLS: readonly SuggestedTool[] = [
