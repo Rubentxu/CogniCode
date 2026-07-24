@@ -2259,21 +2259,23 @@ impl ViewExecutor for EvidenceExecutor {
 /// Fetches the Doc node from graph_repo and renders its content and metadata.
 /// Shared helper for DocSource and EvidenceOverview executors.
 ///
-/// Fetches the node from graph_repo, builds identity + properties blocks,
-/// and wraps them in a ContextualView.
+/// Fetches the node from graph_repo via `resolve_focus_node`, builds identity +
+/// properties blocks, and wraps them in a ContextualView.
+///
+/// DUP-001 refactor: now uses `resolve_focus_node` + `FocusResolution` to avoid
+/// duplicating the 3-way `get_node` match that lives in `resolve_focus_node`.
 async fn build_node_source_view(
     ctx: &ViewContext<'_>,
     id: &str,
     mvp_prefix: &str,
-    view_id: &str,
-    evidence_kind: &str,
-    evidence_title_prefix: &str,
-    identity_block_id: &str,
-    identity_block_title: &str,
+    view_id: &'static str,
+    evidence_kind: &'static str,
+    evidence_title_prefix: &'static str,
+    identity_block_id: &'static str,
+    identity_block_title: &'static str,
     renderer_kind: RendererKind,
 ) -> ExplorerResult<ContextualView> {
     use cognicode_core::domain::aggregates::generic_graph::NodeId;
-    use cognicode_core::domain::ports::GraphRepository;
 
     let mvp = format!("{mvp_prefix}:{id}");
     let Some(repo) = ctx.graph_repo else {
@@ -2281,61 +2283,89 @@ async fn build_node_source_view(
             "graph repository not wired".into(),
         ));
     };
-    let node_id = NodeId::new(id.to_string());
-    let node = match repo.get_node(&node_id).await {
-        Ok(Some(n)) => n,
-        Ok(None) => {
-            return Err(crate::error::ExplorerError::NotFound(format!(
-                "{mvp_prefix} '{id}' not found in graph"
-            )));
-        }
-        Err(e) => {
-            return Err(crate::error::ExplorerError::NotFound(format!(
-                "Failed to fetch {mvp_prefix}: {e}"
-            )));
-        }
+
+    // Build a KsvConfig so we can reuse resolve_focus_node (DUP-001).
+    // The focus_id, mvp_prefix, view_id, and renderer_kind are stamped into the
+    // cfg; the other fields are unused by build_node_source_view.
+    let cfg = KsvConfig {
+        focus_id: id.to_string(),
+        mvp_prefix: mvp_prefix.to_string(),
+        view_id: view_id,
+        evidence_kind: evidence_kind,
+        title_prefix: evidence_title_prefix,
+        identity_block_id: identity_block_id,
+        identity_block_title: identity_block_title,
+        renderer_kind: renderer_kind.clone(),
     };
-    let evidence_id = format!("evidence:{evidence_kind}");
-    let evidence = vec![EvidenceBlock {
-        id: evidence_id.clone(),
-        kind: evidence_kind.into(),
-        title: format!("{evidence_title_prefix}: {}", node.label),
-        file: node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
-        line_range: None,
-        source_tool_or_query: "GraphRepository::get_node".into(),
-        confidence: Some(1.0),
-        freshness: Some("unknown".into()),
-        provenance: None,
-    }];
-    let properties_json: serde_json::Value =
-        serde_json::to_value(&node.properties).unwrap_or_else(|_| serde_json::json!({}));
-    let blocks = vec![
-        ViewBlock {
-            id: identity_block_id.into(),
-            title: identity_block_title.into(),
-            body: json!({
-                "id": id,
-                "label": node.label,
-                "source_path": node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
-            }),
-        },
-        ViewBlock {
-            id: format!("{}_properties", identity_block_id),
-            title: "Properties".into(),
-            body: properties_json,
-        },
-    ];
-    Ok(ContextualView {
-        object_id: mvp,
-        view_id: view_id.into(),
-        title: node.label,
-        blocks,
-        relations: Vec::new(),
-        evidence,
-        findings: Vec::new(),
-        renderer_kind,
-        ..Default::default()
-    })
+
+    let node_id = NodeId::new(id.to_string());
+    let resolution = resolve_focus_node(repo, node_id, &cfg, ViewKind::SeamMap).await?;
+
+    match resolution {
+        FocusResolution::Error(msg) => Err(crate::error::ExplorerError::NotFound(msg)),
+        FocusResolution::NotFound { mvp, title, .. } => Ok(ContextualView {
+            object_id: mvp,
+            view_id: view_id.into(),
+            title,
+            blocks: vec![ViewBlock {
+                id: identity_block_id.into(),
+                title: identity_block_title.into(),
+                body: json!({
+                    "id": id,
+                    "label": "(unknown)",
+                    "source_path": serde_json::Value::Null,
+                }),
+            }],
+            relations: Vec::new(),
+            evidence: Vec::new(),
+            findings: Vec::new(),
+            renderer_kind,
+            ..Default::default()
+        }),
+        FocusResolution::Found(node) => {
+            let evidence_id = format!("evidence:{evidence_kind}");
+            let evidence = vec![EvidenceBlock {
+                id: evidence_id.clone(),
+                kind: evidence_kind.into(),
+                title: format!("{evidence_title_prefix}: {}", node.label),
+                file: node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                line_range: None,
+                source_tool_or_query: "GraphRepository::get_node".into(),
+                confidence: Some(1.0),
+                freshness: Some("unknown".into()),
+                provenance: None,
+            }];
+            let properties_json: serde_json::Value =
+                serde_json::to_value(&node.properties).unwrap_or_else(|_| serde_json::json!({}));
+            let blocks = vec![
+                ViewBlock {
+                    id: identity_block_id.into(),
+                    title: identity_block_title.into(),
+                    body: json!({
+                        "id": id,
+                        "label": node.label,
+                        "source_path": node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                    }),
+                },
+                ViewBlock {
+                    id: format!("{}_properties", identity_block_id),
+                    title: "Properties".into(),
+                    body: properties_json,
+                },
+            ];
+            Ok(ContextualView {
+                object_id: mvp,
+                view_id: view_id.into(),
+                title: node.label,
+                blocks,
+                relations: Vec::new(),
+                evidence,
+                findings: Vec::new(),
+                renderer_kind,
+                ..Default::default()
+            })
+        }
+    }
 }
 
 pub struct DocSourceExecutor;
@@ -8378,5 +8408,94 @@ mod view_seam_tests {
             json_first, json_second,
             "JSON round-trip must produce byte-identical output"
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // DUP-001 refactor — build_node_source_view NotFound/Error paths
+    // These tests verify the refactor preserves the early-return semantics:
+    // NotFound → valid marker view, Error → ExplorerError::NotFound.
+    // -------------------------------------------------------------------------
+
+    fn make_node(id: &str, label: &str) -> GraphNode {
+        GraphNode {
+            id: NodeId::new(id.to_string()),
+            kind: NodeKind::Decision,
+            label: label.to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/adr/ADR-001.md")),
+            properties: HashMap::new(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn build_node_source_view_not_found_returns_marker_view() {
+        // Empty MockGraphRepo → get_node returns Ok(None) → FocusResolution::NotFound
+        let mock = MockGraphRepo::new();
+        let target = InspectionTarget::Doc { id: "missing-doc".to_string() };
+        let ctx = ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock),
+        };
+
+        let result = super::build_node_source_view(
+            &ctx,
+            "missing-doc",
+            "doc",
+            "doc-source",
+            "doc_source",
+            "Doc source",
+            "doc_identity",
+            "Document",
+            RendererKind::Code,
+        )
+        .await
+        .expect("NotFound should produce a valid view, not error");
+
+        // Marker view has 1 block (identity) and uses the stamped MVP + title.
+        assert_eq!(result.blocks.len(), 1, "NotFound should produce exactly one identity block");
+        assert_eq!(result.object_id, "doc:missing-doc");
+        assert!(result.title.contains("missing-doc"), "title should reference the missing focus_id");
+        assert!(result.evidence.is_empty(), "marker view has no evidence");
+    }
+
+    #[tokio::test]
+    async fn build_node_source_view_found_returns_full_view() {
+        // Mock with a node → get_node returns Ok(Some(n)) → FocusResolution::Found
+        let node = make_node("doc-1", "Architecture Decision Record");
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(node);
+        let target = InspectionTarget::Doc { id: "doc-1".to_string() };
+        let ctx = ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock),
+        };
+
+        let result = super::build_node_source_view(
+            &ctx,
+            "doc-1",
+            "doc",
+            "doc-source",
+            "doc_source",
+            "Doc source",
+            "doc_identity",
+            "Document",
+            RendererKind::Code,
+        )
+        .await
+        .expect("Found should produce a full view");
+
+        // Full view has 2 blocks (identity + properties) + 1 evidence entry.
+        assert_eq!(result.blocks.len(), 2, "Found should produce identity + properties blocks");
+        assert_eq!(result.evidence.len(), 1, "Found should produce one evidence block");
+        assert_eq!(result.title, "Architecture Decision Record");
     }
 }
