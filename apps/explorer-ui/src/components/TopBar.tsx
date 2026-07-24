@@ -20,6 +20,7 @@ export interface TopBarProps {
 export function TopBar({ onSpotterOpen, onMcpToolsOpen }: TopBarProps) {
   return (
     <header
+      data-testid="topbar"
       className="flex items-center justify-between gap-4 px-4 py-2.5"
       style={{
         backgroundColor: "var(--color-surface-raised)",
@@ -29,23 +30,27 @@ export function TopBar({ onSpotterOpen, onMcpToolsOpen }: TopBarProps) {
       <div className="flex min-w-0 items-center gap-3">
         <div className="min-w-0">
           <h1
+            data-testid="topbar-brand"
             className="truncate text-sm font-semibold"
             style={{ color: "var(--color-text-primary)" }}
           >
             CogniCode Explorer
           </h1>
           <p
+            data-testid="topbar-tagline"
             className="truncate text-[11px]"
             style={{ color: "var(--color-text-muted)" }}
           >
             Moldable exploration workbench
           </p>
         </div>
-        <HealthProbe showFullScreenOnError={false} />
-        <ScanBar />
-        <PerspectiveToggle />
+        <div data-testid="topbar-status" className="flex items-center gap-3">
+          <HealthProbe showFullScreenOnError={false} />
+          <ScanBar />
+          <PerspectiveToggle />
+        </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div data-testid="topbar-actions" className="flex items-center gap-2">
         <button
           type="button"
           onClick={onSpotterOpen}
