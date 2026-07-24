@@ -123,6 +123,34 @@
 }
 
 /* =============================================================================
+   Reduced-motion hardening (E27.4 / WCAG 2.2 AAA)
+
+   CogniCode respects the user's prefers-reduced-motion preference.
+   When the user requests reduced motion, transitions and animations
+   complete in 0.01ms (effectively instant). Scroll behavior also
+   disables smooth-scroll to avoid motion-triggering side effects.
+
+   Previously only InteractiveGraph honored this preference (see
+   InteractiveGraph.module.css); this global rule ensures all
+   transitions/animations in the workbench (PaneStackView tab
+   transitions, button hover states, modal entrance, etc.) respect
+   the same user preference.
+
+   Per docs/E27-progressive-workbench-shell.md: "reduced-motion path
+   mandatory" and PRODUCT.md WCAG 2.2 AA accessibility bar.
+   ============================================================================= */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* =============================================================================
    Syntax highlighting token classes — dark theme
    Each class maps a Prism token type to the corresponding CSS variable.
    ============================================================================= */
