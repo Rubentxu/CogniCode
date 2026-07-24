@@ -294,6 +294,7 @@ impl DecisionSupportPackBuilder {
             quality,
             graph_query,
             graph_repo: None,
+            node_property_reader: None,
         };
 
         // Call build via ViewExecutor trait object
@@ -339,6 +340,7 @@ impl DecisionSupportPackBuilder {
             quality: None,
             graph_query,
             graph_repo: None,
+            node_property_reader: None,
         };
 
         // Call build via ViewExecutor trait object

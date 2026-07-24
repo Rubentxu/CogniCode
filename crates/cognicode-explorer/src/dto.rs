@@ -334,6 +334,10 @@ pub struct ViewContext<'a> {
     /// Optional graph repository for knowledge-layer entities (Decision/Doc/Evidence).
     /// `None` when no graph repo is wired.
     pub graph_repo: Option<&'a dyn cognicode_core::domain::ports::GraphRepository>,
+    /// Optional async node property reader for ownership attribution.
+    /// When provided, executors can read ownership data without `block_on`
+    /// gymnastics. `None` when no PostgresRepository is wired.
+    pub node_property_reader: Option<&'a dyn cognicode_core::domain::ports::NodePropertyReader>,
 }
 
 // ============================================================================

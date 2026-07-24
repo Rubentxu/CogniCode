@@ -11,6 +11,8 @@
 
 pub mod graph_error;
 pub mod graph_repository;
+pub mod node_property_reader;
 
 pub use graph_error::{GraphError, GraphResult};
 pub use graph_repository::{GraphRepository, SearchPage};
+pub use node_property_reader::NodePropertyReader;
