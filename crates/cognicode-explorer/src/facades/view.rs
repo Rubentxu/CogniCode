@@ -407,6 +407,7 @@ impl ViewService for ViewServiceImpl {
             quality: self.quality.as_ref().map(|q| q.as_ref()),
             graph_query: self.graph_query.as_ref().map(|g| g.as_ref()),
             graph_repo: self.graph_repo.as_ref().map(|g| g.as_ref()),
+            node_property_reader: None,
         };
 
         // AD-2: stamp descriptor metadata onto DTO at single seam

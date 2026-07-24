@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::{CallEntry, CallGraph, Symbol, SymbolId};
+use cognicode_core::domain::ports::NodePropertyReader;
 use cognicode_core::domain::traits::graph_query_port::{
     CalleeWithMetadata, CallerWithMetadata, EdgeWithMetadata, GraphQueryPort, RelationTarget,
     RelationTargetWithMetadata,
@@ -14,11 +15,6 @@ use cognicode_core::domain::value_objects::{DependencyType, Provenance};
 
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
-
-#[cfg(feature = "ownership")]
-use tokio::runtime::Handle;
-#[cfg(feature = "ownership")]
-use tokio::task::spawn_blocking;
 
 /// Adapter that exposes a `CallGraph` through the explorer port.
 pub struct CallGraphRepository {
@@ -287,18 +283,27 @@ impl GraphQueryPort for CallGraphRepository {
     /// This allows OwnershipMapExecutor to read ownership attribution data
     /// (codeowners, last_author, author_email) stored in PostgreSQL.
     ///
-    /// Uses `spawn_blocking` to avoid blocking a Tokio worker thread.
-    /// The closure runs on a dedicated blocking thread; we get a fresh
-    /// `Handle::current()` inside the closure since we're not on a worker.
+    /// Note: this sync shim is kept for backwards compatibility but the
+    /// preferred path is via the async [`NodePropertyReader`] trait (the
+    /// executor should prefer that when available to avoid `block_on`).
     #[cfg(feature = "ownership")]
-    fn node_properties(&self, id: &SymbolId) -> Option<std::collections::HashMap<String, String>> {
+    fn node_properties(&self, _id: &SymbolId) -> Option<std::collections::HashMap<String, String>> {
+        // Sync shim returns None — async NodePropertyReader is the real path.
+        // Keeping the method on the trait (returning None by default) avoids
+        // forcing every implementor to do the unsafe block_on dance.
+        None
+    }
+}
+
+#[cfg(feature = "ownership")]
+#[async_trait::async_trait]
+impl NodePropertyReader for CallGraphRepository {
+    async fn node_properties(
+        &self,
+        id: &SymbolId,
+    ) -> Option<std::collections::HashMap<String, String>> {
         let pg_repo = self.pg_repo.as_ref()?.clone();
-        let id = id.clone();
-        let handle = spawn_blocking(move || {
-            let rt = Handle::current();
-            rt.block_on(async move { pg_repo.node_properties(&id).await })
-        });
-        Handle::current().block_on(handle).ok()?.ok()?
+        pg_repo.node_properties(id).await.ok().flatten()
     }
 }
 
@@ -688,7 +693,9 @@ mod tests {
         let repo = CallGraphRepository::new(Arc::new(build_graph()));
         // pg_repo is None by default when constructed via new()
         let id = SymbolId::new("src/a.rs:alpha:1");
-        let result = repo.node_properties(&id);
+        // Use the async NodePropertyReader explicitly to disambiguate from
+        // the sync shim on GraphQueryPort.
+        let result = <CallGraphRepository as NodePropertyReader>::node_properties(&repo, &id).await;
         assert!(
             result.is_none(),
             "node_properties must return None when pg_repo is None"
@@ -703,7 +710,7 @@ mod tests {
         let repo = CallGraphRepository::new(Arc::new(build_graph()));
         let id = SymbolId::new("src/missing.rs:ghost:99");
         // Should return None, not panic
-        let result = repo.node_properties(&id);
+        let result = <CallGraphRepository as NodePropertyReader>::node_properties(&repo, &id).await;
         assert!(
             result.is_none(),
             "node_properties must return None when pg_repo is None"
