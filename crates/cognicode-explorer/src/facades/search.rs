@@ -39,6 +39,8 @@ pub struct SearchServiceImpl {
     graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
     /// ADR repository for the "adr" Spotter family.
     adr_repo: Option<Arc<dyn crate::ports::AdrRepository>>,
+    /// Doc repository for the "doc" Spotter family (Plan 012).
+    doc_repo: Option<Arc<dyn crate::ports::DocRepository>>,
 }
 
 impl SearchServiceImpl {
@@ -63,6 +65,7 @@ impl SearchServiceImpl {
             investigation,
             graph_repo,
             adr_repo: None,
+            doc_repo: None,
         }
     }
 
@@ -72,6 +75,15 @@ impl SearchServiceImpl {
         adr_repo: Option<Arc<dyn crate::ports::AdrRepository>>,
     ) -> Self {
         self.adr_repo = adr_repo;
+        self
+    }
+
+    /// Set the Doc repository (Plan 012 — knowledge layer ports).
+    pub fn with_doc_repo(
+        mut self,
+        doc_repo: Option<Arc<dyn crate::ports::DocRepository>>,
+    ) -> Self {
+        self.doc_repo = doc_repo;
         self
     }
 }
@@ -88,6 +100,7 @@ impl SearchService for SearchServiceImpl {
         let search = self.search.clone();
         let view_registry = self.view_registry.clone();
         let adr_repo = self.adr_repo.clone();
+        let doc_repo = self.doc_repo.clone();
         let query = query.to_string();
         let kind = kind.map(|s| s.to_string());
 
@@ -97,6 +110,7 @@ impl SearchService for SearchServiceImpl {
                 search.as_ref(),
                 &view_registry,
                 adr_repo.as_ref(),
+                doc_repo.as_ref(),
                 &query,
                 kind.as_deref(),
             )
@@ -134,10 +148,11 @@ impl SearchService for SearchServiceImpl {
             let repo_clone = repo.clone();
             let vr_clone = view_registry.clone();
             let adr_clone = self.adr_repo.clone();
+            let doc_clone = self.doc_repo.clone();
             let q = query_for_blocking.clone();
             let k = kind_filter.clone();
             tokio::task::spawn_blocking(move || {
-                spotter_search_impl(&repo_clone, None, &vr_clone, adr_clone.as_ref(), &q, k.as_deref())
+                spotter_search_impl(&repo_clone, None, &vr_clone, adr_clone.as_ref(), doc_clone.as_ref(), &q, k.as_deref())
             })
             .await
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("join error: {}", e)))?
@@ -397,37 +412,62 @@ impl SearchService for SearchServiceImpl {
                 let q = query_for_blocking.clone();
                 let k = kind_filter.clone();
 
-                // Doc hits
+                // Doc hits — prefer dedicated DocRepository port when available
+                // (Plan 012), otherwise fall back to graph search_paginated.
                 if k.as_ref()
                     .map(|kk| kk.eq_ignore_ascii_case("doc"))
                     .unwrap_or(true)
                 {
-                    let doc_nodes = graph
-                        .search_paginated(
-                            &q,
-                            &[cognicode_core::domain::value_objects::node_kind::NodeKind::Doc],
-                            SPOTTER_RESULT_LIMIT,
-                            None,
-                        )
-                        .await;
-                    if let Ok(page) = doc_nodes {
-                        for node in page.items {
-                            results.push(SpotterSearchResult::Doc(SpotterResult {
-                                object: InspectableObjectSummary {
-                                    id: format!("doc:{}", node.id),
-                                    object_type: InspectableObjectType::Doc,
-                                    label: node.label.clone(),
-                                    subtitle: node
-                                        .source_path
-                                        .as_ref()
-                                        .map(|p| p.to_string_lossy().into_owned())
-                                        .unwrap_or_else(|| "Graph node".to_string()),
-                                    properties: Vec::new(),
-                                    available_views: vr_clone.list_for(InspectableObjectType::Doc),
-                                },
-                                score: 0.75,
-                                match_type: "doc".to_string(),
-                            }));
+                    if let Some(doc_repo) = self.doc_repo.as_ref() {
+                        match doc_repo.search_docs("", &q, SPOTTER_RESULT_LIMIT) {
+                            Ok(docs) => {
+                                for doc in docs {
+                                    results.push(SpotterSearchResult::Doc(SpotterResult {
+                                        object: InspectableObjectSummary {
+                                            id: format!("doc:{}", doc.id),
+                                            object_type: InspectableObjectType::Doc,
+                                            label: doc.title,
+                                            subtitle: doc.source_path,
+                                            properties: Vec::new(),
+                                            available_views: vr_clone.list_for(InspectableObjectType::Doc),
+                                        },
+                                        score: 0.75,
+                                        match_type: "doc".to_string(),
+                                    }));
+                                }
+                            }
+                            Err(_) => {
+                                // Graceful degradation: fall back to graph search
+                            }
+                        }
+                    } else if let Some(graph) = graph_repo.as_ref() {
+                        let doc_nodes = graph
+                            .search_paginated(
+                                &q,
+                                &[cognicode_core::domain::value_objects::node_kind::NodeKind::Doc],
+                                SPOTTER_RESULT_LIMIT,
+                                None,
+                            )
+                            .await;
+                        if let Ok(page) = doc_nodes {
+                            for node in page.items {
+                                results.push(SpotterSearchResult::Doc(SpotterResult {
+                                    object: InspectableObjectSummary {
+                                        id: format!("doc:{}", node.id),
+                                        object_type: InspectableObjectType::Doc,
+                                        label: node.label.clone(),
+                                        subtitle: node
+                                            .source_path
+                                            .as_ref()
+                                            .map(|p| p.to_string_lossy().into_owned())
+                                            .unwrap_or_else(|| "Graph node".to_string()),
+                                        properties: Vec::new(),
+                                        available_views: vr_clone.list_for(InspectableObjectType::Doc),
+                                    },
+                                    score: 0.75,
+                                    match_type: "doc".to_string(),
+                                }));
+                            }
                         }
                     }
                 }
@@ -768,6 +808,7 @@ fn spotter_search_impl(
     search: Option<&Arc<dyn crate::ports::SearchRepository>>,
     view_registry: &Arc<ViewRegistry>,
     adr_repo: Option<&Arc<dyn crate::ports::AdrRepository>>,
+    doc_repo: Option<&Arc<dyn crate::ports::DocRepository>>,
     query: &str,
     kind: Option<&str>,
 ) -> ExplorerResult<Vec<SpotterResult>> {
