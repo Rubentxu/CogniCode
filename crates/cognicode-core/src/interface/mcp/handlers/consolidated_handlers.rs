@@ -1316,6 +1316,7 @@ pub async fn handle_list_view_specs(
                 runtime_descriptors.push(ViewDescriptor {
                     id: row.id,
                     title: row.title,
+                    view_kind: row.view_kind,
                     is_builtin: false,
                     source: Some("runtime".into()),
                 });

@@ -4087,7 +4087,7 @@ impl ViewExecutor for ArchitectureRationaleExecutor {
 pub struct DecisionSupportPackExecutor;
 impl ViewDescriptor for DecisionSupportPackExecutor {
     fn id(&self) -> &'static str {
-        "decision_support_pack"
+        "decision-support-pack"
     }
     fn title(&self) -> &'static str {
         "Decision Support Pack"
@@ -4110,55 +4110,47 @@ impl ViewExecutor for DecisionSupportPackExecutor {
             InspectionTarget::Decision { id } => {
                 #[cfg(feature = "multimodal")]
                 {
-                    use crate::domain::decision_support_pack::{DecisionSupportPackBuilder, PaneStatus};
+                    use crate::domain::decision_support_pack::{DecisionSupportPackBuilder, DecisionSupportPack, PaneStatus};
+                    use cognicode_core::domain::aggregates::generic_graph::NodeId;
+                    use std::sync::Arc;
 
-                    // graph_query and quality are optional for the pack builder
-                    let pack = DecisionSupportPackBuilder::build(id, None, None, ctx.graph_repo)
-                        .await?;
-
-                    // Convert DecisionSupportPack to a ContextualView with one block per pane
-                    let blocks: Vec<ViewBlock> = pack
-                        .panes
-                        .iter()
-                        .map(|p| {
-                            let body = match (&p.status, &p.view) {
-                                (PaneStatus::Ok, Some(view)) => serde_json::json!({
-                                    "status": "ok",
-                                    "view_id": view.view_id,
-                                    "title": view.title,
-                                }),
-                                (PaneStatus::Degraded(msg), _) => serde_json::json!({
-                                    "status": "degraded",
-                                    "message": msg,
-                                }),
-                                (PaneStatus::Failed(msg), _) => serde_json::json!({
-                                    "status": "failed",
-                                    "message": msg,
-                                }),
-                                (PaneStatus::Ok, None) => serde_json::json!({
-                                    "status": "ok",
-                                    "message": "no view",
-                                }),
-                            };
-                            ViewBlock {
-                                id: p.view_id.into(),
-                                title: p.title.clone(),
-                                body,
-                            }
-                        })
-                        .collect();
-
-                    Ok(ContextualView {
-                        object_id: format!("decision:{id}"),
-                        view_id: "decision_support_pack".into(),
-                        title: format!("Decision Support Pack: {}", id),
-                        view_kind: ViewKind::DecisionSupportPack,
-                        blocks,
-                        relations: Vec::new(),
-                        evidence: Vec::new(),
-                        findings: Vec::new(),
-                        renderer_kind: RendererKind::Composite,
-                    })
+                    // Detect empty neighborhood: decision exists but has no edges in the graph.
+                    // An empty-neighborhood decision returns status="empty" with zero panes,
+                    // per the E25 spec (empty-decision semantics, spec.md §empty-decision).
+                    if let Some(repo) = ctx.graph_repo {
+                        let node_id = NodeId::new(id.to_string());
+                        let Ok((subgraph_nodes, subgraph_edges, _)) = repo
+                            .rationale_subgraph(&node_id, 3, 100).await else {
+                            // Not found or error — let the builder handle it
+                            let pack = DecisionSupportPackBuilder::build(id, None, None, Some(repo))
+                                .await?;
+                            return pack_to_contextual_view(id, pack);
+                        };
+                        // Empty neighborhood: only the decision node itself, no edges
+                        if subgraph_nodes.len() == 1 && subgraph_edges.is_empty() {
+                            return Ok(ContextualView {
+                                object_id: format!("decision:{id}"),
+                                view_id: "decision-support-pack".into(),
+                                title: format!("Decision Support Pack: {}", id),
+                                view_kind: ViewKind::DecisionSupportPack,
+                                blocks: Vec::new(),
+                                relations: Vec::new(),
+                                evidence: Vec::new(),
+                                findings: Vec::new(),
+                                renderer_kind: RendererKind::Composite,
+                            });
+                        }
+                        // Non-empty: build the full pack preserving all sub-view data.
+                        // graph_query and quality are optional for the pack builder.
+                        let pack = DecisionSupportPackBuilder::build(id, None, None, Some(repo))
+                            .await?;
+                        return pack_to_contextual_view(id, pack);
+                    } else {
+                        // No graph repo — let builder report the error
+                        let pack = DecisionSupportPackBuilder::build(id, None, None, None)
+                            .await?;
+                        return pack_to_contextual_view(id, pack);
+                    }
                 }
                 #[cfg(not(feature = "multimodal"))]
                 {
@@ -4170,10 +4162,70 @@ impl ViewExecutor for DecisionSupportPackExecutor {
             }
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
-                view_id: "decision_support_pack".into(),
+                view_id: "decision-support-pack".into(),
             }),
         }
     }
+}
+
+#[cfg(feature = "multimodal")]
+fn pack_to_contextual_view(
+    decision_id: &str,
+    pack: crate::domain::decision_support_pack::DecisionSupportPack,
+) -> ExplorerResult<ContextualView> {
+    use crate::domain::decision_support_pack::PaneStatus;
+
+    let blocks: Vec<ViewBlock> = pack
+        .panes
+        .iter()
+        .map(|p| {
+            let body = match (&p.status, &p.view) {
+                // Preserve the complete sub-view ContextualView with required wire fields
+                // per E25 spec: pane_id (view_id), view_kind, renderer_kind, view
+                (PaneStatus::Ok, Some(view)) => serde_json::json!({
+                    "status": "ok",
+                    "view_id": p.view_id,
+                    "view_kind": view.view_kind,
+                    "renderer_kind": view.renderer_kind,
+                    "view": view,
+                }),
+                // Degraded: sub-view built but quality is reduced
+                (PaneStatus::Degraded(msg), _) => serde_json::json!({
+                    "status": "degraded",
+                    "view_id": p.view_id,
+                    "message": msg,
+                }),
+                // Failed sub-view → "degraded" on the wire (spec: Failed is builder-crash only)
+                (PaneStatus::Failed(msg), _) => serde_json::json!({
+                    "status": "degraded",
+                    "view_id": p.view_id,
+                    "message": msg,
+                }),
+                (PaneStatus::Ok, None) => serde_json::json!({
+                    "status": "ok",
+                    "view_id": p.view_id,
+                    "message": "no view",
+                }),
+            };
+            ViewBlock {
+                id: p.view_id.into(),
+                title: p.title.clone(),
+                body,
+            }
+        })
+        .collect();
+
+    Ok(ContextualView {
+        object_id: format!("decision:{decision_id}"),
+        view_id: "decision-support-pack".into(),
+        title: format!("Decision Support Pack: {}", decision_id),
+        view_kind: ViewKind::DecisionSupportPack,
+        blocks,
+        relations: Vec::new(),
+        evidence: Vec::new(),
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Composite,
+    })
 }
 
 // ============================================================================
@@ -6828,10 +6880,11 @@ mod tests {
     // -------------------------------------------------------------------------
 
     /// W-2: Empty-decision scenario — decision exists but has no neighborhood.
-    /// The pack should still return a valid view with five panes.
+    /// Per the E25 spec, an empty-neighborhood decision returns status="empty" with zero panes.
+    /// This is distinct from a non-existent decision (404) or a populated pack (200 + five panes).
     #[tokio::test]
     #[cfg(feature = "multimodal")]
-    async fn decision_support_pack_empty_decision_shows_five_panes() {
+    async fn decision_support_pack_empty_decision_returns_empty_status() {
         use chrono::Utc;
         use cognicode_core::domain::aggregates::generic_graph::NodeId;
         use cognicode_core::domain::ports::GraphRepository;
@@ -6864,23 +6917,19 @@ mod tests {
         let result = executor.build(&ctx).await;
         assert!(result.is_ok(), "empty decision pack should not error: {:?}", result);
         let view = result.unwrap();
-        assert_eq!(view.view_id, "decision_support_pack");
+        // view_id uses kebab-case per spec
+        assert_eq!(view.view_id, "decision-support-pack");
         assert_eq!(view.view_kind, crate::dto::ViewKind::DecisionSupportPack);
         assert_eq!(view.renderer_kind, crate::dto::RendererKind::Composite);
-        // W-2: five panes in stable order
-        assert_eq!(view.blocks.len(), 5, "pack should have exactly 5 panes");
-        assert_eq!(view.blocks[0].id, "decision_graph");
-        assert_eq!(view.blocks[1].id, "architecture_rationale");
-        assert_eq!(view.blocks[2].id, "evidence_pack");
-        assert_eq!(view.blocks[3].id, "risk_map");
-        assert_eq!(view.blocks[4].id, "change_impact_story");
+        // W-2: empty decision → zero panes
+        assert_eq!(view.blocks.len(), 0, "empty-neighborhood decision should have zero panes");
     }
 
     /// C-2 discoverable: DecisionSupportPack applies to DecisionArtifact.
     #[test]
     fn decision_support_pack_executor_applies_to_decision_artifact() {
         let exec = &super::DECISION_SUPPORT_PACK_EXECUTOR;
-        assert_eq!(exec.id(), "decision_support_pack");
+        assert_eq!(exec.id(), "decision-support-pack");
         assert_eq!(exec.title(), "Decision Support Pack");
         assert!(
             exec.applies_to()

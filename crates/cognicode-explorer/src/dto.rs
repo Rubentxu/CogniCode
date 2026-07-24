@@ -128,10 +128,13 @@ pub enum InspectableObjectType {
 /// This type lives in the explorer crate. The MCP/JSON surface uses this type
 /// directly. When crossing the explorer↔core boundary, the [`crate::boundary`]
 /// module provides the anti-corruption layer (`From` impls).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewDescriptorDto {
     pub id: String,
     pub title: String,
+    /// The semantic [`ViewKind`] of this view, enabling clients to route to the
+    /// correct renderer without inspecting the `id` string.
+    pub view_kind: ViewKind,
     /// Whether this is a built-in view (`true`) or a runtime user-defined view (`false`).
     /// Phase 4+: included so the frontend can badge runtime views.
     /// Default `true` when absent (backward compat).
@@ -1283,6 +1286,53 @@ pub enum ViewKind {
     Custom(String),
 }
 
+impl ViewKind {
+    /// Returns the wire-format tag string used in JSON serialization.
+    pub fn to_wire_tag(&self) -> String {
+        match self {
+            ViewKind::VerticalSlice => "vertical_slice".into(),
+            ViewKind::CallGraph => "call_graph".into(),
+            ViewKind::SeamMap => "seam_map".into(),
+            ViewKind::DependencyGraph => "dependency_graph".into(),
+            ViewKind::SourceView => "source_view".into(),
+            ViewKind::DataFlow => "data_flow".into(),
+            ViewKind::ImpactRadius => "impact_radius".into(),
+            ViewKind::DiffView => "diff_view".into(),
+            ViewKind::C4Context => "c4_context".into(),
+            ViewKind::C4Container => "c4_container".into(),
+            ViewKind::C4Component => "c4_component".into(),
+            ViewKind::C4Code => "c4_code".into(),
+            ViewKind::QualityHotspots => "quality_hotspots".into(),
+            ViewKind::EvidenceView => "evidence_view".into(),
+            ViewKind::DecisionGraph => "decision_graph".into(),
+            ViewKind::DecisionSupportPack => "decision_support_pack".into(),
+            ViewKind::ArchitectureRationale => "architecture_rationale".into(),
+            ViewKind::ArchitectureDrift => "architecture_drift".into(),
+            ViewKind::BoundaryMap => "boundary_map".into(),
+            ViewKind::DependencyPressure => "dependency_pressure".into(),
+            ViewKind::ChangeImpactStory => "change_impact_story".into(),
+            ViewKind::OwnershipMap => "ownership_map".into(),
+            ViewKind::RiskMap => "risk_map".into(),
+            ViewKind::DecisionTrace => "decision_trace".into(),
+            ViewKind::TestSlice => "test_slice".into(),
+            ViewKind::DebugSlice => "debug_slice".into(),
+            ViewKind::RefactorPlan => "refactor_plan".into(),
+            ViewKind::CallersAndImplementors => "callers_and_implementors".into(),
+            ViewKind::UsageExamples => "usage_examples".into(),
+            ViewKind::ApiSurface => "api_surface".into(),
+            ViewKind::DeadCodeCandidates => "dead_code_candidates".into(),
+            ViewKind::SemanticSearchResults => "semantic_search_results".into(),
+            ViewKind::DocCodeAlignment => "doc_code_alignment".into(),
+            ViewKind::ExampleObject => "example_object".into(),
+            ViewKind::ComposedNarrative => "composed_narrative".into(),
+            ViewKind::ProjectDiary => "project_diary".into(),
+            ViewKind::ConceptMap => "concept_map".into(),
+            ViewKind::EvidencePack => "evidence_pack".into(),
+            ViewKind::Custom(s) => s.clone(),
+        }
+    }
+}
+
 impl Serialize for ViewKind {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -1744,11 +1794,19 @@ mod view_spec_tests {
             ViewKind::VerticalSlice,
             ViewKind::SourceView,
             ViewKind::QualityHotspots,
+            ViewKind::DecisionSupportPack,
         ] {
             let json = serde_json::to_string(&vk).expect("serialize");
             let back: ViewKind = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(vk, back, "ViewKind::{vk:?} must round-trip");
         }
+    }
+
+    #[test]
+    fn view_kind_decision_support_pack_snake_case() {
+        let vk = ViewKind::DecisionSupportPack;
+        let json = serde_json::to_string(&vk).expect("serialize");
+        assert_eq!(json, "\"decision_support_pack\"");
     }
 
     #[test]
