@@ -25,10 +25,10 @@ use crate::ports::quality_repository::QualityRepository;
 use crate::domain::decision_graph_topology::DecisionGraphTopology;
 
 /// Maximum traversal depth for rationale subgraph in pack builder.
-const PACK_RATIONALE_MAX_DEPTH: u32 = 3;
+pub(crate) const PACK_RATIONALE_MAX_DEPTH: u32 = 3;
 
 /// Maximum nodes to include in the rationale subgraph.
-const PACK_RATIONALE_MAX_NODES: usize = 100;
+pub(crate) const PACK_RATIONALE_MAX_NODES: usize = 100;
 
 // ============================================================================
 // DTOs

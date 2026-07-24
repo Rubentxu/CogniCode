@@ -4140,9 +4140,21 @@ impl ViewExecutor for DecisionSupportPackExecutor {
             InspectionTarget::Decision { id } => {
                 #[cfg(feature = "multimodal")]
                 {
-                    use crate::domain::decision_support_pack::{DecisionSupportPackBuilder, DecisionSupportPack, PaneStatus};
+                    use crate::domain::decision_support_pack::{
+                        DecisionSupportPackBuilder, PACK_RATIONALE_MAX_DEPTH, PACK_RATIONALE_MAX_NODES,
+                    };
                     use cognicode_core::domain::aggregates::generic_graph::NodeId;
-                    use std::sync::Arc;
+
+                    // Helper: build the pack via DecisionSupportPackBuilder and
+                    // convert to a ContextualView. Consolidates the 3 duplicate
+                    // call sites that previously lived inline (S-002).
+                    async fn build_pack(
+                        id: &str,
+                        repo: Option<&dyn cognicode_core::domain::ports::GraphRepository>,
+                    ) -> ExplorerResult<ContextualView> {
+                        let pack = DecisionSupportPackBuilder::build(id, None, None, repo).await?;
+                        pack_to_contextual_view(id, pack)
+                    }
 
                     // Detect empty neighborhood: decision exists but has no edges in the graph.
                     // An empty-neighborhood decision returns status="empty" with zero panes,
@@ -4150,11 +4162,14 @@ impl ViewExecutor for DecisionSupportPackExecutor {
                     if let Some(repo) = ctx.graph_repo {
                         let node_id = NodeId::new(id.to_string());
                         let Ok((subgraph_nodes, subgraph_edges, _)) = repo
-                            .rationale_subgraph(&node_id, 3, 100).await else {
+                            .rationale_subgraph(
+                                &node_id,
+                                PACK_RATIONALE_MAX_DEPTH,
+                                PACK_RATIONALE_MAX_NODES,
+                            )
+                            .await else {
                             // Not found or error — let the builder handle it
-                            let pack = DecisionSupportPackBuilder::build(id, None, None, Some(repo))
-                                .await?;
-                            return pack_to_contextual_view(id, pack);
+                            return build_pack(id, Some(repo)).await;
                         };
                         // Empty neighborhood: only the decision node itself, no edges
                         if subgraph_nodes.len() == 1 && subgraph_edges.is_empty() {
@@ -4171,15 +4186,10 @@ impl ViewExecutor for DecisionSupportPackExecutor {
                             });
                         }
                         // Non-empty: build the full pack preserving all sub-view data.
-                        // graph_query and quality are optional for the pack builder.
-                        let pack = DecisionSupportPackBuilder::build(id, None, None, Some(repo))
-                            .await?;
-                        return pack_to_contextual_view(id, pack);
+                        return build_pack(id, Some(repo)).await;
                     } else {
                         // No graph repo — let builder report the error
-                        let pack = DecisionSupportPackBuilder::build(id, None, None, None)
-                            .await?;
-                        return pack_to_contextual_view(id, pack);
+                        return build_pack(id, None).await;
                     }
                 }
                 #[cfg(not(feature = "multimodal"))]
