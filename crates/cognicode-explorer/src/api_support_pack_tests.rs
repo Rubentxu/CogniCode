@@ -448,3 +448,162 @@ async fn support_pack_panes_have_valid_status_field() {
         );
     }
 }
+
+// --- API payload field shape tests ---
+
+#[tokio::test]
+async fn support_pack_top_level_has_decision_id_and_panes() {
+    let app = support_pack_app();
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/decisions/A/support-pack")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("body bytes");
+    let pack: serde_json::Value = serde_json::from_slice(&body).expect("valid JSON");
+
+    // Top-level decision_id is required
+    let decision_id = pack.get("decision_id").expect("decision_id field at top level");
+    assert!(
+        decision_id.is_string(),
+        "decision_id should be a string, got: {:?}",
+        decision_id
+    );
+    assert_eq!(
+        decision_id.as_str().unwrap(),
+        "A",
+        "top-level decision_id should be A"
+    );
+
+    // Top-level panes array is required
+    let panes = pack.get("panes").expect("panes field at top level");
+    assert!(
+        panes.is_array(),
+        "panes should be an array, got: {:?}",
+        panes
+    );
+}
+
+#[tokio::test]
+async fn support_pack_pane_fields_are_complete() {
+    let app = support_pack_app();
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/decisions/A/support-pack")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("body bytes");
+    let pack: serde_json::Value = serde_json::from_slice(&body).expect("valid JSON");
+
+    let panes = pack.get("panes").expect("panes field").as_array().expect("panes array");
+    assert_eq!(panes.len(), 5, "expected exactly five panes");
+
+    // Check the first pane (decision_graph) has all required fields
+    // PackPane fields: view_id, title, view, status
+    let first_pane = panes.get(0).expect("first pane");
+    let pane_obj = first_pane.as_object().expect("pane should be an object");
+
+    // Required pane-level fields per DecisionSupportPack struct
+    assert!(
+        pane_obj.contains_key("view_id"),
+        "pane should have view_id field"
+    );
+    assert!(
+        pane_obj.contains_key("title"),
+        "pane should have title field"
+    );
+    assert!(
+        pane_obj.contains_key("view"),
+        "pane should have view field (Option<ContextualView>)"
+    );
+    assert!(
+        pane_obj.contains_key("status"),
+        "pane should have status field"
+    );
+
+    // view_id should be "decision_graph"
+    let view_id = pane_obj.get("view_id").unwrap();
+    assert_eq!(
+        view_id.as_str().unwrap(),
+        "decision_graph",
+        "first pane view_id should be decision_graph"
+    );
+
+    // title should be a string
+    let title = pane_obj.get("title").unwrap();
+    assert!(
+        title.is_string(),
+        "title should be a string, got: {:?}",
+        title
+    );
+
+    // view should be an object (the ContextualView for successful panes)
+    let view = pane_obj.get("view").unwrap();
+    assert!(
+        view.is_object(),
+        "view should be the ContextualView object, got: {:?}",
+        view
+    );
+
+    // The view object should have view_id and view_kind
+    let view_obj = view.as_object().unwrap();
+    assert!(
+        view_obj.contains_key("view_id"),
+        "ContextualView should have view_id"
+    );
+    assert!(
+        view_obj.contains_key("view_kind"),
+        "ContextualView should have view_kind"
+    );
+    assert!(
+        view_obj.contains_key("renderer_kind"),
+        "ContextualView should have renderer_kind"
+    );
+}
+
+#[tokio::test]
+async fn support_pack_panes_have_valid_status_object() {
+    let app = support_pack_app();
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/decisions/A/support-pack")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("body bytes");
+    let pack: serde_json::Value = serde_json::from_slice(&body).expect("valid JSON");
+
+    let panes = pack.get("panes").expect("panes field").as_array().expect("panes array");
+    for pane in panes {
+        let pane_obj = pane.as_object().expect("pane must be object");
+        // status field is required and should be an object with inner "status" string
+        let status = pane_obj.get("status").expect("status field required");
+        let status_obj = status.as_object().expect("status must be object");
+        let inner = status_obj.get("status").expect("inner status string required");
+        assert!(
+            inner.is_string(),
+            "inner status must be string, got: {:?}",
+            inner
+        );
+        let inner_str = inner.as_str().unwrap();
+        assert!(
+            ["ok", "degraded", "failed"].contains(&inner_str),
+            "status must be ok|degraded|failed, got: {}",
+            inner_str
+        );
+    }
+}

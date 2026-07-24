@@ -192,6 +192,7 @@ impl From<&dyn ViewDescriptorProvider> for ViewDescriptorDto {
         Self {
             id: provider.id().to_string(),
             title: provider.title().to_string(),
+            view_kind: provider.view_kind(),
             is_builtin: true,
             source: None,
         }
@@ -381,6 +382,11 @@ fn real_executors() -> &'static ViewExecutorMap {
                     as &dyn crate::domain::views::ViewExecutor,
             },
             ExecutorEntry {
+                id: "decision-support-pack",
+                executor: &crate::domain::views::DECISION_SUPPORT_PACK_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            },
+            ExecutorEntry {
                 id: "architecture_rationale",
                 executor: &crate::domain::views::ARCHITECTURE_RATIONALE_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
@@ -475,6 +481,7 @@ impl ViewRegistry {
                 descriptors.push(ViewDescriptorDto {
                     id: id.to_string(),
                     title: executor.title().to_string(),
+                    view_kind: executor.view_kind(),
                     is_builtin: true,
                     source: None,
                 });
@@ -554,6 +561,7 @@ impl ViewRegistry {
                         descriptors.push(ViewDescriptorDto {
                             id: spec.id.clone(),
                             title: spec.title.clone(),
+                            view_kind: spec.view_kind,
                             is_builtin: false,
                             source: Some("runtime".to_string()),
                         });
@@ -595,6 +603,7 @@ impl ViewRegistry {
                 return Some(ViewDescriptorDto {
                     id: spec.id.clone(),
                     title: spec.title.clone(),
+                    view_kind: spec.view_kind,
                     is_builtin: false,
                     source: Some("runtime".to_string()),
                 });
@@ -626,6 +635,7 @@ impl ViewRegistry {
                 ViewKind::QualityHotspots,
                 ViewKind::EvidenceView,
                 ViewKind::DecisionGraph,
+                ViewKind::DecisionSupportPack,
                 ViewKind::ArchitectureRationale,
                 ViewKind::ArchitectureDrift,
                 ViewKind::BoundaryMap,
@@ -714,6 +724,7 @@ mod tests {
         assert!(kinds.contains(&ViewKind::CallGraph));
         assert!(kinds.contains(&ViewKind::SourceView));
         assert!(kinds.contains(&ViewKind::QualityHotspots));
+        assert!(kinds.contains(&ViewKind::DecisionSupportPack));
     }
 
     // --- known_view_kinds is stable (same slice on multiple calls) ---
@@ -743,6 +754,25 @@ mod tests {
             evidence_views.iter().any(|v| v.id == "evidence-overview"),
             "expected evidence-overview for Evidence, got {evidence_views:?}"
         );
+    }
+
+    // --- DecisionArtifact list includes decision-support-pack with correct view_kind ---
+
+    #[test]
+    fn list_for_decision_artifact_includes_decision_support_pack() {
+        let registry = ViewRegistry::new(None);
+        let views = registry.list_for(InspectableObjectType::DecisionArtifact);
+        let pack_view = views
+            .iter()
+            .find(|v| v.id == "decision-support-pack");
+        assert!(
+            pack_view.is_some(),
+            "expected decision-support-pack for DecisionArtifact, got {views:?}"
+        );
+        let pack_view = pack_view.unwrap();
+        assert_eq!(pack_view.view_kind, ViewKind::DecisionSupportPack);
+        assert_eq!(pack_view.title, "Decision Support Pack");
+        assert!(pack_view.is_builtin);
     }
 
     // --- Built-in providers are registered and accessible ---
