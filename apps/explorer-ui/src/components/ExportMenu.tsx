@@ -18,6 +18,7 @@ import {
   addMermaidArtifact,
   addDrawioArtifact,
   addSvgArtifact,
+  addPngArtifact,
 } from "../hooks/useInvestigations";
 
 export interface ExportMenuProps {
@@ -143,8 +144,8 @@ export function ExportMenu({ view, workspaceId, investigationId, onShowNotificat
               provenance,
             );
           } else {
-            // PNG: store as base64 in content
-            await addSvgArtifact(
+            // PNG: store as base64 data URL with kind="png"
+            await addPngArtifact(
               investigationId,
               `${view?.title || "Diagram"} - PNG export`,
               `data:image/png;base64,${content}`,

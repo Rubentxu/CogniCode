@@ -234,6 +234,28 @@ export async function addDrawioArtifact(
   });
 }
 
+/**
+ * Helper function to add a PNG image as an investigation artifact.
+ * ADR-010 E24.1: provenance captures the source view context.
+ *
+ * The caller is responsible for providing a base64 data URL (`data:image/png;base64,...`).
+ */
+export async function addPngArtifact(
+  investigationId: string,
+  title: string,
+  pngBase64DataUrl: string,
+  generatedFrom?: string,
+  provenance?: AddArtifactRequestDto["provenance"],
+): Promise<void> {
+  return addInvestigationArtifact(investigationId, {
+    kind: "png",
+    title,
+    content: pngBase64DataUrl,
+    generated_from: generatedFrom,
+    provenance,
+  });
+}
+
 // Re-export z for use in this file
 import { z } from "zod";
 
