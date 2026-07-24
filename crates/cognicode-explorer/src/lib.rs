@@ -32,6 +32,8 @@ pub mod federation;
 mod api_graph_tests;
 #[cfg(feature = "multimodal")]
 mod api_rationale_tests;
+#[cfg(feature = "multimodal")]
+mod api_support_pack_tests;
 #[cfg(test)]
 mod dto_tests;
 
