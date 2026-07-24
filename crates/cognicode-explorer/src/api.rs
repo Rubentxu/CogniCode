@@ -435,6 +435,39 @@ async fn rationale_handler(
     Ok(Json(response).into_response())
 }
 
+/// Handler for `GET /api/decisions/:id/support-pack`.
+///
+/// Returns a `DecisionSupportPack` with five panes in stable order:
+/// decision_graph, architecture_rationale, evidence_pack, risk_map,
+/// change_impact_story. Each pane carries its own `PaneStatus` so partial
+/// failure never propagates beyond the pane.
+///
+/// Requires the `multimodal` feature.
+#[cfg(feature = "multimodal")]
+async fn get_decision_support_pack(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    use crate::domain::decision_support_pack::DecisionSupportPackBuilder;
+    use crate::ports::graph_repository::GraphRepository;
+
+    let id = validate_id(&id).map_err(ApiError)?;
+
+    let graph_repo = state.graph_repo.clone().ok_or_else(|| {
+        ExplorerError::FeatureDisabled("multimodal graph repository not wired".to_string())
+    })?;
+
+    // Get graph_query from the GraphService for RiskMap/ChangeImpactStory
+    let graph_query = state.graph.graph_query();
+
+    let pack = DecisionSupportPackBuilder::build(&id, graph_query, None, Some(graph_repo.as_ref()))
+        .await
+        .map_err(ExplorerError::from)
+        .map_err(ApiError)?;
+
+    Ok(Json(pack).into_response())
+}
+
 #[derive(Clone)]
 pub struct ApiState {
     pub workspace: Arc<dyn WorkspaceService>,
@@ -562,6 +595,15 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/api/graph/:id/subgraph", get(subgraph_handler))
         .route("/api/graph/:id/contextual", get(contextual_handler))
         .route("/api/graph/:id/rationale", get(rationale_handler))
+        // Decision support pack endpoint — E25 PR2
+        // Only mounted when the `multimodal` feature is active.
+        .route(
+            "/api/decisions/:id/support-pack",
+            #[cfg(feature = "multimodal")]
+            get(get_decision_support_pack),
+            #[cfg(not(feature = "multimodal"))]
+            get(not_found_stub),
+        )
         .route(
             "/api/workspaces/:workspace_id/architecture/mermaid",
             get(mermaid_handler),
@@ -665,6 +707,15 @@ pub fn router(state: ApiState) -> Router {
             "/api/graph/:id/rationale",
             #[cfg(feature = "multimodal")]
             get(rationale_handler),
+            #[cfg(not(feature = "multimodal"))]
+            get(not_found_stub),
+        )
+        // Decision support pack endpoint — E25 PR2
+        // Only mounted when the `multimodal` feature is active.
+        .route(
+            "/api/decisions/:id/support-pack",
+            #[cfg(feature = "multimodal")]
+            get(get_decision_support_pack),
             #[cfg(not(feature = "multimodal"))]
             get(not_found_stub),
         )

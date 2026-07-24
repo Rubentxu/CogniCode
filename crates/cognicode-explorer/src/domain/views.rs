@@ -3943,15 +3943,13 @@ pub fn build_rationale_view(decision_id: &str) -> ContextualView {
     }
 }
 
-fn with_decision_graph_identity(mut view: ContextualView) -> ContextualView {
-    view.view_id = "decision_graph".into();
-    view.title = "Decision Graph".into();
-    view.view_kind = ViewKind::DecisionGraph;
-    view
-}
-
-/// Decision Graph capability — decision-centric affordance alias over the same
-/// rationale topology used by ArchitectureRationale.
+/// Decision Graph capability — builds the decision graph topology using
+/// GraphRepository::rationale_subgraph with RendererKind::Graph.
+///
+/// This is the differentiated Decision A from ArchitectureRationale:
+/// - DecisionGraph uses Graph renderer, ArchitectureRationale uses Markdown
+/// - DecisionGraph builds its own typed topology preserving edge kind/provenance/confidence
+/// - ArchitectureRationale renders rationale as structured markdown
 pub struct DecisionGraphExecutor;
 impl ViewDescriptor for DecisionGraphExecutor {
     fn id(&self) -> &'static str {
@@ -3967,7 +3965,7 @@ impl ViewDescriptor for DecisionGraphExecutor {
         ViewKind::DecisionGraph
     }
     fn renderer_kind(&self) -> RendererKind {
-        RendererKind::Markdown
+        RendererKind::Graph
     }
 }
 
@@ -3978,14 +3976,52 @@ impl ViewExecutor for DecisionGraphExecutor {
             InspectionTarget::Decision { id } => {
                 #[cfg(feature = "multimodal")]
                 {
-                    Ok(with_decision_graph_identity(
-                        build_rationale_view(id, ctx.graph_repo).await,
+                    use crate::domain::decision_graph_topology::DecisionGraphTopology;
+                    use cognicode_core::domain::aggregates::generic_graph::NodeId;
+                    use cognicode_core::domain::ports::GraphRepository;
+
+                    let mvp = format!("decision:{id}");
+
+                    let Some(repo) = ctx.graph_repo else {
+                        return Err(crate::error::ExplorerError::FeatureDisabled(
+                            "graph repository not wired".into(),
+                        ));
+                    };
+
+                    let node_id = NodeId::new(id.to_string());
+                    let decision_node = match repo.get_node(&node_id).await {
+                        Ok(Some(node)) => node,
+                        Ok(None) => {
+                            return Err(crate::error::ExplorerError::NotFound(format!(
+                                "Decision '{id}' not found in graph"
+                            )));
+                        }
+                        Err(e) => {
+                            return Err(crate::error::ExplorerError::NotFound(format!(
+                                "Failed to fetch decision: {e}"
+                            )));
+                        }
+                    };
+
+                    let topology = DecisionGraphTopology::build(
+                        repo,
+                        &node_id,
+                        None,
+                        None,
+                    )
+                    .await?;
+
+                    Ok(crate::domain::decision_graph_topology::assemble_decision_graph_view(
+                        &decision_node,
+                        topology,
                     ))
                 }
                 #[cfg(not(feature = "multimodal"))]
                 {
                     let _ = ctx;
-                    Ok(with_decision_graph_identity(build_rationale_view(id)))
+                    Err(crate::error::ExplorerError::FeatureDisabled(
+                        "DecisionGraph requires multimodal feature".into(),
+                    ))
                 }
             }
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
@@ -6501,18 +6537,64 @@ mod tests {
                 .contains(&crate::dto::InspectableObjectType::DecisionArtifact)
         );
         assert_eq!(exec.view_kind(), crate::dto::ViewKind::DecisionGraph);
-        assert_eq!(exec.renderer_kind(), crate::dto::RendererKind::Markdown);
+        // Decision A: DecisionGraph uses Graph renderer (differentiated from ArchitectureRationale)
+        assert_eq!(exec.renderer_kind(), crate::dto::RendererKind::Graph);
     }
 
     #[tokio::test]
+    #[cfg(feature = "multimodal")]
     async fn decision_graph_executor_handles_decision() {
+        use crate::domain::decision_graph_topology::DecisionGraphTopology;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+        use cognicode_core::domain::ports::GraphRepository;
+
         let target = super::InspectionTarget::Decision {
             id: "ADR-001".to_string(),
         };
+
+        // Create a mock graph repo with the decision node
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("ADR-001".to_string()),
+            kind: NodeKind::Decision,
+            label: "ADR-001".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/adr/ADR-001.md")),
+            properties: std::collections::HashMap::new(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        });
+
         let ctx = super::ViewContext {
             target: &target,
             repo: &MockRepo::new(),
             reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = super::DecisionGraphExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok(), "DecisionGraphExecutor should succeed with graph_repo");
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "decision_graph");
+        assert_eq!(view.title, "Decision Graph: ADR-001");
+        assert_eq!(view.view_kind, crate::dto::ViewKind::DecisionGraph);
+        // Decision A: DecisionGraph uses Graph renderer (differentiated from ArchitectureRationale)
+        assert_eq!(view.renderer_kind, crate::dto::RendererKind::Graph);
+        assert!(!view.blocks.is_empty());
+    }
+
+    #[tokio::test]
+    #[cfg(not(feature = "multimodal"))]
+    async fn decision_graph_requires_multimodal_feature() {
+        // DecisionGraphExecutor requires multimodal feature
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let target = super::InspectionTarget::Symbol(sym);
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(std::collections::HashMap::new()),
             quality: None,
             graph_query: None,
             graph_repo: None,
@@ -6520,22 +6602,13 @@ mod tests {
 
         let executor = super::DecisionGraphExecutor;
         let result = executor.build(&ctx).await;
-        assert!(result.is_ok());
-        let view = result.unwrap();
-        assert_eq!(view.view_id, "decision_graph");
-        assert_eq!(view.title, "Decision Graph");
-        assert_eq!(view.view_kind, crate::dto::ViewKind::DecisionGraph);
-        assert_eq!(view.renderer_kind, crate::dto::RendererKind::Markdown);
-        assert!(!view.blocks.is_empty());
-    }
-
-    #[test]
-    #[cfg(not(feature = "multimodal"))]
-    fn decision_graph_retags_rationale_identity() {
-        let view = super::with_decision_graph_identity(super::build_rationale_view("ADR-042"));
-        assert_eq!(view.view_id, "decision_graph");
-        assert_eq!(view.title, "Decision Graph");
-        assert_eq!(view.view_kind, crate::dto::ViewKind::DecisionGraph);
+        assert!(result.is_err(), "Expected error but got: {:?}", result);
+        let err = result.unwrap_err();
+        // DecisionGraphExecutor only supports Decision targets - Symbol returns ViewNotAvailable
+        assert!(matches!(
+            err,
+            crate::error::ExplorerError::ViewNotAvailable { .. }
+        ));
     }
 
     #[test]
@@ -6695,11 +6768,11 @@ mod tests {
         assert!(result.is_ok(), "empty graph should not error");
         let view = result.unwrap();
         assert_eq!(view.view_id, "decision_graph");
-        // Decision node + rationale_graph block
+        // Decision node + decision_graph_topology block
         let block_ids: Vec<&str> = view.blocks.iter().map(|b| b.id.as_str()).collect();
         assert!(
-            block_ids.contains(&"rationale_graph"),
-            "must have rationale_graph block"
+            block_ids.contains(&"decision_graph_topology"),
+            "must have decision_graph_topology block"
         );
         // Edges summary should show 0 connections
         let edges_block = view.blocks.iter().find(|b| b.id == "edges_summary");
@@ -6752,12 +6825,12 @@ mod tests {
         let view = result.unwrap();
         // Shape check: view_id is preserved
         assert_eq!(view.view_id, "decision_graph");
-        assert_eq!(view.title, "Decision Graph");
+        assert_eq!(view.title, "Decision Graph: ADR-002");
         assert_eq!(view.view_kind, super::ViewKind::DecisionGraph);
-        // The rationale_graph block must report 1 node (focus only)
-        let rationale_block = view.blocks.iter().find(|b| b.id == "rationale_graph");
-        assert!(rationale_block.is_some());
-        let total = rationale_block
+        // The decision_graph_topology block must report 1 node (focus only)
+        let graph_block = view.blocks.iter().find(|b| b.id == "decision_graph_topology");
+        assert!(graph_block.is_some());
+        let total = graph_block
             .unwrap()
             .body
             .get("total_nodes")
@@ -6874,9 +6947,11 @@ mod tests {
             "label must be preserved from graph node"
         );
 
-        // ViewKind and renderer_kind must be DecisionGraph / Markdown
+        // ViewKind and renderer_kind must be DecisionGraph / Graph
+        // Decision A: DecisionGraph is differentiated from ArchitectureRationale
+        // by using RendererKind::Graph (not Markdown)
         assert_eq!(view.view_kind, super::ViewKind::DecisionGraph);
-        assert_eq!(view.renderer_kind, super::RendererKind::Markdown);
+        assert_eq!(view.renderer_kind, super::RendererKind::Graph);
 
         // Relations must reflect the single justifies edge
         assert_eq!(view.relations.len(), 1);
