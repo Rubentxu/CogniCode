@@ -2791,51 +2791,17 @@ pub async fn build_concept_map_view(
                     crate::error::ExplorerError::NotFound(format!("rationale_subgraph: {}", e))
                 })?;
 
-            // Build evidence
+            // Build evidence using shared helper (closes DUP-002)
             let evidence_id = cfg.evidence_id();
-            let evidence = vec![EvidenceBlock {
-                id: evidence_id.clone(),
-                kind: "concept_map".into(),
-                title: format!("Concept Map: {}", focus_node.label),
-                file: focus_node
-                    .source_path
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().into_owned()),
-                line_range: None,
-                source_tool_or_query: "GraphRepository::rationale_subgraph".into(),
-                confidence: Some(1.0),
-                freshness: Some("unknown".into()),
-                provenance: None,
-            }];
+            let evidence = vec![build_subgraph_evidence_block(
+                &evidence_id,
+                "concept_map",
+                "Concept Map",
+                &focus_node,
+            )];
 
-            // Build typed relations from edges
-            let relations: Vec<TypedRelation> = edges
-                .iter()
-                .map(|e| {
-                    let (source_id, target_id, direction) = if e.source == focus_node.id {
-                        (
-                            e.source.to_string(),
-                            e.target.to_string(),
-                            RelationDirection::Outgoing,
-                        )
-                    } else {
-                        (
-                            e.source.to_string(),
-                            e.target.to_string(),
-                            RelationDirection::Incoming,
-                        )
-                    };
-                    TypedRelation {
-                        relation_type: format!("{:?}", e.kind),
-                        direction,
-                        target_object_id: target_id,
-                        target_label: "related node".to_string(),
-                        evidence_ids: vec![evidence_id.clone()],
-                        provenance: None,
-                        confidence: Some(e.confidence),
-                    }
-                })
-                .collect();
+            // Build typed relations using shared helper (closes DUP-003)
+            let relations = edges_to_typed_relations(&edges, &focus_node.id, &evidence_id, true);
 
             // Collect related symbol ids (nodes that are symbols, excluding the focus itself)
             let focus_id_str = focus_node.id.to_string();
@@ -3670,6 +3636,128 @@ impl ViewExecutor for ArchitectureDriftExecutor {
 const RATIONALE_SUBGRAPH_MAX_DEPTH: u32 = 3;
 const RATIONALE_SUBGRAPH_MAX_NODES: usize = 100;
 
+/// Re-exported constants for DecisionGraph (closes DUP-005/OVR-002).
+/// Using the same limits avoids divergent behaviour between the two view types.
+pub const DECISION_GRAPH_MAX_DEPTH: u32 = RATIONALE_SUBGRAPH_MAX_DEPTH;
+pub const DECISION_GRAPH_MAX_NODES: usize = RATIONALE_SUBGRAPH_MAX_NODES;
+
+/// Fetch a decision node and its rationale subgraph in one call.
+///
+/// Encapsulates the 3-way get_node match (found / not found / error) and the
+/// rationale_subgraph traversal. Returns the node, edges, and a truncated flag.
+///
+/// Used by both `build_rationale_view` and `DecisionGraphExecutor::build`.
+pub async fn fetch_decision_with_subgraph(
+    repo: &dyn cognicode_core::domain::ports::GraphRepository,
+    decision_id: &str,
+) -> ExplorerResult<(
+    cognicode_core::domain::aggregates::generic_graph::GraphNode,
+    Vec<cognicode_core::domain::aggregates::generic_graph::GraphNode>,
+    Vec<cognicode_core::domain::aggregates::generic_graph::GraphEdge>,
+    bool,
+)> {
+    use cognicode_core::domain::aggregates::generic_graph::NodeId;
+    use cognicode_core::domain::ports::GraphRepository;
+
+    let node_id = NodeId::new(decision_id.to_string());
+
+    // 3-way get_node match
+    let focus_node = match repo.get_node(&node_id).await {
+        Ok(Some(node)) => node,
+        Ok(None) => {
+            return Err(crate::error::ExplorerError::NotFound(format!(
+                "Decision '{}' not found in graph",
+                decision_id
+            )));
+        }
+        Err(e) => {
+            return Err(crate::error::ExplorerError::NotFound(format!(
+                "Failed to fetch decision: {}",
+                e
+            )));
+        }
+    };
+
+    // Fetch rationale subgraph
+    let (nodes, edges, truncated) = repo
+        .rationale_subgraph(
+            &node_id,
+            RATIONALE_SUBGRAPH_MAX_DEPTH,
+            RATIONALE_SUBGRAPH_MAX_NODES,
+        )
+        .await
+        .map_err(|e| {
+            crate::error::ExplorerError::NotFound(format!(
+                "Failed to fetch rationale subgraph: {}",
+                e
+            ))
+        })?;
+
+    // Return node, all nodes (including focus), edges, and truncated flag
+    Ok((focus_node, nodes, edges, truncated))
+}
+
+/// Build an EvidenceBlock for a subgraph-based view.
+///
+/// Common evidence-block builder used by both ArchitectureRationale and DecisionGraph,
+/// closing DUP-002.
+pub fn build_subgraph_evidence_block(
+    evidence_id: &str,
+    kind: &str,
+    title_prefix: &str,
+    focus_node: &cognicode_core::domain::aggregates::generic_graph::GraphNode,
+) -> EvidenceBlock {
+    EvidenceBlock {
+        id: evidence_id.to_string(),
+        kind: kind.into(),
+        title: format!("{}: {}", title_prefix, focus_node.label),
+        file: focus_node
+            .source_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string()),
+        line_range: None,
+        source_tool_or_query: "GraphRepository::rationale_subgraph".into(),
+        confidence: Some(1.0),
+        freshness: Some("unknown".into()),
+        provenance: None,
+    }
+}
+
+/// Build typed relations from edges, computing direction and target based on focus node.
+///
+/// Common TypedRelation builder used by both ArchitectureRationale and DecisionGraph,
+/// closing DUP-003.
+pub fn edges_to_typed_relations(
+    edges: &[cognicode_core::domain::aggregates::generic_graph::GraphEdge],
+    focus_id: &cognicode_core::domain::aggregates::generic_graph::NodeId,
+    evidence_id: &str,
+    include_metadata: bool,
+) -> Vec<TypedRelation> {
+    edges
+        .iter()
+        .map(|e| {
+            let (target_id, direction) = if e.source == *focus_id {
+                (e.target.to_string(), RelationDirection::Outgoing)
+            } else {
+                (e.source.to_string(), RelationDirection::Incoming)
+            };
+            TypedRelation {
+                relation_type: format!("{:?}", e.kind),
+                direction,
+                target_object_id: target_id,
+                target_label: "related node".to_string(),
+                evidence_ids: vec![evidence_id.to_string()],
+                provenance: None,
+                confidence: if include_metadata {
+                    Some(e.confidence)
+                } else {
+                    None
+                },
+            }
+        })
+        .collect()
+}
+
 /// Helper to build a placeholder ContextualView when a decision is unavailable.
 fn decision_unavailable_for(
     object_id: &str,
@@ -3745,85 +3833,30 @@ pub async fn build_rationale_view(
         );
     };
 
-    // Fetch the decision node
-    let node_id = NodeId::new(decision_id.to_string());
-    let decision_node = match repo.get_node(&node_id).await {
-        Ok(Some(node)) => node,
-        Ok(None) => {
-            return contextual_view_error(
-                &mvp,
-                "architecture_rationale",
-                "Decision Not Found",
-                &format!("Decision '{}' not found in graph", decision_id),
-            );
-        }
+    // Fetch the decision node and its rationale subgraph using the shared helper
+    let (decision_node, nodes, edges, truncated) = match fetch_decision_with_subgraph(repo, decision_id).await {
+        Ok((node, nodes, edges, truncated)) => (node, nodes, edges, truncated),
         Err(e) => {
             return contextual_view_error(
                 &mvp,
                 "architecture_rationale",
                 "Error",
-                &format!("Failed to fetch decision: {}", e),
+                &format!("{}", e),
             );
         }
     };
 
-    // Fetch rationale subgraph: Justifies, Cites, Resolves, CorroboratedBy edges
-    let (nodes, edges, truncated) = match repo
-        .rationale_subgraph(
-            &node_id,
-            RATIONALE_SUBGRAPH_MAX_DEPTH,
-            RATIONALE_SUBGRAPH_MAX_NODES,
-        )
-        .await
-    {
-        Ok((nodes, edges, truncated)) => (nodes, edges, truncated),
-        Err(e) => {
-            return contextual_view_error(
-                &mvp,
-                "architecture_rationale",
-                "Error",
-                &format!("Failed to fetch rationale subgraph: {}", e),
-            );
-        }
-    };
-
-    // Build evidence block for the rationale
+    // Build evidence block using the shared helper (closes DUP-002)
     let evidence_id = "evidence:architecture_rationale".to_string();
-    let evidence = vec![EvidenceBlock {
-        id: evidence_id.clone(),
-        kind: "architecture_rationale".into(),
-        title: format!("Architecture Rationale: {}", decision_node.label),
-        file: decision_node
-            .source_path
-            .map(|p| p.to_string_lossy().to_string()),
-        line_range: None,
-        source_tool_or_query: "GraphRepository::rationale_subgraph".into(),
-        confidence: Some(1.0),
-        freshness: Some("unknown".into()),
-        provenance: None,
-    }];
+    let evidence = vec![build_subgraph_evidence_block(
+        &evidence_id,
+        "architecture_rationale",
+        "Architecture Rationale",
+        &decision_node,
+    )];
 
-    // Build typed relations from edges
-    let relations: Vec<TypedRelation> = edges
-        .iter()
-        .map(|e| TypedRelation {
-            relation_type: format!("{:?}", e.kind),
-            direction: if e.source == decision_node.id {
-                RelationDirection::Outgoing
-            } else {
-                RelationDirection::Incoming
-            },
-            target_object_id: if e.source == decision_node.id {
-                e.target.to_string()
-            } else {
-                e.source.to_string()
-            },
-            target_label: "related node".to_string(),
-            evidence_ids: vec![evidence_id.clone()],
-            provenance: None,
-            confidence: None,
-        })
-        .collect();
+    // Build typed relations using the shared helper (closes DUP-003)
+    let relations = edges_to_typed_relations(&edges, &decision_node.id, &evidence_id, false);
 
     // Build blocks: decision info, related nodes, edges summary
     let related_nodes_json: serde_json::Value = serde_json::json!(
