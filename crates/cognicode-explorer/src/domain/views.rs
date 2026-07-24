@@ -3356,6 +3356,7 @@ pub static OWNERSHIP_MAP_EXECUTOR: OwnershipMapExecutor = OwnershipMapExecutor;
 pub static COMPOSED_NARRATIVE_EXECUTOR: ComposedNarrativeExecutor = ComposedNarrativeExecutor;
 pub static RISK_MAP_EXECUTOR: RiskMapExecutor = RiskMapExecutor;
 pub static DECISION_GRAPH_EXECUTOR: DecisionGraphExecutor = DecisionGraphExecutor;
+pub static DECISION_SUPPORT_PACK_EXECUTOR: DecisionSupportPackExecutor = DecisionSupportPackExecutor;
 pub static ARCHITECTURE_RATIONALE_EXECUTOR: ArchitectureRationaleExecutor =
     ArchitectureRationaleExecutor;
 pub static DOC_SOURCE_EXECUTOR: DocSourceExecutor = DocSourceExecutor;
@@ -4074,6 +4075,102 @@ impl ViewExecutor for ArchitectureRationaleExecutor {
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
                 view_id: "architecture_rationale".into(),
+            }),
+        }
+    }
+}
+
+/// Decision Support Pack capability — applies to Decision.
+///
+/// E25 PR3: Produces a composite five-pane pack wrapping DecisionSupportPackBuilder.
+/// Uses RendererKind::Composite since it composes multiple sub-views.
+pub struct DecisionSupportPackExecutor;
+impl ViewDescriptor for DecisionSupportPackExecutor {
+    fn id(&self) -> &'static str {
+        "decision_support_pack"
+    }
+    fn title(&self) -> &'static str {
+        "Decision Support Pack"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::DecisionArtifact]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::DecisionSupportPack
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Composite
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for DecisionSupportPackExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match ctx.target {
+            InspectionTarget::Decision { id } => {
+                #[cfg(feature = "multimodal")]
+                {
+                    use crate::domain::decision_support_pack::{DecisionSupportPackBuilder, PaneStatus};
+
+                    // graph_query and quality are optional for the pack builder
+                    let pack = DecisionSupportPackBuilder::build(id, None, None, ctx.graph_repo)
+                        .await?;
+
+                    // Convert DecisionSupportPack to a ContextualView with one block per pane
+                    let blocks: Vec<ViewBlock> = pack
+                        .panes
+                        .iter()
+                        .map(|p| {
+                            let body = match (&p.status, &p.view) {
+                                (PaneStatus::Ok, Some(view)) => serde_json::json!({
+                                    "status": "ok",
+                                    "view_id": view.view_id,
+                                    "title": view.title,
+                                }),
+                                (PaneStatus::Degraded(msg), _) => serde_json::json!({
+                                    "status": "degraded",
+                                    "message": msg,
+                                }),
+                                (PaneStatus::Failed(msg), _) => serde_json::json!({
+                                    "status": "failed",
+                                    "message": msg,
+                                }),
+                                (PaneStatus::Ok, None) => serde_json::json!({
+                                    "status": "ok",
+                                    "message": "no view",
+                                }),
+                            };
+                            ViewBlock {
+                                id: p.view_id.into(),
+                                title: p.title.clone(),
+                                body,
+                            }
+                        })
+                        .collect();
+
+                    Ok(ContextualView {
+                        object_id: format!("decision:{id}"),
+                        view_id: "decision_support_pack".into(),
+                        title: format!("Decision Support Pack: {}", id),
+                        view_kind: ViewKind::DecisionSupportPack,
+                        blocks,
+                        relations: Vec::new(),
+                        evidence: Vec::new(),
+                        findings: Vec::new(),
+                        renderer_kind: RendererKind::Composite,
+                    })
+                }
+                #[cfg(not(feature = "multimodal"))]
+                {
+                    let _ = ctx;
+                    Err(crate::error::ExplorerError::FeatureDisabled(
+                        "DecisionSupportPack requires multimodal feature".into(),
+                    ))
+                }
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "decision_support_pack".into(),
             }),
         }
     }
@@ -6724,6 +6821,126 @@ mod tests {
             body.get("decision_id").unwrap().as_str().unwrap(),
             "ADR-999"
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // DecisionSupportPackExecutor tests — E25 PR3 C-2
+    // -------------------------------------------------------------------------
+
+    /// W-2: Empty-decision scenario — decision exists but has no neighborhood.
+    /// The pack should still return a valid view with five panes.
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn decision_support_pack_empty_decision_shows_five_panes() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+        use cognicode_core::domain::ports::GraphRepository;
+
+        // Decision A with no edges — empty neighborhood scenario
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("DEC-A".to_string()),
+            kind: NodeKind::Decision,
+            label: "DEC-A".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/adr/DEC-A.md")),
+            properties: HashMap::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+
+        let target = super::InspectionTarget::Decision {
+            id: "DEC-A".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock as &dyn GraphRepository),
+        };
+
+        let executor = super::DecisionSupportPackExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok(), "empty decision pack should not error: {:?}", result);
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "decision_support_pack");
+        assert_eq!(view.view_kind, crate::dto::ViewKind::DecisionSupportPack);
+        assert_eq!(view.renderer_kind, crate::dto::RendererKind::Composite);
+        // W-2: five panes in stable order
+        assert_eq!(view.blocks.len(), 5, "pack should have exactly 5 panes");
+        assert_eq!(view.blocks[0].id, "decision_graph");
+        assert_eq!(view.blocks[1].id, "architecture_rationale");
+        assert_eq!(view.blocks[2].id, "evidence_pack");
+        assert_eq!(view.blocks[3].id, "risk_map");
+        assert_eq!(view.blocks[4].id, "change_impact_story");
+    }
+
+    /// C-2 discoverable: DecisionSupportPack applies to DecisionArtifact.
+    #[test]
+    fn decision_support_pack_executor_applies_to_decision_artifact() {
+        let exec = &super::DECISION_SUPPORT_PACK_EXECUTOR;
+        assert_eq!(exec.id(), "decision_support_pack");
+        assert_eq!(exec.title(), "Decision Support Pack");
+        assert!(
+            exec.applies_to()
+                .contains(&crate::dto::InspectableObjectType::DecisionArtifact)
+        );
+        assert_eq!(
+            exec.view_kind(),
+            crate::dto::ViewKind::DecisionSupportPack
+        );
+        assert_eq!(exec.renderer_kind(), crate::dto::RendererKind::Composite);
+    }
+
+    /// C-2 non-Decision target returns ViewNotAvailable.
+    #[tokio::test]
+    async fn decision_support_pack_executor_rejects_symbol() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let target = super::InspectionTarget::Symbol(sym);
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: None,
+        };
+
+        let executor = super::DecisionSupportPackExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::ExplorerError::ViewNotAvailable { .. }
+        ));
+    }
+
+    /// C-2: non-Decision target (File) returns ViewNotAvailable.
+    #[tokio::test]
+    async fn decision_support_pack_executor_rejects_file() {
+        let target = super::InspectionTarget::File {
+            path: "src/lib.rs".to_string(),
+            symbols: Vec::new(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: None,
+        };
+
+        let executor = super::DecisionSupportPackExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::ExplorerError::ViewNotAvailable { .. }
+        ));
     }
 
     // -------------------------------------------------------------------------

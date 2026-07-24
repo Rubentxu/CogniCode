@@ -1251,6 +1251,8 @@ pub enum ViewKind {
     QualityHotspots,
     EvidenceView,
     DecisionGraph,
+    /// E25 PR3 — composite five-pane pack for DecisionArtifact targets.
+    DecisionSupportPack,
     // Architecture
     ArchitectureRationale,
     ArchitectureDrift,
@@ -1302,6 +1304,7 @@ impl Serialize for ViewKind {
             ViewKind::QualityHotspots => serializer.serialize_str("quality_hotspots"),
             ViewKind::EvidenceView => serializer.serialize_str("evidence_view"),
             ViewKind::DecisionGraph => serializer.serialize_str("decision_graph"),
+            ViewKind::DecisionSupportPack => serializer.serialize_str("decision_support_pack"),
             ViewKind::ArchitectureRationale => serializer.serialize_str("architecture_rationale"),
             ViewKind::ArchitectureDrift => serializer.serialize_str("architecture_drift"),
             ViewKind::BoundaryMap => serializer.serialize_str("boundary_map"),
@@ -1353,6 +1356,7 @@ impl<'de> Deserialize<'de> for ViewKind {
             "quality_hotspots" => Ok(ViewKind::QualityHotspots),
             "evidence_view" => Ok(ViewKind::EvidenceView),
             "decision_graph" => Ok(ViewKind::DecisionGraph),
+            "decision_support_pack" => Ok(ViewKind::DecisionSupportPack),
             "architecture_rationale" => Ok(ViewKind::ArchitectureRationale),
             "architecture_drift" => Ok(ViewKind::ArchitectureDrift),
             "boundary_map" => Ok(ViewKind::BoundaryMap),
