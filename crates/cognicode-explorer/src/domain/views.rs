@@ -6545,7 +6545,7 @@ mod tests {
         assert!(result.is_ok(), "DecisionGraphExecutor should succeed with graph_repo");
         let view = result.unwrap();
         assert_eq!(view.view_id, "decision_graph");
-        assert_eq!(view.title, "Decision Graph");
+        assert_eq!(view.title, "Decision Graph: ADR-001");
         assert_eq!(view.view_kind, crate::dto::ViewKind::DecisionGraph);
         // Decision A: DecisionGraph uses Graph renderer (differentiated from ArchitectureRationale)
         assert_eq!(view.renderer_kind, crate::dto::RendererKind::Graph);
@@ -6735,11 +6735,11 @@ mod tests {
         assert!(result.is_ok(), "empty graph should not error");
         let view = result.unwrap();
         assert_eq!(view.view_id, "decision_graph");
-        // Decision node + rationale_graph block
+        // Decision node + decision_graph_topology block
         let block_ids: Vec<&str> = view.blocks.iter().map(|b| b.id.as_str()).collect();
         assert!(
-            block_ids.contains(&"rationale_graph"),
-            "must have rationale_graph block"
+            block_ids.contains(&"decision_graph_topology"),
+            "must have decision_graph_topology block"
         );
         // Edges summary should show 0 connections
         let edges_block = view.blocks.iter().find(|b| b.id == "edges_summary");
@@ -6792,12 +6792,12 @@ mod tests {
         let view = result.unwrap();
         // Shape check: view_id is preserved
         assert_eq!(view.view_id, "decision_graph");
-        assert_eq!(view.title, "Decision Graph");
+        assert_eq!(view.title, "Decision Graph: ADR-002");
         assert_eq!(view.view_kind, super::ViewKind::DecisionGraph);
-        // The rationale_graph block must report 1 node (focus only)
-        let rationale_block = view.blocks.iter().find(|b| b.id == "rationale_graph");
-        assert!(rationale_block.is_some());
-        let total = rationale_block
+        // The decision_graph_topology block must report 1 node (focus only)
+        let graph_block = view.blocks.iter().find(|b| b.id == "decision_graph_topology");
+        assert!(graph_block.is_some());
+        let total = graph_block
             .unwrap()
             .body
             .get("total_nodes")
