@@ -6,6 +6,7 @@
 pub mod adr_repository;
 pub mod doc_repository;
 pub mod edge_emitter;
+pub mod evidence_store;
 pub mod graph_repository;
 pub mod quality_repository;
 pub mod search_repository;
@@ -18,6 +19,9 @@ pub use edge_emitter::{
     ApiRoute, ApiRouteEdge, BatchStats, EDGE_KIND_GRAPHQL_CALLS, EDGE_KIND_GRPC_CALLS,
     EDGE_KIND_HTTP_CALLS, EDGE_KIND_TRPC_CALLS, EdgeEmitter, PROTOCOL_GRAPHQL, PROTOCOL_GRPC,
     PROTOCOL_HTTP, PROTOCOL_TRPC,
+};
+pub use evidence_store::{
+    EvidenceKind, EvidenceStore, EvidenceSummary, InMemoryEvidenceStore,
 };
 pub use graph_repository::{GraphRepository, SearchPage};
 pub use quality_repository::{NewIssue, UpsertSummary};
