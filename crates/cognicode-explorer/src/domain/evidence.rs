@@ -177,6 +177,9 @@ mod tests {
             Ok(Vec::new())
         }
         fn find_symbols_by_file(&self, _file: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            // OE-006: `_file` is required by the trait signature but unused
+            // in this no-op stub. Underscore prefix suppresses the warning
+            // while keeping the parameter position for trait compliance.
             Ok(Vec::new())
         }
         fn module_list(&self) -> Vec<String> {
