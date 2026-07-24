@@ -11,7 +11,7 @@
  *                                   focused object
  *   - `explorer_open_workspace`   → open a workspace
  *
- * The map is exhaustive over the 11 `InspectableObjectType` variants —
+ * The map is exhaustive over the 12 `InspectableObjectType` variants —
  * TypeScript enforces this at compile time via `Record<…, …>`. Adding
  * a new kind to the schema triggers a compile error here.
  *
@@ -362,6 +362,41 @@ export const SUGGESTED_QUESTIONS: {
       params: { question: "what does `{label}` call?" },
       requiresGraph: true,
       verb: "trace",
+    },
+  ],
+
+  doc: [
+    {
+      id: "summarize-doc",
+      label: "Summarize this document",
+      tool: "cognicode_ask",
+      params: { question: "summarize the document `{label}`" },
+      requiresGraph: false,
+      verb: "understand",
+    },
+    {
+      id: "what-cites-doc",
+      label: "What code cites this document?",
+      tool: "explorer_get_view",
+      params: { view_id: "cited-by" },
+      requiresGraph: true,
+      verb: "trace",
+    },
+    {
+      id: "what-justifies-doc",
+      label: "What does this document justify?",
+      tool: "explorer_inspect_object",
+      params: { object_id: "{id}" },
+      requiresGraph: false,
+      verb: "explain",
+    },
+    {
+      id: "related-decisions",
+      label: "What decisions relate to this document?",
+      tool: "explorer_get_view",
+      params: { view_id: "decision_graph" },
+      requiresGraph: true,
+      verb: "compare",
     },
   ],
 
