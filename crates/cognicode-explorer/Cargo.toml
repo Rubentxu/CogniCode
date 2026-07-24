@@ -35,7 +35,11 @@ multimodal = ["cognicode-core/multimodal"]
 # `ownership` enables CODEOWNERS/git-blame ownership attribution.
 # When enabled, CallGraphRepository delegates node_properties() to
 # PostgresRepository so OwnershipMapExecutor can render real ownership data.
-ownership = ["cognicode-core/ownership", "cognicode-core/postgres"]
+# Note: `multimodal` is required because the JSONB `properties` column
+# is read via `node_properties()` which lives in a `multimodal`-gated
+# impl block of `PostgresRepository`. Future refactor can split out
+# a lean `NodePropertyRow` (no multimodal deps) to remove this dep.
+ownership = ["cognicode-core/ownership", "cognicode-core/postgres", "cognicode-core/multimodal"]
 
 [dependencies]
 cognicode-core.workspace = true

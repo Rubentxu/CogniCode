@@ -1382,6 +1382,16 @@ struct GraphNodeRow {
     updated_at: String,
 }
 
+/// Lean row-mapping struct for `node_properties`.
+/// Only needs the `properties` JSONB column (used by ownership feature).
+/// Does NOT require the `multimodal` feature — the row's JSONB value
+/// is scanned as raw `serde_json::Value` and the caller flattens it.
+#[cfg(feature = "postgres")]
+#[derive(Debug, sqlx::FromRow)]
+struct NodePropertyRow {
+    properties: serde_json::Value,
+}
+
 #[cfg(all(feature = "postgres", feature = "multimodal"))]
 impl GraphNodeRow {
     /// Convert the raw row into the domain [`GraphNode`].
@@ -1815,9 +1825,9 @@ impl PostgresRepository {
     /// (e12f) to surface `codeowners`, `last_author`, and `author_email`
     /// via `GraphQueryPort::node_properties`.
     ///
-    /// Requires the `postgres` feature. Returns `Ok(None)` when the
-    /// `multimodal` feature is not enabled (the `graph_nodes` table
-    /// exists but `GraphNodeRow` type is not available without it).
+    /// Requires the `postgres` feature. Returns `Ok(None)` when either
+    /// `postgres` or `multimodal` is not enabled (the `graph_nodes` table
+    /// exists but its row type is gated behind `multimodal`).
     ///
     /// # Errors
     /// Returns `RepositoryError::Store` if the SQL query fails.
@@ -1827,10 +1837,8 @@ impl PostgresRepository {
     ) -> Result<Option<HashMap<String, String>>, RepositoryError> {
         #[cfg(all(feature = "postgres", feature = "multimodal"))]
         {
-            let row: Option<GraphNodeRow> = sqlx::query_as(
-                "SELECT id, kind, label, source_path, properties, \
-                        created_at::text AS created_at, \
-                        updated_at::text AS updated_at \
+            let row: Option<NodePropertyRow> = sqlx::query_as(
+                "SELECT properties \
                  FROM graph_nodes \
                  WHERE id = $1 \
                  LIMIT 1",
