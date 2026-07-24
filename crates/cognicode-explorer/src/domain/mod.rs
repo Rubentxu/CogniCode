@@ -5,6 +5,7 @@
 //! are wired in by the application service.
 
 pub mod c4_mermaid;
+pub mod decision_graph_topology;
 pub mod diagram_regen;
 pub mod entry_point;
 pub mod evidence;
