@@ -448,7 +448,10 @@ fn pack_pane(
             view_id,
             title: title.to_string(),
             view: None,
-            status: PaneStatus::Failed(e.to_string()),
+            // W-002: use Degraded (not Failed) for partial failures like
+            // "target not found" or "missing secondary data". PaneStatus::Failed
+            // is reserved for actual builder crashes per the enum doc comment.
+            status: PaneStatus::Degraded(e.to_string()),
         },
     }
 }
@@ -556,14 +559,15 @@ mod tests {
         assert!(matches!(pack.panes[1].status, PaneStatus::Ok), "architecture_rationale should be Ok");
         assert!(matches!(pack.panes[2].status, PaneStatus::Ok), "evidence_pack should be Ok");
 
-        // risk_map and change_impact_story fail without primary symbol
+        // risk_map and change_impact_story are degraded without primary symbol
+        // (W-002: partial failures now use Degraded, not Failed)
         assert!(
-            matches!(pack.panes[3].status, PaneStatus::Failed(_)),
-            "risk_map should fail without primary symbol"
+            matches!(pack.panes[3].status, PaneStatus::Degraded(_)),
+            "risk_map should be degraded without primary symbol"
         );
         assert!(
-            matches!(pack.panes[4].status, PaneStatus::Failed(_)),
-            "change_impact_story should fail without primary symbol"
+            matches!(pack.panes[4].status, PaneStatus::Degraded(_)),
+            "change_impact_story should be degraded without primary symbol"
         );
     }
 
