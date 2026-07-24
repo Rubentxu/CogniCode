@@ -1,5 +1,6 @@
 import { useAppDispatch, useAppState } from "../state/context";
 import { useObject } from "../hooks/useObject";
+import { useObjectKnowledge } from "../hooks/useObjectKnowledge";
 import { ViewSpecWizardTrigger } from "./ViewSpecWizardTrigger";
 
 function objectTypeLabel(kind: string | undefined): string {
@@ -19,9 +20,10 @@ function objectTypeLabel(kind: string | undefined): string {
 
 export function ContextRail() {
   const dispatch = useAppDispatch();
-  const { activeObjectId, navigation, activeInvestigationId } = useAppState();
+  const { activeObjectId, navigation } = useAppState();
   const activePane = navigation.panes.find((pane) => pane.id === navigation.activePaneId) ?? null;
   const { data: object } = useObject(activeObjectId);
+  const { data: knowledge } = useObjectKnowledge(activeObjectId);
 
   return (
     <aside
@@ -82,9 +84,11 @@ export function ContextRail() {
         </section>
 
         <section>
-          {/* E27.3-pending: This section is a structural stub. Real knowledge
-              content (ADRs/evidence/decisions linked to the active object)
-              is deferred to E27.3. */}
+          {/* E27.3 (Phase 1) — wire the Knowledge section to the new
+              /api/objects/:id/related-knowledge endpoint. Real linking
+              logic is deferred; this stub exposes the count + structure
+              so users see the rail populated as soon as the backend
+              ships linking logic. */}
           <h3 className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--color-text-muted)" }}>
             Knowledge
           </h3>
@@ -92,17 +96,36 @@ export function ContextRail() {
             borderColor: "var(--color-border)",
             backgroundColor: "var(--color-surface)",
           }}>
-            <p className="text-xs leading-5" style={{ color: "var(--color-text-secondary)" }}>
-              This rail will surface linked ADRs, docs, evidence, artifacts, and
-              next-step actions for the active object.
-            </p>
-            {activeInvestigationId ? (
-              <p className="text-xs" style={{ color: "var(--color-text-primary)" }}>
-                Investigation active: <span className="font-medium">{activeInvestigationId}</span>
-              </p>
+            {activeObjectId ? (
+              <>
+                <p
+                  className="text-xs"
+                  style={{ color: "var(--color-text-secondary)" }}
+                  data-testid="context-rail-knowledge-counts"
+                >
+                  {knowledge.adrs.length} ADR
+                  {knowledge.adrs.length === 1 ? "" : "s"} ·{" "}
+                  {knowledge.docs.length} doc
+                  {knowledge.docs.length === 1 ? "" : "s"} ·{" "}
+                  {knowledge.evidence.length} evidence
+                </p>
+                {knowledge.adrs.length === 0 &&
+                  knowledge.docs.length === 0 &&
+                  knowledge.evidence.length === 0 && (
+                    <p
+                      className="text-xs"
+                      style={{ color: "var(--color-text-muted)" }}
+                    >
+                      No linked knowledge yet for this object.
+                    </p>
+                  )}
+              </>
             ) : (
-              <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
-                No active investigation yet.
+              <p
+                className="text-xs"
+                style={{ color: "var(--color-text-muted)" }}
+              >
+                Select an object to see linked knowledge.
               </p>
             )}
           </div>
