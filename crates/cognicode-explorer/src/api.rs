@@ -577,6 +577,10 @@ pub fn router_with_state(state: ApiState) -> Router {
             "/api/objects/:object_id/views/:view_id",
             get(contextual_view),
         )
+        .route(
+            "/api/objects/:object_id/related-knowledge",
+            get(related_knowledge),
+        )
         .route("/api/objects/:object_id/lenses", get(available_lenses))
         .route("/api/objects/:object_id/lenses/:lens_id", get(apply_lens))
         .route("/api/exploration-sessions", post(save_exploration_session))
@@ -683,6 +687,10 @@ pub fn router(state: ApiState) -> Router {
         .route(
             "/api/objects/:object_id/views/:view_id",
             get(contextual_view),
+        )
+        .route(
+            "/api/objects/:object_id/related-knowledge",
+            get(related_knowledge),
         )
         .route("/api/objects/:object_id/lenses", get(available_lenses))
         .route("/api/objects/:object_id/lenses/:lens_id", get(apply_lens))
@@ -1370,6 +1378,32 @@ async fn inspect_object(
     Path(object_id): Path<String>,
 ) -> Result<Response, ApiError> {
     Ok(Json(state.search.inspect_object(&object_id).await?).into_response())
+}
+
+/// Return knowledge objects linked to `object_id`.
+///
+/// Phase E27.3 stub: returns empty arrays for adrs/docs/evidence. Real
+/// linking logic (via graph `cites`/`cites`/`cites_by` edges) is
+/// deferred — see Plan 020. The endpoint shape is locked so the
+/// frontend can wire against it.
+#[derive(Debug, serde::Serialize)]
+struct RelatedKnowledge {
+    adrs: Vec<serde_json::Value>,
+    docs: Vec<serde_json::Value>,
+    evidence: Vec<serde_json::Value>,
+}
+
+async fn related_knowledge(
+    State(_state): State<ApiState>,
+    Path(object_id): Path<String>,
+) -> Result<Response, ApiError> {
+    let _ = object_id;
+    Ok(Json(RelatedKnowledge {
+        adrs: Vec::new(),
+        docs: Vec::new(),
+        evidence: Vec::new(),
+    })
+    .into_response())
 }
 
 async fn available_views(
