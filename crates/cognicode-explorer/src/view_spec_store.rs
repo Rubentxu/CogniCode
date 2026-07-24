@@ -183,6 +183,7 @@ fn applies_to_to_string(applies_to: &InspectableObjectType) -> String {
         InspectableObjectType::SavedExploration => "saved_exploration".to_string(),
         InspectableObjectType::Investigation => "investigation".to_string(),
         InspectableObjectType::Doc => "doc".to_string(),
+        InspectableObjectType::Adr => "adr".to_string(),
     }
 }
 

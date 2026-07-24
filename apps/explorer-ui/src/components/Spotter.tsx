@@ -579,6 +579,10 @@ function kindGlyph(kind: string): string {
       return "▣";
     case "decision_artifact":
       return "✎";
+    case "doc":
+      return "▤";
+    case "adr":
+      return "§";
     case "quality_issue":
       return "!";
     case "rule":

@@ -37,6 +37,8 @@ pub struct SearchServiceImpl {
     /// Graph repository for Doc/Decision/Evidence families.
     /// `None` when postgres feature is absent or graph is not wired.
     graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
+    /// ADR repository for the "adr" Spotter family.
+    adr_repo: Option<Arc<dyn crate::ports::AdrRepository>>,
 }
 
 impl SearchServiceImpl {
@@ -60,7 +62,17 @@ impl SearchServiceImpl {
             persistence,
             investigation,
             graph_repo,
+            adr_repo: None,
         }
+    }
+
+    /// Set the ADR repository (Plan 012 — knowledge layer ports).
+    pub fn with_adr_repo(
+        mut self,
+        adr_repo: Option<Arc<dyn crate::ports::AdrRepository>>,
+    ) -> Self {
+        self.adr_repo = adr_repo;
+        self
     }
 }
 
@@ -75,6 +87,7 @@ impl SearchService for SearchServiceImpl {
         let repo = self.repo.clone();
         let search = self.search.clone();
         let view_registry = self.view_registry.clone();
+        let adr_repo = self.adr_repo.clone();
         let query = query.to_string();
         let kind = kind.map(|s| s.to_string());
 
@@ -83,6 +96,7 @@ impl SearchService for SearchServiceImpl {
                 &repo,
                 search.as_ref(),
                 &view_registry,
+                adr_repo.as_ref(),
                 &query,
                 kind.as_deref(),
             )
@@ -119,10 +133,11 @@ impl SearchService for SearchServiceImpl {
         let symbol_spotter_results = {
             let repo_clone = repo.clone();
             let vr_clone = view_registry.clone();
+            let adr_clone = self.adr_repo.clone();
             let q = query_for_blocking.clone();
             let k = kind_filter.clone();
             tokio::task::spawn_blocking(move || {
-                spotter_search_impl(&repo_clone, None, &vr_clone, &q, k.as_deref())
+                spotter_search_impl(&repo_clone, None, &vr_clone, adr_clone.as_ref(), &q, k.as_deref())
             })
             .await
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("join error: {}", e)))?
@@ -492,13 +507,37 @@ impl SearchService for SearchServiceImpl {
             results
         };
 
-        // Build symbol SpotterSearchResults
+// Build symbol SpotterSearchResults
         let symbol_hits: Vec<SpotterSearchResult> = symbol_spotter_results
             .into_iter()
             .map(SpotterSearchResult::Symbol)
             .collect();
 
-        // Merge all results: symbols first, then files, then other async results
+        // Build ADR SpotterSearchResults (Plan 012 — knowledge layer ports)
+        let adr_results: Vec<SpotterSearchResult> = match &self.adr_repo {
+            Some(repo) => match repo.search_adrs("", query, SPOTTER_RESULT_LIMIT) {
+                Ok(adrs) => adrs
+                    .into_iter()
+                    .map(|adr| {
+                        SpotterSearchResult::Adr(SpotterResult {
+                            object: InspectableObjectSummary {
+                                id: format!("adr:{}", adr.id),
+                                object_type: InspectableObjectType::Adr,
+                                label: adr.title,
+                                subtitle: format!("ADR {} • {}", adr.id, adr.date),
+                                properties: Vec::new(),
+                                available_views: Vec::new(),
+                            },
+                            score: 0.85,
+                            match_type: "exact".to_string(),
+                        })
+                    })
+                    .collect(),
+                Err(_) => Vec::new(),
+            },
+            None => Vec::new(),
+        };
+
         let mut all_hits: Vec<SpotterSearchResult> = Vec::new();
         all_hits.extend(symbol_hits);
         all_hits.extend(file_results);
@@ -509,6 +548,7 @@ impl SearchService for SearchServiceImpl {
         all_hits.extend(scope_results);
         all_hits.extend(viewspec_results);
         all_hits.extend(graph_results);
+        all_hits.extend(adr_results);
 
         // Apply kind filter if specified
         if let Some(k) = kind {
@@ -525,6 +565,7 @@ impl SearchService for SearchServiceImpl {
                     SpotterSearchResult::Doc(_) => "doc",
                     SpotterSearchResult::Decision(_) => "decision",
                     SpotterSearchResult::Evidence(_) => "evidence",
+                    SpotterSearchResult::Adr(_) => "adr",
                 };
                 kind_str.eq_ignore_ascii_case(k)
             });
@@ -726,6 +767,7 @@ fn spotter_search_impl(
     repo: &Arc<dyn SymbolRepository>,
     search: Option<&Arc<dyn crate::ports::SearchRepository>>,
     view_registry: &Arc<ViewRegistry>,
+    adr_repo: Option<&Arc<dyn crate::ports::AdrRepository>>,
     query: &str,
     kind: Option<&str>,
 ) -> ExplorerResult<Vec<SpotterResult>> {

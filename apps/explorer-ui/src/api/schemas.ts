@@ -37,6 +37,7 @@ export const inspectableObjectTypeSchema = z.enum([
   "route",
   "investigation",
   "doc",
+  "adr",
 ]);
 export type InspectableObjectType = z.infer<typeof inspectableObjectTypeSchema>;
 
@@ -829,6 +830,10 @@ export const spotterSearchResultSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("evidence"),
+    result: spotterResultSchema,
+  }),
+  z.object({
+    kind: z.literal("adr"),
     result: spotterResultSchema,
   }),
 ]);
