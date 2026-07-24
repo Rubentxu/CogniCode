@@ -31,8 +31,10 @@ impl From<core_schema::ViewDescriptor> for ViewDescriptorDto {
     fn from(s: core_schema::ViewDescriptor) -> Self {
         // Parse the wire-format view_kind string back to ViewKind enum.
         // Unknown variants deserialize to Custom via serde, preserving forward compat.
-        let view_kind: ViewKind = serde_json::from_str::<ViewKind>(&format!("\"{}\"", s.view_kind))
-            .unwrap_or_else(|_| ViewKind::Custom(s.view_kind.clone()));
+        // S-004: avoid format!() + from_str() round-trip — use Value::String directly.
+        let wire_tag = s.view_kind;
+        let view_kind: ViewKind = serde_json::from_value(serde_json::Value::String(wire_tag.clone()))
+            .unwrap_or_else(|_| ViewKind::Custom(wire_tag));
         Self {
             id: s.id,
             title: s.title,
