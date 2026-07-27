@@ -35,9 +35,11 @@ pub use file_manifest::{FileEntry, FileManifest};
 pub use location::Location;
 pub use node_kind::NodeKind;
 pub use provenance::Provenance;
+pub use revision_id::{ParseRevisionIdError, RevisionId};
 pub use source_range::SourceRange;
 pub use symbol_kind::SymbolKind;
 pub use walk_filter::{WalkDecision, WalkFilter};
+pub use workspace_id::{WorkspaceId, WorkspaceIdError};
 
 // Multimodal re-exports — Space + SpaceId live in `value_objects::space`
 // (with `SpaceId` re-exported at the top-level for ergonomic
