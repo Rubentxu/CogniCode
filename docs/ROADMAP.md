@@ -360,6 +360,7 @@ Closed before resuming new cycles:
 
 | Change | Tag | Closed | PR | Notes |
 |--------|-----|--------|----|----|
+| `e25-pr2-pack-builder` | v0.55.0 | 2026-07-24 | [#120](https://github.com/Rubentxu/CogniCode/pull/120) | DecisionSupportPackBuilder + GET /api/decisions/:id/support-pack. 5 commits. Verdict PASS_WITH_WARNINGS. C-2 (ViewExecutor wiring) deferred to follow-up PR. |
 | `typed-overview-affordance-matrix-v1` | v0.43.0 | 2026-07-02 | [#102](https://github.com/Rubentxu/CogniCode/pull/102) | Affordance matrix per InspectableObjectType. `GET /api/affordances/:object_type`. `AffordanceCards` in PaneInspector. 7 unit tests. Verdict PASS_WITH_WARNINGS. |
 | `moldql-intent-syntax-v1` | v0.44.0 | 2026-07-02 | [#103](https://github.com/Rubentxu/CogniCode/pull/103) | MoldQL intent lowering layer: lowercase `symbols where` and `calls from` patterns translated to MoldQL AST before canonical parser. 15 unit + 9 integration tests. Verdict PASS_WITH_WARNINGS. |
 | `relation-candidates-v1` | v0.45.0 | 2026-07-02 | [#104](https://github.com/Rubentxu/CogniCode/pull/104) | `AnalysisService::find_dead_code()` + `candidates_for_reverse_edge()`. reverse_edges type-blind HashMap fixed. 4 unit tests. Verdict PASS. |
