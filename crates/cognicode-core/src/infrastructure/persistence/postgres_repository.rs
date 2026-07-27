@@ -3631,6 +3631,76 @@ mod tests {
         assert!(err, "UnknownRevision error must be returned for unknown revision");
     });
 
+    /// 4.7 RED — pg_test asserting `load_call_graph_ws(ws, rev)` is revision-pinned:
+    /// after saving graph g at rev N, a concurrent ingest that saves a NEW revision N+1
+    /// must NOT affect the result of loading at rev N. Verifies the SnapshotProvider
+    /// cache key (workspace, revision) prevents head-swap races.
+    pg_test!(load_call_graph_ws_revision_pinned_against_concurrent_ingest, |pool: PgPool| {
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
+        use crate::domain::aggregates::Symbol;
+        use crate::domain::value_objects::{Location, SymbolKind};
+
+        let repo = PostgresRepository::from_pool(pool);
+        let ws = WorkspaceId::default();
+
+        // Build and save initial graph at rev 1
+        let mut g1 = CallGraph::new();
+        g1.add_symbol(Symbol::new(
+            "original_func", SymbolKind::Function, Location::new("lib.rs", 1, 0),
+        ));
+        let rev1 = repo.save_call_graph_ws(&g1, &ws)
+            .await
+            .expect("save g1 must succeed");
+        assert_eq!(rev1.get(), 1, "first revision must be 1");
+
+        // Load at rev1 — should have original_func
+        let loaded1 = repo.load_call_graph_ws(&ws, rev1)
+            .await
+            .expect("load rev1 must succeed")
+            .expect("rev1 should exist");
+        let symbols_at_rev1: Vec<_> = loaded1.symbols().map(|s| s.name()).collect();
+        assert!(symbols_at_rev1.contains(&"original_func"), "rev1 must have original_func");
+        assert_eq!(symbols_at_rev1.len(), 1, "rev1 must have exactly 1 symbol");
+
+        // Simulate concurrent ingest: save NEW graph at rev2
+        let mut g2 = CallGraph::new();
+        g2.add_symbol(Symbol::new(
+            "new_func", SymbolKind::Function, Location::new("lib.rs", 10, 0),
+        ));
+        let rev2 = repo.save_call_graph_ws(&g2, &ws)
+            .await
+            .expect("save g2 must succeed");
+        assert_eq!(rev2.get(), 2, "second revision must be 2");
+
+        // Re-load at rev1 — MUST still return original_func (revision-pinned, not head)
+        let loaded1_again = repo.load_call_graph_ws(&ws, rev1)
+            .await
+            .expect("load rev1 again must succeed")
+            .expect("rev1 should still exist");
+        let symbols_at_rev1_again: Vec<_> = loaded1_again.symbols().map(|s| s.name()).collect();
+        assert!(
+            symbols_at_rev1_again.contains(&"original_func"),
+            "rev1 must STILL have original_func after concurrent ingest"
+        );
+        assert_eq!(
+            symbols_at_rev1_again.len(), 1,
+            "rev1 must STILL have exactly 1 symbol after concurrent ingest"
+        );
+        assert!(
+            !symbols_at_rev1_again.contains(&"new_func"),
+            "rev1 must NOT have new_func from rev2"
+        );
+
+        // Verify rev2 has the new graph
+        let loaded2 = repo.load_call_graph_ws(&ws, rev2)
+            .await
+            .expect("load rev2 must succeed")
+            .expect("rev2 should exist");
+        let symbols_at_rev2: Vec<_> = loaded2.symbols().map(|s| s.name()).collect();
+        assert!(symbols_at_rev2.contains(&"new_func"), "rev2 must have new_func");
+        assert!(!symbols_at_rev2.contains(&"original_func"), "rev2 must NOT have original_func");
+    });
+
     /// 2.8b RED — pg_test asserting `load_call_graph_ws` for ws1 never returns
     /// ws2's symbols/edges. Write different graphs to ws1 and ws2, then load each
     /// and verify the loaded graph matches what was written to THAT workspace only.
