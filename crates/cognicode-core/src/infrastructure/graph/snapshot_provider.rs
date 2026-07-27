@@ -194,22 +194,18 @@ impl SnapshotProviderImpl {
                         for ws in to_flush.drain(..) {
                             if pending.remove(&ws).is_some() {
                                 // Query the current head revision for this workspace.
-                                let pool = pool_for_flush.clone();
-                                let ws_clone = ws.clone();
-                                let head = tokio::runtime::Handle::current()
-                                    .block_on(async {
-                                        let row: Option<(i64,)> = sqlx::query_as(
-                                            "SELECT MAX(revision_id) FROM graph_revisions \
-                                             WHERE workspace_id = $1 AND head_of = true",
-                                        )
-                                        .bind(ws_clone.as_str())
-                                        .fetch_optional(&pool)
-                                        .await
-                                        .ok()
-                                        .flatten();
-                                        row.map(|(rev,)| RevisionId(rev as u64))
-                                            .unwrap_or(RevisionId::NONE)
-                                    });
+                                // The spawned task IS already an async context — use direct .await.
+                                let row: Option<(i64,)> = sqlx::query_as(
+                                    "SELECT MAX(revision_id) FROM graph_revisions \
+                                     WHERE workspace_id = $1 AND head_of = true",
+                                )
+                                .bind(ws.as_str())
+                                .fetch_optional(&pool_for_flush)
+                                .await
+                                .ok()
+                                .flatten();
+                                let head = row.map(|(rev,)| RevisionId(rev as u64))
+                                    .unwrap_or(RevisionId::NONE);
                                 let _ = notify_tx.send(SnapshotEvent::Updated {
                                     workspace: ws,
                                     revision: head,
@@ -379,30 +375,33 @@ impl SnapshotProviderImpl {
 #[cfg(feature = "postgres")]
 impl SnapshotProvider for SnapshotProviderImpl {
     fn current_head(&self, workspace: &WorkspaceId) -> Result<RevisionId, SnapshotError> {
-        // Synchronous version using pool.blocking_read() for simplicity
-        // in the non-async context. For full async, use .fetch_one(&self.pool) directly.
         let ws_str = workspace.as_str().to_string();
         let pool = self.pool.clone();
 
-        // Use try_one to check if there's a current head
-        let head: Result<RevisionId, SnapshotError> =
-            tokio::runtime::Handle::current()
-                .block_on(async {
-                    let row: Option<(i64,)> = sqlx::query_as(
-                        "SELECT MAX(revision_id) FROM graph_revisions \
-                         WHERE workspace_id = $1 AND head_of = true",
-                    )
-                    .bind(&ws_str)
-                    .fetch_optional(&pool)
-                    .await
-                    .map_err(|e| SnapshotError::NoSnapshot(workspace.clone()))?;
-
-                    Ok(row
-                        .map(|(rev,)| RevisionId(rev as u64))
-                        .unwrap_or(RevisionId::NONE))
-                });
-
-        head
+        // Use block_in_place to run async SQL from this sync context on a
+        // blocking thread. This avoids the Handle::block_on panic when called
+        // from a tokio worker thread (multi-thread runtime).
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::task::block_in_place(move || {
+            let handle = tokio::runtime::Handle::current();
+            let _enter = handle.enter();
+            tokio::spawn(async move {
+                let row: Option<(i64,)> = sqlx::query_as(
+                    "SELECT MAX(revision_id) FROM graph_revisions \
+                     WHERE workspace_id = $1 AND head_of = true",
+                )
+                .bind(&ws_str)
+                .fetch_optional(&pool)
+                .await
+                .ok()
+                .flatten();
+                let _ = tx.send(row);
+            });
+        });
+        let row: Option<(i64,)> = rx.recv().unwrap_or(None);
+        Ok(row
+            .map(|(rev,)| RevisionId(rev as u64))
+            .unwrap_or(RevisionId::NONE))
     }
 
     fn snapshot(
@@ -418,22 +417,33 @@ impl SnapshotProvider for SnapshotProviderImpl {
             }
         }
 
-        // Slow path: load from PostgreSQL.
+        // Slow path: load from PostgreSQL using block_in_place.
+        // This avoids the Handle::block_on panic when called from a tokio
+        // worker thread (multi-thread runtime).
         let ws = workspace.clone();
         let pool = self.pool.clone();
         let rev = revision;
 
-        let graph = tokio::runtime::Handle::current()
-            .block_on(async {
-                Self::load_from_pg(&pool, &ws, rev)
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::task::block_in_place(move || {
+            let handle = tokio::runtime::Handle::current();
+            let _enter = handle.enter();
+            tokio::spawn(async move {
+                let result = Self::load_from_pg(&pool, &ws, rev)
                     .await
                     .map_err(|e| match e {
                         RepositoryError::UnknownRevision { workspace, revision } => {
                             SnapshotError::UnknownRevision { workspace, revision }
                         }
                         _ => SnapshotError::NoSnapshot(ws.clone()),
-                    })
-            })?;
+                    });
+                let _ = tx.send(result);
+            });
+        });
+
+        let graph = rx.recv().unwrap_or_else(|_| {
+            Err(SnapshotError::NoSnapshot(workspace.clone()))
+        })?;
 
         let graph_arc = Arc::new(graph);
 
