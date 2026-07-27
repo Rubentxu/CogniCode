@@ -23,6 +23,7 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 
 use crate::domain::value_objects::edge_kind::EdgeKind;
@@ -115,10 +116,11 @@ pub struct GraphEdge {
     /// Must also be finite (no `NaN` or infinities).
     pub confidence: f64,
     /// Free-form metadata (key=value hints from the extractor).
-    /// Empty by default; never `None` so callers can iterate without
-    /// an extra `Option` layer.
+    /// Defaults to JSON `Null`; never absent so callers can iterate
+    /// without an extra `Option` layer. Use `to_map()` for backward-
+    /// compatible `HashMap<String, String>` access.
     #[serde(default)]
-    pub metadata: HashMap<String, String>,
+    pub metadata: Value,
 }
 
 impl GraphEdge {
@@ -150,18 +152,64 @@ impl GraphEdge {
             kind,
             provenance,
             confidence,
-            metadata: HashMap::new(),
+            metadata: Value::Null,
         })
     }
 
     /// Returns `true` if this edge has any metadata key set.
     pub fn has_metadata(&self) -> bool {
-        !self.metadata.is_empty()
+        match &self.metadata {
+            Value::Object(map) => !map.is_empty(),
+            Value::Array(arr) => !arr.is_empty(),
+            Value::Null => false,
+            _ => true,
+        }
     }
 
-    /// Inserts a metadata key, returning `self` for chaining.
+    /// Inserts a string metadata key, returning `self` for chaining.
+    /// This is the flat-string shim for backward compatibility.
     pub fn with_metadata(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.metadata.insert(key.into(), value.into());
+        if self.metadata.is_null() {
+            self.metadata = Value::Object(serde_json::Map::new());
+        }
+        if let Value::Object(ref mut map) = self.metadata {
+            map.insert(key.into(), Value::String(value.into()));
+        }
+        self
+    }
+
+    /// Inserts a metadata key with any JSON value, returning `self` for chaining.
+    pub fn with_metadata_json(mut self, key: impl Into<String>, value: Value) -> Self {
+        if self.metadata.is_null() {
+            self.metadata = Value::Object(serde_json::Map::new());
+        }
+        if let Value::Object(ref mut map) = self.metadata {
+            map.insert(key.into(), value);
+        }
+        self
+    }
+
+    /// Converts `metadata` to a `HashMap<String, String>` for backward
+    /// compatibility. Non-string values are skipped.
+    pub fn to_map(&self) -> HashMap<String, String> {
+        match &self.metadata {
+            Value::Object(map) => map
+                .iter()
+                .filter_map(|(k, v)| {
+                    v.as_str().map(|s| (k.clone(), s.to_string()))
+                })
+                .collect(),
+            _ => HashMap::new(),
+        }
+    }
+
+    /// Imports metadata from a `HashMap<String, String>` (backward compat adapter).
+    pub fn from_map(mut self, map: &HashMap<String, String>) -> Self {
+        self.metadata = Value::Object(
+            map.iter()
+                .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+                .collect(),
+        );
         self
     }
 }
@@ -184,8 +232,12 @@ pub struct GraphNode {
     /// Source file / URL the node was extracted from, if applicable.
     pub source_path: Option<PathBuf>,
     /// Open key=value map for kind-specific attributes.
+    /// Stored as JSONB (`serde_json::Value`) to support structured data
+    /// (nested objects, arrays) beyond flat strings. Default is
+    /// `serde_json::Value::Object(Default::default())` (empty object `{}`).
+    /// Use `to_map()` for backward-compatible `HashMap<String, String>` access.
     #[serde(default)]
-    pub properties: HashMap<String, String>,
+    pub properties: Value,
     /// UTC timestamp of creation.
     pub created_at: DateTime<Utc>,
     /// UTC timestamp of the last update.
@@ -199,12 +251,44 @@ impl GraphNode {
         GraphNodeBuilder::new(id, kind)
     }
 
-    /// Inserts a property, returning `self` for chaining. Updates
-    /// `updated_at` to the current UTC time.
+    /// Inserts a property (string value), returning `self` for chaining.
+    /// Updates `updated_at` to the current UTC time.
     pub fn with_property(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.properties.insert(key.into(), value.into());
+        if self.properties.is_null() {
+            self.properties = Value::Object(serde_json::Map::new());
+        }
+        if let Value::Object(ref mut map) = self.properties {
+            map.insert(key.into(), Value::String(value.into()));
+        }
         self.updated_at = Utc::now();
         self
+    }
+
+    /// Inserts a property with any JSON value, returning `self` for chaining.
+    /// Updates `updated_at` to the current UTC time.
+    pub fn with_property_json(mut self, key: impl Into<String>, value: Value) -> Self {
+        if self.properties.is_null() {
+            self.properties = Value::Object(serde_json::Map::new());
+        }
+        if let Value::Object(ref mut map) = self.properties {
+            map.insert(key.into(), value);
+        }
+        self.updated_at = Utc::now();
+        self
+    }
+
+    /// Converts `properties` to a `HashMap<String, String>` for backward
+    /// compatibility. Non-string values are skipped.
+    pub fn to_map(&self) -> HashMap<String, String> {
+        match &self.properties {
+            Value::Object(map) => map
+                .iter()
+                .filter_map(|(k, v)| {
+                    v.as_str().map(|s| (k.clone(), s.to_string()))
+                })
+                .collect(),
+            _ => HashMap::new(),
+        }
     }
 }
 
@@ -213,7 +297,7 @@ impl GraphNode {
 /// Defaults:
 /// - `label`: empty string
 /// - `source_path`: `None`
-/// - `properties`: empty map
+/// - `properties`: empty JSON object `{}`
 /// - `created_at` / `updated_at`: the time at which `id`/`kind` were
 ///   passed to [`GraphNodeBuilder::new`].
 pub struct GraphNodeBuilder {
@@ -221,7 +305,7 @@ pub struct GraphNodeBuilder {
     kind: NodeKind,
     label: String,
     source_path: Option<PathBuf>,
-    properties: HashMap<String, String>,
+    properties: Value,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -236,7 +320,7 @@ impl GraphNodeBuilder {
             kind,
             label: String::new(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: Value::Object(serde_json::Map::new()),
             created_at: now,
             updated_at: now,
         }
@@ -254,20 +338,48 @@ impl GraphNodeBuilder {
         self
     }
 
-    /// Inserts a single property.
+    /// Inserts a single property with a string value.
     pub fn property(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.properties.insert(key.into(), value.into());
+        if let Value::Object(ref mut map) = self.properties {
+            map.insert(key.into(), Value::String(value.into()));
+        }
         self
     }
 
-    /// Inserts many properties in one shot.
+    /// Inserts a single property with any JSON value.
+    pub fn property_json(mut self, key: impl Into<String>, value: Value) -> Self {
+        if self.properties.is_null() {
+            self.properties = Value::Object(serde_json::Map::new());
+        }
+        if let Value::Object(ref mut map) = self.properties {
+            map.insert(key.into(), value);
+        }
+        self
+    }
+
+    /// Inserts many string properties in one shot.
     pub fn properties(
         mut self,
         props: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
     ) -> Self {
-        for (k, v) in props {
-            self.properties.insert(k.into(), v.into());
+        if self.properties.is_null() {
+            self.properties = Value::Object(serde_json::Map::new());
         }
+        if let Value::Object(ref mut map) = self.properties {
+            for (k, v) in props {
+                map.insert(k.into(), Value::String(v.into()));
+            }
+        }
+        self
+    }
+
+    /// Imports properties from a `HashMap<String, String>` (backward compat adapter).
+    pub fn from_map(mut self, map: &HashMap<String, String>) -> Self {
+        self.properties = Value::Object(
+            map.iter()
+                .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+                .collect(),
+        );
         self
     }
 
@@ -445,11 +557,11 @@ mod tests {
         .with_metadata("section", "intro")
         .with_metadata("line", "12");
         assert!(edge.has_metadata());
-        assert_eq!(
-            edge.metadata.get("section").map(String::as_str),
-            Some("intro")
-        );
-        assert_eq!(edge.metadata.get("line").map(String::as_str), Some("12"));
+
+        // Backward-compatible access via to_map adapter
+        let map = edge.to_map();
+        assert_eq!(map.get("section").map(String::as_str), Some("intro"));
+        assert_eq!(map.get("line").map(String::as_str), Some("12"));
     }
 
     #[test]
@@ -467,6 +579,77 @@ mod tests {
         let parsed: GraphEdge = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, edge);
     }
+
+    // -------------------------------------------------------------------------
+    // Task 1.7a RED — GraphEdge metadata JSONB + confidence boundaries
+    // Scenario: `generic-graph-model::Structured metadata round-trips via PG JSONB`
+    //           `generic-graph-model::Confidence boundaries`
+    // Assert: nested `Value` survives serialization;
+    //         `GraphEdge::new(…,1.5)`→`Err(ConfidenceOutOfRange(1.5))`;
+    //         `NaN`→`Err(ConfidenceNotFinite)`.
+    // Note: confidence boundary tests are pre-existing (graph_edge_confidence_out_of_range).
+    //       This test covers the JSONB metadata upgrade.
+    // -------------------------------------------------------------------------
+
+    /// `GraphEdge.metadata` defaults to `Value::Null` (no metadata object created).
+    #[test]
+    fn graph_edge_metadata_default_is_null() {
+        let edge = GraphEdge::new(
+            symbol_id(),
+            symbol_id_2(),
+            EdgeKind::Dependency(DependencyType::Calls),
+            Provenance::Extracted,
+            0.95,
+        )
+        .expect("valid edge");
+        assert!(
+            edge.metadata.is_null(),
+            "default metadata must be Null, got: {:?}",
+            edge.metadata
+        );
+    }
+
+    /// `GraphEdge.metadata` accepts nested JSON values.
+    #[test]
+    fn graph_edge_metadata_nested_json() {
+        let nested = serde_json::json!({ "profiler": "hot", "hits": 42 });
+        let edge = GraphEdge::new(
+            symbol_id(),
+            symbol_id_2(),
+            EdgeKind::Dependency(DependencyType::Calls),
+            Provenance::Inferred,
+            0.8,
+        )
+        .unwrap()
+        .with_metadata_json("perf", nested.clone());
+
+        let retrieved = edge.metadata.get("perf").expect("perf key");
+        assert_eq!(retrieved, &nested);
+    }
+
+    /// `to_map()` adapter converts JSON metadata to flat `HashMap<String, String>`.
+    #[test]
+    fn graph_edge_to_map_adapter() {
+        let edge = GraphEdge::new(
+            symbol_id(),
+            symbol_id_2(),
+            EdgeKind::Dependency(DependencyType::Calls),
+            Provenance::Inferred,
+            0.6,
+        )
+        .unwrap()
+        .with_metadata("lang", "rust")
+        .with_metadata("tier", "1");
+
+        let map = edge.to_map();
+        assert_eq!(map.get("lang").map(String::as_str), Some("rust"));
+        assert_eq!(map.get("tier").map(String::as_str), Some("1"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Task 1.7b GREEN — GraphEdge metadata is serde_json::Value default Null
+    // (implemented alongside Task 1.6 as part of the same struct change)
+    // -------------------------------------------------------------------------
 
     // ---- T4 RED gate tests ----
 
@@ -490,10 +673,9 @@ mod tests {
             node.source_path.as_deref(),
             Some(std::path::Path::new("/repo/src/main.rs"))
         );
-        assert_eq!(
-            node.properties.get("visibility").map(String::as_str),
-            Some("pub")
-        );
+        // Backward-compatible access via to_map adapter
+        let map = node.to_map();
+        assert_eq!(map.get("visibility").map(String::as_str), Some("pub"));
         assert_eq!(node.created_at, now);
         assert_eq!(node.updated_at, now);
 
@@ -573,10 +755,10 @@ mod tests {
             .updated_at(now)
             .build();
         assert_eq!(node.label, "main");
-        assert_eq!(
-            node.properties.get("visibility").map(String::as_str),
-            Some("pub")
-        );
+
+        // Backward-compatible access via to_map adapter
+        let map = node.to_map();
+        assert_eq!(map.get("visibility").map(String::as_str), Some("pub"));
         assert_eq!(node.created_at, now);
     }
 
@@ -588,4 +770,101 @@ mod tests {
         assert_eq!(id.clone(), NodeId::from("abc".to_string()));
         assert_eq!(format!("{}", id), "abc");
     }
+
+    // -------------------------------------------------------------------------
+    // Task 1.6a RED — Typed JSONB properties round-trip
+    // Scenario: `generic-graph-model::Structured properties round-trip via PG JSONB`
+    // Assert: `Value::Object({…nested…})` round-trips; adapter still maps
+    //         `String→String` flat keys.
+    // -------------------------------------------------------------------------
+
+    /// `GraphNode.properties` must be `serde_json::Value` defaulting to an
+    /// empty JSON object `{}`.
+    #[test]
+    fn graph_node_properties_default_is_empty_object() {
+        let node = GraphNode::builder(symbol_id(), NodeKind::Symbol(SymbolKind::Function))
+            .build();
+        assert_eq!(
+            node.properties,
+            serde_json::Value::Object(serde_json::Map::new()),
+            "default properties must be empty JSON object"
+        );
+    }
+
+    /// `GraphNode.properties` must accept nested JSON values (not just flat strings).
+    #[test]
+    fn graph_node_properties_nested_json() {
+        let nested = serde_json::json!({
+            "complexity": 12,
+            "tags": ["auth", "security"],
+            "nested": { "k": "v" }
+        });
+        let node = GraphNode::builder(symbol_id(), NodeKind::Symbol(SymbolKind::Function))
+            .build()
+            .with_property_json("meta", nested.clone());
+
+        let retrieved = node.properties.get("meta").expect("meta key");
+        assert_eq!(retrieved, &nested);
+    }
+
+    /// `properties` round-trips through JSON serialization.
+    #[test]
+    fn graph_node_properties_json_roundtrip() {
+        let node = GraphNode::builder(symbol_id(), NodeKind::Symbol(SymbolKind::Function))
+            .property("visibility", "pub")
+            .property_json("complexity", serde_json::json!(5))
+            .build();
+
+        let json = serde_json::to_string(&node).expect("serialize");
+        let parsed: GraphNode = serde_json::from_str(&json).expect("deserialize");
+
+        let map = parsed.to_map();
+        assert_eq!(
+            map.get("visibility").map(String::as_str),
+            Some("pub"),
+            "flat string property preserved"
+        );
+        assert_eq!(
+            parsed.properties.get("complexity"),
+            Some(&serde_json::json!(5)),
+            "nested numeric property preserved"
+        );
+    }
+
+    /// `to_map()` adapter must convert JSON properties back to `HashMap<String, String>`
+    /// for backward compatibility with code that expects flat string properties.
+    #[test]
+    fn graph_node_to_map_adapter() {
+        let node = GraphNode::builder(symbol_id(), NodeKind::Symbol(SymbolKind::Function))
+            .property("visibility", "pub")
+            .property("line", "42")
+            .build();
+
+        let map = node.to_map();
+        assert_eq!(map.get("visibility").map(String::as_str), Some("pub"));
+        assert_eq!(map.get("line").map(String::as_str), Some("42"));
+    }
+
+    /// `from_map()` adapter must convert `HashMap<String, String>` to JSON properties.
+    #[test]
+    fn graph_node_from_map_adapter() {
+        use std::collections::HashMap;
+        let mut map = HashMap::new();
+        map.insert("visibility".to_string(), "pub".to_string());
+        map.insert("line".to_string(), "42".to_string());
+
+        let node = GraphNode::builder(symbol_id(), NodeKind::Symbol(SymbolKind::Function))
+            .from_map(&map)
+            .build();
+
+        // Verify round-trip: from_map creates Value which to_map decodes back
+        let decoded = node.to_map();
+        assert_eq!(decoded.get("visibility").map(String::as_str), Some("pub"));
+        assert_eq!(decoded.get("line").map(String::as_str), Some("42"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Task 1.6b GREEN — Change `properties: HashMap<String, String>` to JSON Value
+    // Tests above verify the contract; implementation below makes them pass.
+    // -------------------------------------------------------------------------
 }

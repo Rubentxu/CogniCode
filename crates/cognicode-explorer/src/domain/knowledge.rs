@@ -76,10 +76,10 @@ pub async fn project_doc(
             .then_some("Document")
     };
     let extract_props = |n: &GraphNode, props: &mut Vec<Property>| {
-        if let Some(section) = n.properties.get("section") {
+        if let Some(section) = n.properties.get("section").and_then(|v| v.as_str()) {
             props.push(Property {
                 key: "section".into(),
-                value: serde_json::Value::String(section.clone()),
+                value: serde_json::Value::String(section.to_string()),
                 value_type: "string".into(),
                 source: "graph_nodes.metadata".into(),
             });
@@ -111,14 +111,14 @@ pub async fn project_decision(
             .then_some("Decision")
     };
     let extract_props = |n: &GraphNode, props: &mut Vec<Property>| {
-        if let Some(status) = n.properties.get("status") {
-            props.push(Property { key: "status".into(), value: serde_json::Value::String(status.clone()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
+        if let Some(status) = n.properties.get("status").and_then(|v| v.as_str()) {
+            props.push(Property { key: "status".into(), value: serde_json::Value::String(status.to_string()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
         }
-        if let Some(date) = n.properties.get("date") {
-            props.push(Property { key: "date".into(), value: serde_json::Value::String(date.clone()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
+        if let Some(date) = n.properties.get("date").and_then(|v| v.as_str()) {
+            props.push(Property { key: "date".into(), value: serde_json::Value::String(date.to_string()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
         }
-        if let Some(adr) = n.properties.get("adr_number") {
-            props.push(Property { key: "adr_number".into(), value: serde_json::Value::String(adr.clone()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
+        if let Some(adr) = n.properties.get("adr_number").and_then(|v| v.as_str()) {
+            props.push(Property { key: "adr_number".into(), value: serde_json::Value::String(adr.to_string()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
         }
     };
     project_generic(
@@ -147,16 +147,18 @@ pub async fn project_evidence(
             .then_some("Evidence")
     };
     let extract_props = |n: &GraphNode, props: &mut Vec<Property>| {
-        if let Some(tool) = n.properties.get("source_tool") {
-            props.push(Property { key: "source_tool".into(), value: serde_json::Value::String(tool.clone()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
+        if let Some(tool) = n.properties.get("source_tool").and_then(|v| v.as_str()) {
+            props.push(Property { key: "source_tool".into(), value: serde_json::Value::String(tool.to_string()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
         }
         if let Some(c) = n.properties.get("confidence") {
-            if let Ok(parsed) = c.parse::<f64>() {
+            // Accept both JSON number (0.85) and JSON string ("0.85")
+            let parsed = c.as_f64().or_else(|| c.as_str().and_then(|s| s.parse::<f64>().ok()));
+            if let Some(parsed) = parsed {
                 props.push(Property { key: "confidence".into(), value: serde_json::json!(parsed), value_type: "number".into(), source: "graph_nodes.metadata".into() });
             }
         }
-        if let Some(fresh) = n.properties.get("freshness") {
-            props.push(Property { key: "freshness".into(), value: serde_json::Value::String(fresh.clone()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
+        if let Some(fresh) = n.properties.get("freshness").and_then(|v| v.as_str()) {
+            props.push(Property { key: "freshness".into(), value: serde_json::Value::String(fresh.to_string()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
         }
     };
     project_generic(
@@ -178,18 +180,19 @@ mod tests {
     use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
     use cognicode_core::domain::value_objects::node_kind::NodeKind;
     use std::collections::HashMap;
+    use serde_json::Map;
 
     fn make_doc_node(id: &str, label: &str, section: Option<&str>) -> GraphNode {
-        let mut props = HashMap::new();
+        let mut props = Map::new();
         if let Some(s) = section {
-            props.insert("section".to_string(), s.to_string());
+            props.insert("section".to_string(), serde_json::Value::String(s.to_string()));
         }
         GraphNode {
             id: NodeId(id.to_string()),
             kind: NodeKind::Doc,
             label: label.to_string(),
             source_path: Some(std::path::PathBuf::from("/docs/guide.md")),
-            properties: props,
+            properties: serde_json::Value::Object(props),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }
@@ -201,20 +204,20 @@ mod tests {
         status: Option<&str>,
         date: Option<&str>,
     ) -> GraphNode {
-        let mut props = HashMap::new();
+        let mut props = Map::new();
         if let Some(s) = status {
-            props.insert("status".to_string(), s.to_string());
+            props.insert("status".to_string(), serde_json::Value::String(s.to_string()));
         }
         if let Some(d) = date {
-            props.insert("date".to_string(), d.to_string());
+            props.insert("date".to_string(), serde_json::Value::String(d.to_string()));
         }
-        props.insert("adr_number".to_string(), id.to_string());
+        props.insert("adr_number".to_string(), serde_json::Value::String(id.to_string()));
         GraphNode {
             id: NodeId(id.to_string()),
             kind: NodeKind::Decision,
             label: label.to_string(),
             source_path: Some(std::path::PathBuf::from("/docs/adr")),
-            properties: props,
+            properties: serde_json::Value::Object(props),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }
@@ -226,19 +229,19 @@ mod tests {
         source_tool: Option<&str>,
         confidence: Option<&str>,
     ) -> GraphNode {
-        let mut props = HashMap::new();
+        let mut props = Map::new();
         if let Some(t) = source_tool {
-            props.insert("source_tool".to_string(), t.to_string());
+            props.insert("source_tool".to_string(), serde_json::Value::String(t.to_string()));
         }
         if let Some(c) = confidence {
-            props.insert("confidence".to_string(), c.to_string());
+            props.insert("confidence".to_string(), serde_json::Value::String(c.to_string()));
         }
         GraphNode {
             id: NodeId(id.to_string()),
             kind: NodeKind::Evidence,
             label: label.to_string(),
             source_path: Some(std::path::PathBuf::from("/evidence/run1.json")),
-            properties: props,
+            properties: serde_json::Value::Object(props),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }

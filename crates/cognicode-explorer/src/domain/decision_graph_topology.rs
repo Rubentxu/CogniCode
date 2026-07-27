@@ -235,7 +235,7 @@ mod tests {
             kind: NodeKind::Decision,
             label: label.to_string(),
             source_path: Some(std::path::PathBuf::from(format!("docs/adr/{}.md", id))),
-            properties: std::collections::HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -247,7 +247,7 @@ mod tests {
             kind: NodeKind::Doc,
             label: label.to_string(),
             source_path: None,
-            properties: std::collections::HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
