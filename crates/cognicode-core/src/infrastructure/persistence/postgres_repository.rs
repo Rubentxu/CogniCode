@@ -2419,9 +2419,13 @@ mod tests {
             .await
             .ok()?;
 
-        // Connect to the new DB and run our migrations.
+        // Connect to the new DB and run the full migration chain
+        // (SCHEMA_SQL + m0009…m0018) so pg_tests start from a complete schema.
         let pool = sqlx::PgPool::connect(&test_url).await.ok()?;
-        sqlx::raw_sql(SCHEMA_SQL).execute(&pool).await.ok()?;
+        PostgresRepository::from_pool(pool.clone())
+            .run_migrations()
+            .await
+            .ok()?;
 
         // Best-effort cleanup on test exit. Errors are ignored:
         // some CI sandboxes revoke DROP DATABASE privileges.
@@ -4449,6 +4453,11 @@ mod tests {
     pg_test!(workspace_scoped_edges_unique_index, |pool: PgPool| {
         let repo = PostgresRepository::from_pool(pool);
 
+        // The composite FK is (workspace_id, source_id, kind) REFERENCES
+        // graph_nodes(workspace_id, id, kind). The kind must match between
+        // edge and node. We use kind='symbol.function' for both nodes and
+        // edges to satisfy the FK constraint.
+        //
         // Insert first edge in ws1
         sqlx::query(
             "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
@@ -4467,7 +4476,7 @@ mod tests {
 
         sqlx::query(
             "INSERT INTO graph_edges (workspace_id, source_id, target_id, kind) \
-             VALUES ('ws1', 'a', 'b', 'dependency.calls')",
+             VALUES ('ws1', 'a', 'b', 'symbol.function')",
         )
         .execute(repo.pool())
         .await
@@ -4491,7 +4500,7 @@ mod tests {
 
         sqlx::query(
             "INSERT INTO graph_edges (workspace_id, source_id, target_id, kind) \
-             VALUES ('ws2', 'a', 'b', 'dependency.calls')",
+             VALUES ('ws2', 'a', 'b', 'symbol.function')",
         )
         .execute(repo.pool())
         .await
@@ -4499,7 +4508,7 @@ mod tests {
 
         let count: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM graph_edges \
-             WHERE source_id = 'a' AND target_id = 'b' AND kind = 'dependency.calls'",
+             WHERE source_id = 'a' AND target_id = 'b' AND kind = 'symbol.function'",
         )
         .fetch_one(repo.pool())
         .await
