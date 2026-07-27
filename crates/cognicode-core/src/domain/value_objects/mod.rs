@@ -10,6 +10,7 @@ pub mod file_manifest;
 pub mod location;
 pub mod node_kind;
 pub mod provenance;
+pub mod revision_id;
 pub mod source_range;
 pub mod symbol_kind;
 pub mod walk_filter;
