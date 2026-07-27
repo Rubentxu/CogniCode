@@ -14,6 +14,7 @@ pub mod revision_id;
 pub mod source_range;
 pub mod symbol_kind;
 pub mod walk_filter;
+pub mod workspace_id;
 
 // Multimodal (brain-federation) — Space domain value objects.
 // Gated behind the `multimodal` Cargo feature so the default build
