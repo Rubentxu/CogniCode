@@ -931,4 +931,64 @@ mod tests {
             "arc clones must point to the same allocation"
         );
     }
+
+    // ---------------------------------------------------------------------------
+    // CRIT-1 regression test: verify SnapshotProviderImpl works in multi-thread
+    // runtime (catches Handle::block_on panic from worker thread).
+    // This test is outside pg_test! because we need explicit flavor = multi_thread.
+    // ---------------------------------------------------------------------------
+    #[tokio::test(flavor = "multi_thread")]
+    async fn snapshot_provider_multi_thread_runtime_does_not_panic() {
+        use crate::domain::traits::repository::Repository;
+        use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
+
+        let Some(pool) = fresh_pool().await else {
+            eprintln!("skipping: TEST_DATABASE_URL not set");
+            return;
+        };
+
+        let ws = WorkspaceId::default();
+
+        // Create a minimal graph to establish rev 1.
+        let repo = PostgresRepository::from_pool(pool.clone());
+        let g0 = make_graph("base");
+        let _rev0 = repo.save_call_graph_ws(&g0, &ws).await
+            .expect("initial save must succeed");
+
+        // Subscribe BEFORE the batch window — this starts the LISTEN task.
+        let provider = SnapshotProviderImpl::new(pool.clone());
+        let mut rx = provider.subscribe(&ws);
+
+        // Drain any prior pending notification.
+        let _ = rx.try_recv();
+
+        // Do 5 rapid saves — each triggers pg_notify which the LISTEN task
+        // should debounce and broadcast without panicking.
+        for i in 0..5_i32 {
+            let node_name = format!("node_{}", i);
+            let g = make_graph(&node_name);
+            let _ = repo.save_call_graph_ws(&g, &ws).await;
+        }
+
+        // Drain events within 200ms (100ms debounce + margin).
+        let mut events_received = 0;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(200);
+        while std::time::Instant::now() < deadline {
+            if rx.try_recv().is_ok() {
+                events_received += 1;
+            }
+            if events_received >= 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+
+        // With the Handle::block_on fix (direct .await in LISTEN task), the
+        // multi-thread runtime should NOT panic and we should receive ≥ 1 event.
+        assert!(
+            events_received >= 1,
+            "expected at least 1 notification event in multi-thread runtime, got {}",
+            events_received
+        );
+    }
 }
