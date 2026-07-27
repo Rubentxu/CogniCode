@@ -55,6 +55,8 @@ use cognicode_core::domain::value_objects::node_kind::NodeKind;
 #[cfg(feature = "postgres")]
 use cognicode_core::domain::value_objects::provenance::Provenance;
 #[cfg(feature = "postgres")]
+use cognicode_core::domain::value_objects::WorkspaceId;
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::{GraphError, GraphResult, SearchPage};
 
 #[cfg(feature = "postgres")]
@@ -470,6 +472,64 @@ impl PgGraphRepository {
             GraphError::Storage(format!("pg_graph_repository: upsert_edges commit: {e}"))
         })?;
         Ok(inserted)
+    }
+
+    // ---- 4.3: Workspace-scoped query methods ----
+
+    /// 4.3b GREEN — find nodes by kind filtered by workspace_id.
+    /// Extends the GraphRepository trait method with workspace scoping.
+    pub async fn find_nodes_by_kind(
+        &self,
+        kind: &NodeKind,
+        workspace: &WorkspaceId,
+    ) -> GraphResult<Vec<GraphNode>> {
+        let pool = self.pool.clone();
+        let kind_str = kind.to_string();
+        let workspace_str = workspace.as_str();
+
+        let rows: Vec<GraphNodeRow> = sqlx::query_as(
+            "SELECT id, kind, label, source_path, properties, \
+                    created_at::text AS created_at, \
+                    updated_at::text AS updated_at \
+             FROM graph_nodes \
+             WHERE kind = $1 AND workspace_id = $2 \
+             ORDER BY id",
+        )
+        .bind(&kind_str)
+        .bind(workspace_str)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| GraphError::Storage(format!("pg_graph_repository find_nodes_by_kind ws: {e}")))?;
+
+        Ok(rows.into_iter().map(|r| r.into_graph_node()).collect())
+    }
+
+    /// 4.3b GREEN — find incoming edges filtered by workspace_id.
+    /// Returns all edges where the target equals the given id.
+    pub async fn find_incoming_edges(
+        &self,
+        id: &NodeId,
+        workspace: &WorkspaceId,
+    ) -> GraphResult<Vec<GraphEdge>> {
+        let pool = self.pool.clone();
+        let id_str = id.as_str().to_string();
+        let workspace_str = workspace.as_str();
+
+        let rows: Vec<GraphEdgeRow> = sqlx::query_as(
+            "SELECT source_id, target_id, kind, provenance, confidence, metadata \
+             FROM graph_edges \
+             WHERE target_id = $1 AND workspace_id = $2 \
+             ORDER BY source_id",
+        )
+        .bind(&id_str)
+        .bind(workspace_str)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| GraphError::Storage(format!("pg_graph_repository find_incoming_edges: {e}")))?;
+
+        rows.into_iter()
+            .map(|r| r.into_graph_edge())
+            .collect()
     }
 }
 
