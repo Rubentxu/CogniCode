@@ -97,6 +97,12 @@ const SCHEMA_SQL_VIEWSPEC_PROVENANCE: &str = include_str!("m0015_viewspec_proven
 #[cfg(feature = "postgres")]
 const SCHEMA_SQL_DIAGRAM_PROVENANCE: &str = include_str!("m0016_diagram_provenance.sql");
 
+/// Graph revisions DDL — creates `graph_revisions` table with monotonic
+/// revision IDs per workspace and a partial unique index enforcing at most
+/// one `head_of=true` row per workspace (e28-0 PR1 Foundation).
+#[cfg(feature = "postgres")]
+const SCHEMA_SQL_REVISIONS: &str = include_str!("m0017_graph_revisions.sql");
+
 /// PostgreSQL-backed implementation of the async [`Repository`]
 /// trait. Owns its [`PgPool`]; consumers that want shared
 /// ownership can wrap in `Arc<PostgresRepository>`.
@@ -225,6 +231,12 @@ impl PostgresRepository {
             .execute(&self.pool)
             .await
             .map_err(|e| RepositoryError::Store(format!("diagram provenance migration: {e}")))?;
+
+        // 10. Graph revisions table — e28-0 PR1 Foundation.
+        sqlx::raw_sql(SCHEMA_SQL_REVISIONS)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("graph revisions migration: {e}")))?;
 
         Ok(())
     }
@@ -4208,4 +4220,121 @@ mod tests {
             assert!(result.is_none(), "expected None for missing node");
         }
     );
+
+    // -------------------------------------------------------------------------
+    // Task 1.4a RED — graph_revisions table with head uniqueness
+    // Scenario: `graph-revisions::New table exists with head uniqueness`
+    // Assert: `\d graph_revisions` columns match; second `head_of=true`
+    //         insert for same workspace rejected.
+    // -------------------------------------------------------------------------
+    #[cfg(feature = "postgres")]
+    pg_test!(graph_revisions_table_exists, |pool: PgPool| {
+        use sqlx::Row;
+
+        let repo = PostgresRepository::from_pool(pool);
+
+        // Verify columns via information_schema
+        let rows = sqlx::query(
+            "SELECT column_name, data_type \
+             FROM information_schema.columns \
+             WHERE table_name = 'graph_revisions' \
+             ORDER BY ordinal_position",
+        )
+        .fetch_all(repo.pool())
+        .await
+        .expect("query graph_revisions columns");
+
+        // Should have: workspace_id, revision_id, created_at, head_of
+        assert!(
+            rows.iter().any(|r| r.get::<String, _>("column_name") == "workspace_id"),
+            "workspace_id column missing"
+        );
+        assert!(
+            rows.iter().any(|r| r.get::<String, _>("column_name") == "revision_id"),
+            "revision_id column missing"
+        );
+        assert!(
+            rows.iter().any(|r| r.get::<String, _>("column_name") == "created_at"),
+            "created_at column missing"
+        );
+        assert!(
+            rows.iter().any(|r| r.get::<String, _>("column_name") == "head_of"),
+            "head_of column missing"
+        );
+    });
+
+    #[cfg(feature = "postgres")]
+    pg_test!(graph_revisions_head_unique_per_workspace, |pool: PgPool| {
+        let repo = PostgresRepository::from_pool(pool);
+
+        // Insert first revision with head_of=true for "ws1"
+        sqlx::query(
+            "INSERT INTO graph_revisions (workspace_id, revision_id, head_of) \
+             VALUES ('ws1', 1, true)",
+        )
+        .execute(repo.pool())
+        .await
+        .expect("first head insert");
+
+        // Insert second revision with head_of=true for "ws1" — should fail
+        let err = sqlx::query(
+            "INSERT INTO graph_revisions (workspace_id, revision_id, head_of) \
+             VALUES ('ws1', 2, true)",
+        )
+        .execute(repo.pool())
+        .await
+        .expect_err("second head insert for same workspace must fail");
+
+        // Postgres constraint violation error
+        assert!(
+            err.to_string().contains("idx_graph_revisions_head")
+                || err.to_string().contains("unique"),
+            "expected unique constraint error, got: {err}"
+        );
+
+        // Verify first row is still there
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM graph_revisions WHERE workspace_id = 'ws1'",
+        )
+        .fetch_one(repo.pool())
+        .await
+        .expect("count query");
+        assert_eq!(count, 1, "first row must remain after constraint violation");
+    });
+
+    // -------------------------------------------------------------------------
+    // Task 1.4b GREEN — idempotent on empty (migration is embedded + run)
+    // -------------------------------------------------------------------------
+    #[cfg(feature = "postgres")]
+    pg_test!(run_migrations_idempotent_on_empty_graph_revisions, |pool: PgPool| {
+        let repo = PostgresRepository::from_pool(pool);
+        // First call — runs migrations
+        repo.run_migrations().await.expect("first call");
+        // Second call — must be idempotent
+        repo.run_migrations().await.expect("second call must be idempotent");
+
+        // Insert two revisions — first head, second non-head
+        sqlx::query(
+            "INSERT INTO graph_revisions (workspace_id, revision_id, head_of) \
+             VALUES ('default', 1, true)",
+        )
+        .execute(repo.pool())
+        .await
+        .expect("insert head revision");
+
+        sqlx::query(
+            "INSERT INTO graph_revisions (workspace_id, revision_id, head_of) \
+             VALUES ('default', 2, false)",
+        )
+        .execute(repo.pool())
+        .await
+        .expect("insert non-head revision");
+
+        let count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM graph_revisions")
+                .fetch_one(repo.pool())
+                .await
+                .expect("count");
+        assert_eq!(count, 2, "expected 2 revisions");
+    });
 }
