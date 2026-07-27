@@ -178,6 +178,17 @@ impl GraphEdge {
         self
     }
 
+    /// Inserts a metadata key with any JSON value, returning `self` for chaining.
+    pub fn with_metadata_json(mut self, key: impl Into<String>, value: Value) -> Self {
+        if self.metadata.is_null() {
+            self.metadata = Value::Object(serde_json::Map::new());
+        }
+        if let Value::Object(ref mut map) = self.metadata {
+            map.insert(key.into(), value);
+        }
+        self
+    }
+
     /// Converts `metadata` to a `HashMap<String, String>` for backward
     /// compatibility. Non-string values are skipped.
     pub fn metadata_to_map(&self) -> HashMap<String, String> {
@@ -558,6 +569,77 @@ mod tests {
         let parsed: GraphEdge = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, edge);
     }
+
+    // -------------------------------------------------------------------------
+    // Task 1.7a RED — GraphEdge metadata JSONB + confidence boundaries
+    // Scenario: `generic-graph-model::Structured metadata round-trips via PG JSONB`
+    //           `generic-graph-model::Confidence boundaries`
+    // Assert: nested `Value` survives serialization;
+    //         `GraphEdge::new(…,1.5)`→`Err(ConfidenceOutOfRange(1.5))`;
+    //         `NaN`→`Err(ConfidenceNotFinite)`.
+    // Note: confidence boundary tests are pre-existing (graph_edge_confidence_out_of_range).
+    //       This test covers the JSONB metadata upgrade.
+    // -------------------------------------------------------------------------
+
+    /// `GraphEdge.metadata` defaults to `Value::Null` (no metadata object created).
+    #[test]
+    fn graph_edge_metadata_default_is_null() {
+        let edge = GraphEdge::new(
+            symbol_id(),
+            symbol_id_2(),
+            EdgeKind::Dependency(DependencyType::Calls),
+            Provenance::Extracted,
+            0.95,
+        )
+        .expect("valid edge");
+        assert!(
+            edge.metadata.is_null(),
+            "default metadata must be Null, got: {:?}",
+            edge.metadata
+        );
+    }
+
+    /// `GraphEdge.metadata` accepts nested JSON values.
+    #[test]
+    fn graph_edge_metadata_nested_json() {
+        let nested = serde_json::json!({ "profiler": "hot", "hits": 42 });
+        let edge = GraphEdge::new(
+            symbol_id(),
+            symbol_id_2(),
+            EdgeKind::Dependency(DependencyType::Calls),
+            Provenance::Inferred,
+            0.8,
+        )
+        .unwrap()
+        .with_metadata_json("perf", nested.clone());
+
+        let retrieved = edge.metadata.get("perf").expect("perf key");
+        assert_eq!(retrieved, &nested);
+    }
+
+    /// `metadata_to_map()` adapter converts JSON metadata to flat `HashMap<String, String>`.
+    #[test]
+    fn graph_edge_metadata_to_map_adapter() {
+        let edge = GraphEdge::new(
+            symbol_id(),
+            symbol_id_2(),
+            EdgeKind::Dependency(DependencyType::Calls),
+            Provenance::Inferred,
+            0.6,
+        )
+        .unwrap()
+        .with_metadata("lang", "rust")
+        .with_metadata("tier", "1");
+
+        let map = edge.metadata_to_map();
+        assert_eq!(map.get("lang").map(String::as_str), Some("rust"));
+        assert_eq!(map.get("tier").map(String::as_str), Some("1"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Task 1.7b GREEN — GraphEdge metadata is serde_json::Value default Null
+    // (implemented alongside Task 1.6 as part of the same struct change)
+    // -------------------------------------------------------------------------
 
     // ---- T4 RED gate tests ----
 
