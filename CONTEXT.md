@@ -12,6 +12,10 @@ CogniCode is a code intelligence platform that provides graph-based exploration,
 - **EdgeKind**: Taxonomy of relationships — Dependency (8 kinds), Cites, Justifies, Resolves, CorroboratedBy, PartOf, DeployedAs, InSystem
 - **SymbolRepository**: Read-only port for symbol identity resolution — `resolve`, `find_symbols_by_name`, `find_symbols_by_file`, `all_symbols`, `graph_stats`, `module_list`. Does NOT navigate the call graph.
 - **GraphQueryPort**: Read-only port for structural graph navigation — neighbors with metadata (`provenance`, `confidence`), multi-hop traversals (`traverse`, `subgraph`). MoldQL compiles its queries to operations of this port. Replaces the deprecated `MetadataAwareRepository` + `as_metadata_aware()` escape hatch.
+- **MoldPlan**: Versioned, backend-neutral normalized plan for every MoldQL operation. Graph-selecting operations contain a `GraphPlan`; object selection, quality, lens, and view execution retain their own typed operations. See [ADR-014 §3](docs/adr/ADR-014-moldql-pattern-graph-analytics-platform.md).
+- **GraphPlan**: Read-only graph execution contract shared by PostgreSQL and immutable snapshot executors. Each execution is pinned to one workspace and graph revision and declares resource limits. See [ADR-014 §4](docs/adr/ADR-014-moldql-pattern-graph-analytics-platform.md) and [graph query execution specification](docs/specs/graph-query-execution.md).
+- **Pattern Profile**: Proposed GQL/openCypher-inspired MoldQL profile for typed, directed, bounded graph patterns. It does not imply Cypher, openCypher, or ISO GQL compatibility. See [ADR-014 §2](docs/adr/ADR-014-moldql-pattern-graph-analytics-platform.md) and [graph query execution specification](docs/specs/graph-query-execution.md).
+- **Graph Analytics Registry**: Proposed descriptor-driven catalog for reproducible, resource-governed algorithms with `stream`, `stats`, `annotate`, and authorized `persist` modes. Analytics never mutate canonical graph facts. See [ADR-014 §6](docs/adr/ADR-014-moldql-pattern-graph-analytics-platform.md) and [graph analytics execution specification](docs/specs/graph-analytics-execution.md).
 - **ToolHandler**: ISP-segregated trait for MCP tool dispatch. Each tool family (graph, views, search, sessions) registers its handlers via registry. The MCP handler dispatches by tool name — no central match arms. Same pattern as `ViewExecutor`.
 
 ### Visualization
@@ -360,6 +364,16 @@ cache. No intermediate files.
 | PG NOTIFY/LISTEN | (no equivalent) | Real-time graph update notifications to Explorer |
 
 ## Open Questions
+- [ ] Graph stack coherence and visualization readiness — detailed current-state
+      assessment and phased plan:
+      [`docs/analysis/cognicode-graph-stack-assessment.md`](docs/analysis/cognicode-graph-stack-assessment.md)
+- [ ] MoldQL Pattern Profile and graph analytics platform — proposed decision,
+      executable requirements, and delivery sequence:
+      [ADR-014](docs/adr/ADR-014-moldql-pattern-graph-analytics-platform.md),
+      [query specification](docs/specs/graph-query-execution.md),
+      [analytics specification](docs/specs/graph-analytics-execution.md),
+      [Cypher/GDS fit assessment](docs/analysis/cognicode-cypher-gds-fit-assessment.md),
+      and [E28 roadmap](docs/ROADMAP.md#graph-query--analytics-platform-e28)
 - [ ] How to auto-generate MCP tool schemas from handler signatures
 - [ ] How to implement ReAct agent loop with tool calling
 - [ ] RAG + LLM port from gt4llm patterns

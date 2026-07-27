@@ -1,8 +1,49 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-02 (continuación sesión — PR #104 merged, relation-candidates-v1 shipped v0.45.0. e12f-ownership-map: explore + propose + spec + design completos, pendiente tasks.)
+Last updated: 2026-07-27 (E28 graph query and analytics program proposed.)
 
 ## Active
+
+### Graph Query & Analytics Platform (E28)
+
+**Strategic ADR**:
+[ADR-014](./adr/ADR-014-moldql-pattern-graph-analytics-platform.md)
+
+**Goal**: Make graph queries and selected analytics reproducible, bounded, and
+consistent across PostgreSQL and immutable in-memory snapshots while keeping
+PostgreSQL as the sole canonical store.
+
+All E28 changes are **PROPOSED**. Each change requires its own approved SDD
+artifacts before implementation begins.
+
+| Change | Goal | Depends on | Exit criteria | Status |
+|---|---|---|---|---|
+| `e28-0-canonical-graph-revisions` | Stabilize identity, typed property round-trip, workspace isolation, immutable revisions, deletion, and snapshot refresh | None | The same node and edge identities round-trip through PostgreSQL and snapshots; runs pin one workspace and revision; ingest, deletion, and refresh tests pass | PROPOSED |
+| `e28-1-moldplan-graphplan-contracts` | Introduce versioned `MoldPlan`/`GraphPlan`, typed results, execution policy, limits, and structured unsupported-operation errors | E28.0 | Plans contain no backend or presentation types; every run declares limits; unsupported operations fail before execution | PROPOSED |
+| `e28-2-differential-graph-executors` | Execute existing `PATH`, `NEIGHBORS`, `SUBGRAPH`, `CLUSTER`, `EXPLAIN`, and boolean composition in PostgreSQL and snapshot executors | E28.1 | Golden fixtures prove equivalent typed multisets, ordering, paths, errors, provenance, and truncation; no supported operation returns synthetic empty success | PROPOSED |
+| `e28-3-moldql-pattern-profile-v1` | Add read-only typed patterns, direction, bounded quantifiers, predicates, aggregation, ordering, limits, and bounded shortest paths | E28.2 | The supported-feature matrix is published; parser, lowering, differential, REST/MCP, and Explorer interaction tests pass; no Cypher/GQL compatibility claim is made | PROPOSED |
+| `e28-4-analytics-registry-cohort-1` | Add descriptor admission, `stream`/`stats`/`annotate`/`persist` modes, run lineage, and stabilize PageRank, SCC, WCC, and bounded shortest paths | E28.2 | Every admitted algorithm is versioned, resource-governed, reproducible, and non-mutating; cohort-1 conformance and composition tests pass | PROPOSED |
+| `e28-5-structural-analytics-cohort-2` | Add dominators, articulation points, bridges, and k-core for impact, seam, dependency-pressure, and risk views | E28.4 | Each algorithm has a product question, descriptor, golden fixtures, and either an Explorer surface or an explicit internal/composable classification | PROPOSED |
+| `e28-6-advanced-analytics-evidence-gate` | Evaluate betweenness, k-shortest paths, multi-source reachability, personalized PageRank, Leiden, conductance/modularity, node similarity, and an optional Neo4j CI oracle | E28.5 | Only measured, product-relevant algorithms are admitted; optional oracle checks do not affect production availability; any production sidecar proposal is deferred to a separate ADR | PROPOSED |
+
+#### E28 execution order
+
+```text
+E28.0 -> E28.1 -> E28.2 -> E28.3
+                         -> E28.4 -> E28.5 -> E28.6
+```
+
+E28.3 and E28.4 may proceed in parallel only after E28.2 proves executor
+equivalence. New diagram models, graph mutation, complete Cypher/GQL
+compatibility, and production Neo4j infrastructure remain outside E28.
+
+**Specifications**:
+[graph query execution](./specs/graph-query-execution.md) and
+[graph analytics execution](./specs/graph-analytics-execution.md).
+
+**Evidence**:
+[graph stack assessment](./analysis/cognicode-graph-stack-assessment.md) and
+[Cypher/GDS fit assessment](./analysis/cognicode-cypher-gds-fit-assessment.md).
 
 ### Moldable UX + C4 Investigation + Diagram Representations
 
@@ -117,6 +158,22 @@ E18 and E19 can start in parallel. E20 depends on E19 (C4 levels inform diagram 
 **Follow-up queued**: `refactor/e13-followup-typed-accessors` — ✅ DONE (commit c783d77)
 
 **Semver**: PATCH — additive feature (8 families), no breaking changes
+
+## Session Handover 2026-07-27
+
+**E28 documentation chain closed (no code, no PR yet)**
+
+Cierre documental del programa E28 sin abrir ciclo de código:
+
+- Análisis de evidencia persistido: [`cognicode-graph-stack-assessment.md`](analysis/cognicode-graph-stack-assessment.md), [`cognicode-cypher-gds-fit-assessment.md`](analysis/cognicode-cypher-gds-fit-assessment.md).
+- Decisión estratégica: [`ADR-014`](adr/ADR-014-moldql-pattern-graph-analytics-platform.md) (PROPOSED).
+- Especificaciones ejecutables: [`graph-query-execution.md`](specs/graph-query-execution.md), [`graph-analytics-execution.md`](specs/graph-analytics-execution.md).
+- Nueva sección [`### Graph Query & Analytics Platform (E28)`](#graph-query--analytics-platform-e28) con 7 cambios dependientes (E28.0 → E28.6), tabla goal/dep/exit-criteria/status, diagrama de orden y enlaces cruzados.
+- `docs/adr/README.md` actualizado con ADR-008..014.
+- `CONTEXT.md` enriquecido: MoldPlan, GraphPlan, Pattern Profile, Graph Analytics Registry, con enlaces inline a ADR-014 y specs; Open Questions cerrada la entrega documental.
+- Anclas cruzadas: ADR-014 ↔ ROADMAP ↔ CONTEXT ↔ specs ↔ análisis resuelven.
+
+**Próximo paso propuesto**: abrir ciclo SDDK A-lite para [`e28-0-canonical-graph-revisions`](#graph-query--analytics-platform-e28) (depends-on: none; fundamento de identidad tipada, property round-trip, revisiones inmutables y refresco de snapshots antes de tocar planners o analytics).
 
 ## Session Handover 2026-07-01
 
