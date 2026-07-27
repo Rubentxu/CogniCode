@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-27 (E28 graph query and analytics program proposed.)
+Last updated: 2026-07-27 (E28 PR1 Foundation shipped v0.61.0.)
 
 ## Active
 
@@ -174,6 +174,28 @@ Cierre documental del programa E28 sin abrir ciclo de código:
 - Anclas cruzadas: ADR-014 ↔ ROADMAP ↔ CONTEXT ↔ specs ↔ análisis resuelven.
 
 **Próximo paso propuesto**: abrir ciclo SDDK A-lite para [`e28-0-canonical-graph-revisions`](#graph-query--analytics-platform-e28) (depends-on: none; fundamento de identidad tipada, property round-trip, revisiones inmutables y refresco de snapshots antes de tocar planners o analytics).
+
+## Session Handover 2026-07-27 (E28 PR1 shipped)
+
+**E28 PR1 Foundation closed and shipped v0.61.0 (PR #135 merged to main).**
+
+Ciclo SDDK A-lite ejecutado completamente en auto mode. PR1 cubre la fundación de E28 (Phase 1 del ROADMAP: 14 tasks; 7 atomic commits + 4 correction cycle 1 + 3 correction cycle 2 + 1 inline fixup = 15 commits total en `feat/e28-0-canonical-graph-revisions`).
+
+**Logros PR1**:
+- Value objects: `RevisionId`, `WorkspaceId` (ambos re-exportados en `value_objects::`).
+- Migrations PG: `m0017_graph_revisions` (tabla + head uniqueness), `m0018_workspace_scoped_identity` (PK `(workspace_id, id, kind)`, FKs compuestas, idempotente en todos los estados).
+- Typed JSONB upgrade: `GraphNode.properties` y `GraphEdge.metadata` migrados de `HashMap<String,String>` a `serde_json::Value` con adaptadores `to_map()` / `from_map()`.
+- `NodeKind::Symbol(_)` ahora produce `Display = "symbol.{inner}"` con `FromStr` inverso; bare `"symbol"` rechazado.
+- Verifiers: `sddk-verify` PASS_WITH_WARNINGS (0 CRITICAL, 1 WARNING pre-existing); `sddk-debt-verify` PASS_WITH_WARNINGS (smells-W1 cerrado inline).
+- Strict TDD discipline aplicada: RED → GREEN por task, evidence table completa en `apply-progress.md`.
+
+**Trazabilidad**:
+- Branch: `feat/e28-0-canonical-graph-revisions` (squashed a `cd529cde` en merge).
+- Tag: `v0.61.0` (MINOR — typed JSONB upgrade + new value objects + migrations).
+- PR: <https://github.com/Rubentxu/CogniCode/pull/135>.
+- Artifacts: `sddk/e28-0-canonical-graph-revisions/` (proposal, spec, tasks, apply-progress, verify-report, debt-report, archive-report).
+
+**Próximo paso propuesto**: PR2 Persistence (`e28-0-pr2-persistence`; 22 tasks: `save_call_graph`/`load_call_graph` pinned + deletion completeness + SnapshotProvider + edge trigger + refresh wiring). Cadena stacked-to-main sigue.
 
 ## Session Handover 2026-07-01
 
