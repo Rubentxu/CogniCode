@@ -12,6 +12,12 @@
 --
 -- Idempotent: uses DO blocks guarded by information_schema checks.
 --
+-- Execution order (CRITICAL for FK/PK dependency):
+--   Step 1: Drop old single-column FKs (graph_edges → graph_nodes)
+--   Step 2: Drop old PK, add new composite PK (workspace_id, id, kind)
+--   Step 3: Drop old unique index, add workspace-scoped unique index
+--   Step 4: Add new composite FKs (graph_edges → graph_nodes)
+--
 -- Old: graph_nodes PRIMARY KEY (id) — workspace_id just a column
 -- New: graph_nodes PRIMARY KEY (workspace_id, id, kind)
 --
@@ -22,7 +28,36 @@
 -- New: graph_edges FKs referencing graph_nodes(workspace_id, id, kind)
 
 -- =============================================================================
--- 1. Change graph_nodes PRIMARY KEY to include workspace_id
+-- Step 1: Drop old single-column FKs FIRST (must precede PK drop)
+-- =============================================================================
+-- The old FKs graph_edges_source_id_fkey / graph_edges_target_id_fkey reference
+-- graph_nodes(id). PostgreSQL requires that we drop these FKs before we can
+-- drop graph_nodes_pkey, because the FKs depend on that PK.
+DO $$
+BEGIN
+    -- Drop old source FK if it exists
+    IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'graph_edges_source_id_fkey'
+          AND table_name = 'graph_edges'
+    ) THEN
+        ALTER TABLE graph_edges DROP CONSTRAINT graph_edges_source_id_fkey;
+        RAISE NOTICE 'Dropped old FK graph_edges_source_id_fkey';
+    END IF;
+
+    -- Drop old target FK if it exists
+    IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'graph_edges_target_id_fkey'
+          AND table_name = 'graph_edges'
+    ) THEN
+        ALTER TABLE graph_edges DROP CONSTRAINT graph_edges_target_id_fkey;
+        RAISE NOTICE 'Dropped old FK graph_edges_target_id_fkey';
+    END IF;
+END $$;
+
+-- =============================================================================
+-- Step 2: Change graph_nodes PRIMARY KEY to include workspace_id
 -- =============================================================================
 DO $$
 BEGIN
@@ -37,7 +72,7 @@ BEGIN
         WHERE constraint_name = 'graph_nodes_pkey_ws'
           AND table_name = 'graph_nodes'
     ) THEN
-        -- Drop old PK
+        -- Drop old PK (now safe because FKs were dropped in Step 1)
         ALTER TABLE graph_nodes DROP CONSTRAINT graph_nodes_pkey;
 
         -- Add new PK with workspace_id
@@ -50,34 +85,21 @@ BEGIN
 END $$;
 
 -- =============================================================================
--- 2. Change graph_edges unique index to include workspace_id
+-- Step 3: Change graph_edges unique index to include workspace_id
 -- =============================================================================
--- Idempotent: unconditionally drop the old index (if present) and create
--- the new workspace-scoped index. Using IF EXISTS on the DROP prevents errors
--- if the old index was already absent (e.g., a fresh database that skipped m0018).
--- The new index is always created so this migration is safe in ALL starting states.
+-- Idempotent: drop BOTH the old and new index names (in case of re-run),
+-- then create the workspace-scoped index. Using IF EXISTS on each DROP
+-- prevents errors if the index was already absent.
 DROP INDEX IF EXISTS uniq_graph_edges_source_target_kind;
+DROP INDEX IF EXISTS uniq_graph_edges_ws_source_target_kind;
 CREATE UNIQUE INDEX uniq_graph_edges_ws_source_target_kind
     ON graph_edges(workspace_id, source_id, target_id, kind);
 
 -- =============================================================================
--- 3. Replace old single-column FKs with workspace-scoped composite FKs
+-- Step 4: Add new composite FKs (now safe because new PK exists)
 -- =============================================================================
--- The old FKs graph_edges_source_id_fkey / graph_edges_target_id_fkey reference
--- graph_nodes(id). After changing graph_nodes PK to (workspace_id, id, kind),
--- we must replace them with composite FKs that reference the new PK.
--- Using IF EXISTS / IF NOT EXISTS guards for idempotency.
 DO $$
 BEGIN
-    -- Drop old source FK if it exists
-    IF EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE constraint_name = 'graph_edges_source_id_fkey'
-          AND table_name = 'graph_edges'
-    ) THEN
-        ALTER TABLE graph_edges DROP CONSTRAINT graph_edges_source_id_fkey;
-    END IF;
-
     -- Add new composite FK for source
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.table_constraints
@@ -88,20 +110,12 @@ BEGIN
             ADD CONSTRAINT graph_edges_ws_source_fkey
             FOREIGN KEY (workspace_id, source_id, kind)
             REFERENCES graph_nodes(workspace_id, id, kind);
+        RAISE NOTICE 'Added composite FK graph_edges_ws_source_fkey';
     END IF;
 END $$;
 
 DO $$
 BEGIN
-    -- Drop old target FK if it exists
-    IF EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE constraint_name = 'graph_edges_target_id_fkey'
-          AND table_name = 'graph_edges'
-    ) THEN
-        ALTER TABLE graph_edges DROP CONSTRAINT graph_edges_target_id_fkey;
-    END IF;
-
     -- Add new composite FK for target
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.table_constraints
@@ -112,5 +126,6 @@ BEGIN
             ADD CONSTRAINT graph_edges_ws_target_fkey
             FOREIGN KEY (workspace_id, target_id, kind)
             REFERENCES graph_nodes(workspace_id, id, kind);
+        RAISE NOTICE 'Added composite FK graph_edges_ws_target_fkey';
     END IF;
 END $$;
