@@ -17,7 +17,7 @@ persistence = ["dep:blake3"]
 # `postgres` is additive to `persistence` — both can be active simultaneously.
 # When enabled, the workspace `sqlx` dep is pulled in with its
 # `runtime-tokio` + `postgres` features.
-postgres = ["dep:sqlx"]
+postgres = ["dep:sqlx", "dep:sqlx-postgres"]
 # `multimodal` is an opt-in feature that enables the Generic Graph
 # Layer (`NodeKind`, `EdgeKind`, `NodeId`, `GraphNode`, `GraphEdge`)
 # and the docs-source adapter (`SourceExtractor`, `DocsExtractor`,
@@ -148,6 +148,10 @@ pulldown-cmark.workspace = true
 # PostgreSQL async driver — optional, gated behind the `postgres` feature.
 # When the feature is off, this dep is absent from the build graph.
 sqlx = { workspace = true, optional = true }
+
+# sqlx-postgres internals (for PgListener — NOT re-exported from the main sqlx crate).
+# Version must track the workspace sqlx version (0.8).
+sqlx-postgres = { version = "0.8", optional = true }
 
 # Rig-core (optional)
 rig-core = { workspace = true, optional = true }

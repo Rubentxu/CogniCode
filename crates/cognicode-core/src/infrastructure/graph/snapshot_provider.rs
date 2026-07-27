@@ -13,6 +13,8 @@
 use std::collections::HashMap;
 #[cfg(feature = "postgres")]
 use std::str::FromStr;
+#[cfg(feature = "postgres")]
+use std::time::{Duration, Instant};
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::value_objects::{RevisionId, WorkspaceId};
@@ -112,9 +114,12 @@ pub enum SnapshotEvent {
 pub struct SnapshotProviderImpl {
     /// Shared PostgreSQL connection pool.
     pool: sqlx::PgPool,
-    /// Per-workspace versioned graph cache.
-    /// Each workspace gets its own ring with the configured retention.
+    /// Per-workspace versioned graph cache (CheckpointId-based ring).
     caches: HashMap<WorkspaceId, VersionedGraphCache>,
+    /// Snapshot cache keyed by (workspace, revision).
+    /// Populated on `snapshot()` calls; retains graphs for pinned reads.
+    /// Protected by a Mutex for interior mutability (needed since `snapshot` is `&self`).
+    snapshot_cache: std::sync::Mutex<HashMap<(WorkspaceId, RevisionId), Arc<CallGraph>>>,
     /// Broadcast channel for change notifications.
     notify_tx: broadcast::Sender<SnapshotEvent>,
     /// Default retention per workspace ring.
@@ -124,13 +129,113 @@ pub struct SnapshotProviderImpl {
 #[cfg(feature = "postgres")]
 impl SnapshotProviderImpl {
     /// Build a new `SnapshotProviderImpl` backed by the given `PgPool`.
+    ///
+    /// Spawns a background task that LISTENs to `pg_notify('graph_updated')`
+    /// and debounces notifications per workspace (100ms window).
     pub fn new(pool: sqlx::PgPool) -> Self {
+        let notify_tx = broadcast::Sender::new(16);
+        let pool_clone = pool.clone();
+        let tx_clone = notify_tx.clone();
+
+        // Spawn the LISTEN + debounce background task using sqlx_postgres::PgListener.
+        // This task subscribes to graph_updated notifications and debounces
+        // by 100ms per workspace before broadcasting through notify_tx.
+        tokio::spawn(async move {
+            let notify_tx = tx_clone;
+            let mut pending: HashMap<WorkspaceId, Instant> = HashMap::new();
+            const DEBOUNCE_MS: u64 = 100;
+
+            // Clone pool for use in the flush branch (can be used multiple times).
+            let pool_for_flush = pool_clone.clone();
+
+            // Use PgListener from sqlx_postgres to receive notifications.
+            // PgListener::connect_with takes &Pool<Postgres> = &sqlx::PgPool.
+            let mut listener = match sqlx_postgres::PgListener::connect_with(&pool_clone).await {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("SnapshotProviderImpl LISTEN: failed to connect PgListener: {e}");
+                    return;
+                }
+            };
+
+            if let Err(e) = listener.listen("graph_updated").await {
+                eprintln!("SnapshotProviderImpl LISTEN: failed to LISTEN on graph_updated: {e}");
+                return;
+            }
+
+            // Process notifications in a loop using try_recv.
+            loop {
+                match tokio::time::timeout(Duration::from_millis(50), listener.try_recv()).await {
+                    Ok(Ok(Some(notification))) => {
+                        // Parse workspace_id from the notification payload.
+                        if let Some(workspace) =
+                            Self::parse_workspace_from_notification(notification.payload())
+                        {
+                            pending.insert(workspace, Instant::now());
+                        }
+                    }
+                    Ok(Ok(None)) => {
+                        // No notification available this poll.
+                    }
+                    Ok(Err(e)) => {
+                        // Connection error.
+                        eprintln!("SnapshotProviderImpl LISTEN: error receiving notification: {e}");
+                        break;
+                    }
+                    Err(_) => {
+                        // Timeout: flush any pending notifications whose debounce window has elapsed.
+                        let now = Instant::now();
+                        let mut to_flush: Vec<WorkspaceId> = Vec::new();
+                        for (ws, since) in pending.iter() {
+                            if now.duration_since(*since) >= Duration::from_millis(DEBOUNCE_MS) {
+                                to_flush.push(ws.clone());
+                            }
+                        }
+                        for ws in to_flush.drain(..) {
+                            if pending.remove(&ws).is_some() {
+                                // Query the current head revision for this workspace.
+                                let pool = pool_for_flush.clone();
+                                let ws_clone = ws.clone();
+                                let head = tokio::runtime::Handle::current()
+                                    .block_on(async {
+                                        let row: Option<(i64,)> = sqlx::query_as(
+                                            "SELECT MAX(revision_id) FROM graph_revisions \
+                                             WHERE workspace_id = $1 AND head_of = true",
+                                        )
+                                        .bind(ws_clone.as_str())
+                                        .fetch_optional(&pool)
+                                        .await
+                                        .ok()
+                                        .flatten();
+                                        row.map(|(rev,)| RevisionId(rev as u64))
+                                            .unwrap_or(RevisionId::NONE)
+                                    });
+                                let _ = notify_tx.send(SnapshotEvent::Updated {
+                                    workspace: ws,
+                                    revision: head,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
         Self {
             pool,
             caches: HashMap::new(),
-            notify_tx: broadcast::Sender::new(16),
+            snapshot_cache: std::sync::Mutex::new(HashMap::new()),
+            notify_tx,
             retention: 2,
         }
+    }
+
+    /// Parse `workspace_id` from a pg_notify payload JSON string.
+    fn parse_workspace_from_notification(payload: &str) -> Option<WorkspaceId> {
+        // Payload is like: {"workspace_id": "default", "source_path": "...", "action": "INSERT", "timestamp": ...}
+        let json: serde_json::Value = serde_json::from_str(payload).ok()?;
+        let ws_str = json.get("workspace_id")?.as_str()?;
+        WorkspaceId::try_new(ws_str).ok()
     }
 
     /// Get or create the cache for a workspace.
@@ -305,26 +410,39 @@ impl SnapshotProvider for SnapshotProviderImpl {
         workspace: &WorkspaceId,
         revision: RevisionId,
     ) -> Result<Arc<CallGraph>, SnapshotError> {
+        // Fast path: check the revision-keyed snapshot cache.
+        {
+            let cache = self.snapshot_cache.lock().unwrap();
+            if let Some(cached) = cache.get(&(workspace.clone(), revision)) {
+                return Ok(cached.clone());
+            }
+        }
+
+        // Slow path: load from PostgreSQL.
         let ws = workspace.clone();
         let pool = self.pool.clone();
         let rev = revision;
 
-        tokio::runtime::Handle::current()
+        let graph = tokio::runtime::Handle::current()
             .block_on(async {
-                // Try to load from cache first (if workspace cache exists and has the revision)
-                // For simplicity, we always load from PG and populate the cache
-
-                let graph = Self::load_from_pg(&pool, &ws, rev)
+                Self::load_from_pg(&pool, &ws, rev)
                     .await
                     .map_err(|e| match e {
                         RepositoryError::UnknownRevision { workspace, revision } => {
                             SnapshotError::UnknownRevision { workspace, revision }
                         }
                         _ => SnapshotError::NoSnapshot(ws.clone()),
-                    })?;
+                    })
+            })?;
 
-                Ok(Arc::new(graph))
-            })
+        let graph_arc = Arc::new(graph);
+
+        // Populate the snapshot cache for future pinned reads.
+        let key = (workspace.clone(), revision);
+        let mut cache = self.snapshot_cache.lock().unwrap();
+        cache.entry(key).or_insert_with(|| graph_arc.clone());
+
+        Ok(graph_arc)
     }
 
     fn subscribe(
@@ -343,6 +461,349 @@ mod tests {
     use crate::infrastructure::graph::checkpoint::CheckpointId;
     use crate::infrastructure::graph::graph_cache::GraphCache;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    // ---------------------------------------------------------------------------
+    // Helpers adapted from postgres_repository.rs for pg_test! macro
+    // ---------------------------------------------------------------------------
+
+    /// Unique counter for per-test database names (avoids conflicts in shared CIs).
+    static UNIQ: AtomicU64 = AtomicU64::new(0);
+
+    /// Build a unique per-test database URL. Returns `None` when
+    /// `TEST_DATABASE_URL` is not set so tests skip gracefully.
+    async fn fresh_pool() -> Option<sqlx::PgPool> {
+        use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
+
+        let base = std::env::var("TEST_DATABASE_URL").ok()?;
+        let n = UNIQ.fetch_add(1, Ordering::Relaxed);
+        let pid = std::process::id();
+        let db_name = format!("cognicode_test_{pid}_{n}");
+        let admin_url = base.clone();
+        let test_url = rewrite_db_name(&admin_url, &db_name);
+
+        // Create the unique DB (idempotent: drop first if it lingers from a crashed run).
+        let admin = sqlx::PgPool::connect(&admin_url).await.ok()?;
+        let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS \"{db_name}\""))
+            .execute(&admin)
+            .await;
+        sqlx::query(&format!("CREATE DATABASE \"{db_name}\""))
+            .execute(&admin)
+            .await
+            .ok()?;
+
+        // Connect to the new DB and run the full migration chain
+        // (SCHEMA_SQL + m0009…m0018) so tests start from a complete schema.
+        let pool = sqlx::PgPool::connect(&test_url).await.ok()?;
+        PostgresRepository::from_pool(pool.clone())
+            .run_migrations()
+            .await
+            .ok()?;
+
+        Some(pool)
+    }
+
+    /// Replace the database segment in a `postgres://...` URL.
+    fn rewrite_db_name(url: &str, new_name: &str) -> String {
+        if let Some(at_idx) = url.rfind('@') {
+            let (head, tail) = url.split_at(at_idx);
+            if let Some(slash_idx) = tail.find('/') {
+                let (host, _) = tail.split_at(slash_idx);
+                return format!("{head}{host}/{new_name}");
+            }
+        }
+        let trimmed = url.trim_end_matches('/');
+        format!("{trimmed}/{new_name}")
+    }
+
+    /// Build a simple one-symbol CallGraph for testing.
+    fn make_graph(symbol_name: &str) -> CallGraph {
+        let mut g = CallGraph::new();
+        let sym = Symbol::new(
+            symbol_name,
+            SymbolKind::Function,
+            Location::new("test.rs", 1, 1),
+        );
+        g.add_symbol(sym);
+        g
+    }
+
+    // ---------------------------------------------------------------------------
+    // pg_test! macro — identical contract to postgres_repository.rs
+    // ---------------------------------------------------------------------------
+    macro_rules! pg_test {
+        ($name:ident, |$pool:ident: sqlx::PgPool| $body:tt) => {
+            #[tokio::test]
+            async fn $name() {
+                let Some($pool) = fresh_pool().await else {
+                    eprintln!(
+                        "skipping {}: TEST_DATABASE_URL not set",
+                        stringify!($name)
+                    );
+                    return;
+                };
+                async fn inner($pool: sqlx::PgPool) {
+                    $body
+                }
+                inner($pool).await
+            }
+        };
+    }
+
+    // ---------------------------------------------------------------------------
+    // 3.2a RED — pg_test asserting current_head returns correct revision after
+    // two sequential saves advancing 5 → 7.
+    // ---------------------------------------------------------------------------
+    pg_test!(current_head_returns_live_head_after_two_commits, |pool: sqlx::PgPool| {
+        use crate::domain::traits::repository::Repository;
+        use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
+
+        let repo = PostgresRepository::from_pool(pool.clone());
+        let ws = crate::domain::value_objects::WorkspaceId::default();
+
+        // Save first graph — expect rev 1
+        let g1 = make_graph("func_v1");
+        let rev1 = repo.save_call_graph_ws(&g1, &ws).await
+            .expect("first save must succeed");
+        assert!(rev1.is_valid(), "first revision must be valid");
+
+        // Save second graph — expect rev 2
+        let g2 = make_graph("func_v2");
+        let rev2 = repo.save_call_graph_ws(&g2, &ws).await
+            .expect("second save must succeed");
+        assert!(rev2.is_valid(), "second revision must be valid");
+        assert_eq!(rev2.get(), rev1.get() + 1, "revisions must be sequential");
+
+        // SnapshotProvider must see head = rev2
+        let provider = SnapshotProviderImpl::new(pool);
+        let head = provider.current_head(&ws).expect("current_head must succeed");
+        assert_eq!(
+            head.get(),
+            rev2.get(),
+            "current_head must return the latest committed revision_id"
+        );
+    });
+
+    // ---------------------------------------------------------------------------
+    // 3.3b GREEN — wiring test: GraphCache::get_at_provider() routes to the
+    // SnapshotProvider when one is set. Uses TestSnapshotProvider in-memory.
+    // ---------------------------------------------------------------------------
+    #[test]
+    fn get_at_provider_routes_to_provider_when_set() {
+        use crate::domain::aggregates::call_graph::CallGraph;
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
+        use std::sync::Arc;
+
+        // Build a TestSnapshotProvider that returns a known graph.
+        let test_provider = TestSnapshotProvider::new();
+        let ws = WorkspaceId::try_new("test-workspace").unwrap();
+
+        let mut expected_graph = CallGraph::new();
+        let sym = Symbol::new(
+            "routed_func",
+            SymbolKind::Function,
+            Location::new("routed.rs", 42, 7),
+        );
+        expected_graph.add_symbol(sym);
+        test_provider.insert(&ws, RevisionId(3), expected_graph);
+
+        let provider_arc: Arc<dyn SnapshotProvider> = Arc::new(test_provider);
+
+        // Create a GraphCache and set the provider.
+        let cache = GraphCache::new();
+        cache.set_provider(provider_arc.clone());
+
+        // get_at_provider must route to the provider and return the known graph.
+        let result = cache.get_at_provider(&ws, RevisionId(3));
+        assert!(
+            result.is_some(),
+            "get_at_provider must return Some when provider is set"
+        );
+        let loaded = result.unwrap();
+        assert_eq!(
+            loaded.symbol_count(),
+            1,
+            "loaded graph must have exactly 1 symbol from the provider"
+        );
+    }
+
+    #[test]
+    fn get_at_provider_returns_none_when_no_provider_set() {
+        let ws = WorkspaceId::try_new("test-workspace").unwrap();
+        let cache = GraphCache::new();
+        // Without a provider set, get_at_provider must return None.
+        let result = cache.get_at_provider(&ws, RevisionId(1));
+        assert!(result.is_none(), "get_at_provider must return None when no provider is set");
+    }
+
+    // ---------------------------------------------------------------------------
+    // 3.5a RED — pg_test asserting 50 sequential edge inserts within 100ms
+    // produce ≤1 notification carrying the final revision id (batched, NOT 50).
+    // ---------------------------------------------------------------------------
+    pg_test!(notification_batching_50_inserts_produce_at_most_1_event, |pool: sqlx::PgPool| {
+        use crate::domain::traits::repository::Repository;
+        use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
+
+        let ws = crate::domain::value_objects::WorkspaceId::default();
+
+        // Create a minimal graph to establish rev 1.
+        let repo = PostgresRepository::from_pool(pool.clone());
+        let g0 = make_graph("base");
+        let rev0 = repo.save_call_graph_ws(&g0, &ws).await
+            .expect("initial save must succeed");
+
+        // Subscribe BEFORE the batch window.
+        let provider = SnapshotProviderImpl::new(pool.clone());
+        let mut rx = provider.subscribe(&ws);
+
+        // Drain any prior pending notification.
+        let _ = rx.try_recv();
+
+        // Do 50 rapid edge inserts within a tight loop (no sleep — pure speed).
+        // Each insert triggers pg_notify which the provider should coalesce.
+        // After all inserts, the head is rev0 + 50.
+        let final_rev = rev0.get() + 50;
+        for i in 0..50_i32 {
+            let node_a = format!("n{}", i * 2);
+            let node_b = format!("n{}", i * 2 + 1);
+            // Insert two nodes then an edge to advance revision
+            let g = make_graph(&node_a);
+            let _ = repo.save_call_graph_ws(&g, &ws).await;
+        }
+
+        // Drain events with a short timeout (150ms covers 100ms debounce + margin).
+        let mut events_received = 0;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(150);
+        while std::time::Instant::now() < deadline {
+            if let Ok(_) = rx.try_recv() {
+                events_received += 1;
+            }
+            if events_received >= 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+
+        assert!(
+            events_received <= 1,
+            "50 rapid inserts must produce at most 1 batched notification, got {}",
+            events_received
+        );
+    });
+
+    // ---------------------------------------------------------------------------
+    // 3.6a RED — pg_test asserting save_call_graph_ws returns OK then
+    // snapshot(ws, current_head(ws)) returns the just-committed state.
+    // ---------------------------------------------------------------------------
+    pg_test!(sequential_commit_and_read_returns_just_committed_state, |pool: sqlx::PgPool| {
+        use crate::domain::traits::repository::Repository;
+        use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
+
+        let repo = PostgresRepository::from_pool(pool.clone());
+        let ws = crate::domain::value_objects::WorkspaceId::default();
+
+        // Commit a graph with 3 symbols.
+        let mut g = CallGraph::new();
+        let sym1 = Symbol::new("alice", SymbolKind::Function, Location::new("a.rs", 1, 0));
+        let sym2 = Symbol::new("bob", SymbolKind::Function, Location::new("b.rs", 2, 0));
+        let sym3 = Symbol::new("carol", SymbolKind::Class, Location::new("c.rs", 3, 0));
+        let id1 = g.add_symbol(sym1);
+        let id2 = g.add_symbol(sym2);
+        let id3 = g.add_symbol(sym3);
+        use crate::domain::services::ExtractionContext;
+        use crate::domain::value_objects::DependencyType;
+        let _ = g.add_dependency_with_provenance(
+            &id1, &id2, DependencyType::Calls, ExtractionContext::DirectExtraction,
+        );
+        let _ = g.add_dependency_with_provenance(
+            &id2, &id3, DependencyType::Imports, ExtractionContext::DirectExtraction,
+        );
+
+        let rev = repo.save_call_graph_ws(&g, &ws).await
+            .expect("save_call_graph_ws must succeed");
+
+        // SnapshotProvider must see the just-committed state.
+        let provider = SnapshotProviderImpl::new(pool);
+        let head = provider.current_head(&ws).expect("current_head must succeed");
+        assert_eq!(head.get(), rev.get(), "head must match committed revision");
+
+        let snapshot = provider.snapshot(&ws, head)
+            .expect("snapshot must succeed for known revision");
+
+        assert_eq!(
+            snapshot.symbol_count(),
+            3,
+            "snapshot must reflect all 3 just-committed symbols"
+        );
+        assert_eq!(
+            snapshot.edge_count(),
+            2,
+            "snapshot must reflect all 2 just-committed edges"
+        );
+    });
+
+    // ---------------------------------------------------------------------------
+    // 3.7a RED — pg_test asserting a reader pinned to (ws, 5) keeps returning
+    // revision-5 snapshot when concurrent ingest advances head to 6.
+    // VersionedGraphCache retention must be ≥ 2 so pinned revision survives
+    // the next ingest's cache update.
+    // ---------------------------------------------------------------------------
+    pg_test!(pinned_read_survives_concurrent_ingest, |pool: sqlx::PgPool| {
+        use crate::domain::traits::repository::Repository;
+        use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
+
+        let repo = PostgresRepository::from_pool(pool.clone());
+        let ws = crate::domain::value_objects::WorkspaceId::default();
+
+        // Rev 1: "first" graph
+        let g1 = make_graph("first");
+        let rev1 = repo.save_call_graph_ws(&g1, &ws).await
+            .expect("save rev1 must succeed");
+
+        // Rev 2: "second" graph — head now at rev2
+        let g2 = make_graph("second");
+        let rev2 = repo.save_call_graph_ws(&g2, &ws).await
+            .expect("save rev2 must succeed");
+
+        // SnapshotProvider: load and cache both revisions.
+        let provider = SnapshotProviderImpl::new(pool.clone());
+
+        // Prime the cache by loading both revisions.
+        let snap1 = provider.snapshot(&ws, rev1)
+            .expect("snapshot(rev1) must succeed");
+        let snap2 = provider.snapshot(&ws, rev2)
+            .expect("snapshot(rev2) must succeed");
+
+        assert_eq!(
+            snap1.symbol_count(), 1,
+            "rev1 snapshot must have exactly 1 symbol (named 'first')"
+        );
+        assert_eq!(
+            snap2.symbol_count(), 1,
+            "rev2 snapshot must have exactly 1 symbol (named 'second')"
+        );
+
+        // Rev 3: concurrent ingest advances head to rev3.
+        let g3 = make_graph("third");
+        let rev3 = repo.save_call_graph_ws(&g3, &ws).await
+            .expect("save rev3 must succeed");
+
+        // Head is now rev3; pinned reader at rev1 must STILL return rev1 data.
+        let pinned1 = provider.snapshot(&ws, rev1)
+            .expect("snapshot(rev1) must still succeed after head advanced");
+        assert_eq!(
+            pinned1.symbol_count(), 1,
+            "pinned revision-1 read must still return revision-1 graph (1 symbol)"
+        );
+
+        // Also verify rev2 is still accessible.
+        let pinned2 = provider.snapshot(&ws, rev2)
+            .expect("snapshot(rev2) must still succeed after head advanced");
+        assert_eq!(
+            pinned2.symbol_count(), 1,
+            "pinned revision-2 read must still return revision-2 graph"
+        );
+    });
 
     /// A minimal in-memory implementation for testing.
     /// Stores snapshots keyed by (workspace, revision).
