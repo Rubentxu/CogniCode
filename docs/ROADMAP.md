@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-27 (E28 PR2 Persistence shipped v0.62.0.)
+Last updated: 2026-07-27 (E28.0 chain complete: PR1 Foundation v0.61.0 + PR2 Persistence v0.62.0 merged; PR3 Snapshot+Bridge pending.)
 
 ## Active
 
@@ -13,18 +13,30 @@ Last updated: 2026-07-27 (E28 PR2 Persistence shipped v0.62.0.)
 consistent across PostgreSQL and immutable in-memory snapshots while keeping
 PostgreSQL as the sole canonical store.
 
-All E28 changes are **PROPOSED**. Each change requires its own approved SDD
-artifacts before implementation begins.
+**E28.0 is DONE** (PR1 Foundation v0.61.0 + PR2 Persistence v0.62.0 merged;
+PR3 Snapshot+Bridge pending to close the foundation chain). E28.1 through
+E28.6 remain **PROPOSED**, each requiring its own approved SDD artifacts
+before implementation begins.
 
 | Change | Goal | Depends on | Exit criteria | Status |
 |---|---|---|---|---|
-| `e28-0-canonical-graph-revisions` | Stabilize identity, typed property round-trip, workspace isolation, immutable revisions, deletion, and snapshot refresh | None | The same node and edge identities round-trip through PostgreSQL and snapshots; runs pin one workspace and revision; ingest, deletion, and refresh tests pass | PROPOSED |
+| `e28-0-canonical-graph-revisions` | Stabilize identity, typed property round-trip, workspace isolation, immutable revisions, deletion, and snapshot refresh | None | The same node and edge identities round-trip through PostgreSQL and snapshots; runs pin one workspace and revision; ingest, deletion, and refresh tests pass | **DONE** (PR1 v0.61.0 + PR2 v0.62.0 merged; PR3 pending) |
 | `e28-1-moldplan-graphplan-contracts` | Introduce versioned `MoldPlan`/`GraphPlan`, typed results, execution policy, limits, and structured unsupported-operation errors | E28.0 | Plans contain no backend or presentation types; every run declares limits; unsupported operations fail before execution | PROPOSED |
 | `e28-2-differential-graph-executors` | Execute existing `PATH`, `NEIGHBORS`, `SUBGRAPH`, `CLUSTER`, `EXPLAIN`, and boolean composition in PostgreSQL and snapshot executors | E28.1 | Golden fixtures prove equivalent typed multisets, ordering, paths, errors, provenance, and truncation; no supported operation returns synthetic empty success | PROPOSED |
 | `e28-3-moldql-pattern-profile-v1` | Add read-only typed patterns, direction, bounded quantifiers, predicates, aggregation, ordering, limits, and bounded shortest paths | E28.2 | The supported-feature matrix is published; parser, lowering, differential, REST/MCP, and Explorer interaction tests pass; no Cypher/GQL compatibility claim is made | PROPOSED |
 | `e28-4-analytics-registry-cohort-1` | Add descriptor admission, `stream`/`stats`/`annotate`/`persist` modes, run lineage, and stabilize PageRank, SCC, WCC, and bounded shortest paths | E28.2 | Every admitted algorithm is versioned, resource-governed, reproducible, and non-mutating; cohort-1 conformance and composition tests pass | PROPOSED |
 | `e28-5-structural-analytics-cohort-2` | Add dominators, articulation points, bridges, and k-core for impact, seam, dependency-pressure, and risk views | E28.4 | Each algorithm has a product question, descriptor, golden fixtures, and either an Explorer surface or an explicit internal/composable classification | PROPOSED |
 | `e28-6-advanced-analytics-evidence-gate` | Evaluate betweenness, k-shortest paths, multi-source reachability, personalized PageRank, Leiden, conductance/modularity, node similarity, and an optional Neo4j CI oracle | E28.5 | Only measured, product-relevant algorithms are admitted; optional oracle checks do not affect production availability; any production sidecar proposal is deferred to a separate ADR | PROPOSED |
+
+#### E28.0 stacked-to-main chain
+
+| Sub-PR | Branch | Status | Tag | PR |
+|---|---|---|---|---|
+| PR1 Foundation | `feat/e28-0-canonical-graph-revisions` | ✅ Merged | v0.61.0 | [#135](https://github.com/Rubentxu/CogniCode/pull/135) |
+| PR2 Persistence | `feat/e28-0-pr2-persistence` | ✅ Merged | v0.62.0 | [#136](https://github.com/Rubentxu/CogniCode/pull/136) |
+| **PR3 Snapshot+Bridge** | `feat/e28-0-pr3-snapshot-bridge` | 🔲 Pending | — | — |
+
+PR3 closes the E28.0 chain (Phase 4: Repository trait extension + GenericGraphRepository + MetadataAwareRepository contract tests + 5 carry-over WARNING cleanup). E28.1 unblocks once E28.0 is fully DONE.
 
 #### E28 execution order
 
