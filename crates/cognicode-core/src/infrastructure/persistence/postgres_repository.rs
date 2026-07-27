@@ -31,7 +31,7 @@ use crate::domain::services::ExtractionContext;
 use crate::domain::traits::repository::{Repository, RepositoryError};
 #[cfg(feature = "postgres")]
 use crate::domain::value_objects::{
-    DependencyType, EdgeMetadata, Location, Provenance, SymbolKind,
+    DependencyType, EdgeMetadata, Location, Provenance, RevisionId, SymbolKind, WorkspaceId,
 };
 
 /// Schema DDL embedded at compile time.
@@ -415,6 +415,151 @@ impl PostgresRepository {
             .await
             .map_err(|e| RepositoryError::Store(format!("save_call_graph commit: {e}")))?;
         Ok(())
+    }
+
+    /// Save a [`CallGraph`] for a specific workspace, opening a new revision.
+    ///
+    /// This is the workspace-scoped variant used by Phase 2 (e28-0 PR2).
+    /// It opens a new `graph_revisions` row with `head_of=true`, atomically
+    /// demoting the previous head, then performs a delete-and-replace of all
+    /// `graph_nodes` and `graph_edges` for the given workspace.
+    ///
+    /// Returns the newly opened [`RevisionId`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `RepositoryError::Store` on any DB failure.
+    pub async fn save_call_graph_ws(
+        &self,
+        graph: &CallGraph,
+        workspace_id: &WorkspaceId,
+    ) -> Result<RevisionId, RepositoryError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| RepositoryError::Store(format!("save_call_graph_ws begin: {e}")))?;
+
+        // Step 1: Open a new revision.
+        // First, demote the existing head (if any) to `head_of = false`.
+        // We use UPDATE ... WHERE head_of = true to be precise.
+        sqlx::query(
+            "UPDATE graph_revisions \
+             SET head_of = false \
+             WHERE workspace_id = $1 AND head_of = true",
+        )
+        .bind(workspace_id.as_str())
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("save_call_graph_ws demote head: {e}")))?;
+
+        // Next, compute MAX(revision_id) + 1 for this workspace.
+        // If no revision exists yet, COALESCE returns 0 and we add 1 → 1.
+        let next_rev: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(revision_id), 0) + 1 \
+             FROM graph_revisions \
+             WHERE workspace_id = $1",
+        )
+        .bind(workspace_id.as_str())
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| RepositoryError::Store(format!(
+            "save_call_graph_ws compute next revision: {e}"
+        )))?;
+
+        // Insert the new head row.
+        sqlx::query(
+            "INSERT INTO graph_revisions (workspace_id, revision_id, head_of) \
+             VALUES ($1, $2, true)",
+        )
+        .bind(workspace_id.as_str())
+        .bind(next_rev)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("save_call_graph_ws insert revision: {e}")))?;
+
+        let ws_str = workspace_id.as_str();
+
+        // Step 2: Delete existing graph_nodes and graph_edges for this workspace.
+        // This is the "delete" half of delete-and-replace.
+        sqlx::query("DELETE FROM graph_edges WHERE workspace_id = $1")
+            .bind(ws_str)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| RepositoryError::Store(format!(
+                "save_call_graph_ws delete edges: {e}"
+            )))?;
+        sqlx::query("DELETE FROM graph_nodes WHERE workspace_id = $1")
+            .bind(ws_str)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| RepositoryError::Store(format!(
+                "save_call_graph_ws delete nodes: {e}"
+            )))?;
+
+        // Step 3: Insert every symbol into graph_nodes.
+        for (_id, symbol) in graph.symbol_ids() {
+            let location = symbol.location();
+            let line = location.line() as i32;
+            let column = location.column() as i32;
+            let kind_str = format!("symbol.{}", symbol.kind());
+            sqlx::query(
+                "INSERT INTO graph_nodes \
+                    (id, kind, label, source_path, properties, workspace_id) \
+                 VALUES ($1, $2, $3, $4, $5, $6)",
+            )
+            .bind(symbol.fully_qualified_name())
+            .bind(&kind_str)
+            .bind(symbol.name())
+            .bind(location.file())
+            .bind(serde_json::json!({
+                "line": line,
+                "column": column,
+            }))
+            .bind(ws_str)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| RepositoryError::Store(format!(
+                "save_call_graph_ws insert symbol: {e}"
+            )))?;
+        }
+
+        // Step 4: Insert every edge into graph_edges.
+        for (src, tgt, dep_type, prov, conf) in graph.edges_with_metadata() {
+            let caller_name = graph
+                .get_symbol(&src)
+                .map(|s| s.name().to_string())
+                .unwrap_or_default();
+            let callee_name = graph
+                .get_symbol(&tgt)
+                .map(|s| s.name().to_string())
+                .unwrap_or_default();
+            let edge_kind = format!("dependency.{}", dep_type);
+            sqlx::query(
+                "INSERT INTO graph_edges \
+                    (source_id, target_id, kind, provenance, confidence, metadata, workspace_id) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            )
+            .bind(src.as_str())
+            .bind(tgt.as_str())
+            .bind(&edge_kind)
+            .bind(prov.to_string())
+            .bind(conf)
+            .bind(serde_json::Value::Null) // metadata
+            .bind(ws_str)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| RepositoryError::Store(format!(
+                "save_call_graph_ws insert edge: {e}"
+            )))?;
+        }
+
+        // Step 5: Commit.
+        tx.commit()
+            .await
+            .map_err(|e| RepositoryError::Store(format!("save_call_graph_ws commit: {e}")))?;
+
+        Ok(RevisionId(next_rev as u64))
     }
 
     /// Reconstruct a [`CallGraph`] from the `symbols` + `call_edges`
@@ -1096,6 +1241,138 @@ impl PostgresRepository {
         .await
         .map_err(|e| RepositoryError::Store(format!("update_view_spec: {e}")))?;
         Ok(result.rows_affected() > 0)
+    }
+
+    /// 2.5b GREEN — implement `load_call_graph_ws(&self, &WorkspaceId, RevisionId)
+    /// -> Result<Option<CallGraph>, RepositoryError>` querying graph_nodes and
+    /// graph_edges filtered by workspace_id and reconstructing the CallGraph via
+    /// the domain API (symbol creation + add_dependency_with_provenance).
+    pub async fn load_call_graph_ws(
+        &self,
+        workspace_id: &WorkspaceId,
+        _revision_id: RevisionId,
+    ) -> Result<Option<CallGraph>, RepositoryError> {
+        // 1. Query all graph_nodes for this workspace.
+        #[derive(Debug, sqlx::FromRow)]
+        struct NodeRow {
+            id: String,
+            label: String,
+            kind: String,
+            source_path: String,
+            properties: serde_json::Value,
+        }
+
+        let nodes: Vec<NodeRow> = sqlx::query_as(
+            "SELECT id, label, kind, source_path, properties \
+             FROM graph_nodes \
+             WHERE workspace_id = $1 \
+             ORDER BY id",
+        )
+        .bind(workspace_id.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("load_call_graph_ws select nodes: {e}")))?;
+
+        if nodes.is_empty() {
+            // No nodes → either empty workspace or non-existent workspace.
+            // Distinguish by checking graph_revisions.
+            let rev_count: Option<i64> = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM graph_revisions WHERE workspace_id = $1",
+            )
+            .bind(workspace_id.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!(
+                "load_call_graph_ws count revisions: {e}"
+            )))?;
+            return if rev_count == Some(0) {
+                Ok(None) // truly empty workspace
+            } else {
+                Ok(Some(CallGraph::new())) // workspace exists but no symbols yet
+            };
+        }
+
+        // 2. Build CallGraph + FQN→SymbolId map.
+        let mut graph = CallGraph::new();
+        let mut fqn_to_id: HashMap<String, SymbolId> = HashMap::new();
+        for row in nodes {
+            // Parse kind: stored as "symbol.function" → strip "symbol." prefix.
+            let kind_str = row.kind.strip_prefix("symbol.").unwrap_or(&row.kind);
+            let kind = SymbolKind::from_str(kind_str).unwrap_or(SymbolKind::Unknown);
+
+            // Parse location from JSON properties: { "line": N, "column": M }
+            let (line, column) = match &row.properties {
+                serde_json::Value::Object(map) => {
+                    let l = map.get("line").and_then(|v| v.as_i64()).unwrap_or(1) as u32;
+                    let c = map.get("column").and_then(|v| v.as_i64()).unwrap_or(0) as u32;
+                    (l, c)
+                }
+                _ => (1, 0),
+            };
+            let location = Location::new(&row.source_path, line, column);
+
+            let symbol = Symbol::new(&row.label, kind, location);
+            let id = graph.add_symbol(symbol);
+            fqn_to_id.insert(row.id.clone(), id);
+        }
+
+        // 3. Query all graph_edges for this workspace.
+        #[derive(Debug, sqlx::FromRow)]
+        struct GraphEdgeRow {
+            source_id: String,
+            target_id: String,
+            kind: String,
+            provenance: String,
+            confidence: f64,
+        }
+
+        let edges: Vec<GraphEdgeRow> = sqlx::query_as(
+            "SELECT source_id, target_id, kind, provenance, confidence \
+             FROM graph_edges \
+             WHERE workspace_id = $1 \
+             ORDER BY source_id",
+        )
+        .bind(workspace_id.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("load_call_graph_ws select edges: {e}")))?;
+
+        // 4. Reconstruct edges via add_dependency_with_provenance.
+        for row in edges {
+            let src_id = fqn_to_id.get(&row.source_id).ok_or_else(|| {
+                RepositoryError::Store(format!(
+                    "load_call_graph_ws missing source symbol: {}",
+                    row.source_id
+                ))
+            })?;
+            let tgt_id = fqn_to_id.get(&row.target_id).ok_or_else(|| {
+                RepositoryError::Store(format!(
+                    "load_call_graph_ws missing target symbol: {}",
+                    row.target_id
+                ))
+            })?;
+
+            // kind stored as "dependency.calls" → extract "calls"
+            let dep_type_str = row.kind.strip_prefix("dependency.").unwrap_or(&row.kind);
+            let dep_type =
+                DependencyType::from_str(dep_type_str).unwrap_or(DependencyType::Calls);
+
+            let provenance =
+                Provenance::from_str(&row.provenance).unwrap_or(Provenance::Extracted);
+
+            // Round-trip: provenance + confidence → ExtractionContext →
+            // ConfidenceRules::assign → same (provenance, confidence).
+            let ctx = Self::provenance_to_extraction_context(provenance, row.confidence);
+            graph
+                .add_dependency_with_provenance(src_id, tgt_id, dep_type, ctx)
+                .map_err(|e| {
+                    RepositoryError::Store(format!(
+                        "load_call_graph_ws add_dependency_with_provenance: {e}"
+                    ))
+                })?;
+        }
+
+        Ok(Some(graph))
     }
 }
 
@@ -3048,6 +3325,356 @@ mod tests {
 
         g
     }
+
+    // -----------------------------------------------------------------
+    // Phase 2: Persistence — graph_revisions and workspace-scoped save/load
+    // (e28-0 PR2)
+    // -----------------------------------------------------------------
+
+    /// 2.4a RED — pg_test asserting `save_call_graph_ws` with a colliding unique-index
+    /// row returns `Err(RepositoryError::Store(_))` and leaves 0 symbols/0 edges
+    /// and 0 `graph_revisions` rows for `ws`.
+    pg_test!(save_call_graph_ws_failed_commit_leaves_no_revision, |pool: PgPool| {
+        use crate::domain::value_objects::WorkspaceId;
+
+        let repo = PostgresRepository::from_pool(pool);
+        let ws = WorkspaceId::default();
+
+        // Pre-seed a node so we can force a CHECK constraint violation.
+        // We install a CHECK on graph_nodes.kind that rejects the kind value
+        // "symbol.function" (the kind of every function symbol).
+        // The save_call_graph_ws will try to INSERT a Function symbol,
+        // triggering the CHECK → tx rolls back.
+        sqlx::query(
+            "ALTER TABLE graph_nodes \
+             ADD CONSTRAINT chk_ws_reject_function_kind \
+             CHECK (kind != 'symbol.function' OR workspace_id != $1)",
+        )
+        .bind(ws.as_str())
+        .execute(repo.pool())
+        .await
+        .expect("add CHECK constraint");
+
+        let mut g = CallGraph::new();
+        use crate::domain::value_objects::Location;
+        use crate::domain::aggregates::Symbol;
+        use crate::domain::value_objects::SymbolKind;
+        g.add_symbol(Symbol::new(
+            "x",
+            SymbolKind::Function,
+            Location::new("x.rs", 1, 0),
+        ));
+
+        let result = repo.save_call_graph_ws(&g, &ws).await;
+        assert!(
+            matches!(result, Err(RepositoryError::Store(_))),
+            "expected Store error on CHECK constraint violation, got {result:?}"
+        );
+
+        // After rollback: 0 symbols, 0 edges, 0 graph_revisions for this workspace
+        let sym_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1")
+                .bind(ws.as_str())
+                .fetch_one(repo.pool())
+                .await
+                .expect("count symbols after rollback");
+        assert_eq!(
+            sym_count, 0,
+            "no symbols must remain after failed commit"
+        );
+
+        let edge_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM graph_edges WHERE workspace_id = $1")
+                .bind(ws.as_str())
+                .fetch_one(repo.pool())
+                .await
+                .expect("count edges after rollback");
+        assert_eq!(
+            edge_count, 0,
+            "no edges must remain after failed commit"
+        );
+
+        let rev_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM graph_revisions WHERE workspace_id = $1",
+        )
+        .bind(ws.as_str())
+        .fetch_one(repo.pool())
+        .await
+        .expect("count revisions after rollback");
+        assert_eq!(
+            rev_count, 0,
+            "no graph_revisions rows must remain after failed commit"
+        );
+
+        // Cleanup
+        let _ = sqlx::query(
+            "ALTER TABLE graph_nodes DROP CONSTRAINT IF EXISTS chk_ws_reject_function_kind",
+        )
+        .execute(repo.pool())
+        .await;
+    });
+
+    /// 2.5a RED — pg_test asserting `load_call_graph_ws(&ws, rev)` returns
+    /// `Ok(Some(g))` with exact symbol_count and edge_count, and every edge's
+    /// (provenance, confidence) matches what was saved.
+    pg_test!(load_call_graph_ws_returns_exact_graph, |pool: PgPool| {
+        use crate::domain::value_objects::{WorkspaceId, RevisionId};
+
+        let repo = PostgresRepository::from_pool(pool);
+        let ws = WorkspaceId::default();
+
+        // Build a graph with known edges carrying specific provenance + confidence.
+        let mut g = CallGraph::new();
+        use crate::domain::aggregates::Symbol;
+        use crate::domain::services::ExtractionContext;
+        use crate::domain::value_objects::{Location, SymbolKind, DependencyType, Provenance};
+        let id_a = g.add_symbol(Symbol::new(
+            "a",
+            SymbolKind::Function,
+            Location::new("main.rs", 10, 0),
+        ));
+        let id_b = g.add_symbol(Symbol::new(
+            "b",
+            SymbolKind::Function,
+            Location::new("main.rs", 20, 0),
+        ));
+        // Edge with specific provenance + confidence — Heuristic round-trips as Inferred
+        g.add_dependency_with_provenance(
+            &id_a, &id_b,
+            DependencyType::Calls,
+            ExtractionContext::Heuristic { score: 0.87 },
+        ).expect("add_dependency_with_provenance must succeed");
+
+        // Save and capture the returned revision
+        let rev = repo.save_call_graph_ws(&g, &ws)
+            .await
+            .expect("save_call_graph_ws must succeed");
+
+        // Load the graph at the saved revision
+        let loaded = repo.load_call_graph_ws(&ws, rev)
+            .await
+            .expect("load_call_graph_ws must succeed")
+            .expect("load must return Some for a saved workspace");
+
+        assert_eq!(
+            loaded.symbol_count(),
+            2,
+            "loaded graph must have exactly 2 symbols"
+        );
+        assert_eq!(
+            loaded.edge_count(),
+            1,
+            "loaded graph must have exactly 1 edge"
+        );
+
+        // Verify edge provenance + confidence
+        let edges: Vec<_> = loaded.edges_with_metadata().collect();
+        assert_eq!(edges.len(), 1, "must have exactly one edge");
+        let (_src, _tgt, dep_type, prov, conf) = edges[0].clone();
+        assert_eq!(dep_type, DependencyType::Calls, "dependency type must be Calls");
+        assert_eq!(prov, Provenance::Inferred, "provenance must be Inferred");
+        assert!(
+            (conf - 0.87).abs() < 1e-9,
+            "confidence must be 0.87, got {conf}"
+        );
+    });
+
+    /// 2.3a RED — pg_test asserting `save_call_graph_ws` returns `Ok(RevisionId)`,
+    /// opens one `graph_revisions` row `head_of=true revision_id=rev`, and
+    /// populates the expected symbols and edges count.
+    pg_test!(save_call_graph_ws_returns_revision_id_and_populates, |pool: PgPool| {
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
+
+        let repo = PostgresRepository::from_pool(pool);
+        let graph = build_mixed_provenance_graph();
+        let ws = WorkspaceId::default();
+
+        // save_call_graph_ws must return a valid RevisionId
+        let rev = repo
+            .save_call_graph_ws(&graph, &ws)
+            .await
+            .expect("save_call_graph_ws must succeed");
+        assert!(rev.is_valid(), "revision must be valid");
+        assert!(rev.get() > 0, "revision must be > 0");
+
+        // Exactly one graph_revisions row with head_of=true
+        let head_rows: Vec<(String, i64, bool)> = sqlx::query_as(
+            "SELECT workspace_id, revision_id, head_of FROM graph_revisions WHERE workspace_id = $1 AND head_of = true",
+        )
+        .bind(ws.as_str())
+        .fetch_all(repo.pool())
+        .await
+        .expect("query head rows");
+        assert_eq!(
+            head_rows.len(),
+            1,
+            "must have exactly 1 head row, got {}",
+            head_rows.len()
+        );
+        assert_eq!(
+            head_rows[0].1,
+            rev.get() as i64,
+            "head revision_id must match returned revision"
+        );
+
+        // Check symbols and edges counts in graph_nodes / graph_edges
+        let sym_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1",
+        )
+        .bind(ws.as_str())
+        .fetch_one(repo.pool())
+        .await
+        .expect("count symbols");
+        assert_eq!(
+            sym_count,
+            graph.symbol_count() as i64,
+            "graph_nodes row count must match symbol count"
+        );
+
+        let edge_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM graph_edges WHERE workspace_id = $1",
+        )
+        .bind(ws.as_str())
+        .fetch_one(repo.pool())
+        .await
+        .expect("count edges");
+        assert_eq!(
+            edge_count,
+            graph.edge_count() as i64,
+            "graph_edges row count must match edge count"
+        );
+    });
+
+    /// 2.2a RED — pg_test asserting `save_call_graph_ws(&g, &ws2)` with
+    /// `ws1` already at head 3 advances `ws2`'s counter, not `ws1`'s.
+    pg_test!(save_call_graph_ws_workspace_isolated_counters, |pool: PgPool| {
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
+
+        let repo = PostgresRepository::from_pool(pool);
+        let graph = build_mixed_provenance_graph();
+        let ws1 = WorkspaceId::default(); // "default"
+        let ws2 = WorkspaceId::try_new("ws2").expect("ws2 is valid");
+
+        // ws1 commits: rev 1
+        let rev1 = repo
+            .save_call_graph_ws(&graph, &ws1)
+            .await
+            .expect("ws1 commit 1");
+        assert_eq!(rev1, RevisionId(1));
+
+        // ws1 commits: rev 2
+        let rev2 = repo
+            .save_call_graph_ws(&graph, &ws1)
+            .await
+            .expect("ws1 commit 2");
+        assert_eq!(rev2, RevisionId(2));
+
+        // ws1 commits: rev 3
+        let rev3 = repo
+            .save_call_graph_ws(&graph, &ws1)
+            .await
+            .expect("ws1 commit 3");
+        assert_eq!(rev3, RevisionId(3));
+
+        // ws2 first commit: should be rev 1 (not rev 4!)
+        let ws2_rev1 = repo
+            .save_call_graph_ws(&graph, &ws2)
+            .await
+            .expect("ws2 first commit");
+        assert_eq!(
+            ws2_rev1,
+            RevisionId(1),
+            "ws2 should start at rev 1, not continue from ws1's rev 3"
+        );
+
+        // ws1 head must still be 3
+        let ws1_head: Option<(String, i64)> = sqlx::query_as(
+            "SELECT workspace_id, revision_id FROM graph_revisions WHERE workspace_id = $1 AND head_of = true",
+        )
+        .bind(ws1.as_str())
+        .fetch_optional(repo.pool())
+        .await
+        .expect("query ws1 head");
+        assert!(ws1_head.is_some(), "ws1 should have a head");
+        assert_eq!(
+            ws1_head.unwrap().1, 3_i64,
+            "ws1 head must still be 3 after ws2 commits"
+        );
+
+        // ws2 head must be 1
+        let ws2_head: Option<(String, i64)> = sqlx::query_as(
+            "SELECT workspace_id, revision_id FROM graph_revisions WHERE workspace_id = $1 AND head_of = true",
+        )
+        .bind(ws2.as_str())
+        .fetch_optional(repo.pool())
+        .await
+        .expect("query ws2 head");
+        assert!(ws2_head.is_some(), "ws2 should have a head");
+        assert_eq!(ws2_head.unwrap().1, 1_i64, "ws2 head must be 1");
+    });
+
+    /// 2.1a RED — pg_test asserting two sequential `save_call_graph_ws`
+    /// calls open revisions `(1,true)` then `(2,true)` and no duplicate
+    /// `(workspace_id,revision_id)`.
+    pg_test!(save_call_graph_ws_opens_monotonic_revision, |pool: PgPool| {
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
+
+        let repo = PostgresRepository::from_pool(pool);
+        let graph = build_mixed_provenance_graph();
+        let ws = WorkspaceId::default();
+
+        // First commit opens revision 1
+        let rev1 = repo
+            .save_call_graph_ws(&graph, &ws)
+            .await
+            .expect("first commit must succeed");
+        assert!(rev1.is_valid(), "first revision must be valid");
+        assert_eq!(rev1, RevisionId(1), "first revision must be 1");
+
+        // Check graph_revisions: exactly one head = rev1
+        let head1: (i64, bool) = sqlx::query_as(
+            "SELECT revision_id, head_of FROM graph_revisions WHERE workspace_id = $1 AND head_of = true",
+        )
+        .bind(ws.as_str())
+        .fetch_one(repo.pool())
+        .await
+        .expect("must have exactly one head row after first commit");
+        assert_eq!(head1.0, 1_i64, "head revision_id must be 1");
+        assert!(head1.1, "head_of must be true");
+
+        // Second commit opens revision 2
+        let rev2 = repo
+            .save_call_graph_ws(&graph, &ws)
+            .await
+            .expect("second commit must succeed");
+        assert_eq!(rev2, RevisionId(2), "second revision must be 2");
+
+        // Check graph_revisions: head is now rev2
+        let head2: (i64, bool) = sqlx::query_as(
+            "SELECT revision_id, head_of FROM graph_revisions WHERE workspace_id = $1 AND head_of = true",
+        )
+        .bind(ws.as_str())
+        .fetch_one(repo.pool())
+        .await
+        .expect("must have exactly one head row after second commit");
+        assert_eq!(head2.0, 2_i64, "head revision_id must be 2");
+        assert!(head2.1, "head_of must be true");
+
+        // Both revisions must exist (for pinned reads)
+        let all_revs: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT workspace_id, revision_id FROM graph_revisions WHERE workspace_id = $1 ORDER BY revision_id",
+        )
+        .bind(ws.as_str())
+        .fetch_all(repo.pool())
+        .await
+        .expect("must have 2 revision rows");
+        assert_eq!(all_revs.len(), 2, "must have exactly 2 revision rows");
+        assert_eq!(all_revs[0].1, 1, "revision 1 must exist");
+        assert_eq!(all_revs[1].1, 2, "revision 2 must exist");
+
+        // PK constraint: no duplicate (workspace_id, revision_id) — verified by UNIQUE index
+        // If there were a duplicate, the INSERT would have failed with a unique violation.
+    });
 
     /// Spec requirement: `save_call_graph` populates both
     /// `symbols` and `call_edges` in a single transaction.
