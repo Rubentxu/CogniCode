@@ -191,7 +191,7 @@ impl GraphEdge {
 
     /// Converts `metadata` to a `HashMap<String, String>` for backward
     /// compatibility. Non-string values are skipped.
-    pub fn metadata_to_map(&self) -> HashMap<String, String> {
+    pub fn to_map(&self) -> HashMap<String, String> {
         match &self.metadata {
             Value::Object(map) => map
                 .iter()
@@ -201,6 +201,16 @@ impl GraphEdge {
                 .collect(),
             _ => HashMap::new(),
         }
+    }
+
+    /// Imports metadata from a `HashMap<String, String>` (backward compat adapter).
+    pub fn from_map(mut self, map: &HashMap<String, String>) -> Self {
+        self.metadata = Value::Object(
+            map.iter()
+                .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+                .collect(),
+        );
+        self
     }
 }
 
@@ -269,7 +279,7 @@ impl GraphNode {
 
     /// Converts `properties` to a `HashMap<String, String>` for backward
     /// compatibility. Non-string values are skipped.
-    pub fn properties_to_map(&self) -> HashMap<String, String> {
+    pub fn to_map(&self) -> HashMap<String, String> {
         match &self.properties {
             Value::Object(map) => map
                 .iter()
@@ -364,7 +374,7 @@ impl GraphNodeBuilder {
     }
 
     /// Imports properties from a `HashMap<String, String>` (backward compat adapter).
-    pub fn properties_from_map(mut self, map: &HashMap<String, String>) -> Self {
+    pub fn from_map(mut self, map: &HashMap<String, String>) -> Self {
         self.properties = Value::Object(
             map.iter()
                 .map(|(k, v)| (k.clone(), Value::String(v.clone())))
@@ -549,7 +559,7 @@ mod tests {
         assert!(edge.has_metadata());
 
         // Backward-compatible access via to_map adapter
-        let map = edge.metadata_to_map();
+        let map = edge.to_map();
         assert_eq!(map.get("section").map(String::as_str), Some("intro"));
         assert_eq!(map.get("line").map(String::as_str), Some("12"));
     }
@@ -617,9 +627,9 @@ mod tests {
         assert_eq!(retrieved, &nested);
     }
 
-    /// `metadata_to_map()` adapter converts JSON metadata to flat `HashMap<String, String>`.
+    /// `to_map()` adapter converts JSON metadata to flat `HashMap<String, String>`.
     #[test]
-    fn graph_edge_metadata_to_map_adapter() {
+    fn graph_edge_to_map_adapter() {
         let edge = GraphEdge::new(
             symbol_id(),
             symbol_id_2(),
@@ -631,7 +641,7 @@ mod tests {
         .with_metadata("lang", "rust")
         .with_metadata("tier", "1");
 
-        let map = edge.metadata_to_map();
+        let map = edge.to_map();
         assert_eq!(map.get("lang").map(String::as_str), Some("rust"));
         assert_eq!(map.get("tier").map(String::as_str), Some("1"));
     }
@@ -664,7 +674,7 @@ mod tests {
             Some(std::path::Path::new("/repo/src/main.rs"))
         );
         // Backward-compatible access via to_map adapter
-        let map = node.properties_to_map();
+        let map = node.to_map();
         assert_eq!(map.get("visibility").map(String::as_str), Some("pub"));
         assert_eq!(node.created_at, now);
         assert_eq!(node.updated_at, now);
@@ -747,7 +757,7 @@ mod tests {
         assert_eq!(node.label, "main");
 
         // Backward-compatible access via to_map adapter
-        let map = node.properties_to_map();
+        let map = node.to_map();
         assert_eq!(map.get("visibility").map(String::as_str), Some("pub"));
         assert_eq!(node.created_at, now);
     }
@@ -808,7 +818,7 @@ mod tests {
         let json = serde_json::to_string(&node).expect("serialize");
         let parsed: GraphNode = serde_json::from_str(&json).expect("deserialize");
 
-        let map = parsed.properties_to_map();
+        let map = parsed.to_map();
         assert_eq!(
             map.get("visibility").map(String::as_str),
             Some("pub"),
@@ -824,31 +834,31 @@ mod tests {
     /// `to_map()` adapter must convert JSON properties back to `HashMap<String, String>`
     /// for backward compatibility with code that expects flat string properties.
     #[test]
-    fn graph_node_properties_to_map_adapter() {
+    fn graph_node_to_map_adapter() {
         let node = GraphNode::builder(symbol_id(), NodeKind::Symbol(SymbolKind::Function))
             .property("visibility", "pub")
             .property("line", "42")
             .build();
 
-        let map = node.properties_to_map();
+        let map = node.to_map();
         assert_eq!(map.get("visibility").map(String::as_str), Some("pub"));
         assert_eq!(map.get("line").map(String::as_str), Some("42"));
     }
 
     /// `from_map()` adapter must convert `HashMap<String, String>` to JSON properties.
     #[test]
-    fn graph_node_properties_from_map_adapter() {
+    fn graph_node_from_map_adapter() {
         use std::collections::HashMap;
         let mut map = HashMap::new();
         map.insert("visibility".to_string(), "pub".to_string());
         map.insert("line".to_string(), "42".to_string());
 
         let node = GraphNode::builder(symbol_id(), NodeKind::Symbol(SymbolKind::Function))
-            .properties_from_map(&map)
+            .from_map(&map)
             .build();
 
-        // Verify round-trip: properties_from_map creates Value which to_map decodes back
-        let decoded = node.properties_to_map();
+        // Verify round-trip: from_map creates Value which to_map decodes back
+        let decoded = node.to_map();
         assert_eq!(decoded.get("visibility").map(String::as_str), Some("pub"));
         assert_eq!(decoded.get("line").map(String::as_str), Some("42"));
     }
