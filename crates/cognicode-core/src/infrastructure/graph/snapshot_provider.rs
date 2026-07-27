@@ -991,4 +991,61 @@ mod tests {
             events_received
         );
     }
+
+    // Retrofit the notification_batching test to multi_thread flavor.
+    // The original pg_test! macro uses current_thread which masks the panic.
+    // We redefine it here as multi_thread to catch regressions.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn notification_batching_50_inserts_multi_thread() {
+        use crate::domain::traits::repository::Repository;
+        use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
+
+        let Some(pool) = fresh_pool().await else {
+            eprintln!("skipping: TEST_DATABASE_URL not set");
+            return;
+        };
+
+        let ws = WorkspaceId::default();
+
+        // Create a minimal graph to establish rev 1.
+        let repo = PostgresRepository::from_pool(pool.clone());
+        let g0 = make_graph("base");
+        let rev0 = repo.save_call_graph_ws(&g0, &ws).await
+            .expect("initial save must succeed");
+
+        // Subscribe BEFORE the batch window.
+        let provider = SnapshotProviderImpl::new(pool.clone());
+        let mut rx = provider.subscribe(&ws);
+
+        // Drain any prior pending notification.
+        let _ = rx.try_recv();
+
+        // Do 50 rapid edge inserts within a tight loop.
+        let _final_rev = rev0.get() + 50;
+        for i in 0..50_i32 {
+            let node_a = format!("n{}", i * 2);
+            let g = make_graph(&node_a);
+            let _ = repo.save_call_graph_ws(&g, &ws).await;
+        }
+
+        // Drain events within 150ms (100ms debounce + margin).
+        let mut events_received = 0;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(150);
+        while std::time::Instant::now() < deadline {
+            if rx.try_recv().is_ok() {
+                events_received += 1;
+            }
+            if events_received >= 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+
+        // 50 rapid inserts should produce at most 1 batched notification.
+        assert!(
+            events_received <= 1,
+            "50 rapid inserts must produce at most 1 batched notification, got {}",
+            events_received
+        );
+    }
 }
