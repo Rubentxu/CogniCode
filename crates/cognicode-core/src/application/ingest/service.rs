@@ -21,6 +21,7 @@ use crate::application::ingest::types::{
     ChangeKind, FailedFile, ScanProgress, ScanResult, ScanStage,
 };
 use crate::infrastructure::graph::graph_cache::GraphCache;
+use crate::infrastructure::graph::snapshot_provider::SnapshotProvider;
 use crate::infrastructure::persistence::PostgresRepository;
 
 /// Run the full ingest pipeline for a workspace root.
@@ -179,7 +180,11 @@ pub async fn run_scan(
 
     // ── Stage 4: Refresh ──────────────────────────────────────────
     report_progress(on_progress, ScanStage::Refresh, 0, 1, 0);
-    if let Err(e) = refresh_from_pg(repo, cache).await {
+    use crate::domain::value_objects::WorkspaceId;
+    use crate::infrastructure::graph::SnapshotProviderImpl;
+    let ws = WorkspaceId::try_new(workspace_id).unwrap_or_default();
+    let provider = SnapshotProviderImpl::new(repo.pool().clone());
+    if let Err(e) = refresh_from_pg(&provider, cache, &ws).await {
         tracing::error!("refresh failed: {e}");
         failed_files.push(FailedFile {
             path: "<refresh>".to_string(),

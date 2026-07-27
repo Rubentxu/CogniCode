@@ -232,3 +232,9 @@ DROP TRIGGER IF EXISTS graph_nodes_notify ON graph_nodes;
 CREATE TRIGGER graph_nodes_notify
     AFTER INSERT OR UPDATE OR DELETE ON graph_nodes
     FOR EACH ROW EXECUTE FUNCTION notify_graph_change();
+
+-- e28-0 PR2 Phase 3 (3.4b): Extend notify trigger to graph_edges table
+DROP TRIGGER IF EXISTS graph_edges_notify ON graph_edges;
+CREATE TRIGGER graph_edges_notify
+    AFTER INSERT OR UPDATE OR DELETE ON graph_edges
+    FOR EACH ROW EXECUTE FUNCTION notify_graph_change();

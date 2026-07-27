@@ -51,6 +51,8 @@ pub use strategy::{
 };
 pub use symbol_index::{CacheConfig, SymbolIndex};
 pub use snapshot_provider::{SnapshotError, SnapshotEvent, SnapshotProvider};
+#[cfg(feature = "postgres")]
+pub use snapshot_provider::SnapshotProviderImpl;
 
 #[cfg(feature = "persistence")]
 pub use file_manifest::{FileManifest, FileRecord, ScanDelta};

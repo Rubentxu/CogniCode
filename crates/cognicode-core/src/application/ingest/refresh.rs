@@ -1,34 +1,47 @@
 //! Refresh stage — reload the in-memory `CallGraph` from PG and set it
 //! in the `GraphCache` (ArcSwap), so the Explorer serves fresh data.
 //!
-//! For Sprint 1, this is a full reload (ADR-017). Sprint 4 will replace
-//! this with incremental updates via `GraphDiffCalculator` (ADR-022).
+//! Uses [`SnapshotProvider`] to fetch the current head snapshot from PostgreSQL.
 
 use crate::domain::traits::repository::RepositoryError;
+use crate::domain::value_objects::WorkspaceId;
 use crate::infrastructure::graph::graph_cache::GraphCache;
-use crate::infrastructure::persistence::PostgresRepository;
+use crate::infrastructure::graph::snapshot_provider::SnapshotProvider;
 
-/// Refresh the `GraphCache` from PG. Loads all symbols and edges via the
-/// `symbols` and `call_edges` VIEWs, constructs a `CallGraph`, and sets
-/// it in the ArcSwap cache.
+/// Refresh the `GraphCache` from PostgreSQL via [`SnapshotProvider`].
+///
+/// Calls `current_head(ws)` to discover the live revision, then `snapshot(ws, head)`
+/// to fetch the graph, and stores it in the local `GraphCache` ring buffer.
 pub async fn refresh_from_pg(
-    repo: &PostgresRepository,
+    provider: &dyn SnapshotProvider,
     cache: &GraphCache,
+    workspace: &WorkspaceId,
 ) -> Result<RefreshStats, RepositoryError> {
-    let graph = repo.load_call_graph().await?;
+    // Discover current head revision
+    let head = provider.current_head(workspace).map_err(|e| {
+        RepositoryError::Store(format!("refresh_from_pg: current_head failed: {}", e))
+    })?;
 
-    if let Some(graph) = graph {
-        let stats = RefreshStats {
-            symbols: graph.symbol_count(),
-            edges: graph.edge_count(),
-        };
-        cache.set(graph);
-        Ok(stats)
-    } else {
-        // Empty database — clear the cache
+    if !head.is_valid() {
+        // No revision yet — clear the cache
         cache.clear();
-        Ok(RefreshStats::default())
+        return Ok(RefreshStats::default());
     }
+
+    // Fetch the snapshot for the current head
+    let graph = provider.snapshot(workspace, head).map_err(|e| {
+        RepositoryError::Store(format!("refresh_from_pg: snapshot failed: {}", e))
+    })?;
+
+    let stats = RefreshStats {
+        symbols: graph.symbol_count(),
+        edges: graph.edge_count(),
+    };
+
+    // Store in local ring buffer (sets the head checkpoint)
+    cache.set((*graph).clone());
+
+    Ok(stats)
 }
 
 /// Statistics from a refresh operation.
