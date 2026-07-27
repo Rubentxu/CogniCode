@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-27 (E28 PR1 Foundation shipped v0.61.0.)
+Last updated: 2026-07-27 (E28 PR2 Persistence shipped v0.62.0.)
 
 ## Active
 
@@ -196,6 +196,38 @@ Ciclo SDDK A-lite ejecutado completamente en auto mode. PR1 cubre la fundación 
 - Artifacts: `sddk/e28-0-canonical-graph-revisions/` (proposal, spec, tasks, apply-progress, verify-report, debt-report, archive-report).
 
 **Próximo paso propuesto**: PR2 Persistence (`e28-0-pr2-persistence`; 22 tasks: `save_call_graph`/`load_call_graph` pinned + deletion completeness + SnapshotProvider + edge trigger + refresh wiring). Cadena stacked-to-main sigue.
+
+## Session Handover 2026-07-27 (E28 PR2 shipped)
+
+**E28 PR2 Persistence closed and shipped v0.62.0 (PR #136 merged to main).**
+
+Ciclo SDDK A-lite ejecutado completamente en auto mode. PR2 cubre Phase 2 (Persistence) + Phase 3 (SnapshotProvider + Wiring) del programa E28 (40 tasks; 6 commits originales + 3 commits correction cycle 1 + 1 commit docs = 10 commits totales en `feat/e28-0-pr2-persistence`).
+
+**Logros PR2**:
+- `save_call_graph(g, ws) -> RevisionId` ahora workspace-scoped + revision-aware en una transacción atómica.
+- `load_call_graph_ws(ws, rev) -> Option<CallGraph>` pinned a `(workspace_id, revision_id)`; `Err(UnknownRevision)` cuando la revisión no existe.
+- `RepositoryError::UnknownRevision { workspace, revision }` nuevo variant.
+- Deletion completeness: archivos removidos desaparecen de `graph_nodes`, `graph_edges` y `scan_manifest` en la misma transacción.
+- Cross-workspace isolation: ws1 nunca afecta contadores ni revisiones de ws2.
+- `SnapshotProvider` trait + PostgreSQL-backed impl + `PgListener` (LISTEN/NOTIFY `graph_updated`).
+- Edge trigger extendido a `graph_edges` (idempotente).
+- 100ms debounce por `workspace_id` coalesciendo eventos al último `revision_id`.
+- `VersionedGraphCache` retention ≥ 2; lecturas pinned sobreviven a ingest concurrente.
+- `GraphCache::Arc<dyn SnapshotProvider>` integrado con `ArcSwap` legacy.
+- `refresh_from_pg` reescrito a usar `&dyn SnapshotProvider`.
+
+**CRIT-1 cerrado en correction cycle 1**:
+- Defecto: `SnapshotProviderImpl` LISTEN task llamaba `Handle::current().block_on(...)` desde worker thread → panic en producción bajo `#[tokio::main]` multi-thread runtime.
+- Fix: direct `.await` en async context; `block_in_place` + `Handle::enter` + `tokio::spawn` + mpsc para sync trait methods.
+- 2 nuevos `#[tokio::test(flavor = "multi_thread")]` regression tests.
+
+**Trazabilidad**:
+- Branch: `feat/e28-0-pr2-persistence` (squashed a `7e83ee17` al mergear).
+- Tag: `v0.62.0` (MINOR — new trait + new variant + revision-pinned methods).
+- PR: <https://github.com/Rubentxu/CogniCode/pull/136>.
+- Artifacts: `sddk/e28-0-canonical-graph-revisions/` (verify-report PR2, debt-report PR2).
+
+**Próximo paso propuesto**: PR3 Snapshot+Bridge (`e28-0-pr3-snapshot-bridge`; 16 tasks: Repository trait extension + GenericGraphRepository + MetadataAwareRepository contract tests + 5 follow-up WARNINGs cleanup). Cadena stacked-to-main sigue.
 
 ## Session Handover 2026-07-01
 
