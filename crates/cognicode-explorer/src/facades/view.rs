@@ -933,7 +933,7 @@ mod view_service_tests {
             kind: NodeKind::Doc,
             label: "Test Document".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/test.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
@@ -964,7 +964,7 @@ mod view_service_tests {
             kind: NodeKind::Evidence,
             label: "Test Evidence".to_string(),
             source_path: Some(std::path::PathBuf::from("evidence/test.txt")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
@@ -998,7 +998,7 @@ mod view_service_tests {
             kind: NodeKind::Doc,
             label: "Test Document".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/test.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
