@@ -103,6 +103,13 @@ const SCHEMA_SQL_DIAGRAM_PROVENANCE: &str = include_str!("m0016_diagram_provenan
 #[cfg(feature = "postgres")]
 const SCHEMA_SQL_REVISIONS: &str = include_str!("m0017_graph_revisions.sql");
 
+/// Workspace-scoped identity DDL — changes `graph_nodes` PK and `graph_edges`
+/// unique index to include `workspace_id` so homonymous nodes across
+/// workspaces do not collide (e28-0 PR1 Foundation).
+#[cfg(feature = "postgres")]
+const SCHEMA_SQL_WORKSPACE_SCOPED_IDENTITY: &str =
+    include_str!("m0018_workspace_scoped_identity.sql");
+
 /// PostgreSQL-backed implementation of the async [`Repository`]
 /// trait. Owns its [`PgPool`]; consumers that want shared
 /// ownership can wrap in `Arc<PostgresRepository>`.
@@ -237,6 +244,14 @@ impl PostgresRepository {
             .execute(&self.pool)
             .await
             .map_err(|e| RepositoryError::Store(format!("graph revisions migration: {e}")))?;
+
+        // 11. Workspace-scoped identity — e28-0 PR1 Foundation.
+        sqlx::raw_sql(SCHEMA_SQL_WORKSPACE_SCOPED_IDENTITY)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!(
+                "workspace-scoped identity migration: {e}"
+            )))?;
 
         Ok(())
     }
@@ -4302,39 +4317,193 @@ mod tests {
         assert_eq!(count, 1, "first row must remain after constraint violation");
     });
 
+        // -------------------------------------------------------------------------
+        // Task 1.4b GREEN — idempotent on empty (migration is embedded + run)
+        // -------------------------------------------------------------------------
+        #[cfg(feature = "postgres")]
+        pg_test!(run_migrations_idempotent_on_empty_graph_revisions, |pool: PgPool| {
+            let repo = PostgresRepository::from_pool(pool);
+            // First call — runs migrations
+            repo.run_migrations().await.expect("first call");
+            // Second call — must be idempotent
+            repo.run_migrations().await.expect("second call must be idempotent");
+
+            // Insert two revisions — first head, second non-head
+            sqlx::query(
+                "INSERT INTO graph_revisions (workspace_id, revision_id, head_of) \
+                 VALUES ('default', 1, true)",
+            )
+            .execute(repo.pool())
+            .await
+            .expect("insert head revision");
+
+            sqlx::query(
+                "INSERT INTO graph_revisions (workspace_id, revision_id, head_of) \
+                 VALUES ('default', 2, false)",
+            )
+            .execute(repo.pool())
+            .await
+            .expect("insert non-head revision");
+
+            let count: i64 =
+                sqlx::query_scalar("SELECT count(*) FROM graph_revisions")
+                    .fetch_one(repo.pool())
+                    .await
+                    .expect("count");
+            assert_eq!(count, 2, "expected 2 revisions");
+        });
+
     // -------------------------------------------------------------------------
-    // Task 1.4b GREEN — idempotent on empty (migration is embedded + run)
+    // Task 1.5a RED — workspace-scoped identity migration
+    // Scenario: `generic-graph-model::PK and uniqueness include workspace_id`
+    //           `generic-graph-model::Homonymous nodes across workspaces do not collide`
+    // Assert: `\d graph_nodes` PK matches; insert `(ws2,"src/x.rs:foo:1",
+    //         "symbol.function",…)` succeeds when `(ws1,…)` exists; `count(*)` is 2.
     // -------------------------------------------------------------------------
     #[cfg(feature = "postgres")]
-    pg_test!(run_migrations_idempotent_on_empty_graph_revisions, |pool: PgPool| {
+    pg_test!(workspace_scoped_pk_applied, |pool: PgPool| {
+        use sqlx::Row;
+
         let repo = PostgresRepository::from_pool(pool);
-        // First call — runs migrations
-        repo.run_migrations().await.expect("first call");
-        // Second call — must be idempotent
-        repo.run_migrations().await.expect("second call must be idempotent");
 
-        // Insert two revisions — first head, second non-head
+        // Verify graph_nodes PK includes workspace_id
+        let pk_cols: Vec<String> = sqlx::query(
+            "SELECT column_name \
+             FROM information_schema.key_column_usage \
+             WHERE table_name = 'graph_nodes' AND constraint_name = 'graph_nodes_pkey_ws' \
+             ORDER BY ordinal_position",
+        )
+        .fetch_all(repo.pool())
+        .await
+        .expect("query PK columns")
+        .iter()
+        .map(|r| r.get("column_name"))
+        .collect();
+
+        assert!(
+            pk_cols.contains(&"workspace_id".to_string()),
+            "PK must include workspace_id, got: {pk_cols:?}"
+        );
+        assert!(
+            pk_cols.contains(&"id".to_string()),
+            "PK must include id, got: {pk_cols:?}"
+        );
+        assert!(
+            pk_cols.contains(&"kind".to_string()),
+            "PK must include kind, got: {pk_cols:?}"
+        );
+    });
+
+    #[cfg(feature = "postgres")]
+    pg_test!(homonymous_nodes_across_workspaces_no_collision, |pool: PgPool| {
+        let repo = PostgresRepository::from_pool(pool);
+
+        // Insert a node in ws1
         sqlx::query(
-            "INSERT INTO graph_revisions (workspace_id, revision_id, head_of) \
-             VALUES ('default', 1, true)",
+            "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
+             VALUES ('ws1', 'src/x.rs:foo:1', 'symbol.function', 'foo')",
         )
         .execute(repo.pool())
         .await
-        .expect("insert head revision");
+        .expect("insert ws1 node");
 
+        // Insert a node with SAME id and kind but DIFFERENT workspace — must succeed
         sqlx::query(
-            "INSERT INTO graph_revisions (workspace_id, revision_id, head_of) \
-             VALUES ('default', 2, false)",
+            "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
+             VALUES ('ws2', 'src/x.rs:foo:1', 'symbol.function', 'bar')",
         )
         .execute(repo.pool())
         .await
-        .expect("insert non-head revision");
+        .expect("insert ws2 node with same id/kind must succeed");
 
-        let count: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM graph_revisions")
-                .fetch_one(repo.pool())
-                .await
-                .expect("count");
-        assert_eq!(count, 2, "expected 2 revisions");
+        // Verify both exist
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM graph_nodes \
+             WHERE id = 'src/x.rs:foo:1' AND kind = 'symbol.function'",
+        )
+        .fetch_one(repo.pool())
+        .await
+        .expect("count");
+        assert_eq!(count, 2, "expected 2 rows (one per workspace)");
+
+        // Verify they are distinct by workspace
+        let ws1_label: String = sqlx::query_scalar(
+            "SELECT label FROM graph_nodes \
+             WHERE workspace_id = 'ws1' AND id = 'src/x.rs:foo:1'",
+        )
+        .fetch_one(repo.pool())
+        .await
+        .expect("ws1 label");
+        let ws2_label: String = sqlx::query_scalar(
+            "SELECT label FROM graph_nodes \
+             WHERE workspace_id = 'ws2' AND id = 'src/x.rs:foo:1'",
+        )
+        .fetch_one(repo.pool())
+        .await
+        .expect("ws2 label");
+        assert_eq!(ws1_label, "foo");
+        assert_eq!(ws2_label, "bar");
+    });
+
+    #[cfg(feature = "postgres")]
+    pg_test!(workspace_scoped_edges_unique_index, |pool: PgPool| {
+        let repo = PostgresRepository::from_pool(pool);
+
+        // Insert first edge in ws1
+        sqlx::query(
+            "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
+             VALUES ('ws1', 'a', 'symbol.function', 'a')",
+        )
+        .execute(repo.pool())
+        .await
+        .expect("insert node a");
+        sqlx::query(
+            "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
+             VALUES ('ws1', 'b', 'symbol.function', 'b')",
+        )
+        .execute(repo.pool())
+        .await
+        .expect("insert node b");
+
+        sqlx::query(
+            "INSERT INTO graph_edges (workspace_id, source_id, target_id, kind) \
+             VALUES ('ws1', 'a', 'b', 'dependency.calls')",
+        )
+        .execute(repo.pool())
+        .await
+        .expect("insert ws1 edge");
+
+        // Insert same edge in ws2 — must succeed (different workspace)
+        sqlx::query(
+            "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
+             VALUES ('ws2', 'a', 'symbol.function', 'a')",
+        )
+        .execute(repo.pool())
+        .await
+        .expect("insert ws2 node a");
+        sqlx::query(
+            "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
+             VALUES ('ws2', 'b', 'symbol.function', 'b')",
+        )
+        .execute(repo.pool())
+        .await
+        .expect("insert ws2 node b");
+
+        sqlx::query(
+            "INSERT INTO graph_edges (workspace_id, source_id, target_id, kind) \
+             VALUES ('ws2', 'a', 'b', 'dependency.calls')",
+        )
+        .execute(repo.pool())
+        .await
+        .expect("insert ws2 edge must succeed");
+
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM graph_edges \
+             WHERE source_id = 'a' AND target_id = 'b' AND kind = 'dependency.calls'",
+        )
+        .fetch_one(repo.pool())
+        .await
+        .expect("count");
+        assert_eq!(count, 2, "expected 2 edges (one per workspace)");
     });
 }
