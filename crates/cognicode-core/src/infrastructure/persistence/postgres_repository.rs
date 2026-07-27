@@ -1726,13 +1726,10 @@ impl GraphNodeRow {
             // doesn't yet have a stable wire string.
             VkNodeKind::Symbol(crate::domain::value_objects::symbol_kind::SymbolKind::Unknown)
         });
-        let properties = match self.properties {
-            serde_json::Value::Object(map) => map
-                .into_iter()
-                .filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_string())))
-                .collect(),
-            _ => std::collections::HashMap::new(),
-        };
+        // Preserve the raw JSON value as-is: numbers, arrays, nested objects
+        // remain their original types. This is the inverse of store_graph_nodes
+        // binding node.properties.clone() directly.
+        let properties = self.properties;
         // PG TIMESTAMPTZ -> RFC 3339 -> chrono::DateTime<Utc>.
         // Malformed timestamps fall back to the Unix epoch so the
         // read path is total (same defensive pattern as
@@ -1748,7 +1745,7 @@ impl GraphNodeRow {
             builder = builder.source_path(sp);
         }
         builder
-            .properties(properties)
+            .properties_value(properties)
             .created_at(created_at)
             .updated_at(updated_at)
             .build()
@@ -1879,18 +1876,11 @@ impl PostgresRepository {
                 .source_path
                 .as_ref()
                 .map(|p| p.to_string_lossy().into_owned());
-            // The `properties` map is projected to a JSONB object:
-            // every key in `node.properties` becomes a top-level
-            // string-typed key. The shape is intentional — the
-            // spec'd `DocsExtractor` payload (e.g.
-            // `{"status": "accepted", "date": "2026-01-02"}`) is a
-            // flat string map and round-trips losslessly.
-            let properties_json = serde_json::Value::Object(
-                node.properties
-                    .iter()
-                    .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
-                    .collect::<serde_json::Map<_, _>>(),
-            );
+            // The `properties` Value is stored as JSONB directly, preserving
+            // all value types (numbers, arrays, nested objects). This
+            // satisfies the spec requirement that structured properties
+            // round-trip unchanged through PG.
+            let properties_json = node.properties.clone();
             // ON CONFLICT (id) DO UPDATE: refreshes the mutable
             // columns. `created_at` is intentionally NOT in the
             // SET clause so the first-insert timestamp is
@@ -5356,6 +5346,52 @@ mod tests {
             assert!(result.is_none(), "expected None for missing node");
         }
     );
+
+    // -------------------------------------------------------------------------
+    // 4.6a RED — GraphNode JSONB properties round-trip
+    // Spec: `repository-trait-bridge::Typed JSONB properties round-trip unchanged`
+    // GIVEN a GraphNode with structured properties (complexity: 12, tags: ["auth"],
+    //           nested: {"k": "v"})
+    // WHEN persisted via store_graph_nodes and re-loaded via get_graph_node
+    // THEN loaded.properties equals the original bit-for-bit
+    // -------------------------------------------------------------------------
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    pg_test!(graph_node_properties_jsonb_roundtrip, |pool: PgPool| {
+        let repo = PostgresRepository::from_pool(pool);
+        repo.run_migrations().await.expect("migrations");
+
+        // Build a node with the exact properties shape from the spec.
+        let original_props = serde_json::json!({
+            "complexity": 12,
+            "tags": ["auth"],
+            "nested": {"k": "v"}
+        });
+        let node = MmGraphNode::builder(MmNodeId::new("doc:adr/0010.md#decision"), MmNodeKind::Doc)
+            .label("ADR-0010")
+            .source_path("/docs/adr/0010.md")
+            .created_at(MmUtc::now())
+            .updated_at(MmUtc::now())
+            .property_json("complexity", original_props["complexity"].clone())
+            .property_json("tags", original_props["tags"].clone())
+            .property_json("nested", original_props["nested"].clone())
+            .build();
+
+        repo.store_graph_nodes(vec![node.clone()])
+            .await
+            .expect("store_graph_nodes must succeed");
+
+        let loaded = repo
+            .get_graph_node(MmNodeId::new("doc:adr/0010.md#decision"))
+            .await
+            .expect("get_graph_node must succeed")
+            .expect("expected Some(GraphNode)");
+
+        // Assert bit-for-bit equality of the full properties Value.
+        assert_eq!(
+            loaded.properties, original_props,
+            "properties must round-trip unchanged through PG JSONB"
+        );
+    });
 
     // -------------------------------------------------------------------------
     // Task 1.4a RED — graph_revisions table with head uniqueness
