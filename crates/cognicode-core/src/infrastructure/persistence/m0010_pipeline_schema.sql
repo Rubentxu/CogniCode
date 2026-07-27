@@ -45,23 +45,39 @@ CREATE TABLE IF NOT EXISTS graph_edges (
 
 -- FK constraints: add only if they don't already exist (idempotent).
 -- We use DO blocks because ADD CONSTRAINT doesn't support IF NOT EXISTS.
+--
+-- IMPORTANT (e28-0): m0018 changes graph_nodes PK from (id) to (workspace_id, id, kind)
+-- and replaces these single-column FKs with composite FKs. After m0018 runs,
+-- graph_nodes_pkey_ws exists and the old FKs have been dropped. On subsequent
+-- run_migrations() calls, this DO block would try to recreate the old FKs,
+-- which fails because graph_nodes(id) is no longer a unique key.
+-- Guard: only create old-style FKs if m0018 has NOT yet run
+-- (i.e., graph_nodes_pkey_ws does not exist).
 DO $$
 BEGIN
+    -- Only proceed if m0018 has NOT been applied yet.
+    -- If graph_nodes_pkey_ws exists, m0018 ran and dropped the old FKs.
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.table_constraints
-        WHERE constraint_name = 'graph_edges_source_id_fkey'
+        WHERE constraint_name = 'graph_nodes_pkey_ws'
+          AND table_name = 'graph_nodes'
     ) THEN
-        ALTER TABLE graph_edges
-            ADD CONSTRAINT graph_edges_source_id_fkey
-            FOREIGN KEY (source_id) REFERENCES graph_nodes(id);
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE constraint_name = 'graph_edges_target_id_fkey'
-    ) THEN
-        ALTER TABLE graph_edges
-            ADD CONSTRAINT graph_edges_target_id_fkey
-            FOREIGN KEY (target_id) REFERENCES graph_nodes(id);
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints
+            WHERE constraint_name = 'graph_edges_source_id_fkey'
+        ) THEN
+            ALTER TABLE graph_edges
+                ADD CONSTRAINT graph_edges_source_id_fkey
+                FOREIGN KEY (source_id) REFERENCES graph_nodes(id);
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints
+            WHERE constraint_name = 'graph_edges_target_id_fkey'
+        ) THEN
+            ALTER TABLE graph_edges
+                ADD CONSTRAINT graph_edges_target_id_fkey
+                FOREIGN KEY (target_id) REFERENCES graph_nodes(id);
+        END IF;
     END IF;
 END $$;
 

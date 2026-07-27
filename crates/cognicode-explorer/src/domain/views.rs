@@ -8346,7 +8346,7 @@ mod view_seam_tests {
             kind: NodeKind::Doc,
             label: "Test Doc".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/test.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8423,7 +8423,7 @@ mod view_seam_tests {
             kind: NodeKind::Doc,
             label: "Test Node".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/test.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -8461,17 +8461,17 @@ mod view_seam_tests {
     fn ksv_helpers_produce_byte_identical_output() {
         use chrono::Utc;
         use cognicode_core::domain::aggregates::generic_graph::NodeId;
-        use std::collections::HashMap;
+        use serde_json::Map;
 
-        let mut props = HashMap::new();
-        props.insert("author".to_string(), "test".to_string());
+        let mut props = Map::new();
+        props.insert("author".to_string(), serde_json::Value::String("test".to_string()));
 
         let node = GraphNode {
             id: NodeId::new("DOC-X".to_string()),
             kind: NodeKind::Doc,
             label: "Sample Doc".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/sample.md")),
-            properties: props,
+            properties: serde_json::Value::Object(props),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -8529,7 +8529,7 @@ mod view_seam_tests {
             kind: NodeKind::Decision,
             label: label.to_string(),
             source_path: Some(std::path::PathBuf::from("docs/adr/ADR-001.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }

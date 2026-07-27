@@ -83,22 +83,28 @@ pub enum NodeKind {
 impl FromStr for NodeKind {
     type Err = NodeKindParseError;
 
-    /// Parse a `NodeKind` from its stable kebab-case `Display` form.
+    /// Parse a `NodeKind` from its stable `Display` form.
     ///
-    /// The `Symbol(SymbolKind)` wrapper is matched on the `symbol`
+    /// The `Symbol(SymbolKind)` wrapper is matched on the `"symbol."`
     /// prefix and the inner kind is delegated to
-    /// `SymbolKind::from_str`. Without the `multimodal` feature,
-    /// the only accepted string is `"symbol"`.
+    /// `SymbolKind::from_str`. Bare `"symbol"` is rejected as legacy.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "symbol" => SymbolKind::from_str(s)
+        // Symbol sub-kind: "symbol.{inner}"
+        if let Some(inner) = s.strip_prefix("symbol.") {
+            if inner.is_empty() {
+                return Err(NodeKindParseError::Unknown(s.to_string()));
+            }
+            return SymbolKind::from_str(inner)
                 .map(NodeKind::Symbol)
-                .map_err(|_| NodeKindParseError::Unknown(s.to_string())),
+                .map_err(|_| NodeKindParseError::Unknown(s.to_string()));
+        }
+        // Unit variants
+        match s {
             "decision" => Ok(NodeKind::Decision),
             "doc" => Ok(NodeKind::Doc),
+            "evidence" => Ok(NodeKind::Evidence),
             #[cfg(feature = "multimodal")]
             "issue" => Ok(NodeKind::Issue),
-            "evidence" => Ok(NodeKind::Evidence),
             #[cfg(feature = "multimodal")]
             "component" => Ok(NodeKind::Component),
             #[cfg(feature = "multimodal")]
@@ -107,31 +113,36 @@ impl FromStr for NodeKind {
             "system" => Ok(NodeKind::System),
             #[cfg(feature = "multimodal")]
             "route" => Ok(NodeKind::Route),
+            // Legacy bare "symbol" is rejected — use "symbol.{inner}" instead.
             _ => Err(NodeKindParseError::Unknown(s.to_string())),
         }
     }
 }
 
 impl NodeKind {
-    /// Returns a stable, kebab-case identifier for this kind.
+    /// Returns a stable identifier for this kind.
     /// Used for JSON serialization, DB persistence, and frontend style
     /// class mapping.
-    pub fn as_str(&self) -> &'static str {
+    ///
+    /// For `Symbol(SymbolKind)` variants, returns `"symbol.{inner}"` where
+    /// `{inner}` is the kebab-case name of the inner `SymbolKind`. This makes
+    /// sub-kinds distinguishable in the serialized form.
+    pub fn as_str(&self) -> String {
         match self {
-            NodeKind::Symbol(_) => "symbol",
-            NodeKind::Decision => "decision",
-            NodeKind::Doc => "doc",
+            NodeKind::Symbol(inner) => format!("symbol.{}", inner),
+            NodeKind::Decision => "decision".to_string(),
+            NodeKind::Doc => "doc".to_string(),
             #[cfg(feature = "multimodal")]
-            NodeKind::Issue => "issue",
-            NodeKind::Evidence => "evidence",
+            NodeKind::Issue => "issue".to_string(),
+            NodeKind::Evidence => "evidence".to_string(),
             #[cfg(feature = "multimodal")]
-            NodeKind::Component => "component",
+            NodeKind::Component => "component".to_string(),
             #[cfg(feature = "multimodal")]
-            NodeKind::Container => "container",
+            NodeKind::Container => "container".to_string(),
             #[cfg(feature = "multimodal")]
-            NodeKind::System => "system",
+            NodeKind::System => "system".to_string(),
             #[cfg(feature = "multimodal")]
-            NodeKind::Route => "route",
+            NodeKind::Route => "route".to_string(),
         }
     }
 
@@ -145,7 +156,7 @@ impl NodeKind {
 
 impl fmt::Display for NodeKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -218,9 +229,10 @@ mod tests {
     /// kind. The frontend and the PG layer both rely on this string.
     #[test]
     fn node_kind_display() {
+        // After Task 1.3: Symbol variants emit "symbol.{inner}" not bare "symbol"
         assert_eq!(
             format!("{}", NodeKind::Symbol(SymbolKind::Function)),
-            "symbol"
+            "symbol.function"
         );
         // Knowledge-layer variants: always available.
         assert_eq!(format!("{}", NodeKind::Decision), "decision");
@@ -279,7 +291,9 @@ mod tests {
     #[test]
     fn feature_gate_compiles_symbol_variant() {
         let kind = NodeKind::Symbol(SymbolKind::Trait);
-        assert_eq!(kind.as_str(), "symbol");
+        // After Task 1.3: Symbol variant emits "symbol.trait" not bare "symbol"
+        assert_eq!(kind.as_str(), "symbol.trait");
+        assert_eq!(format!("{}", kind), "symbol.trait");
     }
 
     #[test]
@@ -327,5 +341,81 @@ mod tests {
         // FromStr
         let parsed_from_str = NodeKind::from_str("route").expect("parse route");
         assert_eq!(parsed_from_str, route);
+    }
+
+    // -------------------------------------------------------------------------
+    // Task 1.3a RED — Symbol sub-kinds produce distinct strings
+    // Scenario: `generic-graph-model::Symbol sub-kinds produce distinct strings`
+    // Assert: `Symbol(Function).to_string()=="symbol.function"` round-trips
+    // -------------------------------------------------------------------------
+
+    /// `NodeKind::Symbol(SymbolKind::Function).to_string()` must be `"symbol.function"`.
+    #[test]
+    fn node_kind_symbol_function_display() {
+        assert_eq!(
+            NodeKind::Symbol(SymbolKind::Function).to_string(),
+            "symbol.function"
+        );
+    }
+
+    /// `NodeKind::Symbol(SymbolKind::Class).to_string()` must be `"symbol.class"`.
+    #[test]
+    fn node_kind_symbol_class_display() {
+        assert_eq!(
+            NodeKind::Symbol(SymbolKind::Class).to_string(),
+            "symbol.class"
+        );
+    }
+
+    /// `NodeKind::Symbol(SymbolKind::Method).to_string()` must be `"symbol.method"`.
+    #[test]
+    fn node_kind_symbol_method_display() {
+        assert_eq!(
+            NodeKind::Symbol(SymbolKind::Method).to_string(),
+            "symbol.method"
+        );
+    }
+
+    /// `from_str("symbol.function")` must parse to `NodeKind::Symbol(SymbolKind::Function)`.
+    #[test]
+    fn node_kind_from_str_symbol_function() {
+        let parsed: NodeKind = "symbol.function".parse().expect("parse symbol.function");
+        assert_eq!(parsed, NodeKind::Symbol(SymbolKind::Function));
+    }
+
+    /// `from_str("symbol.class")` must parse to `NodeKind::Symbol(SymbolKind::Class)`.
+    #[test]
+    fn node_kind_from_str_symbol_class() {
+        let parsed: NodeKind = "symbol.class".parse().expect("parse symbol.class");
+        assert_eq!(parsed, NodeKind::Symbol(SymbolKind::Class));
+    }
+
+    // -------------------------------------------------------------------------
+    // Task 1.3a RED — Legacy rejection
+    // Scenario: `generic-graph-model::Unit variants and legacy rejection`
+    // Assert: `from_str("symbol")`→`Err(Unknown)`
+    // -------------------------------------------------------------------------
+
+    /// Bare `"symbol"` must be rejected as a legacy format.
+    #[test]
+    fn node_kind_from_str_bare_symbol_rejected() {
+        let result: Result<NodeKind, _> = "symbol".parse();
+        assert!(
+            result.is_err(),
+            "bare 'symbol' must be rejected as legacy format"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Task 1.3a — as_str matches Display for Symbol variants
+    // -------------------------------------------------------------------------
+
+    /// `as_str()` for `Symbol(Function)` must return `"symbol.function"`.
+    #[test]
+    fn node_kind_as_str_symbol_function() {
+        assert_eq!(
+            NodeKind::Symbol(SymbolKind::Function).as_str(),
+            "symbol.function"
+        );
     }
 }

@@ -241,7 +241,7 @@ impl GraphRepository for PgGraphRepository {
             kind: NodeKind::Doc,
             label: focus.0.clone(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -312,7 +312,7 @@ impl GraphRepository for PgGraphRepository {
                                 kind: NodeKind::Doc,
                                 label: edge.target.as_str().to_string(),
                                 source_path: None,
-                                properties: HashMap::new(),
+                                properties: serde_json::Value::Object(Default::default()),
                                 created_at: Utc::now(),
                                 updated_at: Utc::now(),
                             }),
@@ -370,12 +370,7 @@ impl PgGraphRepository {
                 .source_path
                 .as_ref()
                 .map(|p| p.to_string_lossy().into_owned());
-            let properties_json = serde_json::Value::Object(
-                node.properties
-                    .iter()
-                    .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
-                    .collect::<serde_json::Map<String, serde_json::Value>>(),
-            );
+            let properties_json = node.properties.clone();
             let result = sqlx::query(
                 "INSERT INTO graph_nodes (id, kind, label, source_path, properties, created_at, updated_at) \
                  VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) \
@@ -444,12 +439,7 @@ impl PgGraphRepository {
             let kind = edge.kind.to_string();
             let provenance = edge.provenance.to_string();
             let confidence = edge.confidence;
-            let metadata_json = serde_json::Value::Object(
-                edge.metadata
-                    .iter()
-                    .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
-                    .collect::<serde_json::Map<String, serde_json::Value>>(),
-            );
+            let metadata_json = edge.metadata.clone();
             let result = sqlx::query(
                 "INSERT INTO graph_edges (source, target, kind, provenance, confidence, metadata) \
                  VALUES ($1, $2, $3, $4, $5, $6) \
@@ -503,17 +493,6 @@ struct GraphNodeRow {
 #[cfg(feature = "postgres")]
 impl GraphNodeRow {
     fn into_graph_node(self) -> GraphNode {
-        use std::collections::HashMap;
-        let props: HashMap<String, String> = self
-            .properties
-            .as_object()
-            .map(|obj| {
-                obj.iter()
-                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                    .collect()
-            })
-            .unwrap_or_default();
-
         // Fallback for unknown kinds: use Symbol(Unknown) so we never
         // lose the node from the graph. The `from_str` failure means
         // the kind string in the DB doesn't match any known variant
@@ -529,7 +508,7 @@ impl GraphNodeRow {
             kind,
             label: self.label,
             source_path: self.source_path.map(std::path::PathBuf::from),
-            properties: props,
+            properties: self.properties,
             created_at: DateTime::parse_from_rfc3339(&self.created_at)
                 .map(|dt| dt.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),
@@ -564,15 +543,6 @@ impl GraphEdgeRow {
             ))
         })?;
         let provenance = Provenance::from_str(&self.provenance).unwrap_or(Provenance::Extracted);
-        let metadata: HashMap<String, String> = self
-            .metadata
-            .as_object()
-            .map(|obj| {
-                obj.iter()
-                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                    .collect()
-            })
-            .unwrap_or_default();
 
         let mut edge = GraphEdge::new(
             NodeId(self.source_id),
@@ -582,7 +552,7 @@ impl GraphEdgeRow {
             self.confidence as f64,
         )
         .map_err(|e| GraphError::Storage(format!("pg_graph_repository graph edge invalid: {e}")))?;
-        edge.metadata = metadata;
+        edge.metadata = self.metadata;
         Ok(edge)
     }
 }

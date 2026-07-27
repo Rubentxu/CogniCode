@@ -61,7 +61,7 @@ impl GraphRepository for InMemoryGraphRepository {
             });
         }
         let q = query.to_ascii_lowercase();
-        let allowed: Option<HashSet<&'static str>> = if node_kinds.is_empty() {
+        let allowed: Option<HashSet<String>> = if node_kinds.is_empty() {
             None
         } else {
             Some(node_kinds.iter().map(|k| k.as_str()).collect())
@@ -75,16 +75,23 @@ impl GraphRepository for InMemoryGraphRepository {
             .nodes
             .iter()
             .filter_map(|n| {
-                if let Some(allowed) = allowed.as_ref() {
-                    if !allowed.contains(n.kind.as_str()) {
+                if let Some(ref allowed) = allowed {
+                    if !allowed.contains(&n.kind.as_str()) {
                         return None;
                     }
                 }
                 let label_hit = n.label.to_ascii_lowercase().contains(&q);
                 let prop_hit = n
                     .properties
-                    .values()
-                    .any(|v| v.to_ascii_lowercase().contains(&q));
+                    .as_object()
+                    .map(|obj| {
+                        obj.values().any(|v| {
+                            v.as_str()
+                                .map(|s| s.to_ascii_lowercase().contains(&q))
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false);
                 if label_hit {
                     Some((1.0, n))
                 } else if prop_hit {
@@ -261,7 +268,7 @@ impl GraphRepository for InMemoryGraphRepository {
             });
         }
         let q = query.to_ascii_lowercase();
-        let allowed: Option<HashSet<&'static str>> = if kinds.is_empty() {
+        let allowed: Option<HashSet<String>> = if kinds.is_empty() {
             None
         } else {
             Some(kinds.iter().map(|k| k.as_str()).collect())
@@ -273,16 +280,23 @@ impl GraphRepository for InMemoryGraphRepository {
             .nodes
             .iter()
             .filter_map(|n| {
-                if let Some(allowed) = allowed.as_ref() {
-                    if !allowed.contains(n.kind.as_str()) {
+                if let Some(ref allowed) = allowed {
+                    if !allowed.contains(&n.kind.as_str()) {
                         return None;
                     }
                 }
                 let label_hit = n.label.to_ascii_lowercase().contains(&q);
                 let prop_hit = n
                     .properties
-                    .values()
-                    .any(|v| v.to_ascii_lowercase().contains(&q));
+                    .as_object()
+                    .map(|obj| {
+                        obj.values().any(|v| {
+                            v.as_str()
+                                .map(|s| s.to_ascii_lowercase().contains(&q))
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false);
                 if label_hit {
                     Some((1.0, n))
                 } else if prop_hit {
@@ -358,7 +372,7 @@ impl GraphRepository for InMemoryGraphRepository {
                 kind: NodeKind::Doc,
                 label: focus.0.clone(),
                 source_path: None,
-                properties: HashMap::new(),
+                properties: serde_json::Value::Object(Default::default()),
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
             });
@@ -407,7 +421,7 @@ impl GraphRepository for InMemoryGraphRepository {
                                 kind: NodeKind::Doc,
                                 label: e.target.0.clone(),
                                 source_path: None,
-                                properties: HashMap::new(),
+                                properties: serde_json::Value::Object(Default::default()),
                                 created_at: chrono::Utc::now(),
                                 updated_at: chrono::Utc::now(),
                             });
@@ -451,7 +465,7 @@ mod tests {
             kind,
             label: label.to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }
@@ -611,7 +625,7 @@ mod tests {
                 kind: EdgeKind::Justifies,
                 provenance: Provenance::Manual,
                 confidence: 0.9,
-                metadata: HashMap::new(),
+                metadata: serde_json::Value::Null,
             },
             GraphEdge {
                 source: NodeId::new("D"),
@@ -619,7 +633,7 @@ mod tests {
                 kind: EdgeKind::Cites,
                 provenance: Provenance::Extracted,
                 confidence: 0.8,
-                metadata: HashMap::new(),
+                metadata: serde_json::Value::Null,
             },
             GraphEdge {
                 source: NodeId::new("D"),
@@ -627,7 +641,7 @@ mod tests {
                 kind: EdgeKind::CorroboratedBy,
                 provenance: Provenance::Tested,
                 confidence: 0.7,
-                metadata: HashMap::new(),
+                metadata: serde_json::Value::Null,
             },
             GraphEdge {
                 source: NodeId::new("Z"),
@@ -635,7 +649,7 @@ mod tests {
                 kind: EdgeKind::Justifies,
                 provenance: Provenance::Inferred,
                 confidence: 0.5,
-                metadata: HashMap::new(),
+                metadata: serde_json::Value::Null,
             },
         ];
         let repo = InMemoryGraphRepository::new(nodes, edges);
@@ -727,7 +741,7 @@ mod tests {
             kind: EdgeKind::Justifies,
             provenance: Provenance::Manual,
             confidence: 0.9,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Null,
         }];
         let repo = InMemoryGraphRepository::new(nodes, edges);
 
@@ -782,7 +796,7 @@ mod tests {
             kind: EdgeKind::Justifies,
             provenance: Provenance::Manual,
             confidence: 0.9,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Null,
         }];
         let repo = InMemoryGraphRepository::new(nodes, edges);
 
