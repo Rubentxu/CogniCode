@@ -3533,6 +3533,318 @@ mod tests {
         assert!(err, "UnknownRevision error must be returned for unknown revision");
     });
 
+    /// 2.7a RED — pg_test asserting `load_call_graph_ws(ws2, RevisionId(3))`
+    /// when ws2 has never had any revisions returns
+    /// `Err(UnknownRevision{workspace:\"ws2\", revision:3})`. This verifies
+    /// the error workspace field carries the ACTUAL requested workspace (ws2),
+    /// not the default workspace.
+    pg_test!(load_call_graph_ws_cross_workspace_unknown_rev_error, |pool: PgPool| {
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
+        use crate::domain::traits::repository::RepositoryError;
+
+        let repo = PostgresRepository::from_pool(pool);
+        let ws2 = WorkspaceId::try_new("ws2").expect("ws2 must be valid WorkspaceId");
+
+        // Verify ws2 has NO revisions at all
+        let rev_count: Option<i64> = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM graph_revisions WHERE workspace_id = $1",
+        )
+        .bind(ws2.as_str())
+        .fetch_optional(repo.pool())
+        .await
+        .expect("query revision count");
+        assert_eq!(rev_count, Some(0), "ws2 must have zero revisions");
+
+        // Loading any revision for ws2 must fail with UnknownRevision{workspace: "ws2"}
+        let result = repo
+            .load_call_graph_ws(&ws2, RevisionId(3))
+            .await;
+
+        let err = match result {
+            Err(RepositoryError::UnknownRevision { workspace, revision }) => {
+                assert_eq!(
+                    workspace.as_str(), "ws2",
+                    "error workspace must be 'ws2', not the default workspace"
+                );
+                assert_eq!(revision.get(), 3, "error revision must be 3");
+                true
+            }
+            other => panic!(
+                "expected UnknownRevision{{ws: \"ws2\", rev: 3}}, got {:?}",
+                other
+            ),
+        };
+        assert!(err, "UnknownRevision error must be returned for unknown cross-workspace revision");
+    });
+
+    /// 2.8b RED — pg_test asserting `load_call_graph_ws` for ws1 never returns
+    /// ws2's symbols/edges. Write different graphs to ws1 and ws2, then load each
+    /// and verify the loaded graph matches what was written to THAT workspace only.
+    pg_test!(load_call_graph_ws_cross_workspace_isolation, |pool: PgPool| {
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
+        use crate::domain::aggregates::Symbol;
+        use crate::domain::services::ExtractionContext;
+        use crate::domain::value_objects::{Location, SymbolKind, DependencyType, Provenance};
+
+        let repo = PostgresRepository::from_pool(pool);
+        let ws1 = WorkspaceId::try_new("ws1").expect("ws1 must be valid WorkspaceId");
+        let ws2 = WorkspaceId::try_new("ws2").expect("ws2 must be valid WorkspaceId");
+
+        // Build different graphs for ws1 and ws2
+        let mut g1 = CallGraph::new();
+        let a1 = g1.add_symbol(Symbol::new(
+            "symbol_a", SymbolKind::Function, Location::new("file_a.rs", 1, 0),
+        ));
+        let b1 = g1.add_symbol(Symbol::new(
+            "symbol_b", SymbolKind::Function, Location::new("file_a.rs", 5, 0),
+        ));
+        g1.add_dependency_with_provenance(&a1, &b1, DependencyType::Calls, ExtractionContext::DirectExtraction)
+            .expect("direct extraction");
+
+        let mut g2 = CallGraph::new();
+        let x2 = g2.add_symbol(Symbol::new(
+            "symbol_x", SymbolKind::Class, Location::new("file_x.rs", 10, 0),
+        ));
+        let y2 = g2.add_symbol(Symbol::new(
+            "symbol_y", SymbolKind::Class, Location::new("file_x.rs", 20, 0),
+        ));
+        g2.add_dependency_with_provenance(&x2, &y2, DependencyType::Imports, ExtractionContext::Heuristic { score: 0.9 })
+            .expect("heuristic");
+
+        // Save ws1 graph at rev 1
+        let rev1 = repo.save_call_graph_ws(&g1, &ws1)
+            .await
+            .expect("ws1 save must succeed");
+        assert_eq!(rev1.get(), 1, "ws1 first rev must be 1");
+
+        // Save ws2 graph at rev 1 (independent counter)
+        let rev2 = repo.save_call_graph_ws(&g2, &ws2)
+            .await
+            .expect("ws2 save must succeed");
+        assert_eq!(rev2.get(), 1, "ws2 first rev must be 1");
+
+        // Load ws1 — must have exactly ws1's 2 symbols, 1 edge
+        let loaded1 = repo.load_call_graph_ws(&ws1, rev1)
+            .await
+            .expect("load ws1 must succeed")
+            .expect("load must return Some for ws1");
+        assert_eq!(loaded1.symbol_count(), 2, "ws1 must have 2 symbols");
+        assert_eq!(loaded1.edge_count(), 1, "ws1 must have 1 edge");
+
+        // Verify ws1 has the correct symbol names
+        let ws1_symbols: Vec<_> = loaded1.symbols().map(|s| s.name()).collect();
+        assert!(ws1_symbols.contains(&"symbol_a"), "ws1 must contain symbol_a");
+        assert!(ws1_symbols.contains(&"symbol_b"), "ws1 must contain symbol_b");
+        assert!(!ws1_symbols.contains(&"symbol_x"), "ws1 must NOT contain symbol_x from ws2");
+
+        // Load ws2 — must have exactly ws2's 2 symbols, 1 edge
+        let loaded2 = repo.load_call_graph_ws(&ws2, rev2)
+            .await
+            .expect("load ws2 must succeed")
+            .expect("load must return Some for ws2");
+        assert_eq!(loaded2.symbol_count(), 2, "ws2 must have 2 symbols");
+        assert_eq!(loaded2.edge_count(), 1, "ws2 must have 1 edge");
+
+        // Verify ws2 has the correct symbol names
+        let ws2_symbols: Vec<_> = loaded2.symbols().map(|s| s.name()).collect();
+        assert!(ws2_symbols.contains(&"symbol_x"), "ws2 must contain symbol_x");
+        assert!(ws2_symbols.contains(&"symbol_y"), "ws2 must contain symbol_y");
+        assert!(!ws2_symbols.contains(&"symbol_a"), "ws2 must NOT contain symbol_a from ws1");
+    });
+
+    /// 2.8a RED — pg_test asserting `load_call_graph_ws(ws, save_call_graph_ws(g, ws))`
+    /// produces a graph that is `PartialEq`-equal to `g`. Verifies exact bit-exact
+    /// round-trip: symbol counts, edge counts, and per-edge (provenance, confidence) match.
+    pg_test!(load_call_graph_ws_round_trip_equality, |pool: PgPool| {
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
+        use crate::domain::aggregates::Symbol;
+        use crate::domain::services::ExtractionContext;
+        use crate::domain::value_objects::{Location, SymbolKind, DependencyType, Provenance};
+
+        let repo = PostgresRepository::from_pool(pool);
+        let ws = WorkspaceId::default();
+
+        // Build a non-trivial graph with mixed provenance edges
+        let mut g = CallGraph::new();
+        let a = g.add_symbol(Symbol::new(
+            "a", SymbolKind::Function, Location::new("a.rs", 1, 0),
+        ));
+        let b = g.add_symbol(Symbol::new(
+            "b", SymbolKind::Function, Location::new("b.rs", 5, 0),
+        ));
+        let c = g.add_symbol(Symbol::new(
+            "c", SymbolKind::Class, Location::new("c.rs", 10, 0),
+        ));
+        // Edge: a -> b, Calls, DirectExtraction
+        g.add_dependency_with_provenance(&a, &b, DependencyType::Calls, ExtractionContext::DirectExtraction)
+            .expect("direct extraction");
+        // Edge: b -> c, Imports, Heuristic 0.75 → Inferred 0.75
+        g.add_dependency_with_provenance(&b, &c, DependencyType::Imports, ExtractionContext::Heuristic { score: 0.75 })
+            .expect("heuristic");
+
+        // Save and get revision
+        let rev = repo.save_call_graph_ws(&g, &ws)
+            .await
+            .expect("save_call_graph_ws must succeed");
+
+        // Load at the saved revision
+        let loaded = repo.load_call_graph_ws(&ws, rev)
+            .await
+            .expect("load_call_graph_ws must succeed")
+            .expect("load must return Some for saved workspace");
+
+        // Exact equality check
+        assert_eq!(
+            loaded.symbol_count(), g.symbol_count(),
+            "symbol count must match after round-trip"
+        );
+        assert_eq!(
+            loaded.edge_count(), g.edge_count(),
+            "edge count must match after round-trip"
+        );
+
+        // Verify edge provenance + confidence round-trips correctly
+        let orig_edges: Vec<_> = g.edges_with_metadata().collect();
+        let loaded_edges: Vec<_> = loaded.edges_with_metadata().collect();
+        assert_eq!(orig_edges.len(), loaded_edges.len(), "edge counts must match");
+
+        for ((_, _, od, op, oc), (_, _, ld, lp, lc)) in orig_edges.into_iter().zip(loaded_edges.into_iter()) {
+            assert_eq!(od, ld, "dependency type must match");
+            assert_eq!(op, lp, "provenance must match after round-trip");
+            assert!(
+                (oc - lc).abs() < 1e-9,
+                "confidence must match after round-trip: orig={}, loaded={}",
+                oc, lc
+            );
+        }
+
+        // The graphs themselves should be PartialEq-equal
+        assert_eq!(
+            loaded, g,
+            "loaded graph must be PartialEq-equal to original after round-trip"
+        );
+    });
+
+    /// 2.9a RED — pg_test asserting that when a file disappears from scan_manifest,
+    /// its nodes and edges are deleted at the next revision. At rev 1, src/x.rs and
+    /// src/y.rs are both in scan_manifest. At rev 2, only src/y.rs remains in
+    /// scan_manifest (src/x.rs is removed). After saving rev 2:
+    /// - count_nodes WHERE source_path='src/x.rs' must be 0
+    /// - count_edges must be 0 (the only edge was from x.rs node)
+    /// - src/y.rs node must still exist
+    pg_test!(deleted_file_nodes_and_edges_disappear, |pool: PgPool| {
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
+        use crate::domain::aggregates::Symbol;
+        use crate::domain::services::ExtractionContext;
+        use crate::domain::value_objects::{Location, SymbolKind, DependencyType};
+        use crate::infrastructure::persistence::postgres_repository::ScanManifestRow;
+
+        let repo = PostgresRepository::from_pool(pool);
+        let ws = WorkspaceId::default();
+
+        // --- Rev 1: two files in scan_manifest ---
+        let mut g1 = CallGraph::new();
+        let a1 = g1.add_symbol(Symbol::new(
+            "foo", SymbolKind::Function, Location::new("src/x.rs", 1, 0),
+        ));
+        let b1 = g1.add_symbol(Symbol::new(
+            "bar", SymbolKind::Function, Location::new("src/y.rs", 5, 0),
+        ));
+        g1.add_dependency_with_provenance(&a1, &b1, DependencyType::Calls, ExtractionContext::DirectExtraction)
+            .expect("direct");
+
+        let rev1 = repo.save_call_graph_ws(&g1, &ws)
+            .await
+            .expect("rev1 save must succeed");
+
+        // Upsert scan_manifest for rev 1 (both files)
+        repo.upsert_scan_manifest_row(&ScanManifestRow {
+            workspace_id: ws.as_str().to_string(),
+            file_path: "src/x.rs".to_string(),
+            file_type: "source".to_string(),
+            language: Some("rust".to_string()),
+            content_hash: "hash_x".to_string(),
+            mtime: 100.0,
+            symbol_count: 1,
+            edge_count: 1,
+            status: "scanned".to_string(),
+            error_msg: None,
+        })
+        .await
+        .expect("upsert x.rs");
+        repo.upsert_scan_manifest_row(&ScanManifestRow {
+            workspace_id: ws.as_str().to_string(),
+            file_path: "src/y.rs".to_string(),
+            file_type: "source".to_string(),
+            language: Some("rust".to_string()),
+            content_hash: "hash_y".to_string(),
+            mtime: 100.0,
+            symbol_count: 1,
+            edge_count: 0,
+            status: "scanned".to_string(),
+            error_msg: None,
+        })
+        .await
+        .expect("upsert y.rs");
+
+        // Verify rev 1: both nodes present
+        let x_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1 AND source_path = 'src/x.rs'"
+        )
+        .bind(ws.as_str())
+        .fetch_one(repo.pool())
+        .await
+        .expect("count x.rs nodes");
+        assert_eq!(x_count, 1, "rev 1 must have 1 node for src/x.rs");
+
+        // --- Rev 2: only src/y.rs in scan_manifest (src/x.rs removed) ---
+        let mut g2 = CallGraph::new();
+        let _b2 = g2.add_symbol(Symbol::new(
+            "bar", SymbolKind::Function, Location::new("src/y.rs", 5, 0),
+        ));
+        // No edge from x.rs since x.rs is gone from scan_manifest
+
+        let rev2 = repo.save_call_graph_ws(&g2, &ws)
+            .await
+            .expect("rev2 save must succeed");
+        assert_eq!(rev2.get(), 2, "rev2 must be 2");
+
+        // Delete scan_manifest entries NOT in the new manifest
+        repo.delete_scan_manifest_except(ws.as_str(), &["src/y.rs".to_string()])
+            .await
+            .expect("delete_scan_manifest_except for rev 2");
+
+        // Verify: src/x.rs nodes must be gone at rev 2
+        let x_count2: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1 AND source_path = 'src/x.rs'"
+        )
+        .bind(ws.as_str())
+        .fetch_one(repo.pool())
+        .await
+        .expect("count x.rs nodes at rev 2");
+        assert_eq!(x_count2, 0, "rev 2 must have 0 nodes for src/x.rs (file removed from manifest)");
+
+        // Verify: src/y.rs node still exists
+        let y_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1 AND source_path = 'src/y.rs'"
+        )
+        .bind(ws.as_str())
+        .fetch_one(repo.pool())
+        .await
+        .expect("count y.rs nodes");
+        assert_eq!(y_count, 1, "rev 2 must still have 1 node for src/y.rs");
+
+        // Verify: no orphaned edges (edge a1->b1 must be gone since a1 is deleted)
+        let edge_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM graph_edges WHERE workspace_id = $1"
+        )
+        .bind(ws.as_str())
+        .fetch_one(repo.pool())
+        .await
+        .expect("count edges");
+        assert_eq!(edge_count, 0, "rev 2 must have 0 edges (only edge was from deleted x.rs node)");
+    });
+
     /// 2.3a RED — pg_test asserting `save_call_graph_ws` returns `Ok(RevisionId)`,
     /// opens one `graph_revisions` row `head_of=true revision_id=rev`, and
     /// populates the expected symbols and edges count.
