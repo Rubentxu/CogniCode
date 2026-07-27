@@ -2301,6 +2301,16 @@ impl Repository for PostgresRepository {
             .map_err(|e| RepositoryError::Store(format!("count_edges column: {e}")))?;
         Ok(n.max(0) as usize)
     }
+
+    async fn load_call_graph_pinned(
+        &self,
+        workspace: &WorkspaceId,
+        revision: RevisionId,
+    ) -> Result<Option<CallGraph>, RepositoryError> {
+        // Delegate to the existing load_call_graph_ws which is already
+        // revision-pinned via graph_revisions join (PR2).
+        self.load_call_graph_ws(workspace, revision).await
+    }
 }
 
 #[cfg(feature = "postgres")]
@@ -3575,6 +3585,50 @@ mod tests {
             ),
         };
         assert!(err, "UnknownRevision error must be returned for unknown cross-workspace revision");
+    });
+
+    /// 4.2a RED — pg_test asserting `load_call_graph_pinned(ws, RevisionId(99))`
+    /// when no revision 99 exists for ws returns `Err(UnknownRevision{ws, 99})`.
+    /// This verifies the Repository trait method delegates to load_call_graph_ws
+    /// which already performs the revision existence check.
+    pg_test!(load_call_graph_pinned_unknown_revision_returns_unknown_revision_error, |pool: PgPool| {
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
+        use crate::domain::traits::repository::RepositoryError;
+
+        let repo = PostgresRepository::from_pool(pool);
+        let ws = WorkspaceId::default();
+
+        // Verify there are NO revisions at all for this workspace
+        let rev_count: Option<i64> = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM graph_revisions WHERE workspace_id = $1",
+        )
+        .bind(ws.as_str())
+        .fetch_optional(repo.pool())
+        .await
+        .expect("query revision count");
+        assert_eq!(rev_count, Some(0), "workspace should start with no revisions");
+
+        // load_call_graph_pinned with unknown revision must fail with UnknownRevision
+        let result = repo
+            .load_call_graph_pinned(&ws, RevisionId(99))
+            .await;
+
+        let err = match result {
+            Err(RepositoryError::UnknownRevision { workspace, revision }) => {
+                assert_eq!(
+                    workspace.as_str(), ws.as_str(),
+                    "error workspace must match requested workspace"
+                );
+                assert_eq!(revision.get(), 99, "error revision must be 99");
+                true
+            }
+            other => panic!(
+                "expected UnknownRevision{{ws: \"{}\", rev: 99}}, got {:?}",
+                ws.as_str(),
+                other
+            ),
+        };
+        assert!(err, "UnknownRevision error must be returned for unknown revision");
     });
 
     /// 2.8b RED — pg_test asserting `load_call_graph_ws` for ws1 never returns
