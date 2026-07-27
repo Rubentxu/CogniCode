@@ -1273,23 +1273,31 @@ impl PostgresRepository {
         .await
         .map_err(|e| RepositoryError::Store(format!("load_call_graph_ws select nodes: {e}")))?;
 
+        // First: verify the requested revision exists in graph_revisions.
+        // This is the "closed world" check — unknown revisions fail fast rather
+        // than silently falling back to the current head.
+        let rev_exists: Option<(i64, bool)> = sqlx::query_as(
+            "SELECT revision_id, head_of FROM graph_revisions \
+             WHERE workspace_id = $1 AND revision_id = $2",
+        )
+        .bind(workspace_id.as_str())
+        .bind(_revision_id.get() as i64)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!(
+            "load_call_graph_ws check revision: {e}"
+        )))?;
+
+        if rev_exists.is_none() {
+            return Err(RepositoryError::UnknownRevision {
+                workspace: workspace_id.clone(),
+                revision: _revision_id,
+            });
+        }
+
         if nodes.is_empty() {
-            // No nodes → either empty workspace or non-existent workspace.
-            // Distinguish by checking graph_revisions.
-            let rev_count: Option<i64> = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM graph_revisions WHERE workspace_id = $1",
-            )
-            .bind(workspace_id.as_str())
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| RepositoryError::Store(format!(
-                "load_call_graph_ws count revisions: {e}"
-            )))?;
-            return if rev_count == Some(0) {
-                Ok(None) // truly empty workspace
-            } else {
-                Ok(Some(CallGraph::new())) // workspace exists but no symbols yet
-            };
+            // Revision exists but no nodes are stored — return empty graph.
+            return Ok(Some(CallGraph::new()));
         }
 
         // 2. Build CallGraph + FQN→SymbolId map.
@@ -3477,6 +3485,52 @@ mod tests {
             (conf - 0.87).abs() < 1e-9,
             "confidence must be 0.87, got {conf}"
         );
+    });
+
+    /// 2.6a RED — pg_test asserting `load_call_graph_ws(&ws, RevisionId(99))`
+    /// when no revision 99 exists for ws returns `Err(RepositoryError::UnknownRevision{..})`
+    /// and NEVER silently falls back to the head revision.
+    pg_test!(load_call_graph_ws_unknown_revision_returns_error, |pool: PgPool| {
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
+        use crate::domain::traits::repository::RepositoryError;
+
+        let repo = PostgresRepository::from_pool(pool);
+        let ws = WorkspaceId::default();
+
+        // Verify there are NO revisions at all for this workspace
+        let rev_count: Option<i64> = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM graph_revisions WHERE workspace_id = $1",
+        )
+        .bind(ws.as_str())
+        .fetch_optional(repo.pool())
+        .await
+        .expect("query revision count");
+        assert_eq!(rev_count, Some(0), "workspace should start with no revisions");
+
+        // Loading revision 99 must fail with UnknownRevision, NOT fall back to head
+        let result = repo
+            .load_call_graph_ws(&ws, RevisionId(99))
+            .await;
+
+        let err = match result {
+            Err(RepositoryError::UnknownRevision { workspace, revision }) => {
+                assert_eq!(
+                    workspace.as_str(), ws.as_str(),
+                    "error workspace must match requested workspace"
+                );
+                assert_eq!(
+                    revision.get(), 99,
+                    "error revision must be 99"
+                );
+                true
+            }
+            other => panic!(
+                "expected UnknownRevision{{ws: \"{}\", rev: 99}}, got {:?}",
+                ws.as_str(),
+                other
+            ),
+        };
+        assert!(err, "UnknownRevision error must be returned for unknown revision");
     });
 
     /// 2.3a RED — pg_test asserting `save_call_graph_ws` returns `Ok(RevisionId)`,
