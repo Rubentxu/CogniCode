@@ -100,3 +100,55 @@ pub trait SymbolRepository: Send + Sync {
     /// workspace summary to report real symbol/edge counts.
     fn graph_stats(&self) -> GraphStats;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 4.5a RED — unit test asserting `RelationTarget::from(&ResolvedSymbol{...})`
+    /// produces a RelationTarget with identity fields copied correctly.
+    /// Backward compatibility: provenance and confidence are not applicable to
+    /// RelationTarget (they live on RelationTargetWithMetadata), so they
+    /// are not set in this conversion.
+    #[test]
+    fn relation_target_from_resolved_symbol_copies_identity_fields() {
+        let resolved = ResolvedSymbol {
+            id: SymbolId::new("src/lib.rs:main:1"),
+            name: "main".to_string(),
+            kind: SymbolKind::Function,
+            file: "src/lib.rs".to_string(),
+            line: 1,
+            signature: Some("fn main()".to_string()),
+        };
+
+        let target: RelationTarget = (&resolved).into();
+
+        assert_eq!(target.id, resolved.id);
+        assert_eq!(target.name, resolved.name);
+        assert_eq!(target.kind, resolved.kind);
+        assert_eq!(target.file, resolved.file);
+        assert_eq!(target.line, resolved.line);
+        assert_eq!(target.signature, resolved.signature);
+    }
+
+    #[test]
+    fn relation_target_from_owned_resolved_symbol_copies_identity_fields() {
+        let resolved = ResolvedSymbol {
+            id: SymbolId::new("src/lib.rs:main:1"),
+            name: "main".to_string(),
+            kind: SymbolKind::Function,
+            file: "src/lib.rs".to_string(),
+            line: 1,
+            signature: Some("fn main()".to_string()),
+        };
+
+        let target: RelationTarget = resolved.into();
+
+        assert_eq!(target.id, SymbolId::new("src/lib.rs:main:1"));
+        assert_eq!(target.name, "main");
+        assert_eq!(target.kind, SymbolKind::Function);
+        assert_eq!(target.file, "src/lib.rs");
+        assert_eq!(target.line, 1);
+        assert_eq!(target.signature, Some("fn main()".to_string()));
+    }
+}
