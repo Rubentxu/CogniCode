@@ -39,6 +39,15 @@ pub enum RepositoryError {
     /// already exists.
     #[error("unique violation: {0}")]
     UniqueViolation(String),
+
+    /// Requested revision does not exist in `graph_revisions` for the
+    /// given workspace. The revision may have been never created or
+    /// rolled back.
+    #[error("unknown revision: {workspace} r revision {revision}")]
+    UnknownRevision {
+        workspace: crate::domain::value_objects::WorkspaceId,
+        revision: crate::domain::value_objects::RevisionId,
+    },
 }
 
 /// Async-ready read-side port over the canonical symbol/edge store.

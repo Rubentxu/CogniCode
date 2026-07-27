@@ -12,6 +12,7 @@
 //! - `GraphStrategy`: Unified interface for different strategies
 //! - `FileManifest` / `IncrementalScanner` (gated behind `persistence`):
 //!   mtime + blake3 content-hash tracking for incremental graph rescans.
+//! - `SnapshotProvider`: Domain port for versioned graph snapshots (ADR-035).
 
 mod call_graph_projection;
 pub mod checkpoint;
@@ -20,6 +21,7 @@ mod lightweight_index;
 mod on_demand_graph;
 mod per_file_graph;
 mod pet_graph_store;
+pub mod snapshot_provider;
 mod strategy;
 mod symbol_index;
 
@@ -48,6 +50,9 @@ pub use strategy::{
     PerFileStrategy,
 };
 pub use symbol_index::{CacheConfig, SymbolIndex};
+pub use snapshot_provider::{SnapshotError, SnapshotEvent, SnapshotProvider};
+#[cfg(feature = "postgres")]
+pub use snapshot_provider::SnapshotProviderImpl;
 
 #[cfg(feature = "persistence")]
 pub use file_manifest::{FileManifest, FileRecord, ScanDelta};

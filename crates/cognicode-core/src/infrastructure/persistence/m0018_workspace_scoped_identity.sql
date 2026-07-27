@@ -25,7 +25,9 @@
 -- New: graph_edges UNIQUE INDEX (workspace_id, source_id, target_id, kind)
 --
 -- Old: graph_edges FKs referencing graph_nodes(id) — replaced with composite FKs
--- New: graph_edges FKs referencing graph_nodes(workspace_id, id, kind)
+-- New: graph_edges FKs referencing graph_nodes(workspace_id, id) [NOTE: NOT kind-aligned
+-- because graph_edges.kind (dependency kind) and graph_nodes.kind (node kind) are
+-- different enum spaces and cannot be matched across tables]
 
 -- =============================================================================
 -- Step 1: Drop old single-column FKs FIRST (must precede PK drop)
@@ -97,10 +99,18 @@ CREATE UNIQUE INDEX uniq_graph_edges_ws_source_target_kind
 
 -- =============================================================================
 -- Step 4: Add new composite FKs (now safe because new PK exists)
+-- The composite FK approach (workspace_id, source_id, kind) → (workspace_id, id, kind)
+-- is NOT used because graph_edges.kind (dependency kind, e.g. "dependency.Calls")
+-- and graph_nodes.kind (node kind, e.g. "symbol.function") are different
+-- enum spaces — a composite FK requiring them to match would reject all edges.
+-- Instead, we use simple composite FKs on (workspace_id, source_id) → (workspace_id, id).
+-- The workspace_id in graph_edges must match the workspace_id in graph_nodes,
+-- and the source_id/target_id must reference a valid node id in that workspace.
+-- This preserves referential integrity without requiring kind alignment.
 -- =============================================================================
 DO $$
 BEGIN
-    -- Add new composite FK for source
+    -- Add new simple composite FK for source (workspace_id + source_id → graph_nodes)
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.table_constraints
         WHERE constraint_name = 'graph_edges_ws_source_fkey'
@@ -108,15 +118,15 @@ BEGIN
     ) THEN
         ALTER TABLE graph_edges
             ADD CONSTRAINT graph_edges_ws_source_fkey
-            FOREIGN KEY (workspace_id, source_id, kind)
-            REFERENCES graph_nodes(workspace_id, id, kind);
+            FOREIGN KEY (workspace_id, source_id)
+            REFERENCES graph_nodes(workspace_id, id);
         RAISE NOTICE 'Added composite FK graph_edges_ws_source_fkey';
     END IF;
 END $$;
 
 DO $$
 BEGIN
-    -- Add new composite FK for target
+    -- Add new simple composite FK for target (workspace_id + target_id → graph_nodes)
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.table_constraints
         WHERE constraint_name = 'graph_edges_ws_target_fkey'
@@ -124,8 +134,8 @@ BEGIN
     ) THEN
         ALTER TABLE graph_edges
             ADD CONSTRAINT graph_edges_ws_target_fkey
-            FOREIGN KEY (workspace_id, target_id, kind)
-            REFERENCES graph_nodes(workspace_id, id, kind);
+            FOREIGN KEY (workspace_id, target_id)
+            REFERENCES graph_nodes(workspace_id, id);
         RAISE NOTICE 'Added composite FK graph_edges_ws_target_fkey';
     END IF;
 END $$;

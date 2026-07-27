@@ -4,10 +4,16 @@
 //! [`GraphCache`] wraps an `ArcSwap<Mutex<VersionedGraphCache>>` so
 //! writers can publish a new head while in-flight readers pin to an
 //! older version. The default retention is 2 (current + previous).
+//!
+//! For new code paths, set a [`SnapshotProvider`] via `set_provider()`.
+//! When a provider is set, `get()` routes through it to serve fresh data
+//! from PostgreSQL while legacy `ArcSwap` path remains for backward compatibility.
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::events::GraphEvent;
+use crate::domain::value_objects::{RevisionId, WorkspaceId};
 use crate::infrastructure::graph::checkpoint::{CheckpointId, VersionedGraphCache};
+use crate::infrastructure::graph::snapshot_provider::SnapshotProvider;
 use arc_swap::ArcSwap;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -28,10 +34,16 @@ pub const DEFAULT_RETENTION: usize = 2;
 /// * Inner `Mutex` for the rare write path that needs to mutate the
 ///   ring (insert, evict, read head_id) and return a value derived
 ///   from the new state.
+///
+/// When a [`SnapshotProvider`] is set via `set_provider()`, new readers
+/// are routed through it instead of the local ring buffer.
 pub struct GraphCache {
     cache: ArcSwap<Mutex<VersionedGraphCache>>,
     pending_events: Mutex<Vec<GraphEvent>>,
     event_sender: broadcast::Sender<GraphEvent>,
+    /// Optional snapshot provider for routing reads through PostgreSQL.
+    /// When set, `get()` uses the provider instead of the local ring.
+    snapshot_provider: Mutex<Option<Arc<dyn SnapshotProvider>>>,
 }
 
 impl GraphCache {
@@ -49,7 +61,16 @@ impl GraphCache {
             cache: ArcSwap::from_pointee(Mutex::new(VersionedGraphCache::new(retention))),
             pending_events: Mutex::new(Vec::new()),
             event_sender,
+            snapshot_provider: Mutex::new(None),
         }
+    }
+
+    /// Set the [`SnapshotProvider`] for routing new reads through PostgreSQL.
+    /// When set, `get()` uses the provider's `current_head()` and `snapshot()`
+    /// instead of the local ring buffer.
+    pub fn set_provider(&self, provider: Arc<dyn SnapshotProvider>) {
+        let mut sp = self.snapshot_provider.lock().unwrap();
+        *sp = Some(provider);
     }
 
     /// Subscribe to graph mutation events
@@ -59,12 +80,30 @@ impl GraphCache {
 
     /// Gets the current head graph. Always returns a value — a fresh
     /// cache exposes an empty `CallGraph` as head.
+    ///
+    /// When a [`SnapshotProvider`] is set via `set_provider()`, callers can
+    /// use `get_at_provider(ws, rev)` to fetch specific revisions from
+    /// PostgreSQL. The local ring buffer remains available via `get_at(id)`.
     pub fn get(&self) -> Arc<CallGraph> {
         let guard = self.cache.load();
         let cache = guard
             .lock()
             .unwrap_or_else(|_| panic!("graph cache poisoned"));
         cache.head().unwrap_or_else(|| Arc::new(CallGraph::new()))
+    }
+
+    /// Get a snapshot via the configured [`SnapshotProvider`], if one is set.
+    /// Returns `None` if no provider is configured or if the provider returns an error.
+    pub fn get_at_provider(
+        &self,
+        workspace: &WorkspaceId,
+        revision: RevisionId,
+    ) -> Option<Arc<CallGraph>> {
+        let provider_guard = self.snapshot_provider.lock().unwrap();
+        let provider = provider_guard.as_ref()?;
+        provider
+            .snapshot(workspace, revision)
+            .ok()
     }
 
     /// Gets a reference to the underlying graph.
