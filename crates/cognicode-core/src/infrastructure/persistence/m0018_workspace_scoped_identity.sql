@@ -17,6 +17,9 @@
 --
 -- Old: graph_edges UNIQUE INDEX (source_id, target_id, kind)
 -- New: graph_edges UNIQUE INDEX (workspace_id, source_id, target_id, kind)
+--
+-- Old: graph_edges FKs referencing graph_nodes(id) — replaced with composite FKs
+-- New: graph_edges FKs referencing graph_nodes(workspace_id, id, kind)
 
 -- =============================================================================
 -- 1. Change graph_nodes PRIMARY KEY to include workspace_id
@@ -49,21 +52,65 @@ END $$;
 -- =============================================================================
 -- 2. Change graph_edges unique index to include workspace_id
 -- =============================================================================
+-- Idempotent: unconditionally drop the old index (if present) and create
+-- the new workspace-scoped index. Using IF EXISTS on the DROP prevents errors
+-- if the old index was already absent (e.g., a fresh database that skipped m0018).
+-- The new index is always created so this migration is safe in ALL starting states.
+DROP INDEX IF EXISTS uniq_graph_edges_source_target_kind;
+CREATE UNIQUE INDEX uniq_graph_edges_ws_source_target_kind
+    ON graph_edges(workspace_id, source_id, target_id, kind);
+
+-- =============================================================================
+-- 3. Replace old single-column FKs with workspace-scoped composite FKs
+-- =============================================================================
+-- The old FKs graph_edges_source_id_fkey / graph_edges_target_id_fkey reference
+-- graph_nodes(id). After changing graph_nodes PK to (workspace_id, id, kind),
+-- we must replace them with composite FKs that reference the new PK.
+-- Using IF EXISTS / IF NOT EXISTS guards for idempotency.
 DO $$
 BEGIN
-    -- Only proceed if the old unique index exists
+    -- Drop old source FK if it exists
     IF EXISTS (
-        SELECT 1 FROM pg_indexes
-        WHERE indexname = 'uniq_graph_edges_source_target_kind'
-          AND tablename = 'graph_edges'
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'graph_edges_source_id_fkey'
+          AND table_name = 'graph_edges'
     ) THEN
-        -- Drop old unique index
-        DROP INDEX IF EXISTS uniq_graph_edges_source_target_kind;
+        ALTER TABLE graph_edges DROP CONSTRAINT graph_edges_source_id_fkey;
+    END IF;
 
-        -- Create new unique index with workspace_id
-        CREATE UNIQUE INDEX uniq_graph_edges_ws_source_target_kind
-            ON graph_edges(workspace_id, source_id, target_id, kind);
+    -- Add new composite FK for source
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'graph_edges_ws_source_fkey'
+          AND table_name = 'graph_edges'
+    ) THEN
+        ALTER TABLE graph_edges
+            ADD CONSTRAINT graph_edges_ws_source_fkey
+            FOREIGN KEY (workspace_id, source_id, kind)
+            REFERENCES graph_nodes(workspace_id, id, kind);
+    END IF;
+END $$;
 
-        RAISE NOTICE 'Changed graph_edges unique index to (workspace_id, source_id, target_id, kind)';
+DO $$
+BEGIN
+    -- Drop old target FK if it exists
+    IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'graph_edges_target_id_fkey'
+          AND table_name = 'graph_edges'
+    ) THEN
+        ALTER TABLE graph_edges DROP CONSTRAINT graph_edges_target_id_fkey;
+    END IF;
+
+    -- Add new composite FK for target
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'graph_edges_ws_target_fkey'
+          AND table_name = 'graph_edges'
+    ) THEN
+        ALTER TABLE graph_edges
+            ADD CONSTRAINT graph_edges_ws_target_fkey
+            FOREIGN KEY (workspace_id, target_id, kind)
+            REFERENCES graph_nodes(workspace_id, id, kind);
     END IF;
 END $$;
