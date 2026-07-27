@@ -133,7 +133,7 @@ fn default_build_unchanged() {
     use cognicode_core::domain::value_objects::symbol_kind::SymbolKind;
     // The `Symbol` variant is always present.
     let _k = NodeKind::Symbol(SymbolKind::Function);
-    // `Display` is a stable kebab-case identifier.
+    // `Display` produces "symbol.{inner}" for Symbol sub-kinds per task 1.3.
     let s = format!("{}", _k);
-    assert_eq!(s, "symbol");
+    assert_eq!(s, "symbol.function");
 }

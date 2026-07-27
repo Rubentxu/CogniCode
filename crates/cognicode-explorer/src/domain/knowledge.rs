@@ -151,7 +151,9 @@ pub async fn project_evidence(
             props.push(Property { key: "source_tool".into(), value: serde_json::Value::String(tool.to_string()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
         }
         if let Some(c) = n.properties.get("confidence") {
-            if let Some(parsed) = c.as_f64() {
+            // Accept both JSON number (0.85) and JSON string ("0.85")
+            let parsed = c.as_f64().or_else(|| c.as_str().and_then(|s| s.parse::<f64>().ok()));
+            if let Some(parsed) = parsed {
                 props.push(Property { key: "confidence".into(), value: serde_json::json!(parsed), value_type: "number".into(), source: "graph_nodes.metadata".into() });
             }
         }
