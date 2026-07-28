@@ -59,7 +59,7 @@ impl fmt::Display for TruncationMarker {
 
 /// A semantics-level error: ordering mismatch, path sequence mismatch, or
 /// tolerance exceeded for approximate numeric comparisons.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, thiserror::Error, Serialize, Deserialize)]
 pub enum SemanticsViolation {
     #[error("ordered result mismatch: {0}")]
     PathOrderMismatch(String),

@@ -12,6 +12,7 @@
 //! - `neutrality.rs` — static backend-neutrality assertions
 //! - `mold_plan.rs`  — `MoldPlan` enum
 //! - `graph_plan.rs` — `GraphPlan` enum
+//! - `lower.rs`   — `AstLowerer` trait + `NoOpLowerer` (port for AST→Plan lowering; adapter in `cognicode-explorer`)
 
 pub mod version;
 pub mod limits;
@@ -21,6 +22,7 @@ pub mod error;
 pub mod neutrality;
 pub mod mold_plan;
 pub mod graph_plan;
+pub mod lower;
 
 // Re-exports for ergonomic use at the crate root.
 pub use version::{PlanVersion, PlanHash, PlanMetadata, ParsePlanVersionError};
