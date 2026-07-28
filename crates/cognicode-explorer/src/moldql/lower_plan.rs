@@ -10,6 +10,7 @@ use cognicode_core::domain::plan::{
     GraphPlan, NeighborKind, PathPredicate, PathProjection, PathQuantifier, PlanError,
     PlanHash, PlanLimits, PlanMetadata, PlanVersion,
 };
+use cognicode_core::domain::plan::lower::{populate_defaults, QueryShape};
 use std::any::Any;
 
 use super::ast::{
@@ -49,16 +50,33 @@ impl MoldqlAstLowerer {
         let quantifier = PathQuantifier::new(Some(effective_max_hops), 0)
             .expect("effective_max_hops is always Some");
         let predicates = self.lower_conditions(&pq.conditions);
+        let metadata = self.plan_metadata();
+        
+        // Build plan with initial limits
+        let plan = GraphPlan::Path {
+            src: pq.from.clone(),
+            dst: pq.to.clone(),
+            quantifier: quantifier.clone(),
+            predicates: predicates.clone(),
+            projection: PathProjection::default(),
+            limits: PlanLimits::builder()
+                .max_hops(effective_max_hops)
+                .build(),
+            metadata: metadata.clone(),
+        };
+        
+        // W-A fix: call populate_defaults to use the port function
+        let shape = QueryShape::Path { max_hops: pq.max_hops };
+        let final_limits = populate_defaults(&plan, &shape);
+        
         Ok(GraphPlan::Path {
             src: pq.from.clone(),
             dst: pq.to.clone(),
             quantifier,
             predicates,
             projection: PathProjection::default(),
-            limits: PlanLimits::builder()
-                .max_hops(effective_max_hops)
-                .build(),
-            metadata: self.plan_metadata(),
+            limits: final_limits,
+            metadata,
         })
     }
 
@@ -69,15 +87,31 @@ impl MoldqlAstLowerer {
             TraversalDirection::Both => NeighborKind::Both,
         };
         let predicates = self.lower_conditions(&nq.conditions);
+        let metadata = self.plan_metadata();
+        
+        // Build plan with initial limits
+        let plan = GraphPlan::Neighbors {
+            src: nq.root.clone(),
+            kind: kind.clone(),
+            depth: nq.depth,
+            predicates: predicates.clone(),
+            limits: PlanLimits::builder()
+                .max_depth(nq.depth)
+                .build(),
+            metadata: metadata.clone(),
+        };
+        
+        // W-A fix: call populate_defaults to use the port function
+        let shape = QueryShape::Neighbors;
+        let final_limits = populate_defaults(&plan, &shape);
+        
         Ok(GraphPlan::Neighbors {
             src: nq.root.clone(),
             kind,
             depth: nq.depth,
             predicates,
-            limits: PlanLimits::builder()
-                .max_depth(nq.depth)
-                .build(),
-            metadata: self.plan_metadata(),
+            limits: final_limits,
+            metadata,
         })
     }
 
@@ -90,41 +124,86 @@ impl MoldqlAstLowerer {
         } else {
             sq.depth
         };
-        Ok(GraphPlan::Subgraph {
+        let metadata = self.plan_metadata();
+        
+        // Build plan with initial limits
+        let plan = GraphPlan::Subgraph {
             nodes: vec![sq.root.clone()],
             edges: None,
             aggregations: vec![],
             limits: PlanLimits::builder()
                 .max_depth(effective_depth)
                 .build(),
-            metadata: self.plan_metadata(),
+            metadata: metadata.clone(),
+        };
+        
+        // W-A fix: call populate_defaults to use the port function
+        let shape = QueryShape::Subgraph { depth: sq.depth };
+        let final_limits = populate_defaults(&plan, &shape);
+        
+        Ok(GraphPlan::Subgraph {
+            nodes: vec![sq.root.clone()],
+            edges: None,
+            aggregations: vec![],
+            limits: final_limits,
+            metadata,
         })
     }
 
     fn lower_cluster(&self, cq: &ClusterQuery) -> Result<GraphPlan, PlanError> {
-        Ok(GraphPlan::Cluster {
+        let metadata = self.plan_metadata();
+        
+        // Build plan with initial limits
+        let plan = GraphPlan::Cluster {
             by: vec![], // ClusterMethod maps to grouping key; empty for now
             aggregations: vec![],
             limits: PlanLimits::default(),
-            metadata: self.plan_metadata(),
+            metadata: metadata.clone(),
+        };
+        
+        // W-A fix: call populate_defaults to use the port function
+        let shape = QueryShape::Cluster;
+        let final_limits = populate_defaults(&plan, &shape);
+        
+        Ok(GraphPlan::Cluster {
+            by: vec![],
+            aggregations: vec![],
+            limits: final_limits,
+            metadata,
         })
     }
 
     fn lower_explain(&self, eq: &ExplainQuery) -> Result<GraphPlan, PlanError> {
+        let predicates = self.lower_conditions(&eq.conditions);
+        let metadata = self.plan_metadata();
+        
+        // Build inner path plan
         let inner = GraphPlan::Path {
             src: eq.from.clone(),
             dst: eq.to.clone(),
             quantifier: PathQuantifier::new(Some(u32::MAX), 0)
                 .expect("u32::MAX is Some"),
-            predicates: self.lower_conditions(&eq.conditions),
+            predicates,
             projection: PathProjection::default(),
             limits: PlanLimits::default(),
-            metadata: self.plan_metadata(),
+            metadata: metadata.clone(),
         };
+        
+        // Build explain plan with initial limits for populate_defaults call
+        let explain_plan = GraphPlan::Explain {
+            inner: Box::new(inner.clone()),
+            limits: PlanLimits::default(),
+            metadata: metadata.clone(),
+        };
+        
+        // W-A fix: call populate_defaults for the Explain wrapper
+        let shape = QueryShape::Explain;
+        let final_limits = populate_defaults(&explain_plan, &shape);
+        
         Ok(GraphPlan::Explain {
             inner: Box::new(inner),
-            limits: PlanLimits::default(),
-            metadata: self.plan_metadata(),
+            limits: final_limits,
+            metadata,
         })
     }
 
@@ -139,11 +218,25 @@ impl MoldqlAstLowerer {
             .iter()
             .map(|op| self.lower(op))
             .collect::<Result<Vec<_>, _>>()?;
+        let metadata = self.plan_metadata();
+        
+        // Build plan with initial limits
+        let plan = GraphPlan::BooleanComposition {
+            op,
+            operands: operands.clone(),
+            limits: PlanLimits::default(),
+            metadata: metadata.clone(),
+        };
+        
+        // W-A fix: call populate_defaults to use the port function
+        let shape = QueryShape::Boolean;
+        let final_limits = populate_defaults(&plan, &shape);
+        
         Ok(GraphPlan::BooleanComposition {
             op,
             operands,
-            limits: PlanLimits::default(),
-            metadata: self.plan_metadata(),
+            limits: final_limits,
+            metadata,
         })
     }
 
