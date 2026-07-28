@@ -18,6 +18,7 @@ pub mod federation;
 // are available in the default build (multimodal gates WRITE only).
 pub mod investigation;
 pub mod investigation_store;
+pub mod plan;
 pub mod ports;
 pub mod services;
 pub mod traits;

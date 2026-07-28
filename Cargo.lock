@@ -516,6 +516,7 @@ dependencies = [
  "dashmap",
  "futures-util",
  "glob",
+ "hex",
  "ignore",
  "indexmap 2.13.0",
  "lsp-types",

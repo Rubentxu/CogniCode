@@ -1,0 +1,396 @@
+//! GraphPlan — versioned, backend-neutral discriminated union for graph-selecting operations.
+//!
+//! Part of e28-1-moldplan-graphplan-contracts: PR1 Foundation Phase 1.
+//!
+//! ## Design
+//!
+//! `GraphPlan` is the discriminator for all graph-selecting MoldQL operations:
+//! path finding, neighbor traversal, subgraph extraction, and clustering.
+//! Each variant is fully self-describing with typed predicate and projection
+//! payloads. No SQL, Petgraph, or tokio types appear in this enum.
+
+use serde::{Deserialize, Serialize};
+use std::fmt;
+
+// Types from sibling modules.
+use super::limits::{PlanLimits, PlanLimit};
+use super::value::TypedValue;
+use super::version::{PlanHash, PlanMetadata, PlanVersion};
+
+/// Discriminated union for all graph-selecting MoldQL operations.
+///
+/// `GraphPlan` is always wrapped inside `MoldPlan::Graph(_)`. It carries
+/// the concrete graph operation payload with all required bounds (no
+/// unbounded quantifiers allowed).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GraphPlan {
+    /// Shortest/widest path between two nodes with a bounded hop count.
+    Path {
+        src: String,
+        dst: String,
+        quantifier: PathQuantifier,
+        predicates: Vec<super::PathPredicate>,
+        projection: PathProjection,
+        limits: PlanLimits,
+        metadata: PlanMetadata,
+    },
+    /// Neighbors of a source node at a given depth.
+    Neighbors {
+        src: String,
+        kind: NeighborKind,
+        depth: u32,
+        predicates: Vec<super::PathPredicate>,
+        limits: PlanLimits,
+        metadata: PlanMetadata,
+    },
+    /// Extract a subgraph from a set of nodes and optional edge filter.
+    Subgraph {
+        nodes: Vec<String>,
+        edges: Option<Vec<super::EdgeResult>>,
+        aggregations: Vec<super::TypedValue>,
+        limits: PlanLimits,
+        metadata: PlanMetadata,
+    },
+    /// Cluster nodes by a grouping key with optional aggregations.
+    Cluster {
+        by: Vec<String>,
+        aggregations: Vec<super::TypedValue>,
+        limits: PlanLimits,
+        metadata: PlanMetadata,
+    },
+    /// EXPLAIN wrapper — returns plan metadata without executing.
+    Explain {
+        inner: Box<GraphPlan>,
+        limits: PlanLimits,
+        metadata: PlanMetadata,
+    },
+}
+
+/// Quantifier for path queries — always bounded.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PathQuantifier {
+    /// Maximum number of hops. Must be `Some` — unbounded paths are rejected.
+    pub max_hops: Option<u32>,
+    /// Minimum number of hops (default 0).
+    pub min_hops: u32,
+}
+
+impl PathQuantifier {
+    /// Construct a bounded quantifier. Returns `None` if `max_hops` is `None`.
+    pub fn new(max_hops: Option<u32>, min_hops: u32) -> Option<Self> {
+        if max_hops.is_none() {
+            // Unbounded quantifier is rejected — must have a bound.
+            return None;
+        }
+        Some(Self { max_hops, min_hops })
+    }
+
+    /// Returns `true` if the quantifier has a finite bound.
+    pub fn is_bounded(&self) -> bool {
+        self.max_hops.is_some()
+    }
+}
+
+/// Projection of nodes and edges for a path result.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub struct PathProjection {
+    /// Node properties to include.
+    pub nodes: Vec<String>,
+    /// Edge properties to include.
+    pub edges: Vec<String>,
+}
+
+/// Kind of neighbor traversal.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum NeighborKind {
+    /// Both incoming and outgoing edges.
+    Both,
+    /// Only outgoing edges.
+    Outgoing,
+    /// Only incoming edges.
+    Incoming,
+}
+
+impl Default for NeighborKind {
+    fn default() -> Self {
+        Self::Both
+    }
+}
+
+impl GraphPlan {
+    /// Returns a reference to the plan metadata.
+    pub fn metadata(&self) -> &PlanMetadata {
+        match self {
+            GraphPlan::Path { metadata, .. }
+            | GraphPlan::Neighbors { metadata, .. }
+            | GraphPlan::Subgraph { metadata, .. }
+            | GraphPlan::Cluster { metadata, .. }
+            | GraphPlan::Explain { metadata, .. } => metadata,
+        }
+    }
+
+    /// Returns a reference to the plan limits.
+    pub fn limits(&self) -> &PlanLimits {
+        match self {
+            GraphPlan::Path { limits, .. }
+            | GraphPlan::Neighbors { limits, .. }
+            | GraphPlan::Subgraph { limits, .. }
+            | GraphPlan::Cluster { limits, .. }
+            | GraphPlan::Explain { limits, .. } => limits,
+        }
+    }
+
+    /// Returns the plan version string.
+    pub fn version(&self) -> &str {
+        self.metadata().version_str()
+    }
+
+    /// Returns the plan hash hex string.
+    pub fn hash(&self) -> &str {
+        self.metadata().hash_str()
+    }
+}
+
+impl fmt::Display for GraphPlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GraphPlan::Path { src, dst, quantifier, .. } => {
+                write!(f, "Path({src} → {dst}, max_hops={:?})", quantifier.max_hops)
+            }
+            GraphPlan::Neighbors { src, depth, kind, .. } => {
+                write!(f, "Neighbors({src}, {kind:?}, depth={depth})")
+            }
+            GraphPlan::Subgraph { nodes, .. } => {
+                write!(f, "Subgraph(nodes={:?})", nodes)
+            }
+            GraphPlan::Cluster { by, .. } => {
+                write!(f, "Cluster(by={by:?})")
+            }
+            GraphPlan::Explain { inner, .. } => {
+                write!(f, "Explain({inner})")
+            }
+        }
+    }
+}
+
+// PathPredicate lives here for now (moved from filter.rs placeholder)
+/// A predicate applied to edges or nodes during graph traversal.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PathPredicate {
+    pub label: String,
+    pub value: super::TypedValue,
+}
+
+// Re-export path_predicate at module level for MoldPlan references
+pub use PathPredicate as GraphPathPredicate;
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // Task 1.8a RED — GraphPlan enum (Path/Neighbors/Subgraph/Cluster/Explain)
+    // Scenario: `moldplan-graphplan::GraphPlan Bounded Traversal` (both) +
+    //           GraphPlan variants serialize round-trip
+    // Assert: `ShortestPath::new(..., max_hops: None)` → `Err(MissingBound)`;
+    //         BooleanComposition wraps sub-plans preserving operands
+    // -------------------------------------------------------------------------
+
+    /// `PathQuantifier::new(Some(3), 0)` returns a bounded quantifier.
+    #[test]
+    fn path_quantifier_bounded() {
+        let q = PathQuantifier::new(Some(3), 0).unwrap();
+        assert!(q.is_bounded());
+        assert_eq!(q.max_hops, Some(3));
+        assert_eq!(q.min_hops, 0);
+    }
+
+    /// `PathQuantifier::new(None, 0)` returns `None` (unbounded rejected).
+    #[test]
+    fn path_quantifier_unbounded_rejected() {
+        let q = PathQuantifier::new(None, 0);
+        assert!(q.is_none(), "unbounded quantifier must be rejected");
+    }
+
+    /// `NeighborKind::default()` is `Both`.
+    #[test]
+    fn neighbor_kind_default() {
+        assert_eq!(NeighborKind::default(), NeighborKind::Both);
+    }
+
+    /// `GraphPlan::Path` round-trips through serde.
+    #[test]
+    fn graph_plan_path_roundtrip() {
+        let plan = GraphPlan::Path {
+            src: "A".into(),
+            dst: "B".into(),
+            quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
+            predicates: vec![],
+            projection: PathProjection::default(),
+            limits: PlanLimits::builder().max_hops(3).build(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let json = serde_json::to_string(&plan).expect("serialize");
+        let parsed: GraphPlan = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, plan);
+    }
+
+    /// `GraphPlan::Neighbors` round-trips through serde.
+    #[test]
+    fn graph_plan_neighbors_roundtrip() {
+        let plan = GraphPlan::Neighbors {
+            src: "node1".into(),
+            kind: NeighborKind::Outgoing,
+            depth: 2,
+            predicates: vec![],
+            limits: PlanLimits::builder().max_depth(2).build(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let json = serde_json::to_string(&plan).expect("serialize");
+        let parsed: GraphPlan = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, plan);
+    }
+
+    /// `GraphPlan::Subgraph` round-trips through serde.
+    #[test]
+    fn graph_plan_subgraph_roundtrip() {
+        let plan = GraphPlan::Subgraph {
+            nodes: vec!["n1".into(), "n2".into()],
+            edges: None,
+            aggregations: vec![],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let json = serde_json::to_string(&plan).expect("serialize");
+        let parsed: GraphPlan = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, plan);
+    }
+
+    /// `GraphPlan::Cluster` round-trips through serde.
+    #[test]
+    fn graph_plan_cluster_roundtrip() {
+        let plan = GraphPlan::Cluster {
+            by: vec!["kind".into()],
+            aggregations: vec![super::super::TypedValue::Int(1)],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let json = serde_json::to_string(&plan).expect("serialize");
+        let parsed: GraphPlan = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, plan);
+    }
+
+    /// `GraphPlan::Explain` wraps an inner plan.
+    #[test]
+    fn graph_plan_explain_roundtrip() {
+        let inner = GraphPlan::Neighbors {
+            src: "A".into(),
+            kind: NeighborKind::Both,
+            depth: 1,
+            predicates: vec![],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let plan = GraphPlan::Explain {
+            inner: Box::new(inner),
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let json = serde_json::to_string(&plan).expect("serialize");
+        let parsed: GraphPlan = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, plan);
+    }
+
+    /// `GraphPlan::metadata()` returns the plan metadata.
+    #[test]
+    fn graph_plan_metadata() {
+        let version = PlanVersion::new("1.0.0").unwrap();
+        let hash = PlanHash::compute(&0u32);
+        let metadata = PlanMetadata::new(version.clone(), hash.clone());
+        let plan = GraphPlan::Neighbors {
+            src: "A".into(),
+            kind: NeighborKind::Both,
+            depth: 1,
+            predicates: vec![],
+            limits: PlanLimits::default(),
+            metadata: metadata.clone(),
+        };
+        assert_eq!(plan.metadata().version_str(), "1.0.0");
+        assert_eq!(plan.metadata().hash_str(), hash.as_str());
+    }
+
+    /// `GraphPlan::Display` includes variant name and key fields.
+    #[test]
+    fn graph_plan_display() {
+        let plan = GraphPlan::Path {
+            src: "X".into(),
+            dst: "Y".into(),
+            quantifier: PathQuantifier { max_hops: Some(5), min_hops: 0 },
+            predicates: vec![],
+            projection: PathProjection::default(),
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let display = plan.to_string();
+        assert!(display.contains("Path"));
+        assert!(display.contains("X"));
+        assert!(display.contains("Y"));
+        assert!(display.contains("max_hops"));
+    }
+
+    /// `PathProjection` is `Default`.
+    #[test]
+    fn path_projection_default() {
+        let proj = PathProjection::default();
+        assert!(proj.nodes.is_empty());
+        assert!(proj.edges.is_empty());
+    }
+
+    /// `GraphPlan` is `Send + Sync + 'static`.
+    #[test]
+    fn graph_plan_send_sync_static() {
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        fn assert_static<T: 'static>() {}
+        assert_send::<GraphPlan>();
+        assert_sync::<GraphPlan>();
+        assert_static::<GraphPlan>();
+    }
+
+    /// `PathPredicate` serde round-trip.
+    #[test]
+    fn path_predicate_roundtrip() {
+        let pred = PathPredicate {
+            label: "kind".into(),
+            value: super::super::TypedValue::String("function".into()),
+        };
+        let json = serde_json::to_string(&pred).expect("serialize");
+        let parsed: PathPredicate = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, pred);
+    }
+}
