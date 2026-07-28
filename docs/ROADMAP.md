@@ -241,6 +241,43 @@ Ciclo SDDK A-lite ejecutado completamente en auto mode. PR2 cubre Phase 2 (Persi
 
 **Próximo paso propuesto**: PR3 Snapshot+Bridge (`e28-0-pr3-snapshot-bridge`; 16 tasks: Repository trait extension + GenericGraphRepository + MetadataAwareRepository contract tests + 5 follow-up WARNINGs cleanup). Cadena stacked-to-main sigue.
 
+## Session Handover 2026-07-28 (E28.1 PR1 shipped)
+
+**E28.1 PR1 Foundation closed and shipped v0.64.0 (PR #138 merged to main).**
+
+Ciclo SDDK A-lite ejecutado completamente en auto mode. PR1 cubre Phase 1 (Foundation — value objects) del programa E28.1 (22 tasks; 1 commit atómico en `feat/e28-1-pr1-foundation`).
+
+**Logros PR1**:
+- Value objects introducidos en `crates/cognicode-core/src/domain/plan/`:
+  - `PlanVersion` (semver) + `PlanHash` (SHA-256 de plan canónico)
+  - `TypedValue` (Null/Bool/Int/Float/String/Json) + `assert_approx_equal` para floats
+  - `ResultSet` (Rows/Nodes/Edges/Paths/Scalars) con multiset semantics + stable iteration order
+  - `TruncationMarker` + `SemanticsViolation` + `Path` + `PathHop` (graph navigation)
+  - `PlanLimits` + `PlanLimit` (9 variantes) + `CancellationToken`
+  - `PlanError` + `UnsupportedConstruct` + `ConstructId` + `SourceLocation`
+  - `ExecutorError` (extiende/supersede `QueryError`)
+  - `MoldPlan` enum (Select/Count/Aggregate/Explain)
+  - `GraphPlan` enum (Path/Neighbors/Subgraph/Cluster/Explain)
+- Backend-neutrality static assertions (`BackendNeutral` sealed trait + `assert_backend_neutral!` macro).
+- 103 plan-specific tests pasando.
+
+**PR2-track WARNINGs** (7 identificados por debt-verify; non-blocking):
+1. `BackendNeutral` sealed trait theater — implementar `sealed::Sealed` o remover.
+2. `SemanticsViolation` name drift — unificar vía `#[from]` entre `result.rs`/`error.rs`/`PlanError`.
+3. `CancellationToken::Hash` no-determinista (hashes por `Arc::as_ptr`) — documentar o remover impl.
+4. `PlanLimits`/`PlanLimit` shotgun surgery — refactor a lookup table.
+5. `PathHop::edge_kind: Option<String>` primitive obsession — introducir `EdgeKind` enum.
+6. `PlanVersion` semver validation incompleta — completar o adoptar `semver` crate.
+7. `PlanLimits::PartialEq` semantics para `cancellation` field.
+
+**Trazabilidad**:
+- Branch: `feat/e28-1-pr1-foundation` (squashed a `0da8ed78` al mergear).
+- Tag: `v0.64.0` (MINOR — nuevos value objects públicos en `cognicode-core::domain::plan`).
+- PR: <https://github.com/Rubentxu/CogniCode/pull/138>.
+- Artifacts: `sddk/e28-1-moldplan-graphplan-contracts/` (proposal, spec, tasks, apply-progress, verify-report, debt-report).
+
+**Próximo paso propuesto**: PR2 Plan Algebra (`feat/e28-1-pr2-plan-algebra`; Phase 2 — parser lowering a `MoldPlan`/`GraphPlan`; 12 tasks; ~500 LOC; resuelve también los 7 WARNINGs del PR1 backlog). Cadena stacked-to-main sigue.
+
 ## Session Handover 2026-07-27 (E28 PR3 shipped)
 
 **E28 PR3 Snapshot+Bridge closed and shipped v0.63.0 (PR #137 merged to main). E28.0 chain fully DONE.**
