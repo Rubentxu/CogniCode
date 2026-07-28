@@ -14,8 +14,8 @@
 use async_trait::async_trait;
 use thiserror::Error;
 
-use crate::domain::aggregates::Symbol;
-use crate::domain::value_objects::EdgeMetadata;
+use crate::domain::aggregates::{CallGraph, Symbol};
+use crate::domain::value_objects::{EdgeMetadata, RevisionId, WorkspaceId};
 
 /// Error type for [`Repository`] operations.
 ///
@@ -95,6 +95,18 @@ pub trait Repository: Send + Sync {
     /// Count every indexed call-graph edge. Cheap call — delegates
     /// to `SELECT COUNT(*)` on the `call_edges` table.
     async fn count_edges(&self) -> Result<usize, RepositoryError>;
+
+    /// Load the call graph snapshot for a specific revision.
+    ///
+    /// Returns `Ok(Some(CallGraph))` when the revision exists,
+    /// `Ok(None)` when the workspace has no graph yet (empty graph),
+    /// and `Err(UnknownRevision{ws, rev})` when the revision does not
+    /// exist in `graph_revisions` for this workspace.
+    async fn load_call_graph_pinned(
+        &self,
+        workspace: &WorkspaceId,
+        revision: RevisionId,
+    ) -> Result<Option<CallGraph>, RepositoryError>;
 }
 
 #[cfg(test)]
@@ -137,6 +149,14 @@ mod tests {
         async fn count_edges(&self) -> Result<usize, RepositoryError> {
             Ok(0)
         }
+
+        async fn load_call_graph_pinned(
+            &self,
+            _workspace: &WorkspaceId,
+            _revision: RevisionId,
+        ) -> Result<Option<CallGraph>, RepositoryError> {
+            Ok(None)
+        }
     }
 
     /// A second implementation to prove the trait is open to
@@ -176,6 +196,14 @@ mod tests {
         async fn count_edges(&self) -> Result<usize, RepositoryError> {
             Ok(self.edges)
         }
+
+        async fn load_call_graph_pinned(
+            &self,
+            _workspace: &WorkspaceId,
+            _revision: RevisionId,
+        ) -> Result<Option<CallGraph>, RepositoryError> {
+            Ok(None)
+        }
     }
 
     #[tokio::test]
@@ -191,6 +219,11 @@ mod tests {
         assert!(repo.find_edges_by_caller("x").await.unwrap().is_empty());
         assert!(repo.find_edges_by_callee("x").await.unwrap().is_empty());
         assert_eq!(repo.count_edges().await.unwrap(), 0);
+        assert!(repo
+            .load_call_graph_pinned(&WorkspaceId::default(), RevisionId::NONE)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
@@ -204,6 +237,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn load_call_graph_pinned_returns_none_for_empty_repo() {
+        let repo = EmptyRepo;
+        let result = repo
+            .load_call_graph_pinned(&WorkspaceId::default(), RevisionId::NONE)
+            .await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[tokio::test]
     async fn trait_is_dyn_compatible_and_send_sync() {
         // This test would NOT compile if `Repository` lost its
         // `Send + Sync` bound or its `#[async_trait]` annotation.
@@ -214,6 +257,12 @@ mod tests {
         let _shared: Arc<dyn Repository> = Arc::new(EmptyRepo);
         assert_eq!(boxed.count_symbols().await.unwrap(), 7);
         assert_eq!(boxed.count_edges().await.unwrap(), 3);
+        // load_call_graph_pinned on dyn box
+        assert!(boxed
+            .load_call_graph_pinned(&WorkspaceId::default(), RevisionId::NONE)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[test]

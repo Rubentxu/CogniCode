@@ -19,7 +19,7 @@ use cognicode_core::domain::services::CycleDetectionResult;
 
 // Import value objects
 use cognicode_core::domain::value_objects::{
-    CheckpointId, DependencyType, Location, SourceRange, SymbolKind,
+    CheckpointId, DependencyType, Location, RevisionId, SourceRange, SymbolKind, WorkspaceId,
 };
 
 // Import from code_intelligence sub-module directly
@@ -791,6 +791,14 @@ impl Repository for MockRepository {
 
     async fn count_edges(&self) -> Result<usize, RepositoryError> {
         Ok(self.edge_count)
+    }
+
+    async fn load_call_graph_pinned(
+        &self,
+        _workspace: &WorkspaceId,
+        _revision: RevisionId,
+    ) -> Result<Option<CallGraph>, RepositoryError> {
+        Ok(None)
     }
 }
 

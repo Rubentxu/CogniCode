@@ -11,7 +11,7 @@ use cognicode_core::domain::traits::graph_query_port::{
     CalleeWithMetadata, CallerWithMetadata, EdgeWithMetadata, GraphQueryPort, RelationTarget,
     RelationTargetWithMetadata,
 };
-use cognicode_core::domain::value_objects::{DependencyType, Provenance};
+use cognicode_core::domain::value_objects::{DependencyType, Provenance, RevisionId, WorkspaceId};
 
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
@@ -77,6 +77,33 @@ impl CallGraphRepository {
         id: &SymbolId,
     ) -> Vec<(SymbolId, DependencyType, Provenance, f64)> {
         self.graph.callees_with_metadata(id)
+    }
+
+    /// 4.4b GREEN — Load call graph via SnapshotProvider::snapshot(ws, rev)
+    /// then query callees_with_metadata on the pinned snapshot.
+    ///
+    /// This enables revision-pinned queries: the result set's
+    /// (provenance, confidence) are pinned to revision `rev` even
+    /// when concurrent ingest advances the head revision.
+    pub fn callees_with_metadata_pinned(
+        &self,
+        id: &SymbolId,
+        workspace: &WorkspaceId,
+        revision: RevisionId,
+        snapshot_provider: &dyn cognicode_core::infrastructure::graph::SnapshotProvider,
+    ) -> Result<Vec<CalleeWithMetadata>, cognicode_core::infrastructure::graph::SnapshotError>
+    {
+        let pinned_graph = snapshot_provider.snapshot(workspace, revision)?;
+        Ok(pinned_graph
+            .callees_with_metadata(id)
+            .into_iter()
+            .map(|(callee_id, dependency_type, provenance, confidence)| CalleeWithMetadata {
+                callee_id,
+                dependency_type,
+                provenance,
+                confidence,
+            })
+            .collect())
     }
 
     /// Wrap an existing graph (used by `graph_mut`-style construction flows).

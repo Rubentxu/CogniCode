@@ -383,6 +383,14 @@ impl GraphNodeBuilder {
         self
     }
 
+    /// Sets properties from a raw `serde_json::Value::Object`, preserving
+    /// all value types (numbers, arrays, nested objects) without flattening
+    /// to strings. Use this when reading back from a JSONB column.
+    pub fn properties_value(mut self, props: Value) -> Self {
+        self.properties = props;
+        self
+    }
+
     /// Overrides the `created_at` timestamp.
     pub fn created_at(mut self, ts: DateTime<Utc>) -> Self {
         self.created_at = ts;
