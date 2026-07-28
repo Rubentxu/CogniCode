@@ -349,12 +349,19 @@ The debt report flagged that `populate_defaults` (port function in `lower.rs`) i
 
 ## Push Status
 
-**NOT pushed** — verified `git log origin/feat/e28-1-pr3-bridge..HEAD` → no remote
+✅ **Pushed** to `origin/feat/e28-1-pr3-bridge`
+
+## PR
+
+✅ **PR created**: https://github.com/Rubentxu/CogniCode/pull/140
+- Target: `main`
+- Chain: stacked-to-main (PR3 → main after PR2 merged)
+- Title: `feat(e28-1): PR3 Bridge — compile_to_plan + deprecation + W-A/W-B/W-C`
 
 ## Next
 
-- Run `sddk-verify` to validate all 65 spec scenarios
-- Push branch and create PR (stacked-to-main chain)
+- Await review/merge of PR #140
+- Run `sddk-verify` after merge to confirm all 65 spec scenarios pass
 
 ## Risks
 
