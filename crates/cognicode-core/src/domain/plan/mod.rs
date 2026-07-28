@@ -28,7 +28,7 @@ pub mod lower;
 
 // Re-exports for ergonomic use at the crate root.
 pub use version::{PlanVersion, PlanHash, PlanMetadata, ParsePlanVersionError};
-pub use limits::{PlanLimits, PlanLimit, PlanLimitsBuilder};
+pub use limits::{PlanLimits, PlanLimit, PlanLimitKind, PlanLimitsBuilder, PLAN_LIMIT_KINDS};
 pub use value::{TypedValue, ValueError};
 pub use result::{ResultSet, TruncationMarker, SemanticsViolation, Path, Row, NodeResult, EdgeResult, assert_equivalent, assert_approx_equal, PathHop};
 pub use error::{PlanError, ExecutorError, UnsupportedConstruct, ConstructId, SourceLocation, CancellationToken, ProvenanceSource};
