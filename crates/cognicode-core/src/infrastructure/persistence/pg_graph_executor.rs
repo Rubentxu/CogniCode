@@ -960,7 +960,13 @@ mod tests {
         }
 
         // Create a pool and repository
-        let pool = sqlx::PgPool::connect(&base).await.unwrap();
+        let pool = match sqlx::PgPool::connect(&base).await.ok() {
+            Some(p) => p,
+            None => {
+                eprintln!("skipping construct_from_postgres_repository: cannot connect to database");
+                return;
+            }
+        };
         let repo = PostgresRepository::from_pool(pool);
         let executor = PgGraphExecutor::new(repo);
 
@@ -982,12 +988,72 @@ mod tests {
             return;
         }
 
-        let pool = sqlx::PgPool::connect(&base).await.unwrap();
+        let pool = match sqlx::PgPool::connect(&base).await.ok() {
+            Some(p) => p,
+            None => {
+                eprintln!("skipping pg_graph_executor_implements_graph_executor: cannot connect to database");
+                return;
+            }
+        };
         let repo = PostgresRepository::from_pool(pool);
         let executor = PgGraphExecutor::new(repo);
 
         // Verify GraphExecutor trait is implemented
         fn _assert_executor(_: &dyn GraphExecutor) {}
         _assert_executor(&executor);
+    }
+
+    // -------------------------------------------------------------------------
+    // Task 2.2 RED — unknown revision rejection
+    // Scenario: pg-graph-executor::RevisionHandling::Unknown workspace:revision
+    // Assert: ExecutorError::RevisionUnknown is returned
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn unknown_revision_returns_error() {
+        let base = std::env::var("TEST_DATABASE_URL").unwrap_or_default();
+        if base.is_empty() {
+            eprintln!("skipping unknown_revision_returns_error: TEST_DATABASE_URL not set");
+            return;
+        }
+
+        let pool = match sqlx::PgPool::connect(&base).await.ok() {
+            Some(p) => p,
+            None => {
+                eprintln!("skipping unknown_revision_returns_error: cannot connect to database");
+                return;
+            }
+        };
+        let repo = PostgresRepository::from_pool(pool);
+        let executor = PgGraphExecutor::new(repo);
+
+        // Create a Path plan with a known source but non-existent revision
+        let plan = GraphPlan::Path {
+            src: "test_node".to_string(),
+            dst: "other_node".to_string(),
+            quantifier: PathQuantifier {
+                max_hops: Some(3),
+                min_hops: 0,
+            },
+            predicates: vec![],
+            projection: PathProjection::default(),
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let ws = WorkspaceId::try_new("test_ws").unwrap();
+        let rev = RevisionId(999999); // Non-existent revision
+
+        // Execute and verify we get RevisionUnknown error
+        let result = executor.execute(&plan, (ws, rev));
+        match result {
+            Err(ExecutorError::RevisionUnknown(pin)) => {
+                // Verify pin format is "workspace:revision"
+                assert!(pin.contains("999999"), "pin should contain revision id");
+            }
+            other => panic!("expected ExecutorError::RevisionUnknown, got {:?}", other),
+        }
     }
 }
