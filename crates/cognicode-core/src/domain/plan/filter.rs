@@ -55,7 +55,7 @@ impl Sealed for PlanFilterOp {}
 /// to backend-specific predicates during plan lowering.
 ///
 /// Note: `Eq` and `Hash` are NOT derived because `f64` does not implement `Eq`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PlanFilter {
     /// Confidence score filter (e.g., `WHERE confidence > 0.5`).
     Confidence { op: PlanFilterOp, threshold: f64 },
@@ -64,7 +64,32 @@ pub enum PlanFilter {
 }
 
 // Manual `Eq` for PlanFilter — needed because f64 is not Eq, but Float
-// values used in confidence thresholds are always finite (NaN is rejected at construction).
+// values used in confidence thresholds should be finite (NaN is rejected at construction).
+// We implement PartialEq manually to ensure NaN == NaN (consistent with Hash, which uses to_bits()).
+impl PartialEq for PlanFilter {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                PlanFilter::Confidence { op: op1, threshold: t1 },
+                PlanFilter::Confidence { op: op2, threshold: t2 },
+            ) => {
+                op1 == op2 && {
+                    if t1.is_nan() && t2.is_nan() {
+                        true // NaN == NaN consistent with Hash (same bits hash equal)
+                    } else {
+                        t1.to_bits() == t2.to_bits()
+                    }
+                }
+            }
+            (
+                PlanFilter::Provenance { key: k1, value: v1 },
+                PlanFilter::Provenance { key: k2, value: v2 },
+            ) => k1 == k2 && v1 == v2,
+            _ => false,
+        }
+    }
+}
+
 impl Eq for PlanFilter {}
 
 // Manual `Hash` for PlanFilter — f64 implements Hash but not Eq.
@@ -217,5 +242,45 @@ mod tests {
         set.insert(PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.5 });
         set.insert(PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.5 }); // duplicate
         assert_eq!(set.len(), 1);
+    }
+
+    // -------------------------------------------------------------------------
+    // W-C (NaN soundness): NaN threshold has consistent Hash/Eq contract
+    // Scenario: `smells::S-002` / `coupling::C-002` — NaN violates IEEE 754 Eq
+    // but Hash (to_bits) is consistent, so Eq must match for the Hash/Eq contract.
+    // Fix: NaN == NaN returns true (consistent with Hash), finite values use bits comparison.
+    // -------------------------------------------------------------------------
+
+    /// `PlanFilter::Confidence { threshold: NaN }` equals itself (Hash/Eq contract).
+    #[test]
+    fn plan_filter_confidence_nan_equals_itself() {
+        use std::collections::HashSet;
+        let filter1 = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: f64::NAN };
+        let filter2 = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: f64::NAN };
+        // NaN == NaN via our custom Eq (consistent with Hash, which uses to_bits())
+        assert_eq!(filter1, filter2, "NaN threshold should equal itself for Hash/Eq contract");
+        // Both insert at same hash bucket
+        let mut set: HashSet<PlanFilter> = HashSet::new();
+        set.insert(filter1);
+        set.insert(filter2);
+        assert_eq!(set.len(), 1, "NaN filters should dedupe in HashSet");
+    }
+
+    /// `PlanFilter::Confidence` with finite threshold uses normal equality.
+    #[test]
+    fn plan_filter_confidence_finite_equals_normal() {
+        let filter1 = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.5 };
+        let filter2 = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.5 };
+        let filter3 = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.6 };
+        assert_eq!(filter1, filter2);
+        assert_ne!(filter1, filter3);
+    }
+
+    /// `PlanFilter::Confidence` with NaN does NOT equal a finite threshold.
+    #[test]
+    fn plan_filter_confidence_nan_not_equal_finite() {
+        let nan_filter = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: f64::NAN };
+        let finite_filter = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.5 };
+        assert_ne!(nan_filter, finite_filter);
     }
 }
