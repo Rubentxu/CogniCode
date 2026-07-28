@@ -278,6 +278,42 @@ Ciclo SDDK A-lite ejecutado completamente en auto mode. PR1 cubre Phase 1 (Found
 
 **Próximo paso propuesto**: PR2 Plan Algebra (`feat/e28-1-pr2-plan-algebra`; Phase 2 — parser lowering a `MoldPlan`/`GraphPlan`; 12 tasks; ~500 LOC; resuelve también los 7 WARNINGs del PR1 backlog). Cadena stacked-to-main sigue.
 
+## Session Handover 2026-07-28 (E28.1 PR2 shipped)
+
+**E28.1 PR2 Plan Algebra closed and shipped v0.65.0 (PR #139 merged to main).**
+
+Ciclo SDDK A-lite ejecutado en auto mode (3 apply sub-runs para completar scope completo). PR2 cubre Phase 2 (Parser Lowering + 7 PR1-track WARNING fixes) del programa E28.1 (12 tasks + 7 WARNINGs = 19 tareas; 5 commits squash-merged a `4abce4ae`).
+
+**Logros PR2**:
+- `GraphPlan` enum extendido: `Path`, `Neighbors`, `Subgraph`, `Cluster`, `Explain`, `BooleanComposition` con `BooleanOp` (And/Or/Not).
+- `MoldPlan` enum extendido: `Select`, `Graph`, `ObjectSelection`, `Quality`, `Lens`, `ViewExecution`.
+- `MoldPlan::Graph { inner, pin: Option<(WorkspaceId, RevisionId)> }` con `with_pin(ws, rev)` para revision pinning.
+- `PlanLimits::validate(&GraphPlan)` enforcing Subgraph requiere `max_depth`, Path requiere `max_hops`.
+- `AstLowerer` trait + `NoOpLowerer` port en `lower.rs`; `MoldqlAstLowerer` adapter en `cognicode-explorer`.
+- `populate_defaults(plan, &QueryShape) -> PlanLimits` deriving graph-selecting limits desde query shape.
+- 7 PR1-track WARNINGs cerrados (W1-W7):
+  - W1: `BackendNeutral` Sealed impl para 26+ plan types.
+  - W2: `SemanticsViolation` unified enum (was String drift).
+  - W3: `CancellationToken::Hash` documentado como process-local.
+  - W4: `PlanLimitKind` single source of truth.
+  - W5: `PathHop::edge_kind: Option<String>` → `Option<EdgeKind>`.
+  - W6: `PlanVersion` semver 2.0 validation.
+  - W7: `PlanLimits::PartialEq` para cancellation via `Arc::ptr_eq`.
+- 2637 tests verdes (143 plan + 15 lower_plan + 1610 core + 869 explorer).
+
+**Trazabilidad**:
+- Branch: `feat/e28-1-pr2-plan-algebra` (squashed a `4abce4ae` al mergear).
+- Tag: `v0.65.0` (MINOR — nuevos value objects + extension de `MoldPlan`/`GraphPlan` + `PlanFilter`).
+- PR: <https://github.com/Rubentxu/CogniCode/pull/139>.
+- Artifacts: `sddk/e28-1-moldplan-graphplan-contracts/` (verify-report PR2, debt-report PR2).
+
+**3 WARNINGs nuevas para PR3** (no bloqueantes, pero documentadas):
+1. `populate_defaults` definido como port function pero nunca llamado por `MoldqlAstLowerer` adapter (adapter inlinea su propia lógica de defaulting).
+2. `validate()` wired into `lower()` pero solo invocado desde tests, no desde el lowering production path.
+3. NaN soundness hole en `PlanFilter::Confidence::threshold` (manual `Eq` impl viola Hash/Eq contract).
+
+**Próximo paso propuesto**: PR3 Bridge (`feat/e28-1-pr3-bridge`; Phase 3 — `compile_to_plan` + legacy bridge + `#[deprecated]` + cleanup de las 3 WARNINGs nuevas; 10 tasks; ~400 LOC). Cadena stacked-to-main sigue.
+
 ## Session Handover 2026-07-27 (E28 PR3 shipped)
 
 **E28 PR3 Snapshot+Bridge closed and shipped v0.63.0 (PR #137 merged to main). E28.0 chain fully DONE.**
