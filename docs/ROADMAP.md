@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-28 (E28.1 PR3 Bridge shipped v0.66.0; PR4 PG Conformance pending.)
+Last updated: 2026-07-28 (E28.1 PR4 PG Conformance shipped v0.67.0; **E28.1 chain fully DONE**; E28.2 unblocked.)
 
 ## Active
 
@@ -355,6 +355,45 @@ Ciclo SDDK A-lite ejecutado en auto mode. PR3 cubre Phase 3 (Bridge: `compile_to
 - cognicode-macros clippy + 17 unnecessary_min_or_max (PRE-EXISTING).
 
 **Próximo paso propuesto**: PR4 PG Conformance (`feat/e28-1-pr4-pg-conformance`; Phase 4 — 6 `pg_test!` scenarios + bridge-mapping + executor regression gate + W-A cleanup; 10 tasks; ~500 LOC; requiere `TEST_DATABASE_URL`). Cadena stacked-to-main sigue.
+
+## Session Handover 2026-07-28 (E28.1 PR4 shipped — E28.1 chain fully DONE)
+
+**E28.1 PR4 PG Conformance closed and shipped v0.67.0 (PR #141 merged to main). E28.1 chain fully DONE. E28.2 (differential graph executors) unblocked.**
+
+Ciclo SDDK A-lite ejecutado en auto mode. PR4 cubre Phase 4 (PG Conformance + W-A cleanup) del programa E28.1 (10 tasks + 1 W-A cleanup = 11 tareas; 1 commit squash-merged a `24df3ed9`).
+
+**Logros PR4**:
+- 6 `pg_test!` scenarios en `crates/cognicode-explorer/tests/e28_1_pg_conformance.rs`:
+  - `pg_sql_safety_confidence_parameter_binding` (4.1)
+  - `pg_sql_injection_no_inlining` (4.2) — `from = "alpha' OR 1=1; --"` no aparece verbatim
+  - `pg_filter_equivalence_vs_petgraph` (4.3)
+  - `pg_path_parity` (4.4)
+  - `pg_neighbors_parity_with_where` (4.5)
+  - `pg_subgraph_parity_with_provenance_filter` (4.6)
+- 2 unit tests: executor refuses empty success (4.7) + bridge mapping legacy→MoldError (4.8)
+- W-A cleanup: `populate_defaults` wired into all 6 `lower_*` functions de `MoldqlAstLowerer`; `compile_to_plan(SubgraphQuery { depth: 0 })` ahora retorna `PlanLimits { max_depth: Some(5), .. }`.
+
+**Trazabilidad**:
+- Branch: `feat/e28-1-pr4-pg-conformance` (squashed a `24df3ed9` al mergear).
+- Tag: `v0.67.0` (MINOR — nuevos pg_tests + W-A fix).
+- PR: <https://github.com/Rubentxu/CogniCode/pull/141>.
+- Artifacts: `sddk/e28-1-moldplan-graphplan-contracts/apply-progress.md` (PR1+PR2+PR3+PR4 evidence).
+
+**E28.1 chain closure**:
+- PR1 Foundation ✅ → v0.64.0
+- PR2 Plan Algebra ✅ → v0.65.0
+- PR3 Bridge ✅ → v0.66.0
+- PR4 PG Conformance ✅ → v0.67.0
+- **E28.1 is fully DONE.**
+
+**Pre-existing debt (out of PR4 scope, NOT blockers)**:
+- 30+ multimodal feature compile errors in non-E28.1 files
+- `cognicode-macros/src/newtype.rs:78,119` `clippy::useless_conversion` (blocks `-D warnings`)
+- 17 `clippy::unnecessary_min_or_max` errors in non-PR4 files
+- 4 `sandbox_orchestrator_test` failures in `cognicode` package (pre-existing on main)
+- 5 PR2 E28.0 carry-over WARNINGs (snapshot_cache unbounded, subscribe ignores workspace, load_call_graph_ws not pinned, SnapshotProvider async_trait, SnapshotError Cow)
+
+**Próximo paso propuesto**: E28.2 — Differential Graph Executors (depends on E28.1; unblocked). Cadena E28 continúa.
 
 ## Session Handover 2026-07-27 (E28 PR3 shipped)
 
