@@ -17,6 +17,32 @@ use super::limits::{PlanLimits, PlanLimit};
 use super::value::TypedValue;
 use super::version::{PlanHash, PlanMetadata, PlanVersion};
 
+// Sealed trait — implemented by all plan types to certify backend-neutrality.
+use super::neutrality::Sealed;
+
+/// Boolean operator for combining graph sub-plans.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum BooleanOp {
+    /// Logical AND of operands.
+    And,
+    /// Logical OR of operands.
+    Or,
+    /// Logical NOT of the single operand.
+    Not,
+}
+
+impl fmt::Display for BooleanOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BooleanOp::And => write!(f, "AND"),
+            BooleanOp::Or => write!(f, "OR"),
+            BooleanOp::Not => write!(f, "NOT"),
+        }
+    }
+}
+
+impl Sealed for BooleanOp {}
+
 /// Discriminated union for all graph-selecting MoldQL operations.
 ///
 /// `GraphPlan` is always wrapped inside `MoldPlan::Graph(_)`. It carries
@@ -64,7 +90,20 @@ pub enum GraphPlan {
         limits: PlanLimits,
         metadata: PlanMetadata,
     },
+    /// Boolean composition of sub-plans (AND, OR, NOT).
+    BooleanComposition {
+        /// The boolean operator combining the operands.
+        op: BooleanOp,
+        /// The sub-plans to combine. NOT has exactly 1 operand; AND/OR have 2+.
+        operands: Vec<GraphPlan>,
+        /// Limits applied to the composition result.
+        limits: PlanLimits,
+        /// Metadata for the composed plan.
+        metadata: PlanMetadata,
+    },
 }
+
+impl Sealed for GraphPlan {}
 
 /// Quantifier for path queries — always bounded.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -91,6 +130,8 @@ impl PathQuantifier {
     }
 }
 
+impl Sealed for PathQuantifier {}
+
 /// Projection of nodes and edges for a path result.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct PathProjection {
@@ -99,6 +140,8 @@ pub struct PathProjection {
     /// Edge properties to include.
     pub edges: Vec<String>,
 }
+
+impl Sealed for PathProjection {}
 
 /// Kind of neighbor traversal.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -117,6 +160,8 @@ impl Default for NeighborKind {
     }
 }
 
+impl Sealed for NeighborKind {}
+
 impl GraphPlan {
     /// Returns a reference to the plan metadata.
     pub fn metadata(&self) -> &PlanMetadata {
@@ -125,7 +170,8 @@ impl GraphPlan {
             | GraphPlan::Neighbors { metadata, .. }
             | GraphPlan::Subgraph { metadata, .. }
             | GraphPlan::Cluster { metadata, .. }
-            | GraphPlan::Explain { metadata, .. } => metadata,
+            | GraphPlan::Explain { metadata, .. }
+            | GraphPlan::BooleanComposition { metadata, .. } => metadata,
         }
     }
 
@@ -136,7 +182,8 @@ impl GraphPlan {
             | GraphPlan::Neighbors { limits, .. }
             | GraphPlan::Subgraph { limits, .. }
             | GraphPlan::Cluster { limits, .. }
-            | GraphPlan::Explain { limits, .. } => limits,
+            | GraphPlan::Explain { limits, .. }
+            | GraphPlan::BooleanComposition { limits, .. } => limits,
         }
     }
 
@@ -169,6 +216,9 @@ impl fmt::Display for GraphPlan {
             GraphPlan::Explain { inner, .. } => {
                 write!(f, "Explain({inner})")
             }
+            GraphPlan::BooleanComposition { op, operands, .. } => {
+                write!(f, "BooleanComposition({op}, {} operands)", operands.len())
+            }
         }
     }
 }
@@ -180,6 +230,8 @@ pub struct PathPredicate {
     pub label: String,
     pub value: super::TypedValue,
 }
+
+impl Sealed for PathPredicate {}
 
 // Re-export path_predicate at module level for MoldPlan references
 pub use PathPredicate as GraphPathPredicate;
@@ -392,5 +444,113 @@ mod tests {
         let json = serde_json::to_string(&pred).expect("serialize");
         let parsed: PathPredicate = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, pred);
+    }
+
+    // -------------------------------------------------------------------------
+    // Task 2.1a RED — GraphPlan BooleanComposition variant
+    // Scenario: `moldplan-graphplan::GraphPlan Bounded Traversal`
+    // Assert: BooleanComposition wraps sub-plans preserving operands;
+    //         serde round-trip preserves variant + payload
+    // -------------------------------------------------------------------------
+
+    /// `GraphPlan::BooleanComposition` wraps sub-plans with a boolean operator.
+    #[test]
+    fn graph_plan_boolean_composition_roundtrip() {
+        let sub_a = GraphPlan::Neighbors {
+            src: "A".into(),
+            kind: NeighborKind::Both,
+            depth: 1,
+            predicates: vec![],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let sub_b = GraphPlan::Neighbors {
+            src: "B".into(),
+            kind: NeighborKind::Outgoing,
+            depth: 2,
+            predicates: vec![],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let plan = GraphPlan::BooleanComposition {
+            op: BooleanOp::And,
+            operands: vec![sub_a.clone(), sub_b.clone()],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let json = serde_json::to_string(&plan).expect("serialize");
+        let parsed: GraphPlan = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, plan);
+        // Verify operands are preserved
+        if let GraphPlan::BooleanComposition { operands: ops, .. } = parsed {
+            assert_eq!(ops.len(), 2);
+        } else {
+            panic!("expected BooleanComposition variant");
+        }
+    }
+
+    /// `GraphPlan::BooleanComposition` with NOT operator (single operand).
+    #[test]
+    fn graph_plan_boolean_composition_not() {
+        let sub = GraphPlan::Neighbors {
+            src: "A".into(),
+            kind: NeighborKind::Both,
+            depth: 1,
+            predicates: vec![],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let plan = GraphPlan::BooleanComposition {
+            op: BooleanOp::Not,
+            operands: vec![sub],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let json = serde_json::to_string(&plan).expect("serialize");
+        let parsed: GraphPlan = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, plan);
+    }
+
+    /// `GraphPlan::BooleanComposition::And` Display includes operand count.
+    #[test]
+    fn graph_plan_boolean_composition_display() {
+        let plan = GraphPlan::BooleanComposition {
+            op: BooleanOp::Or,
+            operands: vec![],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let display = plan.to_string();
+        assert!(display.contains("BooleanComposition"));
+        assert!(display.contains("OR"));
+    }
+
+    /// `BooleanOp` is `Send + Sync + 'static`.
+    #[test]
+    fn boolean_op_send_sync_static() {
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        fn assert_static<T: 'static>() {}
+        assert_send::<BooleanOp>();
+        assert_sync::<BooleanOp>();
+        assert_static::<BooleanOp>();
     }
 }

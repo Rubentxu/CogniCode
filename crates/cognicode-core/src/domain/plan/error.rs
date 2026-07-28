@@ -8,6 +8,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 
+// Sealed trait — implemented by all plan types to certify backend-neutrality.
+use super::neutrality::Sealed;
+
 // ============================================================================
 // PlanError
 // ============================================================================
@@ -57,8 +60,22 @@ pub enum PlanError {
 
     /// A semantic violation in the plan itself.
     #[error("semantics violation: {0}")]
-    SemanticsViolation(String),
+    SemanticsViolation(#[from] super::SemanticsViolation),
+
+    /// The plan is already pinned and cannot be pinned again.
+    #[error("plan is already pinned to a workspace and revision")]
+    AlreadyPinned,
+
+    /// The operation requires a graph plan but the current plan is not a graph plan.
+    #[error("operation requires a graph plan")]
+    NotAGraphPlan,
+
+    /// An unsupported syntactic construct was encountered during lowering.
+    #[error("unsupported construct: {0}")]
+    UnsupportedConstruct(#[from] UnsupportedConstruct),
 }
+
+impl Sealed for PlanError {}
 
 // ============================================================================
 // CancellationToken
@@ -112,9 +129,18 @@ impl Eq for CancellationToken {}
 impl std::hash::Hash for CancellationToken {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         // Hash by pointer value of the Arc.
+        //
+        // NOTE: This hash is **process-local**. The Arc pointer address is
+        // determined by the allocator and is NOT stable across process restarts.
+        // Do NOT use `CancellationToken` as a key in persistent `HashMap`/
+        // `HashSet` structures that outlive a single process. Within a single
+        // process, pointer-based hashing is consistent with `PartialEq` (which
+        // also uses `Arc::ptr_eq`).
         (Arc::as_ptr(&self.inner) as usize).hash(state);
     }
 }
+
+impl Sealed for CancellationToken {}
 
 // ============================================================================
 // ConstructId
@@ -156,6 +182,8 @@ impl fmt::Display for ConstructId {
     }
 }
 
+impl Sealed for ConstructId {}
+
 // ============================================================================
 // SourceLocation
 // ============================================================================
@@ -182,6 +210,8 @@ impl fmt::Display for SourceLocation {
         write!(f, "{}:{}:{}", self.line, self.column, self.byte_offset)
     }
 }
+
+impl Sealed for SourceLocation {}
 
 // ============================================================================
 // UnsupportedConstruct
@@ -241,6 +271,8 @@ impl fmt::Display for UnsupportedConstruct {
     }
 }
 
+impl Sealed for UnsupportedConstruct {}
+
 // ============================================================================
 // ProvenanceSource
 // ============================================================================
@@ -268,6 +300,8 @@ impl fmt::Display for ProvenanceSource {
         }
     }
 }
+
+impl Sealed for ProvenanceSource {}
 
 // ============================================================================
 // ExecutorError
@@ -299,7 +333,7 @@ pub enum ExecutorError {
 
     /// A semantic rule was violated at runtime.
     #[error("semantics violation: {0}")]
-    SemanticsViolation(String),
+    SemanticsViolation(#[from] super::SemanticsViolation),
 
     /// A plan-level construction/validation error.
     #[error("plan error: {0}")]
@@ -322,6 +356,8 @@ impl ExecutorError {
         )
     }
 }
+
+impl Sealed for ExecutorError {}
 
 // ============================================================================
 // Tests

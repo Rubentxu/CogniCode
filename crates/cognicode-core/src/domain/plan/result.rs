@@ -13,12 +13,16 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+// Sealed trait — implemented by all plan types to certify backend-neutrality.
+use super::neutrality::Sealed;
 use std::hash::Hash;
 
 // Types from sibling modules.
 use super::limits::PlanLimits;
 use super::value::TypedValue;
 use super::version::{PlanHash, PlanMetadata, PlanVersion};
+use crate::domain::value_objects::EdgeKind;
 
 // ============================================================================
 // TruncationMarker
@@ -52,13 +56,15 @@ impl fmt::Display for TruncationMarker {
     }
 }
 
+impl Sealed for TruncationMarker {}
+
 // ============================================================================
 // SemanticsViolation
 // ============================================================================
 
 /// A semantics-level error: ordering mismatch, path sequence mismatch, or
 /// tolerance exceeded for approximate numeric comparisons.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, thiserror::Error, Serialize, Deserialize)]
 pub enum SemanticsViolation {
     #[error("ordered result mismatch: {0}")]
     PathOrderMismatch(String),
@@ -67,6 +73,8 @@ pub enum SemanticsViolation {
     #[error("multiset elements differ: {0}")]
     MultisetMismatch(String),
 }
+
+impl Sealed for SemanticsViolation {}
 
 // ============================================================================
 // ResultSet
@@ -128,11 +136,15 @@ impl Default for ResultSet {
     }
 }
 
+impl Sealed for ResultSet {}
+
 /// A row result (table-like result from a projection query).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Row {
     pub columns: Vec<super::TypedValue>,
 }
+
+impl Sealed for Row {}
 
 /// A node result from a graph query.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -141,6 +153,8 @@ pub struct NodeResult {
     pub labels: Vec<String>,
     pub properties: Vec<super::TypedValue>,
 }
+
+impl Sealed for NodeResult {}
 
 /// An edge result from a graph query.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -151,6 +165,8 @@ pub struct EdgeResult {
     pub label: String,
     pub properties: Vec<super::TypedValue>,
 }
+
+impl Sealed for EdgeResult {}
 
 // ============================================================================
 // Path
@@ -194,14 +210,18 @@ impl Path {
     }
 }
 
+impl Sealed for Path {}
+
 /// A single hop in a path: a node with an optional incoming edge.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PathHop {
     /// The node id for this hop.
     pub node_id: String,
     /// The kind of the edge that led to this node (None for start node).
-    pub edge_kind: Option<String>,
+    pub edge_kind: Option<EdgeKind>,
 }
+
+impl Sealed for PathHop {}
 
 // ============================================================================
 // assert_equivalent
@@ -406,11 +426,12 @@ mod tests {
     /// `assert_equivalent` returns `Err(PathOrderMismatch)` for paths in different order.
     #[test]
     fn assert_equivalent_paths_ordered() {
+        use crate::domain::value_objects::DependencyType;
         let a = ResultSet {
             paths: vec![
                 Path::new(vec![
                     PathHop { node_id: "A".into(), edge_kind: None },
-                    PathHop { node_id: "B".into(), edge_kind: Some("Calls".into()) },
+                    PathHop { node_id: "B".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)) },
                 ]),
             ],
             ..ResultSet::empty()
@@ -419,7 +440,7 @@ mod tests {
             paths: vec![
                 Path::new(vec![
                     PathHop { node_id: "B".into(), edge_kind: None },
-                    PathHop { node_id: "A".into(), edge_kind: Some("Calls".into()) },
+                    PathHop { node_id: "A".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)) },
                 ]),
             ],
             ..ResultSet::empty()
@@ -471,14 +492,15 @@ mod tests {
     /// `Path` preserves edge kinds per hop.
     #[test]
     fn path_preserves_edge_kinds() {
+        use crate::domain::value_objects::DependencyType;
         let path = Path::new(vec![
             PathHop { node_id: "A".into(), edge_kind: None },
-            PathHop { node_id: "B".into(), edge_kind: Some("Calls".into()) },
-            PathHop { node_id: "C".into(), edge_kind: Some("Imports".into()) },
+            PathHop { node_id: "B".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)) },
+            PathHop { node_id: "C".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Imports)) },
         ]);
         assert_eq!(path.hops[0].edge_kind, None);
-        assert_eq!(path.hops[1].edge_kind.as_deref(), Some("Calls"));
-        assert_eq!(path.hops[2].edge_kind.as_deref(), Some("Imports"));
+        assert_eq!(path.hops[1].edge_kind.as_ref().map(|e| e.as_str()).as_deref(), Some("dependency.calls"));
+        assert_eq!(path.hops[2].edge_kind.as_ref().map(|e| e.as_str()).as_deref(), Some("dependency.imports"));
         assert_eq!(path.start(), "A");
         assert_eq!(path.end(), "C");
         assert_eq!(path.len(), 2); // 3 hops = 2 edges
@@ -547,9 +569,10 @@ mod tests {
     /// `Path` serde round-trip.
     #[test]
     fn path_serde_roundtrip() {
+        use crate::domain::value_objects::DependencyType;
         let path = Path::new(vec![
             PathHop { node_id: "A".into(), edge_kind: None },
-            PathHop { node_id: "B".into(), edge_kind: Some("Calls".into()) },
+            PathHop { node_id: "B".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)) },
         ]);
         let json = serde_json::to_string(&path).expect("serialize");
         let parsed: Path = serde_json::from_str(&json).expect("deserialize");

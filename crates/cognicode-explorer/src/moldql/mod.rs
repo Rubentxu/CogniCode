@@ -45,6 +45,7 @@ pub mod compile;
 pub mod cursor;
 pub mod executor;
 pub mod intent;
+pub mod lower_plan;
 pub mod parser;
 pub mod parser_explorerql;
 
@@ -53,4 +54,5 @@ pub use ast::{
 };
 pub use executor::{MoldQLExecutor, MoldQLItem, MoldQLResult, MoldQLView};
 pub use intent::lower_intent;
+pub use lower_plan::MoldqlAstLowerer;
 pub use parser::{ParseError, parse};

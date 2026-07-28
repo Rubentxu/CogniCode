@@ -18,6 +18,9 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+// Sealed trait — implemented by all plan types to certify backend-neutrality.
+use super::neutrality::Sealed;
+
 // ============================================================================
 // PlanVersion
 // ============================================================================
@@ -29,6 +32,8 @@ use sha2::{Digest, Sha256};
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PlanVersion(String);
 
+impl Sealed for PlanVersion {}
+
 impl PlanVersion {
     /// Current version of the MoldPlan/GraphPlan wire format.
     pub const CURRENT: &'static str = "1.0.0";
@@ -39,9 +44,20 @@ impl PlanVersion {
         let s = v.into();
         // Validate semver format: major.minor.patch with optional pre-release and build
         // Format: major.minor.patch (-prerelease)? (+build)?
-        let mut parts = s.splitn(2, '-');
-        let version_part = parts.next().ok_or_else(|| ParsePlanVersionError::InvalidSemver(s.clone()))?;
-        let _prerelease = parts.next();
+        // Per semver 2.0 §2: prerelease identifiers are ASCII alphanumerics and hyphens,
+        // with no leading zeros on numeric identifiers.
+
+        // First split off build metadata (+build)
+        let (version_and_prerelease, _build) = match s.split_once('+') {
+            Some((vp, _b)) => (vp, Some(_b)), // build metadata not yet supported; keep for future
+            None => (&s[..], None),
+        };
+
+        // Split version from prerelease
+        let (version_part, prerelease) = match version_and_prerelease.split_once('-') {
+            Some((v, p)) => (v, Some(p)),
+            None => (version_and_prerelease, None),
+        };
 
         let mut vparts = version_part.splitn(3, '.');
         let major = vparts.next().ok_or_else(|| ParsePlanVersionError::InvalidSemver(s.clone()))?;
@@ -53,6 +69,27 @@ impl PlanVersion {
             || patch.parse::<u64>().is_err()
         {
             return Err(ParsePlanVersionError::InvalidSemver(s));
+        }
+
+        // Validate prerelease format per semver 2.0 §2
+        if let Some(pr) = prerelease {
+            for segment in pr.split('.') {
+                if segment.is_empty() {
+                    return Err(ParsePlanVersionError::InvalidSemver(s.clone()));
+                }
+                // Each segment: ASCII alphanumerics and hyphens only
+                if !segment.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+                    return Err(ParsePlanVersionError::InvalidSemver(s.clone()));
+                }
+                // No leading zeros on numeric-only segments
+                let chars: Vec<char> = segment.chars().collect();
+                if chars.first().map(|c| *c == '0').unwrap_or(false)
+                    && segment.len() > 1
+                    && chars.get(1).map(|c| c.is_ascii_digit()).unwrap_or(false)
+                {
+                    return Err(ParsePlanVersionError::InvalidSemver(s.clone()));
+                }
+            }
         }
 
         Ok(Self(s))
@@ -94,6 +131,8 @@ pub enum ParsePlanVersionError {
 /// regardless of in-memory key ordering.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PlanHash(String);
+
+impl Sealed for PlanHash {}
 
 impl PlanHash {
     /// Compute the `PlanHash` from a serializable value.
@@ -142,6 +181,8 @@ pub struct PlanMetadata {
     pub version: PlanVersion,
     pub hash: PlanHash,
 }
+
+impl Sealed for PlanMetadata {}
 
 impl PlanMetadata {
     pub fn new(version: PlanVersion, hash: PlanHash) -> Self {
