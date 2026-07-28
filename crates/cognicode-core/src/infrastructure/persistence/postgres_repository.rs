@@ -110,6 +110,15 @@ const SCHEMA_SQL_REVISIONS: &str = include_str!("m0017_graph_revisions.sql");
 const SCHEMA_SQL_WORKSPACE_SCOPED_IDENTITY: &str =
     include_str!("m0018_workspace_scoped_identity.sql");
 
+/// Unique index on (workspace_id, id) — enables graph_edges FK subset reference.
+/// m0018 added composite FKs (workspace_id, source_id) → graph_nodes(workspace_id, id)
+/// but graph_nodes PK is (workspace_id, id, kind). PostgreSQL requires a matching
+/// UNIQUE constraint for FK subset references. This index provides that constraint.
+/// Added in e28-0 PR3 Correction Cycle 1.
+#[cfg(feature = "postgres")]
+const SCHEMA_SQL_WORKSPACE_UNIQUE: &str =
+    include_str!("m0019_unique_index_workspace_id.sql");
+
 /// PostgreSQL-backed implementation of the async [`Repository`]
 /// trait. Owns its [`PgPool`]; consumers that want shared
 /// ownership can wrap in `Arc<PostgresRepository>`.
@@ -251,6 +260,16 @@ impl PostgresRepository {
             .await
             .map_err(|e| RepositoryError::Store(format!(
                 "workspace-scoped identity migration: {e}"
+            )))?;
+
+        // 12. Unique index on (workspace_id, id) — enables graph_edges FK subset.
+        //     e28-0 PR3 Correction Cycle 1. Must run AFTER m0018 because it
+        //     depends on the table existing and the m0018 FKs being added.
+        sqlx::raw_sql(SCHEMA_SQL_WORKSPACE_UNIQUE)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!(
+                "workspace unique index migration: {e}"
             )))?;
 
         Ok(())
