@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-28 (E28.1 PR4 PG Conformance shipped v0.67.0; **E28.1 chain fully DONE**; E28.2 unblocked.)
+Last updated: 2026-07-28 (E28.2 PR1 Port shipped v0.68.0; PR2 PG Executor pending.)
 
 ## Active
 
@@ -355,6 +355,28 @@ Ciclo SDDK A-lite ejecutado en auto mode. PR3 cubre Phase 3 (Bridge: `compile_to
 - cognicode-macros clippy + 17 unnecessary_min_or_max (PRE-EXISTING).
 
 **Próximo paso propuesto**: PR4 PG Conformance (`feat/e28-1-pr4-pg-conformance`; Phase 4 — 6 `pg_test!` scenarios + bridge-mapping + executor regression gate + W-A cleanup; 10 tasks; ~500 LOC; requiere `TEST_DATABASE_URL`). Cadena stacked-to-main sigue.
+
+## Session Handover 2026-07-28 (E28.2 PR1 Port shipped)
+
+**E28.2 PR1 Port closed and shipped v0.68.0 (PR #142 merged to main).**
+
+Ciclo SDDK A-lite ejecutado en auto mode. PR1 cubre Phase 1 (Infrastructure — Executor Port) del programa E28.2 (5 tasks; 2 commits squash-merged a `7e72b0bc`).
+
+**Logros PR1**:
+- `GraphExecutor` trait en `crates/cognicode-core/src/domain/plan/executor.rs`: `execute(&self, plan: &GraphPlan, pin: (WorkspaceId, RevisionId)) -> Result<ResultSet, ExecutorError>`. `Send + Sync + 'static`, object-safe.
+- `ExecutorError` enum extendido: `RevisionUnknown { workspace, revision }`, `UnsupportedConstruct { construct: ConstructId }`, `LimitExceeded { limit: PlanLimitKind }`, `Internal(String)`.
+- `ProvenanceEnvelope` aggregate para per-row source-side provenance.
+- `StubExecutor` test impl (returns `Ok(ResultSet::empty())` o `Err(ExecutorError::RevisionUnknown)`).
+- 11 nuevos tests (9 unit + 2 pg_test); 1631/1631 cognicode-core tests verdes.
+- Re-export en `plan/mod.rs`: `GraphExecutor`, `ExecutorError`, `ProvenanceEnvelope`.
+
+**Trazabilidad**:
+- Branch: `feat/e28-2-pr1-port` (squashed a `7e72b0bc` al mergear).
+- Tag: `v0.68.0` (MINOR — nuevos public types).
+- PR: <https://github.com/Rubentxu/CogniCode/pull/142>.
+- Artifacts: `sddk/e28-2-differential-graph-executors/apply-progress.md`.
+
+**Próximo paso propuesto**: PR2 PG Executor (`feat/e28-2-pr2-pg-executor`; Phase 2 — `PgGraphExecutor` + recursive CTE sobre `PostgresRepository::load_call_graph_ws`; 15 tasks; ~500 LOC; ~11 PG scenarios). Cadena stacked-to-main sigue.
 
 ## Session Handover 2026-07-28 (E28.1 PR4 shipped — E28.1 chain fully DONE)
 
