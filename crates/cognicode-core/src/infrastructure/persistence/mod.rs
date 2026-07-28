@@ -27,6 +27,9 @@ pub mod postgres_investigation_store;
 pub mod postgres_repository;
 
 #[cfg(feature = "postgres")]
+pub mod pg_graph_executor;
+
+#[cfg(feature = "postgres")]
 pub use postgres_repository::{
     ExplorationSessionRow, InvestigationArtifactRow, InvestigationEvidenceRow, InvestigationRow,
     NamedViewRow, PostgresRepository, ScanManifestRow, ViewSpecRow,
