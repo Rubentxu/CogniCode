@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-28 (E28.2 PR2 PG Executor shipped v0.69.0; PR3 Snapshot Executor pending.)
+Last updated: 2026-07-28 (E28.2 PR3 Snapshot Executor shipped v0.70.0; PR4 Conformance pending.)
 
 ## Active
 
@@ -406,6 +406,32 @@ Ciclo SDDK A-lite ejecutado en auto mode. PR2 cubre Phase 2 (PG Executor) del pr
 - PR: <https://github.com/Rubentxu/CogniCode/pull/143>.
 
 **Próximo paso propuesto**: PR3 Snapshot Executor (`feat/e28-2-pr3-snapshot-executor`; Phase 3 — `SnapshotGraphExecutor` + BFS over petgraph; 8 tasks; ~400 LOC; 0 PG scenarios). Cadena stacked-to-main sigue.
+
+## Session Handover 2026-07-28 (E28.2 PR3 Snapshot Executor shipped)
+
+**E28.2 PR3 Snapshot Executor closed and shipped v0.70.0 (PR #144 merged to main).**
+
+Ciclo SDDK A-lite ejecutado en auto mode. PR3 cubre Phase 3 (Snapshot Executor) del programa E28.2 (8 tasks; 1 commit squash-merged a `ca20fbaa`).
+
+**Logros PR3**:
+- `SnapshotGraphExecutor<'a> { provider: &'a dyn SnapshotProvider }` struct en `crates/cognicode-core/src/infrastructure/graph/snapshot_graph_executor.rs` (1863 LOC).
+- `impl GraphExecutor for SnapshotGraphExecutor` con `execute(plan, pin)` + `execute_with_limits(plan, pin, limits_override)`.
+- Dispatcher `execute_snapshot` con 5 métodos:
+  - `execute_path` — BFS over petgraph `StableGraph<String, DependencyType>` con shortest-first ordering; bounded por `max_hops`.
+  - `execute_neighbors` — Incoming (Direction::Incoming) + Outgoing (Direction::Outgoing) at configurable depth.
+  - `execute_subgraph` — BFS from `{nodes}` set; emits visited nodes + edges.
+  - `execute_cluster` — `HashMap<String, usize>` group counts; emits one row per group con `TypedValue`.
+  - `execute_boolean` — typed multiset: `And = intersection`, `Or = union`, `Not = complement`.
+- PlanLimits enforcement: `max_result_rows` + `max_path_count` applied post-walk via `TruncationMarker`.
+- Cancellation: `CancellationToken::set()` mid-BFS → `Err(ExecutorError::LimitExceeded { limit: PlanLimitKind::Cancellation })`.
+- 15/15 unit tests verde (1660+ cognicode-core lib tests passed).
+
+**Trazabilidad**:
+- Branch: `feat/e28-2-pr3-snapshot-executor` (squashed a `ca20fbaa` al mergear).
+- Tag: `v0.70.0` (MINOR — nuevo `SnapshotGraphExecutor` public type + second `GraphExecutor` trait implementation).
+- PR: <https://github.com/Rubentxu/CogniCode/pull/144>.
+
+**Próximo paso propuesto**: PR4 Conformance (`feat/e28-2-pr4-conformance`; Phase 4 — `assert_equivalent` differential harness + petgraph oracle; 10 tasks; ~500 LOC; ~7 PG scenarios). Cierra la cadena E28.2.
 
 ## Session Handover 2026-07-28 (E28.1 PR4 shipped — E28.1 chain fully DONE)
 
