@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
 
+// Sealed trait — implemented by all plan types to certify backend-neutrality.
+use super::neutrality::Sealed;
+
 // ============================================================================
 // ValueError
 // ============================================================================
@@ -27,6 +30,8 @@ pub enum ValueError {
     #[error("type mismatch: {0}")]
     TypeMismatch(String),
 }
+
+impl Sealed for ValueError {}
 
 // ============================================================================
 // TypedValue
@@ -45,6 +50,8 @@ pub enum TypedValue {
     String(String),
     Json(serde_json::Value),
 }
+
+impl Sealed for TypedValue {}
 
 impl TypedValue {
     /// Parse a JSON value into a `TypedValue`, applying the promotion rules:

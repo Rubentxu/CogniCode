@@ -8,6 +8,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 
+// Sealed trait — implemented by all plan types to certify backend-neutrality.
+use super::neutrality::Sealed;
+
 // ============================================================================
 // PlanError
 // ============================================================================
@@ -72,6 +75,8 @@ pub enum PlanError {
     UnsupportedConstruct(#[from] UnsupportedConstruct),
 }
 
+impl Sealed for PlanError {}
+
 // ============================================================================
 // CancellationToken
 // ============================================================================
@@ -135,6 +140,8 @@ impl std::hash::Hash for CancellationToken {
     }
 }
 
+impl Sealed for CancellationToken {}
+
 // ============================================================================
 // ConstructId
 // ============================================================================
@@ -175,6 +182,8 @@ impl fmt::Display for ConstructId {
     }
 }
 
+impl Sealed for ConstructId {}
+
 // ============================================================================
 // SourceLocation
 // ============================================================================
@@ -201,6 +210,8 @@ impl fmt::Display for SourceLocation {
         write!(f, "{}:{}:{}", self.line, self.column, self.byte_offset)
     }
 }
+
+impl Sealed for SourceLocation {}
 
 // ============================================================================
 // UnsupportedConstruct
@@ -260,6 +271,8 @@ impl fmt::Display for UnsupportedConstruct {
     }
 }
 
+impl Sealed for UnsupportedConstruct {}
+
 // ============================================================================
 // ProvenanceSource
 // ============================================================================
@@ -287,6 +300,8 @@ impl fmt::Display for ProvenanceSource {
         }
     }
 }
+
+impl Sealed for ProvenanceSource {}
 
 // ============================================================================
 // ExecutorError
@@ -341,6 +356,8 @@ impl ExecutorError {
         )
     }
 }
+
+impl Sealed for ExecutorError {}
 
 // ============================================================================
 // Tests

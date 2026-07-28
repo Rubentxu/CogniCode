@@ -17,6 +17,9 @@ use super::limits::{PlanLimits, PlanLimit};
 use super::value::TypedValue;
 use super::version::{PlanHash, PlanMetadata, PlanVersion};
 
+// Sealed trait — implemented by all plan types to certify backend-neutrality.
+use super::neutrality::Sealed;
+
 /// Boolean operator for combining graph sub-plans.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BooleanOp {
@@ -37,6 +40,8 @@ impl fmt::Display for BooleanOp {
         }
     }
 }
+
+impl Sealed for BooleanOp {}
 
 /// Discriminated union for all graph-selecting MoldQL operations.
 ///
@@ -98,6 +103,8 @@ pub enum GraphPlan {
     },
 }
 
+impl Sealed for GraphPlan {}
+
 /// Quantifier for path queries — always bounded.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PathQuantifier {
@@ -123,6 +130,8 @@ impl PathQuantifier {
     }
 }
 
+impl Sealed for PathQuantifier {}
+
 /// Projection of nodes and edges for a path result.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct PathProjection {
@@ -131,6 +140,8 @@ pub struct PathProjection {
     /// Edge properties to include.
     pub edges: Vec<String>,
 }
+
+impl Sealed for PathProjection {}
 
 /// Kind of neighbor traversal.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -148,6 +159,8 @@ impl Default for NeighborKind {
         Self::Both
     }
 }
+
+impl Sealed for NeighborKind {}
 
 impl GraphPlan {
     /// Returns a reference to the plan metadata.
@@ -217,6 +230,8 @@ pub struct PathPredicate {
     pub label: String,
     pub value: super::TypedValue,
 }
+
+impl Sealed for PathPredicate {}
 
 // Re-export path_predicate at module level for MoldPlan references
 pub use PathPredicate as GraphPathPredicate;

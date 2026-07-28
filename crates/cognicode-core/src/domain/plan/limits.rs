@@ -5,6 +5,9 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+// Sealed trait — implemented by all plan types to certify backend-neutrality.
+use super::neutrality::Sealed;
+
 // ============================================================================
 // PlanLimit
 // ============================================================================
@@ -38,6 +41,8 @@ impl fmt::Display for PlanLimit {
         }
     }
 }
+
+impl Sealed for PlanLimit {}
 
 // ============================================================================
 // PlanLimits
@@ -73,6 +78,8 @@ pub struct PlanLimits {
     /// Maximum memory usage in bytes (soft limit — executor may estimate).
     pub max_memory_bytes: Option<u64>,
 }
+
+impl Sealed for PlanLimits {}
 
 // Manual PartialEq: cancellation equality is pointer-based (Arc identity).
 impl PartialEq for PlanLimits {
@@ -204,6 +211,8 @@ impl PlanLimitsBuilder {
         self.0
     }
 }
+
+impl Sealed for PlanLimitsBuilder {}
 
 // ============================================================================
 // Tests

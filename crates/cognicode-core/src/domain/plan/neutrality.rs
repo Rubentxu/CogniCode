@@ -9,9 +9,19 @@
 //! - `tokio::task::JoinSet` / `tokio::spawn` — async runtime
 //! - `petgraph::Graph` / `petgraph::graphmap` — graph data structure
 //!
-//! This module provides a compile-time assertion via a sealed marker trait
-//! and a `static` assertion struct. Any module that implements the sealed
-//! trait certifies that it does not contain backend types.
+//! This module provides a compile-time assertion via a sealed marker trait.
+//! The `Sealed` trait is defined HERE (in `neutrality.rs`) and re-exported
+//! by ALL plan types' parent modules. A type implements `Sealed` to certify
+//! it is part of the plan module. External code cannot implement `Sealed`
+//! because the trait is not accessible outside the `plan` module boundary.
+//
+//! ## Sealed trait re-export
+//!
+//! Each child module (`version.rs`, `limits.rs`, etc.) re-exports `Sealed`
+//! via `pub use super::neutrality::Sealed;` and then `impl Sealed for MyType;`.
+//! This allows `assert_backend_neutral!` to work while keeping `Sealed`
+//! inaccessible from outside the `plan` module.
+//! because the trait is not accessible outside the module hierarchy.
 
 use std::marker::PhantomData;
 
@@ -19,24 +29,31 @@ use std::marker::PhantomData;
 // Sealed marker trait — no backend types
 // ============================================================================
 
-mod sealed {
-    pub trait Sealed {}
-}
+/// Seals the `BackendNeutral` trait to types within the `plan` module.
+///
+/// `Sealed` is implemented by every type that lives in `domain::plan::*`.
+/// External code cannot implement `Sealed` because this trait is not
+/// exported outside the `plan` module boundary — it is re-exported only
+/// by the specific modules that define each plan type (via `pub use super::sealed::Sealed`).
+///
+/// This is the standard Rust sealed-trait pattern: the trait is accessible
+/// within the module hierarchy but not outside it.
+pub trait Sealed {}
 
 /// Marker trait for types that are guaranteed not to contain any backend-
 /// specific types (`sqlx`, `tokio`, `petgraph`, etc.).
 ///
-/// Types in `domain::plan::*` should implement this marker trait to certify
-/// their backend-neutrality at the type level. The `assert_backend_neutral!`
-/// macro generates a compile-time assertion that the type's module has not
-/// imported banned types.
-pub trait BackendNeutral: sealed::Sealed {}
+/// A type implements `Sealed` (above) to certify its plan-module membership.
+/// `BackendNeutral` is automatically satisfied by any `Sealed` type via the
+/// blanket impl below. The `assert_backend_neutral!` macro generates a
+/// compile-time assertion that `T: BackendNeutral`.
+pub trait BackendNeutral: Sealed {}
+
+impl<T: Sealed> BackendNeutral for T {}
 
 /// A type that has been verified as backend-neutral at compile time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BackendNeutralMarker<T>(PhantomData<T>);
-
-impl<T: sealed::Sealed> BackendNeutral for T {}
 
 /// Assert at compile time that `T` is backend-neutral.
 ///

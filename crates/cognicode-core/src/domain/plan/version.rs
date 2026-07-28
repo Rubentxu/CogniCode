@@ -18,6 +18,9 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+// Sealed trait — implemented by all plan types to certify backend-neutrality.
+use super::neutrality::Sealed;
+
 // ============================================================================
 // PlanVersion
 // ============================================================================
@@ -28,6 +31,8 @@ use sha2::{Digest, Sha256};
 /// plans from a future version that has incompatible semantics.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PlanVersion(String);
+
+impl Sealed for PlanVersion {}
 
 impl PlanVersion {
     /// Current version of the MoldPlan/GraphPlan wire format.
@@ -127,6 +132,8 @@ pub enum ParsePlanVersionError {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PlanHash(String);
 
+impl Sealed for PlanHash {}
+
 impl PlanHash {
     /// Compute the `PlanHash` from a serializable value.
     ///
@@ -174,6 +181,8 @@ pub struct PlanMetadata {
     pub version: PlanVersion,
     pub hash: PlanHash,
 }
+
+impl Sealed for PlanMetadata {}
 
 impl PlanMetadata {
     pub fn new(version: PlanVersion, hash: PlanHash) -> Self {

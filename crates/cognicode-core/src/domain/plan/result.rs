@@ -13,6 +13,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+// Sealed trait — implemented by all plan types to certify backend-neutrality.
+use super::neutrality::Sealed;
 use std::hash::Hash;
 
 // Types from sibling modules.
@@ -53,6 +56,8 @@ impl fmt::Display for TruncationMarker {
     }
 }
 
+impl Sealed for TruncationMarker {}
+
 // ============================================================================
 // SemanticsViolation
 // ============================================================================
@@ -68,6 +73,8 @@ pub enum SemanticsViolation {
     #[error("multiset elements differ: {0}")]
     MultisetMismatch(String),
 }
+
+impl Sealed for SemanticsViolation {}
 
 // ============================================================================
 // ResultSet
@@ -129,11 +136,15 @@ impl Default for ResultSet {
     }
 }
 
+impl Sealed for ResultSet {}
+
 /// A row result (table-like result from a projection query).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Row {
     pub columns: Vec<super::TypedValue>,
 }
+
+impl Sealed for Row {}
 
 /// A node result from a graph query.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -142,6 +153,8 @@ pub struct NodeResult {
     pub labels: Vec<String>,
     pub properties: Vec<super::TypedValue>,
 }
+
+impl Sealed for NodeResult {}
 
 /// An edge result from a graph query.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -152,6 +165,8 @@ pub struct EdgeResult {
     pub label: String,
     pub properties: Vec<super::TypedValue>,
 }
+
+impl Sealed for EdgeResult {}
 
 // ============================================================================
 // Path
@@ -195,6 +210,8 @@ impl Path {
     }
 }
 
+impl Sealed for Path {}
+
 /// A single hop in a path: a node with an optional incoming edge.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PathHop {
@@ -203,6 +220,8 @@ pub struct PathHop {
     /// The kind of the edge that led to this node (None for start node).
     pub edge_kind: Option<EdgeKind>,
 }
+
+impl Sealed for PathHop {}
 
 // ============================================================================
 // assert_equivalent
