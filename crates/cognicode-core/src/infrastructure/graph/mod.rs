@@ -22,6 +22,7 @@ mod on_demand_graph;
 mod per_file_graph;
 mod pet_graph_store;
 pub mod snapshot_provider;
+pub mod snapshot_graph_executor;
 mod strategy;
 mod symbol_index;
 
