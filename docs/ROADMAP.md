@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-28 (E28.1 PR1 Foundation shipped v0.64.0; E28.0+E28.1 PR1 DONE.)
+Last updated: 2026-07-28 (E28.1 PR3 Bridge shipped v0.66.0; PR4 PG Conformance pending.)
 
 ## Active
 
@@ -37,6 +37,17 @@ before implementation begins.
 | **PR3 Snapshot+Bridge** | `feat/e28-0-pr3-snapshot-bridge` | ✅ Merged | v0.63.0 | [#137](https://github.com/Rubentxu/CogniCode/pull/137) |
 
 **E28.0 is now fully DONE.** PR3 closes the foundation chain (Phase 4: Repository trait extension + GenericGraphRepository + MetadataAwareRepository contract tests + m0019 FK subset fix + 2 new pg_tests). **E28.1 unblocked.**
+
+#### E28.1 stacked-to-main chain
+
+| Sub-PR | Branch | Status | Tag | PR |
+|---|---|---|---|---|
+| PR1 Foundation | `feat/e28-1-pr1-foundation` | ✅ Merged | v0.64.0 | [#138](https://github.com/Rubentxu/CogniCode/pull/138) |
+| PR2 Plan Algebra | `feat/e28-1-pr2-plan-algebra` | ✅ Merged | v0.65.0 | [#139](https://github.com/Rubentxu/CogniCode/pull/139) |
+| **PR3 Bridge** | `feat/e28-1-pr3-bridge` | ✅ Merged | v0.66.0 | [#140](https://github.com/Rubentxu/CogniCode/pull/140) |
+| PR4 PG Conformance | `feat/e28-1-pr4-pg-conformance` | 🔲 Pending | — | — |
+
+PR4 closes the E28.1 chain (Phase 4: PG `#[sqlx::test]` integration + bridge-mapping + executor regression gate). Then E28.2 unblocks.
 
 #### E28 execution order
 
@@ -313,6 +324,37 @@ Ciclo SDDK A-lite ejecutado en auto mode (3 apply sub-runs para completar scope 
 3. NaN soundness hole en `PlanFilter::Confidence::threshold` (manual `Eq` impl viola Hash/Eq contract).
 
 **Próximo paso propuesto**: PR3 Bridge (`feat/e28-1-pr3-bridge`; Phase 3 — `compile_to_plan` + legacy bridge + `#[deprecated]` + cleanup de las 3 WARNINGs nuevas; 10 tasks; ~400 LOC). Cadena stacked-to-main sigue.
+
+## Session Handover 2026-07-28 (E28.1 PR3 shipped)
+
+**E28.1 PR3 Bridge closed and shipped v0.66.0 (PR #140 merged to main).**
+
+Ciclo SDDK A-lite ejecutado en auto mode. PR3 cubre Phase 3 (Bridge: `compile_to_plan` + legacy bridge + `#[deprecated]` + cleanup de las 3 WARNINGs nuevas del debt-verify PR2) del programa E28.1 (10 tasks + 3 WARNINGs = 13 tareas; 3 commits squash-merged a `90559f75`).
+
+**Logros PR3**:
+- `compile_to_plan(query, limits, pin) -> Result<MoldPlan, PlanError>` nuevo entry point que retorna versioned `MoldPlan` con `PlanVersion`, `PlanHash`, `pin: Option<(WorkspaceId, RevisionId)>`.
+- Legacy `compile(q, target)` ahora delega a `compile_to_plan` + re-emite PG SQL o wraps PetgraphPlan (24 tests existentes siguen verdes).
+- `#[deprecated(note = "use compile_to_plan for new code")]` en `compile()` y `CompileTarget` enum (compilation warning al build).
+- `PlanFilter::Confidence` lowered a PG `confidence > $N` (bind parameter, NO inline literal) — SQL injection safe.
+- 39 tests en `moldql::compile` (24 existentes + 12 nuevos `compile_to_plan_tests` + 3 NaN soundness).
+
+**3 WARNINGs PR2-debt fixes (PR3 cleanup)**:
+- W-A (populate_defaults): función existe en `lower.rs` port pero NO es llamada desde `MoldqlAstLowerer` adapter (cada `lower_*` setea sus propios limits internamente). **PARCIAL** — la función está documentada pero sub-utilizada. Filed as follow-up `e28-1-pr4-populate-defaults`.
+- W-B (validate wired): `compile_to_plan` llama `PlanLimits::validate(&plan)?` en producción. **CLOSED**.
+- W-C (NaN soundness): `PlanFilter::Confidence::PartialEq` manual para tratar NaN consistent con Hash. 3 tests added. **CLOSED**.
+
+**Trazabilidad**:
+- Branch: `feat/e28-1-pr3-bridge` (squashed a `90559f75` al mergear).
+- Tag: `v0.66.0` (MINOR — nuevo entry point `compile_to_plan` + deprecation markers).
+- PR: <https://github.com/Rubentxu/CogniCode/pull/140>.
+- Artifacts: `sddk/e28-1-moldplan-graphplan-contracts/` (verify-report PR3 + debt-report PR3).
+
+**Carry-over (out of PR3 scope)**:
+- W-A (populate_defaults unused) — follow-up `e28-1-pr4-populate-defaults` or addressed in PR4 PG Conformance.
+- 30+ multimodal feature compile errors in non-E28.1 files (PRE-EXISTING).
+- cognicode-macros clippy + 17 unnecessary_min_or_max (PRE-EXISTING).
+
+**Próximo paso propuesto**: PR4 PG Conformance (`feat/e28-1-pr4-pg-conformance`; Phase 4 — 6 `pg_test!` scenarios + bridge-mapping + executor regression gate + W-A cleanup; 10 tasks; ~500 LOC; requiere `TEST_DATABASE_URL`). Cadena stacked-to-main sigue.
 
 ## Session Handover 2026-07-27 (E28 PR3 shipped)
 
