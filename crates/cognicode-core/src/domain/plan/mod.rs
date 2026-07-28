@@ -25,6 +25,7 @@ pub mod filter;
 pub mod mold_plan;
 pub mod graph_plan;
 pub mod lower;
+pub mod executor;
 
 // Re-exports for ergonomic use at the crate root.
 pub use version::{PlanVersion, PlanHash, PlanMetadata, ParsePlanVersionError};
@@ -35,3 +36,4 @@ pub use error::{PlanError, ExecutorError, UnsupportedConstruct, ConstructId, Sou
 pub use filter::{PlanFilter, PlanFilterOp};
 pub use mold_plan::MoldPlan;
 pub use graph_plan::{GraphPlan, PathPredicate, PathQuantifier, NeighborKind, PathProjection, BooleanOp};
+pub use executor::{GraphExecutor, ProvenanceEnvelope, StubExecutor};
