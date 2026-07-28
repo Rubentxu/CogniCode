@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-27 (E28.0 chain closed: PR3 Snapshot+Bridge shipped v0.63.0; E28.0 fully DONE.)
+Last updated: 2026-07-28 (E28.1 PR1 Foundation shipped v0.64.0; E28.0+E28.1 PR1 DONE.)
 
 ## Active
 
