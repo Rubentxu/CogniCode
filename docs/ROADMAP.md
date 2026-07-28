@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-28 (E28.2 PR1 Port shipped v0.68.0; PR2 PG Executor pending.)
+Last updated: 2026-07-28 (E28.2 PR2 PG Executor shipped v0.69.0; PR3 Snapshot Executor pending.)
 
 ## Active
 
@@ -377,6 +377,35 @@ Ciclo SDDK A-lite ejecutado en auto mode. PR1 cubre Phase 1 (Infrastructure — 
 - Artifacts: `sddk/e28-2-differential-graph-executors/apply-progress.md`.
 
 **Próximo paso propuesto**: PR2 PG Executor (`feat/e28-2-pr2-pg-executor`; Phase 2 — `PgGraphExecutor` + recursive CTE sobre `PostgresRepository::load_call_graph_ws`; 15 tasks; ~500 LOC; ~11 PG scenarios). Cadena stacked-to-main sigue.
+
+## Session Handover 2026-07-28 (E28.2 PR2 PG Executor shipped)
+
+**E28.2 PR2 PG Executor closed and shipped v0.69.0 (PR #143 merged to main).**
+
+Ciclo SDDK A-lite ejecutado en auto mode. PR2 cubre Phase 2 (PG Executor) del programa E28.2 (15 tasks; 3 commits squash-merged a `4974485c`).
+
+**Logros PR2**:
+- `PgGraphExecutor` struct en `crates/cognicode-core/src/infrastructure/persistence/pg_graph_executor.rs` (1744 LOC).
+- `impl GraphExecutor for PgGraphExecutor` con `execute(plan, pin)` + `execute_with_limits(plan, pin, limits_override)`.
+- Dispatcher `execute_pg` con 5 métodos:
+  - `execute_path` — `WITH RECURSIVE` CTE bounded by `max_hops ≤ 32`.
+  - `execute_neighbors` — recursive CTE at depth 1+ (both directions).
+  - `execute_subgraph` — BFS-via-CTE from `{nodes}` set.
+  - `execute_cluster` — `GROUP BY` aggregation.
+  - `execute_boolean` — `INTERSECT` / `UNION ALL` / `EXCEPT` typed multiset.
+- Plan-limit enforcement: `LIMIT n` pushed into SQL for `max_result_rows`; in-process polling para `time_ms` y `cancellation`.
+- `unknown_revision` path: `RepositoryError::UnknownRevision` → `ExecutorError::RevisionUnknown("<ws>:<rev>")`.
+- 11 nuevos tests (10 pass + 1 PRE-EXISTING-DEBT).
+
+**Known issue (PRE-EXISTING-DEBT)**:
+- `unknown_revision_returns_error` pg_test fails with "pool timed out" en sandbox. Root cause: el dedicated-OS-thread approach holds a PG connection que no se libera antes de la assertion. CI con timeouts más generosos podría pasar. Follow-up: `e28-2-pr2-pool-connection-release` — usar el patrón `block_in_place + Handle::enter + tokio::spawn + mpsc` (que ya funciona en `snapshot_provider.rs`).
+
+**Trazabilidad**:
+- Branch: `feat/e28-2-pr2-pg-executor` (squashed a `4974485c` al mergear).
+- Tag: `v0.69.0` (MINOR — nuevo `PgGraphExecutor` public type + `GraphExecutor` trait implementation).
+- PR: <https://github.com/Rubentxu/CogniCode/pull/143>.
+
+**Próximo paso propuesto**: PR3 Snapshot Executor (`feat/e28-2-pr3-snapshot-executor`; Phase 3 — `SnapshotGraphExecutor` + BFS over petgraph; 8 tasks; ~400 LOC; 0 PG scenarios). Cadena stacked-to-main sigue.
 
 ## Session Handover 2026-07-28 (E28.1 PR4 shipped — E28.1 chain fully DONE)
 
