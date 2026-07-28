@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-27 (E28.0 chain complete: PR1 Foundation v0.61.0 + PR2 Persistence v0.62.0 merged; PR3 Snapshot+Bridge pending.)
+Last updated: 2026-07-27 (E28.0 chain closed: PR3 Snapshot+Bridge shipped v0.63.0; E28.0 fully DONE.)
 
 ## Active
 
@@ -34,9 +34,9 @@ before implementation begins.
 |---|---|---|---|---|
 | PR1 Foundation | `feat/e28-0-canonical-graph-revisions` | ✅ Merged | v0.61.0 | [#135](https://github.com/Rubentxu/CogniCode/pull/135) |
 | PR2 Persistence | `feat/e28-0-pr2-persistence` | ✅ Merged | v0.62.0 | [#136](https://github.com/Rubentxu/CogniCode/pull/136) |
-| **PR3 Snapshot+Bridge** | `feat/e28-0-pr3-snapshot-bridge` | 🔲 Pending | — | — |
+| **PR3 Snapshot+Bridge** | `feat/e28-0-pr3-snapshot-bridge` | ✅ Merged | v0.63.0 | [#137](https://github.com/Rubentxu/CogniCode/pull/137) |
 
-PR3 closes the E28.0 chain (Phase 4: Repository trait extension + GenericGraphRepository + MetadataAwareRepository contract tests + 5 carry-over WARNING cleanup). E28.1 unblocks once E28.0 is fully DONE.
+**E28.0 is now fully DONE.** PR3 closes the foundation chain (Phase 4: Repository trait extension + GenericGraphRepository + MetadataAwareRepository contract tests + m0019 FK subset fix + 2 new pg_tests). **E28.1 unblocked.**
 
 #### E28 execution order
 
@@ -240,6 +240,39 @@ Ciclo SDDK A-lite ejecutado completamente en auto mode. PR2 cubre Phase 2 (Persi
 - Artifacts: `sddk/e28-0-canonical-graph-revisions/` (verify-report PR2, debt-report PR2).
 
 **Próximo paso propuesto**: PR3 Snapshot+Bridge (`e28-0-pr3-snapshot-bridge`; 16 tasks: Repository trait extension + GenericGraphRepository + MetadataAwareRepository contract tests + 5 follow-up WARNINGs cleanup). Cadena stacked-to-main sigue.
+
+## Session Handover 2026-07-27 (E28 PR3 shipped)
+
+**E28 PR3 Snapshot+Bridge closed and shipped v0.63.0 (PR #137 merged to main). E28.0 chain fully DONE.**
+
+Ciclo SDDK A-lite ejecutado completamente en auto mode. PR3 cubre Phase 4 (Repository Bridge + Contract tests) del programa E28 (16 tasks originales; 5 commits GREEN + 3 commits correction cycle 1 + 1 commit docs = 9 commits totales en `feat/e28-0-pr3-snapshot-bridge`).
+
+**Logros PR3**:
+- `Repository::load_call_graph_pinned(&WorkspaceId, RevisionId)` trait extension con `Send + Sync` dyn-compat.
+- `PostgresRepository::load_call_graph_pinned` delega a `load_call_graph_ws(ws, rev)` (ya revision-pinned desde PR2).
+- `PgGraphRepository::find_nodes_by_kind(kind, &WorkspaceId)` + `find_incoming_edges(id, &WorkspaceId)` filtran por `workspace_id` en SQL.
+- `MetadataAwareRepository::callees_with_metadata_pinned(id, &WorkspaceId, RevisionId, &SnapshotProvider)` usa `SnapshotProvider::snapshot` para lecturas pinned.
+- `From<&ResolvedSymbol> for RelationTarget` con `provenance=None, confidence=None` (backward compat).
+- pg_test contra ingest concurrente (rev 3 vs rev 4) sobrevive lectura pinned.
+
+**CRITs cerrados en correction cycle 1**:
+- **CRIT-2 (4.3a)**: pg_test workspace-scoped (ws1 vs ws2 isolation) ahora pasa.
+- **CRIT-3 (4.4a)**: pg_test revision-pinned callees_with_metadata_pinned ahora pasa.
+- **CRIT-1 (4.6)**: `GraphNode.properties` preserva raw `serde_json::Value` (no aplana a `HashMap<String,String>`); código committed pero runtime bloqueado por 30+ errores pre-existentes de compilación `multimodal` feature (clasificado PRE-EXISTING-DEBT, fuera del scope PR3).
+
+**Bug latente corregido (m0019)**: el FK subset `(workspace_id, source_id) → graph_nodes(workspace_id, id)` que `m0018` declaró sin UNIQUE INDEX subset estaba siendo rechazado silenciosamente por PostgreSQL, causando que `fresh_pool() → run_migrations()` fallara y todos los pg_tests se skippearan desde PR1. La nueva migration `m0019_unique_index_workspace_id.sql` agrega `CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_nodes_workspace_id ON graph_nodes(workspace_id, id)` que satisface el FK subset.
+
+**Trazabilidad**:
+- Branch: `feat/e28-0-pr3-snapshot-bridge` (squashed a `62c694c6` al mergear).
+- Tag: `v0.63.0` (MINOR — new trait method + new migration).
+- PR: <https://github.com/Rubentxu/CogniCode/pull/137>.
+- Artifacts: `sddk/e28-0-canonical-graph-revisions/` (verify-report PR3, debt-report PR3).
+
+**E28.0 chain completion**:
+- PR1 Foundation ✅ → v0.61.0
+- PR2 Persistence ✅ → v0.62.0
+- PR3 Snapshot+Bridge ✅ → v0.63.0
+- **E28.0 is fully DONE; E28.1 (MoldPlan/GraphPlan contracts) is unblocked.**
 
 ## Session Handover 2026-07-01
 
