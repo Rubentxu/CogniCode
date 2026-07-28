@@ -54,7 +54,13 @@ pub enum MoldPlan {
         metadata: PlanMetadata,
     },
     /// A graph-selecting operation (payload lives in `GraphPlan`).
-    Graph(super::GraphPlan),
+    /// The pin is stored at the MoldPlan level; GraphPlan itself is pin-agnostic.
+    /// The pin is immutable once set via `with_pin`.
+    Graph {
+        inner: super::GraphPlan,
+        /// Workspace and revision pin. Once set via `with_pin`, it cannot be changed.
+        pin: Option<(super::super::value_objects::WorkspaceId, super::super::value_objects::RevisionId)>,
+    },
 }
 
 impl MoldPlan {
@@ -65,7 +71,7 @@ impl MoldPlan {
             MoldPlan::Count { metadata, .. } => metadata,
             MoldPlan::Aggregate { metadata, .. } => metadata,
             MoldPlan::Explain { metadata, .. } => metadata,
-            MoldPlan::Graph(g) => g.metadata(),
+            MoldPlan::Graph { inner, .. } => inner.metadata(),
         }
     }
 
@@ -76,7 +82,7 @@ impl MoldPlan {
             MoldPlan::Count { limits, .. } => limits,
             MoldPlan::Aggregate { limits, .. } => limits,
             MoldPlan::Explain { limits, .. } => limits,
-            MoldPlan::Graph(g) => g.limits(),
+            MoldPlan::Graph { inner, .. } => inner.limits(),
         }
     }
 
@@ -88,6 +94,41 @@ impl MoldPlan {
     /// Returns the plan hash hex string.
     pub fn hash(&self) -> &str {
         self.metadata().hash_str()
+    }
+
+    /// Pin this plan to a workspace and revision.
+    ///
+    /// Once pinned, the pin is frozen — calling `with_pin` again on a
+    /// pinned plan returns `Err(PlanError::AlreadyPinned)`.
+    ///
+    /// Only `MoldPlan::Graph` can be pinned. Non-graph plans return
+    /// `Err(PlanError::NotAGraphPlan)`.
+    pub fn with_pin(
+        self,
+        ws: super::super::value_objects::WorkspaceId,
+        rev: super::super::value_objects::RevisionId,
+    ) -> Result<Self, super::PlanError> {
+        match self {
+            MoldPlan::Graph { mut inner, pin } => {
+                if pin.is_some() {
+                    return Err(super::PlanError::AlreadyPinned);
+                }
+                inner.metadata(); // ensure metadata is accessible
+                Ok(MoldPlan::Graph {
+                    inner,
+                    pin: Some((ws, rev)),
+                })
+            }
+            _ => Err(super::PlanError::NotAGraphPlan),
+        }
+    }
+
+    /// Returns the workspace and revision pin, if set.
+    pub fn pin(&self) -> Option<&(super::super::value_objects::WorkspaceId, super::super::value_objects::RevisionId)> {
+        match self {
+            MoldPlan::Graph { pin, .. } => pin.as_ref(),
+            _ => None,
+        }
     }
 }
 
@@ -102,7 +143,13 @@ impl fmt::Display for MoldPlan {
                 write!(f, "Aggregate(from={from}, group_by={group_by:?})")
             }
             MoldPlan::Explain { inner, .. } => write!(f, "Explain({inner})"),
-            MoldPlan::Graph(g) => write!(f, "Graph({g})"),
+            MoldPlan::Graph { inner, pin } => {
+                if let Some((ws, rev)) = pin {
+                    write!(f, "Graph({inner}, pinned={ws}:{rev})")
+                } else {
+                    write!(f, "Graph({inner}, unpinned)")
+                }
+            }
         }
     }
 }
@@ -293,5 +340,108 @@ mod tests {
         assert_send::<MoldPlan>();
         assert_sync::<MoldPlan>();
         assert_static::<MoldPlan>();
+    }
+
+    // -------------------------------------------------------------------------
+    // Task 2.3a RED — with_pin(ws, rev) requirement + immutability
+    // Scenario: `moldplan-graphplan::Revision Pinning` (both)
+    // Assert: MoldPlan::Graph(...).with_pin(ws, rev=3) → Ok;
+    //         concurrent rev=4 ingest does not change pinned rev=3;
+    //         without with_pin → Err(UnpinnedGraphPlan)
+    // -------------------------------------------------------------------------
+
+    /// `MoldPlan::Graph` can be pinned to a workspace and revision.
+    #[test]
+    fn with_pin_sets_pin() {
+        use crate::domain::value_objects::{WorkspaceId, RevisionId};
+        use super::super::{GraphPlan, NeighborKind};
+
+        let inner = GraphPlan::Neighbors {
+            src: "A".into(),
+            kind: NeighborKind::Both,
+            depth: 1,
+            predicates: vec![],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let plan = MoldPlan::Graph { inner, pin: None };
+        let ws = WorkspaceId::try_new("ws1").expect("valid workspace id");
+        let rev = RevisionId::new(3);
+
+        let pinned = plan.with_pin(ws.clone(), rev.clone()).expect("with_pin should succeed");
+        assert_eq!(pinned.pin(), Some(&(ws, rev)));
+    }
+
+    /// Pinning twice returns `AlreadyPinned` error.
+    #[test]
+    fn with_pin_twice_returns_error() {
+        use crate::domain::value_objects::{WorkspaceId, RevisionId};
+        use super::super::{GraphPlan, NeighborKind};
+
+        let inner = GraphPlan::Neighbors {
+            src: "A".into(),
+            kind: NeighborKind::Both,
+            depth: 1,
+            predicates: vec![],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let plan = MoldPlan::Graph { inner, pin: None };
+        let ws = WorkspaceId::try_new("ws1").expect("valid workspace id");
+        let rev = RevisionId::new(3);
+
+        let pinned = plan.with_pin(ws.clone(), rev.clone()).expect("first with_pin should succeed");
+        let result = pinned.with_pin(ws, rev);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), super::super::PlanError::AlreadyPinned));
+    }
+
+    /// `with_pin` on a non-graph plan returns `NotAGraphPlan`.
+    #[test]
+    fn with_pin_on_non_graph_plan_error() {
+        use crate::domain::value_objects::{WorkspaceId, RevisionId};
+
+        let plan = MoldPlan::Select {
+            from: "symbols".into(),
+            r#where: vec![],
+            projection: vec!["name".into()],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let ws = WorkspaceId::try_new("ws1").expect("valid workspace id");
+        let rev = RevisionId::new(3);
+
+        let result = plan.with_pin(ws, rev);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), super::super::PlanError::NotAGraphPlan));
+    }
+
+    /// `MoldPlan::Graph` with no pin returns `None` from `pin()`.
+    #[test]
+    fn pin_returns_none_when_unpinned() {
+        use super::super::{GraphPlan, NeighborKind};
+
+        let inner = GraphPlan::Neighbors {
+            src: "A".into(),
+            kind: NeighborKind::Both,
+            depth: 1,
+            predicates: vec![],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let plan = MoldPlan::Graph { inner, pin: None };
+        assert_eq!(plan.pin(), None);
     }
 }

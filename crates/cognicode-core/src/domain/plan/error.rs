@@ -58,6 +58,14 @@ pub enum PlanError {
     /// A semantic violation in the plan itself.
     #[error("semantics violation: {0}")]
     SemanticsViolation(String),
+
+    /// The plan is already pinned and cannot be pinned again.
+    #[error("plan is already pinned to a workspace and revision")]
+    AlreadyPinned,
+
+    /// The operation requires a graph plan but the current plan is not a graph plan.
+    #[error("operation requires a graph plan")]
+    NotAGraphPlan,
 }
 
 // ============================================================================

@@ -29,4 +29,4 @@ pub use value::{TypedValue, ValueError};
 pub use result::{ResultSet, TruncationMarker, SemanticsViolation, Path, Row, NodeResult, EdgeResult, assert_equivalent, assert_approx_equal, PathHop};
 pub use error::{PlanError, ExecutorError, UnsupportedConstruct, ConstructId, SourceLocation, CancellationToken, ProvenanceSource};
 pub use mold_plan::{MoldPlan, PlanFilter, PlanFilterOp, PlanFilter as MoldPlanFilter};
-pub use graph_plan::{GraphPlan, PathPredicate, PathQuantifier, NeighborKind, PathProjection};
+pub use graph_plan::{GraphPlan, PathPredicate, PathQuantifier, NeighborKind, PathProjection, BooleanOp};

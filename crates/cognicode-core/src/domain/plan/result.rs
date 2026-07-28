@@ -19,6 +19,7 @@ use std::hash::Hash;
 use super::limits::PlanLimits;
 use super::value::TypedValue;
 use super::version::{PlanHash, PlanMetadata, PlanVersion};
+use crate::domain::value_objects::EdgeKind;
 
 // ============================================================================
 // TruncationMarker
@@ -200,7 +201,7 @@ pub struct PathHop {
     /// The node id for this hop.
     pub node_id: String,
     /// The kind of the edge that led to this node (None for start node).
-    pub edge_kind: Option<String>,
+    pub edge_kind: Option<EdgeKind>,
 }
 
 // ============================================================================
@@ -406,11 +407,12 @@ mod tests {
     /// `assert_equivalent` returns `Err(PathOrderMismatch)` for paths in different order.
     #[test]
     fn assert_equivalent_paths_ordered() {
+        use crate::domain::value_objects::DependencyType;
         let a = ResultSet {
             paths: vec![
                 Path::new(vec![
                     PathHop { node_id: "A".into(), edge_kind: None },
-                    PathHop { node_id: "B".into(), edge_kind: Some("Calls".into()) },
+                    PathHop { node_id: "B".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)) },
                 ]),
             ],
             ..ResultSet::empty()
@@ -419,7 +421,7 @@ mod tests {
             paths: vec![
                 Path::new(vec![
                     PathHop { node_id: "B".into(), edge_kind: None },
-                    PathHop { node_id: "A".into(), edge_kind: Some("Calls".into()) },
+                    PathHop { node_id: "A".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)) },
                 ]),
             ],
             ..ResultSet::empty()
@@ -471,14 +473,15 @@ mod tests {
     /// `Path` preserves edge kinds per hop.
     #[test]
     fn path_preserves_edge_kinds() {
+        use crate::domain::value_objects::DependencyType;
         let path = Path::new(vec![
             PathHop { node_id: "A".into(), edge_kind: None },
-            PathHop { node_id: "B".into(), edge_kind: Some("Calls".into()) },
-            PathHop { node_id: "C".into(), edge_kind: Some("Imports".into()) },
+            PathHop { node_id: "B".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)) },
+            PathHop { node_id: "C".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Imports)) },
         ]);
         assert_eq!(path.hops[0].edge_kind, None);
-        assert_eq!(path.hops[1].edge_kind.as_deref(), Some("Calls"));
-        assert_eq!(path.hops[2].edge_kind.as_deref(), Some("Imports"));
+        assert_eq!(path.hops[1].edge_kind.as_ref().map(|e| e.as_str()).as_deref(), Some("dependency.calls"));
+        assert_eq!(path.hops[2].edge_kind.as_ref().map(|e| e.as_str()).as_deref(), Some("dependency.imports"));
         assert_eq!(path.start(), "A");
         assert_eq!(path.end(), "C");
         assert_eq!(path.len(), 2); // 3 hops = 2 edges
@@ -547,9 +550,10 @@ mod tests {
     /// `Path` serde round-trip.
     #[test]
     fn path_serde_roundtrip() {
+        use crate::domain::value_objects::DependencyType;
         let path = Path::new(vec![
             PathHop { node_id: "A".into(), edge_kind: None },
-            PathHop { node_id: "B".into(), edge_kind: Some("Calls".into()) },
+            PathHop { node_id: "B".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)) },
         ]);
         let json = serde_json::to_string(&path).expect("serialize");
         let parsed: Path = serde_json::from_str(&json).expect("deserialize");
