@@ -88,16 +88,17 @@ PR4 closes the E28.1 chain (Phase 4: PG `#[sqlx::test]` integration + bridge-map
 | PR2 PageRank+SCC+WCC | `feat/e28-4-pr2-pagerank-scc-wcc` | ✅ Merged | v0.73.1 | [#159](https://github.com/Rubentxu/CogniCode/pull/159) |
 | PR3 BSP Descriptor | `feat/e28-4-pr3-bsp-descriptor` | ✅ Merged | v0.73.2 | [#160](https://github.com/Rubentxu/CogniCode/pull/160) |
 | PR4 Lineage Persistence | `feat/e28-4-pr4-lineage-persistence` | ✅ Merged | v0.73.3 | [#161](https://github.com/Rubentxu/CogniCode/pull/161) |
-| **PR5 REST+MCP Surfaces** | `feat/e28-4-pr5-surfaces` | 🔲 Open | — | [#162](https://github.com/Rubentxu/CogniCode/pull/162) |
+| PR5 REST+MCP Surfaces | `feat/e28-4-pr5-surfaces` | ✅ Merged | v0.73.4 | [#162](https://github.com/Rubentxu/CogniCode/pull/162) |
+| **PR6 Registry Wiring Fix** | `fix/e28-4-wire-registry` | ✅ Merged | v0.73.6 | [#164](https://github.com/Rubentxu/CogniCode/pull/164) |
 
-**E28.4 PR5** adds analytics REST and MCP surfaces:
-- `POST /api/analytics/run` — execute BSP via GraphAnalyticsService
-- `GET /api/analytics/catalog` — list admitted algorithm descriptors
-- `GET /api/analytics/lineage` — list lineage records
-- `GET /api/analytics/lineage/:run_id` — get specific lineage record
-- MCP tools: `analytics_run`, `analytics_catalog`, `analytics_lineage_list`, `analytics_lineage_get`
+**E28.4 PR6** (v0.73.6) closes the remaining 6 blockers from debt-verify FAIL verdict:
+- DefaultAnalyticsBoundaryGuard wired into AlgorithmRegistry::run
+- CallerCapabilities enforcement at run path (Persist denied for ExternalMCP/Explorer)
+- descriptor_limits persisted on admit, read on run (survives restarts)
+- REST handlers wired to registry (catalog, lineage_list, lineage_get)
+- AlgorithmId now implements FromStr for "name@version" format
 
-Session Handover: PR5 is open on `feat/e28-4-pr5-surfaces`. The MCP `analytics_run` handler works correctly via `McpContext::graph` (CallGraph access). REST handlers are stubs pending full `CallGraph` wiring from `GraphService` in the API layer. Next steps: (1) wire AlgorithmRegistry from composition root, (2) connect lineage store to PostgreSQL, (3) implement Explorer React AnalyticsPanel.
+Session Handover 2026-07-29: E28.4 PR6 closes the wiring blockers. Remaining E28.4 work: wire AlgorithmRegistry from runtime composition root with algorithm descriptors admitted at startup.
 
 #### E28 execution order
 
