@@ -504,6 +504,16 @@ pub struct ApiState {
     /// Used as a fallback `revision_id` for `MoldQLService::execute_query_pinned`
     /// when the caller doesn't supply one.
     pub revision_tracker: Arc<AtomicU64>,
+    /// Optional analytics algorithm registry (E28.4).
+    /// Wired when postgres feature is enabled and lineage store is available.
+    pub analytics_registry: Option<
+        Arc<cognicode_core::application::services::graph_analytics::AlgorithmRegistry>,
+    >,
+    /// Optional analytics lineage store (E28.4).
+    /// Wired when postgres feature is enabled.
+    pub analytics_lineage_store: Option<
+        Arc<dyn cognicode_core::domain::analytics::RunLineageStore>,
+    >,
 }
 
 impl ApiState {
@@ -528,6 +538,8 @@ impl ApiState {
             ingest: None,
             snapshot: None,
             revision_tracker: Arc::new(AtomicU64::new(1)),
+            analytics_registry: None,
+            analytics_lineage_store: None,
         }
     }
 
@@ -567,6 +579,21 @@ impl ApiState {
     pub fn with_revision_tracker(self, tracker: Arc<AtomicU64>) -> Self {
         Self {
             revision_tracker: tracker,
+            ..self
+        }
+    }
+
+    /// Wire an analytics algorithm registry and lineage store (E28.4).
+    ///
+    /// Both arguments are required — pass `None` to explicitly opt out of analytics.
+    pub fn with_analytics(
+        self,
+        registry: Arc<cognicode_core::application::services::graph_analytics::AlgorithmRegistry>,
+        lineage_store: Arc<dyn cognicode_core::domain::analytics::RunLineageStore>,
+    ) -> Self {
+        Self {
+            analytics_registry: Some(registry),
+            analytics_lineage_store: Some(lineage_store),
             ..self
         }
     }
@@ -841,6 +868,22 @@ use crate::dto::{
     AlgorithmDescriptorSummary, LineageEntry, RunAnalyticsRequest, RunAnalyticsResponse,
 };
 
+/// Query parameters for analytics lineage list endpoint.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalyticsLineageQuery {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
+    pub revision_id: Option<u64>,
+    #[serde(default)]
+    pub algorithm_id: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub limit: Option<u64>,
+}
+
 async fn analytics_run_handler(
     State(state): State<ApiState>,
     Json(req): Json<RunAnalyticsRequest>,
@@ -877,69 +920,209 @@ async fn analytics_run_handler(
     Ok(Json(response).into_response())
 }
 
-async fn analytics_catalog_handler() -> Response {
-    // Return stub catalog - in production this would query the AlgorithmRegistry
-    let algorithms = vec![
-        AlgorithmDescriptorSummary {
-            id: "bounded_shortest_paths".to_string(),
-            name: "Bounded Shortest Paths".to_string(),
-            version: "1.0.0".to_string(),
-            description: "Find all simple paths between two symbols bounded by max hops".to_string(),
-            mode: "Stream".to_string(),
-            categories: vec!["pathfinding".to_string(), "graph".to_string()],
-        },
-        AlgorithmDescriptorSummary {
-            id: "page_rank".to_string(),
-            name: "PageRank".to_string(),
-            version: "1.0.0".to_string(),
-            description: "Compute PageRank scores for all symbols in the call graph".to_string(),
-            mode: "Stats".to_string(),
-            categories: vec!["centrality".to_string(), "graph".to_string()],
-        },
-        AlgorithmDescriptorSummary {
-            id: "scc".to_string(),
-            name: "Strongly Connected Components".to_string(),
-            version: "1.0.0".to_string(),
-            description: "Find strongly connected components in the call graph".to_string(),
-            mode: "Stats".to_string(),
-            categories: vec!["clustering".to_string(), "graph".to_string()],
-        },
-        AlgorithmDescriptorSummary {
-            id: "wcc".to_string(),
-            name: "Weakly Connected Components".to_string(),
-            version: "1.0.0".to_string(),
-            description: "Find weakly connected components in the call graph".to_string(),
-            mode: "Stats".to_string(),
-            categories: vec!["clustering".to_string(), "graph".to_string()],
-        },
-    ];
+async fn analytics_catalog_handler(
+    State(state): State<ApiState>,
+) -> Response {
+    // E28.4: Return catalog from registry if wired, otherwise return hardcoded list
+    let registry = match &state.analytics_registry {
+        Some(r) => r,
+        None => {
+            // Fall back to hardcoded catalog when registry is not wired
+            let algorithms = vec![
+                AlgorithmDescriptorSummary {
+                    id: "bounded_shortest_paths".to_string(),
+                    name: "Bounded Shortest Paths".to_string(),
+                    version: "1.0.0".to_string(),
+                    description: "Find all simple paths between two symbols bounded by max hops".to_string(),
+                    mode: "Stream".to_string(),
+                    categories: vec!["pathfinding".to_string(), "graph".to_string()],
+                },
+                AlgorithmDescriptorSummary {
+                    id: "page_rank".to_string(),
+                    name: "PageRank".to_string(),
+                    version: "1.0.0".to_string(),
+                    description: "Compute PageRank scores for all symbols in the call graph".to_string(),
+                    mode: "Stats".to_string(),
+                    categories: vec!["centrality".to_string(), "graph".to_string()],
+                },
+                AlgorithmDescriptorSummary {
+                    id: "scc".to_string(),
+                    name: "Strongly Connected Components".to_string(),
+                    version: "1.0.0".to_string(),
+                    description: "Find strongly connected components in the call graph".to_string(),
+                    mode: "Stats".to_string(),
+                    categories: vec!["clustering".to_string(), "graph".to_string()],
+                },
+                AlgorithmDescriptorSummary {
+                    id: "wcc".to_string(),
+                    name: "Weakly Connected Components".to_string(),
+                    version: "1.0.0".to_string(),
+                    description: "Find weakly connected components in the call graph".to_string(),
+                    mode: "Stats".to_string(),
+                    categories: vec!["clustering".to_string(), "graph".to_string()],
+                },
+            ];
+            let total = algorithms.len();
+            return Json(AnalyticsCatalogResponse { algorithms, total }).into_response();
+        }
+    };
+
+    // Query the registry for admitted algorithms
+    let algorithms: Vec<AlgorithmDescriptorSummary> = registry
+        .admitted()
+        .map(|d| {
+            let identity = d.identity();
+            AlgorithmDescriptorSummary {
+                id: identity.id.as_str().to_string(),
+                name: identity.id.as_str().to_string(),
+                version: identity.version.to_string(),
+                description: format!("{} v{}", identity.id.as_str(), identity.version),
+                mode: d.supported_modes().first().map(|m| m.to_string()).unwrap_or_default(),
+                categories: vec!["graph".to_string(), "analytics".to_string()],
+            }
+        })
+        .collect();
 
     let total = algorithms.len();
-    let response = AnalyticsCatalogResponse { algorithms, total };
-    Json(response).into_response()
+    Json(AnalyticsCatalogResponse { algorithms, total }).into_response()
 }
 
-async fn analytics_lineage_list_handler() -> Response {
-    // Stub lineage response - in production this would query the lineage store
-    let response = AnalyticsLineageResponse {
-        runs: vec![],
-        total: 0,
+async fn analytics_lineage_list_handler(
+    State(state): State<ApiState>,
+    Query(params): Query<AnalyticsLineageQuery>,
+) -> Response {
+    // E28.4: Wire to lineage store if available
+    let store = match &state.analytics_lineage_store {
+        Some(s) => s,
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": "analytics_not_available",
+                    "message": "analytics lineage store not wired (requires postgres)"
+                })),
+            )
+                .into_response();
+        }
     };
-    Json(response).into_response()
+
+    // Build filter from query params
+    use cognicode_core::domain::analytics::{RunLineageFilter, RunStatus};
+    use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
+
+    let filter = RunLineageFilter {
+        workspace_id: params.workspace_id.as_ref().map(|s| WorkspaceId::try_new(s.clone()).ok()).flatten(),
+        revision_id: params.revision_id.map(|r| RevisionId::new(r)),
+        algorithm_id: params.algorithm_id.as_ref().and_then(|s| {
+            if s.is_empty() {
+                None
+            } else {
+                Some(cognicode_core::domain::analytics::AlgorithmId::from_string(s.clone()))
+            }
+        }),
+        status: params.status.as_ref().and_then(|s| match s.as_str() {
+            "succeeded" => Some(RunStatus::Succeeded),
+            "failed" => Some(RunStatus::Failed),
+            "truncated" => Some(RunStatus::Truncated),
+            "pending" => Some(RunStatus::Pending),
+            "running" => Some(RunStatus::Running),
+            _ => None,
+        }),
+    };
+
+    match store.query(filter, params.limit).await {
+        Ok(lineages) => {
+            let runs: Vec<LineageEntry> = lineages
+                .into_iter()
+                .map(|l| LineageEntry {
+                    run_id: l.run_id.to_string(),
+                    algorithm_id: l.algorithm_id.to_string(),
+                    executed_at: l.started_at.to_rfc3339(),
+                    parameters: l.params,
+                    result_summary: serde_json::json!({
+                        "status": l.status.to_string(),
+                        "row_count": l.row_count,
+                        "mode": l.mode.to_string(),
+                    }),
+                    mode: l.mode.to_string(),
+                })
+                .collect();
+            let total = runs.len();
+            Json(AnalyticsLineageResponse { runs, total }).into_response()
+        }
+        Err(e) => {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "lineage_query_failed",
+                    "message": format!("failed to query lineage: {}", e)
+                })),
+            )
+                .into_response()
+        }
+    }
 }
 
 async fn analytics_lineage_get_handler(
+    State(state): State<ApiState>,
     Path(run_id): Path<String>,
 ) -> Response {
-    // Stub - lineage store not wired in this build
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({
-            "error": "not_found",
-            "message": format!("run `{}` not found (lineage store not wired in this build)", run_id)
-        })),
-    )
-        .into_response()
+    // E28.4: Wire to lineage store if available
+    let store = match &state.analytics_lineage_store {
+        Some(s) => s,
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": "analytics_not_available",
+                    "message": "analytics lineage store not wired (requires postgres)"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Parse run_id into Uuid
+    let run_uuid = cognicode_core::domain::analytics::lineage::Uuid::from_string(run_id.clone());
+
+    // Query the lineage store
+    match store.get(run_uuid).await {
+        Ok(lineage) => {
+            let response = AnalyticsLineageDetailResponse {
+                run_id: lineage.run_id.to_string(),
+                algorithm_id: lineage.algorithm_id.to_string(),
+                executed_at: lineage.started_at.to_rfc3339(),
+                parameters: lineage.params,
+                result_summary: serde_json::json!({
+                    "status": lineage.status.to_string(),
+                    "row_count": lineage.row_count,
+                    "mode": lineage.mode.to_string(),
+                }),
+                mode: lineage.mode.to_string(),
+            };
+            Json(response).into_response()
+        }
+        Err(cognicode_core::domain::analytics::AnalyticsError::RunNotFound(_)) => {
+            (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "not_found",
+                    "message": format!("run `{}` not found", run_id)
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "lineage_query_failed",
+                    "message": format!("failed to query lineage: {}", e)
+                })),
+            )
+                .into_response()
+        }
+    }
 }
 
 /// Stub handler for routes that are only available behind a feature gate.

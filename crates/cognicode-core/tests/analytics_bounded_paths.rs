@@ -3,26 +3,45 @@
 //! Part of E28.4 Analytics Registry Cohort 1 — PR3 Bounded Paths.
 
 use cognicode_core::domain::analytics::bounded_shortest_paths_descriptor::BoundedShortestPathsDescriptor;
-use cognicode_core::domain::analytics::{AlgorithmDescriptor, AnalyticsMode};
+use cognicode_core::domain::analytics::{AlgorithmDescriptor, AlgorithmId, AnalyticsMode, RunLineageStore};
+use cognicode_core::domain::plan::limits::PlanLimits;
 
 /// A no-op lineage store for testing.
 struct NoOpLineageStore;
 
-impl cognicode_core::domain::analytics::RunLineageStore for NoOpLineageStore {
-    fn insert(&self, _lineage: &cognicode_core::domain::analytics::RunLineage) -> Result<(), cognicode_core::domain::analytics::AnalyticsError> {
+#[async_trait::async_trait]
+impl RunLineageStore for NoOpLineageStore {
+    async fn insert(&self, _lineage: &cognicode_core::domain::analytics::RunLineage) -> Result<(), cognicode_core::domain::analytics::AnalyticsError> {
         Ok(())
     }
 
-    fn get(&self, _run_id: cognicode_core::domain::analytics::Uuid) -> Result<cognicode_core::domain::analytics::RunLineage, cognicode_core::domain::analytics::AnalyticsError> {
+    async fn get(&self, _run_id: cognicode_core::domain::analytics::Uuid) -> Result<cognicode_core::domain::analytics::RunLineage, cognicode_core::domain::analytics::AnalyticsError> {
         Err(cognicode_core::domain::analytics::AnalyticsError::RunNotFound("not found".into()))
     }
 
-    fn query(
+    async fn query(
         &self,
         _filter: cognicode_core::domain::analytics::RunLineageFilter,
         _limit: Option<u64>,
     ) -> Result<Vec<cognicode_core::domain::analytics::RunLineage>, cognicode_core::domain::analytics::AnalyticsError> {
         Ok(vec![])
+    }
+
+    async fn upsert_descriptor_limits(
+        &self,
+        _algorithm_id: &AlgorithmId,
+        _version: &str,
+        _limits: &PlanLimits,
+    ) -> Result<(), cognicode_core::domain::analytics::AnalyticsError> {
+        Ok(())
+    }
+
+    async fn get_descriptor_limits(
+        &self,
+        _algorithm_id: &AlgorithmId,
+        _version: &str,
+    ) -> Result<Option<PlanLimits>, cognicode_core::domain::analytics::AnalyticsError> {
+        Ok(None)
     }
 }
 
@@ -44,6 +63,8 @@ fn bsp_descriptor_has_correct_identity() {
 fn bsp_descriptor_accepts_valid_params() {
     let d = BoundedShortestPathsDescriptor;
     let params = serde_json::json!({
+        "from_symbol": "test.rs:A:1",
+        "to_symbol": "test.rs:D:1",
         "max_hops": 5,
         "max_paths": 100
     });
@@ -54,6 +75,8 @@ fn bsp_descriptor_accepts_valid_params() {
 fn bsp_descriptor_accepts_params_without_max_paths() {
     let d = BoundedShortestPathsDescriptor;
     let params = serde_json::json!({
+        "from_symbol": "test.rs:A:1",
+        "to_symbol": "test.rs:D:1",
         "max_hops": 5
     });
     assert!(d.params().validate(&params).is_ok());
@@ -63,6 +86,8 @@ fn bsp_descriptor_accepts_params_without_max_paths() {
 fn bsp_descriptor_rejects_missing_max_hops() {
     let d = BoundedShortestPathsDescriptor;
     let params = serde_json::json!({
+        "from_symbol": "test.rs:A:1",
+        "to_symbol": "test.rs:D:1",
         "max_paths": 100
     });
     assert!(d.params().validate(&params).is_err());
@@ -74,6 +99,8 @@ fn bsp_descriptor_rejects_missing_max_hops() {
 fn bsp_descriptor_rejects_zero_max_hops() {
     let d = BoundedShortestPathsDescriptor;
     let params = serde_json::json!({
+        "from_symbol": "test.rs:A:1",
+        "to_symbol": "test.rs:D:1",
         "max_hops": 0
     });
     assert!(d.params().validate(&params).is_err());
@@ -85,6 +112,8 @@ fn bsp_descriptor_rejects_zero_max_hops() {
 fn bsp_descriptor_rejects_zero_max_paths() {
     let d = BoundedShortestPathsDescriptor;
     let params = serde_json::json!({
+        "from_symbol": "test.rs:A:1",
+        "to_symbol": "test.rs:D:1",
         "max_hops": 5,
         "max_paths": 0
     });
@@ -158,7 +187,7 @@ fn registry_admits_bounded_shortest_paths() {
     use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
     use std::sync::Arc;
 
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore));
+    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
     let result = registry.admit(Box::new(BoundedShortestPathsDescriptor));
     assert!(result.is_ok());
 }
@@ -168,7 +197,7 @@ fn registry_returns_bounded_shortest_paths() {
     use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
     use std::sync::Arc;
 
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore));
+    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
     registry.admit(Box::new(BoundedShortestPathsDescriptor)).unwrap();
 
     let ids: Vec<_> = registry.admitted().map(|d| d.identity().id.as_str()).collect();
@@ -180,7 +209,7 @@ fn registry_get_returns_bounded_shortest_paths_descriptor() {
     use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
     use std::sync::Arc;
 
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore));
+    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
     registry.admit(Box::new(BoundedShortestPathsDescriptor)).unwrap();
 
     let bsp_id = cognicode_core::domain::analytics::AlgorithmId::from_static("bounded_shortest_paths");

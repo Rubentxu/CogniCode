@@ -184,4 +184,7 @@ mockall = "0.11"
 # own per-test isolated database via a tiny manual fixture instead of
 # `#[sqlx::test]` — same isolation guarantee, no extra features. Document
 # this in the PR description.
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros", "uuid"] }
+
+# UUID v4 generation — CSPRNG-based, replaces hand-rolled implementation.
+uuid = { version = "1.10", features = ["v4", "serde"] }

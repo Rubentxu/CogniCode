@@ -123,26 +123,9 @@ impl Uuid {
         Self(s.into())
     }
 
-    /// Generate a new random UUID v4.
+    /// Generate a new random UUID v4 using CSPRNG.
     pub fn new_v4() -> Self {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let now_nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos() as u128;
-        let pid = std::process::id() as u128;
-        // Simple random-ish generator based on timestamp and pid
-        let rand1 = ((now_nanos >> 32) ^ pid) as u32;
-        let rand2 = (now_nanos ^ (pid << 32)) as u32;
-        let rand3 = ((rand1.wrapping_mul(0x517cc1b7)) ^ (rand2 >> 16)) as u32;
-        Self(format!(
-            "{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}",
-            rand1,
-            rand2 & 0xffff,
-            rand3 & 0xfff,
-            0x8000 | (rand2 >> 17),
-            ((rand1 as u64) << 32) | (rand3 as u64)
-        ))
+        Self(uuid::Uuid::new_v4().to_string())
     }
 }
 
@@ -221,22 +204,38 @@ impl RunLineage {
 /// Port for persisting and querying run lineage records.
 ///
 /// Implementations must provide durable storage (e.g., PostgreSQL).
+#[async_trait::async_trait]
 pub trait RunLineageStore: Send + Sync + 'static {
     /// Insert a new run lineage record.
     ///
     /// Returns `Err(AnalyticsError::IdempotencyConflict)` if an existing
     /// record has the same idempotency_key but different parameters.
-    fn insert(&self, lineage: &RunLineage) -> Result<(), AnalyticsError>;
+    async fn insert(&self, lineage: &RunLineage) -> Result<(), AnalyticsError>;
 
     /// Get a run lineage record by run ID.
-    fn get(&self, run_id: Uuid) -> Result<RunLineage, AnalyticsError>;
+    async fn get(&self, run_id: Uuid) -> Result<RunLineage, AnalyticsError>;
 
     /// Query lineage records by filter.
-    fn query(
+    async fn query(
         &self,
         filter: RunLineageFilter,
         limit: Option<u64>,
     ) -> Result<Vec<RunLineage>, AnalyticsError>;
+
+    /// Upsert descriptor limits for an algorithm version.
+    async fn upsert_descriptor_limits(
+        &self,
+        algorithm_id: &AlgorithmId,
+        version: &str,
+        limits: &crate::domain::plan::limits::PlanLimits,
+    ) -> Result<(), AnalyticsError>;
+
+    /// Get descriptor limits for an algorithm version.
+    async fn get_descriptor_limits(
+        &self,
+        algorithm_id: &AlgorithmId,
+        version: &str,
+    ) -> Result<Option<crate::domain::plan::limits::PlanLimits>, AnalyticsError>;
 }
 
 /// Filter criteria for lineage queries.

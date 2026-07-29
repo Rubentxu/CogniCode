@@ -9,26 +9,45 @@ use cognicode_core::domain::analytics::{
     RunLineageFilter, RunLineageStore, RunStatus, Uuid,
 };
 use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
+use cognicode_core::domain::plan::limits::PlanLimits;
 use cognicode_core::infrastructure::persistence::PostgresLineageStore;
 
 /// A no-op lineage store for testing — in-memory fallback.
 struct NoOpLineageStore;
 
+#[async_trait::async_trait]
 impl RunLineageStore for NoOpLineageStore {
-    fn insert(&self, _lineage: &RunLineage) -> Result<(), AnalyticsError> {
+    async fn insert(&self, _lineage: &RunLineage) -> Result<(), AnalyticsError> {
         Ok(())
     }
 
-    fn get(&self, _run_id: Uuid) -> Result<RunLineage, AnalyticsError> {
+    async fn get(&self, _run_id: Uuid) -> Result<RunLineage, AnalyticsError> {
         Err(AnalyticsError::RunNotFound("not found".into()))
     }
 
-    fn query(
+    async fn query(
         &self,
         _filter: RunLineageFilter,
         _limit: Option<u64>,
     ) -> Result<Vec<RunLineage>, AnalyticsError> {
         Ok(vec![])
+    }
+
+    async fn upsert_descriptor_limits(
+        &self,
+        _algorithm_id: &AlgorithmId,
+        _version: &str,
+        _limits: &PlanLimits,
+    ) -> Result<(), AnalyticsError> {
+        Ok(())
+    }
+
+    async fn get_descriptor_limits(
+        &self,
+        _algorithm_id: &AlgorithmId,
+        _version: &str,
+    ) -> Result<Option<PlanLimits>, AnalyticsError> {
+        Ok(None)
     }
 }
 
@@ -40,8 +59,8 @@ fn dummy_revision() -> RevisionId {
     RevisionId::new(1)
 }
 
-#[test]
-fn noop_lineage_store_insert_returns_ok() {
+#[tokio::test]
+async fn noop_lineage_store_insert_returns_ok() {
     let store = NoOpLineageStore;
     let lineage = RunLineage::new(
         dummy_workspace(),
@@ -53,22 +72,22 @@ fn noop_lineage_store_insert_returns_ok() {
         None,
         AnalyticsMode::Stream,
     );
-    assert!(store.insert(&lineage).is_ok());
+    assert!(store.insert(&lineage).await.is_ok());
 }
 
-#[test]
-fn noop_lineage_store_get_returns_not_found() {
+#[tokio::test]
+async fn noop_lineage_store_get_returns_not_found() {
     let store = NoOpLineageStore;
     let uuid = Uuid::new_v4();
-    let result = store.get(uuid);
+    let result = store.get(uuid).await;
     assert!(matches!(result, Err(AnalyticsError::RunNotFound(_))));
 }
 
-#[test]
-fn noop_lineage_store_query_returns_empty() {
+#[tokio::test]
+async fn noop_lineage_store_query_returns_empty() {
     let store = NoOpLineageStore;
     let filter = RunLineageFilter::default();
-    let result = store.query(filter, None);
+    let result = store.query(filter, None).await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_empty());
 }

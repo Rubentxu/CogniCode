@@ -6,10 +6,10 @@ use std::sync::Arc;
 use std::sync::LazyLock;
 
 use cognicode_core::domain::analytics::{
-    AdmissionError, AlgorithmDescriptor, AlgorithmId, AlgorithmVersion, AnalyticsError,
+    AdmissionError, AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AlgorithmVersion, AnalyticsError,
     AnalyticsMode, ComplexityClass, DeterminismKind, Fixture, FixtureGraph, Maturity,
     OutputField, OutputSchema, OutputType, ProjectionAssumption, RunLineage, RunLineageFilter,
-    RunLineageStore,
+    RunLineageStore, RunOutput,
 };
 use cognicode_core::domain::plan::limits::PlanLimits;
 use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
@@ -160,6 +160,18 @@ impl AlgorithmDescriptor for CompletePagerankDescriptor {
     }
 }
 
+#[async_trait::async_trait]
+impl AlgorithmExecute for CompletePagerankDescriptor {
+    async fn execute(
+        &self,
+        _params: &serde_json::Value,
+        _graph: &cognicode_core::domain::aggregates::CallGraph,
+        _limits: &PlanLimits,
+    ) -> Result<RunOutput, AnalyticsError> {
+        Ok(RunOutput::PageRank(serde_json::json!([])))
+    }
+}
+
 /// Descriptor missing output_schema.
 struct IncompleteSchemaDescriptor;
 
@@ -210,6 +222,18 @@ impl AlgorithmDescriptor for IncompleteSchemaDescriptor {
 
     fn projection_assumption(&self) -> &ProjectionAssumption {
         &ProjectionAssumption::CallGraphIncoming
+    }
+}
+
+#[async_trait::async_trait]
+impl AlgorithmExecute for IncompleteSchemaDescriptor {
+    async fn execute(
+        &self,
+        _params: &serde_json::Value,
+        _graph: &cognicode_core::domain::aggregates::CallGraph,
+        _limits: &PlanLimits,
+    ) -> Result<RunOutput, AnalyticsError> {
+        Ok(RunOutput::PageRank(serde_json::json!([])))
     }
 }
 
@@ -266,24 +290,54 @@ impl AlgorithmDescriptor for IncompleteLimitsDescriptor {
     }
 }
 
+#[async_trait::async_trait]
+impl AlgorithmExecute for IncompleteLimitsDescriptor {
+    async fn execute(
+        &self,
+        _params: &serde_json::Value,
+        _graph: &cognicode_core::domain::aggregates::CallGraph,
+        _limits: &PlanLimits,
+    ) -> Result<RunOutput, AnalyticsError> {
+        Ok(RunOutput::PageRank(serde_json::json!([])))
+    }
+}
+
 /// A noop lineage store for testing.
 struct NoopLineageStore;
 
+#[async_trait::async_trait]
 impl RunLineageStore for NoopLineageStore {
-    fn insert(&self, _lineage: &RunLineage) -> Result<(), AnalyticsError> {
+    async fn insert(&self, _lineage: &RunLineage) -> Result<(), AnalyticsError> {
         Ok(())
     }
 
-    fn get(&self, _run_id: cognicode_core::domain::analytics::Uuid) -> Result<RunLineage, AnalyticsError> {
+    async fn get(&self, _run_id: cognicode_core::domain::analytics::Uuid) -> Result<RunLineage, AnalyticsError> {
         Err(AnalyticsError::RunNotFound("not found".into()))
     }
 
-    fn query(
+    async fn query(
         &self,
         _filter: RunLineageFilter,
         _limit: Option<u64>,
     ) -> Result<Vec<RunLineage>, AnalyticsError> {
         Ok(vec![])
+    }
+
+    async fn upsert_descriptor_limits(
+        &self,
+        _algorithm_id: &AlgorithmId,
+        _version: &str,
+        _limits: &PlanLimits,
+    ) -> Result<(), AnalyticsError> {
+        Ok(())
+    }
+
+    async fn get_descriptor_limits(
+        &self,
+        _algorithm_id: &AlgorithmId,
+        _version: &str,
+    ) -> Result<Option<PlanLimits>, AnalyticsError> {
+        Ok(None)
     }
 }
 
@@ -293,7 +347,7 @@ impl RunLineageStore for NoopLineageStore {
 
 #[test]
 fn admits_complete_descriptor() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore));
+    let mut registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore), None);
     let result = registry.admit(Box::new(CompletePagerankDescriptor));
     assert!(result.is_ok(), "complete descriptor should be admitted: {:?}", result);
     assert!(registry.is_admitted(&AlgorithmId::from_static("pagerank")));
@@ -301,7 +355,7 @@ fn admits_complete_descriptor() {
 
 #[test]
 fn rejects_incomplete_descriptor_missing_output_schema() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore));
+    let mut registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore), None);
     let result = registry.admit(Box::new(IncompleteSchemaDescriptor));
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -317,7 +371,7 @@ fn rejects_incomplete_descriptor_missing_output_schema() {
 
 #[test]
 fn rejects_incomplete_descriptor_missing_limits() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore));
+    let mut registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore), None);
     let result = registry.admit(Box::new(IncompleteLimitsDescriptor));
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -333,7 +387,7 @@ fn rejects_incomplete_descriptor_missing_limits() {
 
 #[test]
 fn rejects_duplicate_admission_same_version() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore));
+    let mut registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore), None);
     registry
         .admit(Box::new(CompletePagerankDescriptor))
         .expect("first admission should succeed");
@@ -347,7 +401,7 @@ fn rejects_duplicate_admission_same_version() {
 
 #[test]
 fn is_admitted_returns_false_for_non_admitted() {
-    let registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore));
+    let registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore), None);
     assert!(!registry.is_admitted(&AlgorithmId::from_static("nonexistent")));
     assert!(registry.get(&AlgorithmId::from_static("nonexistent")).is_none());
 }
