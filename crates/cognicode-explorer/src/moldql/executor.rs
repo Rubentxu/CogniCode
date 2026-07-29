@@ -80,8 +80,7 @@ impl<'a> MoldQLExecutor<'a> {
             | MoldQLQuery::Subgraph(_)
             | MoldQLQuery::Cluster(_)
             | MoldQLQuery::Explain(_)
-            | MoldQLQuery::Boolean(_)
-            | MoldQLQuery::Pattern(_) => {
+            | MoldQLQuery::Boolean(_) => {
                 // Default target: petgraph. The MCP tool can override
                 // this via the `target` field on the request.
                 let compiled = crate::moldql::compile::compile(
@@ -89,6 +88,18 @@ impl<'a> MoldQLExecutor<'a> {
                     crate::moldql::compile::CompileTarget::Petgraph,
                 )
                 .map_err(|e| ExplorerError::ResolutionFailed(e.to_string()))?;
+                crate::moldql::compile::run(
+                    compiled,
+                    crate::moldql::compile::CompileTarget::Petgraph,
+                    self.view,
+                )
+            }
+            // Pattern Profile queries: compile via compile_pattern() (not the
+            // deprecated compile() which lacks a Pattern arm), then execute
+            // the resulting GraphPlan through run().
+            MoldQLQuery::Pattern(_) => {
+                let compiled = crate::moldql::compile::compile_pattern(&query)
+                    .map_err(|e| ExplorerError::ResolutionFailed(e.to_string()))?;
                 crate::moldql::compile::run(
                     compiled,
                     crate::moldql::compile::CompileTarget::Petgraph,
@@ -1624,5 +1635,83 @@ mod tests {
             .execute_with_target(ast, crate::moldql::compile::CompileTarget::Petgraph)
             .expect("ok");
         assert!(r.query.contains("Bfs"));
+    }
+
+    // -------------------------------------------------------------------------
+    // T5 — Pattern Profile executor arm
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn pattern_query_executes_without_error() {
+        // T5 integration test: end-to-end Pattern query through MoldQLExecutor.
+        // Builds a small fixture graph and executes:
+        //   MATCH (n:Function)-[:Calls]->(m:Function) RETURN PATH(n,m)
+        // The MVP run_graph_plan() returns empty results with the plan as query string.
+        // The key assertion is that the executor does NOT return an error
+        // and the query string reflects the GraphPlan.
+        let repo = make_repo(|r| {
+            r.with_sym("caller", "src/caller.rs", 1);
+            r.with_sym("callee", "src/callee.rs", 10);
+            // caller calls callee
+            r.with_caller(
+                &r.sid("callee", "src/callee.rs", 10),
+                &r.sid("caller", "src/caller.rs", 1),
+            );
+        });
+        let view = build_view(repo.clone());
+
+        // Execute Pattern query via parser through execute.
+        let ast = crate::moldql::parser::parse(
+            "MATCH (n:Function)-[:Calls]->(m:Function) RETURN PATH(n,m)"
+        ).expect("parse ok");
+
+        let result = view
+            .executor()
+            .execute(ast)
+            .await
+            .expect("Pattern query should not error");
+
+        // For MVP, run_graph_plan returns empty items with plan as query string.
+        // The executor wiring is exercised end-to-end.
+        assert!(
+            result.query.contains("Path"),
+            "query string should contain 'Path' (GraphPlan::Path): got {}",
+            result.query
+        );
+    }
+
+    #[tokio::test]
+    async fn pattern_query_via_lower_intent() {
+        // T5 integration test: lowercase pattern through the full execute_query flow.
+        // This exercises the T4 lower_intent path + T5 executor Pattern arm together.
+        let repo = make_repo(|r| {
+            r.with_sym("a", "src/a.rs", 1);
+            r.with_sym("b", "src/b.rs", 5);
+            r.with_caller(
+                &r.sid("b", "src/b.rs", 5),
+                &r.sid("a", "src/a.rs", 1),
+            );
+        });
+        let view = build_view(repo.clone());
+
+        // Simulate the facade's execute_query path: lower_intent first.
+        // Node bindings must have explicit kinds.
+        let query = "match (n:Function)-[:Calls]->(m:Function) return path(n,m)";
+        let ast = crate::moldql::lower_intent(query)
+            .expect("lowercase match should be lowered")
+            .expect("lowering should succeed");
+
+        let result = view
+            .executor()
+            .execute(ast)
+            .await
+            .expect("Pattern query via lower_intent should not error");
+
+        // MVP: run_graph_plan returns empty items with plan description.
+        assert!(
+            result.query.contains("Path"),
+            "expected GraphPlan::Path in query string, got: {}",
+            result.query
+        );
     }
 }

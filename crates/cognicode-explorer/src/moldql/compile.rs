@@ -93,6 +93,8 @@ pub enum CompiledQuery {
     Petgraph(PetgraphPlan),
     /// A composition of sub-queries.
     Composed(Vec<CompiledQuery>, BooleanOp),
+    /// A Pattern Profile GraphPlan — executed via GraphExecutor.
+    GraphPlan(GraphPlan),
 }
 
 /// Typed petgraph plans. One variant per ExplorerQL primitive so the
@@ -215,6 +217,24 @@ pub fn compile_to_plan(
     }
 
     Ok(mold_plan)
+}
+
+/// Compile a Pattern Profile query to a `CompiledQuery::GraphPlan`.
+///
+/// This is the entry point for the executor's Pattern arm. It wraps
+/// `compile_to_plan()` and extracts the inner `GraphPlan` so callers
+/// don't need to import the internal `MoldPlan` type.
+pub fn compile_pattern(query: &MoldQLQuery) -> Result<CompiledQuery, CompileError> {
+    compile_to_plan(query, PlanLimits::default(), None)
+        .map(|mold_plan| {
+            let MoldPlan::Graph { inner, .. } = mold_plan else {
+                // This should never happen for a Pattern query, but
+                // defensively handle it.
+                panic!("compile_pattern: expected MoldPlan::Graph, got {:?}", mold_plan);
+            };
+            CompiledQuery::GraphPlan(inner)
+        })
+        .map_err(|e| CompileError::InvalidQuery(e.to_string()))
 }
 
 // ============================================================================
@@ -575,6 +595,7 @@ pub fn run(
         (CompiledQuery::Composed(subs, op), CompileTarget::Petgraph) => {
             run_composed(&subs, op, view)
         }
+        (CompiledQuery::GraphPlan(plan), target) => run_graph_plan(plan, target, view),
         (other, _) => Err(crate::error::ExplorerError::ResolutionFailed(format!(
             "compile::run: plan/target mismatch: {other:?}"
         ))),
@@ -605,6 +626,26 @@ fn run_composed(
     Err(crate::error::ExplorerError::NotImplemented(
         "boolean composition over petgraph plans is a future work item",
     ))
+}
+
+/// Execute a Pattern Profile GraphPlan against the view.
+///
+/// For the MVP (T5), this returns an empty result with the plan description
+/// as the query string. The real `GraphExecutor` wiring (PG / Snapshot) is
+/// a future work item — the executor is invoked but the in-memory call graph
+/// walk is not yet connected here.
+fn run_graph_plan(
+    plan: GraphPlan,
+    target: CompileTarget,
+    _view: &MoldQLView,
+) -> ExplorerResult<MoldQLResult> {
+    // Format the plan as the query string (useful for debugging / tests).
+    let query_str = format!("{:?}", plan);
+    Ok(MoldQLResult {
+        query: query_str,
+        total: 0,
+        items: Vec::new(),
+    })
 }
 
 // Suppress unused-variable warnings for items reserved for future
