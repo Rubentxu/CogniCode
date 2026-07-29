@@ -27,6 +27,9 @@ pub mod postgres_investigation_store;
 pub mod postgres_repository;
 
 #[cfg(feature = "postgres")]
+pub mod analytics_lineage_repo;
+
+#[cfg(feature = "postgres")]
 pub mod pg_graph_executor;
 
 #[cfg(feature = "postgres")]
@@ -37,6 +40,9 @@ pub use postgres_repository::{
 
 #[cfg(feature = "postgres")]
 pub use postgres_investigation_store::PostgresInvestigationStore;
+
+#[cfg(feature = "postgres")]
+pub use analytics_lineage_repo::PostgresLineageStore;
 
 // IaC repository stub — re-export the concrete PG-backed implementation
 // alongside the trait so callers can `use ...::persistence::PostgresIacRepository`

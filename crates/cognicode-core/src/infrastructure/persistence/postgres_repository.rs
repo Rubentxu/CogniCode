@@ -119,6 +119,12 @@ const SCHEMA_SQL_WORKSPACE_SCOPED_IDENTITY: &str =
 const SCHEMA_SQL_WORKSPACE_UNIQUE: &str =
     include_str!("m0019_unique_index_workspace_id.sql");
 
+/// Analytics lineage + descriptor limits DDL — e28-4 PR4.
+/// Creates analytics_run_lineage and descriptor_limits tables.
+#[cfg(feature = "postgres")]
+const SCHEMA_SQL_ANALYTICS_LINEAGE: &str =
+    include_str!("m0020_analytics_lineage.sql");
+
 /// PostgreSQL-backed implementation of the async [`Repository`]
 /// trait. Owns its [`PgPool`]; consumers that want shared
 /// ownership can wrap in `Arc<PostgresRepository>`.
@@ -276,6 +282,14 @@ impl PostgresRepository {
             .await
             .map_err(|e| RepositoryError::Store(format!(
                 "workspace-scoped identity migration: {e}"
+            )))?;
+
+        // 13. Analytics lineage + descriptor limits — e28-4 PR4.
+        sqlx::raw_sql(SCHEMA_SQL_ANALYTICS_LINEAGE)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!(
+                "analytics lineage migration: {e}"
             )))?;
 
         Ok(())
