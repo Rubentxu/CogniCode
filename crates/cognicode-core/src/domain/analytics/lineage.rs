@@ -116,6 +116,13 @@ pub struct RunLineage {
 pub struct Uuid(String);
 
 impl Uuid {
+    /// Construct a Uuid from a string.
+    ///
+    /// Used when reconstructing from database storage.
+    pub fn from_string(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+
     /// Generate a new random UUID v4.
     pub fn new_v4() -> Self {
         use std::time::{SystemTime, UNIX_EPOCH};

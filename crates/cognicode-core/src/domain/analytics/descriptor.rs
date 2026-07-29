@@ -30,6 +30,15 @@ impl AlgorithmId {
         Self(s.into())
     }
 
+    /// Construct an `AlgorithmId` from an owned string.
+    ///
+    /// Used when reconstructing from database storage.
+    pub fn from_string(s: impl Into<String>) -> Self {
+        let s = s.into();
+        assert!(!s.is_empty(), "AlgorithmId must not be empty");
+        Self(s)
+    }
+
     /// Returns the raw string value.
     pub fn as_str(&self) -> &str {
         &self.0
