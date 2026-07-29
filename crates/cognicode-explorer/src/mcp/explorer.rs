@@ -384,6 +384,7 @@ impl ExplorerMcpHandler {
         graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>>,
         quality_repo: Option<Arc<dyn crate::ports::QualityRepository>>,
         quality_write: Option<Arc<dyn crate::ports::QualityWritePort>>,
+        revision_tracker: Arc<std::sync::atomic::AtomicU64>,
         #[cfg(feature = "multimodal")] edge_emitter: Option<Arc<dyn crate::ports::EdgeEmitter>>,
         #[cfg(feature = "ownership")] pg_repo: Option<
             Arc<cognicode_core::infrastructure::persistence::PostgresRepository>,
@@ -470,7 +471,8 @@ impl ExplorerMcpHandler {
             .with_view(view.clone())
             .with_moldql(moldql.clone())
             .with_persistence(persistence)
-            .with_graph_service(graph_facade.clone());
+            .with_graph_service(graph_facade.clone())
+            .with_revision_tracker(revision_tracker);
         if let Some(q) = quality_repo {
             ctx_builder = ctx_builder.with_quality(q);
         }
