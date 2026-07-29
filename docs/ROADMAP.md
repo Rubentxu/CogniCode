@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-29 (E28.4 PR5 surfaces shipped — REST and MCP analytics endpoints, PR3+PR4+PR5 chain in progress.)
+Last updated: 2026-07-29 (E28.4 MCP analytics wiring fix shipped v0.73.7 — all 9 debt-verify blockers closed; E28.4 chain fully DONE; E28.5 unblocked.)
 
 ## Active
 
@@ -1091,3 +1091,38 @@ The 3 previously-listed items (`cognicode-axiom`, `cognicode-quality`, `cognicod
 - Each entry links to: branch (Active), tag + PR (Completed), or ADR/scenario (Future).
 - The `quality-stack-pg-canonical` entry includes a follow-up commit (`ad35e06`) that landed AFTER the original PR merged; both are part of the same change for the purposes of this roadmap.
 - When an item shifts from Future to Completed (or to Archived), the entry is moved and the source ADR/spec is cited.
+
+## Session Handover 2026-07-29 (E28.4 MCP analytics wiring fix shipped v0.73.7)
+
+**E28.4 chain fully DONE**. Closes the final debt-verify blocker (MCP analytics handlers were stubs after v0.73.6 wiring fix).
+
+**Fix** (PR #165, 3 commits on `fix/mcp-handler-analytics-wiring`):
+
+- `McpContext` gains `analytics_registry: Option<Arc<AlgorithmRegistry>>` and `analytics_lineage_store: Option<Arc<dyn AnalyticsLineageStore>>`.
+- `McpContextBuilder` supports the new fields.
+- 4 MCP analytics handlers replaced from stubs to real wiring:
+  - `analytics_catalog` → `registry.admitted()` (was hardcoded 4 algorithms).
+  - `analytics_run` → `registry.run(request, lineage, &boundary_guard)` with `CallerCapabilities::ExternalMCP` (Persist denied by default).
+  - `analytics_lineage_list` → `lineage.query_runs(...)`.
+  - `analytics_lineage_get` → `lineage.get_run(run_id)`.
+- Runtime composition root wires the new fields when `postgres` feature is enabled.
+
+**Verification**:
+| Scope | Result |
+|---|---|
+| 4 new MCP tests (catalog, run, persist-denied, lineage-get) | ✅ all pass |
+| `cargo build -p cognicode-runtime --features postgres` | ✅ passes |
+| Full workspace regression | ✅ no new failures introduced |
+
+**Trazabilidad**:
+- Branch: `fix/mcp-handler-analytics-wiring` (squashed a `ab857fdd` al mergear).
+- PR: <https://github.com/Rubentxu/CogniCode/pull/165>.
+- Tag: `v0.73.7` (PATCH — additive `McpContext` fields; no breaking changes).
+- Files: `crates/cognicode-explorer/src/mcp/{context,handler/analytics}.rs` + `crates/cognicode-runtime/src/lib.rs`.
+
+**E28.4 chain closure**:
+- PR1 v0.73.0 ✅ → PR2 v0.73.1 ✅ → PR3 v0.73.2 ✅ → PR4 v0.73.3 ✅ → PR5 v0.73.4 ✅ (stubs) → delta sync v0.73.5 ✅ → registry wiring v0.73.6 ✅ (8/9 blockers) → MCP wiring v0.73.7 ✅ (last blocker).
+- **E28.4 is fully DONE. All 9 debt-verify blockers closed.**
+
+**Próximo paso propuesto**: Launch **E28.5** (`structural-analytics-cohort-2`: dominators, articulation points, bridges, k-core) via `/sddk-new` — registry is fully wired and can admit cohort-2 algorithms.
+
