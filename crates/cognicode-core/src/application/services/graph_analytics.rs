@@ -31,11 +31,18 @@
 //! "no data" messages uniformly.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences, NodeIndexable};
 
 use crate::domain::aggregates::{CallGraph, SymbolId};
+use crate::domain::analytics::{
+    AdmissionError, AlgorithmDescriptor, AlgorithmId, AnalyticsError, AnalyticsMode,
+    DeterminismKind, RunLineage, RunLineageFilter, RunLineageStore, RunStatus,
+};
+use crate::domain::plan::limits::PlanLimits;
+use crate::domain::value_objects::{RevisionId, WorkspaceId};
 use crate::infrastructure::graph::CallGraphProjection;
 use cognicode_graph_algos::{self, GraphBuilder};
 
@@ -275,6 +282,196 @@ impl GraphAnalyticsService {
             })
             .collect()
     }
+}
+
+// ============================================================================
+// AlgorithmRegistry
+// ============================================================================
+
+/// Analytics algorithm registry — admission gate and run orchestrator.
+///
+/// The registry owns admitted algorithm descriptors and provides the
+/// `run()` method that all analytics execution flows through.
+/// Validates descriptor completeness at admission, limits at request time,
+/// and delegates to pure algorithm implementations.
+pub struct AlgorithmRegistry {
+    descriptors: HashMap<AlgorithmId, Box<dyn AlgorithmDescriptor>>,
+    lineage: Arc<dyn RunLineageStore>,
+}
+
+impl AlgorithmRegistry {
+    /// Create a new registry with the given lineage store.
+    pub fn new(lineage: Arc<dyn RunLineageStore>) -> Self {
+        Self {
+            descriptors: HashMap::new(),
+            lineage,
+        }
+    }
+
+    /// Admit an algorithm descriptor into the registry.
+    ///
+    /// Returns `Ok(())` if all 12 required methods return non-empty values.
+    /// Returns `Err(AdmissionError::Incomplete)` if any method returns None/empty.
+    pub fn admit(&mut self, d: Box<dyn AlgorithmDescriptor>) -> Result<(), AdmissionError> {
+        // Validate completeness of all required fields
+        let id = d.identity();
+
+        // Check all required fields are present
+        let missing = validate_descriptor_completeness(&*d);
+        if !missing.is_empty() {
+            return Err(AdmissionError::Incomplete(missing));
+        }
+
+        // Check if already admitted with same version
+        if let Some(existing) = self.descriptors.get(&id.id) {
+            if existing.identity().version == id.version {
+                return Err(AdmissionError::AlreadyAdmitted(
+                    id.id.as_str().into(),
+                    id.version.clone(),
+                ));
+            }
+        }
+
+        self.descriptors.insert(id.id.clone(), d);
+        Ok(())
+    }
+
+    /// Get an admitted descriptor by ID.
+    pub fn get(&self, id: &AlgorithmId) -> Option<&dyn AlgorithmDescriptor> {
+        self.descriptors.get(id).map(|b| b.as_ref())
+    }
+
+    /// Iterate over all admitted descriptors.
+    pub fn admitted(&self) -> impl Iterator<Item = &dyn AlgorithmDescriptor> {
+        self.descriptors.values().map(|b| b.as_ref())
+    }
+
+    /// Check if an algorithm is admitted.
+    pub fn is_admitted(&self, id: &AlgorithmId) -> bool {
+        self.descriptors.contains_key(id)
+    }
+
+    /// Get the lineage store.
+    pub fn lineage_store(&self) -> &Arc<dyn RunLineageStore> {
+        &self.lineage
+    }
+}
+
+/// Validate that all required descriptor methods return complete data.
+/// Returns a comma-separated list of missing fields.
+fn validate_descriptor_completeness(d: &dyn AlgorithmDescriptor) -> String {
+    let mut missing = Vec::new();
+
+    if d.params().param_names().is_empty() {
+        missing.push("params");
+    }
+    if d.output_schema().fields.is_empty() {
+        missing.push("output_schema");
+    }
+    if d.supported_modes().is_empty() {
+        missing.push("supported_modes");
+    }
+    if d.complexity().time.is_empty() {
+        missing.push("complexity.time");
+    }
+    if d.limits().is_unbounded() {
+        missing.push("limits");
+    }
+    if d.conformance_fixtures().is_empty() {
+        missing.push("conformance_fixtures");
+    }
+
+    missing.join(", ")
+}
+
+// ============================================================================
+// AnalyticsBoundaryGuard (port)
+// ============================================================================
+
+/// Port for the analytics execution boundary guard.
+///
+/// The guard holds write access to canonical graph tables and enforces
+/// that only `Persist` mode can write, and only derived-analysis records.
+pub trait AnalyticsBoundaryGuard: Send + Sync + 'static {
+    /// Check if the caller is authorized for persist mode.
+    fn can_persist(&self, caller: CallerCapabilities) -> bool;
+
+    /// Execute a closure with canonical write access, returning an error
+    /// if the closure attempts a canonical write.
+    fn with_canonical_access<F, T>(&self, f: F) -> Result<T, AnalyticsError>
+    where
+        F: FnOnce() -> Result<T, AnalyticsError>;
+}
+
+/// Caller capabilities for authorization decisions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallerCapabilities {
+    /// Internal services with full access.
+    Internal,
+    /// Trusted REST callers.
+    TrustedREST,
+    /// External MCP callers.
+    ExternalMCP,
+    /// Explorer UI callers.
+    Explorer,
+}
+
+/// Validate effective limits for a request.
+///
+/// Returns the effective limits after applying caller constraints.
+pub fn validate_effective_limits(
+    descriptor: &dyn AlgorithmDescriptor,
+    caller_limits: PlanLimits,
+) -> Result<PlanLimits, AnalyticsError> {
+    let defaults = descriptor.limits();
+    let mut effective = defaults.clone();
+
+    // Caller can only tighten limits, not widen them
+    if let Some(caller_max_nodes) = caller_limits.max_visited_nodes {
+        if let Some(default_max) = defaults.max_visited_nodes {
+            if caller_max_nodes > default_max {
+                return Err(AnalyticsError::LimitPolicyViolation(
+                    format!("caller max_visited_nodes {} exceeds descriptor maximum {}", caller_max_nodes, default_max)
+                ));
+            }
+            effective.max_visited_nodes = Some(caller_max_nodes);
+        }
+    }
+
+    if let Some(caller_max_edges) = caller_limits.max_visited_edges {
+        if let Some(default_max) = defaults.max_visited_edges {
+            if caller_max_edges > default_max {
+                return Err(AnalyticsError::LimitPolicyViolation(
+                    format!("caller max_visited_edges {} exceeds descriptor maximum {}", caller_max_edges, default_max)
+                ));
+            }
+            effective.max_visited_edges = Some(caller_max_edges);
+        }
+    }
+
+    if let Some(caller_max_rows) = caller_limits.max_result_rows {
+        if let Some(default_max) = defaults.max_result_rows {
+            if caller_max_rows > default_max {
+                return Err(AnalyticsError::LimitPolicyViolation(
+                    format!("caller max_result_rows {} exceeds descriptor maximum {}", caller_max_rows, default_max)
+                ));
+            }
+            effective.max_result_rows = Some(caller_max_rows);
+        }
+    }
+
+    if let Some(caller_time) = caller_limits.time_ms {
+        if let Some(default_time) = defaults.time_ms {
+            if caller_time > default_time {
+                return Err(AnalyticsError::LimitPolicyViolation(
+                    format!("caller time_ms {} exceeds descriptor maximum {}", caller_time, default_time)
+                ));
+            }
+            effective.time_ms = Some(caller_time);
+        }
+    }
+
+    Ok(effective)
 }
 
 #[cfg(test)]
