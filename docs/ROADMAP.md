@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-29 (Runtime wiring followup shipped v0.72.7 — revision tracker wired to API and MCP for pinned MoldQL execution.)
+Last updated: 2026-07-29 (E28.4 PR5 surfaces shipped — REST and MCP analytics endpoints, PR3+PR4+PR5 chain in progress.)
 
 ## Active
 
@@ -24,7 +24,7 @@ before implementation begins.
 | `e28-1-moldplan-graphplan-contracts` | Introduce versioned `MoldPlan`/`GraphPlan`, typed results, execution policy, limits, and structured unsupported-operation errors | E28.0 | Plans contain no backend or presentation types; every run declares limits; unsupported operations fail before execution | PROPOSED |
 | `e28-2-differential-graph-executors` | Execute existing `PATH`, `NEIGHBORS`, `SUBGRAPH`, `CLUSTER`, `EXPLAIN`, and boolean composition in PostgreSQL and snapshot executors | E28.1 | Golden fixtures prove equivalent typed multisets, ordering, paths, errors, provenance, and truncation; no supported operation returns synthetic empty success | **DONE** (PR1 Port v0.68.0 + PR2 PG Executor v0.69.0 + PR3 Snapshot Executor v0.70.0 + PR6 pool-fix v0.70.1 + PR5 edge-filter v0.71.0 + PR4 Conformance v0.71.1 merged) |
 | `e28-3-moldql-pattern-profile-v1` | Add read-only typed patterns, direction, bounded quantifiers, predicates, aggregation, ordering, limits, and bounded shortest paths | E28.2 | The supported-feature matrix is published; parser, lowering, differential, REST/MCP, and Explorer interaction tests pass; no Cypher/GQL compatibility claim is made | **DONE** (PR1 v0.72.0 + PR2 v0.72.1 + PR3 v0.72.2 + PR4 v0.72.3 merged) |
-| `e28-4-analytics-registry-cohort-1` | Add descriptor admission, `stream`/`stats`/`annotate`/`persist` modes, run lineage, and stabilize PageRank, SCC, WCC, and bounded shortest paths | E28.2 | Every admitted algorithm is versioned, resource-governed, reproducible, and non-mutating; cohort-1 conformance and composition tests pass | PROPOSED |
+| `e28-4-analytics-registry-cohort-1` | Add descriptor admission, `stream`/`stats`/`annotate`/`persist` modes, run lineage, and stabilize PageRank, SCC, WCC, and bounded shortest paths | E28.2 | Every admitted algorithm is versioned, resource-governed, reproducible, and non-mutating; cohort-1 conformance and composition tests pass | **IN PROGRESS** (PR3+PR4+PR5 chain) |
 | `e28-5-structural-analytics-cohort-2` | Add dominators, articulation points, bridges, and k-core for impact, seam, dependency-pressure, and risk views | E28.4 | Each algorithm has a product question, descriptor, golden fixtures, and either an Explorer surface or an explicit internal/composable classification | PROPOSED |
 | `e28-6-advanced-analytics-evidence-gate` | Evaluate betweenness, k-shortest paths, multi-source reachability, personalized PageRank, Leiden, conductance/modularity, node similarity, and an optional Neo4j CI oracle | E28.5 | Only measured, product-relevant algorithms are admitted; optional oracle checks do not affect production availability; any production sidecar proposal is deferred to a separate ADR | PROPOSED |
 
@@ -79,6 +79,25 @@ PR4 closes the E28.1 chain (Phase 4: PG `#[sqlx::test]` integration + bridge-map
 - Feature matrix endpoint (`GET /api/moldql/pattern/capabilities`)
 - UnsupportedConstruct coverage for unbounded path, mutation, and optional match
 - Full workspace verification: 0 failed across 4 crates (1,651 tests)
+
+#### E28.4 stacked-to-main chain
+
+| Sub-PR | Branch | Status | Tag | PR |
+|---|---|---|---|---|
+| PR1 Foundation | `feat/e28-4-pr1-foundation` | ✅ Merged | v0.73.0 | [#158](https://github.com/Rubentxu/CogniCode/pull/158) |
+| PR2 PageRank+SCC+WCC | `feat/e28-4-pr2-pagerank-scc-wcc` | ✅ Merged | v0.73.1 | [#159](https://github.com/Rubentxu/CogniCode/pull/159) |
+| PR3 BSP Descriptor | `feat/e28-4-pr3-bsp-descriptor` | ✅ Merged | v0.73.2 | [#160](https://github.com/Rubentxu/CogniCode/pull/160) |
+| PR4 Lineage Persistence | `feat/e28-4-pr4-lineage-persistence` | ✅ Merged | v0.73.3 | [#161](https://github.com/Rubentxu/CogniCode/pull/161) |
+| **PR5 REST+MCP Surfaces** | `feat/e28-4-pr5-surfaces` | 🔲 Open | — | [#162](https://github.com/Rubentxu/CogniCode/pull/162) |
+
+**E28.4 PR5** adds analytics REST and MCP surfaces:
+- `POST /api/analytics/run` — execute BSP via GraphAnalyticsService
+- `GET /api/analytics/catalog` — list admitted algorithm descriptors
+- `GET /api/analytics/lineage` — list lineage records
+- `GET /api/analytics/lineage/:run_id` — get specific lineage record
+- MCP tools: `analytics_run`, `analytics_catalog`, `analytics_lineage_list`, `analytics_lineage_get`
+
+Session Handover: PR5 is open on `feat/e28-4-pr5-surfaces`. The MCP `analytics_run` handler works correctly via `McpContext::graph` (CallGraph access). REST handlers are stubs pending full `CallGraph` wiring from `GraphService` in the API layer. Next steps: (1) wire AlgorithmRegistry from composition root, (2) connect lineage store to PostgreSQL, (3) implement Explorer React AnalyticsPanel.
 
 #### E28 execution order
 
