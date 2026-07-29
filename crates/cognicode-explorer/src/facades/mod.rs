@@ -275,6 +275,17 @@ pub trait MoldQLService: Send + Sync {
         query: &str,
         target: crate::moldql::compile::CompileTarget,
     ) -> ExplorerResult<MoldQLResult>;
+
+    /// Execute a MoldQL query with explicit workspace + revision pins.
+    ///
+    /// This bypasses the instance-level pin, allowing per-call specification
+    /// of the target revision for Pattern Profile queries.
+    async fn execute_query_pinned(
+        &self,
+        query: &str,
+        workspace_id: String,
+        revision_id: u64,
+    ) -> ExplorerResult<MoldQLResult>;
 }
 
 // ============================================================================

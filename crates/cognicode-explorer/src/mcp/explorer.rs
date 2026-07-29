@@ -452,6 +452,9 @@ impl ExplorerMcpHandler {
             lens_executor,
             #[cfg(feature = "multimodal")]
             None, // graph_repo
+            None, // graph_executor
+            None, // workspace_id
+            None, // revision_id
         ));
 
         // Graph facade.

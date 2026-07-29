@@ -120,6 +120,25 @@ impl Runtime {
             ) as Arc<dyn GraphQueryPort>
         });
 
+        // GraphExecutor for Pattern Profile queries. Constructed from pg_repo when available.
+        #[cfg(feature = "postgres")]
+        let graph_executor: Option<
+            Arc<dyn cognicode_core::domain::plan::executor::GraphExecutor>,
+        > = self.pg_repo.as_ref().map(|repo| {
+            let pool = repo.pool().clone();
+            let pg_repo =
+                cognicode_core::infrastructure::persistence::PostgresRepository::from_pool(pool);
+            Arc::new(
+                cognicode_core::infrastructure::persistence::pg_graph_executor::PgGraphExecutor::new(
+                    pg_repo,
+                ),
+            ) as Arc<dyn cognicode_core::domain::plan::executor::GraphExecutor>
+        });
+        #[cfg(not(feature = "postgres"))]
+        let graph_executor: Option<
+            Arc<dyn cognicode_core::domain::plan::executor::GraphExecutor>,
+        > = None;
+
         // Workspace resolver — maps workspace_id → root_path.
         // Populated when open_workspace is called.
         let ws_resolver: Arc<dyn cognicode_core::application::ingest::WorkspaceResolver> =
@@ -238,6 +257,9 @@ impl Runtime {
                 lens_executor,
                 #[cfg(feature = "multimodal")]
                 None, // graph_repo
+                graph_executor,
+                Some("default".to_string()), // workspace_id — runtime doesn't track active workspace yet
+                Some(1),                   // revision_id — default revision
             ));
 
         // Graph facade.
