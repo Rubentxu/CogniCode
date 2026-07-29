@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-29 (E28.3 PR4 Pattern Profile matrix + verify shipped v0.72.3; E28.3 chain fully DONE; E28.4 unblocked; E28.2 + E28.3 fully DONE.)
+Last updated: 2026-07-29 (Pattern Profile executor wiring fix shipped v0.72.5 — MVP stub replaced with real GraphExecutor; E28.4 unblocked.)
 
 ## Active
 
@@ -614,6 +614,49 @@ Persistence / domain:
 ## Session Handover 2026-07-29 (E28.3 PR4 shipped v0.72.3 — E28.3 chain fully DONE)
 
 **E28.3 PR4 Pattern Profile matrix + verify closed and shipped v0.72.3 (PR #153 merged to main). E28.3 chain fully DONE. E28.4 (`analytics-registry-cohort-1`) remains unblocked; E28.3 and E28.4 may now proceed in parallel.**
+
+## Session Handover 2026-07-29 (Pattern Profile executor wiring fix shipped v0.72.5)
+
+**Critical fix for E28.3 chain**: `compile::run_graph_plan` was an MVP stub that always returned `{total: 0, items: []}`. The capability matrix advertised 9 "supported" features but the executor could not fulfill any. **User directed immediate fix** (option 1) over amending the matrix or deferring E28.4.
+
+**Fix** (PR #155, 8 commits, single PR):
+
+- Added 2 additive `Option` fields to `MoldQLView`:
+  - `graph_executor: Option<Arc<dyn GraphExecutor>>` — the real E28.2 trait executor.
+  - `pin: Option<(WorkspaceId, RevisionId)>` — required by the executor's `execute(plan, pin)` signature.
+- Replaced MVP stub with real wiring: `exec.execute(&plan, pin) → ResultSet → MoldQLResult::from_result_set(rs, query)`.
+- New `MoldQLResult::from_result_set(rs, query)` constructor (no `From` impl — shape differences hide a policy choice).
+- New `InMemoryGraphExecutor` test helper supporting `GraphPlan::Path` and `Neighbors` only; other variants return `ExecutorError::UnsupportedConstruct` (test-only scope).
+- 9 new tests (5 InMemoryGraphExecutor unit + 2 updated T5 integration + 2 new error-path).
+- Updated 2 existing T5 tests to assert `items.len() > 0` (was `query.contains("Path")` — proved nothing about real execution).
+
+**Behavior change**: views without `graph_executor` set now return `Err(ExplorerError::FeatureDisabled)` for Pattern queries (was `Ok({total: 0, items: []})`). Mandated by spec scenario "Pattern lowering failures remain typed". Surfaced as breaking for callers depending on empty results; not breaking for callers checking typed errors.
+
+**Verification**:
+| Scope | Result |
+|---|---|
+| `cognicode-explorer --lib --features postgres` (925 tests) | ✅ all pass |
+| `cognicode-explorer --tests --features postgres` | ✅ all pass |
+| Full workspace | ✅ 920+ pass |
+
+**Pre-existing failures NOT introduced by this PR** (confirmed on `main` HEAD `efca6589`):
+- `cognicode-explorer/tests/e28_1_pg_conformance.rs` 7 PG tests fail with `cannot insert into view "symbols"` (pre-existing view-updatability bug; out of PR4 Conformance scope).
+- `cognicode-core::infrastructure::graph::snapshot_provider::tests::pinned_read_survives_concurrent_ingest` (pre-existing flaky concurrent test).
+
+**Trazabilidad**:
+- Branch: `fix/e28-3-wire-executor` (squashed a `d8f84fca` al mergear).
+- PR: <https://github.com/Rubentxu/CogniCode/pull/155>.
+- Tag: `v0.72.5` (PATCH — no API surface changes, behavior fix only).
+- Files: `crates/cognicode-explorer/src/moldql/{compile,executor}.rs` + 2 test files.
+- Artifacts: `sddk/fix-e28-3-wire-executor/` (proposal, design, tasks, debt-report PASS_WITH_WARNINGS, archive-report).
+- Debt-verify verdict: PASS_WITH_WARNINGS (0 high, 0 medium, 8 low follow-ups — none blocking).
+
+**Out of scope (deferred to follow-up PR)**:
+1. **Production runtime wiring** — `cognicode-runtime` must inject real `PgGraphExecutor` or `SnapshotGraphExecutor` into `MoldQLView` at composition root. Until this lands, Pattern queries through production surfaces return `FeatureDisabled`.
+2. **Remove `compile::run_petgraph_plan` MVP stub** (also returns empty; separate fix).
+3. **Consolidate `pin` source** between `MoldQLView.pin` and `MoldPlan::Graph.pin` (debt-verify follow-up).
+
+**Próximo paso propuesto**: Launch **E28.4** (`analytics-registry-cohort-1`) via `/sddk-new` — the executor now correctly wires through and E28.4's analytics registry can build on top. Alternatively, address the 3 deferred follow-ups first.
 
 Ciclo SDDK A-lite ejecutado en auto mode. PR4 cierra la cadena E28.3 con:
 
