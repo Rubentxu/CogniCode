@@ -13,7 +13,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::CallGraph;
+use cognicode_core::domain::analytics::RunLineageStore;
 use cognicode_core::domain::traits::GraphQueryPort;
+use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
 
 use crate::domain::snapshot::SnapshotService;
 use crate::facades::{
@@ -78,6 +80,12 @@ pub struct McpContext {
     /// Optional revision tracker for Pattern Profile query pinning.
     /// When `Some`, used as the fallback `revision_id` when MCP callers don't supply one.
     pub revision_tracker: Option<Arc<AtomicU64>>,
+    /// Analytics registry (algorithm descriptors + run dispatcher).
+    /// `None` when no PG feature is enabled at build time.
+    pub analytics_registry: Option<Arc<AlgorithmRegistry>>,
+    /// Analytics lineage store (PG-backed run records).
+    /// `None` when no PG feature is enabled or no repository was wired at startup.
+    pub analytics_lineage_store: Option<Arc<dyn RunLineageStore>>,
 }
 
 impl McpContext {
@@ -100,6 +108,8 @@ impl McpContext {
             edge_emitter: None,
             snapshot: None,
             revision_tracker: None,
+            analytics_registry: None,
+            analytics_lineage_store: None,
         }
     }
 
@@ -175,6 +185,18 @@ impl McpContext {
         self
     }
 
+    /// Wire an `AlgorithmRegistry` into the context.
+    pub fn with_analytics_registry(mut self, registry: Arc<AlgorithmRegistry>) -> Self {
+        self.analytics_registry = Some(registry);
+        self
+    }
+
+    /// Wire an analytics lineage store into the context.
+    pub fn with_analytics_lineage_store(mut self, store: Arc<dyn RunLineageStore>) -> Self {
+        self.analytics_lineage_store = Some(store);
+        self
+    }
+
     /// Returns the current workspace_id and revision_id for query pinning.
     /// Falls back to `("default", 1)` if workspace service has no current workspace
     /// or if no revision tracker is wired.
@@ -210,6 +232,8 @@ pub struct McpContextBuilder {
     edge_emitter: Option<Arc<dyn EdgeEmitter>>,
     snapshot: Option<Arc<SnapshotService>>,
     revision_tracker: Option<Arc<AtomicU64>>,
+    analytics_registry: Option<Arc<AlgorithmRegistry>>,
+    analytics_lineage_store: Option<Arc<dyn RunLineageStore>>,
     #[cfg(feature = "multimodal")]
     graph_repo: Option<Option<Arc<dyn crate::ports::graph_repository::GraphRepository>>>,
 }
@@ -231,6 +255,8 @@ impl McpContextBuilder {
             edge_emitter: None,
             snapshot: None,
             revision_tracker: None,
+            analytics_registry: None,
+            analytics_lineage_store: None,
             #[cfg(feature = "multimodal")]
             graph_repo: Some(None),
         }
@@ -320,6 +346,18 @@ impl McpContextBuilder {
         self
     }
 
+    /// Wire an `AlgorithmRegistry` into the context.
+    pub fn with_analytics_registry(mut self, registry: Arc<AlgorithmRegistry>) -> Self {
+        self.analytics_registry = Some(registry);
+        self
+    }
+
+    /// Wire an analytics lineage store into the context.
+    pub fn with_analytics_lineage_store(mut self, store: Arc<dyn RunLineageStore>) -> Self {
+        self.analytics_lineage_store = Some(store);
+        self
+    }
+
     /// Wire an optional `GraphQueryPort` into the context (Phase 4).
     /// Passes through `None` when `graph_query` is `None`.
     pub fn with_optional_graph_query(
@@ -358,6 +396,8 @@ impl McpContextBuilder {
             edge_emitter: self.edge_emitter,
             snapshot: self.snapshot,
             revision_tracker: self.revision_tracker,
+            analytics_registry: self.analytics_registry,
+            analytics_lineage_store: self.analytics_lineage_store,
         }
     }
 }
