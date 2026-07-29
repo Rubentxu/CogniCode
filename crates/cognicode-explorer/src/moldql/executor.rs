@@ -2052,6 +2052,60 @@ mod tests {
     // T5 — Pattern Profile executor arm
     // -------------------------------------------------------------------------
 
+    /// Build a view with `graph_executor: None` but with a valid pin.
+    /// Used for testing the FeatureDisabled error path.
+    fn build_view_without_executor(
+        repo: Arc<MockRepo>,
+    ) -> MoldQLView {
+        use crate::adapters::FsSourceReader;
+        use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
+        let reader: Arc<dyn crate::ports::SourceReader> = Arc::new(FsSourceReader::new("/tmp"));
+        let apply: Arc<dyn Fn(&str, &str) -> ExplorerResult<LensResult> + Send + Sync> =
+            Arc::new(|_mvp, _lens_id| {
+                Err(ExplorerError::ResolutionFailed("no lens in test".into()))
+            });
+        MoldQLView {
+            repo: repo.clone() as Arc<dyn SymbolRepository>,
+            quality: None,
+            reader,
+            apply_lens: apply,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
+            graph_query: Some(repo.clone() as Arc<dyn GraphQueryPort>),
+            graph_executor: None,
+            pin: Some((
+                WorkspaceId::try_new("test-workspace").unwrap(),
+                RevisionId::new(1),
+            )),
+        }
+    }
+
+    /// Build a view with `graph_executor` wired but `pin: None`.
+    /// Used for testing the ResolutionFailed error path.
+    fn build_view_without_pin(
+        repo: Arc<MockRepo>,
+    ) -> MoldQLView {
+        use crate::adapters::FsSourceReader;
+        let reader: Arc<dyn crate::ports::SourceReader> = Arc::new(FsSourceReader::new("/tmp"));
+        let apply: Arc<dyn Fn(&str, &str) -> ExplorerResult<LensResult> + Send + Sync> =
+            Arc::new(|_mvp, _lens_id| {
+                Err(ExplorerError::ResolutionFailed("no lens in test".into()))
+            });
+        MoldQLView {
+            repo: repo.clone() as Arc<dyn SymbolRepository>,
+            quality: None,
+            reader,
+            apply_lens: apply,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
+            graph_query: Some(repo.clone() as Arc<dyn GraphQueryPort>),
+            graph_executor: Some(Arc::new(InMemoryGraphExecutor { repo: repo.clone() })),
+            pin: None,
+        }
+    }
+
+    // -------------------------------------------------------------------------
+
     #[tokio::test]
     async fn pattern_query_executes_without_error() {
         // T5 integration test: end-to-end Pattern query through MoldQLExecutor.
@@ -2117,6 +2171,50 @@ mod tests {
             "expected ≥1 path item, got {} items: {:?}",
             result.items.len(),
             result.items
+        );
+    }
+
+    #[tokio::test]
+    async fn pattern_query_unwired_view_returns_feature_disabled_error() {
+        // RED test: view without graph_executor returns FeatureDisabled for Pattern query.
+        let repo = make_repo(|r| {
+            r.with_sym("n", "src/lib.rs", 1);
+            r.with_sym("m", "src/lib.rs", 10);
+            r.with_callee(&r.sid("n", "src/lib.rs", 1), &r.sid("m", "src/lib.rs", 10));
+        });
+        let view = build_view_without_executor(repo.clone());
+
+        let ast = crate::moldql::parser::parse(
+            "MATCH (n:Function)-[:Calls]->(m:Function) RETURN PATH(n,m)"
+        ).expect("parse ok");
+
+        let result = view.executor().execute(ast).await;
+        assert!(
+            matches!(result, Err(ExplorerError::FeatureDisabled(_))),
+            "expected FeatureDisabled error, got {:?}",
+            result
+        );
+    }
+
+    #[tokio::test]
+    async fn pattern_query_without_pin_returns_resolution_failed_error() {
+        // RED test: view with executor but without pin returns ResolutionFailed for Pattern query.
+        let repo = make_repo(|r| {
+            r.with_sym("n", "src/lib.rs", 1);
+            r.with_sym("m", "src/lib.rs", 10);
+            r.with_callee(&r.sid("n", "src/lib.rs", 1), &r.sid("m", "src/lib.rs", 10));
+        });
+        let view = build_view_without_pin(repo.clone());
+
+        let ast = crate::moldql::parser::parse(
+            "MATCH (n:Function)-[:Calls]->(m:Function) RETURN PATH(n,m)"
+        ).expect("parse ok");
+
+        let result = view.executor().execute(ast).await;
+        assert!(
+            matches!(result, Err(ExplorerError::ResolutionFailed(_))),
+            "expected ResolutionFailed error, got {:?}",
+            result
         );
     }
 }
