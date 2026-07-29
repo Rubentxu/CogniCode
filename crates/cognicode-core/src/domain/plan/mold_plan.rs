@@ -381,6 +381,7 @@ mod tests {
             src: "A".into(),
             kind: NeighborKind::Both,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
@@ -406,6 +407,7 @@ mod tests {
             src: "A".into(),
             kind: NeighborKind::Both,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
@@ -455,6 +457,7 @@ mod tests {
             src: "A".into(),
             kind: NeighborKind::Both,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(

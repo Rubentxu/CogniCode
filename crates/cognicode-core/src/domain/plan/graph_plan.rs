@@ -16,6 +16,7 @@ use std::fmt;
 use super::limits::{PlanLimits, PlanLimit};
 use super::value::TypedValue;
 use super::version::{PlanHash, PlanMetadata, PlanVersion};
+use crate::domain::value_objects::DependencyType;
 
 // Sealed trait — implemented by all plan types to certify backend-neutrality.
 use super::neutrality::Sealed;
@@ -55,6 +56,11 @@ pub enum GraphPlan {
         src: String,
         dst: String,
         quantifier: PathQuantifier,
+        /// Optional filter restricting traversal to edges of the listed
+        /// `DependencyType`s (e.g. `[Calls]` to exclude `References`,
+        /// `Imports`, etc.). When `None`, every edge type is traversed
+        /// (preserves the pre-fix behavior; see `e28-2-pr5-edge-filter`).
+        edge_kind_filter: Option<Vec<DependencyType>>,
         predicates: Vec<super::PathPredicate>,
         projection: PathProjection,
         limits: PlanLimits,
@@ -65,6 +71,9 @@ pub enum GraphPlan {
         src: String,
         kind: NeighborKind,
         depth: u32,
+        /// Optional filter restricting which edges contribute neighbors.
+        /// `None` means "any edge kind" (pre-fix behavior).
+        edge_kind_filter: Option<Vec<DependencyType>>,
         predicates: Vec<super::PathPredicate>,
         limits: PlanLimits,
         metadata: PlanMetadata,
@@ -281,6 +290,7 @@ mod tests {
             src: "A".into(),
             dst: "B".into(),
             quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
+            edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
             limits: PlanLimits::builder().max_hops(3).build(),
@@ -301,6 +311,7 @@ mod tests {
             src: "node1".into(),
             kind: NeighborKind::Outgoing,
             depth: 2,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::builder().max_depth(2).build(),
             metadata: PlanMetadata::new(
@@ -355,6 +366,7 @@ mod tests {
             src: "A".into(),
             kind: NeighborKind::Both,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
@@ -385,6 +397,7 @@ mod tests {
             src: "A".into(),
             kind: NeighborKind::Both,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: metadata.clone(),
@@ -400,6 +413,7 @@ mod tests {
             src: "X".into(),
             dst: "Y".into(),
             quantifier: PathQuantifier { max_hops: Some(5), min_hops: 0 },
+            edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
             limits: PlanLimits::default(),
@@ -460,6 +474,7 @@ mod tests {
             src: "A".into(),
             kind: NeighborKind::Both,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
@@ -471,6 +486,7 @@ mod tests {
             src: "B".into(),
             kind: NeighborKind::Outgoing,
             depth: 2,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
@@ -505,6 +521,7 @@ mod tests {
             src: "A".into(),
             kind: NeighborKind::Both,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
