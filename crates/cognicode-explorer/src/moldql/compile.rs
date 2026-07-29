@@ -636,16 +636,25 @@ fn run_composed(
 /// walk is not yet connected here.
 fn run_graph_plan(
     plan: GraphPlan,
-    target: CompileTarget,
-    _view: &MoldQLView,
+    _target: CompileTarget,
+    view: &MoldQLView,
 ) -> ExplorerResult<MoldQLResult> {
-    // Format the plan as the query string (useful for debugging / tests).
+    use cognicode_core::domain::plan::executor::GraphExecutor;
     let query_str = format!("{:?}", plan);
-    Ok(MoldQLResult {
-        query: query_str,
-        total: 0,
-        items: Vec::new(),
-    })
+    let exec = view.graph_executor.as_ref().ok_or_else(|| {
+        crate::error::ExplorerError::FeatureDisabled(
+            "Pattern Profile executor not wired in this view".into(),
+        )
+    })?;
+    let pin = view.pin.as_ref().ok_or_else(|| {
+        crate::error::ExplorerError::ResolutionFailed(
+            "Pattern Profile requires a workspace + revision pin on the view".into(),
+        )
+    })?;
+    let result_set = exec.execute(&plan, pin.clone()).map_err(|e| {
+        crate::error::ExplorerError::ResolutionFailed(format!("GraphExecutor failed: {e}"))
+    })?;
+    Ok(MoldQLResult::from_result_set(result_set, query_str))
 }
 
 // Suppress unused-variable warnings for items reserved for future

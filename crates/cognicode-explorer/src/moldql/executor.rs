@@ -55,6 +55,51 @@ pub struct MoldQLItem {
     pub detail: Option<String>,
 }
 
+impl MoldQLResult {
+    /// Project a backend [`ResultSet`] into the view-shaped [`MoldQLResult`].
+    ///
+    /// Mapping policy: paths take priority (1 item per path); otherwise nodes
+    /// (1 item per node). `total` = number of items produced.
+    pub fn from_result_set(
+        rs: cognicode_core::domain::plan::ResultSet,
+        query: String,
+    ) -> Self {
+        use cognicode_core::domain::plan::{NodeResult, Path};
+
+        fn path_to_item(p: &Path) -> MoldQLItem {
+            let label = p
+                .hops
+                .iter()
+                .map(|h| h.node_id.clone())
+                .collect::<Vec<_>>()
+                .join("→");
+            MoldQLItem {
+                object_id: p.start().to_string(),
+                object_type: crate::dto::InspectableObjectType::Symbol,
+                label,
+                detail: None,
+            }
+        }
+
+        fn node_to_item(n: &NodeResult) -> MoldQLItem {
+            MoldQLItem {
+                object_id: n.id.clone(),
+                object_type: crate::dto::InspectableObjectType::Symbol,
+                label: n.id.clone(),
+                detail: None,
+            }
+        }
+
+        let items: Vec<MoldQLItem> = if !rs.paths.is_empty() {
+            rs.paths.iter().map(path_to_item).collect()
+        } else {
+            rs.nodes.iter().map(node_to_item).collect()
+        };
+        let total = items.len();
+        Self { query, items, total }
+    }
+}
+
 /// Executes a parsed MoldQL query against a [`MoldQLView`].
 ///
 /// Construction goes through [`MoldQLView::executor`] so the executor
