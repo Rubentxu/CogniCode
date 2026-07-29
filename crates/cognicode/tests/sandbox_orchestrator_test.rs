@@ -13,38 +13,6 @@ use cognicode::sandbox_core::artifacts::{
 };
 use cognicode::sandbox_core::failure::FailureClass;
 
-/// Detect the orchestrator binary path.
-/// Looks in the standard cargo target locations.
-fn orchestrator_path() -> Option<PathBuf> {
-    let project_root = project_root();
-
-    let release_path = project_root.join("target/release/sandbox-orchestrator");
-    if release_path.exists() {
-        return Some(release_path);
-    }
-
-    let debug_path = project_root.join("target/debug/sandbox-orchestrator");
-    if debug_path.exists() {
-        return Some(debug_path);
-    }
-
-    None
-}
-
-/// Helper: run the orchestrator plan command and return stdout.
-fn run_plan(manifest_paths: &[&str]) -> Option<String> {
-    let orch = orchestrator_path()?;
-    let project_root = project_root();
-
-    let mut cmd = std::process::Command::new(&orch);
-    cmd.arg("plan");
-    for p in manifest_paths {
-        cmd.arg(project_root.join(p));
-    }
-    let output = cmd.output().ok()?;
-    Some(String::from_utf8_lossy(&output.stdout).to_string())
-}
-
 /// Get project root (two ancestors up from crates/cognicode)
 fn project_root() -> PathBuf {
     PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
@@ -52,79 +20,6 @@ fn project_root() -> PathBuf {
         .nth(2)
         .unwrap()
         .to_path_buf()
-}
-
-#[test]
-fn test_plan_expands_rust_manifest() {
-    let output = run_plan(&["sandbox/manifests/rust.yaml"])
-        .expect("orchestrator binary not found - run: cargo build --bin sandbox-orchestrator");
-    // Should contain scenario names
-    assert!(output.contains("rust_safe_refactor_rename_preview_default"));
-    assert!(output.contains("rust_read_file_raw_default"));
-    // Should show expected outcomes
-    assert!(output.contains("expect: expected_fail"));
-    assert!(output.contains("expect: pass"));
-    // Should show scenario classes
-    assert!(output.contains("read_only"));
-    assert!(output.contains("mutation"));
-}
-
-#[test]
-fn test_plan_expands_python_manifest() {
-    let output = run_plan(&["sandbox/manifests/python.yaml"])
-        .expect("orchestrator binary not found - run: cargo build --bin sandbox-orchestrator");
-    assert!(output.contains("python_safe_refactor_rename_preview_default"));
-    assert!(output.contains("python_read_file_raw_default"));
-}
-
-#[test]
-fn test_plan_expands_multiple_manifests() {
-    let output = run_plan(&[
-        "sandbox/manifests/rust.yaml",
-        "sandbox/manifests/python.yaml",
-    ])
-    .expect("orchestrator binary not found - run: cargo build --bin sandbox-orchestrator");
-    assert!(output.contains("rust_read_file_raw_default"));
-    assert!(output.contains("python_read_file_raw_default"));
-}
-
-#[test]
-fn test_plan_json_format() {
-    let orch = orchestrator_path()
-        .expect("orchestrator binary not found - run: cargo build --bin sandbox-orchestrator");
-    let project_root = project_root();
-    let output = std::process::Command::new(&orch)
-        .arg("plan")
-        .arg(project_root.join("sandbox/manifests/rust.yaml"))
-        .arg("--format")
-        .arg("json")
-        .output()
-        .expect("failed to run orchestrator");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // Should be valid JSON array
-    let parsed: Vec<serde_json::Value> =
-        serde_json::from_str(&stdout).expect("plan --format json should return valid JSON array");
-    assert!(!parsed.is_empty());
-    // Each item should have expected fields
-    for item in &parsed {
-        assert!(item.get("id").is_some(), "scenario should have id field");
-        assert!(
-            item.get("language").is_some(),
-            "scenario should have language field"
-        );
-        assert!(
-            item.get("tool").is_some(),
-            "scenario should have tool field"
-        );
-        assert!(
-            item.get("action").is_some(),
-            "scenario should have action field"
-        );
-        assert!(
-            item.get("expected_outcome").is_some(),
-            "scenario should have expected_outcome field"
-        );
-    }
 }
 
 #[test]

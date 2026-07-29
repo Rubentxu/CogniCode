@@ -152,7 +152,27 @@ impl GraphEdge {
             kind,
             provenance,
             confidence,
-            metadata: Value::Null,
+            metadata: Value::Object(serde_json::Map::new()),
+        })
+    }
+
+    /// Returns `metadata` as a `&serde_json::Map`. Panics if not Object.
+    ///
+    /// # Contract
+    /// `metadata` is canonically `Value::Object`. `GraphEdge::new()`
+    /// initializes it to an empty Object; `with_metadata` /
+    /// `with_metadata_json` always produce Objects.
+    ///
+    /// # Panic
+    /// Panics if `self.metadata` is not `Value::Object`. This indicates
+    /// a broken invariant (manual construction or malformed
+    /// deserialization). NOT user error.
+    pub fn metadata_map(&self) -> &serde_json::Map<String, Value> {
+        self.metadata.as_object().unwrap_or_else(|| {
+            panic!(
+                "GraphEdge.metadata invariant violated: expected Value::Object, got {:?} (edge: {} -> {})",
+                self.metadata, self.source, self.target
+            )
         })
     }
 
@@ -289,6 +309,28 @@ impl GraphNode {
                 .collect(),
             _ => HashMap::new(),
         }
+    }
+
+    /// Returns `properties` as a `&serde_json::Map`. Panics if not Object.
+    ///
+    /// # Contract
+    /// `properties` is canonically `Value::Object`. The builder always
+    /// initializes it to an empty Object; PostgreSQL JSONB round-trips
+    /// preserve the Object variant.
+    ///
+    /// # Panic
+    /// Panics if `self.properties` is not `Value::Object`. This indicates
+    /// a broken invariant (e.g., manual struct construction bypassing
+    /// the builder, or deserialization from malformed JSON with
+    /// `"properties": null`). It is NOT user error — the caller did
+    /// nothing wrong; the data is corrupt.
+    pub fn properties_map(&self) -> &serde_json::Map<String, Value> {
+        self.properties.as_object().unwrap_or_else(|| {
+            panic!(
+                "GraphNode.properties invariant violated: expected Value::Object, got {:?} (node id: {})",
+                self.properties, self.id
+            )
+        })
     }
 }
 
@@ -599,9 +641,9 @@ mod tests {
     //       This test covers the JSONB metadata upgrade.
     // -------------------------------------------------------------------------
 
-    /// `GraphEdge.metadata` defaults to `Value::Null` (no metadata object created).
+    /// `GraphEdge.metadata` defaults to `Value::Object({})` (empty JSON object).
     #[test]
-    fn graph_edge_metadata_default_is_null() {
+    fn graph_edge_metadata_default_is_empty_object() {
         let edge = GraphEdge::new(
             symbol_id(),
             symbol_id_2(),
@@ -610,10 +652,10 @@ mod tests {
             0.95,
         )
         .expect("valid edge");
-        assert!(
-            edge.metadata.is_null(),
-            "default metadata must be Null, got: {:?}",
-            edge.metadata
+        assert_eq!(
+            edge.metadata,
+            serde_json::Value::Object(serde_json::Map::new()),
+            "default metadata must be empty JSON object"
         );
     }
 
@@ -704,7 +746,7 @@ mod tests {
         assert_eq!(minimal.kind, NodeKind::Decision);
         assert_eq!(minimal.label, "");
         assert!(minimal.source_path.is_none());
-        assert!(minimal.properties.is_empty());
+        assert!(minimal.properties_map().is_empty());
         // Both timestamps set to "now" (they may differ by a few ns;
         // we only assert they are not the default epoch).
         assert!(minimal.created_at.timestamp() > 0);
@@ -726,13 +768,13 @@ mod tests {
             full.source_path.as_deref(),
             Some(std::path::Path::new("/repo/docs/adr/0001.md"))
         );
-        assert_eq!(full.properties.len(), 4);
+        assert_eq!(full.properties_map().len(), 4);
         assert_eq!(
-            full.properties.get("status").map(String::as_str),
+            full.properties_map().get("status").and_then(|v| v.as_str()),
             Some("accepted")
         );
         assert_eq!(
-            full.properties.get("section").map(String::as_str),
+            full.properties_map().get("section").and_then(|v| v.as_str()),
             Some("Context")
         );
         assert_eq!(full.created_at, fixed);

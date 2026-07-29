@@ -130,9 +130,9 @@ pub fn build_issue_node(raw: &RawIssue, owner: &str, repo: &str) -> Result<Extra
     // Validate the property map. The spec requires the
     // extractor to fail-fast on a malformed candidate.
     let mut props: std::collections::HashMap<String, String> = node
-        .properties
+        .properties_map()
         .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
+        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
         .collect();
     for k in ["number", "title", "status", "url", "tracker", "repo"] {
         props.entry(k.to_string()).or_insert_with(|| match k {
@@ -759,9 +759,9 @@ mod tests {
             build_issue_node(&raw, "acme", "widgets").expect("build accepts normalised status");
         assert_eq!(
             node.potential_node
-                .properties
+                .properties_map()
                 .get("status")
-                .map(String::as_str),
+                .and_then(|v| v.as_str()),
             Some("open"),
             "unknown state must be normalised to 'open'"
         );
@@ -776,16 +776,16 @@ mod tests {
         assert_eq!(node.potential_node.kind, NodeKind::Issue);
         assert_eq!(
             node.potential_node
-                .properties
+                .properties_map()
                 .get("status")
-                .map(String::as_str),
+                .and_then(|v| v.as_str()),
             Some("open")
         );
         assert_eq!(
             node.potential_node
-                .properties
+                .properties_map()
                 .get("number")
-                .map(String::as_str),
+                .and_then(|v| v.as_str()),
             Some("42")
         );
     }

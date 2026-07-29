@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-29 (E28.2 PR4 Conformance shipped v0.71.1; E28.2 chain fully DONE; E28.3 + E28.4 unblocked.)
+Last updated: 2026-07-29 (E28.2 PR4 Conformance shipped v0.71.1; E28.2 chain fully DONE; E28.3 + E28.4 unblocked; Pre-existing Debt Batch shipped v0.71.2.)
 
 ## Active
 
@@ -59,6 +59,7 @@ PR4 closes the E28.1 chain (Phase 4: PG `#[sqlx::test]` integration + bridge-map
 | PR6 pool-timeout fix | `fix/e28-2-pr2-pool-connection-release` | ✅ Merged | v0.70.1 | [#145](https://github.com/Rubentxu/CogniCode/pull/145) |
 | PR5 edge-filter fix | `fix/e28-2-pr5-edge-filter` | ✅ Merged | v0.71.0 | [#147](https://github.com/Rubentxu/CogniCode/pull/147) |
 | **PR4 Conformance** | `feat/e28-2-pr4-conformance` | ✅ Merged | v0.71.1 | [#148](https://github.com/Rubentxu/CogniCode/pull/148) |
+| **Pre-existing Debt Batch** | `fix/pre-existing-debt-batch` | ✅ Merged | v0.71.2 | (this PR) |
 
 **E28.2 is now fully DONE.** PR4 closes the differential chain with 10 conformance tests proving `PgGraphExecutor` and `SnapshotGraphExecutor` return equivalent `GraphResult`s for the same `MoldPlan` + workspace + revision pin. **E28.3 (`moldql-pattern-profile-v1`) and E28.4 (`analytics-registry-cohort-1`) unblocked** — may now proceed in parallel per the E28 execution order.
 

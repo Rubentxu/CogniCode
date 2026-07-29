@@ -1976,12 +1976,7 @@ impl PostgresRepository {
             let kind = edge.kind.to_string();
             let provenance = edge.provenance.to_string();
             let confidence = edge.confidence;
-            let metadata_json = serde_json::Value::Object(
-                edge.metadata
-                    .iter()
-                    .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
-                    .collect::<serde_json::Map<_, _>>(),
-            );
+            let metadata_json = edge.metadata.clone();
             sqlx::query(
                 "INSERT INTO graph_edges \
                     (source_id, target_id, kind, provenance, confidence, metadata) \
@@ -5101,7 +5096,7 @@ mod tests {
         assert_eq!(fetched.label, node.label);
         assert_eq!(fetched.source_path, node.source_path);
         assert_eq!(
-            fetched.properties.get("status").map(String::as_str),
+            fetched.properties_map().get("status").and_then(|v| v.as_str()),
             Some("accepted")
         );
     });
@@ -5189,7 +5184,7 @@ mod tests {
             .expect("Some");
         assert_eq!(updated.label, "Second Label");
         assert_eq!(
-            updated.properties.get("status").map(String::as_str),
+            updated.properties_map().get("status").and_then(|v| v.as_str()),
             Some("accepted")
         );
         assert_eq!(
