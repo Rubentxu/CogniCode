@@ -772,7 +772,11 @@ fn render_explore(e: &crate::moldql::ast::ExploreQuery) -> String {
 mod tests {
     use super::*;
     use crate::ports::QualityRepository;
-    use cognicode_core::domain::value_objects::SymbolKind;
+    use cognicode_core::domain::plan::{
+        ConstructId, ExecutorError, GraphPlan, NeighborKind, NodeResult, PathQuantifier,
+        Path as GraphPath, PathHop, ResultSet, UnsupportedConstruct,
+    };
+    use cognicode_core::domain::value_objects::{DependencyType, EdgeKind, RevisionId, SymbolKind, WorkspaceId};
     use std::collections::HashMap as StdHashMap;
     use std::sync::Arc;
 
@@ -946,6 +950,153 @@ mod tests {
             _max_depth: u8,
         ) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
             Vec::new()
+        }
+    }
+
+    /// Test-only [`GraphExecutor`] backed by a `MockRepo`'s caller/callee maps.
+    ///
+    /// **Limitation**: only `GraphPlan::Path` and `GraphPlan::Neighbors` are
+    /// implemented. All other variants return `ExecutorError::UnsupportedConstruct`.
+    struct InMemoryGraphExecutor {
+        repo: Arc<MockRepo>,
+    }
+
+    impl std::fmt::Debug for InMemoryGraphExecutor {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("InMemoryGraphExecutor").finish()
+        }
+    }
+
+    impl InMemoryGraphExecutor {
+        /// Bounded BFS over `callees_of` from `src`, emitting one [`GraphPath`]
+        /// per route that reaches `dst` within `q.max_hops`.
+        fn run_path(
+            &self,
+            src: &str,
+            dst: &str,
+            q: &PathQuantifier,
+        ) -> Result<ResultSet, ExecutorError> {
+            let max_hops = q.max_hops.unwrap_or(u32::MAX) as usize;
+            let mut results = Vec::new();
+
+            // BFS: each stack item is (current_node, path_hops)
+            let mut queue: VecDeque<(String, Vec<PathHop>)> = VecDeque::new();
+            queue.push_back((src.to_string(), vec![PathHop { node_id: src.to_string(), edge_kind: None }]));
+
+            while let Some((current, hops)) = queue.pop_front() {
+                // If we've reached the destination, emit the path
+                if current == dst {
+                    results.push(GraphPath::new(hops));
+                    continue;
+                }
+
+                // Respect hop budget
+                if hops.len() - 1 >= max_hops {
+                    continue;
+                }
+
+                // Explore callees
+                if let Some(callees) = self.repo.callees_of.get(&current) {
+                    for callee_id in callees {
+                        let next_hops = {
+                            let mut h = hops.clone();
+                            h.push(PathHop {
+                                node_id: callee_id.clone(),
+                                edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)),
+                            });
+                            h
+                        };
+                        queue.push_back((callee_id.clone(), next_hops));
+                    }
+                }
+            }
+
+            Ok(ResultSet {
+                rows: Vec::new(),
+                nodes: Vec::new(),
+                edges: Vec::new(),
+                paths: results,
+                scalars: Vec::new(),
+                truncated: false,
+                truncation: None,
+            })
+        }
+
+        /// BFS over `callers_of`/`callees_of` up to `depth`, emitting [`NodeResult`]
+        /// per visited node (excluding `src`).
+        fn run_neighbors(
+            &self,
+            src: &str,
+            kind: NeighborKind,
+            depth: u32,
+        ) -> Result<ResultSet, ExecutorError> {
+            let mut visited: StdHashMap<String, ()> = StdHashMap::new();
+            visited.insert(src.to_string(), ());
+            let mut queue: VecDeque<(String, u32)> = VecDeque::new();
+            queue.push_back((src.to_string(), 0));
+
+            while let Some((current, d)) = queue.pop_front() {
+                if d >= depth {
+                    continue;
+                }
+                let neighbors: Vec<String> = match kind {
+                    NeighborKind::Outgoing | NeighborKind::Both => {
+                        self.repo.callees_of.get(&current).cloned().unwrap_or_default()
+                    }
+                    NeighborKind::Incoming => {
+                        self.repo.callers_of.get(&current).cloned().unwrap_or_default()
+                    }
+                };
+                for neighbor_id in neighbors {
+                    if visited.insert(neighbor_id.clone(), ()).is_none() {
+                        queue.push_back((neighbor_id, d + 1));
+                    }
+                }
+            }
+
+            // src itself is not included; visited contains all reached nodes
+            let nodes: Vec<NodeResult> = visited
+                .keys()
+                .filter(|id| id.as_str() != src)
+                .map(|id| NodeResult {
+                    id: id.clone(),
+                    labels: vec!["Function".to_string()],
+                    properties: Vec::new(),
+                })
+                .collect();
+
+            Ok(ResultSet {
+                rows: Vec::new(),
+                nodes,
+                edges: Vec::new(),
+                paths: Vec::new(),
+                scalars: Vec::new(),
+                truncated: false,
+                truncation: None,
+            })
+        }
+    }
+
+    impl GraphExecutor for InMemoryGraphExecutor {
+        fn execute(
+            &self,
+            plan: &GraphPlan,
+            _pin: (WorkspaceId, RevisionId),
+        ) -> Result<ResultSet, ExecutorError> {
+            match plan {
+                GraphPlan::Path { src, dst, quantifier, .. } => {
+                    self.run_path(src, dst, quantifier)
+                }
+                GraphPlan::Neighbors { src, kind, depth, .. } => {
+                    self.run_neighbors(src, kind.clone(), *depth)
+                }
+                other => Err(ExecutorError::UnsupportedConstruct(
+                    UnsupportedConstruct::new(
+                        ConstructId::Other("InMemoryGraphExecutor".into()),
+                        format!("only handles Path and Neighbors; got {:?}", other),
+                    ),
+                )),
+            }
         }
     }
 
@@ -1156,6 +1307,183 @@ mod tests {
         let mut repo = MockRepo::new();
         builder(&mut repo);
         Arc::new(repo)
+    }
+
+    // -------------------------------------------------------------------------
+    // InMemoryGraphExecutor unit tests
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn inmemory_path_single_hop() {
+        // caller → callee, max_hops=1 ⇒ 1 path
+        // with_callee sets callees_of[caller] = [callee]
+        let repo = make_repo(|r| {
+            r.with_sym("caller", "src/lib.rs", 1);
+            r.with_sym("callee", "src/lib.rs", 10);
+            r.with_callee(
+                &r.sid("caller", "src/lib.rs", 1),
+                &r.sid("callee", "src/lib.rs", 10),
+            );
+        });
+        let executor = InMemoryGraphExecutor { repo: repo.clone() };
+        let ws = WorkspaceId::try_new("test-ws").unwrap();
+        let caller_id = repo.sid("caller", "src/lib.rs", 1);
+        let callee_id = repo.sid("callee", "src/lib.rs", 10);
+        let plan = GraphPlan::Path {
+            src: caller_id.clone(),
+            dst: callee_id.clone(),
+            quantifier: PathQuantifier { max_hops: Some(1), min_hops: 0 },
+            edge_kind_filter: None,
+            predicates: Vec::new(),
+            projection: cognicode_core::domain::plan::PathProjection::default(),
+            limits: Default::default(),
+            metadata: cognicode_core::domain::plan::PlanMetadata::new(
+                cognicode_core::domain::plan::PlanVersion::default(),
+                cognicode_core::domain::plan::PlanHash::compute(&()),
+            ),
+        };
+        let result = executor.execute(&plan, (ws, RevisionId::new(1))).unwrap();
+        assert_eq!(result.paths.len(), 1, "expected 1 path; got {:?}", result.paths);
+        let path = &result.paths[0];
+        assert_eq!(path.start(), caller_id.as_str());
+        assert_eq!(path.end(), callee_id.as_str());
+        assert_eq!(path.len(), 1, "single hop");
+    }
+
+    #[tokio::test]
+    async fn inmemory_path_multi_hop() {
+        // a → b → c, max_hops=2 ⇒ 1 path with 3 hops
+        let repo = make_repo(|r| {
+            r.with_sym("a", "src/lib.rs", 1);
+            r.with_sym("b", "src/lib.rs", 5);
+            r.with_sym("c", "src/lib.rs", 10);
+            // a calls b, b calls c (forward edges via with_callee)
+            r.with_callee(&r.sid("a", "src/lib.rs", 1), &r.sid("b", "src/lib.rs", 5));
+            r.with_callee(&r.sid("b", "src/lib.rs", 5), &r.sid("c", "src/lib.rs", 10));
+        });
+        let executor = InMemoryGraphExecutor { repo: repo.clone() };
+        let ws = WorkspaceId::try_new("test-ws").unwrap();
+        let a_id = repo.sid("a", "src/lib.rs", 1);
+        let c_id = repo.sid("c", "src/lib.rs", 10);
+        let plan = GraphPlan::Path {
+            src: a_id,
+            dst: c_id,
+            quantifier: PathQuantifier { max_hops: Some(2), min_hops: 0 },
+            edge_kind_filter: None,
+            predicates: Vec::new(),
+            projection: cognicode_core::domain::plan::PathProjection::default(),
+            limits: Default::default(),
+            metadata: cognicode_core::domain::plan::PlanMetadata::new(
+                cognicode_core::domain::plan::PlanVersion::default(),
+                cognicode_core::domain::plan::PlanHash::compute(&()),
+            ),
+        };
+        let result = executor.execute(&plan, (ws, RevisionId::new(1))).unwrap();
+        assert_eq!(result.paths.len(), 1, "expected 1 path; got {:?}", result.paths);
+        assert_eq!(result.paths[0].hops.len(), 3, "3 nodes in path");
+    }
+
+    #[tokio::test]
+    async fn inmemory_path_no_match() {
+        // Disconnected src/dst ⇒ 0 paths, Ok
+        let repo = make_repo(|r| {
+            r.with_sym("x", "src/lib.rs", 1);
+            r.with_sym("y", "src/lib.rs", 5);
+            // No caller relationship
+        });
+        let executor = InMemoryGraphExecutor { repo: repo.clone() };
+        let ws = WorkspaceId::try_new("test-ws").unwrap();
+        let x_id = repo.sid("x", "src/lib.rs", 1);
+        let y_id = repo.sid("y", "src/lib.rs", 5);
+        let plan = GraphPlan::Path {
+            src: x_id,
+            dst: y_id,
+            quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
+            edge_kind_filter: None,
+            predicates: Vec::new(),
+            projection: cognicode_core::domain::plan::PathProjection::default(),
+            limits: Default::default(),
+            metadata: cognicode_core::domain::plan::PlanMetadata::new(
+                cognicode_core::domain::plan::PlanVersion::default(),
+                cognicode_core::domain::plan::PlanHash::compute(&()),
+            ),
+        };
+        let result = executor.execute(&plan, (ws, RevisionId::new(1))).unwrap();
+        assert!(result.paths.is_empty(), "expected 0 paths; got {:?}", result.paths);
+    }
+
+    #[tokio::test]
+    async fn inmemory_neighbors_incoming() {
+        // Incoming neighbors: callers of callee (via with_caller)
+        let repo = make_repo(|r| {
+            r.with_sym("caller1", "src/lib.rs", 1);
+            r.with_sym("caller2", "src/lib.rs", 2);
+            r.with_sym("callee", "src/lib.rs", 10);
+            r.with_caller(&r.sid("callee", "src/lib.rs", 10), &r.sid("caller1", "src/lib.rs", 1));
+            r.with_caller(&r.sid("callee", "src/lib.rs", 10), &r.sid("caller2", "src/lib.rs", 2));
+        });
+        let executor = InMemoryGraphExecutor { repo: repo.clone() };
+        let ws = WorkspaceId::try_new("test-ws").unwrap();
+        let callee_id = repo.sid("callee", "src/lib.rs", 10);
+        let caller1_id = repo.sid("caller1", "src/lib.rs", 1);
+        let caller2_id = repo.sid("caller2", "src/lib.rs", 2);
+        let plan = GraphPlan::Neighbors {
+            src: callee_id,
+            kind: NeighborKind::Incoming,
+            depth: 1,
+            edge_kind_filter: None,
+            predicates: Vec::new(),
+            limits: Default::default(),
+            metadata: cognicode_core::domain::plan::PlanMetadata::new(
+                cognicode_core::domain::plan::PlanVersion::default(),
+                cognicode_core::domain::plan::PlanHash::compute(&()),
+            ),
+        };
+        let result = executor.execute(&plan, (ws, RevisionId::new(1))).unwrap();
+        let neighbor_ids: Vec<_> = result.nodes.iter().map(|n| n.id.as_str()).collect();
+        assert!(
+            neighbor_ids.contains(&caller1_id.as_str())
+                && neighbor_ids.contains(&caller2_id.as_str()),
+            "expected both callers; got {:?}",
+            neighbor_ids
+        );
+    }
+
+    #[tokio::test]
+    async fn inmemory_neighbors_outgoing() {
+        // Outgoing neighbors: callees of caller (via with_callee)
+        let repo = make_repo(|r| {
+            r.with_sym("caller", "src/lib.rs", 1);
+            r.with_sym("callee1", "src/lib.rs", 10);
+            r.with_sym("callee2", "src/lib.rs", 20);
+            r.with_callee(&r.sid("caller", "src/lib.rs", 1), &r.sid("callee1", "src/lib.rs", 10));
+            r.with_callee(&r.sid("caller", "src/lib.rs", 1), &r.sid("callee2", "src/lib.rs", 20));
+        });
+        let executor = InMemoryGraphExecutor { repo: repo.clone() };
+        let ws = WorkspaceId::try_new("test-ws").unwrap();
+        let caller_id = repo.sid("caller", "src/lib.rs", 1);
+        let callee1_id = repo.sid("callee1", "src/lib.rs", 10);
+        let callee2_id = repo.sid("callee2", "src/lib.rs", 20);
+        let plan = GraphPlan::Neighbors {
+            src: caller_id,
+            kind: NeighborKind::Outgoing,
+            depth: 1,
+            edge_kind_filter: None,
+            predicates: Vec::new(),
+            limits: Default::default(),
+            metadata: cognicode_core::domain::plan::PlanMetadata::new(
+                cognicode_core::domain::plan::PlanVersion::default(),
+                cognicode_core::domain::plan::PlanHash::compute(&()),
+            ),
+        };
+        let result = executor.execute(&plan, (ws, RevisionId::new(1))).unwrap();
+        let neighbor_ids: Vec<_> = result.nodes.iter().map(|n| n.id.as_str()).collect();
+        assert!(
+            neighbor_ids.contains(&callee1_id.as_str())
+                && neighbor_ids.contains(&callee2_id.as_str()),
+            "expected both callees; got {:?}",
+            neighbor_ids
+        );
     }
 
     #[tokio::test]
