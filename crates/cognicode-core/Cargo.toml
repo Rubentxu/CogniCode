@@ -154,6 +154,9 @@ sqlx = { workspace = true, optional = true }
 # Version must track the workspace sqlx version (0.8).
 sqlx-postgres = { version = "0.8", optional = true }
 
+# UUID v4 — CSPRNG-based, replaces hand-rolled implementation.
+uuid = { workspace = true, features = ["v4", "serde"] }
+
 # Rig-core (optional)
 rig-core = { workspace = true, optional = true }
 
