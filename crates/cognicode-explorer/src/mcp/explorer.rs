@@ -84,6 +84,12 @@ pub const TOOL_APPLY_LENS: &str = "explorer_apply_lens";
 /// `explorer_query_moldql` — execute a MoldQL query.
 pub const TOOL_QUERY_MOLDQL: &str = "explorer_query_moldql";
 
+/// `moldql_pattern_query` — execute a Pattern Profile query (MATCH syntax).
+pub const TOOL_PATTERN_QUERY: &str = "moldql_pattern_query";
+
+/// `moldql_pattern_capabilities` — return the v1 supported-feature matrix.
+pub const TOOL_PATTERN_CAPABILITIES: &str = "moldql_pattern_capabilities";
+
 /// `impact_radius` — predecessor (reverse) BFS from a root symbol.
 pub const TOOL_IMPACT_RADIUS: &str = "impact_radius";
 
@@ -583,6 +589,8 @@ pub fn tool_names() -> Vec<&'static str> {
         TOOL_GET_LENSES,
         TOOL_APPLY_LENS,
         TOOL_QUERY_MOLDQL,
+        TOOL_PATTERN_QUERY,
+        TOOL_PATTERN_CAPABILITIES,
         TOOL_IMPACT_RADIUS,
         TOOL_IMPACT_FORWARD_RADIUS,
         TOOL_IMPACT_HAS_PATH,
@@ -618,6 +626,8 @@ pub const TOOL_NAMES: &[&str] = &[
     TOOL_GET_LENSES,
     TOOL_APPLY_LENS,
     TOOL_QUERY_MOLDQL,
+    TOOL_PATTERN_QUERY,
+    TOOL_PATTERN_CAPABILITIES,
     TOOL_IMPACT_RADIUS,
     TOOL_IMPACT_FORWARD_RADIUS,
     TOOL_IMPACT_HAS_PATH,
