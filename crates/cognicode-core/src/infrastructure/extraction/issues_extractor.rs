@@ -759,9 +759,9 @@ mod tests {
             build_issue_node(&raw, "acme", "widgets").expect("build accepts normalised status");
         assert_eq!(
             node.potential_node
-                .properties
+                .properties_map()
                 .get("status")
-                .map(String::as_str),
+                .and_then(|v| v.as_str()),
             Some("open"),
             "unknown state must be normalised to 'open'"
         );
@@ -776,16 +776,16 @@ mod tests {
         assert_eq!(node.potential_node.kind, NodeKind::Issue);
         assert_eq!(
             node.potential_node
-                .properties
+                .properties_map()
                 .get("status")
-                .map(String::as_str),
+                .and_then(|v| v.as_str()),
             Some("open")
         );
         assert_eq!(
             node.potential_node
-                .properties
+                .properties_map()
                 .get("number")
-                .map(String::as_str),
+                .and_then(|v| v.as_str()),
             Some("42")
         );
     }

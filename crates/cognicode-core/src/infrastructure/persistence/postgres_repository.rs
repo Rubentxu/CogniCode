@@ -5096,7 +5096,7 @@ mod tests {
         assert_eq!(fetched.label, node.label);
         assert_eq!(fetched.source_path, node.source_path);
         assert_eq!(
-            fetched.properties.get("status").map(String::as_str),
+            fetched.properties_map().get("status").and_then(|v| v.as_str()),
             Some("accepted")
         );
     });
@@ -5184,7 +5184,7 @@ mod tests {
             .expect("Some");
         assert_eq!(updated.label, "Second Label");
         assert_eq!(
-            updated.properties.get("status").map(String::as_str),
+            updated.properties_map().get("status").and_then(|v| v.as_str()),
             Some("accepted")
         );
         assert_eq!(

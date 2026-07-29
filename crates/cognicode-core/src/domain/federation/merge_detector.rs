@@ -229,20 +229,20 @@ mod tests {
     /// Full match (label + kind + property overlap) caps at 1.0.
     #[test]
     fn scoring_full_match_returns_1_0_capped() {
-        let mut a = make_fnode(
-            "a",
-            "file:a:1",
-            "User",
-            NodeKind::Symbol(SymbolKind::Function),
+        let a = FederatedNode::new(
+            GraphNode::builder("a", NodeKind::Symbol(SymbolKind::Function))
+                .label("User")
+                .property("k", "v")
+                .build(),
+            SpaceId::try_new("file:a:1").unwrap(),
         );
-        let mut b = make_fnode(
-            "b",
-            "file:b:1",
-            "user",
-            NodeKind::Symbol(SymbolKind::Function),
+        let b = FederatedNode::new(
+            GraphNode::builder("b", NodeKind::Symbol(SymbolKind::Function))
+                .label("user")
+                .property("k", "v")
+                .build(),
+            SpaceId::try_new("file:b:1").unwrap(),
         );
-        a.node.properties.insert("k".to_string(), "v".to_string());
-        b.node.properties.insert("k".to_string(), "v".to_string());
         let cand = score_pair(&a, &b).expect("score");
         assert!(
             (cand.confidence - 1.0).abs() < 1e-9,
@@ -365,20 +365,20 @@ mod tests {
     /// Full match populates all three reasons.
     #[test]
     fn reasons_populated_for_full_match() {
-        let mut a = make_fnode(
-            "a",
-            "file:a:1",
-            "User",
-            NodeKind::Symbol(SymbolKind::Function),
+        let a = FederatedNode::new(
+            GraphNode::builder("a", NodeKind::Symbol(SymbolKind::Function))
+                .label("User")
+                .property("k", "v")
+                .build(),
+            SpaceId::try_new("file:a:1").unwrap(),
         );
-        let mut b = make_fnode(
-            "b",
-            "file:b:1",
-            "user",
-            NodeKind::Symbol(SymbolKind::Function),
+        let b = FederatedNode::new(
+            GraphNode::builder("b", NodeKind::Symbol(SymbolKind::Function))
+                .label("user")
+                .property("k", "v")
+                .build(),
+            SpaceId::try_new("file:b:1").unwrap(),
         );
-        a.node.properties.insert("k".to_string(), "v".to_string());
-        b.node.properties.insert("k".to_string(), "v".to_string());
         let det = MergeDetector::new();
         let out = det.detect(&[a, b]);
         assert_eq!(out.len(), 1);

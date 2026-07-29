@@ -133,7 +133,7 @@ mod tests {
             kind: EdgeKind::Dependency(DependencyType::Calls),
             provenance: prov,
             confidence,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(serde_json::Map::new()),
         }
     }
 
