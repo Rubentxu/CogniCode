@@ -379,6 +379,79 @@ pub enum AnalyticsError {
 }
 
 // ============================================================================
+// RunOutput
+// ============================================================================
+
+/// Output produced by an algorithm's [`AlgorithmDescriptor::execute()`] call.
+///
+/// Each variant corresponds to one algorithm family. The registry's `run()`
+/// method wraps this in a [`RunResult`] with lineage tracking.
+#[derive(Debug, Clone)]
+pub enum RunOutput {
+    /// PageRank scores: node symbol ID → score.
+    PageRank(serde_json::Value),
+    /// Strongly Connected Components: list of component lists.
+    Scc(serde_json::Value),
+    /// Weakly Connected Components: list of component lists.
+    Wcc(serde_json::Value),
+    /// Bounded shortest paths: list of paths.
+    BoundedShortestPaths(serde_json::Value),
+}
+
+impl RunOutput {
+    /// Returns the number of result items (rows) in this output.
+    pub fn row_count(&self) -> i64 {
+        match self {
+            RunOutput::PageRank(v) => v.as_array().map(|a| a.len()).unwrap_or(0) as i64,
+            RunOutput::Scc(v) => v.as_array().map(|a| a.len()).unwrap_or(0) as i64,
+            RunOutput::Wcc(v) => v.as_array().map(|a| a.len()).unwrap_or(0) as i64,
+            RunOutput::BoundedShortestPaths(v) => v.as_array().map(|a| a.len()).unwrap_or(0) as i64,
+        }
+    }
+
+    /// Convert to JSON value for serialization.
+    pub fn to_json(&self) -> serde_json::Value {
+        match self {
+            RunOutput::PageRank(v) => v.clone(),
+            RunOutput::Scc(v) => v.clone(),
+            RunOutput::Wcc(v) => v.clone(),
+            RunOutput::BoundedShortestPaths(v) => v.clone(),
+        }
+    }
+}
+
+// ============================================================================
+// AlgorithmDescriptor::execute
+// ============================================================================
+
+/// Extension trait providing the async `execute` method on [`AlgorithmDescriptor`].
+///
+/// This is implemented by each cohort-1 descriptor. The async signature is
+/// required for dynamic dispatch via `#[async_trait]`.
+#[async_trait::async_trait]
+pub trait AlgorithmExecute: AlgorithmDescriptor {
+    /// Execute the algorithm against the given call graph.
+    ///
+    /// # Arguments
+    ///
+    /// - `params` — validated algorithm parameters (schema-validated before this call)
+    /// - `graph` — the call graph to run the algorithm on
+    /// - `limits` — effective resource limits (already validated against descriptor maxima)
+    ///
+    /// # Returns
+    ///
+    /// The algorithm's typed output wrapped in [`RunOutput`]. The caller
+    /// ( [`AlgorithmRegistry::run()`][super::AlgorithmRegistry::run]) handles
+    /// lineage tracking and mode-specific wrapping.
+    async fn execute(
+        &self,
+        params: &serde_json::Value,
+        graph: &crate::domain::aggregates::CallGraph,
+        limits: &PlanLimits,
+    ) -> Result<RunOutput, AnalyticsError>;
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 

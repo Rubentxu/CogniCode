@@ -2,15 +2,19 @@
 //!
 //! Part of E28.4 Analytics Registry Cohort 1 — PR2 Cohort-1 Core.
 
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use crate::domain::aggregates::CallGraph;
 use crate::domain::analytics::{
-    AlgorithmDescriptor, AlgorithmIdentity, AlgorithmId, AlgorithmParams,
-    AlgorithmVersion, AnalyticsMode, ComplexityClass, DeterminismKind,
+    AlgorithmDescriptor, AlgorithmExecute, AlgorithmIdentity, AlgorithmId, AlgorithmParams,
+    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind,
     Fixture, FixtureGraph, Maturity, OutputField, OutputSchema, OutputType,
-    ProjectionAssumption,
+    ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
+use crate::infrastructure::graph::CallGraphProjection;
+use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
 // PageRank Params
@@ -210,5 +214,46 @@ impl AlgorithmDescriptor for PageRankDescriptor {
     fn projection_assumption(&self) -> &ProjectionAssumption {
         // PageRank accumulates on callees (incoming edges)
         &ProjectionAssumption::CallGraphIncoming
+    }
+}
+
+#[async_trait::async_trait]
+impl AlgorithmExecute for PageRankDescriptor {
+    async fn execute(
+        &self,
+        params: &serde_json::Value,
+        graph: &CallGraph,
+        _limits: &PlanLimits,
+    ) -> Result<RunOutput, AnalyticsError> {
+        let obj = params
+            .as_object()
+            .ok_or_else(|| AnalyticsError::Internal("PageRank params must be a JSON object".into()))?;
+
+        let alpha = obj
+            .get("alpha")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.85);
+        let max_iterations = obj
+            .get("max_iterations")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .unwrap_or(100);
+
+        let projection = CallGraphProjection::from_call_graph(graph);
+        let (in_neighbors, out_degree) = projection.build_adjacency();
+        let n = projection.node_count();
+
+        let raw_scores =
+            cognicode_graph_algos::page_rank(&in_neighbors, &out_degree, n, alpha, max_iterations);
+
+        // Map back to SymbolId and serialize
+        let mut scores: HashMap<String, f64> = HashMap::new();
+        for (sid, ni) in projection.id_to_index() {
+            if let Some(&score) = raw_scores.get(&ni.index()) {
+                scores.insert(sid.as_str().to_string(), score);
+            }
+        }
+
+        Ok(RunOutput::PageRank(serde_json::to_value(scores).unwrap()))
     }
 }

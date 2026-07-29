@@ -7,28 +7,47 @@ use std::sync::Arc;
 use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
 use cognicode_core::domain::analytics::{
     pagerank_descriptor::PageRankDescriptor, scc_descriptor::SccDescriptor,
-    wcc_descriptor::WccDescriptor, AdmissionError, AlgorithmDescriptor,
+    wcc_descriptor::WccDescriptor, AdmissionError, AlgorithmDescriptor, AlgorithmId,
     AnalyticsError, RunLineage, RunLineageFilter, RunLineageStore, Uuid,
 };
+use cognicode_core::domain::plan::limits::PlanLimits;
 
 /// A no-op lineage store for testing.
 struct NoOpLineageStore;
 
+#[async_trait::async_trait]
 impl RunLineageStore for NoOpLineageStore {
-    fn insert(&self, _lineage: &RunLineage) -> Result<(), AnalyticsError> {
+    async fn insert(&self, _lineage: &RunLineage) -> Result<(), AnalyticsError> {
         Ok(())
     }
 
-    fn get(&self, _run_id: Uuid) -> Result<RunLineage, AnalyticsError> {
+    async fn get(&self, _run_id: Uuid) -> Result<RunLineage, AnalyticsError> {
         Err(AnalyticsError::RunNotFound("not found".into()))
     }
 
-    fn query(
+    async fn query(
         &self,
         _filter: RunLineageFilter,
         _limit: Option<u64>,
     ) -> Result<Vec<RunLineage>, AnalyticsError> {
         Ok(vec![])
+    }
+
+    async fn upsert_descriptor_limits(
+        &self,
+        _algorithm_id: &AlgorithmId,
+        _version: &str,
+        _limits: &PlanLimits,
+    ) -> Result<(), AnalyticsError> {
+        Ok(())
+    }
+
+    async fn get_descriptor_limits(
+        &self,
+        _algorithm_id: &AlgorithmId,
+        _version: &str,
+    ) -> Result<Option<PlanLimits>, AnalyticsError> {
+        Ok(None)
     }
 }
 
@@ -219,7 +238,7 @@ fn wcc_descriptor_has_conformance_fixtures() {
 
 #[test]
 fn registry_admits_pagerank_scc_wcc() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore));
+    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
     assert!(registry.admit(Box::new(PageRankDescriptor)).is_ok());
     assert!(registry.admit(Box::new(SccDescriptor)).is_ok());
     assert!(registry.admit(Box::new(WccDescriptor)).is_ok());
@@ -227,7 +246,7 @@ fn registry_admits_pagerank_scc_wcc() {
 
 #[test]
 fn registry_returns_admitted_descriptors() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore));
+    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
     registry.admit(Box::new(PageRankDescriptor)).unwrap();
     registry.admit(Box::new(SccDescriptor)).unwrap();
     registry.admit(Box::new(WccDescriptor)).unwrap();
@@ -240,7 +259,7 @@ fn registry_returns_admitted_descriptors() {
 
 #[test]
 fn registry_is_admitted_check() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore));
+    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
     registry.admit(Box::new(PageRankDescriptor)).unwrap();
 
     let pagerank_id = cognicode_core::domain::analytics::AlgorithmId::from_static("pagerank");
@@ -252,7 +271,7 @@ fn registry_is_admitted_check() {
 
 #[test]
 fn registry_get_returns_descriptor() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore));
+    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
     registry.admit(Box::new(PageRankDescriptor)).unwrap();
 
     let pagerank_id = cognicode_core::domain::analytics::AlgorithmId::from_static("pagerank");
@@ -263,7 +282,7 @@ fn registry_get_returns_descriptor() {
 
 #[test]
 fn registry_rejects_duplicate_same_version() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore));
+    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
     assert!(registry.admit(Box::new(PageRankDescriptor)).is_ok());
     let result = registry.admit(Box::new(PageRankDescriptor));
     assert!(matches!(result, Err(AdmissionError::AlreadyAdmitted(_, _))));

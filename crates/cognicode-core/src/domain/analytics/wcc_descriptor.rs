@@ -4,13 +4,16 @@
 
 use std::sync::LazyLock;
 
+use crate::domain::aggregates::CallGraph;
 use crate::domain::analytics::{
-    AlgorithmDescriptor, AlgorithmIdentity, AlgorithmId, AlgorithmParams,
-    AlgorithmVersion, AnalyticsMode, ComplexityClass, DeterminismKind,
+    AlgorithmDescriptor, AlgorithmExecute, AlgorithmIdentity, AlgorithmId, AlgorithmParams,
+    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind,
     Fixture, FixtureGraph, Maturity, OutputField, OutputSchema, OutputType,
-    ProjectionAssumption,
+    ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
+use crate::infrastructure::graph::CallGraphProjection;
+use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
 // WCC output schema
@@ -205,5 +208,58 @@ impl AlgorithmDescriptor for WccDescriptor {
     fn projection_assumption(&self) -> &ProjectionAssumption {
         // WCC ignores edge direction — uses both in and out neighbors
         &ProjectionAssumption::Undirected
+    }
+}
+
+#[async_trait::async_trait]
+impl AlgorithmExecute for WccDescriptor {
+    async fn execute(
+        &self,
+        _params: &serde_json::Value,
+        graph: &CallGraph,
+        _limits: &PlanLimits,
+    ) -> Result<RunOutput, AnalyticsError> {
+        let projection = CallGraphProjection::from_call_graph(graph);
+        let (in_neighbors, _) = projection.build_adjacency();
+        let n = projection.node_count();
+
+        // Build undirected adjacency for WCC: union of in and out neighbors
+        let mut undirected: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for (i, neighbors) in in_neighbors.iter().enumerate() {
+            for &j in neighbors {
+                if i < n && j < n {
+                    undirected[i].push(j);
+                }
+            }
+        }
+        // Also add out neighbors to make it undirected
+        let out_neighbors = projection.build_out_neighbors();
+        for (i, neighbors) in out_neighbors.iter().enumerate() {
+            for &j in neighbors {
+                if i < n && j < n && !undirected[i].contains(&j) {
+                    undirected[i].push(j);
+                }
+            }
+        }
+
+        let raw = cognicode_graph_algos::cluster_components(&undirected, &undirected, n);
+
+        // Map component indices back to SymbolIds
+        let components: Vec<Vec<String>> = raw
+            .into_iter()
+            .map(|comp| {
+                comp.into_iter()
+                    .filter_map(|idx| {
+                        projection
+                            .id_to_index()
+                            .iter()
+                            .find(|(_, ni)| ni.index() == idx)
+                            .map(|(sid, _)| sid.as_str().to_string())
+                    })
+                    .collect()
+            })
+            .collect();
+
+        Ok(RunOutput::Wcc(serde_json::to_value(components).unwrap()))
     }
 }

@@ -38,7 +38,7 @@ use petgraph::visit::{EdgeRef, IntoEdgeReferences, NodeIndexable};
 
 use crate::domain::aggregates::{CallGraph, SymbolId};
 use crate::domain::analytics::{
-    AdmissionError, AlgorithmDescriptor, AlgorithmId, AnalyticsError, AnalyticsMode,
+    AdmissionError, AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AnalyticsError, AnalyticsMode,
     DeterminismKind, RunLineage, RunLineageFilter, RunLineageStore, RunStatus,
 };
 use crate::domain::plan::limits::PlanLimits;
@@ -295,16 +295,21 @@ impl GraphAnalyticsService {
 /// Validates descriptor completeness at admission, limits at request time,
 /// and delegates to pure algorithm implementations.
 pub struct AlgorithmRegistry {
-    descriptors: HashMap<AlgorithmId, Box<dyn AlgorithmDescriptor>>,
+    descriptors: HashMap<AlgorithmId, Box<dyn AlgorithmExecute>>,
     lineage: Arc<dyn RunLineageStore>,
+    boundary_guard: Option<Arc<dyn AnalyticsBoundaryGuard>>,
 }
 
 impl AlgorithmRegistry {
-    /// Create a new registry with the given lineage store.
-    pub fn new(lineage: Arc<dyn RunLineageStore>) -> Self {
+    /// Create a new registry with the given lineage store and optional boundary guard.
+    pub fn new(
+        lineage: Arc<dyn RunLineageStore>,
+        boundary_guard: Option<Arc<dyn AnalyticsBoundaryGuard>>,
+    ) -> Self {
         Self {
             descriptors: HashMap::new(),
             lineage,
+            boundary_guard,
         }
     }
 
@@ -312,7 +317,7 @@ impl AlgorithmRegistry {
     ///
     /// Returns `Ok(())` if all 12 required methods return non-empty values.
     /// Returns `Err(AdmissionError::Incomplete)` if any method returns None/empty.
-    pub fn admit(&mut self, d: Box<dyn AlgorithmDescriptor>) -> Result<(), AdmissionError> {
+    pub fn admit(&mut self, d: Box<dyn AlgorithmExecute>) -> Result<(), AdmissionError> {
         // Validate completeness of all required fields
         let id = d.identity();
 
@@ -337,12 +342,12 @@ impl AlgorithmRegistry {
     }
 
     /// Get an admitted descriptor by ID.
-    pub fn get(&self, id: &AlgorithmId) -> Option<&dyn AlgorithmDescriptor> {
+    pub fn get(&self, id: &AlgorithmId) -> Option<&dyn AlgorithmExecute> {
         self.descriptors.get(id).map(|b| b.as_ref())
     }
 
     /// Iterate over all admitted descriptors.
-    pub fn admitted(&self) -> impl Iterator<Item = &dyn AlgorithmDescriptor> {
+    pub fn admitted(&self) -> impl Iterator<Item = &dyn AlgorithmExecute> {
         self.descriptors.values().map(|b| b.as_ref())
     }
 
@@ -404,16 +409,10 @@ fn validate_descriptor_completeness(d: &dyn AlgorithmDescriptor) -> String {
 pub trait AnalyticsBoundaryGuard: Send + Sync + 'static {
     /// Check if the caller is authorized for persist mode.
     fn can_persist(&self, caller: CallerCapabilities) -> bool;
-
-    /// Execute a closure with canonical write access, returning an error
-    /// if the closure attempts a canonical write.
-    fn with_canonical_access<F, T>(&self, f: F) -> Result<T, AnalyticsError>
-    where
-        F: FnOnce() -> Result<T, AnalyticsError>;
 }
 
 /// Caller capabilities for authorization decisions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CallerCapabilities {
     /// Internal services with full access.
     Internal,
@@ -481,6 +480,195 @@ pub fn validate_effective_limits(
     }
 
     Ok(effective)
+}
+
+// ============================================================================
+// RunRequest and RunResult
+// ============================================================================
+
+/// Request to run an analytics algorithm.
+pub struct RunRequest {
+    /// Algorithm identifier.
+    pub algorithm_id: AlgorithmId,
+    /// Schema-validated algorithm parameters.
+    pub params: serde_json::Value,
+    /// Pinned workspace and revision.
+    pub pin: (WorkspaceId, RevisionId),
+    /// Execution mode.
+    pub mode: AnalyticsMode,
+    /// Caller-provided limits (tightened against descriptor maxima).
+    pub caller_limits: PlanLimits,
+    /// Seed for seeded algorithms.
+    pub seed: Option<u64>,
+    /// Idempotency key for persist mode.
+    pub idempotency_key: Option<String>,
+    /// Caller capabilities for authorization.
+    pub caller: CallerCapabilities,
+    /// The call graph to run the algorithm on.
+    pub graph: CallGraph,
+}
+
+/// Result of an analytics run.
+pub struct RunResult {
+    /// Unique run identifier.
+    pub run_id: crate::domain::analytics::lineage::Uuid,
+    /// Final status.
+    pub status: RunStatus,
+    /// Algorithm output.
+    pub output: crate::domain::analytics::RunOutput,
+    /// Row count (if applicable).
+    pub row_count: i64,
+    /// Truncation marker (if truncated).
+    pub truncation_marker: Option<crate::domain::analytics::TruncationMarker>,
+}
+
+// ============================================================================
+// DefaultAnalyticsBoundaryGuard
+// ============================================================================
+
+/// Default boundary guard that allows persist for Internal and TrustedREST callers.
+#[derive(Debug, Clone)]
+pub struct DefaultAnalyticsBoundaryGuard {
+    persist_caller_classes: std::collections::HashSet<CallerCapabilities>,
+}
+
+impl DefaultAnalyticsBoundaryGuard {
+    /// Create a new guard with the default policy.
+    ///
+    /// Internal and TrustedREST callers are authorized for persist.
+    /// ExternalMCP and Explorer are NOT authorized for persist.
+    pub fn new() -> Self {
+        let mut persist_caller_classes = std::collections::HashSet::new();
+        persist_caller_classes.insert(CallerCapabilities::Internal);
+        persist_caller_classes.insert(CallerCapabilities::TrustedREST);
+        Self { persist_caller_classes }
+    }
+}
+
+impl Default for DefaultAnalyticsBoundaryGuard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AnalyticsBoundaryGuard for DefaultAnalyticsBoundaryGuard {
+    fn can_persist(&self, caller: CallerCapabilities) -> bool {
+        self.persist_caller_classes.contains(&caller)
+    }
+}
+
+// ============================================================================
+// AlgorithmRegistry::run
+// ============================================================================
+
+impl AlgorithmRegistry {
+    /// Run an admitted algorithm.
+    ///
+    /// This is the main entry point for analytics execution. It:
+    /// 1. Looks up the descriptor by algorithm_id
+    /// 2. Validates effective limits
+    /// 3. Checks persist authorization if mode == Persist
+    /// 4. Inserts a pending lineage record
+    /// 5. Dispatches to the algorithm's execute() method
+    /// 6. Updates the lineage record with the result
+    /// 7. Returns the run result
+    pub async fn run(
+        &self,
+        request: RunRequest,
+    ) -> Result<RunResult, AnalyticsError> {
+        // Step 1: Look up the descriptor
+        let descriptor = self
+            .get(&request.algorithm_id)
+            .ok_or_else(|| AnalyticsError::NotAdmitted(request.algorithm_id.clone()))?;
+
+        // Step 2: Validate effective limits
+        let effective_limits = validate_effective_limits(descriptor, request.caller_limits)?;
+
+        // Step 3: Check persist authorization
+        if request.mode == AnalyticsMode::Persist {
+            if self.boundary_guard.as_ref().map_or(true, |g| !g.can_persist(request.caller)) {
+                return Err(AnalyticsError::PersistUnauthorized);
+            }
+        }
+
+        // Step 4: Insert pending lineage record
+        let mut lineage = RunLineage::new(
+            request.pin.0.clone(),
+            request.pin.1.clone(),
+            request.algorithm_id.clone(),
+            descriptor.identity().version.to_string(),
+            vec![], // plan_hash - empty for now
+            request.params.clone(),
+            request.seed,
+            request.mode,
+        );
+        if let Some(ref key) = request.idempotency_key {
+            lineage.set_idempotency_key(key.clone());
+        }
+
+        // Clone lineage for first async insert
+        let lineage_store = self.lineage.clone();
+        let lineage_for_insert = lineage.clone();
+        tokio::runtime::Handle::current()
+            .spawn(async move {
+                lineage_store.insert(&lineage_for_insert).await
+            })
+            .await
+            .map_err(|e| AnalyticsError::Internal(format!("lineage insert task: {e}")))?
+            .map_err(|e| AnalyticsError::Internal(format!("lineage insert: {e}")))?;
+
+        // Step 5: Dispatch to algorithm's execute() method
+        let exec_result = descriptor.execute(&request.params, &request.graph, &effective_limits).await;
+
+        // Step 6: Update lineage record with result and extract output
+        let (status, row_count, truncation_marker, output) = match exec_result {
+            Ok(output) => {
+                let count = output.row_count();
+                lineage.succeed(count);
+                (RunStatus::Succeeded, count, None, Some(output))
+            }
+            Err(AnalyticsError::LimitExceeded(kind)) => {
+                lineage.fail(format!("LimitExceeded({:?})", kind), kind.to_string());
+                return Err(AnalyticsError::LimitExceeded(kind));
+            }
+            Err(AnalyticsError::Truncated(msg)) => {
+                // Determine truncation marker from limits
+                let marker = if effective_limits.max_result_rows.is_some() {
+                    Some(crate::domain::analytics::TruncationMarker::ResultRowsLimit)
+                } else {
+                    None
+                };
+                lineage.truncate(marker.unwrap_or(crate::domain::analytics::TruncationMarker::ResultRowsLimit), 0);
+                (RunStatus::Truncated, 0, marker, None)
+            }
+            Err(e) => {
+                lineage.fail(e.to_string(), format!("{:?}", e));
+                return Err(e);
+            }
+        };
+
+        // Update lineage in store
+        let lineage_store = self.lineage.clone();
+        let lineage_for_update = lineage.clone();
+        tokio::runtime::Handle::current()
+            .spawn(async move {
+                lineage_store.insert(&lineage_for_update).await
+            })
+            .await
+            .map_err(|e| AnalyticsError::Internal(format!("lineage update task: {e}")))?
+            .map_err(|e| AnalyticsError::Internal(format!("lineage update: {e}")))?;
+
+        // Step 7: Return result
+        let output = output.expect("output must be Some for success case");
+
+        Ok(RunResult {
+            run_id: lineage.run_id,
+            status,
+            output,
+            row_count,
+            truncation_marker,
+        })
+    }
 }
 
 #[cfg(test)]

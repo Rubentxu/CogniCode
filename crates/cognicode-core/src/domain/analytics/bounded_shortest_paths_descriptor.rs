@@ -4,13 +4,16 @@
 
 use std::sync::LazyLock;
 
+use crate::domain::aggregates::{CallGraph, SymbolId};
 use crate::domain::analytics::{
-    AlgorithmDescriptor, AlgorithmIdentity, AlgorithmId, AlgorithmParams,
-    AlgorithmVersion, AnalyticsMode, ComplexityClass, DeterminismKind,
+    AlgorithmDescriptor, AlgorithmExecute, AlgorithmIdentity, AlgorithmId, AlgorithmParams,
+    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind,
     Fixture, FixtureGraph, Maturity, OutputField, OutputSchema, OutputType,
-    ProjectionAssumption,
+    ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
+use crate::infrastructure::graph::CallGraphProjection;
+use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
 // Bounded Shortest Paths params
@@ -18,11 +21,11 @@ use crate::domain::plan::limits::PlanLimits;
 
 /// Parameter names for bounded shortest paths.
 static BSP_PARAM_NAMES: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| vec!["max_hops", "max_paths"]);
+    LazyLock::new(|| vec!["from_symbol", "to_symbol", "max_hops", "max_paths"]);
 
 /// Bounded Shortest Paths parameter schema.
 ///
-/// Required: `max_hops` (positive integer, max intermediate nodes).
+/// Required: `from_symbol`, `to_symbol` (symbol names), `max_hops` (positive integer).
 /// Optional: `max_paths` (positive integer, max paths to return).
 pub struct BoundedShortestPathsParams;
 
@@ -33,6 +36,20 @@ impl AlgorithmParams for BoundedShortestPathsParams {
 
     fn validate(&self, params: &serde_json::Value) -> Result<(), String> {
         if let Some(obj) = params.as_object() {
+            // from_symbol is required
+            if !obj.contains_key("from_symbol") {
+                return Err("missing required parameter: from_symbol".into());
+            }
+            if !obj.get("from_symbol").map(|v| v.is_string()).unwrap_or(false) {
+                return Err("from_symbol must be a string".into());
+            }
+            // to_symbol is required
+            if !obj.contains_key("to_symbol") {
+                return Err("missing required parameter: to_symbol".into());
+            }
+            if !obj.get("to_symbol").map(|v| v.is_string()).unwrap_or(false) {
+                return Err("to_symbol must be a string".into());
+            }
             // max_hops is required
             if !obj.contains_key("max_hops") {
                 return Err("missing required parameter: max_hops".into());
@@ -230,5 +247,93 @@ impl AlgorithmDescriptor for BoundedShortestPathsDescriptor {
     fn projection_assumption(&self) -> &ProjectionAssumption {
         // all_simple_paths uses out_neighbors (CallGraphOutgoing)
         &ProjectionAssumption::CallGraphOutgoing
+    }
+}
+
+#[async_trait::async_trait]
+impl AlgorithmExecute for BoundedShortestPathsDescriptor {
+    async fn execute(
+        &self,
+        params: &serde_json::Value,
+        graph: &CallGraph,
+        limits: &PlanLimits,
+    ) -> Result<RunOutput, AnalyticsError> {
+        let obj = params
+            .as_object()
+            .ok_or_else(|| AnalyticsError::Internal("BSP params must be a JSON object".into()))?;
+
+        let from_symbol = obj
+            .get("from_symbol")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AnalyticsError::Internal("missing required param: from_symbol".into()))?;
+        let to_symbol = obj
+            .get("to_symbol")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AnalyticsError::Internal("missing required param: to_symbol".into()))?;
+        let max_hops = obj
+            .get("max_hops")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .unwrap_or(100);
+        let max_paths = obj
+            .get("max_paths")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
+
+        let projection = CallGraphProjection::from_call_graph(graph);
+        let out_neighbors = projection.build_out_neighbors();
+        let n = projection.node_count();
+
+        let from_id = SymbolId::new(from_symbol.to_string());
+        let to_id = SymbolId::new(to_symbol.to_string());
+
+        let (Some(&from_idx), Some(&to_idx)) = (
+            projection.id_to_index().get(&from_id),
+            projection.id_to_index().get(&to_id),
+        ) else {
+            // Unknown symbols - return empty result
+            let empty: Vec<serde_json::Value> = vec![];
+            return Ok(RunOutput::BoundedShortestPaths(serde_json::to_value(empty).unwrap()));
+        };
+
+        let mut paths = cognicode_graph_algos::all_simple_paths(
+            &out_neighbors,
+            from_idx.index(),
+            to_idx.index(),
+            max_hops,
+        );
+
+        // Apply max_paths limit
+        if let Some(max_p) = max_paths {
+            paths.truncate(max_p);
+        }
+
+        // Enforce result_rows limit from limits
+        let max_result_rows = limits.max_result_rows.unwrap_or(100_000) as usize;
+        paths.truncate(max_result_rows);
+
+        // Map paths to string representation
+        let result_paths: Vec<serde_json::Value> = paths
+            .into_iter()
+            .take(max_result_rows)
+            .map(|path| {
+                let nodes: Vec<String> = path
+                    .into_iter()
+                    .filter_map(|idx| {
+                        projection
+                            .id_to_index()
+                            .iter()
+                            .find(|(_, ni)| ni.index() == idx)
+                            .map(|(sid, _)| sid.as_str().to_string())
+                    })
+                    .collect();
+                serde_json::json!({
+                    "nodes": nodes,
+                    "cost": 1.0  // unweighted, cost = 1 per edge
+                })
+            })
+            .collect();
+
+        Ok(RunOutput::BoundedShortestPaths(serde_json::to_value(result_paths).unwrap()))
     }
 }
