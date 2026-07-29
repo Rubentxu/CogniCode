@@ -1356,7 +1356,11 @@ impl PostgresRepository {
             target_id: String,
             kind: String,
             provenance: String,
-            confidence: f64,
+            // Schema stores `confidence REAL` (f32). Cast to f64 to match
+            // the `GraphEdge.confidence: f64` field. Pre-existing schema
+            // mismatch surfaced when restarting the postgres container
+            // wiped the volume (2026-07-29).
+            confidence: f32,
         }
 
         let edges: Vec<GraphEdgeRow> = sqlx::query_as(
@@ -1395,7 +1399,8 @@ impl PostgresRepository {
 
             // Round-trip: provenance + confidence → ExtractionContext →
             // ConfidenceRules::assign → same (provenance, confidence).
-            let ctx = Self::provenance_to_extraction_context(provenance, row.confidence);
+            // Cast f32 → f64 to match `ExtractionContext`'s f64 confidence.
+            let ctx = Self::provenance_to_extraction_context(provenance, row.confidence as f64);
             graph
                 .add_dependency_with_provenance(src_id, tgt_id, dep_type, ctx)
                 .map_err(|e| {

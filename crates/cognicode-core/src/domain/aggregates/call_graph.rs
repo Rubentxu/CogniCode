@@ -211,6 +211,23 @@ impl CallGraph {
         })
     }
 
+    /// Returns an iterator over all dependencies with full metadata
+    /// `(source, target, dep_type, provenance, confidence)`. Used by the
+    /// snapshot executor to populate `EdgeResult.properties` so the
+    /// conformance harness sees the same shape as the PG executor
+    /// (e28-2-pr4-conformance).
+    pub fn all_dependencies_with_metadata(
+        &self,
+    ) -> impl Iterator<Item = (&SymbolId, &SymbolId, &DependencyType, Provenance, f64)> {
+        self.edges.iter().flat_map(|(source, targets)| {
+            targets
+                .iter()
+                .map(move |((target, dep_type), (provenance, confidence))| {
+                    (source, target, dep_type, *provenance, *confidence)
+                })
+        })
+    }
+
     /// Returns all dependencies (outgoing edges) for a symbol
     pub fn dependencies(
         &self,

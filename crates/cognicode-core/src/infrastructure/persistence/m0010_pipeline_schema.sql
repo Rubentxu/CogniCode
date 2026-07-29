@@ -216,14 +216,32 @@ CREATE INDEX IF NOT EXISTS idx_graph_reports_workspace
 -- =============================================================================
 -- 8. notify_graph_change trigger (ADR-022)
 -- =============================================================================
+-- Note: m0018 (workspace-scoped identity) dropped `source_path` from
+-- `graph_edges` (it remains in `graph_nodes`). The original trigger
+-- referenced `NEW.source_path` which fails for inserts into graph_edges.
+-- The fix uses TG_TABLE_NAME to conditionally include `source_path`
+-- only for `graph_nodes` inserts. Fix applied 2026-07-29 (pre-existing
+-- bug surfaced when restarting the postgres container wiped the volume
+-- and forced migrations to run from scratch).
 CREATE OR REPLACE FUNCTION notify_graph_change() RETURNS trigger AS $$
+DECLARE
+    payload text;
 BEGIN
-    PERFORM pg_notify('graph_updated', json_build_object(
-        'workspace_id', COALESCE(NEW.workspace_id, OLD.workspace_id),
-        'source_path', COALESCE(NEW.source_path, OLD.source_path),
-        'action', TG_OP,
-        'timestamp', extract(epoch from now())
-    )::text);
+    IF TG_TABLE_NAME = 'graph_nodes' THEN
+        payload := json_build_object(
+            'workspace_id', COALESCE(NEW.workspace_id, OLD.workspace_id),
+            'source_path', COALESCE(NEW.source_path, OLD.source_path),
+            'action', TG_OP,
+            'timestamp', extract(epoch from now())
+        )::text;
+    ELSE
+        payload := json_build_object(
+            'workspace_id', COALESCE(NEW.workspace_id, OLD.workspace_id),
+            'action', TG_OP,
+            'timestamp', extract(epoch from now())
+        )::text;
+    END IF;
+    PERFORM pg_notify('graph_updated', payload);
     RETURN COALESCE(NEW, OLD);
 END;
 $$ LANGUAGE plpgsql;

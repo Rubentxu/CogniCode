@@ -573,7 +573,10 @@ impl<'a> SnapshotGraphExecutor<'a> {
             .map(|symbol_id| {
                 let symbol = graph.get_symbol(&crate::domain::aggregates::call_graph::SymbolId::new(symbol_id));
                 let (labels, properties) = if let Some(sym) = symbol {
-                    let kind_str = format!("{:?}", sym.kind());
+                    // Use Display (lowercase, e.g. "function") instead of
+                    // Debug (PascalCase, e.g. "Function") to match the PG
+                    // executor's `parse_node_labels("symbol.function")` output.
+                    let kind_str = sym.kind().to_string();
                     let labels = if kind_str.starts_with("symbol.") {
                         vec![kind_str.strip_prefix("symbol.").unwrap_or(&kind_str).to_string()]
                     } else {
@@ -591,6 +594,11 @@ impl<'a> SnapshotGraphExecutor<'a> {
                 }
             })
             .collect();
+        // Sort nodes by id ASC so deterministic truncation (LIMIT N) yields
+        // the same N nodes on PG and snapshot backends. Required for
+        // `assert_equivalent` conformance when `max_result_rows` truncates.
+        let mut nodes = nodes;
+        nodes.sort_by(|a, b| a.id.cmp(&b.id));
 
         let truncated = limits.max_result_rows.is_some()
             && nodes.len() as u64 >= limits.max_result_rows.unwrap();
@@ -628,6 +636,21 @@ impl<'a> SnapshotGraphExecutor<'a> {
         use std::time::Instant;
 
         let start = Instant::now();
+
+        // Build a (src, tgt) → (provenance, confidence) lookup up-front so
+        // EdgeResult.properties mirrors the PG executor's shape.
+        let edge_meta: std::collections::HashMap<
+            (String, String),
+            (crate::domain::value_objects::Provenance, f64),
+        > = graph
+            .all_dependencies_with_metadata()
+            .map(|(src, tgt, dep, prov, conf)| {
+                (
+                    (src.as_str().to_string(), tgt.as_str().to_string()),
+                    (prov, conf),
+                )
+            })
+            .collect();
 
         let depth = limits.max_depth.unwrap_or(5) as usize;
 
@@ -688,7 +711,10 @@ impl<'a> SnapshotGraphExecutor<'a> {
             .map(|symbol_id| {
                 let symbol = graph.get_symbol(&crate::domain::aggregates::call_graph::SymbolId::new(symbol_id));
                 let (labels, properties) = if let Some(sym) = symbol {
-                    let kind_str = format!("{:?}", sym.kind());
+                    // Use Display (lowercase, e.g. "function") instead of
+                    // Debug (PascalCase, e.g. "Function") to match the PG
+                    // executor's `parse_node_labels("symbol.function")` output.
+                    let kind_str = sym.kind().to_string();
                     let labels = if kind_str.starts_with("symbol.") {
                         vec![kind_str.strip_prefix("symbol.").unwrap_or(&kind_str).to_string()]
                     } else {
@@ -706,6 +732,11 @@ impl<'a> SnapshotGraphExecutor<'a> {
                 }
             })
             .collect();
+        // Sort nodes by id ASC so deterministic truncation (LIMIT N) yields
+        // the same N nodes on PG and snapshot backends. Required for
+        // `assert_equivalent` conformance when `max_result_rows` truncates.
+        let mut nodes = nodes;
+        nodes.sort_by(|a, b| a.id.cmp(&b.id));
 
         // Build result edges (only edges where both endpoints are in visited set)
         let visited_set: HashSet<&str> = visited
@@ -721,13 +752,25 @@ impl<'a> SnapshotGraphExecutor<'a> {
             if let (Some(src), Some(tgt)) = (src_id, tgt_id) {
                 if visited_set.contains(src.as_str()) && visited_set.contains(tgt.as_str()) {
                     let dep_type = edge_ref.weight();
-                    let kind_str = format!("dependency.{:?}", dep_type);
+                    // Use Display (lowercase, e.g. "calls") instead of Debug ("Calls") to
+                    // match the PG executor's `format!("dependency.{}", dep_type)`
+                    // which produces "dependency.calls". Conformance parity.
+                    let kind_str = format!("dependency.{}", dep_type);
+                    let (provenance, confidence) =
+                        edge_meta.get(&(src.clone(), tgt.clone())).copied().unwrap_or((
+                            crate::domain::value_objects::Provenance::Extracted,
+                            1.0,
+                        ));
+                    let properties = vec![
+                        TypedValue::String(provenance.to_string()),
+                        TypedValue::Float(confidence),
+                    ];
                     edges.push(EdgeResult {
                         id: format!("{}->{}", src, tgt),
                         src: src.clone(),
                         dst: tgt.clone(),
                         label: kind_str,
-                        properties: vec![],
+                        properties,
                     });
                 }
             }
@@ -972,6 +1015,11 @@ impl<'a> SnapshotGraphExecutor<'a> {
                 }
             })
             .collect();
+        // Sort nodes by id ASC so deterministic truncation (LIMIT N) yields
+        // the same N nodes on PG and snapshot backends. Required for
+        // `assert_equivalent` conformance when `max_result_rows` truncates.
+        let mut nodes = nodes;
+        nodes.sort_by(|a, b| a.id.cmp(&b.id));
 
         // Apply max_result_rows limit
         let mut result_nodes = nodes;
