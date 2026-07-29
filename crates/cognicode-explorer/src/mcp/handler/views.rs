@@ -9,6 +9,7 @@
 //! - `moldql_pattern_query` — execute a Pattern Profile query (T7)
 //! - `moldql_pattern_capabilities` — return v1 supported-feature matrix (T7)
 
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -534,8 +535,27 @@ impl ToolHandler for PatternQueryHandler {
             }
         };
 
+        // Resolve pin: explicit args > ctx.current_pin() > default fallback.
+        let (ws_id, rev_id) = match (&args.workspace_id, args.revision_id) {
+            (Some(ws), Some(rev)) => (ws.clone(), rev),
+            (Some(ws), None) => (
+                ws.clone(),
+                ctx.revision_tracker
+                    .as_ref()
+                    .map(|t| t.load(Ordering::SeqCst))
+                    .unwrap_or(1),
+            ),
+            (None, Some(rev)) => {
+                let (ws, _) = ctx.current_pin();
+                (ws, rev)
+            }
+            (None, None) => ctx.current_pin(),
+        };
         let result: Result<crate::dto::MoldQLResultDto, _> =
-            moldql_service.execute_query(&query).await.map(crate::dto::MoldQLResultDto::from);
+            moldql_service
+                .execute_query_pinned(&query, ws_id, rev_id)
+                .await
+                .map(crate::dto::MoldQLResultDto::from);
 
         match result {
             Ok(dto) => {

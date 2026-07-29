@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
@@ -9,6 +10,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use serde::Deserialize;
+use serde::Serialize;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
@@ -225,7 +227,7 @@ pub fn apply_landing_cap(total: usize) -> (bool, Option<String>) {
 // ============================================================================
 
 /// Request body for `POST /api/moldql/pattern`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PatternQueryBody {
     /// The Pattern Profile query string to execute.
     pub query: String,
@@ -498,6 +500,10 @@ pub struct ApiState {
     pub ingest: Option<Arc<cognicode_core::application::ingest::IngestController>>,
     /// Optional snapshot rendering service (requires mmdc on PATH).
     pub snapshot: Option<Arc<SnapshotService>>,
+    /// Monotonically-increasing counter incremented after each successful ingest.
+    /// Used as a fallback `revision_id` for `MoldQLService::execute_query_pinned`
+    /// when the caller doesn't supply one.
+    pub revision_tracker: Arc<AtomicU64>,
 }
 
 impl ApiState {
@@ -521,6 +527,7 @@ impl ApiState {
             graph_repo: None,
             ingest: None,
             snapshot: None,
+            revision_tracker: Arc::new(AtomicU64::new(1)),
         }
     }
 
@@ -554,6 +561,26 @@ impl ApiState {
             investigation: Some(investigation),
             ..self
         }
+    }
+
+    /// Inject a custom revision tracker (used by tests to verify bump behaviour).
+    pub fn with_revision_tracker(self, tracker: Arc<AtomicU64>) -> Self {
+        Self {
+            revision_tracker: tracker,
+            ..self
+        }
+    }
+
+    /// Returns the current workspace_id (from WorkspaceService) and the latest revision_id.
+    /// Falls back to `("default", 1)` if workspace service has no current workspace.
+    pub fn current_pin(&self) -> (String, u64) {
+        let ws_id = self
+            .workspace
+            .current_workspace()
+            .map(|w| w.id)
+            .unwrap_or_else(|_| "default".to_string());
+        let rev = self.revision_tracker.load(Ordering::SeqCst);
+        (ws_id, rev)
     }
 }
 
@@ -819,7 +846,7 @@ async fn open_workspace(
     Ok(Json(summary).into_response())
 }
 
-async fn index_workspace(
+pub async fn index_workspace(
     State(state): State<ApiState>,
     Path(workspace_id): Path<String>,
 ) -> Result<Response, ApiError> {
@@ -830,15 +857,19 @@ async fn index_workspace(
     })?;
 
     match ingest.start_scan(&workspace_id).await {
-        Ok(accepted) => Ok((
-            axum::http::StatusCode::ACCEPTED,
-            Json(serde_json::json!({
-                "job_id": accepted.job_id,
-                "status": accepted.status,
-                "message": accepted.message,
-            })),
-        )
-            .into_response()),
+        Ok(accepted) => {
+            // Bump revision tracker after each successful ingest.
+            state.revision_tracker.fetch_add(1, Ordering::SeqCst);
+            Ok((
+                axum::http::StatusCode::ACCEPTED,
+                Json(serde_json::json!({
+                    "job_id": accepted.job_id,
+                    "status": accepted.status,
+                    "message": accepted.message,
+                })),
+            )
+                .into_response())
+        }
         Err(e) => Err(ApiError(ExplorerError::InvalidInput(e))),
     }
 }
@@ -1484,13 +1515,23 @@ async fn apply_lens(
 ///
 /// Accepts a JSON body with `query`, optional `workspace_id`, and optional
 /// `revision_id`. Response mirrors the shape of `/api/moldql/query`.
-async fn moldql_pattern_handler(
+pub async fn moldql_pattern_handler(
     State(state): State<ApiState>,
     Json(body): Json<PatternQueryBody>,
 ) -> Result<Response, ApiError> {
+    // Resolve pin: explicit body > runtime current_pin > default fallback.
+    let (ws_id, rev_id) = match (&body.workspace_id, body.revision_id) {
+        (Some(ws), Some(rev)) => (ws.clone(), rev),
+        (Some(ws), None) => (ws.clone(), state.revision_tracker.load(Ordering::SeqCst)),
+        (None, Some(rev)) => {
+            let (ws, _) = state.current_pin();
+            (ws, rev)
+        }
+        (None, None) => state.current_pin(),
+    };
     let result = state
         .moldql
-        .execute_query(&body.query)
+        .execute_query_pinned(&body.query, ws_id, rev_id)
         .await
         .map_err(ApiError)?;
     Ok(Json(crate::dto::MoldQLResultDto::from(result)).into_response())
@@ -1862,7 +1903,7 @@ async fn regenerate_artifact(
     .into_response())
 }
 
-struct ApiError(ExplorerError);
+pub struct ApiError(ExplorerError);
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {

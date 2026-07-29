@@ -9,6 +9,7 @@
 //! all invocations. Handlers that need only a subset of these fields
 //! borrow only what they use (ISP compliance).
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::CallGraph;
@@ -74,6 +75,9 @@ pub struct McpContext {
     /// Snapshot rendering service (requires mmdc on PATH).
     /// Used by the snapshot MCP handler to render diagrams as PNG/SVG.
     pub snapshot: Option<Arc<SnapshotService>>,
+    /// Optional revision tracker for Pattern Profile query pinning.
+    /// When `Some`, used as the fallback `revision_id` when MCP callers don't supply one.
+    pub revision_tracker: Option<Arc<AtomicU64>>,
 }
 
 impl McpContext {
@@ -95,6 +99,7 @@ impl McpContext {
             quality_write: None,
             edge_emitter: None,
             snapshot: None,
+            revision_tracker: None,
         }
     }
 
@@ -163,6 +168,30 @@ impl McpContext {
         self.snapshot = Some(snapshot);
         self
     }
+
+    /// Wire a revision tracker for Pattern Profile query pinning.
+    pub fn with_revision_tracker(mut self, tracker: Arc<AtomicU64>) -> Self {
+        self.revision_tracker = Some(tracker);
+        self
+    }
+
+    /// Returns the current workspace_id and revision_id for query pinning.
+    /// Falls back to `("default", 1)` if workspace service has no current workspace
+    /// or if no revision tracker is wired.
+    pub fn current_pin(&self) -> (String, u64) {
+        let ws_id = self
+            .workspace
+            .as_ref()
+            .and_then(|w| w.current_workspace().ok())
+            .map(|w| w.id)
+            .unwrap_or_else(|| "default".to_string());
+        let rev = self
+            .revision_tracker
+            .as_ref()
+            .map(|t| t.load(Ordering::SeqCst))
+            .unwrap_or(1);
+        (ws_id, rev)
+    }
 }
 
 /// Builder for [`McpContext`].
@@ -180,6 +209,7 @@ pub struct McpContextBuilder {
     quality_write: Option<Arc<dyn QualityWritePort>>,
     edge_emitter: Option<Arc<dyn EdgeEmitter>>,
     snapshot: Option<Arc<SnapshotService>>,
+    revision_tracker: Option<Arc<AtomicU64>>,
     #[cfg(feature = "multimodal")]
     graph_repo: Option<Option<Arc<dyn crate::ports::graph_repository::GraphRepository>>>,
 }
@@ -200,6 +230,7 @@ impl McpContextBuilder {
             quality_write: None,
             edge_emitter: None,
             snapshot: None,
+            revision_tracker: None,
             #[cfg(feature = "multimodal")]
             graph_repo: Some(None),
         }
@@ -283,6 +314,12 @@ impl McpContextBuilder {
         self
     }
 
+    /// Wire a revision tracker for Pattern Profile query pinning.
+    pub fn with_revision_tracker(mut self, tracker: Arc<AtomicU64>) -> Self {
+        self.revision_tracker = Some(tracker);
+        self
+    }
+
     /// Wire an optional `GraphQueryPort` into the context (Phase 4).
     /// Passes through `None` when `graph_query` is `None`.
     pub fn with_optional_graph_query(
@@ -320,6 +357,7 @@ impl McpContextBuilder {
             quality_write: self.quality_write,
             edge_emitter: self.edge_emitter,
             snapshot: self.snapshot,
+            revision_tracker: self.revision_tracker,
         }
     }
 }

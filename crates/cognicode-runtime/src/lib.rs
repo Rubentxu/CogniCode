@@ -1,6 +1,7 @@
 //! CogniCode Runtime — shared bootstrap for API and MCP binaries.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -20,6 +21,8 @@ pub struct Runtime {
     /// PostgresRepository for the ingest pipeline (PG-connected Mode B only).
     #[cfg(feature = "postgres")]
     pub pg_repo: Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
+    /// Shared revision tracker — bumped by `index_workspace` after each successful ingest.
+    pub revision_tracker: Arc<AtomicU64>,
 }
 
 impl Runtime {
@@ -94,6 +97,7 @@ impl Runtime {
             graph_cache,
             #[cfg(feature = "postgres")]
             pg_repo,
+            revision_tracker: Arc::new(AtomicU64::new(1)),
         })
     }
 
@@ -298,6 +302,9 @@ impl Runtime {
             state = state.with_investigation(investigation);
         }
 
+        // Wire the shared revision tracker so MoldQL REST endpoints can pin queries.
+        state = state.with_revision_tracker(self.revision_tracker.clone());
+
         state
     }
 
@@ -329,6 +336,7 @@ impl Runtime {
             self.graph,
             quality,
             quality_write,
+            self.revision_tracker,
             #[cfg(feature = "multimodal")]
             edge_emitter,
             #[cfg(feature = "ownership")]
