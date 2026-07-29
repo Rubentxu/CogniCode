@@ -10,11 +10,18 @@ use async_trait::async_trait;
 use rmcp::model::CallToolResult;
 use serde::Deserialize;
 use serde_json::Value;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+
+use cognicode_core::application::services::graph_analytics::{
+    AlgorithmRegistry, CallerCapabilities, DefaultAnalyticsBoundaryGuard, RunRequest,
+};
+use cognicode_core::domain::analytics::lineage::{RunLineageFilter, RunLineageStore, Uuid};
+use cognicode_core::domain::analytics::{AnalyticsMode, RunOutput};
+use cognicode_core::domain::plan::limits::PlanLimits;
 
 use crate::dto::{
     AnalyticsCatalogResponse, AnalyticsLineageDetailResponse, AnalyticsLineageResponse,
-    AlgorithmDescriptorSummary, LineageEntry, RunAnalyticsRequest, RunAnalyticsResponse,
+    AlgorithmDescriptorSummary, LineageEntry, RunAnalyticsResponse,
 };
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
@@ -145,16 +152,29 @@ impl ToolHandler for AnalyticsRunHandler {
             }
         };
 
-        // Validate algorithm_id format - from_string panics on empty string
-        if algorithm_id.is_empty() {
-            return err_envelope(
-                TOOL_ANALYTICS_RUN,
-                "unknown_algorithm",
-                "analytics_run: algorithm_id cannot be empty",
-            );
-        }
-        let _algorithm_id_parsed =
-            cognicode_core::domain::analytics::descriptor::AlgorithmId::from_string(&algorithm_id);
+        // Require analytics_registry
+        let registry = match ctx.analytics_registry.as_ref() {
+            Some(r) => r,
+            None => {
+                return err_envelope(
+                    TOOL_ANALYTICS_RUN,
+                    "analytics_not_available",
+                    "analytics_run: AlgorithmRegistry not wired in this context",
+                );
+            }
+        };
+
+        // Require lineage store
+        let lineage = match ctx.analytics_lineage_store.as_ref() {
+            Some(l) => l,
+            None => {
+                return err_envelope(
+                    TOOL_ANALYTICS_RUN,
+                    "analytics_not_available",
+                    "analytics_run: AnalyticsLineageStore not wired in this context",
+                );
+            }
+        };
 
         // Require graph for algorithm execution
         let graph = match ctx.graph.as_ref() {
@@ -168,56 +188,67 @@ impl ToolHandler for AnalyticsRunHandler {
             }
         };
 
+        // Parse algorithm_id
+        let algorithm_id_parsed =
+            cognicode_core::domain::analytics::descriptor::AlgorithmId::from_string(&algorithm_id);
+
+        // Build RunRequest
+        let (workspace_id, revision_id) = ctx.current_pin();
+        let workspace_id = cognicode_core::domain::value_objects::WorkspaceId::try_new(workspace_id)
+            .unwrap_or_else(|_| cognicode_core::domain::value_objects::WorkspaceId::try_new("default").unwrap());
+        let revision_id = cognicode_core::domain::value_objects::RevisionId::new(revision_id);
+
         let max_hops = args.max_hops.unwrap_or(5);
-
-        // Execute BSP using GraphAnalyticsService
-        let from_id = cognicode_core::domain::aggregates::SymbolId::new(from_symbol.clone());
-        let to_id = cognicode_core::domain::aggregates::SymbolId::new(to_symbol.clone());
-
-        let paths = cognicode_core::application::services::graph_analytics::GraphAnalyticsService::all_simple_paths(
-            graph,
-            &from_id,
-            &to_id,
-            max_hops,
-        );
-
-        let path_summaries: Vec<_> = paths
-            .iter()
-            .take(100)
-            .map(|path| {
-                path.iter()
-                    .map(|sid| sid.as_str().to_string())
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-
-        let run_id = format!(
-            "run_{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        );
-        let executed_at = chrono::Utc::now().to_rfc3339();
-
-        let result = serde_json::json!({
-            "algorithm_id": algorithm_id,
+        let params = serde_json::json!({
             "from_symbol": from_symbol,
             "to_symbol": to_symbol,
             "max_hops": max_hops,
-            "paths_found": paths.len(),
-            "paths": path_summaries,
         });
 
-        let response = RunAnalyticsResponse {
-            algorithm_id,
-            run_id: run_id.clone(),
-            executed_at,
-            lineage_persisted: false,
-            result,
+        let request = RunRequest {
+            algorithm_id: algorithm_id_parsed,
+            params,
+            pin: (workspace_id, revision_id),
+            mode: AnalyticsMode::Stats,
+            caller_limits: PlanLimits::default(),
+            seed: None,
+            idempotency_key: None,
+            caller: CallerCapabilities::ExternalMCP,
+            graph: (*graph).as_ref().clone(),
         };
 
-        ok_envelope(TOOL_ANALYTICS_RUN, &response)
+        // Execute via registry with ExternalMCP capability (Persist denied by default)
+        let result = match registry.run(request).await {
+            Ok(run_result) => {
+                // Map RunResult to RunAnalyticsResponse
+                let run_id = run_result.run_id.to_string();
+                let executed_at = chrono::Utc::now().to_rfc3339();
+                let output_json = match run_result.output {
+                    RunOutput::PageRank(v) => v,
+                    RunOutput::Scc(v) => v,
+                    RunOutput::Wcc(v) => v,
+                    RunOutput::BoundedShortestPaths(v) => v,
+                };
+                let lineage_persisted = matches!(run_result.status, cognicode_core::domain::analytics::lineage::RunStatus::Succeeded);
+
+                RunAnalyticsResponse {
+                    algorithm_id: algorithm_id.clone(),
+                    run_id,
+                    executed_at,
+                    lineage_persisted,
+                    result: output_json,
+                }
+            }
+            Err(e) => {
+                return err_envelope(
+                    TOOL_ANALYTICS_RUN,
+                    "analytics_error",
+                    &format!("analytics_run: {e}"),
+                );
+            }
+        };
+
+        ok_envelope(TOOL_ANALYTICS_RUN, &result)
     }
 }
 
@@ -241,42 +272,49 @@ impl ToolHandler for AnalyticsCatalogHandler {
         })
     }
 
-    async fn handle(&self, _ctx: &McpContext, _params: Value) -> CallToolResult {
-        // Return stub catalog - in production this would query the AlgorithmRegistry
-        let algorithms = vec![
-            AlgorithmDescriptorSummary {
-                id: "bounded_shortest_paths".to_string(),
-                name: "Bounded Shortest Paths".to_string(),
-                version: "1.0.0".to_string(),
-                description: "Find all simple paths between two symbols bounded by max hops".to_string(),
-                mode: "Stream".to_string(),
-                categories: vec!["pathfinding".to_string(), "graph".to_string()],
-            },
-            AlgorithmDescriptorSummary {
-                id: "page_rank".to_string(),
-                name: "PageRank".to_string(),
-                version: "1.0.0".to_string(),
-                description: "Compute PageRank scores for all symbols in the call graph".to_string(),
-                mode: "Stats".to_string(),
-                categories: vec!["centrality".to_string(), "graph".to_string()],
-            },
-            AlgorithmDescriptorSummary {
-                id: "scc".to_string(),
-                name: "Strongly Connected Components".to_string(),
-                version: "1.0.0".to_string(),
-                description: "Find strongly connected components in the call graph".to_string(),
-                mode: "Stats".to_string(),
-                categories: vec!["clustering".to_string(), "graph".to_string()],
-            },
-            AlgorithmDescriptorSummary {
-                id: "wcc".to_string(),
-                name: "Weakly Connected Components".to_string(),
-                version: "1.0.0".to_string(),
-                description: "Find weakly connected components in the call graph".to_string(),
-                mode: "Stats".to_string(),
-                categories: vec!["clustering".to_string(), "graph".to_string()],
-            },
-        ];
+    async fn handle(&self, ctx: &McpContext, _params: Value) -> CallToolResult {
+        // Get the registry from context
+        let registry = match ctx.analytics_registry.as_ref() {
+            Some(r) => r,
+            None => {
+                return err_envelope(
+                    TOOL_ANALYTICS_CATALOG,
+                    "analytics_not_available",
+                    "analytics_catalog: AlgorithmRegistry not wired in this context",
+                );
+            }
+        };
+
+        // Query admitted algorithms from the registry
+        let algorithms: Vec<AlgorithmDescriptorSummary> = registry
+            .admitted()
+            .map(|d| {
+                let identity = d.identity();
+                // Build a readable name from the algorithm id (e.g., "bounded_shortest_paths" -> "Bounded Shortest Paths")
+                let name = identity
+                    .id
+                    .as_str()
+                    .split('_')
+                    .map(|word| {
+                        let mut chars = word.chars();
+                        match chars.next() {
+                            None => String::new(),
+                            Some(c) => c.to_uppercase().chain(chars).collect(),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                AlgorithmDescriptorSummary {
+                    id: identity.id.as_str().to_string(),
+                    name,
+                    version: identity.version.as_str().to_string(),
+                    description: "No description available".to_string(),
+                    mode: format!("{:?}", d.supported_modes().first().unwrap_or(&AnalyticsMode::Stats)),
+                    categories: vec!["analytics".to_string()],
+                }
+            })
+            .collect();
 
         let total = algorithms.len();
         let response = AnalyticsCatalogResponse { algorithms, total };
@@ -310,7 +348,7 @@ impl ToolHandler for AnalyticsLineageListHandler {
         })
     }
 
-    async fn handle(&self, _ctx: &McpContext, params: Value) -> CallToolResult {
+    async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: AnalyticsLineageListArgs = match serde_json::from_value(params) {
             Ok(a) => a,
             Err(e) => {
@@ -322,15 +360,62 @@ impl ToolHandler for AnalyticsLineageListHandler {
             }
         };
 
-        let _limit = args.limit.unwrap_or(100).min(100);
+        let limit = args.limit.unwrap_or(100).min(100);
 
-        // Stub lineage response - in production this would query the lineage store
-        let runs: Vec<LineageEntry> = vec![];
-
-        let response = AnalyticsLineageResponse {
-            runs,
-            total: 0,
+        // Require lineage store
+        let lineage = match ctx.analytics_lineage_store.as_ref() {
+            Some(l) => l,
+            None => {
+                return err_envelope(
+                    TOOL_ANALYTICS_LINEAGE_LIST,
+                    "analytics_not_available",
+                    "analytics_lineage_list: AnalyticsLineageStore not wired in this context",
+                );
+            }
         };
+
+        // Build filter from current context
+        let (workspace_id_str, revision_id) = ctx.current_pin();
+        let workspace_id = cognicode_core::domain::value_objects::WorkspaceId::try_new(workspace_id_str.clone())
+            .unwrap_or_else(|_| cognicode_core::domain::value_objects::WorkspaceId::try_new("default").unwrap());
+        let revision_id = cognicode_core::domain::value_objects::RevisionId::new(revision_id);
+
+        let filter = RunLineageFilter {
+            workspace_id: Some(workspace_id),
+            revision_id: Some(revision_id),
+            algorithm_id: None,
+            status: None,
+        };
+
+        // Query lineage store
+        let lineage_records = match lineage.query(filter, Some(limit as u64)).await {
+            Ok(records) => records,
+            Err(e) => {
+                return err_envelope(
+                    TOOL_ANALYTICS_LINEAGE_LIST,
+                    "lineage_error",
+                    &format!("analytics_lineage_list: {e}"),
+                );
+            }
+        };
+
+        let runs: Vec<LineageEntry> = lineage_records
+            .iter()
+            .map(|r| LineageEntry {
+                run_id: r.run_id.to_string(),
+                algorithm_id: r.algorithm_id.as_str().to_string(),
+                executed_at: r.started_at.to_rfc3339(),
+                parameters: r.params.clone(),
+                result_summary: serde_json::json!({
+                    "status": format!("{}", r.status),
+                    "row_count": r.row_count,
+                }),
+                mode: format!("{:?}", r.mode),
+            })
+            .collect();
+
+        let total = runs.len();
+        let response = AnalyticsLineageResponse { runs, total };
 
         ok_envelope(TOOL_ANALYTICS_LINEAGE_LIST, &response)
     }
@@ -361,7 +446,7 @@ impl ToolHandler for AnalyticsLineageGetHandler {
         })
     }
 
-    async fn handle(&self, _ctx: &McpContext, params: Value) -> CallToolResult {
+    async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: AnalyticsLineageGetArgs = match serde_json::from_value(params) {
             Ok(a) => a,
             Err(e) => {
@@ -384,12 +469,45 @@ impl ToolHandler for AnalyticsLineageGetHandler {
             }
         };
 
-        // Stub - in production this would query the lineage store
-        return err_envelope(
-            TOOL_ANALYTICS_LINEAGE_GET,
-            "not_implemented",
-            &format!("analytics_lineage_get: run `{run_id}` not found (lineage store not wired in this build)"),
-        );
+        // Require lineage store
+        let lineage = match ctx.analytics_lineage_store.as_ref() {
+            Some(l) => l,
+            None => {
+                return err_envelope(
+                    TOOL_ANALYTICS_LINEAGE_GET,
+                    "analytics_not_available",
+                    "analytics_lineage_get: AnalyticsLineageStore not wired in this context",
+                );
+            }
+        };
+
+        // Parse run_id and query the store
+        let run_uuid = Uuid::from_string(run_id.clone());
+        let record = match lineage.get(run_uuid).await {
+            Ok(r) => r,
+            Err(e) => {
+                return err_envelope(
+                    TOOL_ANALYTICS_LINEAGE_GET,
+                    "lineage_not_found",
+                    &format!("analytics_lineage_get: run `{run_id}` not found: {e}"),
+                );
+            }
+        };
+
+        let response = AnalyticsLineageDetailResponse {
+            run_id: record.run_id.to_string(),
+            algorithm_id: record.algorithm_id.as_str().to_string(),
+            executed_at: record.started_at.to_rfc3339(),
+            parameters: record.params,
+            result_summary: serde_json::json!({
+                "status": format!("{}", record.status),
+                "row_count": record.row_count,
+                "finished_at": record.finished_at.map(|t| t.to_rfc3339()),
+            }),
+            mode: format!("{:?}", record.mode),
+        };
+
+        ok_envelope(TOOL_ANALYTICS_LINEAGE_GET, &response)
     }
 }
 
