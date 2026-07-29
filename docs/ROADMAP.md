@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-29 (Pattern Profile executor wiring fix shipped v0.72.5 — MVP stub replaced with real GraphExecutor; E28.4 unblocked.)
+Last updated: 2026-07-29 (Runtime GraphExecutor injection fix shipped v0.72.6 — Pattern Profile queries now execute against PostgreSQL in production.)
 
 ## Active
 
@@ -71,6 +71,7 @@ PR4 closes the E28.1 chain (Phase 4: PG `#[sqlx::test]` integration + bridge-map
 | PR2 Parser + Lowering | `feat/e28-3-pr2-pattern-parser` | ✅ Merged | v0.72.1 | [#151](https://github.com/Rubentxu/CogniCode/pull/151) |
 | PR3 Surfaces | `feat/e28-3-pr3-surfaces` | ✅ Merged | v0.72.2 | [#152](https://github.com/Rubentxu/CogniCode/pull/152) |
 | **PR4 Matrix + Verify** | `feat/e28-3-pr4-matrix-verify` | ✅ Merged | v0.72.3 | [#153](https://github.com/Rubentxu/CogniCode/pull/153) |
+| **PR5 Runtime Injection Fix** | `fix/e28-3-runtime-inject-executor` | ✅ Merged | v0.72.6 | [#156](https://github.com/Rubentxu/CogniCode/pull/156) |
 
 **E28.3 is now fully DONE.** PR4 closes the Pattern Profile chain with:
 - REST integration tests restored (`POST /api/moldql/pattern` with mock MoldQLService)
