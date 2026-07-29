@@ -220,6 +220,21 @@ pub fn apply_landing_cap(total: usize) -> (bool, Option<String>) {
     }
 }
 
+// ============================================================================
+// MoldQL Pattern Profile — T6
+// ============================================================================
+
+/// Request body for `POST /api/moldql/pattern`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PatternQueryBody {
+    /// The Pattern Profile query string to execute.
+    pub query: String,
+    /// Optional workspace scope. Defaults to current workspace if omitted.
+    pub workspace_id: Option<String>,
+    /// Optional revision pin. Defaults to workspace HEAD if omitted.
+    pub revision_id: Option<u64>,
+}
+
 /// Validate the path `:id` segment. Non-empty and ≤ 512 chars. We
 /// keep the limit generous — the actual id space is set by the
 /// repository, not the API.
@@ -651,6 +666,8 @@ pub fn router_with_state(state: ApiState) -> Router {
             "/api/objects/:object_id/affordances",
             get(affordances_handler),
         )
+        // MoldQL Pattern Profile endpoint — T6
+        .route("/api/moldql/pattern", post(moldql_pattern_handler))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -749,6 +766,8 @@ pub fn router(state: ApiState) -> Router {
             "/api/objects/:object_id/affordances",
             get(affordances_handler),
         )
+        // MoldQL Pattern Profile endpoint — T6
+        .route("/api/moldql/pattern", post(moldql_pattern_handler))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -1445,6 +1464,26 @@ async fn apply_lens(
     Path((object_id, lens_id)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
     Ok(Json(state.view.apply_lens(&object_id, &lens_id).await?).into_response())
+}
+
+// ============================================================================
+// MoldQL Pattern Profile REST endpoint — T6
+// ============================================================================
+
+/// `POST /api/moldql/pattern` — execute a Pattern Profile query.
+///
+/// Accepts a JSON body with `query`, optional `workspace_id`, and optional
+/// `revision_id`. Response mirrors the shape of `/api/moldql/query`.
+async fn moldql_pattern_handler(
+    State(state): State<ApiState>,
+    Json(body): Json<PatternQueryBody>,
+) -> Result<Response, ApiError> {
+    let result = state
+        .moldql
+        .execute_query(&body.query)
+        .await
+        .map_err(ApiError)?;
+    Ok(Json(crate::dto::MoldQLResultDto::from(result)).into_response())
 }
 
 /// GET /api/workspaces/:workspace_id/explorations — list saved explorations for a workspace.
