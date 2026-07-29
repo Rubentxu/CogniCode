@@ -1,11 +1,13 @@
 //! View-family tool handlers.
 //!
-//! Implements 5 MCP tools for view and lens operations:
+//! Implements 7 MCP tools for view and lens operations:
 //! - `explorer_get_views`  — list available views for an object
 //! - `explorer_get_view`   — build a specific contextual view
 //! - `explorer_get_lenses` — list available lenses for an object
 //! - `explorer_apply_lens` — apply a lens to an object
 //! - `explorer_query_moldql` — execute a MoldQL query
+//! - `moldql_pattern_query` — execute a Pattern Profile query (T7)
+//! - `moldql_pattern_capabilities` — return v1 supported-feature matrix (T7)
 
 use std::sync::Arc;
 
@@ -18,7 +20,7 @@ use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::{
     McpContext, ProvenanceMetadata, TOOL_APPLY_LENS, TOOL_GET_LENSES, TOOL_GET_VIEW,
-    TOOL_GET_VIEWS, TOOL_QUERY_MOLDQL,
+    TOOL_GET_VIEWS, TOOL_PATTERN_CAPABILITIES, TOOL_PATTERN_QUERY, TOOL_QUERY_MOLDQL,
 };
 
 // ============================================================================
@@ -50,6 +52,14 @@ struct ApplyLensArgs {
 struct QueryMoldQLArgs {
     query: Option<String>,
     target: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct PatternQueryArgs {
+    query: Option<String>,
+    workspace_id: Option<String>,
+    revision_id: Option<u64>,
 }
 
 // ============================================================================
@@ -458,15 +468,142 @@ impl ToolHandler for QueryMoldQLHandler {
     }
 }
 
+// --- moldql_pattern_query ---
+
+struct PatternQueryHandler;
+
+#[async_trait]
+impl ToolHandler for PatternQueryHandler {
+    fn name(&self) -> &'static str {
+        TOOL_PATTERN_QUERY
+    }
+
+    fn arg_schema(&self) -> Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The Pattern Profile query to execute (required). Example: MATCH (f:Function) RETURN PATH(f)"
+                },
+                "workspace_id": {
+                    "type": "string",
+                    "description": "Optional workspace scope (defaults to current workspace)."
+                },
+                "revision_id": {
+                    "type": "integer",
+                    "description": "Optional revision pin (defaults to workspace HEAD)."
+                }
+            },
+            "required": ["query"]
+        })
+    }
+
+    async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
+        let args: PatternQueryArgs = match serde_json::from_value(params) {
+            Ok(a) => a,
+            Err(e) => {
+                return err_envelope(
+                    TOOL_PATTERN_QUERY,
+                    "invalid_args",
+                    &format!("{TOOL_PATTERN_QUERY}: invalid args: {e}"),
+                );
+            }
+        };
+
+        let query = match args.query {
+            Some(q) if !q.is_empty() => q,
+            _ => {
+                return err_envelope(
+                    TOOL_PATTERN_QUERY,
+                    "missing_required_arg",
+                    "moldql_pattern_query: missing required arg `query`",
+                );
+            }
+        };
+
+        // Use the MoldQL facade (same implementation as explorer_query_moldql).
+        let moldql_service = match ctx.moldql.as_ref() {
+            Some(ms) => ms,
+            None => {
+                return err_envelope(
+                    TOOL_PATTERN_QUERY,
+                    "facade_unavailable",
+                    "moldql service not wired",
+                );
+            }
+        };
+
+        let result: Result<crate::dto::MoldQLResultDto, _> =
+            moldql_service.execute_query(&query).await.map(crate::dto::MoldQLResultDto::from);
+
+        match result {
+            Ok(dto) => {
+                let payload = serde_json::to_value(dto).unwrap_or(Value::Null);
+                ok_envelope(TOOL_PATTERN_QUERY, &payload)
+            }
+            Err(e) => err_envelope(TOOL_PATTERN_QUERY, "service_error", &e.to_string()),
+        }
+    }
+}
+
+// --- moldql_pattern_capabilities ---
+
+struct PatternCapabilitiesHandler;
+
+#[async_trait]
+impl ToolHandler for PatternCapabilitiesHandler {
+    fn name(&self) -> &'static str {
+        TOOL_PATTERN_CAPABILITIES
+    }
+
+    fn arg_schema(&self) -> Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
+    }
+
+    async fn handle(&self, _ctx: &McpContext, _params: Value) -> CallToolResult {
+        // Hard-coded v1 supported-feature matrix.
+        // PR4 will refine the matrix with actual runtime detection.
+        let matrix = serde_json::json!({
+            "version": "1.0",
+            "profile": "Pattern Profile",
+            "features": [
+                {"construct": "MATCH (node:Label)", "status": "supported", "notes": "Typed node patterns with label"},
+                {"construct": "MATCH (a)-[e:EdgeType]->(b)", "status": "supported", "notes": "Directed edge patterns"},
+                {"construct": "MATCH (a)-[e:EdgeType*1..N]->(b)", "status": "supported", "notes": "Bounded path quantifier; N must be finite"},
+                {"construct": "MATCH (a)-[e?]->(b)", "status": "supported", "notes": "Zero-or-one quantifier maps to 0..1"},
+                {"construct": "MATCH (a)-[e+]->(b)", "status": "supported", "notes": "One-or-more quantifier maps to 1..profile_max_hops"},
+                {"construct": "RETURN PATH(a,b)", "status": "supported", "notes": "Path result shape with bindings"},
+                {"construct": "RETURN COUNT(e)", "status": "supported", "notes": "Aggregation with ordering and limit"},
+                {"construct": "SHORTEST path", "status": "supported", "notes": "Bounded shortest path selection"},
+                {"construct": "CREATE/DELETE/SET/MERGE", "status": "unsupported", "notes": "Pattern Profile is read-only; mutations rejected as UnsupportedConstruct"}
+            ],
+            "compatibility_claims": {
+                "cypher": "not_claimed",
+                "opencypher": "not_claimed",
+                "iso_gql": "not_claimed"
+            }
+        });
+
+        ok_envelope(TOOL_PATTERN_CAPABILITIES, &matrix)
+    }
+}
+
 // ============================================================================
 // Registry builder
 // ============================================================================
 
-/// Register all 5 view-family handlers into the registry.
+/// Register all 7 view-family handlers into the registry.
 pub fn register_view_handlers(registry: &mut crate::mcp::handler::ToolHandlerRegistry) {
     registry.register(GetViewsHandler);
     registry.register(GetViewHandler);
     registry.register(GetLensesHandler);
     registry.register(ApplyLensHandler);
     registry.register(QueryMoldQLHandler);
+    registry.register(PatternQueryHandler);
+    registry.register(PatternCapabilitiesHandler);
 }
