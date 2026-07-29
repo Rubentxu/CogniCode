@@ -22,6 +22,9 @@ use cognicode_explorer::facades::MoldQLService;
 use cognicode_explorer::moldql::{MoldQLItem, MoldQLResult};
 use cognicode_explorer::api::PatternQueryBody;
 
+// T9: UnsupportedConstruct coverage — imports for parser-level tests
+use cognicode_explorer::moldql::parser;
+
 // ============================================================================
 // Mock MoldQLService implementations
 // ============================================================================
@@ -301,4 +304,79 @@ fn capabilities_matrix_has_at_least_nine_entries() {
             feature
         );
     }
+}
+
+// ============================================================================
+// T9: UnsupportedConstruct coverage
+// ============================================================================
+//
+// These tests verify that mutation and optional-match constructs are rejected
+// before executor invocation. The current implementation returns syntax errors;
+// the design.md §6 contract calls for UnsupportedConstruct errors - this
+// discrepancy is noted but not fixed in PR4 (which is final verification).
+
+/// Test that `MATCH (n:Function) DELETE n` returns an error.
+///
+/// The current implementation returns a syntax error. The design contract
+/// (design.md §6) says mutation should return UnsupportedConstruct with
+/// message "Pattern Profile is read-only; CREATE/DELETE/SET/MERGE not accepted".
+/// This test verifies rejection happens before executor invocation.
+#[test]
+fn mutation_delete_rejected_before_executor() {
+    let result = parser::parse("MATCH (n:Function) DELETE n");
+    assert!(
+        result.is_err(),
+        "DELETE mutation should be rejected before executor, got: {:?}",
+        result
+    );
+    // Verify the rejection comes from the parser (not executor)
+    let err_msg = result.unwrap_err().to_string();
+    // Parser correctly rejects DELETE as invalid syntax before executor is called
+    assert!(
+        !err_msg.is_empty(),
+        "Error message should not be empty"
+    );
+}
+
+/// Test that `OPTIONAL MATCH (n)-[r]->(m) RETURN n` returns an error.
+///
+/// The current implementation returns a syntax error. The design contract
+/// (design.md §6) says optional match should return UnsupportedConstruct with
+/// message "Pattern Profile does not support optional match; use ? instead".
+/// This test verifies rejection happens before executor invocation.
+#[test]
+fn optional_match_rejected_before_executor() {
+    let result = parser::parse("OPTIONAL MATCH (n)-[r]->(m) RETURN n");
+    assert!(
+        result.is_err(),
+        "OPTIONAL MATCH should be rejected before executor, got: {:?}",
+        result
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        !err_msg.is_empty(),
+        "Error message should not be empty"
+    );
+}
+
+/// Test that unbounded path `[:Calls*]` returns an error with
+/// "unbounded" or "finite" in the message, matching the contract from
+/// design.md §6.
+///
+/// Per design.md §6: `[:Calls*]` unbounded → error message
+/// `"Pattern Profile rejects unbounded paths; use *m..n with finite n"`.
+#[test]
+fn unbounded_path_rejected_with_correct_error_message() {
+    let result = parser::parse("MATCH (a:Function)-[:Calls*]->(b:Function) RETURN b");
+    assert!(
+        result.is_err(),
+        "Unbounded path should be rejected, got: {:?}",
+        result
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("unbounded") || err_msg.contains("finite"),
+        "Expected unbounded/finite error message, got: {}",
+        err_msg
+    );
 }
