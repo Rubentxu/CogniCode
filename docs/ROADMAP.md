@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-29 (E28.2 PR5 edge-filter fix shipped v0.71.0; PR4 Conformance pending.)
+Last updated: 2026-07-29 (E28.2 PR4 Conformance shipped v0.71.1; E28.2 chain fully DONE; E28.3 + E28.4 unblocked.)
 
 ## Active
 
@@ -22,7 +22,7 @@ before implementation begins.
 |---|---|---|---|---|
 | `e28-0-canonical-graph-revisions` | Stabilize identity, typed property round-trip, workspace isolation, immutable revisions, deletion, and snapshot refresh | None | The same node and edge identities round-trip through PostgreSQL and snapshots; runs pin one workspace and revision; ingest, deletion, and refresh tests pass | **DONE** (PR1 v0.61.0 + PR2 v0.62.0 merged; PR3 pending) |
 | `e28-1-moldplan-graphplan-contracts` | Introduce versioned `MoldPlan`/`GraphPlan`, typed results, execution policy, limits, and structured unsupported-operation errors | E28.0 | Plans contain no backend or presentation types; every run declares limits; unsupported operations fail before execution | PROPOSED |
-| `e28-2-differential-graph-executors` | Execute existing `PATH`, `NEIGHBORS`, `SUBGRAPH`, `CLUSTER`, `EXPLAIN`, and boolean composition in PostgreSQL and snapshot executors | E28.1 | Golden fixtures prove equivalent typed multisets, ordering, paths, errors, provenance, and truncation; no supported operation returns synthetic empty success | PROPOSED |
+| `e28-2-differential-graph-executors` | Execute existing `PATH`, `NEIGHBORS`, `SUBGRAPH`, `CLUSTER`, `EXPLAIN`, and boolean composition in PostgreSQL and snapshot executors | E28.1 | Golden fixtures prove equivalent typed multisets, ordering, paths, errors, provenance, and truncation; no supported operation returns synthetic empty success | **DONE** (PR1 Port v0.68.0 + PR2 PG Executor v0.69.0 + PR3 Snapshot Executor v0.70.0 + PR6 pool-fix v0.70.1 + PR5 edge-filter v0.71.0 + PR4 Conformance v0.71.1 merged) |
 | `e28-3-moldql-pattern-profile-v1` | Add read-only typed patterns, direction, bounded quantifiers, predicates, aggregation, ordering, limits, and bounded shortest paths | E28.2 | The supported-feature matrix is published; parser, lowering, differential, REST/MCP, and Explorer interaction tests pass; no Cypher/GQL compatibility claim is made | PROPOSED |
 | `e28-4-analytics-registry-cohort-1` | Add descriptor admission, `stream`/`stats`/`annotate`/`persist` modes, run lineage, and stabilize PageRank, SCC, WCC, and bounded shortest paths | E28.2 | Every admitted algorithm is versioned, resource-governed, reproducible, and non-mutating; cohort-1 conformance and composition tests pass | PROPOSED |
 | `e28-5-structural-analytics-cohort-2` | Add dominators, articulation points, bridges, and k-core for impact, seam, dependency-pressure, and risk views | E28.4 | Each algorithm has a product question, descriptor, golden fixtures, and either an Explorer surface or an explicit internal/composable classification | PROPOSED |
@@ -48,6 +48,19 @@ before implementation begins.
 | PR4 PG Conformance | `feat/e28-1-pr4-pg-conformance` | 🔲 Pending | — | — |
 
 PR4 closes the E28.1 chain (Phase 4: PG `#[sqlx::test]` integration + bridge-mapping + executor regression gate). Then E28.2 unblocks.
+
+#### E28.2 stacked-to-main chain
+
+| Sub-PR | Branch | Status | Tag | PR |
+|---|---|---|---|---|
+| PR1 Port | `feat/e28-2-pr1-port` | ✅ Merged | v0.68.0 | [#142](https://github.com/Rubentxu/CogniCode/pull/142) |
+| PR2 PG Executor | `feat/e28-2-pr2-pg-executor` | ✅ Merged | v0.69.0 | [#143](https://github.com/Rubentxu/CogniCode/pull/143) |
+| PR3 Snapshot Executor | `feat/e28-2-pr3-snapshot-executor` | ✅ Merged | v0.70.0 | [#144](https://github.com/Rubentxu/CogniCode/pull/144) |
+| PR6 pool-timeout fix | `fix/e28-2-pr2-pool-connection-release` | ✅ Merged | v0.70.1 | [#145](https://github.com/Rubentxu/CogniCode/pull/145) |
+| PR5 edge-filter fix | `fix/e28-2-pr5-edge-filter` | ✅ Merged | v0.71.0 | [#147](https://github.com/Rubentxu/CogniCode/pull/147) |
+| **PR4 Conformance** | `feat/e28-2-pr4-conformance` | ✅ Merged | v0.71.1 | [#148](https://github.com/Rubentxu/CogniCode/pull/148) |
+
+**E28.2 is now fully DONE.** PR4 closes the differential chain with 10 conformance tests proving `PgGraphExecutor` and `SnapshotGraphExecutor` return equivalent `GraphResult`s for the same `MoldPlan` + workspace + revision pin. **E28.3 (`moldql-pattern-profile-v1`) and E28.4 (`analytics-registry-cohort-1`) unblocked** — may now proceed in parallel per the E28 execution order.
 
 #### E28 execution order
 
@@ -505,6 +518,82 @@ Pre-existing 4 `sandbox_orchestrator_test::test_plan_expands_*` failures confirm
 - Files: `crates/cognicode-core/src/domain/plan/graph_plan.rs` + `snapshot_graph_executor.rs` + `pg_graph_executor.rs` + `postgres_repository.rs` + `tests/e28_2_port_unknown_pin.rs` + `crates/cognicode-explorer/src/moldql/lower_plan.rs`
 
 **Próximo paso propuesto**: PR4 Conformance (`feat/e28-2-pr4-conformance`; Phase 4 — `assert_equivalent` differential harness + petgraph oracle; 10 tasks; ~500 LOC; ~7 PG scenarios). Cierra la cadena E28.2. El bug #4 ya está resuelto, así que PR4 validará la semántica correcta de edge_kind_filter.
+
+## Session Handover 2026-07-29 (E28.2 PR4 Conformance shipped v0.71.1 — E28.2 chain fully DONE)
+
+**E28.2 PR4 Conformance closed and shipped v0.71.1 (PR #148 merged to main). E28.2 chain fully DONE. E28.3 (`moldql-pattern-profile-v1`) and E28.4 (`analytics-registry-cohort-1`) unblocked — may now proceed in parallel.**
+
+Ciclo SDDK A-lite ejecutado en auto mode. PR4 cubre Phase 4 (differential conformance harness) del programa E28.2 (38 tasks across 4 phases; 1 commit `0d604ad3` fast-forward-merged a `5db567b2`).
+
+**Logros PR4**:
+- NEW file `crates/cognicode-core/tests/e28_2_executor_conformance.rs` (571 LOC) — differential harness with 10 tests (7 PG-required scenarios + 3 unit-only):
+  - `conformance_path_sequences_match_in_order` (sequential equality)
+  - `conformance_unordered_neighbor_sets_match` (multiset equality)
+  - `conformance_max_result_rows_truncation_matches`
+  - `conformance_max_path_count_truncation_matches`
+  - `conformance_subgraph_nodes_match`
+  - `conformance_unknown_revision_matches`
+  - `conformance_bfs_ordering_matches_sql`
+  - `petgraph_oracle_divergence_is_non_binding` (oracle divergence is logged but non-fatal)
+  - `loud_failure_panics_with_triple_on_multiset_mismatch`
+  - `loud_failure_panics_on_path_order_mismatch`
+- `pg_conformance_test!` macro (local) — spins up fresh DB + runs migrations; uses `flavor = "multi_thread"` so `block_in_place` is allowed.
+- `CallGraph::all_dependencies_with_metadata()` — new method returning `(source, target, dep_type, provenance, confidence)` for snapshot-vs-PG parity.
+
+**14 pre-existing executor / schema bugs fixed** (atomic, single PR):
+
+PG executor:
+- `DISTINCT ON (path[last])` collapsed parallel paths per endpoint → `DISTINCT path` + `ORDER BY depth ASC, path ASC`.
+- `execute_boolean` pin propagation dropped caller revision → threads caller pin through.
+- `execute_boolean` Not semantics returned operand → queries `graph_nodes` directly for universe via `block_in_place`.
+- `max_path_count` truncation missing → added.
+- Neighbor query needs `ORDER BY id ASC` → added for stable order.
+
+Snapshot executor:
+- Edge labels used Debug form (`"Calls"`) instead of Display `"dependency.calls"` → fixed.
+- Nodes not sorted before LIMIT truncation → sort by id, then truncate.
+- `EdgeResult.properties` empty → populated from `CallGraph::all_dependencies_with_metadata()`.
+
+Schema:
+- `notify_graph_change` trigger referenced `NEW.source_path` on `graph_edges` inserts (column dropped after m0018) → use `TG_TABLE_NAME` to conditionally include `source_path` only on `graph_nodes` inserts.
+- `m0018` / `m0019` migration order swapped: m0019 unique index must exist before m0018 composite FKs reference it.
+- `"column"` reserved keyword → quoted in SQL.
+
+Persistence / domain:
+- `postgres_repository.rs`: `confidence` column is `REAL` (f32); cast to f64 to match `ExtractionContext`.
+- `pg_test!` macro uses `flavor = "multi_thread"` so `block_in_place` is allowed; `#![cfg(feature = "postgres")]` required at top of integration tests.
+
+**Verification** (real `cargo test` output as GREEN evidence):
+
+| Scope | Result |
+|---|---|
+| `e28_2_executor_conformance` (10 tests, 7 PG-required) | **10 passed in 0.85s** |
+| `pg_graph_executor::tests::*` (12 tests) | **12 passed** |
+| `snapshot_graph_executor::tests::*` (16 tests) | **16 passed** |
+| `cognicode-core --tests --features postgres --lib` | **1650 passed, 0 failed**, 27 ignored |
+| `cognicode-explorer --tests` | **4 passed** |
+
+**Trazabilidad**:
+- Branch: `feat/e28-2-pr4-conformance` (fast-forward merged a `5db567b2`).
+- Commit: `0d604ad3` (6 files, +742 / −30 lines).
+- PR: <https://github.com/Rubentxu/CogniCode/pull/148>.
+- Tag: `v0.71.1` (PATCH — no new capability, just validates executor equivalence).
+- Specs implemented: `openspec/specs/executor-equivalence-conformance/spec.md` (now FULL).
+
+**E28.2 chain closure**:
+- PR1 Port ✅ → v0.68.0
+- PR2 PG Executor ✅ → v0.69.0
+- PR3 Snapshot Executor ✅ → v0.70.0
+- PR6 pool-timeout fix ✅ → v0.70.1
+- PR5 edge-filter fix ✅ → v0.71.0
+- PR4 Conformance ✅ → v0.71.1
+- **E28.2 is fully DONE.**
+
+**Pre-existing debt (out of PR4 scope, NOT blockers, follow-up `fix/` PR planned)**:
+- ~37 `postgres_repository.rs` tests still fail with `cannot insert into view "call_edges"` / `cannot insert into view "symbols"` (view-updatability bugs from schema rename).
+- 4 `sandbox_orchestrator_test` failures (pre-existing on main; binary not built).
+
+**Próximo paso propuesto**: launch **E28.3** (`moldql-pattern-profile-v1`) and **E28.4** (`analytics-registry-cohort-1`) in parallel — both unblocked now that E28.2 proves executor equivalence. Use the proven SDDK A-lite auto-mode cycle pattern.
 
 ## Session Handover 2026-07-28 (E28.1 PR4 shipped — E28.1 chain fully DONE)
 
