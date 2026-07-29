@@ -668,6 +668,11 @@ pub fn router_with_state(state: ApiState) -> Router {
         )
         // MoldQL Pattern Profile endpoint — T6
         .route("/api/moldql/pattern", post(moldql_pattern_handler))
+        // T8: capabilities endpoint
+        .route(
+            "/api/moldql/pattern/capabilities",
+            get(moldql_pattern_capabilities_handler),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -768,6 +773,11 @@ pub fn router(state: ApiState) -> Router {
         )
         // MoldQL Pattern Profile endpoint — T6
         .route("/api/moldql/pattern", post(moldql_pattern_handler))
+        // T8: capabilities endpoint
+        .route(
+            "/api/moldql/pattern/capabilities",
+            get(moldql_pattern_capabilities_handler),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -1484,6 +1494,35 @@ async fn moldql_pattern_handler(
         .await
         .map_err(ApiError)?;
     Ok(Json(crate::dto::MoldQLResultDto::from(result)).into_response())
+}
+
+/// `GET /api/moldql/pattern/capabilities` — return the v1 supported-feature matrix.
+///
+/// Returns the same hard-coded matrix as the MCP `moldql_pattern_capabilities` tool.
+/// The matrix is defined in openspec/changes/e28-3-moldql-pattern-profile-v1/specs/
+/// moldql-pattern-profile/spec.md §"Supported-feature matrix".
+async fn moldql_pattern_capabilities_handler() -> Json<serde_json::Value> {
+    // Hard-coded v1 supported-feature matrix — mirrors PatternCapabilitiesHandler in MCP.
+    Json(serde_json::json!({
+        "version": "1.0",
+        "profile": "Pattern Profile",
+        "features": [
+            {"construct": "MATCH (node:Label)", "status": "supported", "notes": "Typed node patterns with label"},
+            {"construct": "MATCH (a)-[e:EdgeType]->(b)", "status": "supported", "notes": "Directed edge patterns"},
+            {"construct": "MATCH (a)-[e:EdgeType*1..N]->(b)", "status": "supported", "notes": "Bounded path quantifier; N must be finite"},
+            {"construct": "MATCH (a)-[e?]->(b)", "status": "supported", "notes": "Zero-or-one quantifier maps to 0..1"},
+            {"construct": "MATCH (a)-[e+]->(b)", "status": "supported", "notes": "One-or-more quantifier maps to 1..profile_max_hops"},
+            {"construct": "RETURN PATH(a,b)", "status": "supported", "notes": "Path result shape with bindings"},
+            {"construct": "RETURN COUNT(e)", "status": "supported", "notes": "Aggregation with ordering and limit"},
+            {"construct": "SHORTEST path", "status": "supported", "notes": "Bounded shortest path selection"},
+            {"construct": "CREATE/DELETE/SET/MERGE", "status": "unsupported", "notes": "Pattern Profile is read-only; mutations rejected as UnsupportedConstruct"}
+        ],
+        "compatibility_claims": {
+            "cypher": "not_claimed",
+            "opencypher": "not_claimed",
+            "iso_gql": "not_claimed"
+        }
+    }))
 }
 
 /// GET /api/workspaces/:workspace_id/explorations — list saved explorations for a workspace.
