@@ -58,6 +58,15 @@ impl MoldQLService for MockMoldQLServiceSuccess {
     ) -> ExplorerResult<MoldQLResult> {
         self.execute_query(_query).await
     }
+
+    async fn execute_query_pinned(
+        &self,
+        _query: &str,
+        _workspace_id: String,
+        _revision_id: u64,
+    ) -> ExplorerResult<MoldQLResult> {
+        self.execute_query(_query).await
+    }
 }
 
 /// A mock MoldQLService that returns an empty result.
@@ -77,6 +86,15 @@ impl MoldQLService for MockMoldQLServiceEmpty {
         &self,
         query: &str,
         _target: cognicode_explorer::moldql::compile::CompileTarget,
+    ) -> ExplorerResult<MoldQLResult> {
+        self.execute_query(query).await
+    }
+
+    async fn execute_query_pinned(
+        &self,
+        query: &str,
+        _workspace_id: String,
+        _revision_id: u64,
     ) -> ExplorerResult<MoldQLResult> {
         self.execute_query(query).await
     }
@@ -103,6 +121,15 @@ impl MoldQLService for MockMoldQLServiceUnsupported {
         &self,
         _query: &str,
         _target: cognicode_explorer::moldql::compile::CompileTarget,
+    ) -> ExplorerResult<MoldQLResult> {
+        self.execute_query(_query).await
+    }
+
+    async fn execute_query_pinned(
+        &self,
+        _query: &str,
+        _workspace_id: String,
+        _revision_id: u64,
     ) -> ExplorerResult<MoldQLResult> {
         self.execute_query(_query).await
     }

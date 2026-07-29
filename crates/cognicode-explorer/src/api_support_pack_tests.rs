@@ -251,6 +251,14 @@ impl MoldQLService for MockMoldQLService {
     ) -> crate::ExplorerResult<crate::moldql::MoldQLResult> {
         Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
     }
+    async fn execute_query_pinned(
+        &self,
+        _query: &str,
+        _workspace_id: String,
+        _revision_id: u64,
+    ) -> crate::ExplorerResult<crate::moldql::MoldQLResult> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
 }
 
 // ---------------------------------------------------------------------------
