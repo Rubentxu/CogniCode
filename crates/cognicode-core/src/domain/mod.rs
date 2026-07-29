@@ -5,6 +5,7 @@
 //! aggregates, services, and traits that represent the business logic.
 
 pub mod aggregates;
+pub mod analytics;
 pub mod error;
 pub mod events;
 // Multimodal (brain-federation) primitives — `FederatedNodeId`,
