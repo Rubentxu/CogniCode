@@ -19,6 +19,7 @@ use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::SymbolId;
+use cognicode_core::domain::plan::executor::GraphExecutor;
 use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 
 use crate::domain::object_identity::ObjectIdentity;
@@ -630,6 +631,13 @@ pub struct MoldQLView {
     /// Optional GraphQueryPort for call graph traversal (callers, callees,
     /// fan_in, fan_out). When `None`, these methods degrade gracefully.
     pub graph_query: Option<Arc<dyn GraphQueryPort>>,
+    /// Pattern Profile executor. `None` ⇒ `FeatureDisabled` at run time.
+    pub graph_executor: Option<Arc<dyn GraphExecutor>>,
+    /// Workspace + revision pin. `None` ⇒ `ResolutionFailed` at run time.
+    pub pin: Option<(
+        cognicode_core::domain::value_objects::WorkspaceId,
+        cognicode_core::domain::value_objects::RevisionId,
+    )>,
 }
 
 impl MoldQLView {
@@ -1102,6 +1110,8 @@ mod tests {
             #[cfg(feature = "multimodal")]
             graph_repo: None,
             graph_query: Some(repo as Arc<dyn GraphQueryPort>),
+            graph_executor: None,
+            pin: None,
         }
     }
 
@@ -1125,6 +1135,8 @@ mod tests {
             #[cfg(feature = "multimodal")]
             graph_repo: None,
             graph_query: Some(repo as Arc<dyn GraphQueryPort>),
+            graph_executor: None,
+            pin: None,
         }
     }
 

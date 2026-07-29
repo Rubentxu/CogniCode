@@ -110,6 +110,8 @@ impl MoldQLServiceImpl {
             #[cfg(feature = "multimodal")]
             graph_repo: self.graph_repo.clone(),
             graph_query: None,
+            graph_executor: None,
+            pin: None,
         }
     }
 }
