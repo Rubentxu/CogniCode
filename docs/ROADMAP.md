@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-29 (E28.2 PR4 Conformance shipped v0.71.1; E28.2 chain fully DONE; E28.3 + E28.4 unblocked; Pre-existing Debt Batch shipped v0.71.2.)
+Last updated: 2026-07-29 (E28.3 PR4 Pattern Profile matrix + verify shipped v0.72.3; E28.3 chain fully DONE; E28.4 unblocked; E28.2 + E28.3 fully DONE.)
 
 ## Active
 
@@ -23,7 +23,7 @@ before implementation begins.
 | `e28-0-canonical-graph-revisions` | Stabilize identity, typed property round-trip, workspace isolation, immutable revisions, deletion, and snapshot refresh | None | The same node and edge identities round-trip through PostgreSQL and snapshots; runs pin one workspace and revision; ingest, deletion, and refresh tests pass | **DONE** (PR1 v0.61.0 + PR2 v0.62.0 merged; PR3 pending) |
 | `e28-1-moldplan-graphplan-contracts` | Introduce versioned `MoldPlan`/`GraphPlan`, typed results, execution policy, limits, and structured unsupported-operation errors | E28.0 | Plans contain no backend or presentation types; every run declares limits; unsupported operations fail before execution | PROPOSED |
 | `e28-2-differential-graph-executors` | Execute existing `PATH`, `NEIGHBORS`, `SUBGRAPH`, `CLUSTER`, `EXPLAIN`, and boolean composition in PostgreSQL and snapshot executors | E28.1 | Golden fixtures prove equivalent typed multisets, ordering, paths, errors, provenance, and truncation; no supported operation returns synthetic empty success | **DONE** (PR1 Port v0.68.0 + PR2 PG Executor v0.69.0 + PR3 Snapshot Executor v0.70.0 + PR6 pool-fix v0.70.1 + PR5 edge-filter v0.71.0 + PR4 Conformance v0.71.1 merged) |
-| `e28-3-moldql-pattern-profile-v1` | Add read-only typed patterns, direction, bounded quantifiers, predicates, aggregation, ordering, limits, and bounded shortest paths | E28.2 | The supported-feature matrix is published; parser, lowering, differential, REST/MCP, and Explorer interaction tests pass; no Cypher/GQL compatibility claim is made | PROPOSED |
+| `e28-3-moldql-pattern-profile-v1` | Add read-only typed patterns, direction, bounded quantifiers, predicates, aggregation, ordering, limits, and bounded shortest paths | E28.2 | The supported-feature matrix is published; parser, lowering, differential, REST/MCP, and Explorer interaction tests pass; no Cypher/GQL compatibility claim is made | **DONE** (PR1 v0.72.0 + PR2 v0.72.1 + PR3 v0.72.2 + PR4 v0.72.3 merged) |
 | `e28-4-analytics-registry-cohort-1` | Add descriptor admission, `stream`/`stats`/`annotate`/`persist` modes, run lineage, and stabilize PageRank, SCC, WCC, and bounded shortest paths | E28.2 | Every admitted algorithm is versioned, resource-governed, reproducible, and non-mutating; cohort-1 conformance and composition tests pass | PROPOSED |
 | `e28-5-structural-analytics-cohort-2` | Add dominators, articulation points, bridges, and k-core for impact, seam, dependency-pressure, and risk views | E28.4 | Each algorithm has a product question, descriptor, golden fixtures, and either an Explorer surface or an explicit internal/composable classification | PROPOSED |
 | `e28-6-advanced-analytics-evidence-gate` | Evaluate betweenness, k-shortest paths, multi-source reachability, personalized PageRank, Leiden, conductance/modularity, node similarity, and an optional Neo4j CI oracle | E28.5 | Only measured, product-relevant algorithms are admitted; optional oracle checks do not affect production availability; any production sidecar proposal is deferred to a separate ADR | PROPOSED |
@@ -62,6 +62,21 @@ PR4 closes the E28.1 chain (Phase 4: PG `#[sqlx::test]` integration + bridge-map
 | **Pre-existing Debt Batch** | `fix/pre-existing-debt-batch` | ✅ Merged | v0.71.2 | (this PR) |
 
 **E28.2 is now fully DONE.** PR4 closes the differential chain with 10 conformance tests proving `PgGraphExecutor` and `SnapshotGraphExecutor` return equivalent `GraphResult`s for the same `MoldPlan` + workspace + revision pin. **E28.3 (`moldql-pattern-profile-v1`) and E28.4 (`analytics-registry-cohort-1`) unblocked** — may now proceed in parallel per the E28 execution order.
+
+#### E28.3 stacked-to-main chain
+
+| Sub-PR | Branch | Status | Tag | PR |
+|---|---|---|---|---|
+| PR1 Foundation | `feat/e28-3-pr1-pattern-foundation` | ✅ Merged | v0.72.0 | [#150](https://github.com/Rubentxu/CogniCode/pull/150) |
+| PR2 Parser + Lowering | `feat/e28-3-pr2-pattern-parser` | ✅ Merged | v0.72.1 | [#151](https://github.com/Rubentxu/CogniCode/pull/151) |
+| PR3 Surfaces | `feat/e28-3-pr3-surfaces` | ✅ Merged | v0.72.2 | [#152](https://github.com/Rubentxu/CogniCode/pull/152) |
+| **PR4 Matrix + Verify** | `feat/e28-3-pr4-matrix-verify` | ✅ Merged | v0.72.3 | [#153](https://github.com/Rubentxu/CogniCode/pull/153) |
+
+**E28.3 is now fully DONE.** PR4 closes the Pattern Profile chain with:
+- REST integration tests restored (`POST /api/moldql/pattern` with mock MoldQLService)
+- Feature matrix endpoint (`GET /api/moldql/pattern/capabilities`)
+- UnsupportedConstruct coverage for unbounded path, mutation, and optional match
+- Full workspace verification: 0 failed across 4 crates (1,651 tests)
 
 #### E28 execution order
 
@@ -595,6 +610,45 @@ Persistence / domain:
 - 4 `sandbox_orchestrator_test` failures (pre-existing on main; binary not built).
 
 **Próximo paso propuesto**: launch **E28.3** (`moldql-pattern-profile-v1`) and **E28.4** (`analytics-registry-cohort-1`) in parallel — both unblocked now that E28.2 proves executor equivalence. Use the proven SDDK A-lite auto-mode cycle pattern.
+
+## Session Handover 2026-07-29 (E28.3 PR4 shipped v0.72.3 — E28.3 chain fully DONE)
+
+**E28.3 PR4 Pattern Profile matrix + verify closed and shipped v0.72.3 (PR #153 merged to main). E28.3 chain fully DONE. E28.4 (`analytics-registry-cohort-1`) remains unblocked; E28.3 and E28.4 may now proceed in parallel.**
+
+Ciclo SDDK A-lite ejecutado en auto mode. PR4 cierra la cadena E28.3 con:
+
+**Logros PR4**:
+- **REST integration tests restored**: `POST /api/moldql/pattern` handler tested via mock MoldQLService (3 tests: success with typed items, empty result, unsupported construct error)
+- **Feature matrix endpoint**: `GET /api/moldql/pattern/capabilities` returns the v1 supported-feature matrix (9 entries covering typed nodes/edges, direction, bounded quantifiers, predicates, projections, COUNT/ORDER BY/LIMIT, SHORTEST, and explicit unsupported mutations)
+- **UnsupportedConstruct coverage**: Tests for unbounded path, mutation (DELETE), and optional match rejection — all rejected before executor invocation
+- **Full workspace verification**: 0 failed across 4 crates (1,651 tests)
+
+**Test counts across PR1-PR4**:
+- PR1: 9 parser tests + 4 AST tests = 13
+- PR2: 4 lowering tests = 4
+- PR3: 2 MCP tests + 8 executor tests = 10
+- PR4: 7 REST tests + 3 T9 tests + 1 matrix test = 11
+- **Total new tests: 38** (exceeds ≥35 requirement)
+
+**Trazabilidad**:
+- Branch: `feat/e28-3-pr4-matrix-verify` (3 commits: REST tests, capabilities endpoint, T9 unsupported tests)
+- Tag: `v0.72.3` (PATCH — final verification + REST tests + matrix endpoint)
+- PR: <https://github.com/Rubentxu/CogniCode/pull/153>
+
+**E28.3 chain closure**:
+- PR1 Foundation ✅ → v0.72.0
+- PR2 Parser + Lowering ✅ → v0.72.1
+- PR3 Surfaces ✅ → v0.72.2
+- PR4 Matrix + Verify ✅ → v0.72.3
+- **E28.3 is fully DONE.**
+
+**E28 execution order**:
+```
+E28.0 -> E28.1 -> E28.2 -> E28.3
+                         -> E28.4 -> E28.5 -> E28.6
+```
+
+**Próximo paso propuesto**: E28.4 (`analytics-registry-cohort-1`) — descriptor admission, `stream`/`stats`/`annotate`/`persist` modes, and first algorithm cohort. E28.3 and E28.4 run in parallel now that E28.2 and E28.3 are both DONE.
 
 ## Session Handover 2026-07-28 (E28.1 PR4 shipped — E28.1 chain fully DONE)
 
