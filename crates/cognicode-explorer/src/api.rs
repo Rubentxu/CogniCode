@@ -700,6 +700,14 @@ pub fn router_with_state(state: ApiState) -> Router {
             "/api/moldql/pattern/capabilities",
             get(moldql_pattern_capabilities_handler),
         )
+        // E28.4 PR5: Analytics surfaces
+        .route("/api/analytics/run", post(analytics_run_handler))
+        .route("/api/analytics/catalog", get(analytics_catalog_handler))
+        .route("/api/analytics/lineage", get(analytics_lineage_list_handler))
+        .route(
+            "/api/analytics/lineage/:run_id",
+            get(analytics_lineage_get_handler),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -805,6 +813,14 @@ pub fn router(state: ApiState) -> Router {
             "/api/moldql/pattern/capabilities",
             get(moldql_pattern_capabilities_handler),
         )
+        // E28.4 PR5: Analytics surfaces
+        .route("/api/analytics/run", post(analytics_run_handler))
+        .route("/api/analytics/catalog", get(analytics_catalog_handler))
+        .route("/api/analytics/lineage", get(analytics_lineage_list_handler))
+        .route(
+            "/api/analytics/lineage/:run_id",
+            get(analytics_lineage_get_handler),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -814,6 +830,116 @@ pub async fn serve(state: ApiState, addr: SocketAddr) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, router(state)).await?;
     Ok(())
+}
+
+// ============================================================================
+// E28.4 PR5: Analytics REST handlers
+// ============================================================================
+
+use crate::dto::{
+    AnalyticsCatalogResponse, AnalyticsLineageDetailResponse, AnalyticsLineageResponse,
+    AlgorithmDescriptorSummary, LineageEntry, RunAnalyticsRequest, RunAnalyticsResponse,
+};
+
+async fn analytics_run_handler(
+    State(state): State<ApiState>,
+    Json(req): Json<RunAnalyticsRequest>,
+) -> Result<Response, ApiError> {
+    // E28.4: Full integration requires CallGraph access from GraphService.
+    // Return stub response for now - MCP handler has full BSP implementation.
+    let run_id = format!(
+        "run_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let executed_at = chrono::Utc::now().to_rfc3339();
+
+    let result = serde_json::json!({
+        "algorithm_id": req.algorithm_id,
+        "from_symbol": req.from_symbol,
+        "to_symbol": req.to_symbol,
+        "max_hops": req.max_hops.unwrap_or(5),
+        "paths_found": 0,
+        "paths": [],
+        "note": "REST handler stub - use MCP analytics_run tool for actual execution"
+    });
+
+    let response = RunAnalyticsResponse {
+        algorithm_id: req.algorithm_id,
+        run_id,
+        executed_at,
+        lineage_persisted: false,
+        result,
+    };
+
+    Ok(Json(response).into_response())
+}
+
+async fn analytics_catalog_handler() -> Response {
+    // Return stub catalog - in production this would query the AlgorithmRegistry
+    let algorithms = vec![
+        AlgorithmDescriptorSummary {
+            id: "bounded_shortest_paths".to_string(),
+            name: "Bounded Shortest Paths".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Find all simple paths between two symbols bounded by max hops".to_string(),
+            mode: "Stream".to_string(),
+            categories: vec!["pathfinding".to_string(), "graph".to_string()],
+        },
+        AlgorithmDescriptorSummary {
+            id: "page_rank".to_string(),
+            name: "PageRank".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Compute PageRank scores for all symbols in the call graph".to_string(),
+            mode: "Stats".to_string(),
+            categories: vec!["centrality".to_string(), "graph".to_string()],
+        },
+        AlgorithmDescriptorSummary {
+            id: "scc".to_string(),
+            name: "Strongly Connected Components".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Find strongly connected components in the call graph".to_string(),
+            mode: "Stats".to_string(),
+            categories: vec!["clustering".to_string(), "graph".to_string()],
+        },
+        AlgorithmDescriptorSummary {
+            id: "wcc".to_string(),
+            name: "Weakly Connected Components".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Find weakly connected components in the call graph".to_string(),
+            mode: "Stats".to_string(),
+            categories: vec!["clustering".to_string(), "graph".to_string()],
+        },
+    ];
+
+    let total = algorithms.len();
+    let response = AnalyticsCatalogResponse { algorithms, total };
+    Json(response).into_response()
+}
+
+async fn analytics_lineage_list_handler() -> Response {
+    // Stub lineage response - in production this would query the lineage store
+    let response = AnalyticsLineageResponse {
+        runs: vec![],
+        total: 0,
+    };
+    Json(response).into_response()
+}
+
+async fn analytics_lineage_get_handler(
+    Path(run_id): Path<String>,
+) -> Response {
+    // Stub - lineage store not wired in this build
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({
+            "error": "not_found",
+            "message": format!("run `{}` not found (lineage store not wired in this build)", run_id)
+        })),
+    )
+        .into_response()
 }
 
 /// Stub handler for routes that are only available behind a feature gate.

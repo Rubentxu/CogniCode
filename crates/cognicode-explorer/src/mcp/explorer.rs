@@ -492,6 +492,7 @@ impl ExplorerMcpHandler {
 
         // Build registry and register all handlers.
         let mut registry = ToolHandlerRegistry::new();
+        crate::mcp::handler::register_analytics_handlers(&mut registry);
         crate::mcp::handler::register_ask_handlers(&mut registry);
         crate::mcp::handler::register_context_builder_handlers(&mut registry);
         crate::mcp::handler::register_drift_handlers(&mut registry);

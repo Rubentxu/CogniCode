@@ -1002,6 +1002,101 @@ pub struct SameLevelSection {
     pub edges: Vec<GraphEdge>,
 }
 
+// ============================================================================
+// Analytics DTOs — E28.4 PR5 surfaces
+// ============================================================================
+
+/// Request payload for `POST /api/analytics/run` and the
+/// `analytics_run` MCP tool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunAnalyticsRequest {
+    /// Algorithm identifier, e.g. `"bounded_shortest_paths"`.
+    pub algorithm_id: String,
+    /// Named of the source symbol (caller side of the BSP query).
+    pub from_symbol: String,
+    /// Named of the target symbol (callee side of the BSP query).
+    pub to_symbol: String,
+    /// Maximum hops (intermediate nodes) for bounded shortest paths.
+    #[serde(default)]
+    pub max_hops: Option<usize>,
+    /// Optional caller capabilities for authorization.
+    #[serde(default)]
+    pub caller_capabilities: Option<String>,
+}
+
+/// Response payload for `POST /api/analytics/run` and the
+/// `analytics_run` MCP tool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunAnalyticsResponse {
+    /// The algorithm that was executed.
+    pub algorithm_id: String,
+    /// Unique run identifier for lineage tracking.
+    pub run_id: String,
+    /// Execution timestamp (ISO 8601).
+    pub executed_at: String,
+    /// Whether lineage was persisted.
+    pub lineage_persisted: bool,
+    /// Algorithm-specific result payload.
+    pub result: serde_json::Value,
+}
+
+/// A single descriptor entry in the analytics catalog.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlgorithmDescriptorSummary {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    pub mode: String,
+    pub categories: Vec<String>,
+}
+
+/// Response payload for `GET /api/analytics/catalog` and the
+/// `analytics_catalog` MCP tool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalyticsCatalogResponse {
+    pub algorithms: Vec<AlgorithmDescriptorSummary>,
+    pub total: usize,
+}
+
+/// A single lineage record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LineageEntry {
+    pub run_id: String,
+    pub algorithm_id: String,
+    pub executed_at: String,
+    pub parameters: serde_json::Value,
+    pub result_summary: serde_json::Value,
+    pub mode: String,
+}
+
+/// Response payload for `GET /api/analytics/lineage` and the
+/// `analytics_lineage_list` MCP tool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalyticsLineageResponse {
+    pub runs: Vec<LineageEntry>,
+    pub total: usize,
+}
+
+/// Response payload for `GET /api/analytics/lineage/:run_id` and the
+/// `analytics_lineage_get` MCP tool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalyticsLineageDetailResponse {
+    pub run_id: String,
+    pub algorithm_id: String,
+    pub executed_at: String,
+    pub parameters: serde_json::Value,
+    pub result_summary: serde_json::Value,
+    pub mode: String,
+}
+
 #[cfg(test)]
 mod named_view_tests {
     use super::*;
