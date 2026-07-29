@@ -19,6 +19,7 @@ use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::SymbolId;
+use cognicode_core::domain::plan::executor::GraphExecutor;
 use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 
 use crate::domain::object_identity::ObjectIdentity;
@@ -52,6 +53,51 @@ pub struct MoldQLItem {
     /// string is `<lens_id>: <summary>` or, when the lens returned no
     /// findings, just `<lens_id>`.
     pub detail: Option<String>,
+}
+
+impl MoldQLResult {
+    /// Project a backend [`ResultSet`] into the view-shaped [`MoldQLResult`].
+    ///
+    /// Mapping policy: paths take priority (1 item per path); otherwise nodes
+    /// (1 item per node). `total` = number of items produced.
+    pub fn from_result_set(
+        rs: cognicode_core::domain::plan::ResultSet,
+        query: String,
+    ) -> Self {
+        use cognicode_core::domain::plan::{NodeResult, Path};
+
+        fn path_to_item(p: &Path) -> MoldQLItem {
+            let label = p
+                .hops
+                .iter()
+                .map(|h| h.node_id.clone())
+                .collect::<Vec<_>>()
+                .join("→");
+            MoldQLItem {
+                object_id: p.start().to_string(),
+                object_type: crate::dto::InspectableObjectType::Symbol,
+                label,
+                detail: None,
+            }
+        }
+
+        fn node_to_item(n: &NodeResult) -> MoldQLItem {
+            MoldQLItem {
+                object_id: n.id.clone(),
+                object_type: crate::dto::InspectableObjectType::Symbol,
+                label: n.id.clone(),
+                detail: None,
+            }
+        }
+
+        let items: Vec<MoldQLItem> = if !rs.paths.is_empty() {
+            rs.paths.iter().map(path_to_item).collect()
+        } else {
+            rs.nodes.iter().map(node_to_item).collect()
+        };
+        let total = items.len();
+        Self { query, items, total }
+    }
 }
 
 /// Executes a parsed MoldQL query against a [`MoldQLView`].
@@ -630,6 +676,13 @@ pub struct MoldQLView {
     /// Optional GraphQueryPort for call graph traversal (callers, callees,
     /// fan_in, fan_out). When `None`, these methods degrade gracefully.
     pub graph_query: Option<Arc<dyn GraphQueryPort>>,
+    /// Pattern Profile executor. `None` ⇒ `FeatureDisabled` at run time.
+    pub graph_executor: Option<Arc<dyn GraphExecutor>>,
+    /// Workspace + revision pin. `None` ⇒ `ResolutionFailed` at run time.
+    pub pin: Option<(
+        cognicode_core::domain::value_objects::WorkspaceId,
+        cognicode_core::domain::value_objects::RevisionId,
+    )>,
 }
 
 impl MoldQLView {
@@ -764,8 +817,12 @@ fn render_explore(e: &crate::moldql::ast::ExploreQuery) -> String {
 mod tests {
     use super::*;
     use crate::ports::QualityRepository;
-    use cognicode_core::domain::value_objects::SymbolKind;
-    use std::collections::HashMap as StdHashMap;
+    use cognicode_core::domain::plan::{
+        ConstructId, ExecutorError, GraphPlan, NeighborKind, NodeResult, PathQuantifier,
+        Path as GraphPath, PathHop, ResultSet, UnsupportedConstruct,
+    };
+    use cognicode_core::domain::value_objects::{DependencyType, EdgeKind, RevisionId, SymbolKind, WorkspaceId};
+    use std::collections::{HashMap as StdHashMap, HashSet as StdHashSet};
     use std::sync::Arc;
 
     /// Test repository that backs symbols + edges by hashmap.
@@ -941,6 +998,177 @@ mod tests {
         }
     }
 
+    /// Test-only [`GraphExecutor`] backed by a `MockRepo`'s caller/callee maps.
+    ///
+    /// **Limitation**: only `GraphPlan::Path` and `GraphPlan::Neighbors` are
+    /// implemented. All other variants return `ExecutorError::UnsupportedConstruct`.
+    struct InMemoryGraphExecutor {
+        repo: Arc<MockRepo>,
+    }
+
+    impl std::fmt::Debug for InMemoryGraphExecutor {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("InMemoryGraphExecutor").finish()
+        }
+    }
+
+    impl InMemoryGraphExecutor {
+        /// Resolve a binding name (symbol name) to zero or more matching symbol IDs.
+        /// If the input already looks like a composite symbol ID (contains ':'),
+        /// returns it directly without repository lookup.
+        fn resolve_name_to_ids(&self, name: &str) -> Result<Vec<String>, ExecutorError> {
+            // Composite IDs (e.g., "src/lib.rs:1:caller") are already resolved — return as-is.
+            if name.contains(':') {
+                return Ok(vec![name.to_string()]);
+            }
+            let symbols = self.repo.find_symbols_by_name(name).map_err(|e| {
+                ExecutorError::InternalError(format!("failed to resolve name '{}': {}", name, e))
+            })?;
+            Ok(symbols.into_iter().map(|s| s.id.to_string()).collect())
+        }
+
+        /// Bounded BFS over `callees_of` from `src`, emitting one [`GraphPath`]
+        /// per route that reaches `dst` within `q.max_hops`.
+        fn run_path(
+            &self,
+            src: &str,
+            dst: &str,
+            q: &PathQuantifier,
+        ) -> Result<ResultSet, ExecutorError> {
+            let max_hops = q.max_hops.unwrap_or(u32::MAX) as usize;
+            let mut results = Vec::new();
+
+            // Resolve binding names to symbol IDs via the repo.
+            // For Pattern Profile, src/dst are binding names (symbol names).
+            let src_ids = self.resolve_name_to_ids(src)?;
+            let dst_ids: StdHashSet<String> = self.resolve_name_to_ids(dst)?.into_iter().collect();
+
+            // BFS: each queue item is (current_symbol_id, path_hops)
+            let mut queue: VecDeque<(String, Vec<PathHop>)> = VecDeque::new();
+            for src_id in &src_ids {
+                queue.push_back((src_id.clone(), vec![PathHop { node_id: src_id.clone(), edge_kind: None }]));
+            }
+
+            while let Some((current, hops)) = queue.pop_front() {
+                // If we've reached a destination, emit the path
+                if dst_ids.contains(&current) {
+                    results.push(GraphPath::new(hops));
+                    continue;
+                }
+
+                // Respect hop budget
+                if hops.len() - 1 >= max_hops {
+                    continue;
+                }
+
+                // Explore callees
+                if let Some(callees) = self.repo.callees_of.get(&current) {
+                    for callee_id in callees {
+                        let next_hops = {
+                            let mut h = hops.clone();
+                            h.push(PathHop {
+                                node_id: callee_id.clone(),
+                                edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)),
+                            });
+                            h
+                        };
+                        queue.push_back((callee_id.clone(), next_hops));
+                    }
+                }
+            }
+
+            Ok(ResultSet {
+                rows: Vec::new(),
+                nodes: Vec::new(),
+                edges: Vec::new(),
+                paths: results,
+                scalars: Vec::new(),
+                truncated: false,
+                truncation: None,
+            })
+        }
+
+        /// BFS over `callers_of`/`callees_of` up to `depth`, emitting [`NodeResult`]
+        /// per visited node (excluding `src`).
+        fn run_neighbors(
+            &self,
+            src: &str,
+            kind: NeighborKind,
+            depth: u32,
+        ) -> Result<ResultSet, ExecutorError> {
+            let src_ids = self.resolve_name_to_ids(src)?;
+            let mut visited: StdHashSet<String> = StdHashSet::new();
+            let mut queue: VecDeque<(String, u32)> = VecDeque::new();
+            for src_id in &src_ids {
+                visited.insert(src_id.clone());
+                queue.push_back((src_id.clone(), 0));
+            }
+
+            while let Some((current, d)) = queue.pop_front() {
+                if d >= depth {
+                    continue;
+                }
+                let neighbors: Vec<String> = match kind {
+                    NeighborKind::Outgoing | NeighborKind::Both => {
+                        self.repo.callees_of.get(&current).cloned().unwrap_or_default()
+                    }
+                    NeighborKind::Incoming => {
+                        self.repo.callers_of.get(&current).cloned().unwrap_or_default()
+                    }
+                };
+                for neighbor_id in neighbors {
+                    if visited.insert(neighbor_id.clone()) {
+                        queue.push_back((neighbor_id, d + 1));
+                    }
+                }
+            }
+
+            // src_ids are not included; visited contains all reached nodes
+            let nodes: Vec<NodeResult> = visited
+                .iter()
+                .filter(|id| !src_ids.contains(id))
+                .map(|id| NodeResult {
+                    id: id.clone(),
+                    labels: vec!["Function".to_string()],
+                    properties: Vec::new(),
+                })
+                .collect();
+
+            Ok(ResultSet {
+                rows: Vec::new(),
+                nodes,
+                edges: Vec::new(),
+                paths: Vec::new(),
+                scalars: Vec::new(),
+                truncated: false,
+                truncation: None,
+            })
+        }
+    }
+
+    impl GraphExecutor for InMemoryGraphExecutor {
+        fn execute(
+            &self,
+            plan: &GraphPlan,
+            _pin: (WorkspaceId, RevisionId),
+        ) -> Result<ResultSet, ExecutorError> {
+            match plan {
+                GraphPlan::Path { src, dst, quantifier, .. } => {
+                    self.run_path(src, dst, quantifier)
+                }
+                GraphPlan::Neighbors { src, kind, depth, .. } => {
+                    self.run_neighbors(src, kind.clone(), *depth)
+                }
+                other => Err(ExecutorError::UnsupportedConstruct(
+                    UnsupportedConstruct::new(
+                        ConstructId::Other("InMemoryGraphExecutor".into()),
+                        format!("only handles Path and Neighbors; got {:?}", other),
+                    ),
+                )),
+            }
+        }
+    }
+
     /// Quality repo stub. `None` exercises the "no backend" path.
     struct NoQuality;
 
@@ -1079,6 +1307,7 @@ mod tests {
     /// lens is an error, but the executor swallows it gracefully).
     fn build_view(repo: Arc<MockRepo>) -> MoldQLView {
         use crate::adapters::FsSourceReader;
+        use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
         let reader: Arc<dyn crate::ports::SourceReader> = Arc::new(FsSourceReader::new("/tmp"));
         let apply: Arc<dyn Fn(&str, &str) -> ExplorerResult<LensResult> + Send + Sync> =
             Arc::new(|mvp, lens_id| {
@@ -1101,7 +1330,12 @@ mod tests {
             apply_lens: apply,
             #[cfg(feature = "multimodal")]
             graph_repo: None,
-            graph_query: Some(repo as Arc<dyn GraphQueryPort>),
+            graph_query: Some(repo.clone() as Arc<dyn GraphQueryPort>),
+            graph_executor: Some(Arc::new(InMemoryGraphExecutor { repo: repo.clone() })),
+            pin: Some((
+                WorkspaceId::try_new("test-workspace").unwrap(),
+                RevisionId::new(1),
+            )),
         }
     }
 
@@ -1112,6 +1346,7 @@ mod tests {
         quality: Arc<dyn crate::ports::QualityRepository>,
     ) -> MoldQLView {
         use crate::adapters::FsSourceReader;
+        use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
         let reader: Arc<dyn crate::ports::SourceReader> = Arc::new(FsSourceReader::new("/tmp"));
         let apply: Arc<dyn Fn(&str, &str) -> ExplorerResult<LensResult> + Send + Sync> =
             Arc::new(|_mvp, _lens_id| {
@@ -1124,7 +1359,12 @@ mod tests {
             apply_lens: apply,
             #[cfg(feature = "multimodal")]
             graph_repo: None,
-            graph_query: Some(repo as Arc<dyn GraphQueryPort>),
+            graph_query: Some(repo.clone() as Arc<dyn GraphQueryPort>),
+            graph_executor: Some(Arc::new(InMemoryGraphExecutor { repo: repo.clone() })),
+            pin: Some((
+                WorkspaceId::try_new("test-workspace").unwrap(),
+                RevisionId::new(1),
+            )),
         }
     }
 
@@ -1144,6 +1384,183 @@ mod tests {
         let mut repo = MockRepo::new();
         builder(&mut repo);
         Arc::new(repo)
+    }
+
+    // -------------------------------------------------------------------------
+    // InMemoryGraphExecutor unit tests
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn inmemory_path_single_hop() {
+        // caller → callee, max_hops=1 ⇒ 1 path
+        // with_callee sets callees_of[caller] = [callee]
+        let repo = make_repo(|r| {
+            r.with_sym("caller", "src/lib.rs", 1);
+            r.with_sym("callee", "src/lib.rs", 10);
+            r.with_callee(
+                &r.sid("caller", "src/lib.rs", 1),
+                &r.sid("callee", "src/lib.rs", 10),
+            );
+        });
+        let executor = InMemoryGraphExecutor { repo: repo.clone() };
+        let ws = WorkspaceId::try_new("test-ws").unwrap();
+        let caller_id = repo.sid("caller", "src/lib.rs", 1);
+        let callee_id = repo.sid("callee", "src/lib.rs", 10);
+        let plan = GraphPlan::Path {
+            src: caller_id.clone(),
+            dst: callee_id.clone(),
+            quantifier: PathQuantifier { max_hops: Some(1), min_hops: 0 },
+            edge_kind_filter: None,
+            predicates: Vec::new(),
+            projection: cognicode_core::domain::plan::PathProjection::default(),
+            limits: Default::default(),
+            metadata: cognicode_core::domain::plan::PlanMetadata::new(
+                cognicode_core::domain::plan::PlanVersion::default(),
+                cognicode_core::domain::plan::PlanHash::compute(&()),
+            ),
+        };
+        let result = executor.execute(&plan, (ws, RevisionId::new(1))).unwrap();
+        assert_eq!(result.paths.len(), 1, "expected 1 path; got {:?}", result.paths);
+        let path = &result.paths[0];
+        assert_eq!(path.start(), caller_id.as_str());
+        assert_eq!(path.end(), callee_id.as_str());
+        assert_eq!(path.len(), 1, "single hop");
+    }
+
+    #[tokio::test]
+    async fn inmemory_path_multi_hop() {
+        // a → b → c, max_hops=2 ⇒ 1 path with 3 hops
+        let repo = make_repo(|r| {
+            r.with_sym("a", "src/lib.rs", 1);
+            r.with_sym("b", "src/lib.rs", 5);
+            r.with_sym("c", "src/lib.rs", 10);
+            // a calls b, b calls c (forward edges via with_callee)
+            r.with_callee(&r.sid("a", "src/lib.rs", 1), &r.sid("b", "src/lib.rs", 5));
+            r.with_callee(&r.sid("b", "src/lib.rs", 5), &r.sid("c", "src/lib.rs", 10));
+        });
+        let executor = InMemoryGraphExecutor { repo: repo.clone() };
+        let ws = WorkspaceId::try_new("test-ws").unwrap();
+        let a_id = repo.sid("a", "src/lib.rs", 1);
+        let c_id = repo.sid("c", "src/lib.rs", 10);
+        let plan = GraphPlan::Path {
+            src: a_id,
+            dst: c_id,
+            quantifier: PathQuantifier { max_hops: Some(2), min_hops: 0 },
+            edge_kind_filter: None,
+            predicates: Vec::new(),
+            projection: cognicode_core::domain::plan::PathProjection::default(),
+            limits: Default::default(),
+            metadata: cognicode_core::domain::plan::PlanMetadata::new(
+                cognicode_core::domain::plan::PlanVersion::default(),
+                cognicode_core::domain::plan::PlanHash::compute(&()),
+            ),
+        };
+        let result = executor.execute(&plan, (ws, RevisionId::new(1))).unwrap();
+        assert_eq!(result.paths.len(), 1, "expected 1 path; got {:?}", result.paths);
+        assert_eq!(result.paths[0].hops.len(), 3, "3 nodes in path");
+    }
+
+    #[tokio::test]
+    async fn inmemory_path_no_match() {
+        // Disconnected src/dst ⇒ 0 paths, Ok
+        let repo = make_repo(|r| {
+            r.with_sym("x", "src/lib.rs", 1);
+            r.with_sym("y", "src/lib.rs", 5);
+            // No caller relationship
+        });
+        let executor = InMemoryGraphExecutor { repo: repo.clone() };
+        let ws = WorkspaceId::try_new("test-ws").unwrap();
+        let x_id = repo.sid("x", "src/lib.rs", 1);
+        let y_id = repo.sid("y", "src/lib.rs", 5);
+        let plan = GraphPlan::Path {
+            src: x_id,
+            dst: y_id,
+            quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
+            edge_kind_filter: None,
+            predicates: Vec::new(),
+            projection: cognicode_core::domain::plan::PathProjection::default(),
+            limits: Default::default(),
+            metadata: cognicode_core::domain::plan::PlanMetadata::new(
+                cognicode_core::domain::plan::PlanVersion::default(),
+                cognicode_core::domain::plan::PlanHash::compute(&()),
+            ),
+        };
+        let result = executor.execute(&plan, (ws, RevisionId::new(1))).unwrap();
+        assert!(result.paths.is_empty(), "expected 0 paths; got {:?}", result.paths);
+    }
+
+    #[tokio::test]
+    async fn inmemory_neighbors_incoming() {
+        // Incoming neighbors: callers of callee (via with_caller)
+        let repo = make_repo(|r| {
+            r.with_sym("caller1", "src/lib.rs", 1);
+            r.with_sym("caller2", "src/lib.rs", 2);
+            r.with_sym("callee", "src/lib.rs", 10);
+            r.with_caller(&r.sid("callee", "src/lib.rs", 10), &r.sid("caller1", "src/lib.rs", 1));
+            r.with_caller(&r.sid("callee", "src/lib.rs", 10), &r.sid("caller2", "src/lib.rs", 2));
+        });
+        let executor = InMemoryGraphExecutor { repo: repo.clone() };
+        let ws = WorkspaceId::try_new("test-ws").unwrap();
+        let callee_id = repo.sid("callee", "src/lib.rs", 10);
+        let caller1_id = repo.sid("caller1", "src/lib.rs", 1);
+        let caller2_id = repo.sid("caller2", "src/lib.rs", 2);
+        let plan = GraphPlan::Neighbors {
+            src: callee_id,
+            kind: NeighborKind::Incoming,
+            depth: 1,
+            edge_kind_filter: None,
+            predicates: Vec::new(),
+            limits: Default::default(),
+            metadata: cognicode_core::domain::plan::PlanMetadata::new(
+                cognicode_core::domain::plan::PlanVersion::default(),
+                cognicode_core::domain::plan::PlanHash::compute(&()),
+            ),
+        };
+        let result = executor.execute(&plan, (ws, RevisionId::new(1))).unwrap();
+        let neighbor_ids: Vec<_> = result.nodes.iter().map(|n| n.id.as_str()).collect();
+        assert!(
+            neighbor_ids.contains(&caller1_id.as_str())
+                && neighbor_ids.contains(&caller2_id.as_str()),
+            "expected both callers; got {:?}",
+            neighbor_ids
+        );
+    }
+
+    #[tokio::test]
+    async fn inmemory_neighbors_outgoing() {
+        // Outgoing neighbors: callees of caller (via with_callee)
+        let repo = make_repo(|r| {
+            r.with_sym("caller", "src/lib.rs", 1);
+            r.with_sym("callee1", "src/lib.rs", 10);
+            r.with_sym("callee2", "src/lib.rs", 20);
+            r.with_callee(&r.sid("caller", "src/lib.rs", 1), &r.sid("callee1", "src/lib.rs", 10));
+            r.with_callee(&r.sid("caller", "src/lib.rs", 1), &r.sid("callee2", "src/lib.rs", 20));
+        });
+        let executor = InMemoryGraphExecutor { repo: repo.clone() };
+        let ws = WorkspaceId::try_new("test-ws").unwrap();
+        let caller_id = repo.sid("caller", "src/lib.rs", 1);
+        let callee1_id = repo.sid("callee1", "src/lib.rs", 10);
+        let callee2_id = repo.sid("callee2", "src/lib.rs", 20);
+        let plan = GraphPlan::Neighbors {
+            src: caller_id,
+            kind: NeighborKind::Outgoing,
+            depth: 1,
+            edge_kind_filter: None,
+            predicates: Vec::new(),
+            limits: Default::default(),
+            metadata: cognicode_core::domain::plan::PlanMetadata::new(
+                cognicode_core::domain::plan::PlanVersion::default(),
+                cognicode_core::domain::plan::PlanHash::compute(&()),
+            ),
+        };
+        let result = executor.execute(&plan, (ws, RevisionId::new(1))).unwrap();
+        let neighbor_ids: Vec<_> = result.nodes.iter().map(|n| n.id.as_str()).collect();
+        assert!(
+            neighbor_ids.contains(&callee1_id.as_str())
+                && neighbor_ids.contains(&callee2_id.as_str()),
+            "expected both callees; got {:?}",
+            neighbor_ids
+        );
     }
 
     #[tokio::test]
@@ -1641,22 +2058,72 @@ mod tests {
     // T5 — Pattern Profile executor arm
     // -------------------------------------------------------------------------
 
+    /// Build a view with `graph_executor: None` but with a valid pin.
+    /// Used for testing the FeatureDisabled error path.
+    fn build_view_without_executor(
+        repo: Arc<MockRepo>,
+    ) -> MoldQLView {
+        use crate::adapters::FsSourceReader;
+        use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
+        let reader: Arc<dyn crate::ports::SourceReader> = Arc::new(FsSourceReader::new("/tmp"));
+        let apply: Arc<dyn Fn(&str, &str) -> ExplorerResult<LensResult> + Send + Sync> =
+            Arc::new(|_mvp, _lens_id| {
+                Err(ExplorerError::ResolutionFailed("no lens in test".into()))
+            });
+        MoldQLView {
+            repo: repo.clone() as Arc<dyn SymbolRepository>,
+            quality: None,
+            reader,
+            apply_lens: apply,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
+            graph_query: Some(repo.clone() as Arc<dyn GraphQueryPort>),
+            graph_executor: None,
+            pin: Some((
+                WorkspaceId::try_new("test-workspace").unwrap(),
+                RevisionId::new(1),
+            )),
+        }
+    }
+
+    /// Build a view with `graph_executor` wired but `pin: None`.
+    /// Used for testing the ResolutionFailed error path.
+    fn build_view_without_pin(
+        repo: Arc<MockRepo>,
+    ) -> MoldQLView {
+        use crate::adapters::FsSourceReader;
+        let reader: Arc<dyn crate::ports::SourceReader> = Arc::new(FsSourceReader::new("/tmp"));
+        let apply: Arc<dyn Fn(&str, &str) -> ExplorerResult<LensResult> + Send + Sync> =
+            Arc::new(|_mvp, _lens_id| {
+                Err(ExplorerError::ResolutionFailed("no lens in test".into()))
+            });
+        MoldQLView {
+            repo: repo.clone() as Arc<dyn SymbolRepository>,
+            quality: None,
+            reader,
+            apply_lens: apply,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
+            graph_query: Some(repo.clone() as Arc<dyn GraphQueryPort>),
+            graph_executor: Some(Arc::new(InMemoryGraphExecutor { repo: repo.clone() })),
+            pin: None,
+        }
+    }
+
+    // -------------------------------------------------------------------------
+
     #[tokio::test]
     async fn pattern_query_executes_without_error() {
         // T5 integration test: end-to-end Pattern query through MoldQLExecutor.
         // Builds a small fixture graph and executes:
         //   MATCH (n:Function)-[:Calls]->(m:Function) RETURN PATH(n,m)
-        // The MVP run_graph_plan() returns empty results with the plan as query string.
-        // The key assertion is that the executor does NOT return an error
-        // and the query string reflects the GraphPlan.
+        // The executor now returns real items via InMemoryGraphExecutor.
+        // Symbols are named "n" and "m" to match the binding names in the query.
         let repo = make_repo(|r| {
-            r.with_sym("caller", "src/caller.rs", 1);
-            r.with_sym("callee", "src/callee.rs", 10);
-            // caller calls callee
-            r.with_caller(
-                &r.sid("callee", "src/callee.rs", 10),
-                &r.sid("caller", "src/caller.rs", 1),
-            );
+            r.with_sym("n", "src/lib.rs", 1);
+            r.with_sym("m", "src/lib.rs", 10);
+            // n calls m (forward edge via with_callee)
+            r.with_callee(&r.sid("n", "src/lib.rs", 1), &r.sid("m", "src/lib.rs", 10));
         });
         let view = build_view(repo.clone());
 
@@ -1671,12 +2138,12 @@ mod tests {
             .await
             .expect("Pattern query should not error");
 
-        // For MVP, run_graph_plan returns empty items with plan as query string.
-        // The executor wiring is exercised end-to-end.
+        // InMemoryGraphExecutor returns 1 path for n→m
         assert!(
-            result.query.contains("Path"),
-            "query string should contain 'Path' (GraphPlan::Path): got {}",
-            result.query
+            result.items.len() >= 1,
+            "expected ≥1 path item, got {} items: {:?}",
+            result.items.len(),
+            result.items
         );
     }
 
@@ -1685,12 +2152,9 @@ mod tests {
         // T5 integration test: lowercase pattern through the full execute_query flow.
         // This exercises the T4 lower_intent path + T5 executor Pattern arm together.
         let repo = make_repo(|r| {
-            r.with_sym("a", "src/a.rs", 1);
-            r.with_sym("b", "src/b.rs", 5);
-            r.with_caller(
-                &r.sid("b", "src/b.rs", 5),
-                &r.sid("a", "src/a.rs", 1),
-            );
+            r.with_sym("n", "src/lib.rs", 1);
+            r.with_sym("m", "src/lib.rs", 5);
+            r.with_callee(&r.sid("n", "src/lib.rs", 1), &r.sid("m", "src/lib.rs", 5));
         });
         let view = build_view(repo.clone());
 
@@ -1707,11 +2171,56 @@ mod tests {
             .await
             .expect("Pattern query via lower_intent should not error");
 
-        // MVP: run_graph_plan returns empty items with plan description.
+        // InMemoryGraphExecutor returns 1 path for n→m
         assert!(
-            result.query.contains("Path"),
-            "expected GraphPlan::Path in query string, got: {}",
-            result.query
+            result.items.len() >= 1,
+            "expected ≥1 path item, got {} items: {:?}",
+            result.items.len(),
+            result.items
+        );
+    }
+
+    #[tokio::test]
+    async fn pattern_query_unwired_view_returns_feature_disabled_error() {
+        // RED test: view without graph_executor returns FeatureDisabled for Pattern query.
+        let repo = make_repo(|r| {
+            r.with_sym("n", "src/lib.rs", 1);
+            r.with_sym("m", "src/lib.rs", 10);
+            r.with_callee(&r.sid("n", "src/lib.rs", 1), &r.sid("m", "src/lib.rs", 10));
+        });
+        let view = build_view_without_executor(repo.clone());
+
+        let ast = crate::moldql::parser::parse(
+            "MATCH (n:Function)-[:Calls]->(m:Function) RETURN PATH(n,m)"
+        ).expect("parse ok");
+
+        let result = view.executor().execute(ast).await;
+        assert!(
+            matches!(result, Err(ExplorerError::FeatureDisabled(_))),
+            "expected FeatureDisabled error, got {:?}",
+            result
+        );
+    }
+
+    #[tokio::test]
+    async fn pattern_query_without_pin_returns_resolution_failed_error() {
+        // RED test: view with executor but without pin returns ResolutionFailed for Pattern query.
+        let repo = make_repo(|r| {
+            r.with_sym("n", "src/lib.rs", 1);
+            r.with_sym("m", "src/lib.rs", 10);
+            r.with_callee(&r.sid("n", "src/lib.rs", 1), &r.sid("m", "src/lib.rs", 10));
+        });
+        let view = build_view_without_pin(repo.clone());
+
+        let ast = crate::moldql::parser::parse(
+            "MATCH (n:Function)-[:Calls]->(m:Function) RETURN PATH(n,m)"
+        ).expect("parse ok");
+
+        let result = view.executor().execute(ast).await;
+        assert!(
+            matches!(result, Err(ExplorerError::ResolutionFailed(_))),
+            "expected ResolutionFailed error, got {:?}",
+            result
         );
     }
 }
