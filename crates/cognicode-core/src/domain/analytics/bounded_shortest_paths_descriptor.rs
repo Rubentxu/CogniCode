@@ -1,0 +1,234 @@
+//! Bounded Shortest Paths descriptor for the analytics registry.
+//!
+//! Part of E28.4 Analytics Registry Cohort 1 — PR3 Bounded Paths.
+
+use std::sync::LazyLock;
+
+use crate::domain::analytics::{
+    AlgorithmDescriptor, AlgorithmIdentity, AlgorithmId, AlgorithmParams,
+    AlgorithmVersion, AnalyticsMode, ComplexityClass, DeterminismKind,
+    Fixture, FixtureGraph, Maturity, OutputField, OutputSchema, OutputType,
+    ProjectionAssumption,
+};
+use crate::domain::plan::limits::PlanLimits;
+
+// =============================================================================
+// Bounded Shortest Paths params
+// =============================================================================
+
+/// Parameter names for bounded shortest paths.
+static BSP_PARAM_NAMES: LazyLock<Vec<&'static str>> =
+    LazyLock::new(|| vec!["max_hops", "max_paths"]);
+
+/// Bounded Shortest Paths parameter schema.
+///
+/// Required: `max_hops` (positive integer, max intermediate nodes).
+/// Optional: `max_paths` (positive integer, max paths to return).
+pub struct BoundedShortestPathsParams;
+
+impl AlgorithmParams for BoundedShortestPathsParams {
+    fn param_names(&self) -> Vec<&'static str> {
+        BSP_PARAM_NAMES.to_vec()
+    }
+
+    fn validate(&self, params: &serde_json::Value) -> Result<(), String> {
+        if let Some(obj) = params.as_object() {
+            // max_hops is required
+            if !obj.contains_key("max_hops") {
+                return Err("missing required parameter: max_hops".into());
+            }
+            let max_hops = obj.get("max_hops")
+                .ok_or("missing max_hops")?;
+            if !max_hops.is_u64() {
+                return Err("max_hops must be a positive integer".into());
+            }
+            let hops_val = max_hops.as_u64().unwrap();
+            if hops_val == 0 {
+                return Err("max_hops must be > 0".into());
+            }
+            // max_paths is optional but must be positive if provided
+            if let Some(max_paths) = obj.get("max_paths") {
+                if !max_paths.is_u64() {
+                    return Err("max_paths must be a positive integer".into());
+                }
+                let paths_val = max_paths.as_u64().unwrap();
+                if paths_val == 0 {
+                    return Err("max_paths must be > 0".into());
+                }
+            }
+            Ok(())
+        } else {
+            Err("params must be a JSON object".into())
+        }
+    }
+}
+
+// =============================================================================
+// Bounded Shortest Paths output schema
+// =============================================================================
+
+static BSP_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema {
+    fields: vec![
+        OutputField { name: "path_id", type_: OutputType::Count },
+        OutputField { name: "nodes", type_: OutputType::Json },
+        OutputField { name: "cost", type_: OutputType::Cost },
+    ],
+});
+
+// =============================================================================
+// Bounded Shortest Paths limits
+// =============================================================================
+
+static BSP_LIMITS: LazyLock<PlanLimits> = LazyLock::new(|| PlanLimits {
+    time_ms: Some(30000),
+    cancellation: None,
+    max_depth: None,
+    max_hops: Some(100), // Required param, defaults to 100
+    max_visited_nodes: Some(1_000_000),
+    max_visited_edges: None,
+    max_result_rows: Some(100_000),
+    max_path_count: Some(10_000),
+    max_memory_bytes: Some(512 * 1024 * 1024),
+});
+
+// =============================================================================
+// Bounded Shortest Paths complexity
+// =============================================================================
+
+static BSP_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
+    time: "O(V + E + k·d)".into(),
+    space: "O(V)".into(),
+    notes: "k = max_hops, d = graph diameter; bounded DFS".into(),
+});
+
+// =============================================================================
+// Bounded Shortest Paths conformance fixtures
+// =============================================================================
+
+static BSP_FIXTURES: LazyLock<Vec<Fixture>> = LazyLock::new(|| {
+    vec![
+        // Diamond DAG: A → B → D, A → C → D, A → D (direct)
+        // Paths from A to D with max_hops=2: [A,D], [A,B,D], [A,C,D]
+        Fixture {
+            name: "diamond three paths",
+            graph: FixtureGraph {
+                nodes: vec!["A", "B", "C", "D"],
+                edges: vec![
+                    ("A", "B"),
+                    ("A", "C"),
+                    ("A", "D"),
+                    ("B", "D"),
+                    ("C", "D"),
+                ],
+            },
+            expected: serde_json::json!({
+                "type": "diamond_dag",
+                "expectation": "three_paths_a_to_d"
+            }),
+        },
+        // Single direct edge: A → B
+        Fixture {
+            name: "single direct path",
+            graph: FixtureGraph {
+                nodes: vec!["A", "B"],
+                edges: vec![("A", "B")],
+            },
+            expected: serde_json::json!({
+                "type": "direct_edge",
+                "expectation": "one_path"
+            }),
+        },
+        // Empty graph
+        Fixture {
+            name: "empty graph",
+            graph: FixtureGraph {
+                nodes: vec![],
+                edges: vec![],
+            },
+            expected: serde_json::json!({
+                "type": "empty",
+                "expectation": "empty_result"
+            }),
+        },
+    ]
+});
+
+// =============================================================================
+// Bounded Shortest Paths identity
+// =============================================================================
+
+static BSP_IDENTITY: LazyLock<AlgorithmIdentity> = LazyLock::new(|| AlgorithmIdentity {
+    id: AlgorithmId::from_static("bounded_shortest_paths"),
+    version: AlgorithmVersion::v1(),
+    maturity: Maturity::Stable,
+    cohort: 1,
+});
+
+// =============================================================================
+// Bounded Shortest Paths descriptor
+// =============================================================================
+
+/// Bounded Shortest Paths descriptor.
+///
+/// Wraps `cognicode_graph_algos::all_simple_paths`:
+/// - `max_hops`: REQUIRED — max intermediate nodes (hop limit)
+/// - `max_paths`: optional — max paths to return
+/// - Deterministic: DFS with alphabetic tie-breaking
+/// - Directed: yes
+/// - Weighted: no
+/// - Tolerance: 1e-9 for cost, 0 for node/edge sequence
+pub struct BoundedShortestPathsDescriptor;
+
+impl AlgorithmDescriptor for BoundedShortestPathsDescriptor {
+    fn identity(&self) -> &AlgorithmIdentity {
+        &BSP_IDENTITY
+    }
+
+    fn params(&self) -> &dyn AlgorithmParams {
+        &BoundedShortestPathsParams
+    }
+
+    fn output_schema(&self) -> &OutputSchema {
+        &BSP_SCHEMA
+    }
+
+    fn supported_modes(&self) -> &[AnalyticsMode] {
+        &[
+            AnalyticsMode::Stream,
+            AnalyticsMode::Persist,
+        ]
+    }
+
+    fn complexity(&self) -> &ComplexityClass {
+        &BSP_COMPLEXITY
+    }
+
+    fn limits(&self) -> &PlanLimits {
+        &BSP_LIMITS
+    }
+
+    fn conformance_fixtures(&self) -> &[Fixture] {
+        &BSP_FIXTURES
+    }
+
+    fn determinism(&self) -> DeterminismKind {
+        DeterminismKind::Deterministic
+    }
+
+    fn directed(&self) -> bool {
+        true
+    }
+
+    fn weighted(&self) -> bool {
+        false
+    }
+
+    fn heterogeneous(&self) -> bool {
+        false
+    }
+
+    fn projection_assumption(&self) -> &ProjectionAssumption {
+        // all_simple_paths uses out_neighbors (CallGraphOutgoing)
+        &ProjectionAssumption::CallGraphOutgoing
+    }
+}
