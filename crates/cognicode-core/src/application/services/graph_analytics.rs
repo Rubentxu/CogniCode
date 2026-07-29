@@ -359,10 +359,19 @@ impl AlgorithmRegistry {
 
 /// Validate that all required descriptor methods return complete data.
 /// Returns a comma-separated list of missing fields.
+///
+/// Params are considered complete if param_names() returns a non-empty list
+/// (algorithms with required params) OR if validate() accepts null/empty
+/// (algorithms with no required params like SCC, WCC).
 fn validate_descriptor_completeness(d: &dyn AlgorithmDescriptor) -> String {
     let mut missing = Vec::new();
 
-    if d.params().param_names().is_empty() {
+    // Params are complete if either:
+    // - param_names() returns non-empty (has named parameters), OR
+    // - validate(null) succeeds (null/empty is acceptable — no required params)
+    let has_named_params = !d.params().param_names().is_empty();
+    let accepts_null = d.params().validate(&serde_json::Value::Null).is_ok();
+    if !has_named_params && !accepts_null {
         missing.push("params");
     }
     if d.output_schema().fields.is_empty() {
