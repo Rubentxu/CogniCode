@@ -80,7 +80,8 @@ impl<'a> MoldQLExecutor<'a> {
             | MoldQLQuery::Subgraph(_)
             | MoldQLQuery::Cluster(_)
             | MoldQLQuery::Explain(_)
-            | MoldQLQuery::Boolean(_) => {
+            | MoldQLQuery::Boolean(_)
+            | MoldQLQuery::Pattern(_) => {
                 // Default target: petgraph. The MCP tool can override
                 // this via the `target` field on the request.
                 let compiled = crate::moldql::compile::compile(

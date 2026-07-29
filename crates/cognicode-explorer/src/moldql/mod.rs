@@ -46,8 +46,10 @@ pub mod cursor;
 pub mod executor;
 pub mod intent;
 pub mod lower_plan;
+pub mod lower_pattern_profile;
 pub mod parser;
 pub mod parser_explorerql;
+pub mod parser_pattern_profile;
 
 pub use ast::{
     Condition, Direction, ExploreQuery, Field, FindQuery, MoldQLQuery, Op, TargetType, Value,

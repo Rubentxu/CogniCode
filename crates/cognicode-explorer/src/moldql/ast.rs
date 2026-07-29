@@ -297,9 +297,184 @@ impl BooleanOp {
     }
 }
 
+// ============================================================================
+// Pattern Profile — ADR-014 §2 — typed directed bounded patterns
+// ============================================================================
+
+/// A node binding inside a Pattern Profile pattern.
+///
+/// `r` in `(r:Route)` → `Binding { name: Some("r"), kind: Route }`.
+/// Anonymous `( :Route)` → `Binding { name: None, kind: Route }`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Binding {
+    /// Optional name for this binding (used in RETURN projections).
+    pub name: Option<String>,
+    /// The node kind / label (e.g. `Route`, `Function`).
+    pub kind: String,
+}
+
+/// Direction of an edge pattern.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeDirection {
+    /// `—>` or `←` (outgoing from source node).
+    Outgoing,
+    /// `<—` (incoming to source node).
+    Incoming,
+    /// `<—>` (both directions).
+    Both,
+}
+
+/// A directed edge pattern between two bindings.
+///
+/// `-[c:Calls*1..3]->` → `EdgePattern { name: Some("c"), kind: Calls, quantifier: { max: 3, min: 1 }, direction: Outgoing }`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EdgePattern {
+    /// Optional name for this edge (used in RETURN projections).
+    pub name: Option<String>,
+    /// The dependency type (e.g. `Calls`, `Imports`).
+    pub kind: String,
+    /// Path quantifier: `*1..3`, `+`, `?`. Always bounded.
+    pub quantifier: PathQuantifier,
+    /// Edge direction.
+    pub direction: EdgeDirection,
+}
+
+/// Path quantifier for Pattern Profile — always bounded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathQuantifier {
+    pub max_hops: Option<u32>,
+    pub min_hops: u32,
+}
+
+impl PathQuantifier {
+    /// Construct a bounded quantifier. Returns `None` if `max_hops` is `None`.
+    pub fn new(max_hops: Option<u32>, min_hops: u32) -> Option<Self> {
+        if max_hops.is_none() {
+            return None;
+        }
+        Some(Self { max_hops, min_hops })
+    }
+
+    /// `?` → `0..1`.
+    pub fn optional() -> Self {
+        Self { max_hops: Some(1), min_hops: 0 }
+    }
+
+    /// `+` with profile maximum.
+    pub fn plus(max_hops: u32) -> Self {
+        Self { max_hops: Some(max_hops), min_hops: 1 }
+    }
+}
+
+/// What a RETURN clause projects.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PatternProjection {
+    /// `RETURN PATH(r, c, f)` — return the path with bindings intact.
+    Path { bindings: Vec<String> },
+    /// `RETURN node(f)` — return a single node.
+    Node { binding: String },
+    /// `RETURN edge(c)` — return a single edge.
+    Edge { binding: String },
+    /// `RETURN f.module, COUNT(c) AS calls ORDER BY calls DESC LIMIT 5` — typed rows.
+    Row {
+        fields: Vec<RowField>,
+        group_by: Vec<String>,
+        aggregations: Vec<Aggregation>,
+        ordering: Option<OrderClause>,
+        limit: Option<usize>,
+    },
+}
+
+/// A field in a ROW projection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RowField {
+    /// `f.module` — property reference.
+    Property { binding: String, field: String },
+    /// `COUNT(c) AS calls` — aggregation reference by alias.
+    AggregationRef { name: String },
+}
+
+/// An aggregation function applied in a ROW projection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Aggregation {
+    Count { binding: Option<String>, alias: String },
+}
+
+/// Ordering direction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrderDirection {
+    Asc,
+    Desc,
+}
+
+/// `ORDER BY <field> <direction>` clause.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OrderClause {
+    pub by: String,
+    pub direction: OrderDirection,
+}
+
+/// A parsed Pattern Profile query.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatternQuery {
+    /// `SHORTEST` modifier.
+    pub shortest: bool,
+    /// Node bindings in order (first = anchor/src, last = target/dst).
+    pub bindings: Vec<Binding>,
+    /// Edge patterns between bindings.
+    pub edges: Vec<EdgePattern>,
+    /// Predicates over nodes and edges.
+    pub predicates: Vec<PatternPredicate>,
+    /// What to return.
+    pub projection: PatternProjection,
+}
+
+/// A predicate over a node or edge in a pattern.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PatternPredicate {
+    /// `n.module = "core"` — typed field/value comparison.
+    Property {
+        target: PredicateTarget,
+        field: String,
+        op: PatternOp,
+        value: PatternValue,
+    },
+    /// `e.provenance = "tree_sitter"` — provenance filter.
+    Provenance { target: Option<String>, source: String },
+    /// `confidence >= 0.7` — confidence filter (0..=1).
+    Confidence { target: PredicateTarget, op: PatternOp, value: f64 },
+}
+
+/// The target of a predicate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PredicateTarget {
+    Node(String),
+    Edge(String),
+    Anonymous,
+}
+
+/// Comparison operator in a pattern predicate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatternOp {
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    Eq,
+    Neq,
+}
+
+/// Value in a pattern predicate.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PatternValue {
+    String(String),
+    Number(f64),
+}
+
 // Extend the top-level enum with the 5 ExplorerQL primitives plus the
-// boolean composition wrapper. Each variant carries its respective query
-// struct so the executor can pattern-match on it.
+// boolean composition wrapper and the new Pattern Profile variant.
+// Each variant carries its respective query struct so the executor can
+// pattern-match on it.
 
 /// Top-level query variants.
 #[derive(Debug, Clone, PartialEq)]
@@ -320,6 +495,8 @@ pub enum MoldQLQuery {
     Explain(ExplainQuery),
     /// `( <q1> AND|OR <q2> [AND|OR <q3> ...] )` or `NOT <q>`
     Boolean(BooleanQuery),
+    /// Pattern Profile — `MATCH <pattern> [WHERE ...] RETURN ...`
+    Pattern(PatternQuery),
 }
 
 // ============================================================================
@@ -494,5 +671,125 @@ mod tests {
         };
         assert_eq!(q.op, BooleanOp::Not);
         assert_eq!(q.operands.len(), 1);
+    }
+
+    // =========================================================================
+    // Pattern Profile AST — Debug + Clone + PartialEq + behaviour
+    // =========================================================================
+
+    /// `PathQuantifier::new(Some(n), m)` returns a bounded quantifier.
+    #[test]
+    fn pattern_path_quantifier_bounded() {
+        let q = PathQuantifier::new(Some(3), 1).unwrap();
+        assert_eq!(q.max_hops, Some(3));
+        assert_eq!(q.min_hops, 1);
+    }
+
+    /// `PathQuantifier::new(None, _)` returns `None` (unbounded rejected).
+    #[test]
+    fn pattern_path_quantifier_unbounded_rejected() {
+        let q = PathQuantifier::new(None, 0);
+        assert!(q.is_none());
+    }
+
+    /// `PathQuantifier::optional()` → `0..1`.
+    #[test]
+    fn pattern_path_quantifier_optional() {
+        let q = PathQuantifier::optional();
+        assert_eq!(q.max_hops, Some(1));
+        assert_eq!(q.min_hops, 0);
+    }
+
+    /// `PathQuantifier::plus(max)` → `1..max`.
+    #[test]
+    fn pattern_path_quantifier_plus() {
+        let q = PathQuantifier::plus(4);
+        assert_eq!(q.max_hops, Some(4));
+        assert_eq!(q.min_hops, 1);
+    }
+
+    /// `PatternQuery` round-trips through Debug + Clone + PartialEq.
+    #[test]
+    fn pattern_query_roundtrip() {
+        let q = PatternQuery {
+            shortest: true,
+            bindings: vec![
+                Binding { name: Some("r".into()), kind: "Route".into() },
+                Binding { name: Some("f".into()), kind: "Function".into() },
+            ],
+            edges: vec![EdgePattern {
+                name: Some("c".into()),
+                kind: "Calls".into(),
+                quantifier: PathQuantifier::new(Some(3), 1).unwrap(),
+                direction: EdgeDirection::Outgoing,
+            }],
+            predicates: vec![],
+            projection: PatternProjection::Path {
+                bindings: vec!["r".into(), "c".into(), "f".into()],
+            },
+        };
+        let cloned = q.clone();
+        assert_eq!(q, cloned);
+        let _ = format!("{q:?}");
+    }
+
+    /// `MoldQLQuery::Pattern` is pattern-matchable.
+    #[test]
+    fn moldql_query_pattern_variant() {
+        let q = MoldQLQuery::Pattern(PatternQuery {
+            shortest: false,
+            bindings: vec![],
+            edges: vec![],
+            predicates: vec![],
+            projection: PatternProjection::Node { binding: "x".into() },
+        });
+        assert!(matches!(q, MoldQLQuery::Pattern(_)));
+    }
+
+    /// `PatternPredicate::Property` carries the right fields.
+    #[test]
+    fn pattern_predicate_property() {
+        let pred = PatternPredicate::Property {
+            target: PredicateTarget::Node("n".into()),
+            field: "module".into(),
+            op: PatternOp::Eq,
+            value: PatternValue::String("core".into()),
+        };
+        let cloned = pred.clone();
+        assert_eq!(pred, cloned);
+    }
+
+    /// `PatternProjection::Row` carries ordering and limit.
+    #[test]
+    fn pattern_projection_row_with_ordering() {
+        let proj = PatternProjection::Row {
+            fields: vec![RowField::AggregationRef { name: "calls".into() }],
+            group_by: vec!["f.module".into()],
+            aggregations: vec![Aggregation::Count { binding: Some("c".into()), alias: "calls".into() }],
+            ordering: Some(OrderClause { by: "calls".into(), direction: OrderDirection::Desc }),
+            limit: Some(5),
+        };
+        if let PatternProjection::Row { ordering, limit, .. } = &proj {
+            assert!(ordering.is_some());
+            assert_eq!(*limit, Some(5));
+        }
+    }
+
+    /// `EdgeDirection` variants are Outgoing, Incoming, Both.
+    #[test]
+    fn edge_direction_variants() {
+        use EdgeDirection::*;
+        let _ = Outgoing;
+        let _ = Incoming;
+        let _ = Both;
+    }
+
+    /// `PredicateTarget` variants are Node, Edge, Anonymous.
+    #[test]
+    fn predicate_target_variants() {
+        use PredicateTarget::*;
+        let _ = Node("x".into());
+        let _ = Edge("e".into());
+        let _ = Anonymous;
     }
 }

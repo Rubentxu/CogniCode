@@ -35,5 +35,5 @@ pub use result::{ResultSet, TruncationMarker, SemanticsViolation, Path, Row, Nod
 pub use error::{PlanError, ExecutorError, UnsupportedConstruct, ConstructId, SourceLocation, CancellationToken, ProvenanceSource};
 pub use filter::{PlanFilter, PlanFilterOp};
 pub use mold_plan::MoldPlan;
-pub use graph_plan::{GraphPlan, PathPredicate, PathQuantifier, NeighborKind, PathProjection, BooleanOp};
+pub use graph_plan::{GraphPlan, PathPredicate, PathQuantifier, NeighborKind, PathProjection, BooleanOp, OrderClause, OrderDirection};
 pub use executor::{GraphExecutor, ProvenanceEnvelope, StubExecutor};
