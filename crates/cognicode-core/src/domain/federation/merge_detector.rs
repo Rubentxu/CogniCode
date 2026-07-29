@@ -93,7 +93,7 @@ fn score_pair(left: &FederatedNode, right: &FederatedNode) -> Option<MergeCandid
         score += SCORE_KIND;
         reasons.push(MergeReason::KindMatch);
     }
-    if !left.node.properties.is_empty() && !right.node.properties.is_empty() {
+    if !left.node.properties_map().is_empty() && !right.node.properties_map().is_empty() {
         let overlap = property_overlap(&left.node, &right.node);
         if overlap {
             score += SCORE_PROPERTY;
@@ -137,7 +137,8 @@ pub fn normalize_label(s: &str) -> String {
 /// (not a Jaccard overlap; the v1 detector uses a simple
 /// "any overlap" heuristic).
 fn property_overlap(a: &GraphNode, b: &GraphNode) -> bool {
-    a.properties.keys().any(|k| b.properties.contains_key(k))
+    let b_map = b.properties_map();
+    a.properties_map().keys().any(|k| b_map.contains_key(k))
 }
 
 #[cfg(test)]
