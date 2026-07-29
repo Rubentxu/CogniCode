@@ -1642,6 +1642,8 @@ mod tests {
         let plan = GraphPlan::Cluster {
             by: vec!["kind".to_string()],
             aggregations: vec![],
+            ordering: None,
+            limit: None,
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
                 PlanVersion::new("1.0.0").unwrap(),

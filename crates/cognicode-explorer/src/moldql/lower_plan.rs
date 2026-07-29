@@ -15,7 +15,8 @@ use std::any::Any;
 
 use super::ast::{
     BooleanOp as AstBooleanOp, BooleanQuery, ClusterMethod, ClusterQuery, Condition, ExplainQuery,
-    FindQuery, MoldQLQuery, NeighborsQuery, PathQuery, SubgraphQuery, TargetType, TraversalDirection, Value,
+    FindQuery, MoldQLQuery, NeighborsQuery, PathQuery, PatternQuery, SubgraphQuery, TargetType,
+    TraversalDirection, Value,
 };
 
 /// Default limits applied when the query doesn't specify explicit bounds.
@@ -37,7 +38,7 @@ impl MoldqlAstLowerer {
         Self { _priv: () }
     }
 
-    fn plan_metadata(&self) -> PlanMetadata {
+    pub(crate) fn plan_metadata(&self) -> PlanMetadata {
         PlanMetadata::new(
             PlanVersion::new("1.0.0").expect("valid semver"),
             PlanHash::compute(&0u32),
@@ -161,6 +162,8 @@ impl MoldqlAstLowerer {
         let plan = GraphPlan::Cluster {
             by: vec![], // ClusterMethod maps to grouping key; empty for now
             aggregations: vec![],
+            ordering: None,
+            limit: None,
             limits: PlanLimits::default(),
             metadata: metadata.clone(),
         };
@@ -172,6 +175,8 @@ impl MoldqlAstLowerer {
         Ok(GraphPlan::Cluster {
             by: vec![],
             aggregations: vec![],
+            ordering: None,
+            limit: None,
             limits: final_limits,
             metadata,
         })
@@ -285,6 +290,7 @@ impl AstLowerer for MoldqlAstLowerer {
             MoldQLQuery::Cluster(cq) => self.lower_cluster(cq),
             MoldQLQuery::Explain(eq) => self.lower_explain(eq),
             MoldQLQuery::Boolean(bq) => self.lower_boolean(bq),
+            MoldQLQuery::Pattern(pq) => self.lower_pattern_profile(pq),
             MoldQLQuery::Find(_) | MoldQLQuery::Explore(_) => Err(
                 PlanError::UnsupportedConstruct(
                     cognicode_core::domain::plan::UnsupportedConstruct::new(

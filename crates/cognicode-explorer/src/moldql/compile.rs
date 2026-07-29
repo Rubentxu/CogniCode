@@ -151,6 +151,9 @@ pub fn compile(query: &MoldQLQuery, target: CompileTarget) -> Result<CompiledQue
         MoldQLQuery::Explore(_) => Err(CompileError::UnsupportedVariant(
             "EXPLORE executes through MoldQLExecutor, not through compile()",
         )),
+        MoldQLQuery::Pattern(_) => Err(CompileError::UnsupportedVariant(
+            "Pattern queries use compile_to_plan(); use MoldQLExecutor directly",
+        )),
     }
 }
 

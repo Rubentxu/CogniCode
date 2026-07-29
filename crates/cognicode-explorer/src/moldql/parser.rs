@@ -108,6 +108,12 @@ fn parse_query(cursor: &mut Cursor<'_>) -> Result<MoldQLQuery, ParseError> {
         "PATH" | "NEIGHBORS" | "SUBGRAPH" | "CLUSTER" | "EXPLAIN" | "NOT" => {
             parser_explorerql::parse_query_or_chain(cursor)
         }
+        // Pattern Profile — strict superset, runs only when canonical
+        // parse() does not match ExplorerQL.
+        "MATCH" | "SHORTEST" => {
+            let pq = crate::moldql::parser_pattern_profile::parse_pattern_query(cursor)?;
+            Ok(MoldQLQuery::Pattern(pq))
+        }
         // Unknown keyword: forward to the new module so the error
         // message can list all 7 leading keywords (per spec §1).
         _other => parser_explorerql::parse_query_or_chain(cursor),

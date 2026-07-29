@@ -90,6 +90,12 @@ pub enum GraphPlan {
     Cluster {
         by: Vec<String>,
         aggregations: Vec<super::TypedValue>,
+        /// Optional ordering for rows (COUNT, ORDER BY, LIMIT).
+        #[serde(default)]
+        ordering: Option<OrderClause>,
+        /// Optional result limit.
+        #[serde(default)]
+        limit: Option<usize>,
         limits: PlanLimits,
         metadata: PlanMetadata,
     },
@@ -148,9 +154,35 @@ pub struct PathProjection {
     pub nodes: Vec<String>,
     /// Edge properties to include.
     pub edges: Vec<String>,
+    /// When `true`, selects the minimum-hop qualifying path (bounded shortest path).
+    #[serde(default)]
+    pub shortest: bool,
 }
 
 impl Sealed for PathProjection {}
+
+/// Ordering direction for result sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum OrderDirection {
+    Asc,
+    Desc,
+}
+
+/// A result-ordering clause: `ORDER BY <field> <direction>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrderClause {
+    pub by: String,
+    pub direction: OrderDirection,
+}
+
+impl Default for OrderClause {
+    fn default() -> Self {
+        Self {
+            by: String::new(),
+            direction: OrderDirection::Desc,
+        }
+    }
+}
 
 /// Kind of neighbor traversal.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -348,6 +380,11 @@ mod tests {
         let plan = GraphPlan::Cluster {
             by: vec!["kind".into()],
             aggregations: vec![super::super::TypedValue::Int(1)],
+            ordering: Some(OrderClause {
+                by: "count".into(),
+                direction: OrderDirection::Desc,
+            }),
+            limit: Some(5),
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
                 PlanVersion::new("1.0.0").unwrap(),
@@ -429,12 +466,27 @@ mod tests {
         assert!(display.contains("max_hops"));
     }
 
-    /// `PathProjection` is `Default`.
+    /// `PathProjection` is `Default` with `shortest: false`.
     #[test]
     fn path_projection_default() {
         let proj = PathProjection::default();
         assert!(proj.nodes.is_empty());
         assert!(proj.edges.is_empty());
+        assert!(!proj.shortest);
+    }
+
+    /// `PathProjection` round-trips with `shortest: true`.
+    #[test]
+    fn path_projection_shortest_roundtrip() {
+        let proj = PathProjection {
+            nodes: vec!["a".into(), "b".into()],
+            edges: vec!["c".into()],
+            shortest: true,
+        };
+        let json = serde_json::to_string(&proj).expect("serialize");
+        let parsed: PathProjection = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, proj);
+        assert!(parsed.shortest);
     }
 
     /// `GraphPlan` is `Send + Sync + 'static`.
