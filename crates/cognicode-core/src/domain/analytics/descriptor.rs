@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::str::FromStr;
 
 use crate::domain::plan::limits::PlanLimits;
 
@@ -17,6 +18,11 @@ use crate::domain::plan::limits::PlanLimits;
 /// wrapper prevents stringly-typed ID errors at compile time.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AlgorithmId(String);
+
+/// Error returned when parsing an `AlgorithmId` from a string fails.
+#[derive(Debug, thiserror::Error)]
+#[error("invalid algorithm id: {0}")]
+pub struct AlgorithmIdParseError(pub String);
 
 impl AlgorithmId {
     /// Construct an `AlgorithmId` from a static string.
@@ -48,6 +54,41 @@ impl AlgorithmId {
 impl fmt::Display for AlgorithmId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl FromStr for AlgorithmId {
+    type Err = AlgorithmIdParseError;
+
+    /// Parse an `AlgorithmId` from a string.
+    ///
+    /// Accepts either:
+    /// - Just the name: `"pagerank"` → `Ok(AlgorithmId("pagerank"))`
+    /// - Name@version format: `"pagerank@v1.0.0"` → `Ok(AlgorithmId("pagerank"))`
+    ///
+    /// The version is accepted but ignored (it's validated at admission time against
+    /// the descriptor's `AlgorithmVersion`). This allows callers to pass the full
+    /// "name@version" string without splitting first.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Err(AlgorithmIdParseError("cannot be empty".into()));
+        }
+
+        // Handle "name@version" format by extracting just the name
+        let name = if let Some(at_pos) = s.find('@') {
+            &s[..at_pos]
+        } else {
+            s
+        };
+
+        if name.is_empty() {
+            return Err(AlgorithmIdParseError(format!(
+                "empty name in algorithm id `{}`",
+                s
+            )));
+        }
+
+        Ok(AlgorithmId(name.to_string()))
     }
 }
 
@@ -470,6 +511,35 @@ mod tests {
     #[should_panic(expected = "must not be empty")]
     fn algorithm_id_from_static_empty_panics() {
         AlgorithmId::from_static("");
+    }
+
+    #[test]
+    fn algorithm_id_from_str_name_only() {
+        use std::str::FromStr;
+        let id: AlgorithmId = "pagerank".parse().unwrap();
+        assert_eq!(id.as_str(), "pagerank");
+    }
+
+    #[test]
+    fn algorithm_id_from_str_name_at_version() {
+        use std::str::FromStr;
+        let id: AlgorithmId = "pagerank@v1.0.0".parse().unwrap();
+        assert_eq!(id.as_str(), "pagerank");
+    }
+
+    #[test]
+    fn algorithm_id_from_str_empty_is_error() {
+        use std::str::FromStr;
+        let result: Result<AlgorithmId, _> = "".parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn algorithm_id_from_str_empty_name_is_error() {
+        use std::str::FromStr;
+        // "@v1.0.0" has empty name
+        let result: Result<AlgorithmId, _> = "@v1.0.0".parse();
+        assert!(result.is_err());
     }
 
     #[test]
