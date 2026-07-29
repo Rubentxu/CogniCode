@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-29 (E28.2 PR2 pool-timeout fix shipped v0.70.1; PR4 Conformance pending.)
+Last updated: 2026-07-29 (E28.2 PR5 edge-filter fix shipped v0.71.0; PR4 Conformance pending.)
 
 ## Active
 
@@ -463,9 +463,48 @@ Pre-existing 4 `sandbox_orchestrator_test::test_plan_expands_*` failures confirm
 - File: `crates/cognicode-core/src/infrastructure/persistence/pg_graph_executor.rs` (+107 / −84 lines)
 - The fix unblocks reliable `cargo test --features postgres` runs in sandbox environments that previously timed out at 30s.
 
-**Próximo paso propuesto**: PR4 Conformance (`feat/e28-2-pr4-conformance`; Phase 4 — `assert_equivalent` differential harness + petgraph oracle; 10 tasks; ~500 LOC; ~7 PG scenarios). Cierra la cadena E28.2.
+**Próximo paso propuesto**: PR4 Conformance (`feat/e28-2-pr4-conformance`; Phase 4 — `assert_equivalent` differential harness + petgraph oracle; 10 tasks; ~500 LOC; ~7 PG scenarios). Cierra la cadena E28.2. El bug #4 (separación de aristas) ya está resuelto en v0.71.0, así que PR4 conformance validará la semántica correcta.
 
 ---
+
+## Session Handover 2026-07-29 (E28.2 PR5 edge-filter fix shipped v0.71.0)
+
+**Assessment gap #4 closed**: `GraphPlan::Path` and `Neighbors` now carry an optional `edge_kind_filter: Option<Vec<DependencyType>>`. When `Some(list)`, only edges of the listed `DependencyType` variants are traversed; when `None` (default), every edge kind is walked (preserves pre-fix behavior).
+
+**Root cause** (detected during stack evaluation): both `PgGraphExecutor::execute_path` (recursive CTE) and `SnapshotGraphExecutor::bfs_all_paths` walked every edge indiscriminately. The assessment §1.3 item #4 ("separate calls from other dependencies when traversing") had never been implemented. E28.2 PR4 Conformance would have **frozen this as the spec semantic** in `assert_equivalent` conformance tests. Fixing before PR4 is critical.
+
+**Fix** (2 atomic commits, single PR #147):
+
+1. **Commit 1 — pre-existing migration order fix**: `m0018` adds composite FKs `(workspace_id, source_id) → graph_nodes(workspace_id, id)`, but `graph_nodes` PK is `(workspace_id, id, kind)`. PostgreSQL rejects the FK without a matching UNIQUE constraint. `m0019` provides that index but was scheduled *after* `m0018`, so it never ran on a fresh DB. Swapped the order. Bug masked by volume persisting schema state across container restarts; surfaced 2026-07-29.
+
+2. **Commit 2 — edge-filter feature**:
+   - `SnapshotGraphExecutor::bfs_all_paths` + `execute_neighbors`: filter by `edge.weight()` when iterating edges.
+   - `PgGraphExecutor::execute_path` + `execute_neighbors`: SQL `AND ($N::text[] IS NULL OR e.kind = ANY($N))` clause + filter bound as `Option<Vec<String>>` mapped from `DependencyType` → `"dependency.calls"` etc.
+
+**RED tests added** (strict TDD):
+
+| Test | Fixture | Assertion |
+|---|---|---|
+| `snapshot_graph_executor::tests::path_with_edge_kind_filter_excludes_references` | A→B(Calls), A→B_ref(References), B→C(Calls), B_ref→C(Calls) | With `[Calls]` filter, every path must go through B (not B_ref) |
+| `pg_graph_executor::tests::path_with_edge_kind_filter_eliminates_only_path` | A→B(References), B→C(Calls) | Without filter: A→B→C exists. With `[Calls]`: empty paths (no Calls edge from A) |
+
+**Verification** (real `cargo test` output as GREEN evidence):
+
+| Scope | Result |
+|---|---|
+| `pg_graph_executor::tests::*` (12 tests, +1 new) | **12 passed in 8.18s** |
+| `snapshot_graph_executor::tests::*` (16 tests, +1 new) | **16 passed in 0.01s** |
+| `cognicode-core --tests --features postgres` | **1650 passed, 0 failed**, 27 ignored in 253.37s |
+| `cognicode-explorer --tests` (incl. PG feature) | all passed |
+
+**Trazabilidad**:
+- Branch: `fix/e28-2-pr5-edge-filter`
+- Commits: `fd6aaaad` (migration fix) + `7593792d` (edge-filter)
+- PR: <https://github.com/Rubentxu/CogniCode/pull/147>
+- Tag: `v0.71.0` (MINOR — adds optional filter capability)
+- Files: `crates/cognicode-core/src/domain/plan/graph_plan.rs` + `snapshot_graph_executor.rs` + `pg_graph_executor.rs` + `postgres_repository.rs` + `tests/e28_2_port_unknown_pin.rs` + `crates/cognicode-explorer/src/moldql/lower_plan.rs`
+
+**Próximo paso propuesto**: PR4 Conformance (`feat/e28-2-pr4-conformance`; Phase 4 — `assert_equivalent` differential harness + petgraph oracle; 10 tasks; ~500 LOC; ~7 PG scenarios). Cierra la cadena E28.2. El bug #4 ya está resuelto, así que PR4 validará la semántica correcta de edge_kind_filter.
 
 ## Session Handover 2026-07-28 (E28.1 PR4 shipped — E28.1 chain fully DONE)
 
