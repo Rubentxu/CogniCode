@@ -80,25 +80,41 @@ impl PgGraphExecutor {
         &self.repo
     }
 
-    /// Execute an async SQL query in a sync context by spawning a dedicated thread
-    /// with its own Tokio runtime. This avoids the Handle::block_on panic when
-    /// called from a Tokio worker thread (multi-thread runtime) and works in
-    /// both current_thread and multi_thread runtime contexts.
+    /// Run an async closure on the current Tokio runtime via `block_in_place` +
+    /// `Handle::current` + `tokio::spawn`. This is the proven working pattern
+    /// (matches `snapshot_provider.rs::current_head` / `snapshot`) and avoids:
+    ///
+    /// - The `Handle::block_on` panic when called from a Tokio worker thread
+    ///   (multi-thread runtime).
+    /// - The PG connection-pool leak caused by spawning a fresh `Runtime` per
+    ///   call: a new runtime's lifecycle interferes with the shared pool's
+    ///   internal state (tokio handles, mutexes) that was initialized in the
+    ///   caller runtime, leading to "pool timed out" errors on subsequent
+    ///   acquire attempts.
+    ///
+    /// The caller must be inside a Tokio runtime (multi-thread or current_thread).
+    /// `block_in_place` blocks the current thread (must be a worker in multi_thread
+    /// or any thread where blocking is acceptable) while the async work runs on
+    /// the same runtime via `tokio::spawn`.
     fn execute_async<T, F, Fut>(&self, f: F) -> Result<T, ExecutorError>
     where
         F: FnOnce(PostgresRepository) -> Fut + Send + 'static,
         Fut: std::future::Future<Output = Result<T, sqlx::Error>> + Send + 'static,
         T: Send + 'static,
     {
-        let repo = PostgresRepository::from_pool(self.repo.pool().clone());
+        let pool = self.repo.pool().clone();
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let result = rt.block_on(f(repo));
-            let _ = tx.send(result);
+        tokio::task::block_in_place(move || {
+            let handle = tokio::runtime::Handle::current();
+            let _enter = handle.enter();
+            tokio::spawn(async move {
+                let repo = PostgresRepository::from_pool(pool);
+                let result = f(repo).await;
+                let _ = tx.send(result);
+            });
         });
         rx.recv()
-            .expect("PG executor thread panicked")
+            .expect("PG executor task panicked")
             .map_err(|e| ExecutorError::InternalError(format!("async query failed: {e}")))
     }
 }
@@ -126,24 +142,26 @@ impl GraphExecutor for PgGraphExecutor {
         // First: verify the revision exists by calling load_call_graph_ws.
         // This is the "closed world" check — unknown revisions fail fast.
         //
-        // We spawn a dedicated OS thread with its own Tokio runtime to avoid
-        // the Handle::block_on panic when called from a Tokio worker thread
-        // (multi-thread runtime). This approach works correctly in both
-        // current_thread and multi_thread runtime contexts.
-        let pool_for_load = self.repo.pool().clone();
+        // Use the working `block_in_place` pattern (matches `snapshot_provider.rs`):
+        // run the async load on the *current* Tokio runtime via `block_in_place +
+        // Handle::current + handle.enter + tokio::spawn`. This avoids:
+        //   - `Handle::block_on` panic from a Tokio worker thread (multi-thread runtime)
+        //   - PG connection-pool leak from spawning a fresh `Runtime` per call
+        //     (which would interfere with the shared pool's tokio state and cause
+        //     "pool timed out" errors)
         let pin0 = pin.0.clone();
         let pin1 = pin.1;
+        let pool_for_load = self.repo.pool().clone();
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            // Create a single-threaded runtime for the async operation.
-            // This is lighter than multi_thread and sufficient since we're
-            // just doing one async SQL query.
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let graph = rt.block_on(async {
+        tokio::task::block_in_place(move || {
+            let handle = tokio::runtime::Handle::current();
+            let _enter = handle.enter();
+            let tx2 = tx.clone();
+            tokio::spawn(async move {
                 let repo = PostgresRepository::from_pool(pool_for_load);
-                repo.load_call_graph_ws(&pin0, pin1).await
+                let result = repo.load_call_graph_ws(&pin0, pin1).await;
+                let _ = tx2.send(result);
             });
-            let _ = tx.send(graph);
         });
         let graph = rx.recv().expect("PG executor task panicked");
 
@@ -305,27 +323,29 @@ impl PgGraphExecutor {
 
         let start = Instant::now();
 
-        // Spawn dedicated thread to avoid Handle::block_on panic
-        // All data that needs to be used in the thread must be cloned
+        // Run the async query on the current Tokio runtime via `block_in_place`
+        // + `tokio::spawn` (avoids pool leak from per-call `Runtime::new()`).
+        // All data that needs to be used in the spawn closure must be cloned.
         let pool_clone = pool.clone();
         let sql_clone = sql.clone();
         let workspace_str = workspace.as_str().to_string();
         let src_clone = src.to_string();
         let dst_clone = dst.to_string();
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let result = rt.block_on(async {
+        tokio::task::block_in_place(move || {
+            let handle = tokio::runtime::Handle::current();
+            let _enter = handle.enter();
+            tokio::spawn(async move {
                 let mut query = sqlx::query(&sql_clone)
                     .bind(&src_clone)
                     .bind(&workspace_str)
                     .bind(&dst_clone)
                     .bind(max_hops);
-                query.fetch_all(&pool_clone).await
+                let result = query.fetch_all(&pool_clone).await;
+                let _ = tx.send(result);
             });
-            let _ = tx.send(result);
         });
-        let rows = rx.recv().expect("path query thread panicked")
+        let rows = rx.recv().expect("path query task panicked")
             .map_err(|e| ExecutorError::InternalError(format!("path query failed: {e}")))?;
 
         let mut paths = Vec::new();
@@ -478,16 +498,18 @@ impl PgGraphExecutor {
 
         let start = Instant::now();
 
-        // Spawn dedicated thread to avoid Handle::block_on panic
+        // Run the async query on the current Tokio runtime via `block_in_place`
+        // + `tokio::spawn` (avoids pool leak from per-call `Runtime::new()`).
         let pool_clone = pool.clone();
         let sql_clone = sql.clone();
         let workspace_str = workspace.as_str().to_string();
         let src_clone = src.to_string();
         let max_rows_opt = limits.max_result_rows;
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let result = rt.block_on(async {
+        tokio::task::block_in_place(move || {
+            let handle = tokio::runtime::Handle::current();
+            let _enter = handle.enter();
+            tokio::spawn(async move {
                 let mut query = sqlx::query(&sql_clone)
                     .bind(&src_clone)
                     .bind(&workspace_str)
@@ -495,11 +517,11 @@ impl PgGraphExecutor {
                 if let Some(max_rows) = max_rows_opt {
                     query = query.bind(max_rows as i64);
                 }
-                query.fetch_all(&pool_clone).await
+                let result = query.fetch_all(&pool_clone).await;
+                let _ = tx.send(result);
             });
-            let _ = tx.send(result);
         });
-        let rows = rx.recv().expect("neighbors query thread panicked")
+        let rows = rx.recv().expect("neighbors query task panicked")
             .map_err(|e| ExecutorError::InternalError(format!("neighbors query failed: {e}")))?;
 
         let mut nodes = Vec::new();
@@ -616,23 +638,25 @@ impl PgGraphExecutor {
 
         let start = Instant::now();
 
-        // Spawn dedicated thread to avoid Handle::block_on panic
+        // Run the async query on the current Tokio runtime via `block_in_place`
+        // + `tokio::spawn` (avoids pool leak from per-call `Runtime::new()`).
         let pool_clone = pool.clone();
         let sql_clone = sql.clone();
         let workspace_str = workspace.as_str().to_string();
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let result = rt.block_on(async {
-                sqlx::query(&sql_clone)
+        tokio::task::block_in_place(move || {
+            let handle = tokio::runtime::Handle::current();
+            let _enter = handle.enter();
+            tokio::spawn(async move {
+                let result = sqlx::query(&sql_clone)
                     .bind(&workspace_str)
                     .bind(depth)
                     .fetch_all(&pool_clone)
-                    .await
+                    .await;
+                let _ = tx.send(result);
             });
-            let _ = tx.send(result);
         });
-        let rows = rx.recv().expect("subgraph query thread panicked")
+        let rows = rx.recv().expect("subgraph query task panicked")
             .map_err(|e| ExecutorError::InternalError(format!("subgraph query failed: {e}")))?;
 
         let mut nodes = Vec::new();
@@ -688,27 +712,29 @@ impl PgGraphExecutor {
                 query = query.bind(max_rows as i64);
             }
 
-            // Spawn dedicated thread to avoid Handle::block_on panic
+            // Run the async query on the current Tokio runtime via `block_in_place`
+            // + `tokio::spawn` (avoids pool leak from per-call `Runtime::new()`).
             let pool_clone = pool.clone();
             let edge_sql_clone = edge_sql.clone();
             let node_ids_clone = node_ids.clone();
             let workspace_str = workspace.as_str().to_string();
             let max_rows_opt = limits.max_result_rows;
             let (tx, rx) = std::sync::mpsc::channel();
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                let result = rt.block_on(async {
+            tokio::task::block_in_place(move || {
+                let handle = tokio::runtime::Handle::current();
+                let _enter = handle.enter();
+                tokio::spawn(async move {
                     let mut query = sqlx::query(&edge_sql_clone)
                         .bind(&workspace_str)
                         .bind(&node_ids_clone);
                     if let Some(max_rows) = max_rows_opt {
                         query = query.bind(max_rows as i64);
                     }
-                    query.fetch_all(&pool_clone).await
+                    let result = query.fetch_all(&pool_clone).await;
+                    let _ = tx.send(result);
                 });
-                let _ = tx.send(result);
             });
-            let edge_rows = rx.recv().expect("subgraph edges query thread panicked")
+            let edge_rows = rx.recv().expect("subgraph edges query task panicked")
                 .map_err(|e| ExecutorError::InternalError(format!("subgraph edges query failed: {e}")))?;
 
             edge_rows
@@ -820,24 +846,26 @@ impl PgGraphExecutor {
 
         let start = Instant::now();
 
-        // Build query and execute in dedicated thread to avoid Handle::block_on panic
+        // Run the async query on the current Tokio runtime via `block_in_place`
+        // + `tokio::spawn` (avoids pool leak from per-call `Runtime::new()`).
         let pool_clone = pool.clone();
         let sql_clone = sql.clone();
         let workspace_str = workspace.as_str().to_string();
         let max_rows_opt = limits.max_result_rows;
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let result = rt.block_on(async {
+        tokio::task::block_in_place(move || {
+            let handle = tokio::runtime::Handle::current();
+            let _enter = handle.enter();
+            tokio::spawn(async move {
                 let mut query = sqlx::query(&sql_clone).bind(&workspace_str);
                 if let Some(max_rows) = max_rows_opt {
                     query = query.bind(max_rows as i64);
                 }
-                query.fetch_all(&pool_clone).await
+                let result = query.fetch_all(&pool_clone).await;
+                let _ = tx.send(result);
             });
-            let _ = tx.send(result);
         });
-        let rows = rx.recv().expect("cluster query thread panicked")
+        let rows = rx.recv().expect("cluster query task panicked")
             .map_err(|e| ExecutorError::InternalError(format!("cluster query failed: {e}")))?;
 
         let mut scalars = Vec::new();
@@ -966,24 +994,26 @@ impl PgGraphExecutor {
             "#,
         );
 
-        // Spawn dedicated thread to avoid Handle::block_on panic
+        // Run the async query on the current Tokio runtime via `block_in_place`
+        // + `tokio::spawn` (avoids pool leak from per-call `Runtime::new()`).
         let pool_clone = pool.clone();
         let sql_clone = sql.clone();
         let node_ids_clone = node_ids.clone();
         let workspace_str = workspace.as_str().to_string();
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let result = rt.block_on(async {
-                sqlx::query(&sql_clone)
+        tokio::task::block_in_place(move || {
+            let handle = tokio::runtime::Handle::current();
+            let _enter = handle.enter();
+            tokio::spawn(async move {
+                let result = sqlx::query(&sql_clone)
                     .bind(&workspace_str)
                     .bind(&node_ids_clone)
                     .fetch_all(&pool_clone)
-                    .await
+                    .await;
+                let _ = tx.send(result);
             });
-            let _ = tx.send(result);
         });
-        let rows = rx.recv().expect("boolean result nodes query thread panicked")
+        let rows = rx.recv().expect("boolean result nodes query task panicked")
             .map_err(|e| ExecutorError::InternalError(format!("boolean result nodes query failed: {e}")))?;
 
         let nodes: Vec<NodeResult> = rows
@@ -1694,21 +1724,14 @@ mod tests {
     // Assert: ExecutorError::RevisionUnknown is returned
     // -------------------------------------------------------------------------
 
-    #[tokio::test]
-    async fn unknown_revision_returns_error() {
-        let base = std::env::var("TEST_DATABASE_URL").unwrap_or_default();
-        if base.is_empty() {
-            eprintln!("skipping unknown_revision_returns_error: TEST_DATABASE_URL not set");
-            return;
-        }
-
-        let pool = match sqlx::PgPool::connect(&base).await.ok() {
-            Some(p) => p,
-            None => {
-                eprintln!("skipping unknown_revision_returns_error: cannot connect to database");
-                return;
-            }
-        };
+    /// Regression test for e28-2-pr2-pool-connection-release: the previous
+    /// dedicated-OS-thread + `Runtime::new()` approach leaked PG pool
+    /// connections on the first SELECT inside `load_call_graph_ws` for an
+    /// unknown revision, leading to "pool timed out". After switching to the
+    /// `block_in_place + Handle::current + tokio::spawn` pattern (which keeps
+    /// the async SQL work on the caller's Tokio runtime), this scenario must
+    /// return `ExecutorError::RevisionUnknown` instead of an InternalError.
+    pg_test!(unknown_revision_returns_error, |pool: PgPool| {
         let repo = PostgresRepository::from_pool(pool);
         let executor = PgGraphExecutor::new(repo);
 
@@ -1740,5 +1763,5 @@ mod tests {
             }
             other => panic!("expected ExecutorError::RevisionUnknown, got {:?}", other),
         }
-    }
+    });
 }

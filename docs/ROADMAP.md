@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-28 (E28.2 PR3 Snapshot Executor shipped v0.70.0; PR4 Conformance pending.)
+Last updated: 2026-07-29 (E28.2 PR2 pool-timeout fix shipped v0.70.1; PR4 Conformance pending.)
 
 ## Active
 
@@ -432,6 +432,40 @@ Ciclo SDDK A-lite ejecutado en auto mode. PR3 cubre Phase 3 (Snapshot Executor) 
 - PR: <https://github.com/Rubentxu/CogniCode/pull/144>.
 
 **Próximo paso propuesto**: PR4 Conformance (`feat/e28-2-pr4-conformance`; Phase 4 — `assert_equivalent` differential harness + petgraph oracle; 10 tasks; ~500 LOC; ~7 PG scenarios). Cierra la cadena E28.2.
+
+## Session Handover 2026-07-29 (E28.2 PR2 pool-timeout fix shipped v0.70.1)
+
+**Pre-existing-debt follow-up from E28.2 PR2 closed and shipped as v0.70.1.** The `unknown_revision_returns_error` pg_test that was failing with "pool timed out" in sandbox is now green; no regressions in the rest of the PG suite.
+
+**Root cause** (confirmed empirically against `snapshot_provider.rs` which already worked):
+
+The dedicated-OS-thread + `Runtime::new()` approach used by `PgGraphExecutor::execute_with_limits` and all 5 `execute_*` methods leaked PG pool connections. The new `Runtime` lifecycle interfered with the shared pool's tokio primitives (handles, mutexes) that were initialized in the caller runtime, causing "pool timed out" on the first SELECT inside `load_call_graph_ws` for unknown revisions. Other tests passed because they warmed up the pool via `save_call_graph_ws` before calling `execute`.
+
+**Fix**: refactored all 8 inline `std::thread::spawn + Runtime::new + rt.block_on` blocks to the proven `block_in_place + Handle::current + handle.enter + tokio::spawn` pattern (matches `snapshot_provider.rs::current_head` / `snapshot`). Kept the async SQL work on the caller's Tokio runtime instead of spawning a fresh runtime per call, so the pool's tokio state lifecycle is no longer interrupted.
+
+Also converted `unknown_revision_returns_error` from `#[tokio::test]` + direct `PgPool::connect(&base)` (admin DB without schema) to the local `pg_test!` macro (creates a unique DB with migrations run).
+
+**Verification** (real `cargo test` output as GREEN evidence):
+
+| Scope | Result |
+|---|---|
+| `unknown_revision_returns_error` (was RED, now GREEN) | 1 passed in 0.92s |
+| All 11 `pg_graph_executor::tests::*` | 11 passed in 8.87s |
+| `cognicode-core --tests --features postgres --lib` | 1648 passed, 0 failed, 27 ignored in 162.75s |
+| `cognicode-core --tests --features postgres` (full PG suite) | 1648 + 6 + 2 = 1656 passed, 0 failed |
+| `cognicode-explorer --features postgres --tests` | 117 passed across 14 test files, 0 failed |
+
+Pre-existing 4 `sandbox_orchestrator_test::test_plan_expands_*` failures confirmed on `main` HEAD `cdf1d588` — unrelated to this fix (binary not built: `cargo build --bin sandbox-orchestrator`).
+
+**Trazabilidad**:
+- Branch: `fix/e28-2-pr2-pool-connection-release`
+- Tag: `v0.70.1` (PATCH — bug fix only, no new APIs, no breaking changes; `block_in_place` is internal refactor of the sync-to-async bridge in `PgGraphExecutor`)
+- File: `crates/cognicode-core/src/infrastructure/persistence/pg_graph_executor.rs` (+107 / −84 lines)
+- The fix unblocks reliable `cargo test --features postgres` runs in sandbox environments that previously timed out at 30s.
+
+**Próximo paso propuesto**: PR4 Conformance (`feat/e28-2-pr4-conformance`; Phase 4 — `assert_equivalent` differential harness + petgraph oracle; 10 tasks; ~500 LOC; ~7 PG scenarios). Cierra la cadena E28.2.
+
+---
 
 ## Session Handover 2026-07-28 (E28.1 PR4 shipped — E28.1 chain fully DONE)
 
