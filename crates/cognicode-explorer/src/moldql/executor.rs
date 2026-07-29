@@ -1014,7 +1014,13 @@ mod tests {
 
     impl InMemoryGraphExecutor {
         /// Resolve a binding name (symbol name) to zero or more matching symbol IDs.
+        /// If the input already looks like a composite symbol ID (contains ':'),
+        /// returns it directly without repository lookup.
         fn resolve_name_to_ids(&self, name: &str) -> Result<Vec<String>, ExecutorError> {
+            // Composite IDs (e.g., "src/lib.rs:1:caller") are already resolved — return as-is.
+            if name.contains(':') {
+                return Ok(vec![name.to_string()]);
+            }
             let symbols = self.repo.find_symbols_by_name(name).map_err(|e| {
                 ExecutorError::InternalError(format!("failed to resolve name '{}': {}", name, e))
             })?;
