@@ -317,6 +317,9 @@ impl AlgorithmRegistry {
     ///
     /// Returns `Ok(())` if all 12 required methods return non-empty values.
     /// Returns `Err(AdmissionError::Incomplete)` if any method returns None/empty.
+    ///
+    /// Also persists the descriptor's default limits to the lineage store so they
+    /// can be reloaded on registry boot (survives restarts).
     pub fn admit(&mut self, d: Box<dyn AlgorithmExecute>) -> Result<(), AdmissionError> {
         // Validate completeness of all required fields
         let id = d.identity();
@@ -336,6 +339,19 @@ impl AlgorithmRegistry {
                 ));
             }
         }
+
+        // Persist descriptor limits to lineage store (idempotent upsert)
+        let lineage_store = self.lineage.clone();
+        let id_clone = id.id.clone();
+        let version_str = id.version.to_string();
+        let limits = d.limits().clone();
+        tokio::runtime::Handle::current()
+            .block_on(async {
+                lineage_store
+                    .upsert_descriptor_limits(&id_clone, &version_str, &limits)
+                    .await
+            })
+            .map_err(|e| AdmissionError::Incomplete(format!("lineage store error: {}", e)))?;
 
         self.descriptors.insert(id.id.clone(), d);
         Ok(())
@@ -431,48 +447,56 @@ pub fn validate_effective_limits(
     descriptor: &dyn AlgorithmDescriptor,
     caller_limits: PlanLimits,
 ) -> Result<PlanLimits, AnalyticsError> {
-    let defaults = descriptor.limits();
-    let mut effective = defaults.clone();
+    apply_caller_limits(descriptor.limits(), caller_limits)
+}
 
-    // Caller can only tighten limits, not widen them
-    if let Some(caller_max_nodes) = caller_limits.max_visited_nodes {
-        if let Some(default_max) = defaults.max_visited_nodes {
-            if caller_max_nodes > default_max {
+/// Apply caller constraints to base limits.
+///
+/// Caller can only tighten limits, not widen them. Returns the effective limits.
+fn apply_caller_limits(
+    base: &PlanLimits,
+    caller: PlanLimits,
+) -> Result<PlanLimits, AnalyticsError> {
+    let mut effective = base.clone();
+
+    if let Some(caller_max_nodes) = caller.max_visited_nodes {
+        if let Some(base_max) = base.max_visited_nodes {
+            if caller_max_nodes > base_max {
                 return Err(AnalyticsError::LimitPolicyViolation(
-                    format!("caller max_visited_nodes {} exceeds descriptor maximum {}", caller_max_nodes, default_max)
+                    format!("caller max_visited_nodes {} exceeds base maximum {}", caller_max_nodes, base_max)
                 ));
             }
             effective.max_visited_nodes = Some(caller_max_nodes);
         }
     }
 
-    if let Some(caller_max_edges) = caller_limits.max_visited_edges {
-        if let Some(default_max) = defaults.max_visited_edges {
-            if caller_max_edges > default_max {
+    if let Some(caller_max_edges) = caller.max_visited_edges {
+        if let Some(base_max) = base.max_visited_edges {
+            if caller_max_edges > base_max {
                 return Err(AnalyticsError::LimitPolicyViolation(
-                    format!("caller max_visited_edges {} exceeds descriptor maximum {}", caller_max_edges, default_max)
+                    format!("caller max_visited_edges {} exceeds base maximum {}", caller_max_edges, base_max)
                 ));
             }
             effective.max_visited_edges = Some(caller_max_edges);
         }
     }
 
-    if let Some(caller_max_rows) = caller_limits.max_result_rows {
-        if let Some(default_max) = defaults.max_result_rows {
-            if caller_max_rows > default_max {
+    if let Some(caller_max_rows) = caller.max_result_rows {
+        if let Some(base_max) = base.max_result_rows {
+            if caller_max_rows > base_max {
                 return Err(AnalyticsError::LimitPolicyViolation(
-                    format!("caller max_result_rows {} exceeds descriptor maximum {}", caller_max_rows, default_max)
+                    format!("caller max_result_rows {} exceeds base maximum {}", caller_max_rows, base_max)
                 ));
             }
             effective.max_result_rows = Some(caller_max_rows);
         }
     }
 
-    if let Some(caller_time) = caller_limits.time_ms {
-        if let Some(default_time) = defaults.time_ms {
-            if caller_time > default_time {
+    if let Some(caller_time) = caller.time_ms {
+        if let Some(base_time) = base.time_ms {
+            if caller_time > base_time {
                 return Err(AnalyticsError::LimitPolicyViolation(
-                    format!("caller time_ms {} exceeds descriptor maximum {}", caller_time, default_time)
+                    format!("caller time_ms {} exceeds base maximum {}", caller_time, base_time)
                 ));
             }
             effective.time_ms = Some(caller_time);
@@ -581,8 +605,17 @@ impl AlgorithmRegistry {
             .get(&request.algorithm_id)
             .ok_or_else(|| AnalyticsError::NotAdmitted(request.algorithm_id.clone()))?;
 
-        // Step 2: Validate effective limits
-        let effective_limits = validate_effective_limits(descriptor, request.caller_limits)?;
+        // Step 2: Get effective limits — check lineage store first (persisted limits
+        // survive restarts), then fall back to descriptor defaults. Caller limits are
+        // validated on top of whatever base limits we resolve.
+        let identity = descriptor.identity();
+        let base_limits = self
+            .lineage
+            .get_descriptor_limits(&identity.id, &identity.version.to_string())
+            .await
+            .map_err(|e| AnalyticsError::Internal(format!("get descriptor limits: {e}")))?
+            .unwrap_or_else(|| descriptor.limits().clone());
+        let effective_limits = apply_caller_limits(&base_limits, request.caller_limits)?;
 
         // Step 3: Check persist authorization
         if request.mode == AnalyticsMode::Persist {
@@ -936,5 +969,88 @@ mod tests {
         });
         let fas = GraphAnalyticsService::feedback_arc_set(&g);
         assert!(!fas.is_empty());
+    }
+
+    // =============================================================================
+    // CallerCapabilities and boundary guard tests
+    // =============================================================================
+
+    #[test]
+    fn default_boundary_guard_allows_internal_and_trusted_rest() {
+        let guard = DefaultAnalyticsBoundaryGuard::new();
+        assert!(guard.can_persist(CallerCapabilities::Internal));
+        assert!(guard.can_persist(CallerCapabilities::TrustedREST));
+        assert!(!guard.can_persist(CallerCapabilities::ExternalMCP));
+        assert!(!guard.can_persist(CallerCapabilities::Explorer));
+    }
+
+    #[test]
+    fn apply_caller_limits_tightens_base_limits() {
+        use crate::domain::plan::limits::PlanLimits;
+        use crate::domain::plan::limits::PlanLimitKind;
+
+        let base = PlanLimits {
+            time_ms: Some(1000),
+            cancellation: None,
+            max_depth: None,
+            max_hops: None,
+            max_visited_nodes: Some(10000),
+            max_visited_edges: None,
+            max_result_rows: Some(5000),
+            max_path_count: None,
+            max_memory_bytes: None,
+        };
+
+        // Caller tightens all limits
+        let caller = PlanLimits {
+            time_ms: Some(500),
+            cancellation: None,
+            max_depth: None,
+            max_hops: None,
+            max_visited_nodes: Some(5000),
+            max_visited_edges: None,
+            max_result_rows: Some(2500),
+            max_path_count: None,
+            max_memory_bytes: None,
+        };
+
+        let result = apply_caller_limits(&base, caller).unwrap();
+        assert_eq!(result.time_ms, Some(500));
+        assert_eq!(result.max_visited_nodes, Some(5000));
+        assert_eq!(result.max_result_rows, Some(2500));
+    }
+
+    #[test]
+    fn apply_caller_limits_rejects_widening() {
+        use crate::domain::plan::limits::PlanLimits;
+
+        let base = PlanLimits {
+            time_ms: Some(1000),
+            cancellation: None,
+            max_depth: None,
+            max_hops: None,
+            max_visited_nodes: Some(10000),
+            max_visited_edges: None,
+            max_result_rows: Some(5000),
+            max_path_count: None,
+            max_memory_bytes: None,
+        };
+
+        // Caller tries to widen time limit
+        let caller = PlanLimits {
+            time_ms: Some(2000), // wider than base 1000
+            cancellation: None,
+            max_depth: None,
+            max_hops: None,
+            max_visited_nodes: Some(10000),
+            max_visited_edges: None,
+            max_result_rows: Some(5000),
+            max_path_count: None,
+            max_memory_bytes: None,
+        };
+
+        let result = apply_caller_limits(&base, caller);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AnalyticsError::LimitPolicyViolation(_)));
     }
 }
