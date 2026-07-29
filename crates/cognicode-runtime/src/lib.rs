@@ -339,7 +339,7 @@ impl Runtime {
             self.revision_tracker,
             #[cfg(feature = "multimodal")]
             edge_emitter,
-            #[cfg(feature = "ownership")]
+            #[cfg(feature = "postgres")]
             self.pg_repo.clone(),
         )
     }

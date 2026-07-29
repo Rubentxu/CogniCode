@@ -386,7 +386,7 @@ impl ExplorerMcpHandler {
         quality_write: Option<Arc<dyn crate::ports::QualityWritePort>>,
         revision_tracker: Arc<std::sync::atomic::AtomicU64>,
         #[cfg(feature = "multimodal")] edge_emitter: Option<Arc<dyn crate::ports::EdgeEmitter>>,
-        #[cfg(feature = "ownership")] pg_repo: Option<
+        #[cfg(feature = "postgres")] pg_repo: Option<
             Arc<cognicode_core::infrastructure::persistence::PostgresRepository>,
         >,
     ) -> Self {
@@ -488,6 +488,30 @@ impl ExplorerMcpHandler {
             let snapshot = Arc::new(SnapshotService::new());
             ctx_builder = ctx_builder.with_snapshot(snapshot);
         }
+
+        // Wire analytics registry and lineage store when postgres is available.
+        #[cfg(feature = "postgres")]
+        if let Some(ref pg) = pg_repo {
+            use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
+            use cognicode_core::domain::analytics::RunLineageStore;
+            use cognicode_core::infrastructure::persistence::PostgresLineageStore;
+
+            // Create lineage store from postgres pool.
+            let lineage_store: Arc<dyn RunLineageStore> = Arc::new(
+                PostgresLineageStore::new(pg.pool().clone())
+            );
+
+            // Create registry with lineage store and default boundary guard.
+            let registry = Arc::new(AlgorithmRegistry::new(
+                lineage_store.clone(),
+                None, // no boundary guard in this build
+            ));
+
+            ctx_builder = ctx_builder
+                .with_analytics_registry(registry)
+                .with_analytics_lineage_store(lineage_store);
+        }
+
         let ctx = ctx_builder.build();
 
         // Build registry and register all handlers.
