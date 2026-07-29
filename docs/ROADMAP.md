@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-29 (Runtime GraphExecutor injection fix shipped v0.72.6 — Pattern Profile queries now execute against PostgreSQL in production.)
+Last updated: 2026-07-29 (Runtime wiring followup shipped v0.72.7 — revision tracker wired to API and MCP for pinned MoldQL execution.)
 
 ## Active
 
@@ -72,8 +72,9 @@ PR4 closes the E28.1 chain (Phase 4: PG `#[sqlx::test]` integration + bridge-map
 | PR3 Surfaces | `feat/e28-3-pr3-surfaces` | ✅ Merged | v0.72.2 | [#152](https://github.com/Rubentxu/CogniCode/pull/152) |
 | **PR4 Matrix + Verify** | `feat/e28-3-pr4-matrix-verify` | ✅ Merged | v0.72.3 | [#153](https://github.com/Rubentxu/CogniCode/pull/153) |
 | **PR5 Runtime Injection Fix** | `fix/e28-3-runtime-inject-executor` | ✅ Merged | v0.72.6 | [#156](https://github.com/Rubentxu/CogniCode/pull/156) |
+| **PR6 Runtime Wiring Followup** | `fix/e28-3-runtime-wiring-followup` | ✅ Merged | v0.72.7 | [#157](https://github.com/Rubentxu/CogniCode/pull/157) |
 
-**E28.3 is now fully DONE.** PR4 closes the Pattern Profile chain with:
+**E28.3 is fully DONE** — runtime wiring followup (v0.72.7) wired revision tracker through `ApiState` and `McpContext` so pinned MoldQL execution tracks the active workspace + latest revision. PR4 closes the Pattern Profile chain with:
 - REST integration tests restored (`POST /api/moldql/pattern` with mock MoldQLService)
 - Feature matrix endpoint (`GET /api/moldql/pattern/capabilities`)
 - UnsupportedConstruct coverage for unbounded path, mutation, and optional match
