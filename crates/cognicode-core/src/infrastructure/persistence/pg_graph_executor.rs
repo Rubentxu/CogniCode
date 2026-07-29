@@ -184,12 +184,28 @@ impl GraphExecutor for PgGraphExecutor {
 
         // Now dispatch to variant-specific executor
         let mut result = match plan {
-            GraphPlan::Path { src, dst, quantifier, .. } => {
+            GraphPlan::Path { src, dst, quantifier, edge_kind_filter, .. } => {
                 let max_hops = quantifier.max_hops.unwrap_or(32).min(32) as i32;
-                self.execute_path(pool, &pin.0, src, dst, max_hops, &limits)
+                self.execute_path(
+                    pool,
+                    &pin.0,
+                    src,
+                    dst,
+                    max_hops,
+                    edge_kind_filter.as_deref(),
+                    &limits,
+                )
             }
-            GraphPlan::Neighbors { src, kind, depth, .. } => {
-                self.execute_neighbors(pool, &pin.0, src, kind.clone(), *depth as i32, &limits)
+            GraphPlan::Neighbors { src, kind, depth, edge_kind_filter, .. } => {
+                self.execute_neighbors(
+                    pool,
+                    &pin.0,
+                    src,
+                    kind.clone(),
+                    *depth as i32,
+                    edge_kind_filter.as_deref(),
+                    &limits,
+                )
             }
             GraphPlan::Subgraph { nodes, edges, .. } => {
                 self.execute_subgraph(pool, &pin.0, nodes, edges.as_ref(), &limits)
@@ -240,6 +256,7 @@ impl PgGraphExecutor {
         src: &str,
         dst: &str,
         max_hops: i32,
+        edge_kind_filter: Option<&[crate::domain::value_objects::DependencyType]>,
         limits: &PlanLimits,
     ) -> Result<ResultSet, ExecutorError> {
         // max_hops is already bounded to 32 by caller
@@ -271,6 +288,7 @@ impl PgGraphExecutor {
                       AND NOT (e.target_id = ANY(pc.path))
                       AND e.workspace_id = $2
                       AND NOT pc.reached_dst
+                      AND ($6::text[] IS NULL OR e.kind = ANY($6))
                 )
                 SELECT DISTINCT ON (path[array_upper(path, 1)])
                     path,
@@ -309,6 +327,7 @@ impl PgGraphExecutor {
                       AND NOT (e.target_id = ANY(pc.path))
                       AND e.workspace_id = $2
                       AND NOT pc.reached_dst
+                      AND ($5::text[] IS NULL OR e.kind = ANY($5))
                 )
                 SELECT DISTINCT ON (path[array_upper(path, 1)])
                     path,
@@ -331,6 +350,12 @@ impl PgGraphExecutor {
         let workspace_str = workspace.as_str().to_string();
         let src_clone = src.to_string();
         let dst_clone = dst.to_string();
+        // Map DependencyType filter → DB string form ("dependency.calls", etc.)
+        let edge_kind_db_filter: Option<Vec<String>> = edge_kind_filter
+            .map(|kinds| kinds.iter().map(|k| format!("dependency.{}", k)).collect());
+        // Capture owned max_result_rows to satisfy 'static.
+        let max_result_rows_owned: Option<i64> =
+            limits.max_result_rows.map(|v| v as i64);
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::task::block_in_place(move || {
             let handle = tokio::runtime::Handle::current();
@@ -341,6 +366,13 @@ impl PgGraphExecutor {
                     .bind(&workspace_str)
                     .bind(&dst_clone)
                     .bind(max_hops);
+                if let Some(max_rows) = max_result_rows_owned {
+                    query = query
+                        .bind(max_rows)
+                        .bind(edge_kind_db_filter.clone());
+                } else {
+                    query = query.bind(edge_kind_db_filter.clone());
+                }
                 let result = query.fetch_all(&pool_clone).await;
                 let _ = tx.send(result);
             });
@@ -422,6 +454,7 @@ impl PgGraphExecutor {
         src: &str,
         kind: NeighborKind,
         depth: i32,
+        edge_kind_filter: Option<&[crate::domain::value_objects::DependencyType]>,
         limits: &PlanLimits,
     ) -> Result<ResultSet, ExecutorError> {
         let (edge_clause, join_clause) = match kind {
@@ -458,6 +491,7 @@ impl PgGraphExecutor {
                     )
                     WHERE nc.depth < $3
                       AND next_n.workspace_id = $2
+                      AND ($5::text[] IS NULL OR e.kind = ANY($5))
                       {}
                 )
                 SELECT DISTINCT id, kind, label, source_path, properties
@@ -486,6 +520,7 @@ impl PgGraphExecutor {
                     )
                     WHERE nc.depth < $3
                       AND next_n.workspace_id = $2
+                      AND ($4::text[] IS NULL OR e.kind = ANY($4))
                       {}
                 )
                 SELECT DISTINCT id, kind, label, source_path, properties
@@ -505,6 +540,8 @@ impl PgGraphExecutor {
         let workspace_str = workspace.as_str().to_string();
         let src_clone = src.to_string();
         let max_rows_opt = limits.max_result_rows;
+        let edge_kind_db_filter: Option<Vec<String>> = edge_kind_filter
+            .map(|kinds| kinds.iter().map(|k| format!("dependency.{}", k)).collect());
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::task::block_in_place(move || {
             let handle = tokio::runtime::Handle::current();
@@ -515,7 +552,11 @@ impl PgGraphExecutor {
                     .bind(&workspace_str)
                     .bind(depth);
                 if let Some(max_rows) = max_rows_opt {
-                    query = query.bind(max_rows as i64);
+                    query = query
+                        .bind(max_rows as i64)
+                        .bind(edge_kind_db_filter.clone());
+                } else {
+                    query = query.bind(edge_kind_db_filter.clone());
                 }
                 let result = query.fetch_all(&pool_clone).await;
                 let _ = tx.send(result);
@@ -1197,6 +1238,7 @@ mod tests {
                 max_hops: Some(3),
                 min_hops: 0,
             },
+            edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
             limits: PlanLimits::default(),
@@ -1259,6 +1301,7 @@ mod tests {
                 max_hops: Some(5),
                 min_hops: 0,
             },
+            edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
             limits: PlanLimits::default(),
@@ -1316,6 +1359,7 @@ mod tests {
             src: "src/A.rs:A:1".to_string(),
             kind: NeighborKind::Outgoing,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
@@ -1484,10 +1528,11 @@ mod tests {
 
         let executor = PgGraphExecutor::new(repo);
 
-        let neighbors_a = GraphPlan::Neighbors {
+let neighbors_a = GraphPlan::Neighbors {
             src: "src/A.rs:A:1".to_string(),
             kind: NeighborKind::Outgoing,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
@@ -1495,10 +1540,11 @@ mod tests {
                 PlanHash::compute(&0u32),
             ),
         };
-        let neighbors_b = GraphPlan::Neighbors {
+let neighbors_b = GraphPlan::Neighbors {
             src: "src/B.rs:B:1".to_string(),
             kind: NeighborKind::Outgoing,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
@@ -1564,10 +1610,11 @@ mod tests {
 
         let executor = PgGraphExecutor::new(repo);
 
-        let neighbors_a = GraphPlan::Neighbors {
+let neighbors_a = GraphPlan::Neighbors {
             src: "src/A.rs:A:1".to_string(),
             kind: NeighborKind::Outgoing,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
@@ -1638,6 +1685,7 @@ mod tests {
             src: "src/A.rs:A:1".to_string(),
             kind: NeighborKind::Outgoing,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits {
                 max_result_rows: Some(10),
@@ -1743,6 +1791,7 @@ mod tests {
                 max_hops: Some(3),
                 min_hops: 0,
             },
+            edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
             limits: PlanLimits::default(),
@@ -1763,5 +1812,89 @@ mod tests {
             }
             other => panic!("expected ExecutorError::RevisionUnknown, got {:?}", other),
         }
+    });
+
+    // -------------------------------------------------------------------------
+    // Task 5 RED — `path_with_edge_kind_filter_eliminates_only_path` (PG side)
+    // Scenario: `pg-graph-executor::Plan restricts traversal to listed edge kinds`
+    // Assert: `Path(A, C, [Calls])` over a graph where the ONLY route from A
+    //         to C requires a `References` edge must return an empty
+    //         `ResultSet::paths`. Without the filter, the path exists.
+    // Why RED: pre-fix PG recursive CTE does not filter by `e.kind` and walks
+    //         every edge indiscriminately. The conformance spec requires that
+    //         reachability changes when the filter is applied.
+    //
+    //   Fixture: A → B (References); B → C (Calls).
+    //     Without filter → A→B→C exists.
+    //     With filter=[Calls] → A has no Calls outgoing edge → empty paths.
+    // -------------------------------------------------------------------------
+
+    pg_test!(path_with_edge_kind_filter_eliminates_only_path, |pool: PgPool| {
+        use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
+        use crate::domain::value_objects::{SymbolKind, Location, DependencyType};
+        use crate::domain::services::ExtractionContext;
+        use crate::infrastructure::persistence::PostgresRepository;
+        use crate::domain::traits::repository::Repository;
+
+        let repo = PostgresRepository::from_pool(pool);
+        let ws = WorkspaceId::try_new("ws_edge_filter").unwrap();
+
+        let mut graph = CallGraph::new();
+        let id_a = SymbolId::new("src/A.rs:A:1");
+        let id_b = SymbolId::new("src/B.rs:B:1");
+        let id_c = SymbolId::new("src/C.rs:C:1");
+        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 1)));
+        graph.add_symbol(Symbol::new("B", SymbolKind::Function, Location::new("src/B.rs", 1, 1)));
+        graph.add_symbol(Symbol::new("C", SymbolKind::Function, Location::new("src/C.rs", 1, 1)));
+        let _ = graph.add_dependency_with_provenance(&id_a, &id_b, DependencyType::References, ExtractionContext::DirectExtraction);
+        let _ = graph.add_dependency_with_provenance(&id_b, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction);
+
+        let rev = repo.save_call_graph_ws(&graph, &ws).await.expect("save should succeed");
+        let executor = PgGraphExecutor::new(repo);
+
+        // Sanity: unfiltered plan must yield a path.
+        let plan_unfiltered = GraphPlan::Path {
+            src: "src/A.rs:A:1".to_string(),
+            dst: "src/C.rs:C:1".to_string(),
+            quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
+            edge_kind_filter: None,
+            predicates: vec![],
+            projection: PathProjection::default(),
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let rs_unfiltered = executor
+            .execute(&plan_unfiltered, (ws.clone(), rev))
+            .expect("unfiltered execute must succeed");
+        assert!(
+            !rs_unfiltered.paths.is_empty(),
+            "unfiltered fixture must have at least one path A→B→C, got empty"
+        );
+
+        // Filtered: A has no Calls outgoing edge → empty paths.
+        let plan_filtered = GraphPlan::Path {
+            src: "src/A.rs:A:1".to_string(),
+            dst: "src/C.rs:C:1".to_string(),
+            quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
+            edge_kind_filter: Some(vec![DependencyType::Calls]),
+            predicates: vec![],
+            projection: PathProjection::default(),
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let rs_filtered = executor
+            .execute(&plan_filtered, (ws, rev))
+            .expect("filtered execute must succeed (not error)");
+        assert!(
+            rs_filtered.paths.is_empty(),
+            "filtered plan must return empty paths (no Calls edge from A), got {:?}",
+            rs_filtered.paths
+        );
     });
 }

@@ -178,12 +178,26 @@ impl<'a> GraphExecutor for SnapshotGraphExecutor<'a> {
 
         // Dispatch to variant-specific executor
         let mut result = match plan {
-            GraphPlan::Path { src, dst, quantifier, .. } => {
+            GraphPlan::Path { src, dst, quantifier, edge_kind_filter, .. } => {
                 let max_hops = quantifier.max_hops.unwrap_or(32).min(32) as usize;
-                self.execute_path(&graph, src, dst, max_hops, &limits)
+                self.execute_path(
+                    &graph,
+                    src,
+                    dst,
+                    max_hops,
+                    edge_kind_filter.as_deref(),
+                    &limits,
+                )
             }
-            GraphPlan::Neighbors { src, kind, depth, .. } => {
-                self.execute_neighbors(&graph, src, kind.clone(), *depth as usize, &limits)
+            GraphPlan::Neighbors { src, kind, depth, edge_kind_filter, .. } => {
+                self.execute_neighbors(
+                    &graph,
+                    src,
+                    kind.clone(),
+                    *depth as usize,
+                    edge_kind_filter.as_deref(),
+                    &limits,
+                )
             }
             GraphPlan::Subgraph { nodes, edges, .. } => {
                 self.execute_subgraph(&graph, nodes, edges.as_ref(), &limits)
@@ -243,6 +257,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
         src: &str,
         dst: &str,
         max_hops: usize,
+        edge_kind_filter: Option<&[DependencyType]>,
         limits: &PlanLimits,
     ) -> Result<ResultSet, ExecutorError> {
         use std::time::Instant;
@@ -267,6 +282,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
             src_node,
             dst_node,
             max_hops,
+            edge_kind_filter,
             &mut all_paths,
             &mut visited_paths,
         );
@@ -357,6 +373,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
         src: NodeIndex,
         dst: NodeIndex,
         max_hops: usize,
+        edge_kind_filter: Option<&[DependencyType]>,
         all_paths: &mut Vec<Vec<NodeIndex>>,
         visited_paths: &mut HashSet<Vec<NodeIndex>>,
     ) {
@@ -385,6 +402,14 @@ impl<'a> SnapshotGraphExecutor<'a> {
 
             // Explore neighbors in BFS order
             for edge_idx in graph.edges(current) {
+                // Apply edge_kind_filter (None = any edge kind; Some(list) = only listed kinds).
+                // See e28-2-pr5-edge-filter.
+                if let Some(filter) = edge_kind_filter {
+                    let dep = edge_idx.weight();
+                    if !filter.contains(dep) {
+                        continue;
+                    }
+                }
                 let next = edge_idx.target();
                 if !path.contains(&next) {
                     let mut new_path = path.clone();
@@ -454,6 +479,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
         src: &str,
         kind: NeighborKind,
         depth: usize,
+        edge_kind_filter: Option<&[DependencyType]>,
         limits: &PlanLimits,
     ) -> Result<ResultSet, ExecutorError> {
         use std::time::Instant;
@@ -481,13 +507,32 @@ impl<'a> SnapshotGraphExecutor<'a> {
                 continue;
             }
 
-            // Use neighbors_directed to properly handle incoming edges
+            // Collect neighbors respecting direction AND edge_kind_filter.
+            // See e28-2-pr5-edge-filter.
             let neighbors: Vec<NodeIndex> = match kind {
                 NeighborKind::Incoming => stable_graph
-                    .neighbors_directed(current, Direction::Incoming)
+                    .edges_directed(current, Direction::Incoming)
+                    .filter(|edge| match edge_kind_filter {
+                        Some(filter) => filter.contains(edge.weight()),
+                        None => true,
+                    })
+                    .map(|edge| edge.source())
                     .collect(),
-                NeighborKind::Outgoing | NeighborKind::Both => stable_graph
-                    .neighbors(current)
+                NeighborKind::Outgoing => stable_graph
+                    .edges_directed(current, Direction::Outgoing)
+                    .filter(|edge| match edge_kind_filter {
+                        Some(filter) => filter.contains(edge.weight()),
+                        None => true,
+                    })
+                    .map(|edge| edge.target())
+                    .collect(),
+                NeighborKind::Both => stable_graph
+                    .edges(current)
+                    .filter(|edge| match edge_kind_filter {
+                        Some(filter) => filter.contains(edge.weight()),
+                        None => true,
+                    })
+                    .map(|edge| edge.target())
                     .collect(),
             };
 
@@ -960,13 +1005,27 @@ impl<'a> SnapshotGraphExecutor<'a> {
     /// Returns the set of node IDs from the result.
     fn evaluate_operand(&self, graph: &CallGraph, operand: &GraphPlan) -> Result<HashSet<String>, ExecutorError> {
         match operand {
-            GraphPlan::Neighbors { src, kind, depth, predicates, limits, .. } => {
-                let rs = self.execute_neighbors(graph, src, kind.clone(), *depth as usize, limits)?;
+            GraphPlan::Neighbors { src, kind, depth, edge_kind_filter, predicates, limits, .. } => {
+                let rs = self.execute_neighbors(
+                    graph,
+                    src,
+                    kind.clone(),
+                    *depth as usize,
+                    edge_kind_filter.as_deref(),
+                    limits,
+                )?;
                 Ok(rs.nodes.iter().map(|n| n.id.clone()).collect())
             }
-            GraphPlan::Path { src, dst, quantifier, predicates, projection: _, limits, .. } => {
+            GraphPlan::Path { src, dst, quantifier, edge_kind_filter, predicates, projection: _, limits, .. } => {
                 let max_hops = quantifier.max_hops.unwrap_or(32).min(32) as usize;
-                let rs = self.execute_path(graph, src, dst, max_hops, limits)?;
+                let rs = self.execute_path(
+                    graph,
+                    src,
+                    dst,
+                    max_hops,
+                    edge_kind_filter.as_deref(),
+                    limits,
+                )?;
                 // For path plans, extract all node IDs from the path hops
                 let mut node_ids = HashSet::new();
                 for path in &rs.paths {
@@ -1149,6 +1208,7 @@ mod tests {
             src: "A".to_string(),
             kind: NeighborKind::Both,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
@@ -1186,6 +1246,7 @@ mod tests {
             src: "cached_func".to_string(),
             kind: NeighborKind::Both,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
@@ -1223,6 +1284,7 @@ mod tests {
                 max_hops: Some(3),
                 min_hops: 0,
             },
+            edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
             limits: PlanLimits::default(),
@@ -1275,6 +1337,7 @@ mod tests {
                 max_hops: Some(2), // Only allows 2 hops, but path is 3 hops
                 min_hops: 0,
             },
+            edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
             limits: PlanLimits::default(),
@@ -1348,6 +1411,7 @@ mod tests {
             src: "src/A.rs:A:1".to_string(),
             kind: NeighborKind::Outgoing,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
@@ -1416,6 +1480,7 @@ mod tests {
             src: "src/A.rs:A:1".to_string(),
             kind: NeighborKind::Incoming,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
@@ -1601,6 +1666,7 @@ mod tests {
                     src: "src/A.rs:A:1".to_string(),
                     kind: NeighborKind::Outgoing,
                     depth: 1,
+                    edge_kind_filter: None,
                     predicates: vec![],
                     limits: PlanLimits::default(),
                     metadata: PlanMetadata::new(
@@ -1612,6 +1678,7 @@ mod tests {
                     src: "src/B.rs:B:1".to_string(),
                     kind: NeighborKind::Outgoing,
                     depth: 1,
+                    edge_kind_filter: None,
                     predicates: vec![],
                     limits: PlanLimits::default(),
                     metadata: PlanMetadata::new(
@@ -1683,6 +1750,7 @@ mod tests {
                 src: "src/A.rs:A:1".to_string(),
                 kind: NeighborKind::Outgoing,
                 depth: 1,
+                edge_kind_filter: None,
                 predicates: vec![],
                 limits: PlanLimits::default(),
                 metadata: PlanMetadata::new(
@@ -1750,6 +1818,7 @@ mod tests {
                 max_hops: Some(3),
                 min_hops: 0,
             },
+            edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
             limits: PlanLimits {
@@ -1821,6 +1890,7 @@ mod tests {
             src: symbol_ids[0].as_str().to_string(),
             kind: NeighborKind::Both,
             depth: 10, // High depth to reach all nodes
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits {
                 max_result_rows: Some(5),
@@ -1859,5 +1929,94 @@ mod tests {
         pub fn new_for_test(provider: &'static TestSnapshotProvider) -> Self {
             Self::new(provider)
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Task 5 RED — `path_with_edge_kind_filter_excludes_references`
+    // Scenario: `graph-executor-port::Edge-kind filter restricts traversal`
+    // Assert: `Path(A, C, [Calls])` over a graph with both `Calls(A,B)` and
+    //         `References(A,B')` + `B→C` and `B'→C` returns ONLY paths through
+    //         `B` (the Calls node), not `B'` (the References node). Without
+    //         the filter, both paths A→B→C and A→B'→C would appear.
+    // Why RED: pre-fix `bfs_all_paths` does not consult `edge_kind_filter`
+    //         and walks every edge weight indiscriminately.
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn path_with_edge_kind_filter_excludes_references() {
+        use crate::domain::aggregates::symbol::Symbol;
+        use crate::domain::value_objects::SymbolKind;
+
+        let mut graph = CallGraph::new();
+
+        let id_a = SymbolId::new("src/A.rs:A:1");
+        let id_b = SymbolId::new("src/B.rs:B:1");
+        let id_bref = SymbolId::new("src/B_ref.rs:B_ref:1");
+        let id_c = SymbolId::new("src/C.rs:C:1");
+
+        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 1)));
+        graph.add_symbol(Symbol::new("B", SymbolKind::Function, Location::new("src/B.rs", 1, 1)));
+        graph.add_symbol(Symbol::new("B_ref", SymbolKind::Function, Location::new("src/B_ref.rs", 1, 1)));
+        graph.add_symbol(Symbol::new("C", SymbolKind::Function, Location::new("src/C.rs", 1, 1)));
+
+        let _ = graph.add_dependency_with_provenance(&id_a, &id_b, DependencyType::Calls, ExtractionContext::DirectExtraction);
+        let _ = graph.add_dependency_with_provenance(&id_a, &id_bref, DependencyType::References, ExtractionContext::DirectExtraction);
+        let _ = graph.add_dependency_with_provenance(&id_b, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction);
+        let _ = graph.add_dependency_with_provenance(&id_bref, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction);
+
+        let ws = WorkspaceId::try_new("ws1").unwrap();
+        let provider = TestSnapshotProvider::new();
+        provider.insert(&ws, RevisionId(1), graph);
+        let executor = SnapshotGraphExecutor::new(&provider);
+
+        let plan_filtered = GraphPlan::Path {
+            src: "src/A.rs:A:1".to_string(),
+            dst: "src/C.rs:C:1".to_string(),
+            quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
+            edge_kind_filter: Some(vec![DependencyType::Calls]),
+            predicates: vec![],
+            projection: PathProjection::default(),
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+
+        let rs = executor
+            .execute(&plan_filtered, (ws.clone(), RevisionId(1)))
+            .expect("execute with Calls filter must succeed");
+
+        for path in &rs.paths {
+            assert_eq!(path.hops.len(), 3, "expected A→B→C, got {:?}", path.hops);
+            let b_hop = &path.hops[1];
+            assert_eq!(
+                b_hop.node_id, "src/B.rs:B:1",
+                "filtered path must go through B (Calls), not B_ref (References)"
+            );
+        }
+        assert!(!rs.paths.is_empty(), "expected at least one filtered path");
+
+        let plan_unfiltered = GraphPlan::Path {
+            src: "src/A.rs:A:1".to_string(),
+            dst: "src/C.rs:C:1".to_string(),
+            quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
+            edge_kind_filter: None,
+            predicates: vec![],
+            projection: PathProjection::default(),
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let rs_unfiltered = executor
+            .execute(&plan_unfiltered, (ws, RevisionId(1)))
+            .expect("execute without filter must succeed");
+        assert!(
+            rs_unfiltered.paths.len() >= 2,
+            "unfiltered fixture must have at least 2 distinct paths, got {}",
+            rs_unfiltered.paths.len()
+        );
     }
 }

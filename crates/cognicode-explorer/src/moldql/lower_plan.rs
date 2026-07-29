@@ -57,6 +57,7 @@ impl MoldqlAstLowerer {
             src: pq.from.clone(),
             dst: pq.to.clone(),
             quantifier: quantifier.clone(),
+            edge_kind_filter: None,
             predicates: predicates.clone(),
             projection: PathProjection::default(),
             limits: PlanLimits::builder()
@@ -64,15 +65,16 @@ impl MoldqlAstLowerer {
                 .build(),
             metadata: metadata.clone(),
         };
-        
+
         // W-A fix: call populate_defaults to use the port function
         let shape = QueryShape::Path { max_hops: pq.max_hops };
         let final_limits = populate_defaults(&plan, &shape);
-        
+
         Ok(GraphPlan::Path {
             src: pq.from.clone(),
             dst: pq.to.clone(),
             quantifier,
+            edge_kind_filter: None,
             predicates,
             projection: PathProjection::default(),
             limits: final_limits,
@@ -94,21 +96,23 @@ impl MoldqlAstLowerer {
             src: nq.root.clone(),
             kind: kind.clone(),
             depth: nq.depth,
+            edge_kind_filter: None,
             predicates: predicates.clone(),
             limits: PlanLimits::builder()
                 .max_depth(nq.depth)
                 .build(),
             metadata: metadata.clone(),
         };
-        
+
         // W-A fix: call populate_defaults to use the port function
         let shape = QueryShape::Neighbors;
         let final_limits = populate_defaults(&plan, &shape);
-        
+
         Ok(GraphPlan::Neighbors {
             src: nq.root.clone(),
             kind,
             depth: nq.depth,
+            edge_kind_filter: None,
             predicates,
             limits: final_limits,
             metadata,
@@ -183,6 +187,7 @@ impl MoldqlAstLowerer {
             dst: eq.to.clone(),
             quantifier: PathQuantifier::new(Some(u32::MAX), 0)
                 .expect("u32::MAX is Some"),
+            edge_kind_filter: None,
             predicates,
             projection: PathProjection::default(),
             limits: PlanLimits::default(),

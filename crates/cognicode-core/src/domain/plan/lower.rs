@@ -174,6 +174,7 @@ mod tests {
             src: "A".into(),
             dst: "B".into(),
             quantifier: PathQuantifier { max_hops: None, min_hops: 0 },
+            edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
             limits: PlanLimits::default(), // max_hops is None
@@ -197,6 +198,7 @@ mod tests {
             src: "A".into(),
             dst: "B".into(),
             quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
+            edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
             limits: PlanLimits::builder().max_hops(3).build(),
@@ -220,6 +222,7 @@ mod tests {
             src: "A".into(),
             kind: NeighborKind::Both,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(

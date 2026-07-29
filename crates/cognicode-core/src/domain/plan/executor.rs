@@ -146,6 +146,7 @@ mod tests {
             src: "A".into(),
             kind: super::super::NeighborKind::Both,
             depth: 1,
+            edge_kind_filter: None,
             predicates: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(

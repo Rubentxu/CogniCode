@@ -254,22 +254,28 @@ impl PostgresRepository {
             .await
             .map_err(|e| RepositoryError::Store(format!("graph revisions migration: {e}")))?;
 
-        // 11. Workspace-scoped identity — e28-0 PR1 Foundation.
-        sqlx::raw_sql(SCHEMA_SQL_WORKSPACE_SCOPED_IDENTITY)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| RepositoryError::Store(format!(
-                "workspace-scoped identity migration: {e}"
-            )))?;
-
-        // 12. Unique index on (workspace_id, id) — enables graph_edges FK subset.
-        //     e28-0 PR3 Correction Cycle 1. Must run AFTER m0018 because it
-        //     depends on the table existing and the m0018 FKs being added.
+        // 11. Unique index on (workspace_id, id) — enables graph_edges FK subset.
+        //     e28-0 PR3 Correction Cycle 1. MUST run BEFORE m0018 because
+        //     m0018 adds composite FKs on (workspace_id, source_id) →
+        //     graph_nodes(workspace_id, id), which requires this unique
+        //     constraint to exist. Running m0018 first causes "there is no
+        //     unique constraint matching given keys" errors on fresh DBs.
+        //     Pre-existing bug surfaced when restarting the postgres
+        //     container wiped the volume and forced migrations to run from
+        //     scratch on 2026-07-29.
         sqlx::raw_sql(SCHEMA_SQL_WORKSPACE_UNIQUE)
             .execute(&self.pool)
             .await
             .map_err(|e| RepositoryError::Store(format!(
                 "workspace unique index migration: {e}"
+            )))?;
+
+        // 12. Workspace-scoped identity — e28-0 PR1 Foundation.
+        sqlx::raw_sql(SCHEMA_SQL_WORKSPACE_SCOPED_IDENTITY)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!(
+                "workspace-scoped identity migration: {e}"
             )))?;
 
         Ok(())
