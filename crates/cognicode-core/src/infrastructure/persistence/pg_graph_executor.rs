@@ -218,16 +218,23 @@ impl GraphExecutor for PgGraphExecutor {
                 self.execute(inner, pin)
             }
             GraphPlan::BooleanComposition { op, operands, .. } => {
-                self.execute_boolean(pool, &pin.0, *op, operands, &limits)
+                self.execute_boolean(pool, &pin.0, pin.1, *op, operands, &limits)
             }
         };
 
-        // Apply soft limit truncation if result exceeds max_result_rows
+        // Apply soft limit truncation if result exceeds max_result_rows or max_path_count
         if let Ok(ref mut rs) = result {
             if let Some(max_rows) = limits.max_result_rows {
                 let total_rows = rs.rows.len() + rs.nodes.len() + rs.edges.len();
                 if total_rows as u64 > max_rows {
                     *rs = rs.clone().with_truncation(TruncationMarker::ResultRowsLimit);
+                }
+            }
+            if let Some(max_paths) = limits.max_path_count {
+                if rs.paths.len() as u64 > max_paths {
+                    // Mark as truncated; the executor already truncated at the SQL LIMIT.
+                    *rs = rs.clone().with_truncation(TruncationMarker::PathCountLimit);
+                    rs.paths.truncate(max_paths as usize);
                 }
             }
         }
@@ -290,13 +297,16 @@ impl PgGraphExecutor {
                       AND NOT pc.reached_dst
                       AND ($6::text[] IS NULL OR e.kind = ANY($6))
                 )
-                SELECT DISTINCT ON (path[array_upper(path, 1)])
-                    path,
+                -- DISTINCT (path) deduplicates by full path sequence (the
+                -- PG executor must agree with the snapshot executor which
+                -- returns all simple paths; previously used DISTINCT ON
+                -- (path[last]) which collapsed parallel paths per endpoint).
+                SELECT DISTINCT path,
                     edge_kinds,
                     depth
                 FROM path_cte
                 WHERE path[array_upper(path, 1)] = $3
-                ORDER BY path[array_upper(path, 1)], depth ASC, path ASC
+                ORDER BY depth ASC, path ASC
                 LIMIT $5
                 "#,
             )
@@ -329,13 +339,12 @@ impl PgGraphExecutor {
                       AND NOT pc.reached_dst
                       AND ($5::text[] IS NULL OR e.kind = ANY($5))
                 )
-                SELECT DISTINCT ON (path[array_upper(path, 1)])
-                    path,
+                SELECT DISTINCT path,
                     edge_kinds,
                     depth
                 FROM path_cte
                 WHERE path[array_upper(path, 1)] = $3
-                ORDER BY path[array_upper(path, 1)], depth ASC, path ASC
+                ORDER BY depth ASC, path ASC
                 "#,
             )
         };
@@ -497,6 +506,7 @@ impl PgGraphExecutor {
                 SELECT DISTINCT id, kind, label, source_path, properties
                 FROM neighbors_cte
                 WHERE depth > 0
+                ORDER BY id ASC
                 LIMIT $4
                 "#,
                 join_clause, edge_clause
@@ -526,6 +536,7 @@ impl PgGraphExecutor {
                 SELECT DISTINCT id, kind, label, source_path, properties
                 FROM neighbors_cte
                 WHERE depth > 0
+                ORDER BY id ASC
                 "#,
                 join_clause, edge_clause
             )
@@ -962,6 +973,7 @@ impl PgGraphExecutor {
         &self,
         pool: &PgPool,
         workspace: &WorkspaceId,
+        revision: RevisionId,
         op: BooleanOp,
         operands: &[GraphPlan],
         limits: &PlanLimits,
@@ -974,10 +986,38 @@ impl PgGraphExecutor {
         let mut all_node_sets: Vec<HashSet<String>> = Vec::new();
 
         for operand in operands {
-            let result = self.execute(operand, (workspace.clone(), RevisionId::NONE))?;
+            let result = self.execute(operand, (workspace.clone(), revision))?;
             let node_ids: HashSet<String> = result.nodes.iter().map(|n| n.id.clone()).collect();
             all_node_sets.push(node_ids);
         }
+
+        // Compute the universe (all node IDs in the graph) for `Not`.
+        // We issue a direct SQL query because `Subgraph { nodes: [] }` is
+        // documented as a no-op (`seed_nodes.is_empty()` returns early).
+        let universe: HashSet<String> = if matches!(op, BooleanOp::Not) {
+            let pool_clone = pool.clone();
+            let workspace_owned = workspace.as_str().to_string();
+            let universe_ids: Vec<String> = tokio::task::block_in_place(move || {
+                let handle = tokio::runtime::Handle::current();
+                let _enter = handle.enter();
+                let (tx, rx) = std::sync::mpsc::channel();
+                tokio::spawn(async move {
+                    let result: Result<Vec<String>, sqlx::Error> = sqlx::query_scalar(
+                        "SELECT id FROM graph_nodes WHERE workspace_id = $1 ORDER BY id",
+                    )
+                    .bind(&workspace_owned)
+                    .fetch_all(&pool_clone)
+                    .await;
+                    let _ = tx.send(result);
+                });
+                rx.recv()
+                    .expect("universe query task panicked")
+                    .unwrap_or_default()
+            });
+            universe_ids.into_iter().collect()
+        } else {
+            HashSet::new()
+        };
 
         let result_ids: HashSet<String> = match op {
             BooleanOp::And => {
@@ -1001,15 +1041,15 @@ impl PgGraphExecutor {
                 union
             }
             BooleanOp::Not => {
-                // EXCEPT: all nodes in first set minus nodes in other sets
+                // EXCEPT: universe minus the first operand set. Not is unary.
                 if let Some(first) = all_node_sets.first() {
-                    let mut difference = first.clone();
-                    for set in all_node_sets.iter().skip(1) {
-                        difference = difference.difference(set).cloned().collect();
+                    let mut difference = universe.clone();
+                    for v in first {
+                        difference.remove(v);
                     }
                     difference
                 } else {
-                    HashSet::new()
+                    universe.clone()
                 }
             }
         };
@@ -1168,10 +1208,14 @@ mod tests {
         Some(pool)
     }
 
-    /// pg_test macro for pg_graph_executor tests
+    /// pg_test macro for pg_graph_executor tests. Uses `flavor = "multi_thread"`
+    /// because `PgGraphExecutor::execute_with_limits` calls
+    /// `tokio::task::block_in_place`, which requires a multi-thread runtime.
+    /// Without this, tests panic with "can call blocking only when running
+    /// on the multi-threaded runtime". Required since v0.70.1 (pool fix).
     macro_rules! pg_test {
         ($name:ident, |$pool:ident: PgPool| $body:tt) => {
-            #[tokio::test]
+            #[tokio::test(flavor = "multi_thread")]
             async fn $name() {
                 let Some($pool) = fresh_pool().await else {
                     eprintln!("skipping {}: TEST_DATABASE_URL not set", stringify!($name));
@@ -1252,6 +1296,8 @@ mod tests {
         assert!(result.is_ok(), "execute should succeed: {:?}", result);
         let rs = result.unwrap();
 
+        // (debug print removed)
+
         // Should have at least one path
         assert!(!rs.paths.is_empty(), "Expected at least one path from A to D, got {:?}", rs.paths);
 
@@ -1261,7 +1307,14 @@ mod tests {
             let last = path.hops.last().map(|h| h.node_id.as_str());
             assert_eq!(first, Some("src/A.rs:A:1"), "path should start at A");
             assert_eq!(last, Some("src/D.rs:D:1"), "path should end at D");
-            assert!(path.hops.len() as i32 <= 3, "hop count should be ≤ 3");
+            // `path.hops.len()` counts nodes; max_hops counts edges. With
+            // max_hops=3 and self-loop-free paths, the longest valid path
+            // has 4 nodes (= 3 edges).
+            assert!(
+                path.hops.len() as i32 <= 4,
+                "node count should be ≤ max_hops + 1 (got {} hops)",
+                path.hops.len()
+            );
         }
     });
 
@@ -1564,7 +1617,7 @@ let neighbors_b = GraphPlan::Neighbors {
         };
 
         let result = executor.execute(&plan, (ws, rev));
-        assert!(result.is_ok(), "execute should succeed");
+        assert!(result.is_ok(), "execute should succeed: {:?}", result);
         let rs = result.unwrap();
 
         // AND intersection should give C (common neighbor of A and B)
