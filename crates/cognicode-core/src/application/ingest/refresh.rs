@@ -3,7 +3,7 @@
 //!
 //! Uses [`SnapshotProvider`] to fetch the current head snapshot from PostgreSQL.
 
-use crate::domain::traits::repository::RepositoryError;
+use crate::domain::traits::repository::CallGraphStoreError;
 use crate::domain::value_objects::WorkspaceId;
 use crate::infrastructure::graph::graph_cache::GraphCache;
 use crate::infrastructure::graph::snapshot_provider::SnapshotProvider;
@@ -16,10 +16,10 @@ pub async fn refresh_from_pg(
     provider: &dyn SnapshotProvider,
     cache: &GraphCache,
     workspace: &WorkspaceId,
-) -> Result<RefreshStats, RepositoryError> {
+) -> Result<RefreshStats, CallGraphStoreError> {
     // Discover current head revision
     let head = provider.current_head(workspace).map_err(|e| {
-        RepositoryError::Store(format!("refresh_from_pg: current_head failed: {}", e))
+        CallGraphStoreError::Store(format!("refresh_from_pg: current_head failed: {}", e))
     })?;
 
     if !head.is_valid() {
@@ -31,7 +31,7 @@ pub async fn refresh_from_pg(
     // Fetch the snapshot for the current head
     let graph = provider
         .snapshot(workspace, head)
-        .map_err(|e| RepositoryError::Store(format!("refresh_from_pg: snapshot failed: {}", e)))?;
+        .map_err(|e| CallGraphStoreError::Store(format!("refresh_from_pg: snapshot failed: {}", e)))?;
 
     let stats = RefreshStats {
         symbols: graph.symbol_count(),

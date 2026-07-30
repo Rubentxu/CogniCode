@@ -1,6 +1,6 @@
 //! Domain port for documentation discovery.
 //!
-//! Separated from [`super::search_repository::SearchRepository`] per
+//! Separated from [`super::search_repository::FuzzySymbolSearch`] per
 //! ISP: documentation has its own identity, retrieval, and discovery
 //! model that doesn't fit symbol-level search.
 //!

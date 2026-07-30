@@ -30,7 +30,7 @@ pub use graph_query_port::{
 pub use graph_store::{GraphStore, StoreError};
 pub use parser::{AstScanner, ParseError, ParseResult, ParsedTree, Parser, ScannedNode};
 pub use refactor_strategy::{RefactorError, RefactorStrategy};
-pub use repository::{Repository, RepositoryError};
+pub use repository::{CallGraphStore, CallGraphStoreError};
 pub use search_provider::{SearchError, SearchMatch, SearchProvider};
 #[cfg(feature = "multimodal")]
 pub use source_extractor::{

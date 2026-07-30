@@ -1,4 +1,4 @@
-//! ViewService and LensExecutor facade.
+//! ViewService and LensService facade.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -18,7 +18,7 @@ use crate::dto::{ContextualView, ViewDescriptorDto, ViewSpec};
 use crate::dto::{InspectableObjectType, InspectionTarget, ViewContext};
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::PersistenceService;
-use crate::facades::{LensExecutor, ViewService};
+use crate::facades::{LensService, ViewService};
 use crate::ports::quality_repository::QualityRepository;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
@@ -542,7 +542,7 @@ fn bfs_same_level(
 }
 
 #[async_trait]
-impl LensExecutor for ViewServiceImpl {
+impl LensService for ViewServiceImpl {
     async fn apply_lens(&self, object_id: &str, lens_id: &str) -> ExplorerResult<LensResult> {
         ViewService::apply_lens(self, object_id, lens_id).await
     }

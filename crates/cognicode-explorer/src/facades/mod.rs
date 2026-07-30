@@ -289,12 +289,18 @@ pub trait MoldQLService: Send + Sync {
 }
 
 // ============================================================================
-// LensExecutor
+// LensService
 // ============================================================================
 
 /// Standalone lens execution for clients that only need lens application.
+///
+/// Renamed from `LensExecutor` (2026-07-30) for naming consistency with
+/// other `*Service` facades (`GraphService`, `ViewService`,
+/// `PersistenceService`). The role is the same — a facade over lens
+/// capabilities — but the `Service` suffix matches the rest of the
+/// facade layer.
 #[async_trait]
-pub trait LensExecutor: Send + Sync {
+pub trait LensService: Send + Sync {
     /// Apply a design lens to an object, returning the lens result.
     async fn apply_lens(&self, object_id: &str, lens_id: &str) -> ExplorerResult<LensResult>;
 }

@@ -42,7 +42,7 @@ use cognicode_core::domain::traits::parser::{
 use cognicode_core::domain::traits::refactor_strategy::{
     PreparedEdits, RefactorError, RefactorResult, RefactorStrategy, RefactorValidation,
 };
-use cognicode_core::domain::traits::repository::{Repository, RepositoryError};
+use cognicode_core::domain::traits::repository::{CallGraphStore, CallGraphStoreError};
 use cognicode_core::domain::traits::search_provider::{
     QueryValidation, Replacement, SearchError, SearchMatch, SearchProvider, SearchQuery,
     SearchScope, SimilarMatch,
@@ -755,22 +755,22 @@ impl MockRepository {
 }
 
 #[async_trait]
-impl Repository for MockRepository {
+impl CallGraphStore for MockRepository {
     async fn find_symbol_by_qualified_name(
         &self,
         name: &str,
-    ) -> Result<Option<Symbol>, RepositoryError> {
+    ) -> Result<Option<Symbol>, CallGraphStoreError> {
         Ok(self.symbols.get(name).cloned())
     }
 
-    async fn count_symbols(&self) -> Result<usize, RepositoryError> {
+    async fn count_symbols(&self) -> Result<usize, CallGraphStoreError> {
         Ok(self.symbols.len())
     }
 
     async fn find_edges_by_caller(
         &self,
         caller_id: &str,
-    ) -> Result<Vec<EdgeMetadata>, RepositoryError> {
+    ) -> Result<Vec<EdgeMetadata>, CallGraphStoreError> {
         Ok(self
             .edges_by_caller
             .get(caller_id)
@@ -781,7 +781,7 @@ impl Repository for MockRepository {
     async fn find_edges_by_callee(
         &self,
         callee_id: &str,
-    ) -> Result<Vec<EdgeMetadata>, RepositoryError> {
+    ) -> Result<Vec<EdgeMetadata>, CallGraphStoreError> {
         Ok(self
             .edges_by_callee
             .get(callee_id)
@@ -789,7 +789,7 @@ impl Repository for MockRepository {
             .unwrap_or_default())
     }
 
-    async fn count_edges(&self) -> Result<usize, RepositoryError> {
+    async fn count_edges(&self) -> Result<usize, CallGraphStoreError> {
         Ok(self.edge_count)
     }
 
@@ -797,7 +797,7 @@ impl Repository for MockRepository {
         &self,
         _workspace: &WorkspaceId,
         _revision: RevisionId,
-    ) -> Result<Option<CallGraph>, RepositoryError> {
+    ) -> Result<Option<CallGraph>, CallGraphStoreError> {
         Ok(None)
     }
 }

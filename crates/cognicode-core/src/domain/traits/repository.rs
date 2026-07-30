@@ -1,4 +1,4 @@
-//! Async-ready canonical Repository port for the cognicode domain.
+//! Async-ready canonical [`CallGraphStore`] port for the cognicode domain.
 //!
 //! This trait is the structural seam for the PostgreSQL-backed
 //! implementation that lands in a follow-up slice. It is intentionally
@@ -8,8 +8,17 @@
 //! PostgreSQL struct can implement both traits side by side.
 //!
 //! The trait is `Send + Sync` and uses `#[async_trait]` so it remains
-//! dyn-compatible (e.g. `Box<dyn Repository>`) for application code
+//! dyn-compatible (e.g. `Box<dyn CallGraphStore>`) for application code
 //! that wants to swap implementations at runtime.
+//!
+//! **Naming**: this trait was previously called `Repository`. It was
+//! renamed to `CallGraphStore` (2026-07-30) to disambiguate from
+//! the many other `*Repository` ports in the workspace (e.g.
+//! `SymbolRepository`, `GraphRepository`, `AdrRepository`,
+//! `DocRepository`, `EvidenceRepository`). The original name was
+//! too generic to convey what it operates on. The `Store` suffix
+//! follows the workspace convention for ports (see also
+//! `InvestigationStore`, `ViewSpecStore`, `RunLineageStore`).
 
 use async_trait::async_trait;
 use thiserror::Error;
@@ -17,14 +26,14 @@ use thiserror::Error;
 use crate::domain::aggregates::{CallGraph, Symbol};
 use crate::domain::value_objects::{EdgeMetadata, RevisionId, WorkspaceId};
 
-/// Error type for [`Repository`] operations.
+/// Error type for [`CallGraphStore`] operations.
 ///
 /// Distinct from [`crate::domain::traits::graph_store::StoreError`]
 /// (which models the synchronous blob persistence path) so that async
 /// query failures can carry query-specific context without polluting
 /// the persistence surface.
 #[derive(Debug, Error)]
-pub enum RepositoryError {
+pub enum CallGraphStoreError {
     #[error("store error: {0}")]
     Store(String),
 
@@ -56,20 +65,23 @@ pub enum RepositoryError {
 /// starts with symbol queries and grows with edge queries (see
 /// `explorer-graph-postgres-call-edges`). The seam is additive: every
 /// previous method signature stays stable across minor versions.
+///
+/// Renamed from `Repository` (2026-07-30) — see the module doc for
+/// the rationale.
 #[async_trait]
-pub trait Repository: Send + Sync {
+pub trait CallGraphStore: Send + Sync {
     /// Look up a symbol by its fully-qualified name (the canonical
     /// `SymbolId` form: `file:name:line`). Returns `None` when no
     /// symbol matches.
     async fn find_symbol_by_qualified_name(
         &self,
         name: &str,
-    ) -> Result<Option<Symbol>, RepositoryError>;
+    ) -> Result<Option<Symbol>, CallGraphStoreError>;
 
     /// Count every indexed symbol. Cheap call — implementations are
     /// expected to delegate to a precomputed count when available
     /// (e.g. PostgreSQL `pg_stat_user_tables` / a materialized view).
-    async fn count_symbols(&self) -> Result<usize, RepositoryError>;
+    async fn count_symbols(&self) -> Result<usize, CallGraphStoreError>;
 
     /// Return every call-graph edge whose `caller_id` matches
     /// `caller_id`. The empty case MUST be `Ok(Vec::new())` — never
@@ -82,7 +94,7 @@ pub trait Repository: Send + Sync {
     async fn find_edges_by_caller(
         &self,
         caller_id: &str,
-    ) -> Result<Vec<EdgeMetadata>, RepositoryError>;
+    ) -> Result<Vec<EdgeMetadata>, CallGraphStoreError>;
 
     /// Return every call-graph edge whose `callee_id` matches
     /// `callee_id`. Same empty-result contract as
@@ -90,11 +102,11 @@ pub trait Repository: Send + Sync {
     async fn find_edges_by_callee(
         &self,
         callee_id: &str,
-    ) -> Result<Vec<EdgeMetadata>, RepositoryError>;
+    ) -> Result<Vec<EdgeMetadata>, CallGraphStoreError>;
 
     /// Count every indexed call-graph edge. Cheap call — delegates
     /// to `SELECT COUNT(*)` on the `call_edges` table.
-    async fn count_edges(&self) -> Result<usize, RepositoryError>;
+    async fn count_edges(&self) -> Result<usize, CallGraphStoreError>;
 
     /// Load the call graph snapshot for a specific revision.
     ///
@@ -106,7 +118,7 @@ pub trait Repository: Send + Sync {
         &self,
         workspace: &WorkspaceId,
         revision: RevisionId,
-    ) -> Result<Option<CallGraph>, RepositoryError>;
+    ) -> Result<Option<CallGraph>, CallGraphStoreError>;
 }
 
 #[cfg(test)]
@@ -120,33 +132,33 @@ mod tests {
     struct EmptyRepo;
 
     #[async_trait]
-    impl Repository for EmptyRepo {
+    impl CallGraphStore for EmptyRepo {
         async fn find_symbol_by_qualified_name(
             &self,
             _name: &str,
-        ) -> Result<Option<Symbol>, RepositoryError> {
+        ) -> Result<Option<Symbol>, CallGraphStoreError> {
             Ok(None)
         }
 
-        async fn count_symbols(&self) -> Result<usize, RepositoryError> {
+        async fn count_symbols(&self) -> Result<usize, CallGraphStoreError> {
             Ok(0)
         }
 
         async fn find_edges_by_caller(
             &self,
             _caller_id: &str,
-        ) -> Result<Vec<EdgeMetadata>, RepositoryError> {
+        ) -> Result<Vec<EdgeMetadata>, CallGraphStoreError> {
             Ok(Vec::new())
         }
 
         async fn find_edges_by_callee(
             &self,
             _callee_id: &str,
-        ) -> Result<Vec<EdgeMetadata>, RepositoryError> {
+        ) -> Result<Vec<EdgeMetadata>, CallGraphStoreError> {
             Ok(Vec::new())
         }
 
-        async fn count_edges(&self) -> Result<usize, RepositoryError> {
+        async fn count_edges(&self) -> Result<usize, CallGraphStoreError> {
             Ok(0)
         }
 
@@ -154,7 +166,7 @@ mod tests {
             &self,
             _workspace: &WorkspaceId,
             _revision: RevisionId,
-        ) -> Result<Option<CallGraph>, RepositoryError> {
+        ) -> Result<Option<CallGraph>, CallGraphStoreError> {
             Ok(None)
         }
     }
@@ -167,33 +179,33 @@ mod tests {
     }
 
     #[async_trait]
-    impl Repository for CountingRepo {
+    impl CallGraphStore for CountingRepo {
         async fn find_symbol_by_qualified_name(
             &self,
             _name: &str,
-        ) -> Result<Option<Symbol>, RepositoryError> {
+        ) -> Result<Option<Symbol>, CallGraphStoreError> {
             Ok(None)
         }
 
-        async fn count_symbols(&self) -> Result<usize, RepositoryError> {
+        async fn count_symbols(&self) -> Result<usize, CallGraphStoreError> {
             Ok(self.symbols)
         }
 
         async fn find_edges_by_caller(
             &self,
             _caller_id: &str,
-        ) -> Result<Vec<EdgeMetadata>, RepositoryError> {
+        ) -> Result<Vec<EdgeMetadata>, CallGraphStoreError> {
             Ok(Vec::new())
         }
 
         async fn find_edges_by_callee(
             &self,
             _callee_id: &str,
-        ) -> Result<Vec<EdgeMetadata>, RepositoryError> {
+        ) -> Result<Vec<EdgeMetadata>, CallGraphStoreError> {
             Ok(Vec::new())
         }
 
-        async fn count_edges(&self) -> Result<usize, RepositoryError> {
+        async fn count_edges(&self) -> Result<usize, CallGraphStoreError> {
             Ok(self.edges)
         }
 
@@ -201,7 +213,7 @@ mod tests {
             &self,
             _workspace: &WorkspaceId,
             _revision: RevisionId,
-        ) -> Result<Option<CallGraph>, RepositoryError> {
+        ) -> Result<Option<CallGraph>, CallGraphStoreError> {
             Ok(None)
         }
     }
@@ -251,11 +263,11 @@ mod tests {
     async fn trait_is_dyn_compatible_and_send_sync() {
         // This test would NOT compile if `Repository` lost its
         // `Send + Sync` bound or its `#[async_trait]` annotation.
-        let boxed: Box<dyn Repository> = Box::new(CountingRepo {
+        let boxed: Box<dyn CallGraphStore> = Box::new(CountingRepo {
             symbols: 7,
             edges: 3,
         });
-        let _shared: Arc<dyn Repository> = Arc::new(EmptyRepo);
+        let _shared: Arc<dyn CallGraphStore> = Arc::new(EmptyRepo);
         assert_eq!(boxed.count_symbols().await.unwrap(), 7);
         assert_eq!(boxed.count_edges().await.unwrap(), 3);
         // load_call_graph_pinned on dyn box
@@ -270,7 +282,7 @@ mod tests {
 
     #[test]
     fn repository_error_display_is_informative() {
-        let err = RepositoryError::NotFound("src/missing.rs".to_string());
+        let err = CallGraphStoreError::NotFound("src/missing.rs".to_string());
         let msg = err.to_string();
         assert!(msg.contains("src/missing.rs"), "got: {msg}");
     }

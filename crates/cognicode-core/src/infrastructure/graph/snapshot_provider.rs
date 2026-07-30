@@ -21,7 +21,7 @@ use crate::domain::value_objects::{RevisionId, WorkspaceId};
 use std::sync::Arc;
 
 #[cfg(feature = "postgres")]
-use crate::domain::traits::repository::RepositoryError;
+use crate::domain::traits::repository::CallGraphStoreError;
 #[cfg(feature = "postgres")]
 use crate::infrastructure::graph::checkpoint::VersionedGraphCache;
 #[cfg(feature = "postgres")]
@@ -247,7 +247,7 @@ impl SnapshotProviderImpl {
         pool: &sqlx::PgPool,
         workspace: &WorkspaceId,
         revision: RevisionId,
-    ) -> Result<CallGraph, RepositoryError> {
+    ) -> Result<CallGraph, CallGraphStoreError> {
         // Load a CallGraph from PostgreSQL for the given workspace + revision.
         // This is a static async function to avoid borrow conflicts.
         use sqlx::Row;
@@ -281,10 +281,10 @@ impl SnapshotProviderImpl {
         .bind(revision.get() as i64)
         .fetch_optional(pool)
         .await
-        .map_err(|e| RepositoryError::Store(format!("snapshot check revision: {e}")))?;
+        .map_err(|e| CallGraphStoreError::Store(format!("snapshot check revision: {e}")))?;
 
         if rev_exists.is_none() {
-            return Err(RepositoryError::UnknownRevision {
+            return Err(CallGraphStoreError::UnknownRevision {
                 workspace: workspace.clone(),
                 revision,
             });
@@ -300,7 +300,7 @@ impl SnapshotProviderImpl {
         .bind(ws_str)
         .fetch_all(pool)
         .await
-        .map_err(|e| RepositoryError::Store(format!("snapshot select nodes: {e}")))?;
+        .map_err(|e| CallGraphStoreError::Store(format!("snapshot select nodes: {e}")))?;
 
         use crate::domain::aggregates::Symbol;
         use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
@@ -337,7 +337,7 @@ impl SnapshotProviderImpl {
         .bind(ws_str)
         .fetch_all(pool)
         .await
-        .map_err(|e| RepositoryError::Store(format!("snapshot select edges: {e}")))?;
+        .map_err(|e| CallGraphStoreError::Store(format!("snapshot select edges: {e}")))?;
 
         for row in edges {
             let src_id = match fqn_to_id.get(&row.source_id) {
@@ -378,15 +378,14 @@ impl SnapshotProvider for SnapshotProviderImpl {
         let ws_str = workspace.as_str().to_string();
         let pool = self.pool.clone();
 
-        // Use block_in_place to run async SQL from this sync context on a
-        // blocking thread. This avoids the Handle::block_on panic when called
-        // from a tokio worker thread (multi-thread runtime).
         let (tx, rx) = std::sync::mpsc::channel();
-        tokio::task::block_in_place(move || {
-            let handle = tokio::runtime::Handle::current();
-            let _enter = handle.enter();
-            tokio::spawn(async move {
-                let row: Option<(i64,)> = sqlx::query_as(
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("snapshot provider runtime");
+            let row = rt.block_on(async move {
+                sqlx::query_as(
                     "SELECT MAX(revision_id) FROM graph_revisions \
                      WHERE workspace_id = $1 AND head_of = true",
                 )
@@ -394,11 +393,11 @@ impl SnapshotProvider for SnapshotProviderImpl {
                 .fetch_optional(&pool)
                 .await
                 .ok()
-                .flatten();
-                let _ = tx.send(row);
+                .flatten()
             });
+            let _ = tx.send(row);
         });
-        let row: Option<(i64,)> = rx.recv().unwrap_or(None);
+        let row: Option<(i64,)> = rx.recv().ok().flatten();
         Ok(row
             .map(|(rev,)| RevisionId(rev as u64))
             .unwrap_or(RevisionId::NONE))
@@ -417,22 +416,21 @@ impl SnapshotProvider for SnapshotProviderImpl {
             }
         }
 
-        // Slow path: load from PostgreSQL using block_in_place.
-        // This avoids the Handle::block_on panic when called from a tokio
-        // worker thread (multi-thread runtime).
         let ws = workspace.clone();
         let pool = self.pool.clone();
         let rev = revision;
 
         let (tx, rx) = std::sync::mpsc::channel();
-        tokio::task::block_in_place(move || {
-            let handle = tokio::runtime::Handle::current();
-            let _enter = handle.enter();
-            tokio::spawn(async move {
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("snapshot provider runtime");
+            let result = rt.block_on(async move {
                 let result = Self::load_from_pg(&pool, &ws, rev)
                     .await
                     .map_err(|e| match e {
-                        RepositoryError::UnknownRevision {
+                        CallGraphStoreError::UnknownRevision {
                             workspace,
                             revision,
                         } => SnapshotError::UnknownRevision {
@@ -441,8 +439,9 @@ impl SnapshotProvider for SnapshotProviderImpl {
                         },
                         _ => SnapshotError::NoSnapshot(ws.clone()),
                     });
-                let _ = tx.send(result);
+                result
             });
+            let _ = tx.send(result);
         });
 
         let graph = rx
@@ -568,7 +567,7 @@ mod tests {
     pg_test!(
         current_head_returns_live_head_after_two_commits,
         |pool: sqlx::PgPool| {
-            use crate::domain::traits::repository::Repository;
+            use crate::domain::traits::repository::CallGraphStore;
             use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
 
             let repo = PostgresRepository::from_pool(pool.clone());
@@ -666,7 +665,7 @@ mod tests {
     pg_test!(
         notification_batching_50_inserts_produce_at_most_1_event,
         |pool: sqlx::PgPool| {
-            use crate::domain::traits::repository::Repository;
+            use crate::domain::traits::repository::CallGraphStore;
             use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
 
             let ws = crate::domain::value_objects::WorkspaceId::default();
@@ -726,7 +725,7 @@ mod tests {
     pg_test!(
         sequential_commit_and_read_returns_just_committed_state,
         |pool: sqlx::PgPool| {
-            use crate::domain::traits::repository::Repository;
+            use crate::domain::traits::repository::CallGraphStore;
             use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
 
             let repo = PostgresRepository::from_pool(pool.clone());
@@ -793,7 +792,7 @@ mod tests {
     pg_test!(
         pinned_read_survives_concurrent_ingest,
         |pool: sqlx::PgPool| {
-            use crate::domain::traits::repository::Repository;
+            use crate::domain::traits::repository::CallGraphStore;
             use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
 
             let repo = PostgresRepository::from_pool(pool.clone());
@@ -1005,7 +1004,7 @@ mod tests {
     // ---------------------------------------------------------------------------
     #[tokio::test(flavor = "multi_thread")]
     async fn snapshot_provider_multi_thread_runtime_does_not_panic() {
-        use crate::domain::traits::repository::Repository;
+        use crate::domain::traits::repository::CallGraphStore;
         use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
 
         let Some(pool) = fresh_pool().await else {
@@ -1065,7 +1064,7 @@ mod tests {
     // We redefine it here as multi_thread to catch regressions.
     #[tokio::test(flavor = "multi_thread")]
     async fn notification_batching_50_inserts_multi_thread() {
-        use crate::domain::traits::repository::Repository;
+        use crate::domain::traits::repository::CallGraphStore;
         use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
 
         let Some(pool) = fresh_pool().await else {

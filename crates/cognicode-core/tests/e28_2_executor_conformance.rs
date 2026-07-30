@@ -26,7 +26,7 @@ use cognicode_core::domain::plan::{
     PlanVersion, TruncationMarker,
 };
 use cognicode_core::domain::services::ExtractionContext;
-use cognicode_core::domain::traits::repository::Repository;
+use cognicode_core::domain::traits::repository::CallGraphStore;
 use cognicode_core::domain::value_objects::{
     DependencyType, EdgeKind, Location, RevisionId, SymbolKind, WorkspaceId,
 };

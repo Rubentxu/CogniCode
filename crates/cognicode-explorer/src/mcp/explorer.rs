@@ -30,7 +30,7 @@ pub use super::context::McpContext;
 pub use super::error::ToolError;
 pub use super::handler::{ToolHandler, ToolHandlerRegistry};
 use crate::domain::snapshot::SnapshotService;
-use crate::facades::LensExecutor;
+use crate::facades::LensService;
 use crate::facades::graph::GraphServiceImpl;
 use crate::facades::moldql::MoldQLServiceImpl;
 use crate::facades::persistence::PersistenceServiceImpl;
@@ -406,7 +406,7 @@ impl ExplorerMcpHandler {
 
         // Workspace facade.
         let workspace: Arc<dyn WorkspaceService> =
-            Arc::new(WorkspaceServiceImpl::new(symbol_repo.clone(), cwd));
+            Arc::new(WorkspaceServiceImpl::new(symbol_repo.clone(), cwd, None));
 
         // Search facade.
         let search: Arc<dyn SearchService> = Arc::new(SearchServiceImpl::new(
@@ -431,7 +431,7 @@ impl ExplorerMcpHandler {
             None, // view_spec_store
         ));
 
-        // View facade (also provides LensExecutor for MoldQL).
+        // View facade (also provides LensService for MoldQL).
         let view_impl: Arc<ViewServiceImpl> = Arc::new(ViewServiceImpl::new(
             symbol_repo.clone(),
             source_reader.clone(),
@@ -443,7 +443,7 @@ impl ExplorerMcpHandler {
             None, // graph_repo
         ));
         let view: Arc<dyn ViewService> = view_impl.clone();
-        let lens_executor: Arc<dyn LensExecutor> = view_impl;
+        let lens_executor: Arc<dyn LensService> = view_impl;
 
         // MoldQL facade.
         let moldql: Arc<dyn MoldQLService> = Arc::new(MoldQLServiceImpl::new(

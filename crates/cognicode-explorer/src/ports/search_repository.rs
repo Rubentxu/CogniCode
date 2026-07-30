@@ -1,4 +1,4 @@
-//! Domain port for full-text / fuzzy symbol search.
+//! Domain port for fuzzy / full-text symbol search.
 //!
 //! Separated from [`super::symbol_repository::SymbolRepository`] so adapters
 //! that only know how to navigate a graph (the in-memory `CallGraph`,
@@ -7,6 +7,11 @@
 //! its own. This is an explicit ISP split: "find me a symbol by identity /
 //! relation" is one concern, "find me symbols that match this text" is
 //! another.
+//!
+//! **Naming**: this port was previously called `SearchRepository`. It was
+//! renamed to `FuzzySymbolSearch` to disambiguate from the unrelated
+//! `SearchProvider` in `cognicode-core` (which searches code patterns,
+//! not symbols).
 
 use crate::error::ExplorerResult;
 
@@ -65,8 +70,12 @@ impl SearchHit {
     }
 }
 
-/// Read-only port for full-text / fuzzy symbol search.
-pub trait SearchRepository: Send + Sync {
+/// Read-only port for fuzzy / full-text symbol search.
+///
+/// Renamed from `SearchRepository` to `FuzzySymbolSearch` (2026-07-30)
+/// to avoid the name collision with `cognicode_core::SearchProvider`,
+/// which is a different concern (code-pattern search vs. symbol search).
+pub trait FuzzySymbolSearch: Send + Sync {
     /// Return up to `limit` hits for `query`. An empty `query` MUST return
     /// an empty `Vec` (no errors). Adapters that cannot service the query
     /// (e.g. DB missing) return an empty `Vec` — graceful degradation over

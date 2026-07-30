@@ -43,7 +43,7 @@ impl Runtime {
             #[cfg(feature = "postgres")]
             Some(url) => {
                 let graph =
-                    cognicode_explorer::postgres_bridge::open_graph_from_postgres(url).await?;
+                    cognicode_explorer::postgres_bridge::open_graph_from_postgres(url, &cwd).await?;
                 graph_cache.set((*graph).clone());
                 Some(graph)
             }
@@ -145,8 +145,9 @@ impl Runtime {
 
         // Workspace resolver — maps workspace_id → root_path.
         // Populated when open_workspace is called.
-        let ws_resolver: Arc<dyn cognicode_core::application::ingest::WorkspaceResolver> =
-            Arc::new(cognicode_core::application::ingest::StaticWorkspaceResolver::new());
+        let ws_resolver = Arc::new(cognicode_core::application::ingest::StaticWorkspaceResolver::new());
+        let ws_resolver_dyn: Arc<dyn cognicode_core::application::ingest::WorkspaceResolver> =
+            ws_resolver.clone();
 
         // IngestController — only when PG is available.
         #[cfg(feature = "postgres")]
@@ -154,7 +155,7 @@ impl Runtime {
             Arc::new(cognicode_core::application::ingest::IngestController::new(
                 repo.clone(),
                 self.graph_cache.clone(),
-                ws_resolver.clone(),
+                ws_resolver_dyn.clone(),
             ))
         });
         #[cfg(not(feature = "postgres"))]
@@ -165,6 +166,7 @@ impl Runtime {
             cognicode_explorer::facades::workspace::WorkspaceServiceImpl::new(
                 self.symbol_repo.clone(),
                 self.cwd.clone(),
+                Some(ws_resolver.clone()),
             ),
         );
 
@@ -253,7 +255,7 @@ impl Runtime {
                 graph_repo.clone(),
             ));
         let view: Arc<dyn cognicode_explorer::facades::ViewService> = view_impl.clone();
-        let lens_executor: Arc<dyn cognicode_explorer::facades::LensExecutor> = view_impl;
+        let lens_executor: Arc<dyn cognicode_explorer::facades::LensService> = view_impl;
 
         let moldql: Arc<dyn cognicode_explorer::facades::MoldQLService> =
             Arc::new(cognicode_explorer::facades::moldql::MoldQLServiceImpl::new(

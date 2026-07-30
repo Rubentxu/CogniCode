@@ -55,7 +55,7 @@ pub use mcp::ExplorerMcpHandler;
 pub use moldql::{MoldQLExecutor, MoldQLItem, MoldQLQuery, MoldQLResult, ParseError};
 pub use ports::{
     EdgeWithMetadata, QualityGateSummary, QualityIssue, QualityRepository, RelationTarget,
-    RelationTargetWithMetadata, ResolvedSymbol, RuleSummary, SearchHit, SearchRepository,
+    RelationTargetWithMetadata, ResolvedSymbol, RuleSummary, FuzzySymbolSearch, SearchHit,
     SourceReader, SymbolRepository,
 };
 pub use scaffold::{Scaffold, ScaffoldRegistry, registry};

@@ -1,6 +1,6 @@
 //! Domain port for ADR (Architecture Decision Record) discovery.
 //!
-//! Separated from [`super::search_repository::SearchRepository`] per
+//! Separated from [`super::search_repository::FuzzySymbolSearch`] per
 //! ISP: "find me an ADR by identity / status / workspace" is a distinct
 //! concern from full-text symbol search.
 //!

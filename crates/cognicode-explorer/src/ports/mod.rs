@@ -26,7 +26,7 @@ pub use quality_repository::{NewIssue, UpsertSummary};
 pub use quality_repository::{
     QualityGateSummary, QualityIssue, QualityRepository, QualityWritePort, RuleSummary,
 };
-pub use search_repository::{SearchHit, SearchRepository};
+pub use search_repository::{FuzzySymbolSearch, SearchHit};
 pub use source_reader::SourceReader;
 pub use symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
 

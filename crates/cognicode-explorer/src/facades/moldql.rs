@@ -8,7 +8,7 @@ use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
 
 use crate::dto::MoldQLResultDto;
 use crate::error::{ExplorerError, ExplorerResult};
-use crate::facades::LensExecutor;
+use crate::facades::LensService;
 use crate::facades::MoldQLService;
 use crate::moldql::{MoldQLExecutor, MoldQLResult, MoldQLView};
 use crate::ports::quality_repository::QualityRepository;
@@ -28,7 +28,7 @@ pub struct MoldQLServiceImpl {
     repo: Arc<dyn SymbolRepository>,
     quality: Option<Arc<dyn QualityRepository>>,
     reader: Arc<dyn SourceReader>,
-    lens_executor: Arc<dyn LensExecutor>,
+    lens_executor: Arc<dyn LensService>,
     #[cfg(feature = "multimodal")]
     graph_repo: Option<Arc<dyn GraphRepository>>,
     /// Pattern Profile executor. `None` ⇒ `FeatureDisabled` at run time.
@@ -45,7 +45,7 @@ impl MoldQLServiceImpl {
         repo: Arc<dyn SymbolRepository>,
         quality: Option<Arc<dyn QualityRepository>>,
         reader: Arc<dyn SourceReader>,
-        lens_executor: Arc<dyn LensExecutor>,
+        lens_executor: Arc<dyn LensService>,
         #[cfg(feature = "multimodal")] graph_repo: Option<Arc<dyn GraphRepository>>,
         graph_executor: Option<Arc<dyn GraphExecutor>>,
         workspace_id: Option<String>,
@@ -130,12 +130,12 @@ impl MoldQLService for MoldQLServiceImpl {
 impl MoldQLServiceImpl {
     /// Build a `MoldQLView` from the current ports.
     fn build_moldql_view(&self) -> MoldQLView {
-        // Build the apply_lens closure that bridges async LensExecutor to sync MoldQLView.
+        // Build the apply_lens closure that bridges async LensService to sync MoldQLView.
         let lens_executor = self.lens_executor.clone();
         let apply_lens: std::sync::Arc<
             dyn Fn(&str, &str) -> ExplorerResult<crate::dto::LensResult> + Send + Sync,
         > = std::sync::Arc::new(move |object_id, lens_id| {
-            // Use block_on to call the async LensExecutor from the sync MoldQLView context.
+            // Use block_on to call the async LensService from the sync MoldQLView context.
             tokio::runtime::Handle::current().block_on(lens_executor.apply_lens(object_id, lens_id))
         });
 
@@ -164,12 +164,12 @@ impl MoldQLServiceImpl {
         workspace_id: WorkspaceId,
         revision_id: RevisionId,
     ) -> MoldQLView {
-        // Build the apply_lens closure that bridges async LensExecutor to sync MoldQLView.
+        // Build the apply_lens closure that bridges async LensService to sync MoldQLView.
         let lens_executor = self.lens_executor.clone();
         let apply_lens: std::sync::Arc<
             dyn Fn(&str, &str) -> ExplorerResult<crate::dto::LensResult> + Send + Sync,
         > = std::sync::Arc::new(move |object_id, lens_id| {
-            // Use block_on to call the async LensExecutor from the sync MoldQLView context.
+            // Use block_on to call the async LensService from the sync MoldQLView context.
             tokio::runtime::Handle::current().block_on(lens_executor.apply_lens(object_id, lens_id))
         });
 
@@ -191,16 +191,16 @@ impl MoldQLServiceImpl {
 mod tests {
     use super::*;
     use crate::error::ExplorerResult;
-    use crate::facades::LensExecutor;
+use crate::facades::LensService;
     use crate::ports::source_reader::SourceReader;
     use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
     use cognicode_core::domain::aggregates::SymbolId;
     use cognicode_core::domain::plan::executor::StubExecutor;
 
-    /// Stub LensExecutor for tests.
-    struct TestLensExecutor;
+    /// Stub LensService for tests.
+    struct TestLensService;
     #[async_trait]
-    impl LensExecutor for TestLensExecutor {
+    impl LensService for TestLensService {
         async fn apply_lens(
             &self,
             _object_id: &str,
@@ -255,7 +255,7 @@ mod tests {
     async fn execute_query_pinned_accepts_valid_pin() {
         let repo: Arc<dyn SymbolRepository> = Arc::new(TestSymbolRepo);
         let reader: Arc<dyn SourceReader> = Arc::new(TestSourceReader);
-        let lens_executor: Arc<dyn LensExecutor> = Arc::new(TestLensExecutor);
+        let lens_executor: Arc<dyn LensService> = Arc::new(TestLensService);
         let stub_executor: Arc<dyn GraphExecutor> = Arc::new(StubExecutor::new());
 
         let service = MoldQLServiceImpl::new(
@@ -292,7 +292,7 @@ mod tests {
     async fn execute_query_pinned_overrides_instance_pin() {
         let repo: Arc<dyn SymbolRepository> = Arc::new(TestSymbolRepo);
         let reader: Arc<dyn SourceReader> = Arc::new(TestSourceReader);
-        let lens_executor: Arc<dyn LensExecutor> = Arc::new(TestLensExecutor);
+        let lens_executor: Arc<dyn LensService> = Arc::new(TestLensService);
         let stub_executor: Arc<dyn GraphExecutor> = Arc::new(StubExecutor::new());
 
         // Service constructed with instance-level pin (ws-0, rev-0)
@@ -331,7 +331,7 @@ mod tests {
     async fn moldql_service_impl_accepts_graph_executor() {
         let repo: Arc<dyn SymbolRepository> = Arc::new(TestSymbolRepo);
         let reader: Arc<dyn SourceReader> = Arc::new(TestSourceReader);
-        let lens_executor: Arc<dyn LensExecutor> = Arc::new(TestLensExecutor);
+        let lens_executor: Arc<dyn LensService> = Arc::new(TestLensService);
         let stub_executor: Arc<dyn GraphExecutor> = Arc::new(StubExecutor::new());
 
         // Service constructed with a graph_executor

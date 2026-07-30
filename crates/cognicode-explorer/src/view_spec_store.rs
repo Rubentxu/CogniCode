@@ -73,7 +73,7 @@ impl ViewSpecStore for PostgresViewSpecStore {
             )
             .await
             .map_err(|e| match e {
-                cognicode_core::domain::traits::RepositoryError::UniqueViolation(msg) => {
+                cognicode_core::domain::traits::CallGraphStoreError::UniqueViolation(msg) => {
                     ViewSpecStoreError::Conflict(msg)
                 }
                 other => ViewSpecStoreError::Store(other.to_string()),

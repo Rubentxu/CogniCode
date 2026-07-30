@@ -343,7 +343,7 @@ pub trait ViewSpecRepository: Send + Sync {
         owner: &str,
     ) -> Result<
         Vec<crate::infrastructure::persistence::ViewSpecRow>,
-        crate::domain::traits::repository::RepositoryError,
+        crate::domain::traits::repository::CallGraphStoreError,
     >;
 
     /// Load a single ViewSpec by id, scoped to workspace and owner.
@@ -354,7 +354,7 @@ pub trait ViewSpecRepository: Send + Sync {
         owner: &str,
     ) -> Result<
         Option<crate::infrastructure::persistence::ViewSpecRow>,
-        crate::domain::traits::repository::RepositoryError,
+        crate::domain::traits::repository::CallGraphStoreError,
     >;
 }
 
@@ -367,10 +367,10 @@ impl ViewSpecRepository for HandlerContext {
         owner: &str,
     ) -> Result<
         Vec<crate::infrastructure::persistence::ViewSpecRow>,
-        crate::domain::traits::repository::RepositoryError,
+        crate::domain::traits::repository::CallGraphStoreError,
     > {
         let repo = self.view_spec_repo.as_ref().ok_or_else(|| {
-            crate::domain::traits::repository::RepositoryError::NotFound(
+            crate::domain::traits::repository::CallGraphStoreError::NotFound(
                 "view_spec_repo not configured".into(),
             )
         })?;
@@ -384,10 +384,10 @@ impl ViewSpecRepository for HandlerContext {
         owner: &str,
     ) -> Result<
         Option<crate::infrastructure::persistence::ViewSpecRow>,
-        crate::domain::traits::repository::RepositoryError,
+        crate::domain::traits::repository::CallGraphStoreError,
     > {
         let repo = self.view_spec_repo.as_ref().ok_or_else(|| {
-            crate::domain::traits::repository::RepositoryError::NotFound(
+            crate::domain::traits::repository::CallGraphStoreError::NotFound(
                 "view_spec_repo not configured".into(),
             )
         })?;

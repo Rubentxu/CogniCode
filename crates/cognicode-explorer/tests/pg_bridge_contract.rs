@@ -23,7 +23,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use cognicode_core::domain::aggregates::{CallGraph, Symbol, SymbolId};
 use cognicode_core::domain::services::ExtractionContext;
-use cognicode_core::domain::traits::Repository;
+use cognicode_core::domain::traits::CallGraphStore;
 use cognicode_core::domain::value_objects::{DependencyType, Location, Provenance, SymbolKind};
 use cognicode_core::infrastructure::persistence::PostgresRepository;
 use cognicode_explorer::adapters::CallGraphRepository;
@@ -211,7 +211,7 @@ fn build_mixed_provenance_graph() -> CallGraph {
 
 // Spec scenario 1: a populated PG (≥5 sym, ≥3 dep types, all 3
 // provenance variants) round-trips bit-exact through the bridge
-// into a `CallGraphRepository` that `assert_eq!`s equal to the
+// into a `Repository` that `assert_eq!`s equal to the
 // source graph.
 pg_test!(
     round_trip_populated_db_is_bit_exact,

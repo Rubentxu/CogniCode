@@ -171,7 +171,7 @@ impl GraphExecutor for PgGraphExecutor {
                 // Empty graph — return empty result set
                 return Ok(ResultSet::empty());
             }
-            Err(crate::domain::traits::repository::RepositoryError::UnknownRevision {
+            Err(crate::domain::traits::repository::CallGraphStoreError::UnknownRevision {
                 workspace,
                 revision,
             }) => {
@@ -1270,7 +1270,7 @@ mod tests {
     pg_test!(path_shortest_succeeds, |pool: PgPool| {
         use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
         use crate::domain::services::ExtractionContext;
-        use crate::domain::traits::repository::Repository;
+        use crate::domain::traits::repository::CallGraphStore;
         use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
         use crate::infrastructure::persistence::PostgresRepository;
 
@@ -1386,7 +1386,7 @@ mod tests {
     pg_test!(path_unreachable_returns_empty, |pool: PgPool| {
         use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
         use crate::domain::services::ExtractionContext;
-        use crate::domain::traits::repository::Repository;
+        use crate::domain::traits::repository::CallGraphStore;
         use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
         use crate::infrastructure::persistence::PostgresRepository;
 
@@ -1458,7 +1458,7 @@ mod tests {
         use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
         use crate::domain::plan::graph_plan::NeighborKind;
         use crate::domain::services::ExtractionContext;
-        use crate::domain::traits::repository::Repository;
+        use crate::domain::traits::repository::CallGraphStore;
         use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
         use crate::infrastructure::persistence::PostgresRepository;
 
@@ -1564,7 +1564,7 @@ mod tests {
     pg_test!(subgraph_returns_visited_nodes, |pool: PgPool| {
         use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
         use crate::domain::services::ExtractionContext;
-        use crate::domain::traits::repository::Repository;
+        use crate::domain::traits::repository::CallGraphStore;
         use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
         use crate::infrastructure::persistence::PostgresRepository;
 
@@ -1672,7 +1672,7 @@ mod tests {
 
     pg_test!(cluster_by_kind, |pool: PgPool| {
         use crate::domain::aggregates::{CallGraph, Symbol};
-        use crate::domain::traits::repository::Repository;
+        use crate::domain::traits::repository::CallGraphStore;
         use crate::domain::value_objects::{Location, SymbolKind};
         use crate::infrastructure::persistence::PostgresRepository;
 
@@ -1741,7 +1741,7 @@ mod tests {
         use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
         use crate::domain::plan::graph_plan::{BooleanOp, NeighborKind};
         use crate::domain::services::ExtractionContext;
-        use crate::domain::traits::repository::Repository;
+        use crate::domain::traits::repository::CallGraphStore;
         use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
         use crate::infrastructure::persistence::PostgresRepository;
 
@@ -1856,7 +1856,7 @@ mod tests {
         use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
         use crate::domain::plan::graph_plan::{BooleanOp, NeighborKind};
         use crate::domain::services::ExtractionContext;
-        use crate::domain::traits::repository::Repository;
+        use crate::domain::traits::repository::CallGraphStore;
         use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
         use crate::infrastructure::persistence::PostgresRepository;
 
@@ -1972,7 +1972,7 @@ mod tests {
         use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
         use crate::domain::plan::graph_plan::NeighborKind;
         use crate::domain::services::ExtractionContext;
-        use crate::domain::traits::repository::Repository;
+        use crate::domain::traits::repository::CallGraphStore;
         use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
         use crate::infrastructure::persistence::PostgresRepository;
 
@@ -2181,7 +2181,7 @@ mod tests {
         |pool: PgPool| {
             use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
             use crate::domain::services::ExtractionContext;
-            use crate::domain::traits::repository::Repository;
+            use crate::domain::traits::repository::CallGraphStore;
             use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
             use crate::infrastructure::persistence::PostgresRepository;
 

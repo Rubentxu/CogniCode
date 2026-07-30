@@ -28,7 +28,7 @@ const SPOTTER_RESULT_LIMIT: usize = 20;
 /// Holds the same ports that `ExplorerService` uses for search and inspection.
 pub struct SearchServiceImpl {
     repo: Arc<dyn SymbolRepository>,
-    search: Option<Arc<dyn crate::ports::SearchRepository>>,
+    search: Option<Arc<dyn crate::ports::FuzzySymbolSearch>>,
     view_registry: Arc<ViewRegistry>,
     view_spec_store: Option<Arc<dyn ViewSpecStore>>,
     quality: Option<Arc<dyn crate::ports::QualityRepository>>,
@@ -47,7 +47,7 @@ impl SearchServiceImpl {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         repo: Arc<dyn SymbolRepository>,
-        search: Option<Arc<dyn crate::ports::SearchRepository>>,
+        search: Option<Arc<dyn crate::ports::FuzzySymbolSearch>>,
         view_registry: Arc<ViewRegistry>,
         view_spec_store: Option<Arc<dyn ViewSpecStore>>,
         quality: Option<Arc<dyn crate::ports::QualityRepository>>,
@@ -806,7 +806,7 @@ impl SearchService for SearchServiceImpl {
 
 fn spotter_search_impl(
     repo: &Arc<dyn SymbolRepository>,
-    search: Option<&Arc<dyn crate::ports::SearchRepository>>,
+search: Option<&Arc<dyn crate::ports::FuzzySymbolSearch>>,
     view_registry: &Arc<ViewRegistry>,
     adr_repo: Option<&Arc<dyn crate::ports::AdrRepository>>,
     doc_repo: Option<&Arc<dyn crate::ports::DocRepository>>,
@@ -901,7 +901,7 @@ fn spotter_search_impl(
 
 fn inspect_object_impl(
     repo: &Arc<dyn SymbolRepository>,
-    _search: Option<&Arc<dyn crate::ports::SearchRepository>>,
+    _search: Option<&Arc<dyn crate::ports::FuzzySymbolSearch>>,
     view_registry: &Arc<ViewRegistry>,
     quality: Option<&dyn crate::ports::QualityRepository>,
     _persistence: Option<&Arc<dyn PersistenceService>>,

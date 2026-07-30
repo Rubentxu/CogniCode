@@ -282,14 +282,7 @@ pub async fn handle_compare_graph(
         }
     };
 
-    // Use same workspace_id normalization as ingest: sandbox-{dirname}
-    let workspace_id = format!(
-        "sandbox-{}",
-        ctx.working_dir
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "default".into())
-    );
+    let workspace_id = crate::application::ingest::workspace_id_for_path(&ctx.working_dir);
 
     // Load latest report from PG
     let report = match pg_repo
@@ -825,13 +818,7 @@ pub async fn handle_graph_diff(
         )
     })?;
 
-    let workspace_id = format!(
-        "sandbox-{}",
-        ctx.working_dir
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "default".into())
-    );
+    let workspace_id = crate::application::ingest::workspace_id_for_path(&ctx.working_dir);
 
     // Parse baseline date
     let baseline_date = &input.baseline_date;
@@ -961,13 +948,7 @@ pub async fn handle_ingest(
         ));
     };
 
-    let workspace_id = format!(
-        "sandbox-{}",
-        directory
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "default".into())
-    );
+    let workspace_id = crate::application::ingest::workspace_id_for_path(&directory);
 
     // Run the full ingest pipeline: scan → extract → pg_upsert → refresh
     let scan_result = run_scan(
@@ -1041,13 +1022,7 @@ pub async fn handle_graph_timeline(
         )
     })?;
 
-    let workspace_id = format!(
-        "sandbox-{}",
-        ctx.working_dir
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "default".into())
-    );
+    let workspace_id = crate::application::ingest::workspace_id_for_path(&ctx.working_dir);
 
     let reports = repo
         .load_report_range(&workspace_id, input.days)
@@ -1593,7 +1568,7 @@ mod tests {
             &self,
             _workspace_id: &str,
             _owner: &str,
-        ) -> Result<Vec<ViewSpecRow>, crate::domain::traits::repository::RepositoryError> {
+        ) -> Result<Vec<ViewSpecRow>, crate::domain::traits::repository::CallGraphStoreError> {
             Ok(self.specs.clone())
         }
 
@@ -1602,7 +1577,7 @@ mod tests {
             id: &str,
             _workspace_id: &str,
             _owner: &str,
-        ) -> Result<Option<ViewSpecRow>, crate::domain::traits::repository::RepositoryError>
+        ) -> Result<Option<ViewSpecRow>, crate::domain::traits::repository::CallGraphStoreError>
         {
             Ok(self.specs.iter().find(|s| s.id == id).cloned())
         }
