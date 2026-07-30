@@ -341,17 +341,41 @@ impl AlgorithmRegistry {
         }
 
         // Persist descriptor limits to lineage store (idempotent upsert)
+        // Use block_in_place to run async SQL from this sync context on a
+        // blocking thread. This avoids the Handle::block_on panic when called
+        // from a tokio worker thread (multi-thread runtime).
+        // Use try_current to handle the case where no runtime is available
+        // (e.g., called from a non-async test context).
         let lineage_store = self.lineage.clone();
         let id_clone = id.id.clone();
         let version_str = id.version.to_string();
         let limits = d.limits().clone();
-        tokio::runtime::Handle::current()
-            .block_on(async {
-                lineage_store
-                    .upsert_descriptor_limits(&id_clone, &version_str, &limits)
-                    .await
-            })
-            .map_err(|e| AdmissionError::Incomplete(format!("lineage store error: {}", e)))?;
+
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            // Runtime is available: use block_in_place with captured handle
+            let (tx, rx) = std::sync::mpsc::channel();
+            tokio::task::block_in_place(move || {
+                let _enter = handle.enter();
+                tokio::spawn(async move {
+                    let result = lineage_store
+                        .upsert_descriptor_limits(&id_clone, &version_str, &limits)
+                        .await;
+                    let _ = tx.send(result);
+                });
+            });
+            rx.recv()
+                .map_err(|e| AdmissionError::Incomplete(format!("lineage store error: channel recv: {e}")))?
+                .map_err(|e| AdmissionError::Incomplete(format!("lineage store error: {}", e)))?;
+        } else {
+            // No runtime available: create a temporary one-shot runtime
+            // This is needed for sync contexts like plain #[test] functions
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| AdmissionError::Incomplete(format!("lineage store error: runtime create: {e}")))?;
+            runtime.block_on(lineage_store.upsert_descriptor_limits(&id_clone, &version_str, &limits))
+                .map_err(|e| AdmissionError::Incomplete(format!("lineage store error: {}", e)))?;
+        }
 
         self.descriptors.insert(id.id.clone(), d);
         Ok(())
@@ -649,10 +673,9 @@ impl AlgorithmRegistry {
         // Clone lineage for first async insert
         let lineage_store = self.lineage.clone();
         let lineage_for_insert = lineage.clone();
-        tokio::runtime::Handle::current()
-            .spawn(async move { lineage_store.insert(&lineage_for_insert).await })
+        lineage_store
+            .insert(&lineage_for_insert)
             .await
-            .map_err(|e| AnalyticsError::Internal(format!("lineage insert task: {e}")))?
             .map_err(|e| AnalyticsError::Internal(format!("lineage insert: {e}")))?;
 
         // Step 5: Dispatch to algorithm's execute() method
@@ -693,10 +716,9 @@ impl AlgorithmRegistry {
         // Update lineage in store
         let lineage_store = self.lineage.clone();
         let lineage_for_update = lineage.clone();
-        tokio::runtime::Handle::current()
-            .spawn(async move { lineage_store.insert(&lineage_for_update).await })
+        lineage_store
+            .insert(&lineage_for_update)
             .await
-            .map_err(|e| AnalyticsError::Internal(format!("lineage update task: {e}")))?
             .map_err(|e| AnalyticsError::Internal(format!("lineage update: {e}")))?;
 
         // Step 7: Return result

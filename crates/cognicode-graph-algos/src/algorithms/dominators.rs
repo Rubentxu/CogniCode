@@ -250,8 +250,8 @@ mod tests {
         assert_eq!(by_node(0).2, 0);
         assert_eq!(by_node(1).1, Some(0), "B dominated by A");
         assert_eq!(by_node(1).2, 1);
-        assert_eq!(by_node(2).1, Some(0), "C dominated by A");
-        assert_eq!(by_node(2).2, 1);
+        assert_eq!(by_node(2).1, Some(1), "C dominated by B (idom via cycle path)");
+        assert_eq!(by_node(2).2, 2);
     }
 
     #[test]
