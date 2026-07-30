@@ -1,12 +1,16 @@
 //! Pure algorithm functions — same `.rs` compiles to native + wasm32.
 
 pub mod all_simple_paths;
+pub mod articulation_points;
+pub mod bridges;
 pub mod cluster_components;
 pub mod communities;
 pub mod community_god_nodes;
 pub mod condensation;
+pub mod dominators;
 pub mod feedback_arc_set;
 pub mod god_nodes;
+pub mod k_core;
 pub mod page_rank;
 pub mod surprising_connections;
 pub mod transitive_reduction;
