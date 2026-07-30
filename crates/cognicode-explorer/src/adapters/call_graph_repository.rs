@@ -91,18 +91,19 @@ impl CallGraphRepository {
         workspace: &WorkspaceId,
         revision: RevisionId,
         snapshot_provider: &dyn cognicode_core::infrastructure::graph::SnapshotProvider,
-    ) -> Result<Vec<CalleeWithMetadata>, cognicode_core::infrastructure::graph::SnapshotError>
-    {
+    ) -> Result<Vec<CalleeWithMetadata>, cognicode_core::infrastructure::graph::SnapshotError> {
         let pinned_graph = snapshot_provider.snapshot(workspace, revision)?;
         Ok(pinned_graph
             .callees_with_metadata(id)
             .into_iter()
-            .map(|(callee_id, dependency_type, provenance, confidence)| CalleeWithMetadata {
-                callee_id,
-                dependency_type,
-                provenance,
-                confidence,
-            })
+            .map(
+                |(callee_id, dependency_type, provenance, confidence)| CalleeWithMetadata {
+                    callee_id,
+                    dependency_type,
+                    provenance,
+                    confidence,
+                },
+            )
             .collect())
     }
 

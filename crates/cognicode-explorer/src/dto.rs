@@ -1412,7 +1412,6 @@ impl ViewKind {
     }
 }
 
-
 /// One first-class RendererKind — the visual rendering strategy.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RendererKind {

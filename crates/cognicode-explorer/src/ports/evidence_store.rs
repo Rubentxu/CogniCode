@@ -109,7 +109,10 @@ impl EvidenceStore for InMemoryEvidenceStore {
             .iter()
             .filter(|e| {
                 e.title.to_lowercase().contains(&q)
-                    || e.excerpt.as_deref().map(|x| x.to_lowercase().contains(&q)).unwrap_or(false)
+                    || e.excerpt
+                        .as_deref()
+                        .map(|x| x.to_lowercase().contains(&q))
+                        .unwrap_or(false)
             })
             .take(limit)
             .cloned()

@@ -23,12 +23,16 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use cognicode_core::domain::plan::{ExecutorError, GraphPlan, MoldPlan, PlanError, PlanLimits, UnsupportedConstruct, ConstructId};
+use cognicode_core::domain::plan::{
+    ConstructId, ExecutorError, GraphPlan, MoldPlan, PlanError, PlanLimits, UnsupportedConstruct,
+};
 use cognicode_core::infrastructure::persistence::PostgresRepository;
-use cognicode_explorer::moldql::compile::{compile, compile_to_plan, CompileTarget, CompileError, CompiledQuery, PetgraphPlan};
 use cognicode_explorer::moldql::ast::{
     BooleanOp, ClusterMethod, Condition, Field, MoldQLQuery, NeighborsQuery, Op, PathQuery,
     SubgraphQuery, TraversalDirection, Value,
+};
+use cognicode_explorer::moldql::compile::{
+    CompileError, CompileTarget, CompiledQuery, PetgraphPlan, compile, compile_to_plan,
 };
 use sqlx::Row;
 
@@ -48,7 +52,7 @@ async fn w_a_compile_to_plan_subgraph_depth_zero_has_max_depth() {
             return;
         }
     };
-    
+
     let pool = match create_test_pool(&base).await {
         Some(p) => p,
         None => {
@@ -56,10 +60,10 @@ async fn w_a_compile_to_plan_subgraph_depth_zero_has_max_depth() {
             return;
         }
     };
-    
+
     // Seed the fixture graph
     seed_fixture_graph(&pool).await;
-    
+
     // Create a SubgraphQuery with depth=0
     let query = MoldQLQuery::Subgraph(SubgraphQuery {
         root: "A".into(),
@@ -67,11 +71,10 @@ async fn w_a_compile_to_plan_subgraph_depth_zero_has_max_depth() {
         direction: TraversalDirection::Both,
         conditions: vec![],
     });
-    
+
     let limits = PlanLimits::default();
-    let plan = compile_to_plan(&query, limits, None)
-        .expect("compile_to_plan should succeed");
-    
+    let plan = compile_to_plan(&query, limits, None).expect("compile_to_plan should succeed");
+
     match plan {
         MoldPlan::Graph { inner, .. } => {
             if let GraphPlan::Subgraph { limits, .. } = inner {
@@ -80,7 +83,8 @@ async fn w_a_compile_to_plan_subgraph_depth_zero_has_max_depth() {
                     "Subgraph with depth=0 should have max_depth set"
                 );
                 assert_eq!(
-                    limits.max_depth.unwrap(), 5,
+                    limits.max_depth.unwrap(),
+                    5,
                     "max_depth should be 5 (DEFAULT_MAX_DEPTH)"
                 );
             } else {
@@ -110,7 +114,7 @@ async fn pg_sql_safety_confidence_parameter_binding() {
             return;
         }
     };
-    
+
     let pool = match create_test_pool(&base).await {
         Some(p) => p,
         None => {
@@ -118,10 +122,10 @@ async fn pg_sql_safety_confidence_parameter_binding() {
             return;
         }
     };
-    
+
     // Seed the fixture graph
     seed_fixture_graph(&pool).await;
-    
+
     // Create a PathQuery with confidence filter
     let path = PathQuery {
         from: "A".into(),
@@ -134,47 +138,46 @@ async fn pg_sql_safety_confidence_parameter_binding() {
         }],
     };
     let query = MoldQLQuery::Path(path);
-    
+
     // Compile to PG SQL
     #[allow(deprecated)]
-    let compiled = compile(&query, CompileTarget::Postgres)
-        .expect("compile should succeed");
-    
+    let compiled = compile(&query, CompileTarget::Postgres).expect("compile should succeed");
+
     let sql = match compiled {
         CompiledQuery::Postgres(s) => s,
         other => panic!("expected Postgres SQL, got {:?}", other),
     };
-    
+
     // SQL should contain parameterized confidence predicate
     assert!(
         sql.to_ascii_uppercase().contains("CONFIDENCE"),
         "SQL should contain CONFIDENCE predicate: {}",
         sql
     );
-    
+
     // The value 0.5 should NOT appear as a literal (it should be a parameter)
     assert!(
         !sql.contains("0.5"),
         "confidence value should not appear as literal in SQL: {}",
         sql
     );
-    
+
     // SQL should use parameterized form ($N)
     assert!(
         sql.contains("$"),
         "SQL should use parameterized form: {}",
         sql
     );
-    
+
     // Execute the SQL to verify it works
     let rows = sqlx::query(&sql)
-        .bind("A")  // from
-        .bind("D")  // to
-        .bind(0.5)  // confidence threshold
+        .bind("A") // from
+        .bind("D") // to
+        .bind(0.5) // confidence threshold
         .fetch_all(&pool)
         .await
         .expect("query should execute");
-    
+
     // Should return results (nodes on path A→D with confidence > 0.5)
     // Edges A→B (1.0) and A→C (0.8) qualify
     assert!(
@@ -198,7 +201,7 @@ async fn pg_sql_injection_no_inlining() {
             return;
         }
     };
-    
+
     let pool = match create_test_pool(&base).await {
         Some(p) => p,
         None => {
@@ -206,10 +209,10 @@ async fn pg_sql_injection_no_inlining() {
             return;
         }
     };
-    
+
     // Seed the fixture graph
     seed_fixture_graph(&pool).await;
-    
+
     // Create a PathQuery with SQL injection attempt in the 'from' field
     let injection = "alpha' OR 1=1; --";
     let path = PathQuery {
@@ -219,17 +222,16 @@ async fn pg_sql_injection_no_inlining() {
         conditions: vec![],
     };
     let query = MoldQLQuery::Path(path);
-    
+
     // Compile to PG SQL
     #[allow(deprecated)]
-    let compiled = compile(&query, CompileTarget::Postgres)
-        .expect("compile should succeed");
-    
+    let compiled = compile(&query, CompileTarget::Postgres).expect("compile should succeed");
+
     let sql = match compiled {
         CompiledQuery::Postgres(s) => s,
         other => panic!("expected Postgres SQL, got {:?}", other),
     };
-    
+
     // SQL injection string should NOT appear verbatim in the SQL
     assert!(
         !sql.contains("alpha'"),
@@ -246,22 +248,22 @@ async fn pg_sql_injection_no_inlining() {
         "SQL injection string should not appear verbatim: {}",
         sql
     );
-    
+
     // SQL should use parameterized form
     assert!(
         sql.contains("$1"),
         "SQL should use $1 parameter for 'from': {}",
         sql
     );
-    
+
     // Execute the SQL — result should be empty (no symbol named "alpha' OR 1=1; --")
     let rows = sqlx::query(&sql)
-        .bind(injection)  // from
-        .bind("D")        // to
+        .bind(injection) // from
+        .bind("D") // to
         .fetch_all(&pool)
         .await
         .expect("query should execute");
-    
+
     assert!(
         rows.is_empty(),
         "SQL injection should return empty result: found {} rows",
@@ -284,7 +286,7 @@ async fn pg_filter_equivalence_vs_petgraph() {
             return;
         }
     };
-    
+
     let pool = match create_test_pool(&base).await {
         Some(p) => p,
         None => {
@@ -292,10 +294,10 @@ async fn pg_filter_equivalence_vs_petgraph() {
             return;
         }
     };
-    
+
     // Seed the fixture graph
     seed_fixture_graph(&pool).await;
-    
+
     // Create a NeighborsQuery with confidence filter: depth 2, confidence > 0.5
     let neighbors = NeighborsQuery {
         root: "A".into(),
@@ -308,17 +310,16 @@ async fn pg_filter_equivalence_vs_petgraph() {
         }],
     };
     let query = MoldQLQuery::Neighbors(neighbors);
-    
+
     // Compile to PG
     #[allow(deprecated)]
-    let pg_compiled = compile(&query, CompileTarget::Postgres)
-        .expect("compile should succeed");
-    
+    let pg_compiled = compile(&query, CompileTarget::Postgres).expect("compile should succeed");
+
     let pg_sql = match pg_compiled {
         CompiledQuery::Postgres(s) => s,
         other => panic!("expected Postgres SQL, got {:?}", other),
     };
-    
+
     // Execute PG query
     let pg_rows = sqlx::query(&pg_sql)
         .bind("A")
@@ -326,7 +327,7 @@ async fn pg_filter_equivalence_vs_petgraph() {
         .fetch_all(&pool)
         .await
         .expect("PG query should execute");
-    
+
     // Collect node IDs from PG result
     let pg_node_ids: HashSet<String> = pg_rows
         .iter()
@@ -335,12 +336,12 @@ async fn pg_filter_equivalence_vs_petgraph() {
             node
         })
         .collect();
-    
+
     // For petgraph, we just verify the plan compiles
     #[allow(deprecated)]
-    let _pet_compiled = compile(&query, CompileTarget::Petgraph)
-        .expect("petgraph compile should succeed");
-    
+    let _pet_compiled =
+        compile(&query, CompileTarget::Petgraph).expect("petgraph compile should succeed");
+
     // PG should return neighbors of A within depth 2, confidence > 0.5
     // A→B (1.0) and A→C (0.8) qualify
     assert!(
@@ -365,7 +366,7 @@ async fn pg_path_parity() {
             return;
         }
     };
-    
+
     let pool = match create_test_pool(&base).await {
         Some(p) => p,
         None => {
@@ -373,10 +374,10 @@ async fn pg_path_parity() {
             return;
         }
     };
-    
+
     // Seed the fixture graph
     seed_fixture_graph(&pool).await;
-    
+
     // PATH FROM A TO D MAX_HOPS 3
     let path = PathQuery {
         from: "A".into(),
@@ -385,17 +386,16 @@ async fn pg_path_parity() {
         conditions: vec![],
     };
     let query = MoldQLQuery::Path(path);
-    
+
     // Compile to PG
     #[allow(deprecated)]
-    let pg_compiled = compile(&query, CompileTarget::Postgres)
-        .expect("compile should succeed");
-    
+    let pg_compiled = compile(&query, CompileTarget::Postgres).expect("compile should succeed");
+
     let pg_sql = match pg_compiled {
         CompiledQuery::Postgres(s) => s,
         other => panic!("expected Postgres SQL, got {:?}", other),
     };
-    
+
     // Execute PG query
     let pg_rows = sqlx::query(&pg_sql)
         .bind("A")
@@ -403,7 +403,7 @@ async fn pg_path_parity() {
         .fetch_all(&pool)
         .await
         .expect("PG query should execute");
-    
+
     // Collect nodes from path result
     let pg_path_nodes: Vec<String> = pg_rows
         .iter()
@@ -412,26 +412,29 @@ async fn pg_path_parity() {
             node
         })
         .collect();
-    
+
     // Compile to petgraph for parity verification
     #[allow(deprecated)]
-    let pet_compiled = compile(&query, CompileTarget::Petgraph)
-        .expect("petgraph compile should succeed");
-    
+    let pet_compiled =
+        compile(&query, CompileTarget::Petgraph).expect("petgraph compile should succeed");
+
     match pet_compiled {
-        CompiledQuery::Petgraph(plan) => {
-            match plan {
-                PetgraphPlan::Bfs { roots, targets, max_hops, .. } => {
-                    assert_eq!(roots, vec!["A".to_string()]);
-                    assert_eq!(targets, vec!["D".to_string()]);
-                    assert_eq!(max_hops, Some(3));
-                }
-                other => panic!("expected Bfs plan, got {:?}", other),
+        CompiledQuery::Petgraph(plan) => match plan {
+            PetgraphPlan::Bfs {
+                roots,
+                targets,
+                max_hops,
+                ..
+            } => {
+                assert_eq!(roots, vec!["A".to_string()]);
+                assert_eq!(targets, vec!["D".to_string()]);
+                assert_eq!(max_hops, Some(3));
             }
-        }
+            other => panic!("expected Bfs plan, got {:?}", other),
+        },
         other => panic!("expected Petgraph plan, got {:?}", other),
     }
-    
+
     // Path A→D should return at least D
     assert!(
         !pg_path_nodes.is_empty(),
@@ -459,7 +462,7 @@ async fn pg_neighbors_parity_with_where() {
             return;
         }
     };
-    
+
     let pool = match create_test_pool(&base).await {
         Some(p) => p,
         None => {
@@ -467,10 +470,10 @@ async fn pg_neighbors_parity_with_where() {
             return;
         }
     };
-    
+
     // Seed the fixture graph
     seed_fixture_graph(&pool).await;
-    
+
     // NEIGHBORS OF A DEPTH 2 WHERE confidence > 0.5
     let neighbors = NeighborsQuery {
         root: "A".into(),
@@ -483,17 +486,16 @@ async fn pg_neighbors_parity_with_where() {
         }],
     };
     let query = MoldQLQuery::Neighbors(neighbors);
-    
+
     // Compile to PG
     #[allow(deprecated)]
-    let pg_compiled = compile(&query, CompileTarget::Postgres)
-        .expect("compile should succeed");
-    
+    let pg_compiled = compile(&query, CompileTarget::Postgres).expect("compile should succeed");
+
     let pg_sql = match pg_compiled {
         CompiledQuery::Postgres(s) => s,
         other => panic!("expected Postgres SQL, got {:?}", other),
     };
-    
+
     // Execute PG query
     let pg_rows = sqlx::query(&pg_sql)
         .bind("A")
@@ -501,7 +503,7 @@ async fn pg_neighbors_parity_with_where() {
         .fetch_all(&pool)
         .await
         .expect("PG query should execute");
-    
+
     // Collect neighbor node IDs
     let pg_neighbors: HashSet<String> = pg_rows
         .iter()
@@ -510,7 +512,7 @@ async fn pg_neighbors_parity_with_where() {
             node
         })
         .collect();
-    
+
     // A→B (1.0) and A→C (0.8) are direct neighbors
     // B and C should be in the subgraph (reachable via Extracted edges)
     assert!(
@@ -523,22 +525,20 @@ async fn pg_neighbors_parity_with_where() {
         "D should NOT be included (edge C→D is 0.4 < 0.5), got: {:?}",
         pg_neighbors
     );
-    
+
     // Compile to petgraph for parity verification
     #[allow(deprecated)]
-    let pet_compiled = compile(&query, CompileTarget::Petgraph)
-        .expect("petgraph compile should succeed");
-    
+    let pet_compiled =
+        compile(&query, CompileTarget::Petgraph).expect("petgraph compile should succeed");
+
     match pet_compiled {
-        CompiledQuery::Petgraph(plan) => {
-            match plan {
-                PetgraphPlan::DualRadius { root, depth } => {
-                    assert_eq!(root, "A");
-                    assert_eq!(depth, 2);
-                }
-                other => panic!("expected DualRadius plan, got {:?}", other),
+        CompiledQuery::Petgraph(plan) => match plan {
+            PetgraphPlan::DualRadius { root, depth } => {
+                assert_eq!(root, "A");
+                assert_eq!(depth, 2);
             }
-        }
+            other => panic!("expected DualRadius plan, got {:?}", other),
+        },
         other => panic!("expected Petgraph plan, got {:?}", other),
     }
 }
@@ -558,7 +558,7 @@ async fn pg_subgraph_parity_with_provenance_filter() {
             return;
         }
     };
-    
+
     let pool = match create_test_pool(&base).await {
         Some(p) => p,
         None => {
@@ -566,10 +566,10 @@ async fn pg_subgraph_parity_with_provenance_filter() {
             return;
         }
     };
-    
+
     // Seed the fixture graph
     seed_fixture_graph(&pool).await;
-    
+
     // SUBGRAPH FROM A DEPTH 3 WHERE provenance.lsp = "Extracted"
     let subgraph = SubgraphQuery {
         root: "A".into(),
@@ -582,17 +582,16 @@ async fn pg_subgraph_parity_with_provenance_filter() {
         }],
     };
     let query = MoldQLQuery::Subgraph(subgraph);
-    
+
     // Compile to PG
     #[allow(deprecated)]
-    let pg_compiled = compile(&query, CompileTarget::Postgres)
-        .expect("compile should succeed");
-    
+    let pg_compiled = compile(&query, CompileTarget::Postgres).expect("compile should succeed");
+
     let pg_sql = match pg_compiled {
         CompiledQuery::Postgres(s) => s,
         other => panic!("expected Postgres SQL, got {:?}", other),
     };
-    
+
     // Execute PG query
     let pg_rows = sqlx::query(&pg_sql)
         .bind("A")
@@ -600,7 +599,7 @@ async fn pg_subgraph_parity_with_provenance_filter() {
         .fetch_all(&pool)
         .await
         .expect("PG query should execute");
-    
+
     // Collect subgraph node IDs
     let pg_subgraph: HashSet<String> = pg_rows
         .iter()
@@ -609,7 +608,7 @@ async fn pg_subgraph_parity_with_provenance_filter() {
             node
         })
         .collect();
-    
+
     // Only edges with provenance = "Extracted" are A→B and A→C
     // B and C should be in the subgraph (reachable via Extracted edges)
     assert!(
@@ -617,22 +616,20 @@ async fn pg_subgraph_parity_with_provenance_filter() {
         "Subgraph with provenance=Extracted should include B and/or C, got: {:?}",
         pg_subgraph
     );
-    
+
     // Compile to petgraph for parity verification
     #[allow(deprecated)]
-    let pet_compiled = compile(&query, CompileTarget::Petgraph)
-        .expect("petgraph compile should succeed");
-    
+    let pet_compiled =
+        compile(&query, CompileTarget::Petgraph).expect("petgraph compile should succeed");
+
     match pet_compiled {
-        CompiledQuery::Petgraph(plan) => {
-            match plan {
-                PetgraphPlan::DualRadius { root, depth } => {
-                    assert_eq!(root, "A");
-                    assert_eq!(depth, 3);
-                }
-                other => panic!("expected DualRadius plan, got {:?}", other),
+        CompiledQuery::Petgraph(plan) => match plan {
+            PetgraphPlan::DualRadius { root, depth } => {
+                assert_eq!(root, "A");
+                assert_eq!(depth, 3);
             }
-        }
+            other => panic!("expected DualRadius plan, got {:?}", other),
+        },
         other => panic!("expected Petgraph plan, got {:?}", other),
     }
 }
@@ -644,18 +641,18 @@ async fn pg_subgraph_parity_with_provenance_filter() {
 /// Create a unique test database and return a pool to it.
 async fn create_test_pool(base_url: &str) -> Option<sqlx::PgPool> {
     use sqlx::postgres::PgPoolOptions;
-    
+
     let pool = PgPoolOptions::new()
         .max_connections(1)
         .connect(base_url)
         .await
         .ok()?;
-    
+
     // Create unique database name
     let pid = std::process::id();
     let n = UNIQ.fetch_add(1, Ordering::Relaxed);
     let db_name = format!("cognicode_test_e28_{}_{}", pid, n);
-    
+
     // Create the test database
     let admin_url = base_url.to_string();
     let admin_pool = PgPoolOptions::new()
@@ -663,16 +660,16 @@ async fn create_test_pool(base_url: &str) -> Option<sqlx::PgPool> {
         .connect(&admin_url)
         .await
         .ok()?;
-    
+
     let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS \"{}\"", db_name))
         .execute(&admin_pool)
         .await;
-    
+
     sqlx::query(&format!("CREATE DATABASE \"{}\"", db_name))
         .execute(&admin_pool)
         .await
         .ok()?;
-    
+
     // Connect to the new database and run migrations
     let test_url = rewrite_db_name(base_url, &db_name);
     let test_pool = PgPoolOptions::new()
@@ -680,11 +677,11 @@ async fn create_test_pool(base_url: &str) -> Option<sqlx::PgPool> {
         .connect(&test_url)
         .await
         .ok()?;
-    
+
     // Run migrations using PostgresRepository
     let repo = PostgresRepository::from_pool(test_pool.clone());
     repo.run_migrations().await.ok()?;
-    
+
     Some(test_pool)
 }
 
@@ -714,7 +711,7 @@ async fn seed_fixture_graph(pool: &sqlx::PgPool) {
         ("src/c.rs", "C", "function", 3, 1),
         ("src/d.rs", "D", "function", 4, 1),
     ];
-    
+
     for (file, name, kind, line, col) in symbols {
         sqlx::query(
             "INSERT INTO symbols (file_path, name, kind, line, \"column\") VALUES ($1, $2, $3, $4, $5)"
@@ -728,7 +725,7 @@ async fn seed_fixture_graph(pool: &sqlx::PgPool) {
         .await
         .expect("seed symbol");
     }
-    
+
     // Insert call edges: (caller, callee, dep_type, provenance, confidence)
     let edges = vec![
         ("A", "B", "calls", "Extracted", 1.0),
@@ -737,7 +734,7 @@ async fn seed_fixture_graph(pool: &sqlx::PgPool) {
         ("B", "D", "calls", "Inferred", 0.6),
         ("C", "D", "calls", "Manual", 0.4),
     ];
-    
+
     for (caller, callee, dep_type, provenance, confidence) in edges {
         sqlx::query(
             "INSERT INTO call_edges (caller_id, caller_name, callee_id, callee_name, dependency_type, provenance, confidence) VALUES ($1, $2, $3, $4, $5, $6, $7)"
@@ -762,7 +759,7 @@ async fn seed_fixture_graph(pool: &sqlx::PgPool) {
 #[cfg(test)]
 mod executor_refuses_empty_success_tests {
     use super::*;
-    
+
     // -------------------------------------------------------------------------
     // Task 4.7: executor refuses empty success for unsupported construct
     // Scenario: `unsupported-operation-errors::No Empty Success for Unsupported Syntax`
@@ -774,7 +771,7 @@ mod executor_refuses_empty_success_tests {
         // This test verifies the contract that when an executor encounters an
         // unsupported construct, it must return Err(UnsupportedConstruct) and
         // NOT Ok(ResultSet { rows: 0, ... }).
-        
+
         let unsupported_err = ExecutorError::UnsupportedConstruct(
             UnsupportedConstruct::new(
                 ConstructId::Other("FutureVariant".into()),
@@ -782,13 +779,13 @@ mod executor_refuses_empty_success_tests {
             )
             .with_alternative("use an equivalent supported construct"),
         );
-        
+
         // The error should be the UnsupportedConstruct variant
         assert!(matches!(
             unsupported_err,
             ExecutorError::UnsupportedConstruct(_)
         ));
-        
+
         // If we were to convert this to a ResultSet (which we shouldn't),
         // it should NOT be an Ok with empty rows
         let as_result: Result<(), _> = Err(unsupported_err);
@@ -799,7 +796,7 @@ mod executor_refuses_empty_success_tests {
 #[cfg(test)]
 mod bridge_mapping_tests {
     use super::*;
-    
+
     // -------------------------------------------------------------------------
     // Task 4.8: bridge mapping — CompileError::UnsupportedVariant → MoldError
     // Scenario: `unsupported-operation-errors::Distinct from CompileError`
@@ -810,9 +807,9 @@ mod bridge_mapping_tests {
     fn legacy_compile_error_unsupported_variant_maps_to_mold_error() {
         // The legacy compile() function returns CompileError::UnsupportedVariant
         // when it encounters an unsupported AST variant.
-        
+
         let legacy_error = CompileError::UnsupportedVariant("FutureQueryVariant");
-        
+
         // Display should show the unsupported variant
         let display = format!("{}", legacy_error);
         assert!(
@@ -820,27 +817,20 @@ mod bridge_mapping_tests {
             "error display should contain the variant name: {}",
             display
         );
-        
+
         // The conversion to PlanError/UnsupportedConstruct happens in the bridge
         let plan_error: PlanError = match legacy_error {
             CompileError::UnsupportedVariant(variant) => {
-                PlanError::UnsupportedConstruct(
-                    UnsupportedConstruct::new(
-                        ConstructId::Other(variant.into()),
-                        "unsupported query variant",
-                    )
-                )
+                PlanError::UnsupportedConstruct(UnsupportedConstruct::new(
+                    ConstructId::Other(variant.into()),
+                    "unsupported query variant",
+                ))
             }
-            CompileError::InvalidQuery(msg) => {
-                PlanError::UnsupportedConstruct(
-                    UnsupportedConstruct::new(
-                        ConstructId::Other("InvalidQuery".into()),
-                        &msg,
-                    )
-                )
-            }
+            CompileError::InvalidQuery(msg) => PlanError::UnsupportedConstruct(
+                UnsupportedConstruct::new(ConstructId::Other("InvalidQuery".into()), &msg),
+            ),
         };
-        
+
         // Verify the construct id is preserved
         match plan_error {
             PlanError::UnsupportedConstruct(uc) => {
@@ -855,7 +845,7 @@ mod bridge_mapping_tests {
             other => panic!("expected UnsupportedConstruct, got {:?}", other),
         }
     }
-    
+
     #[test]
     fn compile_error_display_includes_variant_name() {
         let err = CompileError::UnsupportedVariant("CustomVariant");

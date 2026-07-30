@@ -281,10 +281,8 @@ fn assert_view_kind_uniqueness(pairs: &[(&'static str, crate::dto::ViewKind)]) {
     }
 }
 
-type ViewExecutorMap = std::collections::HashMap<
-    &'static str,
-    &'static dyn crate::domain::views::ViewExecutor,
->;
+type ViewExecutorMap =
+    std::collections::HashMap<&'static str, &'static dyn crate::domain::views::ViewExecutor>;
 
 static REAL_EXECUTORS: OnceLock<ViewExecutorMap> = OnceLock::new();
 
@@ -436,8 +434,10 @@ fn real_executors() -> &'static ViewExecutorMap {
 
         // E23 uniqueness guard — derive ViewKind via the live trait method to catch
         // any drift between the ExecutorEntry copy and the actual trait definition.
-        let pairs: Vec<(&str, crate::dto::ViewKind)> =
-            entries.iter().map(|e| (e.id, e.executor.view_kind())).collect();
+        let pairs: Vec<(&str, crate::dto::ViewKind)> = entries
+            .iter()
+            .map(|e| (e.id, e.executor.view_kind()))
+            .collect();
         assert_view_kind_uniqueness(&pairs);
 
         map
@@ -780,9 +780,7 @@ mod tests {
     fn list_for_decision_artifact_includes_decision_support_pack() {
         let registry = ViewRegistry::new(None);
         let views = registry.list_for(InspectableObjectType::DecisionArtifact);
-        let pack_view = views
-            .iter()
-            .find(|v| v.id == "decision-support-pack");
+        let pack_view = views.iter().find(|v| v.id == "decision-support-pack");
         assert!(
             pack_view.is_some(),
             "expected decision-support-pack for DecisionArtifact, got {views:?}"

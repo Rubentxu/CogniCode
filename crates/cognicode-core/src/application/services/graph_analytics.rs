@@ -1139,14 +1139,10 @@ pub fn default_analytics_registry(lineage: Arc<dyn RunLineageStore>) -> Algorith
         ))
         .unwrap();
     registry
-        .admit(Box::new(
-            crate::domain::analytics::ConductanceDescriptor,
-        ))
+        .admit(Box::new(crate::domain::analytics::ConductanceDescriptor))
         .unwrap();
     registry
-        .admit(Box::new(
-            crate::domain::analytics::ModularityDescriptor,
-        ))
+        .admit(Box::new(crate::domain::analytics::ModularityDescriptor))
         .unwrap();
 
     registry

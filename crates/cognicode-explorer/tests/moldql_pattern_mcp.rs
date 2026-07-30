@@ -3,9 +3,7 @@
 //! T7: MCP tools for Pattern Profile.
 
 use cognicode_explorer::error::ExplorerError;
-use cognicode_explorer::mcp::{
-    TOOL_PATTERN_CAPABILITIES, TOOL_PATTERN_QUERY,
-};
+use cognicode_explorer::mcp::{TOOL_PATTERN_CAPABILITIES, TOOL_PATTERN_QUERY};
 
 /// Test that `moldql_pattern_query` tool name is correctly defined.
 #[test]
@@ -23,9 +21,8 @@ fn moldql_pattern_capabilities_tool_name() {
 /// that the MCP layer can surface to callers.
 #[test]
 fn mcp_pattern_feature_disabled_is_typed_error() {
-    let err = ExplorerError::FeatureDisabled(
-        "Pattern Profile executor not wired in this view".into(),
-    );
+    let err =
+        ExplorerError::FeatureDisabled("Pattern Profile executor not wired in this view".into());
     let msg = err.to_string();
     assert!(
         msg.to_lowercase().contains("feature") && msg.to_lowercase().contains("disabled"),

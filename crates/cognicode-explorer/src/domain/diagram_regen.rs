@@ -3,8 +3,8 @@
 //! Regenerates diagram content from structured provenance metadata.
 //! Reuses the existing `emit_mermaid_for_snapshot` dispatch table.
 
-use crate::domain::snapshot_dispatch::emit_mermaid_for_snapshot;
 use crate::domain::snapshot_dispatch::SnapshotViewKind;
+use crate::domain::snapshot_dispatch::emit_mermaid_for_snapshot;
 use crate::facades::{GraphService, WorkspaceService};
 
 /// Errors that can occur during diagram regeneration.
@@ -45,9 +45,7 @@ impl DiagramRegenerator {
         // Only Mermaid format is supported for regeneration.
         match provenance.export_format {
             ExportFormat::Mermaid => {}
-            ExportFormat::Svg
-            | ExportFormat::Png
-            | ExportFormat::Drawio => {
+            ExportFormat::Svg | ExportFormat::Png | ExportFormat::Drawio => {
                 return Err(RegenerateError::UnsupportedFormat(
                     provenance.export_format.to_string(),
                 ));
@@ -59,9 +57,14 @@ impl DiagramRegenerator {
             .map_err(|_| RegenerateError::UnsupportedViewKind(provenance.view_kind.clone()))?;
 
         // Re-emit using the existing dispatch table.
-        emit_mermaid_for_snapshot(graph_service, workspace, view_kind, Some(&provenance.object_id))
-            .await
-            .map_err(|e| RegenerateError::EmissionFailed(e.to_string()))
+        emit_mermaid_for_snapshot(
+            graph_service,
+            workspace,
+            view_kind,
+            Some(&provenance.object_id),
+        )
+        .await
+        .map_err(|e| RegenerateError::EmissionFailed(e.to_string()))
     }
 }
 
@@ -166,7 +169,10 @@ mod tests {
         }
     }
 
-    fn make_provenance(object_id: &str, view_kind: &str) -> cognicode_core::domain::investigation::DiagramProvenance {
+    fn make_provenance(
+        object_id: &str,
+        view_kind: &str,
+    ) -> cognicode_core::domain::investigation::DiagramProvenance {
         use cognicode_core::domain::investigation::ExportFormat;
         cognicode_core::domain::investigation::DiagramProvenance {
             object_id: object_id.to_string(),
@@ -181,7 +187,10 @@ mod tests {
     /// Helper to create a minimal ResolvedSymbol for tests.
     fn make_resolved_symbol(name: &str, file: &str, line: u32) -> ResolvedSymbol {
         ResolvedSymbol {
-            id: cognicode_core::domain::aggregates::SymbolId::new(&format!("symbol:{}:{}:{}", file, name, line)),
+            id: cognicode_core::domain::aggregates::SymbolId::new(&format!(
+                "symbol:{}:{}:{}",
+                file, name, line
+            )),
             name: name.to_string(),
             kind: cognicode_core::domain::SymbolKind::Function,
             file: file.to_string(),
@@ -245,6 +254,9 @@ mod tests {
         let workspace = MockWorkspaceService;
 
         let result = DiagramRegenerator::regenerate(&provenance, &graph, &workspace).await;
-        assert!(matches!(result, Err(RegenerateError::UnsupportedViewKind(_))));
+        assert!(matches!(
+            result,
+            Err(RegenerateError::UnsupportedViewKind(_))
+        ));
     }
 }

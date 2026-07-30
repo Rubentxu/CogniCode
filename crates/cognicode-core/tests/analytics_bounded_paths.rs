@@ -3,7 +3,9 @@
 //! Part of E28.4 Analytics Registry Cohort 1 — PR3 Bounded Paths.
 
 use cognicode_core::domain::analytics::bounded_shortest_paths_descriptor::BoundedShortestPathsDescriptor;
-use cognicode_core::domain::analytics::{AlgorithmDescriptor, AlgorithmId, AnalyticsMode, RunLineageStore};
+use cognicode_core::domain::analytics::{
+    AlgorithmDescriptor, AlgorithmId, AnalyticsMode, RunLineageStore,
+};
 use cognicode_core::domain::plan::limits::PlanLimits;
 
 /// A no-op lineage store for testing.
@@ -11,11 +13,20 @@ struct NoOpLineageStore;
 
 #[async_trait::async_trait]
 impl RunLineageStore for NoOpLineageStore {
-    async fn insert(&self, _lineage: &cognicode_core::domain::analytics::RunLineage) -> Result<(), cognicode_core::domain::analytics::AnalyticsError> {
+    async fn insert(
+        &self,
+        _lineage: &cognicode_core::domain::analytics::RunLineage,
+    ) -> Result<(), cognicode_core::domain::analytics::AnalyticsError> {
         Ok(())
     }
 
-    async fn get(&self, _run_id: cognicode_core::domain::analytics::Uuid) -> Result<cognicode_core::domain::analytics::RunLineage, cognicode_core::domain::analytics::AnalyticsError> {
+    async fn get(
+        &self,
+        _run_id: cognicode_core::domain::analytics::Uuid,
+    ) -> Result<
+        cognicode_core::domain::analytics::RunLineage,
+        cognicode_core::domain::analytics::AnalyticsError,
+    > {
         Err(cognicode_core::domain::analytics::AnalyticsError::RunNotFound("not found".into()))
     }
 
@@ -23,7 +34,10 @@ impl RunLineageStore for NoOpLineageStore {
         &self,
         _filter: cognicode_core::domain::analytics::RunLineageFilter,
         _limit: Option<u64>,
-    ) -> Result<Vec<cognicode_core::domain::analytics::RunLineage>, cognicode_core::domain::analytics::AnalyticsError> {
+    ) -> Result<
+        Vec<cognicode_core::domain::analytics::RunLineage>,
+        cognicode_core::domain::analytics::AnalyticsError,
+    > {
         Ok(vec![])
     }
 
@@ -55,7 +69,10 @@ fn bsp_descriptor_has_correct_identity() {
     let id = d.identity();
     assert_eq!(id.id.as_str(), "bounded_shortest_paths");
     assert_eq!(id.version.as_str(), "1.0.0");
-    assert_eq!(id.maturity, cognicode_core::domain::analytics::Maturity::Stable);
+    assert_eq!(
+        id.maturity,
+        cognicode_core::domain::analytics::Maturity::Stable
+    );
     assert_eq!(id.cohort, 1);
 }
 
@@ -156,7 +173,10 @@ fn bsp_descriptor_has_conformance_fixtures() {
     let fixtures = d.conformance_fixtures();
     assert!(!fixtures.is_empty());
     // Verify diamond fixture
-    let diamond = fixtures.iter().find(|f| f.name == "diamond three paths").unwrap();
+    let diamond = fixtures
+        .iter()
+        .find(|f| f.name == "diamond three paths")
+        .unwrap();
     assert_eq!(diamond.graph.nodes, vec!["A", "B", "C", "D"]);
     assert_eq!(diamond.graph.edges.len(), 5);
 }
@@ -198,9 +218,14 @@ fn registry_returns_bounded_shortest_paths() {
     use std::sync::Arc;
 
     let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
-    registry.admit(Box::new(BoundedShortestPathsDescriptor)).unwrap();
+    registry
+        .admit(Box::new(BoundedShortestPathsDescriptor))
+        .unwrap();
 
-    let ids: Vec<_> = registry.admitted().map(|d| d.identity().id.as_str()).collect();
+    let ids: Vec<_> = registry
+        .admitted()
+        .map(|d| d.identity().id.as_str())
+        .collect();
     assert!(ids.contains(&"bounded_shortest_paths"));
 }
 
@@ -210,9 +235,12 @@ fn registry_get_returns_bounded_shortest_paths_descriptor() {
     use std::sync::Arc;
 
     let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
-    registry.admit(Box::new(BoundedShortestPathsDescriptor)).unwrap();
+    registry
+        .admit(Box::new(BoundedShortestPathsDescriptor))
+        .unwrap();
 
-    let bsp_id = cognicode_core::domain::analytics::AlgorithmId::from_static("bounded_shortest_paths");
+    let bsp_id =
+        cognicode_core::domain::analytics::AlgorithmId::from_static("bounded_shortest_paths");
     let d = registry.get(&bsp_id);
     assert!(d.is_some());
     assert_eq!(d.unwrap().identity().id.as_str(), "bounded_shortest_paths");
@@ -224,7 +252,11 @@ fn registry_get_returns_bounded_shortest_paths_descriptor() {
 
 fn sym(name: &str) -> cognicode_core::domain::aggregates::Symbol {
     use cognicode_core::domain::value_objects::{Location, SymbolKind};
-    cognicode_core::domain::aggregates::Symbol::new(name, SymbolKind::Function, Location::new("test.rs", 1, 1))
+    cognicode_core::domain::aggregates::Symbol::new(
+        name,
+        SymbolKind::Function,
+        Location::new("test.rs", 1, 1),
+    )
 }
 
 fn id(name: &str) -> cognicode_core::domain::aggregates::SymbolId {

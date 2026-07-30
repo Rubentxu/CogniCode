@@ -70,19 +70,13 @@ impl SearchServiceImpl {
     }
 
     /// Set the ADR repository (Plan 012 — knowledge layer ports).
-    pub fn with_adr_repo(
-        mut self,
-        adr_repo: Option<Arc<dyn crate::ports::AdrRepository>>,
-    ) -> Self {
+    pub fn with_adr_repo(mut self, adr_repo: Option<Arc<dyn crate::ports::AdrRepository>>) -> Self {
         self.adr_repo = adr_repo;
         self
     }
 
     /// Set the Doc repository (Plan 012 — knowledge layer ports).
-    pub fn with_doc_repo(
-        mut self,
-        doc_repo: Option<Arc<dyn crate::ports::DocRepository>>,
-    ) -> Self {
+    pub fn with_doc_repo(mut self, doc_repo: Option<Arc<dyn crate::ports::DocRepository>>) -> Self {
         self.doc_repo = doc_repo;
         self
     }
@@ -152,7 +146,15 @@ impl SearchService for SearchServiceImpl {
             let q = query_for_blocking.clone();
             let k = kind_filter.clone();
             tokio::task::spawn_blocking(move || {
-                spotter_search_impl(&repo_clone, None, &vr_clone, adr_clone.as_ref(), doc_clone.as_ref(), &q, k.as_deref())
+                spotter_search_impl(
+                    &repo_clone,
+                    None,
+                    &vr_clone,
+                    adr_clone.as_ref(),
+                    doc_clone.as_ref(),
+                    &q,
+                    k.as_deref(),
+                )
             })
             .await
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("join error: {}", e)))?
@@ -429,7 +431,8 @@ impl SearchService for SearchServiceImpl {
                                             label: doc.title,
                                             subtitle: doc.source_path,
                                             properties: Vec::new(),
-                                            available_views: vr_clone.list_for(InspectableObjectType::Doc),
+                                            available_views: vr_clone
+                                                .list_for(InspectableObjectType::Doc),
                                         },
                                         score: 0.75,
                                         match_type: "doc".to_string(),
@@ -462,7 +465,8 @@ impl SearchService for SearchServiceImpl {
                                             .map(|p| p.to_string_lossy().into_owned())
                                             .unwrap_or_else(|| "Graph node".to_string()),
                                         properties: Vec::new(),
-                                        available_views: vr_clone.list_for(InspectableObjectType::Doc),
+                                        available_views: vr_clone
+                                            .list_for(InspectableObjectType::Doc),
                                     },
                                     score: 0.75,
                                     match_type: "doc".to_string(),
@@ -547,7 +551,7 @@ impl SearchService for SearchServiceImpl {
             results
         };
 
-// Build symbol SpotterSearchResults
+        // Build symbol SpotterSearchResults
         let symbol_hits: Vec<SpotterSearchResult> = symbol_spotter_results
             .into_iter()
             .map(SpotterSearchResult::Symbol)
@@ -753,9 +757,7 @@ impl SearchService for SearchServiceImpl {
                 };
 
                 let summary = match &identity {
-                    ObjectIdentity::Doc { .. } => {
-                        project_doc(graph_repo.as_ref(), &id).await
-                    }
+                    ObjectIdentity::Doc { .. } => project_doc(graph_repo.as_ref(), &id).await,
                     ObjectIdentity::Decision { .. } => {
                         project_decision(graph_repo.as_ref(), &id).await
                     }
@@ -767,8 +769,7 @@ impl SearchService for SearchServiceImpl {
 
                 if let Some(mut s) = summary {
                     // Enrich with available views from registry
-                    s.available_views =
-                        self.view_registry.list_for(s.object_type.clone());
+                    s.available_views = self.view_registry.list_for(s.object_type.clone());
                     return Ok(s);
                 }
             }
@@ -936,16 +937,12 @@ fn inspect_object_impl(
                 "graph_repo not wired".into(),
             ))
         }
-        ObjectIdentity::Decision { .. } => {
-            Err(ExplorerError::FeatureDisabled(
-                "graph_repo not wired".into(),
-            ))
-        }
-        ObjectIdentity::Evidence { .. } => {
-            Err(ExplorerError::FeatureDisabled(
-                "graph_repo not wired".into(),
-            ))
-        }
+        ObjectIdentity::Decision { .. } => Err(ExplorerError::FeatureDisabled(
+            "graph_repo not wired".into(),
+        )),
+        ObjectIdentity::Evidence { .. } => Err(ExplorerError::FeatureDisabled(
+            "graph_repo not wired".into(),
+        )),
     }
 }
 
@@ -1550,7 +1547,11 @@ mod tests {
         let service = make_search_service_without_graph_repo();
         let result = service.inspect_object("doc:test-doc-1").await;
         // C-ARCH-03: sync fallback returns FeatureDisabled error
-        assert!(result.is_err(), "Expected Err(FeatureDisabled), got: {:?}", result);
+        assert!(
+            result.is_err(),
+            "Expected Err(FeatureDisabled), got: {:?}",
+            result
+        );
         let err = result.unwrap_err();
         assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
     }
@@ -1559,7 +1560,11 @@ mod tests {
     async fn inspect_object_decision_returns_feature_disabled_when_graph_repo_not_wired() {
         let service = make_search_service_without_graph_repo();
         let result = service.inspect_object("decision:test-decision-1").await;
-        assert!(result.is_err(), "Expected Err(FeatureDisabled), got: {:?}", result);
+        assert!(
+            result.is_err(),
+            "Expected Err(FeatureDisabled), got: {:?}",
+            result
+        );
         let err = result.unwrap_err();
         assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
     }
@@ -1568,7 +1573,11 @@ mod tests {
     async fn inspect_object_evidence_returns_feature_disabled_when_graph_repo_not_wired() {
         let service = make_search_service_without_graph_repo();
         let result = service.inspect_object("evidence:test-evidence-1").await;
-        assert!(result.is_err(), "Expected Err(FeatureDisabled), got: {:?}", result);
+        assert!(
+            result.is_err(),
+            "Expected Err(FeatureDisabled), got: {:?}",
+            result
+        );
         let err = result.unwrap_err();
         assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
     }

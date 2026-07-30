@@ -35,7 +35,8 @@ async fn fresh_pool() -> Option<sqlx::PgPool> {
     let pool = sqlx::PgPool::connect(&test_url).await.ok()?;
 
     // Run migrations
-    let repo = cognicode_core::infrastructure::persistence::PostgresRepository::from_pool(pool.clone());
+    let repo =
+        cognicode_core::infrastructure::persistence::PostgresRepository::from_pool(pool.clone());
     repo.run_migrations().await.ok()?;
 
     Some(pool)
@@ -71,10 +72,7 @@ async fn unknown_pin_returns_revision_unknown() {
         edge_kind_filter: None,
         predicates: vec![],
         limits: PlanLimits::default(),
-        metadata: PlanMetadata::new(
-            PlanVersion::new("1.0.0").unwrap(),
-            PlanHash::compute(&0u32),
-        ),
+        metadata: PlanMetadata::new(PlanVersion::new("1.0.0").unwrap(), PlanHash::compute(&0u32)),
     };
 
     let ws = WorkspaceId::try_new("ws1").unwrap();

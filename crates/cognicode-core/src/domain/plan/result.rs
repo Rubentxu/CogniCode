@@ -269,13 +269,19 @@ pub fn assert_equivalent(a: &ResultSet, b: &ResultSet) -> Result<(), SemanticsVi
         return Err(SemanticsViolation::MultisetMismatch("rows mismatch".into()));
     }
     if !multiset_eq(&a.nodes, &b.nodes) {
-        return Err(SemanticsViolation::MultisetMismatch("nodes mismatch".into()));
+        return Err(SemanticsViolation::MultisetMismatch(
+            "nodes mismatch".into(),
+        ));
     }
     if !multiset_eq(&a.edges, &b.edges) {
-        return Err(SemanticsViolation::MultisetMismatch("edges mismatch".into()));
+        return Err(SemanticsViolation::MultisetMismatch(
+            "edges mismatch".into(),
+        ));
     }
     if !multiset_eq(&a.scalars, &b.scalars) {
-        return Err(SemanticsViolation::MultisetMismatch("scalars mismatch".into()));
+        return Err(SemanticsViolation::MultisetMismatch(
+            "scalars mismatch".into(),
+        ));
     }
 
     // Ordered comparison for paths
@@ -309,7 +315,11 @@ pub fn assert_equivalent(a: &ResultSet, b: &ResultSet) -> Result<(), SemanticsVi
 /// or if both are the same integer representation.
 ///
 /// Returns `Err(SemanticsViolation::ToleranceExceeded)` if the tolerance is exceeded.
-pub fn assert_approx_equal(a: super::TypedValue, b: super::TypedValue, eps: f64) -> Result<(), SemanticsViolation> {
+pub fn assert_approx_equal(
+    a: super::TypedValue,
+    b: super::TypedValue,
+    eps: f64,
+) -> Result<(), SemanticsViolation> {
     match (a, b) {
         (super::TypedValue::Float(af), super::TypedValue::Float(bf)) => {
             if (af - bf).abs() <= eps * af.abs().max(bf.abs().max(1.0)) {
@@ -333,9 +343,7 @@ pub fn assert_approx_equal(a: super::TypedValue, b: super::TypedValue, eps: f64)
             if a == b {
                 Ok(())
             } else {
-                Err(SemanticsViolation::ToleranceExceeded(format!(
-                    "{a} != {b}"
-                )))
+                Err(SemanticsViolation::ToleranceExceeded(format!("{a} != {b}")))
             }
         }
     }
@@ -408,19 +416,38 @@ mod tests {
     fn assert_equivalent_unordered() {
         let a = ResultSet {
             nodes: vec![
-                NodeResult { id: "n1".into(), labels: vec![], properties: vec![] },
-                NodeResult { id: "n2".into(), labels: vec![], properties: vec![] },
+                NodeResult {
+                    id: "n1".into(),
+                    labels: vec![],
+                    properties: vec![],
+                },
+                NodeResult {
+                    id: "n2".into(),
+                    labels: vec![],
+                    properties: vec![],
+                },
             ],
             ..ResultSet::empty()
         };
         let b = ResultSet {
             nodes: vec![
-                NodeResult { id: "n2".into(), labels: vec![], properties: vec![] },
-                NodeResult { id: "n1".into(), labels: vec![], properties: vec![] },
+                NodeResult {
+                    id: "n2".into(),
+                    labels: vec![],
+                    properties: vec![],
+                },
+                NodeResult {
+                    id: "n1".into(),
+                    labels: vec![],
+                    properties: vec![],
+                },
             ],
             ..ResultSet::empty()
         };
-        assert!(assert_equivalent(&a, &b).is_ok(), "unordered nodes: same multiset → equivalent");
+        assert!(
+            assert_equivalent(&a, &b).is_ok(),
+            "unordered nodes: same multiset → equivalent"
+        );
     }
 
     /// `assert_equivalent` returns `Err(PathOrderMismatch)` for paths in different order.
@@ -428,25 +455,36 @@ mod tests {
     fn assert_equivalent_paths_ordered() {
         use crate::domain::value_objects::DependencyType;
         let a = ResultSet {
-            paths: vec![
-                Path::new(vec![
-                    PathHop { node_id: "A".into(), edge_kind: None },
-                    PathHop { node_id: "B".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)) },
-                ]),
-            ],
+            paths: vec![Path::new(vec![
+                PathHop {
+                    node_id: "A".into(),
+                    edge_kind: None,
+                },
+                PathHop {
+                    node_id: "B".into(),
+                    edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)),
+                },
+            ])],
             ..ResultSet::empty()
         };
         let b = ResultSet {
-            paths: vec![
-                Path::new(vec![
-                    PathHop { node_id: "B".into(), edge_kind: None },
-                    PathHop { node_id: "A".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)) },
-                ]),
-            ],
+            paths: vec![Path::new(vec![
+                PathHop {
+                    node_id: "B".into(),
+                    edge_kind: None,
+                },
+                PathHop {
+                    node_id: "A".into(),
+                    edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)),
+                },
+            ])],
             ..ResultSet::empty()
         };
         assert!(
-            matches!(assert_equivalent(&a, &b), Err(SemanticsViolation::PathOrderMismatch(_))),
+            matches!(
+                assert_equivalent(&a, &b),
+                Err(SemanticsViolation::PathOrderMismatch(_))
+            ),
             "ordered paths: different order → PathOrderMismatch"
         );
     }
@@ -455,11 +493,19 @@ mod tests {
     #[test]
     fn assert_equivalent_mismatch() {
         let a = ResultSet {
-            nodes: vec![NodeResult { id: "n1".into(), labels: vec![], properties: vec![] }],
+            nodes: vec![NodeResult {
+                id: "n1".into(),
+                labels: vec![],
+                properties: vec![],
+            }],
             ..ResultSet::empty()
         };
         let b = ResultSet {
-            nodes: vec![NodeResult { id: "n2".into(), labels: vec![], properties: vec![] }],
+            nodes: vec![NodeResult {
+                id: "n2".into(),
+                labels: vec![],
+                properties: vec![],
+            }],
             ..ResultSet::empty()
         };
         assert!(matches!(
@@ -494,13 +540,36 @@ mod tests {
     fn path_preserves_edge_kinds() {
         use crate::domain::value_objects::DependencyType;
         let path = Path::new(vec![
-            PathHop { node_id: "A".into(), edge_kind: None },
-            PathHop { node_id: "B".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)) },
-            PathHop { node_id: "C".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Imports)) },
+            PathHop {
+                node_id: "A".into(),
+                edge_kind: None,
+            },
+            PathHop {
+                node_id: "B".into(),
+                edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)),
+            },
+            PathHop {
+                node_id: "C".into(),
+                edge_kind: Some(EdgeKind::Dependency(DependencyType::Imports)),
+            },
         ]);
         assert_eq!(path.hops[0].edge_kind, None);
-        assert_eq!(path.hops[1].edge_kind.as_ref().map(|e| e.as_str()).as_deref(), Some("dependency.calls"));
-        assert_eq!(path.hops[2].edge_kind.as_ref().map(|e| e.as_str()).as_deref(), Some("dependency.imports"));
+        assert_eq!(
+            path.hops[1]
+                .edge_kind
+                .as_ref()
+                .map(|e| e.as_str())
+                .as_deref(),
+            Some("dependency.calls")
+        );
+        assert_eq!(
+            path.hops[2]
+                .edge_kind
+                .as_ref()
+                .map(|e| e.as_str())
+                .as_deref(),
+            Some("dependency.imports")
+        );
         assert_eq!(path.start(), "A");
         assert_eq!(path.end(), "C");
         assert_eq!(path.len(), 2); // 3 hops = 2 edges
@@ -509,7 +578,10 @@ mod tests {
     /// `Path` start and end for a single-node path.
     #[test]
     fn path_single_node() {
-        let path = Path::new(vec![PathHop { node_id: "X".into(), edge_kind: None }]);
+        let path = Path::new(vec![PathHop {
+            node_id: "X".into(),
+            edge_kind: None,
+        }]);
         assert_eq!(path.start(), "X");
         assert_eq!(path.end(), "X");
         assert_eq!(path.len(), 0);
@@ -558,8 +630,7 @@ mod tests {
     /// `ResultSet` serde round-trip with truncation.
     #[test]
     fn result_set_serde_roundtrip() {
-        let original = ResultSet::empty()
-            .with_truncation(TruncationMarker::PathCountLimit);
+        let original = ResultSet::empty().with_truncation(TruncationMarker::PathCountLimit);
         let json = serde_json::to_string(&original).expect("serialize");
         let parsed: ResultSet = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed.truncated, true);
@@ -571,8 +642,14 @@ mod tests {
     fn path_serde_roundtrip() {
         use crate::domain::value_objects::DependencyType;
         let path = Path::new(vec![
-            PathHop { node_id: "A".into(), edge_kind: None },
-            PathHop { node_id: "B".into(), edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)) },
+            PathHop {
+                node_id: "A".into(),
+                edge_kind: None,
+            },
+            PathHop {
+                node_id: "B".into(),
+                edge_kind: Some(EdgeKind::Dependency(DependencyType::Calls)),
+            },
         ]);
         let json = serde_json::to_string(&path).expect("serialize");
         let parsed: Path = serde_json::from_str(&json).expect("deserialize");

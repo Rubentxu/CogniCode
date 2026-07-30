@@ -215,9 +215,7 @@ impl GraphEdge {
         match &self.metadata {
             Value::Object(map) => map
                 .iter()
-                .filter_map(|(k, v)| {
-                    v.as_str().map(|s| (k.clone(), s.to_string()))
-                })
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
                 .collect(),
             _ => HashMap::new(),
         }
@@ -303,9 +301,7 @@ impl GraphNode {
         match &self.properties {
             Value::Object(map) => map
                 .iter()
-                .filter_map(|(k, v)| {
-                    v.as_str().map(|s| (k.clone(), s.to_string()))
-                })
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
                 .collect(),
             _ => HashMap::new(),
         }
@@ -774,7 +770,9 @@ mod tests {
             Some("accepted")
         );
         assert_eq!(
-            full.properties_map().get("section").and_then(|v| v.as_str()),
+            full.properties_map()
+                .get("section")
+                .and_then(|v| v.as_str()),
             Some("Context")
         );
         assert_eq!(full.created_at, fixed);
@@ -832,8 +830,7 @@ mod tests {
     /// empty JSON object `{}`.
     #[test]
     fn graph_node_properties_default_is_empty_object() {
-        let node = GraphNode::builder(symbol_id(), NodeKind::Symbol(SymbolKind::Function))
-            .build();
+        let node = GraphNode::builder(symbol_id(), NodeKind::Symbol(SymbolKind::Function)).build();
         assert_eq!(
             node.properties,
             serde_json::Value::Object(serde_json::Map::new()),

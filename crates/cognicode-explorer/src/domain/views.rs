@@ -9,10 +9,10 @@ use crate::dto::{
     ContextualView, DesignFinding, EvidenceBlock, FindingSeverity, LineRange, RelationDirection,
     TypedRelation, ViewBlock, ViewDiagnostic,
 };
-use cognicode_core::domain::aggregates::call_graph::CallEntry;
 use crate::ports::quality_repository::{QualityIssue, QualityRepository, RuleSummary};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
+use cognicode_core::domain::aggregates::call_graph::CallEntry;
 
 use crate::adapters::QualityGraphRepository;
 use crate::domain::evidence::build_evidence_blocks;
@@ -1680,9 +1680,11 @@ impl ViewDescriptor for SeamMapExecutor {
 impl ViewExecutor for SeamMapExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match &ctx.target {
-            InspectionTarget::Scope { path, files: _, symbols: _ } => {
-                Ok(build_seam_map(path, ctx.repo, ctx.graph_query))
-            }
+            InspectionTarget::Scope {
+                path,
+                files: _,
+                symbols: _,
+            } => Ok(build_seam_map(path, ctx.repo, ctx.graph_query)),
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
                 view_id: "seam-map".into(),
@@ -1742,12 +1744,18 @@ fn build_seam_map(
     if let Some(gq) = graph_query {
         for sym in &symbols {
             let callees = gq.callees(&sym.id);
-            let caller_module = symbol_to_module.get(&sym.id.to_string()).cloned().unwrap_or_default();
+            let caller_module = symbol_to_module
+                .get(&sym.id.to_string())
+                .cloned()
+                .unwrap_or_default();
             if caller_module.is_empty() {
                 continue;
             }
             for callee in callees {
-                let callee_module = symbol_to_module.get(&callee.id.to_string()).cloned().unwrap_or_default();
+                let callee_module = symbol_to_module
+                    .get(&callee.id.to_string())
+                    .cloned()
+                    .unwrap_or_default();
                 if callee_module.is_empty() || caller_module == callee_module {
                     continue;
                 }
@@ -1818,7 +1826,11 @@ fn build_seam_map(
     let blocks = vec![
         ViewBlock {
             id: "seam_map_graph".into(),
-            title: format!("Seam Map ({} modules, {} cross-module edges)", modules.len(), unique_pairs.len()),
+            title: format!(
+                "Seam Map ({} modules, {} cross-module edges)",
+                modules.len(),
+                unique_pairs.len()
+            ),
             body: json!({
                 "nodes": nodes,
                 "edges": edges,
@@ -2697,7 +2709,10 @@ async fn build_node_source_view(
                 id: evidence_id.clone(),
                 kind: evidence_kind.into(),
                 title: format!("{evidence_title_prefix}: {}", node.label),
-                file: node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                file: node
+                    .source_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
                 line_range: None,
                 source_tool_or_query: "GraphRepository::get_node".into(),
                 confidence: Some(1.0),
@@ -2866,7 +2881,8 @@ pub async fn resolve_focus_node(
             renderer_kind: cfg.renderer_kind.clone(),
         }),
         Err(e) => Ok(FocusResolution::Error(format!(
-            "Failed to fetch {}: {}", cfg.mvp_prefix, e
+            "Failed to fetch {}: {}",
+            cfg.mvp_prefix, e
         ))),
     }
 }
@@ -2891,7 +2907,11 @@ pub fn assemble_knowledge_view(
     ContextualView {
         object_id: cfg.mvp(),
         view_id: cfg.view_id.into(),
-        title: format!("{}: {}", cfg.title_prefix.trim_end_matches(':').trim(), focus_node.label),
+        title: format!(
+            "{}: {}",
+            cfg.title_prefix.trim_end_matches(':').trim(),
+            focus_node.label
+        ),
         view_kind,
         blocks,
         relations,
@@ -3102,9 +3122,7 @@ impl ViewDescriptor for DocCodeAlignmentExecutor {
 impl ViewExecutor for DocCodeAlignmentExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match &ctx.target {
-            InspectionTarget::Doc { id } => {
-                build_doc_code_alignment_view(ctx, id, "doc").await
-            }
+            InspectionTarget::Doc { id } => build_doc_code_alignment_view(ctx, id, "doc").await,
             InspectionTarget::Decision { id } => {
                 build_doc_code_alignment_view(ctx, id, "decision").await
             }
@@ -3757,7 +3775,8 @@ pub static OWNERSHIP_MAP_EXECUTOR: OwnershipMapExecutor = OwnershipMapExecutor;
 pub static COMPOSED_NARRATIVE_EXECUTOR: ComposedNarrativeExecutor = ComposedNarrativeExecutor;
 pub static RISK_MAP_EXECUTOR: RiskMapExecutor = RiskMapExecutor;
 pub static DECISION_GRAPH_EXECUTOR: DecisionGraphExecutor = DecisionGraphExecutor;
-pub static DECISION_SUPPORT_PACK_EXECUTOR: DecisionSupportPackExecutor = DecisionSupportPackExecutor;
+pub static DECISION_SUPPORT_PACK_EXECUTOR: DecisionSupportPackExecutor =
+    DecisionSupportPackExecutor;
 pub static ARCHITECTURE_RATIONALE_EXECUTOR: ArchitectureRationaleExecutor =
     ArchitectureRationaleExecutor;
 pub static DOC_SOURCE_EXECUTOR: DocSourceExecutor = DocSourceExecutor;
@@ -4236,17 +4255,18 @@ pub async fn build_rationale_view(
     };
 
     // Fetch the decision node and its rationale subgraph using the shared helper
-    let (decision_node, nodes, edges, truncated) = match fetch_decision_with_subgraph(repo, decision_id).await {
-        Ok((node, nodes, edges, truncated)) => (node, nodes, edges, truncated),
-        Err(e) => {
-            return contextual_view_error(
-                &mvp,
-                "architecture_rationale",
-                "Error",
-                &format!("{}", e),
-            );
-        }
-    };
+    let (decision_node, nodes, edges, truncated) =
+        match fetch_decision_with_subgraph(repo, decision_id).await {
+            Ok((node, nodes, edges, truncated)) => (node, nodes, edges, truncated),
+            Err(e) => {
+                return contextual_view_error(
+                    &mvp,
+                    "architecture_rationale",
+                    "Error",
+                    &format!("{}", e),
+                );
+            }
+        };
 
     // Build evidence block using the shared helper (closes DUP-002)
     let evidence_id = "evidence:architecture_rationale".to_string();
@@ -4405,18 +4425,14 @@ impl ViewExecutor for DecisionGraphExecutor {
                         }
                     };
 
-                    let topology = DecisionGraphTopology::build(
-                        repo,
-                        &node_id,
-                        None,
-                        None,
-                    )
-                    .await?;
+                    let topology = DecisionGraphTopology::build(repo, &node_id, None, None).await?;
 
-                    Ok(crate::domain::decision_graph_topology::assemble_decision_graph_view(
-                        &decision_node,
-                        topology,
-                    ))
+                    Ok(
+                        crate::domain::decision_graph_topology::assemble_decision_graph_view(
+                            &decision_node,
+                            topology,
+                        ),
+                    )
                 }
                 #[cfg(not(feature = "multimodal"))]
                 {
@@ -4512,7 +4528,8 @@ impl ViewExecutor for DecisionSupportPackExecutor {
                 #[cfg(feature = "multimodal")]
                 {
                     use crate::domain::decision_support_pack::{
-                        DecisionSupportPackBuilder, PACK_RATIONALE_MAX_DEPTH, PACK_RATIONALE_MAX_NODES,
+                        DecisionSupportPackBuilder, PACK_RATIONALE_MAX_DEPTH,
+                        PACK_RATIONALE_MAX_NODES,
                     };
                     use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
@@ -4538,7 +4555,8 @@ impl ViewExecutor for DecisionSupportPackExecutor {
                                 PACK_RATIONALE_MAX_DEPTH,
                                 PACK_RATIONALE_MAX_NODES,
                             )
-                            .await else {
+                            .await
+                        else {
                             // Not found or error — let the builder handle it
                             return build_pack(id, Some(repo)).await;
                         };
@@ -5107,8 +5125,7 @@ mod tests {
             node: &NodeId,
             kinds: &[EdgeKind],
         ) -> GraphResult<Vec<GraphEdge>> {
-            let kind_set: std::collections::HashSet<EdgeKind> =
-                kinds.iter().cloned().collect();
+            let kind_set: std::collections::HashSet<EdgeKind> = kinds.iter().cloned().collect();
             Ok(self
                 .edges
                 .iter()
@@ -5139,8 +5156,7 @@ mod tests {
             ]
             .into();
 
-            let mut visited: std::collections::HashSet<String> =
-                std::collections::HashSet::new();
+            let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut queue: VecDeque<(String, u32)> = VecDeque::new();
             let mut result_nodes: Vec<GraphNode> = Vec::new();
             let mut result_edges: Vec<GraphEdge> = Vec::new();
@@ -7135,7 +7151,10 @@ mod tests {
 
         let executor = super::DecisionGraphExecutor;
         let result = executor.build(&ctx).await;
-        assert!(result.is_ok(), "DecisionGraphExecutor should succeed with graph_repo");
+        assert!(
+            result.is_ok(),
+            "DecisionGraphExecutor should succeed with graph_repo"
+        );
         let view = result.unwrap();
         assert_eq!(view.view_id, "decision_graph");
         assert_eq!(view.title, "Decision Graph: ADR-001");
@@ -7331,14 +7350,22 @@ mod tests {
 
         let executor = super::DecisionSupportPackExecutor;
         let result = executor.build(&ctx).await;
-        assert!(result.is_ok(), "empty decision pack should not error: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "empty decision pack should not error: {:?}",
+            result
+        );
         let view = result.unwrap();
         // view_id uses kebab-case per spec
         assert_eq!(view.view_id, "decision-support-pack");
         assert_eq!(view.view_kind, crate::dto::ViewKind::DecisionSupportPack);
         assert_eq!(view.renderer_kind, crate::dto::RendererKind::Composite);
         // W-2: empty decision → zero panes
-        assert_eq!(view.blocks.len(), 0, "empty-neighborhood decision should have zero panes");
+        assert_eq!(
+            view.blocks.len(),
+            0,
+            "empty-neighborhood decision should have zero panes"
+        );
     }
 
     /// C-2 discoverable: DecisionSupportPack applies to DecisionArtifact.
@@ -7351,10 +7378,7 @@ mod tests {
             exec.applies_to()
                 .contains(&crate::dto::InspectableObjectType::DecisionArtifact)
         );
-        assert_eq!(
-            exec.view_kind(),
-            crate::dto::ViewKind::DecisionSupportPack
-        );
+        assert_eq!(exec.view_kind(), crate::dto::ViewKind::DecisionSupportPack);
         assert_eq!(exec.renderer_kind(), crate::dto::RendererKind::Composite);
     }
 
@@ -7431,14 +7455,12 @@ mod tests {
         // must contain "reason", not the legacy "message" used in the old
         // manual JSON construction in pack_to_contextual_view.
         assert!(
-            obj["status"].get("reason").is_some()
-                || obj.get("reason").is_some(),
+            obj["status"].get("reason").is_some() || obj.get("reason").is_some(),
             "PackPane wire format must contain 'reason' for Failed status; got: {}",
             serde_json::to_string(&body).unwrap_or_default()
         );
         assert!(
-            obj["status"].get("message").is_none()
-                && obj.get("message").is_none(),
+            obj["status"].get("message").is_none() && obj.get("message").is_none(),
             "PackPane wire format must NOT use legacy 'message'; got: {}",
             serde_json::to_string(&body).unwrap_or_default()
         );
@@ -7482,8 +7504,14 @@ mod tests {
         let body = serde_json::to_value(&pane).expect("serialize");
         let obj = body.as_object().expect("body is object");
         // Ok has no content — only the status tag
-        assert!(!obj.contains_key("reason"), "Ok status must not have 'reason'");
-        assert!(!obj.contains_key("message"), "Ok status must not have legacy 'message'");
+        assert!(
+            !obj.contains_key("reason"),
+            "Ok status must not have 'reason'"
+        );
+        assert!(
+            !obj.contains_key("message"),
+            "Ok status must not have legacy 'message'"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -7590,7 +7618,10 @@ mod tests {
         assert_eq!(view.title, "Decision Graph: ADR-002");
         assert_eq!(view.view_kind, super::ViewKind::DecisionGraph);
         // The decision_graph_topology block must report 1 node (focus only)
-        let graph_block = view.blocks.iter().find(|b| b.id == "decision_graph_topology");
+        let graph_block = view
+            .blocks
+            .iter()
+            .find(|b| b.id == "decision_graph_topology");
         assert!(graph_block.is_some());
         let total = graph_block
             .unwrap()
@@ -7740,13 +7771,13 @@ mod tests {
 mod view_seam_tests {
     use super::*;
     use crate::domain::views::tests::MockGraphRepo;
-    use crate::domain::views::tests::MockRepo;
     use crate::domain::views::tests::MockReader;
+    use crate::domain::views::tests::MockRepo;
     use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
     use cognicode_core::domain::ports::graph_repository::GraphRepository;
+    use cognicode_core::domain::value_objects::SymbolKind;
     use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
     use cognicode_core::domain::value_objects::node_kind::NodeKind;
-    use cognicode_core::domain::value_objects::SymbolKind;
     use std::collections::HashMap;
 
     // -------------------------------------------------------------------------
@@ -8007,7 +8038,8 @@ mod view_seam_tests {
         assert_eq!(Exec.id(), "doc_code_alignment");
         assert_eq!(Exec.title(), "Doc/Code Alignment");
         assert!(
-            Exec.applies_to().contains(&crate::dto::InspectableObjectType::Doc),
+            Exec.applies_to()
+                .contains(&crate::dto::InspectableObjectType::Doc),
             "DocCodeAlignment must apply to Doc"
         );
         assert!(
@@ -8015,10 +8047,7 @@ mod view_seam_tests {
                 .contains(&crate::dto::InspectableObjectType::DecisionArtifact),
             "DocCodeAlignment must apply to DecisionArtifact"
         );
-        assert_eq!(
-            Exec.view_kind(),
-            crate::dto::ViewKind::DocCodeAlignment
-        );
+        assert_eq!(Exec.view_kind(), crate::dto::ViewKind::DocCodeAlignment);
         assert_eq!(Exec.renderer_kind(), crate::dto::RendererKind::Graph);
     }
 
@@ -8325,7 +8354,8 @@ mod view_seam_tests {
         assert_eq!(Exec.id(), "concept_map");
         assert_eq!(Exec.title(), "Concept Map");
         assert!(
-            Exec.applies_to().contains(&crate::dto::InspectableObjectType::Doc),
+            Exec.applies_to()
+                .contains(&crate::dto::InspectableObjectType::Doc),
             "ConceptMap must apply to Doc"
         );
         assert!(
@@ -8428,7 +8458,9 @@ mod view_seam_tests {
         // Depth 2 → all three nodes should be present
         let body_json = serde_json::to_string(&view.blocks[0].body).unwrap();
         assert!(
-            body_json.contains("DOC-X") && body_json.contains("ADR-X") && body_json.contains("SYM-X"),
+            body_json.contains("DOC-X")
+                && body_json.contains("ADR-X")
+                && body_json.contains("SYM-X"),
             "depth=2 must include all three nodes"
         );
     }
@@ -8835,7 +8867,10 @@ mod view_seam_tests {
         use serde_json::Map;
 
         let mut props = Map::new();
-        props.insert("author".to_string(), serde_json::Value::String("test".to_string()));
+        props.insert(
+            "author".to_string(),
+            serde_json::Value::String("test".to_string()),
+        );
 
         let node = GraphNode {
             id: NodeId::new("DOC-X".to_string()),
@@ -8910,7 +8945,9 @@ mod view_seam_tests {
     async fn build_node_source_view_not_found_returns_marker_view() {
         // Empty MockGraphRepo → get_node returns Ok(None) → FocusResolution::NotFound
         let mock = MockGraphRepo::new();
-        let target = InspectionTarget::Doc { id: "missing-doc".to_string() };
+        let target = InspectionTarget::Doc {
+            id: "missing-doc".to_string(),
+        };
         let ctx = ViewContext {
             target: &target,
             repo: &MockRepo::new(),
@@ -8936,9 +8973,16 @@ mod view_seam_tests {
         .expect("NotFound should produce a valid view, not error");
 
         // Marker view has 1 block (identity) and uses the stamped MVP + title.
-        assert_eq!(result.blocks.len(), 1, "NotFound should produce exactly one identity block");
+        assert_eq!(
+            result.blocks.len(),
+            1,
+            "NotFound should produce exactly one identity block"
+        );
         assert_eq!(result.object_id, "doc:missing-doc");
-        assert!(result.title.contains("missing-doc"), "title should reference the missing focus_id");
+        assert!(
+            result.title.contains("missing-doc"),
+            "title should reference the missing focus_id"
+        );
         assert!(result.evidence.is_empty(), "marker view has no evidence");
     }
 
@@ -8948,7 +8992,9 @@ mod view_seam_tests {
         let node = make_node("doc-1", "Architecture Decision Record");
         let mut mock = MockGraphRepo::new();
         mock.with_node(node);
-        let target = InspectionTarget::Doc { id: "doc-1".to_string() };
+        let target = InspectionTarget::Doc {
+            id: "doc-1".to_string(),
+        };
         let ctx = ViewContext {
             target: &target,
             repo: &MockRepo::new(),
@@ -8974,8 +9020,16 @@ mod view_seam_tests {
         .expect("Found should produce a full view");
 
         // Full view has 2 blocks (identity + properties) + 1 evidence entry.
-        assert_eq!(result.blocks.len(), 2, "Found should produce identity + properties blocks");
-        assert_eq!(result.evidence.len(), 1, "Found should produce one evidence block");
+        assert_eq!(
+            result.blocks.len(),
+            2,
+            "Found should produce identity + properties blocks"
+        );
+        assert_eq!(
+            result.evidence.len(),
+            1,
+            "Found should produce one evidence block"
+        );
         assert_eq!(result.title, "Architecture Decision Record");
     }
 }

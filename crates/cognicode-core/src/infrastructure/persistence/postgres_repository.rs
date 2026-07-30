@@ -116,14 +116,12 @@ const SCHEMA_SQL_WORKSPACE_SCOPED_IDENTITY: &str =
 /// UNIQUE constraint for FK subset references. This index provides that constraint.
 /// Added in e28-0 PR3 Correction Cycle 1.
 #[cfg(feature = "postgres")]
-const SCHEMA_SQL_WORKSPACE_UNIQUE: &str =
-    include_str!("m0019_unique_index_workspace_id.sql");
+const SCHEMA_SQL_WORKSPACE_UNIQUE: &str = include_str!("m0019_unique_index_workspace_id.sql");
 
 /// Analytics lineage + descriptor limits DDL — e28-4 PR4.
 /// Creates analytics_run_lineage and descriptor_limits tables.
 #[cfg(feature = "postgres")]
-const SCHEMA_SQL_ANALYTICS_LINEAGE: &str =
-    include_str!("m0020_analytics_lineage.sql");
+const SCHEMA_SQL_ANALYTICS_LINEAGE: &str = include_str!("m0020_analytics_lineage.sql");
 
 /// PostgreSQL-backed implementation of the async [`Repository`]
 /// trait. Owns its [`PgPool`]; consumers that want shared
@@ -272,25 +270,23 @@ impl PostgresRepository {
         sqlx::raw_sql(SCHEMA_SQL_WORKSPACE_UNIQUE)
             .execute(&self.pool)
             .await
-            .map_err(|e| RepositoryError::Store(format!(
-                "workspace unique index migration: {e}"
-            )))?;
+            .map_err(|e| {
+                RepositoryError::Store(format!("workspace unique index migration: {e}"))
+            })?;
 
         // 12. Workspace-scoped identity — e28-0 PR1 Foundation.
         sqlx::raw_sql(SCHEMA_SQL_WORKSPACE_SCOPED_IDENTITY)
             .execute(&self.pool)
             .await
-            .map_err(|e| RepositoryError::Store(format!(
-                "workspace-scoped identity migration: {e}"
-            )))?;
+            .map_err(|e| {
+                RepositoryError::Store(format!("workspace-scoped identity migration: {e}"))
+            })?;
 
         // 13. Analytics lineage + descriptor limits — e28-4 PR4.
         sqlx::raw_sql(SCHEMA_SQL_ANALYTICS_LINEAGE)
             .execute(&self.pool)
             .await
-            .map_err(|e| RepositoryError::Store(format!(
-                "analytics lineage migration: {e}"
-            )))?;
+            .map_err(|e| RepositoryError::Store(format!("analytics lineage migration: {e}")))?;
 
         Ok(())
     }
@@ -502,9 +498,9 @@ impl PostgresRepository {
         .bind(workspace_id.as_str())
         .fetch_one(&mut *tx)
         .await
-        .map_err(|e| RepositoryError::Store(format!(
-            "save_call_graph_ws compute next revision: {e}"
-        )))?;
+        .map_err(|e| {
+            RepositoryError::Store(format!("save_call_graph_ws compute next revision: {e}"))
+        })?;
 
         // Insert the new head row.
         sqlx::query(
@@ -525,16 +521,12 @@ impl PostgresRepository {
             .bind(ws_str)
             .execute(&mut *tx)
             .await
-            .map_err(|e| RepositoryError::Store(format!(
-                "save_call_graph_ws delete edges: {e}"
-            )))?;
+            .map_err(|e| RepositoryError::Store(format!("save_call_graph_ws delete edges: {e}")))?;
         sqlx::query("DELETE FROM graph_nodes WHERE workspace_id = $1")
             .bind(ws_str)
             .execute(&mut *tx)
             .await
-            .map_err(|e| RepositoryError::Store(format!(
-                "save_call_graph_ws delete nodes: {e}"
-            )))?;
+            .map_err(|e| RepositoryError::Store(format!("save_call_graph_ws delete nodes: {e}")))?;
 
         // Step 3: Insert every symbol into graph_nodes.
         for (_id, symbol) in graph.symbol_ids() {
@@ -558,9 +550,9 @@ impl PostgresRepository {
             .bind(ws_str)
             .execute(&mut *tx)
             .await
-            .map_err(|e| RepositoryError::Store(format!(
-                "save_call_graph_ws insert symbol: {e}"
-            )))?;
+            .map_err(|e| {
+                RepositoryError::Store(format!("save_call_graph_ws insert symbol: {e}"))
+            })?;
         }
 
         // Step 4: Insert every edge into graph_edges.
@@ -588,9 +580,7 @@ impl PostgresRepository {
             .bind(ws_str)
             .execute(&mut *tx)
             .await
-            .map_err(|e| RepositoryError::Store(format!(
-                "save_call_graph_ws insert edge: {e}"
-            )))?;
+            .map_err(|e| RepositoryError::Store(format!("save_call_graph_ws insert edge: {e}")))?;
         }
 
         // Step 5: Commit.
@@ -1323,9 +1313,7 @@ impl PostgresRepository {
         .bind(_revision_id.get() as i64)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| RepositoryError::Store(format!(
-            "load_call_graph_ws check revision: {e}"
-        )))?;
+        .map_err(|e| RepositoryError::Store(format!("load_call_graph_ws check revision: {e}")))?;
 
         if rev_exists.is_none() {
             return Err(RepositoryError::UnknownRevision {
@@ -1405,11 +1393,9 @@ impl PostgresRepository {
 
             // kind stored as "dependency.calls" → extract "calls"
             let dep_type_str = row.kind.strip_prefix("dependency.").unwrap_or(&row.kind);
-            let dep_type =
-                DependencyType::from_str(dep_type_str).unwrap_or(DependencyType::Calls);
+            let dep_type = DependencyType::from_str(dep_type_str).unwrap_or(DependencyType::Calls);
 
-            let provenance =
-                Provenance::from_str(&row.provenance).unwrap_or(Provenance::Extracted);
+            let provenance = Provenance::from_str(&row.provenance).unwrap_or(Provenance::Extracted);
 
             // Round-trip: provenance + confidence → ExtractionContext →
             // ConfidenceRules::assign → same (provenance, confidence).
@@ -2665,9 +2651,7 @@ impl PostgresRepository {
         .bind(&artifact.provenance)
         .execute(&mut *tx)
         .await
-        .map_err(|e| {
-            RepositoryError::Store(format!("add_investigation_artifact insert: {e}"))
-        })?;
+        .map_err(|e| RepositoryError::Store(format!("add_investigation_artifact insert: {e}")))?;
 
         // Update the investigation's updated_at timestamp.
         sqlx::query(
@@ -3381,91 +3365,87 @@ mod tests {
     /// 2.4a RED — pg_test asserting `save_call_graph_ws` with a colliding unique-index
     /// row returns `Err(RepositoryError::Store(_))` and leaves 0 symbols/0 edges
     /// and 0 `graph_revisions` rows for `ws`.
-    pg_test!(save_call_graph_ws_failed_commit_leaves_no_revision, |pool: PgPool| {
-        use crate::domain::value_objects::WorkspaceId;
+    pg_test!(
+        save_call_graph_ws_failed_commit_leaves_no_revision,
+        |pool: PgPool| {
+            use crate::domain::value_objects::WorkspaceId;
 
-        let repo = PostgresRepository::from_pool(pool);
-        let ws = WorkspaceId::default();
+            let repo = PostgresRepository::from_pool(pool);
+            let ws = WorkspaceId::default();
 
-        // Pre-seed a node so we can force a CHECK constraint violation.
-        // We install a CHECK on graph_nodes.kind that rejects the kind value
-        // "symbol.function" (the kind of every function symbol).
-        // The save_call_graph_ws will try to INSERT a Function symbol,
-        // triggering the CHECK → tx rolls back.
-        sqlx::query(
-            "ALTER TABLE graph_nodes \
+            // Pre-seed a node so we can force a CHECK constraint violation.
+            // We install a CHECK on graph_nodes.kind that rejects the kind value
+            // "symbol.function" (the kind of every function symbol).
+            // The save_call_graph_ws will try to INSERT a Function symbol,
+            // triggering the CHECK → tx rolls back.
+            sqlx::query(
+                "ALTER TABLE graph_nodes \
              ADD CONSTRAINT chk_ws_reject_function_kind \
              CHECK (kind != 'symbol.function' OR workspace_id != $1)",
-        )
-        .bind(ws.as_str())
-        .execute(repo.pool())
-        .await
-        .expect("add CHECK constraint");
+            )
+            .bind(ws.as_str())
+            .execute(repo.pool())
+            .await
+            .expect("add CHECK constraint");
 
-        let mut g = CallGraph::new();
-        use crate::domain::value_objects::Location;
-        use crate::domain::aggregates::Symbol;
-        use crate::domain::value_objects::SymbolKind;
-        g.add_symbol(Symbol::new(
-            "x",
-            SymbolKind::Function,
-            Location::new("x.rs", 1, 0),
-        ));
+            let mut g = CallGraph::new();
+            use crate::domain::aggregates::Symbol;
+            use crate::domain::value_objects::Location;
+            use crate::domain::value_objects::SymbolKind;
+            g.add_symbol(Symbol::new(
+                "x",
+                SymbolKind::Function,
+                Location::new("x.rs", 1, 0),
+            ));
 
-        let result = repo.save_call_graph_ws(&g, &ws).await;
-        assert!(
-            matches!(result, Err(RepositoryError::Store(_))),
-            "expected Store error on CHECK constraint violation, got {result:?}"
-        );
+            let result = repo.save_call_graph_ws(&g, &ws).await;
+            assert!(
+                matches!(result, Err(RepositoryError::Store(_))),
+                "expected Store error on CHECK constraint violation, got {result:?}"
+            );
 
-        // After rollback: 0 symbols, 0 edges, 0 graph_revisions for this workspace
-        let sym_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1")
-                .bind(ws.as_str())
-                .fetch_one(repo.pool())
-                .await
-                .expect("count symbols after rollback");
-        assert_eq!(
-            sym_count, 0,
-            "no symbols must remain after failed commit"
-        );
+            // After rollback: 0 symbols, 0 edges, 0 graph_revisions for this workspace
+            let sym_count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1")
+                    .bind(ws.as_str())
+                    .fetch_one(repo.pool())
+                    .await
+                    .expect("count symbols after rollback");
+            assert_eq!(sym_count, 0, "no symbols must remain after failed commit");
 
-        let edge_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM graph_edges WHERE workspace_id = $1")
-                .bind(ws.as_str())
-                .fetch_one(repo.pool())
-                .await
-                .expect("count edges after rollback");
-        assert_eq!(
-            edge_count, 0,
-            "no edges must remain after failed commit"
-        );
+            let edge_count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM graph_edges WHERE workspace_id = $1")
+                    .bind(ws.as_str())
+                    .fetch_one(repo.pool())
+                    .await
+                    .expect("count edges after rollback");
+            assert_eq!(edge_count, 0, "no edges must remain after failed commit");
 
-        let rev_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM graph_revisions WHERE workspace_id = $1",
-        )
-        .bind(ws.as_str())
-        .fetch_one(repo.pool())
-        .await
-        .expect("count revisions after rollback");
-        assert_eq!(
-            rev_count, 0,
-            "no graph_revisions rows must remain after failed commit"
-        );
+            let rev_count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM graph_revisions WHERE workspace_id = $1")
+                    .bind(ws.as_str())
+                    .fetch_one(repo.pool())
+                    .await
+                    .expect("count revisions after rollback");
+            assert_eq!(
+                rev_count, 0,
+                "no graph_revisions rows must remain after failed commit"
+            );
 
-        // Cleanup
-        let _ = sqlx::query(
-            "ALTER TABLE graph_nodes DROP CONSTRAINT IF EXISTS chk_ws_reject_function_kind",
-        )
-        .execute(repo.pool())
-        .await;
-    });
+            // Cleanup
+            let _ = sqlx::query(
+                "ALTER TABLE graph_nodes DROP CONSTRAINT IF EXISTS chk_ws_reject_function_kind",
+            )
+            .execute(repo.pool())
+            .await;
+        }
+    );
 
     /// 2.5a RED — pg_test asserting `load_call_graph_ws(&ws, rev)` returns
     /// `Ok(Some(g))` with exact symbol_count and edge_count, and every edge's
     /// (provenance, confidence) matches what was saved.
     pg_test!(load_call_graph_ws_returns_exact_graph, |pool: PgPool| {
-        use crate::domain::value_objects::{WorkspaceId, RevisionId};
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
         let repo = PostgresRepository::from_pool(pool);
         let ws = WorkspaceId::default();
@@ -3474,7 +3454,7 @@ mod tests {
         let mut g = CallGraph::new();
         use crate::domain::aggregates::Symbol;
         use crate::domain::services::ExtractionContext;
-        use crate::domain::value_objects::{Location, SymbolKind, DependencyType, Provenance};
+        use crate::domain::value_objects::{DependencyType, Location, Provenance, SymbolKind};
         let id_a = g.add_symbol(Symbol::new(
             "a",
             SymbolKind::Function,
@@ -3487,18 +3467,22 @@ mod tests {
         ));
         // Edge with specific provenance + confidence — Heuristic round-trips as Inferred
         g.add_dependency_with_provenance(
-            &id_a, &id_b,
+            &id_a,
+            &id_b,
             DependencyType::Calls,
             ExtractionContext::Heuristic { score: 0.87 },
-        ).expect("add_dependency_with_provenance must succeed");
+        )
+        .expect("add_dependency_with_provenance must succeed");
 
         // Save and capture the returned revision
-        let rev = repo.save_call_graph_ws(&g, &ws)
+        let rev = repo
+            .save_call_graph_ws(&g, &ws)
             .await
             .expect("save_call_graph_ws must succeed");
 
         // Load the graph at the saved revision
-        let loaded = repo.load_call_graph_ws(&ws, rev)
+        let loaded = repo
+            .load_call_graph_ws(&ws, rev)
             .await
             .expect("load_call_graph_ws must succeed")
             .expect("load must return Some for a saved workspace");
@@ -3518,7 +3502,11 @@ mod tests {
         let edges: Vec<_> = loaded.edges_with_metadata().collect();
         assert_eq!(edges.len(), 1, "must have exactly one edge");
         let (_src, _tgt, dep_type, prov, conf) = edges[0].clone();
-        assert_eq!(dep_type, DependencyType::Calls, "dependency type must be Calls");
+        assert_eq!(
+            dep_type,
+            DependencyType::Calls,
+            "dependency type must be Calls"
+        );
         assert_eq!(prov, Provenance::Inferred, "provenance must be Inferred");
         assert!(
             (conf - 0.87).abs() < 1e-9,
@@ -3529,290 +3517,381 @@ mod tests {
     /// 2.6a RED — pg_test asserting `load_call_graph_ws(&ws, RevisionId(99))`
     /// when no revision 99 exists for ws returns `Err(RepositoryError::UnknownRevision{..})`
     /// and NEVER silently falls back to the head revision.
-    pg_test!(load_call_graph_ws_unknown_revision_returns_error, |pool: PgPool| {
-        use crate::domain::value_objects::{RevisionId, WorkspaceId};
-        use crate::domain::traits::repository::RepositoryError;
+    pg_test!(
+        load_call_graph_ws_unknown_revision_returns_error,
+        |pool: PgPool| {
+            use crate::domain::traits::repository::RepositoryError;
+            use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
-        let repo = PostgresRepository::from_pool(pool);
-        let ws = WorkspaceId::default();
+            let repo = PostgresRepository::from_pool(pool);
+            let ws = WorkspaceId::default();
 
-        // Verify there are NO revisions at all for this workspace
-        let rev_count: Option<i64> = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM graph_revisions WHERE workspace_id = $1",
-        )
-        .bind(ws.as_str())
-        .fetch_optional(repo.pool())
-        .await
-        .expect("query revision count");
-        assert_eq!(rev_count, Some(0), "workspace should start with no revisions");
+            // Verify there are NO revisions at all for this workspace
+            let rev_count: Option<i64> =
+                sqlx::query_scalar("SELECT COUNT(*) FROM graph_revisions WHERE workspace_id = $1")
+                    .bind(ws.as_str())
+                    .fetch_optional(repo.pool())
+                    .await
+                    .expect("query revision count");
+            assert_eq!(
+                rev_count,
+                Some(0),
+                "workspace should start with no revisions"
+            );
 
-        // Loading revision 99 must fail with UnknownRevision, NOT fall back to head
-        let result = repo
-            .load_call_graph_ws(&ws, RevisionId(99))
-            .await;
+            // Loading revision 99 must fail with UnknownRevision, NOT fall back to head
+            let result = repo.load_call_graph_ws(&ws, RevisionId(99)).await;
 
-        let err = match result {
-            Err(RepositoryError::UnknownRevision { workspace, revision }) => {
-                assert_eq!(
-                    workspace.as_str(), ws.as_str(),
-                    "error workspace must match requested workspace"
-                );
-                assert_eq!(
-                    revision.get(), 99,
-                    "error revision must be 99"
-                );
-                true
-            }
-            other => panic!(
-                "expected UnknownRevision{{ws: \"{}\", rev: 99}}, got {:?}",
-                ws.as_str(),
-                other
-            ),
-        };
-        assert!(err, "UnknownRevision error must be returned for unknown revision");
-    });
+            let err = match result {
+                Err(RepositoryError::UnknownRevision {
+                    workspace,
+                    revision,
+                }) => {
+                    assert_eq!(
+                        workspace.as_str(),
+                        ws.as_str(),
+                        "error workspace must match requested workspace"
+                    );
+                    assert_eq!(revision.get(), 99, "error revision must be 99");
+                    true
+                }
+                other => panic!(
+                    "expected UnknownRevision{{ws: \"{}\", rev: 99}}, got {:?}",
+                    ws.as_str(),
+                    other
+                ),
+            };
+            assert!(
+                err,
+                "UnknownRevision error must be returned for unknown revision"
+            );
+        }
+    );
 
     /// 2.7a RED — pg_test asserting `load_call_graph_ws(ws2, RevisionId(3))`
     /// when ws2 has never had any revisions returns
     /// `Err(UnknownRevision{workspace:\"ws2\", revision:3})`. This verifies
     /// the error workspace field carries the ACTUAL requested workspace (ws2),
     /// not the default workspace.
-    pg_test!(load_call_graph_ws_cross_workspace_unknown_rev_error, |pool: PgPool| {
-        use crate::domain::value_objects::{RevisionId, WorkspaceId};
-        use crate::domain::traits::repository::RepositoryError;
+    pg_test!(
+        load_call_graph_ws_cross_workspace_unknown_rev_error,
+        |pool: PgPool| {
+            use crate::domain::traits::repository::RepositoryError;
+            use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
-        let repo = PostgresRepository::from_pool(pool);
-        let ws2 = WorkspaceId::try_new("ws2").expect("ws2 must be valid WorkspaceId");
+            let repo = PostgresRepository::from_pool(pool);
+            let ws2 = WorkspaceId::try_new("ws2").expect("ws2 must be valid WorkspaceId");
 
-        // Verify ws2 has NO revisions at all
-        let rev_count: Option<i64> = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM graph_revisions WHERE workspace_id = $1",
-        )
-        .bind(ws2.as_str())
-        .fetch_optional(repo.pool())
-        .await
-        .expect("query revision count");
-        assert_eq!(rev_count, Some(0), "ws2 must have zero revisions");
+            // Verify ws2 has NO revisions at all
+            let rev_count: Option<i64> =
+                sqlx::query_scalar("SELECT COUNT(*) FROM graph_revisions WHERE workspace_id = $1")
+                    .bind(ws2.as_str())
+                    .fetch_optional(repo.pool())
+                    .await
+                    .expect("query revision count");
+            assert_eq!(rev_count, Some(0), "ws2 must have zero revisions");
 
-        // Loading any revision for ws2 must fail with UnknownRevision{workspace: "ws2"}
-        let result = repo
-            .load_call_graph_ws(&ws2, RevisionId(3))
-            .await;
+            // Loading any revision for ws2 must fail with UnknownRevision{workspace: "ws2"}
+            let result = repo.load_call_graph_ws(&ws2, RevisionId(3)).await;
 
-        let err = match result {
-            Err(RepositoryError::UnknownRevision { workspace, revision }) => {
-                assert_eq!(
-                    workspace.as_str(), "ws2",
-                    "error workspace must be 'ws2', not the default workspace"
-                );
-                assert_eq!(revision.get(), 3, "error revision must be 3");
-                true
-            }
-            other => panic!(
-                "expected UnknownRevision{{ws: \"ws2\", rev: 3}}, got {:?}",
-                other
-            ),
-        };
-        assert!(err, "UnknownRevision error must be returned for unknown cross-workspace revision");
-    });
+            let err = match result {
+                Err(RepositoryError::UnknownRevision {
+                    workspace,
+                    revision,
+                }) => {
+                    assert_eq!(
+                        workspace.as_str(),
+                        "ws2",
+                        "error workspace must be 'ws2', not the default workspace"
+                    );
+                    assert_eq!(revision.get(), 3, "error revision must be 3");
+                    true
+                }
+                other => panic!(
+                    "expected UnknownRevision{{ws: \"ws2\", rev: 3}}, got {:?}",
+                    other
+                ),
+            };
+            assert!(
+                err,
+                "UnknownRevision error must be returned for unknown cross-workspace revision"
+            );
+        }
+    );
 
     /// 4.2a RED — pg_test asserting `load_call_graph_pinned(ws, RevisionId(99))`
     /// when no revision 99 exists for ws returns `Err(UnknownRevision{ws, 99})`.
     /// This verifies the Repository trait method delegates to load_call_graph_ws
     /// which already performs the revision existence check.
-    pg_test!(load_call_graph_pinned_unknown_revision_returns_unknown_revision_error, |pool: PgPool| {
-        use crate::domain::value_objects::{RevisionId, WorkspaceId};
-        use crate::domain::traits::repository::RepositoryError;
+    pg_test!(
+        load_call_graph_pinned_unknown_revision_returns_unknown_revision_error,
+        |pool: PgPool| {
+            use crate::domain::traits::repository::RepositoryError;
+            use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
-        let repo = PostgresRepository::from_pool(pool);
-        let ws = WorkspaceId::default();
+            let repo = PostgresRepository::from_pool(pool);
+            let ws = WorkspaceId::default();
 
-        // Verify there are NO revisions at all for this workspace
-        let rev_count: Option<i64> = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM graph_revisions WHERE workspace_id = $1",
-        )
-        .bind(ws.as_str())
-        .fetch_optional(repo.pool())
-        .await
-        .expect("query revision count");
-        assert_eq!(rev_count, Some(0), "workspace should start with no revisions");
+            // Verify there are NO revisions at all for this workspace
+            let rev_count: Option<i64> =
+                sqlx::query_scalar("SELECT COUNT(*) FROM graph_revisions WHERE workspace_id = $1")
+                    .bind(ws.as_str())
+                    .fetch_optional(repo.pool())
+                    .await
+                    .expect("query revision count");
+            assert_eq!(
+                rev_count,
+                Some(0),
+                "workspace should start with no revisions"
+            );
 
-        // load_call_graph_pinned with unknown revision must fail with UnknownRevision
-        let result = repo
-            .load_call_graph_pinned(&ws, RevisionId(99))
-            .await;
+            // load_call_graph_pinned with unknown revision must fail with UnknownRevision
+            let result = repo.load_call_graph_pinned(&ws, RevisionId(99)).await;
 
-        let err = match result {
-            Err(RepositoryError::UnknownRevision { workspace, revision }) => {
-                assert_eq!(
-                    workspace.as_str(), ws.as_str(),
-                    "error workspace must match requested workspace"
-                );
-                assert_eq!(revision.get(), 99, "error revision must be 99");
-                true
-            }
-            other => panic!(
-                "expected UnknownRevision{{ws: \"{}\", rev: 99}}, got {:?}",
-                ws.as_str(),
-                other
-            ),
-        };
-        assert!(err, "UnknownRevision error must be returned for unknown revision");
-    });
+            let err = match result {
+                Err(RepositoryError::UnknownRevision {
+                    workspace,
+                    revision,
+                }) => {
+                    assert_eq!(
+                        workspace.as_str(),
+                        ws.as_str(),
+                        "error workspace must match requested workspace"
+                    );
+                    assert_eq!(revision.get(), 99, "error revision must be 99");
+                    true
+                }
+                other => panic!(
+                    "expected UnknownRevision{{ws: \"{}\", rev: 99}}, got {:?}",
+                    ws.as_str(),
+                    other
+                ),
+            };
+            assert!(
+                err,
+                "UnknownRevision error must be returned for unknown revision"
+            );
+        }
+    );
 
     /// 4.7 RED — pg_test asserting `load_call_graph_ws(ws, rev)` is revision-pinned:
     /// after saving graph g at rev N, a concurrent ingest that saves a NEW revision N+1
     /// must NOT affect the result of loading at rev N. Verifies the SnapshotProvider
     /// cache key (workspace, revision) prevents head-swap races.
-    pg_test!(load_call_graph_ws_revision_pinned_against_concurrent_ingest, |pool: PgPool| {
-        use crate::domain::value_objects::{RevisionId, WorkspaceId};
-        use crate::domain::aggregates::Symbol;
-        use crate::domain::value_objects::{Location, SymbolKind};
+    pg_test!(
+        load_call_graph_ws_revision_pinned_against_concurrent_ingest,
+        |pool: PgPool| {
+            use crate::domain::aggregates::Symbol;
+            use crate::domain::value_objects::{Location, SymbolKind};
+            use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
-        let repo = PostgresRepository::from_pool(pool);
-        let ws = WorkspaceId::default();
+            let repo = PostgresRepository::from_pool(pool);
+            let ws = WorkspaceId::default();
 
-        // Build and save initial graph at rev 1
-        let mut g1 = CallGraph::new();
-        g1.add_symbol(Symbol::new(
-            "original_func", SymbolKind::Function, Location::new("lib.rs", 1, 0),
-        ));
-        let rev1 = repo.save_call_graph_ws(&g1, &ws)
-            .await
-            .expect("save g1 must succeed");
-        assert_eq!(rev1.get(), 1, "first revision must be 1");
+            // Build and save initial graph at rev 1
+            let mut g1 = CallGraph::new();
+            g1.add_symbol(Symbol::new(
+                "original_func",
+                SymbolKind::Function,
+                Location::new("lib.rs", 1, 0),
+            ));
+            let rev1 = repo
+                .save_call_graph_ws(&g1, &ws)
+                .await
+                .expect("save g1 must succeed");
+            assert_eq!(rev1.get(), 1, "first revision must be 1");
 
-        // Load at rev1 — should have original_func
-        let loaded1 = repo.load_call_graph_ws(&ws, rev1)
-            .await
-            .expect("load rev1 must succeed")
-            .expect("rev1 should exist");
-        let symbols_at_rev1: Vec<_> = loaded1.symbols().map(|s| s.name()).collect();
-        assert!(symbols_at_rev1.contains(&"original_func"), "rev1 must have original_func");
-        assert_eq!(symbols_at_rev1.len(), 1, "rev1 must have exactly 1 symbol");
+            // Load at rev1 — should have original_func
+            let loaded1 = repo
+                .load_call_graph_ws(&ws, rev1)
+                .await
+                .expect("load rev1 must succeed")
+                .expect("rev1 should exist");
+            let symbols_at_rev1: Vec<_> = loaded1.symbols().map(|s| s.name()).collect();
+            assert!(
+                symbols_at_rev1.contains(&"original_func"),
+                "rev1 must have original_func"
+            );
+            assert_eq!(symbols_at_rev1.len(), 1, "rev1 must have exactly 1 symbol");
 
-        // Simulate concurrent ingest: save NEW graph at rev2
-        let mut g2 = CallGraph::new();
-        g2.add_symbol(Symbol::new(
-            "new_func", SymbolKind::Function, Location::new("lib.rs", 10, 0),
-        ));
-        let rev2 = repo.save_call_graph_ws(&g2, &ws)
-            .await
-            .expect("save g2 must succeed");
-        assert_eq!(rev2.get(), 2, "second revision must be 2");
+            // Simulate concurrent ingest: save NEW graph at rev2
+            let mut g2 = CallGraph::new();
+            g2.add_symbol(Symbol::new(
+                "new_func",
+                SymbolKind::Function,
+                Location::new("lib.rs", 10, 0),
+            ));
+            let rev2 = repo
+                .save_call_graph_ws(&g2, &ws)
+                .await
+                .expect("save g2 must succeed");
+            assert_eq!(rev2.get(), 2, "second revision must be 2");
 
-        // Re-load at rev1 — MUST still return original_func (revision-pinned, not head)
-        let loaded1_again = repo.load_call_graph_ws(&ws, rev1)
-            .await
-            .expect("load rev1 again must succeed")
-            .expect("rev1 should still exist");
-        let symbols_at_rev1_again: Vec<_> = loaded1_again.symbols().map(|s| s.name()).collect();
-        assert!(
-            symbols_at_rev1_again.contains(&"original_func"),
-            "rev1 must STILL have original_func after concurrent ingest"
-        );
-        assert_eq!(
-            symbols_at_rev1_again.len(), 1,
-            "rev1 must STILL have exactly 1 symbol after concurrent ingest"
-        );
-        assert!(
-            !symbols_at_rev1_again.contains(&"new_func"),
-            "rev1 must NOT have new_func from rev2"
-        );
+            // Re-load at rev1 — MUST still return original_func (revision-pinned, not head)
+            let loaded1_again = repo
+                .load_call_graph_ws(&ws, rev1)
+                .await
+                .expect("load rev1 again must succeed")
+                .expect("rev1 should still exist");
+            let symbols_at_rev1_again: Vec<_> = loaded1_again.symbols().map(|s| s.name()).collect();
+            assert!(
+                symbols_at_rev1_again.contains(&"original_func"),
+                "rev1 must STILL have original_func after concurrent ingest"
+            );
+            assert_eq!(
+                symbols_at_rev1_again.len(),
+                1,
+                "rev1 must STILL have exactly 1 symbol after concurrent ingest"
+            );
+            assert!(
+                !symbols_at_rev1_again.contains(&"new_func"),
+                "rev1 must NOT have new_func from rev2"
+            );
 
-        // Verify rev2 has the new graph
-        let loaded2 = repo.load_call_graph_ws(&ws, rev2)
-            .await
-            .expect("load rev2 must succeed")
-            .expect("rev2 should exist");
-        let symbols_at_rev2: Vec<_> = loaded2.symbols().map(|s| s.name()).collect();
-        assert!(symbols_at_rev2.contains(&"new_func"), "rev2 must have new_func");
-        assert!(!symbols_at_rev2.contains(&"original_func"), "rev2 must NOT have original_func");
-    });
+            // Verify rev2 has the new graph
+            let loaded2 = repo
+                .load_call_graph_ws(&ws, rev2)
+                .await
+                .expect("load rev2 must succeed")
+                .expect("rev2 should exist");
+            let symbols_at_rev2: Vec<_> = loaded2.symbols().map(|s| s.name()).collect();
+            assert!(
+                symbols_at_rev2.contains(&"new_func"),
+                "rev2 must have new_func"
+            );
+            assert!(
+                !symbols_at_rev2.contains(&"original_func"),
+                "rev2 must NOT have original_func"
+            );
+        }
+    );
 
     /// 2.8b RED — pg_test asserting `load_call_graph_ws` for ws1 never returns
     /// ws2's symbols/edges. Write different graphs to ws1 and ws2, then load each
     /// and verify the loaded graph matches what was written to THAT workspace only.
-    pg_test!(load_call_graph_ws_cross_workspace_isolation, |pool: PgPool| {
-        use crate::domain::value_objects::{RevisionId, WorkspaceId};
-        use crate::domain::aggregates::Symbol;
-        use crate::domain::services::ExtractionContext;
-        use crate::domain::value_objects::{Location, SymbolKind, DependencyType, Provenance};
+    pg_test!(
+        load_call_graph_ws_cross_workspace_isolation,
+        |pool: PgPool| {
+            use crate::domain::aggregates::Symbol;
+            use crate::domain::services::ExtractionContext;
+            use crate::domain::value_objects::{DependencyType, Location, Provenance, SymbolKind};
+            use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
-        let repo = PostgresRepository::from_pool(pool);
-        let ws1 = WorkspaceId::try_new("ws1").expect("ws1 must be valid WorkspaceId");
-        let ws2 = WorkspaceId::try_new("ws2").expect("ws2 must be valid WorkspaceId");
+            let repo = PostgresRepository::from_pool(pool);
+            let ws1 = WorkspaceId::try_new("ws1").expect("ws1 must be valid WorkspaceId");
+            let ws2 = WorkspaceId::try_new("ws2").expect("ws2 must be valid WorkspaceId");
 
-        // Build different graphs for ws1 and ws2
-        let mut g1 = CallGraph::new();
-        let a1 = g1.add_symbol(Symbol::new(
-            "symbol_a", SymbolKind::Function, Location::new("file_a.rs", 1, 0),
-        ));
-        let b1 = g1.add_symbol(Symbol::new(
-            "symbol_b", SymbolKind::Function, Location::new("file_a.rs", 5, 0),
-        ));
-        g1.add_dependency_with_provenance(&a1, &b1, DependencyType::Calls, ExtractionContext::DirectExtraction)
+            // Build different graphs for ws1 and ws2
+            let mut g1 = CallGraph::new();
+            let a1 = g1.add_symbol(Symbol::new(
+                "symbol_a",
+                SymbolKind::Function,
+                Location::new("file_a.rs", 1, 0),
+            ));
+            let b1 = g1.add_symbol(Symbol::new(
+                "symbol_b",
+                SymbolKind::Function,
+                Location::new("file_a.rs", 5, 0),
+            ));
+            g1.add_dependency_with_provenance(
+                &a1,
+                &b1,
+                DependencyType::Calls,
+                ExtractionContext::DirectExtraction,
+            )
             .expect("direct extraction");
 
-        let mut g2 = CallGraph::new();
-        let x2 = g2.add_symbol(Symbol::new(
-            "symbol_x", SymbolKind::Class, Location::new("file_x.rs", 10, 0),
-        ));
-        let y2 = g2.add_symbol(Symbol::new(
-            "symbol_y", SymbolKind::Class, Location::new("file_x.rs", 20, 0),
-        ));
-        g2.add_dependency_with_provenance(&x2, &y2, DependencyType::Imports, ExtractionContext::Heuristic { score: 0.9 })
+            let mut g2 = CallGraph::new();
+            let x2 = g2.add_symbol(Symbol::new(
+                "symbol_x",
+                SymbolKind::Class,
+                Location::new("file_x.rs", 10, 0),
+            ));
+            let y2 = g2.add_symbol(Symbol::new(
+                "symbol_y",
+                SymbolKind::Class,
+                Location::new("file_x.rs", 20, 0),
+            ));
+            g2.add_dependency_with_provenance(
+                &x2,
+                &y2,
+                DependencyType::Imports,
+                ExtractionContext::Heuristic { score: 0.9 },
+            )
             .expect("heuristic");
 
-        // Save ws1 graph at rev 1
-        let rev1 = repo.save_call_graph_ws(&g1, &ws1)
-            .await
-            .expect("ws1 save must succeed");
-        assert_eq!(rev1.get(), 1, "ws1 first rev must be 1");
+            // Save ws1 graph at rev 1
+            let rev1 = repo
+                .save_call_graph_ws(&g1, &ws1)
+                .await
+                .expect("ws1 save must succeed");
+            assert_eq!(rev1.get(), 1, "ws1 first rev must be 1");
 
-        // Save ws2 graph at rev 1 (independent counter)
-        let rev2 = repo.save_call_graph_ws(&g2, &ws2)
-            .await
-            .expect("ws2 save must succeed");
-        assert_eq!(rev2.get(), 1, "ws2 first rev must be 1");
+            // Save ws2 graph at rev 1 (independent counter)
+            let rev2 = repo
+                .save_call_graph_ws(&g2, &ws2)
+                .await
+                .expect("ws2 save must succeed");
+            assert_eq!(rev2.get(), 1, "ws2 first rev must be 1");
 
-        // Load ws1 — must have exactly ws1's 2 symbols, 1 edge
-        let loaded1 = repo.load_call_graph_ws(&ws1, rev1)
-            .await
-            .expect("load ws1 must succeed")
-            .expect("load must return Some for ws1");
-        assert_eq!(loaded1.symbol_count(), 2, "ws1 must have 2 symbols");
-        assert_eq!(loaded1.edge_count(), 1, "ws1 must have 1 edge");
+            // Load ws1 — must have exactly ws1's 2 symbols, 1 edge
+            let loaded1 = repo
+                .load_call_graph_ws(&ws1, rev1)
+                .await
+                .expect("load ws1 must succeed")
+                .expect("load must return Some for ws1");
+            assert_eq!(loaded1.symbol_count(), 2, "ws1 must have 2 symbols");
+            assert_eq!(loaded1.edge_count(), 1, "ws1 must have 1 edge");
 
-        // Verify ws1 has the correct symbol names
-        let ws1_symbols: Vec<_> = loaded1.symbols().map(|s| s.name()).collect();
-        assert!(ws1_symbols.contains(&"symbol_a"), "ws1 must contain symbol_a");
-        assert!(ws1_symbols.contains(&"symbol_b"), "ws1 must contain symbol_b");
-        assert!(!ws1_symbols.contains(&"symbol_x"), "ws1 must NOT contain symbol_x from ws2");
+            // Verify ws1 has the correct symbol names
+            let ws1_symbols: Vec<_> = loaded1.symbols().map(|s| s.name()).collect();
+            assert!(
+                ws1_symbols.contains(&"symbol_a"),
+                "ws1 must contain symbol_a"
+            );
+            assert!(
+                ws1_symbols.contains(&"symbol_b"),
+                "ws1 must contain symbol_b"
+            );
+            assert!(
+                !ws1_symbols.contains(&"symbol_x"),
+                "ws1 must NOT contain symbol_x from ws2"
+            );
 
-        // Load ws2 — must have exactly ws2's 2 symbols, 1 edge
-        let loaded2 = repo.load_call_graph_ws(&ws2, rev2)
-            .await
-            .expect("load ws2 must succeed")
-            .expect("load must return Some for ws2");
-        assert_eq!(loaded2.symbol_count(), 2, "ws2 must have 2 symbols");
-        assert_eq!(loaded2.edge_count(), 1, "ws2 must have 1 edge");
+            // Load ws2 — must have exactly ws2's 2 symbols, 1 edge
+            let loaded2 = repo
+                .load_call_graph_ws(&ws2, rev2)
+                .await
+                .expect("load ws2 must succeed")
+                .expect("load must return Some for ws2");
+            assert_eq!(loaded2.symbol_count(), 2, "ws2 must have 2 symbols");
+            assert_eq!(loaded2.edge_count(), 1, "ws2 must have 1 edge");
 
-        // Verify ws2 has the correct symbol names
-        let ws2_symbols: Vec<_> = loaded2.symbols().map(|s| s.name()).collect();
-        assert!(ws2_symbols.contains(&"symbol_x"), "ws2 must contain symbol_x");
-        assert!(ws2_symbols.contains(&"symbol_y"), "ws2 must contain symbol_y");
-        assert!(!ws2_symbols.contains(&"symbol_a"), "ws2 must NOT contain symbol_a from ws1");
-    });
+            // Verify ws2 has the correct symbol names
+            let ws2_symbols: Vec<_> = loaded2.symbols().map(|s| s.name()).collect();
+            assert!(
+                ws2_symbols.contains(&"symbol_x"),
+                "ws2 must contain symbol_x"
+            );
+            assert!(
+                ws2_symbols.contains(&"symbol_y"),
+                "ws2 must contain symbol_y"
+            );
+            assert!(
+                !ws2_symbols.contains(&"symbol_a"),
+                "ws2 must NOT contain symbol_a from ws1"
+            );
+        }
+    );
 
     /// 2.8a RED — pg_test asserting `load_call_graph_ws(ws, save_call_graph_ws(g, ws))`
     /// produces a graph that is `PartialEq`-equal to `g`. Verifies exact bit-exact
     /// round-trip: symbol counts, edge counts, and per-edge (provenance, confidence) match.
     pg_test!(load_call_graph_ws_round_trip_equality, |pool: PgPool| {
-        use crate::domain::value_objects::{RevisionId, WorkspaceId};
         use crate::domain::aggregates::Symbol;
         use crate::domain::services::ExtractionContext;
-        use crate::domain::value_objects::{Location, SymbolKind, DependencyType, Provenance};
+        use crate::domain::value_objects::{DependencyType, Location, Provenance, SymbolKind};
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
         let repo = PostgresRepository::from_pool(pool);
         let ws = WorkspaceId::default();
@@ -3820,54 +3899,81 @@ mod tests {
         // Build a non-trivial graph with mixed provenance edges
         let mut g = CallGraph::new();
         let a = g.add_symbol(Symbol::new(
-            "a", SymbolKind::Function, Location::new("a.rs", 1, 0),
+            "a",
+            SymbolKind::Function,
+            Location::new("a.rs", 1, 0),
         ));
         let b = g.add_symbol(Symbol::new(
-            "b", SymbolKind::Function, Location::new("b.rs", 5, 0),
+            "b",
+            SymbolKind::Function,
+            Location::new("b.rs", 5, 0),
         ));
         let c = g.add_symbol(Symbol::new(
-            "c", SymbolKind::Class, Location::new("c.rs", 10, 0),
+            "c",
+            SymbolKind::Class,
+            Location::new("c.rs", 10, 0),
         ));
         // Edge: a -> b, Calls, DirectExtraction
-        g.add_dependency_with_provenance(&a, &b, DependencyType::Calls, ExtractionContext::DirectExtraction)
-            .expect("direct extraction");
+        g.add_dependency_with_provenance(
+            &a,
+            &b,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        )
+        .expect("direct extraction");
         // Edge: b -> c, Imports, Heuristic 0.75 → Inferred 0.75
-        g.add_dependency_with_provenance(&b, &c, DependencyType::Imports, ExtractionContext::Heuristic { score: 0.75 })
-            .expect("heuristic");
+        g.add_dependency_with_provenance(
+            &b,
+            &c,
+            DependencyType::Imports,
+            ExtractionContext::Heuristic { score: 0.75 },
+        )
+        .expect("heuristic");
 
         // Save and get revision
-        let rev = repo.save_call_graph_ws(&g, &ws)
+        let rev = repo
+            .save_call_graph_ws(&g, &ws)
             .await
             .expect("save_call_graph_ws must succeed");
 
         // Load at the saved revision
-        let loaded = repo.load_call_graph_ws(&ws, rev)
+        let loaded = repo
+            .load_call_graph_ws(&ws, rev)
             .await
             .expect("load_call_graph_ws must succeed")
             .expect("load must return Some for saved workspace");
 
         // Exact equality check
         assert_eq!(
-            loaded.symbol_count(), g.symbol_count(),
+            loaded.symbol_count(),
+            g.symbol_count(),
             "symbol count must match after round-trip"
         );
         assert_eq!(
-            loaded.edge_count(), g.edge_count(),
+            loaded.edge_count(),
+            g.edge_count(),
             "edge count must match after round-trip"
         );
 
         // Verify edge provenance + confidence round-trips correctly
         let orig_edges: Vec<_> = g.edges_with_metadata().collect();
         let loaded_edges: Vec<_> = loaded.edges_with_metadata().collect();
-        assert_eq!(orig_edges.len(), loaded_edges.len(), "edge counts must match");
+        assert_eq!(
+            orig_edges.len(),
+            loaded_edges.len(),
+            "edge counts must match"
+        );
 
-        for ((_, _, od, op, oc), (_, _, ld, lp, lc)) in orig_edges.into_iter().zip(loaded_edges.into_iter()) {
+        for ((_, _, od, op, oc), (_, _, ld, lp, lc)) in
+            orig_edges.into_iter().zip(loaded_edges.into_iter())
+        {
             assert_eq!(od, ld, "dependency type must match");
             assert_eq!(op, lp, "provenance must match after round-trip");
             assert!(
                 (oc - lc).abs() < 1e-9,
                 "confidence must match after round-trip: orig={}, loaded={}",
-                oc, lc
+                oc,
+                lc
             );
         }
 
@@ -3886,10 +3992,10 @@ mod tests {
     /// - count_edges must be 0 (the only edge was from x.rs node)
     /// - src/y.rs node must still exist
     pg_test!(deleted_file_nodes_and_edges_disappear, |pool: PgPool| {
-        use crate::domain::value_objects::{RevisionId, WorkspaceId};
         use crate::domain::aggregates::Symbol;
         use crate::domain::services::ExtractionContext;
-        use crate::domain::value_objects::{Location, SymbolKind, DependencyType};
+        use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
         use crate::infrastructure::persistence::postgres_repository::ScanManifestRow;
 
         let repo = PostgresRepository::from_pool(pool);
@@ -3898,15 +4004,25 @@ mod tests {
         // --- Rev 1: two files in scan_manifest ---
         let mut g1 = CallGraph::new();
         let a1 = g1.add_symbol(Symbol::new(
-            "foo", SymbolKind::Function, Location::new("src/x.rs", 1, 0),
+            "foo",
+            SymbolKind::Function,
+            Location::new("src/x.rs", 1, 0),
         ));
         let b1 = g1.add_symbol(Symbol::new(
-            "bar", SymbolKind::Function, Location::new("src/y.rs", 5, 0),
+            "bar",
+            SymbolKind::Function,
+            Location::new("src/y.rs", 5, 0),
         ));
-        g1.add_dependency_with_provenance(&a1, &b1, DependencyType::Calls, ExtractionContext::DirectExtraction)
-            .expect("direct");
+        g1.add_dependency_with_provenance(
+            &a1,
+            &b1,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        )
+        .expect("direct");
 
-        let rev1 = repo.save_call_graph_ws(&g1, &ws)
+        let rev1 = repo
+            .save_call_graph_ws(&g1, &ws)
             .await
             .expect("rev1 save must succeed");
 
@@ -3942,7 +4058,7 @@ mod tests {
 
         // Verify rev 1: both nodes present
         let x_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1 AND source_path = 'src/x.rs'"
+            "SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1 AND source_path = 'src/x.rs'",
         )
         .bind(ws.as_str())
         .fetch_one(repo.pool())
@@ -3953,11 +4069,14 @@ mod tests {
         // --- Rev 2: only src/y.rs in scan_manifest (src/x.rs removed) ---
         let mut g2 = CallGraph::new();
         let _b2 = g2.add_symbol(Symbol::new(
-            "bar", SymbolKind::Function, Location::new("src/y.rs", 5, 0),
+            "bar",
+            SymbolKind::Function,
+            Location::new("src/y.rs", 5, 0),
         ));
         // No edge from x.rs since x.rs is gone from scan_manifest
 
-        let rev2 = repo.save_call_graph_ws(&g2, &ws)
+        let rev2 = repo
+            .save_call_graph_ws(&g2, &ws)
             .await
             .expect("rev2 save must succeed");
         assert_eq!(rev2.get(), 2, "rev2 must be 2");
@@ -3969,17 +4088,20 @@ mod tests {
 
         // Verify: src/x.rs nodes must be gone at rev 2
         let x_count2: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1 AND source_path = 'src/x.rs'"
+            "SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1 AND source_path = 'src/x.rs'",
         )
         .bind(ws.as_str())
         .fetch_one(repo.pool())
         .await
         .expect("count x.rs nodes at rev 2");
-        assert_eq!(x_count2, 0, "rev 2 must have 0 nodes for src/x.rs (file removed from manifest)");
+        assert_eq!(
+            x_count2, 0,
+            "rev 2 must have 0 nodes for src/x.rs (file removed from manifest)"
+        );
 
         // Verify: src/y.rs node still exists
         let y_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1 AND source_path = 'src/y.rs'"
+            "SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1 AND source_path = 'src/y.rs'",
         )
         .bind(ws.as_str())
         .fetch_one(repo.pool())
@@ -3988,212 +4110,222 @@ mod tests {
         assert_eq!(y_count, 1, "rev 2 must still have 1 node for src/y.rs");
 
         // Verify: no orphaned edges (edge a1->b1 must be gone since a1 is deleted)
-        let edge_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM graph_edges WHERE workspace_id = $1"
-        )
-        .bind(ws.as_str())
-        .fetch_one(repo.pool())
-        .await
-        .expect("count edges");
-        assert_eq!(edge_count, 0, "rev 2 must have 0 edges (only edge was from deleted x.rs node)");
+        let edge_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM graph_edges WHERE workspace_id = $1")
+                .bind(ws.as_str())
+                .fetch_one(repo.pool())
+                .await
+                .expect("count edges");
+        assert_eq!(
+            edge_count, 0,
+            "rev 2 must have 0 edges (only edge was from deleted x.rs node)"
+        );
     });
 
     /// 2.3a RED — pg_test asserting `save_call_graph_ws` returns `Ok(RevisionId)`,
     /// opens one `graph_revisions` row `head_of=true revision_id=rev`, and
     /// populates the expected symbols and edges count.
-    pg_test!(save_call_graph_ws_returns_revision_id_and_populates, |pool: PgPool| {
-        use crate::domain::value_objects::{RevisionId, WorkspaceId};
+    pg_test!(
+        save_call_graph_ws_returns_revision_id_and_populates,
+        |pool: PgPool| {
+            use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
-        let repo = PostgresRepository::from_pool(pool);
-        let graph = build_mixed_provenance_graph();
-        let ws = WorkspaceId::default();
+            let repo = PostgresRepository::from_pool(pool);
+            let graph = build_mixed_provenance_graph();
+            let ws = WorkspaceId::default();
 
-        // save_call_graph_ws must return a valid RevisionId
-        let rev = repo
-            .save_call_graph_ws(&graph, &ws)
-            .await
-            .expect("save_call_graph_ws must succeed");
-        assert!(rev.is_valid(), "revision must be valid");
-        assert!(rev.get() > 0, "revision must be > 0");
+            // save_call_graph_ws must return a valid RevisionId
+            let rev = repo
+                .save_call_graph_ws(&graph, &ws)
+                .await
+                .expect("save_call_graph_ws must succeed");
+            assert!(rev.is_valid(), "revision must be valid");
+            assert!(rev.get() > 0, "revision must be > 0");
 
-        // Exactly one graph_revisions row with head_of=true
-        let head_rows: Vec<(String, i64, bool)> = sqlx::query_as(
+            // Exactly one graph_revisions row with head_of=true
+            let head_rows: Vec<(String, i64, bool)> = sqlx::query_as(
             "SELECT workspace_id, revision_id, head_of FROM graph_revisions WHERE workspace_id = $1 AND head_of = true",
         )
         .bind(ws.as_str())
         .fetch_all(repo.pool())
         .await
         .expect("query head rows");
-        assert_eq!(
-            head_rows.len(),
-            1,
-            "must have exactly 1 head row, got {}",
-            head_rows.len()
-        );
-        assert_eq!(
-            head_rows[0].1,
-            rev.get() as i64,
-            "head revision_id must match returned revision"
-        );
+            assert_eq!(
+                head_rows.len(),
+                1,
+                "must have exactly 1 head row, got {}",
+                head_rows.len()
+            );
+            assert_eq!(
+                head_rows[0].1,
+                rev.get() as i64,
+                "head revision_id must match returned revision"
+            );
 
-        // Check symbols and edges counts in graph_nodes / graph_edges
-        let sym_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1",
-        )
-        .bind(ws.as_str())
-        .fetch_one(repo.pool())
-        .await
-        .expect("count symbols");
-        assert_eq!(
-            sym_count,
-            graph.symbol_count() as i64,
-            "graph_nodes row count must match symbol count"
-        );
+            // Check symbols and edges counts in graph_nodes / graph_edges
+            let sym_count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM graph_nodes WHERE workspace_id = $1")
+                    .bind(ws.as_str())
+                    .fetch_one(repo.pool())
+                    .await
+                    .expect("count symbols");
+            assert_eq!(
+                sym_count,
+                graph.symbol_count() as i64,
+                "graph_nodes row count must match symbol count"
+            );
 
-        let edge_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM graph_edges WHERE workspace_id = $1",
-        )
-        .bind(ws.as_str())
-        .fetch_one(repo.pool())
-        .await
-        .expect("count edges");
-        assert_eq!(
-            edge_count,
-            graph.edge_count() as i64,
-            "graph_edges row count must match edge count"
-        );
-    });
+            let edge_count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM graph_edges WHERE workspace_id = $1")
+                    .bind(ws.as_str())
+                    .fetch_one(repo.pool())
+                    .await
+                    .expect("count edges");
+            assert_eq!(
+                edge_count,
+                graph.edge_count() as i64,
+                "graph_edges row count must match edge count"
+            );
+        }
+    );
 
     /// 2.2a RED — pg_test asserting `save_call_graph_ws(&g, &ws2)` with
     /// `ws1` already at head 3 advances `ws2`'s counter, not `ws1`'s.
-    pg_test!(save_call_graph_ws_workspace_isolated_counters, |pool: PgPool| {
-        use crate::domain::value_objects::{RevisionId, WorkspaceId};
+    pg_test!(
+        save_call_graph_ws_workspace_isolated_counters,
+        |pool: PgPool| {
+            use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
-        let repo = PostgresRepository::from_pool(pool);
-        let graph = build_mixed_provenance_graph();
-        let ws1 = WorkspaceId::default(); // "default"
-        let ws2 = WorkspaceId::try_new("ws2").expect("ws2 is valid");
+            let repo = PostgresRepository::from_pool(pool);
+            let graph = build_mixed_provenance_graph();
+            let ws1 = WorkspaceId::default(); // "default"
+            let ws2 = WorkspaceId::try_new("ws2").expect("ws2 is valid");
 
-        // ws1 commits: rev 1
-        let rev1 = repo
-            .save_call_graph_ws(&graph, &ws1)
-            .await
-            .expect("ws1 commit 1");
-        assert_eq!(rev1, RevisionId(1));
+            // ws1 commits: rev 1
+            let rev1 = repo
+                .save_call_graph_ws(&graph, &ws1)
+                .await
+                .expect("ws1 commit 1");
+            assert_eq!(rev1, RevisionId(1));
 
-        // ws1 commits: rev 2
-        let rev2 = repo
-            .save_call_graph_ws(&graph, &ws1)
-            .await
-            .expect("ws1 commit 2");
-        assert_eq!(rev2, RevisionId(2));
+            // ws1 commits: rev 2
+            let rev2 = repo
+                .save_call_graph_ws(&graph, &ws1)
+                .await
+                .expect("ws1 commit 2");
+            assert_eq!(rev2, RevisionId(2));
 
-        // ws1 commits: rev 3
-        let rev3 = repo
-            .save_call_graph_ws(&graph, &ws1)
-            .await
-            .expect("ws1 commit 3");
-        assert_eq!(rev3, RevisionId(3));
+            // ws1 commits: rev 3
+            let rev3 = repo
+                .save_call_graph_ws(&graph, &ws1)
+                .await
+                .expect("ws1 commit 3");
+            assert_eq!(rev3, RevisionId(3));
 
-        // ws2 first commit: should be rev 1 (not rev 4!)
-        let ws2_rev1 = repo
-            .save_call_graph_ws(&graph, &ws2)
-            .await
-            .expect("ws2 first commit");
-        assert_eq!(
-            ws2_rev1,
-            RevisionId(1),
-            "ws2 should start at rev 1, not continue from ws1's rev 3"
-        );
+            // ws2 first commit: should be rev 1 (not rev 4!)
+            let ws2_rev1 = repo
+                .save_call_graph_ws(&graph, &ws2)
+                .await
+                .expect("ws2 first commit");
+            assert_eq!(
+                ws2_rev1,
+                RevisionId(1),
+                "ws2 should start at rev 1, not continue from ws1's rev 3"
+            );
 
-        // ws1 head must still be 3
-        let ws1_head: Option<(String, i64)> = sqlx::query_as(
+            // ws1 head must still be 3
+            let ws1_head: Option<(String, i64)> = sqlx::query_as(
             "SELECT workspace_id, revision_id FROM graph_revisions WHERE workspace_id = $1 AND head_of = true",
         )
         .bind(ws1.as_str())
         .fetch_optional(repo.pool())
         .await
         .expect("query ws1 head");
-        assert!(ws1_head.is_some(), "ws1 should have a head");
-        assert_eq!(
-            ws1_head.unwrap().1, 3_i64,
-            "ws1 head must still be 3 after ws2 commits"
-        );
+            assert!(ws1_head.is_some(), "ws1 should have a head");
+            assert_eq!(
+                ws1_head.unwrap().1,
+                3_i64,
+                "ws1 head must still be 3 after ws2 commits"
+            );
 
-        // ws2 head must be 1
-        let ws2_head: Option<(String, i64)> = sqlx::query_as(
+            // ws2 head must be 1
+            let ws2_head: Option<(String, i64)> = sqlx::query_as(
             "SELECT workspace_id, revision_id FROM graph_revisions WHERE workspace_id = $1 AND head_of = true",
         )
         .bind(ws2.as_str())
         .fetch_optional(repo.pool())
         .await
         .expect("query ws2 head");
-        assert!(ws2_head.is_some(), "ws2 should have a head");
-        assert_eq!(ws2_head.unwrap().1, 1_i64, "ws2 head must be 1");
-    });
+            assert!(ws2_head.is_some(), "ws2 should have a head");
+            assert_eq!(ws2_head.unwrap().1, 1_i64, "ws2 head must be 1");
+        }
+    );
 
     /// 2.1a RED — pg_test asserting two sequential `save_call_graph_ws`
     /// calls open revisions `(1,true)` then `(2,true)` and no duplicate
     /// `(workspace_id,revision_id)`.
-    pg_test!(save_call_graph_ws_opens_monotonic_revision, |pool: PgPool| {
-        use crate::domain::value_objects::{RevisionId, WorkspaceId};
+    pg_test!(
+        save_call_graph_ws_opens_monotonic_revision,
+        |pool: PgPool| {
+            use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
-        let repo = PostgresRepository::from_pool(pool);
-        let graph = build_mixed_provenance_graph();
-        let ws = WorkspaceId::default();
+            let repo = PostgresRepository::from_pool(pool);
+            let graph = build_mixed_provenance_graph();
+            let ws = WorkspaceId::default();
 
-        // First commit opens revision 1
-        let rev1 = repo
-            .save_call_graph_ws(&graph, &ws)
-            .await
-            .expect("first commit must succeed");
-        assert!(rev1.is_valid(), "first revision must be valid");
-        assert_eq!(rev1, RevisionId(1), "first revision must be 1");
+            // First commit opens revision 1
+            let rev1 = repo
+                .save_call_graph_ws(&graph, &ws)
+                .await
+                .expect("first commit must succeed");
+            assert!(rev1.is_valid(), "first revision must be valid");
+            assert_eq!(rev1, RevisionId(1), "first revision must be 1");
 
-        // Check graph_revisions: exactly one head = rev1
-        let head1: (i64, bool) = sqlx::query_as(
+            // Check graph_revisions: exactly one head = rev1
+            let head1: (i64, bool) = sqlx::query_as(
             "SELECT revision_id, head_of FROM graph_revisions WHERE workspace_id = $1 AND head_of = true",
         )
         .bind(ws.as_str())
         .fetch_one(repo.pool())
         .await
         .expect("must have exactly one head row after first commit");
-        assert_eq!(head1.0, 1_i64, "head revision_id must be 1");
-        assert!(head1.1, "head_of must be true");
+            assert_eq!(head1.0, 1_i64, "head revision_id must be 1");
+            assert!(head1.1, "head_of must be true");
 
-        // Second commit opens revision 2
-        let rev2 = repo
-            .save_call_graph_ws(&graph, &ws)
-            .await
-            .expect("second commit must succeed");
-        assert_eq!(rev2, RevisionId(2), "second revision must be 2");
+            // Second commit opens revision 2
+            let rev2 = repo
+                .save_call_graph_ws(&graph, &ws)
+                .await
+                .expect("second commit must succeed");
+            assert_eq!(rev2, RevisionId(2), "second revision must be 2");
 
-        // Check graph_revisions: head is now rev2
-        let head2: (i64, bool) = sqlx::query_as(
+            // Check graph_revisions: head is now rev2
+            let head2: (i64, bool) = sqlx::query_as(
             "SELECT revision_id, head_of FROM graph_revisions WHERE workspace_id = $1 AND head_of = true",
         )
         .bind(ws.as_str())
         .fetch_one(repo.pool())
         .await
         .expect("must have exactly one head row after second commit");
-        assert_eq!(head2.0, 2_i64, "head revision_id must be 2");
-        assert!(head2.1, "head_of must be true");
+            assert_eq!(head2.0, 2_i64, "head revision_id must be 2");
+            assert!(head2.1, "head_of must be true");
 
-        // Both revisions must exist (for pinned reads)
-        let all_revs: Vec<(String, i64)> = sqlx::query_as(
+            // Both revisions must exist (for pinned reads)
+            let all_revs: Vec<(String, i64)> = sqlx::query_as(
             "SELECT workspace_id, revision_id FROM graph_revisions WHERE workspace_id = $1 ORDER BY revision_id",
         )
         .bind(ws.as_str())
         .fetch_all(repo.pool())
         .await
         .expect("must have 2 revision rows");
-        assert_eq!(all_revs.len(), 2, "must have exactly 2 revision rows");
-        assert_eq!(all_revs[0].1, 1, "revision 1 must exist");
-        assert_eq!(all_revs[1].1, 2, "revision 2 must exist");
+            assert_eq!(all_revs.len(), 2, "must have exactly 2 revision rows");
+            assert_eq!(all_revs[0].1, 1, "revision 1 must exist");
+            assert_eq!(all_revs[1].1, 2, "revision 2 must exist");
 
-        // PK constraint: no duplicate (workspace_id, revision_id) — verified by UNIQUE index
-        // If there were a duplicate, the INSERT would have failed with a unique violation.
-    });
+            // PK constraint: no duplicate (workspace_id, revision_id) — verified by UNIQUE index
+            // If there were a duplicate, the INSERT would have failed with a unique violation.
+        }
+    );
 
     /// Spec requirement: `save_call_graph` populates both
     /// `symbols` and `call_edges` in a single transaction.
@@ -5110,7 +5242,10 @@ mod tests {
         assert_eq!(fetched.label, node.label);
         assert_eq!(fetched.source_path, node.source_path);
         assert_eq!(
-            fetched.properties_map().get("status").and_then(|v| v.as_str()),
+            fetched
+                .properties_map()
+                .get("status")
+                .and_then(|v| v.as_str()),
             Some("accepted")
         );
     });
@@ -5198,7 +5333,10 @@ mod tests {
             .expect("Some");
         assert_eq!(updated.label, "Second Label");
         assert_eq!(
-            updated.properties_map().get("status").and_then(|v| v.as_str()),
+            updated
+                .properties_map()
+                .get("status")
+                .and_then(|v| v.as_str()),
             Some("accepted")
         );
         assert_eq!(
@@ -5449,106 +5587,118 @@ mod tests {
     // using raw queries, which is what those methods execute internally.
     // -------------------------------------------------------------------------
     #[cfg(feature = "postgres")]
-    pg_test!(workspace_scoped_find_nodes_and_incoming_edges, |pool: PgPool| {
-        use sqlx::Row;
+    pg_test!(
+        workspace_scoped_find_nodes_and_incoming_edges,
+        |pool: PgPool| {
+            use sqlx::Row;
 
-        let repo = PostgresRepository::from_pool(pool);
+            let repo = PostgresRepository::from_pool(pool);
 
-        // Seed ws1: 1 Function node + 3 incoming edges pointing to a Doc target
-        // Insert nodes
-        sqlx::query(
-            "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
+            // Seed ws1: 1 Function node + 3 incoming edges pointing to a Doc target
+            // Insert nodes
+            sqlx::query(
+                "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
              VALUES ('ws1', 'func1', 'symbol.function', 'my_function')",
-        )
-        .execute(repo.pool())
-        .await
-        .expect("insert ws1 function node");
-
-        sqlx::query(
-            "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
-             VALUES ('ws1', 'doc1', 'symbol.doc', 'my_doc')",
-        )
-        .execute(repo.pool())
-        .await
-        .expect("insert ws1 doc node");
-
-        // Insert 3 incoming edges to doc1 in ws1
-        for i in 1..=3 {
-            sqlx::query(&format!(
-                "INSERT INTO graph_edges (workspace_id, source_id, target_id, kind) \
-                 VALUES ('ws1', 'src{}', 'doc1', 'dependency.calls')",
-                i
-            ))
+            )
             .execute(repo.pool())
             .await
-            .expect("insert ws1 edge");
-        }
+            .expect("insert ws1 function node");
 
-        // Seed ws2: only 1 edge pointing to a doc (different target)
-        sqlx::query(
-            "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
+            sqlx::query(
+                "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
+             VALUES ('ws1', 'doc1', 'symbol.doc', 'my_doc')",
+            )
+            .execute(repo.pool())
+            .await
+            .expect("insert ws1 doc node");
+
+            // Insert 3 incoming edges to doc1 in ws1
+            for i in 1..=3 {
+                sqlx::query(&format!(
+                    "INSERT INTO graph_edges (workspace_id, source_id, target_id, kind) \
+                 VALUES ('ws1', 'src{}', 'doc1', 'dependency.calls')",
+                    i
+                ))
+                .execute(repo.pool())
+                .await
+                .expect("insert ws1 edge");
+            }
+
+            // Seed ws2: only 1 edge pointing to a doc (different target)
+            sqlx::query(
+                "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
              VALUES ('ws2', 'func2', 'symbol.function', 'other_function')",
-        )
-        .execute(repo.pool())
-        .await
-        .expect("insert ws2 function node");
+            )
+            .execute(repo.pool())
+            .await
+            .expect("insert ws2 function node");
 
-        sqlx::query(
-            "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
+            sqlx::query(
+                "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
              VALUES ('ws2', 'doc2', 'symbol.doc', 'other_doc')",
-        )
-        .execute(repo.pool())
-        .await
-        .expect("insert ws2 doc node");
+            )
+            .execute(repo.pool())
+            .await
+            .expect("insert ws2 doc node");
 
-        sqlx::query(
-            "INSERT INTO graph_edges (workspace_id, source_id, target_id, kind) \
+            sqlx::query(
+                "INSERT INTO graph_edges (workspace_id, source_id, target_id, kind) \
              VALUES ('ws2', 'src_ws2', 'doc2', 'dependency.calls')",
-        )
-        .execute(repo.pool())
-        .await
-        .expect("insert ws2 edge");
+            )
+            .execute(repo.pool())
+            .await
+            .expect("insert ws2 edge");
 
-        // ---- Assert find_nodes_by_kind(Function, ws1) returns 1 ----
-        let ws1_func_count: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM graph_nodes \
+            // ---- Assert find_nodes_by_kind(Function, ws1) returns 1 ----
+            let ws1_func_count: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM graph_nodes \
              WHERE kind = 'symbol.function' AND workspace_id = 'ws1'",
-        )
-        .fetch_one(repo.pool())
-        .await
-        .expect("count ws1 functions");
-        assert_eq!(ws1_func_count, 1, "ws1 should have 1 function node");
+            )
+            .fetch_one(repo.pool())
+            .await
+            .expect("count ws1 functions");
+            assert_eq!(ws1_func_count, 1, "ws1 should have 1 function node");
 
-        // ---- Assert find_nodes_by_kind(Function, ws2) returns 0 ----
-        let ws2_func_count: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM graph_nodes \
+            // ---- Assert find_nodes_by_kind(Function, ws2) returns 0 ----
+            let ws2_func_count: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM graph_nodes \
              WHERE kind = 'symbol.function' AND workspace_id = 'ws2'",
-        )
-        .fetch_one(repo.pool())
-        .await
-        .expect("count ws2 functions");
-        assert_eq!(ws2_func_count, 0, "ws2 should have 0 function nodes (has doc2 only)");
+            )
+            .fetch_one(repo.pool())
+            .await
+            .expect("count ws2 functions");
+            assert_eq!(
+                ws2_func_count, 0,
+                "ws2 should have 0 function nodes (has doc2 only)"
+            );
 
-        // ---- Assert find_incoming_edges(doc1, ws1) returns exactly 3 ----
-        let ws1_incoming: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM graph_edges \
+            // ---- Assert find_incoming_edges(doc1, ws1) returns exactly 3 ----
+            let ws1_incoming: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM graph_edges \
              WHERE target_id = 'doc1' AND workspace_id = 'ws1'",
-        )
-        .fetch_one(repo.pool())
-        .await
-        .expect("count ws1 incoming edges");
-        assert_eq!(ws1_incoming, 3, "ws1 doc1 should have exactly 3 incoming edges");
+            )
+            .fetch_one(repo.pool())
+            .await
+            .expect("count ws1 incoming edges");
+            assert_eq!(
+                ws1_incoming, 3,
+                "ws1 doc1 should have exactly 3 incoming edges"
+            );
 
-        // ---- Assert find_incoming_edges(doc2, ws2) returns 0 ----
-        let ws2_incoming: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM graph_edges \
+            // ---- Assert find_incoming_edges(doc2, ws2) returns 0 ----
+            let ws2_incoming: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM graph_edges \
              WHERE target_id = 'doc2' AND workspace_id = 'ws2'",
-        )
-        .fetch_one(repo.pool())
-        .await
-        .expect("count ws2 incoming edges");
-        assert_eq!(ws2_incoming, 0, "ws2 doc2 should have 0 incoming edges (src_ws2 -> doc2, but doc2 != doc1)");
-    });
+            )
+            .fetch_one(repo.pool())
+            .await
+            .expect("count ws2 incoming edges");
+            assert_eq!(
+                ws2_incoming, 0,
+                "ws2 doc2 should have 0 incoming edges (src_ws2 -> doc2, but doc2 != doc1)"
+            );
+        }
+    );
 
     // -------------------------------------------------------------------------
     // 4.4a RED — revision-pinned callees_with_metadata
@@ -5566,100 +5716,178 @@ mod tests {
     // revision and directly inspecting CallGraph::callees_with_metadata.
     // -------------------------------------------------------------------------
     #[cfg(feature = "postgres")]
-    pg_test!(callees_with_metadata_pinned_revision_isolation, |pool: PgPool| {
-        use crate::domain::services::ExtractionContext;
-        use crate::domain::value_objects::{DependencyType, Provenance, RevisionId, WorkspaceId};
-        use crate::domain::aggregates::Symbol;
+    pg_test!(
+        callees_with_metadata_pinned_revision_isolation,
+        |pool: PgPool| {
+            use crate::domain::aggregates::Symbol;
+            use crate::domain::services::ExtractionContext;
+            use crate::domain::value_objects::{
+                DependencyType, Provenance, RevisionId, WorkspaceId,
+            };
 
-        let repo = PostgresRepository::from_pool(pool);
-        let ws = WorkspaceId::try_new("ws1").expect("ws1 must be valid");
+            let repo = PostgresRepository::from_pool(pool);
+            let ws = WorkspaceId::try_new("ws1").expect("ws1 must be valid");
 
-        // ---- Build and save rev 3 graph ----
-        // Create caller "caller" and 3 targets with specific provenance
-        let mut g3 = CallGraph::new();
-        let caller = g3.add_symbol(Symbol::new(
-            "caller", SymbolKind::Function, Location::new("lib.rs", 1, 0),
-        ));
-        let t1 = g3.add_symbol(Symbol::new(
-            "target1", SymbolKind::Function, Location::new("lib.rs", 10, 0),
-        ));
-        let t2 = g3.add_symbol(Symbol::new(
-            "target2", SymbolKind::Function, Location::new("lib.rs", 20, 0),
-        ));
-        let t3 = g3.add_symbol(Symbol::new(
-            "target3", SymbolKind::Function, Location::new("lib.rs", 30, 0),
-        ));
+            // ---- Build and save rev 3 graph ----
+            // Create caller "caller" and 3 targets with specific provenance
+            let mut g3 = CallGraph::new();
+            let caller = g3.add_symbol(Symbol::new(
+                "caller",
+                SymbolKind::Function,
+                Location::new("lib.rs", 1, 0),
+            ));
+            let t1 = g3.add_symbol(Symbol::new(
+                "target1",
+                SymbolKind::Function,
+                Location::new("lib.rs", 10, 0),
+            ));
+            let t2 = g3.add_symbol(Symbol::new(
+                "target2",
+                SymbolKind::Function,
+                Location::new("lib.rs", 20, 0),
+            ));
+            let t3 = g3.add_symbol(Symbol::new(
+                "target3",
+                SymbolKind::Function,
+                Location::new("lib.rs", 30, 0),
+            ));
 
-        // Add edges with specific provenance via ExtractionContext
-        g3.add_dependency_with_provenance(&caller, &t1, DependencyType::Calls, ExtractionContext::DirectExtraction)
+            // Add edges with specific provenance via ExtractionContext
+            g3.add_dependency_with_provenance(
+                &caller,
+                &t1,
+                DependencyType::Calls,
+                ExtractionContext::DirectExtraction,
+            )
             .expect("DirectExtraction for target1");
-        // Heuristic score 0.7 → Inferred with confidence 0.7 (clamped to [0.5, 0.9])
-        g3.add_dependency_with_provenance(&caller, &t2, DependencyType::Calls, ExtractionContext::Heuristic { score: 0.7 })
+            // Heuristic score 0.7 → Inferred with confidence 0.7 (clamped to [0.5, 0.9])
+            g3.add_dependency_with_provenance(
+                &caller,
+                &t2,
+                DependencyType::Calls,
+                ExtractionContext::Heuristic { score: 0.7 },
+            )
             .expect("Heuristic for target2");
-        g3.add_dependency_with_provenance(&caller, &t3, DependencyType::Calls, ExtractionContext::Unresolved)
+            g3.add_dependency_with_provenance(
+                &caller,
+                &t3,
+                DependencyType::Calls,
+                ExtractionContext::Unresolved,
+            )
             .expect("Unresolved for target3");
 
-        let rev3 = repo.save_call_graph_ws(&g3, &ws)
-            .await
-            .expect("save rev3 must succeed");
-        assert_eq!(rev3.get(), 3, "rev3 must be 3");
+            let rev3 = repo
+                .save_call_graph_ws(&g3, &ws)
+                .await
+                .expect("save rev3 must succeed");
+            assert_eq!(rev3.get(), 3, "rev3 must be 3");
 
-        // ---- Build and save rev 4 graph (different callees) ----
-        let mut g4 = CallGraph::new();
-        let caller4 = g4.add_symbol(Symbol::new(
-            "caller", SymbolKind::Function, Location::new("lib.rs", 1, 0),
-        ));
-        let t4_new = g4.add_symbol(Symbol::new(
-            "target4_new", SymbolKind::Function, Location::new("lib.rs", 40, 0),
-        ));
-        // Only 1 edge in rev 4
-        g4.add_dependency_with_provenance(&caller4, &t4_new, DependencyType::Calls, ExtractionContext::DirectExtraction)
+            // ---- Build and save rev 4 graph (different callees) ----
+            let mut g4 = CallGraph::new();
+            let caller4 = g4.add_symbol(Symbol::new(
+                "caller",
+                SymbolKind::Function,
+                Location::new("lib.rs", 1, 0),
+            ));
+            let t4_new = g4.add_symbol(Symbol::new(
+                "target4_new",
+                SymbolKind::Function,
+                Location::new("lib.rs", 40, 0),
+            ));
+            // Only 1 edge in rev 4
+            g4.add_dependency_with_provenance(
+                &caller4,
+                &t4_new,
+                DependencyType::Calls,
+                ExtractionContext::DirectExtraction,
+            )
             .expect("DirectExtraction for target4_new");
 
-        let rev4 = repo.save_call_graph_ws(&g4, &ws)
-            .await
-            .expect("save rev4 must succeed");
-        assert_eq!(rev4.get(), 4, "rev4 must be 4");
+            let rev4 = repo
+                .save_call_graph_ws(&g4, &ws)
+                .await
+                .expect("save rev4 must succeed");
+            assert_eq!(rev4.get(), 4, "rev4 must be 4");
 
-        // ---- Load at rev3 and verify callees_with_metadata ----
-        let loaded_rev3 = repo.load_call_graph_ws(&ws, rev3)
-            .await
-            .expect("load rev3 must succeed")
-            .expect("rev3 should exist");
-        let callees_rev3 = loaded_rev3.callees_with_metadata(&caller);
+            // ---- Load at rev3 and verify callees_with_metadata ----
+            let loaded_rev3 = repo
+                .load_call_graph_ws(&ws, rev3)
+                .await
+                .expect("load rev3 must succeed")
+                .expect("rev3 should exist");
+            let callees_rev3 = loaded_rev3.callees_with_metadata(&caller);
 
-        assert_eq!(callees_rev3.len(), 3, "rev3 must have exactly 3 callees");
-        // Verify exact (provenance, confidence) tuples
-        // SymbolId is the fully-qualified name: "lib.rs:{name}:{line}"
-        let mut found = Vec::new();
-        for (target, _dep, prov, conf) in callees_rev3 {
-            found.push((target.as_str().to_string(), prov, conf));
+            assert_eq!(callees_rev3.len(), 3, "rev3 must have exactly 3 callees");
+            // Verify exact (provenance, confidence) tuples
+            // SymbolId is the fully-qualified name: "lib.rs:{name}:{line}"
+            let mut found = Vec::new();
+            for (target, _dep, prov, conf) in callees_rev3 {
+                found.push((target.as_str().to_string(), prov, conf));
+            }
+            found.sort_by_key(|x| x.0.clone());
+
+            assert!(
+                found[0].0.contains("target1"),
+                "first callee must be target1, got {}",
+                found[0].0
+            );
+            assert_eq!(
+                found[0].1,
+                Provenance::Extracted,
+                "target1 provenance must be Extracted"
+            );
+            assert!(
+                (found[0].2 - 1.0).abs() < 1e-9,
+                "target1 confidence must be 1.0"
+            );
+
+            assert!(
+                found[1].0.contains("target2"),
+                "second callee must be target2, got {}",
+                found[1].0
+            );
+            assert_eq!(
+                found[1].1,
+                Provenance::Inferred,
+                "target2 provenance must be Inferred"
+            );
+            assert!(
+                (found[1].2 - 0.7).abs() < 1e-9,
+                "target2 confidence must be 0.7"
+            );
+
+            assert!(
+                found[2].0.contains("target3"),
+                "third callee must be target3, got {}",
+                found[2].0
+            );
+            assert_eq!(
+                found[2].1,
+                Provenance::Ambiguous,
+                "target3 provenance must be Ambiguous"
+            );
+            assert!(
+                (found[2].2 - 0.3).abs() < 1e-9,
+                "target3 confidence must be 0.3"
+            );
+
+            // ---- Verify rev4 has different callees ----
+            let loaded_rev4 = repo
+                .load_call_graph_ws(&ws, rev4)
+                .await
+                .expect("load rev4 must succeed")
+                .expect("rev4 should exist");
+            let callees_rev4 = loaded_rev4.callees_with_metadata(&caller4);
+
+            assert_eq!(callees_rev4.len(), 1, "rev4 must have exactly 1 callee");
+            let t4_name = &callees_rev4[0].0;
+            assert!(
+                t4_name.as_str().contains("target4_new"),
+                "rev4 callee must be target4_new, got {}",
+                t4_name
+            );
         }
-        found.sort_by_key(|x| x.0.clone());
-
-        assert!(found[0].0.contains("target1"), "first callee must be target1, got {}", found[0].0);
-        assert_eq!(found[0].1, Provenance::Extracted, "target1 provenance must be Extracted");
-        assert!((found[0].2 - 1.0).abs() < 1e-9, "target1 confidence must be 1.0");
-
-        assert!(found[1].0.contains("target2"), "second callee must be target2, got {}", found[1].0);
-        assert_eq!(found[1].1, Provenance::Inferred, "target2 provenance must be Inferred");
-        assert!((found[1].2 - 0.7).abs() < 1e-9, "target2 confidence must be 0.7");
-
-        assert!(found[2].0.contains("target3"), "third callee must be target3, got {}", found[2].0);
-        assert_eq!(found[2].1, Provenance::Ambiguous, "target3 provenance must be Ambiguous");
-        assert!((found[2].2 - 0.3).abs() < 1e-9, "target3 confidence must be 0.3");
-
-        // ---- Verify rev4 has different callees ----
-        let loaded_rev4 = repo.load_call_graph_ws(&ws, rev4)
-            .await
-            .expect("load rev4 must succeed")
-            .expect("rev4 should exist");
-        let callees_rev4 = loaded_rev4.callees_with_metadata(&caller4);
-
-        assert_eq!(callees_rev4.len(), 1, "rev4 must have exactly 1 callee");
-        let t4_name = &callees_rev4[0].0;
-        assert!(t4_name.as_str().contains("target4_new"), "rev4 callee must be target4_new, got {}", t4_name);
-    });
+    );
 
     // -------------------------------------------------------------------------
     // Task 1.4a RED — graph_revisions table with head uniqueness
@@ -5686,19 +5914,23 @@ mod tests {
 
         // Should have: workspace_id, revision_id, created_at, head_of
         assert!(
-            rows.iter().any(|r| r.get::<String, _>("column_name") == "workspace_id"),
+            rows.iter()
+                .any(|r| r.get::<String, _>("column_name") == "workspace_id"),
             "workspace_id column missing"
         );
         assert!(
-            rows.iter().any(|r| r.get::<String, _>("column_name") == "revision_id"),
+            rows.iter()
+                .any(|r| r.get::<String, _>("column_name") == "revision_id"),
             "revision_id column missing"
         );
         assert!(
-            rows.iter().any(|r| r.get::<String, _>("column_name") == "created_at"),
+            rows.iter()
+                .any(|r| r.get::<String, _>("column_name") == "created_at"),
             "created_at column missing"
         );
         assert!(
-            rows.iter().any(|r| r.get::<String, _>("column_name") == "head_of"),
+            rows.iter()
+                .any(|r| r.get::<String, _>("column_name") == "head_of"),
             "head_of column missing"
         );
     });
@@ -5733,25 +5965,28 @@ mod tests {
         );
 
         // Verify first row is still there
-        let count: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM graph_revisions WHERE workspace_id = 'ws1'",
-        )
-        .fetch_one(repo.pool())
-        .await
-        .expect("count query");
+        let count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM graph_revisions WHERE workspace_id = 'ws1'")
+                .fetch_one(repo.pool())
+                .await
+                .expect("count query");
         assert_eq!(count, 1, "first row must remain after constraint violation");
     });
 
-        // -------------------------------------------------------------------------
-        // Task 1.4b GREEN — idempotent on empty (migration is embedded + run)
-        // -------------------------------------------------------------------------
-        #[cfg(feature = "postgres")]
-        pg_test!(run_migrations_idempotent_on_empty_graph_revisions, |pool: PgPool| {
+    // -------------------------------------------------------------------------
+    // Task 1.4b GREEN — idempotent on empty (migration is embedded + run)
+    // -------------------------------------------------------------------------
+    #[cfg(feature = "postgres")]
+    pg_test!(
+        run_migrations_idempotent_on_empty_graph_revisions,
+        |pool: PgPool| {
             let repo = PostgresRepository::from_pool(pool);
             // First call — runs migrations
             repo.run_migrations().await.expect("first call");
             // Second call — must be idempotent
-            repo.run_migrations().await.expect("second call must be idempotent");
+            repo.run_migrations()
+                .await
+                .expect("second call must be idempotent");
 
             // Insert two revisions — first head, second non-head
             sqlx::query(
@@ -5770,13 +6005,13 @@ mod tests {
             .await
             .expect("insert non-head revision");
 
-            let count: i64 =
-                sqlx::query_scalar("SELECT count(*) FROM graph_revisions")
-                    .fetch_one(repo.pool())
-                    .await
-                    .expect("count");
+            let count: i64 = sqlx::query_scalar("SELECT count(*) FROM graph_revisions")
+                .fetch_one(repo.pool())
+                .await
+                .expect("count");
             assert_eq!(count, 2, "expected 2 revisions");
-        });
+        }
+    );
 
     // -------------------------------------------------------------------------
     // Task 1.5a RED — workspace-scoped identity migration
@@ -5820,55 +6055,58 @@ mod tests {
     });
 
     #[cfg(feature = "postgres")]
-    pg_test!(homonymous_nodes_across_workspaces_no_collision, |pool: PgPool| {
-        let repo = PostgresRepository::from_pool(pool);
+    pg_test!(
+        homonymous_nodes_across_workspaces_no_collision,
+        |pool: PgPool| {
+            let repo = PostgresRepository::from_pool(pool);
 
-        // Insert a node in ws1
-        sqlx::query(
-            "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
+            // Insert a node in ws1
+            sqlx::query(
+                "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
              VALUES ('ws1', 'src/x.rs:foo:1', 'symbol.function', 'foo')",
-        )
-        .execute(repo.pool())
-        .await
-        .expect("insert ws1 node");
+            )
+            .execute(repo.pool())
+            .await
+            .expect("insert ws1 node");
 
-        // Insert a node with SAME id and kind but DIFFERENT workspace — must succeed
-        sqlx::query(
-            "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
+            // Insert a node with SAME id and kind but DIFFERENT workspace — must succeed
+            sqlx::query(
+                "INSERT INTO graph_nodes (workspace_id, id, kind, label) \
              VALUES ('ws2', 'src/x.rs:foo:1', 'symbol.function', 'bar')",
-        )
-        .execute(repo.pool())
-        .await
-        .expect("insert ws2 node with same id/kind must succeed");
+            )
+            .execute(repo.pool())
+            .await
+            .expect("insert ws2 node with same id/kind must succeed");
 
-        // Verify both exist
-        let count: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM graph_nodes \
+            // Verify both exist
+            let count: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM graph_nodes \
              WHERE id = 'src/x.rs:foo:1' AND kind = 'symbol.function'",
-        )
-        .fetch_one(repo.pool())
-        .await
-        .expect("count");
-        assert_eq!(count, 2, "expected 2 rows (one per workspace)");
+            )
+            .fetch_one(repo.pool())
+            .await
+            .expect("count");
+            assert_eq!(count, 2, "expected 2 rows (one per workspace)");
 
-        // Verify they are distinct by workspace
-        let ws1_label: String = sqlx::query_scalar(
-            "SELECT label FROM graph_nodes \
+            // Verify they are distinct by workspace
+            let ws1_label: String = sqlx::query_scalar(
+                "SELECT label FROM graph_nodes \
              WHERE workspace_id = 'ws1' AND id = 'src/x.rs:foo:1'",
-        )
-        .fetch_one(repo.pool())
-        .await
-        .expect("ws1 label");
-        let ws2_label: String = sqlx::query_scalar(
-            "SELECT label FROM graph_nodes \
+            )
+            .fetch_one(repo.pool())
+            .await
+            .expect("ws1 label");
+            let ws2_label: String = sqlx::query_scalar(
+                "SELECT label FROM graph_nodes \
              WHERE workspace_id = 'ws2' AND id = 'src/x.rs:foo:1'",
-        )
-        .fetch_one(repo.pool())
-        .await
-        .expect("ws2 label");
-        assert_eq!(ws1_label, "foo");
-        assert_eq!(ws2_label, "bar");
-    });
+            )
+            .fetch_one(repo.pool())
+            .await
+            .expect("ws2 label");
+            assert_eq!(ws1_label, "foo");
+            assert_eq!(ws2_label, "bar");
+        }
+    );
 
     #[cfg(feature = "postgres")]
     pg_test!(workspace_scoped_edges_unique_index, |pool: PgPool| {

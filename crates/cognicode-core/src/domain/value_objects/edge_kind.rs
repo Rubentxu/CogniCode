@@ -318,7 +318,10 @@ mod tests {
         #[cfg(feature = "multimodal")]
         {
             assert_eq!(EdgeKind::PartOf.as_str(), format!("{}", EdgeKind::PartOf));
-            assert_eq!(EdgeKind::DeployedAs.as_str(), format!("{}", EdgeKind::DeployedAs));
+            assert_eq!(
+                EdgeKind::DeployedAs.as_str(),
+                format!("{}", EdgeKind::DeployedAs)
+            );
         }
     }
 

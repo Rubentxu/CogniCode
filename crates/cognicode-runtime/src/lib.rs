@@ -218,13 +218,15 @@ impl Runtime {
                 None
             };
         #[cfg(all(feature = "multimodal", not(feature = "postgres")))]
-        let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> = Some(Arc::new(
-            cognicode_explorer::adapters::InMemoryGraphRepository::new(vec![], vec![]),
-        ));
+        let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> =
+            Some(Arc::new(
+                cognicode_explorer::adapters::InMemoryGraphRepository::new(vec![], vec![]),
+            ));
         #[cfg(not(feature = "multimodal"))]
-        let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> = Some(Arc::new(
-            cognicode_explorer::adapters::InMemoryGraphRepository::new(vec![], vec![]),
-        ));
+        let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> =
+            Some(Arc::new(
+                cognicode_explorer::adapters::InMemoryGraphRepository::new(vec![], vec![]),
+            ));
 
         let search: Arc<dyn cognicode_explorer::facades::SearchService> =
             Arc::new(cognicode_explorer::facades::search::SearchServiceImpl::new(
@@ -263,7 +265,7 @@ impl Runtime {
                 None, // graph_repo
                 graph_executor,
                 Some("default".to_string()), // workspace_id — runtime doesn't track active workspace yet
-                Some(1),                   // revision_id — default revision
+                Some(1),                     // revision_id — default revision
             ));
 
         // Graph facade.

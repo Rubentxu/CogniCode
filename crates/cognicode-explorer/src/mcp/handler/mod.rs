@@ -19,12 +19,12 @@ use std::collections::HashMap;
 mod ask;
 // `context_builder` is `pub` so integration tests in `tests/` can
 // register its handlers into a fresh registry.
+mod analytics;
 pub mod context_builder;
 mod drift;
 /// C4 Mermaid export handler.
 pub mod export;
 mod graph;
-mod analytics;
 mod graph_analyze;
 mod impact;
 mod ingest;
@@ -156,6 +156,7 @@ fn unknown_tool_error(name: &str) -> CallToolResult {
 }
 
 // Re-export registration functions from submodules for ergonomic external use.
+pub use analytics::register_analytics_handlers;
 pub use ask::register_ask_handlers;
 pub use context_builder::register_context_builder_handlers;
 pub use drift::register_drift_handlers;
@@ -164,7 +165,6 @@ pub use graph::register_graph_handlers;
 pub use graph_analyze::register_graph_analyze_handlers;
 pub use impact::register_impact_handlers;
 pub use ingest::register_ingest_handlers;
-pub use analytics::register_analytics_handlers;
 pub use internal_mcp::register_internal_mcp_handlers;
 pub use lens_mcp::register_lens_mcp_handlers;
 pub use named_views::register_named_views_handlers;

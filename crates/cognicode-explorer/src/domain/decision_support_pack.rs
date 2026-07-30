@@ -12,17 +12,17 @@ use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
 use cognicode_core::domain::ports::GraphRepository;
+use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
-use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 use serde::{Deserialize, Serialize};
 
+use crate::domain::decision_graph_topology::DecisionGraphTopology;
 use crate::dto::{ContextualView, EvidenceBlock, ViewBlock};
 use crate::error::ExplorerResult;
 use crate::ports::graph_repository::GraphRepository as PortsGraphRepository;
-use crate::ports::symbol_repository::ResolvedSymbol;
 use crate::ports::quality_repository::QualityRepository;
-use crate::domain::decision_graph_topology::DecisionGraphTopology;
+use crate::ports::symbol_repository::ResolvedSymbol;
 
 /// Maximum traversal depth for rationale subgraph in pack builder.
 pub(crate) const PACK_RATIONALE_MAX_DEPTH: u32 = 3;
@@ -127,7 +127,9 @@ impl DecisionSupportPackBuilder {
         let (subgraph_nodes, subgraph_edges, _) = repo
             .rationale_subgraph(&node_id, PACK_RATIONALE_MAX_DEPTH, PACK_RATIONALE_MAX_NODES)
             .await
-            .map_err(|e| crate::error::ExplorerError::NotFound(format!("rationale_subgraph: {e}")))?;
+            .map_err(|e| {
+                crate::error::ExplorerError::NotFound(format!("rationale_subgraph: {e}"))
+            })?;
 
         // Resolve primary symbol: highest-confidence outgoing edge target
         let primary_symbol = resolve_primary_symbol(&subgraph_nodes, &subgraph_edges, &node_id);
@@ -139,8 +141,12 @@ impl DecisionSupportPackBuilder {
             .collect();
 
         // Helper closures to convert Option<Arc<dyn T>> to Option<&dyn T>
-        let graph_query_ref = graph_query.as_ref().map(|g| g.as_ref() as &dyn GraphQueryPort);
-        let quality_ref = quality.as_ref().map(|q| q.as_ref() as &dyn QualityRepository);
+        let graph_query_ref = graph_query
+            .as_ref()
+            .map(|g| g.as_ref() as &dyn GraphQueryPort);
+        let quality_ref = quality
+            .as_ref()
+            .map(|q| q.as_ref() as &dyn QualityRepository);
 
         // Fan out via tokio::join! — all five futures run concurrently
         let (dg_result, ar_result, ep_result, rm_result, cis_result) = tokio::join!(
@@ -153,7 +159,11 @@ impl DecisionSupportPackBuilder {
 
         let panes = vec![
             pack_pane("decision_graph", "Decision Graph", dg_result),
-            pack_pane("architecture_rationale", "Architecture Rationale", ar_result),
+            pack_pane(
+                "architecture_rationale",
+                "Architecture Rationale",
+                ar_result,
+            ),
             pack_pane("evidence_pack", "Evidence Pack", ep_result),
             pack_pane("risk_map", "Risk Map", rm_result),
             pack_pane("change_impact_story", "Change Impact Story", cis_result),
@@ -179,10 +189,12 @@ impl DecisionSupportPackBuilder {
         let node_id = &decision_node.id;
         let topology = DecisionGraphTopology::build(repo, node_id, None, None).await?;
 
-        Ok(crate::domain::decision_graph_topology::assemble_decision_graph_view(
-            decision_node,
-            topology,
-        ))
+        Ok(
+            crate::domain::decision_graph_topology::assemble_decision_graph_view(
+                decision_node,
+                topology,
+            ),
+        )
     }
 
     /// F2: ArchitectureRationale — uses Markdown renderer.
@@ -207,7 +219,10 @@ impl DecisionSupportPackBuilder {
                 id: format!("evidence:{}", n.id),
                 kind: "evidence".into(),
                 title: n.label.clone(),
-                file: n.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                file: n
+                    .source_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
                 line_range: None,
                 source_tool_or_query: "GraphRepository::rationale_subgraph".into(),
                 confidence: Some(1.0),
@@ -354,7 +369,7 @@ impl DecisionSupportPackBuilder {
 // ============================================================================
 
 use crate::ports::source_reader::SourceReader;
-use crate::ports::symbol_repository::{SymbolRepository, GraphStats};
+use crate::ports::symbol_repository::{GraphStats, SymbolRepository};
 use cognicode_core::domain::aggregates::SymbolId;
 
 /// Stub symbol repository that returns empty results.
@@ -373,7 +388,10 @@ impl SymbolRepository for StubSymbolRepo {
         Ok(vec![])
     }
     fn graph_stats(&self) -> GraphStats {
-        GraphStats { symbol_count: 0, relation_count: 0 }
+        GraphStats {
+            symbol_count: 0,
+            relation_count: 0,
+        }
     }
     fn module_list(&self) -> Vec<String> {
         vec![]
@@ -389,7 +407,12 @@ impl SourceReader for StubSourceReader {
             object_id: _file.to_string(),
         })
     }
-    fn read_lines(&self, _file: &str, _start: u32, _end: u32) -> ExplorerResult<Vec<(u32, String)>> {
+    fn read_lines(
+        &self,
+        _file: &str,
+        _start: u32,
+        _end: u32,
+    ) -> ExplorerResult<Vec<(u32, String)>> {
         Err(crate::error::ExplorerError::SourceUnavailable {
             file: _file.to_string(),
             object_id: _file.to_string(),
@@ -411,23 +434,18 @@ fn resolve_primary_symbol<'a>(
     decision_id: &NodeId,
 ) -> Option<&'a GraphNode> {
     // Find outgoing edges from the decision node
-    let outgoing: Vec<&GraphEdge> = edges
-        .iter()
-        .filter(|e| e.source == *decision_id)
-        .collect();
+    let outgoing: Vec<&GraphEdge> = edges.iter().filter(|e| e.source == *decision_id).collect();
 
     if outgoing.is_empty() {
         return None;
     }
 
     // Find the edge with highest confidence
-    let best_edge = outgoing
-        .iter()
-        .max_by(|a, b| {
-            a.confidence
-                .partial_cmp(&b.confidence)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })?;
+    let best_edge = outgoing.iter().max_by(|a, b| {
+        a.confidence
+            .partial_cmp(&b.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })?;
 
     // Find the target node
     nodes.iter().find(|n| n.id == best_edge.target)
@@ -553,13 +571,26 @@ mod tests {
 
         let result = DecisionSupportPackBuilder::build("A", None, None, Some(&repo)).await;
 
-        assert!(result.is_ok(), "Pack build should succeed despite partial failure: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Pack build should succeed despite partial failure: {:?}",
+            result
+        );
         let pack = result.unwrap();
 
         // decision_graph, architecture_rationale, evidence_pack should succeed
-        assert!(matches!(pack.panes[0].status, PaneStatus::Ok), "decision_graph should be Ok");
-        assert!(matches!(pack.panes[1].status, PaneStatus::Ok), "architecture_rationale should be Ok");
-        assert!(matches!(pack.panes[2].status, PaneStatus::Ok), "evidence_pack should be Ok");
+        assert!(
+            matches!(pack.panes[0].status, PaneStatus::Ok),
+            "decision_graph should be Ok"
+        );
+        assert!(
+            matches!(pack.panes[1].status, PaneStatus::Ok),
+            "architecture_rationale should be Ok"
+        );
+        assert!(
+            matches!(pack.panes[2].status, PaneStatus::Ok),
+            "evidence_pack should be Ok"
+        );
 
         // risk_map and change_impact_story are degraded without primary symbol
         // (W-002: partial failures now use Degraded, not Failed)
@@ -635,7 +666,9 @@ mod tests {
 
         // Evidence blocks should be populated
         let view = ep_pane.view.as_ref().unwrap();
-        assert!(!view.evidence.is_empty() || view.blocks.iter().any(|b| b.id == "no_evidence"),
-            "Evidence pack should have evidence blocks or no_evidence message");
+        assert!(
+            !view.evidence.is_empty() || view.blocks.iter().any(|b| b.id == "no_evidence"),
+            "Evidence pack should have evidence blocks or no_evidence message"
+        );
     }
 }

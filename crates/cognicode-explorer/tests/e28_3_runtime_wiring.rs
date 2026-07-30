@@ -206,7 +206,8 @@ impl PersistenceService for MockPersistenceService {
     async fn load_exploration_session(
         &self,
         _: &str,
-    ) -> cognicode_explorer::ExplorerResult<Option<cognicode_explorer::dto::ExplorationSession>> {
+    ) -> cognicode_explorer::ExplorerResult<Option<cognicode_explorer::dto::ExplorationSession>>
+    {
         Ok(None)
     }
     async fn list_explorations(
@@ -262,7 +263,9 @@ impl GraphService for MockGraphService {
     async fn resolve_symbol(
         &self,
         _: &str,
-    ) -> cognicode_explorer::ExplorerResult<Option<cognicode_explorer::ports::symbol_repository::ResolvedSymbol>> {
+    ) -> cognicode_explorer::ExplorerResult<
+        Option<cognicode_explorer::ports::symbol_repository::ResolvedSymbol>,
+    > {
         Ok(None)
     }
     fn graph_query(&self) -> Option<Arc<dyn cognicode_core::domain::traits::GraphQueryPort>> {
@@ -302,7 +305,9 @@ impl GraphService for MockGraphService {
         &self,
         _: usize,
         _: usize,
-    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::ports::symbol_repository::ResolvedSymbol>> {
+    ) -> cognicode_explorer::ExplorerResult<
+        Vec<cognicode_explorer::ports::symbol_repository::ResolvedSymbol>,
+    > {
         Ok(vec![])
     }
     async fn landing_god_nodes(
@@ -324,7 +329,11 @@ impl GraphService for MockGraphService {
 #[tokio::test]
 async fn revision_tracker_bumps_after_ingest() {
     let tracker = Arc::new(AtomicU64::new(1));
-    assert_eq!(tracker.load(Ordering::SeqCst), 1, "precondition: tracker starts at 1");
+    assert_eq!(
+        tracker.load(Ordering::SeqCst),
+        1,
+        "precondition: tracker starts at 1"
+    );
 
     let recording = Arc::new(RecordingMoldQLService::new());
     let workspace = Arc::new(MockWorkspaceForPin::new("test-ws"));
@@ -411,7 +420,10 @@ async fn moldql_pattern_handler_uses_explicit_pin() {
     assert_eq!(response.status(), StatusCode::OK, "handler should succeed");
 
     let pin = recording.take_recorded_pin();
-    assert!(pin.is_some(), "execute_query_pinned should have been called");
+    assert!(
+        pin.is_some(),
+        "execute_query_pinned should have been called"
+    );
     let (ws, rev) = pin.unwrap();
     assert_eq!(ws, "explicit-ws", "workspace_id should match body");
     assert_eq!(rev, 99, "revision_id should match body");
@@ -458,7 +470,10 @@ async fn moldql_pattern_handler_falls_back_to_current_pin() {
     assert_eq!(response.status(), StatusCode::OK, "handler should succeed");
 
     let pin = recording.take_recorded_pin();
-    assert!(pin.is_some(), "execute_query_pinned should have been called");
+    assert!(
+        pin.is_some(),
+        "execute_query_pinned should have been called"
+    );
     let (ws, rev) = pin.unwrap();
     assert_eq!(
         ws, "current-ws",

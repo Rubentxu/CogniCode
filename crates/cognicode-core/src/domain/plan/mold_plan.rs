@@ -14,7 +14,7 @@ use std::fmt;
 
 // Types from sibling modules.
 use super::filter::{PlanFilter, PlanFilterOp};
-use super::limits::{PlanLimits, PlanLimit, PlanLimitsBuilder};
+use super::limits::{PlanLimit, PlanLimits, PlanLimitsBuilder};
 use super::value::TypedValue;
 use super::version::{PlanHash, PlanMetadata, PlanVersion};
 
@@ -62,7 +62,10 @@ pub enum MoldPlan {
     Graph {
         inner: super::GraphPlan,
         /// Workspace and revision pin. Once set via `with_pin`, it cannot be changed.
-        pin: Option<(super::super::value_objects::WorkspaceId, super::super::value_objects::RevisionId)>,
+        pin: Option<(
+            super::super::value_objects::WorkspaceId,
+            super::super::value_objects::RevisionId,
+        )>,
     },
     /// An OBJECT SELECTION query: select specific objects by identity.
     ObjectSelection {
@@ -187,7 +190,12 @@ impl MoldPlan {
     }
 
     /// Returns the workspace and revision pin, if set.
-    pub fn pin(&self) -> Option<&(super::super::value_objects::WorkspaceId, super::super::value_objects::RevisionId)> {
+    pub fn pin(
+        &self,
+    ) -> Option<&(
+        super::super::value_objects::WorkspaceId,
+        super::super::value_objects::RevisionId,
+    )> {
         match self {
             MoldPlan::Graph { pin, .. } => pin.as_ref(),
             _ => None,
@@ -198,7 +206,9 @@ impl MoldPlan {
 impl fmt::Display for MoldPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MoldPlan::Select { from, projection, .. } => {
+            MoldPlan::Select {
+                from, projection, ..
+            } => {
                 write!(f, "Select(from={from}, projection={projection:?})")
             }
             MoldPlan::Count { from, .. } => write!(f, "Count(from={from})"),
@@ -217,7 +227,9 @@ impl fmt::Display for MoldPlan {
                 write!(f, "ObjectSelection(objects={:?})", objects)
             }
             MoldPlan::Quality { scope, .. } => write!(f, "Quality(scope={scope})"),
-            MoldPlan::Lens { lens_name, scope, .. } => {
+            MoldPlan::Lens {
+                lens_name, scope, ..
+            } => {
                 write!(f, "Lens({lens_name}, scope={scope})")
             }
             MoldPlan::ViewExecution { view_id, .. } => {
@@ -226,8 +238,6 @@ impl fmt::Display for MoldPlan {
         }
     }
 }
-
-
 
 // ============================================================================
 // Tests
@@ -305,9 +315,7 @@ mod tests {
             group_by: vec!["kind".into()],
             aggregations: vec![TypedValue::Int(1)],
             r#where: vec![],
-            limits: PlanLimits::builder()
-                .max_result_rows(100)
-                .build(),
+            limits: PlanLimits::builder().max_result_rows(100).build(),
             metadata: PlanMetadata::new(
                 PlanVersion::new("1.0.0").unwrap(),
                 PlanHash::compute(&0u32),
@@ -346,7 +354,10 @@ mod tests {
     /// `PlanFilter` serde round-trip.
     #[test]
     fn plan_filter_roundtrip() {
-        let filter = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.5 };
+        let filter = PlanFilter::Confidence {
+            op: PlanFilterOp::Gt,
+            threshold: 0.5,
+        };
         let json = serde_json::to_string(&filter).expect("serialize");
         let parsed: PlanFilter = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, filter);
@@ -374,8 +385,8 @@ mod tests {
     /// `MoldPlan::Graph` can be pinned to a workspace and revision.
     #[test]
     fn with_pin_sets_pin() {
-        use crate::domain::value_objects::{WorkspaceId, RevisionId};
         use super::super::{GraphPlan, NeighborKind};
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
         let inner = GraphPlan::Neighbors {
             src: "A".into(),
@@ -393,15 +404,17 @@ mod tests {
         let ws = WorkspaceId::try_new("ws1").expect("valid workspace id");
         let rev = RevisionId::new(3);
 
-        let pinned = plan.with_pin(ws.clone(), rev.clone()).expect("with_pin should succeed");
+        let pinned = plan
+            .with_pin(ws.clone(), rev.clone())
+            .expect("with_pin should succeed");
         assert_eq!(pinned.pin(), Some(&(ws, rev)));
     }
 
     /// Pinning twice returns `AlreadyPinned` error.
     #[test]
     fn with_pin_twice_returns_error() {
-        use crate::domain::value_objects::{WorkspaceId, RevisionId};
         use super::super::{GraphPlan, NeighborKind};
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
         let inner = GraphPlan::Neighbors {
             src: "A".into(),
@@ -419,16 +432,21 @@ mod tests {
         let ws = WorkspaceId::try_new("ws1").expect("valid workspace id");
         let rev = RevisionId::new(3);
 
-        let pinned = plan.with_pin(ws.clone(), rev.clone()).expect("first with_pin should succeed");
+        let pinned = plan
+            .with_pin(ws.clone(), rev.clone())
+            .expect("first with_pin should succeed");
         let result = pinned.with_pin(ws, rev);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), super::super::PlanError::AlreadyPinned));
+        assert!(matches!(
+            result.unwrap_err(),
+            super::super::PlanError::AlreadyPinned
+        ));
     }
 
     /// `with_pin` on a non-graph plan returns `NotAGraphPlan`.
     #[test]
     fn with_pin_on_non_graph_plan_error() {
-        use crate::domain::value_objects::{WorkspaceId, RevisionId};
+        use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
         let plan = MoldPlan::Select {
             from: "symbols".into(),
@@ -445,7 +463,10 @@ mod tests {
 
         let result = plan.with_pin(ws, rev);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), super::super::PlanError::NotAGraphPlan));
+        assert!(matches!(
+            result.unwrap_err(),
+            super::super::PlanError::NotAGraphPlan
+        ));
     }
 
     /// `MoldPlan::Graph` with no pin returns `None` from `pin()`.

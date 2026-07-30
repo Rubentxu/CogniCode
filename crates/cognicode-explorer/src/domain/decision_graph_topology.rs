@@ -59,7 +59,9 @@ impl DecisionGraphTopology {
         let (nodes, raw_edges, truncated) = repo
             .rationale_subgraph(focus_id, depth, node_cap)
             .await
-            .map_err(|e| crate::error::ExplorerError::NotFound(format!("rationale_subgraph: {e}")))?;
+            .map_err(|e| {
+                crate::error::ExplorerError::NotFound(format!("rationale_subgraph: {e}"))
+            })?;
 
         let edges = raw_edges
             .into_iter()
@@ -113,7 +115,10 @@ pub fn build_decision_graph_relations(
 /// Build the graph block for the decision graph view.
 ///
 /// Shapes the topology data for the `GraphViewRenderer` frontend component.
-pub fn build_decision_graph_block(topology: &DecisionGraphTopology, focus_id: &NodeId) -> ViewBlock {
+pub fn build_decision_graph_block(
+    topology: &DecisionGraphTopology,
+    focus_id: &NodeId,
+) -> ViewBlock {
     let nodes_json: Vec<serde_json::Value> = topology
         .nodes
         .iter()
@@ -166,7 +171,10 @@ pub fn build_decision_graph_evidence(
         id: evidence_id.to_string(),
         kind: "decision_graph".into(),
         title: format!("Decision Graph: {}", focus_node.label),
-        file: focus_node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+        file: focus_node
+            .source_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned()),
         line_range: None,
         source_tool_or_query: "GraphRepository::rationale_subgraph".into(),
         confidence: Some(1.0),

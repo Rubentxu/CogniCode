@@ -3,16 +3,16 @@
 //! Part of e28-3-moldql-pattern-profile-v1: PR1 Foundation.
 
 use cognicode_core::domain::plan::{
-    GraphPlan, NeighborKind, OrderClause as DomainOrderClause, OrderDirection as DomainOrderDirection,
-    PathPredicate, PathProjection, PathQuantifier, PlanError, PlanHash, PlanLimits, PlanMetadata,
-    PlanVersion,
+    GraphPlan, NeighborKind, OrderClause as DomainOrderClause,
+    OrderDirection as DomainOrderDirection, PathPredicate, PathProjection, PathQuantifier,
+    PlanError, PlanHash, PlanLimits, PlanMetadata, PlanVersion,
 };
-use std::str::FromStr;
 use cognicode_core::domain::value_objects::DependencyType;
+use std::str::FromStr;
 
 use super::ast::{
-    Aggregation, Binding, EdgeDirection, EdgePattern, OrderClause, OrderDirection, PatternPredicate,
-    PatternProjection, PatternQuery, PatternValue, PredicateTarget,
+    Aggregation, Binding, EdgeDirection, EdgePattern, OrderClause, OrderDirection,
+    PatternPredicate, PatternProjection, PatternQuery, PatternValue, PredicateTarget,
 };
 
 /// Default maximum hops for `+` quantifier in Pattern Profile.
@@ -43,7 +43,9 @@ impl super::MoldqlAstLowerer {
             .and_then(|b| b.name.clone())
             .ok_or_else(|| {
                 let uc = cognicode_core::domain::plan::UnsupportedConstruct::new(
-                    cognicode_core::domain::plan::ConstructId::Other("missing anchor binding".into()),
+                    cognicode_core::domain::plan::ConstructId::Other(
+                        "missing anchor binding".into(),
+                    ),
                     String::from("Pattern must have at least one named node binding"),
                 );
                 PlanError::UnsupportedConstruct(uc)
@@ -54,14 +56,20 @@ impl super::MoldqlAstLowerer {
             .and_then(|b| b.name.clone())
             .ok_or_else(|| {
                 let uc = cognicode_core::domain::plan::UnsupportedConstruct::new(
-                    cognicode_core::domain::plan::ConstructId::Other("missing target binding".into()),
+                    cognicode_core::domain::plan::ConstructId::Other(
+                        "missing target binding".into(),
+                    ),
                     String::from("Pattern must have at least one named node binding"),
                 );
                 PlanError::UnsupportedConstruct(uc)
             })?;
 
         // 3. Build edge kind filter from edge patterns.
-        let edge_kind_filter = if q.edges.iter().any(|e| !e.kind.eq_ignore_ascii_case("calls")) {
+        let edge_kind_filter = if q
+            .edges
+            .iter()
+            .any(|e| !e.kind.eq_ignore_ascii_case("calls"))
+        {
             Some(
                 q.edges
                     .iter()
@@ -126,58 +134,53 @@ impl super::MoldqlAstLowerer {
         }
     }
 
-    fn lower_pattern_predicates(
-        &self,
-        preds: &[PatternPredicate],
-    ) -> Vec<PathPredicate> {
+    fn lower_pattern_predicates(&self, preds: &[PatternPredicate]) -> Vec<PathPredicate> {
         preds
             .iter()
-            .filter_map(|p| {
-                match p {
-                    PatternPredicate::Property { target, field, op, value } => {
-                        let label = match target {
-                            PredicateTarget::Node(n) => format!("{}.{}", n, field),
-                            PredicateTarget::Edge(e) => format!("{}.{}", e, field),
-                            PredicateTarget::Anonymous => field.clone(),
-                        };
-                        let value = match value {
-                            PatternValue::String(s) => {
-                                cognicode_core::domain::plan::TypedValue::String(s.clone())
-                            }
-                            PatternValue::Number(n) => {
-                                cognicode_core::domain::plan::TypedValue::Float(*n)
-                            }
-                        };
-                        Some(PathPredicate { label, value })
-                    }
-                    PatternPredicate::Provenance { target, source } => {
-                        let label = match target {
-                            Some(n) => format!("{}.provenance", n),
-                            None => "provenance".into(),
-                        };
-                        let value =
-                            cognicode_core::domain::plan::TypedValue::String(source.clone());
-                        Some(PathPredicate { label, value })
-                    }
-                    PatternPredicate::Confidence { target, op, value } => {
-                        let label = match target {
-                            PredicateTarget::Node(n) => format!("{}.confidence", n),
-                            PredicateTarget::Edge(e) => format!("{}.confidence", e),
-                            PredicateTarget::Anonymous => "confidence".into(),
-                        };
-                        let v = cognicode_core::domain::plan::TypedValue::Float(*value);
-                        Some(PathPredicate { label, value: v })
-                    }
+            .filter_map(|p| match p {
+                PatternPredicate::Property {
+                    target,
+                    field,
+                    op,
+                    value,
+                } => {
+                    let label = match target {
+                        PredicateTarget::Node(n) => format!("{}.{}", n, field),
+                        PredicateTarget::Edge(e) => format!("{}.{}", e, field),
+                        PredicateTarget::Anonymous => field.clone(),
+                    };
+                    let value = match value {
+                        PatternValue::String(s) => {
+                            cognicode_core::domain::plan::TypedValue::String(s.clone())
+                        }
+                        PatternValue::Number(n) => {
+                            cognicode_core::domain::plan::TypedValue::Float(*n)
+                        }
+                    };
+                    Some(PathPredicate { label, value })
+                }
+                PatternPredicate::Provenance { target, source } => {
+                    let label = match target {
+                        Some(n) => format!("{}.provenance", n),
+                        None => "provenance".into(),
+                    };
+                    let value = cognicode_core::domain::plan::TypedValue::String(source.clone());
+                    Some(PathPredicate { label, value })
+                }
+                PatternPredicate::Confidence { target, op, value } => {
+                    let label = match target {
+                        PredicateTarget::Node(n) => format!("{}.confidence", n),
+                        PredicateTarget::Edge(e) => format!("{}.confidence", e),
+                        PredicateTarget::Anonymous => "confidence".into(),
+                    };
+                    let v = cognicode_core::domain::plan::TypedValue::Float(*value);
+                    Some(PathPredicate { label, value: v })
                 }
             })
             .collect()
     }
 
-    fn lower_pattern_projection(
-        &self,
-        proj: &PatternProjection,
-        shortest: bool,
-    ) -> PathProjection {
+    fn lower_pattern_projection(&self, proj: &PatternProjection, shortest: bool) -> PathProjection {
         match proj {
             PatternProjection::Path { bindings } => PathProjection {
                 nodes: bindings.clone(),
@@ -227,9 +230,10 @@ impl super::MoldqlAstLowerer {
                 let aggs = aggregations
                     .iter()
                     .map(|a| match a {
-                        Aggregation::Count { binding: _, alias: _ } => {
-                            cognicode_core::domain::plan::TypedValue::Int(0)
-                        }
+                        Aggregation::Count {
+                            binding: _,
+                            alias: _,
+                        } => cognicode_core::domain::plan::TypedValue::Int(0),
                     })
                     .collect();
                 let ordering = ordering.as_ref().map(|o| DomainOrderClause {
@@ -254,8 +258,8 @@ impl super::MoldqlAstLowerer {
 mod tests {
     use super::*;
     use crate::moldql::ast::{
-        Binding, EdgeDirection, EdgePattern, MoldQLQuery, PathQuantifier, PatternProjection,
-        PatternQuery, PatternPredicate, PredicateTarget,
+        Binding, EdgeDirection, EdgePattern, MoldQLQuery, PathQuantifier, PatternPredicate,
+        PatternProjection, PatternQuery, PredicateTarget,
     };
     use crate::moldql::lower_plan::MoldqlAstLowerer;
     use cognicode_core::domain::plan::lower::AstLowerer;
@@ -267,8 +271,14 @@ mod tests {
         let ast = MoldQLQuery::Pattern(PatternQuery {
             shortest: false,
             bindings: vec![
-                Binding { name: Some("r".into()), kind: "Route".into() },
-                Binding { name: Some("f".into()), kind: "Function".into() },
+                Binding {
+                    name: Some("r".into()),
+                    kind: "Route".into(),
+                },
+                Binding {
+                    name: Some("f".into()),
+                    kind: "Function".into(),
+                },
             ],
             edges: vec![EdgePattern {
                 name: Some("c".into()),
@@ -284,8 +294,18 @@ mod tests {
         let result = lowerer.lower(&ast);
         assert!(result.is_ok(), "lowering should succeed: {:?}", result);
         let plan = result.unwrap();
-        assert!(matches!(plan, GraphPlan::Path { .. }), "expected Path variant");
-        if let GraphPlan::Path { src, dst, quantifier, projection, .. } = &plan {
+        assert!(
+            matches!(plan, GraphPlan::Path { .. }),
+            "expected Path variant"
+        );
+        if let GraphPlan::Path {
+            src,
+            dst,
+            quantifier,
+            projection,
+            ..
+        } = &plan
+        {
             assert_eq!(src, "r");
             assert_eq!(dst, "f");
             assert_eq!(quantifier.max_hops, Some(3));
@@ -301,17 +321,28 @@ mod tests {
         let ast = MoldQLQuery::Pattern(PatternQuery {
             shortest: false,
             bindings: vec![
-                Binding { name: Some("a".into()), kind: "Function".into() },
-                Binding { name: Some("b".into()), kind: "Function".into() },
+                Binding {
+                    name: Some("a".into()),
+                    kind: "Function".into(),
+                },
+                Binding {
+                    name: Some("b".into()),
+                    kind: "Function".into(),
+                },
             ],
             edges: vec![EdgePattern {
                 name: None,
                 kind: "Calls".into(),
-                quantifier: PathQuantifier { max_hops: None, min_hops: 0 },
+                quantifier: PathQuantifier {
+                    max_hops: None,
+                    min_hops: 0,
+                },
                 direction: EdgeDirection::Outgoing,
             }],
             predicates: vec![],
-            projection: PatternProjection::Node { binding: "b".into() },
+            projection: PatternProjection::Node {
+                binding: "b".into(),
+            },
         });
         let result = lowerer.lower(&ast);
         assert!(result.is_err(), "unbounded should be rejected");
@@ -324,8 +355,14 @@ mod tests {
         let ast = MoldQLQuery::Pattern(PatternQuery {
             shortest: true,
             bindings: vec![
-                Binding { name: Some("a".into()), kind: "Route".into() },
-                Binding { name: Some("b".into()), kind: "Function".into() },
+                Binding {
+                    name: Some("a".into()),
+                    kind: "Route".into(),
+                },
+                Binding {
+                    name: Some("b".into()),
+                    kind: "Function".into(),
+                },
             ],
             edges: vec![EdgePattern {
                 name: Some("c".into()),
@@ -351,8 +388,14 @@ mod tests {
         let ast = MoldQLQuery::Pattern(PatternQuery {
             shortest: false,
             bindings: vec![
-                Binding { name: Some("f".into()), kind: "Function".into() },
-                Binding { name: Some("g".into()), kind: "Function".into() },
+                Binding {
+                    name: Some("f".into()),
+                    kind: "Function".into(),
+                },
+                Binding {
+                    name: Some("g".into()),
+                    kind: "Function".into(),
+                },
             ],
             edges: vec![EdgePattern {
                 name: Some("c".into()),
@@ -376,8 +419,14 @@ mod tests {
             },
         });
         let result = lowerer.lower(&ast).unwrap();
-        assert!(matches!(result, GraphPlan::Cluster { .. }), "expected Cluster variant");
-        if let GraphPlan::Cluster { ordering, limit, .. } = &result {
+        assert!(
+            matches!(result, GraphPlan::Cluster { .. }),
+            "expected Cluster variant"
+        );
+        if let GraphPlan::Cluster {
+            ordering, limit, ..
+        } = &result
+        {
             assert!(ordering.is_some(), "ordering should be set");
             assert_eq!(*limit, Some(5), "limit should be 5");
         }

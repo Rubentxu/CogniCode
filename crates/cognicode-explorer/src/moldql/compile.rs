@@ -36,7 +36,9 @@
 use std::fmt;
 
 use cognicode_core::domain::plan::lower::AstLowerer;
-use cognicode_core::domain::plan::{GraphPlan, MoldPlan, PlanError, PlanHash, PlanLimits, PlanMetadata, PlanVersion};
+use cognicode_core::domain::plan::{
+    GraphPlan, MoldPlan, PlanError, PlanHash, PlanLimits, PlanMetadata, PlanVersion,
+};
 use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
 
 use crate::error::ExplorerResult;
@@ -230,7 +232,10 @@ pub fn compile_pattern(query: &MoldQLQuery) -> Result<CompiledQuery, CompileErro
             let MoldPlan::Graph { inner, .. } = mold_plan else {
                 // This should never happen for a Pattern query, but
                 // defensively handle it.
-                panic!("compile_pattern: expected MoldPlan::Graph, got {:?}", mold_plan);
+                panic!(
+                    "compile_pattern: expected MoldPlan::Graph, got {:?}",
+                    mold_plan
+                );
             };
             CompiledQuery::GraphPlan(inner)
         })
@@ -1193,7 +1198,10 @@ mod compile_to_plan_tests {
         assert_eq!(plan1, plan2, "compile_to_plan should be deterministic");
         // Metadata should be equal
         assert_eq!(plan1.metadata().hash_str(), plan2.metadata().hash_str());
-        assert_eq!(plan1.metadata().version_str(), plan2.metadata().version_str());
+        assert_eq!(
+            plan1.metadata().version_str(),
+            plan2.metadata().version_str()
+        );
     }
 
     #[test]
@@ -1315,18 +1323,18 @@ mod compile_to_plan_tests {
             from: "a".into(),
             to: "b".into(),
             max_hops: None,
-            conditions: vec![
-                Condition {
-                    field: Field::single("confidence"),
-                    op: Op::Gte,
-                    value: Value::Number(0.5),
-                },
-            ],
+            conditions: vec![Condition {
+                field: Field::single("confidence"),
+                op: Op::Gte,
+                value: Value::Number(0.5),
+            }],
         };
         let q = MoldQLQuery::Path(path);
         #[allow(deprecated)]
         let c = compile(&q, CompileTarget::Postgres).expect("compile should succeed");
-        let CompiledQuery::Postgres(sql) = c else { panic!("expected Postgres") };
+        let CompiledQuery::Postgres(sql) = c else {
+            panic!("expected Postgres")
+        };
 
         // The SQL should use parameterized form (confidence >= $N)
         // The exact SQL depends on emit_path_pg which uses render_condition
@@ -1380,7 +1388,11 @@ mod compile_to_plan_tests {
         let q = compile_fixtures::path_with_max_hops("a", "b", 3);
         let limits = PlanLimits::default();
         let result = compile_to_plan(&q, limits, None);
-        assert!(result.is_ok(), "valid path query should compile: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "valid path query should compile: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -1408,8 +1420,14 @@ mod compile_to_plan_tests {
         use cognicode_core::domain::plan::{PlanFilter, PlanFilterOp};
         use std::collections::HashSet;
 
-        let filter1 = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: f64::NAN };
-        let filter2 = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: f64::NAN };
+        let filter1 = PlanFilter::Confidence {
+            op: PlanFilterOp::Gt,
+            threshold: f64::NAN,
+        };
+        let filter2 = PlanFilter::Confidence {
+            op: PlanFilterOp::Gt,
+            threshold: f64::NAN,
+        };
 
         let mut set: HashSet<PlanFilter> = HashSet::new();
         set.insert(filter1);

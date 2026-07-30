@@ -101,9 +101,7 @@ impl GraphCache {
     ) -> Option<Arc<CallGraph>> {
         let provider_guard = self.snapshot_provider.lock().unwrap();
         let provider = provider_guard.as_ref()?;
-        provider
-            .snapshot(workspace, revision)
-            .ok()
+        provider.snapshot(workspace, revision).ok()
     }
 
     /// Gets a reference to the underlying graph.

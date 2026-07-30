@@ -29,9 +29,9 @@ pub async fn refresh_from_pg(
     }
 
     // Fetch the snapshot for the current head
-    let graph = provider.snapshot(workspace, head).map_err(|e| {
-        RepositoryError::Store(format!("refresh_from_pg: snapshot failed: {}", e))
-    })?;
+    let graph = provider
+        .snapshot(workspace, head)
+        .map_err(|e| RepositoryError::Store(format!("refresh_from_pg: snapshot failed: {}", e)))?;
 
     let stats = RefreshStats {
         symbols: graph.symbol_count(),

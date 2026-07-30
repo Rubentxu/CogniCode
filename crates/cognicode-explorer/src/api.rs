@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -506,14 +506,12 @@ pub struct ApiState {
     pub revision_tracker: Arc<AtomicU64>,
     /// Optional analytics algorithm registry (E28.4).
     /// Wired when postgres feature is enabled and lineage store is available.
-    pub analytics_registry: Option<
-        Arc<cognicode_core::application::services::graph_analytics::AlgorithmRegistry>,
-    >,
+    pub analytics_registry:
+        Option<Arc<cognicode_core::application::services::graph_analytics::AlgorithmRegistry>>,
     /// Optional analytics lineage store (E28.4).
     /// Wired when postgres feature is enabled.
-    pub analytics_lineage_store: Option<
-        Arc<dyn cognicode_core::domain::analytics::RunLineageStore>,
-    >,
+    pub analytics_lineage_store:
+        Option<Arc<dyn cognicode_core::domain::analytics::RunLineageStore>>,
 }
 
 impl ApiState {
@@ -730,7 +728,10 @@ pub fn router_with_state(state: ApiState) -> Router {
         // E28.4 PR5: Analytics surfaces
         .route("/api/analytics/run", post(analytics_run_handler))
         .route("/api/analytics/catalog", get(analytics_catalog_handler))
-        .route("/api/analytics/lineage", get(analytics_lineage_list_handler))
+        .route(
+            "/api/analytics/lineage",
+            get(analytics_lineage_list_handler),
+        )
         .route(
             "/api/analytics/lineage/:run_id",
             get(analytics_lineage_get_handler),
@@ -843,7 +844,10 @@ pub fn router(state: ApiState) -> Router {
         // E28.4 PR5: Analytics surfaces
         .route("/api/analytics/run", post(analytics_run_handler))
         .route("/api/analytics/catalog", get(analytics_catalog_handler))
-        .route("/api/analytics/lineage", get(analytics_lineage_list_handler))
+        .route(
+            "/api/analytics/lineage",
+            get(analytics_lineage_list_handler),
+        )
         .route(
             "/api/analytics/lineage/:run_id",
             get(analytics_lineage_get_handler),
@@ -864,8 +868,8 @@ pub async fn serve(state: ApiState, addr: SocketAddr) -> anyhow::Result<()> {
 // ============================================================================
 
 use crate::dto::{
-    AnalyticsCatalogResponse, AnalyticsLineageDetailResponse, AnalyticsLineageResponse,
-    AlgorithmDescriptorSummary, LineageEntry, RunAnalyticsRequest, RunAnalyticsResponse,
+    AlgorithmDescriptorSummary, AnalyticsCatalogResponse, AnalyticsLineageDetailResponse,
+    AnalyticsLineageResponse, LineageEntry, RunAnalyticsRequest, RunAnalyticsResponse,
 };
 
 /// Query parameters for analytics lineage list endpoint.
@@ -920,9 +924,7 @@ async fn analytics_run_handler(
     Ok(Json(response).into_response())
 }
 
-async fn analytics_catalog_handler(
-    State(state): State<ApiState>,
-) -> Response {
+async fn analytics_catalog_handler(State(state): State<ApiState>) -> Response {
     // E28.4: Return catalog from registry if wired, otherwise return hardcoded list
     let registry = match &state.analytics_registry {
         Some(r) => r,
@@ -933,7 +935,8 @@ async fn analytics_catalog_handler(
                     id: "bounded_shortest_paths".to_string(),
                     name: "Bounded Shortest Paths".to_string(),
                     version: "1.0.0".to_string(),
-                    description: "Find all simple paths between two symbols bounded by max hops".to_string(),
+                    description: "Find all simple paths between two symbols bounded by max hops"
+                        .to_string(),
                     mode: "Stream".to_string(),
                     categories: vec!["pathfinding".to_string(), "graph".to_string()],
                 },
@@ -941,7 +944,8 @@ async fn analytics_catalog_handler(
                     id: "page_rank".to_string(),
                     name: "PageRank".to_string(),
                     version: "1.0.0".to_string(),
-                    description: "Compute PageRank scores for all symbols in the call graph".to_string(),
+                    description: "Compute PageRank scores for all symbols in the call graph"
+                        .to_string(),
                     mode: "Stats".to_string(),
                     categories: vec!["centrality".to_string(), "graph".to_string()],
                 },
@@ -977,7 +981,11 @@ async fn analytics_catalog_handler(
                 name: identity.id.as_str().to_string(),
                 version: identity.version.to_string(),
                 description: format!("{} v{}", identity.id.as_str(), identity.version),
-                mode: d.supported_modes().first().map(|m| m.to_string()).unwrap_or_default(),
+                mode: d
+                    .supported_modes()
+                    .first()
+                    .map(|m| m.to_string())
+                    .unwrap_or_default(),
                 categories: vec!["graph".to_string(), "analytics".to_string()],
             }
         })
@@ -1011,13 +1019,19 @@ async fn analytics_lineage_list_handler(
     use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
 
     let filter = RunLineageFilter {
-        workspace_id: params.workspace_id.as_ref().map(|s| WorkspaceId::try_new(s.clone()).ok()).flatten(),
+        workspace_id: params
+            .workspace_id
+            .as_ref()
+            .map(|s| WorkspaceId::try_new(s.clone()).ok())
+            .flatten(),
         revision_id: params.revision_id.map(|r| RevisionId::new(r)),
         algorithm_id: params.algorithm_id.as_ref().and_then(|s| {
             if s.is_empty() {
                 None
             } else {
-                Some(cognicode_core::domain::analytics::AlgorithmId::from_string(s.clone()))
+                Some(cognicode_core::domain::analytics::AlgorithmId::from_string(
+                    s.clone(),
+                ))
             }
         }),
         status: params.status.as_ref().and_then(|s| match s.as_str() {
@@ -1050,16 +1064,14 @@ async fn analytics_lineage_list_handler(
             let total = runs.len();
             Json(AnalyticsLineageResponse { runs, total }).into_response()
         }
-        Err(e) => {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "lineage_query_failed",
-                    "message": format!("failed to query lineage: {}", e)
-                })),
-            )
-                .into_response()
-        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": "lineage_query_failed",
+                "message": format!("failed to query lineage: {}", e)
+            })),
+        )
+            .into_response(),
     }
 }
 
@@ -1102,26 +1114,22 @@ async fn analytics_lineage_get_handler(
             };
             Json(response).into_response()
         }
-        Err(cognicode_core::domain::analytics::AnalyticsError::RunNotFound(_)) => {
-            (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "not_found",
-                    "message": format!("run `{}` not found", run_id)
-                })),
-            )
-                .into_response()
-        }
-        Err(e) => {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "lineage_query_failed",
-                    "message": format!("failed to query lineage: {}", e)
-                })),
-            )
-                .into_response()
-        }
+        Err(cognicode_core::domain::analytics::AnalyticsError::RunNotFound(_)) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "not_found",
+                "message": format!("run `{}` not found", run_id)
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": "lineage_query_failed",
+                "message": format!("failed to query lineage: {}", e)
+            })),
+        )
+            .into_response(),
     }
 }
 
@@ -1526,10 +1534,12 @@ async fn trace_mermaid_handler(
         TraceMermaidViewKind::CallGraph => call_graph_to_mermaid(&trace_ctx, &q.target),
         TraceMermaidViewKind::ImpactRadius => impact_radius_to_mermaid(&trace_ctx, &q.target),
         #[cfg(feature = "multimodal")]
-        TraceMermaidViewKind::DecisionTrace => {
-            decision_trace_to_mermaid(&trace_ctx, &q.target)
-                .map_err(|_| ApiError(ExplorerError::UnsupportedFormat("decision_trace not implemented (E24.3)".into())))?
-        }
+        TraceMermaidViewKind::DecisionTrace => decision_trace_to_mermaid(&trace_ctx, &q.target)
+            .map_err(|_| {
+                ApiError(ExplorerError::UnsupportedFormat(
+                    "decision_trace not implemented (E24.3)".into(),
+                ))
+            })?,
         TraceMermaidViewKind::VerticalSlice => vertical_slice_to_mermaid(&trace_ctx, &q.target),
     };
 
@@ -2093,7 +2103,10 @@ async fn add_investigation_artifact(
     let artifact = facade.add_artifact(&id, request).await.map_err(|e| {
         let msg = e.to_string();
         if msg.contains("not found") {
-            ApiError(ExplorerError::NotFound(format!("investigation {} not found", id)))
+            ApiError(ExplorerError::NotFound(format!(
+                "investigation {} not found",
+                id
+            )))
         } else {
             ApiError(e)
         }
@@ -2142,7 +2155,7 @@ async fn get_investigation_composed_narrative(
             )))
         })?;
 
-        let view = crate::domain::views::build_investigation_narrative(&investigation);
+    let view = crate::domain::views::build_investigation_narrative(&investigation);
     Ok(Json(view).into_response())
 }
 
@@ -2160,12 +2173,12 @@ async fn regenerate_artifact(
         .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?;
 
     // Fetch the investigation to locate the artifact.
-    let mut investigation = facade
-        .get_investigation(&id)
-        .await?
-        .ok_or_else(|| {
-            ApiError(ExplorerError::NotFound(format!("investigation {} not found", id)))
-        })?;
+    let mut investigation = facade.get_investigation(&id).await?.ok_or_else(|| {
+        ApiError(ExplorerError::NotFound(format!(
+            "investigation {} not found",
+            id
+        )))
+    })?;
 
     // Find the artifact by id.
     let artifact_idx = investigation

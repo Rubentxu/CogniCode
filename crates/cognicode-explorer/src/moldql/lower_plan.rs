@@ -6,11 +6,11 @@
 //! Part of e28-1-moldplan-graphplan-contracts: PR2 Plan Algebra.
 
 use cognicode_core::domain::plan::lower::AstLowerer;
+use cognicode_core::domain::plan::lower::{QueryShape, populate_defaults};
 use cognicode_core::domain::plan::{
-    GraphPlan, NeighborKind, PathPredicate, PathProjection, PathQuantifier, PlanError,
-    PlanHash, PlanLimits, PlanMetadata, PlanVersion,
+    GraphPlan, NeighborKind, PathPredicate, PathProjection, PathQuantifier, PlanError, PlanHash,
+    PlanLimits, PlanMetadata, PlanVersion,
 };
-use cognicode_core::domain::plan::lower::{populate_defaults, QueryShape};
 use std::any::Any;
 
 use super::ast::{
@@ -52,7 +52,7 @@ impl MoldqlAstLowerer {
             .expect("effective_max_hops is always Some");
         let predicates = self.lower_conditions(&pq.conditions);
         let metadata = self.plan_metadata();
-        
+
         // Build plan with initial limits
         let plan = GraphPlan::Path {
             src: pq.from.clone(),
@@ -61,14 +61,14 @@ impl MoldqlAstLowerer {
             edge_kind_filter: None,
             predicates: predicates.clone(),
             projection: PathProjection::default(),
-            limits: PlanLimits::builder()
-                .max_hops(effective_max_hops)
-                .build(),
+            limits: PlanLimits::builder().max_hops(effective_max_hops).build(),
             metadata: metadata.clone(),
         };
 
         // W-A fix: call populate_defaults to use the port function
-        let shape = QueryShape::Path { max_hops: pq.max_hops };
+        let shape = QueryShape::Path {
+            max_hops: pq.max_hops,
+        };
         let final_limits = populate_defaults(&plan, &shape);
 
         Ok(GraphPlan::Path {
@@ -91,7 +91,7 @@ impl MoldqlAstLowerer {
         };
         let predicates = self.lower_conditions(&nq.conditions);
         let metadata = self.plan_metadata();
-        
+
         // Build plan with initial limits
         let plan = GraphPlan::Neighbors {
             src: nq.root.clone(),
@@ -99,9 +99,7 @@ impl MoldqlAstLowerer {
             depth: nq.depth,
             edge_kind_filter: None,
             predicates: predicates.clone(),
-            limits: PlanLimits::builder()
-                .max_depth(nq.depth)
-                .build(),
+            limits: PlanLimits::builder().max_depth(nq.depth).build(),
             metadata: metadata.clone(),
         };
 
@@ -130,22 +128,20 @@ impl MoldqlAstLowerer {
             sq.depth
         };
         let metadata = self.plan_metadata();
-        
+
         // Build plan with initial limits
         let plan = GraphPlan::Subgraph {
             nodes: vec![sq.root.clone()],
             edges: None,
             aggregations: vec![],
-            limits: PlanLimits::builder()
-                .max_depth(effective_depth)
-                .build(),
+            limits: PlanLimits::builder().max_depth(effective_depth).build(),
             metadata: metadata.clone(),
         };
-        
+
         // W-A fix: call populate_defaults to use the port function
         let shape = QueryShape::Subgraph { depth: sq.depth };
         let final_limits = populate_defaults(&plan, &shape);
-        
+
         Ok(GraphPlan::Subgraph {
             nodes: vec![sq.root.clone()],
             edges: None,
@@ -157,7 +153,7 @@ impl MoldqlAstLowerer {
 
     fn lower_cluster(&self, cq: &ClusterQuery) -> Result<GraphPlan, PlanError> {
         let metadata = self.plan_metadata();
-        
+
         // Build plan with initial limits
         let plan = GraphPlan::Cluster {
             by: vec![], // ClusterMethod maps to grouping key; empty for now
@@ -167,11 +163,11 @@ impl MoldqlAstLowerer {
             limits: PlanLimits::default(),
             metadata: metadata.clone(),
         };
-        
+
         // W-A fix: call populate_defaults to use the port function
         let shape = QueryShape::Cluster;
         let final_limits = populate_defaults(&plan, &shape);
-        
+
         Ok(GraphPlan::Cluster {
             by: vec![],
             aggregations: vec![],
@@ -185,31 +181,30 @@ impl MoldqlAstLowerer {
     fn lower_explain(&self, eq: &ExplainQuery) -> Result<GraphPlan, PlanError> {
         let predicates = self.lower_conditions(&eq.conditions);
         let metadata = self.plan_metadata();
-        
+
         // Build inner path plan
         let inner = GraphPlan::Path {
             src: eq.from.clone(),
             dst: eq.to.clone(),
-            quantifier: PathQuantifier::new(Some(u32::MAX), 0)
-                .expect("u32::MAX is Some"),
+            quantifier: PathQuantifier::new(Some(u32::MAX), 0).expect("u32::MAX is Some"),
             edge_kind_filter: None,
             predicates,
             projection: PathProjection::default(),
             limits: PlanLimits::default(),
             metadata: metadata.clone(),
         };
-        
+
         // Build explain plan with initial limits for populate_defaults call
         let explain_plan = GraphPlan::Explain {
             inner: Box::new(inner.clone()),
             limits: PlanLimits::default(),
             metadata: metadata.clone(),
         };
-        
+
         // W-A fix: call populate_defaults for the Explain wrapper
         let shape = QueryShape::Explain;
         let final_limits = populate_defaults(&explain_plan, &shape);
-        
+
         Ok(GraphPlan::Explain {
             inner: Box::new(inner),
             limits: final_limits,
@@ -229,7 +224,7 @@ impl MoldqlAstLowerer {
             .map(|op| self.lower(op))
             .collect::<Result<Vec<_>, _>>()?;
         let metadata = self.plan_metadata();
-        
+
         // Build plan with initial limits
         let plan = GraphPlan::BooleanComposition {
             op,
@@ -237,11 +232,11 @@ impl MoldqlAstLowerer {
             limits: PlanLimits::default(),
             metadata: metadata.clone(),
         };
-        
+
         // W-A fix: call populate_defaults to use the port function
         let shape = QueryShape::Boolean;
         let final_limits = populate_defaults(&plan, &shape);
-        
+
         Ok(GraphPlan::BooleanComposition {
             op,
             operands,
@@ -270,18 +265,14 @@ impl MoldqlAstLowerer {
 impl AstLowerer for MoldqlAstLowerer {
     fn lower(&self, ast: &dyn Any) -> Result<GraphPlan, PlanError> {
         // Downcast the AST to MoldQLQuery
-        let query = ast
-            .downcast_ref::<MoldQLQuery>()
-            .ok_or_else(|| {
-                PlanError::UnsupportedConstruct(
-                    cognicode_core::domain::plan::UnsupportedConstruct::new(
-                        cognicode_core::domain::plan::ConstructId::Other(
-                            "expected MoldQLQuery".into(),
-                        ),
-                        "ast is not a MoldQLQuery",
-                    ),
-                )
-            })?;
+        let query = ast.downcast_ref::<MoldQLQuery>().ok_or_else(|| {
+            PlanError::UnsupportedConstruct(
+                cognicode_core::domain::plan::UnsupportedConstruct::new(
+                    cognicode_core::domain::plan::ConstructId::Other("expected MoldQLQuery".into()),
+                    "ast is not a MoldQLQuery",
+                ),
+            )
+        })?;
 
         match query {
             MoldQLQuery::Path(pq) => self.lower_path(pq),
@@ -291,16 +282,14 @@ impl AstLowerer for MoldqlAstLowerer {
             MoldQLQuery::Explain(eq) => self.lower_explain(eq),
             MoldQLQuery::Boolean(bq) => self.lower_boolean(bq),
             MoldQLQuery::Pattern(pq) => self.lower_pattern_profile(pq),
-            MoldQLQuery::Find(_) | MoldQLQuery::Explore(_) => Err(
-                PlanError::UnsupportedConstruct(
-                    cognicode_core::domain::plan::UnsupportedConstruct::new(
-                        cognicode_core::domain::plan::ConstructId::Other(
-                            "Find/Explore not graph-selecting".into(),
-                        ),
-                        "FIND and EXPLORE are not graph-selecting operations",
+            MoldQLQuery::Find(_) | MoldQLQuery::Explore(_) => Err(PlanError::UnsupportedConstruct(
+                cognicode_core::domain::plan::UnsupportedConstruct::new(
+                    cognicode_core::domain::plan::ConstructId::Other(
+                        "Find/Explore not graph-selecting".into(),
                     ),
+                    "FIND and EXPLORE are not graph-selecting operations",
                 ),
-            ),
+            )),
         }
     }
 }
@@ -312,8 +301,8 @@ impl AstLowerer for MoldqlAstLowerer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cognicode_core::domain::plan::{PlanLimits, PlanLimit};
     use cognicode_core::domain::plan::lower::AstLowerer;
+    use cognicode_core::domain::plan::{PlanLimit, PlanLimits};
 
     /// `MoldqlAstLowerer` lowers `PathQuery` → `GraphPlan::Path`.
     #[test]
@@ -329,7 +318,13 @@ mod tests {
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert!(matches!(plan, GraphPlan::Path { .. }));
-        if let GraphPlan::Path { src, dst, quantifier, .. } = plan {
+        if let GraphPlan::Path {
+            src,
+            dst,
+            quantifier,
+            ..
+        } = plan
+        {
             assert_eq!(src, "A");
             assert_eq!(dst, "B");
             assert_eq!(quantifier.max_hops, Some(3));
@@ -350,7 +345,10 @@ mod tests {
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert!(matches!(plan, GraphPlan::Neighbors { .. }));
-        if let GraphPlan::Neighbors { src, depth, kind, .. } = plan {
+        if let GraphPlan::Neighbors {
+            src, depth, kind, ..
+        } = plan
+        {
             assert_eq!(src, "A");
             assert_eq!(depth, 2);
             assert_eq!(kind, NeighborKind::Outgoing);
@@ -524,7 +522,11 @@ mod tests {
         });
         let plan = lowerer.lower(&ast).expect("lowering should succeed");
         let limits = plan.limits();
-        assert_eq!(limits.max_depth, Some(5), "Subgraph depth=0 should default max_depth to 5");
+        assert_eq!(
+            limits.max_depth,
+            Some(5),
+            "Subgraph depth=0 should default max_depth to 5"
+        );
     }
 
     /// Path with no max_hops gets max_hops=6 (safe default).
@@ -539,7 +541,11 @@ mod tests {
         });
         let plan = lowerer.lower(&ast).expect("lowering should succeed");
         let limits = plan.limits();
-        assert_eq!(limits.max_hops, Some(6), "Path with no max_hops should default to 6");
+        assert_eq!(
+            limits.max_hops,
+            Some(6),
+            "Path with no max_hops should default to 6"
+        );
     }
 
     /// Lowered subgraph plan passes validate (no MissingLimit error).
@@ -554,7 +560,9 @@ mod tests {
         });
         let plan = lowerer.lower(&ast).expect("lowering should succeed");
         let limits = plan.limits();
-        limits.validate(&plan).expect("Subgraph plan should pass validate after lowering");
+        limits
+            .validate(&plan)
+            .expect("Subgraph plan should pass validate after lowering");
     }
 
     // -------------------------------------------------------------------------
@@ -578,7 +586,9 @@ mod tests {
             conditions: vec![],
         });
         let plan = lowerer.lower(&ast).unwrap();
-        plan.limits().validate(&plan).expect("Path should pass validate");
+        plan.limits()
+            .validate(&plan)
+            .expect("Path should pass validate");
 
         // Neighbors with explicit depth
         let ast = MoldQLQuery::Neighbors(NeighborsQuery {
@@ -588,7 +598,9 @@ mod tests {
             conditions: vec![],
         });
         let plan = lowerer.lower(&ast).unwrap();
-        plan.limits().validate(&plan).expect("Neighbors should pass validate");
+        plan.limits()
+            .validate(&plan)
+            .expect("Neighbors should pass validate");
 
         // Subgraph with depth=0 (defaults max_depth=5)
         let ast = MoldQLQuery::Subgraph(SubgraphQuery {
@@ -598,6 +610,8 @@ mod tests {
             conditions: vec![],
         });
         let plan = lowerer.lower(&ast).unwrap();
-        plan.limits().validate(&plan).expect("Subgraph should pass validate after default population");
+        plan.limits()
+            .validate(&plan)
+            .expect("Subgraph should pass validate after default population");
     }
 }

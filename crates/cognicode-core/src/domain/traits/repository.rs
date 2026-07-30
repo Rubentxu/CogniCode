@@ -219,11 +219,12 @@ mod tests {
         assert!(repo.find_edges_by_caller("x").await.unwrap().is_empty());
         assert!(repo.find_edges_by_callee("x").await.unwrap().is_empty());
         assert_eq!(repo.count_edges().await.unwrap(), 0);
-        assert!(repo
-            .load_call_graph_pinned(&WorkspaceId::default(), RevisionId::NONE)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            repo.load_call_graph_pinned(&WorkspaceId::default(), RevisionId::NONE)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -258,11 +259,13 @@ mod tests {
         assert_eq!(boxed.count_symbols().await.unwrap(), 7);
         assert_eq!(boxed.count_edges().await.unwrap(), 3);
         // load_call_graph_pinned on dyn box
-        assert!(boxed
-            .load_call_graph_pinned(&WorkspaceId::default(), RevisionId::NONE)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            boxed
+                .load_call_graph_pinned(&WorkspaceId::default(), RevisionId::NONE)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

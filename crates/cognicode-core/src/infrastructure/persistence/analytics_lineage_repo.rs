@@ -17,8 +17,8 @@ use sqlx::PgPool;
 
 #[cfg(feature = "postgres")]
 use crate::domain::analytics::{
-    AnalyticsError, AnalyticsMode, RunLineage, RunLineageFilter,
-    RunLineageStore, RunStatus, TruncationMarker, Uuid,
+    AnalyticsError, AnalyticsMode, RunLineage, RunLineageFilter, RunLineageStore, RunStatus,
+    TruncationMarker, Uuid,
 };
 #[cfg(feature = "postgres")]
 use crate::domain::plan::limits::PlanLimits;
@@ -334,11 +334,11 @@ impl AnalyticsRunLineageRow {
             started_at: DateTime::parse_from_rfc3339(&self.started_at)
                 .expect("valid timestamp from DB")
                 .with_timezone(&Utc),
-            finished_at: self.finished_at.map(|s|
+            finished_at: self.finished_at.map(|s| {
                 DateTime::parse_from_rfc3339(&s)
                     .expect("valid timestamp from DB")
                     .with_timezone(&Utc)
-            ),
+            }),
             row_count: self.row_count,
             truncation_marker: self.truncation_marker.map(|s| match s.as_str() {
                 "ResultRowsLimit" => TruncationMarker::ResultRowsLimit,

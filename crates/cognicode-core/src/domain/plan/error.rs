@@ -201,7 +201,11 @@ pub struct SourceLocation {
 
 impl SourceLocation {
     pub fn new(line: u32, column: u32, byte_offset: u32) -> Self {
-        Self { line, column, byte_offset }
+        Self {
+            line,
+            column,
+            byte_offset,
+        }
     }
 }
 
@@ -260,7 +264,11 @@ impl UnsupportedConstruct {
 
 impl fmt::Display for UnsupportedConstruct {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "unsupported construct: {} — {}", self.construct, self.message)?;
+        write!(
+            f,
+            "unsupported construct: {} — {}",
+            self.construct, self.message
+        )?;
         if let Some(ref alt) = self.supported_alternative {
             write!(f, " (supported alternative: {alt})")?;
         }
@@ -392,7 +400,10 @@ mod tests {
     #[test]
     fn plan_error_unpinned() {
         let err = PlanError::UnpinnedGraphPlan;
-        assert_eq!(err.to_string(), "graph plan must be pinned to a workspace and revision");
+        assert_eq!(
+            err.to_string(),
+            "graph plan must be pinned to a workspace and revision"
+        );
     }
 
     /// `PlanError::MissingLimit` carries the limit variant.
@@ -445,7 +456,10 @@ mod tests {
         assert!(!clone.is_cancelled());
         token.set();
         assert!(token.is_cancelled());
-        assert!(clone.is_cancelled(), "clone must see the same cancelled state");
+        assert!(
+            clone.is_cancelled(),
+            "clone must see the same cancelled state"
+        );
     }
 
     /// `CancellationToken` is `Eq` when they share the same underlying flag.
@@ -483,7 +497,10 @@ mod tests {
     fn construct_id_display() {
         assert_eq!(ConstructId::UnboundedPath.to_string(), "UnboundedPath");
         assert_eq!(ConstructId::MutatingClause.to_string(), "MutatingClause");
-        assert_eq!(ConstructId::Other("CustomThing".into()).to_string(), "Other(CustomThing)");
+        assert_eq!(
+            ConstructId::Other("CustomThing".into()).to_string(),
+            "Other(CustomThing)"
+        );
     }
 
     /// `ConstructId` has all expected variants.
@@ -515,8 +532,9 @@ mod tests {
     /// `UnsupportedConstruct::with_alternative` sets the alternative.
     #[test]
     fn unsupported_construct_with_alternative() {
-        let err = UnsupportedConstruct::new(ConstructId::UnboundedQuantifier, "quantifier unbounded")
-            .with_alternative("add a `max_hops = N` bound");
+        let err =
+            UnsupportedConstruct::new(ConstructId::UnboundedQuantifier, "quantifier unbounded")
+                .with_alternative("add a `max_hops = N` bound");
         assert_eq!(
             err.supported_alternative.as_deref(),
             Some("add a `max_hops = N` bound")
@@ -526,8 +544,9 @@ mod tests {
     /// `UnsupportedConstruct::at` sets the location.
     #[test]
     fn unsupported_construct_with_location() {
-        let err = UnsupportedConstruct::new(ConstructId::MutatingClause, "WRITE in read-only context")
-            .at(SourceLocation::new(5, 10, 42));
+        let err =
+            UnsupportedConstruct::new(ConstructId::MutatingClause, "WRITE in read-only context")
+                .at(SourceLocation::new(5, 10, 42));
         assert_eq!(err.location.as_ref().unwrap().line, 5);
         assert_eq!(err.location.as_ref().unwrap().column, 10);
         assert_eq!(err.location.as_ref().unwrap().byte_offset, 42);
@@ -536,7 +555,8 @@ mod tests {
     /// `UnsupportedConstruct::Display` includes construct + message.
     #[test]
     fn unsupported_construct_display() {
-        let err = UnsupportedConstruct::new(ConstructId::PatternProfileFeature, "not implemented yet");
+        let err =
+            UnsupportedConstruct::new(ConstructId::PatternProfileFeature, "not implemented yet");
         let display = err.to_string();
         assert!(display.contains("unsupported construct"));
         assert!(display.contains("PatternProfileFeature"));
@@ -619,7 +639,15 @@ mod tests {
     /// `PlanError` is `Clone`, `Debug`, `PartialEq`, `Eq`, `Serialize`, `Deserialize`.
     #[test]
     fn plan_error_derives() {
-        fn assert_derives<T: Clone + std::fmt::Debug + PartialEq + Eq + serde::Serialize + for<'de> serde::Deserialize<'de>>() {}
+        fn assert_derives<
+            T: Clone
+                + std::fmt::Debug
+                + PartialEq
+                + Eq
+                + serde::Serialize
+                + for<'de> serde::Deserialize<'de>,
+        >() {
+        }
         assert_derives::<PlanError>();
     }
 
@@ -647,9 +675,18 @@ mod tests {
     /// `ProvenanceSource` has all expected variants and Display format.
     #[test]
     fn provenance_source_display() {
-        assert_eq!(ProvenanceSource::StaticAnalysis("calls".into()).to_string(), "static:calls");
-        assert_eq!(ProvenanceSource::Runtime("profiling".into()).to_string(), "runtime:profiling");
-        assert_eq!(ProvenanceSource::External("lsp".into()).to_string(), "external:lsp");
+        assert_eq!(
+            ProvenanceSource::StaticAnalysis("calls".into()).to_string(),
+            "static:calls"
+        );
+        assert_eq!(
+            ProvenanceSource::Runtime("profiling".into()).to_string(),
+            "runtime:profiling"
+        );
+        assert_eq!(
+            ProvenanceSource::External("lsp".into()).to_string(),
+            "external:lsp"
+        );
         assert_eq!(ProvenanceSource::Unknown.to_string(), "unknown");
     }
 }

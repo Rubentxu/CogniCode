@@ -15,25 +15,34 @@
 //! - `graph_plan.rs` — `GraphPlan` enum
 //! - `lower.rs`   — `AstLowerer` trait + `NoOpLowerer` (port for AST→Plan lowering; adapter in `cognicode-explorer`)
 
-pub mod version;
-pub mod limits;
-pub mod value;
-pub mod result;
 pub mod error;
-pub mod neutrality;
-pub mod filter;
-pub mod mold_plan;
-pub mod graph_plan;
-pub mod lower;
 pub mod executor;
+pub mod filter;
+pub mod graph_plan;
+pub mod limits;
+pub mod lower;
+pub mod mold_plan;
+pub mod neutrality;
+pub mod result;
+pub mod value;
+pub mod version;
 
 // Re-exports for ergonomic use at the crate root.
-pub use version::{PlanVersion, PlanHash, PlanMetadata, ParsePlanVersionError};
-pub use limits::{PlanLimits, PlanLimit, PlanLimitKind, PlanLimitsBuilder, PLAN_LIMIT_KINDS};
-pub use value::{TypedValue, ValueError};
-pub use result::{ResultSet, TruncationMarker, SemanticsViolation, Path, Row, NodeResult, EdgeResult, assert_equivalent, assert_approx_equal, PathHop};
-pub use error::{PlanError, ExecutorError, UnsupportedConstruct, ConstructId, SourceLocation, CancellationToken, ProvenanceSource};
-pub use filter::{PlanFilter, PlanFilterOp};
-pub use mold_plan::MoldPlan;
-pub use graph_plan::{GraphPlan, PathPredicate, PathQuantifier, NeighborKind, PathProjection, BooleanOp, OrderClause, OrderDirection};
+pub use error::{
+    CancellationToken, ConstructId, ExecutorError, PlanError, ProvenanceSource, SourceLocation,
+    UnsupportedConstruct,
+};
 pub use executor::{GraphExecutor, ProvenanceEnvelope, StubExecutor};
+pub use filter::{PlanFilter, PlanFilterOp};
+pub use graph_plan::{
+    BooleanOp, GraphPlan, NeighborKind, OrderClause, OrderDirection, PathPredicate, PathProjection,
+    PathQuantifier,
+};
+pub use limits::{PLAN_LIMIT_KINDS, PlanLimit, PlanLimitKind, PlanLimits, PlanLimitsBuilder};
+pub use mold_plan::MoldPlan;
+pub use result::{
+    EdgeResult, NodeResult, Path, PathHop, ResultSet, Row, SemanticsViolation, TruncationMarker,
+    assert_approx_equal, assert_equivalent,
+};
+pub use value::{TypedValue, ValueError};
+pub use version::{ParsePlanVersionError, PlanHash, PlanMetadata, PlanVersion};

@@ -22,13 +22,13 @@
 //! Value        ::= STRING | DECIMAL
 //! ```
 
+use crate::moldql::ParseError;
 use crate::moldql::ast::{
-    Aggregation, Binding, EdgeDirection, EdgePattern, Field, MoldQLQuery,
-    OrderClause, OrderDirection, PathQuantifier, PatternOp, PatternPredicate, PatternProjection,
-    PatternQuery, PatternValue, PredicateTarget, Value as AstValue,
+    Aggregation, Binding, EdgeDirection, EdgePattern, Field, MoldQLQuery, OrderClause,
+    OrderDirection, PathQuantifier, PatternOp, PatternPredicate, PatternProjection, PatternQuery,
+    PatternValue, PredicateTarget, Value as AstValue,
 };
 use crate::moldql::cursor::Cursor;
-use crate::moldql::ParseError;
 
 /// Parse a pattern query from a string.
 pub fn parse_pattern_query_from_str(input: &str) -> Result<MoldQLQuery, ParseError> {
@@ -52,13 +52,14 @@ pub(crate) fn parse_pattern_query(cursor: &mut Cursor<'_>) -> Result<PatternQuer
     cursor.skip_ws();
 
     // Optional SHORTEST keyword
-    let shortest = if cursor.peek_keyword().map(|k| k.to_ascii_uppercase()) == Some("SHORTEST".into()) {
-        cursor.consume_keyword("SHORTEST");
-        cursor.skip_ws();
-        true
-    } else {
-        false
-    };
+    let shortest =
+        if cursor.peek_keyword().map(|k| k.to_ascii_uppercase()) == Some("SHORTEST".into()) {
+            cursor.consume_keyword("SHORTEST");
+            cursor.skip_ws();
+            true
+        } else {
+            false
+        };
 
     // MATCH keyword
     let kw = cursor.peek_keyword().ok_or_else(|| {
@@ -133,25 +134,27 @@ pub(crate) fn parse_pattern_query(cursor: &mut Cursor<'_>) -> Result<PatternQuer
     }
 
     // Optional WHERE clause
-    let predicates = if cursor.peek_keyword().map(|k| k.to_ascii_uppercase()) == Some("WHERE".into()) {
-        cursor.consume_keyword("WHERE");
-        cursor.skip_ws();
-        parse_predicates(cursor)?
-    } else {
-        Vec::new()
-    };
+    let predicates =
+        if cursor.peek_keyword().map(|k| k.to_ascii_uppercase()) == Some("WHERE".into()) {
+            cursor.consume_keyword("WHERE");
+            cursor.skip_ws();
+            parse_predicates(cursor)?
+        } else {
+            Vec::new()
+        };
 
     // Optional RETURN clause
-    let projection = if cursor.peek_keyword().map(|k| k.to_ascii_uppercase()) == Some("RETURN".into()) {
-        cursor.consume_keyword("RETURN");
-        cursor.skip_ws();
-        parse_projection(cursor)?
-    } else {
-        // Default projection: PATH with all bindings
-        PatternProjection::Path {
-            bindings: bindings.iter().filter_map(|b| b.name.clone()).collect(),
-        }
-    };
+    let projection =
+        if cursor.peek_keyword().map(|k| k.to_ascii_uppercase()) == Some("RETURN".into()) {
+            cursor.consume_keyword("RETURN");
+            cursor.skip_ws();
+            parse_projection(cursor)?
+        } else {
+            // Default projection: PATH with all bindings
+            PatternProjection::Path {
+                bindings: bindings.iter().filter_map(|b| b.name.clone()).collect(),
+            }
+        };
 
     Ok(PatternQuery {
         shortest,
@@ -169,7 +172,11 @@ fn parse_node_pattern(cursor: &mut Cursor<'_>) -> Result<Binding, ParseError> {
     // Expect '('
     if cursor.peek_char() != Some('(') {
         let (line, col) = cursor.position();
-        return Err(ParseError::at("expected `(` to open node pattern", line, col));
+        return Err(ParseError::at(
+            "expected `(` to open node pattern",
+            line,
+            col,
+        ));
     }
     cursor.advance(); // consume '('
     cursor.skip_ws();
@@ -187,17 +194,28 @@ fn parse_node_pattern(cursor: &mut Cursor<'_>) -> Result<Binding, ParseError> {
             // Expect ')'
             if cursor.peek_char() != Some(')') {
                 let (line, col) = cursor.position();
-                return Err(ParseError::at("expected `)` to close node pattern", line, col));
+                return Err(ParseError::at(
+                    "expected `)` to close node pattern",
+                    line,
+                    col,
+                ));
             }
             cursor.advance();
-            Binding { name: Some(name), kind }
+            Binding {
+                name: Some(name),
+                kind,
+            }
         } else {
             // This is the kind only (anonymous binding)
             let kind = name;
             // Expect ')'
             if cursor.peek_char() != Some(')') {
                 let (line, col) = cursor.position();
-                return Err(ParseError::at("expected `)` to close node pattern", line, col));
+                return Err(ParseError::at(
+                    "expected `)` to close node pattern",
+                    line,
+                    col,
+                ));
             }
             cursor.advance();
             Binding { name: None, kind }
@@ -210,7 +228,11 @@ fn parse_node_pattern(cursor: &mut Cursor<'_>) -> Result<Binding, ParseError> {
         cursor.skip_ws();
         if cursor.peek_char() != Some(')') {
             let (line, col) = cursor.position();
-            return Err(ParseError::at("expected `)` to close node pattern", line, col));
+            return Err(ParseError::at(
+                "expected `)` to close node pattern",
+                line,
+                col,
+            ));
         }
         cursor.advance();
         Binding { name: None, kind }
@@ -226,7 +248,11 @@ fn parse_edge_pattern(cursor: &mut Cursor<'_>) -> Result<EdgePattern, ParseError
     // Expect '['
     if cursor.peek_char() != Some('[') {
         let (line, col) = cursor.position();
-        return Err(ParseError::at("expected `[` to open edge pattern", line, col));
+        return Err(ParseError::at(
+            "expected `[` to open edge pattern",
+            line,
+            col,
+        ));
     }
     cursor.advance(); // consume '['
     cursor.skip_ws();
@@ -254,11 +280,17 @@ fn parse_edge_pattern(cursor: &mut Cursor<'_>) -> Result<EdgePattern, ParseError
     };
 
     // Optional quantifier
-    let quantifier = if cursor.peek_char() == Some('*') || cursor.peek_char() == Some('+') || cursor.peek_char() == Some('?') {
+    let quantifier = if cursor.peek_char() == Some('*')
+        || cursor.peek_char() == Some('+')
+        || cursor.peek_char() == Some('?')
+    {
         parse_quantifier(cursor)?
     } else {
         // Default: exactly 1 hop
-        PathQuantifier { max_hops: Some(1), min_hops: 1 }
+        PathQuantifier {
+            max_hops: Some(1),
+            min_hops: 1,
+        }
     };
 
     // Direction: always undirected inside brackets; outer loop sets actual direction
@@ -268,7 +300,11 @@ fn parse_edge_pattern(cursor: &mut Cursor<'_>) -> Result<EdgePattern, ParseError
     // Expect ']'
     if cursor.peek_char() != Some(']') {
         let (line, col) = cursor.position();
-        return Err(ParseError::at("expected `]` to close edge pattern", line, col));
+        return Err(ParseError::at(
+            "expected `]` to close edge pattern",
+            line,
+            col,
+        ));
     }
     cursor.advance();
 
@@ -290,12 +326,18 @@ fn parse_quantifier(cursor: &mut Cursor<'_>) -> Result<PathQuantifier, ParseErro
     match ch {
         '?' => {
             cursor.advance();
-            Ok(PathQuantifier { max_hops: Some(1), min_hops: 0 })
+            Ok(PathQuantifier {
+                max_hops: Some(1),
+                min_hops: 0,
+            })
         }
         '+' => {
             cursor.advance();
             // + → 1..DEFAULT_MAX_HOPS (8)
-            Ok(PathQuantifier { max_hops: Some(8), min_hops: 1 })
+            Ok(PathQuantifier {
+                max_hops: Some(8),
+                min_hops: 1,
+            })
         }
         '*' => {
             cursor.advance();
@@ -324,7 +366,11 @@ fn parse_quantifier(cursor: &mut Cursor<'_>) -> Result<PathQuantifier, ParseErro
 
             let n: u32 = captured.parse().map_err(|_| {
                 let (line, col) = cursor.position();
-                ParseError::at(format!("invalid number `{captured}` in quantifier"), line, col)
+                ParseError::at(
+                    format!("invalid number `{captured}` in quantifier"),
+                    line,
+                    col,
+                )
             })?;
 
             cursor.skip_ws();
@@ -350,15 +396,25 @@ fn parse_quantifier(cursor: &mut Cursor<'_>) -> Result<PathQuantifier, ParseErro
                 let min_hops: u32 = min_str.parse().unwrap_or(0);
                 cursor.skip_ws();
 
-                Ok(PathQuantifier { min_hops: n, max_hops: Some(min_hops) })
+                Ok(PathQuantifier {
+                    min_hops: n,
+                    max_hops: Some(min_hops),
+                })
             } else {
                 // Just *n → min=0, max=n
-                Ok(PathQuantifier { max_hops: Some(n), min_hops: 0 })
+                Ok(PathQuantifier {
+                    max_hops: Some(n),
+                    min_hops: 0,
+                })
             }
         }
         _ => {
             let (line, col) = cursor.position();
-            Err(ParseError::at(format!("unexpected quantifier `{ch}`"), line, col))
+            Err(ParseError::at(
+                format!("unexpected quantifier `{ch}`"),
+                line,
+                col,
+            ))
         }
     }
 }
@@ -395,7 +451,11 @@ fn parse_projection(cursor: &mut Cursor<'_>) -> Result<PatternProjection, ParseE
     cursor.skip_ws();
     let kw = cursor.peek_keyword().ok_or_else(|| {
         let (line, col) = cursor.position();
-        ParseError::at("expected RETURN followed by PATH, NODE, EDGE, or field list", line, col)
+        ParseError::at(
+            "expected RETURN followed by PATH, NODE, EDGE, or field list",
+            line,
+            col,
+        )
     })?;
     match kw.to_ascii_uppercase().as_str() {
         "PATH" => {
@@ -486,7 +546,11 @@ fn parse_row_projection(cursor: &mut Cursor<'_>) -> Result<PatternProjection, Pa
                 cursor.skip_ws();
                 if cursor.peek_char() != Some(')') {
                     let (line, col) = cursor.position();
-                    return Err(ParseError::at("expected `)` after COUNT binding", line, col));
+                    return Err(ParseError::at(
+                        "expected `)` after COUNT binding",
+                        line,
+                        col,
+                    ));
                 }
                 cursor.advance();
                 cursor.skip_ws();
@@ -528,22 +592,24 @@ fn parse_row_projection(cursor: &mut Cursor<'_>) -> Result<PatternProjection, Pa
     }
 
     // Optional ORDER BY
-    let ordering = if cursor.peek_keyword().map(|k| k.to_ascii_uppercase()) == Some("ORDER".into()) {
+    let ordering = if cursor.peek_keyword().map(|k| k.to_ascii_uppercase()) == Some("ORDER".into())
+    {
         cursor.consume_keyword("ORDER");
         cursor.skip_ws();
         cursor.consume_keyword("BY");
         cursor.skip_ws();
         let by = parse_identifier(cursor, "order field")?;
         cursor.skip_ws();
-        let direction = if cursor.peek_keyword().map(|k| k.to_ascii_uppercase()) == Some("DESC".into()) {
-            cursor.consume_keyword("DESC");
-            OrderDirection::Desc
-        } else {
-            if cursor.peek_keyword().map(|k| k.to_ascii_uppercase()) == Some("ASC".into()) {
-                cursor.consume_keyword("ASC");
-            }
-            OrderDirection::Asc
-        };
+        let direction =
+            if cursor.peek_keyword().map(|k| k.to_ascii_uppercase()) == Some("DESC".into()) {
+                cursor.consume_keyword("DESC");
+                OrderDirection::Desc
+            } else {
+                if cursor.peek_keyword().map(|k| k.to_ascii_uppercase()) == Some("ASC".into()) {
+                    cursor.consume_keyword("ASC");
+                }
+                OrderDirection::Asc
+            };
         cursor.skip_ws();
         Some(OrderClause { by, direction })
     } else {
@@ -632,7 +698,9 @@ fn parse_predicate(cursor: &mut Cursor<'_>) -> Result<PatternPredicate, ParseErr
 }
 
 /// Parse predicate target: [name.]field
-fn parse_predicate_target(cursor: &mut Cursor<'_>) -> Result<(PredicateTarget, String), ParseError> {
+fn parse_predicate_target(
+    cursor: &mut Cursor<'_>,
+) -> Result<(PredicateTarget, String), ParseError> {
     cursor.skip_ws();
     let start = cursor.index;
     while let Some(c) = cursor.peek_char() {
@@ -861,7 +929,9 @@ mod tests {
     #[test]
     fn basic_match() {
         let q = parse_ok("MATCH (r:Route) RETURN PATH(r)");
-        let MoldQLQuery::Pattern(pq) = q else { panic!("expected Pattern") };
+        let MoldQLQuery::Pattern(pq) = q else {
+            panic!("expected Pattern")
+        };
         assert!(!pq.shortest);
         assert_eq!(pq.bindings.len(), 1);
         assert_eq!(pq.bindings[0].name.as_deref(), Some("r"));
@@ -871,7 +941,9 @@ mod tests {
     #[test]
     fn match_with_edge() {
         let q = parse_ok("MATCH (r:Route)-[:Calls*1..3]->(f:Function) RETURN PATH(r,f)");
-        let MoldQLQuery::Pattern(pq) = q else { panic!("expected Pattern") };
+        let MoldQLQuery::Pattern(pq) = q else {
+            panic!("expected Pattern")
+        };
         assert_eq!(pq.bindings.len(), 2);
         assert_eq!(pq.edges.len(), 1);
         assert_eq!(pq.edges[0].kind, "Calls");
@@ -882,14 +954,18 @@ mod tests {
     #[test]
     fn shortest_match() {
         let q = parse_ok("SHORTEST MATCH (a:Route)-[:Calls*1..6]->(b:Function) RETURN PATH(a,b)");
-        let MoldQLQuery::Pattern(pq) = q else { panic!("expected Pattern") };
+        let MoldQLQuery::Pattern(pq) = q else {
+            panic!("expected Pattern")
+        };
         assert!(pq.shortest);
     }
 
     #[test]
     fn optional_quantifier() {
         let q = parse_ok("MATCH (f:Function)-[:Calls?]->(x:Function) RETURN PATH(f,x)");
-        let MoldQLQuery::Pattern(pq) = q else { panic!("expected Pattern") };
+        let MoldQLQuery::Pattern(pq) = q else {
+            panic!("expected Pattern")
+        };
         assert_eq!(pq.edges[0].quantifier.max_hops, Some(1));
         assert_eq!(pq.edges[0].quantifier.min_hops, 0);
     }
@@ -897,7 +973,9 @@ mod tests {
     #[test]
     fn anonymous_nodes() {
         let q = parse_ok("MATCH (:Route)-[:Calls]->(:Function) RETURN PATH()");
-        let MoldQLQuery::Pattern(pq) = q else { panic!("expected Pattern") };
+        let MoldQLQuery::Pattern(pq) = q else {
+            panic!("expected Pattern")
+        };
         assert!(pq.bindings[0].name.is_none());
         assert!(pq.bindings[1].name.is_none());
     }
@@ -905,23 +983,34 @@ mod tests {
     #[test]
     fn node_projection() {
         let q = parse_ok("MATCH (f:Function) RETURN NODE(f)");
-        let MoldQLQuery::Pattern(pq) = q else { panic!("expected Pattern") };
+        let MoldQLQuery::Pattern(pq) = q else {
+            panic!("expected Pattern")
+        };
         assert!(matches!(pq.projection, PatternProjection::Node { .. }));
     }
 
     #[test]
     fn edge_projection() {
         let q = parse_ok("MATCH (a)-[c:Calls]->(b) RETURN EDGE(c)");
-        let MoldQLQuery::Pattern(pq) = q else { panic!("expected Pattern") };
+        let MoldQLQuery::Pattern(pq) = q else {
+            panic!("expected Pattern")
+        };
         assert!(matches!(pq.projection, PatternProjection::Edge { .. }));
     }
 
     #[test]
     fn row_projection_with_ordering() {
-        let q = parse_ok("MATCH (f:Function)-[c:Calls]->(g) RETURN COUNT(c) AS calls ORDER BY calls DESC LIMIT 5");
-        let MoldQLQuery::Pattern(pq) = q else { panic!("expected Pattern") };
+        let q = parse_ok(
+            "MATCH (f:Function)-[c:Calls]->(g) RETURN COUNT(c) AS calls ORDER BY calls DESC LIMIT 5",
+        );
+        let MoldQLQuery::Pattern(pq) = q else {
+            panic!("expected Pattern")
+        };
         assert!(matches!(pq.projection, PatternProjection::Row { .. }));
-        if let PatternProjection::Row { ordering, limit, .. } = &pq.projection {
+        if let PatternProjection::Row {
+            ordering, limit, ..
+        } = &pq.projection
+        {
             assert!(ordering.is_some());
             assert_eq!(*limit, Some(5));
         }

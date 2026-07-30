@@ -5,11 +5,11 @@
 use std::sync::Arc;
 
 use cognicode_core::domain::analytics::{
-    AnalyticsError, AnalyticsMode, AlgorithmId, DeterminismKind, RunLineage,
-    RunLineageFilter, RunLineageStore, RunStatus, Uuid,
+    AlgorithmId, AnalyticsError, AnalyticsMode, DeterminismKind, RunLineage, RunLineageFilter,
+    RunLineageStore, RunStatus, Uuid,
 };
-use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
 use cognicode_core::domain::plan::limits::PlanLimits;
+use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
 use cognicode_core::infrastructure::persistence::PostgresLineageStore;
 
 /// A no-op lineage store for testing — in-memory fallback.
@@ -141,9 +141,15 @@ fn run_lineage_truncate() {
         None,
         AnalyticsMode::Stream,
     );
-    lineage.truncate(cognicode_core::domain::analytics::TruncationMarker::ResultRowsLimit, 10);
+    lineage.truncate(
+        cognicode_core::domain::analytics::TruncationMarker::ResultRowsLimit,
+        10,
+    );
     assert_eq!(lineage.status, RunStatus::Truncated);
-    assert_eq!(lineage.truncation_marker, Some(cognicode_core::domain::analytics::TruncationMarker::ResultRowsLimit));
+    assert_eq!(
+        lineage.truncation_marker,
+        Some(cognicode_core::domain::analytics::TruncationMarker::ResultRowsLimit)
+    );
     assert_eq!(lineage.row_count, Some(10));
 }
 

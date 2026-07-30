@@ -105,10 +105,11 @@ mod tests {
 
         // Verify the types we define satisfy these bounds.
         // If a type contains a non-Send/non-Sync/non-'static field, this fails to compile.
-        use super::super::{PlanVersion, PlanHash, PlanMetadata, PlanLimits, PlanLimit,
-                           TypedValue, ResultSet, Path, CancellationToken,
-                           UnsupportedConstruct, ConstructId, SourceLocation,
-                           ExecutorError, PlanError};
+        use super::super::{
+            CancellationToken, ConstructId, ExecutorError, Path, PlanError, PlanHash, PlanLimit,
+            PlanLimits, PlanMetadata, PlanVersion, ResultSet, SourceLocation, TypedValue,
+            UnsupportedConstruct,
+        };
         assert_send::<PlanVersion>();
         assert_sync::<PlanVersion>();
         assert_static::<PlanVersion>();

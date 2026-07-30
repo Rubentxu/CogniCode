@@ -11,7 +11,10 @@
 //! This separation enforces the hexagonal architecture invariant:
 //! `cognicode-core` (domain) must NOT depend on `cognicode-explorer` (infrastructure).
 
-use super::{GraphPlan, PlanError, PlanLimits, PlanMetadata, PlanVersion, PlanHash, PathQuantifier, PathProjection, NeighborKind};
+use super::{
+    GraphPlan, NeighborKind, PathProjection, PathQuantifier, PlanError, PlanHash, PlanLimits,
+    PlanMetadata, PlanVersion,
+};
 
 /// Default maximum depth for Subgraph queries.
 pub const DEFAULT_MAX_DEPTH: u32 = 5;
@@ -145,7 +148,10 @@ mod tests {
     /// `Subgraph` with `depth: 0` gets `max_depth = Some(5)` from defaults.
     #[test]
     fn populate_defaults_subgraph_depth_zero() {
-        use super::{GraphPlan, PlanMetadata, PlanVersion, PlanHash, PlanLimits, QueryShape, DEFAULT_MAX_DEPTH};
+        use super::{
+            DEFAULT_MAX_DEPTH, GraphPlan, PlanHash, PlanLimits, PlanMetadata, PlanVersion,
+            QueryShape,
+        };
 
         let plan = GraphPlan::Subgraph {
             nodes: vec!["A".into()],
@@ -168,12 +174,18 @@ mod tests {
     /// `Path` with `max_hops: None` gets `max_hops = Some(6)` from defaults.
     #[test]
     fn populate_defaults_path_no_max_hops() {
-        use super::{GraphPlan, PlanMetadata, PlanVersion, PlanHash, PlanLimits, PathQuantifier, PathProjection, QueryShape, DEFAULT_MAX_HOPS};
+        use super::{
+            DEFAULT_MAX_HOPS, GraphPlan, PathProjection, PathQuantifier, PlanHash, PlanLimits,
+            PlanMetadata, PlanVersion, QueryShape,
+        };
 
         let plan = GraphPlan::Path {
             src: "A".into(),
             dst: "B".into(),
-            quantifier: PathQuantifier { max_hops: None, min_hops: 0 },
+            quantifier: PathQuantifier {
+                max_hops: None,
+                min_hops: 0,
+            },
             edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
@@ -192,12 +204,18 @@ mod tests {
     /// `Path` with explicit `max_hops: Some(3)` keeps the explicit value.
     #[test]
     fn populate_defaults_path_explicit_max_hops_preserved() {
-        use super::{GraphPlan, PlanMetadata, PlanVersion, PlanHash, PlanLimits, PathQuantifier, PathProjection, QueryShape};
+        use super::{
+            GraphPlan, PathProjection, PathQuantifier, PlanHash, PlanLimits, PlanMetadata,
+            PlanVersion, QueryShape,
+        };
 
         let plan = GraphPlan::Path {
             src: "A".into(),
             dst: "B".into(),
-            quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
+            quantifier: PathQuantifier {
+                max_hops: Some(3),
+                min_hops: 0,
+            },
             edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
@@ -216,7 +234,9 @@ mod tests {
     /// `QueryShape::Neighbors` has no graph-traversal defaults.
     #[test]
     fn populate_defaults_neighbors_no_defaults() {
-        use super::{GraphPlan, PlanMetadata, PlanVersion, PlanHash, PlanLimits, NeighborKind, QueryShape};
+        use super::{
+            GraphPlan, NeighborKind, PlanHash, PlanLimits, PlanMetadata, PlanVersion, QueryShape,
+        };
 
         let plan = GraphPlan::Neighbors {
             src: "A".into(),
@@ -240,7 +260,7 @@ mod tests {
     /// `populate_defaults` does not raise `PlanError::MissingLimit`.
     #[test]
     fn populate_defaults_no_missing_limit_error() {
-        use super::{GraphPlan, PlanMetadata, PlanVersion, PlanHash, PlanLimits, QueryShape};
+        use super::{GraphPlan, PlanHash, PlanLimits, PlanMetadata, PlanVersion, QueryShape};
 
         let plan = GraphPlan::Subgraph {
             nodes: vec!["A".into()],
@@ -280,7 +300,10 @@ mod tests {
         // and PlanLimits::validate should reject it
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, super::super::PlanError::MissingLimit(super::super::PlanLimit::MaxDepth)));
+        assert!(matches!(
+            err,
+            super::super::PlanError::MissingLimit(super::super::PlanLimit::MaxDepth)
+        ));
     }
 
     /// `lower_with_defaults` applies populate_defaults first, so validation passes.
@@ -312,7 +335,7 @@ mod tests {
 
     impl super::AstLowerer for DummyLowererForTest {
         fn lower(&self, _ast: &dyn std::any::Any) -> Result<GraphPlan, PlanError> {
-            use super::{GraphPlan, PlanMetadata, PlanVersion, PlanHash, PlanLimits};
+            use super::{GraphPlan, PlanHash, PlanLimits, PlanMetadata, PlanVersion};
 
             // Construct a GraphPlan with NO max_depth set
             let plan = GraphPlan::Subgraph {
@@ -343,7 +366,10 @@ mod tests {
 
     impl super::AstLowerer for DummyLowererWithDefaults {
         fn lower(&self, _ast: &dyn std::any::Any) -> Result<GraphPlan, PlanError> {
-            use super::{GraphPlan, PlanMetadata, PlanVersion, PlanHash, PlanLimits, populate_defaults, QueryShape};
+            use super::{
+                GraphPlan, PlanHash, PlanLimits, PlanMetadata, PlanVersion, QueryShape,
+                populate_defaults,
+            };
 
             // Construct a GraphPlan with NO max_depth set
             let plan = GraphPlan::Subgraph {

@@ -60,9 +60,15 @@ impl PlanVersion {
         };
 
         let mut vparts = version_part.splitn(3, '.');
-        let major = vparts.next().ok_or_else(|| ParsePlanVersionError::InvalidSemver(s.clone()))?;
-        let minor = vparts.next().ok_or_else(|| ParsePlanVersionError::InvalidSemver(s.clone()))?;
-        let patch = vparts.next().ok_or_else(|| ParsePlanVersionError::InvalidSemver(s.clone()))?;
+        let major = vparts
+            .next()
+            .ok_or_else(|| ParsePlanVersionError::InvalidSemver(s.clone()))?;
+        let minor = vparts
+            .next()
+            .ok_or_else(|| ParsePlanVersionError::InvalidSemver(s.clone()))?;
+        let patch = vparts
+            .next()
+            .ok_or_else(|| ParsePlanVersionError::InvalidSemver(s.clone()))?;
 
         if major.parse::<u64>().is_err()
             || minor.parse::<u64>().is_err()
@@ -78,7 +84,10 @@ impl PlanVersion {
                     return Err(ParsePlanVersionError::InvalidSemver(s.clone()));
                 }
                 // Each segment: ASCII alphanumerics and hyphens only
-                if !segment.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+                if !segment
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-')
+                {
                     return Err(ParsePlanVersionError::InvalidSemver(s.clone()));
                 }
                 // No leading zeros on numeric-only segments
@@ -275,8 +284,14 @@ mod tests {
             max_hops: u32,
             depth: u32,
         }
-        let a = FakePlan { max_hops: 3, depth: 5 };
-        let b = FakePlan { max_hops: 3, depth: 5 };
+        let a = FakePlan {
+            max_hops: 3,
+            depth: 5,
+        };
+        let b = FakePlan {
+            max_hops: 3,
+            depth: 5,
+        };
         let hash_a = PlanHash::compute(&a);
         let hash_b = PlanHash::compute(&b);
         assert_eq!(hash_a, hash_b, "identical content → identical hash");
@@ -300,7 +315,9 @@ mod tests {
     #[test]
     fn plan_hash_serde_roundtrip() {
         #[derive(serde::Serialize)]
-        struct FakePlan { value: i32 }
+        struct FakePlan {
+            value: i32,
+        }
         let plan = FakePlan { value: 42 };
         let hash = PlanHash::compute(&plan);
         let json = serde_json::to_string(&hash).expect("serialize");
@@ -313,7 +330,9 @@ mod tests {
     fn plan_metadata_carries_both() {
         let version = PlanVersion::new("1.0.0").unwrap();
         #[derive(serde::Serialize)]
-        struct P { x: i32 }
+        struct P {
+            x: i32,
+        }
         let hash = PlanHash::compute(&P { x: 1 });
         let meta = PlanMetadata::new(version.clone(), hash.clone());
         assert_eq!(meta.version_str(), "1.0.0");
@@ -325,7 +344,9 @@ mod tests {
     fn plan_metadata_serde_roundtrip() {
         let version = PlanVersion::new("1.0.0").unwrap();
         #[derive(serde::Serialize)]
-        struct P { x: i32 }
+        struct P {
+            x: i32,
+        }
         let hash = PlanHash::compute(&P { x: 1 });
         let meta = PlanMetadata::new(version, hash);
         let json = serde_json::to_string(&meta).expect("serialize");
@@ -337,7 +358,9 @@ mod tests {
     #[test]
     fn plan_hash_display_prefix() {
         #[derive(serde::Serialize)]
-        struct P { x: i32 }
+        struct P {
+            x: i32,
+        }
         let hash = PlanHash::compute(&P { x: 0 });
         let display = hash.to_string();
         assert!(
