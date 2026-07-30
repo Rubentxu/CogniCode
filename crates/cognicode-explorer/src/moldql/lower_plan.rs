@@ -38,10 +38,12 @@ impl MoldqlAstLowerer {
         Self { _priv: () }
     }
 
-    pub(crate) fn plan_metadata(&self) -> PlanMetadata {
+    /// Build PlanMetadata with the correct hash derived from the actual plan.
+    /// Replaces the placeholder `PlanHash::compute(&0u32)` with a real content hash.
+    pub(crate) fn plan_metadata_for(&self, plan: &GraphPlan) -> PlanMetadata {
         PlanMetadata::new(
             PlanVersion::new("1.0.0").expect("valid semver"),
-            PlanHash::compute(&0u32),
+            plan.compute_hash(),
         )
     }
 
@@ -51,9 +53,8 @@ impl MoldqlAstLowerer {
         let quantifier = PathQuantifier::new(Some(effective_max_hops), 0)
             .expect("effective_max_hops is always Some");
         let predicates = self.lower_conditions(&pq.conditions);
-        let metadata = self.plan_metadata();
 
-        // Build plan with initial limits
+        // Build plan with placeholder metadata (hash updated after construction)
         let plan = GraphPlan::Path {
             src: pq.from.clone(),
             dst: pq.to.clone(),
@@ -62,7 +63,10 @@ impl MoldqlAstLowerer {
             predicates: predicates.clone(),
             projection: PathProjection::default(),
             limits: PlanLimits::builder().max_hops(effective_max_hops).build(),
-            metadata: metadata.clone(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").expect("valid semver"),
+                PlanHash::compute(&0u32),
+            ),
         };
 
         // W-A fix: call populate_defaults to use the port function
@@ -79,7 +83,7 @@ impl MoldqlAstLowerer {
             predicates,
             projection: PathProjection::default(),
             limits: final_limits,
-            metadata,
+            metadata: self.plan_metadata_for(&plan),
         })
     }
 
@@ -90,9 +94,8 @@ impl MoldqlAstLowerer {
             TraversalDirection::Both => NeighborKind::Both,
         };
         let predicates = self.lower_conditions(&nq.conditions);
-        let metadata = self.plan_metadata();
 
-        // Build plan with initial limits
+        // Build plan with placeholder metadata (hash updated after construction)
         let plan = GraphPlan::Neighbors {
             src: nq.root.clone(),
             kind: kind.clone(),
@@ -100,7 +103,10 @@ impl MoldqlAstLowerer {
             edge_kind_filter: None,
             predicates: predicates.clone(),
             limits: PlanLimits::builder().max_depth(nq.depth).build(),
-            metadata: metadata.clone(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").expect("valid semver"),
+                PlanHash::compute(&0u32),
+            ),
         };
 
         // W-A fix: call populate_defaults to use the port function
@@ -114,7 +120,7 @@ impl MoldqlAstLowerer {
             edge_kind_filter: None,
             predicates,
             limits: final_limits,
-            metadata,
+            metadata: self.plan_metadata_for(&plan),
         })
     }
 
@@ -127,15 +133,17 @@ impl MoldqlAstLowerer {
         } else {
             sq.depth
         };
-        let metadata = self.plan_metadata();
 
-        // Build plan with initial limits
+        // Build plan with placeholder metadata (hash updated after construction)
         let plan = GraphPlan::Subgraph {
             nodes: vec![sq.root.clone()],
             edges: None,
             aggregations: vec![],
             limits: PlanLimits::builder().max_depth(effective_depth).build(),
-            metadata: metadata.clone(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").expect("valid semver"),
+                PlanHash::compute(&0u32),
+            ),
         };
 
         // W-A fix: call populate_defaults to use the port function
@@ -147,21 +155,22 @@ impl MoldqlAstLowerer {
             edges: None,
             aggregations: vec![],
             limits: final_limits,
-            metadata,
+            metadata: self.plan_metadata_for(&plan),
         })
     }
 
     fn lower_cluster(&self, cq: &ClusterQuery) -> Result<GraphPlan, PlanError> {
-        let metadata = self.plan_metadata();
-
-        // Build plan with initial limits
+        // Build plan with placeholder metadata (hash updated after construction)
         let plan = GraphPlan::Cluster {
             by: vec![], // ClusterMethod maps to grouping key; empty for now
             aggregations: vec![],
             ordering: None,
             limit: None,
             limits: PlanLimits::default(),
-            metadata: metadata.clone(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").expect("valid semver"),
+                PlanHash::compute(&0u32),
+            ),
         };
 
         // W-A fix: call populate_defaults to use the port function
@@ -174,15 +183,18 @@ impl MoldqlAstLowerer {
             ordering: None,
             limit: None,
             limits: final_limits,
-            metadata,
+            metadata: self.plan_metadata_for(&plan),
         })
     }
 
     fn lower_explain(&self, eq: &ExplainQuery) -> Result<GraphPlan, PlanError> {
         let predicates = self.lower_conditions(&eq.conditions);
-        let metadata = self.plan_metadata();
+        let placeholder = PlanMetadata::new(
+            PlanVersion::new("1.0.0").expect("valid semver"),
+            PlanHash::compute(&0u32),
+        );
 
-        // Build inner path plan
+        // Build inner path plan with placeholder metadata
         let inner = GraphPlan::Path {
             src: eq.from.clone(),
             dst: eq.to.clone(),
@@ -191,14 +203,14 @@ impl MoldqlAstLowerer {
             predicates,
             projection: PathProjection::default(),
             limits: PlanLimits::default(),
-            metadata: metadata.clone(),
+            metadata: placeholder.clone(),
         };
 
-        // Build explain plan with initial limits for populate_defaults call
+        // Build explain plan with placeholder metadata (hash updated after construction)
         let explain_plan = GraphPlan::Explain {
             inner: Box::new(inner.clone()),
             limits: PlanLimits::default(),
-            metadata: metadata.clone(),
+            metadata: placeholder.clone(),
         };
 
         // W-A fix: call populate_defaults for the Explain wrapper
@@ -208,7 +220,7 @@ impl MoldqlAstLowerer {
         Ok(GraphPlan::Explain {
             inner: Box::new(inner),
             limits: final_limits,
-            metadata,
+            metadata: self.plan_metadata_for(&explain_plan),
         })
     }
 
@@ -223,14 +235,16 @@ impl MoldqlAstLowerer {
             .iter()
             .map(|op| self.lower(op))
             .collect::<Result<Vec<_>, _>>()?;
-        let metadata = self.plan_metadata();
 
-        // Build plan with initial limits
+        // Build plan with placeholder metadata (hash updated after construction)
         let plan = GraphPlan::BooleanComposition {
             op,
             operands: operands.clone(),
             limits: PlanLimits::default(),
-            metadata: metadata.clone(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").expect("valid semver"),
+                PlanHash::compute(&0u32),
+            ),
         };
 
         // W-A fix: call populate_defaults to use the port function
@@ -241,7 +255,7 @@ impl MoldqlAstLowerer {
             op,
             operands,
             limits: final_limits,
-            metadata,
+            metadata: self.plan_metadata_for(&plan),
         })
     }
 

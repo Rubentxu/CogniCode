@@ -95,17 +95,29 @@ impl super::MoldqlAstLowerer {
             .unwrap_or(1);
 
         // 7. Pick the right GraphPlan variant based on projection.
-        let metadata = self.plan_metadata();
         match &q.projection {
             PatternProjection::Row { .. } => {
                 // COUNT / ORDER BY / LIMIT → Cluster variant.
                 let (by, aggregations, ordering, limit) = self.lower_row_projection(&q.projection);
+                let plan_limits = PlanLimits::builder().max_hops(max_hops).build();
+                let placeholder = GraphPlan::Cluster {
+                    by: by.clone(),
+                    aggregations: aggregations.clone(),
+                    ordering: ordering.clone(),
+                    limit,
+                    limits: plan_limits.clone(),
+                    metadata: PlanMetadata::new(
+                        PlanVersion::new("1.0.0").expect("valid semver"),
+                        PlanHash::compute(&0u32),
+                    ),
+                };
+                let metadata = self.plan_metadata_for(&placeholder);
                 Ok(GraphPlan::Cluster {
                     by,
                     aggregations,
                     ordering,
                     limit,
-                    limits: PlanLimits::builder().max_hops(max_hops).build(),
+                    limits: plan_limits,
                     metadata,
                 })
             }
@@ -120,6 +132,21 @@ impl super::MoldqlAstLowerer {
                     })
                     .unwrap_or_else(|| PathQuantifier::new(Some(1), 1).unwrap());
 
+                let plan_limits = PlanLimits::builder().max_hops(max_hops).build();
+                let placeholder = GraphPlan::Path {
+                    src: src.clone(),
+                    dst: dst.clone(),
+                    quantifier: quantifier.clone(),
+                    edge_kind_filter: edge_kind_filter.clone(),
+                    predicates: predicates.clone(),
+                    projection: projection.clone(),
+                    limits: plan_limits.clone(),
+                    metadata: PlanMetadata::new(
+                        PlanVersion::new("1.0.0").expect("valid semver"),
+                        PlanHash::compute(&0u32),
+                    ),
+                };
+                let metadata = self.plan_metadata_for(&placeholder);
                 Ok(GraphPlan::Path {
                     src,
                     dst,
@@ -127,7 +154,7 @@ impl super::MoldqlAstLowerer {
                     edge_kind_filter,
                     predicates,
                     projection,
-                    limits: PlanLimits::builder().max_hops(max_hops).build(),
+                    limits: plan_limits,
                     metadata,
                 })
             }
