@@ -385,7 +385,7 @@ impl ExplorerMcpHandler {
         quality_repo: Option<Arc<dyn crate::ports::QualityRepository>>,
         quality_write: Option<Arc<dyn crate::ports::QualityWritePort>>,
         revision_tracker: Arc<std::sync::atomic::AtomicU64>,
-        #[cfg(feature = "multimodal")] edge_emitter: Option<Arc<dyn crate::ports::EdgeEmitter>>,
+        #[cfg(feature = "multimodal")] route_store: Option<Arc<dyn crate::ports::RouteStore>>,
         #[cfg(feature = "postgres")] pg_repo: Option<
             Arc<cognicode_core::infrastructure::persistence::PostgresRepository>,
         >,
@@ -480,8 +480,8 @@ impl ExplorerMcpHandler {
             ctx_builder = ctx_builder.with_quality_write(qw);
         }
         #[cfg(feature = "multimodal")]
-        if let Some(ee) = edge_emitter {
-            ctx_builder = ctx_builder.with_edge_emitter(ee);
+        if let Some(ee) = route_store {
+            ctx_builder = ctx_builder.with_route_store(ee);
         }
         #[cfg(feature = "multimodal")]
         {

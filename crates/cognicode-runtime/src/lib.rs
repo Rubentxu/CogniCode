@@ -327,9 +327,9 @@ impl Runtime {
         let quality_write = quality_write_repo_arc();
 
         #[cfg(feature = "postgres")]
-        let edge_emitter = edge_emitter_repo_arc(self.pg_repo.as_ref());
+        let route_store = route_store_repo_arc(self.pg_repo.as_ref());
         #[cfg(not(feature = "postgres"))]
-        let edge_emitter = None;
+        let route_store = None;
 
         cognicode_explorer::mcp::ExplorerMcpHandler::with_graph(
             self.symbol_repo,
@@ -342,7 +342,7 @@ impl Runtime {
             quality_write,
             self.revision_tracker,
             #[cfg(feature = "multimodal")]
-            edge_emitter,
+            route_store,
             #[cfg(feature = "postgres")]
             self.pg_repo.clone(),
         )
@@ -392,24 +392,24 @@ fn quality_write_repo_arc() -> Option<Arc<dyn cognicode_explorer::ports::Quality
     None
 }
 
-/// Build a `PostgresEdgeEmitter` wired as an `EdgeEmitter` port.
+/// Build a `PostgresRouteStore` wired as an `RouteStore` port.
 ///
 /// Returns `None` when the `postgres` feature is off or when no PG
 /// connection is available — the `ingest_openapi` and `trace_route`
 /// tools degrade gracefully with a `feature_disabled` envelope.
 #[cfg(feature = "postgres")]
-fn edge_emitter_repo_arc(
+fn route_store_repo_arc(
     pg_repo: Option<&Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
-) -> Option<Arc<dyn cognicode_explorer::ports::EdgeEmitter>> {
+) -> Option<Arc<dyn cognicode_explorer::ports::RouteStore>> {
     let pg = pg_repo?;
     Some(Arc::new(
-        cognicode_explorer::adapters::PostgresEdgeEmitter::from_pool(pg.pool().clone()),
+        cognicode_explorer::adapters::PostgresRouteStore::from_pool(pg.pool().clone()),
     ))
 }
 
 #[cfg(not(feature = "postgres"))]
-fn edge_emitter_repo_arc(
+fn route_store_repo_arc(
     _pg_repo: Option<&Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
-) -> Option<Arc<dyn cognicode_explorer::ports::EdgeEmitter>> {
+) -> Option<Arc<dyn cognicode_explorer::ports::RouteStore>> {
     None
 }

@@ -13,12 +13,12 @@ pub mod in_memory_graph_repository;
 #[cfg(feature = "postgres")]
 pub mod postgres_quality;
 
-/// PG-backed adapter for the `EdgeEmitter` port (cycle e15.5).
+/// PG-backed adapter for the `RouteStore` port (cycle e15.5).
 /// Compiled only when the `postgres` feature is enabled; backs the
 /// `cognicode_ingest_openapi` handler's persistence path and the
 /// `cognicode_trace_route` tool's reverse lookup.
 #[cfg(feature = "postgres")]
-pub mod postgres_edge_emitter;
+pub mod postgres_route_store;
 
 /// PG-backed adapter for the `GraphRepository` port (read+write).
 /// Compiled only when the `postgres` feature is enabled.
@@ -35,7 +35,7 @@ pub use in_memory_graph_repository::InMemoryGraphRepository;
 #[cfg(feature = "postgres")]
 pub use pg_graph_repository::PgGraphRepository;
 #[cfg(feature = "postgres")]
-pub use postgres_edge_emitter::PostgresEdgeEmitter;
+pub use postgres_route_store::PostgresRouteStore;
 #[cfg(feature = "postgres")]
 pub use postgres_quality::PostgresQualityRepository;
 pub use quality_graph_repository::{HotspotNode, QualityGraphRepository, RelEdge, TraversalFilter};

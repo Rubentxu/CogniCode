@@ -21,7 +21,7 @@ use crate::domain::snapshot::SnapshotService;
 use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
 };
-use crate::ports::{EdgeEmitter, QualityRepository, QualityWritePort};
+use crate::ports::{RouteStore, QualityRepository, QualityWritePort};
 use crate::session::SessionRegistry;
 
 /// Optional Generic Graph Layer port for multimodal queries.
@@ -73,7 +73,7 @@ pub struct McpContext {
     /// Edge emitter port — write-path for route + protocol edges.
     /// Used by `ingest_openapi` (cycle e15.5) to persist `Route` nodes
     /// and `HttpCalls` edges into `api_routes` + `api_route_edges`.
-    pub edge_emitter: Option<Arc<dyn EdgeEmitter>>,
+    pub route_store: Option<Arc<dyn RouteStore>>,
     /// Snapshot rendering service (requires mmdc on PATH).
     /// Used by the snapshot MCP handler to render diagrams as PNG/SVG.
     pub snapshot: Option<Arc<SnapshotService>>,
@@ -105,7 +105,7 @@ impl McpContext {
             graph_service: None,
             quality: None,
             quality_write: None,
-            edge_emitter: None,
+            route_store: None,
             snapshot: None,
             revision_tracker: None,
             analytics_registry: None,
@@ -167,9 +167,9 @@ impl McpContext {
         self
     }
 
-    /// Wire an `EdgeEmitter` port into the context (cycle e15.5).
-    pub fn with_edge_emitter(mut self, edge_emitter: Arc<dyn EdgeEmitter>) -> Self {
-        self.edge_emitter = Some(edge_emitter);
+    /// Wire an `RouteStore` port into the context (cycle e15.5).
+    pub fn with_route_store(mut self, route_store: Arc<dyn RouteStore>) -> Self {
+        self.route_store = Some(route_store);
         self
     }
 
@@ -229,7 +229,7 @@ pub struct McpContextBuilder {
     graph_service: Option<Arc<dyn GraphService>>,
     quality: Option<Arc<dyn QualityRepository>>,
     quality_write: Option<Arc<dyn QualityWritePort>>,
-    edge_emitter: Option<Arc<dyn EdgeEmitter>>,
+    route_store: Option<Arc<dyn RouteStore>>,
     snapshot: Option<Arc<SnapshotService>>,
     revision_tracker: Option<Arc<AtomicU64>>,
     analytics_registry: Option<Arc<AlgorithmRegistry>>,
@@ -252,7 +252,7 @@ impl McpContextBuilder {
             graph_service: None,
             quality: None,
             quality_write: None,
-            edge_emitter: None,
+            route_store: None,
             snapshot: None,
             revision_tracker: None,
             analytics_registry: None,
@@ -328,9 +328,9 @@ impl McpContextBuilder {
         self
     }
 
-    /// Wire an `EdgeEmitter` port into the context (cycle e15.5).
-    pub fn with_edge_emitter(mut self, edge_emitter: Arc<dyn EdgeEmitter>) -> Self {
-        self.edge_emitter = Some(edge_emitter);
+    /// Wire an `RouteStore` port into the context (cycle e15.5).
+    pub fn with_route_store(mut self, route_store: Arc<dyn RouteStore>) -> Self {
+        self.route_store = Some(route_store);
         self
     }
 
@@ -393,7 +393,7 @@ impl McpContextBuilder {
             graph_service: self.graph_service,
             quality: self.quality,
             quality_write: self.quality_write,
-            edge_emitter: self.edge_emitter,
+            route_store: self.route_store,
             snapshot: self.snapshot,
             revision_tracker: self.revision_tracker,
             analytics_registry: self.analytics_registry,

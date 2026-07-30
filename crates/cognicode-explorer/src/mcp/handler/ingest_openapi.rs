@@ -233,8 +233,8 @@ pub(crate) mod handlers {
     use crate::mcp::McpContext;
     use crate::mcp::envelope::{err_envelope, ok_envelope};
     use crate::mcp::handler::ToolHandler;
-    use crate::ports::edge_emitter::{
-        ApiRoute, ApiRouteEdge, EDGE_KIND_HTTP_CALLS, EdgeEmitter, PROTOCOL_HTTP,
+    use crate::ports::route_store::{
+        ApiRoute, ApiRouteEdge, EDGE_KIND_HTTP_CALLS, RouteStore, PROTOCOL_HTTP,
     };
 
     // Tool name imported from explorer.rs
@@ -438,13 +438,13 @@ pub(crate) mod handlers {
             let spec_hash = sha256_hex(&spec_bytes);
 
             // 3. Check idempotency — if routes for this hash already exist, skip
-            let emitter = match &ctx.edge_emitter {
+            let emitter = match &ctx.route_store {
                 Some(e) => e,
                 None => {
                     return err_envelope(
                         TOOL_INGEST_OPENAPI,
                         "feature_disabled",
-                        "ingest_openapi: edge_emitter port not wired (ensure --postgres flag is set)",
+                        "ingest_openapi: route_store port not wired (ensure --postgres flag is set)",
                     );
                 }
             };
@@ -561,14 +561,14 @@ pub(crate) mod handlers {
                 })
                 .collect();
 
-            // 10. Emit via EdgeEmitter
-            let stats = match emitter.emit_many(&routes_with_symbols, &edges).await {
+            // 10. Emit via RouteStore
+            let stats = match emitter.save_many(&routes_with_symbols, &edges).await {
                 Ok(s) => s,
                 Err(e) => {
                     return err_envelope(
                         TOOL_INGEST_OPENAPI,
                         "emit_error",
-                        &format!("ingest_openapi: emit_many failed: {e}"),
+                        &format!("ingest_openapi: save_many failed: {e}"),
                     );
                 }
             };
@@ -646,13 +646,13 @@ pub(crate) mod handlers {
                 );
             }
 
-            let emitter = match &ctx.edge_emitter {
+            let emitter = match &ctx.route_store {
                 Some(e) => e,
                 None => {
                     return err_envelope(
                         TOOL_TRACE_ROUTE,
                         "feature_disabled",
-                        "trace_route: edge_emitter port not wired (ensure --postgres flag is set)",
+                        "trace_route: route_store port not wired (ensure --postgres flag is set)",
                     );
                 }
             };
