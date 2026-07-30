@@ -120,9 +120,8 @@ impl MoldQLService for MoldQLServiceImpl {
                 .map_err(|e| ExplorerError::ResolutionFailed(e.to_string()))?,
         };
 
-        let ws_id = WorkspaceId::try_new(workspace_id).map_err(|e| {
-            ExplorerError::ResolutionFailed(format!("invalid workspace_id: {e}"))
-        })?;
+        let ws_id = WorkspaceId::try_new(workspace_id)
+            .map_err(|e| ExplorerError::ResolutionFailed(format!("invalid workspace_id: {e}")))?;
         let view = self.build_moldql_view_with_pin(ws_id, RevisionId(revision_id));
         MoldQLExecutor::new(&view).execute(ast).await
     }
@@ -191,12 +190,12 @@ impl MoldQLServiceImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cognicode_core::domain::plan::executor::StubExecutor;
+    use crate::error::ExplorerResult;
     use crate::facades::LensExecutor;
     use crate::ports::source_reader::SourceReader;
-    use crate::ports::symbol_repository::{SymbolRepository, ResolvedSymbol, GraphStats};
-    use crate::error::ExplorerResult;
+    use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
     use cognicode_core::domain::aggregates::SymbolId;
+    use cognicode_core::domain::plan::executor::StubExecutor;
 
     /// Stub LensExecutor for tests.
     struct TestLensExecutor;
@@ -217,7 +216,12 @@ mod tests {
         fn read_source(&self, _path: &str) -> ExplorerResult<String> {
             Ok(String::new())
         }
-        fn read_lines(&self, _path: &str, _start: u32, _end: u32) -> ExplorerResult<Vec<(u32, String)>> {
+        fn read_lines(
+            &self,
+            _path: &str,
+            _start: u32,
+            _end: u32,
+        ) -> ExplorerResult<Vec<(u32, String)>> {
             Ok(vec![])
         }
     }
@@ -225,12 +229,24 @@ mod tests {
     /// Stub SymbolRepository for tests.
     struct TestSymbolRepo;
     impl SymbolRepository for TestSymbolRepo {
-        fn resolve(&self, _id: &SymbolId) -> ExplorerResult<Option<ResolvedSymbol>> { Ok(None) }
-        fn find_symbols_by_name(&self, _name: &str) -> ExplorerResult<Vec<ResolvedSymbol>> { Ok(vec![]) }
-        fn find_symbols_by_file(&self, _file: &str) -> ExplorerResult<Vec<ResolvedSymbol>> { Ok(vec![]) }
-        fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> { Ok(vec![]) }
-        fn graph_stats(&self) -> GraphStats { GraphStats::default() }
-        fn module_list(&self) -> Vec<String> { vec![] }
+        fn resolve(&self, _id: &SymbolId) -> ExplorerResult<Option<ResolvedSymbol>> {
+            Ok(None)
+        }
+        fn find_symbols_by_name(&self, _name: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(vec![])
+        }
+        fn find_symbols_by_file(&self, _file: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(vec![])
+        }
+        fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(vec![])
+        }
+        fn graph_stats(&self) -> GraphStats {
+            GraphStats::default()
+        }
+        fn module_list(&self) -> Vec<String> {
+            vec![]
+        }
     }
 
     /// Test that `execute_query_pinned` accepts valid workspace_id and revision_id
@@ -334,6 +350,9 @@ mod tests {
         // Verify that the service was constructed without panicking
         // (MoldQLServiceImpl::new should not require graph_executor to be Some,
         // but the field should be populated correctly)
-        assert!(true, "MoldQLServiceImpl should be constructible with graph_executor");
+        assert!(
+            true,
+            "MoldQLServiceImpl should be constructible with graph_executor"
+        );
     }
 }

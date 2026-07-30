@@ -58,8 +58,7 @@ fn re_pattern_profile() -> &'static Regex {
 /// check — the parser also rejects mutations, but falling through at the
 /// intent layer keeps the canonical parser as the single source of truth
 /// for mutation diagnostics.
-const MUTATION_KEYWORDS: &[&str] =
-    &["create ", "delete ", "set ", "merge ", "detach ", "remove "];
+const MUTATION_KEYWORDS: &[&str] = &["create ", "delete ", "set ", "merge ", "detach ", "remove "];
 
 /// Translates a lowercase intent query into a MoldQL AST.
 ///
@@ -299,7 +298,9 @@ mod tests {
             matches!(result, Some(Ok(MoldQLQuery::Pattern(_)))),
             "expected Some(Ok(Pattern)), got {result:?}"
         );
-        let Some(Ok(MoldQLQuery::Pattern(pq))) = result else { return; };
+        let Some(Ok(MoldQLQuery::Pattern(pq))) = result else {
+            return;
+        };
         // Verify bindings: r and f (PATH only includes start/end nodes, not edge binding)
         assert_eq!(pq.bindings.len(), 2, "expected 2 bindings in PATH(r,f)");
         assert_eq!(pq.edges.len(), 1, "expected 1 edge");
@@ -323,7 +324,10 @@ mod tests {
         // THEN it returns None
         // AND the canonical parser surfaces the unsupported mutation diagnostic.
         let result = lower_intent("match (f:Function) detach delete f");
-        assert!(result.is_none(), "mutation fragment should return None, got {result:?}");
+        assert!(
+            result.is_none(),
+            "mutation fragment should return None, got {result:?}"
+        );
     }
 
     #[test]
@@ -333,23 +337,35 @@ mod tests {
         // Tests: + maps to 1..8, ordering and limit are preserved.
         use crate::moldql::ast::{OrderDirection, PatternProjection};
         let result = lower_intent(
-            "match (f:Function)-[c:Calls+]->(g:Function) return COUNT(c) AS calls ORDER BY calls DESC LIMIT 5"
+            "match (f:Function)-[c:Calls+]->(g:Function) return COUNT(c) AS calls ORDER BY calls DESC LIMIT 5",
         );
         assert!(
             matches!(result, Some(Ok(MoldQLQuery::Pattern(_)))),
             "expected Some(Ok(Pattern)), got {result:?}"
         );
-        let Some(Ok(MoldQLQuery::Pattern(pq))) = result else { return; };
+        let Some(Ok(MoldQLQuery::Pattern(pq))) = result else {
+            return;
+        };
         // Verify + maps to 1..8 (profile max hops default = 8)
         assert_eq!(pq.edges.len(), 1);
         let edge = &pq.edges[0];
         assert_eq!(edge.quantifier.min_hops, 1, "+ should map to min_hops=1");
-        assert_eq!(edge.quantifier.max_hops, Some(8), "+ should map to max_hops=8");
+        assert_eq!(
+            edge.quantifier.max_hops,
+            Some(8),
+            "+ should map to max_hops=8"
+        );
         // Verify projection has ordering and limit
-        if let PatternProjection::Row { ordering, limit, .. } = &pq.projection {
+        if let PatternProjection::Row {
+            ordering, limit, ..
+        } = &pq.projection
+        {
             assert!(ordering.is_some(), "expected ordering");
             let ord = ordering.as_ref().unwrap();
-            assert!(matches!(ord.direction, OrderDirection::Desc), "expected DESC");
+            assert!(
+                matches!(ord.direction, OrderDirection::Desc),
+                "expected DESC"
+            );
             assert_eq!(ord.by, "calls", "order by calls");
             assert_eq!(*limit, Some(5), "limit should be 5");
         } else {
@@ -364,19 +380,23 @@ mod tests {
         // WHEN lowered
         // THEN its relationship bound is 0..1.
         use crate::moldql::ast::PatternProjection;
-        let result = lower_intent(
-            "match (f:Function)-[:Calls?]->(x:Function) return node(x)"
-        );
+        let result = lower_intent("match (f:Function)-[:Calls?]->(x:Function) return node(x)");
         assert!(
             matches!(result, Some(Ok(MoldQLQuery::Pattern(_)))),
             "expected Some(Ok(Pattern)), got {result:?}"
         );
-        let Some(Ok(MoldQLQuery::Pattern(pq))) = result else { return; };
+        let Some(Ok(MoldQLQuery::Pattern(pq))) = result else {
+            return;
+        };
         // Verify ? maps to 0..1
         assert_eq!(pq.edges.len(), 1);
         let edge = &pq.edges[0];
         assert_eq!(edge.quantifier.min_hops, 0, "? should map to min_hops=0");
-        assert_eq!(edge.quantifier.max_hops, Some(1), "? should map to max_hops=1");
+        assert_eq!(
+            edge.quantifier.max_hops,
+            Some(1),
+            "? should map to max_hops=1"
+        );
         // Verify node(x) projection
         assert!(
             matches!(&pq.projection, PatternProjection::Node { binding } if binding == "x"),
@@ -390,14 +410,15 @@ mod tests {
         // Scenario: SHORTEST keyword is preserved in lowering
         // Grammar: [SHORTEST] MATCH NodePattern — SHORTEST comes BEFORE MATCH.
         use crate::moldql::ast::PatternProjection;
-        let result = lower_intent(
-            "shortest match (r:Route)-[:Calls*1..6]->(f:Function) return path(r,f)"
-        );
+        let result =
+            lower_intent("shortest match (r:Route)-[:Calls*1..6]->(f:Function) return path(r,f)");
         assert!(
             matches!(result, Some(Ok(MoldQLQuery::Pattern(_)))),
             "expected Some(Ok(Pattern)), got {result:?}"
         );
-        let Some(Ok(MoldQLQuery::Pattern(pq))) = result else { return; };
+        let Some(Ok(MoldQLQuery::Pattern(pq))) = result else {
+            return;
+        };
         assert!(pq.shortest, "SHORTEST keyword should be preserved");
     }
 
@@ -412,7 +433,11 @@ mod tests {
         // symbols where — unchanged
         let symbols = lower_intent("symbols where kind = \"function\"").unwrap();
         let symbols_parsed = parser::parse("FIND symbols WHERE kind = \"function\"").unwrap();
-        assert_eq!(symbols, Ok(symbols_parsed), "symbols where roundtrip broken");
+        assert_eq!(
+            symbols,
+            Ok(symbols_parsed),
+            "symbols where roundtrip broken"
+        );
 
         // calls from — unchanged
         let calls = lower_intent("calls from 'sym:42' depth 3").unwrap();
@@ -425,13 +450,19 @@ mod tests {
         // Uppercase MATCH should NOT be handled by lower_intent — it goes
         // through the canonical parser.
         let result = lower_intent("MATCH (f:Function) return node(f)");
-        assert!(result.is_none(), "uppercase MATCH should return None, got {result:?}");
+        assert!(
+            result.is_none(),
+            "uppercase MATCH should return None, got {result:?}"
+        );
     }
 
     #[test]
     fn test_mixed_case_match_falls_through() {
         // Mixed-case `Match` should NOT be handled — only lowercase.
         let result = lower_intent("Match (f:Function) return node(f)");
-        assert!(result.is_none(), "mixed-case Match should return None, got {result:?}");
+        assert!(
+            result.is_none(),
+            "mixed-case Match should return None, got {result:?}"
+        );
     }
 }

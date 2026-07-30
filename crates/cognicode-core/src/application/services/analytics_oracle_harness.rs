@@ -19,7 +19,9 @@
 
 use std::env;
 
-use crate::domain::analytics::oracle::{Divergence, OracleConfig, OracleError, OracleReport, OracleResult};
+use crate::domain::analytics::oracle::{
+    Divergence, OracleConfig, OracleError, OracleReport, OracleResult,
+};
 use crate::domain::plan::MoldPlan;
 
 /// Analytics Oracle Harness for CI parity checking.
@@ -259,7 +261,10 @@ mod tests {
         // If NEO4J_URI is set in the environment, oracle is available
         // If NEO4J_URI is not set, oracle is not available
         if env::var("NEO4J_URI").is_err() {
-            assert!(!is_available, "Oracle should not be available without NEO4J_URI");
+            assert!(
+                !is_available,
+                "Oracle should not be available without NEO4J_URI"
+            );
         }
     }
 

@@ -5,14 +5,14 @@
 use std::sync::Arc;
 use std::sync::LazyLock;
 
+use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
 use cognicode_core::domain::analytics::{
-    AdmissionError, AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AlgorithmVersion, AnalyticsError,
-    AnalyticsMode, ComplexityClass, DeterminismKind, Fixture, FixtureGraph, Maturity,
-    OutputField, OutputSchema, OutputType, ProjectionAssumption, RunLineage, RunLineageFilter,
-    RunLineageStore, RunOutput,
+    AdmissionError, AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AlgorithmVersion,
+    AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind, Fixture, FixtureGraph,
+    Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunLineage,
+    RunLineageFilter, RunLineageStore, RunOutput,
 };
 use cognicode_core::domain::plan::limits::PlanLimits;
-use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
 
 // =============================================================================
 // Test fixtures
@@ -36,8 +36,14 @@ static ID_INCOMPLETE2: LazyLock<cognicode_core::domain::analytics::AlgorithmIden
 
 static PAGERANK_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema {
     fields: vec![
-        OutputField { name: "node_id", type_: OutputType::NodeId },
-        OutputField { name: "score", type_: OutputType::Score },
+        OutputField {
+            name: "node_id",
+            type_: OutputType::NodeId,
+        },
+        OutputField {
+            name: "score",
+            type_: OutputType::Score,
+        },
     ],
 });
 
@@ -92,9 +98,8 @@ static PAGERANK_PARAMS: LazyLock<SimpleParams> = LazyLock::new(|| SimpleParams {
     names: &["alpha", "max_iterations"],
 });
 
-static INCOMPLETE_PARAMS: LazyLock<SimpleParams> = LazyLock::new(|| SimpleParams {
-    names: &["alpha"],
-});
+static INCOMPLETE_PARAMS: LazyLock<SimpleParams> =
+    LazyLock::new(|| SimpleParams { names: &["alpha"] });
 
 static PAGERANK_FIXTURES: LazyLock<Vec<Fixture>> = LazyLock::new(|| {
     vec![Fixture {
@@ -140,7 +145,10 @@ impl AlgorithmDescriptor for CompletePagerankDescriptor {
     }
 
     fn determinism(&self) -> DeterminismKind {
-        DeterminismKind::Seeded { required: false, default: Some(0) }
+        DeterminismKind::Seeded {
+            required: false,
+            default: Some(0),
+        }
     }
 
     fn directed(&self) -> bool {
@@ -311,7 +319,10 @@ impl RunLineageStore for NoopLineageStore {
         Ok(())
     }
 
-    async fn get(&self, _run_id: cognicode_core::domain::analytics::Uuid) -> Result<RunLineage, AnalyticsError> {
+    async fn get(
+        &self,
+        _run_id: cognicode_core::domain::analytics::Uuid,
+    ) -> Result<RunLineage, AnalyticsError> {
         Err(AnalyticsError::RunNotFound("not found".into()))
     }
 
@@ -349,7 +360,11 @@ impl RunLineageStore for NoopLineageStore {
 fn admits_complete_descriptor() {
     let mut registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore), None);
     let result = registry.admit(Box::new(CompletePagerankDescriptor));
-    assert!(result.is_ok(), "complete descriptor should be admitted: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "complete descriptor should be admitted: {:?}",
+        result
+    );
     assert!(registry.is_admitted(&AlgorithmId::from_static("pagerank")));
 }
 
@@ -403,5 +418,9 @@ fn rejects_duplicate_admission_same_version() {
 fn is_admitted_returns_false_for_non_admitted() {
     let registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore), None);
     assert!(!registry.is_admitted(&AlgorithmId::from_static("nonexistent")));
-    assert!(registry.get(&AlgorithmId::from_static("nonexistent")).is_none());
+    assert!(
+        registry
+            .get(&AlgorithmId::from_static("nonexistent"))
+            .is_none()
+    );
 }

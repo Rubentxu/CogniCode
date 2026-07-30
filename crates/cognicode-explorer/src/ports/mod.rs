@@ -20,9 +20,7 @@ pub use edge_emitter::{
     EDGE_KIND_HTTP_CALLS, EDGE_KIND_TRPC_CALLS, EdgeEmitter, PROTOCOL_GRAPHQL, PROTOCOL_GRPC,
     PROTOCOL_HTTP, PROTOCOL_TRPC,
 };
-pub use evidence_store::{
-    EvidenceKind, EvidenceStore, EvidenceSummary, InMemoryEvidenceStore,
-};
+pub use evidence_store::{EvidenceKind, EvidenceStore, EvidenceSummary, InMemoryEvidenceStore};
 pub use graph_repository::{GraphRepository, SearchPage};
 pub use quality_repository::{NewIssue, UpsertSummary};
 pub use quality_repository::{

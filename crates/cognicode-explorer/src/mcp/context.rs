@@ -9,13 +9,13 @@
 //! all invocations. Handlers that need only a subset of these fields
 //! borrow only what they use (ISP compliance).
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
+use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
 use cognicode_core::domain::aggregates::CallGraph;
 use cognicode_core::domain::analytics::RunLineageStore;
 use cognicode_core::domain::traits::GraphQueryPort;
-use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
 
 use crate::domain::snapshot::SnapshotService;
 use crate::facades::{

@@ -6,9 +6,9 @@ use std::sync::Arc;
 
 use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
 use cognicode_core::domain::analytics::{
-    pagerank_descriptor::PageRankDescriptor, scc_descriptor::SccDescriptor,
-    wcc_descriptor::WccDescriptor, AdmissionError, AlgorithmDescriptor, AlgorithmId,
-    AnalyticsError, RunLineage, RunLineageFilter, RunLineageStore, Uuid,
+    AdmissionError, AlgorithmDescriptor, AlgorithmId, AnalyticsError, RunLineage, RunLineageFilter,
+    RunLineageStore, Uuid, pagerank_descriptor::PageRankDescriptor, scc_descriptor::SccDescriptor,
+    wcc_descriptor::WccDescriptor,
 };
 use cognicode_core::domain::plan::limits::PlanLimits;
 
@@ -61,7 +61,10 @@ fn pagerank_descriptor_has_correct_identity() {
     let id = d.identity();
     assert_eq!(id.id.as_str(), "pagerank");
     assert_eq!(id.version.as_str(), "1.0.0");
-    assert_eq!(id.maturity, cognicode_core::domain::analytics::Maturity::Stable);
+    assert_eq!(
+        id.maturity,
+        cognicode_core::domain::analytics::Maturity::Stable
+    );
     assert_eq!(id.cohort, 1);
 }
 
@@ -173,7 +176,10 @@ fn scc_descriptor_has_conformance_fixtures() {
     let fixtures = d.conformance_fixtures();
     assert!(!fixtures.is_empty());
     // Verify 3-node cycle single SCC
-    let cycle = fixtures.iter().find(|f| f.name == "3-node cycle single SCC").unwrap();
+    let cycle = fixtures
+        .iter()
+        .find(|f| f.name == "3-node cycle single SCC")
+        .unwrap();
     assert_eq!(cycle.graph.nodes, vec!["A", "B", "C"]);
     assert_eq!(cycle.graph.edges.len(), 3);
 }
@@ -227,7 +233,10 @@ fn wcc_descriptor_has_conformance_fixtures() {
     let fixtures = d.conformance_fixtures();
     assert!(!fixtures.is_empty());
     // Verify chain fixture
-    let chain = fixtures.iter().find(|f| f.name == "chain one component").unwrap();
+    let chain = fixtures
+        .iter()
+        .find(|f| f.name == "chain one component")
+        .unwrap();
     assert_eq!(chain.graph.nodes, vec!["A", "B", "C"]);
     assert_eq!(chain.graph.edges.len(), 2);
 }
@@ -251,7 +260,10 @@ fn registry_returns_admitted_descriptors() {
     registry.admit(Box::new(SccDescriptor)).unwrap();
     registry.admit(Box::new(WccDescriptor)).unwrap();
 
-    let ids: Vec<_> = registry.admitted().map(|d| d.identity().id.as_str()).collect();
+    let ids: Vec<_> = registry
+        .admitted()
+        .map(|d| d.identity().id.as_str())
+        .collect();
     assert!(ids.contains(&"pagerank"));
     assert!(ids.contains(&"scc"));
     assert!(ids.contains(&"wcc"));

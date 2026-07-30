@@ -175,7 +175,8 @@ impl ViewServiceImpl {
             ObjectIdentity::Doc { id } => {
                 let _graph_repo = self.graph_repo.as_ref().ok_or_else(|| {
                     ExplorerError::FeatureDisabled(
-                        "Doc resolution requires graph repository (not wired in ViewService)".into(),
+                        "Doc resolution requires graph repository (not wired in ViewService)"
+                            .into(),
                     )
                 })?;
                 Ok(InspectionTarget::Doc { id: id.clone() })
@@ -945,7 +946,11 @@ mod view_service_tests {
         let result = service
             .contextual_view("doc:test-doc-1", "doc-source")
             .await;
-        assert!(result.is_ok(), "Expected success when graph_repo is wired, got: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Expected success when graph_repo is wired, got: {:?}",
+            result
+        );
         let view = result.unwrap();
         assert_eq!(view.view_id, "doc-source");
         assert_eq!(view.title, "Test Document");
@@ -975,7 +980,11 @@ mod view_service_tests {
         let result = service
             .contextual_view("evidence:test-evidence-1", "evidence-overview")
             .await;
-        assert!(result.is_ok(), "Expected success when graph_repo is wired, got: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Expected success when graph_repo is wired, got: {:?}",
+            result
+        );
         let view = result.unwrap();
         assert_eq!(view.view_id, "evidence-overview");
         assert_eq!(view.title, "Test Evidence");
@@ -1010,13 +1019,21 @@ mod view_service_tests {
 
         // Verify graph_repo.is_some() after wiring (runtime composition assertion)
         // The service should hold the graph_repo that was passed to it
-        assert!(service.graph_repo.is_some(), "graph_repo should be Some after wiring");
+        assert!(
+            service.graph_repo.is_some(),
+            "graph_repo should be Some after wiring"
+        );
         // Verify it's the same instance (identity check)
         let service_graph_repo: &Arc<dyn cognicode_core::domain::ports::GraphRepository> =
             service.graph_repo.as_ref().unwrap();
         // Both are Arc-wrapped, so we compare by pointer equality through downcast
-        let repo_ptr = (&**service_graph_repo) as *const dyn cognicode_core::domain::ports::GraphRepository;
-        let original_ptr = (&*graph_repo) as *const dyn cognicode_core::domain::ports::GraphRepository;
-        assert_eq!(repo_ptr, original_ptr, "graph_repo should be the same instance after wiring");
+        let repo_ptr =
+            (&**service_graph_repo) as *const dyn cognicode_core::domain::ports::GraphRepository;
+        let original_ptr =
+            (&*graph_repo) as *const dyn cognicode_core::domain::ports::GraphRepository;
+        assert_eq!(
+            repo_ptr, original_ptr,
+            "graph_repo should be the same instance after wiring"
+        );
     }
 }

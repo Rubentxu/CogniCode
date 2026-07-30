@@ -65,10 +65,7 @@ pub fn conductance(
     for &(node, community) in community_assignment {
         if node < n {
             node_to_community[node] = Some(community);
-            community_members
-                .entry(community)
-                .or_default()
-                .push(node);
+            community_members.entry(community).or_default().push(node);
         }
     }
 
@@ -79,10 +76,7 @@ pub fn conductance(
 
     if m == 0 {
         // No edges in graph — every community is isolated → worst conductance
-        return community_members
-            .keys()
-            .map(|&c| (c, 1.0))
-            .collect();
+        return community_members.keys().map(|&c| (c, 1.0)).collect();
     }
 
     let mut results: Vec<(usize, f64)> = Vec::with_capacity(community_members.len());
@@ -92,8 +86,7 @@ pub fn conductance(
             continue;
         }
 
-        let members_set: std::collections::HashSet<usize> =
-            members.iter().cloned().collect();
+        let members_set: std::collections::HashSet<usize> = members.iter().cloned().collect();
 
         // Compute cut edges: edges from community to outside
         let mut cut_edges: usize = 0;

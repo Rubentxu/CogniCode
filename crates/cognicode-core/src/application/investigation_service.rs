@@ -459,6 +459,9 @@ mod tests {
         };
 
         let result = service.add_artifact("inv:nonexistent", artifact).await;
-        assert!(matches!(result, Err(InvestigationError::Store(StoreError::NotFound(_)))));
+        assert!(matches!(
+            result,
+            Err(InvestigationError::Store(StoreError::NotFound(_)))
+        ));
     }
 }

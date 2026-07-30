@@ -1481,7 +1481,9 @@ mod tests {
         let node = &nodes[0].potential_node;
         assert_eq!(node.kind, NodeKind::Doc);
         assert_eq!(
-            node.properties_map().get("fallback").and_then(|v| v.as_str()),
+            node.properties_map()
+                .get("fallback")
+                .and_then(|v| v.as_str()),
             Some("no_headings")
         );
         assert_eq!(

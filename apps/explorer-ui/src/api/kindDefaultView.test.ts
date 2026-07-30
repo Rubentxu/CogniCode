@@ -18,9 +18,9 @@ describe("kindDefaultView", () => {
     expect(kindDefaultView("route")).toBe("vertical_slice");
   });
 
-  it("maps file|scope → overview", () => {
+  it("maps file → overview, scope → seam_map", () => {
     expect(kindDefaultView("file")).toBe("overview");
-    expect(kindDefaultView("scope")).toBe("overview");
+    expect(kindDefaultView("scope")).toBe("seam_map");
   });
 
   it("maps doc → doc_code_alignment", () => {
@@ -35,9 +35,9 @@ describe("kindDefaultView", () => {
     expect(kindDefaultView("evidence")).toBe("evidence");
   });
 
-  it("maps workspace|module → overview", () => {
+  it("maps workspace → overview, module → seam_map", () => {
     expect(kindDefaultView("workspace")).toBe("overview");
-    expect(kindDefaultView("module")).toBe("overview");
+    expect(kindDefaultView("module")).toBe("seam_map");
   });
 
   it("maps quality_issue|rule → quality", () => {

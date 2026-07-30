@@ -315,8 +315,14 @@ mod tests {
     #[test]
     fn typed_value_partial_ord() {
         use Ordering::*;
-        assert_eq!(TypedValue::Int(1).partial_cmp(&TypedValue::Int(2)), Some(Less));
-        assert_eq!(TypedValue::String("a".into()).partial_cmp(&TypedValue::String("b".into())), Some(Less));
+        assert_eq!(
+            TypedValue::Int(1).partial_cmp(&TypedValue::Int(2)),
+            Some(Less)
+        );
+        assert_eq!(
+            TypedValue::String("a".into()).partial_cmp(&TypedValue::String("b".into())),
+            Some(Less)
+        );
         assert_eq!(TypedValue::Null.partial_cmp(&TypedValue::Null), Some(Equal));
     }
 

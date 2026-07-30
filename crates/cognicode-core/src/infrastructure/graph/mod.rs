@@ -21,8 +21,8 @@ mod lightweight_index;
 mod on_demand_graph;
 mod per_file_graph;
 mod pet_graph_store;
-pub mod snapshot_provider;
 pub mod snapshot_graph_executor;
+pub mod snapshot_provider;
 mod strategy;
 mod symbol_index;
 
@@ -46,14 +46,14 @@ pub use on_demand_graph::{
 };
 pub use per_file_graph::PerFileGraphCache;
 pub use pet_graph_store::PetGraphStore;
+#[cfg(feature = "postgres")]
+pub use snapshot_provider::SnapshotProviderImpl;
+pub use snapshot_provider::{SnapshotError, SnapshotEvent, SnapshotProvider};
 pub use strategy::{
     FullGraphStrategy, GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy,
     PerFileStrategy,
 };
 pub use symbol_index::{CacheConfig, SymbolIndex};
-pub use snapshot_provider::{SnapshotError, SnapshotEvent, SnapshotProvider};
-#[cfg(feature = "postgres")]
-pub use snapshot_provider::SnapshotProviderImpl;
 
 #[cfg(feature = "persistence")]
 pub use file_manifest::{FileManifest, FileRecord, ScanDelta};

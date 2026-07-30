@@ -11,9 +11,9 @@
 //! This test creates a `CallGraph` with a non-uniform structure and verifies
 //! that `build_adjacency` returns correct caller/callee separation.
 
+use cognicode_core::domain::aggregates::SymbolId;
 use cognicode_core::domain::aggregates::call_graph::CallGraph;
 use cognicode_core::domain::aggregates::symbol::Symbol;
-use cognicode_core::domain::aggregates::SymbolId;
 use cognicode_core::domain::services::ExtractionContext;
 use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
 use cognicode_core::infrastructure::graph::CallGraphProjection;

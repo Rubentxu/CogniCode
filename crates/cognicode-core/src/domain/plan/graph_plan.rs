@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 // Types from sibling modules.
-use super::limits::{PlanLimits, PlanLimit};
+use super::limits::{PlanLimit, PlanLimits};
 use super::value::TypedValue;
 use super::version::{PlanHash, PlanMetadata, PlanVersion};
 use crate::domain::value_objects::DependencyType;
@@ -242,10 +242,17 @@ impl GraphPlan {
 impl fmt::Display for GraphPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            GraphPlan::Path { src, dst, quantifier, .. } => {
+            GraphPlan::Path {
+                src,
+                dst,
+                quantifier,
+                ..
+            } => {
                 write!(f, "Path({src} → {dst}, max_hops={:?})", quantifier.max_hops)
             }
-            GraphPlan::Neighbors { src, depth, kind, .. } => {
+            GraphPlan::Neighbors {
+                src, depth, kind, ..
+            } => {
                 write!(f, "Neighbors({src}, {kind:?}, depth={depth})")
             }
             GraphPlan::Subgraph { nodes, .. } => {
@@ -321,7 +328,10 @@ mod tests {
         let plan = GraphPlan::Path {
             src: "A".into(),
             dst: "B".into(),
-            quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
+            quantifier: PathQuantifier {
+                max_hops: Some(3),
+                min_hops: 0,
+            },
             edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
@@ -449,7 +459,10 @@ mod tests {
         let plan = GraphPlan::Path {
             src: "X".into(),
             dst: "Y".into(),
-            quantifier: PathQuantifier { max_hops: Some(5), min_hops: 0 },
+            quantifier: PathQuantifier {
+                max_hops: Some(5),
+                min_hops: 0,
+            },
             edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),

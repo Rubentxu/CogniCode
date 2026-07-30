@@ -158,7 +158,14 @@ mod tests {
         let mut personalization = vec![0.0f64; 6];
         personalization[1] = 1.0;
 
-        let ppr = personalized_pagerank(&in_neighbors, &out_degree, 6, 0.85, 100, Some(&personalization));
+        let ppr = personalized_pagerank(
+            &in_neighbors,
+            &out_degree,
+            6,
+            0.85,
+            100,
+            Some(&personalization),
+        );
 
         // Node 1 (personalized) should have higher score than other leaves
         for leaf in 2..6 {
@@ -195,7 +202,14 @@ mod tests {
         let out_degree = vec![1, 1, 1];
         let personalization = vec![0.5, 0.3, 0.2];
 
-        let result = personalized_pagerank(&in_neighbors, &out_degree, 3, 0.85, 100, Some(&personalization));
+        let result = personalized_pagerank(
+            &in_neighbors,
+            &out_degree,
+            3,
+            0.85,
+            100,
+            Some(&personalization),
+        );
         let sum: f64 = result.values().sum();
         assert!((sum - 1.0).abs() < 1e-3, "mass conservation: sum={}", sum);
     }
@@ -206,7 +220,8 @@ mod tests {
         let in_neighbors = vec![vec![2], vec![0], vec![1]];
         let out_degree = vec![1, 1, 1];
 
-        let ppr = personalized_pagerank(&in_neighbors, &out_degree, 3, 0.85, 100, Some(&[0.5, 0.5]));
+        let ppr =
+            personalized_pagerank(&in_neighbors, &out_degree, 3, 0.85, 100, Some(&[0.5, 0.5]));
         let pr = crate::page_rank(&in_neighbors, &out_degree, 3, 0.85, 100);
 
         // Should behave like standard PageRank (uniform teleportation)

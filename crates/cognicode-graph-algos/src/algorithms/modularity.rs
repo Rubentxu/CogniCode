@@ -218,7 +218,11 @@ mod tests {
         let (q, count) = modularity(&assignment, &out_neighbors);
         assert_eq!(count, 2);
         // Q should be positive — all edges are within communities
-        assert!(q > 0.0, "modularity should be positive for clean community structure, got {}", q);
+        assert!(
+            q > 0.0,
+            "modularity should be positive for clean community structure, got {}",
+            q
+        );
     }
 
     /// Determinism: same input → same output.
@@ -253,9 +257,8 @@ mod tests {
             build_out_neighbors(4, &[(0, 1), (1, 2), (2, 3), (3, 0)]), // cycle
         ];
         for out_neighbors in cases {
-            let assignment: Vec<(usize, usize)> = (0..out_neighbors.len())
-                .map(|i| (i, i))
-                .collect();
+            let assignment: Vec<(usize, usize)> =
+                (0..out_neighbors.len()).map(|i| (i, i)).collect();
             let (q, _) = modularity(&assignment, &out_neighbors);
             assert!(
                 q >= -1.0 && q <= 1.0,

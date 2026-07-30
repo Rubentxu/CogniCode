@@ -357,12 +357,18 @@ impl PathQuantifier {
 
     /// `?` → `0..1`.
     pub fn optional() -> Self {
-        Self { max_hops: Some(1), min_hops: 0 }
+        Self {
+            max_hops: Some(1),
+            min_hops: 0,
+        }
     }
 
     /// `+` with profile maximum.
     pub fn plus(max_hops: u32) -> Self {
-        Self { max_hops: Some(max_hops), min_hops: 1 }
+        Self {
+            max_hops: Some(max_hops),
+            min_hops: 1,
+        }
     }
 }
 
@@ -397,7 +403,10 @@ pub enum RowField {
 /// An aggregation function applied in a ROW projection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Aggregation {
-    Count { binding: Option<String>, alias: String },
+    Count {
+        binding: Option<String>,
+        alias: String,
+    },
 }
 
 /// Ordering direction.
@@ -440,9 +449,16 @@ pub enum PatternPredicate {
         value: PatternValue,
     },
     /// `e.provenance = "tree_sitter"` — provenance filter.
-    Provenance { target: Option<String>, source: String },
+    Provenance {
+        target: Option<String>,
+        source: String,
+    },
     /// `confidence >= 0.7` — confidence filter (0..=1).
-    Confidence { target: PredicateTarget, op: PatternOp, value: f64 },
+    Confidence {
+        target: PredicateTarget,
+        op: PatternOp,
+        value: f64,
+    },
 }
 
 /// The target of a predicate.
@@ -714,8 +730,14 @@ mod tests {
         let q = PatternQuery {
             shortest: true,
             bindings: vec![
-                Binding { name: Some("r".into()), kind: "Route".into() },
-                Binding { name: Some("f".into()), kind: "Function".into() },
+                Binding {
+                    name: Some("r".into()),
+                    kind: "Route".into(),
+                },
+                Binding {
+                    name: Some("f".into()),
+                    kind: "Function".into(),
+                },
             ],
             edges: vec![EdgePattern {
                 name: Some("c".into()),
@@ -741,7 +763,9 @@ mod tests {
             bindings: vec![],
             edges: vec![],
             predicates: vec![],
-            projection: PatternProjection::Node { binding: "x".into() },
+            projection: PatternProjection::Node {
+                binding: "x".into(),
+            },
         });
         assert!(matches!(q, MoldQLQuery::Pattern(_)));
     }
@@ -763,13 +787,24 @@ mod tests {
     #[test]
     fn pattern_projection_row_with_ordering() {
         let proj = PatternProjection::Row {
-            fields: vec![RowField::AggregationRef { name: "calls".into() }],
+            fields: vec![RowField::AggregationRef {
+                name: "calls".into(),
+            }],
             group_by: vec!["f.module".into()],
-            aggregations: vec![Aggregation::Count { binding: Some("c".into()), alias: "calls".into() }],
-            ordering: Some(OrderClause { by: "calls".into(), direction: OrderDirection::Desc }),
+            aggregations: vec![Aggregation::Count {
+                binding: Some("c".into()),
+                alias: "calls".into(),
+            }],
+            ordering: Some(OrderClause {
+                by: "calls".into(),
+                direction: OrderDirection::Desc,
+            }),
             limit: Some(5),
         };
-        if let PatternProjection::Row { ordering, limit, .. } = &proj {
+        if let PatternProjection::Row {
+            ordering, limit, ..
+        } = &proj
+        {
             assert!(ordering.is_some());
             assert_eq!(*limit, Some(5));
         }

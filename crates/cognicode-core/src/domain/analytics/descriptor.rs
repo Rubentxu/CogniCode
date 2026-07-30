@@ -527,7 +527,10 @@ impl RunOutput {
                 "community_ids": community_ids,
                 "scores": scores,
             }),
-            RunOutput::Modularity { score, community_count } => serde_json::json!({
+            RunOutput::Modularity {
+                score,
+                community_count,
+            } => serde_json::json!({
                 "score": score,
                 "community_count": community_count,
             }),

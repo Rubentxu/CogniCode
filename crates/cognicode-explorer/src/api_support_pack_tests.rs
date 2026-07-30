@@ -14,10 +14,10 @@ use async_trait::async_trait;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
+use cognicode_core::domain::value_objects::SymbolKind;
 use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
 use cognicode_core::domain::value_objects::provenance::Provenance;
-use cognicode_core::domain::value_objects::SymbolKind;
 use tower::ServiceExt;
 
 use crate::adapters::InMemoryGraphRepository;
@@ -28,9 +28,7 @@ use crate::facades::{
 };
 use crate::ports::graph_repository::GraphRepository;
 use crate::ports::source_reader::SourceReader;
-use crate::ports::symbol_repository::{
-    GraphStats, SymbolRepository,
-};
+use crate::ports::symbol_repository::{GraphStats, SymbolRepository};
 use cognicode_core::domain::aggregates::SymbolId;
 
 // ---------------------------------------------------------------------------
@@ -40,7 +38,10 @@ use cognicode_core::domain::aggregates::SymbolId;
 struct EmptySymbolRepo;
 
 impl SymbolRepository for EmptySymbolRepo {
-    fn resolve(&self, _id: &SymbolId) -> crate::error::ExplorerResult<Option<crate::ports::symbol_repository::ResolvedSymbol>> {
+    fn resolve(
+        &self,
+        _id: &SymbolId,
+    ) -> crate::error::ExplorerResult<Option<crate::ports::symbol_repository::ResolvedSymbol>> {
         Ok(None)
     }
     fn find_symbols_by_name(
@@ -58,7 +59,9 @@ impl SymbolRepository for EmptySymbolRepo {
     fn module_list(&self) -> Vec<String> {
         Vec::new()
     }
-    fn all_symbols(&self) -> crate::error::ExplorerResult<Vec<crate::ports::symbol_repository::ResolvedSymbol>> {
+    fn all_symbols(
+        &self,
+    ) -> crate::error::ExplorerResult<Vec<crate::ports::symbol_repository::ResolvedSymbol>> {
         Ok(Vec::new())
     }
     fn graph_stats(&self) -> GraphStats {
@@ -90,10 +93,14 @@ impl WorkspaceService for MockWorkspaceService {
         &self,
         _request: crate::dto::OpenWorkspaceRequest,
     ) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
-        Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        Err(crate::error::ExplorerError::WorkspaceNotFound(
+            "mock".into(),
+        ))
     }
     fn current_workspace(&self) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
-        Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        Err(crate::error::ExplorerError::WorkspaceNotFound(
+            "mock".into(),
+        ))
     }
 }
 
@@ -377,7 +384,11 @@ async fn support_pack_returns_five_panes_in_stable_order() {
         .expect("body bytes");
     let pack: serde_json::Value = serde_json::from_slice(&body).expect("valid JSON");
 
-    let panes = pack.get("panes").expect("panes field").as_array().expect("panes array");
+    let panes = pack
+        .get("panes")
+        .expect("panes field")
+        .as_array()
+        .expect("panes array");
     assert_eq!(panes.len(), 5, "expected exactly five panes");
 
     // Stable order is defined by the builder:
@@ -392,7 +403,10 @@ async fn support_pack_returns_five_panes_in_stable_order() {
     for (i, expected_id) in expected_order.iter().enumerate() {
         let pane = panes.get(i).expect("pane exists");
         assert_eq!(
-            pane.get("view_id").expect("view_id field").as_str().expect("view_id string"),
+            pane.get("view_id")
+                .expect("view_id field")
+                .as_str()
+                .expect("view_id string"),
             *expected_id,
             "pane {} should be {}",
             i,
@@ -431,7 +445,11 @@ async fn support_pack_panes_have_valid_status_field() {
         .expect("body bytes");
     let pack: serde_json::Value = serde_json::from_slice(&body).expect("valid JSON");
 
-    let panes = pack.get("panes").expect("panes field").as_array().expect("panes array");
+    let panes = pack
+        .get("panes")
+        .expect("panes field")
+        .as_array()
+        .expect("panes array");
     for pane in panes {
         // Every pane must have a `status` field: "ok", "degraded", or "failed"
         // (snake_case via PaneStatus Serialize with rename_all = "snake_case")
@@ -476,7 +494,9 @@ async fn support_pack_top_level_has_decision_id_and_panes() {
     let pack: serde_json::Value = serde_json::from_slice(&body).expect("valid JSON");
 
     // Top-level decision_id is required
-    let decision_id = pack.get("decision_id").expect("decision_id field at top level");
+    let decision_id = pack
+        .get("decision_id")
+        .expect("decision_id field at top level");
     assert!(
         decision_id.is_string(),
         "decision_id should be a string, got: {:?}",
@@ -513,7 +533,11 @@ async fn support_pack_pane_fields_are_complete() {
         .expect("body bytes");
     let pack: serde_json::Value = serde_json::from_slice(&body).expect("valid JSON");
 
-    let panes = pack.get("panes").expect("panes field").as_array().expect("panes array");
+    let panes = pack
+        .get("panes")
+        .expect("panes field")
+        .as_array()
+        .expect("panes array");
     assert_eq!(panes.len(), 5, "expected exactly five panes");
 
     // Check the first pane (decision_graph) has all required fields
@@ -595,13 +619,19 @@ async fn support_pack_panes_have_valid_status_object() {
         .expect("body bytes");
     let pack: serde_json::Value = serde_json::from_slice(&body).expect("valid JSON");
 
-    let panes = pack.get("panes").expect("panes field").as_array().expect("panes array");
+    let panes = pack
+        .get("panes")
+        .expect("panes field")
+        .as_array()
+        .expect("panes array");
     for pane in panes {
         let pane_obj = pane.as_object().expect("pane must be object");
         // status field is required and should be an object with inner "status" string
         let status = pane_obj.get("status").expect("status field required");
         let status_obj = status.as_object().expect("status must be object");
-        let inner = status_obj.get("status").expect("inner status string required");
+        let inner = status_obj
+            .get("status")
+            .expect("inner status string required");
         assert!(
             inner.is_string(),
             "inner status must be string, got: {:?}",

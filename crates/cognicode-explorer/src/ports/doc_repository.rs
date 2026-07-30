@@ -80,7 +80,11 @@ impl DocRepository for InMemoryDocRepository {
         Ok(self
             .docs
             .iter()
-            .filter(|d| section.map(|s| d.section.as_deref() == Some(s)).unwrap_or(true))
+            .filter(|d| {
+                section
+                    .map(|s| d.section.as_deref() == Some(s))
+                    .unwrap_or(true)
+            })
             .cloned()
             .collect())
     }
@@ -97,8 +101,14 @@ impl DocRepository for InMemoryDocRepository {
             .iter()
             .filter(|d| {
                 d.title.to_lowercase().contains(&q)
-                    || d.section.as_deref().map(|s| s.to_lowercase().contains(&q)).unwrap_or(false)
-                    || d.excerpt.as_deref().map(|e| e.to_lowercase().contains(&q)).unwrap_or(false)
+                    || d.section
+                        .as_deref()
+                        .map(|s| s.to_lowercase().contains(&q))
+                        .unwrap_or(false)
+                    || d.excerpt
+                        .as_deref()
+                        .map(|e| e.to_lowercase().contains(&q))
+                        .unwrap_or(false)
             })
             .take(limit)
             .cloned()

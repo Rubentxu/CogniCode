@@ -49,13 +49,13 @@ use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, No
 #[cfg(feature = "postgres")]
 use cognicode_core::domain::ports::GraphRepository;
 #[cfg(feature = "postgres")]
+use cognicode_core::domain::value_objects::WorkspaceId;
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
 #[cfg(feature = "postgres")]
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
 #[cfg(feature = "postgres")]
 use cognicode_core::domain::value_objects::provenance::Provenance;
-#[cfg(feature = "postgres")]
-use cognicode_core::domain::value_objects::WorkspaceId;
 #[cfg(feature = "postgres")]
 use cognicode_core::domain::{GraphError, GraphResult, SearchPage};
 
@@ -499,7 +499,9 @@ impl PgGraphRepository {
         .bind(workspace_str)
         .fetch_all(&pool)
         .await
-        .map_err(|e| GraphError::Storage(format!("pg_graph_repository find_nodes_by_kind ws: {e}")))?;
+        .map_err(|e| {
+            GraphError::Storage(format!("pg_graph_repository find_nodes_by_kind ws: {e}"))
+        })?;
 
         Ok(rows.into_iter().map(|r| r.into_graph_node()).collect())
     }
@@ -525,11 +527,11 @@ impl PgGraphRepository {
         .bind(workspace_str)
         .fetch_all(&pool)
         .await
-        .map_err(|e| GraphError::Storage(format!("pg_graph_repository find_incoming_edges: {e}")))?;
+        .map_err(|e| {
+            GraphError::Storage(format!("pg_graph_repository find_incoming_edges: {e}"))
+        })?;
 
-        rows.into_iter()
-            .map(|r| r.into_graph_edge())
-            .collect()
+        rows.into_iter().map(|r| r.into_graph_edge()).collect()
     }
 }
 

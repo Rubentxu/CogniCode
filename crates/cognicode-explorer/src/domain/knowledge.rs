@@ -72,8 +72,11 @@ pub async fn project_doc(
     id: &str,
 ) -> Option<InspectableObjectSummary> {
     let kind_match = |n: &GraphNode| {
-        matches!(n.kind, cognicode_core::domain::value_objects::node_kind::NodeKind::Doc)
-            .then_some("Document")
+        matches!(
+            n.kind,
+            cognicode_core::domain::value_objects::node_kind::NodeKind::Doc
+        )
+        .then_some("Document")
     };
     let extract_props = |n: &GraphNode, props: &mut Vec<Property>| {
         if let Some(section) = n.properties.get("section").and_then(|v| v.as_str()) {
@@ -107,18 +110,36 @@ pub async fn project_decision(
     id: &str,
 ) -> Option<InspectableObjectSummary> {
     let kind_match = |n: &GraphNode| {
-        matches!(n.kind, cognicode_core::domain::value_objects::node_kind::NodeKind::Decision)
-            .then_some("Decision")
+        matches!(
+            n.kind,
+            cognicode_core::domain::value_objects::node_kind::NodeKind::Decision
+        )
+        .then_some("Decision")
     };
     let extract_props = |n: &GraphNode, props: &mut Vec<Property>| {
         if let Some(status) = n.properties.get("status").and_then(|v| v.as_str()) {
-            props.push(Property { key: "status".into(), value: serde_json::Value::String(status.to_string()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
+            props.push(Property {
+                key: "status".into(),
+                value: serde_json::Value::String(status.to_string()),
+                value_type: "string".into(),
+                source: "graph_nodes.metadata".into(),
+            });
         }
         if let Some(date) = n.properties.get("date").and_then(|v| v.as_str()) {
-            props.push(Property { key: "date".into(), value: serde_json::Value::String(date.to_string()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
+            props.push(Property {
+                key: "date".into(),
+                value: serde_json::Value::String(date.to_string()),
+                value_type: "string".into(),
+                source: "graph_nodes.metadata".into(),
+            });
         }
         if let Some(adr) = n.properties.get("adr_number").and_then(|v| v.as_str()) {
-            props.push(Property { key: "adr_number".into(), value: serde_json::Value::String(adr.to_string()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
+            props.push(Property {
+                key: "adr_number".into(),
+                value: serde_json::Value::String(adr.to_string()),
+                value_type: "string".into(),
+                source: "graph_nodes.metadata".into(),
+            });
         }
     };
     project_generic(
@@ -143,22 +164,42 @@ pub async fn project_evidence(
     id: &str,
 ) -> Option<InspectableObjectSummary> {
     let kind_match = |n: &GraphNode| {
-        matches!(n.kind, cognicode_core::domain::value_objects::node_kind::NodeKind::Evidence)
-            .then_some("Evidence")
+        matches!(
+            n.kind,
+            cognicode_core::domain::value_objects::node_kind::NodeKind::Evidence
+        )
+        .then_some("Evidence")
     };
     let extract_props = |n: &GraphNode, props: &mut Vec<Property>| {
         if let Some(tool) = n.properties.get("source_tool").and_then(|v| v.as_str()) {
-            props.push(Property { key: "source_tool".into(), value: serde_json::Value::String(tool.to_string()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
+            props.push(Property {
+                key: "source_tool".into(),
+                value: serde_json::Value::String(tool.to_string()),
+                value_type: "string".into(),
+                source: "graph_nodes.metadata".into(),
+            });
         }
         if let Some(c) = n.properties.get("confidence") {
             // Accept both JSON number (0.85) and JSON string ("0.85")
-            let parsed = c.as_f64().or_else(|| c.as_str().and_then(|s| s.parse::<f64>().ok()));
+            let parsed = c
+                .as_f64()
+                .or_else(|| c.as_str().and_then(|s| s.parse::<f64>().ok()));
             if let Some(parsed) = parsed {
-                props.push(Property { key: "confidence".into(), value: serde_json::json!(parsed), value_type: "number".into(), source: "graph_nodes.metadata".into() });
+                props.push(Property {
+                    key: "confidence".into(),
+                    value: serde_json::json!(parsed),
+                    value_type: "number".into(),
+                    source: "graph_nodes.metadata".into(),
+                });
             }
         }
         if let Some(fresh) = n.properties.get("freshness").and_then(|v| v.as_str()) {
-            props.push(Property { key: "freshness".into(), value: serde_json::Value::String(fresh.to_string()), value_type: "string".into(), source: "graph_nodes.metadata".into() });
+            props.push(Property {
+                key: "freshness".into(),
+                value: serde_json::Value::String(fresh.to_string()),
+                value_type: "string".into(),
+                source: "graph_nodes.metadata".into(),
+            });
         }
     };
     project_generic(
@@ -179,13 +220,16 @@ mod tests {
     use crate::adapters::InMemoryGraphRepository;
     use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
     use cognicode_core::domain::value_objects::node_kind::NodeKind;
-    use std::collections::HashMap;
     use serde_json::Map;
+    use std::collections::HashMap;
 
     fn make_doc_node(id: &str, label: &str, section: Option<&str>) -> GraphNode {
         let mut props = Map::new();
         if let Some(s) = section {
-            props.insert("section".to_string(), serde_json::Value::String(s.to_string()));
+            props.insert(
+                "section".to_string(),
+                serde_json::Value::String(s.to_string()),
+            );
         }
         GraphNode {
             id: NodeId(id.to_string()),
@@ -206,12 +250,18 @@ mod tests {
     ) -> GraphNode {
         let mut props = Map::new();
         if let Some(s) = status {
-            props.insert("status".to_string(), serde_json::Value::String(s.to_string()));
+            props.insert(
+                "status".to_string(),
+                serde_json::Value::String(s.to_string()),
+            );
         }
         if let Some(d) = date {
             props.insert("date".to_string(), serde_json::Value::String(d.to_string()));
         }
-        props.insert("adr_number".to_string(), serde_json::Value::String(id.to_string()));
+        props.insert(
+            "adr_number".to_string(),
+            serde_json::Value::String(id.to_string()),
+        );
         GraphNode {
             id: NodeId(id.to_string()),
             kind: NodeKind::Decision,
@@ -231,10 +281,16 @@ mod tests {
     ) -> GraphNode {
         let mut props = Map::new();
         if let Some(t) = source_tool {
-            props.insert("source_tool".to_string(), serde_json::Value::String(t.to_string()));
+            props.insert(
+                "source_tool".to_string(),
+                serde_json::Value::String(t.to_string()),
+            );
         }
         if let Some(c) = confidence {
-            props.insert("confidence".to_string(), serde_json::Value::String(c.to_string()));
+            props.insert(
+                "confidence".to_string(),
+                serde_json::Value::String(c.to_string()),
+            );
         }
         GraphNode {
             id: NodeId(id.to_string()),
@@ -292,7 +348,10 @@ mod tests {
         assert!(second.is_some());
         // Same id and label on both invocations — deterministic output.
         assert_eq!(first.as_ref().unwrap().id, second.as_ref().unwrap().id);
-        assert_eq!(first.as_ref().unwrap().label, second.as_ref().unwrap().label);
+        assert_eq!(
+            first.as_ref().unwrap().label,
+            second.as_ref().unwrap().label
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -345,7 +404,10 @@ mod tests {
         assert!(first.is_some());
         assert!(second.is_some());
         assert_eq!(first.as_ref().unwrap().id, second.as_ref().unwrap().id);
-        assert_eq!(first.as_ref().unwrap().label, second.as_ref().unwrap().label);
+        assert_eq!(
+            first.as_ref().unwrap().label,
+            second.as_ref().unwrap().label
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -354,8 +416,12 @@ mod tests {
 
     #[tokio::test]
     async fn project_evidence_returns_summary_with_provenance() {
-        let node =
-            make_evidence_node("ev-001", "Benchmark: 2x throughput", Some("perf-bench"), Some("0.85"));
+        let node = make_evidence_node(
+            "ev-001",
+            "Benchmark: 2x throughput",
+            Some("perf-bench"),
+            Some("0.85"),
+        );
         let repo = InMemoryGraphRepository::new(vec![node], Vec::new());
 
         let result = project_evidence(&repo, "ev-001").await;
@@ -394,6 +460,9 @@ mod tests {
         assert!(first.is_some());
         assert!(second.is_some());
         assert_eq!(first.as_ref().unwrap().id, second.as_ref().unwrap().id);
-        assert_eq!(first.as_ref().unwrap().label, second.as_ref().unwrap().label);
+        assert_eq!(
+            first.as_ref().unwrap().label,
+            second.as_ref().unwrap().label
+        );
     }
 }

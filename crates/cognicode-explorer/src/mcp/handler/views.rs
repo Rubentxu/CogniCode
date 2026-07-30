@@ -9,8 +9,8 @@
 //! - `moldql_pattern_query` — execute a Pattern Profile query (T7)
 //! - `moldql_pattern_capabilities` — return v1 supported-feature matrix (T7)
 
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use async_trait::async_trait;
 use rmcp::model::{CallToolResult, Content};
@@ -551,11 +551,10 @@ impl ToolHandler for PatternQueryHandler {
             }
             (None, None) => ctx.current_pin(),
         };
-        let result: Result<crate::dto::MoldQLResultDto, _> =
-            moldql_service
-                .execute_query_pinned(&query, ws_id, rev_id)
-                .await
-                .map(crate::dto::MoldQLResultDto::from);
+        let result: Result<crate::dto::MoldQLResultDto, _> = moldql_service
+            .execute_query_pinned(&query, ws_id, rev_id)
+            .await
+            .map(crate::dto::MoldQLResultDto::from);
 
         match result {
             Ok(dto) => {

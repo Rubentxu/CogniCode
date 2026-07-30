@@ -4,12 +4,9 @@
 
 use std::fmt;
 
-use super::{
-    GraphPlan, PlanLimits, PlanLimitKind, ResultSet,
-    TypedValue,
-};
-use crate::domain::value_objects::{RevisionId, WorkspaceId};
 use super::ExecutorError;
+use super::{GraphPlan, PlanLimitKind, PlanLimits, ResultSet, TypedValue};
+use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
 /// A provenance envelope carrying source-side provenance information per result row.
 ///
@@ -140,7 +137,7 @@ mod tests {
     /// `StubExecutor` implements `GraphExecutor` and returns `Ok(ResultSet::empty())`.
     #[test]
     fn stub_executor_returns_empty() {
-        use super::super::{GraphPlan, PlanMetadata, PlanVersion, PlanHash};
+        use super::super::{GraphPlan, PlanHash, PlanMetadata, PlanVersion};
         let executor = StubExecutor::new();
         let plan = GraphPlan::Neighbors {
             src: "A".into(),

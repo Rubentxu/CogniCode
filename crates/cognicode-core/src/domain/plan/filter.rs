@@ -70,8 +70,14 @@ impl PartialEq for PlanFilter {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (
-                PlanFilter::Confidence { op: op1, threshold: t1 },
-                PlanFilter::Confidence { op: op2, threshold: t2 },
+                PlanFilter::Confidence {
+                    op: op1,
+                    threshold: t1,
+                },
+                PlanFilter::Confidence {
+                    op: op2,
+                    threshold: t2,
+                },
             ) => {
                 op1 == op2 && {
                     if t1.is_nan() && t2.is_nan() {
@@ -141,7 +147,10 @@ mod tests {
     /// `PlanFilter::Confidence` serde round-trip.
     #[test]
     fn plan_filter_confidence_roundtrip() {
-        let filter = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.5 };
+        let filter = PlanFilter::Confidence {
+            op: PlanFilterOp::Gt,
+            threshold: 0.5,
+        };
         let json = serde_json::to_string(&filter).expect("serialize");
         let parsed: PlanFilter = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, filter);
@@ -150,8 +159,14 @@ mod tests {
     /// `PlanFilter::Confidence` with all operators.
     #[test]
     fn plan_filter_confidence_all_ops() {
-        for op in [PlanFilterOp::Gt, PlanFilterOp::Lt, PlanFilterOp::Gte,
-                   PlanFilterOp::Lte, PlanFilterOp::Eq, PlanFilterOp::Ne] {
+        for op in [
+            PlanFilterOp::Gt,
+            PlanFilterOp::Lt,
+            PlanFilterOp::Gte,
+            PlanFilterOp::Lte,
+            PlanFilterOp::Eq,
+            PlanFilterOp::Ne,
+        ] {
             let filter = PlanFilter::Confidence { op, threshold: 0.7 };
             let json = serde_json::to_string(&filter).expect("serialize");
             let parsed: PlanFilter = serde_json::from_str(&json).expect("deserialize");
@@ -174,7 +189,10 @@ mod tests {
     /// `PlanFilter::Display` shows readable filter representation.
     #[test]
     fn plan_filter_display() {
-        let confidence = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.5 };
+        let confidence = PlanFilter::Confidence {
+            op: PlanFilterOp::Gt,
+            threshold: 0.5,
+        };
         assert!(confidence.to_string().contains("0.5"));
 
         let provenance = PlanFilter::Provenance {
@@ -189,7 +207,10 @@ mod tests {
     /// `PlanFilter::Confidence` threshold survives JSON round-trip with precision.
     #[test]
     fn plan_filter_confidence_precision() {
-        let filter = PlanFilter::Confidence { op: PlanFilterOp::Gte, threshold: 0.95 };
+        let filter = PlanFilter::Confidence {
+            op: PlanFilterOp::Gte,
+            threshold: 0.95,
+        };
         let json = serde_json::to_string(&filter).expect("serialize");
         let parsed: PlanFilter = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, filter);
@@ -239,8 +260,14 @@ mod tests {
     fn plan_filter_in_hashset() {
         use std::collections::HashSet;
         let mut set: HashSet<PlanFilter> = HashSet::new();
-        set.insert(PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.5 });
-        set.insert(PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.5 }); // duplicate
+        set.insert(PlanFilter::Confidence {
+            op: PlanFilterOp::Gt,
+            threshold: 0.5,
+        });
+        set.insert(PlanFilter::Confidence {
+            op: PlanFilterOp::Gt,
+            threshold: 0.5,
+        }); // duplicate
         assert_eq!(set.len(), 1);
     }
 
@@ -255,10 +282,19 @@ mod tests {
     #[test]
     fn plan_filter_confidence_nan_equals_itself() {
         use std::collections::HashSet;
-        let filter1 = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: f64::NAN };
-        let filter2 = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: f64::NAN };
+        let filter1 = PlanFilter::Confidence {
+            op: PlanFilterOp::Gt,
+            threshold: f64::NAN,
+        };
+        let filter2 = PlanFilter::Confidence {
+            op: PlanFilterOp::Gt,
+            threshold: f64::NAN,
+        };
         // NaN == NaN via our custom Eq (consistent with Hash, which uses to_bits())
-        assert_eq!(filter1, filter2, "NaN threshold should equal itself for Hash/Eq contract");
+        assert_eq!(
+            filter1, filter2,
+            "NaN threshold should equal itself for Hash/Eq contract"
+        );
         // Both insert at same hash bucket
         let mut set: HashSet<PlanFilter> = HashSet::new();
         set.insert(filter1);
@@ -269,9 +305,18 @@ mod tests {
     /// `PlanFilter::Confidence` with finite threshold uses normal equality.
     #[test]
     fn plan_filter_confidence_finite_equals_normal() {
-        let filter1 = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.5 };
-        let filter2 = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.5 };
-        let filter3 = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.6 };
+        let filter1 = PlanFilter::Confidence {
+            op: PlanFilterOp::Gt,
+            threshold: 0.5,
+        };
+        let filter2 = PlanFilter::Confidence {
+            op: PlanFilterOp::Gt,
+            threshold: 0.5,
+        };
+        let filter3 = PlanFilter::Confidence {
+            op: PlanFilterOp::Gt,
+            threshold: 0.6,
+        };
         assert_eq!(filter1, filter2);
         assert_ne!(filter1, filter3);
     }
@@ -279,8 +324,14 @@ mod tests {
     /// `PlanFilter::Confidence` with NaN does NOT equal a finite threshold.
     #[test]
     fn plan_filter_confidence_nan_not_equal_finite() {
-        let nan_filter = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: f64::NAN };
-        let finite_filter = PlanFilter::Confidence { op: PlanFilterOp::Gt, threshold: 0.5 };
+        let nan_filter = PlanFilter::Confidence {
+            op: PlanFilterOp::Gt,
+            threshold: f64::NAN,
+        };
+        let finite_filter = PlanFilter::Confidence {
+            op: PlanFilterOp::Gt,
+            threshold: 0.5,
+        };
         assert_ne!(nan_filter, finite_filter);
     }
 }

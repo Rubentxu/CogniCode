@@ -29,8 +29,5 @@ use std::collections::HashMap;
 #[async_trait]
 pub trait NodePropertyReader: Send + Sync {
     /// Return the JSONB properties map for `id`, or `None` if not present.
-    async fn node_properties(
-        &self,
-        id: &SymbolId,
-    ) -> Option<HashMap<String, String>>;
+    async fn node_properties(&self, id: &SymbolId) -> Option<HashMap<String, String>>;
 }

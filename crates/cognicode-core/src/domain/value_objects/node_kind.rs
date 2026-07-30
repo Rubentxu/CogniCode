@@ -192,10 +192,7 @@ mod tests {
     fn node_kind_knowledge_variants() {
         // Decision, Doc, Evidence are always available.
         for kind in [NodeKind::Decision, NodeKind::Doc, NodeKind::Evidence] {
-            assert!(
-                kind.is_multimodal(),
-                "{kind:?} should be multimodal"
-            );
+            assert!(kind.is_multimodal(), "{kind:?} should be multimodal");
             let json = serde_json::to_string(&kind).expect("serialize");
             let parsed: NodeKind = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(parsed, kind);
@@ -277,10 +274,7 @@ mod tests {
                 NodeKind::Container.as_str(),
                 format!("{}", NodeKind::Container)
             );
-            assert_eq!(
-                NodeKind::System.as_str(),
-                format!("{}", NodeKind::System)
-            );
+            assert_eq!(NodeKind::System.as_str(), format!("{}", NodeKind::System));
             assert_eq!(NodeKind::Route.as_str(), format!("{}", NodeKind::Route));
         }
     }

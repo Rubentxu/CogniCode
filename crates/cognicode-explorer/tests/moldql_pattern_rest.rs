@@ -10,17 +10,17 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use axum::Json;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Response, StatusCode};
-use axum::Json;
 use serde_json::Value;
 
+use cognicode_explorer::api::PatternQueryBody;
 use cognicode_explorer::dto::MoldQLResultDto;
 use cognicode_explorer::error::{ExplorerError, ExplorerResult};
 use cognicode_explorer::facades::MoldQLService;
 use cognicode_explorer::moldql::{MoldQLItem, MoldQLResult};
-use cognicode_explorer::api::PatternQueryBody;
 
 // T9: UnsupportedConstruct coverage — imports for parser-level tests
 use cognicode_explorer::moldql::parser;
@@ -244,7 +244,8 @@ async fn rest_pattern_empty_result_returns_200_with_empty_envelope() {
 async fn rest_pattern_unbounded_returns_400_with_unsupported_error() {
     // GIVEN a mock service that returns an UnsupportedConstruct error
     let mock = Arc::new(MockMoldQLServiceUnsupported::new(
-        "Pattern Profile rejects unbounded paths; use *m..n with finite n (edge `Calls`)".to_string(),
+        "Pattern Profile rejects unbounded paths; use *m..n with finite n (edge `Calls`)"
+            .to_string(),
     ));
     let state = MockApiState::new(mock);
 
@@ -313,10 +314,22 @@ fn capabilities_matrix_has_at_least_nine_entries() {
     );
 
     // Verify compatibility_claims section
-    let claims = matrix.get("compatibility_claims").and_then(|v| v.as_object()).unwrap();
-    assert_eq!(claims.get("cypher").and_then(|v| v.as_str()), Some("not_claimed"));
-    assert_eq!(claims.get("opencypher").and_then(|v| v.as_str()), Some("not_claimed"));
-    assert_eq!(claims.get("iso_gql").and_then(|v| v.as_str()), Some("not_claimed"));
+    let claims = matrix
+        .get("compatibility_claims")
+        .and_then(|v| v.as_object())
+        .unwrap();
+    assert_eq!(
+        claims.get("cypher").and_then(|v| v.as_str()),
+        Some("not_claimed")
+    );
+    assert_eq!(
+        claims.get("opencypher").and_then(|v| v.as_str()),
+        Some("not_claimed")
+    );
+    assert_eq!(
+        claims.get("iso_gql").and_then(|v| v.as_str()),
+        Some("not_claimed")
+    );
 
     // Verify each feature has status and constraint fields
     for feature in features {
@@ -359,10 +372,7 @@ fn mutation_delete_rejected_before_executor() {
     // Verify the rejection comes from the parser (not executor)
     let err_msg = result.unwrap_err().to_string();
     // Parser correctly rejects DELETE as invalid syntax before executor is called
-    assert!(
-        !err_msg.is_empty(),
-        "Error message should not be empty"
-    );
+    assert!(!err_msg.is_empty(), "Error message should not be empty");
 }
 
 /// Test that `OPTIONAL MATCH (n)-[r]->(m) RETURN n` returns an error.
@@ -380,10 +390,7 @@ fn optional_match_rejected_before_executor() {
         result
     );
     let err_msg = result.unwrap_err().to_string();
-    assert!(
-        !err_msg.is_empty(),
-        "Error message should not be empty"
-    );
+    assert!(!err_msg.is_empty(), "Error message should not be empty");
 }
 
 /// Test that unbounded path `[:Calls*]` returns an error with

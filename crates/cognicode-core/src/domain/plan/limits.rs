@@ -508,7 +508,9 @@ mod tests {
     /// `Subgraph` without `max_depth` is rejected.
     #[test]
     fn validate_subgraph_requires_max_depth() {
-        use super::super::{GraphPlan, PathQuantifier, PlanMetadata, PlanVersion, PlanHash, NeighborKind};
+        use super::super::{
+            GraphPlan, NeighborKind, PathQuantifier, PlanHash, PlanMetadata, PlanVersion,
+        };
 
         // Subgraph with no max_depth limit → Err
         let limits = PlanLimits::default(); // max_depth is None
@@ -523,14 +525,20 @@ mod tests {
             ),
         };
         let result = limits.validate(&plan);
-        assert!(result.is_err(), "Subgraph without max_depth must be rejected");
-        assert!(matches!(result.unwrap_err(), super::super::PlanError::MissingLimit(super::PlanLimit::MaxDepth)));
+        assert!(
+            result.is_err(),
+            "Subgraph without max_depth must be rejected"
+        );
+        assert!(matches!(
+            result.unwrap_err(),
+            super::super::PlanError::MissingLimit(super::PlanLimit::MaxDepth)
+        ));
     }
 
     /// `Subgraph` with `max_depth` set is accepted.
     #[test]
     fn validate_subgraph_with_max_depth_ok() {
-        use super::super::{GraphPlan, PlanMetadata, PlanVersion, PlanHash};
+        use super::super::{GraphPlan, PlanHash, PlanMetadata, PlanVersion};
 
         let limits = PlanLimits::builder().max_depth(5).build();
         let plan = GraphPlan::Subgraph {
@@ -550,13 +558,18 @@ mod tests {
     /// `Path` without `max_hops` is rejected.
     #[test]
     fn validate_path_requires_max_hops() {
-        use super::super::{GraphPlan, PathQuantifier, PlanMetadata, PlanVersion, PlanHash, PathProjection};
+        use super::super::{
+            GraphPlan, PathProjection, PathQuantifier, PlanHash, PlanMetadata, PlanVersion,
+        };
 
         let limits = PlanLimits::default(); // max_hops is None
         let plan = GraphPlan::Path {
             src: "A".into(),
             dst: "B".into(),
-            quantifier: PathQuantifier { max_hops: None, min_hops: 0 },
+            quantifier: PathQuantifier {
+                max_hops: None,
+                min_hops: 0,
+            },
             edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
@@ -568,19 +581,27 @@ mod tests {
         };
         let result = limits.validate(&plan);
         assert!(result.is_err(), "Path without max_hops must be rejected");
-        assert!(matches!(result.unwrap_err(), super::super::PlanError::MissingLimit(super::PlanLimit::MaxHops)));
+        assert!(matches!(
+            result.unwrap_err(),
+            super::super::PlanError::MissingLimit(super::PlanLimit::MaxHops)
+        ));
     }
 
     /// `Path` with `max_hops` set is accepted.
     #[test]
     fn validate_path_with_max_hops_ok() {
-        use super::super::{GraphPlan, PathQuantifier, PlanMetadata, PlanVersion, PlanHash, PathProjection};
+        use super::super::{
+            GraphPlan, PathProjection, PathQuantifier, PlanHash, PlanMetadata, PlanVersion,
+        };
 
         let limits = PlanLimits::builder().max_hops(6).build();
         let plan = GraphPlan::Path {
             src: "A".into(),
             dst: "B".into(),
-            quantifier: PathQuantifier { max_hops: Some(6), min_hops: 0 },
+            quantifier: PathQuantifier {
+                max_hops: Some(6),
+                min_hops: 0,
+            },
             edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),

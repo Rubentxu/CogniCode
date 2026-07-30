@@ -239,11 +239,9 @@ impl ToolHandler for ExportTraceMermaidHandler {
             TraceMermaidViewKind::DecisionTrace => {
                 return match decision_trace_to_mermaid(&trace_ctx, &args.target) {
                     Ok(m) => ok_envelope(TOOL_EXPORT_TRACE_MERMAID, &m),
-                    Err(e) => err_envelope(
-                        TOOL_EXPORT_TRACE_MERMAID,
-                        "not_implemented",
-                        &e.to_string(),
-                    ),
+                    Err(e) => {
+                        err_envelope(TOOL_EXPORT_TRACE_MERMAID, "not_implemented", &e.to_string())
+                    }
                 };
             }
             TraceMermaidViewKind::VerticalSlice => {

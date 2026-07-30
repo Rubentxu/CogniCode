@@ -17,17 +17,18 @@ import {
 import type { ContextualView } from "../../api/types";
 
 describe("GRAPH_KINDS", () => {
-  it("contains 6 graph-shaped ViewKinds", () => {
-    expect(GRAPH_KINDS.size).toBe(6);
+  it("contains 7 graph-shaped ViewKinds", () => {
+    expect(GRAPH_KINDS.size).toBe(7);
   });
 
-  it("contains call_graph, dependency_graph, data_flow, impact_radius, seam_map, concept_map", () => {
+  it("contains call_graph, dependency_graph, data_flow, impact_radius, seam_map, concept_map, vertical_slice", () => {
     expect(GRAPH_KINDS.has("call_graph")).toBe(true);
     expect(GRAPH_KINDS.has("dependency_graph")).toBe(true);
     expect(GRAPH_KINDS.has("data_flow")).toBe(true);
     expect(GRAPH_KINDS.has("impact_radius")).toBe(true);
     expect(GRAPH_KINDS.has("seam_map")).toBe(true);
     expect(GRAPH_KINDS.has("concept_map")).toBe(true);
+    expect(GRAPH_KINDS.has("vertical_slice")).toBe(true);
   });
 });
 
@@ -52,8 +53,8 @@ describe("isGraphViewKind", () => {
     expect(isGraphViewKind("seam_map")).toBe(true);
   });
 
-  it("returns false for vertical_slice", () => {
-    expect(isGraphViewKind("vertical_slice")).toBe(false);
+  it("returns true for vertical_slice", () => {
+    expect(isGraphViewKind("vertical_slice")).toBe(true);
   });
 
   it("returns false for undefined", () => {
@@ -100,7 +101,7 @@ describe("resolveRenderStrategy", () => {
   });
 
   describe("built-in view with blocks → blocks (renderer_kind ignored)", () => {
-    it("vertical_slice with blocks → blocks", () => {
+    it("vertical_slice with blocks → graph (vertical_slice is a graph ViewKind)", () => {
       const result = resolveRenderStrategy(
         makeView({
           view_kind: "vertical_slice",
@@ -108,7 +109,7 @@ describe("resolveRenderStrategy", () => {
           blocks: [{ id: "identity", title: "Identity", body: {} }],
         }),
       );
-      expect(result).toEqual({ kind: "blocks" });
+      expect(result).toEqual({ kind: "registry", rendererKind: "graph" });
     });
 
     it("overview with blocks → blocks", () => {
@@ -122,14 +123,14 @@ describe("resolveRenderStrategy", () => {
       expect(result).toEqual({ kind: "blocks" });
     });
 
-    it("empty blocks still → blocks (edge case)", () => {
+    it("empty blocks still → graph for vertical_slice (graph ViewKind, even with empty blocks)", () => {
       const result = resolveRenderStrategy(
         makeView({
           view_kind: "vertical_slice",
           blocks: [],
         }),
       );
-      expect(result).toEqual({ kind: "blocks" });
+      expect(result).toEqual({ kind: "registry", rendererKind: "graph" });
     });
   });
 

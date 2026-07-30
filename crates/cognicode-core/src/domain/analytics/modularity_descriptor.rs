@@ -44,7 +44,9 @@ impl AlgorithmParams for ModularityParams {
                 }
                 for item in arr {
                     if !item.is_array() || item.as_array().unwrap().len() != 2 {
-                        return Err("community_assignment must be [[node_id, community_id], ...]".into());
+                        return Err(
+                            "community_assignment must be [[node_id, community_id], ...]".into(),
+                        );
                     }
                 }
             } else {
@@ -150,13 +152,12 @@ static MODULARITY_FIXTURES: LazyLock<Vec<Fixture>> = LazyLock::new(|| {
 // Modularity identity
 // =============================================================================
 
-static MODULARITY_IDENTITY: LazyLock<AlgorithmIdentity> =
-    LazyLock::new(|| AlgorithmIdentity {
-        id: AlgorithmId::from_static("modularity"),
-        version: AlgorithmVersion::v1(),
-        maturity: Maturity::Experimental,
-        cohort: 3,
-    });
+static MODULARITY_IDENTITY: LazyLock<AlgorithmIdentity> = LazyLock::new(|| AlgorithmIdentity {
+    id: AlgorithmId::from_static("modularity"),
+    version: AlgorithmVersion::v1(),
+    maturity: Maturity::Experimental,
+    cohort: 3,
+});
 
 // =============================================================================
 // Modularity descriptor
@@ -244,9 +245,7 @@ impl AlgorithmExecute for ModularityDescriptor {
         let assignment_arr = obj
             .get("community_assignment")
             .and_then(|v| v.as_array())
-            .ok_or_else(|| {
-                AnalyticsError::Internal("missing community_assignment".into())
-            })?;
+            .ok_or_else(|| AnalyticsError::Internal("missing community_assignment".into()))?;
 
         let projection = CallGraphProjection::from_call_graph(graph);
         let out_neighbors = projection.build_directed_adjacency();
@@ -260,7 +259,9 @@ impl AlgorithmExecute for ModularityDescriptor {
                 AnalyticsError::InvalidParameter("node_id must be a non-negative integer".into())
             })? as usize;
             let community = arr[1].as_u64().ok_or_else(|| {
-                AnalyticsError::InvalidParameter("community_id must be a non-negative integer".into())
+                AnalyticsError::InvalidParameter(
+                    "community_id must be a non-negative integer".into(),
+                )
             })? as usize;
             community_assignment.push((node, community));
         }

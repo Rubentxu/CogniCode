@@ -251,33 +251,38 @@ impl crate::domain::views::ViewExecutor for ProviderExecutorAdapter {
 
 use std::sync::Arc;
 
-/// Assert that no two executors share the same `ViewKind`.
+/// Assert that no two executors share the same `id`.
 ///
-/// Panics with a diagnostic message naming both executor ids and the
-/// duplicate `ViewKind` variant when a conflict is detected.
+/// Panics with a diagnostic message naming the duplicate `id` when a
+/// conflict is detected. Warns (but does not panic) when multiple executors
+/// share the same `ViewKind` — that is now allowed.
 ///
 /// This guard fires once at `real_executors()` initialization — it does NOT
 /// run on every call, only at process startup when the `OnceLock` is first
 /// populated.
 fn assert_view_kind_uniqueness(pairs: &[(&'static str, crate::dto::ViewKind)]) {
     use std::collections::HashSet;
-    // S4: Use a simple HashSet to detect duplicates without Vec allocation.
-    // Track (kind, first_id) for the error message; duplicate ids are detected
-    // by insertion failure rather than building a full Vec map.
-    let mut seen: HashSet<&crate::dto::ViewKind> = HashSet::new();
+    // Track duplicate ids (panic) and duplicate kinds (warn).
+    let mut seen_ids: HashSet<&str> = HashSet::new();
+    let mut seen_kinds: HashSet<&crate::dto::ViewKind> = HashSet::new();
     for (id, kind) in pairs {
-        if !seen.insert(kind) {
-            panic!(
-                "duplicate ViewKind registration: kind={kind:?} already registered by id={id}",
+        // E23: duplicate id is the real invariant — panic immediately
+        if !seen_ids.insert(id) {
+            panic!("duplicate id registration: id={id}");
+        }
+        // Relaxed: shared ViewKind is allowed — warn only
+        if !seen_kinds.insert(kind) {
+            eprintln!(
+                "WARNING: ViewKind {:?} is shared by multiple executors (including id={id}). \
+                 This is allowed but may indicate semantic overload.",
+                kind
             );
         }
     }
 }
 
-type ViewExecutorMap = std::collections::HashMap<
-    &'static str,
-    &'static dyn crate::domain::views::ViewExecutor,
->;
+type ViewExecutorMap =
+    std::collections::HashMap<&'static str, &'static dyn crate::domain::views::ViewExecutor>;
 
 static REAL_EXECUTORS: OnceLock<ViewExecutorMap> = OnceLock::new();
 
@@ -299,6 +304,16 @@ fn real_executors() -> &'static ViewExecutorMap {
             ExecutorEntry {
                 id: "call-graph",
                 executor: &crate::domain::views::CALLGRAPH_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            },
+            ExecutorEntry {
+                id: "vertical-slice",
+                executor: &crate::domain::views::VERTICAL_SLICE_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            },
+            ExecutorEntry {
+                id: "seam-map",
+                executor: &crate::domain::views::SEAM_MAP_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
             },
             ExecutorEntry {
@@ -419,8 +434,10 @@ fn real_executors() -> &'static ViewExecutorMap {
 
         // E23 uniqueness guard — derive ViewKind via the live trait method to catch
         // any drift between the ExecutorEntry copy and the actual trait definition.
-        let pairs: Vec<(&str, crate::dto::ViewKind)> =
-            entries.iter().map(|e| (e.id, e.executor.view_kind())).collect();
+        let pairs: Vec<(&str, crate::dto::ViewKind)> = entries
+            .iter()
+            .map(|e| (e.id, e.executor.view_kind()))
+            .collect();
         assert_view_kind_uniqueness(&pairs);
 
         map
@@ -620,6 +637,7 @@ impl ViewRegistry {
         static KNOWN_KINDS: OnceLock<Vec<ViewKind>> = OnceLock::new();
         KNOWN_KINDS.get_or_init(|| {
             vec![
+                ViewKind::Summary,
                 ViewKind::VerticalSlice,
                 ViewKind::CallGraph,
                 ViewKind::SeamMap,
@@ -762,9 +780,7 @@ mod tests {
     fn list_for_decision_artifact_includes_decision_support_pack() {
         let registry = ViewRegistry::new(None);
         let views = registry.list_for(InspectableObjectType::DecisionArtifact);
-        let pack_view = views
-            .iter()
-            .find(|v| v.id == "decision-support-pack");
+        let pack_view = views.iter().find(|v| v.id == "decision-support-pack");
         assert!(
             pack_view.is_some(),
             "expected decision-support-pack for DecisionArtifact, got {views:?}"
@@ -860,33 +876,40 @@ mod tests {
         fn _accept_store<S: super::ViewSpecStore>(_: &S) {}
     }
 
-    // --- E23 uniqueness guard: panic on duplicate ViewKind ---
+    // --- E23 uniqueness guard: panic on duplicate id, warn on shared ViewKind ---
 
-    /// Scenario 21: assert_view_kind_uniqueness panics when two ids share the same ViewKind.
+    /// Scenario 21a: distinct ids with the same ViewKind MUST NOT panic.
     #[test]
-    #[should_panic(expected = "duplicate ViewKind registration")]
-    fn assert_view_kind_uniqueness_panics_on_duplicate() {
-        let pairs = &[("a", ViewKind::CallGraph), ("b", ViewKind::CallGraph)];
+    fn shared_viewkind_with_different_ids_no_panic() {
+        // ("vertical-slice", VerticalSlice) and ("overview", VerticalSlice) — different ids, same kind.
+        // The relaxed guard tracks ids and warns on shared kinds, but does NOT panic.
+        let pairs = &[
+            ("vertical-slice", ViewKind::CallGraph),
+            ("doc-source", ViewKind::CallGraph),
+        ];
+        // Should NOT panic — ids are distinct even though kinds are shared
         super::assert_view_kind_uniqueness(pairs);
     }
 
-    /// E23 positive uniqueness: every real executor has a distinct ViewKind.
+    /// Scenario 21b: duplicate ids MUST still panic (the real invariant).
     #[test]
-    fn real_executors_view_kinds_are_distinct() {
+    #[should_panic(expected = "duplicate id registration")]
+    fn assert_executor_id_uniqueness_panics_on_duplicate() {
+        let pairs = &[("a", ViewKind::CallGraph), ("a", ViewKind::SourceView)];
+        super::assert_view_kind_uniqueness(pairs);
+    }
+
+    /// E23 positive uniqueness: every real executor has a distinct id.
+    #[test]
+    fn real_executors_ids_are_distinct() {
         let map = super::real_executors();
-        let mut ids: Vec<&str> = Vec::new();
-        let mut kinds: Vec<ViewKind> = Vec::new();
-        for (id, executor) in map.iter() {
-            ids.push(id);
-            kinds.push(executor.view_kind());
-        }
-        let unique_kinds: std::collections::HashSet<_> = kinds.iter().collect();
+        let ids: Vec<&str> = map.keys().copied().collect();
+        let unique_ids: std::collections::HashSet<_> = ids.iter().collect();
         assert_eq!(
-            unique_kinds.len(),
-            kinds.len(),
-            "duplicate ViewKind across executors: ids={:?}, kinds={:?}",
-            ids,
-            kinds
+            unique_ids.len(),
+            ids.len(),
+            "duplicate executor id: ids={:?}",
+            ids
         );
     }
 }

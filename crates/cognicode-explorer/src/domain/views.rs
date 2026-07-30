@@ -12,6 +12,7 @@ use crate::dto::{
 use crate::ports::quality_repository::{QualityIssue, QualityRepository, RuleSummary};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
+use cognicode_core::domain::aggregates::call_graph::CallEntry;
 
 use crate::adapters::QualityGraphRepository;
 use crate::domain::evidence::build_evidence_blocks;
@@ -1413,7 +1414,7 @@ impl ViewDescriptor for OverviewExecutor {
         ]
     }
     fn view_kind(&self) -> ViewKind {
-        ViewKind::VerticalSlice
+        ViewKind::Summary
     }
     fn renderer_kind(&self) -> RendererKind {
         RendererKind::Json
@@ -1483,6 +1484,386 @@ impl ViewExecutor for CallGraphExecutor {
                 view_id: "call-graph".into(),
             }),
         }
+    }
+}
+
+/// VerticalSlice capability — applies to Symbol.
+/// Traces a symbol via BFS callers (depth 1) and callees (depth 3).
+pub struct VerticalSliceExecutor;
+impl ViewDescriptor for VerticalSliceExecutor {
+    fn id(&self) -> &'static str {
+        "vertical-slice"
+    }
+    fn title(&self) -> &'static str {
+        "Vertical Slice"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Symbol]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::VerticalSlice
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Graph
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for VerticalSliceExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match &ctx.target {
+            InspectionTarget::Symbol(symbol) => Ok(build_vertical_slice(symbol, ctx.graph_query)),
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "vertical-slice".into(),
+            }),
+        }
+    }
+}
+
+/// Build the Vertical Slice view: focused symbol + BFS callers (depth 1) + callees (depth 3).
+fn build_vertical_slice(
+    symbol: &ResolvedSymbol,
+    graph_query: Option<&dyn GraphQueryPort>,
+) -> ContextualView {
+    const CALLER_DEPTH: u8 = 1;
+    const CALLEE_DEPTH: u8 = 3;
+
+    let callers: Vec<CallEntry> = graph_query
+        .as_ref()
+        .map(|gq| gq.traverse_callers(&symbol.id, CALLER_DEPTH))
+        .unwrap_or_default();
+
+    let callees: Vec<CallEntry> = graph_query
+        .as_ref()
+        .map(|gq| gq.traverse_callees(&symbol.id, CALLEE_DEPTH))
+        .unwrap_or_default();
+
+    // Build graph nodes: focus symbol + all reached callers + all reached callees.
+    // Edges: caller->focus, focus->callee.
+    let mut nodes: Vec<serde_json::Value> = vec![json!({
+        "id": symbol.id.to_string(),
+        "label": symbol.name,
+        "kind": symbol.kind.name(),
+        "file": symbol.file,
+        "line": symbol.line,
+        "is_focus": true,
+    })];
+
+    let mut edges: Vec<serde_json::Value> = Vec::new();
+
+    for c in &callers {
+        nodes.push(json!({
+            "id": c.symbol_id.to_string(),
+            "label": c.symbol_name,
+            "kind": "function", // CallEntry doesn't expose kind; approximate
+            "file": c.file,
+            "line": c.line,
+            "is_focus": false,
+        }));
+        edges.push(json!({
+            "source": c.symbol_id.to_string(),
+            "target": symbol.id.to_string(),
+            "direction": "incoming",
+        }));
+    }
+
+    for c in &callees {
+        nodes.push(json!({
+            "id": c.symbol_id.to_string(),
+            "label": c.symbol_name,
+            "kind": "function",
+            "file": c.file,
+            "line": c.line,
+            "is_focus": false,
+        }));
+        edges.push(json!({
+            "source": symbol.id.to_string(),
+            "target": c.symbol_id.to_string(),
+            "direction": "outgoing",
+        }));
+    }
+
+    let blocks = vec![
+        ViewBlock {
+            id: "vertical_slice_graph".into(),
+            title: format!(
+                "Vertical Slice: {} ({} callers, {} callees)",
+                symbol.name,
+                callers.len(),
+                callees.len()
+            ),
+            body: json!({
+                "nodes": nodes,
+                "edges": edges,
+            }),
+        },
+        ViewBlock {
+            id: "callers".into(),
+            title: format!("Callers ({})", callers.len()),
+            body: json!({
+                "columns": ["symbol_id", "symbol_name", "file", "line", "depth"],
+                "rows": callers.iter().map(|e| json!({
+                    "symbol_id": e.symbol_id.to_string(),
+                    "symbol_name": e.symbol_name,
+                    "file": e.file,
+                    "line": e.line,
+                    "depth": e.depth,
+                })).collect::<Vec<_>>(),
+            }),
+        },
+        ViewBlock {
+            id: "callees".into(),
+            title: format!("Callees ({})", callees.len()),
+            body: json!({
+                "columns": ["symbol_id", "symbol_name", "file", "line", "depth"],
+                "rows": callees.iter().map(|e| json!({
+                    "symbol_id": e.symbol_id.to_string(),
+                    "symbol_name": e.symbol_name,
+                    "file": e.file,
+                    "line": e.line,
+                    "depth": e.depth,
+                })).collect::<Vec<_>>(),
+            }),
+        },
+        ViewBlock {
+            id: "metrics".into(),
+            title: "Metrics".into(),
+            body: json!({
+                "caller_count": callers.len(),
+                "callee_count": callees.len(),
+                "caller_depth": CALLER_DEPTH,
+                "callee_depth": CALLEE_DEPTH,
+            }),
+        },
+    ];
+
+    ContextualView {
+        object_id: mvp_id(symbol),
+        view_id: "vertical-slice".into(),
+        title: format!("Vertical Slice: {}", symbol.name),
+        blocks,
+        relations: Vec::new(),
+        evidence: vec![symbol_metadata_evidence(symbol)],
+        findings: Vec::new(),
+        view_kind: ViewKind::VerticalSlice,
+        renderer_kind: RendererKind::Graph,
+    }
+}
+
+/// SeamMap capability — applies to Scope, Module, Crate.
+/// Shows module boundaries and cross-boundary call edges.
+pub struct SeamMapExecutor;
+impl ViewDescriptor for SeamMapExecutor {
+    fn id(&self) -> &'static str {
+        "seam-map"
+    }
+    fn title(&self) -> &'static str {
+        "Seam Map"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[
+            InspectableObjectType::Module,
+            InspectableObjectType::Scope,
+            InspectableObjectType::Workspace,
+        ]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::SeamMap
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Graph
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for SeamMapExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match &ctx.target {
+            InspectionTarget::Scope {
+                path,
+                files: _,
+                symbols: _,
+            } => Ok(build_seam_map(path, ctx.repo, ctx.graph_query)),
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "seam-map".into(),
+            }),
+        }
+    }
+}
+
+/// Build the Seam Map view: module boundaries as nodes, cross-module calls as edges.
+fn build_seam_map(
+    scope_path: &str,
+    repo: &dyn SymbolRepository,
+    graph_query: Option<&dyn GraphQueryPort>,
+) -> ContextualView {
+    let modules: Vec<String> = {
+        let mut mods = repo.module_list();
+        mods.sort();
+        mods
+    };
+
+    if modules.is_empty() {
+        return ContextualView {
+            object_id: format!("scope:{}", scope_path),
+            view_id: "seam-map".into(),
+            title: "Seam Map".into(),
+            blocks: vec![ViewBlock {
+                id: "empty_workspace".into(),
+                title: "Empty Workspace".into(),
+                body: json!({ "message": "No modules found in workspace." }),
+            }],
+            relations: Vec::new(),
+            evidence: Vec::new(),
+            findings: Vec::new(),
+            view_kind: ViewKind::SeamMap,
+            renderer_kind: RendererKind::Graph,
+        };
+    }
+
+    // Map symbol -> module (parent directory)
+    let symbols = repo.all_symbols().unwrap_or_default();
+    let symbol_to_module: std::collections::HashMap<String, String> = symbols
+        .iter()
+        .map(|s| {
+            // module is the parent directory of the symbol's file
+            let module = std::path::Path::new(&s.file)
+                .parent()
+                .and_then(|p| p.to_str())
+                .unwrap_or("")
+                .to_string();
+            (s.id.to_string(), module)
+        })
+        .collect();
+
+    // Collect cross-module edges: (caller_module, callee_module) — preserve duplicates for counting
+    let mut cross_module_edges: Vec<(String, String)> = Vec::new();
+
+    if let Some(gq) = graph_query {
+        for sym in &symbols {
+            let callees = gq.callees(&sym.id);
+            let caller_module = symbol_to_module
+                .get(&sym.id.to_string())
+                .cloned()
+                .unwrap_or_default();
+            if caller_module.is_empty() {
+                continue;
+            }
+            for callee in callees {
+                let callee_module = symbol_to_module
+                    .get(&callee.id.to_string())
+                    .cloned()
+                    .unwrap_or_default();
+                if callee_module.is_empty() || caller_module == callee_module {
+                    continue;
+                }
+                // Normalize: store as (a,b) where a < b lexicographically for bidirectional aggregation
+                let pair = if caller_module < callee_module {
+                    (caller_module.clone(), callee_module)
+                } else {
+                    (callee_module, caller_module.clone())
+                };
+                cross_module_edges.push(pair);
+            }
+        }
+    }
+
+    // Count occurrences per (module_a, module_b) pair
+    let mut counts: std::collections::HashMap<(String, String), usize> =
+        std::collections::HashMap::new();
+    for (a, b) in &cross_module_edges {
+        *counts.entry((a.clone(), b.clone())).or_insert(0) += 1;
+    }
+
+    // Build graph nodes: one per module
+    let nodes: Vec<serde_json::Value> = modules
+        .iter()
+        .map(|m| {
+            json!({
+                "id": m,
+                "label": m,
+                "kind": "module",
+            })
+        })
+        .collect();
+
+    // Build edges from unique pairs (keys of counts)
+    // First convert to Vec and sort by count descending
+    let mut sorted_counts: Vec<_> = counts.into_iter().collect();
+    sorted_counts.sort_by(|a, b| b.1.cmp(&a.1)); // sort by count desc
+
+    // unique_pairs for graph edges (clone to avoid borrowing issues)
+    let unique_pairs: Vec<_> = sorted_counts
+        .iter()
+        .map(|((a, b), _)| (a.clone(), b.clone()))
+        .collect();
+
+    let edges: Vec<serde_json::Value> = unique_pairs
+        .iter()
+        .map(|(src, dst)| {
+            json!({
+                "source": src,
+                "target": dst,
+                "type": "cross_module_call",
+            })
+        })
+        .collect();
+
+    // Build count table from sorted_counts
+    let table_rows: Vec<serde_json::Value> = sorted_counts
+        .iter()
+        .map(|((a, b), count)| {
+            json!({
+                "module_a": a,
+                "module_b": b,
+                "edge_count": count,
+            })
+        })
+        .collect();
+
+    let blocks = vec![
+        ViewBlock {
+            id: "seam_map_graph".into(),
+            title: format!(
+                "Seam Map ({} modules, {} cross-module edges)",
+                modules.len(),
+                unique_pairs.len()
+            ),
+            body: json!({
+                "nodes": nodes,
+                "edges": edges,
+            }),
+        },
+        ViewBlock {
+            id: "module_list".into(),
+            title: format!("Modules ({})", modules.len()),
+            body: json!({
+                "columns": ["module"],
+                "rows": modules.iter().map(|m| json!({ "module": m })).collect::<Vec<_>>(),
+            }),
+        },
+        ViewBlock {
+            id: "cross_module_pairs".into(),
+            title: format!("Cross-Module Pairs ({})", unique_pairs.len()),
+            body: json!({
+                "columns": ["module_a", "module_b", "edge_count"],
+                "rows": table_rows,
+            }),
+        },
+    ];
+
+    ContextualView {
+        object_id: format!("scope:{}", scope_path),
+        view_id: "seam-map".into(),
+        title: "Seam Map".into(),
+        blocks,
+        relations: Vec::new(),
+        evidence: Vec::new(),
+        findings: Vec::new(),
+        view_kind: ViewKind::SeamMap,
+        renderer_kind: RendererKind::Graph,
     }
 }
 
@@ -2328,7 +2709,10 @@ async fn build_node_source_view(
                 id: evidence_id.clone(),
                 kind: evidence_kind.into(),
                 title: format!("{evidence_title_prefix}: {}", node.label),
-                file: node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                file: node
+                    .source_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
                 line_range: None,
                 source_tool_or_query: "GraphRepository::get_node".into(),
                 confidence: Some(1.0),
@@ -2380,9 +2764,9 @@ impl ViewDescriptor for DocSourceExecutor {
         &[InspectableObjectType::Doc]
     }
     fn view_kind(&self) -> ViewKind {
-        // DocSource shows the document's own content — a source/overview perspective.
-        // Distinct from SourceExecutor (SourceView) to satisfy ViewKind uniqueness.
-        ViewKind::SeamMap
+        // DocSource shows the document's own source content — uses SourceView
+        // because it renders document source code with a Code renderer.
+        ViewKind::SourceView
     }
     fn renderer_kind(&self) -> RendererKind {
         RendererKind::Code
@@ -2497,7 +2881,8 @@ pub async fn resolve_focus_node(
             renderer_kind: cfg.renderer_kind.clone(),
         }),
         Err(e) => Ok(FocusResolution::Error(format!(
-            "Failed to fetch {}: {}", cfg.mvp_prefix, e
+            "Failed to fetch {}: {}",
+            cfg.mvp_prefix, e
         ))),
     }
 }
@@ -2522,7 +2907,11 @@ pub fn assemble_knowledge_view(
     ContextualView {
         object_id: cfg.mvp(),
         view_id: cfg.view_id.into(),
-        title: format!("{}: {}", cfg.title_prefix.trim_end_matches(':').trim(), focus_node.label),
+        title: format!(
+            "{}: {}",
+            cfg.title_prefix.trim_end_matches(':').trim(),
+            focus_node.label
+        ),
         view_kind,
         blocks,
         relations,
@@ -2733,9 +3122,7 @@ impl ViewDescriptor for DocCodeAlignmentExecutor {
 impl ViewExecutor for DocCodeAlignmentExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match &ctx.target {
-            InspectionTarget::Doc { id } => {
-                build_doc_code_alignment_view(ctx, id, "doc").await
-            }
+            InspectionTarget::Doc { id } => build_doc_code_alignment_view(ctx, id, "doc").await,
             InspectionTarget::Decision { id } => {
                 build_doc_code_alignment_view(ctx, id, "decision").await
             }
@@ -3370,6 +3757,8 @@ impl ViewExecutor for RiskMapExecutor {
 // Static executor instances — referenced by the registry's get_executor() via &'static dyn ViewExecutor.
 pub static OVERVIEW_EXECUTOR: OverviewExecutor = OverviewExecutor;
 pub static CALLGRAPH_EXECUTOR: CallGraphExecutor = CallGraphExecutor;
+pub static VERTICAL_SLICE_EXECUTOR: VerticalSliceExecutor = VerticalSliceExecutor;
+pub static SEAM_MAP_EXECUTOR: SeamMapExecutor = SeamMapExecutor;
 pub static SOURCE_EXECUTOR: SourceExecutor = SourceExecutor;
 pub static QUALITY_EXECUTOR: QualityExecutor = QualityExecutor;
 pub static EVIDENCE_EXECUTOR: EvidenceExecutor = EvidenceExecutor;
@@ -3386,7 +3775,8 @@ pub static OWNERSHIP_MAP_EXECUTOR: OwnershipMapExecutor = OwnershipMapExecutor;
 pub static COMPOSED_NARRATIVE_EXECUTOR: ComposedNarrativeExecutor = ComposedNarrativeExecutor;
 pub static RISK_MAP_EXECUTOR: RiskMapExecutor = RiskMapExecutor;
 pub static DECISION_GRAPH_EXECUTOR: DecisionGraphExecutor = DecisionGraphExecutor;
-pub static DECISION_SUPPORT_PACK_EXECUTOR: DecisionSupportPackExecutor = DecisionSupportPackExecutor;
+pub static DECISION_SUPPORT_PACK_EXECUTOR: DecisionSupportPackExecutor =
+    DecisionSupportPackExecutor;
 pub static ARCHITECTURE_RATIONALE_EXECUTOR: ArchitectureRationaleExecutor =
     ArchitectureRationaleExecutor;
 pub static DOC_SOURCE_EXECUTOR: DocSourceExecutor = DocSourceExecutor;
@@ -3865,17 +4255,18 @@ pub async fn build_rationale_view(
     };
 
     // Fetch the decision node and its rationale subgraph using the shared helper
-    let (decision_node, nodes, edges, truncated) = match fetch_decision_with_subgraph(repo, decision_id).await {
-        Ok((node, nodes, edges, truncated)) => (node, nodes, edges, truncated),
-        Err(e) => {
-            return contextual_view_error(
-                &mvp,
-                "architecture_rationale",
-                "Error",
-                &format!("{}", e),
-            );
-        }
-    };
+    let (decision_node, nodes, edges, truncated) =
+        match fetch_decision_with_subgraph(repo, decision_id).await {
+            Ok((node, nodes, edges, truncated)) => (node, nodes, edges, truncated),
+            Err(e) => {
+                return contextual_view_error(
+                    &mvp,
+                    "architecture_rationale",
+                    "Error",
+                    &format!("{}", e),
+                );
+            }
+        };
 
     // Build evidence block using the shared helper (closes DUP-002)
     let evidence_id = "evidence:architecture_rationale".to_string();
@@ -4034,18 +4425,14 @@ impl ViewExecutor for DecisionGraphExecutor {
                         }
                     };
 
-                    let topology = DecisionGraphTopology::build(
-                        repo,
-                        &node_id,
-                        None,
-                        None,
-                    )
-                    .await?;
+                    let topology = DecisionGraphTopology::build(repo, &node_id, None, None).await?;
 
-                    Ok(crate::domain::decision_graph_topology::assemble_decision_graph_view(
-                        &decision_node,
-                        topology,
-                    ))
+                    Ok(
+                        crate::domain::decision_graph_topology::assemble_decision_graph_view(
+                            &decision_node,
+                            topology,
+                        ),
+                    )
                 }
                 #[cfg(not(feature = "multimodal"))]
                 {
@@ -4141,7 +4528,8 @@ impl ViewExecutor for DecisionSupportPackExecutor {
                 #[cfg(feature = "multimodal")]
                 {
                     use crate::domain::decision_support_pack::{
-                        DecisionSupportPackBuilder, PACK_RATIONALE_MAX_DEPTH, PACK_RATIONALE_MAX_NODES,
+                        DecisionSupportPackBuilder, PACK_RATIONALE_MAX_DEPTH,
+                        PACK_RATIONALE_MAX_NODES,
                     };
                     use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
@@ -4167,7 +4555,8 @@ impl ViewExecutor for DecisionSupportPackExecutor {
                                 PACK_RATIONALE_MAX_DEPTH,
                                 PACK_RATIONALE_MAX_NODES,
                             )
-                            .await else {
+                            .await
+                        else {
                             // Not found or error — let the builder handle it
                             return build_pack(id, Some(repo)).await;
                         };
@@ -4736,8 +5125,7 @@ mod tests {
             node: &NodeId,
             kinds: &[EdgeKind],
         ) -> GraphResult<Vec<GraphEdge>> {
-            let kind_set: std::collections::HashSet<EdgeKind> =
-                kinds.iter().cloned().collect();
+            let kind_set: std::collections::HashSet<EdgeKind> = kinds.iter().cloned().collect();
             Ok(self
                 .edges
                 .iter()
@@ -4768,8 +5156,7 @@ mod tests {
             ]
             .into();
 
-            let mut visited: std::collections::HashSet<String> =
-                std::collections::HashSet::new();
+            let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut queue: VecDeque<(String, u32)> = VecDeque::new();
             let mut result_nodes: Vec<GraphNode> = Vec::new();
             let mut result_edges: Vec<GraphEdge> = Vec::new();
@@ -6764,7 +7151,10 @@ mod tests {
 
         let executor = super::DecisionGraphExecutor;
         let result = executor.build(&ctx).await;
-        assert!(result.is_ok(), "DecisionGraphExecutor should succeed with graph_repo");
+        assert!(
+            result.is_ok(),
+            "DecisionGraphExecutor should succeed with graph_repo"
+        );
         let view = result.unwrap();
         assert_eq!(view.view_id, "decision_graph");
         assert_eq!(view.title, "Decision Graph: ADR-001");
@@ -6960,14 +7350,22 @@ mod tests {
 
         let executor = super::DecisionSupportPackExecutor;
         let result = executor.build(&ctx).await;
-        assert!(result.is_ok(), "empty decision pack should not error: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "empty decision pack should not error: {:?}",
+            result
+        );
         let view = result.unwrap();
         // view_id uses kebab-case per spec
         assert_eq!(view.view_id, "decision-support-pack");
         assert_eq!(view.view_kind, crate::dto::ViewKind::DecisionSupportPack);
         assert_eq!(view.renderer_kind, crate::dto::RendererKind::Composite);
         // W-2: empty decision → zero panes
-        assert_eq!(view.blocks.len(), 0, "empty-neighborhood decision should have zero panes");
+        assert_eq!(
+            view.blocks.len(),
+            0,
+            "empty-neighborhood decision should have zero panes"
+        );
     }
 
     /// C-2 discoverable: DecisionSupportPack applies to DecisionArtifact.
@@ -6980,10 +7378,7 @@ mod tests {
             exec.applies_to()
                 .contains(&crate::dto::InspectableObjectType::DecisionArtifact)
         );
-        assert_eq!(
-            exec.view_kind(),
-            crate::dto::ViewKind::DecisionSupportPack
-        );
+        assert_eq!(exec.view_kind(), crate::dto::ViewKind::DecisionSupportPack);
         assert_eq!(exec.renderer_kind(), crate::dto::RendererKind::Composite);
     }
 
@@ -7060,14 +7455,12 @@ mod tests {
         // must contain "reason", not the legacy "message" used in the old
         // manual JSON construction in pack_to_contextual_view.
         assert!(
-            obj["status"].get("reason").is_some()
-                || obj.get("reason").is_some(),
+            obj["status"].get("reason").is_some() || obj.get("reason").is_some(),
             "PackPane wire format must contain 'reason' for Failed status; got: {}",
             serde_json::to_string(&body).unwrap_or_default()
         );
         assert!(
-            obj["status"].get("message").is_none()
-                && obj.get("message").is_none(),
+            obj["status"].get("message").is_none() && obj.get("message").is_none(),
             "PackPane wire format must NOT use legacy 'message'; got: {}",
             serde_json::to_string(&body).unwrap_or_default()
         );
@@ -7111,8 +7504,14 @@ mod tests {
         let body = serde_json::to_value(&pane).expect("serialize");
         let obj = body.as_object().expect("body is object");
         // Ok has no content — only the status tag
-        assert!(!obj.contains_key("reason"), "Ok status must not have 'reason'");
-        assert!(!obj.contains_key("message"), "Ok status must not have legacy 'message'");
+        assert!(
+            !obj.contains_key("reason"),
+            "Ok status must not have 'reason'"
+        );
+        assert!(
+            !obj.contains_key("message"),
+            "Ok status must not have legacy 'message'"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -7219,7 +7618,10 @@ mod tests {
         assert_eq!(view.title, "Decision Graph: ADR-002");
         assert_eq!(view.view_kind, super::ViewKind::DecisionGraph);
         // The decision_graph_topology block must report 1 node (focus only)
-        let graph_block = view.blocks.iter().find(|b| b.id == "decision_graph_topology");
+        let graph_block = view
+            .blocks
+            .iter()
+            .find(|b| b.id == "decision_graph_topology");
         assert!(graph_block.is_some());
         let total = graph_block
             .unwrap()
@@ -7369,13 +7771,13 @@ mod tests {
 mod view_seam_tests {
     use super::*;
     use crate::domain::views::tests::MockGraphRepo;
-    use crate::domain::views::tests::MockRepo;
     use crate::domain::views::tests::MockReader;
+    use crate::domain::views::tests::MockRepo;
     use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
     use cognicode_core::domain::ports::graph_repository::GraphRepository;
+    use cognicode_core::domain::value_objects::SymbolKind;
     use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
     use cognicode_core::domain::value_objects::node_kind::NodeKind;
-    use cognicode_core::domain::value_objects::SymbolKind;
     use std::collections::HashMap;
 
     // -------------------------------------------------------------------------
@@ -7636,7 +8038,8 @@ mod view_seam_tests {
         assert_eq!(Exec.id(), "doc_code_alignment");
         assert_eq!(Exec.title(), "Doc/Code Alignment");
         assert!(
-            Exec.applies_to().contains(&crate::dto::InspectableObjectType::Doc),
+            Exec.applies_to()
+                .contains(&crate::dto::InspectableObjectType::Doc),
             "DocCodeAlignment must apply to Doc"
         );
         assert!(
@@ -7644,10 +8047,7 @@ mod view_seam_tests {
                 .contains(&crate::dto::InspectableObjectType::DecisionArtifact),
             "DocCodeAlignment must apply to DecisionArtifact"
         );
-        assert_eq!(
-            Exec.view_kind(),
-            crate::dto::ViewKind::DocCodeAlignment
-        );
+        assert_eq!(Exec.view_kind(), crate::dto::ViewKind::DocCodeAlignment);
         assert_eq!(Exec.renderer_kind(), crate::dto::RendererKind::Graph);
     }
 
@@ -7954,7 +8354,8 @@ mod view_seam_tests {
         assert_eq!(Exec.id(), "concept_map");
         assert_eq!(Exec.title(), "Concept Map");
         assert!(
-            Exec.applies_to().contains(&crate::dto::InspectableObjectType::Doc),
+            Exec.applies_to()
+                .contains(&crate::dto::InspectableObjectType::Doc),
             "ConceptMap must apply to Doc"
         );
         assert!(
@@ -8057,7 +8458,9 @@ mod view_seam_tests {
         // Depth 2 → all three nodes should be present
         let body_json = serde_json::to_string(&view.blocks[0].body).unwrap();
         assert!(
-            body_json.contains("DOC-X") && body_json.contains("ADR-X") && body_json.contains("SYM-X"),
+            body_json.contains("DOC-X")
+                && body_json.contains("ADR-X")
+                && body_json.contains("SYM-X"),
             "depth=2 must include all three nodes"
         );
     }
@@ -8464,7 +8867,10 @@ mod view_seam_tests {
         use serde_json::Map;
 
         let mut props = Map::new();
-        props.insert("author".to_string(), serde_json::Value::String("test".to_string()));
+        props.insert(
+            "author".to_string(),
+            serde_json::Value::String("test".to_string()),
+        );
 
         let node = GraphNode {
             id: NodeId::new("DOC-X".to_string()),
@@ -8539,7 +8945,9 @@ mod view_seam_tests {
     async fn build_node_source_view_not_found_returns_marker_view() {
         // Empty MockGraphRepo → get_node returns Ok(None) → FocusResolution::NotFound
         let mock = MockGraphRepo::new();
-        let target = InspectionTarget::Doc { id: "missing-doc".to_string() };
+        let target = InspectionTarget::Doc {
+            id: "missing-doc".to_string(),
+        };
         let ctx = ViewContext {
             target: &target,
             repo: &MockRepo::new(),
@@ -8565,9 +8973,16 @@ mod view_seam_tests {
         .expect("NotFound should produce a valid view, not error");
 
         // Marker view has 1 block (identity) and uses the stamped MVP + title.
-        assert_eq!(result.blocks.len(), 1, "NotFound should produce exactly one identity block");
+        assert_eq!(
+            result.blocks.len(),
+            1,
+            "NotFound should produce exactly one identity block"
+        );
         assert_eq!(result.object_id, "doc:missing-doc");
-        assert!(result.title.contains("missing-doc"), "title should reference the missing focus_id");
+        assert!(
+            result.title.contains("missing-doc"),
+            "title should reference the missing focus_id"
+        );
         assert!(result.evidence.is_empty(), "marker view has no evidence");
     }
 
@@ -8577,7 +8992,9 @@ mod view_seam_tests {
         let node = make_node("doc-1", "Architecture Decision Record");
         let mut mock = MockGraphRepo::new();
         mock.with_node(node);
-        let target = InspectionTarget::Doc { id: "doc-1".to_string() };
+        let target = InspectionTarget::Doc {
+            id: "doc-1".to_string(),
+        };
         let ctx = ViewContext {
             target: &target,
             repo: &MockRepo::new(),
@@ -8603,8 +9020,16 @@ mod view_seam_tests {
         .expect("Found should produce a full view");
 
         // Full view has 2 blocks (identity + properties) + 1 evidence entry.
-        assert_eq!(result.blocks.len(), 2, "Found should produce identity + properties blocks");
-        assert_eq!(result.evidence.len(), 1, "Found should produce one evidence block");
+        assert_eq!(
+            result.blocks.len(),
+            2,
+            "Found should produce identity + properties blocks"
+        );
+        assert_eq!(
+            result.evidence.len(),
+            1,
+            "Found should produce one evidence block"
+        );
         assert_eq!(result.title, "Architecture Decision Record");
     }
 }

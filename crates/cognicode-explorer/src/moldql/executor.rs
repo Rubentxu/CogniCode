@@ -60,10 +60,7 @@ impl MoldQLResult {
     ///
     /// Mapping policy: paths take priority (1 item per path); otherwise nodes
     /// (1 item per node). `total` = number of items produced.
-    pub fn from_result_set(
-        rs: cognicode_core::domain::plan::ResultSet,
-        query: String,
-    ) -> Self {
+    pub fn from_result_set(rs: cognicode_core::domain::plan::ResultSet, query: String) -> Self {
         use cognicode_core::domain::plan::{NodeResult, Path};
 
         fn path_to_item(p: &Path) -> MoldQLItem {
@@ -96,7 +93,11 @@ impl MoldQLResult {
             rs.nodes.iter().map(node_to_item).collect()
         };
         let total = items.len();
-        Self { query, items, total }
+        Self {
+            query,
+            items,
+            total,
+        }
     }
 }
 
@@ -818,10 +819,12 @@ mod tests {
     use super::*;
     use crate::ports::QualityRepository;
     use cognicode_core::domain::plan::{
-        ConstructId, ExecutorError, GraphPlan, NeighborKind, NodeResult, PathQuantifier,
-        Path as GraphPath, PathHop, ResultSet, UnsupportedConstruct,
+        ConstructId, ExecutorError, GraphPlan, NeighborKind, NodeResult, Path as GraphPath,
+        PathHop, PathQuantifier, ResultSet, UnsupportedConstruct,
     };
-    use cognicode_core::domain::value_objects::{DependencyType, EdgeKind, RevisionId, SymbolKind, WorkspaceId};
+    use cognicode_core::domain::value_objects::{
+        DependencyType, EdgeKind, RevisionId, SymbolKind, WorkspaceId,
+    };
     use std::collections::{HashMap as StdHashMap, HashSet as StdHashSet};
     use std::sync::Arc;
 
@@ -1046,7 +1049,13 @@ mod tests {
             // BFS: each queue item is (current_symbol_id, path_hops)
             let mut queue: VecDeque<(String, Vec<PathHop>)> = VecDeque::new();
             for src_id in &src_ids {
-                queue.push_back((src_id.clone(), vec![PathHop { node_id: src_id.clone(), edge_kind: None }]));
+                queue.push_back((
+                    src_id.clone(),
+                    vec![PathHop {
+                        node_id: src_id.clone(),
+                        edge_kind: None,
+                    }],
+                ));
             }
 
             while let Some((current, hops)) = queue.pop_front() {
@@ -1109,12 +1118,18 @@ mod tests {
                     continue;
                 }
                 let neighbors: Vec<String> = match kind {
-                    NeighborKind::Outgoing | NeighborKind::Both => {
-                        self.repo.callees_of.get(&current).cloned().unwrap_or_default()
-                    }
-                    NeighborKind::Incoming => {
-                        self.repo.callers_of.get(&current).cloned().unwrap_or_default()
-                    }
+                    NeighborKind::Outgoing | NeighborKind::Both => self
+                        .repo
+                        .callees_of
+                        .get(&current)
+                        .cloned()
+                        .unwrap_or_default(),
+                    NeighborKind::Incoming => self
+                        .repo
+                        .callers_of
+                        .get(&current)
+                        .cloned()
+                        .unwrap_or_default(),
                 };
                 for neighbor_id in neighbors {
                     if visited.insert(neighbor_id.clone()) {
@@ -1153,12 +1168,15 @@ mod tests {
             _pin: (WorkspaceId, RevisionId),
         ) -> Result<ResultSet, ExecutorError> {
             match plan {
-                GraphPlan::Path { src, dst, quantifier, .. } => {
-                    self.run_path(src, dst, quantifier)
-                }
-                GraphPlan::Neighbors { src, kind, depth, .. } => {
-                    self.run_neighbors(src, kind.clone(), *depth)
-                }
+                GraphPlan::Path {
+                    src,
+                    dst,
+                    quantifier,
+                    ..
+                } => self.run_path(src, dst, quantifier),
+                GraphPlan::Neighbors {
+                    src, kind, depth, ..
+                } => self.run_neighbors(src, kind.clone(), *depth),
                 other => Err(ExecutorError::UnsupportedConstruct(
                     UnsupportedConstruct::new(
                         ConstructId::Other("InMemoryGraphExecutor".into()),
@@ -1409,7 +1427,10 @@ mod tests {
         let plan = GraphPlan::Path {
             src: caller_id.clone(),
             dst: callee_id.clone(),
-            quantifier: PathQuantifier { max_hops: Some(1), min_hops: 0 },
+            quantifier: PathQuantifier {
+                max_hops: Some(1),
+                min_hops: 0,
+            },
             edge_kind_filter: None,
             predicates: Vec::new(),
             projection: cognicode_core::domain::plan::PathProjection::default(),
@@ -1420,7 +1441,12 @@ mod tests {
             ),
         };
         let result = executor.execute(&plan, (ws, RevisionId::new(1))).unwrap();
-        assert_eq!(result.paths.len(), 1, "expected 1 path; got {:?}", result.paths);
+        assert_eq!(
+            result.paths.len(),
+            1,
+            "expected 1 path; got {:?}",
+            result.paths
+        );
         let path = &result.paths[0];
         assert_eq!(path.start(), caller_id.as_str());
         assert_eq!(path.end(), callee_id.as_str());
@@ -1445,7 +1471,10 @@ mod tests {
         let plan = GraphPlan::Path {
             src: a_id,
             dst: c_id,
-            quantifier: PathQuantifier { max_hops: Some(2), min_hops: 0 },
+            quantifier: PathQuantifier {
+                max_hops: Some(2),
+                min_hops: 0,
+            },
             edge_kind_filter: None,
             predicates: Vec::new(),
             projection: cognicode_core::domain::plan::PathProjection::default(),
@@ -1456,7 +1485,12 @@ mod tests {
             ),
         };
         let result = executor.execute(&plan, (ws, RevisionId::new(1))).unwrap();
-        assert_eq!(result.paths.len(), 1, "expected 1 path; got {:?}", result.paths);
+        assert_eq!(
+            result.paths.len(),
+            1,
+            "expected 1 path; got {:?}",
+            result.paths
+        );
         assert_eq!(result.paths[0].hops.len(), 3, "3 nodes in path");
     }
 
@@ -1475,7 +1509,10 @@ mod tests {
         let plan = GraphPlan::Path {
             src: x_id,
             dst: y_id,
-            quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
+            quantifier: PathQuantifier {
+                max_hops: Some(3),
+                min_hops: 0,
+            },
             edge_kind_filter: None,
             predicates: Vec::new(),
             projection: cognicode_core::domain::plan::PathProjection::default(),
@@ -1486,7 +1523,11 @@ mod tests {
             ),
         };
         let result = executor.execute(&plan, (ws, RevisionId::new(1))).unwrap();
-        assert!(result.paths.is_empty(), "expected 0 paths; got {:?}", result.paths);
+        assert!(
+            result.paths.is_empty(),
+            "expected 0 paths; got {:?}",
+            result.paths
+        );
     }
 
     #[tokio::test]
@@ -1496,8 +1537,14 @@ mod tests {
             r.with_sym("caller1", "src/lib.rs", 1);
             r.with_sym("caller2", "src/lib.rs", 2);
             r.with_sym("callee", "src/lib.rs", 10);
-            r.with_caller(&r.sid("callee", "src/lib.rs", 10), &r.sid("caller1", "src/lib.rs", 1));
-            r.with_caller(&r.sid("callee", "src/lib.rs", 10), &r.sid("caller2", "src/lib.rs", 2));
+            r.with_caller(
+                &r.sid("callee", "src/lib.rs", 10),
+                &r.sid("caller1", "src/lib.rs", 1),
+            );
+            r.with_caller(
+                &r.sid("callee", "src/lib.rs", 10),
+                &r.sid("caller2", "src/lib.rs", 2),
+            );
         });
         let executor = InMemoryGraphExecutor { repo: repo.clone() };
         let ws = WorkspaceId::try_new("test-ws").unwrap();
@@ -1533,8 +1580,14 @@ mod tests {
             r.with_sym("caller", "src/lib.rs", 1);
             r.with_sym("callee1", "src/lib.rs", 10);
             r.with_sym("callee2", "src/lib.rs", 20);
-            r.with_callee(&r.sid("caller", "src/lib.rs", 1), &r.sid("callee1", "src/lib.rs", 10));
-            r.with_callee(&r.sid("caller", "src/lib.rs", 1), &r.sid("callee2", "src/lib.rs", 20));
+            r.with_callee(
+                &r.sid("caller", "src/lib.rs", 1),
+                &r.sid("callee1", "src/lib.rs", 10),
+            );
+            r.with_callee(
+                &r.sid("caller", "src/lib.rs", 1),
+                &r.sid("callee2", "src/lib.rs", 20),
+            );
         });
         let executor = InMemoryGraphExecutor { repo: repo.clone() };
         let ws = WorkspaceId::try_new("test-ws").unwrap();
@@ -2060,9 +2113,7 @@ mod tests {
 
     /// Build a view with `graph_executor: None` but with a valid pin.
     /// Used for testing the FeatureDisabled error path.
-    fn build_view_without_executor(
-        repo: Arc<MockRepo>,
-    ) -> MoldQLView {
+    fn build_view_without_executor(repo: Arc<MockRepo>) -> MoldQLView {
         use crate::adapters::FsSourceReader;
         use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
         let reader: Arc<dyn crate::ports::SourceReader> = Arc::new(FsSourceReader::new("/tmp"));
@@ -2088,9 +2139,7 @@ mod tests {
 
     /// Build a view with `graph_executor` wired but `pin: None`.
     /// Used for testing the ResolutionFailed error path.
-    fn build_view_without_pin(
-        repo: Arc<MockRepo>,
-    ) -> MoldQLView {
+    fn build_view_without_pin(repo: Arc<MockRepo>) -> MoldQLView {
         use crate::adapters::FsSourceReader;
         let reader: Arc<dyn crate::ports::SourceReader> = Arc::new(FsSourceReader::new("/tmp"));
         let apply: Arc<dyn Fn(&str, &str) -> ExplorerResult<LensResult> + Send + Sync> =
@@ -2129,8 +2178,9 @@ mod tests {
 
         // Execute Pattern query via parser through execute.
         let ast = crate::moldql::parser::parse(
-            "MATCH (n:Function)-[:Calls]->(m:Function) RETURN PATH(n,m)"
-        ).expect("parse ok");
+            "MATCH (n:Function)-[:Calls]->(m:Function) RETURN PATH(n,m)",
+        )
+        .expect("parse ok");
 
         let result = view
             .executor()
@@ -2191,8 +2241,9 @@ mod tests {
         let view = build_view_without_executor(repo.clone());
 
         let ast = crate::moldql::parser::parse(
-            "MATCH (n:Function)-[:Calls]->(m:Function) RETURN PATH(n,m)"
-        ).expect("parse ok");
+            "MATCH (n:Function)-[:Calls]->(m:Function) RETURN PATH(n,m)",
+        )
+        .expect("parse ok");
 
         let result = view.executor().execute(ast).await;
         assert!(
@@ -2213,8 +2264,9 @@ mod tests {
         let view = build_view_without_pin(repo.clone());
 
         let ast = crate::moldql::parser::parse(
-            "MATCH (n:Function)-[:Calls]->(m:Function) RETURN PATH(n,m)"
-        ).expect("parse ok");
+            "MATCH (n:Function)-[:Calls]->(m:Function) RETURN PATH(n,m)",
+        )
+        .expect("parse ok");
 
         let result = view.executor().execute(ast).await;
         assert!(

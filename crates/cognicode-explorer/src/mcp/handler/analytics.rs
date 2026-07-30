@@ -17,7 +17,9 @@ use cognicode_core::application::services::graph_analytics::{
     AlgorithmRegistry, CallerCapabilities, DefaultAnalyticsBoundaryGuard, RunRequest,
 };
 use cognicode_core::domain::analytics::lineage::{RunLineageFilter, RunLineageStore, Uuid};
-use cognicode_core::domain::analytics::{oracle::OracleConfig, oracle::OracleError, AnalyticsMode, RunOutput};
+use cognicode_core::domain::analytics::{
+    AnalyticsMode, RunOutput, oracle::OracleConfig, oracle::OracleError,
+};
 use cognicode_core::domain::plan::limits::PlanLimits;
 
 use crate::dto::{
@@ -293,7 +295,10 @@ impl ToolHandler for AnalyticsRunHandler {
                             "scores": scores,
                         })
                     }
-                    RunOutput::Modularity { score, community_count } => {
+                    RunOutput::Modularity {
+                        score,
+                        community_count,
+                    } => {
                         serde_json::json!({
                             "score": score,
                             "community_count": community_count,
@@ -373,7 +378,9 @@ impl ToolHandler for AnalyticsRunHandler {
                     }
                     Err(OracleError::NotConfigured) => {
                         // NEO4J_URI not set - skip oracle silently
-                        tracing::debug!("Oracle not configured (NEO4J_URI not set), skipping parity check");
+                        tracing::debug!(
+                            "Oracle not configured (NEO4J_URI not set), skipping parity check"
+                        );
                     }
                     Err(e) => {
                         tracing::error!("Oracle parity check failed: {}", e);
