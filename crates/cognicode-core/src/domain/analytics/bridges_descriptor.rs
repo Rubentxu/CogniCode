@@ -26,22 +26,6 @@ static BRIDGES_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema {
 });
 
 // =============================================================================
-// Bridges limits
-// =============================================================================
-
-static BRIDGES_LIMITS: LazyLock<PlanLimits> = LazyLock::new(|| PlanLimits {
-    time_ms: Some(30000),
-    cancellation: None,
-    max_depth: None,
-    max_hops: None,
-    max_visited_nodes: Some(1_000_000),
-    max_visited_edges: None,
-    max_result_rows: Some(100_000),
-    max_path_count: None,
-    max_memory_bytes: Some(512 * 1024 * 1024),
-});
-
-// =============================================================================
 // Bridges complexity
 // =============================================================================
 
@@ -152,59 +136,16 @@ impl AlgorithmParams for BridgesParams {
 /// - Heterogeneous: no
 pub struct BridgesDescriptor;
 
-impl AlgorithmDescriptor for BridgesDescriptor {
-    fn identity(&self) -> &AlgorithmIdentity {
-        &BRIDGES_IDENTITY
-    }
-
-    fn params(&self) -> &dyn AlgorithmParams {
-        &BridgesParams
-    }
-
-    fn output_schema(&self) -> &OutputSchema {
-        &BRIDGES_SCHEMA
-    }
-
-    fn supported_modes(&self) -> &[AnalyticsMode] {
-        &[
-            AnalyticsMode::Stream,
-            AnalyticsMode::Stats,
-            AnalyticsMode::Annotate,
-        ]
-    }
-
-    fn complexity(&self) -> &ComplexityClass {
-        &BRIDGES_COMPLEXITY
-    }
-
-    fn limits(&self) -> &PlanLimits {
-        &BRIDGES_LIMITS
-    }
-
-    fn conformance_fixtures(&self) -> &[Fixture] {
-        &BRIDGES_FIXTURES
-    }
-
-    fn determinism(&self) -> DeterminismKind {
-        DeterminismKind::Deterministic
-    }
-
-    fn directed(&self) -> bool {
-        false
-    }
-
-    fn weighted(&self) -> bool {
-        false
-    }
-
-    fn heterogeneous(&self) -> bool {
-        false
-    }
-
-    fn projection_assumption(&self) -> &ProjectionAssumption {
-        &ProjectionAssumption::Undirected
-    }
-}
+impl_cohort2_descriptor!(
+    BridgesDescriptor,
+    false,                                     // directed
+    &BRIDGES_IDENTITY,                        // identity
+    &BridgesParams,                           // params
+    &BRIDGES_SCHEMA,                         // output_schema
+    &BRIDGES_FIXTURES,                       // conformance_fixtures
+    &BRIDGES_COMPLEXITY,                     // complexity
+    ProjectionAssumption::Undirected         // projection_assumption
+);
 
 #[async_trait::async_trait]
 impl AlgorithmExecute for BridgesDescriptor {
@@ -212,34 +153,19 @@ impl AlgorithmExecute for BridgesDescriptor {
         &self,
         _params: &serde_json::Value,
         graph: &CallGraph,
-        _limits: &PlanLimits,
+        limits: &PlanLimits,
     ) -> Result<RunOutput, AnalyticsError> {
         let projection = CallGraphProjection::from_call_graph(graph);
-        let (in_neighbors, _) = projection.build_adjacency();
+        let undirected = projection.build_undirected_neighbors();
         let n = projection.node_count();
-
-        // Build undirected adjacency: union of in and out neighbors
-        let mut undirected: Vec<Vec<usize>> = vec![Vec::new(); n];
-        for (i, neighbors) in in_neighbors.iter().enumerate() {
-            for &j in neighbors {
-                if i < n && j < n {
-                    undirected[i].push(j);
-                }
-            }
-        }
-        // Also add out neighbors to make it undirected
-        let out_neighbors = projection.build_out_neighbors();
-        for (i, neighbors) in out_neighbors.iter().enumerate() {
-            for &j in neighbors {
-                if i < n && j < n && !undirected[i].contains(&j) {
-                    undirected[i].push(j);
-                }
-            }
-        }
 
         let raw = cognicode_graph_algos::bridges(&undirected, n);
 
-        Ok(RunOutput::Bridges { edges: raw })
+        // Enforce max_result_rows limit
+        let max_rows = limits.max_result_rows.unwrap_or(100_000) as usize;
+        let edges = raw.into_iter().take(max_rows).collect();
+
+        Ok(RunOutput::Bridges { edges })
     }
 }
 

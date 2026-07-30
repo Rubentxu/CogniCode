@@ -1083,7 +1083,8 @@ mod tests {
 pub fn default_analytics_registry(
     lineage: Arc<dyn RunLineageStore>,
 ) -> AlgorithmRegistry {
-    let mut registry = AlgorithmRegistry::new(lineage, None);
+    let guard = Arc::new(DefaultAnalyticsBoundaryGuard::new());
+    let mut registry = AlgorithmRegistry::new(lineage, Some(guard));
 
     // Cohort 1 algorithms
     registry.admit(Box::new(crate::domain::analytics::PageRankDescriptor)).unwrap();

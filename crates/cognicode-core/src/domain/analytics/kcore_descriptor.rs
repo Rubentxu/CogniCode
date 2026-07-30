@@ -66,22 +66,6 @@ static KCORE_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema {
 });
 
 // =============================================================================
-// K-Core limits
-// =============================================================================
-
-static KCORE_LIMITS: LazyLock<PlanLimits> = LazyLock::new(|| PlanLimits {
-    time_ms: Some(30000),
-    cancellation: None,
-    max_depth: None,
-    max_hops: None,
-    max_visited_nodes: Some(1_000_000),
-    max_visited_edges: None,
-    max_result_rows: Some(100_000),
-    max_path_count: None,
-    max_memory_bytes: Some(512 * 1024 * 1024),
-});
-
-// =============================================================================
 // K-Core complexity
 // =============================================================================
 
@@ -173,59 +157,16 @@ static KCORE_IDENTITY: LazyLock<AlgorithmIdentity> = LazyLock::new(|| AlgorithmI
 /// - Heterogeneous: no
 pub struct KCoreDescriptor;
 
-impl AlgorithmDescriptor for KCoreDescriptor {
-    fn identity(&self) -> &AlgorithmIdentity {
-        &KCORE_IDENTITY
-    }
-
-    fn params(&self) -> &dyn AlgorithmParams {
-        &KCoreParams
-    }
-
-    fn output_schema(&self) -> &OutputSchema {
-        &KCORE_SCHEMA
-    }
-
-    fn supported_modes(&self) -> &[AnalyticsMode] {
-        &[
-            AnalyticsMode::Stream,
-            AnalyticsMode::Stats,
-            AnalyticsMode::Annotate,
-        ]
-    }
-
-    fn complexity(&self) -> &ComplexityClass {
-        &KCORE_COMPLEXITY
-    }
-
-    fn limits(&self) -> &PlanLimits {
-        &KCORE_LIMITS
-    }
-
-    fn conformance_fixtures(&self) -> &[Fixture] {
-        &KCORE_FIXTURES
-    }
-
-    fn determinism(&self) -> DeterminismKind {
-        DeterminismKind::Deterministic
-    }
-
-    fn directed(&self) -> bool {
-        false
-    }
-
-    fn weighted(&self) -> bool {
-        false
-    }
-
-    fn heterogeneous(&self) -> bool {
-        false
-    }
-
-    fn projection_assumption(&self) -> &ProjectionAssumption {
-        &ProjectionAssumption::Undirected
-    }
-}
+impl_cohort2_descriptor!(
+    KCoreDescriptor,
+    false,                                     // directed
+    &KCORE_IDENTITY,                          // identity
+    &KCoreParams,                             // params
+    &KCORE_SCHEMA,                           // output_schema
+    &KCORE_FIXTURES,                         // conformance_fixtures
+    &KCORE_COMPLEXITY,                      // complexity
+    ProjectionAssumption::Undirected          // projection_assumption
+);
 
 #[async_trait::async_trait]
 impl AlgorithmExecute for KCoreDescriptor {
@@ -233,7 +174,7 @@ impl AlgorithmExecute for KCoreDescriptor {
         &self,
         params: &serde_json::Value,
         graph: &CallGraph,
-        _limits: &PlanLimits,
+        limits: &PlanLimits,
     ) -> Result<RunOutput, AnalyticsError> {
         let obj = params
             .as_object()
@@ -246,33 +187,21 @@ impl AlgorithmExecute for KCoreDescriptor {
             .unwrap_or(1);
 
         let projection = CallGraphProjection::from_call_graph(graph);
-        let (in_neighbors, _) = projection.build_adjacency();
+        let undirected = projection.build_undirected_neighbors();
         let n = projection.node_count();
-
-        // Build undirected adjacency: union of in and out neighbors
-        let mut undirected: Vec<Vec<usize>> = vec![Vec::new(); n];
-        for (i, neighbors) in in_neighbors.iter().enumerate() {
-            for &j in neighbors {
-                if i < n && j < n {
-                    undirected[i].push(j);
-                }
-            }
-        }
-        // Also add out neighbors to make it undirected
-        let out_neighbors = projection.build_out_neighbors();
-        for (i, neighbors) in out_neighbors.iter().enumerate() {
-            for &j in neighbors {
-                if i < n && j < n && !undirected[i].contains(&j) {
-                    undirected[i].push(j);
-                }
-            }
-        }
 
         let raw = cognicode_graph_algos::k_core(&undirected, n, k);
 
+        // Enforce max_result_rows limit
+        let max_rows = limits.max_result_rows.unwrap_or(100_000) as usize;
+
         // Unpack into two parallel vectors
-        let nodes: Vec<usize> = raw.iter().map(|(v, _)| *v).collect();
-        let core_numbers: Vec<u32> = raw.iter().map(|(_, c)| *c).collect();
+        let mut nodes: Vec<usize> = raw.iter().map(|(v, _)| *v).collect();
+        let mut core_numbers: Vec<u32> = raw.iter().map(|(_, c)| *c).collect();
+
+        // Truncate to max_result_rows
+        nodes.truncate(max_rows);
+        core_numbers.truncate(max_rows);
 
         Ok(RunOutput::KCore {
             nodes,

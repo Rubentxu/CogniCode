@@ -61,22 +61,6 @@ static DOMINATORS_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema
 });
 
 // =============================================================================
-// Dominators limits
-// =============================================================================
-
-static DOMINATORS_LIMITS: LazyLock<PlanLimits> = LazyLock::new(|| PlanLimits {
-    time_ms: Some(30000),
-    cancellation: None,
-    max_depth: None,
-    max_hops: None,
-    max_visited_nodes: Some(1_000_000),
-    max_visited_edges: None,
-    max_result_rows: Some(100_000),
-    max_path_count: None,
-    max_memory_bytes: Some(512 * 1024 * 1024),
-});
-
-// =============================================================================
 // Dominators complexity
 // =============================================================================
 
@@ -157,59 +141,16 @@ static DOMINATORS_IDENTITY: LazyLock<AlgorithmIdentity> = LazyLock::new(|| Algor
 /// - Heterogeneous: no
 pub struct DominatorsDescriptor;
 
-impl AlgorithmDescriptor for DominatorsDescriptor {
-    fn identity(&self) -> &AlgorithmIdentity {
-        &DOMINATORS_IDENTITY
-    }
-
-    fn params(&self) -> &dyn AlgorithmParams {
-        &DominatorsParams
-    }
-
-    fn output_schema(&self) -> &OutputSchema {
-        &DOMINATORS_SCHEMA
-    }
-
-    fn supported_modes(&self) -> &[AnalyticsMode] {
-        &[
-            AnalyticsMode::Stream,
-            AnalyticsMode::Stats,
-            AnalyticsMode::Annotate,
-        ]
-    }
-
-    fn complexity(&self) -> &ComplexityClass {
-        &DOMINATORS_COMPLEXITY
-    }
-
-    fn limits(&self) -> &PlanLimits {
-        &DOMINATORS_LIMITS
-    }
-
-    fn conformance_fixtures(&self) -> &[Fixture] {
-        &DOMINATORS_FIXTURES
-    }
-
-    fn determinism(&self) -> DeterminismKind {
-        DeterminismKind::Deterministic
-    }
-
-    fn directed(&self) -> bool {
-        true
-    }
-
-    fn weighted(&self) -> bool {
-        false
-    }
-
-    fn heterogeneous(&self) -> bool {
-        false
-    }
-
-    fn projection_assumption(&self) -> &ProjectionAssumption {
-        &ProjectionAssumption::CallGraphOutgoing
-    }
-}
+impl_cohort2_descriptor!(
+    DominatorsDescriptor,
+    true,                                      // directed
+    &DOMINATORS_IDENTITY,                      // identity
+    &DominatorsParams,                         // params
+    &DOMINATORS_SCHEMA,                        // output_schema
+    &DOMINATORS_FIXTURES,                      // conformance_fixtures
+    &DOMINATORS_COMPLEXITY,                    // complexity
+    ProjectionAssumption::CallGraphOutgoing    // projection_assumption
+);
 
 #[async_trait::async_trait]
 impl AlgorithmExecute for DominatorsDescriptor {
@@ -217,7 +158,7 @@ impl AlgorithmExecute for DominatorsDescriptor {
         &self,
         params: &serde_json::Value,
         graph: &CallGraph,
-        _limits: &PlanLimits,
+        limits: &PlanLimits,
     ) -> Result<RunOutput, AnalyticsError> {
         let obj = params
             .as_object()
@@ -247,10 +188,18 @@ impl AlgorithmExecute for DominatorsDescriptor {
 
         let raw = cognicode_graph_algos::dominators(&out_neighbors, n, root_idx);
 
+        // Enforce max_result_rows limit
+        let max_rows = limits.max_result_rows.unwrap_or(100_000) as usize;
+
         // Unpack into three parallel vectors
-        let nodes: Vec<usize> = raw.iter().map(|(v, _, _)| *v).collect();
-        let immediate_dominators: Vec<Option<usize>> = raw.iter().map(|(_, idom, _)| *idom).collect();
-        let depths: Vec<u32> = raw.iter().map(|(_, _, d)| *d).collect();
+        let mut nodes: Vec<usize> = raw.iter().map(|(v, _, _)| *v).collect();
+        let mut immediate_dominators: Vec<Option<usize>> = raw.iter().map(|(_, idom, _)| *idom).collect();
+        let mut depths: Vec<u32> = raw.iter().map(|(_, _, d)| *d).collect();
+
+        // Truncate to max_result_rows
+        nodes.truncate(max_rows);
+        immediate_dominators.truncate(max_rows);
+        depths.truncate(max_rows);
 
         Ok(RunOutput::Dominators {
             nodes,
