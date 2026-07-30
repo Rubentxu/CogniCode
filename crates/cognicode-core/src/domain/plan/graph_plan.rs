@@ -237,6 +237,15 @@ impl GraphPlan {
     pub fn hash(&self) -> &str {
         self.metadata().hash_str()
     }
+
+    /// Compute the `PlanHash` for this plan.
+    ///
+    /// Computes a fresh SHA-256 hash from the canonical JSON serialization
+    /// of this plan. This is the correct way to compute a plan's identity hash
+    /// at construction time, replacing the placeholder `PlanHash::compute(&0u32)`.
+    pub fn compute_hash(&self) -> PlanHash {
+        PlanHash::compute(self)
+    }
 }
 
 impl fmt::Display for GraphPlan {

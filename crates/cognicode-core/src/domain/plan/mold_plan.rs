@@ -162,6 +162,15 @@ impl MoldPlan {
         self.metadata().hash_str()
     }
 
+    /// Compute the `PlanHash` for this plan.
+    ///
+    /// Computes a fresh SHA-256 hash from the canonical JSON serialization
+    /// of this plan. This is the correct way to compute a plan's identity hash
+    /// at construction time, replacing the placeholder `PlanHash::compute(&0u32)`.
+    pub fn compute_hash(&self) -> PlanHash {
+        PlanHash::compute(self)
+    }
+
     /// Pin this plan to a workspace and revision.
     ///
     /// Once pinned, the pin is frozen — calling `with_pin` again on a
