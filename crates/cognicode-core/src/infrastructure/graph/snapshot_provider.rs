@@ -81,10 +81,8 @@ pub trait SnapshotProvider: Send + Sync {
     ///
     /// Implementations MAY batch notifications (e.g. 100ms debounce) to
     /// avoid flooding during bulk ingest operations.
-    fn subscribe(
-        &self,
-        workspace: &WorkspaceId,
-    ) -> tokio::sync::broadcast::Receiver<SnapshotEvent>;
+    fn subscribe(&self, workspace: &WorkspaceId)
+    -> tokio::sync::broadcast::Receiver<SnapshotEvent>;
 }
 
 /// Events emitted by [`SnapshotProvider::subscribe`].
@@ -204,7 +202,8 @@ impl SnapshotProviderImpl {
                                 .await
                                 .ok()
                                 .flatten();
-                                let head = row.map(|(rev,)| RevisionId(rev as u64))
+                                let head = row
+                                    .map(|(rev,)| RevisionId(rev as u64))
                                     .unwrap_or(RevisionId::NONE);
                                 let _ = notify_tx.send(SnapshotEvent::Updated {
                                     workspace: ws,
@@ -237,7 +236,8 @@ impl SnapshotProviderImpl {
     /// Get or create the cache for a workspace.
     fn cache_for(&mut self, workspace: &WorkspaceId) -> &mut VersionedGraphCache {
         if !self.caches.contains_key(workspace) {
-            self.caches.insert(workspace.clone(), VersionedGraphCache::new(self.retention));
+            self.caches
+                .insert(workspace.clone(), VersionedGraphCache::new(self.retention));
         }
         self.caches.get_mut(workspace).expect("just inserted")
     }
@@ -302,10 +302,10 @@ impl SnapshotProviderImpl {
         .await
         .map_err(|e| RepositoryError::Store(format!("snapshot select nodes: {e}")))?;
 
-        use std::collections::HashMap;
         use crate::domain::aggregates::Symbol;
-        use crate::domain::value_objects::{DependencyType, Location, Provenance, SymbolKind};
         use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
+        use crate::domain::value_objects::{DependencyType, Location, Provenance, SymbolKind};
+        use std::collections::HashMap;
 
         let mut graph = CallGraph::new();
         let mut fqn_to_id: HashMap<String, SymbolId> = HashMap::new();
@@ -350,13 +350,13 @@ impl SnapshotProviderImpl {
             };
 
             let dep_type_str = row.kind.strip_prefix("dependency.").unwrap_or(&row.kind);
-            let dep_type: DependencyType =
-                dep_type_str.parse().unwrap_or(DependencyType::Calls);
-            let provenance: Provenance =
-                row.provenance.parse().unwrap_or(Provenance::Extracted);
+            let dep_type: DependencyType = dep_type_str.parse().unwrap_or(DependencyType::Calls);
+            let provenance: Provenance = row.provenance.parse().unwrap_or(Provenance::Extracted);
 
             let ctx = match provenance {
-                Provenance::Extracted => crate::domain::services::ExtractionContext::DirectExtraction,
+                Provenance::Extracted => {
+                    crate::domain::services::ExtractionContext::DirectExtraction
+                }
                 Provenance::Inferred => crate::domain::services::ExtractionContext::Heuristic {
                     score: row.confidence,
                 },
@@ -432,18 +432,22 @@ impl SnapshotProvider for SnapshotProviderImpl {
                 let result = Self::load_from_pg(&pool, &ws, rev)
                     .await
                     .map_err(|e| match e {
-                        RepositoryError::UnknownRevision { workspace, revision } => {
-                            SnapshotError::UnknownRevision { workspace, revision }
-                        }
+                        RepositoryError::UnknownRevision {
+                            workspace,
+                            revision,
+                        } => SnapshotError::UnknownRevision {
+                            workspace,
+                            revision,
+                        },
                         _ => SnapshotError::NoSnapshot(ws.clone()),
                     });
                 let _ = tx.send(result);
             });
         });
 
-        let graph = rx.recv().unwrap_or_else(|_| {
-            Err(SnapshotError::NoSnapshot(workspace.clone()))
-        })?;
+        let graph = rx
+            .recv()
+            .unwrap_or_else(|_| Err(SnapshotError::NoSnapshot(workspace.clone())))?;
 
         let graph_arc = Arc::new(graph);
 
@@ -546,10 +550,7 @@ mod tests {
             #[tokio::test]
             async fn $name() {
                 let Some($pool) = fresh_pool().await else {
-                    eprintln!(
-                        "skipping {}: TEST_DATABASE_URL not set",
-                        stringify!($name)
-                    );
+                    eprintln!("skipping {}: TEST_DATABASE_URL not set", stringify!($name));
                     return;
                 };
                 async fn inner($pool: sqlx::PgPool) {
@@ -564,35 +565,44 @@ mod tests {
     // 3.2a RED — pg_test asserting current_head returns correct revision after
     // two sequential saves advancing 5 → 7.
     // ---------------------------------------------------------------------------
-    pg_test!(current_head_returns_live_head_after_two_commits, |pool: sqlx::PgPool| {
-        use crate::domain::traits::repository::Repository;
-        use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
+    pg_test!(
+        current_head_returns_live_head_after_two_commits,
+        |pool: sqlx::PgPool| {
+            use crate::domain::traits::repository::Repository;
+            use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
 
-        let repo = PostgresRepository::from_pool(pool.clone());
-        let ws = crate::domain::value_objects::WorkspaceId::default();
+            let repo = PostgresRepository::from_pool(pool.clone());
+            let ws = crate::domain::value_objects::WorkspaceId::default();
 
-        // Save first graph — expect rev 1
-        let g1 = make_graph("func_v1");
-        let rev1 = repo.save_call_graph_ws(&g1, &ws).await
-            .expect("first save must succeed");
-        assert!(rev1.is_valid(), "first revision must be valid");
+            // Save first graph — expect rev 1
+            let g1 = make_graph("func_v1");
+            let rev1 = repo
+                .save_call_graph_ws(&g1, &ws)
+                .await
+                .expect("first save must succeed");
+            assert!(rev1.is_valid(), "first revision must be valid");
 
-        // Save second graph — expect rev 2
-        let g2 = make_graph("func_v2");
-        let rev2 = repo.save_call_graph_ws(&g2, &ws).await
-            .expect("second save must succeed");
-        assert!(rev2.is_valid(), "second revision must be valid");
-        assert_eq!(rev2.get(), rev1.get() + 1, "revisions must be sequential");
+            // Save second graph — expect rev 2
+            let g2 = make_graph("func_v2");
+            let rev2 = repo
+                .save_call_graph_ws(&g2, &ws)
+                .await
+                .expect("second save must succeed");
+            assert!(rev2.is_valid(), "second revision must be valid");
+            assert_eq!(rev2.get(), rev1.get() + 1, "revisions must be sequential");
 
-        // SnapshotProvider must see head = rev2
-        let provider = SnapshotProviderImpl::new(pool);
-        let head = provider.current_head(&ws).expect("current_head must succeed");
-        assert_eq!(
-            head.get(),
-            rev2.get(),
-            "current_head must return the latest committed revision_id"
-        );
-    });
+            // SnapshotProvider must see head = rev2
+            let provider = SnapshotProviderImpl::new(pool);
+            let head = provider
+                .current_head(&ws)
+                .expect("current_head must succeed");
+            assert_eq!(
+                head.get(),
+                rev2.get(),
+                "current_head must return the latest committed revision_id"
+            );
+        }
+    );
 
     // ---------------------------------------------------------------------------
     // 3.3b GREEN — wiring test: GraphCache::get_at_provider() routes to the
@@ -643,114 +653,136 @@ mod tests {
         let cache = GraphCache::new();
         // Without a provider set, get_at_provider must return None.
         let result = cache.get_at_provider(&ws, RevisionId(1));
-        assert!(result.is_none(), "get_at_provider must return None when no provider is set");
+        assert!(
+            result.is_none(),
+            "get_at_provider must return None when no provider is set"
+        );
     }
 
     // ---------------------------------------------------------------------------
     // 3.5a RED — pg_test asserting 50 sequential edge inserts within 100ms
     // produce ≤1 notification carrying the final revision id (batched, NOT 50).
     // ---------------------------------------------------------------------------
-    pg_test!(notification_batching_50_inserts_produce_at_most_1_event, |pool: sqlx::PgPool| {
-        use crate::domain::traits::repository::Repository;
-        use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
+    pg_test!(
+        notification_batching_50_inserts_produce_at_most_1_event,
+        |pool: sqlx::PgPool| {
+            use crate::domain::traits::repository::Repository;
+            use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
 
-        let ws = crate::domain::value_objects::WorkspaceId::default();
+            let ws = crate::domain::value_objects::WorkspaceId::default();
 
-        // Create a minimal graph to establish rev 1.
-        let repo = PostgresRepository::from_pool(pool.clone());
-        let g0 = make_graph("base");
-        let rev0 = repo.save_call_graph_ws(&g0, &ws).await
-            .expect("initial save must succeed");
+            // Create a minimal graph to establish rev 1.
+            let repo = PostgresRepository::from_pool(pool.clone());
+            let g0 = make_graph("base");
+            let rev0 = repo
+                .save_call_graph_ws(&g0, &ws)
+                .await
+                .expect("initial save must succeed");
 
-        // Subscribe BEFORE the batch window.
-        let provider = SnapshotProviderImpl::new(pool.clone());
-        let mut rx = provider.subscribe(&ws);
+            // Subscribe BEFORE the batch window.
+            let provider = SnapshotProviderImpl::new(pool.clone());
+            let mut rx = provider.subscribe(&ws);
 
-        // Drain any prior pending notification.
-        let _ = rx.try_recv();
+            // Drain any prior pending notification.
+            let _ = rx.try_recv();
 
-        // Do 50 rapid edge inserts within a tight loop (no sleep — pure speed).
-        // Each insert triggers pg_notify which the provider should coalesce.
-        // After all inserts, the head is rev0 + 50.
-        let final_rev = rev0.get() + 50;
-        for i in 0..50_i32 {
-            let node_a = format!("n{}", i * 2);
-            let node_b = format!("n{}", i * 2 + 1);
-            // Insert two nodes then an edge to advance revision
-            let g = make_graph(&node_a);
-            let _ = repo.save_call_graph_ws(&g, &ws).await;
-        }
-
-        // Drain events with a short timeout (150ms covers 100ms debounce + margin).
-        let mut events_received = 0;
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(150);
-        while std::time::Instant::now() < deadline {
-            if let Ok(_) = rx.try_recv() {
-                events_received += 1;
+            // Do 50 rapid edge inserts within a tight loop (no sleep — pure speed).
+            // Each insert triggers pg_notify which the provider should coalesce.
+            // After all inserts, the head is rev0 + 50.
+            let final_rev = rev0.get() + 50;
+            for i in 0..50_i32 {
+                let node_a = format!("n{}", i * 2);
+                let node_b = format!("n{}", i * 2 + 1);
+                // Insert two nodes then an edge to advance revision
+                let g = make_graph(&node_a);
+                let _ = repo.save_call_graph_ws(&g, &ws).await;
             }
-            if events_received >= 1 {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-        }
 
-        assert!(
-            events_received <= 1,
-            "50 rapid inserts must produce at most 1 batched notification, got {}",
-            events_received
-        );
-    });
+            // Drain events with a short timeout (150ms covers 100ms debounce + margin).
+            let mut events_received = 0;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(150);
+            while std::time::Instant::now() < deadline {
+                if let Ok(_) = rx.try_recv() {
+                    events_received += 1;
+                }
+                if events_received >= 1 {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+
+            assert!(
+                events_received <= 1,
+                "50 rapid inserts must produce at most 1 batched notification, got {}",
+                events_received
+            );
+        }
+    );
 
     // ---------------------------------------------------------------------------
     // 3.6a RED — pg_test asserting save_call_graph_ws returns OK then
     // snapshot(ws, current_head(ws)) returns the just-committed state.
     // ---------------------------------------------------------------------------
-    pg_test!(sequential_commit_and_read_returns_just_committed_state, |pool: sqlx::PgPool| {
-        use crate::domain::traits::repository::Repository;
-        use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
+    pg_test!(
+        sequential_commit_and_read_returns_just_committed_state,
+        |pool: sqlx::PgPool| {
+            use crate::domain::traits::repository::Repository;
+            use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
 
-        let repo = PostgresRepository::from_pool(pool.clone());
-        let ws = crate::domain::value_objects::WorkspaceId::default();
+            let repo = PostgresRepository::from_pool(pool.clone());
+            let ws = crate::domain::value_objects::WorkspaceId::default();
 
-        // Commit a graph with 3 symbols.
-        let mut g = CallGraph::new();
-        let sym1 = Symbol::new("alice", SymbolKind::Function, Location::new("a.rs", 1, 0));
-        let sym2 = Symbol::new("bob", SymbolKind::Function, Location::new("b.rs", 2, 0));
-        let sym3 = Symbol::new("carol", SymbolKind::Class, Location::new("c.rs", 3, 0));
-        let id1 = g.add_symbol(sym1);
-        let id2 = g.add_symbol(sym2);
-        let id3 = g.add_symbol(sym3);
-        use crate::domain::services::ExtractionContext;
-        use crate::domain::value_objects::DependencyType;
-        let _ = g.add_dependency_with_provenance(
-            &id1, &id2, DependencyType::Calls, ExtractionContext::DirectExtraction,
-        );
-        let _ = g.add_dependency_with_provenance(
-            &id2, &id3, DependencyType::Imports, ExtractionContext::DirectExtraction,
-        );
+            // Commit a graph with 3 symbols.
+            let mut g = CallGraph::new();
+            let sym1 = Symbol::new("alice", SymbolKind::Function, Location::new("a.rs", 1, 0));
+            let sym2 = Symbol::new("bob", SymbolKind::Function, Location::new("b.rs", 2, 0));
+            let sym3 = Symbol::new("carol", SymbolKind::Class, Location::new("c.rs", 3, 0));
+            let id1 = g.add_symbol(sym1);
+            let id2 = g.add_symbol(sym2);
+            let id3 = g.add_symbol(sym3);
+            use crate::domain::services::ExtractionContext;
+            use crate::domain::value_objects::DependencyType;
+            let _ = g.add_dependency_with_provenance(
+                &id1,
+                &id2,
+                DependencyType::Calls,
+                ExtractionContext::DirectExtraction,
+            );
+            let _ = g.add_dependency_with_provenance(
+                &id2,
+                &id3,
+                DependencyType::Imports,
+                ExtractionContext::DirectExtraction,
+            );
 
-        let rev = repo.save_call_graph_ws(&g, &ws).await
-            .expect("save_call_graph_ws must succeed");
+            let rev = repo
+                .save_call_graph_ws(&g, &ws)
+                .await
+                .expect("save_call_graph_ws must succeed");
 
-        // SnapshotProvider must see the just-committed state.
-        let provider = SnapshotProviderImpl::new(pool);
-        let head = provider.current_head(&ws).expect("current_head must succeed");
-        assert_eq!(head.get(), rev.get(), "head must match committed revision");
+            // SnapshotProvider must see the just-committed state.
+            let provider = SnapshotProviderImpl::new(pool);
+            let head = provider
+                .current_head(&ws)
+                .expect("current_head must succeed");
+            assert_eq!(head.get(), rev.get(), "head must match committed revision");
 
-        let snapshot = provider.snapshot(&ws, head)
-            .expect("snapshot must succeed for known revision");
+            let snapshot = provider
+                .snapshot(&ws, head)
+                .expect("snapshot must succeed for known revision");
 
-        assert_eq!(
-            snapshot.symbol_count(),
-            3,
-            "snapshot must reflect all 3 just-committed symbols"
-        );
-        assert_eq!(
-            snapshot.edge_count(),
-            2,
-            "snapshot must reflect all 2 just-committed edges"
-        );
-    });
+            assert_eq!(
+                snapshot.symbol_count(),
+                3,
+                "snapshot must reflect all 3 just-committed symbols"
+            );
+            assert_eq!(
+                snapshot.edge_count(),
+                2,
+                "snapshot must reflect all 2 just-committed edges"
+            );
+        }
+    );
 
     // ---------------------------------------------------------------------------
     // 3.7a RED — pg_test asserting a reader pinned to (ws, 5) keeps returning
@@ -758,70 +790,84 @@ mod tests {
     // VersionedGraphCache retention must be ≥ 2 so pinned revision survives
     // the next ingest's cache update.
     // ---------------------------------------------------------------------------
-    pg_test!(pinned_read_survives_concurrent_ingest, |pool: sqlx::PgPool| {
-        use crate::domain::traits::repository::Repository;
-        use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
+    pg_test!(
+        pinned_read_survives_concurrent_ingest,
+        |pool: sqlx::PgPool| {
+            use crate::domain::traits::repository::Repository;
+            use crate::infrastructure::persistence::postgres_repository::PostgresRepository;
 
-        let repo = PostgresRepository::from_pool(pool.clone());
-        let ws = crate::domain::value_objects::WorkspaceId::default();
+            let repo = PostgresRepository::from_pool(pool.clone());
+            let ws = crate::domain::value_objects::WorkspaceId::default();
 
-        // Rev 1: "first" graph
-        let g1 = make_graph("first");
-        let rev1 = repo.save_call_graph_ws(&g1, &ws).await
-            .expect("save rev1 must succeed");
+            // Rev 1: "first" graph
+            let g1 = make_graph("first");
+            let rev1 = repo
+                .save_call_graph_ws(&g1, &ws)
+                .await
+                .expect("save rev1 must succeed");
 
-        // Rev 2: "second" graph — head now at rev2
-        let g2 = make_graph("second");
-        let rev2 = repo.save_call_graph_ws(&g2, &ws).await
-            .expect("save rev2 must succeed");
+            // Rev 2: "second" graph — head now at rev2
+            let g2 = make_graph("second");
+            let rev2 = repo
+                .save_call_graph_ws(&g2, &ws)
+                .await
+                .expect("save rev2 must succeed");
 
-        // SnapshotProvider: load and cache both revisions.
-        let provider = SnapshotProviderImpl::new(pool.clone());
+            // SnapshotProvider: load and cache both revisions.
+            let provider = SnapshotProviderImpl::new(pool.clone());
 
-        // Prime the cache by loading both revisions.
-        let snap1 = provider.snapshot(&ws, rev1)
-            .expect("snapshot(rev1) must succeed");
-        let snap2 = provider.snapshot(&ws, rev2)
-            .expect("snapshot(rev2) must succeed");
+            // Prime the cache by loading both revisions.
+            let snap1 = provider
+                .snapshot(&ws, rev1)
+                .expect("snapshot(rev1) must succeed");
+            let snap2 = provider
+                .snapshot(&ws, rev2)
+                .expect("snapshot(rev2) must succeed");
 
-        assert_eq!(
-            snap1.symbol_count(), 1,
-            "rev1 snapshot must have exactly 1 symbol (named 'first')"
-        );
-        assert_eq!(
-            snap2.symbol_count(), 1,
-            "rev2 snapshot must have exactly 1 symbol (named 'second')"
-        );
+            assert_eq!(
+                snap1.symbol_count(),
+                1,
+                "rev1 snapshot must have exactly 1 symbol (named 'first')"
+            );
+            assert_eq!(
+                snap2.symbol_count(),
+                1,
+                "rev2 snapshot must have exactly 1 symbol (named 'second')"
+            );
 
-        // Rev 3: concurrent ingest advances head to rev3.
-        let g3 = make_graph("third");
-        let rev3 = repo.save_call_graph_ws(&g3, &ws).await
-            .expect("save rev3 must succeed");
+            // Rev 3: concurrent ingest advances head to rev3.
+            let g3 = make_graph("third");
+            let rev3 = repo
+                .save_call_graph_ws(&g3, &ws)
+                .await
+                .expect("save rev3 must succeed");
 
-        // Head is now rev3; pinned reader at rev1 must STILL return rev1 data.
-        let pinned1 = provider.snapshot(&ws, rev1)
-            .expect("snapshot(rev1) must still succeed after head advanced");
-        assert_eq!(
-            pinned1.symbol_count(), 1,
-            "pinned revision-1 read must still return revision-1 graph (1 symbol)"
-        );
+            // Head is now rev3; pinned reader at rev1 must STILL return rev1 data.
+            let pinned1 = provider
+                .snapshot(&ws, rev1)
+                .expect("snapshot(rev1) must still succeed after head advanced");
+            assert_eq!(
+                pinned1.symbol_count(),
+                1,
+                "pinned revision-1 read must still return revision-1 graph (1 symbol)"
+            );
 
-        // Also verify rev2 is still accessible.
-        let pinned2 = provider.snapshot(&ws, rev2)
-            .expect("snapshot(rev2) must still succeed after head advanced");
-        assert_eq!(
-            pinned2.symbol_count(), 1,
-            "pinned revision-2 read must still return revision-2 graph"
-        );
-    });
+            // Also verify rev2 is still accessible.
+            let pinned2 = provider
+                .snapshot(&ws, rev2)
+                .expect("snapshot(rev2) must still succeed after head advanced");
+            assert_eq!(
+                pinned2.symbol_count(),
+                1,
+                "pinned revision-2 read must still return revision-2 graph"
+            );
+        }
+    );
 
     /// A minimal in-memory implementation for testing.
     /// Stores snapshots keyed by (workspace, revision).
     struct TestSnapshotProvider {
-        snapshots: std::sync::Mutex<std::collections::HashMap<
-            (String, u64),
-            Arc<CallGraph>,
-        >>,
+        snapshots: std::sync::Mutex<std::collections::HashMap<(String, u64), Arc<CallGraph>>>,
         heads: std::sync::Mutex<std::collections::HashMap<String, RevisionId>>,
     }
 
@@ -836,14 +882,22 @@ mod tests {
         fn insert(&self, ws: &WorkspaceId, rev: RevisionId, graph: CallGraph) {
             let key = (ws.as_str().to_string(), rev.get());
             self.snapshots.lock().unwrap().insert(key, Arc::new(graph));
-            *self.heads.lock().unwrap().entry(ws.as_str().to_string()).or_insert(RevisionId::NONE) = rev;
+            *self
+                .heads
+                .lock()
+                .unwrap()
+                .entry(ws.as_str().to_string())
+                .or_insert(RevisionId::NONE) = rev;
         }
     }
 
     impl SnapshotProvider for TestSnapshotProvider {
         fn current_head(&self, workspace: &WorkspaceId) -> Result<RevisionId, SnapshotError> {
             let heads = self.heads.lock().unwrap();
-            Ok(heads.get(workspace.as_str()).copied().unwrap_or(RevisionId::NONE))
+            Ok(heads
+                .get(workspace.as_str())
+                .copied()
+                .unwrap_or(RevisionId::NONE))
         }
 
         fn snapshot(
@@ -884,7 +938,11 @@ mod tests {
 
         // Build a graph with one symbol
         let mut graph = CallGraph::new();
-        let sym = Symbol::new("test_func", SymbolKind::Function, Location::new("test.rs", 1, 1));
+        let sym = Symbol::new(
+            "test_func",
+            SymbolKind::Function,
+            Location::new("test.rs", 1, 1),
+        );
         graph.add_symbol(sym);
         let graph_arc = Arc::new(graph);
 
@@ -895,7 +953,11 @@ mod tests {
         let result = provider.snapshot(&ws, RevisionId(5));
         assert!(result.is_ok(), "expected Ok, got {:?}", result);
         let loaded = result.unwrap();
-        assert_eq!(loaded.symbol_count(), 1, "loaded graph should have 1 symbol");
+        assert_eq!(
+            loaded.symbol_count(),
+            1,
+            "loaded graph should have 1 symbol"
+        );
     }
 
     #[test]
@@ -909,7 +971,11 @@ mod tests {
         assert!(result.is_err(), "expected Err, got Ok {:?}", result);
         let err = result.unwrap_err();
         assert!(matches!(err, SnapshotError::UnknownRevision { .. }));
-        if let SnapshotError::UnknownRevision { workspace, revision } = err {
+        if let SnapshotError::UnknownRevision {
+            workspace,
+            revision,
+        } = err
+        {
             assert_eq!(workspace.as_str(), "test-workspace");
             assert_eq!(revision.get(), 99);
         }
@@ -952,7 +1018,9 @@ mod tests {
         // Create a minimal graph to establish rev 1.
         let repo = PostgresRepository::from_pool(pool.clone());
         let g0 = make_graph("base");
-        let _rev0 = repo.save_call_graph_ws(&g0, &ws).await
+        let _rev0 = repo
+            .save_call_graph_ws(&g0, &ws)
+            .await
             .expect("initial save must succeed");
 
         // Subscribe BEFORE the batch window — this starts the LISTEN task.
@@ -1010,7 +1078,9 @@ mod tests {
         // Create a minimal graph to establish rev 1.
         let repo = PostgresRepository::from_pool(pool.clone());
         let g0 = make_graph("base");
-        let rev0 = repo.save_call_graph_ws(&g0, &ws).await
+        let rev0 = repo
+            .save_call_graph_ws(&g0, &ws)
+            .await
             .expect("initial save must succeed");
 
         // Subscribe BEFORE the batch window.

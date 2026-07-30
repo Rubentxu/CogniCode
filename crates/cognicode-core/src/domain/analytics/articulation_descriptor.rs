@@ -6,10 +6,9 @@ use std::sync::LazyLock;
 
 use crate::domain::aggregates::CallGraph;
 use crate::domain::analytics::{
-    AlgorithmDescriptor, AlgorithmExecute, AlgorithmIdentity, AlgorithmId, AlgorithmParams,
-    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind,
-    Fixture, FixtureGraph, Maturity, OutputField, OutputSchema, OutputType,
-    ProjectionAssumption, RunOutput,
+    AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AlgorithmIdentity, AlgorithmParams,
+    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind, Fixture,
+    FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::infrastructure::graph::CallGraphProjection;
@@ -21,8 +20,14 @@ use cognicode_graph_algos::GraphBuilder;
 
 static ARTICULATION_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema {
     fields: vec![
-        OutputField { name: "nodes", type_: OutputType::NodeId },
-        OutputField { name: "cut_vertices_counts", type_: OutputType::Json },
+        OutputField {
+            name: "nodes",
+            type_: OutputType::NodeId,
+        },
+        OutputField {
+            name: "cut_vertices_counts",
+            type_: OutputType::Json,
+        },
     ],
 });
 
@@ -139,13 +144,13 @@ pub struct ArticulationPointsDescriptor;
 
 impl_cohort2_descriptor!(
     ArticulationPointsDescriptor,
-    false,                                     // directed
-    &ARTICULATION_IDENTITY,                    // identity
-    &ArticulationPointsParams,                 // params
-    &ARTICULATION_SCHEMA,                     // output_schema
-    &ARTICULATION_FIXTURES,                   // conformance_fixtures
-    &ARTICULATION_COMPLEXITY,                 // complexity
-    ProjectionAssumption::Undirected          // projection_assumption
+    false,                            // directed
+    &ARTICULATION_IDENTITY,           // identity
+    &ArticulationPointsParams,        // params
+    &ARTICULATION_SCHEMA,             // output_schema
+    &ARTICULATION_FIXTURES,           // conformance_fixtures
+    &ARTICULATION_COMPLEXITY,         // complexity
+    ProjectionAssumption::Undirected  // projection_assumption
 );
 
 #[async_trait::async_trait]

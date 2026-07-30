@@ -6,10 +6,9 @@ use std::sync::LazyLock;
 
 use crate::domain::aggregates::CallGraph;
 use crate::domain::analytics::{
-    AlgorithmDescriptor, AlgorithmExecute, AlgorithmIdentity, AlgorithmId, AlgorithmParams,
-    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind,
-    Fixture, FixtureGraph, Maturity, OutputField, OutputSchema, OutputType,
-    ProjectionAssumption, RunOutput,
+    AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AlgorithmIdentity, AlgorithmParams,
+    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind, Fixture,
+    FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::infrastructure::graph::CallGraphProjection;
@@ -21,9 +20,18 @@ use cognicode_graph_algos::GraphBuilder;
 
 static WCC_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema {
     fields: vec![
-        OutputField { name: "node_id", type_: OutputType::NodeId },
-        OutputField { name: "component_id", type_: OutputType::Count },
-        OutputField { name: "total_components", type_: OutputType::Count },
+        OutputField {
+            name: "node_id",
+            type_: OutputType::NodeId,
+        },
+        OutputField {
+            name: "component_id",
+            type_: OutputType::Count,
+        },
+        OutputField {
+            name: "total_components",
+            type_: OutputType::Count,
+        },
     ],
 });
 

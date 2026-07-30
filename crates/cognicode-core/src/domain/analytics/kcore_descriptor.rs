@@ -6,10 +6,9 @@ use std::sync::LazyLock;
 
 use crate::domain::aggregates::CallGraph;
 use crate::domain::analytics::{
-    AlgorithmDescriptor, AlgorithmExecute, AlgorithmIdentity, AlgorithmId, AlgorithmParams,
-    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind,
-    Fixture, FixtureGraph, Maturity, OutputField, OutputSchema, OutputType,
-    ProjectionAssumption, RunOutput,
+    AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AlgorithmIdentity, AlgorithmParams,
+    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind, Fixture,
+    FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::infrastructure::graph::CallGraphProjection;
@@ -20,8 +19,7 @@ use cognicode_graph_algos::GraphBuilder;
 // =============================================================================
 
 /// Parameter names for k-core.
-static KCORE_PARAM_NAMES: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| vec!["k"]);
+static KCORE_PARAM_NAMES: LazyLock<Vec<&'static str>> = LazyLock::new(|| vec!["k"]);
 
 /// K-Core parameter schema.
 ///
@@ -38,8 +36,7 @@ impl AlgorithmParams for KCoreParams {
             if !obj.contains_key("k") {
                 return Err("missing required parameter: k".into());
             }
-            let k = obj.get("k")
-                .ok_or("missing k")?;
+            let k = obj.get("k").ok_or("missing k")?;
             if !k.is_u64() {
                 return Err("k must be a non-negative integer".into());
             }
@@ -60,8 +57,14 @@ impl AlgorithmParams for KCoreParams {
 
 static KCORE_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema {
     fields: vec![
-        OutputField { name: "nodes", type_: OutputType::NodeId },
-        OutputField { name: "core_numbers", type_: OutputType::Json },
+        OutputField {
+            name: "nodes",
+            type_: OutputType::NodeId,
+        },
+        OutputField {
+            name: "core_numbers",
+            type_: OutputType::Json,
+        },
     ],
 });
 
@@ -159,13 +162,13 @@ pub struct KCoreDescriptor;
 
 impl_cohort2_descriptor!(
     KCoreDescriptor,
-    false,                                     // directed
-    &KCORE_IDENTITY,                          // identity
-    &KCoreParams,                             // params
-    &KCORE_SCHEMA,                           // output_schema
-    &KCORE_FIXTURES,                         // conformance_fixtures
-    &KCORE_COMPLEXITY,                      // complexity
-    ProjectionAssumption::Undirected          // projection_assumption
+    false,                            // directed
+    &KCORE_IDENTITY,                  // identity
+    &KCoreParams,                     // params
+    &KCORE_SCHEMA,                    // output_schema
+    &KCORE_FIXTURES,                  // conformance_fixtures
+    &KCORE_COMPLEXITY,                // complexity
+    ProjectionAssumption::Undirected  // projection_assumption
 );
 
 #[async_trait::async_trait]

@@ -6,10 +6,9 @@ use std::sync::LazyLock;
 
 use crate::domain::aggregates::CallGraph;
 use crate::domain::analytics::{
-    AlgorithmDescriptor, AlgorithmExecute, AlgorithmIdentity, AlgorithmId, AlgorithmParams,
-    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind,
-    Fixture, FixtureGraph, Maturity, OutputField, OutputSchema, OutputType,
-    ProjectionAssumption, RunOutput,
+    AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AlgorithmIdentity, AlgorithmParams,
+    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind, Fixture,
+    FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::infrastructure::graph::CallGraphProjection;
@@ -20,8 +19,7 @@ use cognicode_graph_algos::GraphBuilder;
 // =============================================================================
 
 /// Parameter names for dominators.
-static DOMINATORS_PARAM_NAMES: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| vec!["root_symbol"]);
+static DOMINATORS_PARAM_NAMES: LazyLock<Vec<&'static str>> = LazyLock::new(|| vec!["root_symbol"]);
 
 /// Dominators parameter schema.
 ///
@@ -38,7 +36,11 @@ impl AlgorithmParams for DominatorsParams {
             if !obj.contains_key("root_symbol") {
                 return Err("missing required parameter: root_symbol".into());
             }
-            if !obj.get("root_symbol").map(|v| v.is_string()).unwrap_or(false) {
+            if !obj
+                .get("root_symbol")
+                .map(|v| v.is_string())
+                .unwrap_or(false)
+            {
                 return Err("root_symbol must be a string".into());
             }
             Ok(())
@@ -54,9 +56,18 @@ impl AlgorithmParams for DominatorsParams {
 
 static DOMINATORS_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema {
     fields: vec![
-        OutputField { name: "nodes", type_: OutputType::NodeId },
-        OutputField { name: "immediate_dominators", type_: OutputType::Json },
-        OutputField { name: "depths", type_: OutputType::Json },
+        OutputField {
+            name: "nodes",
+            type_: OutputType::NodeId,
+        },
+        OutputField {
+            name: "immediate_dominators",
+            type_: OutputType::Json,
+        },
+        OutputField {
+            name: "depths",
+            type_: OutputType::Json,
+        },
     ],
 });
 
@@ -143,13 +154,13 @@ pub struct DominatorsDescriptor;
 
 impl_cohort2_descriptor!(
     DominatorsDescriptor,
-    true,                                      // directed
-    &DOMINATORS_IDENTITY,                      // identity
-    &DominatorsParams,                         // params
-    &DOMINATORS_SCHEMA,                        // output_schema
-    &DOMINATORS_FIXTURES,                      // conformance_fixtures
-    &DOMINATORS_COMPLEXITY,                    // complexity
-    ProjectionAssumption::CallGraphOutgoing    // projection_assumption
+    true,                                    // directed
+    &DOMINATORS_IDENTITY,                    // identity
+    &DominatorsParams,                       // params
+    &DOMINATORS_SCHEMA,                      // output_schema
+    &DOMINATORS_FIXTURES,                    // conformance_fixtures
+    &DOMINATORS_COMPLEXITY,                  // complexity
+    ProjectionAssumption::CallGraphOutgoing  // projection_assumption
 );
 
 #[async_trait::async_trait]
@@ -160,14 +171,16 @@ impl AlgorithmExecute for DominatorsDescriptor {
         graph: &CallGraph,
         limits: &PlanLimits,
     ) -> Result<RunOutput, AnalyticsError> {
-        let obj = params
-            .as_object()
-            .ok_or_else(|| AnalyticsError::Internal("Dominators params must be a JSON object".into()))?;
+        let obj = params.as_object().ok_or_else(|| {
+            AnalyticsError::Internal("Dominators params must be a JSON object".into())
+        })?;
 
         let root_symbol = obj
             .get("root_symbol")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| AnalyticsError::Internal("missing required param: root_symbol".into()))?;
+            .ok_or_else(|| {
+                AnalyticsError::Internal("missing required param: root_symbol".into())
+            })?;
 
         let projection = CallGraphProjection::from_call_graph(graph);
         let out_neighbors = projection.build_out_neighbors();
@@ -193,7 +206,8 @@ impl AlgorithmExecute for DominatorsDescriptor {
 
         // Unpack into three parallel vectors
         let mut nodes: Vec<usize> = raw.iter().map(|(v, _, _)| *v).collect();
-        let mut immediate_dominators: Vec<Option<usize>> = raw.iter().map(|(_, idom, _)| *idom).collect();
+        let mut immediate_dominators: Vec<Option<usize>> =
+            raw.iter().map(|(_, idom, _)| *idom).collect();
         let mut depths: Vec<u32> = raw.iter().map(|(_, _, d)| *d).collect();
 
         // Truncate to max_result_rows

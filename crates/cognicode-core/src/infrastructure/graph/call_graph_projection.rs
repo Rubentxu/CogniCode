@@ -646,16 +646,15 @@ impl GraphBuilder for CallGraphProjection {
         let mut out_degree: Vec<usize> = vec![0; bound];
         for ni in self.graph.node_indices() {
             // CORRECT: Incoming edges give us callers (who calls this node)
-            let callers: Vec<usize> = self.graph
+            let callers: Vec<usize> = self
+                .graph
                 .edges_directed(ni, Direction::Incoming)
                 .map(|e| e.source().index())
                 .collect();
             in_neighbors[ni.index()] = callers;
 
             // CORRECT: Outgoing edges give us out_degree (who this node calls)
-            let out_count = self.graph
-                .edges_directed(ni, Direction::Outgoing)
-                .count();
+            let out_count = self.graph.edges_directed(ni, Direction::Outgoing).count();
             out_degree[ni.index()] = out_count;
         }
         (in_neighbors, out_degree)

@@ -6,10 +6,9 @@ use std::sync::LazyLock;
 
 use crate::domain::aggregates::CallGraph;
 use crate::domain::analytics::{
-    AlgorithmDescriptor, AlgorithmExecute, AlgorithmIdentity, AlgorithmId, AlgorithmParams,
-    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind,
-    Fixture, FixtureGraph, Maturity, OutputField, OutputSchema, OutputType,
-    ProjectionAssumption, RunOutput,
+    AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AlgorithmIdentity, AlgorithmParams,
+    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind, Fixture,
+    FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::infrastructure::graph::CallGraphProjection;
@@ -20,9 +19,10 @@ use cognicode_graph_algos::GraphBuilder;
 // =============================================================================
 
 static BRIDGES_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema {
-    fields: vec![
-        OutputField { name: "edges", type_: OutputType::Json },
-    ],
+    fields: vec![OutputField {
+        name: "edges",
+        type_: OutputType::Json,
+    }],
 });
 
 // =============================================================================
@@ -138,13 +138,13 @@ pub struct BridgesDescriptor;
 
 impl_cohort2_descriptor!(
     BridgesDescriptor,
-    false,                                     // directed
-    &BRIDGES_IDENTITY,                        // identity
-    &BridgesParams,                           // params
-    &BRIDGES_SCHEMA,                         // output_schema
-    &BRIDGES_FIXTURES,                       // conformance_fixtures
-    &BRIDGES_COMPLEXITY,                     // complexity
-    ProjectionAssumption::Undirected         // projection_assumption
+    false,                            // directed
+    &BRIDGES_IDENTITY,                // identity
+    &BridgesParams,                   // params
+    &BRIDGES_SCHEMA,                  // output_schema
+    &BRIDGES_FIXTURES,                // conformance_fixtures
+    &BRIDGES_COMPLEXITY,              // complexity
+    ProjectionAssumption::Undirected  // projection_assumption
 );
 
 #[async_trait::async_trait]

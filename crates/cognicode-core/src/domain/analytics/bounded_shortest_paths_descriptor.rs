@@ -6,10 +6,9 @@ use std::sync::LazyLock;
 
 use crate::domain::aggregates::{CallGraph, SymbolId};
 use crate::domain::analytics::{
-    AlgorithmDescriptor, AlgorithmExecute, AlgorithmIdentity, AlgorithmId, AlgorithmParams,
-    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind,
-    Fixture, FixtureGraph, Maturity, OutputField, OutputSchema, OutputType,
-    ProjectionAssumption, RunOutput,
+    AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AlgorithmIdentity, AlgorithmParams,
+    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind, Fixture,
+    FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::infrastructure::graph::CallGraphProjection;
@@ -40,7 +39,11 @@ impl AlgorithmParams for BoundedShortestPathsParams {
             if !obj.contains_key("from_symbol") {
                 return Err("missing required parameter: from_symbol".into());
             }
-            if !obj.get("from_symbol").map(|v| v.is_string()).unwrap_or(false) {
+            if !obj
+                .get("from_symbol")
+                .map(|v| v.is_string())
+                .unwrap_or(false)
+            {
                 return Err("from_symbol must be a string".into());
             }
             // to_symbol is required
@@ -54,8 +57,7 @@ impl AlgorithmParams for BoundedShortestPathsParams {
             if !obj.contains_key("max_hops") {
                 return Err("missing required parameter: max_hops".into());
             }
-            let max_hops = obj.get("max_hops")
-                .ok_or("missing max_hops")?;
+            let max_hops = obj.get("max_hops").ok_or("missing max_hops")?;
             if !max_hops.is_u64() {
                 return Err("max_hops must be a positive integer".into());
             }
@@ -86,9 +88,18 @@ impl AlgorithmParams for BoundedShortestPathsParams {
 
 static BSP_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema {
     fields: vec![
-        OutputField { name: "path_id", type_: OutputType::Count },
-        OutputField { name: "nodes", type_: OutputType::Json },
-        OutputField { name: "cost", type_: OutputType::Cost },
+        OutputField {
+            name: "path_id",
+            type_: OutputType::Count,
+        },
+        OutputField {
+            name: "nodes",
+            type_: OutputType::Json,
+        },
+        OutputField {
+            name: "cost",
+            type_: OutputType::Cost,
+        },
     ],
 });
 
@@ -130,13 +141,7 @@ static BSP_FIXTURES: LazyLock<Vec<Fixture>> = LazyLock::new(|| {
             name: "diamond three paths",
             graph: FixtureGraph {
                 nodes: vec!["A", "B", "C", "D"],
-                edges: vec![
-                    ("A", "B"),
-                    ("A", "C"),
-                    ("A", "D"),
-                    ("B", "D"),
-                    ("C", "D"),
-                ],
+                edges: vec![("A", "B"), ("A", "C"), ("A", "D"), ("B", "D"), ("C", "D")],
             },
             expected: serde_json::json!({
                 "type": "diamond_dag",
@@ -210,10 +215,7 @@ impl AlgorithmDescriptor for BoundedShortestPathsDescriptor {
     }
 
     fn supported_modes(&self) -> &[AnalyticsMode] {
-        &[
-            AnalyticsMode::Stream,
-            AnalyticsMode::Persist,
-        ]
+        &[AnalyticsMode::Stream, AnalyticsMode::Persist]
     }
 
     fn complexity(&self) -> &ComplexityClass {
@@ -265,7 +267,9 @@ impl AlgorithmExecute for BoundedShortestPathsDescriptor {
         let from_symbol = obj
             .get("from_symbol")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| AnalyticsError::Internal("missing required param: from_symbol".into()))?;
+            .ok_or_else(|| {
+                AnalyticsError::Internal("missing required param: from_symbol".into())
+            })?;
         let to_symbol = obj
             .get("to_symbol")
             .and_then(|v| v.as_str())
@@ -293,7 +297,9 @@ impl AlgorithmExecute for BoundedShortestPathsDescriptor {
         ) else {
             // Unknown symbols - return empty result
             let empty: Vec<serde_json::Value> = vec![];
-            return Ok(RunOutput::BoundedShortestPaths(serde_json::to_value(empty).unwrap()));
+            return Ok(RunOutput::BoundedShortestPaths(
+                serde_json::to_value(empty).unwrap(),
+            ));
         };
 
         let mut paths = cognicode_graph_algos::all_simple_paths(
@@ -334,6 +340,8 @@ impl AlgorithmExecute for BoundedShortestPathsDescriptor {
             })
             .collect();
 
-        Ok(RunOutput::BoundedShortestPaths(serde_json::to_value(result_paths).unwrap()))
+        Ok(RunOutput::BoundedShortestPaths(
+            serde_json::to_value(result_paths).unwrap(),
+        ))
     }
 }

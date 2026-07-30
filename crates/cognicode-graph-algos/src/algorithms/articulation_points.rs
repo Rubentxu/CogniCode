@@ -70,7 +70,16 @@ pub fn articulation_points(adj: &[Vec<usize>], n: usize) -> Vec<(usize, usize)> 
                 if is_root {
                     *root_children += 1;
                 }
-                dfs(v, disc, low, timer, parent, articulation, adj, root_children);
+                dfs(
+                    v,
+                    disc,
+                    low,
+                    timer,
+                    parent,
+                    articulation,
+                    adj,
+                    root_children,
+                );
 
                 // After returning from DFS child v:
                 // low[u] = min(low[u], low[v])
@@ -95,7 +104,16 @@ pub fn articulation_points(adj: &[Vec<usize>], n: usize) -> Vec<(usize, usize)> 
     // Handle disconnected components by running DFS from each unvisited node
     for i in 0..n {
         if disc[i] == -1 {
-            dfs(i, &mut disc, &mut low, &mut timer, &mut parent, &mut articulation, adj, &mut root_children);
+            dfs(
+                i,
+                &mut disc,
+                &mut low,
+                &mut timer,
+                &mut parent,
+                &mut articulation,
+                adj,
+                &mut root_children,
+            );
         }
     }
 
@@ -174,9 +192,9 @@ mod tests {
     fn path_articulation() {
         // A-B-C
         let adj = vec![
-            vec![1],     // A → B
-            vec![0, 2],  // B → A, C
-            vec![1],     // C → B
+            vec![1],    // A → B
+            vec![0, 2], // B → A, C
+            vec![1],    // C → B
         ];
         let result = articulation_points(&adj, 3);
         assert_eq!(result.len(), 1, "B should be the only articulation point");
@@ -191,7 +209,7 @@ mod tests {
         // A-B-C-A
         let adj = vec![
             vec![1, 2], // A → B, C
-            vec![0, 2],  // B → A, C
+            vec![0, 2], // B → A, C
             vec![1, 0], // C → B, A
         ];
         let result = articulation_points(&adj, 3);
@@ -235,32 +253,40 @@ mod tests {
     fn spec_example() {
         let mut adj: Vec<Vec<usize>> = vec![Vec::new(); 6];
         // A-B (0-1)
-        adj[0].push(1); adj[1].push(0);
+        adj[0].push(1);
+        adj[1].push(0);
         // B-C (1-2)
-        adj[1].push(2); adj[2].push(1);
+        adj[1].push(2);
+        adj[2].push(1);
         // C-D (2-3)
-        adj[2].push(3); adj[3].push(2);
+        adj[2].push(3);
+        adj[3].push(2);
         // B-D (1-3)
-        adj[1].push(3); adj[3].push(1);
+        adj[1].push(3);
+        adj[3].push(1);
         // B-E (1-4)
-        adj[1].push(4); adj[4].push(1);
+        adj[1].push(4);
+        adj[4].push(1);
         // E-F (4-5)
-        adj[4].push(5); adj[5].push(4);
+        adj[4].push(5);
+        adj[5].push(4);
 
         let result = articulation_points(&adj, 6);
         let nodes: Vec<usize> = result.iter().map(|(n, _)| *n).collect();
-        assert!(nodes.contains(&1), "B (node 1) should be articulation point");
-        assert!(nodes.contains(&4), "E (node 4) should be articulation point");
+        assert!(
+            nodes.contains(&1),
+            "B (node 1) should be articulation point"
+        );
+        assert!(
+            nodes.contains(&4),
+            "E (node 4) should be articulation point"
+        );
     }
 
     /// Determinism: same input → same output.
     #[test]
     fn deterministic() {
-        let adj = vec![
-            vec![1, 2],
-            vec![0, 2],
-            vec![1, 0],
-        ];
+        let adj = vec![vec![1, 2], vec![0, 2], vec![1, 0]];
         let r1 = articulation_points(&adj, 3);
         let r2 = articulation_points(&adj, 3);
         assert_eq!(r1, r2);

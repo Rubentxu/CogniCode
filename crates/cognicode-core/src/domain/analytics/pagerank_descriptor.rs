@@ -7,10 +7,9 @@ use std::sync::LazyLock;
 
 use crate::domain::aggregates::CallGraph;
 use crate::domain::analytics::{
-    AlgorithmDescriptor, AlgorithmExecute, AlgorithmIdentity, AlgorithmId, AlgorithmParams,
-    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind,
-    Fixture, FixtureGraph, Maturity, OutputField, OutputSchema, OutputType,
-    ProjectionAssumption, RunOutput,
+    AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AlgorithmIdentity, AlgorithmParams,
+    AlgorithmVersion, AnalyticsError, AnalyticsMode, ComplexityClass, DeterminismKind, Fixture,
+    FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::infrastructure::graph::CallGraphProjection;
@@ -50,8 +49,14 @@ impl AlgorithmParams for SimpleParams {
 
 static PAGERANK_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema {
     fields: vec![
-        OutputField { name: "node_id", type_: OutputType::NodeId },
-        OutputField { name: "score", type_: OutputType::Score },
+        OutputField {
+            name: "node_id",
+            type_: OutputType::NodeId,
+        },
+        OutputField {
+            name: "score",
+            type_: OutputType::Score,
+        },
     ],
 });
 
@@ -196,7 +201,10 @@ impl AlgorithmDescriptor for PageRankDescriptor {
     fn determinism(&self) -> DeterminismKind {
         // PageRank is deterministic for fixed alpha, epsilon, max_iterations.
         // Seed only affects tie-breaking when scores are nearly equal.
-        DeterminismKind::Seeded { required: false, default: Some(0) }
+        DeterminismKind::Seeded {
+            required: false,
+            default: Some(0),
+        }
     }
 
     fn directed(&self) -> bool {
@@ -225,14 +233,11 @@ impl AlgorithmExecute for PageRankDescriptor {
         graph: &CallGraph,
         _limits: &PlanLimits,
     ) -> Result<RunOutput, AnalyticsError> {
-        let obj = params
-            .as_object()
-            .ok_or_else(|| AnalyticsError::Internal("PageRank params must be a JSON object".into()))?;
+        let obj = params.as_object().ok_or_else(|| {
+            AnalyticsError::Internal("PageRank params must be a JSON object".into())
+        })?;
 
-        let alpha = obj
-            .get("alpha")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.85);
+        let alpha = obj.get("alpha").and_then(|v| v.as_f64()).unwrap_or(0.85);
         let max_iterations = obj
             .get("max_iterations")
             .and_then(|v| v.as_u64())

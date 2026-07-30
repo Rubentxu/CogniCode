@@ -172,7 +172,10 @@ pub enum DeterminismKind {
     /// Results depend on a seed value.
     /// - `required: true` — seed MUST be provided at runtime
     /// - `required: false` — seed is optional, `default` is used when omitted
-    Seeded { required: bool, default: Option<u64> },
+    Seeded {
+        required: bool,
+        default: Option<u64>,
+    },
     /// Results may differ even with the same inputs (e.g., randomized algorithms).
     None,
 }

@@ -69,12 +69,7 @@ pub fn dominators(
     let mut bucket: Vec<Vec<usize>> = vec![Vec::new(); n];
 
     // Union-Find eval with path compression
-    fn eval(
-        v: usize,
-        ancestor: &mut [usize],
-        best: &mut [usize],
-        semi: &[usize],
-    ) -> usize {
+    fn eval(v: usize, ancestor: &mut [usize], best: &mut [usize], semi: &[usize]) -> usize {
         if ancestor[v] == 0 {
             return best[v];
         }
@@ -262,11 +257,7 @@ mod tests {
     #[test]
     fn disconnected_unreachable() {
         // A=0 → B=1, C=2 isolated
-        let out_neighbors = vec![
-            vec![1],
-            Vec::new(),
-            Vec::new(),
-        ];
+        let out_neighbors = vec![vec![1], Vec::new(), Vec::new()];
         let result = dominators(&out_neighbors, 3, 0);
         let by_node = |v| result.iter().find(|r| r.0 == v).unwrap();
         assert_eq!(by_node(0).1, Some(0));
@@ -277,12 +268,7 @@ mod tests {
 
     #[test]
     fn branching_dominators() {
-        let out_neighbors = vec![
-            vec![1, 2, 3],
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ];
+        let out_neighbors = vec![vec![1, 2, 3], Vec::new(), Vec::new(), Vec::new()];
         let result = dominators(&out_neighbors, 4, 0);
         let by_node = |v| result.iter().find(|r| r.0 == v).unwrap();
         assert_eq!(by_node(0).1, Some(0));
@@ -296,12 +282,7 @@ mod tests {
 
     #[test]
     fn deterministic_across_runs() {
-        let out_neighbors = vec![
-            vec![1, 2],
-            vec![3],
-            vec![3],
-            Vec::new(),
-        ];
+        let out_neighbors = vec![vec![1, 2], vec![3], vec![3], Vec::new()];
         let r1 = dominators(&out_neighbors, 4, 0);
         let r2 = dominators(&out_neighbors, 4, 0);
         assert_eq!(r1, r2);

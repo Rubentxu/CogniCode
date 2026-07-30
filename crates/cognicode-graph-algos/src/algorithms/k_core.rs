@@ -105,11 +105,7 @@ mod tests {
 
     #[test]
     fn k_zero_exhaustive() {
-        let adj = vec![
-            vec![1, 2],
-            vec![0, 2],
-            vec![1, 0],
-        ];
+        let adj = vec![vec![1, 2], vec![0, 2], vec![1, 0]];
         let result = k_core(&adj, 3, 0);
         assert_eq!(result.len(), 3);
         for (_, core) in &result {
@@ -119,11 +115,7 @@ mod tests {
 
     #[test]
     fn triangle_k2_all_nodes() {
-        let adj = vec![
-            vec![1, 2],
-            vec![0, 2],
-            vec![1, 0],
-        ];
+        let adj = vec![vec![1, 2], vec![0, 2], vec![1, 0]];
         let result = k_core(&adj, 3, 2);
         assert_eq!(result.len(), 3, "all 3 nodes should survive k=2");
         for (_, core) in &result {
@@ -133,22 +125,14 @@ mod tests {
 
     #[test]
     fn path_k2_empty() {
-        let adj = vec![
-            vec![1],
-            vec![0, 2],
-            vec![1],
-        ];
+        let adj = vec![vec![1], vec![0, 2], vec![1]];
         let result = k_core(&adj, 3, 2);
         assert!(result.is_empty());
     }
 
     #[test]
     fn path_k1_all_nodes() {
-        let adj = vec![
-            vec![1],
-            vec![0, 2],
-            vec![1],
-        ];
+        let adj = vec![vec![1], vec![0, 2], vec![1]];
         let result = k_core(&adj, 3, 1);
         assert_eq!(result.len(), 3);
     }
@@ -157,10 +141,14 @@ mod tests {
     fn triangle_with_tail() {
         // A-B, B-C, C-A, C-D
         let mut adj: Vec<Vec<usize>> = vec![Vec::new(); 4];
-        adj[0].push(1); adj[1].push(0); // A-B
-        adj[1].push(2); adj[2].push(1); // B-C
-        adj[2].push(0); adj[0].push(2); // C-A
-        adj[2].push(3); adj[3].push(2); // C-D
+        adj[0].push(1);
+        adj[1].push(0); // A-B
+        adj[1].push(2);
+        adj[2].push(1); // B-C
+        adj[2].push(0);
+        adj[0].push(2); // C-A
+        adj[2].push(3);
+        adj[3].push(2); // C-D
 
         let result = k_core(&adj, 4, 2);
         // Triangle (A,B,C) survives with core=2
@@ -179,11 +167,16 @@ mod tests {
         // For k=2: A (degree 1) and B (degree 1 after A peeled) are peeled
         // Remaining C-D-E form a triangle, all have degree 2
         let mut adj: Vec<Vec<usize>> = vec![Vec::new(); 5];
-        adj[0].push(1); adj[1].push(0); // A-B
-        adj[1].push(2); adj[2].push(1); // B-C
-        adj[2].push(3); adj[3].push(2); // C-D
-        adj[2].push(4); adj[4].push(2); // C-E
-        adj[3].push(4); adj[4].push(3); // D-E
+        adj[0].push(1);
+        adj[1].push(0); // A-B
+        adj[1].push(2);
+        adj[2].push(1); // B-C
+        adj[2].push(3);
+        adj[3].push(2); // C-D
+        adj[2].push(4);
+        adj[4].push(2); // C-E
+        adj[3].push(4);
+        adj[4].push(3); // D-E
 
         let result = k_core(&adj, 5, 2);
         let nodes: Vec<usize> = result.iter().map(|(n, _)| *n).collect();
@@ -197,11 +190,7 @@ mod tests {
 
     #[test]
     fn deterministic() {
-        let adj = vec![
-            vec![1, 2],
-            vec![0, 2],
-            vec![1, 0],
-        ];
+        let adj = vec![vec![1, 2], vec![0, 2], vec![1, 0]];
         let r1 = k_core(&adj, 3, 2);
         let r2 = k_core(&adj, 3, 2);
         assert_eq!(r1, r2);

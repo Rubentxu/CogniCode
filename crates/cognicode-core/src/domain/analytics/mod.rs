@@ -24,8 +24,13 @@ pub(crate) static COHORT2_LIMITS: LazyLock<crate::domain::plan::limits::PlanLimi
     });
 
 /// Common supported modes for cohort-2 algorithms (Stream, Stats, Annotate).
-pub(crate) static COHORT2_MODES: LazyLock<Vec<AnalyticsMode>> =
-    LazyLock::new(|| vec![AnalyticsMode::Stream, AnalyticsMode::Stats, AnalyticsMode::Annotate]);
+pub(crate) static COHORT2_MODES: LazyLock<Vec<AnalyticsMode>> = LazyLock::new(|| {
+    vec![
+        AnalyticsMode::Stream,
+        AnalyticsMode::Stats,
+        AnalyticsMode::Annotate,
+    ]
+});
 
 // =============================================================================
 // Macro: reduce AlgorithmDescriptor impl boilerplate for cohort-2 algorithms

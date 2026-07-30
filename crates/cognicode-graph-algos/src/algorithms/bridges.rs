@@ -66,7 +66,15 @@ pub fn bridges(adj: &[Vec<usize>], n: usize) -> Vec<(usize, usize)> {
     // Handle disconnected components
     for i in 0..n {
         if disc[i] == -1 {
-            dfs(i, &mut disc, &mut low, &mut timer, &mut parent, &mut bridge_edges, adj);
+            dfs(
+                i,
+                &mut disc,
+                &mut low,
+                &mut timer,
+                &mut parent,
+                &mut bridge_edges,
+                adj,
+            );
         }
     }
 
@@ -97,11 +105,7 @@ mod tests {
     #[test]
     fn path_all_bridges() {
         // A-B-C
-        let adj = vec![
-            vec![1],
-            vec![0, 2],
-            vec![1],
-        ];
+        let adj = vec![vec![1], vec![0, 2], vec![1]];
         let result = bridges(&adj, 3);
         assert_eq!(result.len(), 2);
         assert!(result.contains(&(0, 1)));
@@ -111,11 +115,7 @@ mod tests {
     /// Cycle A-B-C-A: no bridges.
     #[test]
     fn cycle_no_bridges() {
-        let adj = vec![
-            vec![1, 2],
-            vec![0, 2],
-            vec![1, 0],
-        ];
+        let adj = vec![vec![1, 2], vec![0, 2], vec![1, 0]];
         let result = bridges(&adj, 3);
         assert!(result.is_empty());
     }
@@ -124,8 +124,10 @@ mod tests {
     #[test]
     fn disconnected_two_bridges() {
         let mut adj: Vec<Vec<usize>> = vec![Vec::new(); 4];
-        adj[0].push(1); adj[1].push(0);
-        adj[2].push(3); adj[3].push(2);
+        adj[0].push(1);
+        adj[1].push(0);
+        adj[2].push(3);
+        adj[3].push(2);
         let result = bridges(&adj, 4);
         assert_eq!(result.len(), 2);
         assert!(result.contains(&(0, 1)));
@@ -135,12 +137,7 @@ mod tests {
     /// Diamond (A-B, A-C, B-D, C-D): no bridges.
     #[test]
     fn diamond_no_bridges() {
-        let adj = vec![
-            vec![1, 2],
-            vec![0, 3],
-            vec![0, 3],
-            vec![1, 2],
-        ];
+        let adj = vec![vec![1, 2], vec![0, 3], vec![0, 3], vec![1, 2]];
         let result = bridges(&adj, 4);
         assert!(result.is_empty());
     }
@@ -150,9 +147,12 @@ mod tests {
     fn tree_all_bridges() {
         // 0-1, 1-2, 1-3 (a tree)
         let mut adj: Vec<Vec<usize>> = vec![Vec::new(); 4];
-        adj[0].push(1); adj[1].push(0);
-        adj[1].push(2); adj[2].push(1);
-        adj[1].push(3); adj[3].push(1);
+        adj[0].push(1);
+        adj[1].push(0);
+        adj[1].push(2);
+        adj[2].push(1);
+        adj[1].push(3);
+        adj[3].push(1);
         let result = bridges(&adj, 4);
         assert_eq!(result.len(), 3);
         assert!(result.contains(&(0, 1)));
@@ -163,11 +163,7 @@ mod tests {
     /// Determinism: same input → same output (sorted).
     #[test]
     fn deterministic() {
-        let adj = vec![
-            vec![1, 2],
-            vec![0, 2],
-            vec![1, 0],
-        ];
+        let adj = vec![vec![1, 2], vec![0, 2], vec![1, 0]];
         let r1 = bridges(&adj, 3);
         let r2 = bridges(&adj, 3);
         assert_eq!(r1, r2);

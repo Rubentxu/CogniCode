@@ -497,14 +497,15 @@ impl ExplorerMcpHandler {
             use cognicode_core::infrastructure::persistence::PostgresLineageStore;
 
             // Create lineage store from postgres pool.
-            let lineage_store: Arc<dyn RunLineageStore> = Arc::new(
-                PostgresLineageStore::new(pg.pool().clone())
-            );
+            let lineage_store: Arc<dyn RunLineageStore> =
+                Arc::new(PostgresLineageStore::new(pg.pool().clone()));
 
             // Create registry with lineage store and default boundary guard.
-            let registry = Arc::new(cognicode_core::application::services::graph_analytics::default_analytics_registry(
-                lineage_store.clone(),
-            ));
+            let registry = Arc::new(
+                cognicode_core::application::services::graph_analytics::default_analytics_registry(
+                    lineage_store.clone(),
+                ),
+            );
 
             ctx_builder = ctx_builder
                 .with_analytics_registry(registry)

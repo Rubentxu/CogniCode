@@ -6,12 +6,10 @@ use std::sync::Arc;
 
 use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
 use cognicode_core::domain::analytics::{
-    articulation_descriptor::ArticulationPointsDescriptor,
-    bridges_descriptor::BridgesDescriptor,
-    dominators_descriptor::DominatorsDescriptor,
+    AdmissionError, AlgorithmDescriptor, AlgorithmId, AnalyticsError, RunLineage, RunLineageFilter,
+    RunLineageStore, Uuid, articulation_descriptor::ArticulationPointsDescriptor,
+    bridges_descriptor::BridgesDescriptor, dominators_descriptor::DominatorsDescriptor,
     kcore_descriptor::KCoreDescriptor,
-    AdmissionError, AlgorithmDescriptor, AlgorithmId,
-    AnalyticsError, RunLineage, RunLineageFilter, RunLineageStore, Uuid,
 };
 use cognicode_core::domain::plan::limits::PlanLimits;
 
@@ -64,7 +62,10 @@ fn dominators_descriptor_has_correct_identity() {
     let id = d.identity();
     assert_eq!(id.id.as_str(), "dominators");
     assert_eq!(id.version.as_str(), "1.0.0");
-    assert_eq!(id.maturity, cognicode_core::domain::analytics::Maturity::Stable);
+    assert_eq!(
+        id.maturity,
+        cognicode_core::domain::analytics::Maturity::Stable
+    );
     assert_eq!(id.cohort, 2);
 }
 
@@ -113,7 +114,10 @@ fn dominators_descriptor_has_conformance_fixtures() {
     let fixtures = d.conformance_fixtures();
     assert!(!fixtures.is_empty());
     // Verify chain fixture
-    let chain = fixtures.iter().find(|f| f.name == "chain dominators").unwrap();
+    let chain = fixtures
+        .iter()
+        .find(|f| f.name == "chain dominators")
+        .unwrap();
     assert_eq!(chain.graph.nodes, vec!["A", "B", "C"]);
     assert_eq!(chain.graph.edges.len(), 2);
 }
@@ -167,7 +171,10 @@ fn articulation_descriptor_has_conformance_fixtures() {
     let fixtures = d.conformance_fixtures();
     assert!(!fixtures.is_empty());
     // Verify path fixture
-    let path = fixtures.iter().find(|f| f.name == "path articulation").unwrap();
+    let path = fixtures
+        .iter()
+        .find(|f| f.name == "path articulation")
+        .unwrap();
     assert_eq!(path.graph.nodes, vec!["A", "B", "C"]);
 }
 
@@ -219,7 +226,10 @@ fn bridges_descriptor_has_conformance_fixtures() {
     let fixtures = d.conformance_fixtures();
     assert!(!fixtures.is_empty());
     // Verify path fixture
-    let path = fixtures.iter().find(|f| f.name == "path all bridges").unwrap();
+    let path = fixtures
+        .iter()
+        .find(|f| f.name == "path all bridges")
+        .unwrap();
     assert_eq!(path.graph.nodes, vec!["A", "B", "C"]);
 }
 
@@ -286,7 +296,10 @@ fn kcore_descriptor_has_conformance_fixtures() {
     let fixtures = d.conformance_fixtures();
     assert!(!fixtures.is_empty());
     // Verify triangle fixture
-    let triangle = fixtures.iter().find(|f| f.name == "triangle k2 all nodes").unwrap();
+    let triangle = fixtures
+        .iter()
+        .find(|f| f.name == "triangle k2 all nodes")
+        .unwrap();
     assert_eq!(triangle.graph.nodes, vec!["A", "B", "C"]);
 }
 
@@ -298,7 +311,11 @@ fn kcore_descriptor_has_conformance_fixtures() {
 fn registry_admits_all_cohort_2_algorithms() {
     let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
     assert!(registry.admit(Box::new(DominatorsDescriptor)).is_ok());
-    assert!(registry.admit(Box::new(ArticulationPointsDescriptor)).is_ok());
+    assert!(
+        registry
+            .admit(Box::new(ArticulationPointsDescriptor))
+            .is_ok()
+    );
     assert!(registry.admit(Box::new(BridgesDescriptor)).is_ok());
     assert!(registry.admit(Box::new(KCoreDescriptor)).is_ok());
 }
@@ -307,11 +324,16 @@ fn registry_admits_all_cohort_2_algorithms() {
 fn registry_returns_admitted_cohort_2_descriptors() {
     let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
     registry.admit(Box::new(DominatorsDescriptor)).unwrap();
-    registry.admit(Box::new(ArticulationPointsDescriptor)).unwrap();
+    registry
+        .admit(Box::new(ArticulationPointsDescriptor))
+        .unwrap();
     registry.admit(Box::new(BridgesDescriptor)).unwrap();
     registry.admit(Box::new(KCoreDescriptor)).unwrap();
 
-    let ids: Vec<_> = registry.admitted().map(|d| d.identity().id.as_str()).collect();
+    let ids: Vec<_> = registry
+        .admitted()
+        .map(|d| d.identity().id.as_str())
+        .collect();
     assert!(ids.contains(&"dominators"));
     assert!(ids.contains(&"articulation_points"));
     assert!(ids.contains(&"bridges"));
@@ -344,7 +366,11 @@ fn registry_get_returns_cohort_2_descriptor() {
 #[test]
 fn registry_rejects_duplicate_cohort_2_same_version() {
     let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
-    assert!(registry.admit(Box::new(ArticulationPointsDescriptor)).is_ok());
+    assert!(
+        registry
+            .admit(Box::new(ArticulationPointsDescriptor))
+            .is_ok()
+    );
     let result = registry.admit(Box::new(ArticulationPointsDescriptor));
     assert!(matches!(result, Err(AdmissionError::AlreadyAdmitted(_, _))));
 }
