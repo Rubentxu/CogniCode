@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-30 (E12 ViewKind Realization shipped — real VerticalSlice + SeamMap executors, relaxed E23 guard; E28 program complete.)
+Last updated: 2026-07-30 (v0.76.1: pre-existing debt batch — tokio Handle::current panic fix + cycle_dominators assertion + PlanHash helpers; v0.76.0: E12 ViewKind Realization.)
 
 ## Active
 
@@ -991,6 +991,8 @@ Closed before resuming new cycles:
 
 | Change | Tag | Closed | PR | Notes |
 |--------|-----|--------|----|----|
+| `fix/pre-existing-debt-batch-2026-07-30` | v0.76.1 | 2026-07-30 | [#171](https://github.com/Rubentxu/CogniCode/pull/171) | tokio Handle::current().block_on() panic risk fixed (admit sync method → block_in_place pattern); cycle_dominators test assertion corrected (depth[C]=2 not 1); PlanHash::for_plan() helper added (78 fixture sites deferred as separate mechanical migration). PASS_WITH_WARNINGS. |
+| `e12-viewkind-realization` | v0.76.0 | 2026-07-30 | [#170](https://github.com/Rubentxu/CogniCode/pull/170) | Real VerticalSlice + SeamMap executors; E23 guard relaxed (id-uniqueness); OverviewExecutor → ViewKind::Summary; DocSourceExecutor → ViewKind::SourceView. 929 tests. PASS_WITH_WARNINGS. |
 | `e25-pr2-pack-builder` | v0.55.0 | 2026-07-24 | [#120](https://github.com/Rubentxu/CogniCode/pull/120) | DecisionSupportPackBuilder + GET /api/decisions/:id/support-pack. 5 commits. Verdict PASS_WITH_WARNINGS. C-2 (ViewExecutor wiring) deferred to follow-up PR. |
 | `typed-overview-affordance-matrix-v1` | v0.43.0 | 2026-07-02 | [#102](https://github.com/Rubentxu/CogniCode/pull/102) | Affordance matrix per InspectableObjectType. `GET /api/affordances/:object_type`. `AffordanceCards` in PaneInspector. 7 unit tests. Verdict PASS_WITH_WARNINGS. |
 | `moldql-intent-syntax-v1` | v0.44.0 | 2026-07-02 | [#103](https://github.com/Rubentxu/CogniCode/pull/103) | MoldQL intent lowering layer: lowercase `symbols where` and `calls from` patterns translated to MoldQL AST before canonical parser. 15 unit + 9 integration tests. Verdict PASS_WITH_WARNINGS. |
@@ -1042,6 +1044,8 @@ Follow-ups explicitly queued by cycles closed today. Each will need its own prop
 | 3 pre-existing Playwright failures (shell doesn't load in headless Chromium) | HIGH | E18-2 | cmdk `vimBindings` + MSW service worker not registering in headless CI (infra, not code) | Open |
 | Pre-existing GraphLanding cytoscape error (canvas-of-type-2d) | LOW | unknown | unhandled canvas type in headless Chromium | Open |
 | Pre-existing `postgres_quality_write_integration` failure | MEDIUM | unknown | `quality_write_unavailable_when_port_not_wired` assertion fails even with live postgres | Open |
+| Pre-existing build errors in cognicode-core (`rig/tools.rs`, `ingest/blame.rs`) | HIGH | unknown | `ReadMode` vs `String` type mismatch; `parse()`/`insert()` methods not found on JsonValue types | Open — separate fix batch needed |
+| PlanHash placeholder at `lower_plan.rs:44` | MEDIUM | E28.1 | `PlanHash::compute(&0u32)` hardcodes zero — all MoldQL plans share same hash. 1-line helper swap available. | Open — 1-line follow-up |
 
 ## Strategic program: moldable exploration parity
 
