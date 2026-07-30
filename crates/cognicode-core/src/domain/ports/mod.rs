@@ -10,9 +10,29 @@
 //! The `multimodal` feature gates the WRITE/exTRACTION path only.
 
 pub mod graph_error;
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
+pub mod graph_write_port;
 pub mod graph_repository;
+#[cfg(feature = "postgres")]
+pub mod manifest_store;
+#[cfg(feature = "postgres")]
+pub mod named_view_store;
 pub mod node_property_reader;
+#[cfg(feature = "postgres")]
+pub mod report_store;
+#[cfg(feature = "postgres")]
+pub mod session_store;
 
 pub use graph_error::{GraphError, GraphResult};
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
+pub use graph_write_port::{GraphWritePort, PostgresGraphWritePort};
 pub use graph_repository::{GraphRepository, SearchPage};
+#[cfg(feature = "postgres")]
+pub use manifest_store::{ManifestError, ManifestStore, PostgresManifestStore};
+#[cfg(feature = "postgres")]
+pub use named_view_store::{NamedViewError, NamedViewStore, PostgresNamedViewStore};
 pub use node_property_reader::NodePropertyReader;
+#[cfg(feature = "postgres")]
+pub use report_store::{PostgresReportStore, ReportError, ReportStore};
+#[cfg(feature = "postgres")]
+pub use session_store::{PostgresSessionStore, SessionError, SessionRow, SessionStore};
