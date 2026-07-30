@@ -40,7 +40,7 @@ use crate::domain::plan::result::{EdgeResult, NodeResult, Path, PathHop, ResultS
 use crate::domain::plan::value::TypedValue;
 #[cfg(feature = "postgres")]
 use crate::domain::plan::{
-    GraphExecutor, ExecutorError, GraphPlan, PlanLimits, PlanMetadata, PlanVersion, PlanHash,
+    ExecutorError, GraphExecutor, GraphPlan, PlanHash, PlanLimits, PlanMetadata, PlanVersion,
     TruncationMarker,
 };
 #[cfg(feature = "postgres")]
@@ -171,7 +171,10 @@ impl GraphExecutor for PgGraphExecutor {
                 // Empty graph — return empty result set
                 return Ok(ResultSet::empty());
             }
-            Err(crate::domain::traits::repository::RepositoryError::UnknownRevision { workspace, revision }) => {
+            Err(crate::domain::traits::repository::RepositoryError::UnknownRevision {
+                workspace,
+                revision,
+            }) => {
                 let pin_str = format!("{}:{}", workspace.as_str(), revision.get());
                 return Err(ExecutorError::RevisionUnknown(pin_str));
             }
@@ -184,7 +187,13 @@ impl GraphExecutor for PgGraphExecutor {
 
         // Now dispatch to variant-specific executor
         let mut result = match plan {
-            GraphPlan::Path { src, dst, quantifier, edge_kind_filter, .. } => {
+            GraphPlan::Path {
+                src,
+                dst,
+                quantifier,
+                edge_kind_filter,
+                ..
+            } => {
                 let max_hops = quantifier.max_hops.unwrap_or(32).min(32) as i32;
                 self.execute_path(
                     pool,
@@ -196,23 +205,25 @@ impl GraphExecutor for PgGraphExecutor {
                     &limits,
                 )
             }
-            GraphPlan::Neighbors { src, kind, depth, edge_kind_filter, .. } => {
-                self.execute_neighbors(
-                    pool,
-                    &pin.0,
-                    src,
-                    kind.clone(),
-                    *depth as i32,
-                    edge_kind_filter.as_deref(),
-                    &limits,
-                )
-            }
+            GraphPlan::Neighbors {
+                src,
+                kind,
+                depth,
+                edge_kind_filter,
+                ..
+            } => self.execute_neighbors(
+                pool,
+                &pin.0,
+                src,
+                kind.clone(),
+                *depth as i32,
+                edge_kind_filter.as_deref(),
+                &limits,
+            ),
             GraphPlan::Subgraph { nodes, edges, .. } => {
                 self.execute_subgraph(pool, &pin.0, nodes, edges.as_ref(), &limits)
             }
-            GraphPlan::Cluster { by, .. } => {
-                self.execute_cluster(pool, &pin.0, by, &limits)
-            }
+            GraphPlan::Cluster { by, .. } => self.execute_cluster(pool, &pin.0, by, &limits),
             GraphPlan::Explain { inner, .. } => {
                 // EXPLAIN: return plan metadata without executing
                 self.execute(inner, pin)
@@ -227,7 +238,9 @@ impl GraphExecutor for PgGraphExecutor {
             if let Some(max_rows) = limits.max_result_rows {
                 let total_rows = rs.rows.len() + rs.nodes.len() + rs.edges.len();
                 if total_rows as u64 > max_rows {
-                    *rs = rs.clone().with_truncation(TruncationMarker::ResultRowsLimit);
+                    *rs = rs
+                        .clone()
+                        .with_truncation(TruncationMarker::ResultRowsLimit);
                 }
             }
             if let Some(max_paths) = limits.max_path_count {
@@ -363,8 +376,7 @@ impl PgGraphExecutor {
         let edge_kind_db_filter: Option<Vec<String>> = edge_kind_filter
             .map(|kinds| kinds.iter().map(|k| format!("dependency.{}", k)).collect());
         // Capture owned max_result_rows to satisfy 'static.
-        let max_result_rows_owned: Option<i64> =
-            limits.max_result_rows.map(|v| v as i64);
+        let max_result_rows_owned: Option<i64> = limits.max_result_rows.map(|v| v as i64);
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::task::block_in_place(move || {
             let handle = tokio::runtime::Handle::current();
@@ -376,9 +388,7 @@ impl PgGraphExecutor {
                     .bind(&dst_clone)
                     .bind(max_hops);
                 if let Some(max_rows) = max_result_rows_owned {
-                    query = query
-                        .bind(max_rows)
-                        .bind(edge_kind_db_filter.clone());
+                    query = query.bind(max_rows).bind(edge_kind_db_filter.clone());
                 } else {
                     query = query.bind(edge_kind_db_filter.clone());
                 }
@@ -386,7 +396,9 @@ impl PgGraphExecutor {
                 let _ = tx.send(result);
             });
         });
-        let rows = rx.recv().expect("path query task panicked")
+        let rows = rx
+            .recv()
+            .expect("path query task panicked")
             .map_err(|e| ExecutorError::InternalError(format!("path query failed: {e}")))?;
 
         let mut paths = Vec::new();
@@ -402,7 +414,10 @@ impl PgGraphExecutor {
                     let edge_kind = if i == 0 {
                         None
                     } else {
-                        let kind_str = edge_kinds_arr.get(i.saturating_sub(1)).cloned().unwrap_or_default();
+                        let kind_str = edge_kinds_arr
+                            .get(i.saturating_sub(1))
+                            .cloned()
+                            .unwrap_or_default();
                         let edge_kind = parse_edge_kind(&kind_str);
                         Some(edge_kind)
                     };
@@ -573,7 +588,9 @@ impl PgGraphExecutor {
                 let _ = tx.send(result);
             });
         });
-        let rows = rx.recv().expect("neighbors query task panicked")
+        let rows = rx
+            .recv()
+            .expect("neighbors query task panicked")
             .map_err(|e| ExecutorError::InternalError(format!("neighbors query failed: {e}")))?;
 
         let mut nodes = Vec::new();
@@ -659,7 +676,8 @@ impl PgGraphExecutor {
         }
 
         // Build the seed node list for SQL
-        let seed_list: Vec<String> = seed_nodes.iter()
+        let seed_list: Vec<String> = seed_nodes
+            .iter()
             .map(|s| format!("'{}'", s.replace('\'', "''")))
             .collect();
         let seed_sql = seed_list.join(", ");
@@ -708,7 +726,9 @@ impl PgGraphExecutor {
                 let _ = tx.send(result);
             });
         });
-        let rows = rx.recv().expect("subgraph query task panicked")
+        let rows = rx
+            .recv()
+            .expect("subgraph query task panicked")
             .map_err(|e| ExecutorError::InternalError(format!("subgraph query failed: {e}")))?;
 
         let mut nodes = Vec::new();
@@ -732,12 +752,13 @@ impl PgGraphExecutor {
         }
 
         // Now fetch the edges between visited nodes (limit to reasonable size)
-        let edges = if nodes.len() <= 100 && limits.max_result_rows.unwrap_or(1000) >= nodes.len() as u64 {
-            let node_ids: Vec<String> = nodes.iter().map(|n| n.id.clone()).collect();
+        let edges =
+            if nodes.len() <= 100 && limits.max_result_rows.unwrap_or(1000) >= nodes.len() as u64 {
+                let node_ids: Vec<String> = nodes.iter().map(|n| n.id.clone()).collect();
 
-            let edge_sql = if let Some(max_rows) = limits.max_result_rows {
-                format!(
-                    r#"
+                let edge_sql = if let Some(max_rows) = limits.max_result_rows {
+                    format!(
+                        r#"
                     SELECT e.source_id, e.target_id, e.kind, e.provenance, e.confidence
                     FROM graph_edges e
                     WHERE e.workspace_id = $1
@@ -745,74 +766,79 @@ impl PgGraphExecutor {
                       AND e.target_id = ANY($2)
                     LIMIT $3
                     "#,
-                )
-            } else {
-                r#"
+                    )
+                } else {
+                    r#"
                 SELECT e.source_id, e.target_id, e.kind, e.provenance, e.confidence
                 FROM graph_edges e
                 WHERE e.workspace_id = $1
                   AND e.source_id = ANY($2)
                   AND e.target_id = ANY($2)
-                "#.to_string()
-            };
+                "#
+                    .to_string()
+                };
 
-            let mut query = sqlx::query(&edge_sql)
-                .bind(workspace.as_str())
-                .bind(&node_ids);
+                let mut query = sqlx::query(&edge_sql)
+                    .bind(workspace.as_str())
+                    .bind(&node_ids);
 
-            if let Some(max_rows) = limits.max_result_rows {
-                query = query.bind(max_rows as i64);
-            }
+                if let Some(max_rows) = limits.max_result_rows {
+                    query = query.bind(max_rows as i64);
+                }
 
-            // Run the async query on the current Tokio runtime via `block_in_place`
-            // + `tokio::spawn` (avoids pool leak from per-call `Runtime::new()`).
-            let pool_clone = pool.clone();
-            let edge_sql_clone = edge_sql.clone();
-            let node_ids_clone = node_ids.clone();
-            let workspace_str = workspace.as_str().to_string();
-            let max_rows_opt = limits.max_result_rows;
-            let (tx, rx) = std::sync::mpsc::channel();
-            tokio::task::block_in_place(move || {
-                let handle = tokio::runtime::Handle::current();
-                let _enter = handle.enter();
-                tokio::spawn(async move {
-                    let mut query = sqlx::query(&edge_sql_clone)
-                        .bind(&workspace_str)
-                        .bind(&node_ids_clone);
-                    if let Some(max_rows) = max_rows_opt {
-                        query = query.bind(max_rows as i64);
-                    }
-                    let result = query.fetch_all(&pool_clone).await;
-                    let _ = tx.send(result);
+                // Run the async query on the current Tokio runtime via `block_in_place`
+                // + `tokio::spawn` (avoids pool leak from per-call `Runtime::new()`).
+                let pool_clone = pool.clone();
+                let edge_sql_clone = edge_sql.clone();
+                let node_ids_clone = node_ids.clone();
+                let workspace_str = workspace.as_str().to_string();
+                let max_rows_opt = limits.max_result_rows;
+                let (tx, rx) = std::sync::mpsc::channel();
+                tokio::task::block_in_place(move || {
+                    let handle = tokio::runtime::Handle::current();
+                    let _enter = handle.enter();
+                    tokio::spawn(async move {
+                        let mut query = sqlx::query(&edge_sql_clone)
+                            .bind(&workspace_str)
+                            .bind(&node_ids_clone);
+                        if let Some(max_rows) = max_rows_opt {
+                            query = query.bind(max_rows as i64);
+                        }
+                        let result = query.fetch_all(&pool_clone).await;
+                        let _ = tx.send(result);
+                    });
                 });
-            });
-            let edge_rows = rx.recv().expect("subgraph edges query task panicked")
-                .map_err(|e| ExecutorError::InternalError(format!("subgraph edges query failed: {e}")))?;
+                let edge_rows = rx
+                    .recv()
+                    .expect("subgraph edges query task panicked")
+                    .map_err(|e| {
+                        ExecutorError::InternalError(format!("subgraph edges query failed: {e}"))
+                    })?;
 
-            edge_rows
-                .iter()
-                .map(|row| {
-                    let src: String = row.get("source_id");
-                    let dst: String = row.get("target_id");
-                    let kind: String = row.get("kind");
-                    let provenance: String = row.get("provenance");
-                    let confidence: f32 = row.get("confidence");
+                edge_rows
+                    .iter()
+                    .map(|row| {
+                        let src: String = row.get("source_id");
+                        let dst: String = row.get("target_id");
+                        let kind: String = row.get("kind");
+                        let provenance: String = row.get("provenance");
+                        let confidence: f32 = row.get("confidence");
 
-                    EdgeResult {
-                        id: format!("{}->{}", src, dst),
-                        src,
-                        dst,
-                        label: kind.clone(),
-                        properties: vec![
-                            TypedValue::String(provenance),
-                            TypedValue::Float(confidence as f64),
-                        ],
-                    }
-                })
-                .collect()
-        } else {
-            vec![]
-        };
+                        EdgeResult {
+                            id: format!("{}->{}", src, dst),
+                            src,
+                            dst,
+                            label: kind.clone(),
+                            properties: vec![
+                                TypedValue::String(provenance),
+                                TypedValue::Float(confidence as f64),
+                            ],
+                        }
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
 
         // Check time limit
         if let Some(time_ms) = limits.time_ms {
@@ -917,7 +943,9 @@ impl PgGraphExecutor {
                 let _ = tx.send(result);
             });
         });
-        let rows = rx.recv().expect("cluster query task panicked")
+        let rows = rx
+            .recv()
+            .expect("cluster query task panicked")
             .map_err(|e| ExecutorError::InternalError(format!("cluster query failed: {e}")))?;
 
         let mut scalars = Vec::new();
@@ -1094,8 +1122,12 @@ impl PgGraphExecutor {
                 let _ = tx.send(result);
             });
         });
-        let rows = rx.recv().expect("boolean result nodes query task panicked")
-            .map_err(|e| ExecutorError::InternalError(format!("boolean result nodes query failed: {e}")))?;
+        let rows = rx
+            .recv()
+            .expect("boolean result nodes query task panicked")
+            .map_err(|e| {
+                ExecutorError::InternalError(format!("boolean result nodes query failed: {e}"))
+            })?;
 
         let nodes: Vec<NodeResult> = rows
             .iter()
@@ -1157,7 +1189,7 @@ fn parse_node_labels(kind: &str) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::domain::plan::graph_plan::{PathProjection, PathQuantifier};
-    use crate::domain::plan::version::{PlanMetadata, PlanVersion, PlanHash};
+    use crate::domain::plan::version::{PlanHash, PlanMetadata, PlanVersion};
     use crate::domain::value_objects::WorkspaceId;
     use sqlx::PgPool;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -1237,10 +1269,10 @@ mod tests {
 
     pg_test!(path_shortest_succeeds, |pool: PgPool| {
         use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
-        use crate::domain::value_objects::{SymbolKind, Location, DependencyType};
         use crate::domain::services::ExtractionContext;
-        use crate::infrastructure::persistence::PostgresRepository;
         use crate::domain::traits::repository::Repository;
+        use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+        use crate::infrastructure::persistence::PostgresRepository;
 
         let repo = PostgresRepository::from_pool(pool);
         let ws = WorkspaceId::try_new("test_ws").unwrap();
@@ -1265,13 +1297,36 @@ mod tests {
         graph.add_symbol(sym_d);
 
         // Add edges: A→B, A→D, B→C, C→D
-        let _ = graph.add_dependency_with_provenance(&id_a, &id_b, DependencyType::Calls, ExtractionContext::DirectExtraction);
-        let _ = graph.add_dependency_with_provenance(&id_a, &id_d, DependencyType::Calls, ExtractionContext::DirectExtraction);
-        let _ = graph.add_dependency_with_provenance(&id_b, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction);
-        let _ = graph.add_dependency_with_provenance(&id_c, &id_d, DependencyType::Calls, ExtractionContext::DirectExtraction);
+        let _ = graph.add_dependency_with_provenance(
+            &id_a,
+            &id_b,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
+        let _ = graph.add_dependency_with_provenance(
+            &id_a,
+            &id_d,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
+        let _ = graph.add_dependency_with_provenance(
+            &id_b,
+            &id_c,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
+        let _ = graph.add_dependency_with_provenance(
+            &id_c,
+            &id_d,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
 
         // Save the graph
-        let rev = repo.save_call_graph_ws(&graph, &ws).await.expect("save should succeed");
+        let rev = repo
+            .save_call_graph_ws(&graph, &ws)
+            .await
+            .expect("save should succeed");
 
         // Execute path query: A → D with max_hops=3
         let executor = PgGraphExecutor::new(repo);
@@ -1299,7 +1354,11 @@ mod tests {
         // (debug print removed)
 
         // Should have at least one path
-        assert!(!rs.paths.is_empty(), "Expected at least one path from A to D, got {:?}", rs.paths);
+        assert!(
+            !rs.paths.is_empty(),
+            "Expected at least one path from A to D, got {:?}",
+            rs.paths
+        );
 
         // All paths should start at A and end at D
         for path in &rs.paths {
@@ -1326,10 +1385,10 @@ mod tests {
 
     pg_test!(path_unreachable_returns_empty, |pool: PgPool| {
         use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
-        use crate::domain::value_objects::{SymbolKind, Location, DependencyType};
         use crate::domain::services::ExtractionContext;
-        use crate::infrastructure::persistence::PostgresRepository;
         use crate::domain::traits::repository::Repository;
+        use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+        use crate::infrastructure::persistence::PostgresRepository;
 
         let repo = PostgresRepository::from_pool(pool);
         let ws = WorkspaceId::try_new("test_ws").unwrap();
@@ -1340,16 +1399,32 @@ mod tests {
         let id_a = SymbolId::new("src/A.rs:A:1");
         let id_b = SymbolId::new("src/B.rs:B:1");
 
-        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("B", SymbolKind::Function, Location::new("src/B.rs", 1, 0)));
-        let _ = graph.add_dependency_with_provenance(&id_a, &id_b, DependencyType::Calls, ExtractionContext::DirectExtraction);
+        graph.add_symbol(Symbol::new(
+            "A",
+            SymbolKind::Function,
+            Location::new("src/A.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "B",
+            SymbolKind::Function,
+            Location::new("src/B.rs", 1, 0),
+        ));
+        let _ = graph.add_dependency_with_provenance(
+            &id_a,
+            &id_b,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
 
-        let rev = repo.save_call_graph_ws(&graph, &ws).await.expect("save should succeed");
+        let rev = repo
+            .save_call_graph_ws(&graph, &ws)
+            .await
+            .expect("save should succeed");
 
         let executor = PgGraphExecutor::new(repo);
         let plan = GraphPlan::Path {
             src: "src/A.rs:A:1".to_string(),
-            dst: "src/Z.rs:Z:1".to_string(),  // Doesn't exist
+            dst: "src/Z.rs:Z:1".to_string(), // Doesn't exist
             quantifier: PathQuantifier {
                 max_hops: Some(5),
                 min_hops: 0,
@@ -1367,7 +1442,10 @@ mod tests {
         let result = executor.execute(&plan, (ws, rev));
         assert!(result.is_ok(), "execute should succeed");
         let rs = result.unwrap();
-        assert!(rs.paths.is_empty(), "Expected empty paths for unreachable destination");
+        assert!(
+            rs.paths.is_empty(),
+            "Expected empty paths for unreachable destination"
+        );
     });
 
     // -------------------------------------------------------------------------
@@ -1378,11 +1456,11 @@ mod tests {
 
     pg_test!(neighbors_outgoing_depth_1, |pool: PgPool| {
         use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
-        use crate::domain::value_objects::{SymbolKind, Location, DependencyType};
-        use crate::domain::services::ExtractionContext;
-        use crate::infrastructure::persistence::PostgresRepository;
-        use crate::domain::traits::repository::Repository;
         use crate::domain::plan::graph_plan::NeighborKind;
+        use crate::domain::services::ExtractionContext;
+        use crate::domain::traits::repository::Repository;
+        use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+        use crate::infrastructure::persistence::PostgresRepository;
 
         let repo = PostgresRepository::from_pool(pool);
         let ws = WorkspaceId::try_new("test_ws").unwrap();
@@ -1395,17 +1473,51 @@ mod tests {
         let id_c = SymbolId::new("src/C.rs:C:1");
         let id_d = SymbolId::new("src/D.rs:D:1");
 
-        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("B", SymbolKind::Function, Location::new("src/B.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("C", SymbolKind::Function, Location::new("src/C.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("D", SymbolKind::Function, Location::new("src/D.rs", 1, 0)));
+        graph.add_symbol(Symbol::new(
+            "A",
+            SymbolKind::Function,
+            Location::new("src/A.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "B",
+            SymbolKind::Function,
+            Location::new("src/B.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "C",
+            SymbolKind::Function,
+            Location::new("src/C.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "D",
+            SymbolKind::Function,
+            Location::new("src/D.rs", 1, 0),
+        ));
 
         // A→B, A→C, D→A
-        let _ = graph.add_dependency_with_provenance(&id_a, &id_b, DependencyType::Calls, ExtractionContext::DirectExtraction);
-        let _ = graph.add_dependency_with_provenance(&id_a, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction);
-        let _ = graph.add_dependency_with_provenance(&id_d, &id_a, DependencyType::Calls, ExtractionContext::DirectExtraction);
+        let _ = graph.add_dependency_with_provenance(
+            &id_a,
+            &id_b,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
+        let _ = graph.add_dependency_with_provenance(
+            &id_a,
+            &id_c,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
+        let _ = graph.add_dependency_with_provenance(
+            &id_d,
+            &id_a,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
 
-        let rev = repo.save_call_graph_ws(&graph, &ws).await.expect("save should succeed");
+        let rev = repo
+            .save_call_graph_ws(&graph, &ws)
+            .await
+            .expect("save should succeed");
 
         let executor = PgGraphExecutor::new(repo);
         let plan = GraphPlan::Neighbors {
@@ -1427,9 +1539,20 @@ mod tests {
 
         // Should have B and C, not D
         let node_ids: Vec<&str> = rs.nodes.iter().map(|n| n.id.as_str()).collect();
-        assert!(node_ids.contains(&"src/B.rs:B:1"), "Should contain B, got {:?}", node_ids);
-        assert!(node_ids.contains(&"src/C.rs:C:1"), "Should contain C, got {:?}", node_ids);
-        assert!(!node_ids.contains(&"src/D.rs:D:1"), "Should NOT contain D (incoming)");
+        assert!(
+            node_ids.contains(&"src/B.rs:B:1"),
+            "Should contain B, got {:?}",
+            node_ids
+        );
+        assert!(
+            node_ids.contains(&"src/C.rs:C:1"),
+            "Should contain C, got {:?}",
+            node_ids
+        );
+        assert!(
+            !node_ids.contains(&"src/D.rs:D:1"),
+            "Should NOT contain D (incoming)"
+        );
     });
 
     // -------------------------------------------------------------------------
@@ -1440,10 +1563,10 @@ mod tests {
 
     pg_test!(subgraph_returns_visited_nodes, |pool: PgPool| {
         use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
-        use crate::domain::value_objects::{SymbolKind, Location, DependencyType};
         use crate::domain::services::ExtractionContext;
-        use crate::infrastructure::persistence::PostgresRepository;
         use crate::domain::traits::repository::Repository;
+        use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+        use crate::infrastructure::persistence::PostgresRepository;
 
         let repo = PostgresRepository::from_pool(pool);
         let ws = WorkspaceId::try_new("test_ws").unwrap();
@@ -1456,21 +1579,59 @@ mod tests {
         let id_c = SymbolId::new("src/C.rs:C:1");
         let id_d = SymbolId::new("src/D.rs:D:1");
 
-        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("B", SymbolKind::Function, Location::new("src/B.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("C", SymbolKind::Function, Location::new("src/C.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("D", SymbolKind::Function, Location::new("src/D.rs", 1, 0)));
+        graph.add_symbol(Symbol::new(
+            "A",
+            SymbolKind::Function,
+            Location::new("src/A.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "B",
+            SymbolKind::Function,
+            Location::new("src/B.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "C",
+            SymbolKind::Function,
+            Location::new("src/C.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "D",
+            SymbolKind::Function,
+            Location::new("src/D.rs", 1, 0),
+        ));
 
-        let _ = graph.add_dependency_with_provenance(&id_a, &id_b, DependencyType::Calls, ExtractionContext::DirectExtraction);
-        let _ = graph.add_dependency_with_provenance(&id_b, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction);
-        let _ = graph.add_dependency_with_provenance(&id_c, &id_d, DependencyType::Calls, ExtractionContext::DirectExtraction);
+        let _ = graph.add_dependency_with_provenance(
+            &id_a,
+            &id_b,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
+        let _ = graph.add_dependency_with_provenance(
+            &id_b,
+            &id_c,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
+        let _ = graph.add_dependency_with_provenance(
+            &id_c,
+            &id_d,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
 
-        let rev = repo.save_call_graph_ws(&graph, &ws).await.expect("save should succeed");
+        let rev = repo
+            .save_call_graph_ws(&graph, &ws)
+            .await
+            .expect("save should succeed");
 
         let executor = PgGraphExecutor::new(repo);
         let plan = GraphPlan::Subgraph {
-            nodes: vec!["src/A.rs:A:1".to_string(), "src/B.rs:B:1".to_string(), "src/C.rs:C:1".to_string()],
-            edges: None,  // None means include all edges between specified nodes
+            nodes: vec![
+                "src/A.rs:A:1".to_string(),
+                "src/B.rs:B:1".to_string(),
+                "src/C.rs:C:1".to_string(),
+            ],
+            edges: None, // None means include all edges between specified nodes
             aggregations: vec![],
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
@@ -1491,8 +1652,16 @@ mod tests {
 
         // Should have edges A→B and B→C
         let edge_ids: Vec<&str> = rs.edges.iter().map(|e| e.id.as_str()).collect();
-        assert!(edge_ids.contains(&"src/A.rs:A:1->src/B.rs:B:1"), "Should contain edge A->B, got {:?}", edge_ids);
-        assert!(edge_ids.contains(&"src/B.rs:B:1->src/C.rs:C:1"), "Should contain edge B->C, got {:?}", edge_ids);
+        assert!(
+            edge_ids.contains(&"src/A.rs:A:1->src/B.rs:B:1"),
+            "Should contain edge A->B, got {:?}",
+            edge_ids
+        );
+        assert!(
+            edge_ids.contains(&"src/B.rs:B:1->src/C.rs:C:1"),
+            "Should contain edge B->C, got {:?}",
+            edge_ids
+        );
     });
 
     // -------------------------------------------------------------------------
@@ -1503,9 +1672,9 @@ mod tests {
 
     pg_test!(cluster_by_kind, |pool: PgPool| {
         use crate::domain::aggregates::{CallGraph, Symbol};
-        use crate::domain::value_objects::{SymbolKind, Location};
-        use crate::infrastructure::persistence::PostgresRepository;
         use crate::domain::traits::repository::Repository;
+        use crate::domain::value_objects::{Location, SymbolKind};
+        use crate::infrastructure::persistence::PostgresRepository;
 
         let repo = PostgresRepository::from_pool(pool);
         let ws = WorkspaceId::try_new("test_ws").unwrap();
@@ -1513,11 +1682,26 @@ mod tests {
         // Build fixture: mixed kinds
         let mut graph = CallGraph::new();
 
-        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("B", SymbolKind::Class, Location::new("src/B.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("C", SymbolKind::Function, Location::new("src/C.rs", 1, 0)));
+        graph.add_symbol(Symbol::new(
+            "A",
+            SymbolKind::Function,
+            Location::new("src/A.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "B",
+            SymbolKind::Class,
+            Location::new("src/B.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "C",
+            SymbolKind::Function,
+            Location::new("src/C.rs", 1, 0),
+        ));
 
-        let rev = repo.save_call_graph_ws(&graph, &ws).await.expect("save should succeed");
+        let rev = repo
+            .save_call_graph_ws(&graph, &ws)
+            .await
+            .expect("save should succeed");
 
         let executor = PgGraphExecutor::new(repo);
         let plan = GraphPlan::Cluster {
@@ -1555,11 +1739,11 @@ mod tests {
 
     pg_test!(bool_and_intersection, |pool: PgPool| {
         use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
-        use crate::domain::value_objects::{SymbolKind, Location, DependencyType};
-        use crate::domain::services::ExtractionContext;
-        use crate::infrastructure::persistence::PostgresRepository;
-        use crate::domain::traits::repository::Repository;
         use crate::domain::plan::graph_plan::{BooleanOp, NeighborKind};
+        use crate::domain::services::ExtractionContext;
+        use crate::domain::traits::repository::Repository;
+        use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+        use crate::infrastructure::persistence::PostgresRepository;
 
         let repo = PostgresRepository::from_pool(pool);
         let ws = WorkspaceId::try_new("test_ws").unwrap();
@@ -1571,19 +1755,49 @@ mod tests {
         let id_b = SymbolId::new("src/B.rs:B:1");
         let id_c = SymbolId::new("src/C.rs:C:1");
 
-        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("B", SymbolKind::Function, Location::new("src/B.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("C", SymbolKind::Function, Location::new("src/C.rs", 1, 0)));
+        graph.add_symbol(Symbol::new(
+            "A",
+            SymbolKind::Function,
+            Location::new("src/A.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "B",
+            SymbolKind::Function,
+            Location::new("src/B.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "C",
+            SymbolKind::Function,
+            Location::new("src/C.rs", 1, 0),
+        ));
 
-        let _ = graph.add_dependency_with_provenance(&id_a, &id_b, DependencyType::Calls, ExtractionContext::DirectExtraction);
-        let _ = graph.add_dependency_with_provenance(&id_a, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction);
-        let _ = graph.add_dependency_with_provenance(&id_b, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction);
+        let _ = graph.add_dependency_with_provenance(
+            &id_a,
+            &id_b,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
+        let _ = graph.add_dependency_with_provenance(
+            &id_a,
+            &id_c,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
+        let _ = graph.add_dependency_with_provenance(
+            &id_b,
+            &id_c,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
 
-        let rev = repo.save_call_graph_ws(&graph, &ws).await.expect("save should succeed");
+        let rev = repo
+            .save_call_graph_ws(&graph, &ws)
+            .await
+            .expect("save should succeed");
 
         let executor = PgGraphExecutor::new(repo);
 
-let neighbors_a = GraphPlan::Neighbors {
+        let neighbors_a = GraphPlan::Neighbors {
             src: "src/A.rs:A:1".to_string(),
             kind: NeighborKind::Outgoing,
             depth: 1,
@@ -1595,7 +1809,7 @@ let neighbors_a = GraphPlan::Neighbors {
                 PlanHash::compute(&0u32),
             ),
         };
-let neighbors_b = GraphPlan::Neighbors {
+        let neighbors_b = GraphPlan::Neighbors {
             src: "src/B.rs:B:1".to_string(),
             kind: NeighborKind::Outgoing,
             depth: 1,
@@ -1624,7 +1838,12 @@ let neighbors_b = GraphPlan::Neighbors {
 
         // AND intersection should give C (common neighbor of A and B)
         let node_ids: Vec<&str> = rs.nodes.iter().map(|n| n.id.as_str()).collect();
-        assert_eq!(node_ids, vec!["src/C.rs:C:1"], "AND intersection should return {{C}}, got {:?}", node_ids);
+        assert_eq!(
+            node_ids,
+            vec!["src/C.rs:C:1"],
+            "AND intersection should return {{C}}, got {:?}",
+            node_ids
+        );
     });
 
     // -------------------------------------------------------------------------
@@ -1635,11 +1854,11 @@ let neighbors_b = GraphPlan::Neighbors {
 
     pg_test!(bool_not_complement, |pool: PgPool| {
         use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
-        use crate::domain::value_objects::{SymbolKind, Location, DependencyType};
-        use crate::domain::services::ExtractionContext;
-        use crate::infrastructure::persistence::PostgresRepository;
-        use crate::domain::traits::repository::Repository;
         use crate::domain::plan::graph_plan::{BooleanOp, NeighborKind};
+        use crate::domain::services::ExtractionContext;
+        use crate::domain::traits::repository::Repository;
+        use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+        use crate::infrastructure::persistence::PostgresRepository;
 
         let repo = PostgresRepository::from_pool(pool);
         let ws = WorkspaceId::try_new("test_ws").unwrap();
@@ -1652,20 +1871,49 @@ let neighbors_b = GraphPlan::Neighbors {
         let id_c = SymbolId::new("src/C.rs:C:1");
         let id_d = SymbolId::new("src/D.rs:D:1");
 
-        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("B", SymbolKind::Function, Location::new("src/B.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("C", SymbolKind::Function, Location::new("src/C.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("D", SymbolKind::Function, Location::new("src/D.rs", 1, 0)));
+        graph.add_symbol(Symbol::new(
+            "A",
+            SymbolKind::Function,
+            Location::new("src/A.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "B",
+            SymbolKind::Function,
+            Location::new("src/B.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "C",
+            SymbolKind::Function,
+            Location::new("src/C.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "D",
+            SymbolKind::Function,
+            Location::new("src/D.rs", 1, 0),
+        ));
 
         // A→B, A→C, D is isolated
-        let _ = graph.add_dependency_with_provenance(&id_a, &id_b, DependencyType::Calls, ExtractionContext::DirectExtraction);
-        let _ = graph.add_dependency_with_provenance(&id_a, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction);
+        let _ = graph.add_dependency_with_provenance(
+            &id_a,
+            &id_b,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
+        let _ = graph.add_dependency_with_provenance(
+            &id_a,
+            &id_c,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
 
-        let rev = repo.save_call_graph_ws(&graph, &ws).await.expect("save should succeed");
+        let rev = repo
+            .save_call_graph_ws(&graph, &ws)
+            .await
+            .expect("save should succeed");
 
         let executor = PgGraphExecutor::new(repo);
 
-let neighbors_a = GraphPlan::Neighbors {
+        let neighbors_a = GraphPlan::Neighbors {
             src: "src/A.rs:A:1".to_string(),
             kind: NeighborKind::Outgoing,
             depth: 1,
@@ -1694,10 +1942,24 @@ let neighbors_a = GraphPlan::Neighbors {
 
         // NOT complement should return all nodes EXCEPT B and C (the neighbors of A)
         let node_ids: Vec<&str> = rs.nodes.iter().map(|n| n.id.as_str()).collect();
-        assert!(!node_ids.contains(&"src/B.rs:B:1"), "Should NOT contain B, got {:?}", node_ids);
-        assert!(!node_ids.contains(&"src/C.rs:C:1"), "Should NOT contain C, got {:?}", node_ids);
-        assert!(node_ids.contains(&"src/A.rs:A:1"), "Should contain A (A is not in Neighbors(A))");
-        assert!(node_ids.contains(&"src/D.rs:D:1"), "Should contain D (isolated node)");
+        assert!(
+            !node_ids.contains(&"src/B.rs:B:1"),
+            "Should NOT contain B, got {:?}",
+            node_ids
+        );
+        assert!(
+            !node_ids.contains(&"src/C.rs:C:1"),
+            "Should NOT contain C, got {:?}",
+            node_ids
+        );
+        assert!(
+            node_ids.contains(&"src/A.rs:A:1"),
+            "Should contain A (A is not in Neighbors(A))"
+        );
+        assert!(
+            node_ids.contains(&"src/D.rs:D:1"),
+            "Should contain D (isolated node)"
+        );
     });
 
     // -------------------------------------------------------------------------
@@ -1708,11 +1970,11 @@ let neighbors_a = GraphPlan::Neighbors {
 
     pg_test!(max_result_rows_truncated, |pool: PgPool| {
         use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
-        use crate::domain::value_objects::{SymbolKind, Location, DependencyType};
-        use crate::domain::services::ExtractionContext;
-        use crate::infrastructure::persistence::PostgresRepository;
-        use crate::domain::traits::repository::Repository;
         use crate::domain::plan::graph_plan::NeighborKind;
+        use crate::domain::services::ExtractionContext;
+        use crate::domain::traits::repository::Repository;
+        use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+        use crate::infrastructure::persistence::PostgresRepository;
 
         let repo = PostgresRepository::from_pool(pool);
         let ws = WorkspaceId::try_new("test_ws").unwrap();
@@ -1721,17 +1983,33 @@ let neighbors_a = GraphPlan::Neighbors {
         let mut graph = CallGraph::new();
 
         let id_a = SymbolId::new("src/A.rs:A:1");
-        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 0)));
+        graph.add_symbol(Symbol::new(
+            "A",
+            SymbolKind::Function,
+            Location::new("src/A.rs", 1, 0),
+        ));
 
         for i in 0..50 {
             let name = format!("B{:02}", i);
             let fqn = format!("src/{}.rs:{}:1", name, name);
             let sym_id = SymbolId::new(&fqn);
-            graph.add_symbol(Symbol::new(&name, SymbolKind::Function, Location::new(&format!("src/{}.rs", name), 1, 0)));
-            let _ = graph.add_dependency_with_provenance(&id_a, &sym_id, DependencyType::Calls, ExtractionContext::DirectExtraction);
+            graph.add_symbol(Symbol::new(
+                &name,
+                SymbolKind::Function,
+                Location::new(&format!("src/{}.rs", name), 1, 0),
+            ));
+            let _ = graph.add_dependency_with_provenance(
+                &id_a,
+                &sym_id,
+                DependencyType::Calls,
+                ExtractionContext::DirectExtraction,
+            );
         }
 
-        let rev = repo.save_call_graph_ws(&graph, &ws).await.expect("save should succeed");
+        let rev = repo
+            .save_call_graph_ws(&graph, &ws)
+            .await
+            .expect("save should succeed");
 
         let executor = PgGraphExecutor::new(repo);
 
@@ -1757,9 +2035,17 @@ let neighbors_a = GraphPlan::Neighbors {
         let rs = result.unwrap();
 
         // Should be truncated to 10 nodes
-        assert_eq!(rs.nodes.len(), 10, "Should have exactly 10 nodes due to limit");
+        assert_eq!(
+            rs.nodes.len(),
+            10,
+            "Should have exactly 10 nodes due to limit"
+        );
         assert!(rs.truncated, "ResultSet should be marked as truncated");
-        assert_eq!(rs.truncation, Some(TruncationMarker::ResultRowsLimit), "TruncationMarker should be ResultRowsLimit");
+        assert_eq!(
+            rs.truncation,
+            Some(TruncationMarker::ResultRowsLimit),
+            "TruncationMarker should be ResultRowsLimit"
+        );
     });
 
     // -------------------------------------------------------------------------
@@ -1781,7 +2067,9 @@ let neighbors_a = GraphPlan::Neighbors {
         let pool = match sqlx::PgPool::connect(&base).await.ok() {
             Some(p) => p,
             None => {
-                eprintln!("skipping construct_from_postgres_repository: cannot connect to database");
+                eprintln!(
+                    "skipping construct_from_postgres_repository: cannot connect to database"
+                );
                 return;
             }
         };
@@ -1802,14 +2090,18 @@ let neighbors_a = GraphPlan::Neighbors {
     async fn pg_graph_executor_implements_graph_executor() {
         let base = std::env::var("TEST_DATABASE_URL").unwrap_or_default();
         if base.is_empty() {
-            eprintln!("skipping pg_graph_executor_implements_graph_executor: TEST_DATABASE_URL not set");
+            eprintln!(
+                "skipping pg_graph_executor_implements_graph_executor: TEST_DATABASE_URL not set"
+            );
             return;
         }
 
         let pool = match sqlx::PgPool::connect(&base).await.ok() {
             Some(p) => p,
             None => {
-                eprintln!("skipping pg_graph_executor_implements_graph_executor: cannot connect to database");
+                eprintln!(
+                    "skipping pg_graph_executor_implements_graph_executor: cannot connect to database"
+                );
                 return;
             }
         };
@@ -1884,72 +2176,106 @@ let neighbors_a = GraphPlan::Neighbors {
     //     With filter=[Calls] → A has no Calls outgoing edge → empty paths.
     // -------------------------------------------------------------------------
 
-    pg_test!(path_with_edge_kind_filter_eliminates_only_path, |pool: PgPool| {
-        use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
-        use crate::domain::value_objects::{SymbolKind, Location, DependencyType};
-        use crate::domain::services::ExtractionContext;
-        use crate::infrastructure::persistence::PostgresRepository;
-        use crate::domain::traits::repository::Repository;
+    pg_test!(
+        path_with_edge_kind_filter_eliminates_only_path,
+        |pool: PgPool| {
+            use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
+            use crate::domain::services::ExtractionContext;
+            use crate::domain::traits::repository::Repository;
+            use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+            use crate::infrastructure::persistence::PostgresRepository;
 
-        let repo = PostgresRepository::from_pool(pool);
-        let ws = WorkspaceId::try_new("ws_edge_filter").unwrap();
+            let repo = PostgresRepository::from_pool(pool);
+            let ws = WorkspaceId::try_new("ws_edge_filter").unwrap();
 
-        let mut graph = CallGraph::new();
-        let id_a = SymbolId::new("src/A.rs:A:1");
-        let id_b = SymbolId::new("src/B.rs:B:1");
-        let id_c = SymbolId::new("src/C.rs:C:1");
-        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 1)));
-        graph.add_symbol(Symbol::new("B", SymbolKind::Function, Location::new("src/B.rs", 1, 1)));
-        graph.add_symbol(Symbol::new("C", SymbolKind::Function, Location::new("src/C.rs", 1, 1)));
-        let _ = graph.add_dependency_with_provenance(&id_a, &id_b, DependencyType::References, ExtractionContext::DirectExtraction);
-        let _ = graph.add_dependency_with_provenance(&id_b, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction);
+            let mut graph = CallGraph::new();
+            let id_a = SymbolId::new("src/A.rs:A:1");
+            let id_b = SymbolId::new("src/B.rs:B:1");
+            let id_c = SymbolId::new("src/C.rs:C:1");
+            graph.add_symbol(Symbol::new(
+                "A",
+                SymbolKind::Function,
+                Location::new("src/A.rs", 1, 1),
+            ));
+            graph.add_symbol(Symbol::new(
+                "B",
+                SymbolKind::Function,
+                Location::new("src/B.rs", 1, 1),
+            ));
+            graph.add_symbol(Symbol::new(
+                "C",
+                SymbolKind::Function,
+                Location::new("src/C.rs", 1, 1),
+            ));
+            let _ = graph.add_dependency_with_provenance(
+                &id_a,
+                &id_b,
+                DependencyType::References,
+                ExtractionContext::DirectExtraction,
+            );
+            let _ = graph.add_dependency_with_provenance(
+                &id_b,
+                &id_c,
+                DependencyType::Calls,
+                ExtractionContext::DirectExtraction,
+            );
 
-        let rev = repo.save_call_graph_ws(&graph, &ws).await.expect("save should succeed");
-        let executor = PgGraphExecutor::new(repo);
+            let rev = repo
+                .save_call_graph_ws(&graph, &ws)
+                .await
+                .expect("save should succeed");
+            let executor = PgGraphExecutor::new(repo);
 
-        // Sanity: unfiltered plan must yield a path.
-        let plan_unfiltered = GraphPlan::Path {
-            src: "src/A.rs:A:1".to_string(),
-            dst: "src/C.rs:C:1".to_string(),
-            quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
-            edge_kind_filter: None,
-            predicates: vec![],
-            projection: PathProjection::default(),
-            limits: PlanLimits::default(),
-            metadata: PlanMetadata::new(
-                PlanVersion::new("1.0.0").unwrap(),
-                PlanHash::compute(&0u32),
-            ),
-        };
-        let rs_unfiltered = executor
-            .execute(&plan_unfiltered, (ws.clone(), rev))
-            .expect("unfiltered execute must succeed");
-        assert!(
-            !rs_unfiltered.paths.is_empty(),
-            "unfiltered fixture must have at least one path A→B→C, got empty"
-        );
+            // Sanity: unfiltered plan must yield a path.
+            let plan_unfiltered = GraphPlan::Path {
+                src: "src/A.rs:A:1".to_string(),
+                dst: "src/C.rs:C:1".to_string(),
+                quantifier: PathQuantifier {
+                    max_hops: Some(3),
+                    min_hops: 0,
+                },
+                edge_kind_filter: None,
+                predicates: vec![],
+                projection: PathProjection::default(),
+                limits: PlanLimits::default(),
+                metadata: PlanMetadata::new(
+                    PlanVersion::new("1.0.0").unwrap(),
+                    PlanHash::compute(&0u32),
+                ),
+            };
+            let rs_unfiltered = executor
+                .execute(&plan_unfiltered, (ws.clone(), rev))
+                .expect("unfiltered execute must succeed");
+            assert!(
+                !rs_unfiltered.paths.is_empty(),
+                "unfiltered fixture must have at least one path A→B→C, got empty"
+            );
 
-        // Filtered: A has no Calls outgoing edge → empty paths.
-        let plan_filtered = GraphPlan::Path {
-            src: "src/A.rs:A:1".to_string(),
-            dst: "src/C.rs:C:1".to_string(),
-            quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
-            edge_kind_filter: Some(vec![DependencyType::Calls]),
-            predicates: vec![],
-            projection: PathProjection::default(),
-            limits: PlanLimits::default(),
-            metadata: PlanMetadata::new(
-                PlanVersion::new("1.0.0").unwrap(),
-                PlanHash::compute(&0u32),
-            ),
-        };
-        let rs_filtered = executor
-            .execute(&plan_filtered, (ws, rev))
-            .expect("filtered execute must succeed (not error)");
-        assert!(
-            rs_filtered.paths.is_empty(),
-            "filtered plan must return empty paths (no Calls edge from A), got {:?}",
-            rs_filtered.paths
-        );
-    });
+            // Filtered: A has no Calls outgoing edge → empty paths.
+            let plan_filtered = GraphPlan::Path {
+                src: "src/A.rs:A:1".to_string(),
+                dst: "src/C.rs:C:1".to_string(),
+                quantifier: PathQuantifier {
+                    max_hops: Some(3),
+                    min_hops: 0,
+                },
+                edge_kind_filter: Some(vec![DependencyType::Calls]),
+                predicates: vec![],
+                projection: PathProjection::default(),
+                limits: PlanLimits::default(),
+                metadata: PlanMetadata::new(
+                    PlanVersion::new("1.0.0").unwrap(),
+                    PlanHash::compute(&0u32),
+                ),
+            };
+            let rs_filtered = executor
+                .execute(&plan_filtered, (ws, rev))
+                .expect("filtered execute must succeed (not error)");
+            assert!(
+                rs_filtered.paths.is_empty(),
+                "filtered plan must return empty paths (no Calls edge from A), got {:?}",
+                rs_filtered.paths
+            );
+        }
+    );
 }

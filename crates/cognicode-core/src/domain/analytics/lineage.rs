@@ -7,7 +7,7 @@ use std::fmt;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::domain::analytics::descriptor::{AnalyticsError, AnalyticsMode, AlgorithmId};
+use crate::domain::analytics::descriptor::{AlgorithmId, AnalyticsError, AnalyticsMode};
 use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
 // ============================================================================
@@ -322,7 +322,10 @@ mod tests {
         );
         lineage.truncate(TruncationMarker::ResultRowsLimit, 10);
         assert_eq!(lineage.status, RunStatus::Truncated);
-        assert_eq!(lineage.truncation_marker, Some(TruncationMarker::ResultRowsLimit));
+        assert_eq!(
+            lineage.truncation_marker,
+            Some(TruncationMarker::ResultRowsLimit)
+        );
         assert_eq!(lineage.row_count, Some(10));
     }
 

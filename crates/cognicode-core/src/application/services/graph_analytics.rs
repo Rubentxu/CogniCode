@@ -38,8 +38,8 @@ use petgraph::visit::{EdgeRef, IntoEdgeReferences, NodeIndexable};
 
 use crate::domain::aggregates::{CallGraph, SymbolId};
 use crate::domain::analytics::{
-    AdmissionError, AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AnalyticsError, AnalyticsMode,
-    DeterminismKind, RunLineage, RunLineageFilter, RunLineageStore, RunStatus,
+    AdmissionError, AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AnalyticsError,
+    AnalyticsMode, DeterminismKind, RunLineage, RunLineageFilter, RunLineageStore, RunStatus,
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::domain::value_objects::{RevisionId, WorkspaceId};
@@ -462,9 +462,10 @@ fn apply_caller_limits(
     if let Some(caller_max_nodes) = caller.max_visited_nodes {
         if let Some(base_max) = base.max_visited_nodes {
             if caller_max_nodes > base_max {
-                return Err(AnalyticsError::LimitPolicyViolation(
-                    format!("caller max_visited_nodes {} exceeds base maximum {}", caller_max_nodes, base_max)
-                ));
+                return Err(AnalyticsError::LimitPolicyViolation(format!(
+                    "caller max_visited_nodes {} exceeds base maximum {}",
+                    caller_max_nodes, base_max
+                )));
             }
             effective.max_visited_nodes = Some(caller_max_nodes);
         }
@@ -473,9 +474,10 @@ fn apply_caller_limits(
     if let Some(caller_max_edges) = caller.max_visited_edges {
         if let Some(base_max) = base.max_visited_edges {
             if caller_max_edges > base_max {
-                return Err(AnalyticsError::LimitPolicyViolation(
-                    format!("caller max_visited_edges {} exceeds base maximum {}", caller_max_edges, base_max)
-                ));
+                return Err(AnalyticsError::LimitPolicyViolation(format!(
+                    "caller max_visited_edges {} exceeds base maximum {}",
+                    caller_max_edges, base_max
+                )));
             }
             effective.max_visited_edges = Some(caller_max_edges);
         }
@@ -484,9 +486,10 @@ fn apply_caller_limits(
     if let Some(caller_max_rows) = caller.max_result_rows {
         if let Some(base_max) = base.max_result_rows {
             if caller_max_rows > base_max {
-                return Err(AnalyticsError::LimitPolicyViolation(
-                    format!("caller max_result_rows {} exceeds base maximum {}", caller_max_rows, base_max)
-                ));
+                return Err(AnalyticsError::LimitPolicyViolation(format!(
+                    "caller max_result_rows {} exceeds base maximum {}",
+                    caller_max_rows, base_max
+                )));
             }
             effective.max_result_rows = Some(caller_max_rows);
         }
@@ -495,9 +498,10 @@ fn apply_caller_limits(
     if let Some(caller_time) = caller.time_ms {
         if let Some(base_time) = base.time_ms {
             if caller_time > base_time {
-                return Err(AnalyticsError::LimitPolicyViolation(
-                    format!("caller time_ms {} exceeds base maximum {}", caller_time, base_time)
-                ));
+                return Err(AnalyticsError::LimitPolicyViolation(format!(
+                    "caller time_ms {} exceeds base maximum {}",
+                    caller_time, base_time
+                )));
             }
             effective.time_ms = Some(caller_time);
         }
@@ -565,7 +569,9 @@ impl DefaultAnalyticsBoundaryGuard {
         let mut persist_caller_classes = std::collections::HashSet::new();
         persist_caller_classes.insert(CallerCapabilities::Internal);
         persist_caller_classes.insert(CallerCapabilities::TrustedREST);
-        Self { persist_caller_classes }
+        Self {
+            persist_caller_classes,
+        }
     }
 }
 
@@ -596,10 +602,7 @@ impl AlgorithmRegistry {
     /// 5. Dispatches to the algorithm's execute() method
     /// 6. Updates the lineage record with the result
     /// 7. Returns the run result
-    pub async fn run(
-        &self,
-        request: RunRequest,
-    ) -> Result<RunResult, AnalyticsError> {
+    pub async fn run(&self, request: RunRequest) -> Result<RunResult, AnalyticsError> {
         // Step 1: Look up the descriptor
         let descriptor = self
             .get(&request.algorithm_id)
@@ -619,7 +622,11 @@ impl AlgorithmRegistry {
 
         // Step 3: Check persist authorization
         if request.mode == AnalyticsMode::Persist {
-            if self.boundary_guard.as_ref().map_or(true, |g| !g.can_persist(request.caller)) {
+            if self
+                .boundary_guard
+                .as_ref()
+                .map_or(true, |g| !g.can_persist(request.caller))
+            {
                 return Err(AnalyticsError::PersistUnauthorized);
             }
         }
@@ -643,15 +650,15 @@ impl AlgorithmRegistry {
         let lineage_store = self.lineage.clone();
         let lineage_for_insert = lineage.clone();
         tokio::runtime::Handle::current()
-            .spawn(async move {
-                lineage_store.insert(&lineage_for_insert).await
-            })
+            .spawn(async move { lineage_store.insert(&lineage_for_insert).await })
             .await
             .map_err(|e| AnalyticsError::Internal(format!("lineage insert task: {e}")))?
             .map_err(|e| AnalyticsError::Internal(format!("lineage insert: {e}")))?;
 
         // Step 5: Dispatch to algorithm's execute() method
-        let exec_result = descriptor.execute(&request.params, &request.graph, &effective_limits).await;
+        let exec_result = descriptor
+            .execute(&request.params, &request.graph, &effective_limits)
+            .await;
 
         // Step 6: Update lineage record with result and extract output
         let (status, row_count, truncation_marker, output) = match exec_result {
@@ -671,7 +678,10 @@ impl AlgorithmRegistry {
                 } else {
                     None
                 };
-                lineage.truncate(marker.unwrap_or(crate::domain::analytics::TruncationMarker::ResultRowsLimit), 0);
+                lineage.truncate(
+                    marker.unwrap_or(crate::domain::analytics::TruncationMarker::ResultRowsLimit),
+                    0,
+                );
                 (RunStatus::Truncated, 0, marker, None)
             }
             Err(e) => {
@@ -684,9 +694,7 @@ impl AlgorithmRegistry {
         let lineage_store = self.lineage.clone();
         let lineage_for_update = lineage.clone();
         tokio::runtime::Handle::current()
-            .spawn(async move {
-                lineage_store.insert(&lineage_for_update).await
-            })
+            .spawn(async move { lineage_store.insert(&lineage_for_update).await })
             .await
             .map_err(|e| AnalyticsError::Internal(format!("lineage update task: {e}")))?
             .map_err(|e| AnalyticsError::Internal(format!("lineage update: {e}")))?;
@@ -986,8 +994,8 @@ mod tests {
 
     #[test]
     fn apply_caller_limits_tightens_base_limits() {
-        use crate::domain::plan::limits::PlanLimits;
         use crate::domain::plan::limits::PlanLimitKind;
+        use crate::domain::plan::limits::PlanLimits;
 
         let base = PlanLimits {
             time_ms: Some(1000),
@@ -1051,6 +1059,73 @@ mod tests {
 
         let result = apply_caller_limits(&base, caller);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), AnalyticsError::LimitPolicyViolation(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            AnalyticsError::LimitPolicyViolation(_)
+        ));
     }
+}
+
+// =============================================================================
+// Default Analytics Registry (Cohort 1 + Cohort 2)
+// =============================================================================
+
+/// Build an `AlgorithmRegistry` pre-loaded with all 8 algorithms:
+///
+/// **Cohort 1:**
+/// - `pagerank` — PageRank importance scores
+/// - `scc` — Strongly Connected Components
+/// - `wcc` — Weakly Connected Components
+/// - `bounded_shortest_paths` — Bounded shortest paths between symbols
+///
+/// **Cohort 2:**
+/// - `dominators` — Dominator tree (directed, root-parametrized)
+/// - `articulation_points` — Cut vertices (undirected)
+/// - `bridges` — Cut edges (undirected)
+/// - `k_core` — K-core decomposition (undirected, k-parametrized)
+///
+/// # Arguments
+///
+/// - `lineage` — lineage store for run tracking
+///
+/// # Returns
+///
+/// A new `AlgorithmRegistry` with all 8 algorithms admitted.
+pub fn default_analytics_registry(lineage: Arc<dyn RunLineageStore>) -> AlgorithmRegistry {
+    let guard = Arc::new(DefaultAnalyticsBoundaryGuard::new());
+    let mut registry = AlgorithmRegistry::new(lineage, Some(guard));
+
+    // Cohort 1 algorithms
+    registry
+        .admit(Box::new(crate::domain::analytics::PageRankDescriptor))
+        .unwrap();
+    registry
+        .admit(Box::new(crate::domain::analytics::SccDescriptor))
+        .unwrap();
+    registry
+        .admit(Box::new(crate::domain::analytics::WccDescriptor))
+        .unwrap();
+    registry
+        .admit(Box::new(
+            crate::domain::analytics::BoundedShortestPathsDescriptor,
+        ))
+        .unwrap();
+
+    // Cohort 2 algorithms
+    registry
+        .admit(Box::new(crate::domain::analytics::DominatorsDescriptor))
+        .unwrap();
+    registry
+        .admit(Box::new(
+            crate::domain::analytics::ArticulationPointsDescriptor,
+        ))
+        .unwrap();
+    registry
+        .admit(Box::new(crate::domain::analytics::BridgesDescriptor))
+        .unwrap();
+    registry
+        .admit(Box::new(crate::domain::analytics::KCoreDescriptor))
+        .unwrap();
+
+    registry
 }

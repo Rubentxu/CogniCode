@@ -607,6 +607,36 @@ impl CallGraphProjection {
         }
         out_neighbors
     }
+
+    /// Build undirected adjacency (union of incoming and outgoing edges).
+    ///
+    /// `undirected[u]` contains every neighbor of `u` regardless of edge
+    /// direction. Used by Bridges, Articulation Points, and K-Core algorithms
+    /// that treat the call graph as an undirected connectivity graph.
+    pub fn build_undirected_neighbors(&self) -> Vec<Vec<usize>> {
+        let bound = self.graph.node_bound();
+        let (in_neighbors, _) = self.build_adjacency();
+        let out_neighbors = self.build_out_neighbors();
+
+        let mut undirected: Vec<Vec<usize>> = vec![Vec::new(); bound];
+        // Add all incoming neighbors
+        for (i, neighbors) in in_neighbors.iter().enumerate() {
+            for &j in neighbors {
+                if i < bound && j < bound {
+                    undirected[i].push(j);
+                }
+            }
+        }
+        // Add all outgoing neighbors, deduplicating
+        for (i, neighbors) in out_neighbors.iter().enumerate() {
+            for &j in neighbors {
+                if i < bound && j < bound && !undirected[i].contains(&j) {
+                    undirected[i].push(j);
+                }
+            }
+        }
+        undirected
+    }
 }
 
 impl GraphBuilder for CallGraphProjection {
@@ -616,16 +646,15 @@ impl GraphBuilder for CallGraphProjection {
         let mut out_degree: Vec<usize> = vec![0; bound];
         for ni in self.graph.node_indices() {
             // CORRECT: Incoming edges give us callers (who calls this node)
-            let callers: Vec<usize> = self.graph
+            let callers: Vec<usize> = self
+                .graph
                 .edges_directed(ni, Direction::Incoming)
                 .map(|e| e.source().index())
                 .collect();
             in_neighbors[ni.index()] = callers;
 
             // CORRECT: Outgoing edges give us out_degree (who this node calls)
-            let out_count = self.graph
-                .edges_directed(ni, Direction::Outgoing)
-                .count();
+            let out_count = self.graph.edges_directed(ni, Direction::Outgoing).count();
             out_degree[ni.index()] = out_count;
         }
         (in_neighbors, out_degree)

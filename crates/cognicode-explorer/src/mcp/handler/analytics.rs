@@ -20,12 +20,12 @@ use cognicode_core::domain::analytics::{AnalyticsMode, RunOutput};
 use cognicode_core::domain::plan::limits::PlanLimits;
 
 use crate::dto::{
-    AnalyticsCatalogResponse, AnalyticsLineageDetailResponse, AnalyticsLineageResponse,
-    AlgorithmDescriptorSummary, LineageEntry, RunAnalyticsResponse,
+    AlgorithmDescriptorSummary, AnalyticsCatalogResponse, AnalyticsLineageDetailResponse,
+    AnalyticsLineageResponse, LineageEntry, RunAnalyticsResponse,
 };
+use crate::mcp::McpContext;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
-use crate::mcp::McpContext;
 
 // ============================================================================
 // Arg structs
@@ -194,8 +194,11 @@ impl ToolHandler for AnalyticsRunHandler {
 
         // Build RunRequest
         let (workspace_id, revision_id) = ctx.current_pin();
-        let workspace_id = cognicode_core::domain::value_objects::WorkspaceId::try_new(workspace_id)
-            .unwrap_or_else(|_| cognicode_core::domain::value_objects::WorkspaceId::try_new("default").unwrap());
+        let workspace_id =
+            cognicode_core::domain::value_objects::WorkspaceId::try_new(workspace_id)
+                .unwrap_or_else(|_| {
+                    cognicode_core::domain::value_objects::WorkspaceId::try_new("default").unwrap()
+                });
         let revision_id = cognicode_core::domain::value_objects::RevisionId::new(revision_id);
 
         let max_hops = args.max_hops.unwrap_or(5);
@@ -228,8 +231,43 @@ impl ToolHandler for AnalyticsRunHandler {
                     RunOutput::Scc(v) => v,
                     RunOutput::Wcc(v) => v,
                     RunOutput::BoundedShortestPaths(v) => v,
+                    RunOutput::Dominators {
+                        nodes,
+                        immediate_dominators,
+                        depths,
+                    } => {
+                        serde_json::json!({
+                            "nodes": nodes,
+                            "immediate_dominators": immediate_dominators,
+                            "depths": depths,
+                        })
+                    }
+                    RunOutput::ArticulationPoints {
+                        nodes,
+                        cut_vertices_counts,
+                    } => {
+                        serde_json::json!({
+                            "nodes": nodes,
+                            "cut_vertices_counts": cut_vertices_counts,
+                        })
+                    }
+                    RunOutput::Bridges { edges } => {
+                        serde_json::json!({ "edges": edges })
+                    }
+                    RunOutput::KCore {
+                        nodes,
+                        core_numbers,
+                    } => {
+                        serde_json::json!({
+                            "nodes": nodes,
+                            "core_numbers": core_numbers,
+                        })
+                    }
                 };
-                let lineage_persisted = matches!(run_result.status, cognicode_core::domain::analytics::lineage::RunStatus::Succeeded);
+                let lineage_persisted = matches!(
+                    run_result.status,
+                    cognicode_core::domain::analytics::lineage::RunStatus::Succeeded
+                );
 
                 RunAnalyticsResponse {
                     algorithm_id: algorithm_id.clone(),
@@ -310,7 +348,10 @@ impl ToolHandler for AnalyticsCatalogHandler {
                     name,
                     version: identity.version.as_str().to_string(),
                     description: "No description available".to_string(),
-                    mode: format!("{:?}", d.supported_modes().first().unwrap_or(&AnalyticsMode::Stats)),
+                    mode: format!(
+                        "{:?}",
+                        d.supported_modes().first().unwrap_or(&AnalyticsMode::Stats)
+                    ),
                     categories: vec!["analytics".to_string()],
                 }
             })
@@ -376,8 +417,11 @@ impl ToolHandler for AnalyticsLineageListHandler {
 
         // Build filter from current context
         let (workspace_id_str, revision_id) = ctx.current_pin();
-        let workspace_id = cognicode_core::domain::value_objects::WorkspaceId::try_new(workspace_id_str.clone())
-            .unwrap_or_else(|_| cognicode_core::domain::value_objects::WorkspaceId::try_new("default").unwrap());
+        let workspace_id =
+            cognicode_core::domain::value_objects::WorkspaceId::try_new(workspace_id_str.clone())
+                .unwrap_or_else(|_| {
+                    cognicode_core::domain::value_objects::WorkspaceId::try_new("default").unwrap()
+                });
         let revision_id = cognicode_core::domain::value_objects::RevisionId::new(revision_id);
 
         let filter = RunLineageFilter {

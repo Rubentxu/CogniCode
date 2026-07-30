@@ -172,7 +172,10 @@ pub enum DeterminismKind {
     /// Results depend on a seed value.
     /// - `required: true` — seed MUST be provided at runtime
     /// - `required: false` — seed is optional, `default` is used when omitted
-    Seeded { required: bool, default: Option<u64> },
+    Seeded {
+        required: bool,
+        default: Option<u64>,
+    },
     /// Results may differ even with the same inputs (e.g., randomized algorithms).
     None,
 }
@@ -415,6 +418,9 @@ pub enum AnalyticsError {
     #[error("run not found: {0}")]
     RunNotFound(String),
 
+    #[error("invalid parameter: {0}")]
+    InvalidParameter(String),
+
     #[error("internal error: {0}")]
     Internal(String),
 }
@@ -437,6 +443,24 @@ pub enum RunOutput {
     Wcc(serde_json::Value),
     /// Bounded shortest paths: list of paths.
     BoundedShortestPaths(serde_json::Value),
+    /// Dominators: nodes, immediate dominators, and depths.
+    Dominators {
+        nodes: Vec<usize>,
+        immediate_dominators: Vec<Option<usize>>,
+        depths: Vec<u32>,
+    },
+    /// Articulation Points: nodes and their cut-vertex counts.
+    ArticulationPoints {
+        nodes: Vec<usize>,
+        cut_vertices_counts: Vec<usize>,
+    },
+    /// Bridges: list of edge pairs.
+    Bridges { edges: Vec<(usize, usize)> },
+    /// K-Core: nodes and their core numbers.
+    KCore {
+        nodes: Vec<usize>,
+        core_numbers: Vec<u32>,
+    },
 }
 
 impl RunOutput {
@@ -447,6 +471,10 @@ impl RunOutput {
             RunOutput::Scc(v) => v.as_array().map(|a| a.len()).unwrap_or(0) as i64,
             RunOutput::Wcc(v) => v.as_array().map(|a| a.len()).unwrap_or(0) as i64,
             RunOutput::BoundedShortestPaths(v) => v.as_array().map(|a| a.len()).unwrap_or(0) as i64,
+            RunOutput::Dominators { nodes, .. } => nodes.len() as i64,
+            RunOutput::ArticulationPoints { nodes, .. } => nodes.len() as i64,
+            RunOutput::Bridges { edges } => edges.len() as i64,
+            RunOutput::KCore { nodes, .. } => nodes.len() as i64,
         }
     }
 
@@ -457,6 +485,32 @@ impl RunOutput {
             RunOutput::Scc(v) => v.clone(),
             RunOutput::Wcc(v) => v.clone(),
             RunOutput::BoundedShortestPaths(v) => v.clone(),
+            RunOutput::Dominators {
+                nodes,
+                immediate_dominators,
+                depths,
+            } => serde_json::json!({
+                "nodes": nodes,
+                "immediate_dominators": immediate_dominators,
+                "depths": depths,
+            }),
+            RunOutput::ArticulationPoints {
+                nodes,
+                cut_vertices_counts,
+            } => serde_json::json!({
+                "nodes": nodes,
+                "cut_vertices_counts": cut_vertices_counts,
+            }),
+            RunOutput::Bridges { edges } => serde_json::json!({
+                "edges": edges,
+            }),
+            RunOutput::KCore {
+                nodes,
+                core_numbers,
+            } => serde_json::json!({
+                "nodes": nodes,
+                "core_numbers": core_numbers,
+            }),
         }
     }
 }

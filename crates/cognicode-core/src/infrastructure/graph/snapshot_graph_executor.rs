@@ -28,17 +28,17 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use petgraph::stable_graph::{StableGraph, NodeIndex};
-use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use petgraph::Direction;
+use petgraph::stable_graph::{NodeIndex, StableGraph};
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::plan::graph_plan::{BooleanOp, NeighborKind};
 use crate::domain::plan::result::{EdgeResult, NodeResult, Path, PathHop, ResultSet, Row};
 use crate::domain::plan::value::TypedValue;
 use crate::domain::plan::{
-    CancellationToken, ExecutorError, GraphExecutor, GraphPlan, PlanLimits, PlanLimitKind,
-    PlanMetadata, PlanVersion, PlanHash, TruncationMarker,
+    CancellationToken, ExecutorError, GraphExecutor, GraphPlan, PlanHash, PlanLimitKind,
+    PlanLimits, PlanMetadata, PlanVersion, TruncationMarker,
 };
 use crate::domain::value_objects::{DependencyType, EdgeKind, RevisionId, WorkspaceId};
 use crate::infrastructure::graph::SnapshotProvider;
@@ -65,14 +65,19 @@ impl TestSnapshotProvider {
     pub fn insert(&self, ws: &WorkspaceId, rev: RevisionId, graph: CallGraph) {
         let key = (ws.as_str().to_string(), rev.get());
         self.snapshots.lock().unwrap().insert(key, Arc::new(graph));
-        *self.heads.lock().unwrap()
+        *self
+            .heads
+            .lock()
+            .unwrap()
             .entry(ws.as_str().to_string())
             .or_insert(RevisionId::NONE) = rev;
     }
 
     /// Set the current head revision for a workspace.
     pub fn set_head(&self, ws: &WorkspaceId, rev: RevisionId) {
-        self.heads.lock().unwrap()
+        self.heads
+            .lock()
+            .unwrap()
             .insert(ws.as_str().to_string(), rev);
     }
 }
@@ -84,9 +89,15 @@ impl Default for TestSnapshotProvider {
 }
 
 impl SnapshotProvider for TestSnapshotProvider {
-    fn current_head(&self, workspace: &WorkspaceId) -> Result<RevisionId, crate::infrastructure::graph::SnapshotError> {
+    fn current_head(
+        &self,
+        workspace: &WorkspaceId,
+    ) -> Result<RevisionId, crate::infrastructure::graph::SnapshotError> {
         let heads = self.heads.lock().unwrap();
-        Ok(heads.get(workspace.as_str()).copied().unwrap_or(RevisionId::NONE))
+        Ok(heads
+            .get(workspace.as_str())
+            .copied()
+            .unwrap_or(RevisionId::NONE))
     }
 
     fn snapshot(
@@ -96,13 +107,12 @@ impl SnapshotProvider for TestSnapshotProvider {
     ) -> Result<Arc<CallGraph>, crate::infrastructure::graph::SnapshotError> {
         let snapshots = self.snapshots.lock().unwrap();
         let key = (workspace.as_str().to_string(), revision.get());
-        snapshots
-            .get(&key)
-            .cloned()
-            .ok_or_else(|| crate::infrastructure::graph::SnapshotError::UnknownRevision {
+        snapshots.get(&key).cloned().ok_or_else(|| {
+            crate::infrastructure::graph::SnapshotError::UnknownRevision {
                 workspace: workspace.clone(),
                 revision,
-            })
+            }
+        })
     }
 
     fn subscribe(
@@ -178,7 +188,13 @@ impl<'a> GraphExecutor for SnapshotGraphExecutor<'a> {
 
         // Dispatch to variant-specific executor
         let mut result = match plan {
-            GraphPlan::Path { src, dst, quantifier, edge_kind_filter, .. } => {
+            GraphPlan::Path {
+                src,
+                dst,
+                quantifier,
+                edge_kind_filter,
+                ..
+            } => {
                 let max_hops = quantifier.max_hops.unwrap_or(32).min(32) as usize;
                 self.execute_path(
                     &graph,
@@ -189,22 +205,24 @@ impl<'a> GraphExecutor for SnapshotGraphExecutor<'a> {
                     &limits,
                 )
             }
-            GraphPlan::Neighbors { src, kind, depth, edge_kind_filter, .. } => {
-                self.execute_neighbors(
-                    &graph,
-                    src,
-                    kind.clone(),
-                    *depth as usize,
-                    edge_kind_filter.as_deref(),
-                    &limits,
-                )
-            }
+            GraphPlan::Neighbors {
+                src,
+                kind,
+                depth,
+                edge_kind_filter,
+                ..
+            } => self.execute_neighbors(
+                &graph,
+                src,
+                kind.clone(),
+                *depth as usize,
+                edge_kind_filter.as_deref(),
+                &limits,
+            ),
             GraphPlan::Subgraph { nodes, edges, .. } => {
                 self.execute_subgraph(&graph, nodes, edges.as_ref(), &limits)
             }
-            GraphPlan::Cluster { by, .. } => {
-                self.execute_cluster(&graph, by, &limits)
-            }
+            GraphPlan::Cluster { by, .. } => self.execute_cluster(&graph, by, &limits),
             GraphPlan::Explain { inner, .. } => {
                 // EXPLAIN: return inner plan's metadata as scalars, without executing
                 self.execute_explain(inner.as_ref())
@@ -339,10 +357,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
                                 .copied();
                             edge_kind.map(|ek| EdgeKind::Dependency(ek))
                         };
-                        PathHop {
-                            node_id,
-                            edge_kind,
-                        }
+                        PathHop { node_id, edge_kind }
                     })
                     .collect();
                 Path { hops }
@@ -427,7 +442,11 @@ impl<'a> SnapshotGraphExecutor<'a> {
     fn build_petgraph(
         &self,
         graph: &CallGraph,
-    ) -> (StableGraph<String, DependencyType>, HashMap<String, NodeIndex>, HashMap<NodeIndex, String>) {
+    ) -> (
+        StableGraph<String, DependencyType>,
+        HashMap<String, NodeIndex>,
+        HashMap<NodeIndex, String>,
+    ) {
         let mut stable_graph = StableGraph::new();
         let mut symbol_to_node: HashMap<String, NodeIndex> = HashMap::new();
         let mut node_to_symbol: HashMap<NodeIndex, String> = HashMap::new();
@@ -441,9 +460,10 @@ impl<'a> SnapshotGraphExecutor<'a> {
 
         // Add all edges
         for (src_id, tgt_id, dep_type) in graph.all_dependencies() {
-            if let (Some(&src_idx), Some(&tgt_idx)) =
-                (symbol_to_node.get(src_id.as_str()), symbol_to_node.get(tgt_id.as_str()))
-            {
+            if let (Some(&src_idx), Some(&tgt_idx)) = (
+                symbol_to_node.get(src_id.as_str()),
+                symbol_to_node.get(tgt_id.as_str()),
+            ) {
                 stable_graph.add_edge(src_idx, tgt_idx, *dep_type);
             }
         }
@@ -457,12 +477,9 @@ impl<'a> SnapshotGraphExecutor<'a> {
         symbol_id: &str,
         symbol_to_node: &HashMap<String, NodeIndex>,
     ) -> Result<NodeIndex, ExecutorError> {
-        symbol_to_node
-            .get(symbol_id)
-            .copied()
-            .ok_or_else(|| {
-                ExecutorError::InternalError(format!("symbol not found in graph: {symbol_id}"))
-            })
+        symbol_to_node.get(symbol_id).copied().ok_or_else(|| {
+            ExecutorError::InternalError(format!("symbol not found in graph: {symbol_id}"))
+        })
     }
 }
 
@@ -571,14 +588,21 @@ impl<'a> SnapshotGraphExecutor<'a> {
             .iter()
             .filter_map(|&node_idx| node_to_symbol.get(&node_idx))
             .map(|symbol_id| {
-                let symbol = graph.get_symbol(&crate::domain::aggregates::call_graph::SymbolId::new(symbol_id));
+                let symbol = graph.get_symbol(
+                    &crate::domain::aggregates::call_graph::SymbolId::new(symbol_id),
+                );
                 let (labels, properties) = if let Some(sym) = symbol {
                     // Use Display (lowercase, e.g. "function") instead of
                     // Debug (PascalCase, e.g. "Function") to match the PG
                     // executor's `parse_node_labels("symbol.function")` output.
                     let kind_str = sym.kind().to_string();
                     let labels = if kind_str.starts_with("symbol.") {
-                        vec![kind_str.strip_prefix("symbol.").unwrap_or(&kind_str).to_string()]
+                        vec![
+                            kind_str
+                                .strip_prefix("symbol.")
+                                .unwrap_or(&kind_str)
+                                .to_string(),
+                        ]
                     } else {
                         vec![kind_str]
                     };
@@ -709,14 +733,21 @@ impl<'a> SnapshotGraphExecutor<'a> {
             .iter()
             .filter_map(|&node_idx| node_to_symbol.get(&node_idx))
             .map(|symbol_id| {
-                let symbol = graph.get_symbol(&crate::domain::aggregates::call_graph::SymbolId::new(symbol_id));
+                let symbol = graph.get_symbol(
+                    &crate::domain::aggregates::call_graph::SymbolId::new(symbol_id),
+                );
                 let (labels, properties) = if let Some(sym) = symbol {
                     // Use Display (lowercase, e.g. "function") instead of
                     // Debug (PascalCase, e.g. "Function") to match the PG
                     // executor's `parse_node_labels("symbol.function")` output.
                     let kind_str = sym.kind().to_string();
                     let labels = if kind_str.starts_with("symbol.") {
-                        vec![kind_str.strip_prefix("symbol.").unwrap_or(&kind_str).to_string()]
+                        vec![
+                            kind_str
+                                .strip_prefix("symbol.")
+                                .unwrap_or(&kind_str)
+                                .to_string(),
+                        ]
                     } else {
                         vec![kind_str]
                     };
@@ -756,11 +787,10 @@ impl<'a> SnapshotGraphExecutor<'a> {
                     // match the PG executor's `format!("dependency.{}", dep_type)`
                     // which produces "dependency.calls". Conformance parity.
                     let kind_str = format!("dependency.{}", dep_type);
-                    let (provenance, confidence) =
-                        edge_meta.get(&(src.clone(), tgt.clone())).copied().unwrap_or((
-                            crate::domain::value_objects::Provenance::Extracted,
-                            1.0,
-                        ));
+                    let (provenance, confidence) = edge_meta
+                        .get(&(src.clone(), tgt.clone()))
+                        .copied()
+                        .unwrap_or((crate::domain::value_objects::Provenance::Extracted, 1.0));
                     let properties = vec![
                         TypedValue::String(provenance.to_string()),
                         TypedValue::Float(confidence),
@@ -821,7 +851,10 @@ impl<'a> SnapshotGraphExecutor<'a> {
                 // Group by kind
                 let kind_str = format!("{:?}", symbol.kind());
                 if kind_str.starts_with("symbol.") {
-                    kind_str.strip_prefix("symbol.").unwrap_or(&kind_str).to_string()
+                    kind_str
+                        .strip_prefix("symbol.")
+                        .unwrap_or(&kind_str)
+                        .to_string()
                 } else {
                     kind_str
                 }
@@ -991,15 +1024,18 @@ impl<'a> SnapshotGraphExecutor<'a> {
         let nodes: Vec<NodeResult> = result_ids
             .iter()
             .map(|symbol_id| {
-                let symbol =
-                    graph.get_symbol(&crate::domain::aggregates::call_graph::SymbolId::new(symbol_id));
+                let symbol = graph.get_symbol(
+                    &crate::domain::aggregates::call_graph::SymbolId::new(symbol_id),
+                );
                 let (labels, properties) = if let Some(sym) = symbol {
                     let kind_str = format!("{:?}", sym.kind());
                     let labels = if kind_str.starts_with("symbol.") {
-                        vec![kind_str
-                            .strip_prefix("symbol.")
-                            .unwrap_or(&kind_str)
-                            .to_string()]
+                        vec![
+                            kind_str
+                                .strip_prefix("symbol.")
+                                .unwrap_or(&kind_str)
+                                .to_string(),
+                        ]
                     } else {
                         vec![kind_str]
                     };
@@ -1051,9 +1087,21 @@ impl<'a> SnapshotGraphExecutor<'a> {
 
     /// Evaluate a single operand plan directly against an already-fetched graph.
     /// Returns the set of node IDs from the result.
-    fn evaluate_operand(&self, graph: &CallGraph, operand: &GraphPlan) -> Result<HashSet<String>, ExecutorError> {
+    fn evaluate_operand(
+        &self,
+        graph: &CallGraph,
+        operand: &GraphPlan,
+    ) -> Result<HashSet<String>, ExecutorError> {
         match operand {
-            GraphPlan::Neighbors { src, kind, depth, edge_kind_filter, predicates, limits, .. } => {
+            GraphPlan::Neighbors {
+                src,
+                kind,
+                depth,
+                edge_kind_filter,
+                predicates,
+                limits,
+                ..
+            } => {
                 let rs = self.execute_neighbors(
                     graph,
                     src,
@@ -1064,7 +1112,16 @@ impl<'a> SnapshotGraphExecutor<'a> {
                 )?;
                 Ok(rs.nodes.iter().map(|n| n.id.clone()).collect())
             }
-            GraphPlan::Path { src, dst, quantifier, edge_kind_filter, predicates, projection: _, limits, .. } => {
+            GraphPlan::Path {
+                src,
+                dst,
+                quantifier,
+                edge_kind_filter,
+                predicates,
+                projection: _,
+                limits,
+                ..
+            } => {
                 let max_hops = quantifier.max_hops.unwrap_or(32).min(32) as usize;
                 let rs = self.execute_path(
                     graph,
@@ -1083,7 +1140,13 @@ impl<'a> SnapshotGraphExecutor<'a> {
                 }
                 Ok(node_ids)
             }
-            GraphPlan::Subgraph { nodes, edges, aggregations, limits, .. } => {
+            GraphPlan::Subgraph {
+                nodes,
+                edges,
+                aggregations,
+                limits,
+                ..
+            } => {
                 let rs = self.execute_subgraph(graph, nodes, edges.as_ref(), limits)?;
                 Ok(rs.nodes.iter().map(|n| n.id.clone()).collect())
             }
@@ -1091,7 +1154,12 @@ impl<'a> SnapshotGraphExecutor<'a> {
                 let rs = self.execute_cluster(graph, by, limits)?;
                 Ok(rs.nodes.iter().map(|n| n.id.clone()).collect())
             }
-            GraphPlan::BooleanComposition { op, operands, limits, .. } => {
+            GraphPlan::BooleanComposition {
+                op,
+                operands,
+                limits,
+                ..
+            } => {
                 // Recurse for nested boolean composition
                 let inner_sets = self.execute_boolean(graph, *op, operands, limits)?;
                 Ok(inner_sets.nodes.iter().map(|n| n.id.clone()).collect())
@@ -1119,7 +1187,7 @@ mod tests {
     use crate::domain::aggregates::call_graph::SymbolId;
     use crate::domain::aggregates::symbol::Symbol;
     use crate::domain::plan::graph_plan::{PathProjection, PathQuantifier};
-    use crate::domain::plan::version::{PlanMetadata, PlanVersion, PlanHash};
+    use crate::domain::plan::version::{PlanHash, PlanMetadata, PlanVersion};
     use crate::domain::services::ExtractionContext;
     use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
     use crate::infrastructure::graph::SnapshotProvider;
@@ -1437,19 +1505,44 @@ mod tests {
         let id_c = SymbolId::new("src/C.rs:C:1");
         let id_d = SymbolId::new("src/D.rs:D:1");
 
-        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("B", SymbolKind::Function, Location::new("src/B.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("C", SymbolKind::Function, Location::new("src/C.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("D", SymbolKind::Function, Location::new("src/D.rs", 1, 0)));
+        graph.add_symbol(Symbol::new(
+            "A",
+            SymbolKind::Function,
+            Location::new("src/A.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "B",
+            SymbolKind::Function,
+            Location::new("src/B.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "C",
+            SymbolKind::Function,
+            Location::new("src/C.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "D",
+            SymbolKind::Function,
+            Location::new("src/D.rs", 1, 0),
+        ));
 
         let _ = graph.add_dependency_with_provenance(
-            &id_a, &id_b, DependencyType::Calls, ExtractionContext::DirectExtraction,
+            &id_a,
+            &id_b,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
         );
         let _ = graph.add_dependency_with_provenance(
-            &id_a, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction,
+            &id_a,
+            &id_c,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
         );
         let _ = graph.add_dependency_with_provenance(
-            &id_d, &id_a, DependencyType::Calls, ExtractionContext::DirectExtraction,
+            &id_d,
+            &id_a,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
         );
 
         provider.insert(&ws, RevisionId(1), graph);
@@ -1506,19 +1599,44 @@ mod tests {
         let id_c = SymbolId::new("src/C.rs:C:1");
         let id_d = SymbolId::new("src/D.rs:D:1");
 
-        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("B", SymbolKind::Function, Location::new("src/B.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("C", SymbolKind::Function, Location::new("src/C.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("D", SymbolKind::Function, Location::new("src/D.rs", 1, 0)));
+        graph.add_symbol(Symbol::new(
+            "A",
+            SymbolKind::Function,
+            Location::new("src/A.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "B",
+            SymbolKind::Function,
+            Location::new("src/B.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "C",
+            SymbolKind::Function,
+            Location::new("src/C.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "D",
+            SymbolKind::Function,
+            Location::new("src/D.rs", 1, 0),
+        ));
 
         let _ = graph.add_dependency_with_provenance(
-            &id_a, &id_b, DependencyType::Calls, ExtractionContext::DirectExtraction,
+            &id_a,
+            &id_b,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
         );
         let _ = graph.add_dependency_with_provenance(
-            &id_a, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction,
+            &id_a,
+            &id_c,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
         );
         let _ = graph.add_dependency_with_provenance(
-            &id_d, &id_a, DependencyType::Calls, ExtractionContext::DirectExtraction,
+            &id_d,
+            &id_a,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
         );
 
         provider.insert(&ws, RevisionId(1), graph);
@@ -1691,18 +1809,39 @@ mod tests {
         let id_b = SymbolId::new("src/B.rs:B:1");
         let id_c = SymbolId::new("src/C.rs:C:1");
 
-        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("B", SymbolKind::Function, Location::new("src/B.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("C", SymbolKind::Function, Location::new("src/C.rs", 1, 0)));
+        graph.add_symbol(Symbol::new(
+            "A",
+            SymbolKind::Function,
+            Location::new("src/A.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "B",
+            SymbolKind::Function,
+            Location::new("src/B.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "C",
+            SymbolKind::Function,
+            Location::new("src/C.rs", 1, 0),
+        ));
 
         let _ = graph.add_dependency_with_provenance(
-            &id_a, &id_b, DependencyType::Calls, ExtractionContext::DirectExtraction,
+            &id_a,
+            &id_b,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
         );
         let _ = graph.add_dependency_with_provenance(
-            &id_a, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction,
+            &id_a,
+            &id_c,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
         );
         let _ = graph.add_dependency_with_provenance(
-            &id_b, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction,
+            &id_b,
+            &id_c,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
         );
 
         provider.insert(&ws, RevisionId(1), graph);
@@ -1778,16 +1917,38 @@ mod tests {
         let id_c = SymbolId::new("src/C.rs:C:1");
         let id_d = SymbolId::new("src/D.rs:D:1");
 
-        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("B", SymbolKind::Function, Location::new("src/B.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("C", SymbolKind::Function, Location::new("src/C.rs", 1, 0)));
-        graph.add_symbol(Symbol::new("D", SymbolKind::Function, Location::new("src/D.rs", 1, 0)));
+        graph.add_symbol(Symbol::new(
+            "A",
+            SymbolKind::Function,
+            Location::new("src/A.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "B",
+            SymbolKind::Function,
+            Location::new("src/B.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "C",
+            SymbolKind::Function,
+            Location::new("src/C.rs", 1, 0),
+        ));
+        graph.add_symbol(Symbol::new(
+            "D",
+            SymbolKind::Function,
+            Location::new("src/D.rs", 1, 0),
+        ));
 
         let _ = graph.add_dependency_with_provenance(
-            &id_a, &id_b, DependencyType::Calls, ExtractionContext::DirectExtraction,
+            &id_a,
+            &id_b,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
         );
         let _ = graph.add_dependency_with_provenance(
-            &id_a, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction,
+            &id_a,
+            &id_c,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
         );
         // D is isolated — no edges
 
@@ -2004,15 +2165,51 @@ mod tests {
         let id_bref = SymbolId::new("src/B_ref.rs:B_ref:1");
         let id_c = SymbolId::new("src/C.rs:C:1");
 
-        graph.add_symbol(Symbol::new("A", SymbolKind::Function, Location::new("src/A.rs", 1, 1)));
-        graph.add_symbol(Symbol::new("B", SymbolKind::Function, Location::new("src/B.rs", 1, 1)));
-        graph.add_symbol(Symbol::new("B_ref", SymbolKind::Function, Location::new("src/B_ref.rs", 1, 1)));
-        graph.add_symbol(Symbol::new("C", SymbolKind::Function, Location::new("src/C.rs", 1, 1)));
+        graph.add_symbol(Symbol::new(
+            "A",
+            SymbolKind::Function,
+            Location::new("src/A.rs", 1, 1),
+        ));
+        graph.add_symbol(Symbol::new(
+            "B",
+            SymbolKind::Function,
+            Location::new("src/B.rs", 1, 1),
+        ));
+        graph.add_symbol(Symbol::new(
+            "B_ref",
+            SymbolKind::Function,
+            Location::new("src/B_ref.rs", 1, 1),
+        ));
+        graph.add_symbol(Symbol::new(
+            "C",
+            SymbolKind::Function,
+            Location::new("src/C.rs", 1, 1),
+        ));
 
-        let _ = graph.add_dependency_with_provenance(&id_a, &id_b, DependencyType::Calls, ExtractionContext::DirectExtraction);
-        let _ = graph.add_dependency_with_provenance(&id_a, &id_bref, DependencyType::References, ExtractionContext::DirectExtraction);
-        let _ = graph.add_dependency_with_provenance(&id_b, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction);
-        let _ = graph.add_dependency_with_provenance(&id_bref, &id_c, DependencyType::Calls, ExtractionContext::DirectExtraction);
+        let _ = graph.add_dependency_with_provenance(
+            &id_a,
+            &id_b,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
+        let _ = graph.add_dependency_with_provenance(
+            &id_a,
+            &id_bref,
+            DependencyType::References,
+            ExtractionContext::DirectExtraction,
+        );
+        let _ = graph.add_dependency_with_provenance(
+            &id_b,
+            &id_c,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
+        let _ = graph.add_dependency_with_provenance(
+            &id_bref,
+            &id_c,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        );
 
         let ws = WorkspaceId::try_new("ws1").unwrap();
         let provider = TestSnapshotProvider::new();
@@ -2022,7 +2219,10 @@ mod tests {
         let plan_filtered = GraphPlan::Path {
             src: "src/A.rs:A:1".to_string(),
             dst: "src/C.rs:C:1".to_string(),
-            quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
+            quantifier: PathQuantifier {
+                max_hops: Some(3),
+                min_hops: 0,
+            },
             edge_kind_filter: Some(vec![DependencyType::Calls]),
             predicates: vec![],
             projection: PathProjection::default(),
@@ -2050,7 +2250,10 @@ mod tests {
         let plan_unfiltered = GraphPlan::Path {
             src: "src/A.rs:A:1".to_string(),
             dst: "src/C.rs:C:1".to_string(),
-            quantifier: PathQuantifier { max_hops: Some(3), min_hops: 0 },
+            quantifier: PathQuantifier {
+                max_hops: Some(3),
+                min_hops: 0,
+            },
             edge_kind_filter: None,
             predicates: vec![],
             projection: PathProjection::default(),
