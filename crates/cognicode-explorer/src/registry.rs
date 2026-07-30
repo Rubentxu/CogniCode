@@ -637,6 +637,7 @@ impl ViewRegistry {
         static KNOWN_KINDS: OnceLock<Vec<ViewKind>> = OnceLock::new();
         KNOWN_KINDS.get_or_init(|| {
             vec![
+                ViewKind::Summary,
                 ViewKind::VerticalSlice,
                 ViewKind::CallGraph,
                 ViewKind::SeamMap,

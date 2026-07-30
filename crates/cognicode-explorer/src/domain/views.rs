@@ -1736,9 +1736,8 @@ fn build_seam_map(
         })
         .collect();
 
-    // Collect cross-module edges: (caller_module, callee_module)
-    let mut cross_module_edges: std::collections::HashSet<(String, String)> =
-        std::collections::HashSet::new();
+    // Collect cross-module edges: (caller_module, callee_module) — preserve duplicates for counting
+    let mut cross_module_edges: Vec<(String, String)> = Vec::new();
 
     if let Some(gq) = graph_query {
         for sym in &symbols {
@@ -1758,9 +1757,16 @@ fn build_seam_map(
                 } else {
                     (callee_module, caller_module.clone())
                 };
-                cross_module_edges.insert(pair);
+                cross_module_edges.push(pair);
             }
         }
+    }
+
+    // Count occurrences per (module_a, module_b) pair
+    let mut counts: std::collections::HashMap<(String, String), usize> =
+        std::collections::HashMap::new();
+    for (a, b) in &cross_module_edges {
+        *counts.entry((a.clone(), b.clone())).or_insert(0) += 1;
     }
 
     // Build graph nodes: one per module
@@ -1775,8 +1781,18 @@ fn build_seam_map(
         })
         .collect();
 
-    // Build edges from cross_module_edges
-    let edges: Vec<serde_json::Value> = cross_module_edges
+    // Build edges from unique pairs (keys of counts)
+    // First convert to Vec and sort by count descending
+    let mut sorted_counts: Vec<_> = counts.into_iter().collect();
+    sorted_counts.sort_by(|a, b| b.1.cmp(&a.1)); // sort by count desc
+
+    // unique_pairs for graph edges (clone to avoid borrowing issues)
+    let unique_pairs: Vec<_> = sorted_counts
+        .iter()
+        .map(|((a, b), _)| (a.clone(), b.clone()))
+        .collect();
+
+    let edges: Vec<serde_json::Value> = unique_pairs
         .iter()
         .map(|(src, dst)| {
             json!({
@@ -1787,31 +1803,22 @@ fn build_seam_map(
         })
         .collect();
 
-    // Build count table: (module_a, module_b, count) sorted by count desc
-    // Count is always 1 per pair since we deduplicated
-    let mut table_rows: Vec<serde_json::Value> = cross_module_edges
+    // Build count table from sorted_counts
+    let table_rows: Vec<serde_json::Value> = sorted_counts
         .iter()
-        .map(|(a, b)| {
+        .map(|((a, b), count)| {
             json!({
                 "module_a": a,
                 "module_b": b,
-                "edge_count": 1,
+                "edge_count": count,
             })
         })
         .collect();
-    // Sort by module_a, module_b for deterministic output
-    table_rows.sort_by(|a, b| {
-        let a_a = a.get("module_a").and_then(|v| v.as_str()).unwrap_or("");
-        let a_b = a.get("module_b").and_then(|v| v.as_str()).unwrap_or("");
-        let b_a = b.get("module_a").and_then(|v| v.as_str()).unwrap_or("");
-        let b_b = b.get("module_b").and_then(|v| v.as_str()).unwrap_or("");
-        (a_a, a_b).cmp(&(b_a, b_b))
-    });
 
     let blocks = vec![
         ViewBlock {
             id: "seam_map_graph".into(),
-            title: format!("Seam Map ({} modules, {} cross-module edges)", modules.len(), cross_module_edges.len()),
+            title: format!("Seam Map ({} modules, {} cross-module edges)", modules.len(), unique_pairs.len()),
             body: json!({
                 "nodes": nodes,
                 "edges": edges,
@@ -1827,7 +1834,7 @@ fn build_seam_map(
         },
         ViewBlock {
             id: "cross_module_pairs".into(),
-            title: format!("Cross-Module Pairs ({})", cross_module_edges.len()),
+            title: format!("Cross-Module Pairs ({})", unique_pairs.len()),
             body: json!({
                 "columns": ["module_a", "module_b", "edge_count"],
                 "rows": table_rows,
@@ -2742,9 +2749,9 @@ impl ViewDescriptor for DocSourceExecutor {
         &[InspectableObjectType::Doc]
     }
     fn view_kind(&self) -> ViewKind {
-        // DocSource shows the document's own content — a source/overview perspective.
-        // Distinct from SourceExecutor (SourceView) to satisfy ViewKind uniqueness.
-        ViewKind::SeamMap
+        // DocSource shows the document's own source content — uses SourceView
+        // because it renders document source code with a Code renderer.
+        ViewKind::SourceView
     }
     fn renderer_kind(&self) -> RendererKind {
         RendererKind::Code
