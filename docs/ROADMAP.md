@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-29 (E28.4 MCP analytics wiring fix shipped v0.73.7 — all 9 debt-verify blockers closed; E28.4 chain fully DONE; E28.5 unblocked.)
+Last updated: 2026-07-30 (E28.5 structural analytics cohort 2 shipped v0.74.0 — dominators, articulation points, bridges, k-core; E28.6 unblocked.)
 
 ## Active
 
@@ -24,7 +24,7 @@ before implementation begins.
 | `e28-1-moldplan-graphplan-contracts` | Introduce versioned `MoldPlan`/`GraphPlan`, typed results, execution policy, limits, and structured unsupported-operation errors | E28.0 | Plans contain no backend or presentation types; every run declares limits; unsupported operations fail before execution | PROPOSED |
 | `e28-2-differential-graph-executors` | Execute existing `PATH`, `NEIGHBORS`, `SUBGRAPH`, `CLUSTER`, `EXPLAIN`, and boolean composition in PostgreSQL and snapshot executors | E28.1 | Golden fixtures prove equivalent typed multisets, ordering, paths, errors, provenance, and truncation; no supported operation returns synthetic empty success | **DONE** (PR1 Port v0.68.0 + PR2 PG Executor v0.69.0 + PR3 Snapshot Executor v0.70.0 + PR6 pool-fix v0.70.1 + PR5 edge-filter v0.71.0 + PR4 Conformance v0.71.1 merged) |
 | `e28-3-moldql-pattern-profile-v1` | Add read-only typed patterns, direction, bounded quantifiers, predicates, aggregation, ordering, limits, and bounded shortest paths | E28.2 | The supported-feature matrix is published; parser, lowering, differential, REST/MCP, and Explorer interaction tests pass; no Cypher/GQL compatibility claim is made | **DONE** (PR1 v0.72.0 + PR2 v0.72.1 + PR3 v0.72.2 + PR4 v0.72.3 merged) |
-| `e28-4-analytics-registry-cohort-1` | Add descriptor admission, `stream`/`stats`/`annotate`/`persist` modes, run lineage, and stabilize PageRank, SCC, WCC, and bounded shortest paths | E28.2 | Every admitted algorithm is versioned, resource-governed, reproducible, and non-mutating; cohort-1 conformance and composition tests pass | **IN PROGRESS** (PR3+PR4+PR5 chain) |
+| `e28-4-analytics-registry-cohort-1` | Add descriptor admission, `stream`/`stats`/`annotate`/`persist` modes, run lineage, and stabilize PageRank, SCC, WCC, and bounded shortest paths | E28.2 | Every admitted algorithm is versioned, resource-governed, reproducible, and non-mutating; cohort-1 conformance and composition tests pass | **DONE** (PR1 v0.73.0 + PR2 v0.73.1 + PR3 v0.73.2 + PR4 v0.73.3 + PR5 v0.73.4 + PR6 v0.73.6 + PR7 v0.73.7 merged) |
 | `e28-5-structural-analytics-cohort-2` | Add dominators, articulation points, bridges, and k-core for impact, seam, dependency-pressure, and risk views | E28.4 | Each algorithm has a product question, descriptor, golden fixtures, and either an Explorer surface or an explicit internal/composable classification | **DONE** (`refactor/debt-e28-5-structural-analytics-cohort-2-1`, 4 commits; archived 2026-07-30) |
 | `e28-6-advanced-analytics-evidence-gate` | Evaluate betweenness, k-shortest paths, multi-source reachability, personalized PageRank, Leiden, conductance/modularity, node similarity, and an optional Neo4j CI oracle | E28.5 | Only measured, product-relevant algorithms are admitted; optional oracle checks do not affect production availability; any production sidecar proposal is deferred to a separate ADR | PROPOSED |
 
@@ -98,7 +98,19 @@ PR4 closes the E28.1 chain (Phase 4: PG `#[sqlx::test]` integration + bridge-map
 - REST handlers wired to registry (catalog, lineage_list, lineage_get)
 - AlgorithmId now implements FromStr for "name@version" format
 
-Session Handover 2026-07-29: E28.4 PR6 closes the wiring blockers. Remaining E28.4 work: wire AlgorithmRegistry from runtime composition root with algorithm descriptors admitted at startup.
+Session Handover 2026-07-29: E28.4 PR6 closes the wiring blockers. Remaining E28.4 work: wire AlgorithmRegistry from runtime composition root with algorithm descriptors admitted at startup. — COMPLETED in PR7 v0.73.7.
+
+#### E28.5 stacked-to-main chain
+
+| Sub-PR | Branch | Status | Tag | PR |
+|---|---|---|---|---|
+| PR1 Structural Pure Functions | `feat/e28-5-structural-analytics-cohort-2` | ✅ Merged | (part of v0.74.0) | [#166](https://github.com/Rubentxu/CogniCode/pull/166) |
+| PR2 Descriptors + Wiring | `feat/e28-5-structural-analytics-cohort-2` | ✅ Merged | (part of v0.74.0) | [#166](https://github.com/Rubentxu/CogniCode/pull/166) |
+| **Debt Fix Cycle** | `refactor/debt-e28-5-structural-analytics-cohort-2-1` | ✅ Merged | v0.74.0 | [#166](https://github.com/Rubentxu/CogniCode/pull/166) |
+
+**E28.5 is fully DONE.** Ships dominators, articulation points, bridges, and k-core structural analytics via the `impl_cohort2_descriptor!` macro, with production composition root admitting all 8 algorithms (cohort-1 + cohort-2). **E28.6 unblocked.**
+
+Session Handover 2026-07-30: E28.5 shipped v0.74.0 via fix-cycle PR #166. Pre-existing main debt (tokio Handle::current in admit(), plan_hash empty, WorkspaceId panic) tracked for separate fix cycle. E28.6 next.
 
 #### E28 execution order
 
