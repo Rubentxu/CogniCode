@@ -314,6 +314,11 @@ fn real_executors() -> &'static ViewExecutorMap {
                     as &dyn crate::domain::views::ViewExecutor,
             },
             ExecutorEntry {
+                id: "seam-map",
+                executor: &crate::domain::views::SEAM_MAP_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            },
+            ExecutorEntry {
                 id: "source",
                 executor: &crate::domain::views::SOURCE_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,

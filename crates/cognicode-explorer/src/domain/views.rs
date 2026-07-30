@@ -1651,6 +1651,203 @@ fn build_vertical_slice(
     }
 }
 
+/// SeamMap capability — applies to Scope, Module, Crate.
+/// Shows module boundaries and cross-boundary call edges.
+pub struct SeamMapExecutor;
+impl ViewDescriptor for SeamMapExecutor {
+    fn id(&self) -> &'static str {
+        "seam-map"
+    }
+    fn title(&self) -> &'static str {
+        "Seam Map"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[
+            InspectableObjectType::Module,
+            InspectableObjectType::Scope,
+            InspectableObjectType::Workspace,
+        ]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::SeamMap
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Graph
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for SeamMapExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match &ctx.target {
+            InspectionTarget::Scope { path, files: _, symbols: _ } => {
+                Ok(build_seam_map(path, ctx.repo, ctx.graph_query))
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "seam-map".into(),
+            }),
+        }
+    }
+}
+
+/// Build the Seam Map view: module boundaries as nodes, cross-module calls as edges.
+fn build_seam_map(
+    scope_path: &str,
+    repo: &dyn SymbolRepository,
+    graph_query: Option<&dyn GraphQueryPort>,
+) -> ContextualView {
+    let modules: Vec<String> = {
+        let mut mods = repo.module_list();
+        mods.sort();
+        mods
+    };
+
+    if modules.is_empty() {
+        return ContextualView {
+            object_id: format!("scope:{}", scope_path),
+            view_id: "seam-map".into(),
+            title: "Seam Map".into(),
+            blocks: vec![ViewBlock {
+                id: "empty_workspace".into(),
+                title: "Empty Workspace".into(),
+                body: json!({ "message": "No modules found in workspace." }),
+            }],
+            relations: Vec::new(),
+            evidence: Vec::new(),
+            findings: Vec::new(),
+            view_kind: ViewKind::SeamMap,
+            renderer_kind: RendererKind::Graph,
+        };
+    }
+
+    // Map symbol -> module (parent directory)
+    let symbols = repo.all_symbols().unwrap_or_default();
+    let symbol_to_module: std::collections::HashMap<String, String> = symbols
+        .iter()
+        .map(|s| {
+            // module is the parent directory of the symbol's file
+            let module = std::path::Path::new(&s.file)
+                .parent()
+                .and_then(|p| p.to_str())
+                .unwrap_or("")
+                .to_string();
+            (s.id.to_string(), module)
+        })
+        .collect();
+
+    // Collect cross-module edges: (caller_module, callee_module)
+    let mut cross_module_edges: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
+
+    if let Some(gq) = graph_query {
+        for sym in &symbols {
+            let callees = gq.callees(&sym.id);
+            let caller_module = symbol_to_module.get(&sym.id.to_string()).cloned().unwrap_or_default();
+            if caller_module.is_empty() {
+                continue;
+            }
+            for callee in callees {
+                let callee_module = symbol_to_module.get(&callee.id.to_string()).cloned().unwrap_or_default();
+                if callee_module.is_empty() || caller_module == callee_module {
+                    continue;
+                }
+                // Normalize: store as (a,b) where a < b lexicographically for bidirectional aggregation
+                let pair = if caller_module < callee_module {
+                    (caller_module.clone(), callee_module)
+                } else {
+                    (callee_module, caller_module.clone())
+                };
+                cross_module_edges.insert(pair);
+            }
+        }
+    }
+
+    // Build graph nodes: one per module
+    let nodes: Vec<serde_json::Value> = modules
+        .iter()
+        .map(|m| {
+            json!({
+                "id": m,
+                "label": m,
+                "kind": "module",
+            })
+        })
+        .collect();
+
+    // Build edges from cross_module_edges
+    let edges: Vec<serde_json::Value> = cross_module_edges
+        .iter()
+        .map(|(src, dst)| {
+            json!({
+                "source": src,
+                "target": dst,
+                "type": "cross_module_call",
+            })
+        })
+        .collect();
+
+    // Build count table: (module_a, module_b, count) sorted by count desc
+    // Count is always 1 per pair since we deduplicated
+    let mut table_rows: Vec<serde_json::Value> = cross_module_edges
+        .iter()
+        .map(|(a, b)| {
+            json!({
+                "module_a": a,
+                "module_b": b,
+                "edge_count": 1,
+            })
+        })
+        .collect();
+    // Sort by module_a, module_b for deterministic output
+    table_rows.sort_by(|a, b| {
+        let a_a = a.get("module_a").and_then(|v| v.as_str()).unwrap_or("");
+        let a_b = a.get("module_b").and_then(|v| v.as_str()).unwrap_or("");
+        let b_a = b.get("module_a").and_then(|v| v.as_str()).unwrap_or("");
+        let b_b = b.get("module_b").and_then(|v| v.as_str()).unwrap_or("");
+        (a_a, a_b).cmp(&(b_a, b_b))
+    });
+
+    let blocks = vec![
+        ViewBlock {
+            id: "seam_map_graph".into(),
+            title: format!("Seam Map ({} modules, {} cross-module edges)", modules.len(), cross_module_edges.len()),
+            body: json!({
+                "nodes": nodes,
+                "edges": edges,
+            }),
+        },
+        ViewBlock {
+            id: "module_list".into(),
+            title: format!("Modules ({})", modules.len()),
+            body: json!({
+                "columns": ["module"],
+                "rows": modules.iter().map(|m| json!({ "module": m })).collect::<Vec<_>>(),
+            }),
+        },
+        ViewBlock {
+            id: "cross_module_pairs".into(),
+            title: format!("Cross-Module Pairs ({})", cross_module_edges.len()),
+            body: json!({
+                "columns": ["module_a", "module_b", "edge_count"],
+                "rows": table_rows,
+            }),
+        },
+    ];
+
+    ContextualView {
+        object_id: format!("scope:{}", scope_path),
+        view_id: "seam-map".into(),
+        title: "Seam Map".into(),
+        blocks,
+        relations: Vec::new(),
+        evidence: Vec::new(),
+        findings: Vec::new(),
+        view_kind: ViewKind::SeamMap,
+        renderer_kind: RendererKind::Graph,
+    }
+}
+
 /// UsageExamples capability — applies to Symbol.
 /// Shows callers and callees as a navigable table (complement to CallGraph's graph view).
 pub struct UsageExamplesExecutor;
@@ -3536,6 +3733,7 @@ impl ViewExecutor for RiskMapExecutor {
 pub static OVERVIEW_EXECUTOR: OverviewExecutor = OverviewExecutor;
 pub static CALLGRAPH_EXECUTOR: CallGraphExecutor = CallGraphExecutor;
 pub static VERTICAL_SLICE_EXECUTOR: VerticalSliceExecutor = VerticalSliceExecutor;
+pub static SEAM_MAP_EXECUTOR: SeamMapExecutor = SeamMapExecutor;
 pub static SOURCE_EXECUTOR: SourceExecutor = SourceExecutor;
 pub static QUALITY_EXECUTOR: QualityExecutor = QualityExecutor;
 pub static EVIDENCE_EXECUTOR: EvidenceExecutor = EvidenceExecutor;
