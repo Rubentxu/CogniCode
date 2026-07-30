@@ -1054,3 +1054,48 @@ mod tests {
         assert!(matches!(result.unwrap_err(), AnalyticsError::LimitPolicyViolation(_)));
     }
 }
+
+// =============================================================================
+// Default Analytics Registry (Cohort 1 + Cohort 2)
+// =============================================================================
+
+/// Build an `AlgorithmRegistry` pre-loaded with all 8 algorithms:
+///
+/// **Cohort 1:**
+/// - `pagerank` — PageRank importance scores
+/// - `scc` — Strongly Connected Components
+/// - `wcc` — Weakly Connected Components
+/// - `bounded_shortest_paths` — Bounded shortest paths between symbols
+///
+/// **Cohort 2:**
+/// - `dominators` — Dominator tree (directed, root-parametrized)
+/// - `articulation_points` — Cut vertices (undirected)
+/// - `bridges` — Cut edges (undirected)
+/// - `k_core` — K-core decomposition (undirected, k-parametrized)
+///
+/// # Arguments
+///
+/// - `lineage` — lineage store for run tracking
+///
+/// # Returns
+///
+/// A new `AlgorithmRegistry` with all 8 algorithms admitted.
+pub fn default_analytics_registry(
+    lineage: Arc<dyn RunLineageStore>,
+) -> AlgorithmRegistry {
+    let mut registry = AlgorithmRegistry::new(lineage, None);
+
+    // Cohort 1 algorithms
+    registry.admit(Box::new(crate::domain::analytics::PageRankDescriptor)).unwrap();
+    registry.admit(Box::new(crate::domain::analytics::SccDescriptor)).unwrap();
+    registry.admit(Box::new(crate::domain::analytics::WccDescriptor)).unwrap();
+    registry.admit(Box::new(crate::domain::analytics::BoundedShortestPathsDescriptor)).unwrap();
+
+    // Cohort 2 algorithms
+    registry.admit(Box::new(crate::domain::analytics::DominatorsDescriptor)).unwrap();
+    registry.admit(Box::new(crate::domain::analytics::ArticulationPointsDescriptor)).unwrap();
+    registry.admit(Box::new(crate::domain::analytics::BridgesDescriptor)).unwrap();
+    registry.admit(Box::new(crate::domain::analytics::KCoreDescriptor)).unwrap();
+
+    registry
+}

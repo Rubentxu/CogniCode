@@ -16,12 +16,16 @@ pub mod surprising_connections;
 pub mod transitive_reduction;
 
 pub use all_simple_paths::all_simple_paths;
+pub use articulation_points::articulation_points;
+pub use bridges::bridges;
 pub use cluster_components::cluster_components;
 pub use communities::communities;
 pub use community_god_nodes::community_god_nodes;
 pub use condensation::condensation;
+pub use dominators::dominators;
 pub use feedback_arc_set::feedback_arc_set;
 pub use god_nodes::god_nodes;
+pub use k_core::k_core;
 pub use page_rank::page_rank;
 pub use surprising_connections::surprising_connections;
 pub use transitive_reduction::transitive_reduction;
