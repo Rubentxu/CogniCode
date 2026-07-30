@@ -324,76 +324,6 @@ impl Telemetry for HandlerContext {
     }
 }
 
-// =============================================================================
-// ViewSpec Repository Trait (DIP for ViewSpec persistence)
-// =============================================================================
-
-/// DIP port for ViewSpec persistence operations.
-///
-/// Abstracts list/read operations on ViewSpecs so handlers don't depend
-/// directly on PostgresRepository. This allows the MCP layer to be tested
-/// with a mock implementation without requiring a real database.
-#[cfg(feature = "postgres")]
-#[async_trait::async_trait]
-pub trait ViewSpecRepository: Send + Sync {
-    /// List all ViewSpecs for a workspace and owner, newest first.
-    async fn list_view_specs(
-        &self,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<
-        Vec<crate::infrastructure::persistence::ViewSpecRow>,
-        crate::domain::traits::repository::CallGraphStoreError,
-    >;
-
-    /// Load a single ViewSpec by id, scoped to workspace and owner.
-    async fn load_view_spec(
-        &self,
-        id: &str,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<
-        Option<crate::infrastructure::persistence::ViewSpecRow>,
-        crate::domain::traits::repository::CallGraphStoreError,
-    >;
-}
-
-#[cfg(feature = "postgres")]
-#[async_trait::async_trait]
-impl ViewSpecRepository for HandlerContext {
-    async fn list_view_specs(
-        &self,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<
-        Vec<crate::infrastructure::persistence::ViewSpecRow>,
-        crate::domain::traits::repository::CallGraphStoreError,
-    > {
-        let repo = self.view_spec_repo.as_ref().ok_or_else(|| {
-            crate::domain::traits::repository::CallGraphStoreError::NotFound(
-                "view_spec_repo not configured".into(),
-            )
-        })?;
-        ViewSpecRepository::list_view_specs(repo.as_ref(), workspace_id, owner).await
-    }
-
-    async fn load_view_spec(
-        &self,
-        id: &str,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<
-        Option<crate::infrastructure::persistence::ViewSpecRow>,
-        crate::domain::traits::repository::CallGraphStoreError,
-    > {
-        let repo = self.view_spec_repo.as_ref().ok_or_else(|| {
-            crate::domain::traits::repository::CallGraphStoreError::NotFound(
-                "view_spec_repo not configured".into(),
-            )
-        })?;
-        ViewSpecRepository::load_view_spec(repo.as_ref(), id, workspace_id, owner).await
-    }
-}
 
 /// Context passed to all handlers containing shared services
 #[derive(Clone)]
@@ -420,10 +350,11 @@ pub struct HandlerContext {
     pub file_ops_service:
         Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
     /// Optional PostgresRepository for graph_reports queries. Used by graph_diff and graph_timeline tools.
+    /// Also serves ViewSpec queries (list_view_specs, read_view_spec) — the
+    /// ViewSpecRepository port that previously abstracted this was a partial
+    /// duplicate of the more complete `ViewSpecStore` port (in
+    /// `cognicode-explorer/src/registry.rs`) and has been removed (2026-07-30).
     pub postgres_repo: Option<Arc<crate::infrastructure::persistence::PostgresRepository>>,
-    /// Optional ViewSpecRepository for ViewSpec queries. Used by list_view_specs and read_view_spec tools.
-    #[cfg(feature = "postgres")]
-    pub view_spec_repo: Option<Arc<dyn ViewSpecRepository>>,
     /// Optional IacRepository for IaC resource queries. Used by iac_query tool.
     pub iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
     /// Cached InMemoryGraphStore fallback, lazily created on first
@@ -571,8 +502,6 @@ pub struct HandlerContextBuilder {
     file_ops_service:
         Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
     postgres_repo: Option<Arc<crate::infrastructure::persistence::PostgresRepository>>,
-    #[cfg(feature = "postgres")]
-    view_spec_repo: Option<Arc<dyn ViewSpecRepository>>,
     iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
 }
 
@@ -722,9 +651,7 @@ impl HandlerContextBuilder {
         mut self,
         repo: Arc<crate::infrastructure::persistence::PostgresRepository>,
     ) -> Self {
-        self.postgres_repo = Some(repo.clone());
-        // Auto-wire view_spec_repo so handlers can use the DIP port uniformly
-        self.view_spec_repo = Some(repo as Arc<dyn ViewSpecRepository>);
+        self.postgres_repo = Some(repo);
         self
     }
 
@@ -733,15 +660,6 @@ impl HandlerContextBuilder {
         self,
         _repo: Arc<crate::infrastructure::persistence::PostgresRepository>,
     ) -> Self {
-        self
-    }
-
-    /// Sets the ViewSpecRepository for ViewSpec queries.
-    ///
-    /// If not set, list_view_specs and read_view_spec will return an error for runtime specs.
-    #[cfg(feature = "postgres")]
-    pub fn with_view_spec_repo(mut self, repo: Arc<dyn ViewSpecRepository>) -> Self {
-        self.view_spec_repo = Some(repo);
         self
     }
 
@@ -804,8 +722,6 @@ impl HandlerContextBuilder {
             code_intelligence_provider: self.code_intelligence_provider,
             file_ops_service: self.file_ops_service,
             postgres_repo: self.postgres_repo,
-            #[cfg(feature = "postgres")]
-            view_spec_repo: self.view_spec_repo,
             iac_repo: self.iac_repo,
             fallback_store: Arc::new(OnceLock::new()),
             graph_loaded: Arc::new(AtomicBool::new(false)),

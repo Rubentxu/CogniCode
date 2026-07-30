@@ -5,7 +5,7 @@
 
 use crate::domain::services::CycleDetector;
 use crate::interface::mcp::handlers::{
-    HandlerContext, HandlerError, HandlerResult, ViewSpecRepository,
+    HandlerContext, HandlerError, HandlerResult,
 };
 use crate::interface::mcp::schemas::{
     CompareGraphInput, CompareGraphOutput, MetricDeltas, SmartSearchInput, SmartSearchOutput,
@@ -1271,13 +1271,10 @@ pub async fn handle_list_view_specs(
     let mut builtins = builtin_descriptors();
     builtins.sort_by_key(|d| d.id.clone());
 
-    // Runtime specs from view_spec_repo (DIP port) or postgres_repo fallback
+    // Runtime specs from postgres_repo (ViewSpecRepository port was removed 2026-07-30
+    // because it was a partial duplicate of the more complete ViewSpecStore).
     let mut runtime_descriptors: Vec<ViewDescriptor> = Vec::new();
-    let runtime_specs_result = if let Some(ref vs_repo) = ctx.view_spec_repo {
-        vs_repo
-            .list_view_specs(&workspace_id, MCP_DEFAULT_OWNER)
-            .await
-    } else if let Some(ref pg_repo) = ctx.postgres_repo {
+    let runtime_specs_result = if let Some(ref pg_repo) = ctx.postgres_repo {
         pg_repo
             .list_view_specs(&workspace_id, MCP_DEFAULT_OWNER)
             .await
@@ -1353,22 +1350,18 @@ pub async fn handle_read_view_spec(
         return Ok(ReadViewSpecOutput { view });
     }
 
-    // Not a built-in - try to load from view_spec_repo (DIP port) or postgres_repo fallback
-    let repo: &dyn ViewSpecRepository = if let Some(ref vs_repo) = ctx.view_spec_repo {
-        vs_repo.as_ref() as &dyn ViewSpecRepository
-    } else if let Some(ref pg_repo) = ctx.postgres_repo {
-        let pg: &crate::infrastructure::persistence::PostgresRepository = &**pg_repo;
-        pg as &dyn ViewSpecRepository
+    // Not a built-in - load from postgres_repo (ViewSpecRepository port was removed
+    // 2026-07-30 because it was a partial duplicate of ViewSpecStore).
+    let row = if let Some(ref pg_repo) = ctx.postgres_repo {
+        pg_repo
+            .load_view_spec(&input.id, &workspace_id, MCP_DEFAULT_OWNER)
+            .await
+            .map_err(|e| HandlerError::Internal(format!("load_view_spec failed: {}", e)))?
     } else {
         return Err(HandlerError::Internal(
-            "view_spec_repo not configured".into(),
+            "postgres_repo not configured".into(),
         ));
     };
-
-    let row = repo
-        .load_view_spec(&input.id, &workspace_id, MCP_DEFAULT_OWNER)
-        .await
-        .map_err(|e| HandlerError::Internal(format!("load_view_spec failed: {}", e)))?;
 
     match row {
         Some(row) => {
@@ -1507,16 +1500,15 @@ mod tests {
         };
         let result = handle_read_view_spec(&ctx, input).await;
 
-        // Should fail because view_spec_repo is not configured and it's not a built-in
+        // Should fail because postgres_repo is not configured and it's not a built-in
         assert!(
             result.is_err(),
-            "Unknown id without view_spec_repo should error"
+            "Unknown id without postgres_repo should error"
         );
         let err = result.unwrap_err();
-        // Without view_spec_repo, we get Internal("view_spec_repo not configured") error
-        // since the handler checks view_spec_repo first then falls back to postgres_repo
+        // Without postgres_repo, we get Internal("postgres_repo not configured") error
         assert!(
-            matches!(err, HandlerError::Internal(ref msg) if msg.contains("view_spec_repo") |
+            matches!(err, HandlerError::Internal(ref msg) if msg.contains("postgres_repo") |
                      matches!(err, HandlerError::NotFound(_))),
             "Should be Internal or NotFound error, got: {:?}",
             err
@@ -1544,135 +1536,4 @@ mod tests {
         }
     }
 
-    // =====================================================================
-    // Mock ViewSpecRepository for DIP integration tests
-    // =====================================================================
-
-    /// Mock implementation of [`ViewSpecRepository`] for testing the DIP port.
-    #[cfg(feature = "postgres")]
-    struct MockViewSpecRepository {
-        specs: Vec<ViewSpecRow>,
-    }
-
-    #[cfg(feature = "postgres")]
-    impl MockViewSpecRepository {
-        fn new(specs: Vec<ViewSpecRow>) -> Self {
-            Self { specs }
-        }
-    }
-
-    #[cfg(feature = "postgres")]
-    #[async_trait::async_trait]
-    impl ViewSpecRepository for MockViewSpecRepository {
-        async fn list_view_specs(
-            &self,
-            _workspace_id: &str,
-            _owner: &str,
-        ) -> Result<Vec<ViewSpecRow>, crate::domain::traits::repository::CallGraphStoreError> {
-            Ok(self.specs.clone())
-        }
-
-        async fn load_view_spec(
-            &self,
-            id: &str,
-            _workspace_id: &str,
-            _owner: &str,
-        ) -> Result<Option<ViewSpecRow>, crate::domain::traits::repository::CallGraphStoreError>
-        {
-            Ok(self.specs.iter().find(|s| s.id == id).cloned())
-        }
-    }
-
-    /// Helper to create a HandlerContext with a mock ViewSpecRepository.
-    #[cfg(feature = "postgres")]
-    fn test_ctx_with_mock_view_spec_repo(specs: Vec<ViewSpecRow>) -> HandlerContext {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let mock = Arc::new(MockViewSpecRepository::new(specs)) as Arc<dyn ViewSpecRepository>;
-        HandlerContext::builder()
-            .with_working_dir(temp_dir.path().to_path_buf())
-            .with_view_spec_repo(mock)
-            .build()
-    }
-
-    #[tokio::test]
-    #[cfg(feature = "postgres")]
-    async fn test_list_view_specs_with_mock_includes_runtime_specs() {
-        // Create a mock repo with one runtime spec
-        let mock_spec = ViewSpecRow {
-            id: "my-custom-view".into(),
-            workspace_id: "test-workspace".into(),
-            owner: "test-owner".into(),
-            title: "My Custom View".into(),
-            applies_to: "workspace".into(),
-            view_kind: "custom".into(),
-            data_source: r#"{"type":"moldql","query":"symbols"}"#.into(),
-            transform: None,
-            renderer_kind: "graph".into(),
-            props: "{}".into(),
-            created_at: "2024-01-01T00:00:00Z".into(),
-            updated_at: "2024-01-01T00:00:00Z".into(),
-            seed_object_id: None,
-            seed_view_id: None,
-            applies_when: None,
-        };
-
-        let ctx = test_ctx_with_mock_view_spec_repo(vec![mock_spec.clone()]);
-        let input = ListViewSpecsInput {};
-        let output = handle_list_view_specs(&ctx, input).await.unwrap();
-
-        // Should have the 8 built-ins PLUS the mock spec (9 total)
-        assert!(
-            output.count >= 9,
-            "Expected >= 9 views (8 builtins + mock), got {}",
-            output.count
-        );
-
-        // Find the mock spec in the output
-        let mock_view = output.views.iter().find(|v| v.id == "my-custom-view");
-        assert!(mock_view.is_some(), "Mock spec should appear in list");
-        let mock_view = mock_view.unwrap();
-        assert!(
-            !mock_view.is_builtin,
-            "Mock spec should NOT be marked as builtin"
-        );
-        assert_eq!(mock_view.title, "My Custom View");
-    }
-
-    #[tokio::test]
-    #[cfg(feature = "postgres")]
-    async fn test_read_view_spec_with_mock_loads_runtime_spec() {
-        // Create a mock repo with one runtime spec
-        let mock_spec = ViewSpecRow {
-            id: "runtime-view-123".into(),
-            workspace_id: "test-workspace".into(),
-            owner: "test-owner".into(),
-            title: "Runtime Loaded View".into(),
-            applies_to: "workspace".into(),
-            view_kind: "vertical_slice".into(),
-            data_source: r#"{"type":"moldql","query":"calls from 'Foo'"}"#.into(),
-            transform: Some(r#"{"kind":"table"}"#.into()),
-            renderer_kind: "composite".into(),
-            props: r#"{"depth":3}"#.into(),
-            created_at: "2024-06-01T12:00:00Z".into(),
-            updated_at: "2024-06-15T08:30:00Z".into(),
-            seed_object_id: None,
-            seed_view_id: None,
-            applies_when: None,
-        };
-
-        let ctx = test_ctx_with_mock_view_spec_repo(vec![mock_spec.clone()]);
-        let input = ReadViewSpecInput {
-            id: "runtime-view-123".into(),
-        };
-        let output = handle_read_view_spec(&ctx, input).await.unwrap();
-
-        // Verify the runtime spec was loaded through the mock
-        assert_eq!(output.view.id, "runtime-view-123");
-        assert_eq!(output.view.title, "Runtime Loaded View");
-        assert_eq!(output.view.owner, "test-owner");
-        // data_source should be parsed from JSON string
-        let ds = output.view.data_source;
-        assert_eq!(ds["type"], "moldql");
-        assert_eq!(ds["query"], "calls from 'Foo'");
-    }
 }

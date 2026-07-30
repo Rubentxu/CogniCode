@@ -1873,26 +1873,6 @@ impl GraphEdgeRow {
     }
 }
 
-#[cfg(feature = "postgres")]
-#[async_trait::async_trait]
-impl crate::interface::mcp::handlers::ViewSpecRepository for PostgresRepository {
-    async fn list_view_specs(
-        &self,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<Vec<ViewSpecRow>, CallGraphStoreError> {
-        self.list_view_specs(workspace_id, owner).await
-    }
-
-    async fn load_view_spec(
-        &self,
-        id: &str,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<Option<ViewSpecRow>, CallGraphStoreError> {
-        self.load_view_spec(id, workspace_id, owner).await
-    }
-}
 
 #[cfg(all(feature = "postgres", feature = "multimodal"))]
 impl PostgresRepository {
