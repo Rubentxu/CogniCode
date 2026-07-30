@@ -238,7 +238,12 @@ impl AlgorithmExecute for DominatorsDescriptor {
             .get(&root_id)
             .copied()
             .map(|ni| ni.index())
-            .unwrap_or(0);
+            .ok_or_else(|| {
+                AnalyticsError::InvalidParameter(format!(
+                    "root_symbol '{}' not found in call graph",
+                    root_symbol
+                ))
+            })?;
 
         let raw = cognicode_graph_algos::dominators(&out_neighbors, n, root_idx);
 
@@ -289,5 +294,20 @@ mod tests {
         assert!(d.directed());
         assert!(!d.weighted());
         assert!(!d.heterogeneous());
+    }
+
+    #[tokio::test]
+    async fn dominators_descriptor_rejects_unknown_root_symbol() {
+        use crate::domain::aggregates::CallGraph;
+        use crate::domain::plan::limits::PlanLimits;
+
+        let d = DominatorsDescriptor;
+        // Use a symbol name that does not exist in the graph
+        let params = serde_json::json!({ "root_symbol": "NonExistentSymbol" });
+        let graph = CallGraph::new();
+        let limits = PlanLimits::default();
+
+        let result = d.execute(&params, &graph, &limits).await;
+        assert!(matches!(result, Err(AnalyticsError::InvalidParameter(_))));
     }
 }

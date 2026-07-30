@@ -502,9 +502,8 @@ impl ExplorerMcpHandler {
             );
 
             // Create registry with lineage store and default boundary guard.
-            let registry = Arc::new(AlgorithmRegistry::new(
+            let registry = Arc::new(cognicode_core::application::services::graph_analytics::default_analytics_registry(
                 lineage_store.clone(),
-                None, // no boundary guard in this build
             ));
 
             ctx_builder = ctx_builder

@@ -228,6 +228,28 @@ impl ToolHandler for AnalyticsRunHandler {
                     RunOutput::Scc(v) => v,
                     RunOutput::Wcc(v) => v,
                     RunOutput::BoundedShortestPaths(v) => v,
+                    RunOutput::Dominators { nodes, immediate_dominators, depths } => {
+                        serde_json::json!({
+                            "nodes": nodes,
+                            "immediate_dominators": immediate_dominators,
+                            "depths": depths,
+                        })
+                    }
+                    RunOutput::ArticulationPoints { nodes, cut_vertices_counts } => {
+                        serde_json::json!({
+                            "nodes": nodes,
+                            "cut_vertices_counts": cut_vertices_counts,
+                        })
+                    }
+                    RunOutput::Bridges { edges } => {
+                        serde_json::json!({ "edges": edges })
+                    }
+                    RunOutput::KCore { nodes, core_numbers } => {
+                        serde_json::json!({
+                            "nodes": nodes,
+                            "core_numbers": core_numbers,
+                        })
+                    }
                 };
                 let lineage_persisted = matches!(run_result.status, cognicode_core::domain::analytics::lineage::RunStatus::Succeeded);
 

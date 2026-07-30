@@ -415,6 +415,9 @@ pub enum AnalyticsError {
     #[error("run not found: {0}")]
     RunNotFound(String),
 
+    #[error("invalid parameter: {0}")]
+    InvalidParameter(String),
+
     #[error("internal error: {0}")]
     Internal(String),
 }
