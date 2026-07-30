@@ -27,6 +27,7 @@ const GRAPH_KIND_ARRAY = [
   "impact_radius",
   "seam_map",
   "concept_map",
+  "vertical_slice",
 ] as const;
 export type GraphViewKind = (typeof GRAPH_KIND_ARRAY)[number];
 export const GRAPH_KINDS = new Set<GraphViewKind>(GRAPH_KIND_ARRAY);

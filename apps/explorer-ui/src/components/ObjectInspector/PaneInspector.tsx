@@ -38,7 +38,8 @@ function isGraphViewKind(kind: string | undefined): boolean {
     kind === "impact_radius" ||
     kind === "seam_map" ||
     kind === "concept_map" ||
-    kind === "decision_graph"
+    kind === "decision_graph" ||
+    kind === "vertical_slice"
   );
 }
 

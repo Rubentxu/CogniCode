@@ -309,6 +309,11 @@ fn real_executors() -> &'static ViewExecutorMap {
                     as &dyn crate::domain::views::ViewExecutor,
             },
             ExecutorEntry {
+                id: "vertical-slice",
+                executor: &crate::domain::views::VERTICAL_SLICE_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            },
+            ExecutorEntry {
                 id: "source",
                 executor: &crate::domain::views::SOURCE_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,

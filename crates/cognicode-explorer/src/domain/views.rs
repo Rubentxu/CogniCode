@@ -9,6 +9,7 @@ use crate::dto::{
     ContextualView, DesignFinding, EvidenceBlock, FindingSeverity, LineRange, RelationDirection,
     TypedRelation, ViewBlock, ViewDiagnostic,
 };
+use cognicode_core::domain::aggregates::call_graph::CallEntry;
 use crate::ports::quality_repository::{QualityIssue, QualityRepository, RuleSummary};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
@@ -1483,6 +1484,170 @@ impl ViewExecutor for CallGraphExecutor {
                 view_id: "call-graph".into(),
             }),
         }
+    }
+}
+
+/// VerticalSlice capability — applies to Symbol.
+/// Traces a symbol via BFS callers (depth 1) and callees (depth 3).
+pub struct VerticalSliceExecutor;
+impl ViewDescriptor for VerticalSliceExecutor {
+    fn id(&self) -> &'static str {
+        "vertical-slice"
+    }
+    fn title(&self) -> &'static str {
+        "Vertical Slice"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Symbol]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::VerticalSlice
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Graph
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for VerticalSliceExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match &ctx.target {
+            InspectionTarget::Symbol(symbol) => Ok(build_vertical_slice(symbol, ctx.graph_query)),
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "vertical-slice".into(),
+            }),
+        }
+    }
+}
+
+/// Build the Vertical Slice view: focused symbol + BFS callers (depth 1) + callees (depth 3).
+fn build_vertical_slice(
+    symbol: &ResolvedSymbol,
+    graph_query: Option<&dyn GraphQueryPort>,
+) -> ContextualView {
+    const CALLER_DEPTH: u8 = 1;
+    const CALLEE_DEPTH: u8 = 3;
+
+    let callers: Vec<CallEntry> = graph_query
+        .as_ref()
+        .map(|gq| gq.traverse_callers(&symbol.id, CALLER_DEPTH))
+        .unwrap_or_default();
+
+    let callees: Vec<CallEntry> = graph_query
+        .as_ref()
+        .map(|gq| gq.traverse_callees(&symbol.id, CALLEE_DEPTH))
+        .unwrap_or_default();
+
+    // Build graph nodes: focus symbol + all reached callers + all reached callees.
+    // Edges: caller->focus, focus->callee.
+    let mut nodes: Vec<serde_json::Value> = vec![json!({
+        "id": symbol.id.to_string(),
+        "label": symbol.name,
+        "kind": symbol.kind.name(),
+        "file": symbol.file,
+        "line": symbol.line,
+        "is_focus": true,
+    })];
+
+    let mut edges: Vec<serde_json::Value> = Vec::new();
+
+    for c in &callers {
+        nodes.push(json!({
+            "id": c.symbol_id.to_string(),
+            "label": c.symbol_name,
+            "kind": "function", // CallEntry doesn't expose kind; approximate
+            "file": c.file,
+            "line": c.line,
+            "is_focus": false,
+        }));
+        edges.push(json!({
+            "source": c.symbol_id.to_string(),
+            "target": symbol.id.to_string(),
+            "direction": "incoming",
+        }));
+    }
+
+    for c in &callees {
+        nodes.push(json!({
+            "id": c.symbol_id.to_string(),
+            "label": c.symbol_name,
+            "kind": "function",
+            "file": c.file,
+            "line": c.line,
+            "is_focus": false,
+        }));
+        edges.push(json!({
+            "source": symbol.id.to_string(),
+            "target": c.symbol_id.to_string(),
+            "direction": "outgoing",
+        }));
+    }
+
+    let blocks = vec![
+        ViewBlock {
+            id: "vertical_slice_graph".into(),
+            title: format!(
+                "Vertical Slice: {} ({} callers, {} callees)",
+                symbol.name,
+                callers.len(),
+                callees.len()
+            ),
+            body: json!({
+                "nodes": nodes,
+                "edges": edges,
+            }),
+        },
+        ViewBlock {
+            id: "callers".into(),
+            title: format!("Callers ({})", callers.len()),
+            body: json!({
+                "columns": ["symbol_id", "symbol_name", "file", "line", "depth"],
+                "rows": callers.iter().map(|e| json!({
+                    "symbol_id": e.symbol_id.to_string(),
+                    "symbol_name": e.symbol_name,
+                    "file": e.file,
+                    "line": e.line,
+                    "depth": e.depth,
+                })).collect::<Vec<_>>(),
+            }),
+        },
+        ViewBlock {
+            id: "callees".into(),
+            title: format!("Callees ({})", callees.len()),
+            body: json!({
+                "columns": ["symbol_id", "symbol_name", "file", "line", "depth"],
+                "rows": callees.iter().map(|e| json!({
+                    "symbol_id": e.symbol_id.to_string(),
+                    "symbol_name": e.symbol_name,
+                    "file": e.file,
+                    "line": e.line,
+                    "depth": e.depth,
+                })).collect::<Vec<_>>(),
+            }),
+        },
+        ViewBlock {
+            id: "metrics".into(),
+            title: "Metrics".into(),
+            body: json!({
+                "caller_count": callers.len(),
+                "callee_count": callees.len(),
+                "caller_depth": CALLER_DEPTH,
+                "callee_depth": CALLEE_DEPTH,
+            }),
+        },
+    ];
+
+    ContextualView {
+        object_id: mvp_id(symbol),
+        view_id: "vertical-slice".into(),
+        title: format!("Vertical Slice: {}", symbol.name),
+        blocks,
+        relations: Vec::new(),
+        evidence: vec![symbol_metadata_evidence(symbol)],
+        findings: Vec::new(),
+        view_kind: ViewKind::VerticalSlice,
+        renderer_kind: RendererKind::Graph,
     }
 }
 
@@ -3370,6 +3535,7 @@ impl ViewExecutor for RiskMapExecutor {
 // Static executor instances — referenced by the registry's get_executor() via &'static dyn ViewExecutor.
 pub static OVERVIEW_EXECUTOR: OverviewExecutor = OverviewExecutor;
 pub static CALLGRAPH_EXECUTOR: CallGraphExecutor = CallGraphExecutor;
+pub static VERTICAL_SLICE_EXECUTOR: VerticalSliceExecutor = VerticalSliceExecutor;
 pub static SOURCE_EXECUTOR: SourceExecutor = SourceExecutor;
 pub static QUALITY_EXECUTOR: QualityExecutor = QualityExecutor;
 pub static EVIDENCE_EXECUTOR: EvidenceExecutor = EvidenceExecutor;
