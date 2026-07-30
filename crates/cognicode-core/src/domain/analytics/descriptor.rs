@@ -461,6 +461,13 @@ pub enum RunOutput {
         nodes: Vec<usize>,
         core_numbers: Vec<u32>,
     },
+    /// Conductance: community IDs and their conductance scores.
+    Conductance {
+        community_ids: Vec<usize>,
+        scores: Vec<f64>,
+    },
+    /// Modularity: score and community count.
+    Modularity { score: f64, community_count: usize },
 }
 
 impl RunOutput {
@@ -475,6 +482,8 @@ impl RunOutput {
             RunOutput::ArticulationPoints { nodes, .. } => nodes.len() as i64,
             RunOutput::Bridges { edges } => edges.len() as i64,
             RunOutput::KCore { nodes, .. } => nodes.len() as i64,
+            RunOutput::Conductance { community_ids, .. } => community_ids.len() as i64,
+            RunOutput::Modularity { .. } => 1,
         }
     }
 
@@ -510,6 +519,17 @@ impl RunOutput {
             } => serde_json::json!({
                 "nodes": nodes,
                 "core_numbers": core_numbers,
+            }),
+            RunOutput::Conductance {
+                community_ids,
+                scores,
+            } => serde_json::json!({
+                "community_ids": community_ids,
+                "scores": scores,
+            }),
+            RunOutput::Modularity { score, community_count } => serde_json::json!({
+                "score": score,
+                "community_count": community_count,
             }),
         }
     }
