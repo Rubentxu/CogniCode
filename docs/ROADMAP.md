@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-30 (E28.6 advanced analytics evidence gate shipped — 3 PRs (Personalized PageRank + Conductance + Modularity + Neo4j CI Oracle); full chain archived.)
+Last updated: 2026-07-30 (E12 ViewKind Realization shipped — real VerticalSlice + SeamMap executors, relaxed E23 guard; E28 program complete.)
 
 ## Active
 
@@ -139,6 +139,26 @@ compatibility, and production Neo4j infrastructure remain outside E28.
 **Evidence**:
 [graph stack assessment](./analysis/cognicode-graph-stack-assessment.md) and
 [Cypher/GDS fit assessment](./analysis/cognicode-cypher-gds-fit-assessment.md).
+
+### E12 — ViewKind Realization
+
+**Strategic ADR**: [ADR-002 Phase 1](./adr/ADR-002-moldable-exploration-parity-program.md)
+
+**Goal**: Realize the highest-value missing ViewExecutors — the E23 uniqueness guard forced semantic corruption (ViewKind→executor mappings that didn't match their intent). E12 fixes the guard and ships real executors for VerticalSlice and SeamMap.
+
+| Change | Goal | Status | PR |
+|--------|------|--------|-----|
+| `e12-viewkind-realization` | Real VerticalSlice + SeamMap executors; relaxed E23 guard (id-uniqueness); Overview→ViewKind::Summary; DocSource→ViewKind::SourceView | **DONE** | [#170](https://github.com/Rubentxu/CogniCode/pull/170) |
+
+**What shipped**:
+- E23 guard relaxed: uniqueness by *id*, not by ViewKind (enables correct semantic reassignment)
+- VerticalSliceExecutor: real entry-point trace via `traverse_callees` + `traverse_callers`, depth-bounded, graph renderer
+- SeamMapExecutor: module boundary map with cross-module edge counting (sorted by count desc)
+- OverviewExecutor → `ViewKind::Summary` (was mismapped to VerticalSlice)
+- DocSourceExecutor → `ViewKind::SourceView` (was mismapped to SeamMap)
+- 929 tests passing; PASS_WITH_WARNINGS
+
+**Debt deferred**: W5/W6 (no integration tests for VerticalSlice/SeamMap executors), W2 (OverviewProvider vs OverviewExecutor view_kind drift)
 
 ### Moldable UX + C4 Investigation + Diagram Representations
 
