@@ -47,4 +47,29 @@ pub trait GraphBuilder {
     /// See trait docs for the contract. Implementations may allocate
     /// per call; algorithms call this once at the start.
     fn build_adjacency(&self) -> (Vec<Vec<usize>>, Vec<usize>);
+
+    /// Build directed adjacency list: `out_neighbors[v]` contains every `w`
+    /// such that `v → w` is an edge (callees of `v`).
+    ///
+    /// Used by conductance and modularity algorithms that need the outgoing
+    /// adjacency structure directly rather than the (incoming, out_degree) pair.
+    ///
+    /// Default implementation derives this from `build_adjacency()`.
+    /// Implementations may override with a more efficient version if available.
+    fn build_directed_adjacency(&self) -> Vec<Vec<usize>> {
+        let (in_neighbors, out_degree) = self.build_adjacency();
+        let n = in_neighbors.len();
+        let mut out_neighbors: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for v in 0..n {
+            out_neighbors[v].reserve(out_degree[v]);
+        }
+        // Reverse direction: out_neighbors[u] contains v where u → v
+        // We need to scan in_neighbors to build out_neighbors
+        for v in 0..n {
+            for &u in &in_neighbors[v] {
+                out_neighbors[u].push(v);
+            }
+        }
+        out_neighbors
+    }
 }

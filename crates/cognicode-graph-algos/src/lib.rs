@@ -30,7 +30,7 @@ pub mod graph_builder;
 pub use algorithms::{
     all_simple_paths, articulation_points, bridges, cluster_components, communities,
     community_god_nodes, condensation, dominators, feedback_arc_set, god_nodes, k_core, page_rank,
-    surprising_connections, transitive_reduction,
+    personalized_pagerank, surprising_connections, transitive_reduction,
 };
 pub use error::AnalyticsError;
 pub use graph_builder::GraphBuilder;

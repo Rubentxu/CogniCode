@@ -1070,7 +1070,7 @@ mod tests {
 // Default Analytics Registry (Cohort 1 + Cohort 2)
 // =============================================================================
 
-/// Build an `AlgorithmRegistry` pre-loaded with all 8 algorithms:
+/// Build an `AlgorithmRegistry` pre-loaded with all 9 algorithms:
 ///
 /// **Cohort 1:**
 /// - `pagerank` — PageRank importance scores
@@ -1084,13 +1084,16 @@ mod tests {
 /// - `bridges` — Cut edges (undirected)
 /// - `k_core` — K-core decomposition (undirected, k-parametrized)
 ///
+/// **Cohort 3 (E28.6):**
+/// - `personalized_pagerank` — PageRank with personalization vector
+///
 /// # Arguments
 ///
 /// - `lineage` — lineage store for run tracking
 ///
 /// # Returns
 ///
-/// A new `AlgorithmRegistry` with all 8 algorithms admitted.
+/// A new `AlgorithmRegistry` with all 9 algorithms admitted.
 pub fn default_analytics_registry(lineage: Arc<dyn RunLineageStore>) -> AlgorithmRegistry {
     let guard = Arc::new(DefaultAnalyticsBoundaryGuard::new());
     let mut registry = AlgorithmRegistry::new(lineage, Some(guard));
@@ -1125,6 +1128,13 @@ pub fn default_analytics_registry(lineage: Arc<dyn RunLineageStore>) -> Algorith
         .unwrap();
     registry
         .admit(Box::new(crate::domain::analytics::KCoreDescriptor))
+        .unwrap();
+
+    // Cohort 3 algorithms (E28.6)
+    registry
+        .admit(Box::new(
+            crate::domain::analytics::PersonalizedPageRankDescriptor,
+        ))
         .unwrap();
 
     registry

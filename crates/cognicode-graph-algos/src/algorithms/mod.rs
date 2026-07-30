@@ -12,6 +12,7 @@ pub mod feedback_arc_set;
 pub mod god_nodes;
 pub mod k_core;
 pub mod page_rank;
+pub mod personalized_pagerank;
 pub mod surprising_connections;
 pub mod transitive_reduction;
 
@@ -27,5 +28,6 @@ pub use feedback_arc_set::feedback_arc_set;
 pub use god_nodes::god_nodes;
 pub use k_core::k_core;
 pub use page_rank::page_rank;
+pub use personalized_pagerank::personalized_pagerank;
 pub use surprising_connections::surprising_connections;
 pub use transitive_reduction::transitive_reduction;
