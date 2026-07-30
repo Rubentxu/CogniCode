@@ -1,6 +1,7 @@
 //! Application Services module
 
 pub mod analysis_service;
+pub mod analytics_oracle_harness;
 pub mod community_detector;
 pub mod context_compressor;
 pub mod file_operations;

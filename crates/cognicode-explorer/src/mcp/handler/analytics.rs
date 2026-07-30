@@ -12,11 +12,12 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
 
+use cognicode_core::application::services::analytics_oracle_harness::AnalyticsOracleHarness;
 use cognicode_core::application::services::graph_analytics::{
     AlgorithmRegistry, CallerCapabilities, DefaultAnalyticsBoundaryGuard, RunRequest,
 };
 use cognicode_core::domain::analytics::lineage::{RunLineageFilter, RunLineageStore, Uuid};
-use cognicode_core::domain::analytics::{AnalyticsMode, RunOutput};
+use cognicode_core::domain::analytics::{oracle::OracleConfig, oracle::OracleError, AnalyticsMode, RunOutput};
 use cognicode_core::domain::plan::limits::PlanLimits;
 
 use crate::dto::{
@@ -39,6 +40,19 @@ struct AnalyticsRunArgs {
     to_symbol: Option<String>,
     max_hops: Option<usize>,
     caller_capabilities: Option<String>,
+    /// Optional Oracle configuration for CI parity checking against Neo4j.
+    /// When provided and NEO4J_URI is set, runs a parity check after the main analytics run.
+    oracle: Option<OracleConfigArg>,
+}
+
+/// Oracle configuration argument for CI parity checking.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct OracleConfigArg {
+    /// Neo4j connection URI (optional - defaults to NEO4J_URI env var if not provided).
+    neo4j_uri: Option<String>,
+    /// If true, any divergence causes an error; otherwise just reported.
+    strict: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -101,6 +115,10 @@ impl ToolHandler for AnalyticsRunHandler {
                 "caller_capabilities": {
                     "type": "string",
                     "description": "Caller authorization level (Internal, TrustedREST, ExternalMCP, Explorer)"
+                },
+                "oracle": {
+                    "type": "object",
+                    "description": "Optional Oracle configuration for CI parity checking against Neo4j"
                 }
             },
             "required": ["algorithm_id", "from_symbol", "to_symbol"]
@@ -208,6 +226,9 @@ impl ToolHandler for AnalyticsRunHandler {
             "max_hops": max_hops,
         });
 
+        // Clone params for oracle check (if needed)
+        let oracle_params = params.clone();
+
         let request = RunRequest {
             algorithm_id: algorithm_id_parsed,
             params,
@@ -300,6 +321,66 @@ impl ToolHandler for AnalyticsRunHandler {
                 );
             }
         };
+
+        // Optional: Run Oracle parity check if configured
+        // The Oracle is CI-only, opt-in. It compares PG results with Neo4j reference.
+        // If NEO4J_URI is not set, the oracle returns NotConfigured and we simply skip.
+        if let Some(oracle_arg) = args.oracle {
+            // Build OracleConfig from args
+            let neo4j_uri = oracle_arg
+                .neo4j_uri
+                .unwrap_or_else(|| std::env::var("NEO4J_URI").unwrap_or_default());
+            let strict = oracle_arg.strict.unwrap_or(false);
+
+            if !neo4j_uri.is_empty() && std::env::var("NEO4J_URI").is_ok() {
+                let oracle_config = OracleConfig {
+                    neo4j_uri: neo4j_uri.clone(),
+                    strict,
+                };
+                let harness = AnalyticsOracleHarness::new(oracle_config);
+
+                // We need a MoldPlan to pass to parity_check. Since the analytics_run
+                // handler works with RunRequest not MoldPlan, we construct a placeholder
+                // for the oracle. In a full implementation, the registry would return
+                // the plan alongside the result.
+                let placeholder_plan = serde_json::json!({
+                    "algorithm_id": algorithm_id,
+                    "params": oracle_params,
+                });
+
+                match harness
+                    .parity_check(&placeholder_plan, &result.result, &serde_json::Value::Null)
+                    .await
+                {
+                    Ok(report) => {
+                        // Log oracle report for CI visibility
+                        if !report.is_aligned() {
+                            tracing::warn!(
+                                "Oracle parity check: {} divergence(s) detected (pg_nodes={}, neo4j_nodes={}, pg_edges={}, neo4j_edges={})",
+                                report.divergences.len(),
+                                report.pg_nodes,
+                                report.neo4j_nodes,
+                                report.pg_edges,
+                                report.neo4j_edges
+                            );
+                        } else {
+                            tracing::info!(
+                                "Oracle parity check: aligned (pg_nodes={}, neo4j_nodes={})",
+                                report.pg_nodes,
+                                report.neo4j_nodes
+                            );
+                        }
+                    }
+                    Err(OracleError::NotConfigured) => {
+                        // NEO4J_URI not set - skip oracle silently
+                        tracing::debug!("Oracle not configured (NEO4J_URI not set), skipping parity check");
+                    }
+                    Err(e) => {
+                        tracing::error!("Oracle parity check failed: {}", e);
+                    }
+                }
+            }
+        }
 
         ok_envelope(TOOL_ANALYTICS_RUN, &result)
     }
