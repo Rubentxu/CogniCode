@@ -114,6 +114,7 @@ pub mod dominators_descriptor;
 pub mod kcore_descriptor;
 pub mod lineage;
 pub mod pagerank_descriptor;
+pub mod personalized_pagerank_descriptor;
 pub mod scc_descriptor;
 pub mod wcc_descriptor;
 
@@ -125,5 +126,6 @@ pub use dominators_descriptor::*;
 pub use kcore_descriptor::*;
 pub use lineage::*;
 pub use pagerank_descriptor::*;
+pub use personalized_pagerank_descriptor::*;
 pub use scc_descriptor::*;
 pub use wcc_descriptor::*;
