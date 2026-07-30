@@ -1070,7 +1070,7 @@ mod tests {
 // Default Analytics Registry (Cohort 1 + Cohort 2)
 // =============================================================================
 
-/// Build an `AlgorithmRegistry` pre-loaded with all 9 algorithms:
+/// Build an `AlgorithmRegistry` pre-loaded with all 11 algorithms:
 ///
 /// **Cohort 1:**
 /// - `pagerank` — PageRank importance scores
@@ -1086,6 +1086,8 @@ mod tests {
 ///
 /// **Cohort 3 (E28.6):**
 /// - `personalized_pagerank` — PageRank with personalization vector
+/// - `conductance` — Community separation metric
+/// - `modularity` — Community quality metric
 ///
 /// # Arguments
 ///
@@ -1093,7 +1095,7 @@ mod tests {
 ///
 /// # Returns
 ///
-/// A new `AlgorithmRegistry` with all 9 algorithms admitted.
+/// A new `AlgorithmRegistry` with all 11 algorithms admitted.
 pub fn default_analytics_registry(lineage: Arc<dyn RunLineageStore>) -> AlgorithmRegistry {
     let guard = Arc::new(DefaultAnalyticsBoundaryGuard::new());
     let mut registry = AlgorithmRegistry::new(lineage, Some(guard));
@@ -1134,6 +1136,16 @@ pub fn default_analytics_registry(lineage: Arc<dyn RunLineageStore>) -> Algorith
     registry
         .admit(Box::new(
             crate::domain::analytics::PersonalizedPageRankDescriptor,
+        ))
+        .unwrap();
+    registry
+        .admit(Box::new(
+            crate::domain::analytics::ConductanceDescriptor,
+        ))
+        .unwrap();
+    registry
+        .admit(Box::new(
+            crate::domain::analytics::ModularityDescriptor,
         ))
         .unwrap();
 

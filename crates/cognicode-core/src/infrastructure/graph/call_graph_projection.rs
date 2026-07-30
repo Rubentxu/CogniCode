@@ -659,6 +659,27 @@ impl GraphBuilder for CallGraphProjection {
         }
         (in_neighbors, out_degree)
     }
+
+    /// Build directed adjacency list: `out_neighbors[v]` contains every `w`
+    /// such that edge `v → w` exists (callees of `v`).
+    ///
+    /// Override of [`GraphBuilder::build_directed_adjacency`] for CallGraphProjection.
+    /// Uses direct outgoing edge traversal (no intermediate in-neighbor reversal),
+    /// which is more efficient for sparse petgraph StableGraph indices where
+    /// `node_bound()` may be larger than `node_count()`.
+    fn build_directed_adjacency(&self) -> Vec<Vec<usize>> {
+        let bound = self.graph.node_bound();
+        let mut out_neighbors: Vec<Vec<usize>> = vec![Vec::new(); bound];
+        for ni in self.graph.node_indices() {
+            let succs: Vec<usize> = self
+                .graph
+                .edges_directed(ni, Direction::Outgoing)
+                .map(|e| e.target().index())
+                .collect();
+            out_neighbors[ni.index()] = succs;
+        }
+        out_neighbors
+    }
 }
 
 // ============================================================================

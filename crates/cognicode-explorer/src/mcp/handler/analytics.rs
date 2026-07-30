@@ -263,6 +263,21 @@ impl ToolHandler for AnalyticsRunHandler {
                             "core_numbers": core_numbers,
                         })
                     }
+                    RunOutput::Conductance {
+                        community_ids,
+                        scores,
+                    } => {
+                        serde_json::json!({
+                            "community_ids": community_ids,
+                            "scores": scores,
+                        })
+                    }
+                    RunOutput::Modularity { score, community_count } => {
+                        serde_json::json!({
+                            "score": score,
+                            "community_count": community_count,
+                        })
+                    }
                 };
                 let lineage_persisted = matches!(
                     run_result.status,
