@@ -1343,6 +1343,8 @@ impl From<ViewSpecError> for crate::error::ExplorerError {
 #[serde(rename_all = "snake_case")]
 pub enum ViewKind {
     // Core
+    /// E12 — symbol/file/scope identity + call metrics + signature (replaces Overview's VerticalSlice).
+    Summary,
     VerticalSlice,
     CallGraph,
     SeamMap,

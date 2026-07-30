@@ -1413,7 +1413,7 @@ impl ViewDescriptor for OverviewExecutor {
         ]
     }
     fn view_kind(&self) -> ViewKind {
-        ViewKind::VerticalSlice
+        ViewKind::Summary
     }
     fn renderer_kind(&self) -> RendererKind {
         RendererKind::Json
