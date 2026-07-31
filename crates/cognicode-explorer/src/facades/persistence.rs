@@ -10,6 +10,8 @@ use chrono::Utc;
 use serde_json::json;
 
 #[cfg(feature = "postgres")]
+use cognicode_core::domain::ports::{PostgresSessionStore, SessionStore};
+#[cfg(feature = "postgres")]
 use cognicode_core::infrastructure::persistence::PostgresRepository;
 
 use crate::dto::{
@@ -27,10 +29,21 @@ type ExplorationSessionStore = Mutex<HashMap<String, ExplorationSession>>;
 ///
 /// Holds:
 /// - `view_spec_store` — optional ViewSpec persistence backend
-/// - `postgres_repo` — optional PostgreSQL repository for named views
+/// - `session_store` — optional PostgreSQL session persistence (Phase A
+///   of the god-object split; replaces the direct
+///   `postgres_repo: Arc<PostgresRepository>` dependency for session
+///   operations).
+/// - `postgres_repo` — retained for non-session operations that still
+///   have no port abstraction (will be eliminated in subsequent
+///   phases).
 /// - `sessions` — in-memory exploration session store (ADR-016 Fase 3)
 pub struct PersistenceServiceImpl {
     view_spec_store: Option<Arc<dyn ViewSpecStore>>,
+    #[cfg(feature = "postgres")]
+    session_store: Option<Arc<dyn SessionStore>>,
+    /// Kept for `save_call_graph_ws`, `load_call_graph_ws`, and
+    /// `save_investigation_*` operations that don't yet have ports.
+    /// Will be removed when those domains get their own ports.
     #[cfg(feature = "postgres")]
     postgres_repo: Option<Arc<PostgresRepository>>,
     sessions: Arc<ExplorationSessionStore>,
@@ -38,12 +51,25 @@ pub struct PersistenceServiceImpl {
 
 impl PersistenceServiceImpl {
     /// Construct a new `PersistenceServiceImpl`.
+    ///
+    /// `postgres_repo` is still required for non-session operations
+    /// (call graph persistence, investigations). It is also used
+    /// internally to construct the [`SessionStore`] adapter when
+    /// the `postgres` feature is enabled.
     pub fn new(
         view_spec_store: Option<Arc<dyn ViewSpecStore>>,
         #[cfg(feature = "postgres")] postgres_repo: Option<Arc<PostgresRepository>>,
     ) -> Self {
+        #[cfg(feature = "postgres")]
+        let session_store = postgres_repo
+            .as_ref()
+            .map(|repo| {
+                Arc::new(PostgresSessionStore::new(repo.clone())) as Arc<dyn SessionStore>
+            });
         Self {
             view_spec_store,
+            #[cfg(feature = "postgres")]
+            session_store,
             #[cfg(feature = "postgres")]
             postgres_repo,
             sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -170,9 +196,9 @@ impl PersistenceService for PersistenceServiceImpl {
         workspace_id: &str,
     ) -> ExplorerResult<Vec<ExplorationSession>> {
         #[cfg(feature = "postgres")]
-        if let Some(ref repo) = self.postgres_repo {
-            let rows = repo
-                .list_exploration_sessions(workspace_id)
+        if let Some(ref session_store) = self.session_store {
+            let rows = session_store
+                .list(workspace_id)
                 .await
                 .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("list_explorations: {e}")))?;
             let sessions: Vec<ExplorationSession> = rows
@@ -226,21 +252,22 @@ impl PersistenceService for PersistenceServiceImpl {
         };
 
         #[cfg(feature = "postgres")]
-        if let Some(ref repo) = self.postgres_repo {
+        if let Some(ref session_store) = self.session_store {
             let events_json = serde_json::to_string(&request.events)
                 .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("serialize events: {e}")))?;
             let panes_json = serde_json::to_string(&request.panes)
                 .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("serialize panes: {e}")))?;
-            repo.save_exploration_session(
-                &id,
-                &request.workspace_id,
-                &events_json,
-                &request.navigation_mode,
-                &panes_json,
-                investigation_id.as_deref(),
-            )
-            .await
-            .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("save_exploration_session: {e}")))?;
+            session_store
+                .save(
+                    &id,
+                    &request.workspace_id,
+                    &events_json,
+                    &request.navigation_mode,
+                    &panes_json,
+                    investigation_id.as_deref(),
+                )
+                .await
+                .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("save_exploration_session: {e}")))?;
             return Ok(session);
         }
 
@@ -257,7 +284,7 @@ impl PersistenceService for PersistenceServiceImpl {
         session_id: &str,
     ) -> ExplorerResult<Option<ExplorationSession>> {
         #[cfg(feature = "postgres")]
-        if let Some(ref repo) = self.postgres_repo {
+        if let Some(ref session_store) = self.session_store {
             // Try to find the workspace_id from in-memory store first
             // to scope the PG query correctly
             let workspace_id = {
@@ -267,7 +294,7 @@ impl PersistenceService for PersistenceServiceImpl {
                 guard.get(session_id).map(|s| s.workspace_id.clone())
             };
             if let Some(ws_id) = workspace_id {
-                if let Ok(Some(row)) = repo.load_exploration_session(session_id, &ws_id).await {
+                if let Ok(Some(row)) = session_store.load(session_id, &ws_id).await {
                     return Ok(Some(ExplorationSession {
                         id: row.id,
                         workspace_id: row.workspace_id,
