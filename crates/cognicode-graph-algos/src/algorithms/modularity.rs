@@ -261,7 +261,7 @@ mod tests {
                 (0..out_neighbors.len()).map(|i| (i, i)).collect();
             let (q, _) = modularity(&assignment, &out_neighbors);
             assert!(
-                q >= -1.0 && q <= 1.0,
+                (-1.0..=1.0).contains(&q),
                 "modularity {} out of range [-1, 1]",
                 q
             );

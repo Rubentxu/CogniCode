@@ -136,12 +136,11 @@ pub fn dominators(
             if v == root {
                 continue;
             }
-            if let Some(idom_v) = idom[v] {
-                if semi[v] != idom_v {
-                    if let Some(semi_idom) = idom[semi[v]] {
-                        idom[v] = Some(semi_idom);
-                    }
-                }
+            if let Some(idom_v) = idom[v]
+                && semi[v] != idom_v
+                && let Some(semi_idom) = idom[semi[v]]
+            {
+                idom[v] = Some(semi_idom);
             }
         }
     }
@@ -151,11 +150,11 @@ pub fn dominators(
     depth[root] = 0;
 
     let mut children: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for v in 0..n {
-        if let Some(idom_v) = idom[v] {
-            if idom_v != v {
-                children[idom_v].push(v);
-            }
+    for (v, idom_v) in idom.iter().enumerate() {
+        if let Some(idom_v) = idom_v
+            && *idom_v != v
+        {
+            children[*idom_v].push(v);
         }
     }
 
@@ -250,7 +249,11 @@ mod tests {
         assert_eq!(by_node(0).2, 0);
         assert_eq!(by_node(1).1, Some(0), "B dominated by A");
         assert_eq!(by_node(1).2, 1);
-        assert_eq!(by_node(2).1, Some(1), "C dominated by B (idom via cycle path)");
+        assert_eq!(
+            by_node(2).1,
+            Some(1),
+            "C dominated by B (idom via cycle path)"
+        );
         assert_eq!(by_node(2).2, 2);
     }
 

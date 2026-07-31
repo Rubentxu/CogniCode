@@ -1,5 +1,7 @@
 //! Analysis Service - Handles code analysis operations
 
+#![allow(clippy::absurd_extreme_comparisons)]
+
 use crate::application::dto::{
     AnalysisMetadata, DeadCodeEntry, DeadCodeReason, DeadCodeResult, GraphCoverageMetrics,
     GraphStatsDto, ModuleDependenciesResult, ModuleDependency, ModuleDependencyGraph,
@@ -1561,6 +1563,7 @@ def d():
     }
 
     #[test]
+    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     fn test_full_analysis_workflow() {
         use std::io::Write;
         use tempfile::TempDir;

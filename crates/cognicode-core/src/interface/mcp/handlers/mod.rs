@@ -1,5 +1,7 @@
 //! MCP Handlers - Implementation of MCP tool handlers
 
+#![allow(clippy::absurd_extreme_comparisons)]
+
 use crate::application::commands::{
     ChangeSignatureCommand, MoveSymbolCommand, ParameterDefinition, RenameSymbolCommand,
 };
@@ -323,7 +325,6 @@ impl Telemetry for HandlerContext {
         level >= stored_level
     }
 }
-
 
 /// Context passed to all handlers containing shared services
 #[derive(Clone)]

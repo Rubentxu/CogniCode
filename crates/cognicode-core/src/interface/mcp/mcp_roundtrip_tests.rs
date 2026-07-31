@@ -1,4 +1,6 @@
 //! E2E MCP Protocol Roundtrip Tests
+
+#![allow(clippy::absurd_extreme_comparisons)]
 //!
 //! Tests that verify the full MCP protocol roundtrip:
 //! 1. Serialize MCP request → JSON

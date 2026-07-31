@@ -14,12 +14,11 @@
 #[cfg(feature = "petgraph-adapter")]
 #[cfg(test)]
 mod tests {
-    /// Compile-time check: the petgraph-adapter feature flag gates
-    /// this crate correctly. The `impl GraphBuilder for
-    /// CallGraphProjection` lives in cognicode-core (the owner of
-    /// the type), so this module only validates the feature wiring.
-    #[test]
-    fn petgraph_adapter_feature_compiles() {
-        assert!(true);
-    }
+    // Compile-time check: the petgraph-adapter feature flag gates
+    // this crate correctly. The `impl GraphBuilder for
+    // CallGraphProjection` lives in cognicode-core (the owner of
+    // the type), so this module only validates the feature wiring
+    // at compile time. (No runtime test needed; if this module
+    // compiles with the `petgraph-adapter` feature, the wiring is
+    // correct.)
 }

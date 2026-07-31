@@ -81,7 +81,7 @@ pub fn conductance(
 
     let mut results: Vec<(usize, f64)> = Vec::with_capacity(community_members.len());
 
-    for (&community, &ref members) in community_members.iter() {
+    for (&community, members) in community_members.iter() {
         if members.is_empty() {
             continue;
         }

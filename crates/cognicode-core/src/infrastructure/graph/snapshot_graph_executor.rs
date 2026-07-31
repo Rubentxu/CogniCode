@@ -1470,10 +1470,10 @@ mod tests {
         // With max_hops=2, the 3-hop path A→B→C→D should NOT be returned
         // Only the direct 1-hop path A→D should be returned
         // (if it exists — in our graph A→D does exist as a direct edge)
-        assert!(
-            !rs.paths.is_empty() || true, // Path may or may not be empty depending on if A→D exists
-            "result should be ok but may be empty due to hop limit"
-        );
+        // rs.paths may be empty if the direct edge doesn't exist;
+        // the assertion below (all returned paths respect max_hops) is the
+        // real correctness check.
+        let _ = rs.paths.is_empty(); // Path may or may not be empty depending on if A→D exists
 
         // All returned paths must respect max_hops
         for path in &rs.paths {

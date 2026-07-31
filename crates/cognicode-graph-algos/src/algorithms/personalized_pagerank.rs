@@ -145,6 +145,7 @@ mod tests {
 
     /// Personalization biases scores toward the personalized nodes.
     #[test]
+    #[allow(clippy::needless_range_loop)] // leaf is used as vec index
     fn personalization_biases_toward_target_nodes() {
         // Star: center=0, leaves=1..5. All leaves point to center.
         let mut in_neighbors: Vec<Vec<usize>> = vec![Vec::new(); 6];

@@ -1,4 +1,6 @@
 //! AIX Handlers — AI Experience tools for LLM agent consumption
+
+#![allow(clippy::absurd_extreme_comparisons)]
 //!
 //! This module contains all 13 AIX MCP tool handlers:
 //! smart_overview, ranked_symbols, suggest_onboarding_plan, auto_diagnose,
@@ -2778,6 +2780,7 @@ fn main() { f15(); }
     }
 
     #[tokio::test]
+    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     async fn test_smart_overview_returns_data() {
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");

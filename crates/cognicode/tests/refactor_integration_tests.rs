@@ -420,6 +420,7 @@ fn main() {
     }
 
     #[test]
+    #[allow(clippy::absurd_extreme_comparisons)] // documents intent
     fn test_extract_rejects_empty_function_name() {
         let strategy = create_extract_strategy(Language::Rust);
 
