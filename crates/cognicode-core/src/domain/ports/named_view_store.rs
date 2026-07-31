@@ -10,7 +10,24 @@
 
 use async_trait::async_trait;
 
-use crate::infrastructure::persistence::NamedViewRow;
+/// Domain type returned by [`NamedViewStore::load`] and [`NamedViewStore::list`].
+///
+/// Mirrors the columns of the `named_views` table but lives in the
+/// domain layer. The Postgres adapter performs the row-to-domain
+/// translation internally; callers never see the row type.
+#[derive(Debug, Clone)]
+pub struct NamedView {
+    pub id: String,
+    pub workspace_id: String,
+    pub owner: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub level: String,
+    pub lens: String,
+    pub focus_node: String,
+    pub max_depth: i32,
+    pub created_at: String,
+}
 
 /// Port for named view persistence.
 #[async_trait]
@@ -43,7 +60,7 @@ pub trait NamedViewStore: Send + Sync {
         id: &str,
         workspace_id: &str,
         owner: &str,
-    ) -> Result<Option<NamedViewRow>, NamedViewError>;
+    ) -> Result<Option<NamedView>, NamedViewError>;
 
     /// List every named view for `(workspace_id, owner)`, newest-first.
     /// Returns an empty `Vec` for an empty scope (NOT an error).
@@ -51,7 +68,7 @@ pub trait NamedViewStore: Send + Sync {
         &self,
         workspace_id: &str,
         owner: &str,
-    ) -> Result<Vec<NamedViewRow>, NamedViewError>;
+    ) -> Result<Vec<NamedView>, NamedViewError>;
 
     /// Delete a single named view, scoped to `(workspace_id, owner)`.
     ///
@@ -75,11 +92,30 @@ pub enum NamedViewError {
 
 #[cfg(feature = "postgres")]
 mod postgres_adapter {
-    use super::{NamedViewError, NamedViewStore};
+    use super::{NamedView, NamedViewError, NamedViewStore};
     use crate::domain::traits::repository::CallGraphStoreError;
     use crate::infrastructure::persistence::{NamedViewRow, PostgresRepository};
     use async_trait::async_trait;
     use std::sync::Arc;
+
+    /// Translate the Postgres row type into the domain type. Keeps the
+    /// adapter the only place that knows about [`NamedViewRow`].
+    impl From<NamedViewRow> for NamedView {
+        fn from(r: NamedViewRow) -> Self {
+            Self {
+                id: r.id,
+                workspace_id: r.workspace_id,
+                owner: r.owner,
+                name: r.name,
+                description: r.description,
+                level: r.level,
+                lens: r.lens,
+                focus_node: r.focus_node,
+                max_depth: r.max_depth,
+                created_at: r.created_at,
+            }
+        }
+    }
 
     /// Adapter that delegates every [`NamedViewStore`] method to a
     /// [`PostgresRepository`].
@@ -140,10 +176,11 @@ mod postgres_adapter {
             id: &str,
             workspace_id: &str,
             owner: &str,
-        ) -> Result<Option<NamedViewRow>, NamedViewError> {
+        ) -> Result<Option<NamedView>, NamedViewError> {
             self.repo
                 .load_named_view(id, workspace_id, owner)
                 .await
+                .map(|opt| opt.map(NamedView::from))
                 .map_err(|e| NamedViewError::Store(e.to_string()))
         }
 
@@ -151,10 +188,11 @@ mod postgres_adapter {
             &self,
             workspace_id: &str,
             owner: &str,
-        ) -> Result<Vec<NamedViewRow>, NamedViewError> {
+        ) -> Result<Vec<NamedView>, NamedViewError> {
             self.repo
                 .list_named_views(workspace_id, owner)
                 .await
+                .map(|rows| rows.into_iter().map(NamedView::from).collect())
                 .map_err(|e| NamedViewError::Store(e.to_string()))
         }
 
