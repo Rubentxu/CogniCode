@@ -17,7 +17,8 @@ members = [
     "crates/cognicode-explorer",
     "crates/cognicode-core-mock",
     "crates/cognicode-runtime",
-]  
+]
+exclude = ["crates/spike-ladybug"]
 
 [workspace.package]
 version = "0.5.0"
