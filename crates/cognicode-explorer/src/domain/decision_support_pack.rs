@@ -7,10 +7,10 @@
 //!
 //! E25 PR2 — DecisionSupportPackBuilder + REST endpoint.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
+use serde_json::Value;
 use cognicode_core::domain::ports::GraphRepository;
 use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
@@ -488,7 +488,7 @@ mod tests {
             kind: NodeKind::Decision,
             label: label.to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }
@@ -500,7 +500,7 @@ mod tests {
             kind: NodeKind::Symbol(cognicode_core::domain::value_objects::SymbolKind::Function),
             label: label.to_string(),
             source_path: Some(std::path::PathBuf::from(format!("src/{}.rs", id))),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }
@@ -512,7 +512,7 @@ mod tests {
             kind: NodeKind::Evidence,
             label: label.to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }
@@ -528,21 +528,21 @@ mod tests {
             make_evidence_node("Y", "Evidence Y"),
         ];
         let edges = vec![
-            GraphEdge {
-                source: NodeId::new("A"),
-                target: NodeId::new("X"),
-                kind: EdgeKind::Justifies,
-                provenance: Provenance::Extracted,
-                confidence: 0.9,
-                metadata: HashMap::new(),
-            },
+        GraphEdge {
+            source: NodeId::new("A"),
+            target: NodeId::new("X"),
+            kind: EdgeKind::Justifies,
+            provenance: Provenance::Extracted,
+            confidence: 0.9,
+            metadata: serde_json::Value::Object(Default::default()),
+        },
             GraphEdge {
                 source: NodeId::new("A"),
                 target: NodeId::new("Y"),
                 kind: EdgeKind::CorroboratedBy,
                 provenance: Provenance::Manual,
                 confidence: 0.7,
-                metadata: HashMap::new(),
+                metadata: serde_json::Value::Object(Default::default()),
             },
         ];
         let repo = InMemoryGraphRepository::new(nodes, edges);
@@ -620,7 +620,7 @@ mod tests {
                 kind: EdgeKind::Justifies,
                 provenance: Provenance::Extracted,
                 confidence: 0.5,
-                metadata: HashMap::new(),
+                metadata: serde_json::Value::Object(Default::default()),
             },
             GraphEdge {
                 source: NodeId::new("A"),
@@ -628,7 +628,7 @@ mod tests {
                 kind: EdgeKind::Justifies,
                 provenance: Provenance::Extracted,
                 confidence: 0.9,
-                metadata: HashMap::new(),
+                metadata: serde_json::Value::Object(Default::default()),
             },
         ];
 
@@ -650,7 +650,7 @@ mod tests {
             kind: EdgeKind::CorroboratedBy,
             provenance: Provenance::Manual,
             confidence: 0.8,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         }];
         let repo = InMemoryGraphRepository::new(nodes, edges);
 

@@ -7,13 +7,13 @@
 //! This module is gated on `#[cfg(feature = "multimodal")]` in
 //! `lib.rs`, so all items here can assume multimodal is active.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
+use serde_json::Value;
 use cognicode_core::domain::value_objects::SymbolKind;
 use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
@@ -283,7 +283,7 @@ fn support_pack_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: NodeKind::Decision,
             label: "Decision A".to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         },
@@ -292,7 +292,7 @@ fn support_pack_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: NodeKind::Symbol(SymbolKind::Function),
             label: "Symbol X".to_string(),
             source_path: Some(std::path::PathBuf::from("src/x.rs")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         },
@@ -301,7 +301,7 @@ fn support_pack_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: NodeKind::Doc,
             label: "Doc Y".to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         },
@@ -310,7 +310,7 @@ fn support_pack_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: NodeKind::Evidence,
             label: "Evidence Z".to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         },
@@ -322,7 +322,7 @@ fn support_pack_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: EdgeKind::Justifies,
             provenance: Provenance::Extracted,
             confidence: 0.9,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         },
         GraphEdge {
             source: NodeId::new("A"),
@@ -330,7 +330,7 @@ fn support_pack_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: EdgeKind::Cites,
             provenance: Provenance::Extracted,
             confidence: 0.8,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         },
         GraphEdge {
             source: NodeId::new("A"),
@@ -338,7 +338,7 @@ fn support_pack_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: EdgeKind::CorroboratedBy,
             provenance: Provenance::Tested,
             confidence: 0.7,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         },
     ];
     (nodes, edges)

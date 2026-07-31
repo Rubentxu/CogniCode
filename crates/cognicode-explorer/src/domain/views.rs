@@ -7134,7 +7134,7 @@ mod tests {
             kind: NodeKind::Decision,
             label: "ADR-001".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/adr/ADR-001.md")),
-            properties: std::collections::HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         });
@@ -7330,7 +7330,7 @@ mod tests {
             kind: NodeKind::Decision,
             label: "DEC-A".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/adr/DEC-A.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -7532,7 +7532,7 @@ mod tests {
             kind: NodeKind::Decision,
             label: "ADR-001".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/adr/ADR-001.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -7589,7 +7589,7 @@ mod tests {
             kind: NodeKind::Decision,
             label: "ADR-002".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/adr/ADR-002.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -7679,7 +7679,7 @@ mod tests {
             kind: NodeKind::Decision,
             label: "ADR-042: Use PostgreSQL".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/adr/ADR-042.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -7688,7 +7688,7 @@ mod tests {
             kind: NodeKind::Doc,
             label: "PostgreSQL vs SQLite".to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8075,7 +8075,7 @@ mod view_seam_tests {
             kind: NodeKind::Doc,
             label: "My Doc".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/doc.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8084,7 +8084,7 @@ mod view_seam_tests {
             kind: NodeKind::Symbol(SymbolKind::Function),
             label: "my_func".to_string(),
             source_path: Some(std::path::PathBuf::from("src/lib.rs")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8093,7 +8093,7 @@ mod view_seam_tests {
             kind: NodeKind::Symbol(SymbolKind::Function),
             label: "other_func".to_string(),
             source_path: Some(std::path::PathBuf::from("src/lib.rs")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8103,7 +8103,7 @@ mod view_seam_tests {
             kind: EdgeKind::Cites,
             provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
             confidence: 1.0,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         });
         mock.with_edge(GraphEdge {
             source: NodeId::new("DOC-001".to_string()),
@@ -8111,7 +8111,7 @@ mod view_seam_tests {
             kind: EdgeKind::Cites,
             provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
             confidence: 1.0,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         });
 
         let target = super::InspectionTarget::Doc {
@@ -8156,7 +8156,7 @@ mod view_seam_tests {
             kind: NodeKind::Decision,
             label: "ADR-001 Use Postgres".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/adr/ADR-001.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8165,7 +8165,7 @@ mod view_seam_tests {
             kind: NodeKind::Issue,
             label: "Performance issue with Redis".to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8175,7 +8175,7 @@ mod view_seam_tests {
             kind: EdgeKind::Resolves,
             provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
             confidence: 1.0,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         });
 
         let target = super::InspectionTarget::Decision {
@@ -8211,7 +8211,7 @@ mod view_seam_tests {
             kind: NodeKind::Doc,
             label: "My Doc 2".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/doc2.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8221,7 +8221,7 @@ mod view_seam_tests {
             kind: NodeKind::Symbol(SymbolKind::Function),
             label: "existing_func".to_string(),
             source_path: Some(std::path::PathBuf::from("src/lib.rs")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8231,7 +8231,7 @@ mod view_seam_tests {
             kind: EdgeKind::Cites,
             provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
             confidence: 1.0,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         });
         mock.with_edge(GraphEdge {
             source: NodeId::new("DOC-002".to_string()),
@@ -8239,7 +8239,7 @@ mod view_seam_tests {
             kind: EdgeKind::Cites,
             provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
             confidence: 1.0,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         });
 
         let target = super::InspectionTarget::Doc {
@@ -8280,7 +8280,7 @@ mod view_seam_tests {
             kind: NodeKind::Doc,
             label: "Lonely Doc".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/lonely.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8397,7 +8397,7 @@ mod view_seam_tests {
             kind: NodeKind::Doc,
             label: "Knowledge Layer Architecture".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/arch.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8406,7 +8406,7 @@ mod view_seam_tests {
             kind: NodeKind::Decision,
             label: "ADR-X".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/adr/ADR-X.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8415,7 +8415,7 @@ mod view_seam_tests {
             kind: NodeKind::Symbol(SymbolKind::Function),
             label: "arch_func".to_string(),
             source_path: Some(std::path::PathBuf::from("src/arch.rs")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8425,7 +8425,7 @@ mod view_seam_tests {
             kind: EdgeKind::Cites,
             provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
             confidence: 1.0,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         });
         mock.with_edge(GraphEdge {
             source: NodeId::new("ADR-X".to_string()),
@@ -8433,7 +8433,7 @@ mod view_seam_tests {
             kind: EdgeKind::Justifies,
             provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
             confidence: 1.0,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         });
 
         let target = super::InspectionTarget::Doc {
@@ -8477,7 +8477,7 @@ mod view_seam_tests {
             kind: NodeKind::Doc,
             label: "Doc Y".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/y.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8486,7 +8486,7 @@ mod view_seam_tests {
             kind: NodeKind::Decision,
             label: "ADR-Y".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/adr/ADR-Y.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8495,7 +8495,7 @@ mod view_seam_tests {
             kind: NodeKind::Symbol(SymbolKind::Function),
             label: "sym_y".to_string(),
             source_path: Some(std::path::PathBuf::from("src/lib.rs")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8505,7 +8505,7 @@ mod view_seam_tests {
             kind: EdgeKind::Cites,
             provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
             confidence: 1.0,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         });
         mock.with_edge(GraphEdge {
             source: NodeId::new("ADR-Y".to_string()),
@@ -8513,7 +8513,7 @@ mod view_seam_tests {
             kind: EdgeKind::Justifies,
             provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
             confidence: 1.0,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         });
 
         let target = super::InspectionTarget::Doc {
@@ -8557,7 +8557,7 @@ mod view_seam_tests {
             kind: NodeKind::Decision,
             label: "Node A".to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8566,7 +8566,7 @@ mod view_seam_tests {
             kind: NodeKind::Decision,
             label: "Node B".to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8576,7 +8576,7 @@ mod view_seam_tests {
             kind: EdgeKind::Cites,
             provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
             confidence: 1.0,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         });
         mock.with_edge(GraphEdge {
             source: NodeId::new("NODE-B".to_string()),
@@ -8584,7 +8584,7 @@ mod view_seam_tests {
             kind: EdgeKind::Cites,
             provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
             confidence: 1.0,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         });
 
         let target = super::InspectionTarget::Decision {
@@ -8624,7 +8624,7 @@ mod view_seam_tests {
             kind: NodeKind::Symbol(SymbolKind::Function),
             label: "lone_func".to_string(),
             source_path: Some(std::path::PathBuf::from("src/lib.rs")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8678,7 +8678,7 @@ mod view_seam_tests {
             kind: NodeKind::Doc,
             label: "Doc with citations".to_string(),
             source_path: Some(std::path::PathBuf::from("docs/citations.md")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8687,7 +8687,7 @@ mod view_seam_tests {
             kind: NodeKind::Symbol(SymbolKind::Function),
             label: "cited_function".to_string(),
             source_path: Some(std::path::PathBuf::from("src/lib.rs")),
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
@@ -8697,7 +8697,7 @@ mod view_seam_tests {
             kind: EdgeKind::Cites,
             provenance: cognicode_core::domain::value_objects::Provenance::Extracted,
             confidence: 1.0,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         });
 
         let target = super::InspectionTarget::Doc {

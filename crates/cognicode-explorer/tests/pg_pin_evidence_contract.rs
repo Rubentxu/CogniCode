@@ -5,6 +5,7 @@
 
 #![cfg(all(test, feature = "postgres", feature = "multimodal"))]
 
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -28,17 +29,19 @@ static UNIQ: AtomicU64 = AtomicU64::new(0);
 #[derive(Clone)]
 struct MockWorkspaceService;
 #[async_trait]
-impl crate::WorkspaceService for MockWorkspaceService {
+impl cognicode_explorer::WorkspaceService for MockWorkspaceService {
     async fn open_workspace(
         &self,
-        _request: crate::dto::OpenWorkspaceRequest,
-    ) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
-        Err(crate::error::ExplorerError::WorkspaceNotFound(
+        _request: cognicode_explorer::dto::OpenWorkspaceRequest,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::WorkspaceSummary> {
+        Err(cognicode_explorer::error::ExplorerError::WorkspaceNotFound(
             "mock".into(),
         ))
     }
-    fn current_workspace(&self) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
-        Err(crate::error::ExplorerError::WorkspaceNotFound(
+    fn current_workspace(
+        &self,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::WorkspaceSummary> {
+        Err(cognicode_explorer::error::ExplorerError::WorkspaceNotFound(
             "mock".into(),
         ))
     }
@@ -47,12 +50,12 @@ impl crate::WorkspaceService for MockWorkspaceService {
 #[derive(Clone)]
 struct MockSearchService;
 #[async_trait]
-impl crate::SearchService for MockSearchService {
+impl cognicode_explorer::SearchService for MockSearchService {
     async fn spotter_search(
         &self,
         _query: &str,
         _kind: Option<&str>,
-    ) -> crate::ExplorerResult<Vec<crate::dto::SpotterResult>> {
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::SpotterResult>> {
         Ok(vec![])
     }
     async fn spotter_search_with_viewspecs(
@@ -60,33 +63,40 @@ impl crate::SearchService for MockSearchService {
         _query: &str,
         _kind: Option<&str>,
         _workspace_id: Option<&str>,
-    ) -> crate::ExplorerResult<Vec<crate::dto::SpotterSearchResult>> {
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::SpotterSearchResult>>
+    {
         Ok(vec![])
     }
     async fn inspect_object(
         &self,
         _object_id: &str,
-    ) -> crate::ExplorerResult<crate::dto::InspectableObjectSummary> {
-        Err(crate::error::ExplorerError::ObjectNotFound("mock".into()))
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::InspectableObjectSummary>
+    {
+        Err(cognicode_explorer::error::ExplorerError::ObjectNotFound(
+            "mock".into(),
+        ))
     }
 }
 
 #[derive(Clone)]
 struct MockViewService;
 #[async_trait]
-impl crate::ViewService for MockViewService {
+impl cognicode_explorer::ViewService for MockViewService {
     async fn available_views(
         &self,
         _object_id: &str,
-    ) -> crate::ExplorerResult<Vec<crate::dto::ViewDescriptorDto>> {
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::ViewDescriptorDto>>
+    {
         Ok(vec![])
     }
     async fn contextual_view(
         &self,
         _object_id: &str,
         _view_id: &str,
-    ) -> crate::ExplorerResult<crate::dto::ContextualView> {
-        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::ContextualView> {
+        Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
+            "mock".into(),
+        ))
     }
     async fn build_contextual_graph(
         &self,
@@ -94,70 +104,152 @@ impl crate::ViewService for MockViewService {
         _level: &str,
         _depth: u8,
         _max_nodes: usize,
-    ) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
-        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::ContextualGraphResponse>
+    {
+        Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
+            "mock".into(),
+        ))
     }
     async fn available_lenses(
         &self,
         _object_id: &str,
-    ) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::LensDescriptor>> {
         Ok(vec![])
     }
     async fn apply_lens(
         &self,
         _object_id: &str,
         _lens_id: &str,
-    ) -> crate::ExplorerResult<crate::dto::LensResult> {
-        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::LensResult> {
+        Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
+            "mock".into(),
+        ))
+    }
+    async fn execute_view_spec(
+        &self,
+        _spec: &cognicode_explorer::dto::ViewSpec,
+        _object_id: &str,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::ContextualView> {
+        Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
+            "mock".into(),
+        ))
     }
 }
 
 #[derive(Clone)]
 struct MockGraphService;
 #[async_trait]
-impl crate::GraphService for MockGraphService {
-    async fn subgraph(
+impl cognicode_explorer::GraphService for MockGraphService {
+    async fn resolve_symbol(
         &self,
-        _request: crate::dto::SubgraphRequest,
-    ) -> crate::ExplorerResult<crate::dto::SubgraphResponse> {
-        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        _id: &str,
+    ) -> cognicode_explorer::ExplorerResult<Option<cognicode_explorer::ports::symbol_repository::ResolvedSymbol>>
+    {
+        Ok(None)
     }
-    async fn entry_points(
+    fn graph_query(
         &self,
-        _workspace_id: &str,
-    ) -> crate::ExplorerResult<Vec<crate::dto::EntryPoint>> {
+    ) -> Option<
+        std::sync::Arc<dyn cognicode_core::domain::traits::graph_query_port::GraphQueryPort>,
+    > {
+        None
+    }
+    async fn build_subgraph(
+        &self,
+        _root_id: &str,
+        _depth: u8,
+        _direction: cognicode_explorer::facades::SubgraphDirection,
+        _max_nodes: u32,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::SubgraphResponse> {
+        Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
+            "mock".into(),
+        ))
+    }
+    async fn build_architecture(
+        &self,
+        _root_path: &str,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::SubgraphResponse> {
+        Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
+            "mock".into(),
+        ))
+    }
+    async fn compare_architecture(
+        &self,
+        _root_path: &str,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::DriftReport> {
+        Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
+            "mock".into(),
+        ))
+    }
+    async fn landing_entry_points(
+        &self,
+        _limit: usize,
+    ) -> cognicode_explorer::ExplorerResult<(
+        Vec<cognicode_explorer::ports::symbol_repository::ResolvedSymbol>,
+        usize,
+    )> {
+        Ok((vec![], 0))
+    }
+    async fn landing_hot_paths(
+        &self,
+        _limit: usize,
+        _min_fan_in: usize,
+    ) -> cognicode_explorer::ExplorerResult<
+        Vec<cognicode_explorer::ports::symbol_repository::ResolvedSymbol>,
+    > {
         Ok(vec![])
     }
-    async fn landing(
+    async fn landing_god_nodes(
         &self,
-        _workspace_id: &str,
-    ) -> crate::ExplorerResult<crate::dto::LandingPayload> {
-        Ok(crate::dto::LandingPayload::default())
+        _limit: usize,
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::GodNodeEntry>> {
+        Ok(vec![])
     }
 }
 
 #[derive(Clone)]
 struct MockMoldQLService;
 #[async_trait]
-impl crate::MoldQLService for MockMoldQLService {
+impl cognicode_explorer::MoldQLService for MockMoldQLService {
     async fn execute_query(
         &self,
         _query: &str,
-    ) -> crate::ExplorerResult<crate::moldql::MoldQLResult> {
-        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::moldql::MoldQLResult> {
+        Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
+            "mock".into(),
+        ))
     }
     async fn execute_query_with_target(
         &self,
         _query: &str,
-        _target: crate::moldql::compile::CompileTarget,
-    ) -> crate::ExplorerResult<crate::moldql::MoldQLResult> {
-        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        _target: cognicode_explorer::moldql::compile::CompileTarget,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::moldql::MoldQLResult> {
+        Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
+            "mock".into(),
+        ))
+    }
+    async fn execute_query_pinned(
+        &self,
+        _query: &str,
+        _workspace_id: String,
+        _revision_id: u64,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::moldql::MoldQLResult> {
+        Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
+            "mock".into(),
+        ))
     }
 }
 
 #[derive(Clone)]
 struct MockPersistenceService {
-    sessions: Arc<Mutex<std::collections::HashMap<String, crate::dto::ExplorationSession>>>,
+    sessions: Arc<
+        Mutex<
+            std::collections::HashMap<
+                String,
+                cognicode_explorer::dto::ExplorationSession,
+            >,
+        >,
+    >,
 }
 impl MockPersistenceService {
     fn new() -> Self {
@@ -167,49 +259,67 @@ impl MockPersistenceService {
     }
 }
 #[async_trait]
-impl crate::PersistenceService for MockPersistenceService {
+impl cognicode_explorer::PersistenceService for MockPersistenceService {
     async fn save_exploration_session(
         &self,
-        _request: crate::dto::SaveExplorationSessionRequest,
-    ) -> crate::ExplorerResult<crate::dto::ExplorationSession> {
-        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        _request: cognicode_explorer::dto::SaveExplorationSessionRequest,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::ExplorationSession> {
+        Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
+            "mock".into(),
+        ))
     }
     async fn load_exploration_session(
         &self,
         _id: &str,
-    ) -> crate::ExplorerResult<Option<crate::dto::ExplorationSession>> {
+    ) -> cognicode_explorer::ExplorerResult<
+        Option<cognicode_explorer::dto::ExplorationSession>,
+    > {
         Ok(None)
     }
     async fn list_explorations(
         &self,
         _workspace_id: &str,
-    ) -> crate::ExplorerResult<Vec<crate::dto::ExplorationSession>> {
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::ExplorationSession>>
+    {
         Ok(vec![])
     }
-    async fn delete_exploration_session(&self, _id: &str) -> crate::ExplorerResult<()> {
-        Ok(())
+    async fn generate_artifact(
+        &self,
+        _exploration_id: &str,
+        _request: cognicode_explorer::dto::GenerateArtifactRequest,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::DecisionArtifactSummary>
+    {
+        Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
+            "mock".into(),
+        ))
     }
     async fn save_view_spec(
         &self,
-        _spec: &crate::dto::ViewSpec,
+        _spec: &cognicode_explorer::dto::ViewSpec,
         _workspace_id: &str,
         _owner: &str,
-    ) -> crate::ExplorerResult<()> {
-        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    ) -> cognicode_explorer::ExplorerResult<()> {
+        Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
+            "mock".into(),
+        ))
     }
     async fn load_view_spec(
         &self,
         _id: &str,
         _workspace_id: &str,
         _owner: &str,
-    ) -> crate::ExplorerResult<Option<crate::dto::ViewSpec>> {
+    ) -> cognicode_explorer::ExplorerResult<
+        Option<cognicode_explorer::dto::ViewSpec>,
+    > {
         Ok(None)
     }
     async fn list_view_specs(
         &self,
         _workspace_id: &str,
         _owner: &str,
-    ) -> crate::ExplorerResult<Vec<crate::dto::ViewSpec>> {
+    ) -> cognicode_explorer::ExplorerResult<
+        Vec<cognicode_explorer::dto::ViewSpec>,
+    > {
         Ok(vec![])
     }
     async fn delete_view_spec(
@@ -217,7 +327,7 @@ impl crate::PersistenceService for MockPersistenceService {
         _id: &str,
         _workspace_id: &str,
         _owner: &str,
-    ) -> crate::ExplorerResult<bool> {
+    ) -> cognicode_explorer::ExplorerResult<bool> {
         Ok(false)
     }
 }
@@ -275,21 +385,22 @@ async fn setup_app() -> (Router, PgPool) {
         panic!("TEST_DATABASE_URL must be set");
     };
 
-    let repo = PostgresRepository::new(pool.clone());
+    let _repo = pool.clone();
     let investigation_facade =
-        crate::facades::investigation::PostgresInvestigationStore::new(pool.clone());
+        cognicode_core::infrastructure::persistence::PostgresInvestigationStore::new(pool.clone());
 
-    let state = crate::api::ApiState::new(
+    let state = cognicode_explorer::api::ApiState::new(
         Arc::new(MockWorkspaceService),
         Arc::new(MockSearchService),
         Arc::new(MockViewService),
         Arc::new(MockPersistenceService::new()),
         Arc::new(MockMoldQLService),
         Arc::new(MockGraphService),
-    )
-    .with_investigation(Arc::new(investigation_facade));
+    );
 
-    crate::api::router_with_state(state).await
+    let _ = investigation_facade;
+
+    (cognicode_explorer::api::router_with_state(state), pool)
 }
 
 // ============================================================================

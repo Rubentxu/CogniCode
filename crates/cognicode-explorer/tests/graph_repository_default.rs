@@ -110,7 +110,7 @@ fn make_node(id: &str, kind: NodeKind, label: &str) -> GraphNode {
         kind,
         label: label.to_string(),
         source_path: None,
-        properties: HashMap::new(),
+        properties: serde_json::Value::Object(Default::default()),
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     }

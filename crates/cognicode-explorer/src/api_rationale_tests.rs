@@ -16,6 +16,7 @@ use std::sync::Arc;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
+use serde_json::Value;
 use cognicode_core::domain::value_objects::dependency_type::DependencyType;
 use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
@@ -50,7 +51,7 @@ fn rationale_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: NodeKind::Decision,
             label: "Decision A".to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         },
@@ -59,7 +60,7 @@ fn rationale_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: NodeKind::Decision,
             label: "Decision D".to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         },
@@ -68,7 +69,7 @@ fn rationale_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: NodeKind::Doc,
             label: "Doc X".to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         },
@@ -77,7 +78,7 @@ fn rationale_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: NodeKind::Evidence,
             label: "Evidence Y".to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         },
@@ -86,7 +87,7 @@ fn rationale_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: NodeKind::Decision,
             label: "Decision Z".to_string(),
             source_path: None,
-            properties: HashMap::new(),
+            properties: serde_json::Value::Object(Default::default()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         },
@@ -99,7 +100,7 @@ fn rationale_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: EdgeKind::Justifies,
             provenance: Provenance::Manual,
             confidence: 0.9,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         },
         GraphEdge {
             source: NodeId::new("D"),
@@ -107,7 +108,7 @@ fn rationale_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: EdgeKind::Cites,
             provenance: Provenance::Extracted,
             confidence: 0.8,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         },
         GraphEdge {
             source: NodeId::new("D"),
@@ -115,7 +116,7 @@ fn rationale_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: EdgeKind::CorroboratedBy,
             provenance: Provenance::Tested,
             confidence: 0.7,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         },
         GraphEdge {
             source: NodeId::new("Z"),
@@ -123,7 +124,7 @@ fn rationale_fixture() -> (Vec<GraphNode>, Vec<GraphEdge>) {
             kind: EdgeKind::Justifies,
             provenance: Provenance::Inferred,
             confidence: 0.5,
-            metadata: HashMap::new(),
+            metadata: serde_json::Value::Object(Default::default()),
         },
     ];
 

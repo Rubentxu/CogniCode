@@ -420,7 +420,7 @@ async fn rationale_handler(
             kind: n.kind.as_str().to_string(),
             file: n.source_path.map(|p| p.display().to_string()),
             line: None,
-            style_class: crate::api::style_class_for(n.kind.as_str()).to_string(),
+            style_class: crate::api::style_class_for(&n.kind.as_str()).to_string(),
         })
         .collect();
 
