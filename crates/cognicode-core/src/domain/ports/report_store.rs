@@ -57,7 +57,8 @@ mod postgres_adapter {
     use std::sync::Arc;
 
     /// Adapter that delegates every [`ReportStore`] method to a
-    /// [`PostgresRepository`].
+    /// [`PostgresRepository`]. Stores an `Arc` so the adapter can
+    /// outlive a single call site and be shared across threads.
     #[cfg(feature = "postgres")]
     pub struct PostgresReportStore {
         repo: Arc<PostgresRepository>,
@@ -65,6 +66,8 @@ mod postgres_adapter {
 
     #[cfg(feature = "postgres")]
     impl PostgresReportStore {
+        /// Build the adapter from a shared `Arc<PostgresRepository>`.
+        /// This is the canonical constructor.
         pub fn new(repo: Arc<PostgresRepository>) -> Self {
             Self { repo }
         }

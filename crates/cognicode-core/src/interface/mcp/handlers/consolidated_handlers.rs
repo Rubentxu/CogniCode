@@ -4,6 +4,8 @@
 //! Phase 5.3: New tools combining Graphify + CogniCode capabilities.
 
 use crate::domain::services::CycleDetector;
+#[cfg(feature = "postgres")]
+use crate::domain::ports::{PostgresReportStore, ReportStore};
 use crate::interface::mcp::handlers::{
     HandlerContext, HandlerError, HandlerResult,
 };
@@ -285,8 +287,8 @@ pub async fn handle_compare_graph(
     let workspace_id = crate::application::ingest::workspace_id_for_path(&ctx.working_dir);
 
     // Load latest report from PG
-    let report = match pg_repo
-        .load_latest_report(&workspace_id)
+    let report = match PostgresReportStore::new(pg_repo.clone())
+        .load_latest(&workspace_id)
         .await
         .map_err(|e| HandlerError::Internal(format!("Failed to load report: {e}")))?
     {
@@ -822,10 +824,16 @@ pub async fn handle_graph_diff(
 
     // Parse baseline date
     let baseline_date = &input.baseline_date;
-    let baseline_reports = repo
-        .load_report_range(&workspace_id, 365)
-        .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to load reports: {e}")))?;
+    #[cfg(feature = "postgres")]
+    let baseline_reports = {
+        let store = PostgresReportStore::new(repo.clone());
+        store
+            .load_range(&workspace_id, 365)
+            .await
+            .map_err(|e| HandlerError::Internal(format!("Failed to load reports: {e}")))?
+    };
+    #[cfg(not(feature = "postgres"))]
+    let baseline_reports: Vec<crate::infrastructure::persistence::GraphReportRow> = Vec::new();
 
     let baseline_report = baseline_reports
         .iter()
@@ -833,9 +841,16 @@ pub async fn handle_graph_diff(
         .or_else(|| baseline_reports.first());
 
     let current_report = if input.current {
-        repo.load_latest_report(&workspace_id)
-            .await
-            .map_err(|e| HandlerError::Internal(format!("Failed to load current report: {e}")))?
+        #[cfg(feature = "postgres")]
+        {
+            let store = PostgresReportStore::new(repo.clone());
+            store
+                .load_latest(&workspace_id)
+                .await
+                .map_err(|e| HandlerError::Internal(format!("Failed to load current report: {e}")))?
+        }
+        #[cfg(not(feature = "postgres"))]
+        None
     } else {
         None
     };
@@ -1024,8 +1039,8 @@ pub async fn handle_graph_timeline(
 
     let workspace_id = crate::application::ingest::workspace_id_for_path(&ctx.working_dir);
 
-    let reports = repo
-        .load_report_range(&workspace_id, input.days)
+    let reports = PostgresReportStore::new(repo.clone())
+        .load_range(&workspace_id, input.days)
         .await
         .map_err(|e| HandlerError::Internal(format!("Failed to load reports: {e}")))?;
 

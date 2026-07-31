@@ -20,6 +20,8 @@ use crate::application::ingest::scan::{ScanEntry, scan_for_changes};
 use crate::application::ingest::types::{
     ChangeKind, FailedFile, ScanProgress, ScanResult, ScanStage,
 };
+#[cfg(feature = "postgres")]
+use crate::domain::ports::{ManifestError, ManifestStore};
 use crate::infrastructure::graph::graph_cache::GraphCache;
 use crate::infrastructure::graph::snapshot_provider::SnapshotProvider;
 use crate::infrastructure::persistence::PostgresRepository;
@@ -41,7 +43,9 @@ pub async fn run_scan(
     on_progress: Option<&(dyn Fn(ScanProgress) + Send + Sync)>,
 ) -> ScanResult {
     let start = Instant::now();
+    tracing::info!(workspace_id = %workspace_id, root = %root.display(), "ingest: run_scan start");
     let total = count_source_files(root);
+    tracing::info!(workspace_id = %workspace_id, total, "ingest: count_source_files done");
     let mut failed_files: Vec<FailedFile> = Vec::new();
 
     // ── Advisory lock (prevent concurrent scans) ──────────────────
@@ -63,8 +67,20 @@ pub async fn run_scan(
 
     // ── Stage 1: Scan ──────────────────────────────────────────────
     report_progress(on_progress, ScanStage::Scan, 0, total, 0);
-    let previous = load_previous_manifest(repo, workspace_id).await;
+    let previous = {
+        #[cfg(feature = "postgres")]
+        {
+            let manifest = crate::domain::ports::PostgresManifestStore::new(repo);
+            load_previous_manifest(&manifest, workspace_id).await
+        }
+        #[cfg(not(feature = "postgres"))]
+        {
+            load_previous_manifest(repo, workspace_id).await
+        }
+    };
+    tracing::info!(workspace_id = %workspace_id, previous_manifest = previous.len(), "ingest: load_previous_manifest done");
     let changes = scan_for_changes(root, &previous);
+    tracing::info!(workspace_id = %workspace_id, changes = changes.len(), "ingest: scan_for_changes done");
     let scan_done = changes
         .iter()
         .filter(|c| c.kind != ChangeKind::Deleted)
@@ -81,12 +97,16 @@ pub async fn run_scan(
         .filter(|c| c.kind != ChangeKind::Deleted)
         .collect();
     let extract_count = to_extract.len();
+    tracing::info!(workspace_id = %workspace_id, extract_count, "ingest: extract stage start");
 
     report_progress(on_progress, ScanStage::Extract, 0, extract_count, 0);
     let mut rx = extract_streaming(to_extract);
     let mut results: Vec<_> = Vec::new();
     let mut received = 0;
     while let Some(mut result) = rx.recv().await {
+        if received == 0 {
+            tracing::info!(workspace_id = %workspace_id, "ingest: first extraction result received");
+        }
         received += 1;
         if let Some(err) = &result.error {
             failed_files.push(FailedFile {
@@ -108,6 +128,7 @@ pub async fn run_scan(
             failed_files.len(),
         );
     }
+    tracing::info!(workspace_id = %workspace_id, received, failed = failed_files.len(), "ingest: extract stage done");
 
     // ── Stage 3: PgUpsert (streaming) ─────────────────────────────
     report_progress(
@@ -117,16 +138,18 @@ pub async fn run_scan(
         results.len(),
         failed_files.len(),
     );
-    let (upsert_stats, unresolved_edges) = pg_upsert_streaming(repo, workspace_id, {
-        let (tx, rx) =
-            tokio::sync::mpsc::channel(crate::application::ingest::pg_upsert_stage::BATCH_SIZE);
+    let (tx, rx) =
+        tokio::sync::mpsc::channel(crate::application::ingest::pg_upsert_stage::BATCH_SIZE);
+    tokio::spawn(async move {
         for r in results {
-            let _ = tx.send(r).await;
+            if tx.send(r).await.is_err() {
+                tracing::warn!("ingest: pg_upsert receiver dropped before all results were sent");
+                break;
+            }
         }
-        drop(tx);
-        rx
-    })
-    .await;
+    });
+    let (upsert_stats, unresolved_edges) = pg_upsert_streaming(repo, workspace_id, rx).await;
+    tracing::info!(workspace_id = %workspace_id, files = upsert_stats.files, nodes = upsert_stats.nodes, edges = upsert_stats.edges, unresolved = unresolved_edges.len(), errors = upsert_stats.errors, "ingest: pg_upsert done");
     report_progress(
         on_progress,
         ScanStage::PgUpsert,
@@ -145,6 +168,7 @@ pub async fn run_scan(
             0,
         );
         let resolved = resolve_cross_file_calls(repo, workspace_id, &unresolved_edges).await;
+        tracing::info!(workspace_id = %workspace_id, resolved, unresolved = unresolved_edges.len(), "ingest: resolve done");
         report_progress(
             on_progress,
             ScanStage::Resolve,
@@ -157,25 +181,41 @@ pub async fn run_scan(
     // ── Stage 5: Cluster (community detection) ──────────────────
     report_progress(on_progress, ScanStage::Cluster, 0, 1, 0);
     let communities = run_cluster(repo, cache, workspace_id).await;
+    tracing::info!(workspace_id = %workspace_id, communities, "ingest: cluster done");
     report_progress(on_progress, ScanStage::Cluster, communities, 1, 0);
 
     // ── Stage 6: Analyze (god nodes, dead code, hot paths) ──────
     report_progress(on_progress, ScanStage::Analyze, 0, 1, 0);
     let summary = run_analyze(cache).await;
+    tracing::info!(workspace_id = %workspace_id, health_score = summary.health_score, "ingest: analyze done");
     report_progress(on_progress, ScanStage::Analyze, 1, 1, 0);
 
     // ── Stage 7: Report (persist to graph_reports) ──────────────
     report_progress(on_progress, ScanStage::Report, 0, 1, 0);
     let _report_id = run_report(repo, workspace_id, &summary).await;
+    tracing::info!(workspace_id = %workspace_id, "ingest: report done");
     report_progress(on_progress, ScanStage::Report, 1, 1, 0);
 
     // Delete scan_manifest entries for files that were deleted
     let keep_paths: Vec<String> = previous.keys().cloned().collect();
-    if let Err(e) = repo
-        .delete_scan_manifest_except(workspace_id, &keep_paths)
-        .await
+    #[cfg(feature = "postgres")]
     {
-        tracing::warn!("scan_manifest cleanup failed: {e}");
+        let manifest = crate::domain::ports::PostgresManifestStore::new(repo);
+        if let Err(e) = manifest
+            .delete_except(workspace_id, &keep_paths)
+            .await
+        {
+            tracing::warn!("scan_manifest cleanup failed: {e}");
+        }
+    }
+    #[cfg(not(feature = "postgres"))]
+    {
+        if let Err(e) = repo
+            .delete_scan_manifest_except(workspace_id, &keep_paths)
+            .await
+        {
+            tracing::warn!("scan_manifest cleanup failed: {e}");
+        }
     }
 
     // ── Stage 4: Refresh ──────────────────────────────────────────
@@ -191,6 +231,7 @@ pub async fn run_scan(
             error: e.to_string(),
         });
     }
+    tracing::info!(workspace_id = %workspace_id, failed = failed_files.len(), duration_ms = start.elapsed().as_millis() as u64, "ingest: refresh/done");
     report_progress(on_progress, ScanStage::Done, 1, 1, failed_files.len());
 
     let total_nodes = upsert_stats.nodes;
@@ -212,11 +253,12 @@ fn count_source_files(root: &Path) -> usize {
 
 /// Load the previous scan manifest from PG, converting to the
 /// lightweight `ScanEntry` map used by the Scan stage.
+#[cfg(feature = "postgres")]
 async fn load_previous_manifest(
-    repo: &PostgresRepository,
+    manifest: &dyn ManifestStore,
     workspace_id: &str,
 ) -> HashMap<String, ScanEntry> {
-    match repo.load_scan_manifest(workspace_id).await {
+    match manifest.load_manifest(workspace_id).await {
         Ok(rows) => rows
             .into_iter()
             .map(|r| {
@@ -228,10 +270,24 @@ async fn load_previous_manifest(
             })
             .collect(),
         Err(e) => {
-            tracing::warn!("load_scan_manifest failed (treating as empty): {e}");
+            tracing::warn!("load_previous_manifest failed (treating as empty): {e}");
             HashMap::new()
         }
     }
+}
+
+#[cfg(not(feature = "postgres"))]
+async fn load_previous_manifest(
+    _repo: &PostgresRepository,
+    _workspace_id: &str,
+) -> HashMap<String, ScanEntry> {
+    HashMap::new()
+}
+
+/// Helper: log and ignore `ManifestError` from cleanup ops.
+#[cfg(feature = "postgres")]
+fn log_manifest_err(ctx: &str, e: ManifestError) {
+    tracing::warn!("{ctx}: {e}");
 }
 
 /// Report progress to the optional callback.
