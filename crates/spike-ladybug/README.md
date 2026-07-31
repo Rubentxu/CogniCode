@@ -11,7 +11,8 @@ verified empirically on 2026-07-31.
 1. `lbug 0.19.0` is published on crates.io (pubtime 2026-07-30)
 2. The crate's `build.rs` downloads `liblbug-linux-x86_64.tar.gz` from
    `https://github.com/LadybugDB/ladybug/releases/download/v0.19.0/`
-   automatically — **no cmake required**
+   automatically — **no cmake required on this host** (cmake is NOT installed
+   and cannot be installed without sudo)
 3. The static lib links cleanly with the host toolchain (rustc 1.96.0, gcc 16.1.1)
 4. `Database::new` + `Connection::new` + `conn.query` round-trip a single row
 5. The `.lbdb` artifact is materialized as a file, not a directory
@@ -20,7 +21,7 @@ verified empirically on 2026-07-31.
 
 ```bash
 just spike-ladybug          # build + run example + run test end-to-end
-just spike-ladybug-clean    # wipe target/ and .cache/ for fresh download
+just spike-ladybug-clean    # wipe target/ + spike.lbdb for fresh run
 ```
 
 ## Build paths
@@ -32,9 +33,31 @@ The `lbug` crate has two build paths:
 | **Prebuilt static lib** (default) | automatic on first build | ❌ no | ~30s after download |
 | **From source** | `LBUG_BUILD_FROM_SOURCE=1` env var | ✅ yes | 5–15 min |
 
-This spike uses the prebuilt path by default. If the prebuilt download fails,
-the crate falls back to cmake — which is **not installed on this host**.
-The design explicitly forbids cmake fallback; see Troubleshooting below.
+This spike uses the prebuilt path by default. The build script DOES have an
+implicit fallback to the from-source path on download failure (this is upstream
+behavior in `lbug` 0.19.0, not something we can disable from the consumer side).
+
+**On this host**: cmake is NOT installed. So if the prebuilt download ever
+fails (network, rate limit, missing artifact), the build will fail loudly with
+"cmake: command not found". This is observable, not silent — it surfaces the
+real issue rather than masking it.
+
+## Prebuilt cache location
+
+The build script writes the extracted static lib to its OWN `CARGO_MANIFEST_DIR`
+(which, for a registry dependency, is `~/.cargo/registry/src/index.crates.io-*/lbug-0.19.0/.cache/lbug-prebuilt/latest/lib/liblbug.a`),
+**not** to the consuming crate's `.cache/`.
+
+That means:
+
+- `crates/spike-ladybug/.cache/lbug-prebuilt/version-0.19.0/lib/liblbug.a` does
+  **not** exist (verified 2026-07-31)
+- The actual prebuilt lib lives at `~/.cargo/registry/src/index.crates.io-*/lbug-0.19.0/.cache/lbug-prebuilt/latest/lib/liblbug.a`
+  (113 MB on this host)
+- `cargo clean` does NOT wipe this cache (it persists across builds)
+- `just spike-ladybug-clean` wipes `target/` and `spike.lbdb` only — it does
+  NOT wipe the lbug prebuilt cache (and that is intentional: clearing Cargo's
+  registry cache would require `cargo clean` on the whole workspace)
 
 ## API surface (corrected)
 
@@ -61,21 +84,18 @@ Access is by **column index** (`row[i]`), then pattern-match the `Value` enum.
 
 ## Troubleshooting
 
-### Prebuilt download fails
+### Prebuilt download fails (network, GitHub rate limit)
 
 Symptom: build error mentioning `failed to download liblbug` or curl exit non-zero.
 
-Causes: network unreachable, GitHub rate limit, or the artifact name for this
-target triple (`linux-x86_64`) is unavailable.
-
-**On this host**: cmake is NOT installed, so the from-source fallback cannot run.
-The build will fail loudly. This is by design — silent fallback would mask the
-real issue.
+On this host, the from-source fallback will then try to invoke cmake and fail
+loudly with `cmake: command not found`. This is **observable, not silent** —
+the failure mode is unambiguous.
 
 Fix options:
-1. Re-run with a fresh network (most likely transient rate limit)
-2. Manually download `liblbug-linux-x86_64.tar.gz` from the v0.19.0 release
-   and extract to `crates/spike-ladybug/.cache/lbug-prebuilt/version-0.19.0/lib/`
+1. Re-run with fresh network (most likely transient rate limit)
+2. Pre-populate Cargo's registry cache: download `liblbug-linux-x86_64.tar.gz`
+   manually and extract to `~/.cargo/registry/src/index.crates.io-*/lbug-0.19.0/.cache/lbug-prebuilt/latest/lib/liblbug.a`
 3. Install cmake (requires sudo, not currently possible on this host)
 
 ### Database::new returns error
@@ -91,13 +111,9 @@ upstream source: `https://github.com/LadybugDB/ladybug-rust/src/lib.rs`.
 
 ### Build > 30 min
 
-If the prebuilt download succeeded but the build is still taking > 30 min,
-the cmake fallback path was triggered. Investigate `build.rs` env vars:
-- `LBUG_BUILD_FROM_SOURCE=1` → from-source
-- `LBUG_PRECOMPILED_RUN_ID` → use prebuilt from a CI run
-- `LBUG_VERSION` → pin to a specific release
-
-The spike never sets these, so the default prebuilt path should win.
+If the build is still taking > 30 min and you did not set `LBUG_BUILD_FROM_SOURCE=1`,
+something else is wrong (network retry storm, very slow disk, etc.). Investigate
+the cargo build log.
 
 ## Exit criteria
 
@@ -114,7 +130,7 @@ The spike is **PASS** when:
 
 The spike is **FAIL** when:
 
-- Prebuilt download fails and cmake is unavailable
+- Prebuilt download fails AND cmake is unavailable (would need sudo to install)
 - lbug API does not match the corrected Kùzu-derived API
 - `.lbdb` is created as a directory (would mean lbug v0.20+ changed storage)
 
@@ -126,3 +142,4 @@ The spike is **FAIL** when:
 - `sddk/e29-s1-build/tasks.md` — task breakdown
 - `openspec/specs/ladybug-spike-validation/spec.md` — full 6-stage spike spec
 - `docs/adr/ADR-026-ladybugdb-canonical-migration.md` — migration decision
+
