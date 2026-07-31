@@ -87,12 +87,13 @@ fn gen_symbol_csv(path: &std::path::Path, rows: usize) -> anyhow::Result<usize> 
 }
 
 /// Generate Calls CSV for PG (uses TEXT "node_{id}" format for source/target node IDs).
+/// Columns must match graph_edges columns: source_id, target_id, kind, provenance
 fn gen_calls_csv_pg(path: &std::path::Path, symbol_count: usize) -> anyhow::Result<usize> {
     let file = std::fs::File::create(path)?;
     let mut wtr = Writer::from_writer(file);
 
     wtr.write_record(&[
-        "source_id", "target_id", "kind", "provenance", "confidence", "workspace_id",
+        "source_id", "target_id", "kind", "provenance",
     ])?;
 
     let edge_count = symbol_count * 5;
@@ -105,8 +106,6 @@ fn gen_calls_csv_pg(path: &std::path::Path, symbol_count: usize) -> anyhow::Resu
             format!("node_{}", to_id),
             "Calls".to_string(),
             "extractor".to_string(),
-            "1.0".to_string(),
-            "1".to_string(),
         ])?;
     }
 
@@ -237,7 +236,7 @@ async fn populate_pg(
     .map_err(|_| anyhow::anyhow!("PG connection timed out (2s)"))?
     .map_err(|e| anyhow::anyhow!("PG connection failed: {}", e))?;
 
-    // Create graph_nodes table (mirrors cognicode-core m0009)
+    // Create graph_nodes table (simplified spike schema)
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS graph_nodes (\
          id TEXT PRIMARY KEY, \
@@ -246,30 +245,27 @@ async fn populate_pg(
          source_path TEXT, \
          properties JSONB NOT NULL DEFAULT '{}'::jsonb, \
          created_at TIMESTAMPTZ NOT NULL DEFAULT now(), \
-         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), \
-         workspace_id INTEGER NOT NULL);",
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT now());",
     )
     .execute(&pool)
     .await?;
 
-    // Create graph_edges table
+    // Create graph_edges table (no FK constraints for spike benchmark)
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS graph_edges (\
          id SERIAL PRIMARY KEY, \
-         source_id TEXT NOT NULL REFERENCES graph_nodes(id), \
-         target_id TEXT NOT NULL REFERENCES graph_nodes(id), \
+         source_id TEXT NOT NULL, \
+         target_id TEXT NOT NULL, \
          kind TEXT NOT NULL, \
          provenance TEXT NOT NULL DEFAULT 'extracted', \
          confidence REAL NOT NULL DEFAULT 0.5, \
          metadata JSONB NOT NULL DEFAULT '{}'::jsonb, \
-         created_at TIMESTAMPTZ NOT NULL DEFAULT now(), \
-         workspace_id INTEGER NOT NULL);",
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now());",
     )
     .execute(&pool)
     .await?;
 
     // Load symbol CSV into PG — map Symbol.id (SERIAL 1..N) to TEXT "node_{id}"
-    // The CSV has no id column; rows are in order 1..N matching SERIAL ids
     {
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(true)
@@ -278,26 +274,24 @@ async fn populate_pg(
         for result in rdr.records() {
             let record = result?;
             idx += 1;
-            let workspace_id: i32 = record.get(0).unwrap_or("1").parse().unwrap_or(1);
             let id_str = format!("node_{}", idx);
             let kind = record.get(4).unwrap_or("function");
 
             sqlx::query(
-                "INSERT INTO graph_nodes (id, kind, label, source_path, properties, workspace_id) \
-                 VALUES ($1, $2, $3, $4, '{}'::jsonb, $5) \
+                "INSERT INTO graph_nodes (id, kind, label, source_path, properties) \
+                 VALUES ($1, $2, $3, $4, '{}'::jsonb) \
                  ON CONFLICT (id) DO NOTHING",
             )
             .bind(&id_str)
             .bind(kind)
-            .bind(kind) // label = kind for our simplified schema
+            .bind(kind)
             .bind(record.get(5).unwrap_or(""))
-            .bind(workspace_id)
             .execute(&pool)
             .await?;
         }
     }
 
-    // Load calls CSV — from_id/to_id are SERIAL symbol ids (1..N) → map to "node_{id}"
+    // Load calls CSV using individual INSERT statements
     {
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(true)
@@ -306,18 +300,16 @@ async fn populate_pg(
             let record = result?;
             let from_id: i64 = record.get(0).unwrap_or("1").parse().unwrap_or(1);
             let to_id: i64 = record.get(1).unwrap_or("1").parse().unwrap_or(1);
-            let workspace_id: i32 = record.get(2).unwrap_or("1").parse().unwrap_or(1);
 
             sqlx::query(
-                "INSERT INTO graph_edges (source_id, target_id, kind, provenance, workspace_id) \
-                 VALUES ($1, $2, $3, $4, $5) \
+                "INSERT INTO graph_edges (source_id, target_id, kind, provenance) \
+                 VALUES ($1, $2, $3, $4) \
                  ON CONFLICT DO NOTHING",
             )
             .bind(format!("node_{}", from_id))
             .bind(format!("node_{}", to_id))
             .bind("Calls")
             .bind("extractor")
-            .bind(workspace_id)
             .execute(&pool)
             .await?;
         }
