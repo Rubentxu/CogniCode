@@ -671,3 +671,14 @@ spike-ladybug:
 # E29 S1 spike — clean cache + build artifacts (forces fresh prebuilt download)
 spike-ladybug-clean:
     rm -rf crates/spike-ladybug/target crates/spike-ladybug/.cache
+
+# E29 S2 spike — schema load + COPY FROM + query validation
+spike-ladybug-s2:
+    cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s2_schema_create
+    cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s2_copy_from
+    cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s2_query_validation
+    cargo test --manifest-path crates/spike-ladybug/Cargo.toml --tests
+
+# E29 S2 spike — clean S2 .lbdb artifacts
+spike-ladybug-s2-clean:
+    rm -f s2_schema.lbdb s2_copy_from.lbdb s2_query_validation.lbdb
