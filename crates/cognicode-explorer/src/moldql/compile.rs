@@ -184,6 +184,7 @@ pub fn compile(query: &MoldQLQuery, target: CompileTarget) -> Result<CompiledQue
 /// ```
 /// use cognicode_explorer::moldql::compile::compile_to_plan;
 /// use cognicode_explorer::moldql::parser::parse;
+/// use cognicode_core::domain::plan::MoldPlan;
 /// use cognicode_core::domain::plan::PlanLimits;
 /// use cognicode_core::domain::value_objects::{WorkspaceId, RevisionId};
 ///

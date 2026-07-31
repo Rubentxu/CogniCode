@@ -2337,7 +2337,7 @@ fn truncate(s: &str, max_len: usize) -> Option<String> {
 
 fn get_git_short_hash(project_dir: &Path) -> Result<String, String> {
     let output = std::process::Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
+        .args(["rev-parse", "--short=7", "HEAD"])
         .current_dir(project_dir)
         .output()
         .map_err(|e| format!("Failed to run git: {e}"))?;
