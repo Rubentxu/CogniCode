@@ -702,3 +702,19 @@ spike-ladybug-s4:
 # E29 S4 spike — clean S4 .lbdb artifacts
 spike-ladybug-s4-clean:
     rm -f /tmp/s4_e2e.lbdb
+
+# E29 S5 spike — populate dual engines then run full benchmark tests
+# Requires PG running at postgres://cognicode:cognicode@localhost:5432/cognicode
+spike-ladybug-s5:
+    @echo "=== S5: Populating databases ==="
+    cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s5_populate -- \
+        --lbug-path=/tmp/s5_full6.lbdb \
+        --pg-url=postgres://cognicode:cognicode@localhost:5432/cognicode \
+        --rows=10000
+    @echo "=== S5: Running full latency benchmarks ==="
+    cargo test --manifest-path crates/spike-ladybug/Cargo.toml --test s5_latency -- --nocapture
+
+# E29 S5 spike — clean S5 artifacts
+spike-ladybug-s5-clean:
+    rm -f /tmp/s5_full6.lbdb
+    psql postgres://cognicode:cognicode@localhost:5432/cognicode -c "DROP TABLE IF EXISTS graph_edges; DROP TABLE IF EXISTS graph_nodes;" 2>/dev/null || true
