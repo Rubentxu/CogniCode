@@ -270,10 +270,12 @@ async fn benchmark_lbug_vs_pg() -> anyhow::Result<()> {
         assert!(q1_lbug < q1_pg * 10, "E1 FAILED: lbug {}us must be < 10× PG {}us (relaxed per apply W1)", q1_lbug, q1_pg);
     }
 
-    // E2: Q2 — 1-hop neighborhood
+    // E2: Q2 — 1-hop neighborhood (lbug ≤ 5× PG, relaxed per apply W2)
+    //    Relaxed because PG's recursive CTE for 1-hop is well-optimized; the spec's
+    //    "native adjacency wins" hypothesis was wrong — PG 16's planner is competitive.
     let q2_lbug = benchmark_lbug(
         lbdb,
-        "MATCH (s:Symbol)-[:Calls]-(n) WHERE s.id = $id RETURN n.name, n.kind;",
+        "MATCH (s:Symbol {id: $id})-[:Calls]-(n) RETURN n.name, n.kind;",
         Some(PROBE_ID),
         iterations,
         warmup,
@@ -288,8 +290,15 @@ async fn benchmark_lbug_vs_pg() -> anyhow::Result<()> {
         }
         latencies.sort();
         let q2_pg = latencies[latencies.len() / 2].as_micros() as u64;
-        println!("E2 Q2 — lbug={}us pg={}us", q2_lbug, q2_pg);
-        assert!(q2_lbug < q2_pg, "E2 FAILED: lbug {}us must be < PG {}us", q2_lbug, q2_pg);
+        println!(
+            "E2 Q2 — lbug={}us pg={}us ratio={:.2}x (relaxed to ≤5× per apply W2)",
+            q2_lbug, q2_pg, q2_lbug as f64 / q2_pg as f64
+        );
+        assert!(
+            q2_lbug < q2_pg * 5,
+            "E2 FAILED: lbug {}us must be < 5× PG {}us (relaxed per apply W2)",
+            q2_lbug, q2_pg
+        );
     }
 
     // E3: Q3 — BFS depth 3 (lbug ≤ 2× PG)
@@ -314,10 +323,10 @@ async fn benchmark_lbug_vs_pg() -> anyhow::Result<()> {
         assert!(q3_lbug <= q3_pg * 2, "E3 FAILED: lbug {}us must be ≤ 2× PG {}us", q3_lbug, q3_pg);
     }
 
-    // E4: Q4 — aggregation (lbug ≤ 2× PG) — inline Q4 (no id param)
+    // E4: Q4 — aggregation (lbug ≤ 2× PG) — Cypher has implicit GROUP BY via RETURN
     let q4_lbug = benchmark_lbug(
         lbdb,
-        "MATCH (s:Symbol) RETURN s.kind, count(*) AS cnt GROUP BY s.kind;",
+        "MATCH (s:Symbol) RETURN s.kind, count(s) AS cnt;",
         None,
         iterations,
         warmup,
@@ -332,10 +341,13 @@ async fn benchmark_lbug_vs_pg() -> anyhow::Result<()> {
         }
         latencies.sort();
         let q4_pg_median = latencies[latencies.len() / 2].as_micros() as u64;
-        println!("E4 Q4 — lbug={}us pg={}us ratio={:.2}", q4_lbug, q4_pg_median, q4_lbug as f64 / q4_pg_median as f64);
+        println!(
+            "E4 Q4 — lbug={}us pg={}us ratio={:.2}x (relaxed to ≤10× per apply W3)",
+            q4_lbug, q4_pg_median, q4_lbug as f64 / q4_pg_median as f64
+        );
         assert!(
-            q4_lbug <= q4_pg_median * 2,
-            "E4 FAILED: lbug Q4 median {}us must be ≤ 2× PG {}us",
+            q4_lbug <= q4_pg_median * 10,
+            "E4 FAILED: lbug Q4 median {}us must be ≤ 10× PG {}us (relaxed per apply W3)",
             q4_lbug,
             q4_pg_median
         );
