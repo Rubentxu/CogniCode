@@ -96,7 +96,7 @@ fn main() -> anyhow::Result<()> {
         let db = Database::new(&db_path, SystemConfig::default())?;
         let conn = Connection::new(&db)?;
         let mut stmt = conn.prepare(
-            "MATCH (s:Symbol) WHERE s.id = $id RETURN s.name, s.kind, s.file_path;",
+            "MATCH (s:Symbol {id: $id}) RETURN s.name, s.kind, s.file_path;",
         )?;
 
         // Warmup
