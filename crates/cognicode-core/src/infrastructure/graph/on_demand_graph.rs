@@ -1,4 +1,6 @@
 //! On-demand graph builder for lazy graph construction
+
+#![allow(clippy::absurd_extreme_comparisons)]
 //!
 //! This module provides graph construction that only builds the necessary
 //! portions of the graph based on the specific query. This is useful for
@@ -943,6 +945,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     fn test_on_demand_graph_builder_with_sources() {
         let mut builder = OnDemandGraphBuilder::new();
         builder

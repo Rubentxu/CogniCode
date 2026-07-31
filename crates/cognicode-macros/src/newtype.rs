@@ -13,7 +13,7 @@
 
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::quote;
-use syn::{parse_quote, Data, DeriveInput, Fields, Type};
+use syn::{Data, DeriveInput, Fields, Type, parse_quote};
 
 /// Parse extra derives from `#[newtype(derive(Clone, Eq))]`
 fn parse_extra_derives(attrs: &[syn::Attribute]) -> Vec<Ident> {
@@ -75,7 +75,7 @@ pub fn derive_newtype(input: TokenStream2) -> TokenStream2 {
         Err(e) => {
             // Convert syn::Error to token stream
             let compile_error = syn::Error::to_compile_error(&e);
-            return TokenStream2::from(quote! { #compile_error });
+            return quote! { #compile_error };
         }
     };
 
@@ -116,7 +116,7 @@ pub fn derive_newtype(input: TokenStream2) -> TokenStream2 {
         }
     };
 
-    TokenStream2::from(expanded)
+    expanded
 }
 
 #[cfg(test)]

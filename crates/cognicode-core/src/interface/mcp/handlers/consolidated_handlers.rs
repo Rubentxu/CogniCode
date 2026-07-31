@@ -3,12 +3,10 @@
 //! Phase 5.2: Smart composites that replace groups of individual tools.
 //! Phase 5.3: New tools combining Graphify + CogniCode capabilities.
 
-use crate::domain::services::CycleDetector;
 #[cfg(feature = "postgres")]
 use crate::domain::ports::{PostgresReportStore, ReportStore};
-use crate::interface::mcp::handlers::{
-    HandlerContext, HandlerError, HandlerResult,
-};
+use crate::domain::services::CycleDetector;
+use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::mcp::schemas::{
     CompareGraphInput, CompareGraphOutput, MetricDeltas, SmartSearchInput, SmartSearchOutput,
     SmartSearchResult,
@@ -844,10 +842,9 @@ pub async fn handle_graph_diff(
         #[cfg(feature = "postgres")]
         {
             let store = PostgresReportStore::new(repo.clone());
-            store
-                .load_latest(&workspace_id)
-                .await
-                .map_err(|e| HandlerError::Internal(format!("Failed to load current report: {e}")))?
+            store.load_latest(&workspace_id).await.map_err(|e| {
+                HandlerError::Internal(format!("Failed to load current report: {e}"))
+            })?
         }
         #[cfg(not(feature = "postgres"))]
         None
@@ -1550,5 +1547,4 @@ mod tests {
             }
         }
     }
-
 }

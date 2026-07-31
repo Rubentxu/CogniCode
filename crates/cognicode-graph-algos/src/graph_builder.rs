@@ -65,8 +65,8 @@ pub trait GraphBuilder {
         }
         // Reverse direction: out_neighbors[u] contains v where u → v
         // We need to scan in_neighbors to build out_neighbors
-        for v in 0..n {
-            for &u in &in_neighbors[v] {
+        for (v, in_neigh) in in_neighbors.iter().enumerate() {
+            for &u in in_neigh {
                 out_neighbors[u].push(v);
             }
         }

@@ -274,9 +274,9 @@ mod tests {
     /// `TypedValue::from_json(Number)` where number is a fraction → `Float`.
     #[test]
     fn typed_value_fraction() {
-        let json = serde_json::json!(3.14159);
+        let json = serde_json::json!(1.5);
         let result = TypedValue::from_json(json);
-        assert_eq!(result, Ok(TypedValue::Float(3.14159)));
+        assert_eq!(result, Ok(TypedValue::Float(1.5)));
     }
 
     /// `TypedValue::from_json(String)` → `String`.
@@ -331,7 +331,7 @@ mod tests {
     fn typed_value_display() {
         assert_eq!(TypedValue::Null.to_string(), "null");
         assert_eq!(TypedValue::Int(42).to_string(), "42");
-        assert_eq!(TypedValue::Float(3.14).to_string(), "3.14");
+        assert_eq!(TypedValue::Float(2.5).to_string(), "2.5");
     }
 
     /// `TypedValue` implements `Hash`.

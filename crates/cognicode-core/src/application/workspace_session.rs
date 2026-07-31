@@ -2356,6 +2356,7 @@ pub const TEST_CONST: i32 = 42;
     }
 
     #[tokio::test(flavor = "current_thread")]
+    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     async fn test_get_graph_stats_after_build_returns_stats() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2901,6 +2902,7 @@ pub struct PublicStruct {}
     }
 
     #[tokio::test(flavor = "current_thread")]
+    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     async fn test_get_project_diagnostics_complexity_has_expected_fields() {
         let temp_dir = TempDir::new().unwrap();
         let test_rs = temp_dir.path().join("lib.rs");
@@ -4388,6 +4390,7 @@ pub const MY_CONST: i32 = 42;
     }
 
     #[tokio::test(flavor = "current_thread")]
+    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     async fn test_concurrent_analyze_impact_during_rebuild() {
         // Test impact analysis during concurrent graph rebuild
         let temp_dir = TempDir::new().unwrap();

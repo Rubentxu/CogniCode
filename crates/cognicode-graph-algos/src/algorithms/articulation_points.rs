@@ -46,6 +46,7 @@ pub fn articulation_points(adj: &[Vec<usize>], n: usize) -> Vec<(usize, usize)> 
     // Count DFS children of root (root is cut iff children >= 2)
     let mut root_children: usize = 0;
 
+    #[allow(clippy::too_many_arguments)]
     fn dfs(
         u: usize,
         disc: &mut Vec<i64>,
@@ -123,8 +124,8 @@ pub fn articulation_points(adj: &[Vec<usize>], n: usize) -> Vec<(usize, usize)> 
     // Algorithm: remove node, count resulting components
 
     let mut result: Vec<(usize, usize)> = Vec::new();
-    for u in 0..n {
-        if articulation[u] {
+    for (u, &is_articulation) in articulation.iter().enumerate() {
+        if is_articulation {
             let cut_count = count_components_without_node(adj, n, u);
             result.push((u, cut_count));
         }
