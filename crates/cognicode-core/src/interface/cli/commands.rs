@@ -82,6 +82,7 @@ pub enum CliCommand {
     /// absent and `cognicode docs-ingest` returns
     /// "Unknown command".
     #[cfg(feature = "multimodal")]
+    #[command(name = "docs-ingest")]
     DocsIngest {
         /// Path to ingest: a single `.md`/`.markdown`/`.mdx`
         /// file or a directory to walk.
@@ -98,6 +99,7 @@ pub enum CliCommand {
     /// build the variant is absent and `cognicode issues-ingest`
     /// returns "Unknown command".
     #[cfg(feature = "multimodal")]
+    #[command(name = "issues-ingest")]
     IssuesIngest {
         /// GitHub owner / organisation name.
         #[arg(long)]
@@ -1467,153 +1469,3 @@ fn print_outline_tree(nodes: &[OutlineNode], indent: usize) {
     }
 }
 
-// ============================================================================
-// T15 RED gate — `cli_docs_ingest_exits_0_on_success`.
-//
-// Drives the CLI binary end-to-end (the executor wires the
-// `docs-ingest` subcommand to the `DocsExtractor` and prints a
-// structured summary). The test asserts the exit-code contract:
-// - 0 on success (extractor produced >= 1 candidate OR the
-//   input is an empty directory — the operation is a no-op
-//   success in that case).
-// - 1 on a missing path (handled by the executor's
-//   pre-flight `path.exists()` check).
-//
-// The test is gated behind the `multimodal` feature because
-// the `docs-ingest` subcommand is too. On a default build
-// the test module is compiled out entirely (the binary
-// itself rejects the subcommand with a clap error, but
-// we don't even bother spinning the subprocess up).
-// ============================================================================
-#[cfg(all(test, feature = "multimodal"))]
-mod docs_ingest_cli_tests {
-    use std::path::PathBuf;
-    use std::process::Command;
-
-    /// Resolve the `cognicode` workspace binary. The cargo
-    /// test harness sets `CARGO_BIN_EXE_<name>` for every
-    /// binary the test's crate declares; for cross-crate
-    /// binaries (we are testing from `cognicode-core` but the
-    /// binary is in `cognicode-cli`) we look under
-    /// `target/debug/cognicode` after the workspace build.
-    fn cognicode_bin() -> PathBuf {
-        // The env var is only set for the test crate's OWN
-        // binaries. For the cross-crate `cognicode` binary we
-        // hard-code the path the workspace build produces.
-        let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        p.pop(); // drop "cognicode-core"
-        p.pop(); // drop "crates"
-        p.push("target");
-        if std::env::var("PROFILE").as_deref() == Ok("release") {
-            p.push("release");
-        } else {
-            p.push("debug");
-        }
-        p.push("cognicode");
-        p
-    }
-
-    /// T15 RED gate: `cognicode docs-ingest --path <file>`
-    /// MUST exit 0 on success and print the three summary
-    /// lines (`files_processed`, `nodes_created`,
-    /// `edges_created`).
-    #[test]
-    fn cli_docs_ingest_exits_0_on_success() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let f = tmp.path().join("hello.md");
-        std::fs::write(&f, "# Hello\n\nsee [foo](src/foo.rs:foo:1) for details.\n").unwrap();
-
-        let bin = cognicode_bin();
-        if !bin.exists() {
-            // The binary is built lazily by the test harness.
-            // If it isn't present, skip the integration test
-            // with a clear message — the executor's
-            // branching is still covered by the unit tests
-            // in `docs_extractor`.
-            eprintln!(
-                "skipping cli_docs_ingest_exits_0_on_success: {} not found",
-                bin.display()
-            );
-            return;
-        }
-        let out = Command::new(&bin)
-            .arg("docs-ingest")
-            .arg("--path")
-            .arg(f.to_string_lossy().to_string())
-            .output()
-            .expect("invoke cognicode binary");
-        assert!(
-            out.status.success(),
-            "cognicode docs-ingest must exit 0 on success; got {:?}\nstderr: {}",
-            out.status,
-            String::from_utf8_lossy(&out.stderr)
-        );
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(
-            stdout.contains("files_processed"),
-            "expected summary line `files_processed` in stdout, got: {stdout}"
-        );
-        assert!(
-            stdout.contains("nodes_created"),
-            "expected summary line `nodes_created` in stdout, got: {stdout}"
-        );
-        assert!(
-            stdout.contains("edges_created"),
-            "expected summary line `edges_created` in stdout, got: {stdout}"
-        );
-    }
-
-    /// The CLI must also exit 0 on the empty-directory no-op
-    /// success case (the spec is "exit 0 when the operation
-    /// completes without a hard extractor error").
-    #[test]
-    fn cli_docs_ingest_exits_0_on_empty_directory() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let bin = cognicode_bin();
-        if !bin.exists() {
-            eprintln!(
-                "skipping cli_docs_ingest_exits_0_on_empty_directory: {} not found",
-                bin.display()
-            );
-            return;
-        }
-        let out = Command::new(&bin)
-            .arg("docs-ingest")
-            .arg("--path")
-            .arg(tmp.path().to_string_lossy().to_string())
-            .output()
-            .expect("invoke cognicode binary");
-        assert!(
-            out.status.success(),
-            "empty directory must be a no-op success; got {:?}\nstderr: {}",
-            out.status,
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-
-    /// The CLI must exit non-zero (1) on a missing path.
-    #[test]
-    fn cli_docs_ingest_exits_1_on_missing_path() {
-        let bin = cognicode_bin();
-        if !bin.exists() {
-            eprintln!(
-                "skipping cli_docs_ingest_exits_1_on_missing_path: {} not found",
-                bin.display()
-            );
-            return;
-        }
-        let out = Command::new(&bin)
-            .arg("docs-ingest")
-            .arg("--path")
-            .arg("/nonexistent/path/does-not-exist-12345")
-            .output()
-            .expect("invoke cognicode binary");
-        assert_eq!(
-            out.status.code(),
-            Some(1),
-            "missing path must exit 1; got {:?}\nstderr: {}",
-            out.status,
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-}

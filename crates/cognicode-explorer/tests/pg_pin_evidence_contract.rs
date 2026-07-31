@@ -385,9 +385,8 @@ async fn setup_app() -> (Router, PgPool) {
         panic!("TEST_DATABASE_URL must be set");
     };
 
-    let _repo = pool.clone();
     let investigation_facade =
-        cognicode_core::infrastructure::persistence::PostgresInvestigationStore::new(pool.clone());
+        cognicode_explorer::facades::investigation::new_investigation_service_from_postgres(&pool);
 
     let state = cognicode_explorer::api::ApiState::new(
         Arc::new(MockWorkspaceService),
@@ -396,9 +395,8 @@ async fn setup_app() -> (Router, PgPool) {
         Arc::new(MockPersistenceService::new()),
         Arc::new(MockMoldQLService),
         Arc::new(MockGraphService),
-    );
-
-    let _ = investigation_facade;
+    )
+    .with_investigation(investigation_facade);
 
     (cognicode_explorer::api::router_with_state(state), pool)
 }
