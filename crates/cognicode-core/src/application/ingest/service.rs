@@ -51,9 +51,13 @@ pub async fn run_scan(
     // ── Advisory lock (prevent concurrent scans) ──────────────────
     #[cfg(feature = "postgres")]
     let _lock = {
-        let result = sqlx::query("SELECT pg_advisory_lock(hashtext($1))")
-            .bind(workspace_id)
-            .execute(repo.pool())
+        let result = repo
+            .with_pool_async(|pool| async move {
+                sqlx::query("SELECT pg_advisory_lock(hashtext($1))")
+                    .bind(workspace_id)
+                    .execute(pool)
+                    .await
+            })
             .await;
         if let Err(e) = result {
             tracing::error!("advisory_lock failed: {e}");

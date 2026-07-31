@@ -65,49 +65,46 @@ async fn upsert_batch(
     workspace_id: &str,
     batch: &[ExtractionResult],
 ) -> (PgUpsertStats, Vec<ExtractionEdge>) {
-    let mut stats = PgUpsertStats::default();
-    let mut all_unresolved: Vec<ExtractionEdge> = Vec::new();
+    let batch_len = batch.len();
+    let outcome: Result<(PgUpsertStats, Vec<ExtractionEdge>), sqlx::Error> = repo
+        .with_pool_async(|pool| async move {
+            let mut conn = pool.acquire().await?;
+            let mut tx = conn.begin().await?;
 
-    let mut conn = match repo.pool().acquire().await {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!("pg_upsert: failed to acquire connection: {e}");
-            stats.errors += batch.len();
-            return (stats, all_unresolved);
-        }
-    };
+            let mut stats = PgUpsertStats::default();
+            let mut all_unresolved: Vec<ExtractionEdge> = Vec::new();
 
-    let mut tx = match conn.begin().await {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::error!("pg_upsert: failed to begin tx: {e}");
-            stats.errors += batch.len();
-            return (stats, all_unresolved);
-        }
-    };
-
-    for result in batch {
-        match upsert_one(&mut tx, workspace_id, result).await {
-            Ok((file_stats, unresolved)) => {
-                stats.merge_file(&file_stats);
-                all_unresolved.extend(unresolved);
+            for result in batch {
+                match upsert_one(&mut tx, workspace_id, result).await {
+                    Ok((file_stats, unresolved)) => {
+                        stats.merge_file(&file_stats);
+                        all_unresolved.extend(unresolved);
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            file = %result.source_path.display(),
+                            "pg_upsert file failed: {e}"
+                        );
+                        stats.errors += 1;
+                    }
+                }
             }
-            Err(e) => {
-                tracing::error!(
-                    file = %result.source_path.display(),
-                    "pg_upsert file failed: {e}"
-                );
-                stats.errors += 1;
-            }
+
+            tx.commit().await?;
+
+            Ok((stats, all_unresolved))
+        })
+        .await;
+
+    match outcome {
+        Ok(pair) => pair,
+        Err(e) => {
+            tracing::error!("pg_upsert: tx failed: {e}");
+            let mut stats = PgUpsertStats::default();
+            stats.errors = batch_len;
+            (stats, Vec::new())
         }
     }
-
-    if let Err(e) = tx.commit().await {
-        tracing::error!("pg_upsert: commit failed: {e}");
-        stats.errors += batch.len();
-    }
-
-    (stats, all_unresolved)
 }
 
 /// Upsert a single file's extraction result. Returns the stats and

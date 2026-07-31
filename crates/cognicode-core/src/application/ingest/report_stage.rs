@@ -19,21 +19,31 @@ pub async fn run_report(
 ) -> Option<String> {
     let report_json = serde_json::to_value(summary).unwrap_or_else(|_| json!({}));
 
-    let row: (Uuid,) = sqlx::query_as(
-        "INSERT INTO graph_reports \
-            (workspace_id, report, symbol_count, edge_count, health_score) \
-         VALUES ($1, $2, $3, $4, $5) \
-         RETURNING id",
-    )
-    .bind(workspace_id)
-    .bind(report_json)
-    .bind(summary.symbol_count as i32)
-    .bind(summary.edge_count as i32)
-    .bind(summary.health_score)
-    .fetch_one(repo.pool())
-    .await
-    .map_err(|e| tracing::error!("graph_report insert failed: {e}"))
-    .ok()?;
+    let row: Result<(Uuid,), sqlx::Error> = repo
+        .with_pool_async(|pool| async move {
+            sqlx::query_as(
+                "INSERT INTO graph_reports \
+                    (workspace_id, report, symbol_count, edge_count, health_score) \
+                 VALUES ($1, $2, $3, $4, $5) \
+                 RETURNING id",
+            )
+            .bind(workspace_id)
+            .bind(report_json)
+            .bind(summary.symbol_count as i32)
+            .bind(summary.edge_count as i32)
+            .bind(summary.health_score)
+            .fetch_one(pool)
+            .await
+        })
+        .await;
+
+    let row = match row {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("graph_report insert failed: {e}");
+            return None;
+        }
+    };
 
     let report_id = row.0.to_string();
     tracing::info!(report_id = %report_id, "graph_report persisted");
