@@ -661,3 +661,13 @@ sandbox-results:
     else
         echo "No results found"
     fi
+
+# E29 S1 spike — build + run + test LadybugDB lbug 0.19.0 (prebuilt static lib, no cmake needed)
+spike-ladybug:
+    cargo build --release --manifest-path crates/spike-ladybug/Cargo.toml
+    cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s1_bootstrap
+    cargo test --manifest-path crates/spike-ladybug/Cargo.toml --tests
+
+# E29 S1 spike — clean cache + build artifacts (forces fresh prebuilt download)
+spike-ladybug-clean:
+    rm -rf crates/spike-ladybug/target crates/spike-ladybug/.cache
