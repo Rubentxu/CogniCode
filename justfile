@@ -693,3 +693,12 @@ spike-ladybug-s3:
 # E29 S3 spike — clean S3 .lbdb artifacts
 spike-ladybug-s3-clean:
     rm -f /tmp/s3_e2e.lbdb
+
+# E29 S4 spike — run all S4 examples and tests end-to-end
+spike-ladybug-s4:
+    cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s4_writer -- --mode=clean --path=/tmp/s4_e2e.lbdb --rows=1000
+    cargo test --manifest-path crates/spike-ladybug/Cargo.toml --test s4_crash_recovery
+
+# E29 S4 spike — clean S4 .lbdb artifacts
+spike-ladybug-s4-clean:
+    rm -f /tmp/s4_e2e.lbdb
