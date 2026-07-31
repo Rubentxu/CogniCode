@@ -8,6 +8,7 @@ description = "E29 S1 spike — validates lbug 0.19.0 builds via prebuilt static
 [dependencies]
 lbug = "0.19"
 anyhow = "1"
+clap = { version = "4", features = ["derive"] }
 
 [dev-dependencies]
 csv = "1"
