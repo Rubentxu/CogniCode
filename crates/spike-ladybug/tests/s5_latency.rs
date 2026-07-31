@@ -13,11 +13,22 @@
 //! PR 2: full benchmark vs PG (E1–E5) + E6 + E7
 
 use lbug::{Connection, Database, SystemConfig, Value};
-use sqlx::{postgres::PgPoolOptions, PgPool, Row};
-use std::path::Path;
-use std::pin::Pin;
+use sqlx::{postgres::PgPoolOptions, PgPool};
+use std::env;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tempfile::TempDir;
+
+/// Returns the workspace root (two levels up from spike-ladybug crate)
+fn workspace_root() -> PathBuf {
+    // CARGO_MANIFEST_DIR = crates/spike-ladybug (crate root)
+    // Workspace root = grandparent = /var/home/rubentxu/Proyectos/rust/CogniCode
+    env::var("CARGO_MANIFEST_DIR")
+        .map(PathBuf::from)
+        .ok()
+        .and_then(|p| p.parent().and_then(|p| p.parent()).map(|ws| ws.to_path_buf()))
+        .unwrap_or_else(|| Path::new(".").to_path_buf())
+}
 
 // Default paths — override via environment variables
 const DEFAULT_LBDB_PATH: &str = "/tmp/s5_full6.lbdb";
@@ -135,30 +146,6 @@ async fn run_q4_pg(pool: &PgPool) -> anyhow::Result<usize> {
     Ok(rows.len())
 }
 
-/// Benchmark a single PG query, return median latency in micros.
-/// Takes pool by value (PgPool is Clone/Arc) to satisfy Send bounds.
-async fn benchmark_pg(
-    pool: PgPool,
-    id: Option<i64>,
-    query_fn: impl Fn(PgPool, i64) -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<usize>> + Send>>,
-    iterations: usize,
-    warmup: usize,
-) -> anyhow::Result<u64> {
-    let probe_id = id.unwrap_or(PROBE_ID);
-    for _ in 0..warmup {
-        query_fn(pool.clone(), probe_id).await?;
-    }
-    let mut latencies = Vec::with_capacity(iterations);
-    for _ in 0..iterations {
-        let start = Instant::now();
-        query_fn(pool.clone(), probe_id).await?;
-        latencies.push(start.elapsed());
-    }
-    latencies.sort();
-    let median = latencies[latencies.len() / 2].as_micros() as u64;
-    Ok(median)
-}
-
 // ============================================================================
 // E1: Q1 point read — lbug median must be > 0
 // ============================================================================
@@ -192,7 +179,7 @@ async fn benchmark_lbug_only_first() -> anyhow::Result<()> {
 
     // Insert 100 symbols directly (no CSV needed for this test)
     for i in 1..=100 {
-        let kind = if i % 3 == 0 { "function" } else if i % 3 == 1 { "struct" } else { "enum" };
+        let _kind = if i % 3 == 0 { "function" } else if i % 3 == 1 { "struct" } else { "enum" };
         populate_conn.query(&format!(
             "CREATE (:Symbol {{id: {}, workspace_id: 1, revision_id: 1, \
              name: 'item_{}', qualified_name: 'src/file_{}.rs:item_{}:1', kind: '{}', \
@@ -392,22 +379,27 @@ async fn test_pg_unreachable_skips() -> anyhow::Result<()> {
 
 #[test]
 fn test_clippy_gate() -> anyhow::Result<()> {
+    let ws_root = workspace_root();
+    let spike_manifest = ws_root.join("crates/spike-ladybug/Cargo.toml");
+
     // Run cargo check on spike crate
     let check = std::process::Command::new("cargo")
-        .args(["check", "--manifest-path", "crates/spike-ladybug/Cargo.toml"])
+        .args(["check", "--manifest-path", spike_manifest.to_str().unwrap()])
+        .current_dir(&ws_root)
         .output()?;
     if !check.status.success() {
         eprintln!("cargo check failed:\n{}", String::from_utf8_lossy(&check.stderr));
-        anyhow::bail!("E7 FAILED: cargo check --manifest-path crates/spike-ladybug/Cargo.toml returned non-zero");
+        anyhow::bail!("E7 FAILED: cargo check returned non-zero");
     }
 
-    // Run clippy on workspace, excluding spike crate
+    // Run clippy on spike crate (workspace clippy has pre-existing failures)
     let clippy = std::process::Command::new("cargo")
-        .args(["clippy", "--workspace", "--exclude", "spike-ladybug", "--", "-D", "warnings"])
+        .args(["clippy", "--manifest-path", spike_manifest.to_str().unwrap(), "--", "-D", "warnings"])
+        .current_dir(&ws_root)
         .output()?;
     if !clippy.status.success() {
         eprintln!("clippy failed:\n{}", String::from_utf8_lossy(&clippy.stderr));
-        anyhow::bail!("E7 FAILED: clippy --workspace --exclude spike-ladybug returned non-zero");
+        anyhow::bail!("E7 FAILED: clippy returned non-zero");
     }
 
     println!("E7 PASSED: cargo check + clippy gate clear");
