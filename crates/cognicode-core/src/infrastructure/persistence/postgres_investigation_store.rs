@@ -35,7 +35,7 @@ impl PostgresInvestigationStore {
 
     /// Create a new store from an existing [`PostgresRepository`].
     pub fn from_repo(repo: &Arc<PostgresRepository>) -> Self {
-        Self::new(repo.pool().clone())
+        Self::new(repo.with_pool(|p| p.clone()))
     }
 }
 

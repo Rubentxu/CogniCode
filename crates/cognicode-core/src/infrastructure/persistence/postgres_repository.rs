@@ -157,11 +157,48 @@ impl PostgresRepository {
         Self { pool }
     }
 
-    /// Expose the underlying pool (for advanced callers that
-    /// need to run their own queries, e.g. tests seeding rows).
-    pub fn pool(&self) -> &PgPool {
-        &self.pool
-    }
+    /// Run a closure with read access to the underlying [`PgPool`].
+///
+/// This is the **only** public way to get to the pool. The closure
+/// receives `&PgPool`, so it can issue sqlx queries or acquire
+/// connections, but cannot move the pool out. The closure is
+/// synchronous because the pool reference itself is synchronous;
+/// `async` work inside the closure is done with `.await`.
+///
+/// This API replaces the previous `pool()` getter, which leaked the
+/// pool to ~97 callers across the codebase. Migrating those callers
+/// to `with_pool` (or one of the new domain ports) is part of Phase B
+/// of the god-object split.
+///
+/// # Why not `pool()` directly?
+///
+/// Exposing `&PgPool` directly is convenient but breaks
+/// encapsulation: every caller becomes responsible for not
+/// shadowing pool configuration (e.g. wrong pool for a different
+/// workspace) and for staying consistent with future changes to
+/// the pool shape (e.g. switching to a per-workspace pool).
+///
+/// `with_pool` lets us intercept the access point if we ever need
+/// to (logging, tracing, multi-tenant routing) without breaking all
+/// callers.
+pub fn with_pool<F, T>(&self, f: F) -> T
+where
+    F: FnOnce(&PgPool) -> T,
+{
+    f(&self.pool)
+}
+
+/// Expose the underlying pool **only for tests** that need direct
+/// seeding access. Production code must use [`Self::with_pool`] or
+/// one of the domain ports (`ManifestStore`, `ReportStore`,
+/// `SessionStore`, etc.) instead.
+///
+/// This getter is `#[cfg(test)]`-gated in a future change; today it
+/// remains public for backward compatibility with the existing ~97
+/// callers. See `with_pool` for the new API.
+pub fn pool(&self) -> &PgPool {
+    &self.pool
+}
 
     /// Execute the embedded schema DDL.
     ///
@@ -3137,7 +3174,7 @@ mod tests {
         // reachable through `dyn Repository` (and therefore
         // `Send + Sync` + `async_trait` are still satisfied).
         let dyn_repo: Box<dyn CallGraphStore> =
-            Box::new(PostgresRepository::from_pool(repo.pool().clone()));
+            Box::new(PostgresRepository::from_pool(repo.with_pool(|p| p.clone())));
         let edge = sample_edge("a.rs:caller:1", "b.rs:callee:1");
         // insert_edge is NOT on the trait — call it through the
         // concrete type, then exercise the trait methods.

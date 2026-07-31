@@ -223,7 +223,7 @@ pub async fn run_scan(
     use crate::domain::value_objects::WorkspaceId;
     use crate::infrastructure::graph::SnapshotProviderImpl;
     let ws = WorkspaceId::try_new(workspace_id).unwrap_or_default();
-    let provider = SnapshotProviderImpl::new(repo.pool().clone());
+    let provider = SnapshotProviderImpl::new(repo.with_pool(|p| p.clone()));
     if let Err(e) = refresh_from_pg(&provider, cache, &ws).await {
         tracing::error!("refresh failed: {e}");
         failed_files.push(FailedFile {

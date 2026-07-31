@@ -129,7 +129,7 @@ impl Runtime {
         let graph_executor: Option<
             Arc<dyn cognicode_core::domain::plan::executor::GraphExecutor>,
         > = self.pg_repo.as_ref().map(|repo| {
-            let pool = repo.pool().clone();
+            let pool = repo.with_pool(|p| p.clone());
             let pg_repo =
                 cognicode_core::infrastructure::persistence::PostgresRepository::from_pool(pool);
             Arc::new(
@@ -214,7 +214,7 @@ impl Runtime {
         let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> =
             if let Some(ref pg) = self.pg_repo {
                 Some(Arc::new(
-                    cognicode_explorer::adapters::PgGraphRepository::new(pg.pool().clone()),
+                    cognicode_explorer::adapters::PgGraphRepository::new(pg.with_pool(|p| p.clone())),
                 ))
             } else {
                 None
@@ -403,7 +403,7 @@ fn route_store_repo_arc(
 ) -> Option<Arc<dyn cognicode_explorer::ports::RouteStore>> {
     let pg = pg_repo?;
     Some(Arc::new(
-        cognicode_explorer::adapters::PostgresRouteStore::from_pool(pg.pool().clone()),
+        cognicode_explorer::adapters::PostgresRouteStore::from_pool(pg.with_pool(|p| p.clone())),
     ))
 }
 

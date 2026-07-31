@@ -498,7 +498,7 @@ impl ExplorerMcpHandler {
 
             // Create lineage store from postgres pool.
             let lineage_store: Arc<dyn RunLineageStore> =
-                Arc::new(PostgresLineageStore::new(pg.pool().clone()));
+                Arc::new(PostgresLineageStore::new(pg.with_pool(|p| p.clone())));
 
             // Create registry with lineage store and default boundary guard.
             let registry = Arc::new(

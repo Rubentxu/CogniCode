@@ -62,7 +62,7 @@ impl PostgresQualityRepository {
     /// is cloned — both adapters share the same connection pool.
     pub fn new(pg: &PostgresRepository) -> Self {
         Self {
-            pool: pg.pool().clone(),
+            pool: pg.with_pool(|p| p.clone()),
         }
     }
 
@@ -525,12 +525,31 @@ mod tests {
 
 /// Run a future synchronously on the current thread. Used to keep
 /// the port's `fn` methods short (the trait is `fn` not `async fn`,
-/// so the SQL has to be driven from a sync context). On the call
-/// site (the MCP handler) the runtime is multi-threaded, so this
-/// block-on just borrows a thread for the duration of the
-/// transaction. Same pattern as
-/// `pg_graph_repository::futures_executor_block_on`.
+/// so the SQL has to be driven from a sync context). Same pattern as
+/// `SnapshotProviderImpl::current_head` — uses `tokio::task::block_in_place`
+/// when running inside a tokio runtime, otherwise falls back to a fresh
+/// current-thread runtime for the legacy call paths.
 #[cfg(feature = "postgres")]
-fn block_on<F: std::future::Future>(fut: F) -> F::Output {
-    tokio::runtime::Handle::current().block_on(fut)
+fn block_on<F>(fut: F) -> F::Output
+where
+    F: std::future::Future,
+    F::Output: Send + 'static,
+{
+    use tokio::runtime::Handle;
+    if Handle::try_current().is_err() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("postgres_quality current-thread runtime");
+        return rt.block_on(fut);
+    }
+    // We're inside a tokio runtime. We can block the current thread
+    // without trapping other tasks if the runtime is multi-threaded.
+    let handle = Handle::current();
+    let outcome: std::sync::Mutex<Option<F::Output>> = std::sync::Mutex::new(None);
+    tokio::task::block_in_place(|| {
+        let out = handle.block_on(fut);
+        *outcome.lock().unwrap() = Some(out);
+    });
+    outcome.into_inner().unwrap().expect("block_on outcome set")
 }

@@ -69,7 +69,7 @@ impl PostgresRouteStore {
     /// cloned — adapters share the same connection pool.
     pub fn new(pg: &PostgresRepository) -> Self {
         Self {
-            pool: pg.pool().clone(),
+            pool: pg.with_pool(|p| p.clone()),
         }
     }
 

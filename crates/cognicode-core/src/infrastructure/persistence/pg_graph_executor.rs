@@ -102,7 +102,7 @@ impl PgGraphExecutor {
         Fut: std::future::Future<Output = Result<T, sqlx::Error>> + Send + 'static,
         T: Send + 'static,
     {
-        let pool = self.repo.pool().clone();
+        let pool = self.repo.with_pool(|p| p.clone());
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::task::block_in_place(move || {
             let handle = tokio::runtime::Handle::current();
@@ -151,7 +151,7 @@ impl GraphExecutor for PgGraphExecutor {
         //     "pool timed out" errors)
         let pin0 = pin.0.clone();
         let pin1 = pin.1;
-        let pool_for_load = self.repo.pool().clone();
+        let pool_for_load = self.repo.with_pool(|p| p.clone());
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::task::block_in_place(move || {
             let handle = tokio::runtime::Handle::current();
