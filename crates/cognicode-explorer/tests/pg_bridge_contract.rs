@@ -19,6 +19,7 @@
 
 #![cfg(all(test, feature = "postgres"))]
 
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use cognicode_core::domain::aggregates::{CallGraph, Symbol, SymbolId};
@@ -228,7 +229,7 @@ pg_test!(
             .expect("save_call_graph must succeed");
 
         // Run the bridge helper.
-        let loaded_arc = open_graph_from_postgres(&url)
+        let loaded_arc = open_graph_from_postgres(&url, Path::new("."))
             .await
             .expect("bridge helper must succeed on a populated DB");
 
@@ -265,7 +266,7 @@ pg_test!(empty_db_yields_empty_graph, |url: String, pool: PgPool| {
     assert_eq!(seed_repo.count_symbols().await.unwrap(), 0);
     assert_eq!(seed_repo.count_edges().await.unwrap(), 0);
 
-    let arc = open_graph_from_postgres(&url)
+    let arc = open_graph_from_postgres(&url, Path::new("."))
         .await
         .expect("bridge must succeed on an empty DB");
     assert_eq!(arc.symbol_count(), 0);
@@ -284,7 +285,7 @@ pg_test!(empty_db_yields_empty_graph, |url: String, pool: PgPool| {
 async fn connect_failure_propagates_with_prefix() {
     // Unroutable port on loopback: connect must fail fast.
     let bad = "postgres://invalid:invalid@127.0.0.1:1/nope";
-    let result = open_graph_from_postgres(bad).await;
+    let result = open_graph_from_postgres(bad, Path::new(".")).await;
     let err = result.expect_err("unreachable PG must surface as Err");
     let msg = err.to_string();
     assert!(
@@ -357,7 +358,7 @@ pg_test!(
 
         // Load via the bridge and check every (provenance, confidence)
         // pair round-trips bit-exact through the in-memory repository.
-        let loaded_arc = open_graph_from_postgres(&url)
+        let loaded_arc = open_graph_from_postgres(&url, Path::new("."))
             .await
             .expect("bridge must succeed");
         let loaded_repo = CallGraphRepository::new(loaded_arc);
