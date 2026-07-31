@@ -24,6 +24,39 @@ just spike-ladybug          # build + run example + run test end-to-end
 just spike-ladybug-clean    # wipe target/ + spike.lbdb for fresh run
 ```
 
+## Stage S2 — Schema load + COPY FROM + query validation
+
+Validates that `lbug 0.19.0` can host CogniCode's full graph schema and load 60K
+rows via `COPY FROM` in < 60s (measured ~0.14s on this host — ~416K rows/sec).
+
+### What it proves
+
+1. All 25 NODE TABLEs + 20 REL TABLEs apply successfully via Cypher DDL
+2. `COPY FROM` ingests 60K rows in well under the 60s budget
+3. Typed column queries work (INT64, STRING, FLOAT comparisons)
+4. MAP(STRING, STRING) property access works (with work-around for subscript syntax)
+5. Temporal column filtering works (valid_to = -1 for current rows)
+6. Rel traversal queries work (`MATCH (a)-[:Calls]->(b)`)
+
+### How to run
+
+```bash
+just spike-ladybug-s2         # build + run examples + run tests end-to-end
+just spike-ladybug-s2-clean   # wipe S2 .lbdb artifacts
+```
+
+### Critical corrections made during S2 (vs original schema-spec)
+
+1. **`NOT NULL` removed**: Kùzu 0.x parser rejects `NOT NULL` in DDL. The 296 occurrences were removed from the schema spec.
+2. **`CREATE INDEX` removed**: lbug 0.19.0 only supports indexes on node table primary keys. The 43 `CREATE INDEX` statements were removed; secondary index queries will do full table scans until lbug adds support.
+3. **`SERIAL id` ≠ `InternalID`**: The `id(s)` Kùzu function returns an `InternalID` struct, NOT the SERIAL `id` column value. The Calls CSV must use the InternalID (post-Symbol-COPY), not the pre-computed SERIAL id.
+
+### Known limitations
+
+- No secondary indexes (queries on non-PK columns are full table scans)
+- MAP subscript syntax `s['properties']['key']` parses as `LIST_EXTRACT`; use `.properties` returns instead
+- S2 runs 60K rows — production migration would need to re-validate at 10M+ scale
+
 ## Build paths
 
 The `lbug` crate has two build paths:
@@ -114,6 +147,24 @@ upstream source: `https://github.com/LadybugDB/ladybug-rust/src/lib.rs`.
 If the build is still taking > 30 min and you did not set `LBUG_BUILD_FROM_SOURCE=1`,
 something else is wrong (network retry storm, very slow disk, etc.). Investigate
 the cargo build log.
+
+### DDL syntax error
+
+Symptom: `Parser exception: Invalid input < NOT>` or similar.
+
+Cause: Kùzu 0.x DDL is strict. Re-check against schema-spec v0.4.0 (no NOT NULL, no PK on rels, FROM-TO on rels, MAP parentheses).
+
+### CREATE INDEX rejected
+
+Symptom: `Binder exception: HASH indexes are currently supported only on node primary keys`.
+
+Cause: lbug 0.19.0 doesn't support secondary indexes. Remove the index; queries will do full table scans.
+
+### Rel CSV FROM/TO mismatch
+
+Symptom: `Binder exception: Node with id X does not exist` or similar.
+
+Cause: Calls CSV first 2 columns must be InternalIDs (assigned by Symbol COPY FROM), not pre-computed SERIAL ids. Use the two-phase load pattern in s2_copy_from.rs.
 
 ## Exit criteria
 
