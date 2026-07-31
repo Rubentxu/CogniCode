@@ -3,7 +3,7 @@ use lbug::{Connection, Database, SystemConfig, Value};
 use tempfile::TempDir;
 
 #[test]
-fn s1_creates_lbdb_directory_and_round_trips_one_row() {
+fn s1_creates_lbdb_file_and_round_trips_one_row() {
     let tmp = TempDir::new().expect("tempdir");
     let db_path = tmp.path().join("spike.lbdb");
     let path_str = db_path.to_str().unwrap();
@@ -13,6 +13,7 @@ fn s1_creates_lbdb_directory_and_round_trips_one_row() {
 
     conn.query("CREATE NODE TABLE Test(id INT64, name STRING, PRIMARY KEY(id));")
         .expect("CREATE TABLE");
+    // LadybugDB v0.19.0 uses Cypher syntax — SQL INSERT is NOT supported.
     conn.query("CREATE (:Test {id: 1, name: 'hello'});")
         .expect("INSERT");
 
@@ -30,8 +31,10 @@ fn s1_creates_lbdb_directory_and_round_trips_one_row() {
     drop(conn);
     drop(db);
 
+    // LadybugDB v0.19.0 creates a single file at the path (~49 KB),
+    // not a directory. Verified empirically on 2026-07-31.
     assert!(
-        db_path.is_dir(),
-        "expected .lbdb directory at {path_str}"
+        db_path.is_file(),
+        "expected .lbdb file at {path_str}"
     );
 }
