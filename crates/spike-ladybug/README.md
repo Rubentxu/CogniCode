@@ -185,12 +185,55 @@ The spike is **FAIL** when:
 - lbug API does not match the corrected Kùzu-derived API
 - `.lbdb` is created as a directory (would mean lbug v0.20+ changed storage)
 
+## Stage S3 — Concurrency and Single-Writer Constraint
+
+Validates that lbug 0.19.0's concurrency model satisfies CogniCode's needs.
+Single-writer is at the **active-write-query level**, not the connection level.
+
+### What it proves
+
+1. **Single-writer at query level**: multiple `Connection`s can coexist on one RW `Database`, but concurrent write queries serialize — one succeeds, the other errors with "Cannot start a new write transaction in the system. Only one write transaction at a time is allowed in the system."
+
+2. **Retry succeeds**: after the first writer commits, the second writer's retry succeeds.
+
+3. **Multi-reader concurrent reads**: 4 scoped threads each calling `conn.query(...)` execute concurrently without blocking and all return the same snapshot of rows.
+
+4. **Read-only Database rejects writes**: `Database::new(path, SystemConfig::default().read_only(true))` rejects write queries with "Cannot execute write operations in a read-only database!"
+
+5. **Cross-process file lock**: two processes cannot both open the same `.lbdb` as write; the second `Database::new` returns `Err` with "Could not set lock on file".
+
+### Measured error strings
+
+| Scenario | Error message (exact) |
+|----------|---------------------|
+| Concurrent write query (same process) | `Cannot start a new write transaction in the system. Only one write transaction at a time is allowed in the system.` |
+| Write on read-only Database | `Cannot execute write operations in a read-only database!` |
+| Second RW process open | `Could not set lock on file : <path> (Error: Resource temporarily unavailable)` |
+
+### How to run
+
+```bash
+just spike-ladybug-s3         # build + run examples + run tests end-to-end
+just spike-ladybug-s3-clean   # wipe S3 .lbdb artifacts
+```
+
+### Key corrections made during S3
+
+1. **`BEGIN WRITE TRANSACTION` not supported**: lbug 0.19.0 uses auto-commit per query, not explicit transaction commands.
+
+2. **Read-only mode**: `SystemConfig::default().read_only(true)` is the correct API — field is private with builder pattern.
+
+3. **No MVCC snapshot isolation**: lbug 0.19.0 does not provide read transaction isolation; readers see committed data immediately. The single-writer constraint is at the query level, not at the transaction level.
+
 ## See also
 
 - `sddk/e29-s1-build/proposal.md` — full proposal
 - `sddk/e29-s1-build/spec.md` — Given/When/Then acceptance criteria
 - `sddk/e29-s1-build/design.md` — technical design + risk register
 - `sddk/e29-s1-build/tasks.md` — task breakdown
+- `sddk/e29-s3-concurrency/proposal.md` — S3 proposal
+- `sddk/e29-s3-concurrency/spec.md` — S3 delta spec
+- `sddk/e29-s3-concurrency/design.md` — S3 technical design
 - `openspec/specs/ladybug-spike-validation/spec.md` — full 6-stage spike spec
 - `docs/adr/ADR-026-ladybugdb-canonical-migration.md` — migration decision
 

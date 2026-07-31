@@ -682,3 +682,14 @@ spike-ladybug-s2:
 # E29 S2 spike — clean S2 .lbdb artifacts
 spike-ladybug-s2-clean:
     rm -f s2_schema.lbdb s2_copy_from.lbdb s2_query_validation.lbdb
+
+# E29 S3 spike — run all S3 examples and tests end-to-end
+spike-ladybug-s3:
+    cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s3_lock_holder -- --mode=rw --path=/tmp/s3_e2e.lbdb --hold-secs=1
+    cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s3_concurrency
+    cargo test --manifest-path crates/spike-ladybug/Cargo.toml --test s3_concurrency
+    cargo test --manifest-path crates/spike-ladybug/Cargo.toml --test s3_multi_process
+
+# E29 S3 spike — clean S3 .lbdb artifacts
+spike-ladybug-s3-clean:
+    rm -f /tmp/s3_e2e.lbdb
