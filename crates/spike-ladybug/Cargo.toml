@@ -10,4 +10,5 @@ lbug = "0.19"
 anyhow = "1"
 
 [dev-dependencies]
+csv = "1"
 tempfile = "3"
