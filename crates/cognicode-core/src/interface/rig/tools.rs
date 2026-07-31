@@ -141,7 +141,7 @@ impl Tool for ReadFileTool {
 
             let request = ReadFileRequest {
                 path: args.path,
-                mode: Some(mode.to_string()),
+                mode: Some(mode),
                 start_line: args.start_line,
                 end_line: args.end_line,
                 chunk_size: None,

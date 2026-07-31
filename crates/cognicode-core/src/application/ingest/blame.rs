@@ -43,9 +43,11 @@ pub fn enrich_with_blame(
         };
         let rel_path_str = rel_path.to_string_lossy();
 
-        // Get the first line number from properties
-        let line: u32 = match node.properties.get("line") {
-            Some(v) => v.parse().unwrap_or(1),
+        // Get the first line number from properties. properties is a
+        // serde_json::Value (JSONB column); only string-typed values can
+        // be parsed as line numbers.
+        let line: u32 = match node.properties.get("line").and_then(|v| v.as_str()) {
+            Some(s) => s.parse().unwrap_or(1),
             None => 1,
         };
 
@@ -55,17 +57,28 @@ pub fn enrich_with_blame(
             None => continue,
         };
 
-        // Set blame properties on the node
-        node.properties
-            .insert("last_author".to_string(), author_name);
-        node.properties
-            .insert("author_email".to_string(), author_email);
+        // Set blame properties on the node. properties is a JSONB Value;
+        // we need to insert into the underlying Map<String, Value>.
+        // If properties is not an object (e.g. Null or a non-object value),
+        // there is nothing meaningful to attach blame to — skip silently.
+        if let Some(obj) = node.properties.as_object_mut() {
+            obj.insert(
+                "last_author".to_string(),
+                serde_json::Value::String(author_name),
+            );
+            obj.insert(
+                "author_email".to_string(),
+                serde_json::Value::String(author_email),
+            );
 
-        // Set CODEOWNERS property
-        let owners = codeowners.owners_for(&rel_path_str);
-        if !owners.is_empty() {
-            node.properties
-                .insert("codeowners".to_string(), owners.join(","));
+            // Set CODEOWNERS property
+            let owners = codeowners.owners_for(&rel_path_str);
+            if !owners.is_empty() {
+                obj.insert(
+                    "codeowners".to_string(),
+                    serde_json::Value::String(owners.join(",")),
+                );
+            }
         }
     }
 }
@@ -201,8 +214,15 @@ mod tests {
 
         // Should be unchanged - no git repo
         let node = &result.nodes[0];
-        assert!(!node.properties.contains_key("last_author"));
-        assert!(!node.properties.contains_key("author_email"));
+        let props = node.properties.as_object();
+        assert!(
+            !props.is_some_and(|m| m.contains_key("last_author")),
+            "last_author should not be set without a git repo"
+        );
+        assert!(
+            !props.is_some_and(|m| m.contains_key("author_email")),
+            "author_email should not be set without a git repo"
+        );
     }
 
     #[test]
@@ -237,13 +257,13 @@ mod tests {
 
         let node = &result.nodes[0];
         assert_eq!(
-            node.properties.get("last_author"),
-            Some(&"Test User".to_string()),
+            node.properties.get("last_author").and_then(|v| v.as_str()),
+            Some("Test User"),
             "last_author should be set from git blame"
         );
         assert_eq!(
-            node.properties.get("author_email"),
-            Some(&"test@example.com".to_string()),
+            node.properties.get("author_email").and_then(|v| v.as_str()),
+            Some("test@example.com"),
             "author_email should be set from git blame"
         );
     }
@@ -285,8 +305,8 @@ mod tests {
 
         let node = &result.nodes[0];
         assert_eq!(
-            node.properties.get("codeowners"),
-            Some(&"alice,bob".to_string()),
+            node.properties.get("codeowners").and_then(|v| v.as_str()),
+            Some("alice,bob"),
             "codeowners should be set from CODEOWNERS file"
         );
     }
@@ -328,8 +348,8 @@ mod tests {
 
         let node = &result.nodes[0];
         assert_eq!(
-            node.properties.get("last_author"),
-            Some(&"Test User".to_string()),
+            node.properties.get("last_author").and_then(|v| v.as_str()),
+            Some("Test User"),
             "Should use first line author"
         );
     }
