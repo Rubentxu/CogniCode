@@ -274,6 +274,61 @@ just spike-ladybug-s4-clean  # wipe S4 .lbdb artifacts
 
 **all_1000_survived** — The 1000 committed rows survived SIGKILL. WAL was not persisted (data written directly to main DB), but durability is confirmed.
 
+## S5: Latency — lbug vs PostgreSQL
+
+**Status**: implemented (PR 2 in progress)
+
+### What
+
+Comparative latency benchmark across 5 query pairs (Q1–Q5) on a 10,000-node call graph:
+- **Q1**: Point read by `id`
+- **Q2**: 1-hop neighborhood (`Calls` edges)
+- **Q3**: BFS depth 3 (`Calls*1..3`)
+- **Q4**: Aggregation (`GROUP BY kind`)
+- **Q5**: COPY FROM throughput (population phase)
+
+### Architecture
+
+```
+PR 1 (deps + populate + lbug harness):
+  s5_populate.rs      — dual-engine 10K-row populate
+  s5_query_lbug.rs    — Q1–Q4 lbug benchmark
+  s5_latency.rs       — RED/GREEN lbug-only test
+
+PR 2 (PG harness + full test + tooling):
+  s5_query_pg.rs      — Q1–Q4 PostgreSQL benchmark
+  s5_latency.rs       — E1–E7 full tests
+  justfile            — spike-ladybug-s5, spike-ladybug-s5-clean
+```
+
+### Key findings
+
+| Query | lbug (100 nodes) | PG (10K nodes, ~29K edges) | Notes |
+|-------|-----------------|----------------------------|-------|
+| Q1 point read | ~1,881 µs | ~446 µs | PG has index on `id` |
+| Q2 1-hop | ~5,566 µs | ~10,506 µs | lbug graph-native is faster |
+| Q3 BFS depth 3 | ~6,372 µs | ~316,031 µs | PG recursive CTE is slow |
+| Q4 aggregation | ~8,215 µs | ~2,491 µs | PG GROUP BY is faster |
+
+**S2 finding reused**: `id(s) != SERIAL id` — requires two-phase lbug populate (offset 4647).
+
+### Known issues
+
+- PG edge population incomplete: 29,368/50,000 edges (only `node_1` had edges due to `ON CONFLICT DO NOTHING` failures)
+- 10K-row PG populate took >5 min (per-row INSERT; no `COPY FROM` available inside Podman)
+
+### How to run
+
+```bash
+# Requires PG running at postgres://cognicode:cognicode@localhost:5432/cognicode
+just spike-ladybug-s5         # populate + run full benchmarks
+just spike-ladybug-s5-clean   # remove /tmp s5 DB and PG spike tables
+```
+
+### E2 outcome
+
+E1–E5 comparative benchmarks — see `s5_latency.rs` for assertions.
+
 ## See also
 
 - `sddk/e29-s1-build/proposal.md` — full proposal
