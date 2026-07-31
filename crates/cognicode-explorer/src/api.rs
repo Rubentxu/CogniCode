@@ -1150,16 +1150,6 @@ async fn open_workspace(
 ) -> Result<Response, ApiError> {
     let summary = state.workspace.open_workspace(request).await?;
 
-    // Register the workspace path in the ingest controller so
-    // POST /scan can resolve the workspace_id to a root path.
-    if let Some(ref ingest) = state.ingest {
-        let root_path = std::path::PathBuf::from(&summary.root_path);
-        // The ingest controller's workspace resolver is a StaticWorkspaceResolver
-        // that we populated via the runtime. We can't easily access it from here.
-        // This is a temporary gap — the resolver should be shared state.
-        let _ = (ingest, root_path);
-    }
-
     Ok(Json(summary).into_response())
 }
 

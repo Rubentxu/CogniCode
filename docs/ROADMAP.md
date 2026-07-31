@@ -1171,3 +1171,76 @@ The 3 previously-listed items (`cognicode-axiom`, `cognicode-quality`, `cognicod
 
 **Próximo paso propuesto**: Launch **E28.5** (`structural-analytics-cohort-2`: dominators, articulation points, bridges, k-core) via `/sddk-new` — registry is fully wired and can admit cohort-2 algorithms.
 
+---
+
+## LadybugDB Migration Program (E29)
+
+**Strategic ADRs**:
+[ADR-026](./adr/ADR-026-ladybugdb-canonical-migration.md) (LadybugDB canonical store),
+[ADR-027](./adr/ADR-027-ladybugdb-hybrid-schema-strategy.md) (hybrid schema),
+[ADR-028](./adr/ADR-028-ladybugdb-port-abstraction-architecture.md) (port architecture)
+
+**Goal**: Migrate CogniCode's canonical graph store from PostgreSQL to LadybugDB (embedded graph DB, fork of Kùzu, MIT, v0.19.0). LadybugDB is schema-full with `MAP<STRING,STRING>` for emergent properties, multi-label nodes, Cypher query language, WAL+checkpoint ACID, single writer per `.lbdb` file.
+
+### E29 — Spike Validation (Gate: must pass before migration)
+
+| Stage | Goal | Depends on | Exit criteria | Status |
+|-------|------|-----------|--------------|--------|
+| `e29-s1-build` | Verify `lbug` v0.19.0 compiles, links, creates and opens a database | None | Build succeeds; `Database::create` + `execute` + `query` works; `.lbdb` file created | **PROPOSED** |
+| `e29-s2-schema-load` | Validate full schema (22 node tables + ~20 rel tables) + COPY FROM at scale | e29-s1 | All DDL succeeds; 10K nodes + 50K edges in <60s; typed columns, MAP, temporal, multi-label all work | **PROPOSED** |
+| `e29-s3-concurrency` | Validate single-writer constraint, multi-reader, file locking | e29-s1 | One writer succeeds; second writer errors; multiple readers succeed; committed data visible | **PROPOSED** |
+| `e29-s4-crash-recovery` | Validate WAL + checkpoint replay after SIGKILL | e29-s1 | Committed data survives process crash; no corruption; no panic on reopen | **PROPOSED** |
+| `e29-s5-latency` | Benchmark LadybugDB vs PostgreSQL for representative queries | e29-s2 | LadybugDB ≤ PostgreSQL for point/neighborhood/BFS; ≤2x for aggregation | **PROPOSED** |
+| `e29-s6-cypher-compat` | Validate Cypher coverage for all CogniCode query patterns | e29-s2 | Variable-length paths, UNWIND, OPTIONAL MATCH, MAP property access, aggregations all work | **PROPOSED** |
+
+**Spike spec**: [`openspec/specs/ladybug-spike-validation/spec.md`](./specs/ladybug-spike-validation/spec.md)
+
+**E29 spike runs before any migration code is written. If S3 (concurrency) or S4 (crash recovery) fails, spike is ABORTED and PostgreSQL remains canonical.**
+
+### E29 — Phase 0: Port Abstraction (parallel with spike)
+
+| Change | Goal | Depends on | Exit criteria | Status |
+|--------|------|-----------|--------------|--------|
+| `e29-0-clean-ports` | Remove PG doc leaks from `RepositoryError`, `SearchPage` | None | Doc comments no longer mention "SQLSTATE", "ts_rank_cd", or other PG-specific types | **PROPOSED** |
+| `e29-0-move-view-specrepo` | Move `ViewSpecRepository` from `interface/mcp/handlers` to `domain/ports/` | None | `ViewSpecRepository` lives in `domain/ports/`; all references updated | **PROPOSED** |
+| `e29-0-define-new-ports` | Define `ManifestStore`, `RevisionStore`, `QualityStore`, `SessionStore`, `ViewStore`, `ReportStore`, `FederationStore`, `IngestCommit` traits | None | 8 new traits in `domain/ports/` with domain error types | **PROPOSED** |
+| `e29-0-refactor-call-sites` | Refactor ~30 direct sqlx/PostgresRepository call sites to use `Arc<dyn Port>` | e29-0-define-new-ports | All call sites use `dyn Trait`; `PostgresRepository` implements all traits | **PROPOSED** |
+
+### E29 — Phase 1: LadybugDB Adapter
+
+| Change | Goal | Depends on | Exit criteria | Status |
+|--------|------|-----------|--------------|--------|
+| `e29-1-ladybug-adapter` | Create `crates/cognicode-ladybug` with `LadybugStore` implementing all ports | e29-0-define-new-ports + e29-s1 pass | All 8+ ports implemented; build compiles | **PROPOSED** |
+| `e29-1-graph-executor` | Create `LadybugGraphExecutor` implementing `GraphExecutor` trait | e29-s1 pass | `execute(plan, pin)` returns typed `ResultSet`; conforms to E28.2 harness | **PROPOSED** |
+| `e29-1-ddl-init` | Apply full DDL (22 node + ~20 rel tables) via embedded `lbug` DDL executor | e29-1-ladybug-adapter | All tables created; temporal indexes present | **PROPOSED** |
+
+### E29 — Phase 2: Conformance and Migration
+
+| Change | Goal | Depends on | Exit criteria | Status |
+|--------|------|-----------|--------------|--------|
+| `e29-2-conformance` | Run `executor-equivalence-conformance` harness comparing `LadybugGraphExecutor` vs `PgGraphExecutor` | e29-1-graph-executor | All conformance tests pass; LadybugDB ↔ PostgreSQL equivalent | **PROPOSED** |
+| `e29-2-migrate-data` | Export PG data → import LadybugDB via COPY FROM | e29-2-conformance | All 24 tables migrated; query results match | **PROPOSED** |
+| `e29-2-switch-default` | Change composition root default from `postgres` to `ladybug` feature | e29-2-migrate-data | `cargo build -p cognicode-runtime --features ladybug` succeeds | **PROPOSED** |
+| `e29-2-remove-pg` | Delete `PostgresRepository`, `PgGraphExecutor`, all SQL migrations, `postgres` feature | e29-2-switch-default | Build green without PG feature; all tests pass on LadybugDB | **PROPOSED** |
+
+### E29 Execution Order
+
+```
+E29 S1 → S2 → S3 → S4 → S5 → S6  (spike gate)
+       ↓
+E29 Phase 0 (e29-0-*)  (runs parallel with spike)
+       ↓
+E29 Phase 1 (e29-1-*)  (after spike passes + Phase 0 done)
+       ↓
+E29 Phase 2 (e29-2-*)  (after Phase 1 done)
+```
+
+**E29.0 is a prerequisite for all subsequent E29 changes. The spike (S1-S6) gates all migration work. If the spike fails, E29 is ABORTED and PostgreSQL remains canonical.**
+
+### Specifications
+
+- [LadybugDB spike validation](../openspec/specs/ladybug-spike-validation/spec.md)
+- [LadybugDB graph schema](../openspec/specs/ladybug-graph-schema/spec.md)
+- [Graph executor port](../openspec/specs/graph-executor-port/spec.md)
+- [Executor equivalence conformance](../openspec/specs/executor-equivalence-conformance/spec.md)
+

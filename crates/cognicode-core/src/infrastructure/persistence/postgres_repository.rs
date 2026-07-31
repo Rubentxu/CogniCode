@@ -188,6 +188,28 @@ where
     f(&self.pool)
 }
 
+/// Async counterpart of [`Self::with_pool`] for callers that need to
+/// run queries inside the closure.
+///
+/// Use this when the closure body contains `await` points (e.g.
+/// `pool.acquire().await`, `query.fetch_one().await`). The closure
+/// must return a [`Future`] (or anything `IntoFuture`); the returned
+/// future is awaited by `with_pool_async`.
+///
+/// ```ignore
+/// repo.with_pool_async(|pool| async move {
+///     let mut conn = pool.acquire().await?;
+///     sqlx::query("SELECT 1").execute(&mut *conn).await
+/// }).await
+/// ```
+pub async fn with_pool_async<'a, F, Fut, T>(&'a self, f: F) -> T
+where
+    F: FnOnce(&'a PgPool) -> Fut,
+    Fut: std::future::IntoFuture<Output = T> + 'a,
+{
+    f(&self.pool).await
+}
+
 /// Expose the underlying pool **only for tests** that need direct
 /// seeding access. Production code must use [`Self::with_pool`] or
 /// one of the domain ports (`ManifestStore`, `ReportStore`,

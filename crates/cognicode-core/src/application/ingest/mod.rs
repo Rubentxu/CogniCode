@@ -29,7 +29,7 @@ pub use analyzer::{AnalysisSummary, run_analyze};
 pub use cluster::run_cluster;
 pub use controller::{
     GraphStats, IngestController, JobState, JobStatus, ScanAccepted, StaticWorkspaceResolver,
-    WorkspaceResolver,
+    WorkspaceResolver, workspace_id_for_path,
 };
 pub use extract_stage::{extract_all, extract_streaming};
 pub use extractor::extract_file;

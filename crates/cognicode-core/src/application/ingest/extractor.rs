@@ -31,9 +31,16 @@ pub fn extract_file(
 ) -> ExtractionResult {
     let mut parser = Parser::new();
     let ts_lang = (config.ts_language)();
-    parser
-        .set_language(&ts_lang)
-        .expect("failed to set tree-sitter language");
+    if let Err(err) = parser.set_language(&ts_lang) {
+        return ExtractionResult::failed(
+            path.to_path_buf(),
+            content_hash.to_string(),
+            format!(
+                "tree-sitter language init failed for {:?}: {err}",
+                config.language
+            ),
+        );
+    }
 
     let tree = match parser.parse(source.as_bytes(), None) {
         Some(t) => t,

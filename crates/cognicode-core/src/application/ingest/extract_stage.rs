@@ -38,9 +38,11 @@ pub fn extract_all(changes: Vec<FileChange>) -> Vec<ExtractionResult> {
 /// arrive. Backpressure via the bounded channel prevents OOM.
 pub fn extract_streaming(changes: Vec<FileChange>) -> mpsc::Receiver<ExtractionResult> {
     let (tx, rx) = mpsc::channel(EXTRACT_CHANNEL_CAPACITY);
+    let change_count = changes.len();
 
     // Spawn a rayon task that extracts and sends through the channel
     rayon::spawn(move || {
+        tracing::info!(change_count, "ingest: extract_streaming rayon task start");
         use rayon::prelude::*;
         let _ = changes
             .into_par_iter()
@@ -55,6 +57,7 @@ pub fn extract_streaming(changes: Vec<FileChange>) -> mpsc::Receiver<ExtractionR
                     e
                 })
             });
+        tracing::info!(change_count, "ingest: extract_streaming rayon task done");
     });
 
     rx

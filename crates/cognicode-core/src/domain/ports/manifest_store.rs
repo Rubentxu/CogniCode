@@ -58,20 +58,20 @@ mod postgres_adapter {
     /// [`PostgresRepository`]. Exists so the Ingest pipeline can talk
     /// to the port rather than the concrete adapter.
     #[cfg(feature = "postgres")]
-    pub struct PostgresManifestStore {
-        repo: Arc<PostgresRepository>,
+    pub struct PostgresManifestStore<'a> {
+        repo: &'a PostgresRepository,
     }
 
     #[cfg(feature = "postgres")]
-    impl PostgresManifestStore {
-        pub fn new(repo: Arc<PostgresRepository>) -> Self {
+    impl<'a> PostgresManifestStore<'a> {
+        pub fn new(repo: &'a PostgresRepository) -> Self {
             Self { repo }
         }
     }
 
     #[cfg(feature = "postgres")]
     #[async_trait]
-    impl ManifestStore for PostgresManifestStore {
+    impl<'a> ManifestStore for PostgresManifestStore<'a> {
         async fn load_manifest(
             &self,
             workspace_id: &str,

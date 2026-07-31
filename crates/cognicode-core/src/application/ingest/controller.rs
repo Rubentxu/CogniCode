@@ -20,7 +20,7 @@
 //! ```
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -73,6 +73,16 @@ impl StaticWorkspaceResolver {
     pub fn register(&self, id: impl Into<String>, path: PathBuf) {
         self.paths.lock().unwrap().insert(id.into(), path);
     }
+}
+
+/// Derive a stable workspace id from its root path.
+pub fn workspace_id_for_path(root_path: &Path) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut h = DefaultHasher::new();
+    root_path.display().to_string().hash(&mut h);
+    format!("workspace:{:x}", h.finish())
 }
 
 impl WorkspaceResolver for StaticWorkspaceResolver {
@@ -223,7 +233,12 @@ impl IngestController {
             job_id: job_id.clone(),
             workspace_id: workspace_id.to_string(),
             status: JobState::Running,
-            progress: None,
+            progress: Some(ScanProgressPayload {
+                stage: "Queued".to_string(),
+                processed: 0,
+                total: 0,
+                failed: 0,
+            }),
             result: None,
             started_at,
             finished_at: None,
@@ -238,11 +253,46 @@ impl IngestController {
         let job_id_bg = job_id.clone();
         let ws_id_bg = workspace_id.to_string();
         tokio::spawn(async move {
-            let result = run_scan(&repo, &cache, &ws_id_bg, &root, None).await;
+            let progress_jobs = jobs.clone();
+            let progress_job_id = job_id_bg.clone();
+            let on_progress = move |progress: crate::application::ingest::types::ScanProgress| {
+                if let Ok(mut map) = progress_jobs.try_write()
+                    && let Some(s) = map.get_mut(&progress_job_id)
+                {
+                    s.progress = Some(ScanProgressPayload::from(&progress));
+                }
+            };
+
+            let scan_outcome = tokio::task::spawn_blocking(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("ingest current-thread runtime");
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    rt.block_on(run_scan(&repo, &cache, &ws_id_bg, &root, Some(&on_progress)))
+                }))
+            })
+            .await;
+
             let mut map = jobs.write().await;
             if let Some(s) = map.get_mut(&job_id_bg) {
-                s.result = Some(ScanResultPayload::from(&result));
-                s.status = JobState::Completed;
+                match scan_outcome {
+                    Ok(Ok(result)) => {
+                        s.result = Some(ScanResultPayload::from(&result));
+                        s.status = JobState::Completed;
+                    }
+                    Ok(Err(_)) | Err(_) => {
+                        s.status = JobState::Failed;
+                    }
+                }
+                if s.progress.is_none() {
+                    s.progress = Some(ScanProgressPayload {
+                        stage: "Failed".to_string(),
+                        processed: 0,
+                        total: 0,
+                        failed: 1,
+                    });
+                }
                 s.finished_at = Some(chrono::Utc::now().to_rfc3339());
             }
         });

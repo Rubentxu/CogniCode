@@ -16,6 +16,7 @@
  * - `GET /api/investigations/:id/composed-narrative` — composed narrative view
  */
 import useSWR, { mutate } from "swr";
+import { z } from "zod";
 
 import {
   createInvestigationRequestSchema,

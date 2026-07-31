@@ -31,6 +31,8 @@ use std::sync::Arc;
 #[cfg(feature = "postgres")]
 use cognicode_core::domain::aggregates::CallGraph;
 #[cfg(feature = "postgres")]
+use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
+#[cfg(feature = "postgres")]
 use cognicode_core::infrastructure::persistence::PostgresRepository;
 
 /// Connect to PostgreSQL, run the embedded migrations, and load the
@@ -48,8 +50,8 @@ use cognicode_core::infrastructure::persistence::PostgresRepository;
 ///   `"open_graph_from_postgres: load: …"`. The underlying
 ///   `PgPool` is dropped before the error is constructed.
 #[cfg(feature = "postgres")]
-pub async fn open_graph_from_postgres(database_url: &str) -> anyhow::Result<Arc<CallGraph>> {
-    let (graph, _repo) = open_graph_with_repo(database_url).await?;
+pub async fn open_graph_from_postgres(database_url: &str, workspace_root: &std::path::Path) -> anyhow::Result<Arc<CallGraph>> {
+    let (graph, _repo) = open_graph_with_repo(database_url, workspace_root).await?;
     Ok(graph)
 }
 
@@ -70,15 +72,33 @@ pub async fn open_graph_from_postgres(database_url: &str) -> anyhow::Result<Arc<
 #[cfg(feature = "postgres")]
 pub async fn open_graph_with_repo(
     database_url: &str,
+    workspace_root: &std::path::Path,
 ) -> anyhow::Result<(Arc<CallGraph>, Arc<PostgresRepository>)> {
     let repo = PostgresRepository::new(database_url)
         .await
         .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: connect: {e}"))?;
 
-    let graph = repo
-        .load_call_graph()
-        .await
-        .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: load: {e}"))?;
+    let workspace_id = cognicode_core::application::ingest::workspace_id_for_path(workspace_root);
+    let workspace = WorkspaceId::try_new(workspace_id.clone())
+        .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: workspace id: {e}"))?;
+
+    let head_rev: Option<i64> = sqlx::query_scalar(
+        "SELECT MAX(revision_id) FROM graph_revisions WHERE workspace_id = $1 AND head_of = true",
+    )
+    .bind(workspace.as_str())
+    .fetch_one(repo.pool())
+    .await
+    .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: head revision: {e}"))?;
+
+    let graph = if let Some(rev) = head_rev {
+        repo.load_call_graph_ws(&workspace, RevisionId(rev as u64))
+            .await
+            .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: load: {e}"))?
+    } else {
+        repo.load_call_graph_current_ws(&workspace)
+            .await
+            .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: load current workspace: {e}"))?
+    };
 
     let graph = match graph {
         Some(g) => Arc::new(g),

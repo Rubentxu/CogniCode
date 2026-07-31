@@ -17,7 +17,14 @@ This directory holds the architecture decision records (ADRs) for the CogniCode 
 | [ADR-011](./ADR-011-architecture-decision-support-packs.md) | Architecture Decision Support Packs | ACCEPTED | 2026-07-22 |
 | [ADR-012](./ADR-012-ui-visible-capability-contract.md) | UI-visible Capability Contract | PROPOSED | 2026-07-22 |
 | [ADR-013](./ADR-013-progressive-moldable-workbench-shell.md) | Progressive Moldable Workbench Shell | PROPOSED | 2026-07-22 |
-| [ADR-014](./ADR-014-moldql-pattern-graph-analytics-platform.md) | MoldQL Pattern Profile and Graph Analytics Platform | PROPOSED | 2026-07-27 |
+| [ADR-014](./ADR-014-moldql-pattern-graph-analytics-platform.md) | MoldQL Pattern Profile and Graph Analytics Platform | SUPERSEDED | 2026-07-27 |
+| [ADR-015](./ADR-015-temporal-graph-history-and-atomic-ingest.md) | Temporal Graph History and Atomic Ingest Commits | SUPERSEDED | 2026-07-29 |
+| [ADR-016](./ADR-016-renderer-neutral-semantic-projections.md) | Renderer-Neutral Semantic Projections | PROPOSED | 2026-06-15 |
+| [ADR-017](./ADR-017-postgresql-native-ingest-pipeline.md) | PostgreSQL-Native Ingest Pipeline | SUPERSEDED | 2026-06-15 |
+| [ADR-018](./ADR-018-evidence-gated-product-operability.md) | Evidence-Gated Product Operability | PROPOSED | 2026-07-29 |
+| [ADR-026](./ADR-026-ladybugdb-canonical-migration.md) | LadybugDB as Sole Canonical Graph Store | PROPOSED | 2026-07-30 |
+| [ADR-027](./ADR-027-ladybugdb-hybrid-schema-strategy.md) | LadybugDB Hybrid Schema Strategy | PROPOSED | 2026-07-30 |
+| [ADR-028](./ADR-028-ladybugdb-port-abstraction-architecture.md) | Port Abstraction Architecture for LadybugDB Migration | PROPOSED | 2026-07-30 |
 
 ## Format
 

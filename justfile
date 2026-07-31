@@ -22,6 +22,7 @@ EXPLORER_API_BIN := "target/debug/cognicode-explorer-api"
 EXPLORER_PORT := env_var_or_default("EXPLORER_PORT", "5180")
 EXPLORER_API_PORT := env_var_or_default("EXPLORER_API_PORT", "3456")
 EXPLORER_API_RELEASE := "target/release/explorer-api"
+EXPLORER_REAL_API_PORT := env_var_or_default("EXPLORER_REAL_API_PORT", "8010")
 PORT := EXPLORER_API_PORT
 PROJECT_PATH := env_var_or_default("COGNICODE_PROJECT_PATH", "")
 
@@ -392,6 +393,29 @@ explorer-full:
     @echo ""
     @echo "  Frontend: http://127.0.0.1:{{ EXPLORER_PORT }}"
     @echo "  API:      http://127.0.0.1:{{ EXPLORER_API_PORT }}"
+
+# Build the current repo into PostgreSQL via the real MCP server.
+# Safe for git: ingest persists in local PostgreSQL only; tracked-file dirtiness is checked before/after.
+explorer-real-ingest workspace="":
+    bash scripts/explorer/real_ingest.sh "{{ workspace }}"
+
+# Start the real Explorer API against PostgreSQL in the background.
+# Logs/PID live under .tmp-explorer-real/ (gitignored).
+explorer-real-api-up:
+    bash scripts/explorer/real_api_up.sh "{{ EXPLORER_REAL_API_PORT }}"
+
+# Stop the real Explorer API started by explorer-real-api-up.
+explorer-real-api-stop:
+    bash scripts/explorer/real_api_stop.sh "{{ EXPLORER_REAL_API_PORT }}"
+
+# Smoke-check the real stack against this repo: ingest -> API health -> workspace open -> landing.
+explorer-real-smoke workspace="": explorer-real-ingest explorer-real-api-up
+    bash scripts/explorer/real_smoke.sh "{{ workspace }}" "{{ EXPLORER_REAL_API_PORT }}"
+
+# Start the real Explorer UI (Vite) against the real API after a smoke bootstrap.
+explorer-real-ui: explorer-real-smoke
+    @echo "🚀 Starting Explorer UI against real API..."
+    cd {{ EXPLORER_UI_DIR }} && EXPLORER_API_TARGET=http://127.0.0.1:{{ EXPLORER_REAL_API_PORT }} VITE_USE_MOCKS=false npm run dev:real
 
 # Build and start the Explorer API server
 explorer-api:

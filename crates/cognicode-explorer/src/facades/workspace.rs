@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use cognicode_core::application::ingest::{StaticWorkspaceResolver, workspace_id_for_path};
 
 use crate::dto::{OpenWorkspaceRequest, WorkspaceSummary};
 use crate::error::ExplorerResult;
@@ -19,11 +20,51 @@ const SPOTTER_RESULT_LIMIT: usize = 20;
 pub struct WorkspaceServiceImpl {
     repo: Arc<dyn SymbolRepository>,
     root_path: PathBuf,
+    workspace_resolver: Option<Arc<StaticWorkspaceResolver>>,
 }
 
 impl WorkspaceServiceImpl {
-    pub fn new(repo: Arc<dyn SymbolRepository>, root_path: PathBuf) -> Self {
-        Self { repo, root_path }
+    pub fn new(
+        repo: Arc<dyn SymbolRepository>,
+        root_path: PathBuf,
+        workspace_resolver: Option<Arc<StaticWorkspaceResolver>>,
+    ) -> Self {
+        Self {
+            repo,
+            root_path,
+            workspace_resolver,
+        }
+    }
+
+    fn summarize_workspace(&self, root_path: PathBuf) -> ExplorerResult<WorkspaceSummary> {
+        if !root_path.exists() {
+            return Err(crate::error::ExplorerError::WorkspaceNotFound(
+                root_path.display().to_string(),
+            ));
+        }
+
+        let stats = self.repo.graph_stats();
+        let symbol_count = stats.symbol_count;
+        let relation_count = stats.relation_count;
+        let graph_status = if symbol_count > 0 || relation_count > 0 {
+            crate::dto::GraphStatus::Ready
+        } else {
+            crate::dto::GraphStatus::Missing
+        };
+
+        let id = workspace_id_for_path(&root_path);
+        if let Some(resolver) = &self.workspace_resolver {
+            resolver.register(id.clone(), root_path.clone());
+        }
+
+        Ok(WorkspaceSummary {
+            id,
+            root_path: root_path.display().to_string(),
+            graph_status,
+            indexed_at: None,
+            symbol_count,
+            relation_count,
+        })
     }
 }
 
@@ -33,51 +74,10 @@ impl WorkspaceService for WorkspaceServiceImpl {
         &self,
         request: OpenWorkspaceRequest,
     ) -> ExplorerResult<WorkspaceSummary> {
-        let root_path = PathBuf::from(&request.root_path);
-        if !root_path.exists() {
-            return Err(crate::error::ExplorerError::WorkspaceNotFound(
-                request.root_path,
-            ));
-        }
-
-        let db_path = root_path.join(".cognicode/cognicode.db");
-        let graph_status = if db_path.exists() {
-            crate::dto::GraphStatus::Ready
-        } else {
-            crate::dto::GraphStatus::Missing
-        };
-
-        // Spec Req 4: only populate real stats when the graph is ready.
-        let (symbol_count, relation_count) = if db_path.exists() {
-            let stats = self.repo.graph_stats();
-            (stats.symbol_count, stats.relation_count)
-        } else {
-            (0, 0)
-        };
-
-        Ok(WorkspaceSummary {
-            id: workspace_id(&root_path),
-            root_path: root_path.display().to_string(),
-            graph_status,
-            indexed_at: None,
-            symbol_count,
-            relation_count,
-        })
+        self.summarize_workspace(PathBuf::from(request.root_path))
     }
 
     fn current_workspace(&self) -> ExplorerResult<WorkspaceSummary> {
-        // Called from async handlers, so a Tokio runtime is available.
-        tokio::runtime::Handle::current().block_on(self.open_workspace(OpenWorkspaceRequest {
-            root_path: self.root_path.display().to_string(),
-        }))
+        self.summarize_workspace(self.root_path.clone())
     }
-}
-
-/// Derive a stable workspace id from its root path.
-fn workspace_id(root_path: &PathBuf) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h = DefaultHasher::new();
-    root_path.display().to_string().hash(&mut h);
-    format!("workspace:{:x}", h.finish())
 }

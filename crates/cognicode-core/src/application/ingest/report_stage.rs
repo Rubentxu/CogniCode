@@ -5,6 +5,7 @@
 //! as a JSON blob in `graph_reports`.
 
 use serde_json::json;
+use uuid::Uuid;
 
 use crate::application::ingest::analyzer::AnalysisSummary;
 use crate::infrastructure::persistence::PostgresRepository;
@@ -18,7 +19,7 @@ pub async fn run_report(
 ) -> Option<String> {
     let report_json = serde_json::to_value(summary).unwrap_or_else(|_| json!({}));
 
-    let row: (String,) = sqlx::query_as(
+    let row: (Uuid,) = sqlx::query_as(
         "INSERT INTO graph_reports \
             (workspace_id, report, symbol_count, edge_count, health_score) \
          VALUES ($1, $2, $3, $4, $5) \
@@ -34,7 +35,7 @@ pub async fn run_report(
     .map_err(|e| tracing::error!("graph_report insert failed: {e}"))
     .ok()?;
 
-    let report_id = &row.0;
+    let report_id = row.0.to_string();
     tracing::info!(report_id = %report_id, "graph_report persisted");
-    Some(report_id.clone())
+    Some(report_id)
 }
