@@ -82,13 +82,20 @@ pub async fn open_graph_with_repo(
     let workspace = WorkspaceId::try_new(workspace_id.clone())
         .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: workspace id: {e}"))?;
 
-    let head_rev: Option<i64> = sqlx::query_scalar(
-        "SELECT MAX(revision_id) FROM graph_revisions WHERE workspace_id = $1 AND head_of = true",
-    )
-    .bind(workspace.as_str())
-    .fetch_one(repo.pool())
-    .await
-    .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: head revision: {e}"))?;
+    let head_rev: Option<i64> = repo
+        .with_pool_async(|pool| {
+            let ws = workspace.as_str().to_owned();
+            async move {
+                sqlx::query_scalar(
+                    "SELECT MAX(revision_id) FROM graph_revisions WHERE workspace_id = $1 AND head_of = true",
+                )
+                .bind(&ws)
+                .fetch_one(pool)
+                .await
+            }
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: head revision: {e}"))?;
 
     let graph = if let Some(rev) = head_rev {
         repo.load_call_graph_ws(&workspace, RevisionId(rev as u64))

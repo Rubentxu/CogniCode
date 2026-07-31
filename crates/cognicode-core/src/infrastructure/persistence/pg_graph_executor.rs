@@ -137,7 +137,7 @@ impl GraphExecutor for PgGraphExecutor {
         limits_override: Option<PlanLimits>,
     ) -> Result<ResultSet, ExecutorError> {
         let limits = limits_override.unwrap_or_else(|| plan.limits().clone());
-        let pool = self.repo.pool();
+        let pool = self.repo.with_pool(|p| p.clone());
 
         // First: verify the revision exists by calling load_call_graph_ws.
         // This is the "closed world" check — unknown revisions fail fast.
@@ -196,7 +196,7 @@ impl GraphExecutor for PgGraphExecutor {
             } => {
                 let max_hops = quantifier.max_hops.unwrap_or(32).min(32) as i32;
                 self.execute_path(
-                    pool,
+                    &pool,
                     &pin.0,
                     src,
                     dst,
@@ -212,7 +212,7 @@ impl GraphExecutor for PgGraphExecutor {
                 edge_kind_filter,
                 ..
             } => self.execute_neighbors(
-                pool,
+                &pool,
                 &pin.0,
                 src,
                 kind.clone(),
@@ -221,15 +221,15 @@ impl GraphExecutor for PgGraphExecutor {
                 &limits,
             ),
             GraphPlan::Subgraph { nodes, edges, .. } => {
-                self.execute_subgraph(pool, &pin.0, nodes, edges.as_ref(), &limits)
+                self.execute_subgraph(&pool, &pin.0, nodes, edges.as_ref(), &limits)
             }
-            GraphPlan::Cluster { by, .. } => self.execute_cluster(pool, &pin.0, by, &limits),
+            GraphPlan::Cluster { by, .. } => self.execute_cluster(&pool, &pin.0, by, &limits),
             GraphPlan::Explain { inner, .. } => {
                 // EXPLAIN: return plan metadata without executing
                 self.execute(inner, pin)
             }
             GraphPlan::BooleanComposition { op, operands, .. } => {
-                self.execute_boolean(pool, &pin.0, pin.1, *op, operands, &limits)
+                self.execute_boolean(&pool, &pin.0, pin.1, *op, operands, &limits)
             }
         };
 

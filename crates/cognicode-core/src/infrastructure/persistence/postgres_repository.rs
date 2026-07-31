@@ -215,10 +215,10 @@ where
 /// one of the domain ports (`ManifestStore`, `ReportStore`,
 /// `SessionStore`, etc.) instead.
 ///
-/// This getter is `#[cfg(test)]`-gated in a future change; today it
-/// remains public for backward compatibility with the existing ~97
-/// callers. See `with_pool` for the new API.
-pub fn pool(&self) -> &PgPool {
+/// Visibility is `pub(super)` so only this crate's persistence module
+/// (and its tests) can reach it. Outside `cognicode-core::infrastructure
+/// ::persistence`, callers must use `with_pool` or `with_pool_async`.
+pub(super) fn pool(&self) -> &PgPool {
     &self.pool
 }
 

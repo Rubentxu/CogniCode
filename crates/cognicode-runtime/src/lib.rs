@@ -192,9 +192,10 @@ impl Runtime {
         let investigation: Option<
             Arc<dyn cognicode_explorer::facades::InvestigationFacade>,
         > = if let Some(ref repo) = self.pg_repo {
+            let pool = repo.with_pool(|p| p.clone());
             Some(
                 cognicode_explorer::facades::investigation::new_investigation_service_from_postgres(
-                    repo.pool(),
+                    &pool,
                 ),
             )
         } else {
@@ -302,7 +303,8 @@ impl Runtime {
         #[cfg(feature = "postgres")]
         if let Some(ref pg_repo) = self.pg_repo {
             use cognicode_explorer::facades::investigation::new_investigation_service_from_postgres;
-            let investigation = new_investigation_service_from_postgres(pg_repo.pool());
+            let pool = pg_repo.with_pool(|p| p.clone());
+            let investigation = new_investigation_service_from_postgres(&pool);
             state = state.with_investigation(investigation);
         }
 
