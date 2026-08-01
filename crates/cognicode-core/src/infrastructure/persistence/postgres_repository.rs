@@ -33,6 +33,8 @@ use crate::domain::traits::repository::{CallGraphStore, CallGraphStoreError};
 use crate::domain::value_objects::{
     DependencyType, EdgeMetadata, Location, Provenance, RevisionId, SymbolKind, WorkspaceId,
 };
+#[cfg(feature = "postgres")]
+use crate::domain::ports::revision_store::RevisionStore;
 
 /// Schema DDL embedded at compile time.
 ///
@@ -543,45 +545,16 @@ impl PostgresRepository {
                 CallGraphStoreError::Store(format!("save_call_graph_ws begin: {e}"))
             })?;
 
-        // Step 1: Open a new revision.
-        // First, demote the existing head (if any) to `head_of = false`.
-        // We use UPDATE ... WHERE head_of = true to be precise.
-        sqlx::query(
-            "UPDATE graph_revisions \
-             SET head_of = false \
-             WHERE workspace_id = $1 AND head_of = true",
-        )
-        .bind(workspace_id.as_str())
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| CallGraphStoreError::Store(format!("save_call_graph_ws demote head: {e}")))?;
-
-        // Next, compute MAX(revision_id) + 1 for this workspace.
-        // If no revision exists yet, COALESCE returns 0 and we add 1 → 1.
-        let next_rev: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(MAX(revision_id), 0) + 1 \
-             FROM graph_revisions \
-             WHERE workspace_id = $1",
-        )
-        .bind(workspace_id.as_str())
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| {
-            CallGraphStoreError::Store(format!("save_call_graph_ws compute next revision: {e}"))
-        })?;
-
-        // Insert the new head row.
-        sqlx::query(
-            "INSERT INTO graph_revisions (workspace_id, revision_id, head_of) \
-             VALUES ($1, $2, true)",
-        )
-        .bind(workspace_id.as_str())
-        .bind(next_rev)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            CallGraphStoreError::Store(format!("save_call_graph_ws insert revision: {e}"))
-        })?;
+        // Step 1: Open a new revision via RevisionStore.
+        // Delegates to PostgresRevisionStore::create_revision, which
+        // demotes the prior head + computes the next revision id + inserts
+        // the new head row — all inside this same transaction.
+        let revision_store =
+            crate::domain::ports::revision_store::postgres_adapter::PostgresRevisionStore::new(self.pool.clone());
+        let revision_id = revision_store
+            .create_revision(&mut tx, workspace_id)
+            .await
+            .map_err(|e| CallGraphStoreError::Store(format!("save_call_graph_ws create_revision: {e}")))?;
 
         let ws_str = workspace_id.as_str();
 
@@ -664,7 +637,7 @@ impl PostgresRepository {
             .await
             .map_err(|e| CallGraphStoreError::Store(format!("save_call_graph_ws commit: {e}")))?;
 
-        Ok(RevisionId(next_rev as u64))
+        Ok(revision_id)
     }
 
     /// Reconstruct a [`CallGraph`] from the `symbols` + `call_edges`
