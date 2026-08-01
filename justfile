@@ -718,3 +718,12 @@ spike-ladybug-s5:
 spike-ladybug-s5-clean:
     rm -f /tmp/s5_full6.lbdb
     psql postgres://cognicode:cognicode@localhost:5432/cognicode -c "DROP TABLE IF EXISTS graph_edges; DROP TABLE IF EXISTS graph_nodes;" 2>/dev/null || true
+
+# E29 S6 spike — run S6 Cypher compatibility probes
+spike-ladybug-s6:
+    @echo "=== S6: Cypher compatibility probes ==="
+    cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s6_cypher_compat
+
+# E29 S6 spike — clean S6 artifacts
+spike-ladybug-s6-clean:
+    rm -f /tmp/s6_*.lbdb
