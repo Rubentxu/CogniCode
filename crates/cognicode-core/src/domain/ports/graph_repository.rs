@@ -1,14 +1,14 @@
 //! `GraphRepository` — domain port for the Generic Graph Layer.
 //!
 //! Defines the contract the `graph_search` MCP tool (T21) needs to
-//! query multimodal nodes + edges. The PG adapter (in the
+//! query multimodal nodes + edges. The canonical adapter (in the
 //! `cognicode-explorer` crate) implements this trait on top of
 //! `PostgresRepository`; an in-memory mock (also in the explorer)
 //! is used by the unit tests.
 //!
 //! Why a separate port? The Generic Graph Layer has different
 //! primary keys (`graph_nodes(id, kind)`) and different query
-//! patterns (FTS5 over `label || metadata`) than the existing
+//! patterns (full-text search over `label || metadata`) than the existing
 //! `SymbolRepository`. Forcing both onto a single trait would
 //! create a fat-interface smell.
 //!
@@ -47,8 +47,8 @@ pub struct SearchPage {
     /// Opaque cursor for the next page. `None` on the last page
     /// (and on the only page of a small result set).
     pub next_cursor: Option<String>,
-    /// The raw FTS5 rank (the `ts_rank_cd` value as a positive
-    /// float) of the top item on the page. The MCP tool
+    /// The raw relevance score (the underlying search backend's relevance score
+    /// as a positive float) of the top item on the page. The MCP tool
     /// surfaces this alongside the normalised score per the IB
     /// check in `design.md`. Kept for backward compatibility —
     /// the per-item scores live in `item_ranks` and are
@@ -58,7 +58,7 @@ pub struct SearchPage {
     /// `item_ranks.len() == items.len()`). The MCP tool uses
     /// this to emit a distinct `score` per result. `Vec::new()`
     /// when the underlying search backend does not surface
-    /// per-item ranks (e.g. an unimplemented PG stub); the
+    /// per-item ranks (e.g. an unimplemented search stub); the
     /// caller then falls back to `raw_rank` for every item.
     pub item_ranks: Vec<f64>,
 }
@@ -66,7 +66,7 @@ pub struct SearchPage {
 /// Read-only port for the Generic Graph Layer.
 #[async_trait]
 pub trait GraphRepository: Send + Sync {
-    /// FTS5-backed search across `graph_nodes`. Returns at most
+    /// Full-text search across `graph_nodes`. Returns at most
     /// `limit` items, paginated by the opaque `cursor` (start at
     /// the beginning when `None`).
     ///
@@ -135,7 +135,7 @@ pub trait GraphRepository: Send + Sync {
         })
     }
 
-    /// FTS5-backed search with pagination support.
+    /// Full-text search with pagination support.
     ///
     /// Default implementation delegates to `search`. The cursor format
     /// is opaque; implementations that override this method should handle

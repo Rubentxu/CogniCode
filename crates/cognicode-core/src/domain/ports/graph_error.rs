@@ -6,7 +6,7 @@
 //! `cognicode-explorer`'s `ExplorerError`.
 //!
 //! Kept deliberately small — just the four variants the generic
-//! graph layer needs. Adapters can wrap upstream errors (sqlx,
+//! graph layer needs. Adapters can wrap upstream errors (the database driver,
 //! serde, etc.) into `Storage(String)` for transport.
 //!
 //! Available in the default build. The `multimodal` feature gates
@@ -17,7 +17,7 @@ use thiserror::Error;
 /// Domain error type for graph repository operations.
 ///
 /// Adapters that need to surface richer error chains (e.g. the
-/// PostgreSQL adapter) wrap the upstream error in [`GraphError::Storage`]
+    /// canonical adapter) wrap the upstream error in [`GraphError::Storage`]
 /// and propagate. Consumers that need a stable error type for
 /// cross-crate propagation should match on this enum.
 #[derive(Debug, Error)]
@@ -33,7 +33,7 @@ pub enum GraphError {
     #[error("invalid input: {0}")]
     InvalidInput(String),
 
-    /// A storage backend (PostgreSQL, in-memory mock, …) reported
+    /// A storage backend (relational database, in-memory mock, …) reported
     /// a failure. The wrapped message is the human-readable
     /// upstream error; structured causes are deliberately not
     /// preserved (the adapters map them onto this variant).

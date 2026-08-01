@@ -1,11 +1,11 @@
 //! Async-ready canonical [`CallGraphStore`] port for the cognicode domain.
 //!
-//! This trait is the structural seam for the PostgreSQL-backed
-//! implementation that lands in a follow-up slice. It is intentionally
+//! This trait is the structural seam for the
+//! canonical implementation that lands in a follow-up slice. It is intentionally
 //! **standalone** — it does NOT inherit from [`GraphStore`] — so the
 //! write-path (synchronous save/load of bincode blobs) and the
 //! read-path (async, query-shaped) remain independent seams. A future
-//! PostgreSQL struct can implement both traits side by side.
+//! struct can implement both traits side by side.
 //!
 //! The trait is `Send + Sync` and uses `#[async_trait]` so it remains
 //! dyn-compatible (e.g. `Box<dyn CallGraphStore>`) for application code
@@ -43,7 +43,7 @@ pub enum CallGraphStoreError {
     #[error("invalid query: {0}")]
     InvalidQuery(String),
 
-    /// PostgreSQL unique-violation (`SQLSTATE 23505`). Raised by
+    /// A unique-constraint violation. Raised by
     /// `save_named_view` when a `(workspace_id, owner, name)` triple
     /// already exists.
     #[error("unique violation: {0}")]
@@ -80,7 +80,7 @@ pub trait CallGraphStore: Send + Sync {
 
     /// Count every indexed symbol. Cheap call — implementations are
     /// expected to delegate to a precomputed count when available
-    /// (e.g. PostgreSQL `pg_stat_user_tables` / a materialized view).
+    /// (e.g. a precomputed count table or materialized view).
     async fn count_symbols(&self) -> Result<usize, CallGraphStoreError>;
 
     /// Return every call-graph edge whose `caller_id` matches
