@@ -2,7 +2,7 @@
 //! (`find_quality_issues`, `quality_gate`).
 //!
 //! Wires the **real** `McpContext` + a `MockQuality` (in-memory)
-//! `QualityRepository` and dispatches each handler end-to-end through
+//! `QualityStore` and dispatches each handler end-to-end through
 //! the standard `ToolHandlerRegistry::dispatch` path.
 //!
 //! Mirrors the pattern established by `lens_mcp_integration.rs` and
@@ -25,7 +25,8 @@ use cognicode_explorer::mcp::handler::ToolHandlerRegistry;
 use cognicode_explorer::mcp::handler::quality_mcp::register_quality_mcp_handlers;
 use cognicode_explorer::mcp::{McpContext, TOOL_FIND_QUALITY_ISSUES, TOOL_QUALITY_GATE};
 use cognicode_explorer::ports::quality_repository::{
-    IssueFilter, QualityGateSummary, QualityIssue, QualityRepository, RuleSummary,
+    IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
+    RuleSummary, UpsertSummary,
 };
 use cognicode_explorer::session::SessionRegistry;
 use rmcp::model::CallToolResult;
@@ -49,7 +50,7 @@ fn issue(id: i64, severity: &str, category: &str, file: &str, status: &str) -> Q
     }
 }
 
-/// In-memory `QualityRepository` keyed by file. The current v1 port
+/// In-memory `QualityStore` keyed by file. The current v1 port
 /// doesn't expose a file index, so `list_known_files` returns `Ok(vec![])`
 /// from the handler — aggregation must be driven by `issues_for_scope`
 /// or `issues_for_file` directly. We expose the data through `by_file`
@@ -87,11 +88,11 @@ impl InMemoryQuality {
 }
 
 #[async_trait]
-impl QualityRepository for InMemoryQuality {
-    fn issues_for_file(&self, file: &str) -> ExplorerResult<Vec<QualityIssue>> {
+impl QualityStore for InMemoryQuality {
+    fn issues_for_file(&self, file: &str) -> Result<Vec<QualityIssue>, QualityError> {
         Ok(self.by_file.get(file).cloned().unwrap_or_default())
     }
-    fn issues_for_scope(&self, scope_prefix: &str) -> ExplorerResult<Vec<QualityIssue>> {
+    fn issues_for_scope(&self, scope_prefix: &str) -> Result<Vec<QualityIssue>, QualityError> {
         Ok(self
             .by_file
             .iter()
@@ -99,34 +100,37 @@ impl QualityRepository for InMemoryQuality {
             .flat_map(|(_, v)| v.clone())
             .collect())
     }
-    fn issues_at_line(&self, file: &str, line: u32) -> ExplorerResult<Vec<QualityIssue>> {
+    fn issues_at_line(&self, file: &str, line: u32) -> Result<Vec<QualityIssue>, QualityError> {
         Ok(self
             .by_file
             .get(file)
             .map(|v| v.iter().filter(|i| i.line == line).cloned().collect())
             .unwrap_or_default())
     }
-    fn issue_by_id(&self, _id: i64) -> ExplorerResult<Option<QualityIssue>> {
+    fn issue_by_id(&self, _id: i64) -> Result<Option<QualityIssue>, QualityError> {
         Ok(None)
     }
-    fn rule_summary(&self, _rule_id: &str) -> ExplorerResult<RuleSummary> {
+    fn rule_summary(&self, _rule_id: &str) -> Result<RuleSummary, QualityError> {
         Ok(RuleSummary {
             rule_id: "mock".to_string(),
             description: "mock".to_string(),
             open_count: 0,
         })
     }
-    fn quality_gate(&self, _workspace_id: Option<&str>) -> ExplorerResult<QualityGateSummary> {
+    fn quality_gate(
+        &self,
+        _workspace_id: Option<&str>,
+    ) -> Result<QualityGateSummary, QualityError> {
         Ok(self.gate.clone())
     }
-    fn open_issues_count(&self, _workspace_id: Option<&str>) -> ExplorerResult<usize> {
+    fn open_issues_count(&self, _workspace_id: Option<&str>) -> Result<usize, QualityError> {
         Ok(self.open_total)
     }
     fn issues_for_workspace(
         &self,
         _workspace_id: Option<&str>,
         filter: &IssueFilter,
-    ) -> ExplorerResult<Vec<QualityIssue>> {
+    ) -> Result<Vec<QualityIssue>, QualityError> {
         let mut out: Vec<QualityIssue> = self
             .by_file
             .values()
@@ -143,6 +147,19 @@ impl QualityRepository for InMemoryQuality {
             out.truncate(n);
         }
         Ok(out)
+    }
+
+    fn insert_issues(&self, _issues: &[NewIssue]) -> Result<UpsertSummary, QualityError> {
+        Ok(UpsertSummary::default())
+    }
+    fn delete_issue(
+        &self,
+        _workspace_id: &str,
+        _rule_id: &str,
+        _file_path: &str,
+        _line: u32,
+    ) -> Result<bool, QualityError> {
+        Ok(false)
     }
 }
 
@@ -186,7 +203,7 @@ fn err_code(result: &CallToolResult) -> String {
         .expect("err envelope payload must have `error_code`")
 }
 
-fn ctx_with_quality(q: Arc<dyn QualityRepository>) -> McpContext {
+fn ctx_with_quality(q: Arc<dyn QualityStore>) -> McpContext {
     McpContext::builder()
         .with_session_registry(SessionRegistry::new())
         .with_quality(q)
@@ -388,7 +405,7 @@ async fn find_quality_issues_rejects_when_quality_unavailable() {
     assert_eq!(
         err_code(&result),
         "quality_unavailable",
-        "missing QualityRepository should yield quality_unavailable"
+        "missing QualityStore should yield quality_unavailable"
     );
 }
 
@@ -475,6 +492,6 @@ async fn quality_gate_rejects_when_quality_unavailable() {
     assert_eq!(
         err_code(&result),
         "quality_unavailable",
-        "missing QualityRepository should yield quality_unavailable"
+        "missing QualityStore should yield quality_unavailable"
     );
 }

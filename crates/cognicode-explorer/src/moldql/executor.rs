@@ -11,7 +11,7 @@
 //! ## Quality backend
 //!
 //! Quality conditions (`quality.<level>`, `issue_count`, `severity`)
-//! evaluate `false` when no [`crate::ports::QualityRepository`] is
+//! evaluate `false` when no [`crate::ports::QualityStore`] is
 //! wired — callers that skip the quality backend still get a correct
 //! (empty) result without an error.
 
@@ -662,7 +662,7 @@ impl<'a> MoldQLExecutor<'a> {
 /// service-owned data does not need to be public.
 pub struct MoldQLView {
     pub repo: Arc<dyn SymbolRepository>,
-    pub quality: Option<Arc<dyn crate::ports::QualityRepository>>,
+    pub quality: Option<Arc<dyn crate::ports::QualityStore>>,
     pub reader: Arc<dyn crate::ports::SourceReader>,
     /// `apply_lens(mvp, lens_id)` is delegated so the executor never
     /// needs to know about the lens registry. The `Arc` keeps the
@@ -817,7 +817,7 @@ fn render_explore(e: &crate::moldql::ast::ExploreQuery) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ports::QualityRepository;
+    use crate::ports::QualityStore;
     use cognicode_core::domain::plan::{
         ConstructId, ExecutorError, GraphPlan, NeighborKind, NodeResult, Path as GraphPath,
         PathHop, PathQuantifier, ResultSet, UnsupportedConstruct,
@@ -1190,27 +1190,36 @@ mod tests {
     /// Quality repo stub. `None` exercises the "no backend" path.
     struct NoQuality;
 
-    impl QualityRepository for NoQuality {
-        fn issues_for_file(&self, _file: &str) -> ExplorerResult<Vec<crate::ports::QualityIssue>> {
+    impl QualityStore for NoQuality {
+        fn issues_for_file(
+            &self,
+            _file: &str,
+        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
             Ok(Vec::new())
         }
         fn issues_for_scope(
             &self,
             _scope_prefix: &str,
-        ) -> ExplorerResult<Vec<crate::ports::QualityIssue>> {
+        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
             Ok(Vec::new())
         }
         fn issues_at_line(
             &self,
             _file: &str,
             _line: u32,
-        ) -> ExplorerResult<Vec<crate::ports::QualityIssue>> {
+        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
             Ok(Vec::new())
         }
-        fn issue_by_id(&self, _id: i64) -> ExplorerResult<Option<crate::ports::QualityIssue>> {
+        fn issue_by_id(
+            &self,
+            _id: i64,
+        ) -> Result<Option<crate::ports::QualityIssue>, crate::ports::QualityError> {
             Ok(None)
         }
-        fn rule_summary(&self, _rule_id: &str) -> ExplorerResult<crate::ports::RuleSummary> {
+        fn rule_summary(
+            &self,
+            _rule_id: &str,
+        ) -> Result<crate::ports::RuleSummary, crate::ports::QualityError> {
             Ok(crate::ports::RuleSummary {
                 rule_id: String::new(),
                 description: String::new(),
@@ -1220,18 +1229,37 @@ mod tests {
         fn quality_gate(
             &self,
             _workspace_id: Option<&str>,
-        ) -> ExplorerResult<crate::ports::QualityGateSummary> {
+        ) -> Result<crate::ports::QualityGateSummary, crate::ports::QualityError> {
             Ok(crate::ports::QualityGateSummary::default())
         }
-        fn open_issues_count(&self, _workspace_id: Option<&str>) -> ExplorerResult<usize> {
+        fn open_issues_count(
+            &self,
+            _workspace_id: Option<&str>,
+        ) -> Result<usize, crate::ports::QualityError> {
             Ok(0)
         }
         fn issues_for_workspace(
             &self,
             _workspace_id: Option<&str>,
             _filter: &crate::ports::quality_repository::IssueFilter,
-        ) -> ExplorerResult<Vec<crate::ports::QualityIssue>> {
+        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
             Ok(Vec::new())
+        }
+
+        fn insert_issues(
+            &self,
+            _issues: &[crate::ports::NewIssue],
+        ) -> Result<crate::ports::UpsertSummary, crate::ports::QualityError> {
+            Ok(crate::ports::UpsertSummary::default())
+        }
+        fn delete_issue(
+            &self,
+            _workspace_id: &str,
+            _rule_id: &str,
+            _file_path: &str,
+            _line: u32,
+        ) -> Result<bool, crate::ports::QualityError> {
+            Ok(false)
         }
     }
 
@@ -1246,8 +1274,11 @@ mod tests {
             Self { issues }
         }
     }
-    impl QualityRepository for StaticQuality {
-        fn issues_for_file(&self, file: &str) -> ExplorerResult<Vec<crate::ports::QualityIssue>> {
+    impl QualityStore for StaticQuality {
+        fn issues_for_file(
+            &self,
+            file: &str,
+        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
             Ok(self
                 .issues
                 .iter()
@@ -1255,7 +1286,10 @@ mod tests {
                 .cloned()
                 .collect())
         }
-        fn issues_for_scope(&self, scope: &str) -> ExplorerResult<Vec<crate::ports::QualityIssue>> {
+        fn issues_for_scope(
+            &self,
+            scope: &str,
+        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
             Ok(self
                 .issues
                 .iter()
@@ -1267,7 +1301,7 @@ mod tests {
             &self,
             file: &str,
             line: u32,
-        ) -> ExplorerResult<Vec<crate::ports::QualityIssue>> {
+        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
             Ok(self
                 .issues
                 .iter()
@@ -1275,10 +1309,16 @@ mod tests {
                 .cloned()
                 .collect())
         }
-        fn issue_by_id(&self, id: i64) -> ExplorerResult<Option<crate::ports::QualityIssue>> {
+        fn issue_by_id(
+            &self,
+            id: i64,
+        ) -> Result<Option<crate::ports::QualityIssue>, crate::ports::QualityError> {
             Ok(self.issues.iter().find(|i| i.id == id).cloned())
         }
-        fn rule_summary(&self, rule_id: &str) -> ExplorerResult<crate::ports::RuleSummary> {
+        fn rule_summary(
+            &self,
+            rule_id: &str,
+        ) -> Result<crate::ports::RuleSummary, crate::ports::QualityError> {
             let count = self.issues.iter().filter(|i| i.rule_id == rule_id).count();
             Ok(crate::ports::RuleSummary {
                 rule_id: rule_id.to_string(),
@@ -1289,17 +1329,20 @@ mod tests {
         fn quality_gate(
             &self,
             _workspace_id: Option<&str>,
-        ) -> ExplorerResult<crate::ports::QualityGateSummary> {
+        ) -> Result<crate::ports::QualityGateSummary, crate::ports::QualityError> {
             Ok(crate::ports::QualityGateSummary::default())
         }
-        fn open_issues_count(&self, _workspace_id: Option<&str>) -> ExplorerResult<usize> {
+        fn open_issues_count(
+            &self,
+            _workspace_id: Option<&str>,
+        ) -> Result<usize, crate::ports::QualityError> {
             Ok(self.issues.len())
         }
         fn issues_for_workspace(
             &self,
             _workspace_id: Option<&str>,
             filter: &crate::ports::quality_repository::IssueFilter,
-        ) -> ExplorerResult<Vec<crate::ports::QualityIssue>> {
+        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
             let mut out: Vec<crate::ports::QualityIssue> = self
                 .issues
                 .iter()
@@ -1316,6 +1359,22 @@ mod tests {
                 out.truncate(n);
             }
             Ok(out)
+        }
+
+        fn insert_issues(
+            &self,
+            _issues: &[crate::ports::NewIssue],
+        ) -> Result<crate::ports::UpsertSummary, crate::ports::QualityError> {
+            Ok(crate::ports::UpsertSummary::default())
+        }
+        fn delete_issue(
+            &self,
+            _workspace_id: &str,
+            _rule_id: &str,
+            _file_path: &str,
+            _line: u32,
+        ) -> Result<bool, crate::ports::QualityError> {
+            Ok(false)
         }
     }
 
@@ -1361,7 +1420,7 @@ mod tests {
     /// Used by tests that exercise the `quality.<level>` fields.
     fn build_view_with_quality(
         repo: Arc<MockRepo>,
-        quality: Arc<dyn crate::ports::QualityRepository>,
+        quality: Arc<dyn crate::ports::QualityStore>,
     ) -> MoldQLView {
         use crate::adapters::FsSourceReader;
         use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
@@ -1853,7 +1912,7 @@ mod tests {
                 status: "open".into(),
             },
         ]);
-        let quality_arc: Arc<dyn crate::ports::QualityRepository> = Arc::new(quality);
+        let quality_arc: Arc<dyn crate::ports::QualityStore> = Arc::new(quality);
         let view = build_view_with_quality(repo.clone(), quality_arc);
 
         let r = run_find(&view, "FIND files WHERE issue_count > 0").await;
@@ -1964,7 +2023,7 @@ mod tests {
     // backend without actually supplying one.
     #[test]
     fn no_quality_backend_returns_empty_for_issues_queries() {
-        let no_q: Arc<dyn crate::ports::QualityRepository> = Arc::new(NoQuality);
+        let no_q: Arc<dyn crate::ports::QualityStore> = Arc::new(NoQuality);
         let issues = no_q.issues_for_file("anything").expect("ok");
         assert!(issues.is_empty());
     }

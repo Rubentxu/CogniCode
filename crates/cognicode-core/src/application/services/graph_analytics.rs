@@ -364,7 +364,9 @@ impl AlgorithmRegistry {
                 });
             });
             rx.recv()
-                .map_err(|e| AdmissionError::Incomplete(format!("lineage store error: channel recv: {e}")))?
+                .map_err(|e| {
+                    AdmissionError::Incomplete(format!("lineage store error: channel recv: {e}"))
+                })?
                 .map_err(|e| AdmissionError::Incomplete(format!("lineage store error: {}", e)))?;
         } else {
             // No runtime available: create a temporary one-shot runtime
@@ -372,8 +374,11 @@ impl AlgorithmRegistry {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|e| AdmissionError::Incomplete(format!("lineage store error: runtime create: {e}")))?;
-            runtime.block_on(lineage_store.upsert_descriptor_limits(&id_clone, &version_str, &limits))
+                .map_err(|e| {
+                    AdmissionError::Incomplete(format!("lineage store error: runtime create: {e}"))
+                })?;
+            runtime
+                .block_on(lineage_store.upsert_descriptor_limits(&id_clone, &version_str, &limits))
                 .map_err(|e| AdmissionError::Incomplete(format!("lineage store error: {}", e)))?;
         }
 

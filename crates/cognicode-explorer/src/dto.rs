@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 // Ports for InspectionTarget and ViewContext
-use crate::ports::quality_repository::{QualityIssue, QualityRepository};
+use crate::ports::quality_repository::{QualityIssue, QualityStore};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
 use cognicode_core::domain::traits::GraphQueryPort;
@@ -333,7 +333,7 @@ pub struct ViewContext<'a> {
     pub target: &'a InspectionTarget,
     pub repo: &'a dyn SymbolRepository,
     pub reader: &'a dyn SourceReader,
-    pub quality: Option<&'a dyn QualityRepository>,
+    pub quality: Option<&'a dyn QualityStore>,
     /// Optional graph query port for traversal and navigation queries.
     /// `None` when no call graph is wired.
     pub graph_query: Option<&'a dyn GraphQueryPort>,

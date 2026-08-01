@@ -1,0 +1,142 @@
+//! `CallGraphStore` — domain port for the canonical call-graph WS round-trip.
+//!
+//! Surfaces `save_call_graph_ws` and `load_call_graph_ws` behind a
+//! `Send + Sync` trait shape so consumers (snapshot provider, graph
+//! executor, postgres bridge, ingest service) can depend on the
+//! port instead of the `PostgresRepository` concrete type.
+//!
+//! # Why a dedicated port (not `RevisionStore` or `GraphWritePort`)
+//!
+//! - `RevisionStore` is the workspace-scoped revision head *counter*
+//!   (3 methods: `create_revision`, `set_head`, `head_revision`).
+//!   It manipulates the `graph_revisions` table; no `CallGraph`
+//!   aggregate is involved.
+//! - `GraphWritePort` is the generic graph layer (the
+//!   `graph_nodes` + `graph_edges` tables populated by the docs
+//!   extractor). It carries no workspace/revision concept.
+//!
+//! The canonical call-graph WS round-trip is its own aggregate
+//! domain concept — a workspace's edges + nodes at a specific
+//! revision — and warrants its own port.
+
+use std::sync::Arc;
+
+use async_trait::async_trait;
+
+use crate::domain::aggregates::CallGraph;
+use crate::domain::value_objects::{RevisionId, WorkspaceId};
+
+/// Port for the canonical call-graph WS round-trip.
+#[async_trait]
+pub trait CallGraphStore: Send + Sync {
+    /// Persist the `CallGraph` aggregate for `workspace_id` at a new
+    /// revision. Returns the newly-opened [`RevisionId`].
+    ///
+    /// The concrete PG implementation delegates to
+    /// `PostgresRepository::save_call_graph_ws`, which atomically
+    /// demotes the prior head, opens the new revision (via
+    /// `PostgresRevisionStore::create_revision`), and writes the
+    /// graph edges + nodes.
+    async fn save_call_graph_ws(
+        &self,
+        graph: &CallGraph,
+        ws: &WorkspaceId,
+    ) -> Result<RevisionId, CallGraphError>;
+
+    /// Load the `CallGraph` aggregate for `workspace_id` at
+    /// `revision_id`. Returns `Ok(None)` when the workspace has no
+    /// call graph at that revision (the aggregate is workspace+revision
+    /// keyed, not single-row global).
+    async fn load_call_graph_ws(
+        &self,
+        ws: &WorkspaceId,
+        revision: RevisionId,
+    ) -> Result<Option<CallGraph>, CallGraphError>;
+
+    /// Load the *current head* `CallGraph` aggregate for `workspace_id`.
+    /// Equivalent to `load_call_graph_ws(ws, current_head(ws))` but
+    /// resolved atomically in a single SQL call.
+    async fn load_call_graph_current(
+        &self,
+        ws: &WorkspaceId,
+    ) -> Result<Option<CallGraph>, CallGraphError>;
+}
+
+/// Error type for [`CallGraphStore`] operations.
+#[derive(Debug, thiserror::Error)]
+pub enum CallGraphError {
+    #[error("call graph store error: {0}")]
+    Store(String),
+    #[error("call graph not found for workspace {0} at revision {1:?}")]
+    NotFound(WorkspaceId, RevisionId),
+    #[error("call graph store conflict: {0}")]
+    Conflict(String),
+}
+
+#[cfg(feature = "postgres")]
+pub mod postgres_adapter {
+    use std::sync::Arc;
+
+    use super::{CallGraphError, CallGraphStore, RevisionId, WorkspaceId};
+    use crate::domain::aggregates::CallGraph;
+    use crate::infrastructure::persistence::PostgresRepository;
+    use async_trait::async_trait;
+
+    /// `PostgresCallGraphStore` — [`CallGraphStore`] adapter.
+    ///
+    /// Thin pass-through to the existing
+    /// `PostgresRepository::save_call_graph_ws` / `load_call_graph_ws`
+    /// SQL surfaces. The concrete methods already encapsulate the
+    /// atomicity guarantee (begin tx → demote head → create revision →
+    /// delete + insert edges + nodes → commit); the port adapter is a
+    /// pure forwarding layer.
+    pub struct PostgresCallGraphStore {
+        repo: Arc<PostgresRepository>,
+    }
+
+    impl PostgresCallGraphStore {
+        /// Build the adapter from an `Arc<PostgresRepository>` (which
+        /// owns the shared connection pool).
+        pub fn new(repo: Arc<PostgresRepository>) -> Self {
+            Self { repo }
+        }
+    }
+
+    #[async_trait]
+    impl CallGraphStore for PostgresCallGraphStore {
+        async fn save_call_graph_ws(
+            &self,
+            graph: &CallGraph,
+            ws: &WorkspaceId,
+        ) -> Result<RevisionId, CallGraphError> {
+            self.repo
+                .save_call_graph_ws(graph, ws)
+                .await
+                .map_err(|e| CallGraphError::Store(format!("save_call_graph_ws: {e:?}")))
+        }
+
+        async fn load_call_graph_ws(
+            &self,
+            ws: &WorkspaceId,
+            revision: RevisionId,
+        ) -> Result<Option<CallGraph>, CallGraphError> {
+            self.repo
+                .load_call_graph_ws(ws, revision)
+                .await
+                .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: {e:?}")))
+        }
+
+        async fn load_call_graph_current(
+            &self,
+            ws: &WorkspaceId,
+        ) -> Result<Option<CallGraph>, CallGraphError> {
+            self.repo
+                .load_call_graph_current_ws(ws)
+                .await
+                .map_err(|e| CallGraphError::Store(format!("load_call_graph_current_ws: {e:?}")))
+        }
+    }
+}
+
+#[cfg(feature = "postgres")]
+pub use postgres_adapter::PostgresCallGraphStore;

@@ -3,7 +3,7 @@
 //! Mirrors the pattern used by `lens_mcp_integration.rs` and
 //! `internal_mcp_integration.rs`: wire a real `McpContext` with the
 //! necessary ports (SearchService, ViewService, GraphQueryPort,
-//! QualityRepository) and dispatch the handler end-to-end through
+//! QualityStore) and dispatch the handler end-to-end through
 //! `ToolHandlerRegistry::dispatch`.
 //!
 //! Coverage:
@@ -40,7 +40,8 @@ use cognicode_explorer::mcp::handler::ToolHandlerRegistry;
 use cognicode_explorer::mcp::handler::context_builder::register_context_builder_handlers;
 use cognicode_explorer::mcp::{McpContext, TOOL_BUILD_CONTEXT};
 use cognicode_explorer::ports::quality_repository::{
-    IssueFilter, QualityGateSummary, QualityIssue, QualityRepository, RuleSummary,
+    IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
+    RuleSummary, UpsertSummary,
 };
 use cognicode_explorer::session::SessionRegistry;
 use rmcp::model::CallToolResult;
@@ -328,7 +329,7 @@ impl GraphQueryPort for MockGraph {
     }
 }
 
-/// Mock QualityRepository keyed by file.
+/// Mock QualityStore keyed by file.
 struct MockQuality {
     by_file: HashMap<String, Vec<QualityIssue>>,
 }
@@ -359,11 +360,11 @@ fn issue(id: i64, severity: &str, file: &str, msg: &str, line: u32) -> QualityIs
 }
 
 #[async_trait]
-impl QualityRepository for MockQuality {
-    fn issues_for_file(&self, file: &str) -> ExplorerResult<Vec<QualityIssue>> {
+impl QualityStore for MockQuality {
+    fn issues_for_file(&self, file: &str) -> Result<Vec<QualityIssue>, QualityError> {
         Ok(self.by_file.get(file).cloned().unwrap_or_default())
     }
-    fn issues_for_scope(&self, scope: &str) -> ExplorerResult<Vec<QualityIssue>> {
+    fn issues_for_scope(&self, scope: &str) -> Result<Vec<QualityIssue>, QualityError> {
         Ok(self
             .by_file
             .iter()
@@ -371,34 +372,37 @@ impl QualityRepository for MockQuality {
             .flat_map(|(_, v)| v.clone())
             .collect())
     }
-    fn issues_at_line(&self, file: &str, line: u32) -> ExplorerResult<Vec<QualityIssue>> {
+    fn issues_at_line(&self, file: &str, line: u32) -> Result<Vec<QualityIssue>, QualityError> {
         Ok(self
             .by_file
             .get(file)
             .map(|v| v.iter().filter(|i| i.line == line).cloned().collect())
             .unwrap_or_default())
     }
-    fn issue_by_id(&self, _id: i64) -> ExplorerResult<Option<QualityIssue>> {
+    fn issue_by_id(&self, _id: i64) -> Result<Option<QualityIssue>, QualityError> {
         Ok(None)
     }
-    fn rule_summary(&self, _rule_id: &str) -> ExplorerResult<RuleSummary> {
+    fn rule_summary(&self, _rule_id: &str) -> Result<RuleSummary, QualityError> {
         Ok(RuleSummary {
             rule_id: "mock".into(),
             description: "mock".into(),
             open_count: 0,
         })
     }
-    fn quality_gate(&self, _workspace_id: Option<&str>) -> ExplorerResult<QualityGateSummary> {
+    fn quality_gate(
+        &self,
+        _workspace_id: Option<&str>,
+    ) -> Result<QualityGateSummary, QualityError> {
         Ok(QualityGateSummary::default())
     }
-    fn open_issues_count(&self, _workspace_id: Option<&str>) -> ExplorerResult<usize> {
+    fn open_issues_count(&self, _workspace_id: Option<&str>) -> Result<usize, QualityError> {
         Ok(0)
     }
     fn issues_for_workspace(
         &self,
         _workspace_id: Option<&str>,
         filter: &IssueFilter,
-    ) -> ExplorerResult<Vec<QualityIssue>> {
+    ) -> Result<Vec<QualityIssue>, QualityError> {
         let mut out: Vec<QualityIssue> = self
             .by_file
             .values()
@@ -415,6 +419,19 @@ impl QualityRepository for MockQuality {
             out.truncate(n);
         }
         Ok(out)
+    }
+
+    fn insert_issues(&self, _issues: &[NewIssue]) -> Result<UpsertSummary, QualityError> {
+        Ok(UpsertSummary::default())
+    }
+    fn delete_issue(
+        &self,
+        _workspace_id: &str,
+        _rule_id: &str,
+        _file_path: &str,
+        _line: u32,
+    ) -> Result<bool, QualityError> {
+        Ok(false)
     }
 }
 
@@ -478,7 +495,7 @@ async fn build_context_happy_path_all_ports_wired() {
         .with_search(search as Arc<dyn SearchService>)
         .with_view(view as Arc<dyn ViewService>)
         .with_graph_query(graph_query as Arc<dyn GraphQueryPort>)
-        .with_quality(quality as Arc<dyn QualityRepository>)
+        .with_quality(quality as Arc<dyn QualityStore>)
         .build();
 
     let registry = build_registry();

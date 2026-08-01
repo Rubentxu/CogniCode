@@ -269,7 +269,13 @@ impl IngestController {
                     .build()
                     .expect("ingest current-thread runtime");
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    rt.block_on(run_scan(&repo, &cache, &ws_id_bg, &root, Some(&on_progress)))
+                    rt.block_on(run_scan(
+                        &repo,
+                        &cache,
+                        &ws_id_bg,
+                        &root,
+                        Some(&on_progress),
+                    ))
                 }))
             })
             .await;

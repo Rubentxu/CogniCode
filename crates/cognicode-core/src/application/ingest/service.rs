@@ -205,10 +205,7 @@ pub async fn run_scan(
     #[cfg(feature = "postgres")]
     {
         let manifest = crate::domain::ports::PostgresManifestStore::new(repo);
-        if let Err(e) = manifest
-            .delete_except(workspace_id, &keep_paths)
-            .await
-        {
+        if let Err(e) = manifest.delete_except(workspace_id, &keep_paths).await {
             tracing::warn!("scan_manifest cleanup failed: {e}");
         }
     }

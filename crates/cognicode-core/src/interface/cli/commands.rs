@@ -1468,4 +1468,3 @@ fn print_outline_tree(nodes: &[OutlineNode], indent: usize) {
         }
     }
 }
-

@@ -31,97 +31,18 @@ use async_trait::async_trait;
 
 use crate::dto::{InspectableObjectType, RendererKind, ViewDescriptorDto, ViewKind, ViewSpec};
 
-/// Error returned by [`ViewSpecStore`] operations.
-#[derive(Debug, Clone)]
-pub enum ViewSpecStoreError {
-    /// The operation failed due to a storage error.
-    Store(String),
-    /// A row with the same `(workspace_id, owner, title)` already exists.
-    Conflict(String),
-    /// The requested view spec was not found.
-    NotFound(String),
-}
-
-impl std::fmt::Display for ViewSpecStoreError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Store(msg) => write!(f, "view_spec store error: {msg}"),
-            Self::Conflict(msg) => write!(f, "view_spec conflict: {msg}"),
-            Self::NotFound(msg) => write!(f, "view_spec not found: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for ViewSpecStoreError {}
-
-/// Phase 2+ view spec store trait.
+/// Re-export of the [`ViewSpecStore`] port relocated to
+/// `cognicode_core::domain::ports::view_spec_store` (ADR-028 PR2).
 ///
-/// Abstracts the persistence layer for [`ViewSpec`] objects.
-/// Implementations must be `Send + Sync` and `Arc`-friendly.
-#[async_trait]
-pub trait ViewSpecStore: Send + Sync + 'static {
-    /// Persist a view spec. The `id` is client-provided; the store
-    /// must return [`ViewSpecStoreError::Conflict`] when a row with the
-    /// same `(workspace_id, owner, title)` already exists (idempotent
-    /// save is the caller's responsibility).
-    async fn save(
-        &self,
-        spec: &ViewSpec,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<(), ViewSpecStoreError>;
-
-    /// Load a single view spec by id, scoped to `(workspace_id, owner)`.
-    /// Returns `Ok(None)` when no matching row exists.
-    async fn load(
-        &self,
-        id: &str,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<Option<ViewSpec>, ViewSpecStoreError>;
-
-    /// List every view spec for `(workspace_id, owner)`, ordered by
-    /// `created_at DESC` (newest first). Returns `Ok(vec![])` for an
-    /// empty scope — NOT an error.
-    async fn list(
-        &self,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<Vec<ViewSpec>, ViewSpecStoreError>;
-
-    /// Delete a view spec by id, scoped to `(workspace_id, owner)`.
-    /// Returns `Ok(true)` if a row was deleted, `Ok(false)` if no
-    /// matching row existed.
-    async fn delete(
-        &self,
-        id: &str,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<bool, ViewSpecStoreError>;
-
-    /// List every view spec for `workspace_id` with the given `applies_to`,
-    /// across ALL owners. Used by the "all owners visible" Spotter model.
-    /// Returns `Ok(vec![])` for an empty scope — NOT an error.
-    async fn list_for_workspace(
-        &self,
-        workspace_id: &str,
-        applies_to: InspectableObjectType,
-    ) -> Result<Vec<ViewSpec>, ViewSpecStoreError>;
-
-    /// Update a view spec's provenance fields (seed_object_id, seed_view_id,
-    /// applies_when) in-place without touching other columns.
-    /// Returns `Ok(true)` if a row was updated, `Ok(false)` if no matching
-    /// row existed.
-    async fn update(
-        &self,
-        id: &str,
-        workspace_id: &str,
-        owner: &str,
-        seed_object_id: Option<&str>,
-        seed_view_id: Option<&str>,
-        applies_when: Option<&str>,
-    ) -> Result<bool, ViewSpecStoreError>;
-}
+/// The shape of the port changed: it now operates on the wire-format
+/// [`ViewSpecPayload`] struct rather than the explorer-side
+/// `cognicode_explorer::dto::ViewSpec` directly. Conversions happen
+/// at the consumer boundary via `serde` — see the helper
+/// `view_spec_from_payload` / `payload_from_view_spec` in
+/// [`crate::view_spec_store`] for the bridge fns.
+pub use crate::view_spec_store::{
+    PostgresViewSpecStore, ViewSpecPayload, ViewSpecStore, ViewSpecStoreError,
+};
 
 /// A provider of one view's metadata.
 ///
@@ -571,14 +492,21 @@ impl ViewRegistry {
                 descriptors.iter().map(|d| d.id.clone()).collect();
 
             // Fetch ALL runtime specs for this workspace + object type (all owners visible)
-            if let Ok(specs) = store.list_for_workspace(workspace_id, object_type).await {
+            let applies_to_str = crate::view_spec_payload::inspectable_to_wire(object_type);
+            if let Ok(specs) = store
+                .list_for_workspace(workspace_id, &applies_to_str)
+                .await
+            {
                 for spec in specs {
                     // Skip if already in built-in list
                     if !existing_ids.contains(&spec.id) {
+                        let view_kind_json = spec.view_kind.clone();
+                        let view_kind: ViewKind = serde_json::from_value(view_kind_json)
+                            .unwrap_or(ViewKind::Custom(spec.view_kind.to_string()));
                         descriptors.push(ViewDescriptorDto {
                             id: spec.id.clone(),
                             title: spec.title.clone(),
-                            view_kind: spec.view_kind,
+                            view_kind,
                             is_builtin: false,
                             source: Some("runtime".to_string()),
                         });
@@ -617,10 +545,13 @@ impl ViewRegistry {
         // Check runtime specs
         if let Some(store) = &self.spec_store {
             if let Ok(Some(spec)) = store.load(id, workspace_id, owner).await {
+                let view_kind_json = spec.view_kind.clone();
+                let view_kind: ViewKind = serde_json::from_value(view_kind_json)
+                    .unwrap_or(ViewKind::Custom(spec.view_kind.to_string()));
                 return Some(ViewDescriptorDto {
                     id: spec.id.clone(),
                     title: spec.title.clone(),
-                    view_kind: spec.view_kind,
+                    view_kind,
                     is_builtin: false,
                     source: Some("runtime".to_string()),
                 });

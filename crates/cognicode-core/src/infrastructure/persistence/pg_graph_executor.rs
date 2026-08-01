@@ -27,6 +27,8 @@ use std::collections::HashSet;
 #[cfg(feature = "postgres")]
 use std::str::FromStr;
 #[cfg(feature = "postgres")]
+use std::sync::Arc;
+#[cfg(feature = "postgres")]
 use std::time::Instant;
 
 #[cfg(feature = "postgres")]
@@ -44,6 +46,8 @@ use crate::domain::plan::{
     TruncationMarker,
 };
 #[cfg(feature = "postgres")]
+use crate::domain::ports::CallGraphStore;
+#[cfg(feature = "postgres")]
 use crate::domain::value_objects::{EdgeKind, RevisionId, WorkspaceId};
 #[cfg(feature = "postgres")]
 use crate::infrastructure::persistence::PostgresRepository;
@@ -54,11 +58,18 @@ use crate::infrastructure::persistence::PostgresRepository;
 
 /// PostgreSQL-backed graph executor.
 ///
-/// Holds a `PostgresRepository` and implements `GraphExecutor` by running
-/// SQL queries directly against `graph_nodes` and `graph_edges`.
+/// Holds a `PostgresRepository` (for raw sqlx pool access — see D1 in
+/// the explore-report) and an `Arc<dyn CallGraphStore>` (for the
+/// closed-world `load_call_graph_ws` revision existence check).
+/// Implements `GraphExecutor` by running SQL queries directly against
+/// `graph_nodes` and `graph_edges`.
 #[cfg(feature = "postgres")]
 pub struct PgGraphExecutor {
     repo: PostgresRepository,
+    /// Port handle for the canonical call-graph WS round-trip.
+    /// Backed by `PostgresCallGraphStore` from
+    /// `cognicode_core::domain::ports::call_graph_store`.
+    call_graph_store: Arc<dyn CallGraphStore>,
 }
 
 #[cfg(feature = "postgres")]
@@ -70,12 +81,16 @@ impl std::fmt::Debug for PgGraphExecutor {
 
 #[cfg(feature = "postgres")]
 impl PgGraphExecutor {
-    /// Construct a `PgGraphExecutor` from a `PostgresRepository`.
-    pub fn new(repo: PostgresRepository) -> Self {
-        Self { repo }
+    /// Construct a `PgGraphExecutor` from a `PostgresRepository` and
+    /// the new `CallGraphStore` port handle.
+    pub fn new(repo: PostgresRepository, call_graph_store: Arc<dyn CallGraphStore>) -> Self {
+        Self {
+            repo,
+            call_graph_store,
+        }
     }
 
-    /// Returns a reference to the underlying repository.
+    /// Returns a reference to the underlying repository (raw pool access).
     pub fn repo(&self) -> &PostgresRepository {
         &self.repo
     }
@@ -139,27 +154,25 @@ impl GraphExecutor for PgGraphExecutor {
         let limits = limits_override.unwrap_or_else(|| plan.limits().clone());
         let pool = self.repo.with_pool(|p| p.clone());
 
-        // First: verify the revision exists by calling load_call_graph_ws.
-        // This is the "closed world" check — unknown revisions fail fast.
+        // First: verify the revision exists by calling load_call_graph_ws
+        // on the `CallGraphStore` port handle. This is the "closed world"
+        // check — unknown revisions fail fast.
         //
         // Use the working `block_in_place` pattern (matches `snapshot_provider.rs`):
         // run the async load on the *current* Tokio runtime via `block_in_place +
         // Handle::current + handle.enter + tokio::spawn`. This avoids:
         //   - `Handle::block_on` panic from a Tokio worker thread (multi-thread runtime)
         //   - PG connection-pool leak from spawning a fresh `Runtime` per call
-        //     (which would interfere with the shared pool's tokio state and cause
-        //     "pool timed out" errors)
         let pin0 = pin.0.clone();
         let pin1 = pin.1;
-        let pool_for_load = self.repo.with_pool(|p| p.clone());
+        let cg_store = self.call_graph_store.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::task::block_in_place(move || {
             let handle = tokio::runtime::Handle::current();
             let _enter = handle.enter();
             let tx2 = tx.clone();
             tokio::spawn(async move {
-                let repo = PostgresRepository::from_pool(pool_for_load);
-                let result = repo.load_call_graph_ws(&pin0, pin1).await;
+                let result = cg_store.load_call_graph_ws(&pin0, pin1).await;
                 let _ = tx2.send(result);
             });
         });
@@ -171,10 +184,7 @@ impl GraphExecutor for PgGraphExecutor {
                 // Empty graph — return empty result set
                 return Ok(ResultSet::empty());
             }
-            Err(crate::domain::traits::repository::CallGraphStoreError::UnknownRevision {
-                workspace,
-                revision,
-            }) => {
+            Err(crate::domain::ports::CallGraphError::NotFound(workspace, revision)) => {
                 let pin_str = format!("{}:{}", workspace.as_str(), revision.get());
                 return Err(ExecutorError::RevisionUnknown(pin_str));
             }
@@ -1192,6 +1202,17 @@ mod tests {
     use crate::domain::plan::version::{PlanHash, PlanMetadata, PlanVersion};
     use crate::domain::value_objects::WorkspaceId;
     use sqlx::PgPool;
+
+    /// Test helper: build an `Arc<dyn CallGraphStore>` from the same
+    /// `PostgresRepository` the test will also use to build the
+    /// executor. Mirrors what the runtime composition root does —
+    /// we're inlining the trivial 2-line construction so the test
+    /// doesn't have to import the runtime.
+    fn test_call_graph_store(repo: &PostgresRepository) -> std::sync::Arc<dyn CallGraphStore> {
+        std::sync::Arc::new(crate::domain::ports::PostgresCallGraphStore::new(
+            std::sync::Arc::new(PostgresRepository::from_pool(repo.with_pool(|p| p.clone()))),
+        ))
+    }
     use std::sync::atomic::{AtomicU64, Ordering};
 
     /// Unique counter for test database names
@@ -1329,7 +1350,8 @@ mod tests {
             .expect("save should succeed");
 
         // Execute path query: A → D with max_hops=3
-        let executor = PgGraphExecutor::new(repo);
+        let call_graph_store = test_call_graph_store(&repo);
+        let executor = PgGraphExecutor::new(repo, call_graph_store);
         let plan = GraphPlan::Path {
             src: "src/A.rs:A:1".to_string(),
             dst: "src/D.rs:D:1".to_string(),
@@ -1421,7 +1443,8 @@ mod tests {
             .await
             .expect("save should succeed");
 
-        let executor = PgGraphExecutor::new(repo);
+        let call_graph_store = test_call_graph_store(&repo);
+        let executor = PgGraphExecutor::new(repo, call_graph_store);
         let plan = GraphPlan::Path {
             src: "src/A.rs:A:1".to_string(),
             dst: "src/Z.rs:Z:1".to_string(), // Doesn't exist
@@ -1519,7 +1542,8 @@ mod tests {
             .await
             .expect("save should succeed");
 
-        let executor = PgGraphExecutor::new(repo);
+        let call_graph_store = test_call_graph_store(&repo);
+        let executor = PgGraphExecutor::new(repo, call_graph_store);
         let plan = GraphPlan::Neighbors {
             src: "src/A.rs:A:1".to_string(),
             kind: NeighborKind::Outgoing,
@@ -1624,7 +1648,8 @@ mod tests {
             .await
             .expect("save should succeed");
 
-        let executor = PgGraphExecutor::new(repo);
+        let call_graph_store = test_call_graph_store(&repo);
+        let executor = PgGraphExecutor::new(repo, call_graph_store);
         let plan = GraphPlan::Subgraph {
             nodes: vec![
                 "src/A.rs:A:1".to_string(),
@@ -1703,7 +1728,8 @@ mod tests {
             .await
             .expect("save should succeed");
 
-        let executor = PgGraphExecutor::new(repo);
+        let call_graph_store = test_call_graph_store(&repo);
+        let executor = PgGraphExecutor::new(repo, call_graph_store);
         let plan = GraphPlan::Cluster {
             by: vec!["Kind".to_string()],
             aggregations: vec![],
@@ -1795,7 +1821,8 @@ mod tests {
             .await
             .expect("save should succeed");
 
-        let executor = PgGraphExecutor::new(repo);
+        let call_graph_store = test_call_graph_store(&repo);
+        let executor = PgGraphExecutor::new(repo, call_graph_store);
 
         let neighbors_a = GraphPlan::Neighbors {
             src: "src/A.rs:A:1".to_string(),
@@ -1911,7 +1938,8 @@ mod tests {
             .await
             .expect("save should succeed");
 
-        let executor = PgGraphExecutor::new(repo);
+        let call_graph_store = test_call_graph_store(&repo);
+        let executor = PgGraphExecutor::new(repo, call_graph_store);
 
         let neighbors_a = GraphPlan::Neighbors {
             src: "src/A.rs:A:1".to_string(),
@@ -2011,7 +2039,8 @@ mod tests {
             .await
             .expect("save should succeed");
 
-        let executor = PgGraphExecutor::new(repo);
+        let call_graph_store = test_call_graph_store(&repo);
+        let executor = PgGraphExecutor::new(repo, call_graph_store);
 
         // Query with max_result_rows = 10
         let plan = GraphPlan::Neighbors {
@@ -2074,7 +2103,8 @@ mod tests {
             }
         };
         let repo = PostgresRepository::from_pool(pool);
-        let executor = PgGraphExecutor::new(repo);
+        let call_graph_store = test_call_graph_store(&repo);
+        let executor = PgGraphExecutor::new(repo, call_graph_store);
 
         // Verify it implements GraphExecutor (can be called with a &dyn GraphExecutor)
         fn _assert_executor(_: &dyn GraphExecutor) {}
@@ -2106,7 +2136,8 @@ mod tests {
             }
         };
         let repo = PostgresRepository::from_pool(pool);
-        let executor = PgGraphExecutor::new(repo);
+        let call_graph_store = test_call_graph_store(&repo);
+        let executor = PgGraphExecutor::new(repo, call_graph_store);
 
         // Verify GraphExecutor trait is implemented
         fn _assert_executor(_: &dyn GraphExecutor) {}
@@ -2128,7 +2159,8 @@ mod tests {
     /// return `ExecutorError::RevisionUnknown` instead of an InternalError.
     pg_test!(unknown_revision_returns_error, |pool: PgPool| {
         let repo = PostgresRepository::from_pool(pool);
-        let executor = PgGraphExecutor::new(repo);
+        let call_graph_store = test_call_graph_store(&repo);
+        let executor = PgGraphExecutor::new(repo, call_graph_store);
 
         // Create a Path plan with a known source but non-existent revision
         let plan = GraphPlan::Path {
@@ -2224,7 +2256,8 @@ mod tests {
                 .save_call_graph_ws(&graph, &ws)
                 .await
                 .expect("save should succeed");
-            let executor = PgGraphExecutor::new(repo);
+            let call_graph_store = test_call_graph_store(&repo);
+            let executor = PgGraphExecutor::new(repo, call_graph_store);
 
             // Sanity: unfiltered plan must yield a path.
             let plan_unfiltered = GraphPlan::Path {

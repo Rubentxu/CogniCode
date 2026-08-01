@@ -19,6 +19,7 @@ pub mod ports;
 pub mod registry;
 pub mod scaffold;
 pub mod session;
+pub mod view_spec_payload;
 #[cfg(feature = "postgres")]
 pub mod view_spec_store;
 
@@ -54,8 +55,8 @@ pub use facades::{
 pub use mcp::ExplorerMcpHandler;
 pub use moldql::{MoldQLExecutor, MoldQLItem, MoldQLQuery, MoldQLResult, ParseError};
 pub use ports::{
-    EdgeWithMetadata, QualityGateSummary, QualityIssue, QualityRepository, RelationTarget,
-    RelationTargetWithMetadata, ResolvedSymbol, RuleSummary, FuzzySymbolSearch, SearchHit,
+    EdgeWithMetadata, FuzzySymbolSearch, QualityGateSummary, QualityIssue, QualityStore,
+    RelationTarget, RelationTargetWithMetadata, ResolvedSymbol, RuleSummary, SearchHit,
     SourceReader, SymbolRepository,
 };
 pub use scaffold::{Scaffold, ScaffoldRegistry, registry};

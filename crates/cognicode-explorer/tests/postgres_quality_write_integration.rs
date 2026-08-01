@@ -1,4 +1,4 @@
-//! Integration tests for `PostgresQualityRepository`'s `QualityWritePort`
+//! Integration tests for `PostgresQualityStore`'s `QualityStore`
 //! implementation (`insert_issues`, `delete_issue`).
 //!
 //! These tests require a live PostgreSQL instance with the
@@ -17,12 +17,12 @@
 
 use std::sync::Arc;
 
+use cognicode_core::domain::ports::PostgresQualityStore;
 use cognicode_core::infrastructure::persistence::PostgresRepository;
-use cognicode_explorer::adapters::PostgresQualityRepository;
 use cognicode_explorer::mcp::handler::ToolHandlerRegistry;
 use cognicode_explorer::mcp::handler::quality_mcp::register_quality_mcp_handlers;
 use cognicode_explorer::mcp::{McpContext, TOOL_INGEST_QUALITY_ISSUES};
-use cognicode_explorer::ports::quality_repository::{NewIssue, QualityWritePort, UpsertSummary};
+use cognicode_explorer::ports::quality_repository::{NewIssue, QualityStore, UpsertSummary};
 use cognicode_explorer::session::SessionRegistry;
 use rmcp::model::CallToolResult;
 use serde_json::{Value, json};
@@ -45,7 +45,7 @@ fn per_test_url(admin: &str, test_name: &str) -> String {
 
 async fn with_test_db<F, Fut>(test_name: &str, f: F) -> Option<()>
 where
-    F: FnOnce(Arc<PostgresQualityRepository>) -> Fut,
+    F: FnOnce(Arc<PostgresQualityStore>) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
     let admin = admin_url()?;
@@ -71,7 +71,7 @@ where
     let repo = Arc::new(PostgresRepository::new(&url).await.ok()?);
     repo.run_migrations().await.ok()?;
 
-    let adapter = Arc::new(PostgresQualityRepository::new(&repo));
+    let adapter = Arc::new(PostgresQualityStore::new(&repo));
     f(adapter).await;
 
     let admin_pool = sqlx::PgPool::connect(&admin).await.ok()?;
@@ -302,7 +302,7 @@ async fn ingest_quality_issues_mcp_tool_dispatches_to_port() {
     let Some(()) = with_test_db("ingest_tool_dispatch", |adapter| async move {
         let ctx = McpContext::builder()
             .with_session_registry(SessionRegistry::new())
-            .with_quality_write(adapter as Arc<dyn QualityWritePort>)
+            .with_quality_write(adapter as Arc<dyn QualityStore>)
             .build();
         let registry = build_registry();
 

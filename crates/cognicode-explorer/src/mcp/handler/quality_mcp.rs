@@ -1,6 +1,6 @@
 //! Quality-MCP tool wrappers for the Explorer MCP.
 //!
-//! Exposes two tools that surface the `QualityRepository` port:
+//! Exposes two tools that surface the `QualityStore` port:
 //!
 //! - `find_quality_issues` — workspace-wide quality findings with filters
 //!   (severity, category, file pattern, status, limit). Aggregates issues
@@ -8,10 +8,10 @@
 //!   workspace knows about, then post-filters in Rust.
 //! - `quality_gate` — single-shot snapshot of the workspace quality gate
 //!   (rating, total issues, blockers, criticals, debt_minutes, last_run).
-//!   Wraps `QualityRepository::quality_gate()`.
+//!   Wraps `QualityStore::quality_gate()`.
 //!
 //! Both tools follow the canonical envelope contract (`ok_envelope` /
-//! `err_envelope`) and require a wired `QualityRepository`. They return
+//! `err_envelope`) and require a wired `QualityStore`. They return
 //! a structured error when no quality repo is loaded, mirroring the
 //! `graph_unavailable` pattern used by `internal_mcp.rs`.
 //!
@@ -31,7 +31,7 @@ use crate::mcp::handler::ToolHandler;
 use crate::mcp::{
     McpContext, TOOL_FIND_QUALITY_ISSUES, TOOL_INGEST_QUALITY_ISSUES, TOOL_QUALITY_GATE,
 };
-use crate::ports::quality_repository::{NewIssue, QualityIssue, QualityWritePort, RuleSummary};
+use crate::ports::quality_repository::{NewIssue, QualityIssue, QualityStore, RuleSummary};
 
 // ============================================================================
 // require_quality — shared guard
@@ -40,12 +40,12 @@ use crate::ports::quality_repository::{NewIssue, QualityIssue, QualityWritePort,
 fn require_quality<'a>(
     ctx: &'a McpContext,
     tool: &str,
-) -> Result<&'a Arc<dyn crate::ports::QualityRepository>, CallToolResult> {
+) -> Result<&'a Arc<dyn crate::ports::QualityStore>, CallToolResult> {
     ctx.quality.as_ref().ok_or_else(|| {
         err_envelope(
             tool,
             "quality_unavailable",
-            &format!("{tool}: quality data unavailable — no QualityRepository wired"),
+            &format!("{tool}: quality data unavailable — no QualityStore wired"),
         )
     })
 }
@@ -270,8 +270,8 @@ impl ToolHandler for FindQualityIssuesHandler {
 /// callers fall back to other sources or accept empty results.
 /// This is intentionally best-effort: aggregation across an entire
 /// workspace requires cooperation from the port, which is a v2 concern.
-fn list_known_files(_q: &Arc<dyn crate::ports::QualityRepository>) -> Result<Vec<String>, ()> {
-    // v1: QualityRepository doesn't expose a file index. The
+fn list_known_files(_q: &Arc<dyn crate::ports::QualityStore>) -> Result<Vec<String>, ()> {
+    // v1: QualityStore doesn't expose a file index. The
     // aggregation path returns an empty file list, so the handler
     // will produce an empty issues array — callers should narrow by
     // `file_prefix` or scope. This keeps the tool callable even when
@@ -444,7 +444,7 @@ impl ToolHandler for IngestQualityIssuesHandler {
             return err_envelope(
                 TOOL_INGEST_QUALITY_ISSUES,
                 "quality_write_unavailable",
-                "QualityWritePort not wired in context",
+                "QualityStore not wired in context",
             );
         };
 
@@ -491,13 +491,13 @@ mod tests {
     use super::*;
     use crate::error::{ExplorerError, ExplorerResult};
     use crate::ports::quality_repository::{
-        IssueFilter, QualityGateSummary, QualityIssue, QualityRepository, RuleSummary,
+        IssueFilter, QualityGateSummary, QualityIssue, QualityStore, RuleSummary,
     };
     use async_trait::async_trait;
     use std::collections::HashMap;
 
     // ---------------------------------------------------------------------
-    // Mock QualityRepository
+    // Mock QualityStore
     // ---------------------------------------------------------------------
 
     struct MockQuality {
@@ -532,11 +532,17 @@ mod tests {
     }
 
     #[async_trait]
-    impl QualityRepository for MockQuality {
-        fn issues_for_file(&self, file: &str) -> ExplorerResult<Vec<QualityIssue>> {
+    impl QualityStore for MockQuality {
+        fn issues_for_file(
+            &self,
+            file: &str,
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             Ok(self.by_file.get(file).cloned().unwrap_or_default())
         }
-        fn issues_for_scope(&self, scope_prefix: &str) -> ExplorerResult<Vec<QualityIssue>> {
+        fn issues_for_scope(
+            &self,
+            scope_prefix: &str,
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             Ok(self
                 .by_file
                 .iter()
@@ -544,34 +550,47 @@ mod tests {
                 .flat_map(|(_, v)| v.clone())
                 .collect())
         }
-        fn issues_at_line(&self, file: &str, line: u32) -> ExplorerResult<Vec<QualityIssue>> {
+        fn issues_at_line(
+            &self,
+            file: &str,
+            line: u32,
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             Ok(self
                 .by_file
                 .get(file)
                 .map(|v| v.iter().filter(|i| i.line == line).cloned().collect())
                 .unwrap_or_default())
         }
-        fn issue_by_id(&self, _id: i64) -> ExplorerResult<Option<QualityIssue>> {
+        fn issue_by_id(
+            &self,
+            _id: i64,
+        ) -> Result<Option<QualityIssue>, crate::ports::QualityError> {
             Ok(None)
         }
-        fn rule_summary(&self, _rule_id: &str) -> ExplorerResult<RuleSummary> {
+        fn rule_summary(&self, _rule_id: &str) -> Result<RuleSummary, crate::ports::QualityError> {
             Ok(RuleSummary {
                 rule_id: "mock".to_string(),
                 description: "mock".to_string(),
                 open_count: 0,
             })
         }
-        fn quality_gate(&self, _workspace_id: Option<&str>) -> ExplorerResult<QualityGateSummary> {
+        fn quality_gate(
+            &self,
+            _workspace_id: Option<&str>,
+        ) -> Result<QualityGateSummary, crate::ports::QualityError> {
             Ok(self.gate.clone())
         }
-        fn open_issues_count(&self, _workspace_id: Option<&str>) -> ExplorerResult<usize> {
+        fn open_issues_count(
+            &self,
+            _workspace_id: Option<&str>,
+        ) -> Result<usize, crate::ports::QualityError> {
             Ok(self.open_total)
         }
         fn issues_for_workspace(
             &self,
             _workspace_id: Option<&str>,
             filter: &IssueFilter,
-        ) -> ExplorerResult<Vec<QualityIssue>> {
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             let mut out: Vec<QualityIssue> = self
                 .by_file
                 .values()
@@ -588,6 +607,22 @@ mod tests {
                 out.truncate(n);
             }
             Ok(out)
+        }
+
+        fn insert_issues(
+            &self,
+            _issues: &[crate::ports::NewIssue],
+        ) -> Result<crate::ports::UpsertSummary, crate::ports::QualityError> {
+            Ok(crate::ports::UpsertSummary::default())
+        }
+        fn delete_issue(
+            &self,
+            _workspace_id: &str,
+            _rule_id: &str,
+            _file_path: &str,
+            _line: u32,
+        ) -> Result<bool, crate::ports::QualityError> {
+            Ok(false)
         }
     }
 
@@ -711,7 +746,7 @@ mod tests {
     async fn require_quality_returns_err_when_no_repo() {
         let ctx = McpContext::new(None, crate::session::SessionRegistry::new());
         // Map Ok to unit before expect_err — the success type is
-        // `Arc<dyn QualityRepository>`, which does not implement Debug.
+        // `Arc<dyn QualityStore>`, which does not implement Debug.
         let result = require_quality(&ctx, TOOL_FIND_QUALITY_ISSUES).map(|_| ());
         let err = result.expect_err("should be err when no quality wired");
         let text = format!("{err:?}");

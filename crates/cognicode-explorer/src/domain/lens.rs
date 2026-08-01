@@ -7,7 +7,7 @@
 //!
 //! Lenses are NOT new ports. They consume the existing
 //! [`crate::ports::SymbolRepository`], optional
-//! [`crate::ports::QualityRepository`], and
+//! [`crate::ports::QualityStore`], and
 //! [`crate::ports::SourceReader`]. Adding a new lens is OCP-compliant:
 //! implement the trait, register an instance, no service-dispatch changes.
 
@@ -17,7 +17,7 @@ use std::sync::Arc;
 use crate::domain::object_identity::ObjectIdentity;
 use crate::dto::{DesignFinding, InspectableObjectType, LensDescriptor, LensResult};
 use crate::error::ExplorerResult;
-use crate::ports::quality_repository::QualityRepository;
+use crate::ports::quality_repository::QualityStore;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::SymbolRepository;
 use cognicode_core::domain::traits::GraphQueryPort;
@@ -34,7 +34,7 @@ pub struct LensContext {
     /// Optional. `None` means "no quality backend wired" — lenses MUST
     /// degrade gracefully in that case (lower confidence, no quality-based
     /// findings, but no errors).
-    pub quality_repo: Option<Arc<dyn QualityRepository>>,
+    pub quality_repo: Option<Arc<dyn QualityStore>>,
     pub source_reader: Arc<dyn SourceReader>,
     /// Optional graph query port for traversal and navigation queries.
     /// `None` when no call graph is wired.
@@ -47,7 +47,7 @@ impl LensContext {
     pub fn new(
         object_id: ObjectIdentity,
         symbol_repo: Arc<dyn SymbolRepository>,
-        quality_repo: Option<Arc<dyn QualityRepository>>,
+        quality_repo: Option<Arc<dyn QualityStore>>,
         source_reader: Arc<dyn SourceReader>,
         graph_query: Option<Arc<dyn GraphQueryPort>>,
     ) -> Self {

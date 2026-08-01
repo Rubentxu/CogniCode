@@ -11,7 +11,7 @@ use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::LensService;
 use crate::facades::MoldQLService;
 use crate::moldql::{MoldQLExecutor, MoldQLResult, MoldQLView};
-use crate::ports::quality_repository::QualityRepository;
+use crate::ports::quality_repository::QualityStore;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::SymbolRepository;
 
@@ -26,7 +26,7 @@ const MOLDQL_RESULT_LIMIT: usize = 100;
 /// Executes MoldQL queries against the explorer ports.
 pub struct MoldQLServiceImpl {
     repo: Arc<dyn SymbolRepository>,
-    quality: Option<Arc<dyn QualityRepository>>,
+    quality: Option<Arc<dyn QualityStore>>,
     reader: Arc<dyn SourceReader>,
     lens_executor: Arc<dyn LensService>,
     #[cfg(feature = "multimodal")]
@@ -43,7 +43,7 @@ impl MoldQLServiceImpl {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         repo: Arc<dyn SymbolRepository>,
-        quality: Option<Arc<dyn QualityRepository>>,
+        quality: Option<Arc<dyn QualityStore>>,
         reader: Arc<dyn SourceReader>,
         lens_executor: Arc<dyn LensService>,
         #[cfg(feature = "multimodal")] graph_repo: Option<Arc<dyn GraphRepository>>,
@@ -191,7 +191,7 @@ impl MoldQLServiceImpl {
 mod tests {
     use super::*;
     use crate::error::ExplorerResult;
-use crate::facades::LensService;
+    use crate::facades::LensService;
     use crate::ports::source_reader::SourceReader;
     use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
     use cognicode_core::domain::aggregates::SymbolId;

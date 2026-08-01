@@ -26,6 +26,8 @@ use sqlx::Row;
 #[cfg(feature = "postgres")]
 use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
 #[cfg(feature = "postgres")]
+use crate::domain::ports::revision_store::RevisionStore;
+#[cfg(feature = "postgres")]
 use crate::domain::services::ExtractionContext;
 #[cfg(feature = "postgres")]
 use crate::domain::traits::repository::{CallGraphStore, CallGraphStoreError};
@@ -158,69 +160,69 @@ impl PostgresRepository {
     }
 
     /// Run a closure with read access to the underlying [`PgPool`].
-///
-/// This is the **only** public way to get to the pool. The closure
-/// receives `&PgPool`, so it can issue sqlx queries or acquire
-/// connections, but cannot move the pool out. The closure is
-/// synchronous because the pool reference itself is synchronous;
-/// `async` work inside the closure is done with `.await`.
-///
-/// This API replaces the previous `pool()` getter, which leaked the
-/// pool to ~97 callers across the codebase. Migrating those callers
-/// to `with_pool` (or one of the new domain ports) is part of Phase B
-/// of the god-object split.
-///
-/// # Why not `pool()` directly?
-///
-/// Exposing `&PgPool` directly is convenient but breaks
-/// encapsulation: every caller becomes responsible for not
-/// shadowing pool configuration (e.g. wrong pool for a different
-/// workspace) and for staying consistent with future changes to
-/// the pool shape (e.g. switching to a per-workspace pool).
-///
-/// `with_pool` lets us intercept the access point if we ever need
-/// to (logging, tracing, multi-tenant routing) without breaking all
-/// callers.
-pub fn with_pool<F, T>(&self, f: F) -> T
-where
-    F: FnOnce(&PgPool) -> T,
-{
-    f(&self.pool)
-}
+    ///
+    /// This is the **only** public way to get to the pool. The closure
+    /// receives `&PgPool`, so it can issue sqlx queries or acquire
+    /// connections, but cannot move the pool out. The closure is
+    /// synchronous because the pool reference itself is synchronous;
+    /// `async` work inside the closure is done with `.await`.
+    ///
+    /// This API replaces the previous `pool()` getter, which leaked the
+    /// pool to ~97 callers across the codebase. Migrating those callers
+    /// to `with_pool` (or one of the new domain ports) is part of Phase B
+    /// of the god-object split.
+    ///
+    /// # Why not `pool()` directly?
+    ///
+    /// Exposing `&PgPool` directly is convenient but breaks
+    /// encapsulation: every caller becomes responsible for not
+    /// shadowing pool configuration (e.g. wrong pool for a different
+    /// workspace) and for staying consistent with future changes to
+    /// the pool shape (e.g. switching to a per-workspace pool).
+    ///
+    /// `with_pool` lets us intercept the access point if we ever need
+    /// to (logging, tracing, multi-tenant routing) without breaking all
+    /// callers.
+    pub fn with_pool<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&PgPool) -> T,
+    {
+        f(&self.pool)
+    }
 
-/// Async counterpart of [`Self::with_pool`] for callers that need to
-/// run queries inside the closure.
-///
-/// Use this when the closure body contains `await` points (e.g.
-/// `pool.acquire().await`, `query.fetch_one().await`). The closure
-/// must return a [`Future`] (or anything `IntoFuture`); the returned
-/// future is awaited by `with_pool_async`.
-///
-/// ```ignore
-/// repo.with_pool_async(|pool| async move {
-///     let mut conn = pool.acquire().await?;
-///     sqlx::query("SELECT 1").execute(&mut *conn).await
-/// }).await
-/// ```
-pub async fn with_pool_async<'a, F, Fut, T>(&'a self, f: F) -> T
-where
-    F: FnOnce(&'a PgPool) -> Fut,
-    Fut: std::future::IntoFuture<Output = T> + 'a,
-{
-    f(&self.pool).await
-}
+    /// Async counterpart of [`Self::with_pool`] for callers that need to
+    /// run queries inside the closure.
+    ///
+    /// Use this when the closure body contains `await` points (e.g.
+    /// `pool.acquire().await`, `query.fetch_one().await`). The closure
+    /// must return a [`Future`] (or anything `IntoFuture`); the returned
+    /// future is awaited by `with_pool_async`.
+    ///
+    /// ```ignore
+    /// repo.with_pool_async(|pool| async move {
+    ///     let mut conn = pool.acquire().await?;
+    ///     sqlx::query("SELECT 1").execute(&mut *conn).await
+    /// }).await
+    /// ```
+    pub async fn with_pool_async<'a, F, Fut, T>(&'a self, f: F) -> T
+    where
+        F: FnOnce(&'a PgPool) -> Fut,
+        Fut: std::future::IntoFuture<Output = T> + 'a,
+    {
+        f(&self.pool).await
+    }
 
-/// Expose the underlying pool **only for tests** that need direct
-/// seeding access. Production code must use [`Self::with_pool`] or
-/// one of the domain ports (`ManifestStore`, `ReportStore`,
-/// `SessionStore`, etc.) instead.
-///
-/// Visibility is `pub(super)` so only this crate's persistence module
-/// (and its tests) can reach it. Outside `cognicode-core::infrastructure
-/// ::persistence`, callers must use `with_pool` or `with_pool_async`.
-pub(super) fn pool(&self) -> &PgPool {
-    &self.pool
-}
+    /// Expose the underlying pool **only for tests** that need direct
+    /// seeding access. Production code must use [`Self::with_pool`] or
+    /// one of the domain ports (`ManifestStore`, `ReportStore`,
+    /// `SessionStore`, etc.) instead.
+    ///
+    /// Visibility is `pub(super)` so only this crate's persistence module
+    /// (and its tests) can reach it. Outside `cognicode-core::infrastructure
+    /// ::persistence`, callers must use `with_pool` or `with_pool_async`.
+    pub(super) fn pool(&self) -> &PgPool {
+        &self.pool
+    }
 
     /// Execute the embedded schema DDL.
     ///
@@ -303,13 +305,17 @@ pub(super) fn pool(&self) -> &PgPool {
         sqlx::raw_sql(SCHEMA_SQL_VIEWSPEC_PROVENANCE)
             .execute(&self.pool)
             .await
-            .map_err(|e| CallGraphStoreError::Store(format!("viewspec provenance migration: {e}")))?;
+            .map_err(|e| {
+                CallGraphStoreError::Store(format!("viewspec provenance migration: {e}"))
+            })?;
 
         // 9. Diagram provenance column — ADR-010 E24.1.
         sqlx::raw_sql(SCHEMA_SQL_DIAGRAM_PROVENANCE)
             .execute(&self.pool)
             .await
-            .map_err(|e| CallGraphStoreError::Store(format!("diagram provenance migration: {e}")))?;
+            .map_err(|e| {
+                CallGraphStoreError::Store(format!("diagram provenance migration: {e}"))
+            })?;
 
         // 10. Graph revisions table — e28-0 PR1 Foundation.
         sqlx::raw_sql(SCHEMA_SQL_REVISIONS)
@@ -445,11 +451,15 @@ pub(super) fn pool(&self) -> &PgPool {
         sqlx::query("DELETE FROM call_edges")
             .execute(&mut *tx)
             .await
-            .map_err(|e| CallGraphStoreError::Store(format!("save_call_graph delete edges: {e}")))?;
+            .map_err(|e| {
+                CallGraphStoreError::Store(format!("save_call_graph delete edges: {e}"))
+            })?;
         sqlx::query("DELETE FROM symbols")
             .execute(&mut *tx)
             .await
-            .map_err(|e| CallGraphStoreError::Store(format!("save_call_graph delete symbols: {e}")))?;
+            .map_err(|e| {
+                CallGraphStoreError::Store(format!("save_call_graph delete symbols: {e}"))
+            })?;
 
         // 2. Insert every symbol. The `kind` column stores the
         // `Display` form (e.g. "function", "method"), which is the
@@ -472,7 +482,9 @@ pub(super) fn pool(&self) -> &PgPool {
             .bind(column)
             .execute(&mut *tx)
             .await
-            .map_err(|e| CallGraphStoreError::Store(format!("save_call_graph insert symbol: {e}")))?;
+            .map_err(|e| {
+                CallGraphStoreError::Store(format!("save_call_graph insert symbol: {e}"))
+            })?;
         }
 
         // 3. Insert every edge with all 7 data columns.
@@ -528,49 +540,25 @@ pub(super) fn pool(&self) -> &PgPool {
         graph: &CallGraph,
         workspace_id: &WorkspaceId,
     ) -> Result<RevisionId, CallGraphStoreError> {
-        let mut tx = self
-            .pool
-            .begin()
+        let mut tx =
+            self.pool.begin().await.map_err(|e| {
+                CallGraphStoreError::Store(format!("save_call_graph_ws begin: {e}"))
+            })?;
+
+        // Step 1: Open a new revision via RevisionStore.
+        // Delegates to PostgresRevisionStore::create_revision, which
+        // demotes the prior head + computes the next revision id + inserts
+        // the new head row — all inside this same transaction.
+        let revision_store =
+            crate::domain::ports::revision_store::postgres_adapter::PostgresRevisionStore::new(
+                self.pool.clone(),
+            );
+        let revision_id = revision_store
+            .create_revision(&mut tx, workspace_id)
             .await
-            .map_err(|e| CallGraphStoreError::Store(format!("save_call_graph_ws begin: {e}")))?;
-
-        // Step 1: Open a new revision.
-        // First, demote the existing head (if any) to `head_of = false`.
-        // We use UPDATE ... WHERE head_of = true to be precise.
-        sqlx::query(
-            "UPDATE graph_revisions \
-             SET head_of = false \
-             WHERE workspace_id = $1 AND head_of = true",
-        )
-        .bind(workspace_id.as_str())
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| CallGraphStoreError::Store(format!("save_call_graph_ws demote head: {e}")))?;
-
-        // Next, compute MAX(revision_id) + 1 for this workspace.
-        // If no revision exists yet, COALESCE returns 0 and we add 1 → 1.
-        let next_rev: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(MAX(revision_id), 0) + 1 \
-             FROM graph_revisions \
-             WHERE workspace_id = $1",
-        )
-        .bind(workspace_id.as_str())
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| {
-            CallGraphStoreError::Store(format!("save_call_graph_ws compute next revision: {e}"))
-        })?;
-
-        // Insert the new head row.
-        sqlx::query(
-            "INSERT INTO graph_revisions (workspace_id, revision_id, head_of) \
-             VALUES ($1, $2, true)",
-        )
-        .bind(workspace_id.as_str())
-        .bind(next_rev)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| CallGraphStoreError::Store(format!("save_call_graph_ws insert revision: {e}")))?;
+            .map_err(|e| {
+                CallGraphStoreError::Store(format!("save_call_graph_ws create_revision: {e}"))
+            })?;
 
         let ws_str = workspace_id.as_str();
 
@@ -580,12 +568,16 @@ pub(super) fn pool(&self) -> &PgPool {
             .bind(ws_str)
             .execute(&mut *tx)
             .await
-            .map_err(|e| CallGraphStoreError::Store(format!("save_call_graph_ws delete edges: {e}")))?;
+            .map_err(|e| {
+                CallGraphStoreError::Store(format!("save_call_graph_ws delete edges: {e}"))
+            })?;
         sqlx::query("DELETE FROM graph_nodes WHERE workspace_id = $1")
             .bind(ws_str)
             .execute(&mut *tx)
             .await
-            .map_err(|e| CallGraphStoreError::Store(format!("save_call_graph_ws delete nodes: {e}")))?;
+            .map_err(|e| {
+                CallGraphStoreError::Store(format!("save_call_graph_ws delete nodes: {e}"))
+            })?;
 
         // Step 3: Insert every symbol into graph_nodes.
         for (_id, symbol) in graph.symbol_ids() {
@@ -639,7 +631,9 @@ pub(super) fn pool(&self) -> &PgPool {
             .bind(ws_str)
             .execute(&mut *tx)
             .await
-            .map_err(|e| CallGraphStoreError::Store(format!("save_call_graph_ws insert edge: {e}")))?;
+            .map_err(|e| {
+                CallGraphStoreError::Store(format!("save_call_graph_ws insert edge: {e}"))
+            })?;
         }
 
         // Step 5: Commit.
@@ -647,7 +641,7 @@ pub(super) fn pool(&self) -> &PgPool {
             .await
             .map_err(|e| CallGraphStoreError::Store(format!("save_call_graph_ws commit: {e}")))?;
 
-        Ok(RevisionId(next_rev as u64))
+        Ok(revision_id)
     }
 
     /// Reconstruct a [`CallGraph`] from the `symbols` + `call_edges`
@@ -687,10 +681,12 @@ pub(super) fn pool(&self) -> &PgPool {
             let edge_count_row = sqlx::query("SELECT COUNT(*) AS n FROM call_edges")
                 .fetch_one(&self.pool)
                 .await
-                .map_err(|e| CallGraphStoreError::Store(format!("load_call_graph count edges: {e}")))?;
-            let n: i64 = edge_count_row
-                .try_get("n")
-                .map_err(|e| CallGraphStoreError::Store(format!("load_call_graph count col: {e}")))?;
+                .map_err(|e| {
+                    CallGraphStoreError::Store(format!("load_call_graph count edges: {e}"))
+                })?;
+            let n: i64 = edge_count_row.try_get("n").map_err(|e| {
+                CallGraphStoreError::Store(format!("load_call_graph count col: {e}"))
+            })?;
             if n == 0 {
                 return Ok(None);
             }
@@ -1392,7 +1388,9 @@ pub(super) fn pool(&self) -> &PgPool {
             .bind(revision_id.get() as i64)
             .fetch_optional(&self.pool)
             .await
-            .map_err(|e| CallGraphStoreError::Store(format!("load_call_graph_ws check revision: {e}")))?;
+            .map_err(|e| {
+                CallGraphStoreError::Store(format!("load_call_graph_ws check revision: {e}"))
+            })?;
 
             if rev_exists.is_none() {
                 return Err(CallGraphStoreError::UnknownRevision {
@@ -1932,7 +1930,6 @@ impl GraphEdgeRow {
     }
 }
 
-
 #[cfg(all(feature = "postgres", feature = "multimodal"))]
 impl PostgresRepository {
     /// Upsert a batch of `graph_nodes` rows in a single transaction.
@@ -1949,7 +1946,10 @@ impl PostgresRepository {
     /// batches from the [`DocsExtractor`](crate::infrastructure::extraction::docs_extractor::DocsExtractor).
     /// Batching keeps the round-trip count low: 100 nodes = 1
     /// transaction, not 100.
-    pub async fn store_graph_nodes(&self, nodes: Vec<GraphNode>) -> Result<(), CallGraphStoreError> {
+    pub async fn store_graph_nodes(
+        &self,
+        nodes: Vec<GraphNode>,
+    ) -> Result<(), CallGraphStoreError> {
         if nodes.is_empty() {
             return Ok(());
         }
@@ -1993,7 +1993,9 @@ impl PostgresRepository {
             .bind(properties_json)
             .execute(&mut *tx)
             .await
-            .map_err(|e| CallGraphStoreError::Store(format!("store_graph_nodes insert `{id}`: {e}")))?;
+            .map_err(|e| {
+                CallGraphStoreError::Store(format!("store_graph_nodes insert `{id}`: {e}"))
+            })?;
         }
         tx.commit()
             .await
@@ -2021,7 +2023,10 @@ impl PostgresRepository {
     /// Callers MUST call [`PostgresRepository::store_graph_nodes`]
     /// FIRST in the pipeline (the docs-source adapter does this
     /// in [`crate::infrastructure::extraction::docs_extractor`]).
-    pub async fn store_graph_edges(&self, edges: Vec<GraphEdge>) -> Result<(), CallGraphStoreError> {
+    pub async fn store_graph_edges(
+        &self,
+        edges: Vec<GraphEdge>,
+    ) -> Result<(), CallGraphStoreError> {
         if edges.is_empty() {
             return Ok(());
         }
@@ -2191,7 +2196,10 @@ impl PostgresRepository {
 
     /// Look up a single graph node by `id`. Returns `Ok(None)` when
     /// the id is missing.
-    pub async fn get_graph_node(&self, id: NodeId) -> Result<Option<GraphNode>, CallGraphStoreError> {
+    pub async fn get_graph_node(
+        &self,
+        id: NodeId,
+    ) -> Result<Option<GraphNode>, CallGraphStoreError> {
         let row: Option<GraphNodeRow> = sqlx::query_as(
             "SELECT id, kind, label, source_path, properties, \
                     created_at::text AS created_at, \
@@ -2409,11 +2417,10 @@ impl PostgresRepository {
         evidence: &[InvestigationEvidenceRow],
         artifacts: &[InvestigationArtifactRow],
     ) -> Result<(), CallGraphStoreError> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| CallGraphStoreError::Store(format!("save_investigation begin: {e}")))?;
+        let mut tx =
+            self.pool.begin().await.map_err(|e| {
+                CallGraphStoreError::Store(format!("save_investigation begin: {e}"))
+            })?;
 
         // Upsert the investigation row.
         sqlx::query(
@@ -2637,7 +2644,9 @@ impl PostgresRepository {
         .bind(&evidence.pinned_at)
         .execute(&mut *tx)
         .await
-        .map_err(|e| CallGraphStoreError::Store(format!("add_investigation_evidence insert: {e}")))?;
+        .map_err(|e| {
+            CallGraphStoreError::Store(format!("add_investigation_evidence insert: {e}"))
+        })?;
 
         // Update the investigation's updated_at timestamp.
         sqlx::query(
@@ -2652,9 +2661,9 @@ impl PostgresRepository {
             CallGraphStoreError::Store(format!("add_investigation_evidence update ts: {e}"))
         })?;
 
-        tx.commit()
-            .await
-            .map_err(|e| CallGraphStoreError::Store(format!("add_investigation_evidence commit: {e}")))
+        tx.commit().await.map_err(|e| {
+            CallGraphStoreError::Store(format!("add_investigation_evidence commit: {e}"))
+        })
     }
 
     /// Load all artifacts for an investigation.
@@ -2711,7 +2720,9 @@ impl PostgresRepository {
         .bind(&artifact.provenance)
         .execute(&mut *tx)
         .await
-        .map_err(|e| CallGraphStoreError::Store(format!("add_investigation_artifact insert: {e}")))?;
+        .map_err(|e| {
+            CallGraphStoreError::Store(format!("add_investigation_artifact insert: {e}"))
+        })?;
 
         // Update the investigation's updated_at timestamp.
         sqlx::query(
@@ -2726,9 +2737,9 @@ impl PostgresRepository {
             CallGraphStoreError::Store(format!("add_investigation_artifact update ts: {e}"))
         })?;
 
-        tx.commit()
-            .await
-            .map_err(|e| CallGraphStoreError::Store(format!("add_investigation_artifact commit: {e}")))
+        tx.commit().await.map_err(|e| {
+            CallGraphStoreError::Store(format!("add_investigation_artifact commit: {e}"))
+        })
     }
 }
 

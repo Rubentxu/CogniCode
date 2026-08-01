@@ -6,7 +6,7 @@
 //!
 //! ## Write contract
 //!
-//! Unlike `PostgresQualityRepository` (read-only), this adapter is
+//! Unlike `PostgresQualityStore` (read-only), this adapter is
 //! the canonical *write* path for route metadata. The MCP ingestion
 //! handlers (`cognicode_ingest_openapi` and friends) are its only
 //! callers in v1; Phase 5 (e19) may add tRPC and runtime trace

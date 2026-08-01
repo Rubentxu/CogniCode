@@ -3,7 +3,7 @@
 //! Provides ranked hotspot nodes and traversal edges for the `RiskMap` view
 //! by combining call-graph fan-in data with weighted quality issue counts.
 //!
-//! The adapter is read-only and wraps an optional `QualityRepository` and
+//! The adapter is read-only and wraps an optional `QualityStore` and
 //! a `GraphQueryPort`. When quality data is not available, `rank_hotspots`
 //! returns fan-in-only hotspots (still ranked, still useful).
 
@@ -11,7 +11,7 @@ use crate::domain::lens::severity_weight;
 use crate::domain::lenses::hotspots::compute_risk;
 use crate::dto::InspectionTarget;
 use crate::error::{ExplorerError, ExplorerResult};
-use crate::ports::quality_repository::QualityRepository;
+use crate::ports::quality_repository::QualityStore;
 use cognicode_core::domain::aggregates::SymbolId;
 use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 use serde::{Deserialize, Serialize};
@@ -68,7 +68,7 @@ pub struct TraversalFilter {
 
 /// Read-only adapter combining quality data with graph topology for risk views.
 pub struct QualityGraphRepository<'a> {
-    quality: Option<&'a dyn QualityRepository>,
+    quality: Option<&'a dyn QualityStore>,
     graph: Option<&'a dyn GraphQueryPort>,
 }
 
@@ -81,7 +81,7 @@ impl<'a> QualityGraphRepository<'a> {
     /// `graph` may also be `None` — in this case the adapter computes topology-only
     /// hotspot ranking (fan-in only, weighted_issue_count = 0.0).
     pub fn new(
-        quality: Option<&'a dyn QualityRepository>,
+        quality: Option<&'a dyn QualityStore>,
         graph: Option<&'a dyn GraphQueryPort>,
     ) -> Self {
         Self { quality, graph }
@@ -226,29 +226,39 @@ impl<'a> QualityGraphRepository<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ports::quality_repository::QualityIssue;
+    use crate::ports::quality_repository::{IssueFilter, QualityIssue};
     use crate::ports::symbol_repository::ResolvedSymbol;
     use cognicode_core::domain::value_objects::Provenance;
 
-    /// Mock QualityRepository that returns configurable issues.
-    struct MockQualityRepository {
+    /// Mock QualityStore that returns configurable issues.
+    struct MockQualityStore {
         issues: Vec<QualityIssue>,
     }
 
-    impl MockQualityRepository {
+    impl MockQualityStore {
         fn new(issues: Vec<QualityIssue>) -> Self {
             Self { issues }
         }
     }
 
-    impl QualityRepository for MockQualityRepository {
-        fn issues_for_file(&self, _file: &str) -> ExplorerResult<Vec<QualityIssue>> {
+    impl QualityStore for MockQualityStore {
+        fn issues_for_file(
+            &self,
+            _file: &str,
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             Ok(self.issues.clone())
         }
-        fn issues_for_scope(&self, _scope_prefix: &str) -> ExplorerResult<Vec<QualityIssue>> {
+        fn issues_for_scope(
+            &self,
+            _scope_prefix: &str,
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             Ok(self.issues.clone())
         }
-        fn issues_at_line(&self, file: &str, line: u32) -> ExplorerResult<Vec<QualityIssue>> {
+        fn issues_at_line(
+            &self,
+            file: &str,
+            line: u32,
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             Ok(self
                 .issues
                 .iter()
@@ -256,14 +266,17 @@ mod tests {
                 .cloned()
                 .collect())
         }
-        fn issue_by_id(&self, _id: i64) -> ExplorerResult<Option<QualityIssue>> {
+        fn issue_by_id(
+            &self,
+            _id: i64,
+        ) -> Result<Option<QualityIssue>, crate::ports::QualityError> {
             Ok(None)
         }
         fn rule_summary(
             &self,
             _rule_id: &str,
-        ) -> ExplorerResult<crate::ports::quality_repository::RuleSummary> {
-            Ok(crate::ports::quality_repository::RuleSummary {
+        ) -> Result<crate::ports::RuleSummary, crate::ports::QualityError> {
+            Ok(crate::ports::RuleSummary {
                 rule_id: String::new(),
                 description: String::new(),
                 open_count: 0,
@@ -272,18 +285,37 @@ mod tests {
         fn quality_gate(
             &self,
             _workspace_id: Option<&str>,
-        ) -> ExplorerResult<crate::ports::quality_repository::QualityGateSummary> {
+        ) -> Result<crate::ports::QualityGateSummary, crate::ports::QualityError> {
             Ok(Default::default())
         }
-        fn open_issues_count(&self, _workspace_id: Option<&str>) -> ExplorerResult<usize> {
+        fn open_issues_count(
+            &self,
+            _workspace_id: Option<&str>,
+        ) -> Result<usize, crate::ports::QualityError> {
             Ok(self.issues.len())
         }
         fn issues_for_workspace(
             &self,
             _workspace_id: Option<&str>,
             _filter: &crate::ports::quality_repository::IssueFilter,
-        ) -> ExplorerResult<Vec<QualityIssue>> {
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             Ok(self.issues.clone())
+        }
+
+        fn insert_issues(
+            &self,
+            _issues: &[crate::ports::NewIssue],
+        ) -> Result<crate::ports::UpsertSummary, crate::ports::QualityError> {
+            Ok(crate::ports::UpsertSummary::default())
+        }
+        fn delete_issue(
+            &self,
+            _workspace_id: &str,
+            _rule_id: &str,
+            _file_path: &str,
+            _line: u32,
+        ) -> Result<bool, crate::ports::QualityError> {
+            Ok(false)
         }
     }
 
@@ -460,7 +492,7 @@ mod tests {
             },
         ];
 
-        let quality = MockQualityRepository::new(issues);
+        let quality = MockQualityStore::new(issues);
         let graph = MockGraphQueryPort::new()
             .with_fan_in(sym_a.id.clone(), 10) // 10 * 0.4 = 4.0
             .with_fan_in(sym_b.id.clone(), 5); // 5 * 0.4 = 2.0
@@ -489,7 +521,7 @@ mod tests {
         let sym_b = make_symbol("b", "beta", "src/lib.rs", 20);
         let sym_c = make_symbol("c", "gamma", "src/lib.rs", 30);
 
-        let quality = MockQualityRepository::new(vec![]);
+        let quality = MockQualityStore::new(vec![]);
         let graph = MockGraphQueryPort::new()
             .with_fan_in(sym_a.id.clone(), 3)
             .with_fan_in(sym_b.id.clone(), 2)
@@ -515,7 +547,7 @@ mod tests {
         let sym_b = make_symbol("b", "beta", "src/lib.rs", 20);
 
         // No quality issues
-        let quality = MockQualityRepository::new(vec![]);
+        let quality = MockQualityStore::new(vec![]);
         let graph = MockGraphQueryPort::new()
             .with_fan_in(sym_a.id.clone(), 10)
             .with_fan_in(sym_b.id.clone(), 5);
@@ -553,7 +585,7 @@ mod tests {
             status: "open".into(),
         }];
 
-        let quality = MockQualityRepository::new(issues);
+        let quality = MockQualityStore::new(issues);
         let graph = MockGraphQueryPort::new()
             .with_fan_in(sym_a.id.clone(), 10)
             .with_fan_in(sym_b.id.clone(), 5);
@@ -602,7 +634,7 @@ mod tests {
             status: "open".into(),
         }];
 
-        let quality = MockQualityRepository::new(issues);
+        let quality = MockQualityStore::new(issues);
         let graph = MockGraphQueryPort::new().with_fan_in(sym.id.clone(), 7);
         let repo = QualityGraphRepository::new(Some(&quality), Some(&graph));
         let target = InspectionTarget::Symbol(sym.clone());

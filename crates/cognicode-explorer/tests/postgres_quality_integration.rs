@@ -1,4 +1,4 @@
-//! Integration tests for `PostgresQualityRepository`.
+//! Integration tests for `PostgresQualityStore`.
 //!
 //! These tests require a live PostgreSQL instance with the
 //! `m0011_quality.sql` migration applied. They are gated on the
@@ -26,9 +26,9 @@
 
 use std::sync::Arc;
 
+use cognicode_core::domain::ports::PostgresQualityStore;
+use cognicode_core::domain::ports::{IssueFilter, QualityStore};
 use cognicode_core::infrastructure::persistence::PostgresRepository;
-use cognicode_explorer::adapters::PostgresQualityRepository;
-use cognicode_explorer::ports::quality_repository::{IssueFilter, QualityRepository};
 
 /// A minimal admin connection URL (database-less). Used to create /
 /// drop the per-test database. Computed from `TEST_DATABASE_URL` by
@@ -55,7 +55,7 @@ fn per_test_url(admin: &str, test_name: &str) -> String {
 /// `TEST_DATABASE_URL` is unset.
 async fn with_test_db<F, Fut>(test_name: &str, f: F) -> Option<()>
 where
-    F: FnOnce(Arc<PostgresQualityRepository>) -> Fut,
+    F: FnOnce(Arc<PostgresQualityStore>) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
     let admin = admin_url()?;
@@ -84,7 +84,7 @@ where
     repo.run_migrations().await.ok()?;
 
     // Construct the adapter and run the test body.
-    let adapter = Arc::new(PostgresQualityRepository::new(&repo));
+    let adapter = Arc::new(PostgresQualityStore::new(&repo));
     f(adapter).await;
 
     // Drop the database afterwards.
@@ -101,7 +101,7 @@ where
 /// Helper to seed an issue row directly into the test DB. Used by the
 /// `find_*` tests below.
 async fn seed_issue(
-    adapter: &PostgresQualityRepository,
+    adapter: &PostgresQualityStore,
     rule_id: &str,
     severity: &str,
     category: &str,

@@ -38,7 +38,10 @@ pub trait GraphWritePort: Send + Sync {
         &self,
         kind: Option<crate::domain::value_objects::node_kind::NodeKind>,
         limit: i64,
-    ) -> Result<Vec<crate::domain::aggregates::generic_graph::GraphNode>, crate::domain::traits::repository::CallGraphStoreError>;
+    ) -> Result<
+        Vec<crate::domain::aggregates::generic_graph::GraphNode>,
+        crate::domain::traits::repository::CallGraphStoreError,
+    >;
 
     /// Find graph edges. At least one of `source` or `target` MUST be
     /// supplied; passing both is allowed and the predicate is an AND.
@@ -46,14 +49,20 @@ pub trait GraphWritePort: Send + Sync {
         &self,
         source: Option<crate::domain::aggregates::generic_graph::NodeId>,
         target: Option<crate::domain::aggregates::generic_graph::NodeId>,
-    ) -> Result<Vec<crate::domain::aggregates::generic_graph::GraphEdge>, crate::domain::traits::repository::CallGraphStoreError>;
+    ) -> Result<
+        Vec<crate::domain::aggregates::generic_graph::GraphEdge>,
+        crate::domain::traits::repository::CallGraphStoreError,
+    >;
 
     /// Look up a single graph node by `id`. Returns `Ok(None)` when
     /// the id is missing.
     async fn get_node(
         &self,
         id: crate::domain::aggregates::generic_graph::NodeId,
-    ) -> Result<Option<crate::domain::aggregates::generic_graph::GraphNode>, crate::domain::traits::repository::CallGraphStoreError>;
+    ) -> Result<
+        Option<crate::domain::aggregates::generic_graph::GraphNode>,
+        crate::domain::traits::repository::CallGraphStoreError,
+    >;
 
     /// Return the `properties` JSONB map for a node, or `None` if the
     /// node does not exist. Used by the ownership attribution feature
@@ -70,8 +79,8 @@ pub trait GraphWritePort: Send + Sync {
 #[cfg(feature = "postgres")]
 mod postgres_adapter {
     use super::GraphWritePort;
-    use crate::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
     use crate::domain::aggregates::SymbolId;
+    use crate::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
     use crate::domain::traits::repository::CallGraphStoreError;
     use crate::domain::value_objects::node_kind::NodeKind;
     use crate::infrastructure::persistence::PostgresRepository;

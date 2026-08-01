@@ -412,14 +412,14 @@ async fn apply_lenses(
 }
 
 /// Pull quality issues at the object's file. Returns `None` if the
-/// object has no resolvable file or the QualityRepository isn't wired.
+/// object has no resolvable file or the QualityStore isn't wired.
 async fn pull_quality(
     ctx: &McpContext,
     object: &InspectableObjectSummary,
 ) -> (Option<QualitySliceDto>, Option<String>) {
     let quality = match ctx.quality.as_ref() {
         Some(q) => q.clone(),
-        None => return (None, Some("no QualityRepository wired".to_string())),
+        None => return (None, Some("no QualityStore wired".to_string())),
     };
 
     // Resolve the file from the object's properties. Quality is keyed
