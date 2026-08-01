@@ -19,7 +19,7 @@ use crate::dto::{InspectableObjectType, InspectionTarget, ViewContext};
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::PersistenceService;
 use crate::facades::{LensService, ViewService};
-use crate::ports::quality_repository::QualityRepository;
+use crate::ports::quality_repository::QualityStore;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
 use crate::registry::ViewRegistry;
@@ -46,7 +46,7 @@ fn identity_to_inspectable_type(identity: &ObjectIdentity) -> InspectableObjectT
 pub struct ViewServiceImpl {
     repo: Arc<dyn SymbolRepository>,
     reader: Arc<dyn SourceReader>,
-    quality: Option<Arc<dyn QualityRepository>>,
+    quality: Option<Arc<dyn QualityStore>>,
     lens_registry: LensRegistry,
     graph_query: Option<Arc<dyn GraphQueryPort>>,
     view_registry: Arc<ViewRegistry>,
@@ -61,7 +61,7 @@ impl ViewServiceImpl {
     pub fn new(
         repo: Arc<dyn SymbolRepository>,
         reader: Arc<dyn SourceReader>,
-        quality: Option<Arc<dyn QualityRepository>>,
+        quality: Option<Arc<dyn QualityStore>>,
         lens_registry: LensRegistry,
         graph_query: Option<Arc<dyn GraphQueryPort>>,
         view_registry: Arc<ViewRegistry>,

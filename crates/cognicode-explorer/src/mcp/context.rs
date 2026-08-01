@@ -21,7 +21,7 @@ use crate::domain::snapshot::SnapshotService;
 use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
 };
-use crate::ports::{QualityRepository, QualityWritePort, RouteStore};
+use crate::ports::{QualityStore, RouteStore};
 use crate::session::SessionRegistry;
 
 /// Optional Generic Graph Layer port for multimodal queries.
@@ -61,15 +61,15 @@ pub struct McpContext {
     pub graph_query: Option<Arc<dyn GraphQueryPort>>,
     /// Graph service facade — provides build_architecture and compare_architecture.
     pub graph_service: Option<Arc<dyn GraphService>>,
-    /// Quality repository — read-only port for the `issues` table.
+    /// Quality port for the `issues` table (read + write, unified surface).
     /// Used by the quality-MCP handlers (`find_quality_issues`,
-    /// `quality_gate`). Gracefully degrades to empty results when not
-    /// wired (e.g. no quality DB present).
-    pub quality: Option<Arc<dyn QualityRepository>>,
-    /// Quality write port — write-path for the `issues` table.
-    /// Used by `ingest_quality_issues` to persist agent findings.
-    /// Gracefully degrades to an error envelope when not wired.
-    pub quality_write: Option<Arc<dyn QualityWritePort>>,
+    /// `quality_gate`, `ingest_quality_issues`).
+    /// Gracefully degrades to empty results when not wired.
+    pub quality: Option<Arc<dyn QualityStore>>,
+    /// Quality write port — kept as a separate field for backward
+    /// compatibility. Same trait as `quality` (the 10-method
+    /// `QualityStore` covers both). Used by `ingest_quality_issues`.
+    pub quality_write: Option<Arc<dyn QualityStore>>,
     /// Edge emitter port — write-path for route + protocol edges.
     /// Used by `ingest_openapi` (cycle e15.5) to persist `Route` nodes
     /// and `HttpCalls` edges into `api_routes` + `api_route_edges`.
@@ -155,14 +155,17 @@ impl McpContext {
         self
     }
 
-    /// Wire a `QualityRepository` into the context.
-    pub fn with_quality(mut self, q: Arc<dyn QualityRepository>) -> Self {
+    /// Wire a `QualityStore` (read-only methods) into the context.
+    pub fn with_quality(mut self, q: Arc<dyn QualityStore>) -> Self {
         self.quality = Some(q);
         self
     }
 
-    /// Wire a `QualityWritePort` into the context.
-    pub fn with_quality_write(mut self, qw: Arc<dyn QualityWritePort>) -> Self {
+    /// Wire a `QualityStore` for the write path into the context.
+    /// Note: this is the same `QualityStore` trait — callers can pass
+    /// the same `Arc` they passed to `with_quality`. Both fields are
+    /// kept for backward compatibility.
+    pub fn with_quality_write(mut self, qw: Arc<dyn QualityStore>) -> Self {
         self.quality_write = Some(qw);
         self
     }
@@ -227,8 +230,8 @@ pub struct McpContextBuilder {
     persistence: Option<Arc<dyn PersistenceService>>,
     graph_query: Option<Arc<dyn GraphQueryPort>>,
     graph_service: Option<Arc<dyn GraphService>>,
-    quality: Option<Arc<dyn QualityRepository>>,
-    quality_write: Option<Arc<dyn QualityWritePort>>,
+    quality: Option<Arc<dyn QualityStore>>,
+    quality_write: Option<Arc<dyn QualityStore>>,
     route_store: Option<Arc<dyn RouteStore>>,
     snapshot: Option<Arc<SnapshotService>>,
     revision_tracker: Option<Arc<AtomicU64>>,
@@ -316,14 +319,16 @@ impl McpContextBuilder {
         self
     }
 
-    /// Wire a `QualityRepository` into the context.
-    pub fn with_quality(mut self, quality: Arc<dyn QualityRepository>) -> Self {
+    /// Wire a `QualityStore` (read-only methods) into the context.
+    pub fn with_quality(mut self, quality: Arc<dyn QualityStore>) -> Self {
         self.quality = Some(quality);
         self
     }
 
-    /// Wire a `QualityWritePort` into the context.
-    pub fn with_quality_write(mut self, quality_write: Arc<dyn QualityWritePort>) -> Self {
+    /// Wire a `QualityStore` for the write path into the context.
+    /// Note: this is the same `QualityStore` trait — callers can pass
+    /// the same `Arc` they passed to `with_quality`.
+    pub fn with_quality_write(mut self, quality_write: Arc<dyn QualityStore>) -> Self {
         self.quality_write = Some(quality_write);
         self
     }

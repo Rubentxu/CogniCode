@@ -21,7 +21,7 @@ use crate::domain::decision_graph_topology::DecisionGraphTopology;
 use crate::dto::{ContextualView, EvidenceBlock, ViewBlock};
 use crate::error::ExplorerResult;
 use crate::ports::graph_repository::GraphRepository as PortsGraphRepository;
-use crate::ports::quality_repository::QualityRepository;
+use crate::ports::quality_repository::QualityStore;
 use crate::ports::symbol_repository::ResolvedSymbol;
 
 /// Maximum traversal depth for rationale subgraph in pack builder.
@@ -97,7 +97,7 @@ impl DecisionSupportPackBuilder {
     pub async fn build(
         decision_id: &str,
         graph_query: Option<Arc<dyn GraphQueryPort>>,
-        quality: Option<Arc<dyn QualityRepository>>,
+        quality: Option<Arc<dyn QualityStore>>,
         graph_repo: Option<&dyn PortsGraphRepository>,
     ) -> ExplorerResult<DecisionSupportPack> {
         let Some(repo) = graph_repo else {
@@ -144,9 +144,7 @@ impl DecisionSupportPackBuilder {
         let graph_query_ref = graph_query
             .as_ref()
             .map(|g| g.as_ref() as &dyn GraphQueryPort);
-        let quality_ref = quality
-            .as_ref()
-            .map(|q| q.as_ref() as &dyn QualityRepository);
+        let quality_ref = quality.as_ref().map(|q| q.as_ref() as &dyn QualityStore);
 
         // Fan out via tokio::join! — all five futures run concurrently
         let (dg_result, ar_result, ep_result, rm_result, cis_result) = tokio::join!(
@@ -274,7 +272,7 @@ impl DecisionSupportPackBuilder {
     async fn build_risk_map(
         primary_symbol: Option<&GraphNode>,
         graph_query: Option<&dyn GraphQueryPort>,
-        quality: Option<&dyn QualityRepository>,
+        quality: Option<&dyn QualityStore>,
     ) -> ExplorerResult<ContextualView> {
         use crate::domain::views::RISK_MAP_EXECUTOR;
         use crate::dto::InspectionTarget;

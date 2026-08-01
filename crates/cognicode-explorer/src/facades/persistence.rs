@@ -21,6 +21,7 @@ use crate::dto::{
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::PersistenceService;
 use crate::registry::ViewSpecStore;
+use crate::view_spec_payload::{payload_to_view_spec, view_spec_to_payload};
 
 /// In-memory store for exploration sessions (ADR-016 Fase 3).
 type ExplorationSessionStore = Mutex<HashMap<String, ExplorationSession>>;
@@ -132,8 +133,9 @@ impl PersistenceService for PersistenceServiceImpl {
         let store = self.view_spec_store.as_ref().ok_or_else(|| {
             ExplorerError::FeatureDisabled("view_spec_store requires postgres feature".into())
         })?;
+        let payload = view_spec_to_payload(spec)?;
         store
-            .save(spec, workspace_id, owner)
+            .save(&payload, workspace_id, owner)
             .await
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("save_view_spec: {e}")))
     }
@@ -147,10 +149,14 @@ impl PersistenceService for PersistenceServiceImpl {
         let store = self.view_spec_store.as_ref().ok_or_else(|| {
             ExplorerError::FeatureDisabled("view_spec_store requires postgres feature".into())
         })?;
-        store
+        let payload = store
             .load(id, workspace_id, owner)
             .await
-            .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("load_view_spec: {e}")))
+            .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("load_view_spec: {e}")))?;
+        match payload {
+            None => Ok(None),
+            Some(p) => Ok(Some(payload_to_view_spec(p)?)),
+        }
     }
 
     async fn list_view_specs(
@@ -161,10 +167,14 @@ impl PersistenceService for PersistenceServiceImpl {
         let store = self.view_spec_store.as_ref().ok_or_else(|| {
             ExplorerError::FeatureDisabled("view_spec_store requires postgres feature".into())
         })?;
-        store
+        let payloads = store
             .list(workspace_id, owner)
             .await
-            .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("list_view_specs: {e}")))
+            .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("list_view_specs: {e}")))?;
+        payloads
+            .into_iter()
+            .map(payload_to_view_spec)
+            .collect::<ExplorerResult<Vec<_>>>()
     }
 
     async fn delete_view_spec(

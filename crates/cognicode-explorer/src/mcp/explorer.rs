@@ -230,17 +230,17 @@ pub const TOOL_HEALTH_DASHBOARD: &str = "health_dashboard";
 
 /// `find_quality_issues` — workspace-wide quality findings with filters
 /// (severity, category, file prefix, status). Wraps the
-/// `QualityRepository` port.
+/// `QualityStore` port.
 pub const TOOL_FIND_QUALITY_ISSUES: &str = "find_quality_issues";
 
 /// `quality_gate` — single-shot snapshot of the workspace quality gate
 /// (rating, total issues, blockers, criticals, debt_minutes, last_run).
-/// Wraps `QualityRepository::quality_gate()`.
+/// Wraps `QualityStore::quality_gate()`.
 pub const TOOL_QUALITY_GATE: &str = "quality_gate";
 
 /// `ingest_quality_issues` — persist a batch of quality findings into the
 /// quality stack. Implements natural-key idempotency via
-/// `ON CONFLICT DO UPDATE`. Wraps `QualityWritePort::insert_issues()`.
+/// `ON CONFLICT DO UPDATE`. Wraps `QualityStore::insert_issues()`.
 pub const TOOL_INGEST_QUALITY_ISSUES: &str = "ingest_quality_issues";
 
 /// `build_context` — consolidates object inspection + lens findings +
@@ -370,10 +370,10 @@ impl ExplorerMcpHandler {
     ///
     /// * `symbol_repo` — Symbol resolution port.
     /// * `source_reader` — Source file read port.
-    /// * `quality_repo` — Optional `QualityRepository` port backing the
+    /// * `quality_repo` — Optional `QualityStore` port backing the
     ///   quality-MCP tools (`find_quality_issues`, `quality_gate`) and the
     ///   internal lenses that surface quality findings. Wired from
-    ///   `cognicode-runtime` via `PostgresQualityRepository` (PG-canonical).
+    ///   `cognicode-runtime` via `PostgresQualityStore` (PG-canonical).
     #[allow(clippy::too_many_arguments)]
     pub fn with_graph(
         symbol_repo: Arc<dyn SymbolRepository>,
@@ -382,8 +382,8 @@ impl ExplorerMcpHandler {
         lens_registry: crate::domain::lens::LensRegistry,
         cwd: PathBuf,
         graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>>,
-        quality_repo: Option<Arc<dyn crate::ports::QualityRepository>>,
-        quality_write: Option<Arc<dyn crate::ports::QualityWritePort>>,
+        quality_repo: Option<Arc<dyn crate::ports::QualityStore>>,
+        quality_write: Option<Arc<dyn crate::ports::QualityStore>>,
         revision_tracker: Arc<std::sync::atomic::AtomicU64>,
         #[cfg(feature = "multimodal")] route_store: Option<Arc<dyn crate::ports::RouteStore>>,
         #[cfg(feature = "postgres")] pg_repo: Option<

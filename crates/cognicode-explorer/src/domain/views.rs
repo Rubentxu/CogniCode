@@ -9,7 +9,7 @@ use crate::dto::{
     ContextualView, DesignFinding, EvidenceBlock, FindingSeverity, LineRange, RelationDirection,
     TypedRelation, ViewBlock, ViewDiagnostic,
 };
-use crate::ports::quality_repository::{QualityIssue, QualityRepository, RuleSummary};
+use crate::ports::quality_repository::{QualityIssue, QualityStore, RuleSummary};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
 use cognicode_core::domain::aggregates::call_graph::CallEntry;
@@ -321,7 +321,7 @@ fn symbol_metadata_evidence(symbol: &ResolvedSymbol) -> EvidenceBlock {
 /// whether a quality backend is connected.
 pub fn build_symbol_quality_view(
     symbol: &ResolvedSymbol,
-    quality: Option<&dyn QualityRepository>,
+    quality: Option<&dyn QualityStore>,
 ) -> ContextualView {
     let evidence_id = "evidence:symbol_quality".to_string();
     let mvp = mvp_id(symbol);
@@ -377,7 +377,7 @@ pub fn build_symbol_quality_view(
             start: symbol.line,
             end: symbol.line,
         }),
-        source_tool_or_query: "QualityRepository::issues_at_line".into(),
+        source_tool_or_query: "QualityStore::issues_at_line".into(),
         confidence: Some(1.0),
         // Quality data is point-in-time; freshness mirrors the file
         // heuristic used by source_file evidence so callers can compare.
@@ -406,7 +406,7 @@ pub fn build_symbol_quality_view(
 /// repo is wired.
 pub fn build_file_quality_view(
     file_path: &str,
-    quality: Option<&dyn QualityRepository>,
+    quality: Option<&dyn QualityStore>,
 ) -> ContextualView {
     let evidence_id = "evidence:file_quality".to_string();
     let mvp = format!("file:{file_path}");
@@ -467,7 +467,7 @@ pub fn build_file_quality_view(
         title: format!("Quality findings in {}", file_path),
         file: Some(file_path.to_string()),
         line_range: None,
-        source_tool_or_query: "QualityRepository::issues_for_file + quality_gate".into(),
+        source_tool_or_query: "QualityStore::issues_for_file + quality_gate".into(),
         confidence: Some(1.0),
         freshness: Some(if issues.is_empty() {
             "stale".into()
@@ -494,7 +494,7 @@ pub fn build_file_quality_view(
 /// enforced by the adapter's SQL.
 pub fn build_scope_quality_view(
     scope_path: &str,
-    quality: Option<&dyn QualityRepository>,
+    quality: Option<&dyn QualityStore>,
 ) -> ContextualView {
     let evidence_id = "evidence:scope_quality".to_string();
     let mvp = format!("scope:{scope_path}");
@@ -568,7 +568,7 @@ pub fn build_scope_quality_view(
         title: format!("Quality findings in scope {}", scope_path),
         file: None,
         line_range: None,
-        source_tool_or_query: "QualityRepository::issues_for_scope + quality_gate".into(),
+        source_tool_or_query: "QualityStore::issues_for_scope + quality_gate".into(),
         confidence: Some(1.0),
         freshness: Some(if issues.is_empty() {
             "stale".into()
@@ -656,7 +656,7 @@ pub fn build_issue_detail(issue: &QualityIssue) -> ContextualView {
             start: issue.line,
             end: issue.line,
         }),
-        source_tool_or_query: "QualityRepository::issue_by_id".into(),
+        source_tool_or_query: "QualityStore::issue_by_id".into(),
         confidence: Some(1.0),
         freshness: Some(match issue.status.as_str() {
             "fixed" | "false_positive" => "stale".into(),
@@ -681,7 +681,7 @@ pub fn build_issue_detail(issue: &QualityIssue) -> ContextualView {
 /// summary from the repo (open count + description) and surfaces the
 /// first 20 matching issues as `APPLIES_TO` relations. Degrades to a
 /// `None` repo by treating the count as 0.
-pub fn build_rule_detail(rule_id: &str, quality: Option<&dyn QualityRepository>) -> ContextualView {
+pub fn build_rule_detail(rule_id: &str, quality: Option<&dyn QualityStore>) -> ContextualView {
     let evidence_id = "evidence:rule_detail".to_string();
     let mvp = format!("rule:{rule_id}");
 
@@ -752,7 +752,7 @@ pub fn build_rule_detail(rule_id: &str, quality: Option<&dyn QualityRepository>)
         title: format!("Quality rule {}", rule_id),
         file: None,
         line_range: None,
-        source_tool_or_query: "QualityRepository::rule_summary".into(),
+        source_tool_or_query: "QualityStore::rule_summary".into(),
         confidence: Some(1.0),
         freshness: Some(if summary.open_count == 0 {
             "stale".into()
@@ -5526,7 +5526,7 @@ mod tests {
     // Phase 3 — Quality view builders
     // -----------------------------------------------------------------------
 
-    use crate::ports::quality_repository::{IssueFilter, QualityGateSummary, QualityRepository};
+    use crate::ports::quality_repository::{IssueFilter, QualityGateSummary, QualityStore};
     use std::collections::HashMap as StdHashMap;
 
     /// Hand-rolled mock quality repository. Returns pre-baked answers
@@ -5576,24 +5576,34 @@ mod tests {
         }
     }
 
-    impl QualityRepository for MockQuality {
-        fn issues_for_file(&self, file: &str) -> ExplorerResult<Vec<QualityIssue>> {
+    impl QualityStore for MockQuality {
+        fn issues_for_file(
+            &self,
+            file: &str,
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             Ok(self.by_file.get(file).cloned().unwrap_or_default())
         }
-        fn issues_for_scope(&self, scope: &str) -> ExplorerResult<Vec<QualityIssue>> {
+        fn issues_for_scope(
+            &self,
+            scope: &str,
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             Ok(self.by_scope.get(scope).cloned().unwrap_or_default())
         }
-        fn issues_at_line(&self, file: &str, line: u32) -> ExplorerResult<Vec<QualityIssue>> {
+        fn issues_at_line(
+            &self,
+            file: &str,
+            line: u32,
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             Ok(self
                 .by_line
                 .get(&(file.to_string(), line))
                 .cloned()
                 .unwrap_or_default())
         }
-        fn issue_by_id(&self, id: i64) -> ExplorerResult<Option<QualityIssue>> {
+        fn issue_by_id(&self, id: i64) -> Result<Option<QualityIssue>, crate::ports::QualityError> {
             Ok(self.by_id.get(&id).cloned())
         }
-        fn rule_summary(&self, rule_id: &str) -> ExplorerResult<RuleSummary> {
+        fn rule_summary(&self, rule_id: &str) -> Result<RuleSummary, crate::ports::QualityError> {
             Ok(self
                 .rules
                 .get(rule_id)
@@ -5604,17 +5614,23 @@ mod tests {
                     open_count: 0,
                 }))
         }
-        fn quality_gate(&self, _workspace_id: Option<&str>) -> ExplorerResult<QualityGateSummary> {
+        fn quality_gate(
+            &self,
+            _workspace_id: Option<&str>,
+        ) -> Result<QualityGateSummary, crate::ports::QualityError> {
             Ok(self.gate.clone())
         }
-        fn open_issues_count(&self, _workspace_id: Option<&str>) -> ExplorerResult<usize> {
+        fn open_issues_count(
+            &self,
+            _workspace_id: Option<&str>,
+        ) -> Result<usize, crate::ports::QualityError> {
             Ok(self.open_count)
         }
         fn issues_for_workspace(
             &self,
             _workspace_id: Option<&str>,
             filter: &IssueFilter,
-        ) -> ExplorerResult<Vec<QualityIssue>> {
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             let mut out: Vec<QualityIssue> = self
                 .by_file
                 .values()
@@ -5633,6 +5649,22 @@ mod tests {
                 out.truncate(n);
             }
             Ok(out)
+        }
+
+        fn insert_issues(
+            &self,
+            _issues: &[crate::ports::NewIssue],
+        ) -> Result<crate::ports::UpsertSummary, crate::ports::QualityError> {
+            Ok(crate::ports::UpsertSummary::default())
+        }
+        fn delete_issue(
+            &self,
+            _workspace_id: &str,
+            _rule_id: &str,
+            _file_path: &str,
+            _line: u32,
+        ) -> Result<bool, crate::ports::QualityError> {
+            Ok(false)
         }
     }
 
@@ -5679,7 +5711,7 @@ mod tests {
         assert_eq!(view.evidence[0].kind, "quality_finding");
         assert_eq!(
             view.evidence[0].source_tool_or_query,
-            "QualityRepository::issues_at_line"
+            "QualityStore::issues_at_line"
         );
     }
 

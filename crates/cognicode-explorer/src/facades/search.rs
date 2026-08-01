@@ -11,7 +11,7 @@ use crate::domain::object_identity::ObjectIdentity;
 use crate::domain::views::scope_contains_file;
 use crate::dto::{
     ExplorationSession, InspectableObjectSummary, InspectableObjectType, Property, SpotterResult,
-    SpotterSearchResult, ViewSpecSummary,
+    SpotterSearchResult, ViewKind, ViewSpecSummary,
 };
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::{PersistenceService, SearchService};
@@ -31,7 +31,7 @@ pub struct SearchServiceImpl {
     search: Option<Arc<dyn crate::ports::FuzzySymbolSearch>>,
     view_registry: Arc<ViewRegistry>,
     view_spec_store: Option<Arc<dyn ViewSpecStore>>,
-    quality: Option<Arc<dyn crate::ports::QualityRepository>>,
+    quality: Option<Arc<dyn crate::ports::QualityStore>>,
     persistence: Option<Arc<dyn PersistenceService>>,
     investigation: Option<Arc<dyn crate::facades::InvestigationFacade>>,
     /// Graph repository for Doc/Decision/Evidence families.
@@ -50,7 +50,7 @@ impl SearchServiceImpl {
         search: Option<Arc<dyn crate::ports::FuzzySymbolSearch>>,
         view_registry: Arc<ViewRegistry>,
         view_spec_store: Option<Arc<dyn ViewSpecStore>>,
-        quality: Option<Arc<dyn crate::ports::QualityRepository>>,
+        quality: Option<Arc<dyn crate::ports::QualityStore>>,
         persistence: Option<Arc<dyn PersistenceService>>,
         investigation: Option<Arc<dyn crate::facades::InvestigationFacade>>,
         graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
@@ -183,20 +183,33 @@ impl SearchService for SearchServiceImpl {
             {
                 let query_lower = query_lower.clone();
                 if let Ok(all_specs) = store
-                    .list_for_workspace(ws_id, InspectableObjectType::Symbol)
+                    .list_for_workspace(
+                        ws_id,
+                        &crate::view_spec_payload::inspectable_to_wire(
+                            InspectableObjectType::Symbol,
+                        ),
+                    )
                     .await
                 {
                     for spec in all_specs {
                         let title_match = spec.title.to_lowercase().contains(&query_lower);
-                        let kind_match = format!("{:?}", spec.view_kind)
+                        let kind_match = spec
+                            .view_kind
+                            .to_string()
                             .to_lowercase()
                             .contains(&query_lower);
                         if title_match || kind_match {
+                            let view_kind =
+                                serde_json::from_value::<ViewKind>(spec.view_kind.clone())
+                                    .unwrap_or(ViewKind::Custom(spec.view_kind.to_string()));
+                            let applies_to =
+                                crate::view_spec_payload::wire_to_inspectable(&spec.applies_to)
+                                    .unwrap_or(InspectableObjectType::File);
                             results.push(SpotterSearchResult::ViewSpec(ViewSpecSummary {
                                 id: spec.id.clone(),
                                 title: spec.title.clone(),
-                                view_kind: spec.view_kind.clone(),
-                                applies_to: spec.applies_to,
+                                view_kind,
+                                applies_to,
                                 owner: spec.owner.clone(),
                                 updated_at: spec.updated_at.clone(),
                             }));
@@ -903,7 +916,7 @@ fn inspect_object_impl(
     repo: &Arc<dyn SymbolRepository>,
     _search: Option<&Arc<dyn crate::ports::FuzzySymbolSearch>>,
     view_registry: &Arc<ViewRegistry>,
-    quality: Option<&dyn crate::ports::QualityRepository>,
+    quality: Option<&dyn crate::ports::QualityStore>,
     _persistence: Option<&Arc<dyn PersistenceService>>,
     object_id: &str,
 ) -> ExplorerResult<InspectableObjectSummary> {
@@ -1084,7 +1097,7 @@ fn inspect_scope_impl(
 }
 
 fn inspect_quality_issue_impl(
-    quality: Option<&dyn crate::ports::QualityRepository>,
+    quality: Option<&dyn crate::ports::QualityStore>,
     view_registry: &Arc<ViewRegistry>,
     identity: &ObjectIdentity,
     id: i64,
@@ -1098,43 +1111,43 @@ fn inspect_quality_issue_impl(
                     key: "id".into(),
                     value: serde_json::Value::Number(i.id.into()),
                     value_type: "i64".into(),
-                    source: "QualityRepository".into(),
+                    source: "QualityStore".into(),
                 },
                 Property {
                     key: "rule_id".into(),
                     value: serde_json::Value::String(i.rule_id.clone()),
                     value_type: "string".into(),
-                    source: "QualityRepository".into(),
+                    source: "QualityStore".into(),
                 },
                 Property {
                     key: "severity".into(),
                     value: serde_json::Value::String(i.severity.clone()),
                     value_type: "string".into(),
-                    source: "QualityRepository".into(),
+                    source: "QualityStore".into(),
                 },
                 Property {
                     key: "category".into(),
                     value: serde_json::Value::String(i.category.clone()),
                     value_type: "string".into(),
-                    source: "QualityRepository".into(),
+                    source: "QualityStore".into(),
                 },
                 Property {
                     key: "file".into(),
                     value: serde_json::Value::String(i.file_path.clone()),
                     value_type: "string".into(),
-                    source: "QualityRepository".into(),
+                    source: "QualityStore".into(),
                 },
                 Property {
                     key: "line".into(),
                     value: serde_json::Value::Number(i.line.into()),
                     value_type: "u32".into(),
-                    source: "QualityRepository".into(),
+                    source: "QualityStore".into(),
                 },
                 Property {
                     key: "status".into(),
                     value: serde_json::Value::String(i.status.clone()),
                     value_type: "string".into(),
-                    source: "QualityRepository".into(),
+                    source: "QualityStore".into(),
                 },
             ];
             properties.sort_by(|a, b| a.key.cmp(&b.key));
@@ -1166,7 +1179,7 @@ fn inspect_quality_issue_impl(
 }
 
 fn inspect_rule_impl(
-    quality: Option<&dyn crate::ports::QualityRepository>,
+    quality: Option<&dyn crate::ports::QualityStore>,
     view_registry: &Arc<ViewRegistry>,
     identity: &ObjectIdentity,
     rule_id: &str,
@@ -1180,19 +1193,19 @@ fn inspect_rule_impl(
                     key: "description".into(),
                     value: serde_json::Value::String(s.description.clone()),
                     value_type: "string".into(),
-                    source: "QualityRepository".into(),
+                    source: "QualityStore".into(),
                 },
                 Property {
                     key: "open_count".into(),
                     value: serde_json::Value::Number(s.open_count.into()),
                     value_type: "usize".into(),
-                    source: "QualityRepository".into(),
+                    source: "QualityStore".into(),
                 },
                 Property {
                     key: "rule_id".into(),
                     value: serde_json::Value::String(s.rule_id.clone()),
                     value_type: "string".into(),
-                    source: "QualityRepository".into(),
+                    source: "QualityStore".into(),
                 },
             ];
             properties.sort_by(|a, b| a.key.cmp(&b.key));
