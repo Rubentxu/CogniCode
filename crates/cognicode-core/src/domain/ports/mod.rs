@@ -2,7 +2,7 @@
 //!
 //! Hosts the [`GraphRepository`] trait and the [`GraphError`] type
 //! that the trait's methods return. Adapters (the in-memory mock,
-//! the PostgreSQL adapter) implement the trait; domain + service
+//! the canonical adapter) implement the trait; domain + service
 //! code depend on the trait, not on the concrete adapters.
 //!
 //! The `ports` module and its contents (`GraphRepository`, `GraphError`,
@@ -10,9 +10,9 @@
 //! The `multimodal` feature gates the WRITE/exTRACTION path only.
 
 pub mod graph_error;
+pub mod graph_repository;
 #[cfg(all(feature = "postgres", feature = "multimodal"))]
 pub mod graph_write_port;
-pub mod graph_repository;
 #[cfg(feature = "postgres")]
 pub mod manifest_store;
 #[cfg(feature = "postgres")]
@@ -24,9 +24,9 @@ pub mod report_store;
 pub mod session_store;
 
 pub use graph_error::{GraphError, GraphResult};
+pub use graph_repository::{GraphRepository, SearchPage};
 #[cfg(all(feature = "postgres", feature = "multimodal"))]
 pub use graph_write_port::{GraphWritePort, PostgresGraphWritePort};
-pub use graph_repository::{GraphRepository, SearchPage};
 #[cfg(feature = "postgres")]
 pub use manifest_store::{ManifestError, ManifestStore, PostgresManifestStore};
 #[cfg(feature = "postgres")]
