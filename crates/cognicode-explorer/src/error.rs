@@ -92,3 +92,17 @@ impl From<cognicode_core::domain::ports::GraphError> for ExplorerError {
         }
     }
 }
+
+/// Map `cognicode_core::domain::ports::QualityError` onto
+/// `ExplorerError` so existing `?` chain call sites keep working
+/// after PR2 (port trait relocation).
+impl From<cognicode_core::domain::ports::QualityError> for ExplorerError {
+    fn from(err: cognicode_core::domain::ports::QualityError) -> Self {
+        use cognicode_core::domain::ports::QualityError as Core;
+        match err {
+            Core::Store(s) => ExplorerError::Anyhow(anyhow::anyhow!("quality store error: {s}")),
+            Core::Conflict(s) => ExplorerError::Conflict(s),
+            Core::NotFound(id) => ExplorerError::NotFound(format!("issue {id}")),
+        }
+    }
+}

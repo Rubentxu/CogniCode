@@ -382,7 +382,7 @@ mod tests {
     use crate::adapters::FsSourceReader;
     use crate::dto::InspectableObjectType;
     use crate::ports::quality_repository::{
-        IssueFilter, QualityGateSummary, QualityIssue, QualityRepository, RuleSummary,
+        IssueFilter, QualityGateSummary, QualityIssue, QualityStore, RuleSummary,
     };
     use crate::ports::symbol_repository::{
         GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
@@ -518,37 +518,56 @@ mod tests {
             }
         }
     }
-    impl QualityRepository for MockQuality {
-        fn issues_for_file(&self, f: &str) -> ExplorerResult<Vec<QualityIssue>> {
+    impl QualityStore for MockQuality {
+        fn issues_for_file(
+            &self,
+            f: &str,
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             Ok(self.by_file.get(f).cloned().unwrap_or_default())
         }
-        fn issues_for_scope(&self, s: &str) -> ExplorerResult<Vec<QualityIssue>> {
+        fn issues_for_scope(
+            &self,
+            s: &str,
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             Ok(self.by_scope.get(s).cloned().unwrap_or_default())
         }
-        fn issues_at_line(&self, f: &str, l: u32) -> ExplorerResult<Vec<QualityIssue>> {
+        fn issues_at_line(
+            &self,
+            f: &str,
+            l: u32,
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             Ok(self
                 .by_line
                 .get(&(f.to_string(), l))
                 .cloned()
                 .unwrap_or_default())
         }
-        fn issue_by_id(&self, _id: i64) -> ExplorerResult<Option<QualityIssue>> {
+        fn issue_by_id(
+            &self,
+            _id: i64,
+        ) -> Result<Option<QualityIssue>, crate::ports::QualityError> {
             Ok(None)
         }
-        fn rule_summary(&self, _r: &str) -> ExplorerResult<RuleSummary> {
+        fn rule_summary(&self, _r: &str) -> Result<RuleSummary, crate::ports::QualityError> {
             unimplemented!()
         }
-        fn quality_gate(&self, _workspace_id: Option<&str>) -> ExplorerResult<QualityGateSummary> {
+        fn quality_gate(
+            &self,
+            _workspace_id: Option<&str>,
+        ) -> Result<QualityGateSummary, crate::ports::QualityError> {
             unimplemented!()
         }
-        fn open_issues_count(&self, _workspace_id: Option<&str>) -> ExplorerResult<usize> {
+        fn open_issues_count(
+            &self,
+            _workspace_id: Option<&str>,
+        ) -> Result<usize, crate::ports::QualityError> {
             Ok(0)
         }
         fn issues_for_workspace(
             &self,
             _workspace_id: Option<&str>,
             filter: &IssueFilter,
-        ) -> ExplorerResult<Vec<QualityIssue>> {
+        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
             let mut out: Vec<QualityIssue> = self
                 .by_file
                 .values()
@@ -568,6 +587,21 @@ mod tests {
             }
             Ok(out)
         }
+        fn insert_issues(
+            &self,
+            _issues: &[crate::ports::NewIssue],
+        ) -> Result<crate::ports::UpsertSummary, crate::ports::QualityError> {
+            Ok(crate::ports::UpsertSummary::default())
+        }
+        fn delete_issue(
+            &self,
+            _workspace_id: &str,
+            _rule_id: &str,
+            _file_path: &str,
+            _line: u32,
+        ) -> Result<bool, crate::ports::QualityError> {
+            Ok(false)
+        }
     }
 
     fn make_issue(file: &str, line: u32, sev: &str) -> QualityIssue {
@@ -585,15 +619,15 @@ mod tests {
 
     fn ctx_for(object_id: crate::domain::ObjectIdentity, repo: Arc<MockQuality>) -> LensContext {
         let repo_sym: Arc<dyn SymbolRepository> = Arc::new(MockRepo::new());
-        let quality: Option<Arc<dyn QualityRepository>> =
+        let quality: Option<Arc<dyn QualityStore>> =
             if repo.by_line.is_empty() && repo.by_file.is_empty() && repo.by_scope.is_empty() {
                 None
             } else {
-                Some(repo as Arc<dyn QualityRepository>)
+                Some(repo as Arc<dyn QualityStore>)
             };
-        // Wrap quality as Arc<dyn QualityRepository> only if Some
-        let quality_arc: Option<Arc<dyn QualityRepository>> = quality.map(|q| {
-            let arc: Arc<dyn QualityRepository> = q;
+        // Wrap quality as Arc<dyn QualityStore> only if Some
+        let quality_arc: Option<Arc<dyn QualityStore>> = quality.map(|q| {
+            let arc: Arc<dyn QualityStore> = q;
             arc
         });
         LensContext::new(
@@ -634,7 +668,7 @@ mod tests {
         let ctx = LensContext::new(
             crate::domain::ObjectIdentity::new_symbol("src/a.rs", "alpha", 1),
             Arc::new(repo),
-            Some(Arc::new(quality) as Arc<dyn QualityRepository>),
+            Some(Arc::new(quality) as Arc<dyn QualityStore>),
             Arc::new(FsSourceReader::new("/tmp")),
             None,
         );
@@ -663,7 +697,7 @@ mod tests {
             ("src/a.rs".to_string(), 5u32),
             vec![make_issue("src/a.rs", 5, "Blocker")],
         );
-        let quality_arc: Arc<dyn QualityRepository> = Arc::new(quality);
+        let quality_arc: Arc<dyn QualityStore> = Arc::new(quality);
         let repo_arc: Arc<MockRepo> = Arc::new(repo);
         let repo_sym: Arc<dyn SymbolRepository> = repo_arc.clone() as Arc<dyn SymbolRepository>;
         let repo_graph: Arc<dyn GraphQueryPort> = repo_arc.clone() as Arc<dyn GraphQueryPort>;
@@ -707,7 +741,7 @@ mod tests {
                 make_issue("src/main.rs", 2, "Major"),
             ],
         );
-        let quality_arc: Arc<dyn QualityRepository> = Arc::new(quality);
+        let quality_arc: Arc<dyn QualityStore> = Arc::new(quality);
         let repo_arc: Arc<MockRepo> = Arc::new(repo);
         let repo_sym: Arc<dyn SymbolRepository> = repo_arc.clone() as Arc<dyn SymbolRepository>;
         let repo_graph: Arc<dyn GraphQueryPort> = repo_arc.clone() as Arc<dyn GraphQueryPort>;

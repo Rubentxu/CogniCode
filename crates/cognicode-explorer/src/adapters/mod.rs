@@ -6,12 +6,6 @@
 pub mod call_graph_repository;
 pub mod fs_source_reader;
 pub mod in_memory_graph_repository;
-/// PG-backed adapter for the `QualityRepository` port. Compiled
-/// only when the `postgres` feature is enabled; without it, the
-/// runtime must wire a different adapter (or leave the port
-/// unwired, in which case the MCP tools return `quality_unavailable`).
-#[cfg(feature = "postgres")]
-pub mod postgres_quality;
 
 /// PG-backed adapter for the `RouteStore` port (cycle e15.5).
 /// Compiled only when the `postgres` feature is enabled; backs the
@@ -35,7 +29,12 @@ pub use in_memory_graph_repository::InMemoryGraphRepository;
 #[cfg(feature = "postgres")]
 pub use pg_graph_repository::PgGraphRepository;
 #[cfg(feature = "postgres")]
-pub use postgres_quality::PostgresQualityRepository;
-#[cfg(feature = "postgres")]
 pub use postgres_route_store::PostgresRouteStore;
 pub use quality_graph_repository::{HotspotNode, QualityGraphRepository, RelEdge, TraversalFilter};
+
+/// Re-export the Postgres-backed `QualityStore` adapter from
+/// `cognicode-core` so the runtime and existing explorer consumers can
+/// continue to use `cognicode_explorer::adapters::PostgresQualityStore`
+/// (PR2 port relocation).
+#[cfg(feature = "postgres")]
+pub use cognicode_core::domain::ports::PostgresQualityStore;
