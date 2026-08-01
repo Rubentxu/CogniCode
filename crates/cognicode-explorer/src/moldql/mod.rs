@@ -24,7 +24,7 @@
 //!
 //! The executor never reaches outside the existing service ports — it
 //! only consumes [`crate::ports::SymbolRepository`], the optional
-//! [`crate::ports::QualityRepository`], and the registered lenses.
+//! [`crate::ports::QualityStore`], and the registered lenses.
 //!
 //! ## Public surface
 //!
