@@ -23,6 +23,17 @@ pub struct Runtime {
     pub pg_repo: Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
     /// Shared revision tracker — bumped by `index_workspace` after each successful ingest.
     pub revision_tracker: Arc<AtomicU64>,
+    /// Optional `QualityStore` port (PR2 relocation: from
+    /// `cognicode_explorer::ports::quality_repository::QualityRepository`
+    /// to the unified `cognicode_core::domain::ports::QualityStore`).
+    /// `None` when the PG adapter couldn't be constructed.
+    #[cfg(feature = "postgres")]
+    pub quality_store: Option<Arc<dyn cognicode_explorer::ports::QualityStore>>,
+    /// Optional `ViewSpecStore` port (PR2 relocation from
+    /// `cognicode_explorer::registry::ViewSpecStore` to
+    /// `cognicode_core::domain::ports::ViewSpecStore`).
+    #[cfg(feature = "postgres")]
+    pub view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>>,
 }
 
 impl Runtime {
@@ -90,6 +101,22 @@ impl Runtime {
                 ));
             };
 
+        // Construct the relocated port adapters BEFORE we move
+        // pg_repo into the struct (PR2 WU2.9 — wiring happens up front).
+        #[cfg(feature = "postgres")]
+        let quality_store = quality_repo_arc(pg_repo.as_ref());
+        #[cfg(not(feature = "postgres"))]
+        let quality_store: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> = None;
+        #[cfg(feature = "postgres")]
+        let view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>> =
+            pg_repo.as_ref().map(|pg| {
+                Arc::new(cognicode_core::domain::ports::PostgresViewSpecStore::new(
+                    pg.clone(),
+                )) as Arc<dyn cognicode_core::domain::ports::ViewSpecStore>
+            });
+        #[cfg(not(feature = "postgres"))]
+        let view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>> = None;
+
         Ok(Self {
             symbol_repo,
             source_reader,
@@ -99,6 +126,14 @@ impl Runtime {
             #[cfg(feature = "postgres")]
             pg_repo,
             revision_tracker: Arc::new(AtomicU64::new(1)),
+            #[cfg(feature = "postgres")]
+            quality_store,
+            #[cfg(not(feature = "postgres"))]
+            quality_store: None,
+            #[cfg(feature = "postgres")]
+            view_spec_store,
+            #[cfg(not(feature = "postgres"))]
+            view_spec_store: None,
         })
     }
 
@@ -355,7 +390,7 @@ impl Runtime {
     }
 }
 
-/// Build a `PostgresQualityRepository` from the runtime's PG repo.
+/// Build a `PostgresQualityStore` from the runtime's PG repo.
 ///
 /// Returns `None` when the `postgres` feature is off or when no PG
 /// connection is available — in both cases the MCP tools degrade
@@ -363,38 +398,41 @@ impl Runtime {
 /// 3-place `None` pass-through was the source of the v0.22.0
 /// "always quality_unavailable" symptom; this helper centralizes the
 /// adapter construction so adding a new consumer is a one-liner.
+///
+/// PR2 relocation: the adapter now lives in `cognicode-core`'s
+/// `domain::ports::quality_store` module (10-method unified surface).
 #[cfg(feature = "postgres")]
 fn quality_repo_arc(
     pg_repo: Option<&Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
-) -> Option<Arc<dyn cognicode_explorer::ports::QualityRepository>> {
+) -> Option<Arc<dyn cognicode_explorer::ports::QualityStore>> {
     let pg = pg_repo?;
     Some(Arc::new(
-        cognicode_explorer::adapters::PostgresQualityRepository::new(pg),
+        cognicode_core::domain::ports::PostgresQualityStore::new(pg),
     ))
 }
 
 #[cfg(not(feature = "postgres"))]
-fn quality_repo_arc() -> Option<Arc<dyn cognicode_explorer::ports::QualityRepository>> {
+fn quality_repo_arc() -> Option<Arc<dyn cognicode_explorer::ports::QualityStore>> {
     None
 }
 
-/// Build a `PostgresQualityRepository` wired as a `QualityWritePort`.
+/// Build a `PostgresQualityStore` wired as a write-capable `QualityStore`.
 ///
-/// Mirrors `quality_repo_arc` but returns the write port instead of the
-/// read port. Both are backed by the same `PostgresQualityRepository`
-/// value — the read/write split is purely at the trait level (ISP).
+/// Mirrors `quality_repo_arc` — both are backed by the same
+/// `PostgresQualityStore` value; the read/write split is preserved at
+/// the call-site level (callers choose which methods to invoke).
 #[cfg(feature = "postgres")]
 fn quality_write_repo_arc(
     pg_repo: Option<&Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
-) -> Option<Arc<dyn cognicode_explorer::ports::QualityWritePort>> {
+) -> Option<Arc<dyn cognicode_explorer::ports::QualityStore>> {
     let pg = pg_repo?;
     Some(Arc::new(
-        cognicode_explorer::adapters::PostgresQualityRepository::new(pg),
+        cognicode_core::domain::ports::PostgresQualityStore::new(pg),
     ))
 }
 
 #[cfg(not(feature = "postgres"))]
-fn quality_write_repo_arc() -> Option<Arc<dyn cognicode_explorer::ports::QualityWritePort>> {
+fn quality_write_repo_arc() -> Option<Arc<dyn cognicode_explorer::ports::QualityStore>> {
     None
 }
 
