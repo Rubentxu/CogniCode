@@ -179,14 +179,19 @@ pub mod postgres_adapter {
             // Stage 2 — manifest upserts (sequential, own connection).
             for upsert in manifest.upserts {
                 self.manifest_store
-                    .upsert_row(&upsert)
+                    .upsert_manifest_entry(&upsert)
                     .await
                     .map_err(CommitError::from)?;
             }
 
             // Stage 3 — latest report (sequential, own connection).
+            // ADR-028 §3: `save_report(ws, report) -> Result<(), ReportError>`.
+            // For the Phase 0 placeholder we keep the read path (`load_latest`)
+            // working — `save_report` is wired in the adapter but not yet
+            // exercised by the Stage-3 caller (deferred to the next change
+            // when the ingest-state machine grows a publish step).
             self.report_store
-                .load_latest(ws.as_str())
+                .latest_report(ws.as_str())
                 .await
                 .map_err(CommitError::from)?;
 

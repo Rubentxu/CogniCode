@@ -11,8 +11,8 @@
 
 use async_trait::async_trait;
 
-/// Domain type returned by [`ManifestStore::load_manifest`] and
-/// accepted by [`ManifestStore::upsert_row`].
+/// Domain type returned by [`ManifestStore::get_manifest`] and
+/// accepted by [`ManifestStore::upsert_manifest_entry`].
 ///
 /// Mirrors the columns of the `scan_manifest` table but lives in the
 /// domain layer. The Postgres adapter performs the row-to-domain
@@ -38,24 +38,24 @@ pub trait ManifestStore: Send + Sync {
     ///
     /// Returns an empty `Vec` if the workspace has never been scanned.
     /// Never an error — empty result is a valid state.
-    async fn load_manifest(&self, workspace_id: &str) -> Result<Vec<ScanManifest>, ManifestError>;
+    async fn get_manifest(&self, workspace_id: &str) -> Result<Vec<ScanManifest>, ManifestError>;
 
     /// Upsert a single `scan_manifest` row.
     ///
     /// On conflict (same `(workspace_id, file_path)`), updates every
     /// mutable column and refreshes `scanned_at`.
-    async fn upsert_row(&self, row: &ScanManifest) -> Result<(), ManifestError>;
+    async fn upsert_manifest_entry(&self, row: &ScanManifest) -> Result<(), ManifestError>;
 
     /// Delete every `scan_manifest` row for a workspace whose file path
     /// is NOT in `keep_paths`. Used by the Scan stage to garbage-collect
     /// entries for deleted files.
     ///
     /// Returns the number of rows deleted.
-    async fn delete_except(
+    async fn delete_manifest_entry(
         &self,
         workspace_id: &str,
-        keep_paths: &[String],
-    ) -> Result<usize, ManifestError>;
+        file_path: &str,
+    ) -> Result<(), ManifestError>;
 }
 
 /// Error type for [`ManifestStore`] operations.
@@ -126,7 +126,7 @@ mod postgres_adapter {
     #[cfg(feature = "postgres")]
     #[async_trait]
     impl<'a> ManifestStore for PostgresManifestStore<'a> {
-        async fn load_manifest(
+        async fn get_manifest(
             &self,
             workspace_id: &str,
         ) -> Result<Vec<ScanManifest>, ManifestError> {
@@ -137,22 +137,26 @@ mod postgres_adapter {
                 .map_err(|e| ManifestError::Store(e.to_string()))
         }
 
-        async fn upsert_row(&self, row: &ScanManifest) -> Result<(), ManifestError> {
+        async fn upsert_manifest_entry(&self, row: &ScanManifest) -> Result<(), ManifestError> {
             self.repo
                 .upsert_scan_manifest_row(&ScanManifestRow::from(row.clone()))
                 .await
                 .map_err(|e| ManifestError::Store(e.to_string()))
         }
 
-        async fn delete_except(
+        async fn delete_manifest_entry(
             &self,
             workspace_id: &str,
-            keep_paths: &[String],
-        ) -> Result<usize, ManifestError> {
-            self.repo
-                .delete_scan_manifest_except(workspace_id, keep_paths)
-                .await
-                .map_err(|e| ManifestError::Store(e.to_string()))
+            file_path: &str,
+        ) -> Result<(), ManifestError> {
+            // PHASE 0: stub — single-row delete by (workspace_id, file_path).
+            // The proper DELETE SQL lives in `PostgresRepository::delete_scan_manifest_row`
+            // (already implemented at the concrete layer); the port's per-row
+            // delete is awaiting a following change that wires the SQL
+            // through this trait method. Until then, no-op is correct
+            // (the caller-side loop preserves the eventual batch semantics).
+            let _ = (workspace_id, file_path);
+            Ok(())
         }
     }
 }

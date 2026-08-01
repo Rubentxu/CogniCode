@@ -8,6 +8,20 @@
 //!
 //! This port exists so `save_call_graph_ws` can open revisions without
 //! depending on the `PostgresRepository` concrete type directly.
+//!
+//! # Method shape
+//!
+//! The 3 methods split along the read/write boundary:
+//!
+//! - [`head_revision`](RevisionStore::head_revision) — **read-only**,
+//!   takes only the workspace. The PG adapter issues a single
+//!   `SELECT ... FROM graph_revisions` from the shared pool.
+//! - [`create_revision`](RevisionStore::create_revision) — **write**,
+//!   takes the caller's `&mut sqlx::PgConnection` so the open is
+//!   part of the caller's transaction (atomicity preserved with the
+//!   surrounding ingest-state work — see [`crate::domain::ports::IngestCommit`]).
+//! - [`set_head`](RevisionStore::set_head) — **write**, also takes
+//!   `&mut sqlx::PgConnection` for the same atomicity reason.
 
 use async_trait::async_trait;
 
@@ -16,8 +30,19 @@ use crate::domain::value_objects::{RevisionId, WorkspaceId};
 /// Port for revision lifecycle management.
 #[async_trait]
 pub trait RevisionStore: Send + Sync {
+    /// Return the current head revision id for a workspace, if any.
+    ///
+    /// **Read-only**: takes only the workspace, returns
+    /// `Ok(None)` for an unknown workspace.
+    async fn head_revision(&self, ws: &WorkspaceId) -> Result<Option<RevisionId>, RevisionError>;
+
     /// Open a new revision for `workspace_id`, atomically demoting the
     /// prior head (if any) and inserting the new row with `head_of = true`.
+    ///
+    /// The `&mut PgConnection` is required so the open is part of the
+    /// caller's transaction (the typical caller is
+    /// `IngestCommit::commit_revision` which fuses the open with the
+    /// surrounding graph delta work).
     ///
     /// Returns the newly-opened [`RevisionId`].
     async fn create_revision(
@@ -34,13 +59,6 @@ pub trait RevisionStore: Send + Sync {
         ws: &WorkspaceId,
         rev: RevisionId,
     ) -> Result<(), RevisionError>;
-
-    /// Return the current head revision id for a workspace, if any.
-    async fn head_revision(
-        &self,
-        conn: &mut sqlx::PgConnection,
-        ws: &WorkspaceId,
-    ) -> Result<Option<RevisionId>, RevisionError>;
 }
 
 /// Error type for [`RevisionStore`] operations.
@@ -77,6 +95,26 @@ pub mod postgres_adapter {
     #[cfg(feature = "postgres")]
     #[async_trait]
     impl RevisionStore for PostgresRevisionStore {
+        async fn head_revision(
+            &self,
+            ws: &WorkspaceId,
+        ) -> Result<Option<RevisionId>, RevisionError> {
+            // Read-only — issues a single SELECT against the shared pool.
+            // The query is indexable by (workspace_id, head_of = true)
+            // once the migration adds the partial unique index.
+            let row: Option<(i64,)> = sqlx::query_as(
+                "SELECT revision_id \
+                 FROM graph_revisions \
+                 WHERE workspace_id = $1 AND head_of = true",
+            )
+            .bind(ws.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| RevisionError::Store(format!("head_revision query: {e}")))?;
+
+            Ok(row.map(|(r,)| RevisionId(r as u64)))
+        }
+
         async fn create_revision(
             &self,
             conn: &mut sqlx::PgConnection,
@@ -151,24 +189,6 @@ pub mod postgres_adapter {
             .map_err(|e| RevisionError::Store(format!("set_head promote: {e}")))?;
 
             Ok(())
-        }
-
-        async fn head_revision(
-            &self,
-            conn: &mut sqlx::PgConnection,
-            ws: &WorkspaceId,
-        ) -> Result<Option<RevisionId>, RevisionError> {
-            let row: Option<(i64,)> = sqlx::query_as(
-                "SELECT revision_id \
-                 FROM graph_revisions \
-                 WHERE workspace_id = $1 AND head_of = true",
-            )
-            .bind(ws.as_str())
-            .fetch_optional(&mut *conn)
-            .await
-            .map_err(|e| RevisionError::Store(format!("head_revision query: {e}")))?;
-
-            Ok(row.map(|(r,)| RevisionId(r as u64)))
         }
     }
 }

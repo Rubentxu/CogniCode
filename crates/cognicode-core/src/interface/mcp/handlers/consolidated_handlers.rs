@@ -286,7 +286,7 @@ pub async fn handle_compare_graph(
 
     // Load latest report from PG
     let report = match PostgresReportStore::new(pg_repo.clone())
-        .load_latest(&workspace_id)
+        .latest_report(&workspace_id)
         .await
         .map_err(|e| HandlerError::Internal(format!("Failed to load report: {e}")))?
     {
@@ -826,12 +826,12 @@ pub async fn handle_graph_diff(
     let baseline_reports = {
         let store = PostgresReportStore::new(repo.clone());
         store
-            .load_range(&workspace_id, 365)
+            .reports_for_workspace(&workspace_id)
             .await
             .map_err(|e| HandlerError::Internal(format!("Failed to load reports: {e}")))?
     };
     #[cfg(not(feature = "postgres"))]
-    let baseline_reports: Vec<crate::infrastructure::persistence::GraphReportRow> = Vec::new();
+    let baseline_reports: Vec<crate::domain::ports::ReportSummary> = Vec::new();
 
     let baseline_report = baseline_reports
         .iter()
@@ -842,7 +842,7 @@ pub async fn handle_graph_diff(
         #[cfg(feature = "postgres")]
         {
             let store = PostgresReportStore::new(repo.clone());
-            store.load_latest(&workspace_id).await.map_err(|e| {
+            store.latest_report(&workspace_id).await.map_err(|e| {
                 HandlerError::Internal(format!("Failed to load current report: {e}"))
             })?
         }
@@ -1037,7 +1037,7 @@ pub async fn handle_graph_timeline(
     let workspace_id = crate::application::ingest::workspace_id_for_path(&ctx.working_dir);
 
     let reports = PostgresReportStore::new(repo.clone())
-        .load_range(&workspace_id, input.days)
+        .reports_for_workspace(&workspace_id)
         .await
         .map_err(|e| HandlerError::Internal(format!("Failed to load reports: {e}")))?;
 

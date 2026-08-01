@@ -35,6 +35,8 @@ use cognicode_core::domain::ports::CallGraphStore;
 #[cfg(feature = "postgres")]
 use cognicode_core::domain::ports::PostgresCallGraphStore;
 #[cfg(feature = "postgres")]
+use cognicode_core::domain::ports::{PostgresRevisionStore, RevisionStore};
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
 #[cfg(feature = "postgres")]
 use cognicode_core::infrastructure::persistence::PostgresRepository;
@@ -89,18 +91,20 @@ pub async fn open_graph_with_repo(
     let workspace = WorkspaceId::try_new(workspace_id.clone())
         .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: workspace id: {e}"))?;
 
-    let head_rev: Option<i64> = repo
-        .with_pool_async(|pool| {
-            let ws = workspace.as_str().to_owned();
-            async move {
-                sqlx::query_scalar(
-                    "SELECT MAX(revision_id) FROM graph_revisions WHERE workspace_id = $1 AND head_of = true",
-                )
-                .bind(&ws)
-                .fetch_one(pool)
-                .await
-            }
-        })
+    // Pinned-revision is now routed through `RevisionStore::head_revision`
+    // (e29-0-define-new-ports PR1 trait). The pg-side adapter
+    // `PostgresRevisionStore::head_revision` issues the same `SELECT
+    // MAX(revision_id) FROM graph_revisions ... HEAD_OF = true` query
+    // that the inline `with_pool_async` SQL below used to issue; we
+    // keep the connection pool inside the adapter instead of
+    // exposing it to this bridge.
+    let repo_arc: Arc<PostgresRepository> = Arc::new(repo);
+    let rev_store: Arc<dyn RevisionStore> =
+        Arc::new(cognicode_core::domain::ports::PostgresRevisionStore::new(
+            repo_arc.with_pool(|p| p.clone()),
+        ));
+    let head_rev: Option<RevisionId> = rev_store
+        .head_revision(&workspace)
         .await
         .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: head revision: {e}"))?;
 
@@ -110,11 +114,10 @@ pub async fn open_graph_with_repo(
     // still hold the `Arc<PostgresRepository>` for migration + view-spec
     // CRUD paths that are not yet ported (e29-1-ladybug-adapter will
     // obsolete the raw `PostgresRepository` usage entirely).
-    let repo_arc: Arc<PostgresRepository> = Arc::new(repo);
     let cg_store: Arc<dyn CallGraphStore> = Arc::new(PostgresCallGraphStore::new(repo_arc.clone()));
     let graph = if let Some(rev) = head_rev {
         cg_store
-            .load_call_graph_ws(&workspace, RevisionId(rev as u64))
+            .load_call_graph_ws(&workspace, rev)
             .await
             .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: load: {e}"))?
     } else {

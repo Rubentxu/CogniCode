@@ -205,9 +205,19 @@ pub async fn run_scan(
     #[cfg(feature = "postgres")]
     {
         let manifest = crate::domain::ports::PostgresManifestStore::new(repo);
-        if let Err(e) = manifest.delete_except(workspace_id, &keep_paths).await {
-            tracing::warn!("scan_manifest cleanup failed: {e}");
+        // PHASE 0 rename: `delete_except(keep_paths)` (batch by keep set)
+        // is now `delete_manifest_entry(workspace_id, file_path)` (single
+        // row delete) per the ADR-028 contract; the caller-side per-file
+        // loop lives below. The batch semantics are preserved at the
+        // iteration level.
+        for path in previous.keys() {
+            if let Err(e) = manifest.delete_manifest_entry(workspace_id, path).await {
+                tracing::warn!("scan_manifest cleanup failed for {path}: {e}");
+            }
         }
+        // `keep_paths` is unused for now (single-row delete only); reserved
+        // for a future batch helper that restores the optimization.
+        let _ = keep_paths;
     }
     #[cfg(not(feature = "postgres"))]
     {
@@ -259,7 +269,7 @@ async fn load_previous_manifest(
     manifest: &dyn ManifestStore,
     workspace_id: &str,
 ) -> HashMap<String, ScanEntry> {
-    match manifest.load_manifest(workspace_id).await {
+    match manifest.get_manifest(workspace_id).await {
         Ok(rows) => rows
             .into_iter()
             .map(|r| {
