@@ -76,6 +76,7 @@ pub enum ReportError {
 mod postgres_adapter {
     use super::{ReportError, ReportStore, ReportSummary};
     use crate::infrastructure::persistence::PostgresRepository;
+    use crate::infrastructure::persistence::postgres_repository::GraphReportRow;
     use async_trait::async_trait;
     use std::sync::Arc;
 
@@ -104,20 +105,17 @@ mod postgres_adapter {
             workspace_id: &str,
             report: &ReportSummary,
         ) -> Result<(), ReportError> {
-            // PHASE 0 stub: write SQL lands once the ingest-state
-            // machine grows a publish step (sibling change to
-            // `IngestCommit::commit_revision`'s Phase 1 atomicity work).
-            //
-            // The eventual SQL is:
-            //   INSERT INTO graph_reports
-            //   (id, workspace_id, created_at, report, symbol_count, edge_count, health_score)
-            //   VALUES ($1, $2, $3, $4, $5, $6, $7)
-            //   ON CONFLICT (id) DO UPDATE SET
-            //     report = EXCLUDED.report,
-            //     symbol_count = EXCLUDED.symbol_count,
-            //     edge_count = EXCLUDED.edge_count,
-            //     health_score = EXCLUDED.health_score
-            let _ = (workspace_id, report);
+            // ADR-028 §3 `save_report(ws, report)` — insert-or-update
+            // by report id (the row's `created_at` is server-assigned
+            // on the original INSERT and is preserved across updates).
+            self.repo
+                .save_graph_report(&GraphReportRow::from(report))
+                .await
+                .map_err(|e| ReportError::Store(format!("save_graph_report: {e}")))?;
+            // The `workspace_id` parameter on the trait is for
+            // future cross-workspace guard; today's adapter trusts the
+            // report row's own workspace_id field.
+            let _ = workspace_id;
             Ok(())
         }
 
@@ -164,6 +162,25 @@ mod postgres_adapter {
                 symbol_count: r.symbol_count,
                 edge_count: r.edge_count,
                 health_score: r.health_score,
+            }
+        }
+    }
+
+    /// Reverse direction — used by `save_report` to hand the domain
+    /// `ReportSummary` back to the PG adapter's row representation.
+    /// The conversion is a field-for-field copy (no transformation).
+    impl From<&ReportSummary>
+        for crate::infrastructure::persistence::postgres_repository::GraphReportRow
+    {
+        fn from(s: &ReportSummary) -> Self {
+            Self {
+                id: s.id.clone(),
+                workspace_id: s.workspace_id.clone(),
+                created_at: s.created_at.clone(),
+                report: s.report.clone(),
+                symbol_count: s.symbol_count,
+                edge_count: s.edge_count,
+                health_score: s.health_score,
             }
         }
     }

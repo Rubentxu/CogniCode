@@ -834,6 +834,61 @@ impl PostgresRepository {
         Ok(result.rows_affected() as usize)
     }
 
+    /// Delete a single `scan_manifest` row by `(workspace_id, file_path)`.
+    ///
+    /// Per-row delete (vs. the batch `delete_scan_manifest_except` form above)
+    /// — used by the [`crate::domain::ports::ManifestStore::delete_manifest_entry`]
+    /// port method per ADR-028 §3.
+    pub async fn delete_scan_manifest_row(
+        &self,
+        workspace_id: &str,
+        file_path: &str,
+    ) -> Result<usize, CallGraphStoreError> {
+        let result = sqlx::query(
+            "DELETE FROM scan_manifest \
+             WHERE workspace_id = $1 AND file_path = $2",
+        )
+        .bind(workspace_id)
+        .bind(file_path)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| CallGraphStoreError::Store(format!("delete_scan_manifest_row: {e}")))?;
+        Ok(result.rows_affected() as usize)
+    }
+
+    /// Persist a `graph_reports` row (insert-or-update by `id`).
+    ///
+    /// Per the ADR-028 §3 `ReportStore::save_report` contract: `ON CONFLICT
+    /// (id) DO UPDATE SET report = EXCLUDED.report, ...` so callers can
+    /// re-emit a report with the same `id` and trust the latest payload
+    /// wins (the row's `created_at` is server-assigned and never overwritten).
+    pub async fn save_graph_report(
+        &self,
+        report: &GraphReportRow,
+    ) -> Result<(), CallGraphStoreError> {
+        sqlx::query(
+            "INSERT INTO graph_reports \
+                (id, workspace_id, created_at, report, symbol_count, edge_count, health_score) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7) \
+             ON CONFLICT (id) DO UPDATE SET \
+                report = EXCLUDED.report, \
+                symbol_count = EXCLUDED.symbol_count, \
+                edge_count = EXCLUDED.edge_count, \
+                health_score = EXCLUDED.health_score",
+        )
+        .bind(&report.id)
+        .bind(&report.workspace_id)
+        .bind(&report.created_at)
+        .bind(&report.report)
+        .bind(report.symbol_count)
+        .bind(report.edge_count)
+        .bind(report.health_score)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| CallGraphStoreError::Store(format!("save_graph_report: {e}")))?;
+        Ok(())
+    }
+
     // ===========================================================
     // Graph Reports (Pipeline — ADR-017/020)
     // ===========================================================

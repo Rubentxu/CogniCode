@@ -4,13 +4,18 @@
 //! It accepts a delta for each stage (graph, manifest, report) and produces
 //! a new revision id, effectively "publishing" a coherent snapshot.
 //!
-//! ## Phase 0 note
+//! ## Phase 0 reconciliation
 //!
-//! PHASE 0: cosmetic — true atomic tx lands in Phase 1 LadybugStore.
-//! The [`PostgresIngestCommit`] adapter below delegates to the existing
-//! per-stage methods WITHOUT fusing them into a single transaction. The
-//! trait SHAPE is correct; the BEHAVIOUR is a thin sequential wrapper.
-//! Phase 1's `LadybugStore` will replace the body with a real atomic tx.
+//! The [`PostgresIngestCommit`] adapter below now wraps the three stages in
+//! a single `pool.begin()` transaction so failures in any stage roll back
+//! the whole commit (no orphan revisions on a partial failure). Each
+//! stage's SQL lives inside the tx via the underlying `&mut PgConnection`
+//! passed to `RevisionStore::create_revision`. The manifest/report
+//! stages execute inline SQL through the same tx because the per-row
+//! port methods deliberately use their own connection (per ADR-028 §3
+//! `ManifestStore::upsert_manifest_entry(&self, row)` is a tx-free
+//! convenience for individual ingest rows; the IngestCommit contract
+//! overrides that contract to require tx-atomicity).
 //!
 //! This module is gated behind `#[cfg(feature = "multimodal")]` because
 //! [`GraphDelta`] carries [`GraphNode`] and [`GraphEdge`] types which are
@@ -118,7 +123,7 @@ pub mod postgres_adapter {
     use crate::domain::ports::federation_store::PostgresFederationStore;
     use crate::domain::ports::manifest_store::PostgresManifestStore;
     use crate::domain::ports::report_store::PostgresReportStore;
-    use crate::domain::ports::revision_store::PostgresRevisionStore;
+    use crate::domain::ports::revision_store::{PostgresRevisionStore, RevisionStore};
     use async_trait::async_trait;
     use sqlx::PgPool;
     use std::sync::Arc;
@@ -162,38 +167,120 @@ pub mod postgres_adapter {
             manifest: ManifestDelta,
             report: ReportIntent,
         ) -> Result<RevisionId, CommitError> {
-            // PHASE 0: cosmetic — true atomic tx lands in Phase 1 LadybugStore
-            //
-            // Sequential per-stage calls, each opening its own connection
-            // from the pool. No single-shot transaction in Phase 0.
-            use crate::domain::ports::graph_error::GraphError;
-
-            // Stage 1 — open a new revision.
-            let mut conn = self.pool.acquire().await.map_err(|e| {
-                CommitError::Graph(GraphError::Storage(format!(
-                    "acquire connection for revision open: {e}"
-                )))
+            // Single tx for the whole commit — failures in any stage
+            // roll back the previous stages' work. Note: this requires
+            // `&mut PgConnection` to be threaded through all three stage
+            // SQL calls. `RevisionStore::create_revision(&mut conn, ws)`
+            // already takes it; `ManifestStore::upsert_manifest_entry`
+            // and `ReportStore::save_report` are tx-free at the port
+            // level (per ADR-028 §3 convenience for individual callers),
+            // so we issue the manifest + report SQL inline against the
+            // same connection inside the tx.
+            let mut tx = self.pool.begin().await.map_err(|e| {
+                CommitError::Graph(crate::domain::ports::graph_error::GraphError::Storage(
+                    format!("ingest_commit: begin tx: {e}"),
+                ))
             })?;
-            let rev_id = self.revision_store.create_revision(&mut *conn, ws).await?;
 
-            // Stage 2 — manifest upserts (sequential, own connection).
-            for upsert in manifest.upserts {
-                self.manifest_store
-                    .upsert_manifest_entry(&upsert)
-                    .await
-                    .map_err(CommitError::from)?;
+            // Stage 1 — open a new revision inside the tx.
+            let rev_id = self
+                .revision_store
+                .as_ref()
+                .create_revision(&mut *tx, ws)
+                .await
+                .map_err(|e| {
+                    CommitError::Graph(crate::domain::ports::graph_error::GraphError::Storage(
+                        format!("ingest_commit stage 1 (revision open): {e}"),
+                    ))
+                })?;
+
+            // Stage 2 — manifest upserts inline against the same tx.
+            // (Per-row INSERT uses the same `&mut *tx` so failures
+            // roll back the revision open from Stage 1.)
+            for upsert in &manifest.upserts {
+                let row =
+                    crate::infrastructure::persistence::postgres_repository::ScanManifestRow::from(
+                        upsert.clone(),
+                    );
+                sqlx::query(
+                    "INSERT INTO scan_manifest \
+                        (workspace_id, file_path, file_type, language, \
+                         content_hash, mtime, symbol_count, edge_count, status, error_msg, scanned_at) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now()) \
+                     ON CONFLICT (workspace_id, file_path) DO UPDATE SET \
+                        file_type = EXCLUDED.file_type, \
+                        language = EXCLUDED.language, \
+                        content_hash = EXCLUDED.content_hash, \
+                        mtime = EXCLUDED.mtime, \
+                        symbol_count = EXCLUDED.symbol_count, \
+                        edge_count = EXCLUDED.edge_count, \
+                        status = EXCLUDED.status, \
+                        error_msg = EXCLUDED.error_msg, \
+                        scanned_at = now()",
+                )
+                .bind(&row.workspace_id)
+                .bind(&row.file_path)
+                .bind(&row.file_type)
+                .bind(&row.language)
+                .bind(&row.content_hash)
+                .bind(row.mtime)
+                .bind(row.symbol_count)
+                .bind(row.edge_count)
+                .bind(&row.status)
+                .bind(&row.error_msg)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| CommitError::Manifest(crate::domain::ports::manifest_store::ManifestError::Store(
+                    format!("ingest_commit stage 2 (manifest upsert): {e}"),
+                )))?;
             }
 
-            // Stage 3 — latest report (sequential, own connection).
-            // ADR-028 §3: `save_report(ws, report) -> Result<(), ReportError>`.
-            // For the Phase 0 placeholder we keep the read path (`load_latest`)
-            // working — `save_report` is wired in the adapter but not yet
-            // exercised by the Stage-3 caller (deferred to the next change
-            // when the ingest-state machine grows a publish step).
-            self.report_store
-                .latest_report(ws.as_str())
-                .await
-                .map_err(CommitError::from)?;
+            // Stage 3 — save the report inline against the same tx.
+            // Per the ADR-028 §3 contract: `save_report(ws, report) -> ...`.
+            let report_row =
+                crate::infrastructure::persistence::postgres_repository::GraphReportRow::from(
+                    &report.summary,
+                );
+            sqlx::query(
+                "INSERT INTO graph_reports \
+                    (id, workspace_id, created_at, report, symbol_count, edge_count, health_score) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7) \
+                 ON CONFLICT (id) DO UPDATE SET \
+                    report = EXCLUDED.report, \
+                    symbol_count = EXCLUDED.symbol_count, \
+                    edge_count = EXCLUDED.edge_count, \
+                    health_score = EXCLUDED.health_score",
+            )
+            .bind(&report_row.id)
+            .bind(&report_row.workspace_id)
+            .bind(&report_row.created_at)
+            .bind(&report_row.report)
+            .bind(report_row.symbol_count)
+            .bind(report_row.edge_count)
+            .bind(report_row.health_score)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                CommitError::Report(crate::domain::ports::report_store::ReportError::Store(
+                    format!("ingest_commit stage 3 (report save): {e}"),
+                ))
+            })?;
+
+            // (Stage 4 — graph node/edge upserts would go here. The
+            //  `GraphDelta` payload is part of the trait's contract
+            //  but not yet exercised by the in-tree ingest pipeline —
+            //  the GraphWritePort port covers the same domain. The
+            //  IngestCommit adapter takes the delta but ignores it
+            //  until a Stage 4 implementation lands.)
+
+            // Commit — single-shot across all 3 stages.
+            tx.commit().await.map_err(|e| {
+                CommitError::Graph(crate::domain::ports::graph_error::GraphError::Storage(
+                    format!("ingest_commit: tx commit: {e}"),
+                ))
+            })?;
+
+            let _ = graph; // suppress unused warning until Stage 4 lands
 
             Ok(rev_id)
         }

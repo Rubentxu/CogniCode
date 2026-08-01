@@ -149,13 +149,15 @@ mod postgres_adapter {
             workspace_id: &str,
             file_path: &str,
         ) -> Result<(), ManifestError> {
-            // PHASE 0: stub — single-row delete by (workspace_id, file_path).
-            // The proper DELETE SQL lives in `PostgresRepository::delete_scan_manifest_row`
-            // (already implemented at the concrete layer); the port's per-row
-            // delete is awaiting a following change that wires the SQL
-            // through this trait method. Until then, no-op is correct
-            // (the caller-side loop preserves the eventual batch semantics).
-            let _ = (workspace_id, file_path);
+            // ADR-028 §3 `delete_manifest_entry(ws, path)` — single-row
+            // delete by `(workspace_id, file_path)`. Calls through to
+            // `PostgresRepository::delete_scan_manifest_row`; the caller-side
+            // loop in `application/ingest/service.rs` preserves the eventual
+            // batch semantics.
+            self.repo
+                .delete_scan_manifest_row(workspace_id, file_path)
+                .await
+                .map_err(|e| ManifestError::Store(format!("delete_scan_manifest_row: {e}")))?;
             Ok(())
         }
     }
