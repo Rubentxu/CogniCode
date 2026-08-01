@@ -34,6 +34,14 @@ pub struct Runtime {
     /// `cognicode_core::domain::ports::ViewSpecStore`).
     #[cfg(feature = "postgres")]
     pub view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>>,
+    /// Optional `CallGraphStore` port (e29-0-refactor-call-sites).
+    /// Mirrors the `PostgresRepository::save_call_graph_ws` /
+    /// `load_call_graph_ws` / `load_call_graph_current_ws` SQL
+    /// surfaces behind the new domain port so consumers (`PgGraphExecutor`,
+    /// `postgres_bridge`) depend on `Arc<dyn CallGraphStore>` instead
+    /// of the concrete `PostgresRepository` for this aggregate.
+    #[cfg(feature = "postgres")]
+    pub call_graph_store: Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>,
 }
 
 impl Runtime {
@@ -117,6 +125,23 @@ impl Runtime {
         #[cfg(not(feature = "postgres"))]
         let view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>> = None;
 
+        // `CallGraphStore` port wiring (e29-0-refactor-call-sites).
+        // Same shape as the existing `quality_store` / `view_spec_store`
+        // wiring: built from the shared `pg_repo` Arc, so Phase 1
+        // `LadybugStore` can drop in here as a single-line replacement.
+        #[cfg(feature = "postgres")]
+        let call_graph_store: Option<
+            Arc<dyn cognicode_core::domain::ports::CallGraphStore>,
+        > = pg_repo.as_ref().map(|pg| {
+            Arc::new(cognicode_core::domain::ports::PostgresCallGraphStore::new(
+                pg.clone(),
+            )) as Arc<dyn cognicode_core::domain::ports::CallGraphStore>
+        });
+        #[cfg(not(feature = "postgres"))]
+        let call_graph_store: Option<
+            Arc<dyn cognicode_core::domain::ports::CallGraphStore>,
+        > = None;
+
         Ok(Self {
             symbol_repo,
             source_reader,
@@ -134,6 +159,10 @@ impl Runtime {
             view_spec_store,
             #[cfg(not(feature = "postgres"))]
             view_spec_store: None,
+            #[cfg(feature = "postgres")]
+            call_graph_store,
+            #[cfg(not(feature = "postgres"))]
+            call_graph_store: None,
         })
     }
 
@@ -168,9 +197,16 @@ impl Runtime {
             let pool = repo.with_pool(|p| p.clone());
             let pg_repo =
                 cognicode_core::infrastructure::persistence::PostgresRepository::from_pool(pool);
+            let pg_repo_arc = Arc::new(pg_repo);
+            let cg_store: Arc<dyn cognicode_core::domain::ports::CallGraphStore> = Arc::new(
+                cognicode_core::domain::ports::PostgresCallGraphStore::new(pg_repo_arc.clone()),
+            );
             Arc::new(
                 cognicode_core::infrastructure::persistence::pg_graph_executor::PgGraphExecutor::new(
-                    pg_repo,
+                    Arc::try_unwrap(pg_repo_arc)
+                        .ok()
+                        .expect("pg_repo Arc still held elsewhere — refactor to Arc::new(from_pool) earlier"),
+                    cg_store,
                 ),
             ) as Arc<dyn cognicode_core::domain::plan::executor::GraphExecutor>
         });
