@@ -15,6 +15,7 @@ members = [
     # cognicode-quality → docs/parked-crates/cognicode-quality/
     # cognicode-rule-test-harness → docs/parked-crates/cognicode-rule-test-harness/
     "crates/cognicode-explorer",
+    "crates/cognicode-ladybug",
     "crates/cognicode-core-mock",
     "crates/cognicode-runtime",
 ]
