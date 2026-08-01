@@ -192,8 +192,7 @@ mod postgres_adapter {
         RuleSummary, UpsertSummary,
     };
 
-    /// `PostgresQualityStore` — [`QualityStore`] adapter backed by
-    /// PostgreSQL.
+    /// `PostgresQualityStore` — [`QualityStore`] adapter.
     ///
     /// Implements all 10 methods of the [`QualityStore`] port against
     /// the `issues`, `baselines`, and `rules` tables defined in

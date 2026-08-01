@@ -184,7 +184,7 @@ mod postgres_adapter {
     use super::{ViewSpecPayload, ViewSpecStore, ViewSpecStoreError};
 
     /// `PostgresViewSpecStore` — [`ViewSpecStore`] adapter backed by
-    /// PostgreSQL via the existing `view_specs` table persistence layer.
+    /// the `view_specs` table persistence layer.
     ///
     /// Each operation is stateless — the pool is owned by the parent
     /// `PostgresRepository`.
