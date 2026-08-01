@@ -31,6 +31,10 @@ use std::sync::Arc;
 #[cfg(feature = "postgres")]
 use cognicode_core::domain::aggregates::CallGraph;
 #[cfg(feature = "postgres")]
+use cognicode_core::domain::ports::CallGraphStore;
+#[cfg(feature = "postgres")]
+use cognicode_core::domain::ports::PostgresCallGraphStore;
+#[cfg(feature = "postgres")]
 use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
 #[cfg(feature = "postgres")]
 use cognicode_core::infrastructure::persistence::PostgresRepository;
@@ -100,12 +104,22 @@ pub async fn open_graph_with_repo(
         .await
         .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: head revision: {e}"))?;
 
+    // The `load_call_graph_ws` / `load_call_graph_current_ws` calls
+    // go through the new `CallGraphStore` port (e29-0-refactor-call-sites).
+    // The underlying `PostgresRepository` is kept alive so callers can
+    // still hold the `Arc<PostgresRepository>` for migration + view-spec
+    // CRUD paths that are not yet ported (e29-1-ladybug-adapter will
+    // obsolete the raw `PostgresRepository` usage entirely).
+    let repo_arc: Arc<PostgresRepository> = Arc::new(repo);
+    let cg_store: Arc<dyn CallGraphStore> = Arc::new(PostgresCallGraphStore::new(repo_arc.clone()));
     let graph = if let Some(rev) = head_rev {
-        repo.load_call_graph_ws(&workspace, RevisionId(rev as u64))
+        cg_store
+            .load_call_graph_ws(&workspace, RevisionId(rev as u64))
             .await
             .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: load: {e}"))?
     } else {
-        repo.load_call_graph_current_ws(&workspace)
+        cg_store
+            .load_call_graph_current(&workspace)
             .await
             .map_err(|e| anyhow::anyhow!("open_graph_from_postgres: load current workspace: {e}"))?
     };
@@ -114,6 +128,5 @@ pub async fn open_graph_with_repo(
         Some(g) => Arc::new(g),
         None => Arc::new(CallGraph::new()),
     };
-    let repo = Arc::new(repo);
-    Ok((graph, repo))
+    Ok((graph, repo_arc))
 }
