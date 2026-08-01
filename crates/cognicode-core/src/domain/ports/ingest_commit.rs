@@ -112,8 +112,9 @@ pub enum CommitError {
 
 #[cfg(feature = "multimodal")]
 pub mod postgres_adapter {
-    use super::{CommitError, GraphDelta, IngestCommit, ManifestDelta, ReportIntent, RevisionId,
-               WorkspaceId};
+    use super::{
+        CommitError, GraphDelta, IngestCommit, ManifestDelta, ReportIntent, RevisionId, WorkspaceId,
+    };
     use crate::domain::ports::federation_store::PostgresFederationStore;
     use crate::domain::ports::manifest_store::PostgresManifestStore;
     use crate::domain::ports::report_store::PostgresReportStore;
@@ -173,10 +174,7 @@ pub mod postgres_adapter {
                     "acquire connection for revision open: {e}"
                 )))
             })?;
-            let rev_id = self
-                .revision_store
-                .create_revision(&mut *conn, ws)
-                .await?;
+            let rev_id = self.revision_store.create_revision(&mut *conn, ws).await?;
 
             // Stage 2 — manifest upserts (sequential, own connection).
             for upsert in manifest.upserts {

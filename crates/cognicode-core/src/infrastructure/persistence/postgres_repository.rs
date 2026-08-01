@@ -26,6 +26,8 @@ use sqlx::Row;
 #[cfg(feature = "postgres")]
 use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
 #[cfg(feature = "postgres")]
+use crate::domain::ports::revision_store::RevisionStore;
+#[cfg(feature = "postgres")]
 use crate::domain::services::ExtractionContext;
 #[cfg(feature = "postgres")]
 use crate::domain::traits::repository::{CallGraphStore, CallGraphStoreError};
@@ -33,8 +35,6 @@ use crate::domain::traits::repository::{CallGraphStore, CallGraphStoreError};
 use crate::domain::value_objects::{
     DependencyType, EdgeMetadata, Location, Provenance, RevisionId, SymbolKind, WorkspaceId,
 };
-#[cfg(feature = "postgres")]
-use crate::domain::ports::revision_store::RevisionStore;
 
 /// Schema DDL embedded at compile time.
 ///
@@ -550,11 +550,15 @@ impl PostgresRepository {
         // demotes the prior head + computes the next revision id + inserts
         // the new head row — all inside this same transaction.
         let revision_store =
-            crate::domain::ports::revision_store::postgres_adapter::PostgresRevisionStore::new(self.pool.clone());
+            crate::domain::ports::revision_store::postgres_adapter::PostgresRevisionStore::new(
+                self.pool.clone(),
+            );
         let revision_id = revision_store
             .create_revision(&mut tx, workspace_id)
             .await
-            .map_err(|e| CallGraphStoreError::Store(format!("save_call_graph_ws create_revision: {e}")))?;
+            .map_err(|e| {
+                CallGraphStoreError::Store(format!("save_call_graph_ws create_revision: {e}"))
+            })?;
 
         let ws_str = workspace_id.as_str();
 

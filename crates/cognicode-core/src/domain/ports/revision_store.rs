@@ -55,7 +55,7 @@ pub enum RevisionError {
 
 #[cfg(feature = "postgres")]
 pub mod postgres_adapter {
-    use super::{RevisionError, RevisionStore, RevisionId, WorkspaceId};
+    use super::{RevisionError, RevisionId, RevisionStore, WorkspaceId};
     use async_trait::async_trait;
 
     /// Adapter that delegates every [`RevisionStore`] method to raw SQL
@@ -116,9 +116,7 @@ pub mod postgres_adapter {
             .bind(next_rev)
             .execute(&mut *conn)
             .await
-            .map_err(|e| {
-                RevisionError::Store(format!("create_revision insert revision: {e}"))
-            })?;
+            .map_err(|e| RevisionError::Store(format!("create_revision insert revision: {e}")))?;
 
             Ok(RevisionId(next_rev as u64))
         }

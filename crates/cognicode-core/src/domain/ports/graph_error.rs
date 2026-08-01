@@ -17,7 +17,7 @@ use thiserror::Error;
 /// Domain error type for graph repository operations.
 ///
 /// Adapters that need to surface richer error chains (e.g. the
-    /// canonical adapter) wrap the upstream error in [`GraphError::Storage`]
+/// canonical adapter) wrap the upstream error in [`GraphError::Storage`]
 /// and propagate. Consumers that need a stable error type for
 /// cross-crate propagation should match on this enum.
 #[derive(Debug, Error)]

@@ -91,7 +91,10 @@ pub mod postgres_adapter {
     impl FederationStore for PostgresFederationStore {
         async fn register_space(&self, space: &Space) -> Result<SpaceId, FederationError> {
             let kind_str = space.kind.as_str();
-            let source_path = space.source_path.as_ref().map(|p| p.to_string_lossy().to_string());
+            let source_path = space
+                .source_path
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string());
 
             sqlx::query(
                 "INSERT INTO spaces (id, name, kind, source_path, config) \
