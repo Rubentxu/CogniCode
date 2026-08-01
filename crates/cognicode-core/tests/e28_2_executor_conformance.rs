@@ -250,7 +250,15 @@ async fn assert_conformant(pool: &PgPool, fixture: Fixture<'_>) {
     let pin = (ws.clone(), rev);
 
     // PG executor.
-    let pg_exec = PgGraphExecutor::new(repo);
+    let cg_store_test: std::sync::Arc<dyn cognicode_core::domain::ports::CallGraphStore> =
+        std::sync::Arc::new(cognicode_core::domain::ports::PostgresCallGraphStore::new(
+            std::sync::Arc::new(
+                cognicode_core::infrastructure::persistence::PostgresRepository::from_pool(
+                    repo.with_pool(|p| p.clone()),
+                ),
+            ),
+        ));
+    let pg_exec = PgGraphExecutor::new(repo, cg_store_test);
 
     // Snapshot executor — uses TestSnapshotProvider for unit-test-style setup.
     let provider = TestSnapshotProvider::new();
@@ -479,7 +487,15 @@ pg_conformance_test!(conformance_unknown_revision_matches, |pool: PgPool| {
         .await
         .expect("save must succeed");
 
-    let pg_exec = PgGraphExecutor::new(repo);
+    let cg_store_test: std::sync::Arc<dyn cognicode_core::domain::ports::CallGraphStore> =
+        std::sync::Arc::new(cognicode_core::domain::ports::PostgresCallGraphStore::new(
+            std::sync::Arc::new(
+                cognicode_core::infrastructure::persistence::PostgresRepository::from_pool(
+                    repo.with_pool(|p| p.clone()),
+                ),
+            ),
+        ));
+    let pg_exec = PgGraphExecutor::new(repo, cg_store_test);
 
     // Snapshot executor setup
     let provider = TestSnapshotProvider::new();
