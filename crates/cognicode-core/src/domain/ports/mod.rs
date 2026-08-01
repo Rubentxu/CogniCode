@@ -25,6 +25,8 @@
 //!
 //! The `multimodal` feature gates the WRITE/exTRACTION path only.
 
+#[cfg(feature = "postgres")]
+pub mod call_graph_store;
 #[cfg(all(feature = "postgres", feature = "multimodal"))]
 pub mod federation_store;
 pub mod graph_error;
@@ -49,6 +51,8 @@ pub mod session_store;
 #[cfg(feature = "postgres")]
 pub mod view_spec_store;
 
+#[cfg(feature = "postgres")]
+pub use call_graph_store::{CallGraphError, CallGraphStore, PostgresCallGraphStore};
 #[cfg(all(feature = "postgres", feature = "multimodal"))]
 pub use federation_store::{FederationError, FederationStore, PostgresFederationStore};
 pub use graph_error::{GraphError, GraphResult};
