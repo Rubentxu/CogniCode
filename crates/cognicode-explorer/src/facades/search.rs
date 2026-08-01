@@ -806,7 +806,7 @@ impl SearchService for SearchServiceImpl {
 
 fn spotter_search_impl(
     repo: &Arc<dyn SymbolRepository>,
-search: Option<&Arc<dyn crate::ports::FuzzySymbolSearch>>,
+    search: Option<&Arc<dyn crate::ports::FuzzySymbolSearch>>,
     view_registry: &Arc<ViewRegistry>,
     adr_repo: Option<&Arc<dyn crate::ports::AdrRepository>>,
     doc_repo: Option<&Arc<dyn crate::ports::DocRepository>>,

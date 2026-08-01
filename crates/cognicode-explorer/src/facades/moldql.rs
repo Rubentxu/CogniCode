@@ -191,7 +191,7 @@ impl MoldQLServiceImpl {
 mod tests {
     use super::*;
     use crate::error::ExplorerResult;
-use crate::facades::LensService;
+    use crate::facades::LensService;
     use crate::ports::source_reader::SourceReader;
     use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
     use cognicode_core::domain::aggregates::SymbolId;

@@ -35,7 +35,7 @@ pub use in_memory_graph_repository::InMemoryGraphRepository;
 #[cfg(feature = "postgres")]
 pub use pg_graph_repository::PgGraphRepository;
 #[cfg(feature = "postgres")]
-pub use postgres_route_store::PostgresRouteStore;
-#[cfg(feature = "postgres")]
 pub use postgres_quality::PostgresQualityRepository;
+#[cfg(feature = "postgres")]
+pub use postgres_route_store::PostgresRouteStore;
 pub use quality_graph_repository::{HotspotNode, QualityGraphRepository, RelEdge, TraversalFilter};

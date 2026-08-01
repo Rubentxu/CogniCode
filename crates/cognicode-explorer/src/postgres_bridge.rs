@@ -50,7 +50,10 @@ use cognicode_core::infrastructure::persistence::PostgresRepository;
 ///   `"open_graph_from_postgres: load: …"`. The underlying
 ///   `PgPool` is dropped before the error is constructed.
 #[cfg(feature = "postgres")]
-pub async fn open_graph_from_postgres(database_url: &str, workspace_root: &std::path::Path) -> anyhow::Result<Arc<CallGraph>> {
+pub async fn open_graph_from_postgres(
+    database_url: &str,
+    workspace_root: &std::path::Path,
+) -> anyhow::Result<Arc<CallGraph>> {
     let (graph, _repo) = open_graph_with_repo(database_url, workspace_root).await?;
     Ok(graph)
 }

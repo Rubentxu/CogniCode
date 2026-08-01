@@ -21,7 +21,7 @@ use crate::domain::snapshot::SnapshotService;
 use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
 };
-use crate::ports::{RouteStore, QualityRepository, QualityWritePort};
+use crate::ports::{QualityRepository, QualityWritePort, RouteStore};
 use crate::session::SessionRegistry;
 
 /// Optional Generic Graph Layer port for multimodal queries.

@@ -43,7 +43,8 @@ impl Runtime {
             #[cfg(feature = "postgres")]
             Some(url) => {
                 let graph =
-                    cognicode_explorer::postgres_bridge::open_graph_from_postgres(url, &cwd).await?;
+                    cognicode_explorer::postgres_bridge::open_graph_from_postgres(url, &cwd)
+                        .await?;
                 graph_cache.set((*graph).clone());
                 Some(graph)
             }
@@ -145,7 +146,8 @@ impl Runtime {
 
         // Workspace resolver — maps workspace_id → root_path.
         // Populated when open_workspace is called.
-        let ws_resolver = Arc::new(cognicode_core::application::ingest::StaticWorkspaceResolver::new());
+        let ws_resolver =
+            Arc::new(cognicode_core::application::ingest::StaticWorkspaceResolver::new());
         let ws_resolver_dyn: Arc<dyn cognicode_core::application::ingest::WorkspaceResolver> =
             ws_resolver.clone();
 
@@ -215,7 +217,9 @@ impl Runtime {
         let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> =
             if let Some(ref pg) = self.pg_repo {
                 Some(Arc::new(
-                    cognicode_explorer::adapters::PgGraphRepository::new(pg.with_pool(|p| p.clone())),
+                    cognicode_explorer::adapters::PgGraphRepository::new(
+                        pg.with_pool(|p| p.clone()),
+                    ),
                 ))
             } else {
                 None

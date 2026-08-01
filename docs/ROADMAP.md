@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-30 (v0.76.1: pre-existing debt batch — tokio Handle::current panic fix + cycle_dominators assertion + PlanHash helpers; v0.76.0: E12 ViewKind Realization.)
+Last updated: 2026-08-01 (v0.76.1: pre-existing debt batch — tokio Handle::current panic fix + cycle_dominators assertion + PlanHash helpers; v0.76.0: E12 ViewKind Realization. E29 S5 latency spike archived. E29 S6 cypher-compat spike archived — spike gate COMPLETE. E29 Phase 0 e29-0-clean-ports archived — port surface DB-agnostic. E29 Phase 0 e29-0-move-view-specrepo marked OBSOLETE — trait deleted 2026-07-30, ROADMAP row stale.)
 
 ## Active
 
@@ -1190,8 +1190,8 @@ The 3 previously-listed items (`cognicode-axiom`, `cognicode-quality`, `cognicod
 | `e29-s2-schema-load` | Validate full schema (22 node tables + ~20 rel tables) + COPY FROM at scale | e29-s1 | All DDL succeeds; 10K nodes + 50K edges in <60s; typed columns, MAP, temporal, multi-label all work | **PROPOSED** |
 | `e29-s3-concurrency` | Validate single-writer constraint, multi-reader, file locking | e29-s1 | One writer succeeds; second writer errors; multiple readers succeed; committed data visible | **PROPOSED** |
 | `e29-s4-crash-recovery` | Validate WAL + checkpoint replay after SIGKILL | e29-s1 | Committed data survives process crash; no corruption; no panic on reopen | **PROPOSED** |
-| `e29-s5-latency` | Benchmark LadybugDB vs PostgreSQL for representative queries | e29-s2 | LadybugDB ≤ PostgreSQL for point/neighborhood/BFS; ≤2x for aggregation | **PROPOSED** |
-| `e29-s6-cypher-compat` | Validate Cypher coverage for all CogniCode query patterns | e29-s2 | Variable-length paths, UNWIND, OPTIONAL MATCH, MAP property access, aggregations all work | **PROPOSED** |
+| `e29-s5-latency` | Benchmark LadybugDB vs PostgreSQL for representative queries | e29-s2 | LadybugDB ≤ PostgreSQL for point/neighborhood/BFS; ≤2x for aggregation | **DONE** (SDDK archived 2026-08-01, branch feat/e29-s5-latency, verdict PASS_WITH_WARNINGS; 12 commits, tip d3feb872) |
+| `e29-s6-cypher-compat` | Validate Cypher coverage for all CogniCode query patterns | e29-s2 | Variable-length paths, UNWIND, OPTIONAL MATCH, MAP property access, aggregations all work | **DONE** (SDDK archived 2026-08-01, branch feat/e29-s6-cypher-compat, verdict PASS_WITH_WARNINGS; 9 criteria + 3 deviations; tip uncommitted) |
 
 **Spike spec**: [`openspec/specs/ladybug-spike-validation/spec.md`](./specs/ladybug-spike-validation/spec.md)
 
@@ -1201,8 +1201,8 @@ The 3 previously-listed items (`cognicode-axiom`, `cognicode-quality`, `cognicod
 
 | Change | Goal | Depends on | Exit criteria | Status |
 |--------|------|-----------|--------------|--------|
-| `e29-0-clean-ports` | Remove PG doc leaks from `RepositoryError`, `SearchPage` | None | Doc comments no longer mention "SQLSTATE", "ts_rank_cd", or other PG-specific types | **PROPOSED** |
-| `e29-0-move-view-specrepo` | Move `ViewSpecRepository` from `interface/mcp/handlers` to `domain/ports/` | None | `ViewSpecRepository` lives in `domain/ports/`; all references updated | **PROPOSED** |
+| `e29-0-clean-ports` | Remove PG doc leaks from `RepositoryError`/`CallGraphStoreError`, `SearchPage` | None | Doc comments no longer mention "SQLSTATE", "ts_rank_cd", or other PG-specific types | **DONE** (SDDK archived 2026-08-01, branch feat/e29-0-clean-ports, verdict PASS_WITH_WARNINGS; 4 files / ~36-line diff; 1 benign W1 reorder) |
+| `e29-0-move-view-specrepo` | Move `ViewSpecRepository` from `interface/mcp/handlers` to `domain/ports/` | None | `ViewSpecRepository` lives in `domain/ports/`; all references updated | **OBSOLETE** (2026-08-01: trait was removed on 2026-07-30 per `handlers/mod.rs:355-357`; canonical port is `ViewSpecStore` in `cognicode-explorer/src/registry.rs:62`; `*Repository` suffix is dead; moving `ViewSpecStore` to `core/domain/ports/` is out of scope and a separate future change) |
 | `e29-0-define-new-ports` | Define `ManifestStore`, `RevisionStore`, `QualityStore`, `SessionStore`, `ViewStore`, `ReportStore`, `FederationStore`, `IngestCommit` traits | None | 8 new traits in `domain/ports/` with domain error types | **PROPOSED** |
 | `e29-0-refactor-call-sites` | Refactor ~30 direct sqlx/PostgresRepository call sites to use `Arc<dyn Port>` | e29-0-define-new-ports | All call sites use `dyn Trait`; `PostgresRepository` implements all traits | **PROPOSED** |
 

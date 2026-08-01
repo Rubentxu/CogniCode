@@ -10,12 +10,12 @@
 use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
-use serde_json::Value;
 use cognicode_core::domain::ports::GraphRepository;
 use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::domain::decision_graph_topology::DecisionGraphTopology;
 use crate::dto::{ContextualView, EvidenceBlock, ViewBlock};
@@ -528,14 +528,14 @@ mod tests {
             make_evidence_node("Y", "Evidence Y"),
         ];
         let edges = vec![
-        GraphEdge {
-            source: NodeId::new("A"),
-            target: NodeId::new("X"),
-            kind: EdgeKind::Justifies,
-            provenance: Provenance::Extracted,
-            confidence: 0.9,
-            metadata: serde_json::Value::Object(Default::default()),
-        },
+            GraphEdge {
+                source: NodeId::new("A"),
+                target: NodeId::new("X"),
+                kind: EdgeKind::Justifies,
+                provenance: Provenance::Extracted,
+                confidence: 0.9,
+                metadata: serde_json::Value::Object(Default::default()),
+            },
             GraphEdge {
                 source: NodeId::new("A"),
                 target: NodeId::new("Y"),

@@ -28,10 +28,7 @@ pub trait ReportStore: Send + Sync {
     /// Load the most recent `graph_reports` row for a workspace.
     ///
     /// Returns `Ok(None)` when no report exists yet.
-    async fn load_latest(
-        &self,
-        workspace_id: &str,
-    ) -> Result<Option<ReportSummary>, ReportError>;
+    async fn load_latest(&self, workspace_id: &str) -> Result<Option<ReportSummary>, ReportError>;
 
     /// Load every `graph_reports` row for a workspace within the last
     /// `days` days, ordered newest-first.
@@ -100,8 +97,12 @@ mod postgres_adapter {
         }
     }
 
-    impl From<crate::infrastructure::persistence::postgres_repository::GraphReportRow> for ReportSummary {
-        fn from(r: crate::infrastructure::persistence::postgres_repository::GraphReportRow) -> Self {
+    impl From<crate::infrastructure::persistence::postgres_repository::GraphReportRow>
+        for ReportSummary
+    {
+        fn from(
+            r: crate::infrastructure::persistence::postgres_repository::GraphReportRow,
+        ) -> Self {
             Self {
                 id: r.id,
                 workspace_id: r.workspace_id,

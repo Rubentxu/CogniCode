@@ -64,11 +64,8 @@ pub trait NamedViewStore: Send + Sync {
 
     /// List every named view for `(workspace_id, owner)`, newest-first.
     /// Returns an empty `Vec` for an empty scope (NOT an error).
-    async fn list(
-        &self,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<Vec<NamedView>, NamedViewError>;
+    async fn list(&self, workspace_id: &str, owner: &str)
+    -> Result<Vec<NamedView>, NamedViewError>;
 
     /// Delete a single named view, scoped to `(workspace_id, owner)`.
     ///
@@ -160,13 +157,11 @@ mod postgres_adapter {
                 )
                 .await
                 .map_err(|e| match e {
-                    CallGraphStoreError::UniqueViolation(_) => {
-                        NamedViewError::Conflict(
-                            workspace_id.to_string(),
-                            owner.to_string(),
-                            name.to_string(),
-                        )
-                    }
+                    CallGraphStoreError::UniqueViolation(_) => NamedViewError::Conflict(
+                        workspace_id.to_string(),
+                        owner.to_string(),
+                        name.to_string(),
+                    ),
                     other => NamedViewError::Store(other.to_string()),
                 })
         }

@@ -31,11 +31,7 @@ pub trait SessionStore: Send + Sync {
     ///
     /// Returns `Ok(None)` when the id is missing or the scope does
     /// not match.
-    async fn load(
-        &self,
-        id: &str,
-        workspace_id: &str,
-    ) -> Result<Option<SessionRow>, SessionError>;
+    async fn load(&self, id: &str, workspace_id: &str) -> Result<Option<SessionRow>, SessionError>;
 
     /// List every session for a workspace, ordered by `created_at DESC`.
     /// Returns an empty `Vec` for an empty scope (NOT an error).
@@ -115,15 +111,17 @@ mod postgres_adapter {
             self.repo
                 .load_exploration_session(id, workspace_id)
                 .await
-                .map(|opt| opt.map(|r| SessionRow {
-                    id: r.id,
-                    workspace_id: r.workspace_id,
-                    events: r.events,
-                    navigation_mode: r.navigation_mode,
-                    panes: r.panes,
-                    created_at: r.created_at,
-                    investigation_id: r.investigation_id,
-                }))
+                .map(|opt| {
+                    opt.map(|r| SessionRow {
+                        id: r.id,
+                        workspace_id: r.workspace_id,
+                        events: r.events,
+                        navigation_mode: r.navigation_mode,
+                        panes: r.panes,
+                        created_at: r.created_at,
+                        investigation_id: r.investigation_id,
+                    })
+                })
                 .map_err(|e| SessionError::Store(e.to_string()))
         }
 

@@ -234,7 +234,7 @@ pub(crate) mod handlers {
     use crate::mcp::envelope::{err_envelope, ok_envelope};
     use crate::mcp::handler::ToolHandler;
     use crate::ports::route_store::{
-        ApiRoute, ApiRouteEdge, EDGE_KIND_HTTP_CALLS, RouteStore, PROTOCOL_HTTP,
+        ApiRoute, ApiRouteEdge, EDGE_KIND_HTTP_CALLS, PROTOCOL_HTTP, RouteStore,
     };
 
     // Tool name imported from explorer.rs

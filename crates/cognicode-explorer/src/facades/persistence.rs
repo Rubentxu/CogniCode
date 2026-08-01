@@ -63,9 +63,7 @@ impl PersistenceServiceImpl {
         #[cfg(feature = "postgres")]
         let session_store = postgres_repo
             .as_ref()
-            .map(|repo| {
-                Arc::new(PostgresSessionStore::new(repo.clone())) as Arc<dyn SessionStore>
-            });
+            .map(|repo| Arc::new(PostgresSessionStore::new(repo.clone())) as Arc<dyn SessionStore>);
         Self {
             view_spec_store,
             #[cfg(feature = "postgres")]
@@ -267,7 +265,9 @@ impl PersistenceService for PersistenceServiceImpl {
                     investigation_id.as_deref(),
                 )
                 .await
-                .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("save_exploration_session: {e}")))?;
+                .map_err(|e| {
+                    ExplorerError::Anyhow(anyhow::anyhow!("save_exploration_session: {e}"))
+                })?;
             return Ok(session);
         }
 

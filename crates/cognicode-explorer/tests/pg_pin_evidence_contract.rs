@@ -63,15 +63,13 @@ impl cognicode_explorer::SearchService for MockSearchService {
         _query: &str,
         _kind: Option<&str>,
         _workspace_id: Option<&str>,
-    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::SpotterSearchResult>>
-    {
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::SpotterSearchResult>> {
         Ok(vec![])
     }
     async fn inspect_object(
         &self,
         _object_id: &str,
-    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::InspectableObjectSummary>
-    {
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::InspectableObjectSummary> {
         Err(cognicode_explorer::error::ExplorerError::ObjectNotFound(
             "mock".into(),
         ))
@@ -85,8 +83,7 @@ impl cognicode_explorer::ViewService for MockViewService {
     async fn available_views(
         &self,
         _object_id: &str,
-    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::ViewDescriptorDto>>
-    {
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::ViewDescriptorDto>> {
         Ok(vec![])
     }
     async fn contextual_view(
@@ -104,8 +101,7 @@ impl cognicode_explorer::ViewService for MockViewService {
         _level: &str,
         _depth: u8,
         _max_nodes: usize,
-    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::ContextualGraphResponse>
-    {
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::ContextualGraphResponse> {
         Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
             "mock".into(),
         ))
@@ -143,15 +139,15 @@ impl cognicode_explorer::GraphService for MockGraphService {
     async fn resolve_symbol(
         &self,
         _id: &str,
-    ) -> cognicode_explorer::ExplorerResult<Option<cognicode_explorer::ports::symbol_repository::ResolvedSymbol>>
-    {
+    ) -> cognicode_explorer::ExplorerResult<
+        Option<cognicode_explorer::ports::symbol_repository::ResolvedSymbol>,
+    > {
         Ok(None)
     }
     fn graph_query(
         &self,
-    ) -> Option<
-        std::sync::Arc<dyn cognicode_core::domain::traits::graph_query_port::GraphQueryPort>,
-    > {
+    ) -> Option<std::sync::Arc<dyn cognicode_core::domain::traits::graph_query_port::GraphQueryPort>>
+    {
         None
     }
     async fn build_subgraph(
@@ -242,14 +238,8 @@ impl cognicode_explorer::MoldQLService for MockMoldQLService {
 
 #[derive(Clone)]
 struct MockPersistenceService {
-    sessions: Arc<
-        Mutex<
-            std::collections::HashMap<
-                String,
-                cognicode_explorer::dto::ExplorationSession,
-            >,
-        >,
-    >,
+    sessions:
+        Arc<Mutex<std::collections::HashMap<String, cognicode_explorer::dto::ExplorationSession>>>,
 }
 impl MockPersistenceService {
     fn new() -> Self {
@@ -271,24 +261,21 @@ impl cognicode_explorer::PersistenceService for MockPersistenceService {
     async fn load_exploration_session(
         &self,
         _id: &str,
-    ) -> cognicode_explorer::ExplorerResult<
-        Option<cognicode_explorer::dto::ExplorationSession>,
-    > {
+    ) -> cognicode_explorer::ExplorerResult<Option<cognicode_explorer::dto::ExplorationSession>>
+    {
         Ok(None)
     }
     async fn list_explorations(
         &self,
         _workspace_id: &str,
-    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::ExplorationSession>>
-    {
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::ExplorationSession>> {
         Ok(vec![])
     }
     async fn generate_artifact(
         &self,
         _exploration_id: &str,
         _request: cognicode_explorer::dto::GenerateArtifactRequest,
-    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::DecisionArtifactSummary>
-    {
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::DecisionArtifactSummary> {
         Err(cognicode_explorer::error::ExplorerError::FeatureDisabled(
             "mock".into(),
         ))
@@ -308,18 +295,14 @@ impl cognicode_explorer::PersistenceService for MockPersistenceService {
         _id: &str,
         _workspace_id: &str,
         _owner: &str,
-    ) -> cognicode_explorer::ExplorerResult<
-        Option<cognicode_explorer::dto::ViewSpec>,
-    > {
+    ) -> cognicode_explorer::ExplorerResult<Option<cognicode_explorer::dto::ViewSpec>> {
         Ok(None)
     }
     async fn list_view_specs(
         &self,
         _workspace_id: &str,
         _owner: &str,
-    ) -> cognicode_explorer::ExplorerResult<
-        Vec<cognicode_explorer::dto::ViewSpec>,
-    > {
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::ViewSpec>> {
         Ok(vec![])
     }
     async fn delete_view_spec(
