@@ -35,17 +35,17 @@
 //! Each port impl is `Err(Error::Stub(...))` today. The follow-up
 //! commits land the per-port SQL in priority order:
 //!
-//! | Priority | Port | Reason |
-//! |---------|------|--------|
-//! | 1 | `ManifestStore` | Simplest SQL (single-table CRUD), is the basic load-bearing port for Phase 1 tests |
-//! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk |
-//! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) |
-//! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` |
-//! | 5 | `FederationStore` | Single-table CRUD on `spaces` |
-//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) |
-//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` |
-//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` |
-//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports |
+//! | Priority | Port | Reason | Status |
+//! |---------|------|--------|--------|
+//! | 1 | `ManifestStore` | Simplest SQL (single-table CRUD), is the basic load-bearing port for Phase 1 tests | DONE (`af5e2ef2`) |
+//! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk | DONE (`34415ce8`) |
+//! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) | DONE (this branch) |
+//! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` | pending |
+//! | 5 | `FederationStore` | Single-table CRUD on `spaces` | pending (multimodal) |
+//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | pending |
+//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | pending |
+//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | pending |
+//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports | pending |
 
 use std::path::Path;
 use std::sync::Arc;
@@ -485,31 +485,148 @@ impl SessionStore for LadybugStore {
 impl ReportStore for LadybugStore {
     async fn save_report(
         &self,
-        _workspace_id: &str,
-        _report: &ReportSummary,
+        workspace_id: &str,
+        report: &ReportSummary,
     ) -> Result<(), ReportError> {
-        // PHASE 1 STUB. Next change: INSERT INTO graph_reports ... ON CONFLICT
-        // DO UPDATE (per ADR-028 §3 ReportStore contract).
-        Err(ReportError::Store(
-            "(phase 1 stub — see lib.rs port-impl)".into(),
-        ))
+        // ADR-028 §3 `save_report(ws, report)` — INSERT a new GraphReport
+        // node keyed by `id` (single-column STRING PK, same lbug 0.19
+        // shape as SessionStore's ExplorationSession). The PG adapter
+        // trusts the caller's `id` + `created_at`; we mirror that here.
+        //
+        // `report` (the JSON column) is serialized to a STRING — lbug
+        // 0.19 has no JSON type, and the application layer already
+        // round-trips via serde_json (same pattern as SessionStore's
+        // `events` / `panes` columns).
+        //
+        // `health_score` is `Option<f32>` — null-safe via a NULL
+        // parameter when None.
+        let conn = self
+            .connection()
+            .map_err(|e| ReportError::Store(format!("save_report: {e}")))?;
+
+        let report_json = serde_json::to_string(&report.report)
+            .map_err(|e| ReportError::Store(format!("save_report: serialize report: {e}")))?;
+
+        let mut stmt = conn
+            .prepare(
+                "CREATE (r:GraphReport {id: $id, workspace_id: $ws, created_at: $ts, report: $json, symbol_count: $scnt, edge_count: $ecnt, health_score: $hscore});",
+            )
+            .map_err(|e| ReportError::Store(format!("save_report: prepare: {e}")))?;
+        conn.execute(
+            &mut stmt,
+            vec![
+                ("id", lbug::Value::String(report.id.clone())),
+                ("ws", lbug::Value::String(workspace_id.to_string())),
+                ("ts", lbug::Value::String(report.created_at.clone())),
+                ("json", lbug::Value::String(report_json)),
+                ("scnt", lbug::Value::Int64(report.symbol_count as i64)),
+                ("ecnt", lbug::Value::Int64(report.edge_count as i64)),
+                (
+                    "hscore",
+                    match report.health_score {
+                        Some(v) => lbug::Value::Double(v as f64),
+                        None => lbug::Value::Null(lbug::LogicalType::Double),
+                    },
+                ),
+            ],
+        )
+        .map_err(|e| ReportError::Store(format!("save_report: execute: {e}")))?;
+        Ok(())
     }
 
     async fn latest_report(
         &self,
-        _workspace_id: &str,
+        workspace_id: &str,
     ) -> Result<Option<ReportSummary>, ReportError> {
-        // PHASE 1 STUB.
-        Ok(None)
+        // ADR-028 §3 `latest_report(ws)` — newest row by `created_at`,
+        // or None. ORDER BY + LIMIT 1 keeps the read O(rows-scanned);
+        // no time-range filter (per ADR-028 §3 — PG adapter also uses
+        // no time-range filter at the trait level).
+        let conn = self
+            .connection()
+            .map_err(|e| ReportError::Store(format!("latest_report: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:GraphReport) WHERE r.workspace_id = $ws RETURN r.id, r.workspace_id, r.created_at, r.report, r.symbol_count, r.edge_count, r.health_score ORDER BY r.created_at DESC LIMIT 1;",
+            )
+            .map_err(|e| ReportError::Store(format!("latest_report: prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![("ws", lbug::Value::String(workspace_id.to_string()))],
+            )
+            .map_err(|e| ReportError::Store(format!("latest_report: execute: {e}")))?;
+
+        let Some(row) = result.next() else {
+            return Ok(None);
+        };
+        parse_report_row(&row).map(Some)
     }
 
     async fn reports_for_workspace(
         &self,
-        _workspace_id: &str,
+        workspace_id: &str,
     ) -> Result<Vec<ReportSummary>, ReportError> {
-        // PHASE 1 STUB.
-        Ok(Vec::new())
+        // ADR-028 §3 `reports_for_workspace(ws)` — every row for `ws`,
+        // ordered newest-first. No time-range filter (PG adapter also
+        // applies no range at the trait level; the underlying
+        // `load_report_range(days=365)` is adapter-local policy).
+        let conn = self
+            .connection()
+            .map_err(|e| ReportError::Store(format!("reports_for_workspace: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:GraphReport) WHERE r.workspace_id = $ws RETURN r.id, r.workspace_id, r.created_at, r.report, r.symbol_count, r.edge_count, r.health_score ORDER BY r.created_at DESC;",
+            )
+            .map_err(|e| ReportError::Store(format!("reports_for_workspace: prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![("ws", lbug::Value::String(workspace_id.to_string()))],
+            )
+            .map_err(|e| ReportError::Store(format!("reports_for_workspace: execute: {e}")))?;
+
+        let mut rows = Vec::new();
+        while let Some(row) = result.next() {
+            rows.push(parse_report_row(&row)?);
+        }
+        Ok(rows)
     }
+}
+
+/// Row mapper for `ReportStore` queries — shared by `latest_report`
+/// and `reports_for_workspace` so both stay in lock-step on column
+/// order. Column order must match the RETURN clauses above.
+fn parse_report_row(row: &[lbug::Value]) -> Result<ReportSummary, ReportError> {
+    let id = row[0].to_string();
+    let workspace_id = row[1].to_string();
+    let created_at = row[2].to_string();
+    let report: serde_json::Value = serde_json::from_str(&row[3].to_string())
+        .map_err(|e| ReportError::Store(format!("parse_report_row: report JSON: {e}")))?;
+    let symbol_count = match &row[4] {
+        lbug::Value::Int32(n) => *n,
+        lbug::Value::Int64(n) => *n as i32,
+        _ => 0,
+    };
+    let edge_count = match &row[5] {
+        lbug::Value::Int32(n) => *n,
+        lbug::Value::Int64(n) => *n as i32,
+        _ => 0,
+    };
+    let health_score = match &row[6] {
+        lbug::Value::Null(_) => None,
+        lbug::Value::Double(n) => Some(*n as f32),
+        _ => None,
+    };
+    Ok(ReportSummary {
+        id,
+        workspace_id,
+        created_at,
+        report,
+        symbol_count,
+        edge_count,
+        health_score,
+    })
 }
 
 #[async_trait]
@@ -819,5 +936,208 @@ mod tests {
         assert_eq!(rows.len(), 1, "MERGE should NOT create a second row");
         assert_eq!(rows[0].symbol_count, 999);
         assert_eq!(rows[0].content_hash, "new-hash");
+    }
+
+    // --------------------------------------------------------------------
+    // ReportStore (Priority 3)
+    // --------------------------------------------------------------------
+    //
+    // Same pattern as the ManifestStore / SessionStore tests above:
+    // real lbug db in a tempdir, schema-init helper, exercises
+    // save/latest/list with the same shapes the Postgres adapter uses.
+
+    /// Apply the GraphReport NODE TABLE DDL once per test database.
+    /// Idempotent via `IF NOT EXISTS`.
+    ///
+    /// Note: like ExplorationSession, the natural PK here is
+    /// single-column (`id` STRING) — no synthetic PK needed and no
+    /// read-then-conditional-write workaround. The PG adapter's
+    /// `save_report` is also a single-pass INSERT (or
+    /// INSERT-ON-CONFLICT-DO-UPDATE), so parity is direct.
+    ///
+    /// `report` is stored as STRING (the JSON text). `health_score`
+    /// is nullable DOUBLE.
+    fn init_graph_report_schema(store: &LadybugStore) {
+        let conn = store.connection().expect("schema-init connection");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS GraphReport( \
+                 id STRING PRIMARY KEY, \
+                 workspace_id STRING, \
+                 created_at STRING, \
+                 report STRING, \
+                 symbol_count INT64, \
+                 edge_count INT64, \
+                 health_score DOUBLE);",
+        )
+        .expect("create GraphReport NODE TABLE");
+    }
+
+    fn sample_report(id: &str, ws: &str, ts: &str) -> ReportSummary {
+        ReportSummary {
+            id: id.to_string(),
+            workspace_id: ws.to_string(),
+            created_at: ts.to_string(),
+            report: serde_json::json!({
+                "summary": "test report",
+                "issues": 3,
+            }),
+            symbol_count: 100,
+            edge_count: 42,
+            health_score: Some(0.85),
+        }
+    }
+
+    #[tokio::test]
+    async fn report_latest_returns_none_for_fresh_db() {
+        let (store, _dir) = make_test_store();
+        init_graph_report_schema(&store);
+        let r = ReportStore::latest_report(&store, "ws-unknown")
+            .await
+            .expect("latest");
+        assert!(r.is_none(), "fresh db should return None");
+    }
+
+    #[tokio::test]
+    async fn report_list_returns_empty_for_fresh_db() {
+        let (store, _dir) = make_test_store();
+        init_graph_report_schema(&store);
+        let rows = ReportStore::reports_for_workspace(&store, "ws-unknown")
+            .await
+            .expect("list");
+        assert!(rows.is_empty(), "fresh db should return no rows");
+    }
+
+    #[tokio::test]
+    async fn report_save_then_latest_round_trips() {
+        let (store, _dir) = make_test_store();
+        init_graph_report_schema(&store);
+        let report = sample_report("rep-1", "ws-1", "2026-08-02T10:00:00Z");
+        ReportStore::save_report(&store, "ws-1", &report)
+            .await
+            .expect("save");
+        let loaded = ReportStore::latest_report(&store, "ws-1")
+            .await
+            .expect("latest");
+        let loaded = loaded.expect("latest should return Some after save");
+        assert_eq!(loaded.id, "rep-1");
+        assert_eq!(loaded.workspace_id, "ws-1");
+        assert_eq!(loaded.created_at, "2026-08-02T10:00:00Z");
+        assert_eq!(loaded.report["summary"], "test report");
+        assert_eq!(loaded.report["issues"], 3);
+        assert_eq!(loaded.symbol_count, 100);
+        assert_eq!(loaded.edge_count, 42);
+        assert!(
+            (loaded.health_score.expect("health_score") - 0.85_f32).abs() < 1e-4,
+            "health_score should round-trip ~0.85",
+        );
+    }
+
+    #[tokio::test]
+    async fn report_save_with_null_health_score_round_trips() {
+        let (store, _dir) = make_test_store();
+        init_graph_report_schema(&store);
+        let mut report = sample_report("rep-2", "ws-2", "2026-08-02T10:05:00Z");
+        report.health_score = None;
+        ReportStore::save_report(&store, "ws-2", &report)
+            .await
+            .expect("save");
+        let loaded = ReportStore::latest_report(&store, "ws-2")
+            .await
+            .expect("latest")
+            .expect("present");
+        assert!(
+            loaded.health_score.is_none(),
+            "null health_score should round-trip None"
+        );
+    }
+
+    #[tokio::test]
+    async fn report_list_returns_rows_in_created_at_desc_order() {
+        // Save three reports in a known order; list must return them
+        // newest-first. Same determinism pattern as SessionStore's list
+        // ordering test: back-to-back saves may land in the same
+        // nanosecond, so we use distinct `created_at` values supplied
+        // by the caller (the PG adapter trusts the caller's
+        // `created_at`; we mirror that).
+        let (store, _dir) = make_test_store();
+        init_graph_report_schema(&store);
+        ReportStore::save_report(
+            &store,
+            "ws-x",
+            &sample_report("rep-old", "ws-x", "2026-08-02T08:00:00Z"),
+        )
+        .await
+        .expect("save-old");
+        ReportStore::save_report(
+            &store,
+            "ws-x",
+            &sample_report("rep-mid", "ws-x", "2026-08-02T09:00:00Z"),
+        )
+        .await
+        .expect("save-mid");
+        ReportStore::save_report(
+            &store,
+            "ws-x",
+            &sample_report("rep-new", "ws-x", "2026-08-02T10:00:00Z"),
+        )
+        .await
+        .expect("save-new");
+        let rows = ReportStore::reports_for_workspace(&store, "ws-x")
+            .await
+            .expect("list");
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].id, "rep-new");
+        assert_eq!(rows[1].id, "rep-mid");
+        assert_eq!(rows[2].id, "rep-old");
+    }
+
+    #[tokio::test]
+    async fn report_latest_and_list_scopes_to_workspace() {
+        // Two workspaces, three reports total — `latest_report(ws-A)`
+        // and `reports_for_workspace(ws-A)` must only see ws-A's rows.
+        let (store, _dir) = make_test_store();
+        init_graph_report_schema(&store);
+        ReportStore::save_report(
+            &store,
+            "ws-A",
+            &sample_report("a-1", "ws-A", "2026-08-02T08:00:00Z"),
+        )
+        .await
+        .expect("a1");
+        ReportStore::save_report(
+            &store,
+            "ws-A",
+            &sample_report("a-2", "ws-A", "2026-08-02T09:00:00Z"),
+        )
+        .await
+        .expect("a2");
+        ReportStore::save_report(
+            &store,
+            "ws-B",
+            &sample_report("b-1", "ws-B", "2026-08-02T10:00:00Z"),
+        )
+        .await
+        .expect("b1");
+
+        let a_latest = ReportStore::latest_report(&store, "ws-A")
+            .await
+            .expect("latest-A")
+            .expect("present");
+        assert_eq!(
+            a_latest.id, "a-2",
+            "latest for ws-A must be a-2 (newest ws-A report)"
+        );
+
+        let a_rows = ReportStore::reports_for_workspace(&store, "ws-A")
+            .await
+            .expect("list-A");
+        assert_eq!(a_rows.len(), 2);
+        assert!(a_rows.iter().all(|r| r.workspace_id == "ws-A"));
+
+        let b_rows = ReportStore::reports_for_workspace(&store, "ws-B")
+            .await
+            .expect("list-B");
+        assert_eq!(b_rows.len(), 1);
+        assert_eq!(b_rows[0].id, "b-1");
     }
 }
