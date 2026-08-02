@@ -251,27 +251,201 @@ impl FederationStore for LadybugStore {
 
 #[async_trait]
 impl ManifestStore for LadybugStore {
-    async fn get_manifest(&self, _workspace_id: &str) -> Result<Vec<ScanManifest>, ManifestError> {
-        // PHASE 1 STUB. Next change: SELECT ... FROM scan_manifest.
-        Ok(Vec::new())
+    async fn get_manifest(&self, workspace_id: &str) -> Result<Vec<ScanManifest>, ManifestError> {
+        // lbug Cypher: MATCH (s:ScanManifest) WHERE s.workspace_id = $ws
+        // RETURN s.*, ordered by file_path for stable reads.
+        let conn = self
+            .connection()
+            .map_err(|e| ManifestError::Store(format!("get_manifest: {e}")))?;
+        let mut result = conn
+            .query(
+                "MATCH (s:ScanManifest)                  WHERE s.workspace_id = $ws                  RETURN s.workspace_id, s.file_path, s.file_type, s.language,                         s.content_hash, s.mtime, s.symbol_count, s.edge_count,                         s.status, s.error_msg                  ORDER BY s.file_path;",
+            )
+            .map_err(|e| ManifestError::Store(format!("get_manifest: query: {e}")))?;
+        let mut rows = Vec::new();
+        while let Some(row) = result.next() {
+            rows.push(ScanManifest {
+                workspace_id: row[0].to_string(),
+                file_path: row[1].to_string(),
+                file_type: row[2].to_string(),
+                language: match &row[3] {
+                    lbug::Value::Null(_) => None,
+                    other => Some(other.to_string()),
+                },
+                content_hash: row[4].to_string(),
+                mtime: match &row[5] {
+                    lbug::Value::Double(n) => *n,
+                    _ => 0.0,
+                },
+                symbol_count: match &row[6] {
+                    lbug::Value::Int32(n) => *n,
+                    lbug::Value::Int64(n) => *n as i32,
+                    _ => 0,
+                },
+                edge_count: match &row[7] {
+                    lbug::Value::Int32(n) => *n,
+                    lbug::Value::Int64(n) => *n as i32,
+                    _ => 0,
+                },
+                status: row[8].to_string(),
+                error_msg: match &row[9] {
+                    lbug::Value::Null(_) => None,
+                    other => Some(other.to_string()),
+                },
+            });
+        }
+        Ok(rows)
     }
 
-    async fn upsert_manifest_entry(&self, _row: &ScanManifest) -> Result<(), ManifestError> {
-        // PHASE 1 STUB.
-        Err(ManifestError::Store(
-            "(phase 1 stub — see lib.rs port-impl)".into(),
-        ))
+    async fn upsert_manifest_entry(&self, row: &ScanManifest) -> Result<(), ManifestError> {
+        // Phase 1 limitation: lbug 0.19.0 NODE TABLEs support single-column
+        // PRIMARY KEYs only (no composite PK, no UNIQUE constraints on
+        // multi-column sets). The natural key
+        // `(workspace_id, file_path)` is therefore enforced at the
+        // application layer via a read-then-conditional-write:
+        //   1. MATCH by natural key — if it exists, UPDATE all other
+        //      fields.
+        //   2. Otherwise, CREATE a new node with the synthetic `id`
+        //      auto-assigned by `SERIAL PRIMARY KEY`.
+        //
+        // The follow-up per-port PR will add a single-column synthetic
+        // `(workspace_id || file_path)` text-PK that the application can
+        // pre-compute (e.g. `format!("{ws}::{path}")`) and use as the
+        // primary key, restoring a single-pass MERGE upsert. For now,
+        // the 2-step pattern is correct and round-trips.
+        let conn = self
+            .connection()
+            .map_err(|e| ManifestError::Store(format!("upsert_manifest_entry: {e}")))?;
+
+        // Step 1: existence check.
+        let mut check_stmt = conn
+            .prepare(
+                "MATCH (s:ScanManifest) \
+                 WHERE s.workspace_id = $ws AND s.file_path = $path \
+                 RETURN s.id;",
+            )
+            .map_err(|e| {
+                ManifestError::Store(format!("upsert_manifest_entry: check prepare: {e}"))
+            })?;
+        let mut existing = conn
+            .execute(
+                &mut check_stmt,
+                vec![
+                    ("ws", lbug::Value::String(row.workspace_id.clone())),
+                    ("path", lbug::Value::String(row.file_path.clone())),
+                ],
+            )
+            .map_err(|e| {
+                ManifestError::Store(format!("upsert_manifest_entry: check execute: {e}"))
+            })?;
+
+        if existing.next().is_some() {
+            // Step 2a: UPDATE the existing row. lbug's 0.19.0 parser
+            // is line-continuation-sensitive — keep the query on one
+            // line. Pattern form `MATCH (n:L) WHERE ... SET ...` matches
+            // the spike's s6_cypher_compat.rs.
+            let mut upd_stmt = conn
+                .prepare(
+                    "MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path SET s.file_type = $ftype, s.language = $lang, s.content_hash = $hash, s.mtime = $mtime, s.symbol_count = $symcnt, s.edge_count = $edgecnt, s.status = $status, s.error_msg = $errmsg;",
+                )
+                .map_err(|e| ManifestError::Store(format!("upsert_manifest_entry: update prepare: {e}")))?;
+            conn.execute(
+                &mut upd_stmt,
+                vec![
+                    ("ws", lbug::Value::String(row.workspace_id.clone())),
+                    ("path", lbug::Value::String(row.file_path.clone())),
+                    ("ftype", lbug::Value::String(row.file_type.clone())),
+                    (
+                        "lang",
+                        match &row.language {
+                            Some(s) => lbug::Value::String(s.clone()),
+                            None => lbug::Value::Null(lbug::LogicalType::String),
+                        },
+                    ),
+                    ("hash", lbug::Value::String(row.content_hash.clone())),
+                    ("mtime", lbug::Value::Double(row.mtime)),
+                    ("symcnt", lbug::Value::Int32(row.symbol_count)),
+                    ("edgecnt", lbug::Value::Int32(row.edge_count)),
+                    ("status", lbug::Value::String(row.status.clone())),
+                    (
+                        "errmsg",
+                        match &row.error_msg {
+                            Some(s) => lbug::Value::String(s.clone()),
+                            None => lbug::Value::Null(lbug::LogicalType::String),
+                        },
+                    ),
+                ],
+            )
+            .map_err(|e| {
+                ManifestError::Store(format!("upsert_manifest_entry: update execute: {e}"))
+            })?;
+        } else {
+            // Step 2b: CREATE a new row. (lbug 0.19.0 parser is
+            // line-continuation-sensitive — keep the CREATE on one line.)
+            let mut ins_stmt = conn
+                .prepare(
+                    "CREATE (s:ScanManifest {workspace_id: $ws, file_path: $path, file_type: $ftype, language: $lang, content_hash: $hash, mtime: $mtime, symbol_count: $symcnt, edge_count: $edgecnt, status: $status, error_msg: $errmsg});",
+                )
+                .map_err(|e| ManifestError::Store(format!("upsert_manifest_entry: insert prepare: {e}")))?;
+            conn.execute(
+                &mut ins_stmt,
+                vec![
+                    ("ws", lbug::Value::String(row.workspace_id.clone())),
+                    ("path", lbug::Value::String(row.file_path.clone())),
+                    ("ftype", lbug::Value::String(row.file_type.clone())),
+                    (
+                        "lang",
+                        match &row.language {
+                            Some(s) => lbug::Value::String(s.clone()),
+                            None => lbug::Value::Null(lbug::LogicalType::String),
+                        },
+                    ),
+                    ("hash", lbug::Value::String(row.content_hash.clone())),
+                    ("mtime", lbug::Value::Double(row.mtime)),
+                    ("symcnt", lbug::Value::Int32(row.symbol_count)),
+                    ("edgecnt", lbug::Value::Int32(row.edge_count)),
+                    ("status", lbug::Value::String(row.status.clone())),
+                    (
+                        "errmsg",
+                        match &row.error_msg {
+                            Some(s) => lbug::Value::String(s.clone()),
+                            None => lbug::Value::Null(lbug::LogicalType::String),
+                        },
+                    ),
+                ],
+            )
+            .map_err(|e| {
+                ManifestError::Store(format!("upsert_manifest_entry: insert execute: {e}"))
+            })?;
+        }
+        Ok(())
     }
 
     async fn delete_manifest_entry(
         &self,
-        _workspace_id: &str,
-        _file_path: &str,
+        workspace_id: &str,
+        file_path: &str,
     ) -> Result<(), ManifestError> {
-        // PHASE 1 STUB.
-        Err(ManifestError::Store(
-            "(phase 1 stub — see lib.rs port-impl)".into(),
-        ))
+        // lbug Cypher: MATCH by natural key + DELETE. Single-line query
+        // (parser is line-continuation-sensitive). Uses WHERE form
+        // because the property-pattern form is rejected by the 0.19
+        // parser (same constraint we hit in `upsert_manifest_entry`'s
+        // UPDATE branch).
+        let conn = self
+            .connection()
+            .map_err(|e| ManifestError::Store(format!("delete_manifest_entry: {e}")))?;
+        let mut stmt = conn
+            .prepare("MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path DELETE s;")
+            .map_err(|e| ManifestError::Store(format!("delete_manifest_entry: prepare: {e}")))?;
+        conn.execute(
+            &mut stmt,
+            vec![
+                ("ws", lbug::Value::String(workspace_id.to_string())),
+                ("path", lbug::Value::String(file_path.to_string())),
+            ],
+        )
+        .map_err(|e| ManifestError::Store(format!("delete_manifest_entry: execute: {e}")))?;
+        Ok(())
     }
 }
 
@@ -505,5 +679,145 @@ mod tests {
             T: IngestCommit,
         {
         }
+    }
+
+    // ========================================================================
+    // Per-port integration tests — the first land: ManifestStore (Priority 1)
+    // ========================================================================
+
+    /// Create a temp lbug DB and return a `LadybugStore` + temp dir handle
+    /// (the temp dir auto-cleans on drop).
+    ///
+    /// Caller MUST run the schema DDL via `init_schema` before exercising
+    /// the port — same pattern as `PostgresRepository::run_migrations`.
+    fn make_test_store() -> (LadybugStore, tempfile::TempDir) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("test.lbdb");
+        let store = LadybugStore::open(&path).expect("open lbug db");
+        (store, dir)
+    }
+
+    /// Apply the ScanManifest NODE TABLE DDL once per test database.
+    ///
+    /// Mirrors the `PostgresRepository::run_migrations()` pattern: explicit,
+    /// idempotent (uses `IF NOT EXISTS`).
+    ///
+    /// Note: lbug 0.19.0 NODE TABLEs require a single-column PRIMARY KEY
+    /// (the spike's schema pattern adds `id SERIAL PRIMARY KEY` to every
+    /// table — composite PKs aren't supported in 0.19.0). The natural
+    /// key (`workspace_id, file_path`) is enforced via a uniqueness
+    /// constraint at the application layer via the `MERGE` pattern in
+    /// `upsert_manifest_entry`. The synthetic `id` is internal — port
+    /// consumers never see it.
+    fn init_scan_manifest_schema(store: &LadybugStore) {
+        let conn = store.connection().expect("schema-init connection");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS ScanManifest( \
+                 id SERIAL PRIMARY KEY, \
+                 workspace_id STRING, \
+                 file_path STRING, \
+                 file_type STRING, \
+                 language STRING, \
+                 content_hash STRING, \
+                 mtime DOUBLE, \
+                 symbol_count INT64, \
+                 edge_count INT64, \
+                 status STRING, \
+                 error_msg STRING);",
+        )
+        .expect("create ScanManifest NODE TABLE");
+    }
+
+    fn sample_row(ws: &str, path: &str) -> ScanManifest {
+        ScanManifest {
+            workspace_id: ws.to_string(),
+            file_path: path.to_string(),
+            file_type: "rust".to_string(),
+            language: Some("Rust".to_string()),
+            content_hash: "abc123".to_string(),
+            mtime: 1234.5,
+            symbol_count: 42,
+            edge_count: 17,
+            status: "scanned".to_string(),
+            error_msg: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn manifest_get_returns_empty_for_fresh_db() {
+        let (store, _dir) = make_test_store();
+        init_scan_manifest_schema(&store);
+        let rows = store.get_manifest("ws-unknown").await.expect("get");
+        assert!(rows.is_empty(), "fresh db should return no rows");
+    }
+
+    #[tokio::test]
+    async fn manifest_upsert_then_get_round_trips() {
+        let (store, _dir) = make_test_store();
+        init_scan_manifest_schema(&store);
+        let row = sample_row("ws-1", "src/lib.rs");
+        store.upsert_manifest_entry(&row).await.expect("upsert");
+        let rows = store.get_manifest("ws-1").await.expect("get");
+        assert_eq!(rows.len(), 1, "should round-trip exactly one row");
+        let r = &rows[0];
+        assert_eq!(r.workspace_id, "ws-1");
+        assert_eq!(r.file_path, "src/lib.rs");
+        assert_eq!(r.file_type, "rust");
+        assert_eq!(r.language.as_deref(), Some("Rust"));
+        assert_eq!(r.content_hash, "abc123");
+        assert!((r.mtime - 1234.5).abs() < 1e-9);
+        assert_eq!(r.symbol_count, 42);
+        assert_eq!(r.edge_count, 17);
+        assert_eq!(r.status, "scanned");
+        assert_eq!(r.error_msg, None);
+    }
+
+    #[tokio::test]
+    async fn manifest_upsert_with_optional_nulls() {
+        let (store, _dir) = make_test_store();
+        init_scan_manifest_schema(&store);
+        let mut row = sample_row("ws-2", "src/empty.rs");
+        row.language = None;
+        row.error_msg = None;
+        store.upsert_manifest_entry(&row).await.expect("upsert");
+        let rows = store.get_manifest("ws-2").await.expect("get");
+        assert_eq!(rows.len(), 1);
+        let r = &rows[0];
+        assert!(r.language.is_none(), "language should round-trip None");
+        assert!(r.error_msg.is_none(), "error_msg should round-trip None");
+    }
+
+    #[tokio::test]
+    async fn manifest_delete_removes_target_row() {
+        let (store, _dir) = make_test_store();
+        init_scan_manifest_schema(&store);
+        let row1 = sample_row("ws-3", "src/a.rs");
+        let row2 = sample_row("ws-3", "src/b.rs");
+        store.upsert_manifest_entry(&row1).await.expect("u1");
+        store.upsert_manifest_entry(&row2).await.expect("u2");
+        assert_eq!(store.get_manifest("ws-3").await.expect("g1").len(), 2);
+        store
+            .delete_manifest_entry("ws-3", "src/a.rs")
+            .await
+            .expect("d1");
+        let remaining = store.get_manifest("ws-3").await.expect("g2");
+        assert_eq!(remaining.len(), 1, "delete should leave the other row");
+        assert_eq!(remaining[0].file_path, "src/b.rs");
+    }
+
+    #[tokio::test]
+    async fn manifest_upsert_overwrites_existing_row() {
+        let (store, _dir) = make_test_store();
+        init_scan_manifest_schema(&store);
+        let mut row = sample_row("ws-4", "src/x.rs");
+        row.symbol_count = 1;
+        store.upsert_manifest_entry(&row).await.expect("u1");
+        row.symbol_count = 999;
+        row.content_hash = "new-hash".to_string();
+        store.upsert_manifest_entry(&row).await.expect("u2");
+        let rows = store.get_manifest("ws-4").await.expect("g");
+        assert_eq!(rows.len(), 1, "MERGE should NOT create a second row");
+        assert_eq!(rows[0].symbol_count, 999);
+        assert_eq!(rows[0].content_hash, "new-hash");
     }
 }
