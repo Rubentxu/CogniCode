@@ -1,4 +1,9 @@
 //! CogniCode Runtime — shared bootstrap for API and MCP binaries.
+//!
+//! v1 of `e29-2-remove-pg` migration is in progress. The runtime
+//! still uses `PostgresRepository` directly; a follow-up PR will
+//! migrate the call sites to use the `PgBackend` trait (below) +
+//! `LadybugPgBackend` adapter (e29-2-switch-default, PR #204).
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -42,6 +47,58 @@ pub struct Runtime {
     /// of the concrete `PostgresRepository` for this aggregate.
     #[cfg(feature = "postgres")]
     pub call_graph_store: Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>,
+}
+
+/// `PgBackend` trait — abstracts the subset of `PostgresRepository`
+/// operations the runtime needs. Implemented by both the live
+/// `PostgresBackend` (PR follow-up) and `LadybugPgBackend` (this PR).
+///
+/// v1 of the migration adds the trait + the lbug-based adapter. The
+/// runtime's `bootstrap` function still uses `PostgresRepository`
+/// directly; a follow-up PR will switch it to use `&dyn PgBackend`.
+pub trait PgBackend: Send + Sync {
+    fn quality_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>;
+    fn view_spec_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>>;
+    fn call_graph_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>;
+}
+
+/// `LadybugPgBackend` — implements `PgBackend` on top of the
+/// `cognicode-ladybug` crate. Used when the runtime is built with
+/// `--features ladybug` (e29-2-switch-default, PR #204).
+///
+/// v1: the 3 ports are stored as `Option<Arc<dyn ...>>` and returned
+/// via the trait methods. The full integration (constructing the
+/// actual port impls from a `LadybugStore`) is a follow-up PR.
+pub struct LadybugPgBackend {
+    quality_store: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
+    view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>>,
+    call_graph_store: Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>,
+}
+
+impl LadybugPgBackend {
+    pub fn new(
+        quality_store: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
+        view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>>,
+        call_graph_store: Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>,
+    ) -> Self {
+        Self {
+            quality_store,
+            view_spec_store,
+            call_graph_store,
+        }
+    }
+}
+
+impl PgBackend for LadybugPgBackend {
+    fn quality_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::QualityStore>> {
+        self.quality_store.clone()
+    }
+    fn view_spec_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>> {
+        self.view_spec_store.clone()
+    }
+    fn call_graph_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>> {
+        self.call_graph_store.clone()
+    }
 }
 
 impl Runtime {
