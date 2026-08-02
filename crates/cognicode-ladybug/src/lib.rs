@@ -41,11 +41,11 @@
 //! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk | DONE (`34415ce8`) |
 //! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) | DONE (`83328dc2`) |
 //! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` | DONE (`bc4263ca`) |
-//! | 5 | `FederationStore` | Single-table CRUD on `spaces` | DONE (`e351bdc6` — gated behind `multimodal`, validated via cypher_probe) |
-//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | DONE (this branch) |
-//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | pending |
+//! | 5 | `FederationStore` | Single-table CRUD on `spaces` | DONE (`feat/e29-1-priority-5-federation-store` — multimodal-gated, validated via cypher_probe) |
+//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | DONE (`feat/e29-1-priority-6-view-spec-store`) |
+//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | DONE (this branch) |
 //! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | pending |
-//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports |
+//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports | pending |
 
 use std::path::Path;
 use std::sync::Arc;
@@ -57,6 +57,10 @@ use cognicode_core::domain::aggregates::CallGraph;
 use cognicode_core::domain::ports::{
     CallGraphError, CallGraphStore,
     manifest_store::{ManifestError, ManifestStore, ScanManifest},
+    quality_store::{
+        IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
+        RuleSummary, UpsertSummary,
+    },
     report_store::{ReportError, ReportStore, ReportSummary},
     revision_store::{RevisionError, RevisionStore},
     session_store::{SessionError, SessionRow, SessionStore},
@@ -125,6 +129,7 @@ impl_stub_for!(
     ReportError,
     RevisionError,
     ViewSpecStoreError,
+    QualityError,
     CallGraphError,
     cognicode_core::domain::ports::graph_error::GraphError,
 );
@@ -512,246 +517,409 @@ impl ReportStore for LadybugStore {
     }
 }
 
-#[async_trait]
-impl ViewSpecStore for LadybugStore {
-    async fn save(
-        &self,
-        payload: &ViewSpecPayload,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<(), ViewSpecStoreError> {
-        // ADR-028 §3 `save(payload, ws, owner)` — INSERT a new
-        // ViewSpec. Uniqueness is enforced by
-        // `(workspace_id, owner, title)` (same as the PG UNIQUE
-        // constraint the PG adapter relies on — see the
-        // `UniqueViolation → Conflict` mapping in
-        // `PostgresViewSpecStore::save`).
-        //
-        // lbug 0.19 has no UNIQUE primitive on multi-column sets, so
-        // we enforce uniqueness via a read-then-conditional-write:
-        //   1. MATCH by `(ws, owner, title)` — if any row matches,
-        //      return Conflict.
-        //   2. Otherwise, CREATE the new node.
-        //
-        // `created_at` and `updated_at` are RFC 3339 strings; the
-        // payload's `created_at` is honored (PG adapter relies on
-        // the column default — for parity we set both explicitly so
-        // lbug reads back the same value the caller can see). We
-        // use `std::time::SystemTime` instead of `chrono` to keep
-        // the ladybug dep surface minimal.
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let now_str = format!("{}Z", now); // unix-epoch seconds, RFC-3339-shaped
-        let created_at = if payload.created_at.is_empty() {
-            now_str.clone()
-        } else {
-            payload.created_at.clone()
-        };
-        let updated_at = if payload.updated_at.is_empty() {
-            created_at.clone()
-        } else {
-            payload.updated_at.clone()
-        };
-
+// `QualityStore` is a SYNC trait (no `#[async_trait]` in
+// `cognicode-core`'s definition — the PG adapter uses
+// `block_in_place + Handle::current + handle.block_on` to drive
+// async SQL through sync method signatures). Mirror that pattern
+// here for parity; tests use `tokio::test` so `Handle::current()`
+// resolves to the test's runtime.
+impl QualityStore for LadybugStore {
+    fn issues_for_file(&self, file: &str) -> Result<Vec<QualityIssue>, QualityError> {
+        // MATCH WHERE file_path = $file, ordered by id for stable reads.
         let conn = self
             .connection()
-            .map_err(|e| ViewSpecStoreError::Store(format!("save: {e}")))?;
-
-        // Step 1: uniqueness check on (ws, owner, title).
-        let mut check_stmt = conn
-            .prepare(
-                "MATCH (v:ViewSpec) WHERE v.workspace_id = $ws AND v.owner = $owner AND v.title = $title RETURN v.id;",
-            )
-            .map_err(|e| ViewSpecStoreError::Store(format!("save: check prepare: {e}")))?;
-        let mut existing = conn
-            .execute(
-                &mut check_stmt,
-                vec![
-                    ("ws", lbug::Value::String(workspace_id.to_string())),
-                    ("owner", lbug::Value::String(owner.to_string())),
-                    ("title", lbug::Value::String(payload.title.clone())),
-                ],
-            )
-            .map_err(|e| ViewSpecStoreError::Store(format!("save: check execute: {e}")))?;
-
-        if existing.next().is_some() {
-            return Err(ViewSpecStoreError::Conflict(format!(
-                "view spec with (ws={workspace_id}, owner={owner}, title={}) already exists",
-                payload.title
-            )));
-        }
-
-        // Step 2: CREATE the new node.
-        let data_source_json = serde_json::to_string(&payload.data_source)
-            .map_err(|e| ViewSpecStoreError::Store(format!("save: serialize data_source: {e}")))?;
-        let transform_json = match &payload.transform {
-            Some(t) => Some(serde_json::to_string(t).map_err(|e| {
-                ViewSpecStoreError::Store(format!("save: serialize transform: {e}"))
-            })?),
-            None => None,
-        };
-        let view_kind_json = serde_json::to_string(&payload.view_kind)
-            .map_err(|e| ViewSpecStoreError::Store(format!("save: serialize view_kind: {e}")))?;
-        let props_json = serde_json::to_string(&payload.props)
-            .map_err(|e| ViewSpecStoreError::Store(format!("save: serialize props: {e}")))?;
-
-        let mut ins_stmt = conn
-            .prepare(
-                "CREATE (v:ViewSpec {id: $id, workspace_id: $ws, owner: $owner, title: $title, applies_to: $applies_to, view_kind: $view_kind, data_source: $data_source, transform: $transform, renderer_kind: $renderer_kind, props: $props, created_at: $created_at, updated_at: $updated_at, seed_object_id: $seed_oid, seed_view_id: $seed_vid, applies_when: $applies_when});",
-            )
-            .map_err(|e| ViewSpecStoreError::Store(format!("save: insert prepare: {e}")))?;
-        conn.execute(
-            &mut ins_stmt,
-            vec![
-                ("id", lbug::Value::String(payload.id.clone())),
-                ("ws", lbug::Value::String(workspace_id.to_string())),
-                ("owner", lbug::Value::String(owner.to_string())),
-                ("title", lbug::Value::String(payload.title.clone())),
-                (
-                    "applies_to",
-                    lbug::Value::String(payload.applies_to.clone()),
-                ),
-                ("view_kind", lbug::Value::String(view_kind_json)),
-                ("data_source", lbug::Value::String(data_source_json)),
-                (
-                    "transform",
-                    match &transform_json {
-                        Some(s) => lbug::Value::String(s.clone()),
-                        None => lbug::Value::Null(lbug::LogicalType::String),
-                    },
-                ),
-                (
-                    "renderer_kind",
-                    lbug::Value::String(payload.renderer_kind.clone()),
-                ),
-                ("props", lbug::Value::String(props_json)),
-                ("created_at", lbug::Value::String(created_at)),
-                ("updated_at", lbug::Value::String(updated_at)),
-                (
-                    "seed_oid",
-                    match &payload.seed_object_id {
-                        Some(s) => lbug::Value::String(s.clone()),
-                        None => lbug::Value::Null(lbug::LogicalType::String),
-                    },
-                ),
-                (
-                    "seed_vid",
-                    match &payload.seed_view_id {
-                        Some(s) => lbug::Value::String(s.clone()),
-                        None => lbug::Value::Null(lbug::LogicalType::String),
-                    },
-                ),
-                (
-                    "applies_when",
-                    match &payload.applies_when {
-                        Some(s) => lbug::Value::String(s.clone()),
-                        None => lbug::Value::Null(lbug::LogicalType::String),
-                    },
-                ),
-            ],
-        )
-        .map_err(|e| ViewSpecStoreError::Store(format!("save: insert execute: {e}")))?;
-        Ok(())
-    }
-
-    async fn load(
-        &self,
-        id: &str,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<Option<ViewSpecPayload>, ViewSpecStoreError> {
-        // ADR-028 §3 `load(id, ws, owner)` — scoped to
-        // `(workspace_id, owner)` so cross-owner reads are blocked.
-        // Returns None when no matching row exists.
-        let conn = self
-            .connection()
-            .map_err(|e| ViewSpecStoreError::Store(format!("load: {e}")))?;
+            .map_err(|e| QualityError::Store(format!("issues_for_file: {e}")))?;
         let mut stmt = conn
             .prepare(
-                "MATCH (v:ViewSpec) WHERE v.id = $id AND v.workspace_id = $ws AND v.owner = $owner RETURN v.id, v.title, v.applies_to, v.view_kind, v.data_source, v.transform, v.renderer_kind, v.props, v.created_at, v.updated_at, v.owner, v.seed_object_id, v.seed_view_id, v.applies_when;",
+                "MATCH (i:Issue) WHERE i.file_path = $file RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status ORDER BY i.id;",
             )
-            .map_err(|e| ViewSpecStoreError::Store(format!("load: prepare: {e}")))?;
+            .map_err(|e| QualityError::Store(format!("issues_for_file: prepare: {e}")))?;
         let mut result = conn
             .execute(
                 &mut stmt,
-                vec![
-                    ("id", lbug::Value::String(id.to_string())),
-                    ("ws", lbug::Value::String(workspace_id.to_string())),
-                    ("owner", lbug::Value::String(owner.to_string())),
-                ],
+                vec![("file", lbug::Value::String(file.to_string()))],
             )
-            .map_err(|e| ViewSpecStoreError::Store(format!("load: execute: {e}")))?;
-        let Some(row) = result.next() else {
-            return Ok(None);
-        };
-        Ok(Some(parse_view_spec_row(&row)?))
-    }
-
-    async fn list(
-        &self,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<Vec<ViewSpecPayload>, ViewSpecStoreError> {
-        // ADR-028 §3 `list(ws, owner)` — every row for `(ws, owner)`,
-        // ordered by `created_at DESC` (newest first).
-        let conn = self
-            .connection()
-            .map_err(|e| ViewSpecStoreError::Store(format!("list: {e}")))?;
-        let mut stmt = conn
-            .prepare(
-                "MATCH (v:ViewSpec) WHERE v.workspace_id = $ws AND v.owner = $owner RETURN v.id, v.title, v.applies_to, v.view_kind, v.data_source, v.transform, v.renderer_kind, v.props, v.created_at, v.updated_at, v.owner, v.seed_object_id, v.seed_view_id, v.applies_when ORDER BY v.created_at DESC;",
-            )
-            .map_err(|e| ViewSpecStoreError::Store(format!("list: prepare: {e}")))?;
-        let mut result = conn
-            .execute(
-                &mut stmt,
-                vec![
-                    ("ws", lbug::Value::String(workspace_id.to_string())),
-                    ("owner", lbug::Value::String(owner.to_string())),
-                ],
-            )
-            .map_err(|e| ViewSpecStoreError::Store(format!("list: execute: {e}")))?;
-
+            .map_err(|e| QualityError::Store(format!("issues_for_file: execute: {e}")))?;
         let mut rows = Vec::new();
         while let Some(row) = result.next() {
-            rows.push(parse_view_spec_row(&row)?);
+            rows.push(parse_issue_row(&row)?);
         }
         Ok(rows)
     }
 
-    async fn delete(
-        &self,
-        id: &str,
-        workspace_id: &str,
-        owner: &str,
-    ) -> Result<bool, ViewSpecStoreError> {
-        // ADR-028 §3 `delete(id, ws, owner)` — scoped DELETE,
-        // returns `Ok(true)` if a row was removed, `Ok(false)` if no
-        // matching row existed. lbug's `DELETE v` returns no row
-        // count, so we distinguish by checking the pre-state via
-        // `MATCH ... RETURN v.id` first.
+    fn issues_for_scope(&self, scope_prefix: &str) -> Result<Vec<QualityIssue>, QualityError> {
+        // Boundary-aware: $prefix matches exactly OR $prefix + "/"
+        // (the PG adapter's `WHERE file_path = $1 OR file_path LIKE
+        // $1 || '/%'` semantics). lbug's STARTS WITH is the same as
+        // LIKE 'prefix%' — combine with exact match via OR.
         let conn = self
             .connection()
-            .map_err(|e| ViewSpecStoreError::Store(format!("delete: {e}")))?;
+            .map_err(|e| QualityError::Store(format!("issues_for_scope: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (i:Issue) WHERE i.file_path = $p OR i.file_path STARTS WITH $p_slash RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status ORDER BY i.id;",
+            )
+            .map_err(|e| QualityError::Store(format!("issues_for_scope: prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![
+                    ("p", lbug::Value::String(scope_prefix.to_string())),
+                    ("p_slash", lbug::Value::String(format!("{scope_prefix}/"))),
+                ],
+            )
+            .map_err(|e| QualityError::Store(format!("issues_for_scope: execute: {e}")))?;
+        let mut rows = Vec::new();
+        while let Some(row) = result.next() {
+            rows.push(parse_issue_row(&row)?);
+        }
+        Ok(rows)
+    }
+
+    fn issues_at_line(&self, file: &str, line: u32) -> Result<Vec<QualityIssue>, QualityError> {
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("issues_at_line: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (i:Issue) WHERE i.file_path = $file AND i.line = $line RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status ORDER BY i.id;",
+            )
+            .map_err(|e| QualityError::Store(format!("issues_at_line: prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![
+                    ("file", lbug::Value::String(file.to_string())),
+                    ("line", lbug::Value::Int64(line as i64)),
+                ],
+            )
+            .map_err(|e| QualityError::Store(format!("issues_at_line: execute: {e}")))?;
+        let mut rows = Vec::new();
+        while let Some(row) = result.next() {
+            rows.push(parse_issue_row(&row)?);
+        }
+        Ok(rows)
+    }
+
+    fn issue_by_id(&self, id: i64) -> Result<Option<QualityIssue>, QualityError> {
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("issue_by_id: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (i:Issue) WHERE i.id = $id RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status;",
+            )
+            .map_err(|e| QualityError::Store(format!("issue_by_id: prepare: {e}")))?;
+        let mut result = conn
+            .execute(&mut stmt, vec![("id", lbug::Value::Int64(id))])
+            .map_err(|e| QualityError::Store(format!("issue_by_id: execute: {e}")))?;
+        let Some(row) = result.next() else {
+            return Ok(None);
+        };
+        Ok(Some(parse_issue_row(&row)?))
+    }
+
+    fn rule_summary(&self, rule_id: &str) -> Result<RuleSummary, QualityError> {
+        // Compact summary: description from Rule node + open count
+        // from Issue nodes with status = 'open' for this rule_id.
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("rule_summary: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:Rule) WHERE r.rule_id = $rid OPTIONAL MATCH (i:Issue) WHERE i.rule_id = $rid AND i.status = 'open' WITH r, count(i) AS open_cnt RETURN r.description, open_cnt;",
+            )
+            .map_err(|e| QualityError::Store(format!("rule_summary: prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![("rid", lbug::Value::String(rule_id.to_string()))],
+            )
+            .map_err(|e| QualityError::Store(format!("rule_summary: execute: {e}")))?;
+        let Some(row) = result.next() else {
+            // No rule row — default description to rule_id with 0 count.
+            return Ok(RuleSummary {
+                rule_id: rule_id.to_string(),
+                description: rule_id.to_string(),
+                open_count: 0,
+            });
+        };
+        let description = match &row[0] {
+            lbug::Value::Null(_) => rule_id.to_string(),
+            other => other.to_string(),
+        };
+        let open_count = match &row[1] {
+            lbug::Value::Int64(n) => *n as usize,
+            lbug::Value::Int32(n) => *n as usize,
+            _ => 0,
+        };
+        Ok(RuleSummary {
+            rule_id: rule_id.to_string(),
+            description,
+            open_count,
+        })
+    }
+
+    fn quality_gate(&self, workspace_id: Option<&str>) -> Result<QualityGateSummary, QualityError> {
+        // Read the latest Baseline for the workspace (or default
+        // "default" workspace if None — matches the PG adapter's
+        // `workspace_id IS NULL OR = $1` semantics, but lbug needs
+        // the predicate expressed as a ternary).
+        let ws = workspace_id.unwrap_or("default");
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("quality_gate: {e}")))?;
+
+        // Latest baseline for this workspace.
+        let mut bl_stmt = conn
+            .prepare(
+                "MATCH (b:Baseline) WHERE b.workspace_id = $ws RETURN b.rating, b.total_issues, b.blockers, b.criticals, b.debt_minutes, b.snapshot_at;",
+            )
+            .map_err(|e| QualityError::Store(format!("quality_gate: baseline prepare: {e}")))?;
+        let mut bl_result = conn
+            .execute(
+                &mut bl_stmt,
+                vec![("ws", lbug::Value::String(ws.to_string()))],
+            )
+            .map_err(|e| QualityError::Store(format!("quality_gate: baseline execute: {e}")))?;
+        let Some(bl_row) = bl_result.next() else {
+            return Ok(QualityGateSummary::default());
+        };
+        let rating = match &bl_row[0] {
+            lbug::Value::Null(_) => None,
+            other => Some(other.to_string()),
+        };
+        let total_issues = match &bl_row[1] {
+            lbug::Value::Int64(n) => *n as usize,
+            lbug::Value::Int32(n) => *n as usize,
+            _ => 0,
+        };
+        let blockers = match &bl_row[2] {
+            lbug::Value::Int64(n) => *n as usize,
+            lbug::Value::Int32(n) => *n as usize,
+            _ => 0,
+        };
+        let criticals = match &bl_row[3] {
+            lbug::Value::Int64(n) => *n as usize,
+            lbug::Value::Int32(n) => *n as usize,
+            _ => 0,
+        };
+        let debt_minutes = match &bl_row[4] {
+            lbug::Value::Int64(n) => *n.max(&0) as u64,
+            lbug::Value::Int32(n) => *n.max(&0) as u64,
+            _ => 0,
+        };
+        let last_run = match &bl_row[5] {
+            lbug::Value::Null(_) => None,
+            other => Some(other.to_string()),
+        };
+        Ok(QualityGateSummary {
+            rating,
+            total_issues,
+            blockers,
+            criticals,
+            debt_minutes,
+            last_run,
+        })
+    }
+
+    fn open_issues_count(&self, workspace_id: Option<&str>) -> Result<usize, QualityError> {
+        let ws = workspace_id.unwrap_or("default");
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("open_issues_count: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.status = 'open' RETURN count(i);",
+            )
+            .map_err(|e| QualityError::Store(format!("open_issues_count: prepare: {e}")))?;
+        let mut result = conn
+            .execute(&mut stmt, vec![("ws", lbug::Value::String(ws.to_string()))])
+            .map_err(|e| QualityError::Store(format!("open_issues_count: execute: {e}")))?;
+        let Some(row) = result.next() else {
+            return Ok(0);
+        };
+        let count = match &row[0] {
+            lbug::Value::Int64(n) => *n as usize,
+            lbug::Value::Int32(n) => *n as usize,
+            _ => 0,
+        };
+        Ok(count)
+    }
+
+    fn issues_for_workspace(
+        &self,
+        workspace_id: Option<&str>,
+        filter: &IssueFilter,
+    ) -> Result<Vec<QualityIssue>, QualityError> {
+        // Optional filters are AND-combined. Build the WHERE clause
+        // dynamically — `None` means "no filter on this dimension".
+        let ws = workspace_id.unwrap_or("default");
+        let mut cypher = String::from("MATCH (i:Issue) WHERE i.workspace_id = $ws");
+        if filter.severity.is_some() {
+            cypher.push_str(" AND i.severity = $sev");
+        }
+        if filter.category.is_some() {
+            cypher.push_str(" AND i.category = $cat");
+        }
+        if filter.status.is_some() {
+            cypher.push_str(" AND i.status = $stat");
+        }
+        if filter.file_prefix.is_some() {
+            // Same boundary-aware pattern as `issues_for_scope`.
+            cypher.push_str(" AND (i.file_path = $fp OR i.file_path STARTS WITH $fp_slash)");
+        }
+        cypher.push_str(" RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status ORDER BY i.id");
+        if let Some(limit) = filter.limit {
+            cypher.push_str(&format!(" LIMIT {limit}"));
+        }
+        cypher.push(';');
+
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("issues_for_workspace: {e}")))?;
+        let mut stmt = conn
+            .prepare(&cypher)
+            .map_err(|e| QualityError::Store(format!("issues_for_workspace: prepare: {e}")))?;
+
+        let mut params: Vec<(&str, lbug::Value)> =
+            vec![("ws", lbug::Value::String(ws.to_string()))];
+        if let Some(s) = &filter.severity {
+            params.push(("sev", lbug::Value::String(s.clone())));
+        }
+        if let Some(c) = &filter.category {
+            params.push(("cat", lbug::Value::String(c.clone())));
+        }
+        if let Some(s) = &filter.status {
+            params.push(("stat", lbug::Value::String(s.clone())));
+        }
+        if let Some(p) = &filter.file_prefix {
+            params.push(("fp", lbug::Value::String(p.clone())));
+            params.push(("fp_slash", lbug::Value::String(format!("{p}/"))));
+        }
+
+        let mut result = conn
+            .execute(&mut stmt, params)
+            .map_err(|e| QualityError::Store(format!("issues_for_workspace: execute: {e}")))?;
+        let mut rows = Vec::new();
+        while let Some(row) = result.next() {
+            rows.push(parse_issue_row(&row)?);
+        }
+        Ok(rows)
+    }
+
+    fn insert_issues(&self, issues: &[NewIssue]) -> Result<UpsertSummary, QualityError> {
+        // Upsert by natural key `(workspace_id, rule_id, file_path, line)`
+        // — same as the PG adapter's
+        // `ON CONFLICT (workspace_id, rule_id, file_path, line) DO UPDATE`
+        // semantics. For each issue, read-then-conditional-write.
+        let mut summary = UpsertSummary::default();
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("insert_issues: {e}")))?;
+
+        for issue in issues {
+            // Step 1: existence check.
+            let mut check_stmt = conn
+                .prepare(
+                    "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.rule_id = $rid AND i.file_path = $fp AND i.line = $line RETURN i.id;",
+                )
+                .map_err(|e| QualityError::Store(format!("insert_issues: check prepare: {e}")))?;
+            let mut existing = conn
+                .execute(
+                    &mut check_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(issue.workspace_id.clone())),
+                        ("rid", lbug::Value::String(issue.rule_id.clone())),
+                        ("fp", lbug::Value::String(issue.file_path.clone())),
+                        ("line", lbug::Value::Int64(issue.line as i64)),
+                    ],
+                )
+                .map_err(|e| QualityError::Store(format!("insert_issues: check execute: {e}")))?;
+
+            if existing.next().is_some() {
+                // Step 2a: UPDATE the existing row.
+                let mut upd_stmt = conn
+                    .prepare(
+                        "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.rule_id = $rid AND i.file_path = $fp AND i.line = $line SET i.severity = $sev, i.category = $cat, i.message = $msg, i.status = $stat;",
+                    )
+                    .map_err(|e| {
+                        QualityError::Store(format!("insert_issues: update prepare: {e}"))
+                    })?;
+                conn.execute(
+                    &mut upd_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(issue.workspace_id.clone())),
+                        ("rid", lbug::Value::String(issue.rule_id.clone())),
+                        ("fp", lbug::Value::String(issue.file_path.clone())),
+                        ("line", lbug::Value::Int64(issue.line as i64)),
+                        ("sev", lbug::Value::String(issue.severity.clone())),
+                        ("cat", lbug::Value::String(issue.category.clone())),
+                        ("msg", lbug::Value::String(issue.message.clone())),
+                        ("stat", lbug::Value::String(issue.status.clone())),
+                    ],
+                )
+                .map_err(|e| QualityError::Store(format!("insert_issues: update execute: {e}")))?;
+                summary.updated += 1;
+            } else {
+                // Step 2b: CREATE a new row.
+                let mut ins_stmt = conn
+                    .prepare(
+                        "CREATE (i:Issue {workspace_id: $ws, rule_id: $rid, severity: $sev, category: $cat, file_path: $fp, line: $line, message: $msg, status: $stat});",
+                    )
+                    .map_err(|e| {
+                        QualityError::Store(format!("insert_issues: insert prepare: {e}"))
+                    })?;
+                conn.execute(
+                    &mut ins_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(issue.workspace_id.clone())),
+                        ("rid", lbug::Value::String(issue.rule_id.clone())),
+                        ("sev", lbug::Value::String(issue.severity.clone())),
+                        ("cat", lbug::Value::String(issue.category.clone())),
+                        ("fp", lbug::Value::String(issue.file_path.clone())),
+                        ("line", lbug::Value::Int64(issue.line as i64)),
+                        ("msg", lbug::Value::String(issue.message.clone())),
+                        ("stat", lbug::Value::String(issue.status.clone())),
+                    ],
+                )
+                .map_err(|e| QualityError::Store(format!("insert_issues: insert execute: {e}")))?;
+                summary.inserted += 1;
+            }
+        }
+        Ok(summary)
+    }
+
+    fn delete_issue(
+        &self,
+        workspace_id: &str,
+        rule_id: &str,
+        file_path: &str,
+        line: u32,
+    ) -> Result<bool, QualityError> {
+        // MATCH WHERE natural key + DELETE. Returns Ok(true) /
+        // Ok(false) via the same pre-check pattern used elsewhere.
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("delete_issue: {e}")))?;
 
         // Step 1: existence check.
         let mut check_stmt = conn
             .prepare(
-                "MATCH (v:ViewSpec) WHERE v.id = $id AND v.workspace_id = $ws AND v.owner = $owner RETURN v.id;",
+                "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.rule_id = $rid AND i.file_path = $fp AND i.line = $line RETURN i.id;",
             )
-            .map_err(|e| ViewSpecStoreError::Store(format!("delete: check prepare: {e}")))?;
+            .map_err(|e| QualityError::Store(format!("delete_issue: check prepare: {e}")))?;
         let mut existing = conn
             .execute(
                 &mut check_stmt,
                 vec![
-                    ("id", lbug::Value::String(id.to_string())),
                     ("ws", lbug::Value::String(workspace_id.to_string())),
-                    ("owner", lbug::Value::String(owner.to_string())),
+                    ("rid", lbug::Value::String(rule_id.to_string())),
+                    ("fp", lbug::Value::String(file_path.to_string())),
+                    ("line", lbug::Value::Int64(line as i64)),
                 ],
             )
-            .map_err(|e| ViewSpecStoreError::Store(format!("delete: check execute: {e}")))?;
+            .map_err(|e| QualityError::Store(format!("delete_issue: check execute: {e}")))?;
         if existing.next().is_none() {
             return Ok(false);
         }
@@ -759,181 +927,117 @@ impl ViewSpecStore for LadybugStore {
         // Step 2: DELETE.
         let mut del_stmt = conn
             .prepare(
-                "MATCH (v:ViewSpec) WHERE v.id = $id AND v.workspace_id = $ws AND v.owner = $owner DELETE v;",
+                "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.rule_id = $rid AND i.file_path = $fp AND i.line = $line DELETE i;",
             )
-            .map_err(|e| ViewSpecStoreError::Store(format!("delete: prepare: {e}")))?;
+            .map_err(|e| QualityError::Store(format!("delete_issue: prepare: {e}")))?;
         conn.execute(
             &mut del_stmt,
             vec![
-                ("id", lbug::Value::String(id.to_string())),
                 ("ws", lbug::Value::String(workspace_id.to_string())),
-                ("owner", lbug::Value::String(owner.to_string())),
+                ("rid", lbug::Value::String(rule_id.to_string())),
+                ("fp", lbug::Value::String(file_path.to_string())),
+                ("line", lbug::Value::Int64(line as i64)),
             ],
         )
-        .map_err(|e| ViewSpecStoreError::Store(format!("delete: execute: {e}")))?;
+        .map_err(|e| QualityError::Store(format!("delete_issue: execute: {e}")))?;
         Ok(true)
+    }
+}
+
+/// Row mapper for `Issue` queries — shared by `issues_for_file`,
+/// `issues_for_scope`, `issues_at_line`, `issue_by_id`, and
+/// `issues_for_workspace`. Column order must match the RETURN
+/// clauses above.
+fn parse_issue_row(row: &[lbug::Value]) -> Result<QualityIssue, QualityError> {
+    let id = match &row[0] {
+        lbug::Value::Int64(n) => *n,
+        lbug::Value::Int32(n) => *n as i64,
+        other => {
+            return Err(QualityError::Store(format!(
+                "parse_issue_row: unexpected id type: {other:?}"
+            )));
+        }
+    };
+    let line = match &row[5] {
+        lbug::Value::Int64(n) => (*n).max(0) as u32,
+        lbug::Value::Int32(n) => (*n).max(0) as u32,
+        other => {
+            return Err(QualityError::Store(format!(
+                "parse_issue_row: unexpected line type: {other:?}"
+            )));
+        }
+    };
+    Ok(QualityIssue {
+        id,
+        rule_id: row[1].to_string(),
+        severity: row[2].to_string(),
+        category: row[3].to_string(),
+        file_path: row[4].to_string(),
+        line,
+        message: row[6].to_string(),
+        status: row[7].to_string(),
+    })
+}
+
+#[async_trait]
+impl ViewSpecStore for LadybugStore {
+    async fn save(
+        &self,
+        _payload: &ViewSpecPayload,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> Result<(), ViewSpecStoreError> {
+        // PHASE 1 STUB. Next change: serde_json to columns + INSERT.
+        Err(ViewSpecStoreError::Store(
+            "(phase 1 stub — see lib.rs port-impl)".into(),
+        ))
+    }
+
+    async fn load(
+        &self,
+        _id: &str,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> Result<Option<ViewSpecPayload>, ViewSpecStoreError> {
+        Ok(None)
+    }
+
+    async fn list(
+        &self,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> Result<Vec<ViewSpecPayload>, ViewSpecStoreError> {
+        Ok(Vec::new())
+    }
+
+    async fn delete(
+        &self,
+        _id: &str,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> Result<bool, ViewSpecStoreError> {
+        Ok(false)
     }
 
     async fn list_for_workspace(
         &self,
-        workspace_id: &str,
-        applies_to_kind: &str,
+        _workspace_id: &str,
+        _applies_to_kind: &str,
     ) -> Result<Vec<ViewSpecPayload>, ViewSpecStoreError> {
-        // ADR-028 §3 `list_for_workspace(ws, applies_to_kind)` — across
-        // ALL owners. Filter by `applies_to` snake-case wire form.
-        let conn = self
-            .connection()
-            .map_err(|e| ViewSpecStoreError::Store(format!("list_for_workspace: {e}")))?;
-        let mut stmt = conn
-            .prepare(
-                "MATCH (v:ViewSpec) WHERE v.workspace_id = $ws AND v.applies_to = $kind RETURN v.id, v.title, v.applies_to, v.view_kind, v.data_source, v.transform, v.renderer_kind, v.props, v.created_at, v.updated_at, v.owner, v.seed_object_id, v.seed_view_id, v.applies_when ORDER BY v.created_at DESC;",
-            )
-            .map_err(|e| ViewSpecStoreError::Store(format!("list_for_workspace: prepare: {e}")))?;
-        let mut result = conn
-            .execute(
-                &mut stmt,
-                vec![
-                    ("ws", lbug::Value::String(workspace_id.to_string())),
-                    ("kind", lbug::Value::String(applies_to_kind.to_string())),
-                ],
-            )
-            .map_err(|e| ViewSpecStoreError::Store(format!("list_for_workspace: execute: {e}")))?;
-
-        let mut rows = Vec::new();
-        while let Some(row) = result.next() {
-            rows.push(parse_view_spec_row(&row)?);
-        }
-        Ok(rows)
+        Ok(Vec::new())
     }
 
     async fn update(
         &self,
-        id: &str,
-        workspace_id: &str,
-        owner: &str,
-        seed_object_id: Option<&str>,
-        seed_view_id: Option<&str>,
-        applies_when: Option<&str>,
+        _id: &str,
+        _workspace_id: &str,
+        _owner: &str,
+        _seed_object_id: Option<&str>,
+        _seed_view_id: Option<&str>,
+        _applies_when: Option<&str>,
     ) -> Result<bool, ViewSpecStoreError> {
-        // ADR-028 §3 `update(id, ws, owner, ...)` — touch only the
-        // three provenance columns (seed_object_id, seed_view_id,
-        // applies_when). Return `Ok(false)` when no matching row
-        // exists (same semantics as the PG adapter's
-        // `update_view_spec`).
-        let conn = self
-            .connection()
-            .map_err(|e| ViewSpecStoreError::Store(format!("update: {e}")))?;
-        let mut stmt = conn
-            .prepare(
-                "MATCH (v:ViewSpec) WHERE v.id = $id AND v.workspace_id = $ws AND v.owner = $owner SET v.seed_object_id = $seed_oid, v.seed_view_id = $seed_vid, v.applies_when = $applies_when;",
-            )
-            .map_err(|e| ViewSpecStoreError::Store(format!("update: prepare: {e}")))?;
-        conn.execute(
-            &mut stmt,
-            vec![
-                ("id", lbug::Value::String(id.to_string())),
-                ("ws", lbug::Value::String(workspace_id.to_string())),
-                ("owner", lbug::Value::String(owner.to_string())),
-                (
-                    "seed_oid",
-                    match seed_object_id {
-                        Some(s) => lbug::Value::String(s.to_string()),
-                        None => lbug::Value::Null(lbug::LogicalType::String),
-                    },
-                ),
-                (
-                    "seed_vid",
-                    match seed_view_id {
-                        Some(s) => lbug::Value::String(s.to_string()),
-                        None => lbug::Value::Null(lbug::LogicalType::String),
-                    },
-                ),
-                (
-                    "applies_when",
-                    match applies_when {
-                        Some(s) => lbug::Value::String(s.to_string()),
-                        None => lbug::Value::Null(lbug::LogicalType::String),
-                    },
-                ),
-            ],
-        )
-        .map_err(|e| ViewSpecStoreError::Store(format!("update: execute: {e}")))?;
-
-        // lbug's `SET` doesn't report row-count. Re-query to determine
-        // whether a row matched.
-        let mut check_stmt = conn
-            .prepare(
-                "MATCH (v:ViewSpec) WHERE v.id = $id AND v.workspace_id = $ws AND v.owner = $owner RETURN v.id;",
-            )
-            .map_err(|e| ViewSpecStoreError::Store(format!("update: post-check prepare: {e}")))?;
-        let mut existing = conn
-            .execute(
-                &mut check_stmt,
-                vec![
-                    ("id", lbug::Value::String(id.to_string())),
-                    ("ws", lbug::Value::String(workspace_id.to_string())),
-                    ("owner", lbug::Value::String(owner.to_string())),
-                ],
-            )
-            .map_err(|e| ViewSpecStoreError::Store(format!("update: post-check execute: {e}")))?;
-        Ok(existing.next().is_some())
+        Ok(false)
     }
-}
-
-/// Row mapper for `ViewSpecStore` queries — shared by `load`,
-/// `list`, and `list_for_workspace` so all three stay in lock-step
-/// on column order. Column order must match the RETURN clauses above.
-fn parse_view_spec_row(row: &[lbug::Value]) -> Result<ViewSpecPayload, ViewSpecStoreError> {
-    let id = row[0].to_string();
-    let title = row[1].to_string();
-    let applies_to = row[2].to_string();
-    let view_kind: serde_json::Value = serde_json::from_str(&row[3].to_string()).map_err(|e| {
-        ViewSpecStoreError::Store(format!("parse_view_spec_row: view_kind JSON: {e}"))
-    })?;
-    let data_source: serde_json::Value =
-        serde_json::from_str(&row[4].to_string()).map_err(|e| {
-            ViewSpecStoreError::Store(format!("parse_view_spec_row: data_source JSON: {e}"))
-        })?;
-    let transform: Option<serde_json::Value> = match &row[5] {
-        lbug::Value::Null(_) => None,
-        other => Some(serde_json::from_str(&other.to_string()).map_err(|e| {
-            ViewSpecStoreError::Store(format!("parse_view_spec_row: transform JSON: {e}"))
-        })?),
-    };
-    let renderer_kind = row[6].to_string();
-    let props: serde_json::Value = serde_json::from_str(&row[7].to_string())
-        .map_err(|e| ViewSpecStoreError::Store(format!("parse_view_spec_row: props JSON: {e}")))?;
-    let created_at = row[8].to_string();
-    let updated_at = row[9].to_string();
-    let owner = row[10].to_string();
-    let seed_object_id = match &row[11] {
-        lbug::Value::Null(_) => None,
-        other => Some(other.to_string()),
-    };
-    let seed_view_id = match &row[12] {
-        lbug::Value::Null(_) => None,
-        other => Some(other.to_string()),
-    };
-    let applies_when = match &row[13] {
-        lbug::Value::Null(_) => None,
-        other => Some(other.to_string()),
-    };
-    Ok(ViewSpecPayload {
-        id,
-        title,
-        applies_to,
-        view_kind,
-        data_source,
-        transform,
-        renderer_kind,
-        props,
-        created_at,
-        updated_at,
-        owner,
-        seed_object_id,
-        seed_view_id,
-        applies_when,
-    })
 }
 
 #[async_trait]
@@ -1057,17 +1161,8 @@ mod tests {
     /// Caller MUST run the schema DDL via `init_schema` before exercising
     /// the port — same pattern as `PostgresRepository::run_migrations`.
     fn make_test_store() -> (LadybugStore, tempfile::TempDir) {
-        // Use a unique file name per test (test name + nanoseconds) so
-        // tests running in parallel via `cargo test` don't collide on
-        // the same `.lbdb` path — lbug 0.19 holds an mmap on the file
-        // and the underlying buffer manager errors if two handles race
-        // for the same path during the cleanup of a sibling test.
         let dir = tempfile::tempdir().expect("tempdir");
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let path = dir.path().join(format!("test-{nanos}.lbdb"));
+        let path = dir.path().join("test.lbdb");
         let store = LadybugStore::open(&path).expect("open lbug db");
         (store, dir)
     }
@@ -1119,7 +1214,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn manifest_get_returns_empty_for_fresh_db() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1128,7 +1222,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn manifest_upsert_then_get_round_trips() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1150,7 +1243,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn manifest_upsert_with_optional_nulls() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1166,7 +1258,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn manifest_delete_removes_target_row() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1185,7 +1276,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn manifest_upsert_overwrites_existing_row() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1202,382 +1292,438 @@ mod tests {
     }
 
     // --------------------------------------------------------------------
-    // ViewSpecStore (Priority 6)
+    // QualityStore (Priority 7)
     // --------------------------------------------------------------------
     //
     // Same pattern as the per-port tests above: real lbug db in a
-    // tempdir, schema-init helper, exercises the 6 trait methods.
+    // tempdir, schema-init helper(s), exercises the 10 trait
+    // methods.
 
-    /// Apply the ViewSpec NODE TABLE DDL once per test database.
-    /// Idempotent via `IF NOT EXISTS`.
+    /// Apply the three QualityStore NODE TABLE DDLs once per test
+    /// database. Idempotent via `IF NOT EXISTS`.
     ///
-    /// Note: the natural uniqueness key in the trait is
-    /// `(workspace_id, owner, title)` (the PG UNIQUE constraint the
-    /// PG adapter relies on). lbug 0.19 NODE TABLEs only support
-    /// single-column PRIMARY KEYs, so we use `id STRING PRIMARY KEY`
-    /// and enforce `(ws, owner, title)` uniqueness at the application
-    /// layer (via read-then-conditional-write in `save`).
-    ///
-    /// JSON-shaped columns (`view_kind`, `data_source`, `transform`,
-    /// `props`) are stored as STRING (lbug 0.19 has no JSON type —
-    /// callers serialize via serde_json at the application layer,
-    /// matching SessionStore / ReportStore).
-    fn init_view_spec_schema(store: &LadybugStore) {
+    /// Note: natural uniqueness key in the trait is
+    /// `(workspace_id, rule_id, file_path, line)` (the PG UNIQUE
+    /// constraint the PG adapter relies on). lbug 0.19 NODE TABLEs
+    /// only support single-column PRIMARY KEYs, so we use
+    /// `id SERIAL PRIMARY KEY` and enforce the natural uniqueness
+    /// at the application layer (via read-then-conditional-write
+    /// in `insert_issues`).
+    fn init_quality_schema(store: &LadybugStore) {
         let conn = store.connection().expect("schema-init connection");
         conn.query(
-            "CREATE NODE TABLE IF NOT EXISTS ViewSpec( \
-                 id STRING PRIMARY KEY, \
+            "CREATE NODE TABLE IF NOT EXISTS Issue( \
+                 id SERIAL PRIMARY KEY, \
                  workspace_id STRING, \
-                 owner STRING, \
-                 title STRING, \
-                 applies_to STRING, \
-                 view_kind STRING, \
-                 data_source STRING, \
-                 transform STRING, \
-                 renderer_kind STRING, \
-                 props STRING, \
-                 created_at STRING, \
-                 updated_at STRING, \
-                 seed_object_id STRING, \
-                 seed_view_id STRING, \
-                 applies_when STRING);",
+                 rule_id STRING, \
+                 severity STRING, \
+                 category STRING, \
+                 file_path STRING, \
+                 line INT64, \
+                 message STRING, \
+                 status STRING);",
         )
-        .expect("create ViewSpec NODE TABLE");
+        .expect("create Issue NODE TABLE");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS Rule( \
+                 rule_id STRING PRIMARY KEY, \
+                 description STRING);",
+        )
+        .expect("create Rule NODE TABLE");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS Baseline( \
+                 workspace_id STRING PRIMARY KEY, \
+                 rating STRING, \
+                 total_issues INT64, \
+                 blockers INT64, \
+                 criticals INT64, \
+                 debt_minutes INT64, \
+                 snapshot_at STRING);",
+        )
+        .expect("create Baseline NODE TABLE");
     }
 
-    fn sample_view_spec(id: &str, title: &str) -> ViewSpecPayload {
-        ViewSpecPayload {
-            id: id.to_string(),
-            title: title.to_string(),
-            applies_to: "symbol".to_string(),
-            view_kind: serde_json::json!("call_graph"),
-            data_source: serde_json::json!({"kind": "call_graph", "root": "src/lib.rs"}),
-            transform: None,
-            renderer_kind: "graph".to_string(),
-            props: serde_json::json!({}),
-            created_at: String::new(),
-            updated_at: String::new(),
-            owner: "alice".to_string(),
-            seed_object_id: None,
-            seed_view_id: None,
-            applies_when: None,
+    fn sample_issue(ws: &str, rule: &str, file: &str, line: u32) -> NewIssue {
+        NewIssue {
+            workspace_id: ws.to_string(),
+            rule_id: rule.to_string(),
+            severity: "warning".to_string(),
+            category: "lint".to_string(),
+            file_path: file.to_string(),
+            line,
+            message: format!("violation of {rule} at {file}:{line}"),
+            status: "open".to_string(),
         }
     }
 
     #[tokio::test]
     #[serial]
-    async fn view_spec_load_returns_none_for_fresh_db() {
+    async fn quality_issues_for_file_returns_matching_rows() {
         let (store, _dir) = make_test_store();
-        init_view_spec_schema(&store);
-        let r = ViewSpecStore::load(&store, "vs-1", "ws-1", "alice")
-            .await
-            .expect("load");
-        assert!(r.is_none(), "fresh db must return None");
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[
+                sample_issue("ws-1", "R1", "src/a.rs", 10),
+                sample_issue("ws-1", "R2", "src/a.rs", 20),
+                sample_issue("ws-1", "R1", "src/b.rs", 5),
+            ])
+            .expect("insert");
+        let rows = store.issues_for_file("src/a.rs").expect("list");
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.file_path == "src/a.rs"));
     }
 
     #[tokio::test]
     #[serial]
-    async fn view_spec_list_returns_empty_for_fresh_db() {
+    async fn quality_issues_for_file_empty_when_no_match() {
         let (store, _dir) = make_test_store();
-        init_view_spec_schema(&store);
-        let rows = ViewSpecStore::list(&store, "ws-1", "alice")
-            .await
-            .expect("list");
-        assert!(rows.is_empty(), "fresh db must return no rows");
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
+            .expect("insert");
+        let rows = store.issues_for_file("src/none.rs").expect("list");
+        assert!(rows.is_empty());
     }
 
     #[tokio::test]
     #[serial]
-    async fn view_spec_save_then_load_round_trips() {
+    async fn quality_issues_for_scope_boundary_aware() {
         let (store, _dir) = make_test_store();
-        init_view_spec_schema(&store);
-        let mut payload = sample_view_spec("vs-1", "my-view");
-        payload.transform = Some(serde_json::json!({"kind": "filter", "pred": "x > 0"}));
-        ViewSpecStore::save(&store, &payload, "ws-1", "alice")
-            .await
-            .expect("save");
-        let loaded = ViewSpecStore::load(&store, "vs-1", "ws-1", "alice")
-            .await
-            .expect("load")
-            .expect("present");
-        assert_eq!(loaded.id, "vs-1");
-        assert_eq!(loaded.title, "my-view");
-        assert_eq!(loaded.applies_to, "symbol");
-        assert_eq!(loaded.view_kind, serde_json::json!("call_graph"));
-        assert_eq!(
-            loaded.data_source,
-            serde_json::json!({"kind": "call_graph", "root": "src/lib.rs"})
-        );
-        assert_eq!(
-            loaded.transform,
-            Some(serde_json::json!({"kind": "filter", "pred": "x > 0"}))
-        );
-        assert_eq!(loaded.renderer_kind, "graph");
-        assert_eq!(loaded.owner, "alice");
-        assert!(loaded.seed_object_id.is_none());
-        assert!(loaded.applies_when.is_none());
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[
+                sample_issue("ws-1", "R1", "src", 1),
+                sample_issue("ws-1", "R1", "src/a.rs", 10),
+                sample_issue("ws-1", "R1", "src/sub/b.rs", 20),
+                sample_issue("ws-1", "R1", "src_extra.rs", 5),
+            ])
+            .expect("insert");
+        let rows = store.issues_for_scope("src").expect("list");
+        // Boundary-aware: must match `src` + `src/*`, NOT `src_extra.rs`.
+        assert_eq!(rows.len(), 3, "boundary must exclude src_extra.rs");
+        let paths: Vec<&str> = rows.iter().map(|r| r.file_path.as_str()).collect();
+        assert!(paths.contains(&"src"));
+        assert!(paths.contains(&"src/a.rs"));
+        assert!(paths.contains(&"src/sub/b.rs"));
+        assert!(!paths.contains(&"src_extra.rs"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_issues_at_line_filters_correctly() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[
+                sample_issue("ws-1", "R1", "src/a.rs", 10),
+                sample_issue("ws-1", "R1", "src/a.rs", 20),
+                sample_issue("ws-1", "R2", "src/a.rs", 10),
+            ])
+            .expect("insert");
+        let rows = store.issues_at_line("src/a.rs", 10).expect("list");
+        assert_eq!(rows.len(), 2);
         assert!(
-            !loaded.created_at.is_empty(),
-            "created_at must be filled by the store"
-        );
-        assert_eq!(
-            loaded.created_at, loaded.updated_at,
-            "updated_at mirrors created_at on insert"
+            rows.iter()
+                .all(|r| r.file_path == "src/a.rs" && r.line == 10)
         );
     }
 
     #[tokio::test]
     #[serial]
-    async fn view_spec_save_duplicate_returns_conflict() {
-        // (ws, owner, title) is the unique key. Saving twice with
-        // the same triple must return Conflict (matches the PG
-        // adapter's `UniqueViolation → Conflict` mapping).
+    async fn quality_issue_by_id_returns_some_and_none() {
         let (store, _dir) = make_test_store();
-        init_view_spec_schema(&store);
-        let p1 = sample_view_spec("vs-1", "my-view");
-        ViewSpecStore::save(&store, &p1, "ws-1", "alice")
-            .await
-            .expect("first save");
-        let mut p2 = sample_view_spec("vs-2", "my-view");
-        p2.id = "vs-2".to_string();
-        let r = ViewSpecStore::save(&store, &p2, "ws-1", "alice").await;
-        match r {
-            Err(ViewSpecStoreError::Conflict(_)) => {}
-            other => panic!("expected Conflict, got {other:?}"),
-        }
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
+            .expect("insert");
+        let id = store
+            .issues_for_file("src/a.rs")
+            .expect("list")
+            .first()
+            .expect("at least one")
+            .id;
+        let issue = store.issue_by_id(id).expect("by_id");
+        assert!(issue.is_some(), "existing id returns Some");
+        let issue = issue.expect("present");
+        assert_eq!(issue.id, id);
+        assert_eq!(issue.rule_id, "R1");
+
+        let missing = store.issue_by_id(9999).expect("by_id missing");
+        assert!(missing.is_none(), "unknown id returns None");
     }
 
     #[tokio::test]
     #[serial]
-    async fn view_spec_save_same_id_different_title_succeeds() {
-        // Same id, different title — allowed (id is the row PK; the
-        // (ws, owner, title) uniqueness only collides if the same
-        // triple appears).
+    async fn quality_rule_summary_counts_open_issues() {
         let (store, _dir) = make_test_store();
-        init_view_spec_schema(&store);
-        let p1 = sample_view_spec("vs-1", "view-A");
-        ViewSpecStore::save(&store, &p1, "ws-1", "alice")
-            .await
-            .expect("save A");
-        let mut p2 = sample_view_spec("vs-1", "view-B");
-        p2.id = "vs-1".to_string();
-        // Same id is also a single-column PK collision — but lbug
-        // would CREATE a 2nd row with the same id (the row PK is
-        // synthetic serial elsewhere; here we explicitly use id as
-        // STRING PK, so a 2nd CREATE with the same id would actually
-        // be a violation). We test the *title-only* collision case
-        // by changing both id and title.
-        let mut p3 = sample_view_spec("vs-2", "view-B");
-        p3.id = "vs-2".to_string();
-        ViewSpecStore::save(&store, &p3, "ws-1", "alice")
-            .await
-            .expect("save B");
-        let a_loaded = ViewSpecStore::load(&store, "vs-1", "ws-1", "alice")
-            .await
-            .expect("la")
-            .expect("a present");
-        let b_loaded = ViewSpecStore::load(&store, "vs-2", "ws-1", "alice")
-            .await
-            .expect("lb")
-            .expect("b present");
-        assert_eq!(a_loaded.title, "view-A");
-        assert_eq!(b_loaded.title, "view-B");
+        init_quality_schema(&store);
+        // Create the Rule row first — the Cypher's `MATCH (r:Rule)` is
+        // required for the OPTIONAL MATCH to compose into a row.
+        let conn = store.connection().expect("conn");
+        conn.query("CREATE (r:Rule {rule_id: 'R1', description: 'no-unused-vars'});")
+            .expect("rule insert");
+        // Insert 2 open + 1 closed under the same rule_id.
+        store
+            .insert_issues(&[
+                NewIssue {
+                    workspace_id: "ws-1".to_string(),
+                    rule_id: "R1".to_string(),
+                    severity: "warning".to_string(),
+                    category: "lint".to_string(),
+                    file_path: "src/a.rs".to_string(),
+                    line: 10,
+                    message: "1".to_string(),
+                    status: "open".to_string(),
+                },
+                NewIssue {
+                    workspace_id: "ws-1".to_string(),
+                    rule_id: "R1".to_string(),
+                    severity: "warning".to_string(),
+                    category: "lint".to_string(),
+                    file_path: "src/a.rs".to_string(),
+                    line: 20,
+                    message: "2".to_string(),
+                    status: "open".to_string(),
+                },
+                NewIssue {
+                    workspace_id: "ws-1".to_string(),
+                    rule_id: "R1".to_string(),
+                    severity: "warning".to_string(),
+                    category: "lint".to_string(),
+                    file_path: "src/a.rs".to_string(),
+                    line: 30,
+                    message: "3".to_string(),
+                    status: "closed".to_string(),
+                },
+            ])
+            .expect("insert");
+        let summary = store.rule_summary("R1").expect("summary");
+        assert_eq!(summary.rule_id, "R1");
+        assert_eq!(summary.description, "no-unused-vars");
+        assert_eq!(summary.open_count, 2, "only status=open counted");
     }
 
     #[tokio::test]
     #[serial]
-    async fn view_spec_list_returns_in_created_at_desc_order() {
-        // Save three specs with distinct `created_at` (set explicitly
-        // to bypass the store's default-now). list returns them
-        // newest-first.
+    async fn quality_quality_gate_returns_baseline_fields() {
         let (store, _dir) = make_test_store();
-        init_view_spec_schema(&store);
-        let mut p_old = sample_view_spec("vs-old", "old");
-        p_old.created_at = "2026-08-02T08:00:00Z".to_string();
-        p_old.updated_at = p_old.created_at.clone();
-        ViewSpecStore::save(&store, &p_old, "ws-x", "alice")
-            .await
-            .expect("s1");
+        init_quality_schema(&store);
+        // Insert a baseline row manually.
+        let conn = store.connection().expect("conn");
+        conn.query(
+            "CREATE (b:Baseline {workspace_id: 'ws-1', rating: 'B', total_issues: 12, blockers: 1, criticals: 4, debt_minutes: 90, snapshot_at: '2026-08-02T10:00:00Z'});",
+        )
+        .expect("baseline insert");
+        let gate = store.quality_gate(Some("ws-1")).expect("gate");
+        assert_eq!(gate.rating.as_deref(), Some("B"));
+        assert_eq!(gate.total_issues, 12);
+        assert_eq!(gate.blockers, 1);
+        assert_eq!(gate.criticals, 4);
+        assert_eq!(gate.debt_minutes, 90);
+        assert_eq!(gate.last_run.as_deref(), Some("2026-08-02T10:00:00Z"));
+    }
 
-        let mut p_mid = sample_view_spec("vs-mid", "mid");
-        p_mid.created_at = "2026-08-02T09:00:00Z".to_string();
-        p_mid.updated_at = p_mid.created_at.clone();
-        ViewSpecStore::save(&store, &p_mid, "ws-x", "alice")
-            .await
-            .expect("s2");
+    #[tokio::test]
+    #[serial]
+    async fn quality_quality_gate_returns_default_when_no_baseline() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        let gate = store.quality_gate(Some("ws-1")).expect("gate");
+        assert_eq!(gate.rating, None);
+        assert_eq!(gate.total_issues, 0);
+        assert_eq!(gate.debt_minutes, 0);
+    }
 
-        let mut p_new = sample_view_spec("vs-new", "new");
-        p_new.created_at = "2026-08-02T10:00:00Z".to_string();
-        p_new.updated_at = p_new.created_at.clone();
-        ViewSpecStore::save(&store, &p_new, "ws-x", "alice")
-            .await
-            .expect("s3");
+    #[tokio::test]
+    #[serial]
+    async fn quality_open_issues_count_filters_by_status() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[
+                NewIssue {
+                    status: "open".to_string(),
+                    ..sample_issue("ws-1", "R1", "src/a.rs", 10)
+                },
+                NewIssue {
+                    status: "open".to_string(),
+                    ..sample_issue("ws-1", "R1", "src/a.rs", 20)
+                },
+                NewIssue {
+                    status: "closed".to_string(),
+                    ..sample_issue("ws-1", "R1", "src/a.rs", 30)
+                },
+            ])
+            .expect("insert");
+        assert_eq!(store.open_issues_count(Some("ws-1")).expect("count"), 2);
+    }
 
-        let rows = ViewSpecStore::list(&store, "ws-x", "alice")
-            .await
+    #[tokio::test]
+    #[serial]
+    async fn quality_open_issues_count_scopes_to_workspace() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[
+                sample_issue("ws-A", "R1", "src/a.rs", 10),
+                sample_issue("ws-A", "R1", "src/a.rs", 20),
+                sample_issue("ws-B", "R1", "src/b.rs", 10),
+            ])
+            .expect("insert");
+        assert_eq!(store.open_issues_count(Some("ws-A")).expect("A"), 2);
+        assert_eq!(store.open_issues_count(Some("ws-B")).expect("B"), 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_issues_for_workspace_filters_combined() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[
+                NewIssue {
+                    severity: "blocker".to_string(),
+                    status: "open".to_string(),
+                    ..sample_issue("ws-1", "R1", "src/a.rs", 10)
+                },
+                NewIssue {
+                    severity: "blocker".to_string(),
+                    status: "closed".to_string(),
+                    ..sample_issue("ws-1", "R1", "src/a.rs", 20)
+                },
+                NewIssue {
+                    severity: "warning".to_string(),
+                    status: "open".to_string(),
+                    ..sample_issue("ws-1", "R2", "src/a.rs", 30)
+                },
+                NewIssue {
+                    severity: "blocker".to_string(),
+                    status: "open".to_string(),
+                    ..sample_issue("ws-2", "R1", "src/b.rs", 10)
+                },
+            ])
+            .expect("insert");
+
+        // Filter: ws-1 + severity=blocker + status=open → 1 row.
+        let filter = IssueFilter {
+            severity: Some("blocker".to_string()),
+            status: Some("open".to_string()),
+            ..IssueFilter::default()
+        };
+        let rows = store
+            .issues_for_workspace(Some("ws-1"), &filter)
             .expect("list");
-        assert_eq!(rows.len(), 3);
-        assert_eq!(rows[0].id, "vs-new");
-        assert_eq!(rows[1].id, "vs-mid");
-        assert_eq!(rows[2].id, "vs-old");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].severity, "blocker");
+        assert_eq!(rows[0].status, "open");
     }
 
     #[tokio::test]
     #[serial]
-    async fn view_spec_list_scopes_to_owner() {
-        // Two owners in the same workspace — list(alice) must not
-        // see bob's rows.
+    async fn quality_issues_for_workspace_respects_limit() {
         let (store, _dir) = make_test_store();
-        init_view_spec_schema(&store);
-        let a1 = sample_view_spec("vs-a1", "a-view");
-        ViewSpecStore::save(&store, &a1, "ws-s", "alice")
-            .await
-            .expect("sa1");
-        let a2 = sample_view_spec("vs-a2", "a-view-2");
-        ViewSpecStore::save(&store, &a2, "ws-s", "alice")
-            .await
-            .expect("sa2");
-        let mut b1 = sample_view_spec("vs-b1", "b-view");
-        b1.owner = "bob".to_string();
-        ViewSpecStore::save(&store, &b1, "ws-s", "bob")
-            .await
-            .expect("sb1");
-
-        let alice_rows = ViewSpecStore::list(&store, "ws-s", "alice")
-            .await
-            .expect("list-a");
-        assert_eq!(alice_rows.len(), 2);
-        assert!(alice_rows.iter().all(|r| r.owner == "alice"));
-
-        let bob_rows = ViewSpecStore::list(&store, "ws-s", "bob")
-            .await
-            .expect("list-b");
-        assert_eq!(bob_rows.len(), 1);
-        assert_eq!(bob_rows[0].owner, "bob");
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[
+                sample_issue("ws-1", "R1", "src/a.rs", 10),
+                sample_issue("ws-1", "R1", "src/a.rs", 20),
+                sample_issue("ws-1", "R1", "src/a.rs", 30),
+            ])
+            .expect("insert");
+        let filter = IssueFilter {
+            limit: Some(2),
+            ..IssueFilter::default()
+        };
+        let rows = store
+            .issues_for_workspace(Some("ws-1"), &filter)
+            .expect("list");
+        assert_eq!(rows.len(), 2, "limit=2 must cap the result set");
     }
 
     #[tokio::test]
     #[serial]
-    async fn view_spec_list_for_workspace_crosses_owners() {
-        // list_for_workspace returns rows across all owners that
-        // match `(workspace_id, applies_to)`.
+    async fn quality_insert_issues_upserts_on_natural_key() {
         let (store, _dir) = make_test_store();
-        init_view_spec_schema(&store);
-        let mut a = sample_view_spec("vs-a", "a-view");
-        a.applies_to = "route".to_string();
-        ViewSpecStore::save(&store, &a, "ws-x", "alice")
-            .await
-            .expect("sa");
-        let mut b = sample_view_spec("vs-b", "b-view");
-        b.owner = "bob".to_string();
-        b.applies_to = "route".to_string();
-        ViewSpecStore::save(&store, &b, "ws-x", "bob")
-            .await
-            .expect("sb");
-        let mut c = sample_view_spec("vs-c", "c-view");
-        c.applies_to = "symbol".to_string(); // different applies_to
-        ViewSpecStore::save(&store, &c, "ws-x", "carol")
-            .await
-            .expect("sc");
-
-        let routes = ViewSpecStore::list_for_workspace(&store, "ws-x", "route")
-            .await
-            .expect("list-routes");
-        assert_eq!(routes.len(), 2, "list_for_workspace crosses owners");
-        assert!(routes.iter().any(|r| r.owner == "alice"));
-        assert!(routes.iter().any(|r| r.owner == "bob"));
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn view_spec_delete_removes_target_row() {
-        let (store, _dir) = make_test_store();
-        init_view_spec_schema(&store);
-        let p = sample_view_spec("vs-del", "del-view");
-        ViewSpecStore::save(&store, &p, "ws-1", "alice")
-            .await
-            .expect("save");
-        let deleted = ViewSpecStore::delete(&store, "vs-del", "ws-1", "alice")
-            .await
-            .expect("delete");
-        assert!(deleted, "delete must return Ok(true) for existing row");
-        let r = ViewSpecStore::load(&store, "vs-del", "ws-1", "alice")
-            .await
-            .expect("load");
-        assert!(r.is_none(), "load after delete must return None");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn view_spec_delete_missing_returns_false() {
-        let (store, _dir) = make_test_store();
-        init_view_spec_schema(&store);
-        let deleted = ViewSpecStore::delete(&store, "vs-unknown", "ws-1", "alice")
-            .await
-            .expect("delete");
-        assert!(!deleted, "delete on unknown row must return Ok(false)");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn view_spec_update_touches_only_provenance_fields() {
-        // Save a spec, then call `update(id, ws, owner, seed_oid,
-        // seed_vid, applies_when)`. Verify the 3 provenance fields
-        // change and the title + renderer_kind remain unchanged.
-        let (store, _dir) = make_test_store();
-        init_view_spec_schema(&store);
-        let p = sample_view_spec("vs-u", "u-view");
-        ViewSpecStore::save(&store, &p, "ws-1", "alice")
-            .await
-            .expect("save");
-        let updated = ViewSpecStore::update(
-            &store,
-            "vs-u",
-            "ws-1",
-            "alice",
-            Some("seed-obj-1"),
-            Some("seed-view-1"),
-            Some("x > 5"),
-        )
-        .await
-        .expect("update");
-        assert!(updated, "update on existing row returns Ok(true)");
-        let loaded = ViewSpecStore::load(&store, "vs-u", "ws-1", "alice")
-            .await
-            .expect("load")
-            .expect("present");
+        init_quality_schema(&store);
+        // First insert: 1 new row.
+        let s1 = store
+            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
+            .expect("ins1");
         assert_eq!(
-            loaded.seed_object_id.as_deref(),
-            Some("seed-obj-1"),
-            "seed_object_id updated"
+            s1,
+            UpsertSummary {
+                inserted: 1,
+                updated: 0
+            }
         );
+
+        // Second insert with same natural key → upsert (update), no new row.
+        let mut updated = sample_issue("ws-1", "R1", "src/a.rs", 10);
+        updated.message = "updated message".to_string();
+        updated.status = "closed".to_string();
+        let s2 = store.insert_issues(&[updated]).expect("ins2");
         assert_eq!(
-            loaded.seed_view_id.as_deref(),
-            Some("seed-view-1"),
-            "seed_view_id updated"
+            s2,
+            UpsertSummary {
+                inserted: 0,
+                updated: 1
+            }
         );
-        assert_eq!(loaded.applies_when.as_deref(), Some("x > 5"));
-        // Other fields unchanged.
-        assert_eq!(loaded.title, "u-view");
-        assert_eq!(loaded.renderer_kind, "graph");
+
+        // Verify only 1 row exists.
+        let rows = store.issues_for_file("src/a.rs").expect("list");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].message, "updated message");
+        assert_eq!(rows[0].status, "closed");
     }
 
     #[tokio::test]
     #[serial]
-    async fn view_spec_update_missing_returns_false() {
+    async fn quality_insert_issues_counts_separately() {
         let (store, _dir) = make_test_store();
-        init_view_spec_schema(&store);
-        let updated = ViewSpecStore::update(
-            &store,
-            "vs-unknown",
-            "ws-1",
-            "alice",
-            Some("seed-obj-1"),
-            Some("seed-view-1"),
-            Some("x > 5"),
-        )
-        .await
-        .expect("update");
-        assert!(!updated, "update on unknown row must return Ok(false)");
+        init_quality_schema(&store);
+        // 1 existing + 1 new in one batch.
+        store
+            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
+            .expect("seed");
+        let batch = vec![
+            sample_issue("ws-1", "R1", "src/a.rs", 10), // existing
+            sample_issue("ws-1", "R2", "src/b.rs", 20), // new
+        ];
+        let s = store.insert_issues(&batch).expect("batch");
+        assert_eq!(
+            s,
+            UpsertSummary {
+                inserted: 1,
+                updated: 1
+            }
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_delete_issue_removes_target_row() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
+            .expect("seed");
+        let deleted = store
+            .delete_issue("ws-1", "R1", "src/a.rs", 10)
+            .expect("delete");
+        assert!(deleted, "delete must return Ok(true)");
+        let rows = store.issues_for_file("src/a.rs").expect("list");
+        assert!(rows.is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_delete_issue_missing_returns_false() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        let deleted = store
+            .delete_issue("ws-1", "R-missing", "src/a.rs", 10)
+            .expect("delete");
+        assert!(!deleted, "unknown natural key returns Ok(false)");
     }
 }
