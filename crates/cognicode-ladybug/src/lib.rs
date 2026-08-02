@@ -2942,4 +2942,153 @@ mod tests {
         let mut result = conn.execute(&mut stmt, vec![]).expect("execute");
         let _ = result.next(); // empty is fine
     }
+
+    // --------------------------------------------------------------------
+    // e29-2-conformance (LadybugGraphExecutor self-conformance)
+    // --------------------------------------------------------------------
+    //
+    // Self-conformance: the same plan executed multiple times
+    // produces the same ResultSet. This catches non-determinism in
+    // the lbug driver or the executor's internals.
+    //
+    // A separate PR (`e29-2-conformance-cross-backend`) will compare
+    // LadybugGraphExecutor against PgGraphExecutor +
+    // SnapshotGraphExecutor using the E28.2 PR4 conformance
+    // harness pattern — that PR requires CI with a live PG (not
+    // available in this sandbox).
+
+    #[tokio::test]
+    #[serial]
+    async fn e29_2_neighbors_self_conformance_idempotent() {
+        // Executing the same plan twice should produce the same
+        // ResultSet — both the row count and the row content.
+        let (store, _dir) = make_test_store();
+        init_graph_executor_schema(&store);
+        // Inline seed (the seed_graph_fixture helper from PR #195
+        // didn't survive the merge — re-define it inline for v1 of
+        // this PR). foo (calls) -> bar + (imports) -> baz.
+        let conn = store.connection().expect("conn");
+        conn.query(
+            "CREATE (r:GraphRevision {workspace_id: 'ws-1', revision_id: 1, head_of: true});",
+        )
+        .expect("rev");
+        conn.query(
+            "CREATE (s:GraphSymbol {workspace_id: 'ws-1', revision_id: 1, fqn: 'src/a.rs:foo:1', kind: 'function', name: 'foo', file_path: 'src/a.rs', line: 1});",
+        ).expect("foo");
+        conn.query(
+            "CREATE (s:GraphSymbol {workspace_id: 'ws-1', revision_id: 1, fqn: 'src/a.rs:bar:5', kind: 'function', name: 'bar', file_path: 'src/a.rs', line: 5});",
+        ).expect("bar");
+        conn.query(
+            "CREATE (s:GraphSymbol {workspace_id: 'ws-1', revision_id: 1, fqn: 'src/b.rs:baz:10', kind: 'function', name: 'baz', file_path: 'src/b.rs', line: 10});",
+        ).expect("baz");
+        conn.query(
+            "CREATE (e:GraphEdge {workspace_id: 'ws-1', revision_id: 1, source_id: 'src/a.rs:foo:1', target_id: 'src/a.rs:bar:5', dep_type: 'calls', provenance: 'Extracted', confidence: 1.0});",
+        ).expect("e1");
+        let executor = make_graph_executor_for_test(&store);
+        let ws = ws_id("ws-1");
+        let rev = RevisionId(1);
+        let plan = build_minimal_neighbors_plan("src/a.rs:foo:1");
+        let r1 = executor.execute(&plan, (ws.clone(), rev)).expect("r1");
+        let r2 = executor.execute(&plan, (ws, rev)).expect("r2");
+        assert_eq!(r1.rows.len(), r2.rows.len(), "row count must match");
+        assert_eq!(r1.rows, r2.rows, "row content must match exactly");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn e29_2_neighbors_self_conformance_ordered_by_fqn() {
+        // The Neighbors variant MUST return rows ordered by `t.fqn`
+        // ascending (per the E28.2 conformance spec). Verify the
+        // executor respects this ordering when multiple neighbors
+        // exist.
+        let (store, _dir) = make_test_store();
+        init_graph_executor_schema(&store);
+        let conn = store.connection().expect("conn");
+        conn.query(
+            "CREATE (r:GraphRevision {workspace_id: 'ws-1', revision_id: 1, head_of: true});",
+        )
+        .expect("rev");
+        conn.query(
+            "CREATE (s:GraphSymbol {workspace_id: 'ws-1', revision_id: 1, fqn: 'src/a.rs:foo:1', kind: 'function', name: 'foo', file_path: 'src/a.rs', line: 1});",
+        )
+        .expect("foo");
+        conn.query(
+            "CREATE (s:GraphSymbol {workspace_id: 'ws-1', revision_id: 1, fqn: 'src/a.rs:bar:5', kind: 'function', name: 'bar', file_path: 'src/a.rs', line: 5});",
+        )
+        .expect("bar");
+        conn.query(
+            "CREATE (s:GraphSymbol {workspace_id: 'ws-1', revision_id: 1, fqn: 'src/b.rs:baz:10', kind: 'function', name: 'baz', file_path: 'src/b.rs', line: 10});",
+        )
+        .expect("baz");
+        // Add edges in NON-sorted order to verify the executor sorts.
+        conn.query(
+            "CREATE (e:GraphEdge {workspace_id: 'ws-1', revision_id: 1, source_id: 'src/a.rs:foo:1', target_id: 'src/b.rs:baz:10', dep_type: 'imports', provenance: 'Extracted', confidence: 1.0});",
+        )
+        .expect("e1");
+        conn.query(
+            "CREATE (e:GraphEdge {workspace_id: 'ws-1', revision_id: 1, source_id: 'src/a.rs:foo:1', target_id: 'src/a.rs:bar:5', dep_type: 'calls', provenance: 'Extracted', confidence: 1.0});",
+        )
+        .expect("e2");
+        let executor = make_graph_executor_for_test(&store);
+        let plan = build_minimal_neighbors_plan("src/a.rs:foo:1");
+        let result = executor
+            .execute(&plan, (ws_id("ws-1"), RevisionId(1)))
+            .expect("execute");
+        assert_eq!(result.rows.len(), 2, "foo has 2 direct neighbors");
+        // bar's fqn is alphabetically before baz's.
+        // lbug 0.19 returns STRING values wrapped in double quotes
+        // — strip them for the comparison.
+        let strip = |s: String| s.trim_matches('"').to_string();
+        let fqn0 = strip(result.rows[0].columns[0].to_string());
+        let fqn1 = strip(result.rows[1].columns[0].to_string());
+        assert_eq!(
+            fqn0, "src/a.rs:bar:5",
+            "first neighbor must be bar (alphabetical)"
+        );
+        assert_eq!(fqn1, "src/b.rs:baz:10", "second neighbor must be baz");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn e29_2_neighbors_conformance_no_edges_returns_empty() {
+        // Known-answer: a Symbol with zero outgoing edges returns an
+        // empty ResultSet. Stable across all E28.2 executor backends.
+        let (store, _dir) = make_test_store();
+        init_graph_executor_schema(&store);
+        let conn = store.connection().expect("conn");
+        conn.query(
+            "CREATE (r:GraphRevision {workspace_id: 'ws-1', revision_id: 1, head_of: true});",
+        )
+        .expect("rev");
+        conn.query(
+            "CREATE (s:GraphSymbol {workspace_id: 'ws-1', revision_id: 1, fqn: 'src/a.rs:foo:1', kind: 'function', name: 'foo', file_path: 'src/a.rs', line: 1});",
+        )
+        .expect("foo");
+        let executor = make_graph_executor_for_test(&store);
+        let plan = build_minimal_neighbors_plan("src/a.rs:foo:1");
+        let result = executor
+            .execute(&plan, (ws_id("ws-1"), RevisionId(1)))
+            .expect("execute");
+        assert!(result.is_empty(), "isolated node returns empty ResultSet");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn e29_2_neighbors_conformance_unknown_src_returns_empty() {
+        // Known-answer: querying a symbol that doesn't exist returns
+        // empty (parity with PG + Snapshot executors).
+        let (store, _dir) = make_test_store();
+        init_graph_executor_schema(&store);
+        let conn = store.connection().expect("conn");
+        conn.query(
+            "CREATE (r:GraphRevision {workspace_id: 'ws-1', revision_id: 1, head_of: true});",
+        )
+        .expect("rev");
+        let executor = make_graph_executor_for_test(&store);
+        let plan = build_minimal_neighbors_plan("src/does_not_exist.rs:foo:1");
+        let result = executor
+            .execute(&plan, (ws_id("ws-1"), RevisionId(1)))
+            .expect("execute");
+        assert!(result.is_empty(), "unknown source returns empty ResultSet");
+    }
 }
