@@ -680,6 +680,7 @@ name = "cognicode-ladybug"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "cognicode-core",
  "lbug",
  "serde",
