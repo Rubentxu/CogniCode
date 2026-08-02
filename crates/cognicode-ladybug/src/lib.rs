@@ -1085,6 +1085,577 @@ impl IngestCommit for LadybugStore {
 // surface is still complete and verified via the cargo check on the
 // other 8 ports.
 
+// =============================================================================
+// Generic Graph Layer DDL (`e29-1-ddl-init`)
+// =============================================================================
+//
+// Per ADR-027 (`docs/adr/ADR-027-ladybugdb-hybrid-schema-strategy.md`):
+// 22 NODE TABLEs + ~20 REL TABLEs backing the Generic Graph Layer.
+// Hybrid strategy — typed columns for stable properties, MAP for
+// emergent ones. Multi-label nodes for poly形式 membership.
+//
+// **v1 scope (this commit)**: 22 NODE TABLEs as DDL constants + an
+// `init_generic_graph_schema()` function that applies them
+// idempotently. The ~20 REL TABLEs are tracked as a follow-up PR
+// (`e29-1-ddl-rels`) — they require a separate design pass on
+// edge-label naming and the multi-label relationship between node
+// types (e.g. a `Calls` edge between a `Symbol` and another
+// `Symbol`, plus a `Component` ↔ `Component` `Calls`).
+//
+// The `init_generic_graph_schema()` is invoked explicitly by the
+// production runtime composition root (similar to PG's
+// `run_migrations`); tests invoke it via the helper in `mod tests`.
+
+/// `LadybugStore::init_generic_graph_schema` — applies the 22
+/// NODE TABLE DDLs from ADR-027.
+impl LadybugStore {
+    /// Apply the 22 NODE TABLE DDLs from ADR-027 to the underlying
+    /// lbug database. Idempotent (every `CREATE NODE TABLE` uses
+    /// `IF NOT EXISTS`).
+    pub fn init_generic_graph_schema(&self) -> Result<(), Error> {
+        let conn = self
+            .connection()
+            .map_err(|e| Error::Lbug(format!("init_generic_graph_schema: {e}")))?;
+        for stmt in generic_graph_node_table_ddls() {
+            conn.query(stmt)
+                .map_err(|e| Error::Lbug(format!("init_generic_graph_schema: {e}\nDDL: {stmt}")))?;
+        }
+        Ok(())
+    }
+
+    /// Apply the ~20 REL TABLE DDLs from ADR-027 §6. Idempotent.
+    ///
+    /// The caller is expected to have already invoked
+    /// `init_generic_graph_schema()` (which creates the 22 NODE
+    /// TABLEs) — the REL TABLEs reference endpoint `id` columns
+    /// (`source_id`, `target_id`) that the application layer
+    /// populates explicitly (lbug 0.19 has no foreign-key
+    /// constraints, so the integrity is application-enforced).
+    pub fn init_generic_graph_rels_schema(&self) -> Result<(), Error> {
+        let conn = self
+            .connection()
+            .map_err(|e| Error::Lbug(format!("init_generic_graph_rels_schema: {e}")))?;
+        for stmt in generic_graph_rel_table_ddls() {
+            conn.query(stmt).map_err(|e| {
+                Error::Lbug(format!("init_generic_graph_rels_schema: {e}\nDDL: {stmt}"))
+            })?;
+        }
+        Ok(())
+    }
+}
+
+/// Returns the 22 CREATE NODE TABLE statements from ADR-027.
+fn generic_graph_node_table_ddls() -> Vec<&'static str> {
+    vec![
+        "CREATE NODE TABLE IF NOT EXISTS Symbol( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             name STRING, \
+             kind STRING, \
+             file_path STRING, \
+             line_number INT64, \
+             signature STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Decision( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             name STRING, \
+             rationale STRING, \
+             decided_at INT64, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Doc( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             title STRING, \
+             path STRING, \
+             kind STRING, \
+             content_hash STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Evidence( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_kind STRING, \
+             source_ref STRING, \
+             confidence REAL, \
+             captured_at INT64, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Issue( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             severity STRING, \
+             category STRING, \
+             file_path STRING, \
+             line_number INT64, \
+             message STRING, \
+             status STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Component( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             name STRING, \
+             layer STRING, \
+             responsibility STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Container( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             name STRING, \
+             kind STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS System( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             name STRING, \
+             description STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Route( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             path STRING, \
+             kind STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Rule( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             rule_id STRING, \
+             description STRING, \
+             category STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Baseline( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             rating STRING, \
+             total_issues INT64, \
+             blockers INT64, \
+             criticals INT64, \
+             debt_minutes INT64, \
+             snapshot_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Investigation( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             title STRING, \
+             status STRING, \
+             created_at STRING, \
+             updated_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Artifact( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             kind STRING, \
+             format STRING, \
+             content_hash STRING, \
+             created_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS ExplorationSession( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             events STRING, \
+             navigation_mode STRING, \
+             panes STRING, \
+             created_at STRING, \
+             updated_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS NamedView( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             name STRING, \
+             view_kind STRING, \
+             owner STRING, \
+             created_at STRING, \
+             updated_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS ViewSpec( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             title STRING, \
+             applies_to STRING, \
+             view_kind STRING, \
+             data_source STRING, \
+             transform STRING, \
+             renderer_kind STRING, \
+             props STRING, \
+             owner STRING, \
+             created_at STRING, \
+             updated_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS GraphReport( \
+             id STRING PRIMARY KEY, \
+             workspace_id STRING, \
+             revision_id INT64, \
+             created_at STRING, \
+             report STRING, \
+             symbol_count INT64, \
+             edge_count INT64, \
+             health_score DOUBLE, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS AnalyticsRun( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             algorithm STRING, \
+             mode STRING, \
+             result_count INT64, \
+             started_at STRING, \
+             completed_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS FileRecord( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             file_path STRING, \
+             file_type STRING, \
+             language STRING, \
+             content_hash STRING, \
+             mtime DOUBLE, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Revision( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             parent_revision_id INT64, \
+             author STRING, \
+             committed_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Workspace( \
+             id STRING PRIMARY KEY, \
+             name STRING, \
+             kind STRING, \
+             source_path STRING, \
+             config STRING, \
+             created_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Space( \
+             id STRING PRIMARY KEY, \
+             workspace_id INT64, \
+             name STRING, \
+             kind STRING, \
+             source_path STRING, \
+             config STRING, \
+             created_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+    ]
+}
+
+/// Returns the ~20 CREATE NODE TABLE statements for relationships
+/// (edges) per ADR-027 §6. Each is a NODE TABLE in lbug 0.19
+/// (lbug does not differentiate node vs relationship types at the
+/// storage layer; the relationship semantics are enforced by the
+/// application via the `source_id` / `target_id` columns pointing
+/// at the two endpoint NODE TABLEs).
+///
+/// v1 scope: 20 REL TABLEs covering the canonical CognitiveCode
+/// edge vocabulary (Calls, Imports, Inherits, References,
+/// Defines, Annotates, Contains, Documents, Supports, Decides,
+/// Contradicts, Refines, Supersedes, Implements, DependsOn,
+/// Exposes, Consumes, BelongsTo, Hosts, Owns).
+fn generic_graph_rel_table_ddls() -> Vec<&'static str> {
+    vec![
+        "CREATE NODE TABLE IF NOT EXISTS Calls( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             call_site_line INT64, \
+             is_virtual BOOLEAN, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Imports( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             import_path STRING, \
+             is_reexport BOOLEAN, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Inherits( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             visibility STRING, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS References( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             reference_kind STRING, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Defines( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             definition_kind STRING, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Annotates( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             annotation_kind STRING, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Contains( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             containment_kind STRING, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Documents( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             documentation_kind STRING, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Supports( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             support_strength REAL, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Decides( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             decision_kind STRING, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Contradicts( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             severity STRING, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Refines( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Supersedes( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Implements( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS DependsOn( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             dependency_kind STRING, \
+             strength REAL, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Exposes( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             exposure_kind STRING, \
+             visibility STRING, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Consumes( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             consumption_kind STRING, \
+             frequency INT64, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS BelongsTo( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             membership_kind STRING, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Hosts( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             hosting_kind STRING, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Owns( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_id INT64, \
+             target_id INT64, \
+             ownership_kind STRING, \
+             confidence REAL, \
+             provenance STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1714,5 +2285,208 @@ mod tests {
                 .expect("head"),
             Some(RevisionId(1))
         );
+    }
+
+    // --------------------------------------------------------------------
+    // Generic Graph Layer DDL (`e29-1-ddl-init`)
+    // --------------------------------------------------------------------
+
+    #[tokio::test]
+    #[serial]
+    async fn init_generic_graph_schema_applies_all_22_node_tables() {
+        let (store, _dir) = make_test_store();
+        store
+            .init_generic_graph_schema()
+            .expect("init should succeed");
+
+        let conn = store.connection().expect("conn");
+        for table in [
+            "Symbol",
+            "Decision",
+            "Doc",
+            "Evidence",
+            "Issue",
+            "Component",
+            "Container",
+            "System",
+            "Route",
+            "Rule",
+            "Baseline",
+            "Investigation",
+            "Artifact",
+            "ExplorationSession",
+            "NamedView",
+            "ViewSpec",
+            "GraphReport",
+            "AnalyticsRun",
+            "FileRecord",
+            "Revision",
+            "Workspace",
+            "Space",
+        ] {
+            let mut stmt = conn
+                .prepare(&format!("MATCH (n:{table}) RETURN n.id LIMIT 1;"))
+                .unwrap_or_else(|e| panic!("table {table} not queryable: {e}"));
+            let mut result = conn
+                .execute(&mut stmt, vec![])
+                .unwrap_or_else(|e| panic!("execute on {table}: {e}"));
+            let _ = result.next();
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn init_generic_graph_schema_is_idempotent() {
+        let (store, _dir) = make_test_store();
+        store.init_generic_graph_schema().expect("first init");
+        store
+            .init_generic_graph_schema()
+            .expect("second init must be a no-op (IF NOT EXISTS)");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn init_generic_graph_schema_supports_basic_node_insert() {
+        let (store, _dir) = make_test_store();
+        store.init_generic_graph_schema().expect("init");
+        let conn = store.connection().expect("conn");
+        conn.query(
+            "CREATE (s:Symbol {                  id: 1, workspace_id: 1, revision_id: 1,                  name: 'foo', kind: 'function', file_path: 'src/foo.rs',                  line_number: 10, signature: 'fn() -> ()',                  valid_from: 1, valid_to: -1              });",
+        )
+        .expect("insert symbol");
+        let mut stmt = conn
+            .prepare(
+                "MATCH (s:Symbol) WHERE s.name = 'foo' RETURN s.kind, s.signature, s.line_number;",
+            )
+            .expect("prepare");
+        let mut result = conn.execute(&mut stmt, vec![]).expect("execute");
+        let Some(row) = result.next() else {
+            panic!("Symbol not found after insert")
+        };
+        assert_eq!(row[0].to_string(), "function");
+        assert_eq!(row[1].to_string(), "fn() -> ()");
+        assert_eq!(row[2].to_string(), "10");
+    }
+
+    // --------------------------------------------------------------------
+    // Generic Graph Layer REL TABLE DDL (`e29-1-ddl-rels`)
+    // --------------------------------------------------------------------
+
+    #[tokio::test]
+    #[serial]
+    async fn init_generic_graph_rels_schema_applies_all_20_rel_tables() {
+        let (store, _dir) = make_test_store();
+        // REL TABLEs reference endpoint `id` columns that don't
+        // exist yet (the NODE TABLEs) — but lbug 0.19 doesn't enforce
+        // foreign keys, so the REL TABLEs can be created standalone.
+        store
+            .init_generic_graph_rels_schema()
+            .expect("init should succeed");
+        let conn = store.connection().expect("conn");
+        for table in [
+            "Calls",
+            "Imports",
+            "Inherits",
+            "References",
+            "Defines",
+            "Annotates",
+            "Contains",
+            "Documents",
+            "Supports",
+            "Decides",
+            "Contradicts",
+            "Refines",
+            "Supersedes",
+            "Implements",
+            "DependsOn",
+            "Exposes",
+            "Consumes",
+            "BelongsTo",
+            "Hosts",
+            "Owns",
+        ] {
+            let mut stmt = conn
+                .prepare(&format!("MATCH (e:{table}) RETURN e.id LIMIT 1;"))
+                .unwrap_or_else(|err| panic!("table {table} not queryable: {err}"));
+            let mut result = conn
+                .execute(&mut stmt, vec![])
+                .unwrap_or_else(|err| panic!("execute on {table}: {err}"));
+            let _ = result.next();
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn init_generic_graph_rels_schema_is_idempotent() {
+        let (store, _dir) = make_test_store();
+        store.init_generic_graph_rels_schema().expect("first init");
+        store
+            .init_generic_graph_rels_schema()
+            .expect("second init must be no-op");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn init_generic_graph_rels_schema_supports_basic_edge_insert() {
+        // Insert a Symbol + a Calls edge between two Symbols — the
+        // canonical "code calls code" relationship. The edge rows
+        // use `source_id` / `target_id` columns pointing at the
+        // Symbol `id` values (lbug 0.19 has no FK constraints, so
+        // the integrity is application-enforced).
+        let (store, _dir) = make_test_store();
+        store.init_generic_graph_schema().expect("init nodes");
+        store.init_generic_graph_rels_schema().expect("init rels");
+        let conn = store.connection().expect("conn");
+        // Two Symbols.
+        conn.query(
+            "CREATE (s:Symbol {                  id: 1, workspace_id: 1, revision_id: 1,                  name: 'foo', kind: 'function', file_path: 'src/foo.rs',                  line_number: 10, signature: 'fn()',                  valid_from: 1, valid_to: -1              });",
+        )
+        .expect("insert foo");
+        conn.query(
+            "CREATE (s:Symbol {                  id: 2, workspace_id: 1, revision_id: 1,                  name: 'bar', kind: 'function', file_path: 'src/bar.rs',                  line_number: 5, signature: 'fn()',                  valid_from: 1, valid_to: -1              });",
+        )
+        .expect("insert bar");
+        // A Calls edge: foo → bar.
+        conn.query(
+            "CREATE (e:Calls {                  id: 1, workspace_id: 1, revision_id: 1,                  source_id: 1, target_id: 2, call_site_line: 12,                  is_virtual: false, confidence: 0.85, provenance: 'extractor',                  valid_from: 1, valid_to: -1              });",
+        )
+        .expect("insert Calls edge");
+        // Read the edge back via the canonical endpoint query.
+        let mut stmt = conn
+            .prepare("MATCH (e:Calls) WHERE e.source_id = 1 AND e.target_id = 2 RETURN e.call_site_line, e.confidence, e.provenance;")
+            .expect("prepare");
+        let mut result = conn.execute(&mut stmt, vec![]).expect("execute");
+        let Some(row) = result.next() else {
+            panic!("Calls edge not found")
+        };
+        assert_eq!(row[0].to_string(), "12");
+        assert_eq!(
+            row[1].to_string(),
+            "0.85",
+            "confidence should round-trip as REAL"
+        );
+        assert_eq!(row[2].to_string(), "extractor");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn init_generic_graph_full_schema_nodes_then_rels() {
+        // Verify the full init order works: nodes first, then rels.
+        // This is the production runtime composition root pattern.
+        let (store, _dir) = make_test_store();
+        store.init_generic_graph_schema().expect("init nodes");
+        store.init_generic_graph_rels_schema().expect("init rels");
+        // Both should have applied — verify by counting.
+        let conn = store.connection().expect("conn");
+        let mut stmt = conn
+            .prepare("MATCH (n) RETURN n.id LIMIT 1;")
+            .expect("prepare");
+        let mut result = conn.execute(&mut stmt, vec![]).expect("execute");
+        let _ = result.next(); // empty db is fine
+        let mut stmt = conn
+            .prepare("MATCH (e:Calls) RETURN e.id LIMIT 1;")
+            .expect("prepare");
+        let mut result = conn.execute(&mut stmt, vec![]).expect("execute");
+        let _ = result.next(); // empty is fine
     }
 }
