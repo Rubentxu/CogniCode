@@ -14,6 +14,7 @@ path = "src/bin/mcp.rs"
 [dependencies]
 cognicode-core = { path = "../cognicode-core" }
 cognicode-explorer = { path = "../cognicode-explorer", default-features = false }
+cognicode-ladybug = { path = "../cognicode-ladybug", optional = true }
 async-trait.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
@@ -29,3 +30,11 @@ postgres = ["cognicode-explorer/postgres"]
 multimodal = ["cognicode-explorer/multimodal"]
 # Ownership: enables CODEOWNERS/git-blame ownership attribution
 ownership = ["cognicode-explorer/ownership"]
+# Ladybug: enables lbug 0.19 as the runtime's canonical graph store
+# (E29 Phase 2 / e29-2-switch-default). The default is still
+# `postgres` (a future PR will switch the default after all
+# downstream code migrates from PG-specific types to the lbug
+# equivalents). The runtime supports BOTH backends — pick the
+# canonical one with `default-features = ["ladybug"]` or
+# `default-features = ["postgres"]`.
+ladybug = ["cognicode-ladybug", "cognicode-ladybug/multimodal-9ports"]
