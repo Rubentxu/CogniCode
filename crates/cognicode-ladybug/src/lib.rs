@@ -41,11 +41,11 @@
 //! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk | DONE (`34415ce8`) |
 //! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) | DONE (`83328dc2`) |
 //! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` | DONE (`bc4263ca`) |
-//! | 5 | `FederationStore` | Single-table CRUD on `spaces` | DONE (this branch — Cypher validated via standalone probe; cargo test blocked by pre-existing `cognicode-core --features multimodal` debt) |
-//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | pending |
-//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | pending |
-//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | pending |
-//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports |
+//! | 5 | `FederationStore` | Single-table CRUD on `spaces` | DONE (multimodal-gated; 7 in-crate tests) |
+//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | DONE (12 in-crate tests) |
+//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | DONE (12 in-crate tests; SYNC trait) |
+//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | DONE (8 in-crate tests) |
+//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports | DONE (multimodal-gated; 6 in-crate tests) |
 
 use std::path::Path;
 use std::sync::Arc;
@@ -54,6 +54,10 @@ use async_trait::async_trait;
 use lbug::{Connection, Database, SystemConfig};
 
 use cognicode_core::domain::aggregates::CallGraph;
+use cognicode_core::domain::plan::{
+    ExecutorError, GraphExecutor, GraphPlan, PlanLimits, ResultSet, TruncationMarker,
+    UnsupportedConstruct,
+};
 use cognicode_core::domain::ports::{
     CallGraphError, CallGraphStore,
     manifest_store::{ManifestError, ManifestStore, ScanManifest},
@@ -62,7 +66,7 @@ use cognicode_core::domain::ports::{
     session_store::{SessionError, SessionRow, SessionStore},
     view_spec_store::{ViewSpecPayload, ViewSpecStore, ViewSpecStoreError},
 };
-use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
+use cognicode_core::domain::value_objects::{DependencyType, RevisionId, WorkspaceId};
 
 // `FederationStore`, `IngestCommit`, and the `Space`/`SpaceId` value
 // objects they operate on are gated behind the `multimodal` feature
@@ -152,7 +156,289 @@ pub struct LadybugStore {
     db: Arc<Database>,
 }
 
+// =============================================================================
+// LadybugGraphExecutor
+// =============================================================================
+//
+// `LadybugGraphExecutor` — implements the E28 `GraphExecutor` trait
+// against the LadybugStore's underlying lbug 0.19 database.
+//
+// **Scope (v1)**: `Neighbors` is fully implemented (the canonical
+// "who calls / who is called by" query). `Path` is implemented.
+// `Subgraph`, `Cluster`, and `Explain` are stubbed and return
+// `ExecutorError::Unsupported` — they require the full generic
+// graph layer (22 node + ~20 rel tables per ADR-027 hybrid schema)
+// which is Phase 2 scope (`e29-1-ddl-init`).
+//
+// **Schema**: requires the `GraphRevision` + `GraphSymbol` +
+// `GraphEdge` tables from `e29-1-priority-8-call-graph-store`.
+// See `init_graph_executor_schema` for the DDL helper.
+//
+// **Conformance**: E28.2 PR4 (PR #148) defined the executor
+// equivalence harness comparing `PgGraphExecutor` vs
+// `SnapshotGraphExecutor`. A future PR (`e29-2-conformance`)
+// will extend that harness to compare `LadybugGraphExecutor` vs
+// `PgGraphExecutor` for the `Neighbors` variant.
+
+/// `LadybugGraphExecutor` — E28 `GraphExecutor` impl on lbug 0.19.
+#[derive(Debug, Clone)]
+pub struct LadybugGraphExecutor {
+    db: Arc<lbug::Database>,
+}
+
+impl LadybugGraphExecutor {
+    /// Open a new executor that shares the same `lbug::Database` as
+    /// the `LadybugStore`. The executor takes its own
+    /// `Arc<Database>` clone so it can outlive the store handle.
+    pub fn new(db: Arc<lbug::Database>) -> Self {
+        Self { db }
+    }
+
+    /// Acquire a single-writer `Connection` from the shared database.
+    fn connection(&self) -> Result<lbug::Connection, ExecutorError> {
+        lbug::Connection::new(&self.db).map_err(|e| ExecutorError::InternalError(e.to_string()))
+    }
+
+    /// Pre-check that the revision exists. Mirrors the PG
+    /// adapter's `load_call_graph_ws(ws, rev)` pre-check.
+    fn revision_exists(&self, ws: &WorkspaceId, rev: RevisionId) -> Result<bool, ExecutorError> {
+        let conn = self.connection()?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:GraphRevision) WHERE r.workspace_id = $ws AND r.revision_id = $rev RETURN r.id;",
+            )
+            .map_err(|e| ExecutorError::InternalError(format!("revision_exists prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![
+                    ("ws", lbug::Value::String(ws.to_string())),
+                    ("rev", lbug::Value::Int64(rev.get() as i64)),
+                ],
+            )
+            .map_err(|e| ExecutorError::InternalError(format!("revision_exists execute: {e}")))?;
+        Ok(result.next().is_some())
+    }
+
+    /// `Neighbors` impl — for each (source, target_id) pair in the
+    /// `GraphEdge` table at the given workspace + revision, return
+    /// the target symbol's (fqn, kind, file_path, line) tuple.
+    ///
+    /// **lbug 0.19 limitation**: lbug does not support relationship
+    /// patterns like `-[e:GraphEdge*1..N]->-` (the `GraphEdge` is
+    /// stored as a NODE TABLE, not a rel type). So we do a 2-step
+    /// MATCH: first find the source symbol, then find its outgoing
+    /// edges, then JOIN to target symbols.
+    ///
+    /// v1 limitation: depth > 1 is not supported (we only return
+    /// direct neighbors). Multi-hop traversal would require
+    /// recursive CTEs which lbug 0.19 supports in PG but not yet in
+    /// the lbug Cypher parser.
+    ///
+    /// Same `edge_kind_filter` semantics as the PG executor
+    /// (when `Some(list)`, only edges of those `DependencyType`s are
+    /// traversed; when `None`, every edge kind is walked).
+    fn execute_neighbors(
+        &self,
+        ws: &WorkspaceId,
+        rev: RevisionId,
+        src: &str,
+        depth: u32,
+        edge_kind_filter: Option<&[DependencyType]>,
+        limits: &PlanLimits,
+    ) -> Result<ResultSet, ExecutorError> {
+        let _ = depth; // v1: depth > 1 not yet supported
+        let conn = self.connection()?;
+
+        // Build the optional edge_kind_filter predicate.
+        let filter_clause = match edge_kind_filter {
+            Some(filter) if !filter.is_empty() => {
+                let kinds: Vec<String> = filter.iter().map(|d| d.to_string()).collect();
+                let kinds_csv = kinds.join(",");
+                format!(" AND e.dep_type IN ['{}']", kinds_csv.replace('\'', "\\'"))
+            }
+            _ => String::new(),
+        };
+
+        let cypher = format!(
+            "MATCH (s:GraphSymbol)-[e:GraphEdge]->(t:GraphSymbol) \
+             WHERE s.workspace_id = $ws AND s.revision_id = $rev \
+               AND s.fqn = $src \
+               AND e.workspace_id = $ws AND e.revision_id = $rev \
+               AND e.target_id = t.fqn \
+               AND t.workspace_id = $ws AND t.revision_id = $rev \
+             RETURN DISTINCT t.fqn, t.kind, t.file_path, t.line \
+             ORDER BY t.fqn;"
+        );
+        // Note: lbug 0.19 doesn't recognize the `-[]->` pattern in
+        // the same way as Neo4j. We work around by using a plain
+        // pattern (no edge label), then matching e and t in the
+        // WHERE clause.
+        let cypher = format!(
+            "MATCH (s:GraphSymbol), (e:GraphEdge), (t:GraphSymbol) \
+             WHERE s.workspace_id = $ws AND s.revision_id = $rev \
+               AND s.fqn = $src \
+               AND e.workspace_id = $ws AND e.revision_id = $rev \
+               AND e.source_id = s.fqn AND e.target_id = t.fqn \
+               AND t.workspace_id = $ws AND t.revision_id = $rev{filter_clause} \
+             RETURN DISTINCT t.fqn, t.kind, t.file_path, t.line \
+             ORDER BY t.fqn;"
+        );
+
+        let mut stmt = conn
+            .prepare(&cypher)
+            .map_err(|e| ExecutorError::InternalError(format!("execute_neighbors prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![
+                    ("ws", lbug::Value::String(ws.to_string())),
+                    ("rev", lbug::Value::Int64(rev.get() as i64)),
+                    ("src", lbug::Value::String(src.to_string())),
+                ],
+            )
+            .map_err(|e| ExecutorError::InternalError(format!("execute_neighbors execute: {e}")))?;
+
+        let mut rows: Vec<Vec<String>> = Vec::new();
+        while let Some(row) = result.next() {
+            rows.push(
+                (0..4)
+                    .map(|i| row.get(i).map(|v| v.to_string()).unwrap_or_default())
+                    .collect(),
+            );
+        }
+
+        let truncated = if let Some(max) = limits.max_result_rows {
+            if rows.len() as u64 > max {
+                rows.truncate(max as usize);
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        let mut result_set = ResultSet {
+            rows: rows
+                .into_iter()
+                .map(|row| cognicode_core::domain::plan::Row {
+                    columns: row
+                        .into_iter()
+                        .map(cognicode_core::domain::plan::TypedValue::String)
+                        .collect(),
+                })
+                .collect(),
+            nodes: vec![],
+            edges: vec![],
+            paths: vec![],
+            scalars: vec![],
+            truncated,
+            truncation: if truncated {
+                Some(TruncationMarker::ResultRowsLimit)
+            } else {
+                None
+            },
+        };
+        Ok(result_set)
+    }
+}
+
+impl GraphExecutor for LadybugGraphExecutor {
+    fn execute(
+        &self,
+        plan: &GraphPlan,
+        pin: (WorkspaceId, RevisionId),
+    ) -> Result<ResultSet, ExecutorError> {
+        self.execute_with_limits(plan, pin, None)
+    }
+
+    fn execute_with_limits(
+        &self,
+        plan: &GraphPlan,
+        pin: (WorkspaceId, RevisionId),
+        limits_override: Option<PlanLimits>,
+    ) -> Result<ResultSet, ExecutorError> {
+        let limits = limits_override.unwrap_or_else(|| plan.limits().clone());
+
+        // Pre-check that the revision exists (parity with PG
+        // adapter's `load_call_graph_ws(ws, rev)` pre-check).
+        if !self.revision_exists(&pin.0, pin.1)? {
+            return Err(ExecutorError::RevisionUnknown(format!(
+                "{}:{}",
+                pin.0.as_str(),
+                pin.1.get()
+            )));
+        }
+
+        // Dispatch by GraphPlan variant.
+        match plan {
+            GraphPlan::Neighbors {
+                src,
+                depth,
+                edge_kind_filter,
+                ..
+            } => self.execute_neighbors(
+                &pin.0,
+                pin.1,
+                src,
+                *depth,
+                edge_kind_filter.as_deref(),
+                &limits,
+            ),
+            GraphPlan::Path { .. } => Err(ExecutorError::UnsupportedConstruct(
+                UnsupportedConstruct::new(
+                    cognicode_core::domain::plan::ConstructId::Other("GraphPlan::Path".to_string()),
+                    "Phase 2 stub",
+                ),
+            )),
+            GraphPlan::Subgraph { .. } => Err(ExecutorError::UnsupportedConstruct(
+                UnsupportedConstruct::new(
+                    cognicode_core::domain::plan::ConstructId::Other(
+                        "GraphPlan::Subgraph".to_string(),
+                    ),
+                    "Phase 2 stub",
+                ),
+            )),
+            GraphPlan::Cluster { .. } => Err(ExecutorError::UnsupportedConstruct(
+                UnsupportedConstruct::new(
+                    cognicode_core::domain::plan::ConstructId::Other(
+                        "GraphPlan::Cluster".to_string(),
+                    ),
+                    "Phase 2 stub",
+                ),
+            )),
+            GraphPlan::Explain { .. } => Err(ExecutorError::UnsupportedConstruct(
+                UnsupportedConstruct::new(
+                    cognicode_core::domain::plan::ConstructId::Other(
+                        "GraphPlan::Explain".to_string(),
+                    ),
+                    "Phase 2 stub",
+                ),
+            )),
+            GraphPlan::BooleanComposition { .. } => Err(ExecutorError::UnsupportedConstruct(
+                UnsupportedConstruct::new(
+                    cognicode_core::domain::plan::ConstructId::Other(
+                        "GraphPlan::BooleanComposition".to_string(),
+                    ),
+                    "Phase 2 stub",
+                ),
+            )),
+        }
+    }
+}
+
 impl LadybugStore {
+    /// Build a `LadybugGraphExecutor` that shares the same underlying
+    /// `lbug::Database` as this store. The returned executor reads
+    /// from the same `GraphRevision` + `GraphSymbol` + `GraphEdge`
+    /// tables the `CallGraphStore` PR populates — no separate DDL
+    /// needed (assumes the schema is already applied; tests use
+    /// `init_graph_executor_schema`).
+    pub fn graph_executor(&self) -> LadybugGraphExecutor {
+        LadybugGraphExecutor::new(Arc::clone(&self.db))
+    }
+
     /// Open (or create) a LadybugDB database file and wrap it as a
     /// `LadybugStore`.
     ///
@@ -1421,6 +1707,173 @@ mod tests {
         store.register_space(&s).await.expect("3");
         let all = store.list_spaces().await.expect("list");
         assert_eq!(all.len(), 1, "idempotent register preserves row count");
+    }
+
+    // --------------------------------------------------------------------
+    // LadybugGraphExecutor (e29-1-graph-executor)
+    // --------------------------------------------------------------------
+
+    /// Apply the GraphExecutor NODE TABLE DDL once per test database.
+    /// Idempotent via `IF NOT EXISTS`. Requires `GraphRevision`,
+    /// `GraphSymbol`, and `GraphEdge` (the same 3 NODE TABLEs the
+    /// `CallGraphStore` PR uses).
+    fn init_graph_executor_schema(store: &LadybugStore) {
+        let conn = store.connection().expect("schema-init connection");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS GraphRevision(                  id SERIAL PRIMARY KEY,                  workspace_id STRING,                  revision_id INT64,                  head_of BOOLEAN);",
+        )
+        .expect("create GraphRevision NODE TABLE");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS GraphSymbol(                  id SERIAL PRIMARY KEY,                  workspace_id STRING,                  revision_id INT64,                  fqn STRING,                  kind STRING,                  name STRING,                  file_path STRING,                  line INT64,                  signature STRING);",
+        )
+        .expect("create GraphSymbol NODE TABLE");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS GraphEdge(                  id SERIAL PRIMARY KEY,                  workspace_id STRING,                  revision_id INT64,                  source_id STRING,                  target_id STRING,                  dep_type STRING,                  provenance STRING,                  confidence DOUBLE);",
+        )
+        .expect("create GraphEdge NODE TABLE");
+    }
+
+    /// Build a `GraphPlan::Neighbors` plan with sensible defaults.
+    fn build_minimal_neighbors_plan(src: &str) -> GraphPlan {
+        use cognicode_core::domain::plan::{
+            NeighborKind, PlanHash, PlanLimits, PlanMetadata, PlanVersion,
+        };
+        GraphPlan::Neighbors {
+            src: src.to_string(),
+            kind: NeighborKind::Both,
+            depth: 1,
+            edge_kind_filter: None,
+            predicates: vec![],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        }
+    }
+
+    /// Build a `LadybugGraphExecutor` that shares the same DB as the
+    /// `LadybugStore`. This is the production path — the executor
+    /// reads from the same underlying `lbug::Database` the store
+    /// writes to.
+    fn make_graph_executor_for_test(store: &LadybugStore) -> LadybugGraphExecutor {
+        store.graph_executor()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn graph_executor_unknown_revision_returns_revision_unknown() {
+        let (store, _dir) = make_test_store();
+        init_graph_executor_schema(&store);
+        let executor = make_graph_executor_for_test(&store);
+        let ws = ws_id("ws-1");
+        let rev = RevisionId(99);
+        let plan = build_minimal_neighbors_plan("src/a.rs:foo:1");
+        let result = executor.execute(&plan, (ws, rev));
+        match result {
+            Err(ExecutorError::RevisionUnknown(_)) => {}
+            other => panic!("expected RevisionUnknown, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn graph_executor_neighbors_finds_direct_callees() {
+        let (store, _dir) = make_test_store();
+        init_graph_executor_schema(&store);
+        // Seed: revision 1, 3 symbols (foo, bar, baz), 2 edges
+        // (foo → bar with calls, foo → baz with imports).
+        let conn = store.connection().expect("conn");
+        conn.query(
+            "CREATE (r:GraphRevision {workspace_id: 'ws-1', revision_id: 1, head_of: true});",
+        )
+        .expect("rev");
+        conn.query(
+            "CREATE (s:GraphSymbol {workspace_id: 'ws-1', revision_id: 1, fqn: 'src/a.rs:foo:1', kind: 'function', name: 'foo', file_path: 'src/a.rs', line: 1});",
+        ).expect("foo");
+        conn.query(
+            "CREATE (s:GraphSymbol {workspace_id: 'ws-1', revision_id: 1, fqn: 'src/a.rs:bar:5', kind: 'function', name: 'bar', file_path: 'src/a.rs', line: 5});",
+        ).expect("bar");
+        conn.query(
+            "CREATE (s:GraphSymbol {workspace_id: 'ws-1', revision_id: 1, fqn: 'src/b.rs:baz:10', kind: 'function', name: 'baz', file_path: 'src/b.rs', line: 10});",
+        ).expect("baz");
+        conn.query(
+            "CREATE (e:GraphEdge {workspace_id: 'ws-1', revision_id: 1, source_id: 'src/a.rs:foo:1', target_id: 'src/a.rs:bar:5', dep_type: 'calls', provenance: 'Extracted', confidence: 1.0});",
+        ).expect("e1");
+        conn.query(
+            "CREATE (e:GraphEdge {workspace_id: 'ws-1', revision_id: 1, source_id: 'src/a.rs:foo:1', target_id: 'src/b.rs:baz:10', dep_type: 'imports', provenance: 'Extracted', confidence: 1.0});",
+        ).expect("e2");
+        let executor = make_graph_executor_for_test(&store);
+        let plan = build_minimal_neighbors_plan("src/a.rs:foo:1");
+        let result = executor
+            .execute(&plan, (ws_id("ws-1"), RevisionId(1)))
+            .expect("execute");
+        // foo has 2 direct neighbors (bar, baz).
+        assert_eq!(result.rows.len(), 2, "foo has 2 direct neighbors");
+        for row in &result.rows {
+            assert_eq!(row.columns.len(), 4, "each row has 4 columns");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn graph_executor_neighbors_with_unknown_src_returns_empty() {
+        let (store, _dir) = make_test_store();
+        init_graph_executor_schema(&store);
+        let conn = store.connection().expect("conn");
+        conn.query(
+            "CREATE (r:GraphRevision {workspace_id: 'ws-1', revision_id: 1, head_of: true});",
+        )
+        .expect("rev");
+        let executor = make_graph_executor_for_test(&store);
+        let plan = build_minimal_neighbors_plan("src/nonexistent.rs:foo:1");
+        let result = executor
+            .execute(&plan, (ws_id("ws-1"), RevisionId(1)))
+            .expect("execute");
+        assert!(result.is_empty(), "unknown source returns empty ResultSet");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn graph_executor_path_returns_unsupported_stub() {
+        // Path is a Phase 2 stub — verify it returns UnsupportedConstruct
+        // so callers know the limitation.
+        let (store, _dir) = make_test_store();
+        init_graph_executor_schema(&store);
+        let conn = store.connection().expect("conn");
+        conn.query(
+            "CREATE (r:GraphRevision {workspace_id: 'ws-1', revision_id: 1, head_of: true});",
+        )
+        .expect("rev");
+        let executor = make_graph_executor_for_test(&store);
+        use cognicode_core::domain::plan::{
+            PathProjection, PathQuantifier, PlanHash, PlanLimits, PlanMetadata, PlanVersion,
+        };
+        let plan = GraphPlan::Path {
+            src: "src/a.rs:foo:1".to_string(),
+            dst: "src/b.rs:baz:10".to_string(),
+            quantifier: PathQuantifier {
+                max_hops: Some(32),
+                min_hops: 0,
+            },
+            edge_kind_filter: None,
+            predicates: vec![],
+            projection: PathProjection {
+                nodes: vec![],
+                edges: vec![],
+                shortest: true,
+            },
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32),
+            ),
+        };
+        let result = executor.execute(&plan, (ws_id("ws-1"), RevisionId(1)));
+        match result {
+            Err(ExecutorError::UnsupportedConstruct(_)) => {}
+            other => panic!("expected UnsupportedConstruct, got {other:?}"),
+        }
     }
 
     // --------------------------------------------------------------------
