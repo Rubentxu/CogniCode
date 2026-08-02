@@ -41,11 +41,11 @@
 //! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk | DONE (`34415ce8`) |
 //! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) | DONE (`83328dc2`) |
 //! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` | DONE (`bc4263ca`) |
-//! | 5 | `FederationStore` | Single-table CRUD on `spaces` | DONE (`feat/e29-1-priority-5-federation-store` — multimodal-gated, validated via cypher_probe) |
-//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | DONE (`feat/e29-1-priority-6-view-spec-store`) |
-//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | DONE (`feat/e29-1-priority-7-quality-store`) |
-//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | DONE (this branch) |
-//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports | pending |
+//! | 5 | `FederationStore` | Single-table CRUD on `spaces` | DONE (this branch — Cypher validated via standalone probe; cargo test blocked by pre-existing `cognicode-core --features multimodal` debt) |
+//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | pending |
+//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | pending |
+//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | pending |
+//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports |
 
 use std::path::Path;
 use std::sync::Arc;
@@ -62,7 +62,7 @@ use cognicode_core::domain::ports::{
     session_store::{SessionError, SessionRow, SessionStore},
     view_spec_store::{ViewSpecPayload, ViewSpecStore, ViewSpecStoreError},
 };
-use cognicode_core::domain::value_objects::{DependencyType, Provenance, RevisionId, WorkspaceId};
+use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
 
 // `FederationStore`, `IngestCommit`, and the `Space`/`SpaceId` value
 // objects they operate on are gated behind the `multimodal` feature
@@ -179,6 +179,41 @@ impl LadybugStore {
     }
 }
 
+#[cfg(feature = "multimodal")]
+impl LadybugStore {
+    pub(crate) async fn head_revision_for_ws(
+        &self,
+        ws: &WorkspaceId,
+    ) -> Result<Option<RevisionId>, FederationError> {
+        let conn = self
+            .connection()
+            .map_err(|e| FederationError::Store(format!("head_revision_for_ws: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:GraphRevision) WHERE r.workspace_id = $ws AND r.head_of = true RETURN r.revision_id;",
+            )
+            .map_err(|e| {
+                FederationError::Store(format!("head_revision_for_ws: prepare: {e}"))
+            })?;
+        let mut result = conn
+            .execute(&mut stmt, vec![("ws", lbug::Value::String(ws.to_string()))])
+            .map_err(|e| FederationError::Store(format!("head_revision_for_ws: execute: {e}")))?;
+        let Some(row) = result.next() else {
+            return Ok(None);
+        };
+        let rev = match &row[0] {
+            lbug::Value::Int64(n) => RevisionId(*n as u64),
+            lbug::Value::Int32(n) => RevisionId(*n as u64),
+            other => {
+                return Err(FederationError::Store(format!(
+                    "head_revision_for_ws: unexpected type: {other:?}"
+                )));
+            }
+        };
+        Ok(Some(rev))
+    }
+}
+
 // =============================================================================
 // Port impls (Phase 1 stubs)
 // =============================================================================
@@ -233,22 +268,180 @@ impl RevisionStore for LadybugStore {
 #[cfg(feature = "multimodal")]
 #[async_trait]
 impl FederationStore for LadybugStore {
-    async fn register_space(&self, _space: &Space) -> Result<SpaceId, FederationError> {
-        // PHASE 1 STUB. Next change: INSERT INTO spaces ... RETURNING space_id.
-        Err(FederationError::Conflict(
-            "(phase 1 stub — impl lands in next change)".into(),
-        ))
+    async fn register_space(&self, space: &Space) -> Result<SpaceId, FederationError> {
+        // ADR-028 §3 `register_space(space)` — upsert by `id` (single
+        // STRING PK, same natural-key shape as SessionStore /
+        // ReportStore). Mirrors the PG adapter's
+        // `INSERT ... ON CONFLICT (id) DO UPDATE SET name` semantics:
+        // if the row exists, refresh `name` + the other mutable
+        // fields; otherwise create it.
+        //
+        // Pattern: read-then-conditional-write (same workaround as
+        // `ManifestStore::upsert_manifest_entry` — lbug 0.19 NODE
+        // TABLEs have no `MERGE` / `ON CONFLICT` primitive).
+        //
+        // `source_path: Option<PathBuf>` is serialized to its display
+        // form (string), and `config: serde_json::Value` to its
+        // serde_json text (same JSON-as-STRING pattern used by
+        // SessionStore and ReportStore).
+        let conn = self
+            .connection()
+            .map_err(|e| FederationError::Store(format!("register_space: {e}")))?;
+
+        // Step 1: existence check.
+        let mut check_stmt = conn
+            .prepare("MATCH (s:Space) WHERE s.id = $id RETURN s.id;")
+            .map_err(|e| FederationError::Store(format!("register_space: check prepare: {e}")))?;
+        let mut existing = conn
+            .execute(
+                &mut check_stmt,
+                vec![("id", lbug::Value::String(space.id.0.clone()))],
+            )
+            .map_err(|e| FederationError::Store(format!("register_space: check execute: {e}")))?;
+
+        if existing.next().is_some() {
+            // Step 2a: UPDATE existing row.
+            let mut upd_stmt = conn
+                .prepare(
+                    "MATCH (s:Space) WHERE s.id = $id SET s.name = $name, s.kind = $kind, s.source_path = $srcpath, s.config = $cfg;",
+                )
+                .map_err(|e| FederationError::Store(format!("register_space: update prepare: {e}")))?;
+            conn.execute(
+                &mut upd_stmt,
+                vec![
+                    ("id", lbug::Value::String(space.id.0.clone())),
+                    ("name", lbug::Value::String(space.name.clone())),
+                    ("kind", lbug::Value::String(space.kind.as_str().to_string())),
+                    (
+                        "srcpath",
+                        match &space.source_path {
+                            Some(p) => lbug::Value::String(p.display().to_string()),
+                            None => lbug::Value::Null(lbug::LogicalType::String),
+                        },
+                    ),
+                    (
+                        "cfg",
+                        lbug::Value::String(serde_json::to_string(&space.config).map_err(|e| {
+                            FederationError::Store(format!("register_space: serialize config: {e}"))
+                        })?),
+                    ),
+                ],
+            )
+            .map_err(|e| FederationError::Store(format!("register_space: update execute: {e}")))?;
+        } else {
+            // Step 2b: CREATE new row.
+            let mut ins_stmt = conn
+                .prepare(
+                    "CREATE (s:Space {id: $id, name: $name, kind: $kind, source_path: $srcpath, config: $cfg, created_at: $ts});",
+                )
+                .map_err(|e| FederationError::Store(format!("register_space: insert prepare: {e}")))?;
+            conn.execute(
+                &mut ins_stmt,
+                vec![
+                    ("id", lbug::Value::String(space.id.0.clone())),
+                    ("name", lbug::Value::String(space.name.clone())),
+                    ("kind", lbug::Value::String(space.kind.as_str().to_string())),
+                    (
+                        "srcpath",
+                        match &space.source_path {
+                            Some(p) => lbug::Value::String(p.display().to_string()),
+                            None => lbug::Value::Null(lbug::LogicalType::String),
+                        },
+                    ),
+                    (
+                        "cfg",
+                        lbug::Value::String(serde_json::to_string(&space.config).map_err(|e| {
+                            FederationError::Store(format!("register_space: serialize config: {e}"))
+                        })?),
+                    ),
+                    (
+                        "ts",
+                        lbug::Value::String(
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs())
+                                .unwrap_or(0)
+                                .to_string()
+                                + "Z",
+                        ),
+                    ),
+                ],
+            )
+            .map_err(|e| FederationError::Store(format!("register_space: insert execute: {e}")))?;
+        }
+
+        Ok(space.id.clone())
     }
 
     async fn list_spaces(&self) -> Result<Vec<Space>, FederationError> {
-        // PHASE 1 STUB. Next change: SELECT ... FROM spaces.
-        Ok(Vec::new())
+        // ADR-028 §3 `list_spaces()` — every space, ordered by
+        // `created_at DESC` (newest-first). Same ORDER BY pattern as
+        // ReportStore.
+        let conn = self
+            .connection()
+            .map_err(|e| FederationError::Store(format!("list_spaces: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (s:Space) RETURN s.id, s.name, s.kind, s.source_path, s.config, s.created_at ORDER BY s.created_at DESC;",
+            )
+            .map_err(|e| FederationError::Store(format!("list_spaces: prepare: {e}")))?;
+        let mut result = conn
+            .execute(&mut stmt, vec![])
+            .map_err(|e| FederationError::Store(format!("list_spaces: execute: {e}")))?;
+
+        let mut rows = Vec::new();
+        while let Some(row) = result.next() {
+            rows.push(parse_space_row(&row)?);
+        }
+        Ok(rows)
     }
 
-    async fn get_space(&self, _id: &SpaceId) -> Result<Option<Space>, FederationError> {
-        // PHASE 1 STUB.
-        Ok(None)
+    async fn get_space(&self, id: &SpaceId) -> Result<Option<Space>, FederationError> {
+        // ADR-028 §3 `get_space(id)` — single MATCH WHERE id = $id, or
+        // None if absent.
+        let conn = self
+            .connection()
+            .map_err(|e| FederationError::Store(format!("get_space: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (s:Space) WHERE s.id = $id RETURN s.id, s.name, s.kind, s.source_path, s.config, s.created_at;",
+            )
+            .map_err(|e| FederationError::Store(format!("get_space: prepare: {e}")))?;
+        let mut result = conn
+            .execute(&mut stmt, vec![("id", lbug::Value::String(id.0.clone()))])
+            .map_err(|e| FederationError::Store(format!("get_space: execute: {e}")))?;
+
+        let Some(row) = result.next() else {
+            return Ok(None);
+        };
+        Ok(Some(parse_space_row(&row)?))
     }
+}
+
+/// Row mapper for `FederationStore` queries — shared by `list_spaces`
+/// and `get_space` so both stay in lock-step on column order. Column
+/// order must match the RETURN clauses above.
+#[cfg(feature = "multimodal")]
+fn parse_space_row(row: &[lbug::Value]) -> Result<Space, FederationError> {
+    use cognicode_core::domain::value_objects::SpaceKind;
+    let id = SpaceId(row[0].to_string());
+    let name = row[1].to_string();
+    let kind = SpaceKind::from_wire(&row[2].to_string()).ok_or_else(|| {
+        FederationError::Store(format!("parse_space_row: invalid kind: {}", row[2]))
+    })?;
+    let source_path = match &row[3] {
+        lbug::Value::Null(_) => None,
+        other => Some(std::path::PathBuf::from(other.to_string())),
+    };
+    let config: serde_json::Value = serde_json::from_str(&row[4].to_string())
+        .map_err(|e| FederationError::Store(format!("parse_space_row: config JSON: {e}")))?;
+    Ok(Space {
+        id,
+        name,
+        kind,
+        source_path,
+        config,
+    })
 }
 
 #[async_trait]
@@ -579,541 +772,28 @@ impl ViewSpecStore for LadybugStore {
 impl CallGraphStore for LadybugStore {
     async fn save_call_graph_ws(
         &self,
-        graph: &CallGraph,
-        ws: &WorkspaceId,
+        _graph: &CallGraph,
+        _ws: &WorkspaceId,
     ) -> Result<RevisionId, CallGraphError> {
-        // ADR-028 §3 `save_call_graph_ws(graph, ws)` — atomic
-        // demote-prior-head + open-new-revision + delete-prior-nodes+edges
-        // + insert-new-nodes+edges. The PG adapter uses
-        // `PostgresRepository::save_call_graph_ws` which atomically
-        // composes the demote/create/delete/insert into one tx; lbug
-        // 0.19 has no public tx handle so we open a single
-        // `Connection` and run the demote+create as ONE multi-pattern
-        // Cypher (the same `WITH count()` pivot trick used by
-        // Priority 4 `RevisionStore::create_revision_for_ws` — see
-        // the comment there for why the parameter binding survives
-        // across the `SET` scope). The symbols + edges are inserted
-        // in two follow-up statements that share the connection; if
-        // any of the inserts fails, the graph is left in a partial
-        // state (a future follow-up can compose this into a single
-        // multi-statement Cypher per graph).
-        let conn = self
-            .connection()
-            .map_err(|e| CallGraphError::Store(format!("save_call_graph_ws: {e}")))?;
-
-        // Step 1: demote prior head + create new head in one Cypher.
-        let mut rev_stmt = conn
-            .prepare(
-                "MATCH (old:GraphRevision) WHERE old.workspace_id = $ws AND old.head_of = true SET old.head_of = false WITH count(old) AS _demoted OPTIONAL MATCH (r:GraphRevision) WHERE r.workspace_id = $ws WITH $ws AS ws, coalesce(max(r.revision_id), 0) AS max_rev CREATE (new:GraphRevision {workspace_id: ws, revision_id: max_rev + 1, head_of: true}) RETURN new.revision_id;",
-            )
-            .map_err(|e| CallGraphError::Store(format!("save_call_graph_ws: rev prepare: {e}")))?;
-        let mut rev_result = conn
-            .execute(
-                &mut rev_stmt,
-                vec![("ws", lbug::Value::String(ws.to_string()))],
-            )
-            .map_err(|e| CallGraphError::Store(format!("save_call_graph_ws: rev execute: {e}")))?;
-        let Some(rev_row) = rev_result.next() else {
-            return Err(CallGraphError::Store(
-                "save_call_graph_ws: CREATE revision produced no RETURN row".into(),
-            ));
-        };
-        let rev_id = match &rev_row[0] {
-            lbug::Value::Int64(n) => RevisionId(*n as u64),
-            lbug::Value::Int32(n) => RevisionId(*n as u64),
-            other => {
-                return Err(CallGraphError::Store(format!(
-                    "save_call_graph_ws: unexpected revision_id type: {other:?}"
-                )));
-            }
-        };
-
-        // Step 2: INSERT every symbol via read-then-conditional-write.
-        // Symbols are scoped by `(workspace_id, revision_id, fqn)` —
-        // the PG UNIQUE constraint. lbug 0.19 NODE TABLEs only
-        // support single-column PKs, so we use `id SERIAL PRIMARY
-        // KEY` (synthetic) and enforce the natural key at the
-        // application layer. The same FQN can appear in multiple
-        // revisions of the same workspace (this is the common case
-        // when re-saving an updated graph).
-        for symbol in graph.symbols() {
-            // Existence check on (ws, rev, fqn).
-            let mut check_stmt = conn
-                .prepare(
-                    "MATCH (s:GraphSymbol) WHERE s.workspace_id = $ws AND s.revision_id = $rev AND s.fqn = $fqn RETURN s.id;",
-                )
-                .map_err(|e| {
-                    CallGraphError::Store(format!("save_call_graph_ws: sym check prepare: {e}"))
-                })?;
-            let mut existing = conn
-                .execute(
-                    &mut check_stmt,
-                    vec![
-                        ("ws", lbug::Value::String(ws.to_string())),
-                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
-                        (
-                            "fqn",
-                            lbug::Value::String(symbol.fully_qualified_name().to_string()),
-                        ),
-                    ],
-                )
-                .map_err(|e| {
-                    CallGraphError::Store(format!("save_call_graph_ws: sym check execute: {e}"))
-                })?;
-
-            let sig_str = match symbol.signature() {
-                Some(sig) => sig.to_string(),
-                None => String::new(),
-            };
-            if existing.next().is_some() {
-                // UPDATE existing row.
-                let mut upd_stmt = conn
-                    .prepare(
-                        "MATCH (s:GraphSymbol) WHERE s.workspace_id = $ws AND s.revision_id = $rev AND s.fqn = $fqn SET s.kind = $kind, s.name = $name, s.file_path = $file, s.line = $line, s.signature = $sig;",
-                    )
-                    .map_err(|e| {
-                        CallGraphError::Store(format!("save_call_graph_ws: sym update prepare: {e}"))
-                    })?;
-                conn.execute(
-                    &mut upd_stmt,
-                    vec![
-                        ("ws", lbug::Value::String(ws.to_string())),
-                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
-                        (
-                            "fqn",
-                            lbug::Value::String(symbol.fully_qualified_name().to_string()),
-                        ),
-                        ("kind", lbug::Value::String(symbol.kind().to_string())),
-                        ("name", lbug::Value::String(symbol.name().to_string())),
-                        (
-                            "file",
-                            lbug::Value::String(symbol.location().file().to_string()),
-                        ),
-                        ("line", lbug::Value::Int64(symbol.location().line() as i64)),
-                        ("sig", lbug::Value::String(sig_str)),
-                    ],
-                )
-                .map_err(|e| {
-                    CallGraphError::Store(format!("save_call_graph_ws: sym update execute: {e}"))
-                })?;
-            } else {
-                // CREATE new row.
-                let mut ins_stmt = conn
-                    .prepare(
-                        "CREATE (s:GraphSymbol {workspace_id: $ws, revision_id: $rev, fqn: $fqn, kind: $kind, name: $name, file_path: $file, line: $line, signature: $sig});",
-                    )
-                    .map_err(|e| {
-                        CallGraphError::Store(format!("save_call_graph_ws: sym insert prepare: {e}"))
-                    })?;
-                conn.execute(
-                    &mut ins_stmt,
-                    vec![
-                        ("ws", lbug::Value::String(ws.to_string())),
-                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
-                        (
-                            "fqn",
-                            lbug::Value::String(symbol.fully_qualified_name().to_string()),
-                        ),
-                        ("kind", lbug::Value::String(symbol.kind().to_string())),
-                        ("name", lbug::Value::String(symbol.name().to_string())),
-                        (
-                            "file",
-                            lbug::Value::String(symbol.location().file().to_string()),
-                        ),
-                        ("line", lbug::Value::Int64(symbol.location().line() as i64)),
-                        ("sig", lbug::Value::String(sig_str)),
-                    ],
-                )
-                .map_err(|e| {
-                    CallGraphError::Store(format!("save_call_graph_ws: sym insert execute: {e}"))
-                })?;
-            }
-        }
-
-        // Step 3: INSERT every edge. Edges are scoped by
-        // `(workspace_id, revision_id, source_id, target_id,
-        // dep_type)` — the PG UNIQUE constraint. Same synthetic
-        // PK + read-then-conditional-write pattern.
-        for (source, target, dep_type, provenance, confidence) in graph.edges_with_metadata() {
-            let mut check_stmt = conn
-                .prepare(
-                    "MATCH (e:GraphEdge) WHERE e.workspace_id = $ws AND e.revision_id = $rev AND e.source_id = $src AND e.target_id = $tgt AND e.dep_type = $dt RETURN e.id;",
-                )
-                .map_err(|e| {
-                    CallGraphError::Store(format!("save_call_graph_ws: edge check prepare: {e}"))
-                })?;
-            let mut existing = conn
-                .execute(
-                    &mut check_stmt,
-                    vec![
-                        ("ws", lbug::Value::String(ws.to_string())),
-                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
-                        ("src", lbug::Value::String(source.to_string())),
-                        ("tgt", lbug::Value::String(target.to_string())),
-                        ("dt", lbug::Value::String(dep_type.to_string())),
-                    ],
-                )
-                .map_err(|e| {
-                    CallGraphError::Store(format!("save_call_graph_ws: edge check execute: {e}"))
-                })?;
-
-            if existing.next().is_some() {
-                let mut upd_stmt = conn
-                    .prepare(
-                        "MATCH (e:GraphEdge) WHERE e.workspace_id = $ws AND e.revision_id = $rev AND e.source_id = $src AND e.target_id = $tgt AND e.dep_type = $dt SET e.provenance = $prov, e.confidence = $conf;",
-                    )
-                    .map_err(|e| {
-                        CallGraphError::Store(format!("save_call_graph_ws: edge update prepare: {e}"))
-                    })?;
-                conn.execute(
-                    &mut upd_stmt,
-                    vec![
-                        ("ws", lbug::Value::String(ws.to_string())),
-                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
-                        ("src", lbug::Value::String(source.to_string())),
-                        ("tgt", lbug::Value::String(target.to_string())),
-                        ("dt", lbug::Value::String(dep_type.to_string())),
-                        ("prov", lbug::Value::String(provenance.to_string())),
-                        ("conf", lbug::Value::Double(confidence)),
-                    ],
-                )
-                .map_err(|e| {
-                    CallGraphError::Store(format!("save_call_graph_ws: edge update execute: {e}"))
-                })?;
-            } else {
-                let mut ins_stmt = conn
-                    .prepare(
-                        "CREATE (e:GraphEdge {workspace_id: $ws, revision_id: $rev, source_id: $src, target_id: $tgt, dep_type: $dt, provenance: $prov, confidence: $conf});",
-                    )
-                    .map_err(|e| {
-                        CallGraphError::Store(format!("save_call_graph_ws: edge insert prepare: {e}"))
-                    })?;
-                conn.execute(
-                    &mut ins_stmt,
-                    vec![
-                        ("ws", lbug::Value::String(ws.to_string())),
-                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
-                        ("src", lbug::Value::String(source.to_string())),
-                        ("tgt", lbug::Value::String(target.to_string())),
-                        ("dt", lbug::Value::String(dep_type.to_string())),
-                        ("prov", lbug::Value::String(provenance.to_string())),
-                        ("conf", lbug::Value::Double(confidence)),
-                    ],
-                )
-                .map_err(|e| {
-                    CallGraphError::Store(format!("save_call_graph_ws: edge insert execute: {e}"))
-                })?;
-            }
-        }
-
-        Ok(rev_id)
+        // PHASE 1 STUB.
+        Err(CallGraphError::Store(
+            "(phase 1 stub — see lib.rs port-impl)".into(),
+        ))
     }
 
     async fn load_call_graph_ws(
         &self,
-        ws: &WorkspaceId,
-        revision: RevisionId,
+        _ws: &WorkspaceId,
+        _revision: RevisionId,
     ) -> Result<Option<CallGraph>, CallGraphError> {
-        // Read all symbols + edges for `(ws, revision)` and rebuild
-        // the CallGraph aggregate. We use the location.fqn as the
-        // primary lookup key for symbols (it's unique per workspace
-        // and stable across loads).
-        let conn = self
-            .connection()
-            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: {e}")))?;
-
-        // Pre-check: if there are NO symbols AND NO edges for this
-        // (ws, revision), return None — distinguishes "no data"
-        // from "empty data" (lbug has no way to know whether an
-        // empty graph was actually saved or just never existed).
-        // We use a single OPTIONAL MATCH per table and combine via
-        // WITH — only the first row's count is meaningful.
-        let mut pre_stmt = conn
-            .prepare(
-                "OPTIONAL MATCH (s:GraphSymbol) WHERE s.workspace_id = $ws AND s.revision_id = $rev WITH count(s) AS sym_cnt OPTIONAL MATCH (e:GraphEdge) WHERE e.workspace_id = $ws AND e.revision_id = $rev WITH sym_cnt, count(e) AS edge_cnt RETURN sym_cnt, edge_cnt;",
-            )
-            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: pre prepare: {e}")))?;
-        let mut pre_result = conn
-            .execute(
-                &mut pre_stmt,
-                vec![
-                    ("ws", lbug::Value::String(ws.to_string())),
-                    ("rev", lbug::Value::Int64(revision.get() as i64)),
-                ],
-            )
-            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: pre execute: {e}")))?;
-        let Some(pre_row) = pre_result.next() else {
-            return Ok(None);
-        };
-        let sym_cnt = match &pre_row[0] {
-            lbug::Value::Int64(n) => *n,
-            lbug::Value::Int32(n) => *n as i64,
-            _ => 0,
-        };
-        let edge_cnt = match &pre_row[1] {
-            lbug::Value::Int64(n) => *n,
-            lbug::Value::Int32(n) => *n as i64,
-            _ => 0,
-        };
-        if sym_cnt == 0 && edge_cnt == 0 {
-            return Ok(None);
-        }
-
-        // Symbols
-        let mut sym_stmt = conn
-            .prepare(
-                "MATCH (s:GraphSymbol) WHERE s.workspace_id = $ws AND s.revision_id = $rev RETURN s.id, s.fqn, s.kind, s.name, s.file_path, s.line, s.signature;",
-            )
-            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: sym prepare: {e}")))?;
-        let mut sym_result = conn
-            .execute(
-                &mut sym_stmt,
-                vec![
-                    ("ws", lbug::Value::String(ws.to_string())),
-                    ("rev", lbug::Value::Int64(revision.get() as i64)),
-                ],
-            )
-            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: sym execute: {e}")))?;
-
-        let mut graph = CallGraph::new();
-        let mut symbol_count = 0usize;
-        while let Some(row) = sym_result.next() {
-            let s = parse_graph_symbol_row(&row)?;
-            graph.add_symbol(s);
-            symbol_count += 1;
-        }
-
-        // Edges
-        let mut edge_stmt = conn
-            .prepare(
-                "MATCH (e:GraphEdge) WHERE e.workspace_id = $ws AND e.revision_id = $rev RETURN e.source_id, e.target_id, e.dep_type, e.provenance, e.confidence;",
-            )
-            .map_err(|e| {
-                CallGraphError::Store(format!("load_call_graph_ws: edge prepare: {e}"))
-            })?;
-        let mut edge_result = conn
-            .execute(
-                &mut edge_stmt,
-                vec![
-                    ("ws", lbug::Value::String(ws.to_string())),
-                    ("rev", lbug::Value::Int64(revision.get() as i64)),
-                ],
-            )
-            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: edge execute: {e}")))?;
-        while let Some(row) = edge_result.next() {
-            let (source_id, target_id, dep_type, confidence) = parse_graph_edge_row(&row)?;
-            let provenance = parse_provenance(&row[3])?;
-            graph
-                .add_dependency_with_provenance(
-                    &source_id,
-                    &target_id,
-                    dep_type,
-                    // Map the stored Provenance → ExtractionContext
-                    // the same way ConfidenceRules does it on the
-                    // write side: Extracted → DirectExtraction,
-                    // Inferred/Manual/Tested → matching variant,
-                    // Ambiguous → Unresolved.
-                    match provenance {
-                        Provenance::Extracted => {
-                            cognicode_core::domain::services::ExtractionContext::DirectExtraction
-                        }
-                        Provenance::Inferred => {
-                            cognicode_core::domain::services::ExtractionContext::Heuristic {
-                                score: confidence,
-                            }
-                        }
-                        Provenance::Ambiguous => {
-                            cognicode_core::domain::services::ExtractionContext::Unresolved
-                        }
-                        Provenance::Manual => {
-                            cognicode_core::domain::services::ExtractionContext::Manual
-                        }
-                        Provenance::Tested => {
-                            cognicode_core::domain::services::ExtractionContext::Tested
-                        }
-                    },
-                )
-                .map_err(|e| {
-                    CallGraphError::Store(format!("load_call_graph_ws: add_dependency: {e}"))
-                })?;
-        }
-
-        if symbol_count == 0 && edge_result.next().is_none() {
-            // The pre-check above already filtered the truly-empty
-            // (no rows) case; if we got here it means the pre-check
-            // said there ARE rows but the per-table queries returned
-            // none — a race condition between the pre-check and the
-            // per-table reads. Treat as None for consistency.
-            return Ok(None);
-        }
-
-        Ok(Some(graph))
+        Ok(None)
     }
 
     async fn load_call_graph_current(
         &self,
-        ws: &WorkspaceId,
+        _ws: &WorkspaceId,
     ) -> Result<Option<CallGraph>, CallGraphError> {
-        // Resolve the head revision for the workspace via the
-        // `&self`-only helper (Priority 4's trait method requires
-        // a `&mut PgConnection` that LadybugStore cannot honor — see
-        // the head_revision_for_ws comment).
-        let head = self
-            .head_revision_for_ws(ws)
-            .await
-            .map_err(|e| CallGraphError::Store(format!("load_call_graph_current: head: {e}")))?;
-        let Some(rev) = head else {
-            return Ok(None);
-        };
-        self.load_call_graph_ws(ws, rev).await
-    }
-}
-
-/// `RevisionStore::head_revision` body extracted to a
-/// `&self`-only helper so tests can exercise the head-resolution
-/// path without relying on the trait's `&mut PgConnection`
-/// parameter (which LadybugStore cannot honor — see the comment
-/// in the trait impl above for the limitation).
-///
-/// This duplicates the Cypher that Priority 4's
-/// `RevisionStore::head_revision` impl uses; when Priority 4 is
-/// merged, the trait method will be wired and the tests can drop
-/// this helper.
-impl LadybugStore {
-    pub(crate) async fn head_revision_for_ws(
-        &self,
-        ws: &WorkspaceId,
-    ) -> Result<Option<RevisionId>, CallGraphError> {
-        let conn = self
-            .connection()
-            .map_err(|e| CallGraphError::Store(format!("head_revision_for_ws: {e}")))?;
-        let mut stmt = conn
-            .prepare(
-                "MATCH (r:GraphRevision) WHERE r.workspace_id = $ws AND r.head_of = true RETURN r.revision_id;",
-            )
-            .map_err(|e| {
-                CallGraphError::Store(format!("head_revision_for_ws: prepare: {e}"))
-            })?;
-        let mut result = conn
-            .execute(&mut stmt, vec![("ws", lbug::Value::String(ws.to_string()))])
-            .map_err(|e| CallGraphError::Store(format!("head_revision_for_ws: execute: {e}")))?;
-        let Some(row) = result.next() else {
-            return Ok(None);
-        };
-        let rev = match &row[0] {
-            lbug::Value::Int64(n) => RevisionId(*n as u64),
-            lbug::Value::Int32(n) => RevisionId(*n as u64),
-            other => {
-                return Err(CallGraphError::Store(format!(
-                    "head_revision_for_ws: unexpected type: {other:?}"
-                )));
-            }
-        };
-        Ok(Some(rev))
-    }
-}
-
-/// Row mapper for `GraphSymbol` queries. Returns a fully-constructed
-/// [`Symbol`] (the file/line/kind/name/signature fields round-trip via
-/// the Display form — lbug 0.19 has no structured types).
-fn parse_graph_symbol_row(
-    row: &[lbug::Value],
-) -> Result<cognicode_core::domain::aggregates::Symbol, CallGraphError> {
-    use cognicode_core::domain::aggregates::Symbol;
-    use cognicode_core::domain::value_objects::{Location, SymbolKind};
-    let fqn = row[1].to_string();
-    let kind_str = row[2].to_string();
-    let kind = match kind_str.as_str() {
-        "Function" | "function" => SymbolKind::Function,
-        "Method" | "method" => SymbolKind::Method,
-        "Class" | "class" => SymbolKind::Class,
-        "Struct" | "struct" => SymbolKind::Struct,
-        "Enum" | "enum" => SymbolKind::Enum,
-        "Trait" | "trait" => SymbolKind::Trait,
-        "Variable" | "variable" => SymbolKind::Variable,
-        "Constant" | "constant" => SymbolKind::Constant,
-        "Module" | "module" => SymbolKind::Module,
-        "Interface" | "interface" => SymbolKind::Interface,
-        other => {
-            return Err(CallGraphError::Store(format!(
-                "parse_graph_symbol_row: unknown kind: {other}"
-            )));
-        }
-    };
-    let file = row[4].to_string();
-    let line = match &row[5] {
-        lbug::Value::Int64(n) => (*n).max(0) as u32,
-        lbug::Value::Int32(n) => (*n).max(0) as u32,
-        other => {
-            return Err(CallGraphError::Store(format!(
-                "parse_graph_symbol_row: unexpected line type: {other:?}"
-            )));
-        }
-    };
-    let name = row[3].to_string();
-    let mut symbol = Symbol::new(name, kind, Location::new(file, line, 0));
-    symbol.set_fqn_override(&fqn);
-    // Signature round-trip is lossy on the read side (the
-    // Display form drops parameter names' types and async-ness);
-    // the PG adapter has the same constraint — signatures are
-    // reconstructable but lossy. Future PR can move to a JSON
-    // column for full fidelity once lbug has a JSON type.
-    let _sig_str = row[6].to_string();
-    Ok(symbol)
-}
-
-/// Row mapper for `GraphEdge` queries. Returns
-/// `(source_id, target_id, dep_type, confidence)` — `provenance` is
-/// read separately via `parse_provenance` because the caller needs
-/// the discriminant to pick the right `ExtractionContext` when
-/// re-adding the edge to the aggregate.
-fn parse_graph_edge_row(
-    row: &[lbug::Value],
-) -> Result<
-    (
-        cognicode_core::domain::aggregates::SymbolId,
-        cognicode_core::domain::aggregates::SymbolId,
-        DependencyType,
-        f64,
-    ),
-    CallGraphError,
-> {
-    use cognicode_core::domain::aggregates::SymbolId;
-    let source_id = SymbolId::new(row[0].to_string());
-    let target_id = SymbolId::new(row[1].to_string());
-    let dep_type = match row[2].to_string().as_str() {
-        "calls" | "Calls" => DependencyType::Calls,
-        "imports" | "Imports" => DependencyType::Imports,
-        "inherits" | "Inherits" => DependencyType::Inherits,
-        "uses_generic" | "UsesGeneric" => DependencyType::UsesGeneric,
-        "references" | "References" => DependencyType::References,
-        "defines" | "Defines" => DependencyType::Defines,
-        "annotated_by" | "AnnotatedBy" => DependencyType::AnnotatedBy,
-        "contains" | "Contains" => DependencyType::Contains,
-        other => {
-            return Err(CallGraphError::Store(format!(
-                "parse_graph_edge_row: unknown dep_type: {other}"
-            )));
-        }
-    };
-    let confidence = match &row[4] {
-        lbug::Value::Double(n) => *n,
-        lbug::Value::Int64(n) => *n as f64,
-        _ => 0.0,
-    };
-    Ok((source_id, target_id, dep_type, confidence))
-}
-
-fn parse_provenance(value: &lbug::Value) -> Result<Provenance, CallGraphError> {
-    match value.to_string().as_str() {
-        "Extracted" | "extracted" => Ok(Provenance::Extracted),
-        "Inferred" | "inferred" => Ok(Provenance::Inferred),
-        "Ambiguous" | "ambiguous" => Ok(Provenance::Ambiguous),
-        "Manual" | "manual" => Ok(Provenance::Manual),
-        "Tested" | "tested" => Ok(Provenance::Tested),
-        other => Err(CallGraphError::Store(format!(
-            "parse_provenance: unknown: {other}"
-        ))),
+        Ok(None)
     }
 }
 
@@ -1122,21 +802,271 @@ fn parse_provenance(value: &lbug::Value) -> Result<Provenance, CallGraphError> {
 impl IngestCommit for LadybugStore {
     async fn commit_revision(
         &self,
-        _ws: &WorkspaceId,
+        ws: &WorkspaceId,
         _graph: GraphDelta,
-        _manifest: ManifestDelta,
-        _report: ReportIntent,
+        manifest: ManifestDelta,
+        report: ReportIntent,
     ) -> Result<RevisionId, cognicode_core::domain::ports::CommitError> {
-        // PHASE 1 STUB. Next change: single-tx commit_revision that
-        // delegates to RevisionStore::create_revision + ManifestStore
-        // upserts + ReportStore::save_report, all within one
-        // lbug::Connection tx (matches the PostgreSQL behavior
-        // shipped in `b01671f6`).
-        Err(cognicode_core::domain::ports::CommitError::Graph(
-            cognicode_core::domain::ports::graph_error::GraphError::Storage(
-                "(phase 1 stub — see lib.rs port-impl)".to_string(),
-            ),
-        ))
+        // ADR-028 §3 `commit_revision(ws, graph, manifest, report)` —
+        // atomic 3-stage commit. The PG adapter wraps this in a
+        // single `pool.begin()` tx (failures roll back the prior
+        // stages); lbug 0.19 has no public tx handle so we open a
+        // single `Connection` and run the 3 stages as a sequence of
+        // statements against it. lbug's per-`execute` auto-commit
+        // means a failure in stage 3 leaves the work from stages
+        // 1-2 persisted (best-effort atomicity, not transactional
+        // atomicity). A future PR can either:
+        //   - Use lbug's CHECKPOINT mechanism to wrap the sequence
+        //     in an explicit recovery unit, or
+        //   - Compose all 3 stages into a single multi-statement
+        //     Cypher (subject to lbug's parser limits).
+        //
+        // **Trait/tx limitation**: this adapter is gated behind
+        // `multimodal`, which transitively pulls in
+        // `cognicode-core/multimodal`. The cargo test invocation
+        // `--features multimodal` is currently blocked by pre-existing
+        // `cognicode-core --features multimodal` debt (5+ compile
+        // errors in `federation_store.rs` and `ingest_commit.rs` PG
+        // adapter — `Pool<Postgres>` deref + missing
+        // `PostgresManifestStore<'a>` lifetime + `chrono::DateTime<Utc>`
+        // not `sqlx::Decode`); the integration tests for this port are
+        // deferred to the `fix-multimodal-feature-compile-debt-2026-08-02`
+        // follow-up. Logic is validated against lbug 0.19 via the
+        // standalone `cypher_probe` harness.
+        let conn = self.connection().map_err(|e| {
+            cognicode_core::domain::ports::CommitError::Graph(
+                cognicode_core::domain::ports::graph_error::GraphError::Storage(format!(
+                    "commit_revision: connection: {e}"
+                )),
+            )
+        })?;
+
+        // Stage 1: open new revision. Same multi-pattern Cypher with
+        // `WITH count()` pivot used by Priority 4 / 8 — see those for
+        // the rationale on why the `WITH $ws AS ws` post-`SET` form
+        // loses the parameter binding in lbug 0.19.
+        let mut rev_stmt = conn
+            .prepare(
+                "MATCH (old:GraphRevision) WHERE old.workspace_id = $ws AND old.head_of = true SET old.head_of = false WITH count(old) AS _demoted OPTIONAL MATCH (r:GraphRevision) WHERE r.workspace_id = $ws WITH $ws AS ws, coalesce(max(r.revision_id), 0) AS max_rev CREATE (new:GraphRevision {workspace_id: ws, revision_id: max_rev + 1, head_of: true}) RETURN new.revision_id;",
+            )
+            .map_err(|e| {
+                cognicode_core::domain::ports::CommitError::Graph(
+                    cognicode_core::domain::ports::graph_error::GraphError::Storage(format!(
+                        "commit_revision stage 1 (revision open) prepare: {e}"
+                    )),
+                )
+            })?;
+        let mut rev_result = conn
+            .execute(
+                &mut rev_stmt,
+                vec![("ws", lbug::Value::String(ws.to_string()))],
+            )
+            .map_err(|e| {
+                cognicode_core::domain::ports::CommitError::Graph(
+                    cognicode_core::domain::ports::graph_error::GraphError::Storage(format!(
+                        "commit_revision stage 1 (revision open) execute: {e}"
+                    )),
+                )
+            })?;
+        let Some(rev_row) = rev_result.next() else {
+            return Err(cognicode_core::domain::ports::CommitError::Graph(
+                cognicode_core::domain::ports::graph_error::GraphError::Storage(
+                    "commit_revision stage 1: CREATE revision produced no RETURN row".to_string(),
+                ),
+            ));
+        };
+        let rev_id = match &rev_row[0] {
+            lbug::Value::Int64(n) => RevisionId(*n as u64),
+            lbug::Value::Int32(n) => RevisionId(*n as u64),
+            other => {
+                return Err(cognicode_core::domain::ports::CommitError::Graph(
+                    cognicode_core::domain::ports::graph_error::GraphError::Storage(format!(
+                        "commit_revision stage 1: unexpected revision_id type: {other:?}"
+                    )),
+                ));
+            }
+        };
+
+        // Stage 2: manifest upserts. Same read-then-conditional-write
+        // as Priority 1's `ManifestStore::upsert_manifest_entry` —
+        // natural uniqueness on (workspace_id, file_path) enforced at
+        // the application layer via per-row MATCH then UPDATE/CREATE.
+        for row in &manifest.upserts {
+            // Existence check.
+            let mut check_stmt = conn
+                .prepare("MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path RETURN s.id;")
+                .map_err(|e| {
+                    cognicode_core::domain::ports::CommitError::Manifest(
+                        cognicode_core::domain::ports::manifest_store::ManifestError::Store(format!(
+                            "commit_revision stage 2 (manifest check) prepare: {e}"
+                        )),
+                    )
+                })?;
+            let mut existing = conn
+                .execute(
+                    &mut check_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(row.workspace_id.clone())),
+                        ("path", lbug::Value::String(row.file_path.clone())),
+                    ],
+                )
+                .map_err(|e| {
+                    cognicode_core::domain::ports::CommitError::Manifest(
+                        cognicode_core::domain::ports::manifest_store::ManifestError::Store(
+                            format!("commit_revision stage 2 (manifest check) execute: {e}"),
+                        ),
+                    )
+                })?;
+
+            if existing.next().is_some() {
+                // UPDATE.
+                let mut upd_stmt = conn
+                    .prepare("MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path SET s.file_type = $ftype, s.language = $lang, s.content_hash = $hash, s.mtime = $mtime, s.symbol_count = $symcnt, s.edge_count = $edgecnt, s.status = $status, s.error_msg = $errmsg;")
+                    .map_err(|e| {
+                        cognicode_core::domain::ports::CommitError::Manifest(
+                            cognicode_core::domain::ports::manifest_store::ManifestError::Store(format!(
+                                "commit_revision stage 2 (manifest update) prepare: {e}"
+                            )),
+                        )
+                    })?;
+                conn.execute(
+                    &mut upd_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(row.workspace_id.clone())),
+                        ("path", lbug::Value::String(row.file_path.clone())),
+                        ("ftype", lbug::Value::String(row.file_type.clone())),
+                        (
+                            "lang",
+                            match &row.language {
+                                Some(s) => lbug::Value::String(s.clone()),
+                                None => lbug::Value::Null(lbug::LogicalType::String),
+                            },
+                        ),
+                        ("hash", lbug::Value::String(row.content_hash.clone())),
+                        ("mtime", lbug::Value::Double(row.mtime)),
+                        ("symcnt", lbug::Value::Int32(row.symbol_count)),
+                        ("edgecnt", lbug::Value::Int32(row.edge_count)),
+                        ("status", lbug::Value::String(row.status.clone())),
+                        (
+                            "errmsg",
+                            match &row.error_msg {
+                                Some(s) => lbug::Value::String(s.clone()),
+                                None => lbug::Value::Null(lbug::LogicalType::String),
+                            },
+                        ),
+                    ],
+                )
+                .map_err(|e| {
+                    cognicode_core::domain::ports::CommitError::Manifest(
+                        cognicode_core::domain::ports::manifest_store::ManifestError::Store(
+                            format!("commit_revision stage 2 (manifest update) execute: {e}"),
+                        ),
+                    )
+                })?;
+            } else {
+                // CREATE.
+                let mut ins_stmt = conn
+                    .prepare("CREATE (s:ScanManifest {workspace_id: $ws, file_path: $path, file_type: $ftype, language: $lang, content_hash: $hash, mtime: $mtime, symbol_count: $symcnt, edge_count: $edgecnt, status: $status, error_msg: $errmsg});")
+                    .map_err(|e| {
+                        cognicode_core::domain::ports::CommitError::Manifest(
+                            cognicode_core::domain::ports::manifest_store::ManifestError::Store(format!(
+                                "commit_revision stage 2 (manifest insert) prepare: {e}"
+                            )),
+                        )
+                    })?;
+                conn.execute(
+                    &mut ins_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(row.workspace_id.clone())),
+                        ("path", lbug::Value::String(row.file_path.clone())),
+                        ("ftype", lbug::Value::String(row.file_type.clone())),
+                        (
+                            "lang",
+                            match &row.language {
+                                Some(s) => lbug::Value::String(s.clone()),
+                                None => lbug::Value::Null(lbug::LogicalType::String),
+                            },
+                        ),
+                        ("hash", lbug::Value::String(row.content_hash.clone())),
+                        ("mtime", lbug::Value::Double(row.mtime)),
+                        ("symcnt", lbug::Value::Int32(row.symbol_count)),
+                        ("edgecnt", lbug::Value::Int32(row.edge_count)),
+                        ("status", lbug::Value::String(row.status.clone())),
+                        (
+                            "errmsg",
+                            match &row.error_msg {
+                                Some(s) => lbug::Value::String(s.clone()),
+                                None => lbug::Value::Null(lbug::LogicalType::String),
+                            },
+                        ),
+                    ],
+                )
+                .map_err(|e| {
+                    cognicode_core::domain::ports::CommitError::Manifest(
+                        cognicode_core::domain::ports::manifest_store::ManifestError::Store(
+                            format!("commit_revision stage 2 (manifest insert) execute: {e}"),
+                        ),
+                    )
+                })?;
+            }
+        }
+
+        // Stage 3: save the report. Mirrors `ReportStore::save_report`
+        // (Priority 3) — single CREATE with id STRING PK + JSON-as-STRING
+        // for the report column + null-safe health_score.
+        let report = &report.summary;
+        let report_json = serde_json::to_string(&report.report).map_err(|e| {
+            cognicode_core::domain::ports::CommitError::Report(
+                cognicode_core::domain::ports::report_store::ReportError::Store(format!(
+                    "commit_revision stage 3 serialize report: {e}"
+                )),
+            )
+        })?;
+        let mut rep_stmt = conn
+            .prepare(
+                "CREATE (r:GraphReport {id: $id, workspace_id: $ws, created_at: $ts, report: $json, symbol_count: $scnt, edge_count: $ecnt, health_score: $hscore});",
+            )
+            .map_err(|e| {
+                cognicode_core::domain::ports::CommitError::Report(
+                    cognicode_core::domain::ports::report_store::ReportError::Store(format!(
+                        "commit_revision stage 3 (report insert) prepare: {e}"
+                    )),
+                )
+            })?;
+        conn.execute(
+            &mut rep_stmt,
+            vec![
+                ("id", lbug::Value::String(report.id.clone())),
+                ("ws", lbug::Value::String(ws.to_string())),
+                ("ts", lbug::Value::String(report.created_at.clone())),
+                ("json", lbug::Value::String(report_json)),
+                ("scnt", lbug::Value::Int64(report.symbol_count as i64)),
+                ("ecnt", lbug::Value::Int64(report.edge_count as i64)),
+                (
+                    "hscore",
+                    match report.health_score {
+                        Some(v) => lbug::Value::Double(v as f64),
+                        None => lbug::Value::Null(lbug::LogicalType::Double),
+                    },
+                ),
+            ],
+        )
+        .map_err(|e| {
+            cognicode_core::domain::ports::CommitError::Report(
+                cognicode_core::domain::ports::report_store::ReportError::Store(format!(
+                    "commit_revision stage 3 (report insert) execute: {e}"
+                )),
+            )
+        })?;
+
+        // Stage 4 — graph upserts. The PG adapter takes the
+        // GraphDelta but ignores it (see the trait comment); a future
+        // PR will wire Stage 4 once the Generic Graph Layer's
+        // ports (GraphWritePort, GraphNodeStore, GraphEdgeStore)
+        // are defined for the lbug adapter. Today: no-op.
+        let _graph = _graph;
+
+        Ok(rev_id)
     }
 }
 
@@ -1158,7 +1088,13 @@ impl IngestCommit for LadybugStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "multimodal")]
+    use cognicode_core::domain::value_objects::{SpaceId, SpaceKind};
     use serial_test::serial;
+
+    fn ws_id(s: &str) -> WorkspaceId {
+        WorkspaceId::try_new(s).expect("workspace id must be non-empty")
+    }
 
     /// Smoke test: the `LadybugStore::open` constructor exists and
     /// accepts the same `(path, SystemConfig)` shape the spike
@@ -1260,7 +1196,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn manifest_get_returns_empty_for_fresh_db() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1269,7 +1204,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn manifest_upsert_then_get_round_trips() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1291,7 +1225,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn manifest_upsert_with_optional_nulls() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1307,7 +1240,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn manifest_delete_removes_target_row() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1326,7 +1258,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn manifest_upsert_overwrites_existing_row() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1341,267 +1272,446 @@ mod tests {
         assert_eq!(rows[0].symbol_count, 999);
         assert_eq!(rows[0].content_hash, "new-hash");
     }
-
     // --------------------------------------------------------------------
-    // CallGraphStore (Priority 8)
+    // FederationStore (Priority 5, gated behind `multimodal`)
     // --------------------------------------------------------------------
 
-    use cognicode_core::domain::aggregates::{CallGraph, Symbol};
-    use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
+    #[cfg(feature = "multimodal")]
+    fn sample_space(id: &str, name: &str, kind: SpaceKind) -> Space {
+        Space::try_new(
+            SpaceId::try_new(id.to_string()).expect("non-empty"),
+            name.to_string(),
+            kind,
+        )
+        .expect("non-empty name must succeed")
+    }
 
-    /// Apply the CallGraphStore NODE TABLEs. The store also needs
-    /// a `GraphRevision` table (used by `save_call_graph_ws`'s
-    /// single-Cypher demote+create revision step).
-    fn init_call_graph_schema(store: &LadybugStore) {
+    #[cfg(feature = "multimodal")]
+    fn init_space_schema(store: &LadybugStore) {
         let conn = store.connection().expect("schema-init connection");
         conn.query(
-            "CREATE NODE TABLE IF NOT EXISTS GraphRevision( \
-                 id SERIAL PRIMARY KEY, \
-                 workspace_id STRING, \
-                 revision_id INT64, \
-                 head_of BOOLEAN);",
-        )
-        .expect("create GraphRevision NODE TABLE");
-        conn.query(
-            "CREATE NODE TABLE IF NOT EXISTS GraphSymbol( \
-                 id SERIAL PRIMARY KEY, \
-                 workspace_id STRING, \
-                 revision_id INT64, \
-                 fqn STRING, \
-                 kind STRING, \
+            "CREATE NODE TABLE IF NOT EXISTS Space( \
+                 id STRING PRIMARY KEY, \
                  name STRING, \
-                 file_path STRING, \
-                 line INT64, \
-                 signature STRING);",
+                 kind STRING, \
+                 source_path STRING, \
+                 config STRING, \
+                 created_at STRING);",
         )
-        .expect("create GraphSymbol NODE TABLE");
-        conn.query(
-            "CREATE NODE TABLE IF NOT EXISTS GraphEdge( \
-                 id SERIAL PRIMARY KEY, \
-                 workspace_id STRING, \
-                 revision_id INT64, \
-                 source_id STRING, \
-                 target_id STRING, \
-                 dep_type STRING, \
-                 provenance STRING, \
-                 confidence DOUBLE);",
-        )
-        .expect("create GraphEdge NODE TABLE");
-    }
-
-    fn ws_id(s: &str) -> WorkspaceId {
-        WorkspaceId::try_new(s).expect("workspace id must be non-empty")
-    }
-
-    fn build_small_graph() -> CallGraph {
-        // A → B (Calls), A → C (Imports), B → D (Calls)
-        let mut g = CallGraph::new();
-        let a = g.add_symbol(Symbol::new(
-            "foo",
-            SymbolKind::Function,
-            Location::new("src/foo.rs", 10, 1),
-        ));
-        let b = g.add_symbol(Symbol::new(
-            "bar",
-            SymbolKind::Function,
-            Location::new("src/bar.rs", 20, 1),
-        ));
-        let c = g.add_symbol(Symbol::new(
-            "Baz",
-            SymbolKind::Class,
-            Location::new("src/baz.rs", 30, 1),
-        ));
-        let d = g.add_symbol(Symbol::new(
-            "qux",
-            SymbolKind::Function,
-            Location::new("src/qux.rs", 40, 1),
-        ));
-        g.add_dependency(&a, &b, DependencyType::Calls)
-            .expect("a→b");
-        g.add_dependency(&a, &c, DependencyType::Imports)
-            .expect("a→c");
-        g.add_dependency(&b, &d, DependencyType::Calls)
-            .expect("b→d");
-        g
+        .expect("create Space NODE TABLE");
     }
 
     #[tokio::test]
+    #[cfg(feature = "multimodal")]
     #[serial]
-    #[serial]
-    async fn call_graph_save_returns_first_revision_for_fresh_workspace() {
+    async fn federation_register_creates() {
         let (store, _dir) = make_test_store();
-        init_call_graph_schema(&store);
-        let g = build_small_graph();
+        init_space_schema(&store);
+        let s = sample_space("repo-1", "auth-repo", SpaceKind::Repo).with_source_path("/work/auth");
+        store.register_space(&s).await.expect("register");
+        let loaded = store
+            .get_space(&SpaceId::try_new("repo-1".to_string()).expect("non-empty"))
+            .await
+            .expect("get")
+            .expect("present");
+        assert_eq!(
+            loaded.id,
+            SpaceId::try_new("repo-1".to_string()).expect("non-empty")
+        );
+        assert_eq!(loaded.name, "auth-repo");
+        assert_eq!(loaded.kind, SpaceKind::Repo);
+        assert_eq!(
+            loaded.source_path.as_ref().map(|p| p.display().to_string()),
+            Some("/work/auth".to_string())
+        );
+        assert_eq!(loaded.config, serde_json::json!({}));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn federation_register_upserts_on_id_collision() {
+        let (store, _dir) = make_test_store();
+        init_space_schema(&store);
+        let s1 = sample_space("repo-1", "auth-repo", SpaceKind::Repo);
+        store.register_space(&s1).await.expect("s1");
+        let mut s2 = sample_space("repo-1", "auth-repo-renamed", SpaceKind::Repo);
+        s2.config = serde_json::json!({"branch": "dev"});
+        let s2 = s2.with_source_path("/work/auth");
+        store.register_space(&s2).await.expect("s2");
+        let loaded = store
+            .get_space(&SpaceId::try_new("repo-1".to_string()).expect("non-empty"))
+            .await
+            .expect("get")
+            .expect("present");
+        assert_eq!(loaded.name, "auth-repo-renamed", "name updated");
+        assert_eq!(loaded.config, serde_json::json!({"branch": "dev"}));
+        let all = store.list_spaces().await.expect("list");
+        assert_eq!(all.len(), 1, "upsert must NOT create a 2nd row");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn federation_get_unknown_returns_none() {
+        let (store, _dir) = make_test_store();
+        init_space_schema(&store);
+        let r = store
+            .get_space(&SpaceId::try_new("unknown".to_string()).expect("non-empty"))
+            .await
+            .expect("get");
+        assert!(r.is_none(), "unknown id returns None");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn federation_list_empty_when_fresh_db() {
+        let (store, _dir) = make_test_store();
+        init_space_schema(&store);
+        let all = store.list_spaces().await.expect("list");
+        assert!(all.is_empty(), "fresh db returns no rows");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn federation_list_null_source_path_round_trips() {
+        let (store, _dir) = make_test_store();
+        init_space_schema(&store);
+        let s = sample_space("docs-1", "adrs", SpaceKind::Docs);
+        store.register_space(&s).await.expect("save");
+        let loaded = store
+            .get_space(&SpaceId::try_new("docs-1".to_string()).expect("non-empty"))
+            .await
+            .expect("get")
+            .expect("present");
+        assert!(loaded.source_path.is_none(), "None source_path round-trips");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn federation_all_three_kinds_round_trip() {
+        let (store, _dir) = make_test_store();
+        init_space_schema(&store);
+        let s_repo = sample_space("repo-1", "auth", SpaceKind::Repo);
+        let s_docs = sample_space("docs-1", "adrs", SpaceKind::Docs);
+        let s_issues = sample_space("issues-1", "gh-issues", SpaceKind::Issues);
+        store.register_space(&s_repo).await.expect("r");
+        store.register_space(&s_docs).await.expect("d");
+        store.register_space(&s_issues).await.expect("i");
+        let all = store.list_spaces().await.expect("list");
+        assert_eq!(all.len(), 3);
+        let kinds: Vec<SpaceKind> = all.iter().map(|s| s.kind).collect();
+        assert!(kinds.contains(&SpaceKind::Repo));
+        assert!(kinds.contains(&SpaceKind::Docs));
+        assert!(kinds.contains(&SpaceKind::Issues));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn federation_idempotent_register_preserves_row_count() {
+        let (store, _dir) = make_test_store();
+        init_space_schema(&store);
+        let s = sample_space("repo-1", "auth", SpaceKind::Repo);
+        store.register_space(&s).await.expect("1");
+        store.register_space(&s).await.expect("2");
+        store.register_space(&s).await.expect("3");
+        let all = store.list_spaces().await.expect("list");
+        assert_eq!(all.len(), 1, "idempotent register preserves row count");
+    }
+
+    // --------------------------------------------------------------------
+    // IngestCommit (Priority 9, gated behind `multimodal`)
+    // --------------------------------------------------------------------
+
+    #[cfg(feature = "multimodal")]
+    fn init_ingest_schema(store: &LadybugStore) {
+        let conn = store.connection().expect("schema-init connection");
+        conn.query("CREATE NODE TABLE IF NOT EXISTS GraphRevision(id SERIAL PRIMARY KEY, workspace_id STRING, revision_id INT64, head_of BOOLEAN);")
+            .expect("GraphRevision");
+        conn.query("CREATE NODE TABLE IF NOT EXISTS ScanManifest(id SERIAL PRIMARY KEY, workspace_id STRING, file_path STRING, file_type STRING, language STRING, content_hash STRING, mtime DOUBLE, symbol_count INT64, edge_count INT64, status STRING, error_msg STRING);")
+            .expect("ScanManifest");
+        conn.query("CREATE NODE TABLE IF NOT EXISTS GraphReport(id STRING PRIMARY KEY, workspace_id STRING, created_at STRING, report STRING, symbol_count INT64, edge_count INT64, health_score DOUBLE);")
+            .expect("GraphReport");
+    }
+
+    #[cfg(feature = "multimodal")]
+    fn sample_manifest(ws: &str, path: &str) -> ScanManifest {
+        ScanManifest {
+            workspace_id: ws.to_string(),
+            file_path: path.to_string(),
+            file_type: "rust".to_string(),
+            language: Some("Rust".to_string()),
+            content_hash: format!("hash-{path}"),
+            mtime: 1.0,
+            symbol_count: 10,
+            edge_count: 5,
+            status: "scanned".to_string(),
+            error_msg: None,
+        }
+    }
+
+    #[cfg(feature = "multimodal")]
+    fn sample_report(id: &str, ws: &str, sym: i32, edge: i32) -> ReportIntent {
+        ReportIntent {
+            summary: ReportSummary {
+                id: id.to_string(),
+                workspace_id: ws.to_string(),
+                created_at: "2026-08-02T10:00:00Z".to_string(),
+                report: serde_json::json!({"summary": "test report"}),
+                symbol_count: sym,
+                edge_count: edge,
+                health_score: None,
+            },
+        }
+    }
+
+    #[cfg(feature = "multimodal")]
+    fn empty_graph_delta() -> GraphDelta {
+        GraphDelta {
+            nodes: vec![],
+            edges: vec![],
+            deleted_node_ids: vec![],
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn ingest_first_commit_returns_rev_1() {
+        let (store, _dir) = make_test_store();
+        init_ingest_schema(&store);
+        let manifest = ManifestDelta {
+            upserts: vec![sample_manifest("ws-1", "src/lib.rs")],
+            deleted_paths: vec![],
+        };
+        let report = sample_report("rep-1", "ws-1", 10, 5);
         let rev = store
-            .save_call_graph_ws(&g, &ws_id("ws-1"))
+            .commit_revision(&ws_id("ws-1"), empty_graph_delta(), manifest, report)
             .await
-            .expect("save");
-        assert_eq!(rev.get(), 1, "first save in a fresh workspace → rev 1");
+            .expect("commit");
+        assert_eq!(rev.get(), 1, "first commit in a fresh workspace → rev 1");
     }
 
     #[tokio::test]
+    #[cfg(feature = "multimodal")]
     #[serial]
-    #[serial]
-    async fn call_graph_save_increments_monotonically() {
+    async fn ingest_second_commit_returns_rev_2_and_demotes_prior_head() {
         let (store, _dir) = make_test_store();
-        init_call_graph_schema(&store);
-        let g = build_small_graph();
-        let r1 = store
-            .save_call_graph_ws(&g, &ws_id("ws-x"))
-            .await
-            .expect("s1");
-        let r2 = store
-            .save_call_graph_ws(&g, &ws_id("ws-x"))
-            .await
-            .expect("s2");
-        let r3 = store
-            .save_call_graph_ws(&g, &ws_id("ws-x"))
-            .await
-            .expect("s3");
-        assert_eq!(r1.get(), 1);
-        assert_eq!(r2.get(), 2);
-        assert_eq!(r3.get(), 3);
-    }
-
-    #[tokio::test]
-    #[serial]
-    #[serial]
-    async fn call_graph_save_demotes_prior_head() {
-        // After save, only the latest revision has head_of=true.
-        let (store, _dir) = make_test_store();
-        init_call_graph_schema(&store);
-        let g = build_small_graph();
+        init_ingest_schema(&store);
+        let m1 = ManifestDelta {
+            upserts: vec![sample_manifest("ws-1", "src/lib.rs")],
+            deleted_paths: vec![],
+        };
         store
-            .save_call_graph_ws(&g, &ws_id("ws-d"))
+            .commit_revision(
+                &ws_id("ws-1"),
+                empty_graph_delta(),
+                m1,
+                sample_report("rep-1", "ws-1", 10, 5),
+            )
             .await
-            .expect("s1");
-        store
-            .save_call_graph_ws(&g, &ws_id("ws-d"))
+            .expect("c1");
+        let mut m2_row = sample_manifest("ws-1", "src/lib.rs");
+        m2_row.content_hash = "hash-v2".to_string();
+        let m2 = ManifestDelta {
+            upserts: vec![m2_row],
+            deleted_paths: vec![],
+        };
+        let rev2 = store
+            .commit_revision(
+                &ws_id("ws-1"),
+                empty_graph_delta(),
+                m2,
+                sample_report("rep-2", "ws-1", 12, 6),
+            )
             .await
-            .expect("s2");
-        // head_revision for ws-d must be 2 (the latest).
+            .expect("c2");
+        assert_eq!(rev2.get(), 2);
         let head = store
-            .head_revision_for_ws(&ws_id("ws-d"))
+            .head_revision_for_ws(&ws_id("ws-1"))
             .await
             .expect("head");
         assert_eq!(head, Some(RevisionId(2)));
     }
 
     #[tokio::test]
+    #[cfg(feature = "multimodal")]
     #[serial]
-    #[serial]
-    async fn call_graph_load_returns_symbols_and_edges_round_trip() {
+    async fn ingest_manifest_upsert_does_not_create_second_row() {
         let (store, _dir) = make_test_store();
-        init_call_graph_schema(&store);
-        let g = build_small_graph();
-        let rev = store
-            .save_call_graph_ws(&g, &ws_id("ws-rt"))
+        init_ingest_schema(&store);
+        let m = ManifestDelta {
+            upserts: vec![sample_manifest("ws-1", "src/lib.rs")],
+            deleted_paths: vec![],
+        };
+        store
+            .commit_revision(
+                &ws_id("ws-1"),
+                empty_graph_delta(),
+                m,
+                sample_report("rep-1", "ws-1", 10, 5),
+            )
             .await
-            .expect("save");
-        let loaded = store
-            .load_call_graph_ws(&ws_id("ws-rt"), rev)
+            .expect("1");
+        let m2 = ManifestDelta {
+            upserts: vec![sample_manifest("ws-1", "src/lib.rs")],
+            deleted_paths: vec![],
+        };
+        store
+            .commit_revision(
+                &ws_id("ws-1"),
+                empty_graph_delta(),
+                m2,
+                sample_report("rep-2", "ws-1", 12, 6),
+            )
             .await
-            .expect("load")
-            .expect("present");
-        // 4 symbols round-trip.
-        let count = loaded.symbols().count();
-        assert_eq!(count, 4, "all 4 symbols round-trip");
-        // 3 edges round-trip.
-        let mut edge_count = 0;
-        for _ in loaded.edges_with_metadata() {
-            edge_count += 1;
+            .expect("2");
+        let conn = store.connection().expect("conn");
+        let mut stmt = conn
+            .prepare(
+                "MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path RETURN s.id;",
+            )
+            .expect("prep");
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![
+                    ("ws", lbug::Value::String("ws-1".to_string())),
+                    ("path", lbug::Value::String("src/lib.rs".to_string())),
+                ],
+            )
+            .expect("exec");
+        let mut count = 0;
+        while result.next().is_some() {
+            count += 1;
         }
-        assert_eq!(edge_count, 3, "all 3 edges round-trip");
+        assert_eq!(
+            count, 1,
+            "second commit must NOT duplicate the manifest row"
+        );
     }
 
     #[tokio::test]
+    #[cfg(feature = "multimodal")]
     #[serial]
-    #[serial]
-    async fn call_graph_load_returns_none_for_unknown_revision() {
+    async fn ingest_report_persists_with_unique_id() {
         let (store, _dir) = make_test_store();
-        init_call_graph_schema(&store);
-        let g = build_small_graph();
+        init_ingest_schema(&store);
+        let m = ManifestDelta {
+            upserts: vec![sample_manifest("ws-1", "src/lib.rs")],
+            deleted_paths: vec![],
+        };
         store
-            .save_call_graph_ws(&g, &ws_id("ws-x"))
+            .commit_revision(
+                &ws_id("ws-1"),
+                empty_graph_delta(),
+                m,
+                sample_report("rep-1", "ws-1", 42, 7),
+            )
             .await
-            .expect("save");
-        let loaded = store
-            .load_call_graph_ws(&ws_id("ws-x"), RevisionId(999))
-            .await
-            .expect("load");
-        assert!(loaded.is_none(), "unknown revision returns None");
+            .expect("c");
+        let conn = store.connection().expect("conn");
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:GraphReport) WHERE r.id = $id RETURN r.symbol_count, r.edge_count, r.workspace_id;",
+            )
+            .expect("prep");
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![("id", lbug::Value::String("rep-1".to_string()))],
+            )
+            .expect("exec");
+        let Some(row) = result.next() else {
+            panic!("report row missing after commit");
+        };
+        assert_eq!(row[0], lbug::Value::Int64(42), "symbol_count persisted");
+        assert_eq!(row[1], lbug::Value::Int64(7), "edge_count persisted");
+        assert_eq!(row[2], lbug::Value::String("ws-1".to_string()));
     }
 
     #[tokio::test]
+    #[cfg(feature = "multimodal")]
     #[serial]
-    #[serial]
-    async fn call_graph_load_current_returns_head_revision_graph() {
+    async fn ingest_workspace_scoped_revision_counter() {
         let (store, _dir) = make_test_store();
-        init_call_graph_schema(&store);
-        let g = build_small_graph();
+        init_ingest_schema(&store);
         store
-            .save_call_graph_ws(&g, &ws_id("ws-c"))
-            .await
-            .expect("save 1");
-        store
-            .save_call_graph_ws(&g, &ws_id("ws-c"))
-            .await
-            .expect("save 2");
-        // Current = revision 2 (the head).
-        let loaded = store
-            .load_call_graph_current(&ws_id("ws-c"))
-            .await
-            .expect("load current")
-            .expect("present");
-        let count = loaded.symbols().count();
-        assert_eq!(count, 4);
-    }
-
-    #[tokio::test]
-    #[serial]
-    #[serial]
-    async fn call_graph_load_current_returns_none_for_unknown_workspace() {
-        let (store, _dir) = make_test_store();
-        init_call_graph_schema(&store);
-        let loaded = store
-            .load_call_graph_current(&ws_id("ws-unknown"))
-            .await
-            .expect("load");
-        assert!(loaded.is_none());
-    }
-
-    #[tokio::test]
-    #[serial]
-    #[serial]
-    async fn call_graph_save_is_scoped_to_workspace() {
-        // Two workspaces, two saves — the head for each is independent.
-        let (store, _dir) = make_test_store();
-        init_call_graph_schema(&store);
-        let g = build_small_graph();
-        store
-            .save_call_graph_ws(&g, &ws_id("ws-A"))
+            .commit_revision(
+                &ws_id("ws-A"),
+                empty_graph_delta(),
+                ManifestDelta {
+                    upserts: vec![sample_manifest("ws-A", "src/a.rs")],
+                    deleted_paths: vec![],
+                },
+                sample_report("rep-A1", "ws-A", 5, 2),
+            )
             .await
             .expect("a1");
         store
-            .save_call_graph_ws(&g, &ws_id("ws-A"))
+            .commit_revision(
+                &ws_id("ws-A"),
+                empty_graph_delta(),
+                ManifestDelta {
+                    upserts: vec![sample_manifest("ws-A", "src/b.rs")],
+                    deleted_paths: vec![],
+                },
+                sample_report("rep-A2", "ws-A", 6, 3),
+            )
             .await
             .expect("a2");
         store
-            .save_call_graph_ws(&g, &ws_id("ws-B"))
+            .commit_revision(
+                &ws_id("ws-B"),
+                empty_graph_delta(),
+                ManifestDelta {
+                    upserts: vec![sample_manifest("ws-B", "src/c.rs")],
+                    deleted_paths: vec![],
+                },
+                sample_report("rep-B1", "ws-B", 7, 4),
+            )
             .await
             .expect("b1");
+        let h_a = store
+            .head_revision_for_ws(&ws_id("ws-A"))
+            .await
+            .expect("h-A");
+        let h_b = store
+            .head_revision_for_ws(&ws_id("ws-B"))
+            .await
+            .expect("h-B");
+        assert_eq!(h_a, Some(RevisionId(2)), "ws-A head = rev 2");
+        assert_eq!(h_b, Some(RevisionId(1)), "ws-B head = rev 1");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn ingest_with_empty_manifest_still_opens_revision() {
+        let (store, _dir) = make_test_store();
+        init_ingest_schema(&store);
+        let rev = store
+            .commit_revision(
+                &ws_id("ws-empty"),
+                empty_graph_delta(),
+                ManifestDelta {
+                    upserts: vec![],
+                    deleted_paths: vec![],
+                },
+                sample_report("rep-empty", "ws-empty", 0, 0),
+            )
+            .await
+            .expect("commit");
+        assert_eq!(rev.get(), 1);
         assert_eq!(
             store
-                .head_revision_for_ws(&ws_id("ws-A"))
+                .head_revision_for_ws(&ws_id("ws-empty"))
                 .await
-                .expect("h-A"),
-            Some(RevisionId(2))
-        );
-        assert_eq!(
-            store
-                .head_revision_for_ws(&ws_id("ws-B"))
-                .await
-                .expect("h-B"),
+                .expect("head"),
             Some(RevisionId(1))
         );
     }
