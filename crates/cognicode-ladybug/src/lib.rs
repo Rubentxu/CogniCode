@@ -3091,4 +3091,250 @@ mod tests {
             .expect("execute");
         assert!(result.is_empty(), "unknown source returns empty ResultSet");
     }
+
+    // --------------------------------------------------------------------
+    // e29-2-conformance-cross-backend (LadybugGraphExecutor vs in-memory oracle)
+    // --------------------------------------------------------------------
+    //
+    // Cross-backend conformance for the Neighbors variant: seed
+    // the SAME graph in lbug AND in an in-memory CallGraph oracle,
+    // execute the plan on both, assert equivalent ResultSets.
+    //
+    // The in-memory oracle is a tiny `GraphExecutor` impl backed by
+    // `CallGraph` directly (no lbug, no PG) — the in-memory aggregate
+    // IS the source of truth. lbug's Cypher traversal must agree.
+    //
+    // A separate PR (`e29-2-conformance-cross-backend-pg`) will
+    // extend this pattern with PgGraphExecutor — that PR requires
+    // CI with a live PG (not available in this sandbox).
+
+    /// In-memory oracle `GraphExecutor` for cross-backend conformance.
+    /// Holds a single `CallGraph` and answers Neighbors queries by
+    /// iterating `edges_with_metadata()` directly.
+    #[derive(Debug)]
+    struct InMemoryOracleExecutor {
+        graph: std::sync::Arc<std::sync::Mutex<CallGraph>>,
+    }
+
+    impl InMemoryOracleExecutor {
+        fn new(graph: CallGraph) -> Self {
+            Self {
+                graph: std::sync::Arc::new(std::sync::Mutex::new(graph)),
+            }
+        }
+    }
+
+    impl GraphExecutor for InMemoryOracleExecutor {
+        fn execute(
+            &self,
+            plan: &GraphPlan,
+            _pin: (WorkspaceId, RevisionId),
+        ) -> Result<ResultSet, ExecutorError> {
+            // Only `Neighbors` variant supported (parity with
+            // LadybugGraphExecutor v1).
+            let GraphPlan::Neighbors { src, depth, .. } = plan else {
+                return Err(ExecutorError::UnsupportedConstruct(
+                    cognicode_core::domain::plan::UnsupportedConstruct::new(
+                        cognicode_core::domain::plan::ConstructId::Other(
+                            "GraphPlan::other".to_string(),
+                        ),
+                        "Oracle only supports Neighbors",
+                    ),
+                ));
+            };
+            let _ = depth; // v1: depth > 1 not yet supported
+            let graph = self.graph.lock().expect("graph lock");
+            // Find the source symbol's id by matching fqn.
+            let src_id = graph
+                .symbols()
+                .find(|s| s.fully_qualified_name() == src)
+                .map(|s| {
+                    cognicode_core::domain::aggregates::call_graph::SymbolId::new(
+                        s.fully_qualified_name(),
+                    )
+                });
+            let Some(src_id) = src_id else {
+                return Ok(ResultSet::empty());
+            };
+            // Direct neighbors: edges where source == src_id.
+            let mut rows: Vec<Vec<String>> = graph
+                .edges_with_metadata()
+                .filter(|(s, _t, _d, _p, _c)| s == &src_id)
+                .filter_map(|(_s, t, _d, _p, _c)| {
+                    let target_id = t.as_str().to_string();
+                    let target_sym = graph
+                        .symbols()
+                        .find(|sym| sym.fully_qualified_name() == target_id.as_str())?;
+                    Some(vec![
+                        target_id,                                // target_id (fqn)
+                        target_sym.kind().to_string(),            // kind
+                        target_sym.location().file().to_string(), // file_path
+                        target_sym.location().line().to_string(), // line
+                    ])
+                })
+                .collect();
+            // Sort by fqn (target_id) ascending — same order as
+            // LadybugGraphExecutor's ORDER BY t.fqn.
+            rows.sort_by(|a, b| a[0].cmp(&b[0]));
+            Ok(ResultSet {
+                rows: rows
+                    .into_iter()
+                    .map(|row| cognicode_core::domain::plan::Row {
+                        columns: row
+                            .into_iter()
+                            .map(cognicode_core::domain::plan::TypedValue::String)
+                            .collect(),
+                    })
+                    .collect(),
+                nodes: vec![],
+                edges: vec![],
+                paths: vec![],
+                scalars: vec![],
+                truncated: false,
+                truncation: None,
+            })
+        }
+
+        fn execute_with_limits(
+            &self,
+            _plan: &GraphPlan,
+            _pin: (WorkspaceId, RevisionId),
+            _limits: Option<cognicode_core::domain::plan::PlanLimits>,
+        ) -> Result<ResultSet, ExecutorError> {
+            // Delegate to `execute` — the oracle doesn't enforce
+            // soft limits in v1 (the in-memory graph is small).
+            self.execute(_plan, _pin)
+        }
+    }
+
+    /// Build a `CallGraph` from the same fixture data the lbug
+    /// tests use. Returns the in-memory graph for the oracle.
+    fn build_call_graph_fixture() -> CallGraph {
+        use cognicode_core::domain::aggregates::call_graph::CallGraph;
+        use cognicode_core::domain::aggregates::symbol::Symbol;
+        use cognicode_core::domain::services::ExtractionContext;
+        use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
+        let mut g = CallGraph::new();
+        let foo_id = g.add_symbol(Symbol::new(
+            "foo",
+            SymbolKind::Function,
+            Location::new("src/a.rs", 1, 0),
+        ));
+        let bar_id = g.add_symbol(Symbol::new(
+            "bar",
+            SymbolKind::Function,
+            Location::new("src/a.rs", 5, 0),
+        ));
+        let baz_id = g.add_symbol(Symbol::new(
+            "baz",
+            SymbolKind::Function,
+            Location::new("src/b.rs", 10, 0),
+        ));
+        g.add_dependency_with_provenance(
+            &foo_id,
+            &bar_id,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        )
+        .expect("foo->bar");
+        g.add_dependency_with_provenance(
+            &foo_id,
+            &baz_id,
+            DependencyType::Imports,
+            ExtractionContext::DirectExtraction,
+        )
+        .expect("foo->baz");
+        g
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn e29_2_conformance_neighbors_ladybug_vs_in_memory_oracle() {
+        // Seed the SAME graph in both backends and assert the
+        // Neighbors plan produces the same ResultSet.
+        let (store, _dir) = make_test_store();
+        init_graph_executor_schema(&store);
+        // Insert symbols + edges in NON-sorted order to verify the
+        // lbug executor sorts.
+        let conn = store.connection().expect("conn");
+        conn.query(
+            "CREATE (r:GraphRevision {workspace_id: 'ws-1', revision_id: 1, head_of: true});",
+        )
+        .expect("rev");
+        conn.query(
+            "CREATE (s:GraphSymbol {workspace_id: 'ws-1', revision_id: 1, fqn: 'src/a.rs:foo:1', kind: 'function', name: 'foo', file_path: 'src/a.rs', line: 1});",
+        )
+        .expect("foo");
+        conn.query(
+            "CREATE (s:GraphSymbol {workspace_id: 'ws-1', revision_id: 1, fqn: 'src/a.rs:bar:5', kind: 'function', name: 'bar', file_path: 'src/a.rs', line: 5});",
+        )
+        .expect("bar");
+        conn.query(
+            "CREATE (s:GraphSymbol {workspace_id: 'ws-1', revision_id: 1, fqn: 'src/b.rs:baz:10', kind: 'function', name: 'baz', file_path: 'src/b.rs', line: 10});",
+        )
+        .expect("baz");
+        conn.query(
+            "CREATE (e:GraphEdge {workspace_id: 'ws-1', revision_id: 1, source_id: 'src/a.rs:foo:1', target_id: 'src/b.rs:baz:10', dep_type: 'imports', provenance: 'Extracted', confidence: 1.0});",
+        )
+        .expect("e1");
+        conn.query(
+            "CREATE (e:GraphEdge {workspace_id: 'ws-1', revision_id: 1, source_id: 'src/a.rs:foo:1', target_id: 'src/a.rs:bar:5', dep_type: 'calls', provenance: 'Extracted', confidence: 1.0});",
+        )
+        .expect("e2");
+        // Build the in-memory oracle with the SAME data.
+        let oracle_graph = build_call_graph_fixture();
+        let oracle = InMemoryOracleExecutor::new(oracle_graph);
+        // Execute the same plan on both.
+        let lbug_exec = make_graph_executor_for_test(&store);
+        let plan = build_minimal_neighbors_plan("src/a.rs:foo:1");
+        let lbug_result = lbug_exec
+            .execute(&plan, (ws_id("ws-1"), RevisionId(1)))
+            .expect("lbug execute");
+        let oracle_result = oracle
+            .execute(&plan, (ws_id("ws-1"), RevisionId(1)))
+            .expect("oracle execute");
+        // Compare row count.
+        assert_eq!(
+            lbug_result.rows.len(),
+            oracle_result.rows.len(),
+            "row count must match between lbug and oracle",
+        );
+        // Compare row content (by stripping the lbug-wrapped
+        // double-quotes; the oracle stores raw strings).
+        let strip = |s: &str| s.trim_matches('"').to_string();
+        for (lbug_row, oracle_row) in lbug_result.rows.iter().zip(oracle_result.rows.iter()) {
+            assert_eq!(lbug_row.columns.len(), oracle_row.columns.len());
+            for (l, o) in lbug_row.columns.iter().zip(oracle_row.columns.iter()) {
+                assert_eq!(
+                    strip(&l.to_string()),
+                    strip(&o.to_string()),
+                    "column value mismatch",
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn e29_2_conformance_neighbors_unknown_src_ladybug_vs_oracle() {
+        // Unknown source → empty ResultSet on both backends.
+        let (store, _dir) = make_test_store();
+        init_graph_executor_schema(&store);
+        let conn = store.connection().expect("conn");
+        conn.query(
+            "CREATE (r:GraphRevision {workspace_id: 'ws-1', revision_id: 1, head_of: true});",
+        )
+        .expect("rev");
+        let lbug_exec = make_graph_executor_for_test(&store);
+        let oracle = InMemoryOracleExecutor::new(build_call_graph_fixture());
+        let plan = build_minimal_neighbors_plan("src/does_not_exist.rs:foo:1");
+        let lbug_result = lbug_exec
+            .execute(&plan, (ws_id("ws-1"), RevisionId(1)))
+            .expect("lbug execute");
+        let oracle_result = oracle
+            .execute(&plan, (ws_id("ws-1"), RevisionId(1)))
+            .expect("oracle execute");
+        assert!(lbug_result.is_empty(), "lbug unknown src is empty");
+        assert!(oracle_result.is_empty(), "oracle unknown src is empty");
+    }
 }
