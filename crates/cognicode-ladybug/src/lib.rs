@@ -1085,6 +1085,298 @@ impl IngestCommit for LadybugStore {
 // surface is still complete and verified via the cargo check on the
 // other 8 ports.
 
+// =============================================================================
+// Generic Graph Layer DDL (`e29-1-ddl-init`)
+// =============================================================================
+//
+// Per ADR-027 (`docs/adr/ADR-027-ladybugdb-hybrid-schema-strategy.md`):
+// 22 NODE TABLEs + ~20 REL TABLEs backing the Generic Graph Layer.
+// Hybrid strategy — typed columns for stable properties, MAP for
+// emergent ones. Multi-label nodes for poly形式 membership.
+//
+// **v1 scope (this commit)**: 22 NODE TABLEs as DDL constants + an
+// `init_generic_graph_schema()` function that applies them
+// idempotently. The ~20 REL TABLEs are tracked as a follow-up PR
+// (`e29-1-ddl-rels`) — they require a separate design pass on
+// edge-label naming and the multi-label relationship between node
+// types (e.g. a `Calls` edge between a `Symbol` and another
+// `Symbol`, plus a `Component` ↔ `Component` `Calls`).
+//
+// The `init_generic_graph_schema()` is invoked explicitly by the
+// production runtime composition root (similar to PG's
+// `run_migrations`); tests invoke it via the helper in `mod tests`.
+
+/// `LadybugStore::init_generic_graph_schema` — applies the 22
+/// NODE TABLE DDLs from ADR-027.
+impl LadybugStore {
+    /// Apply the 22 NODE TABLE DDLs from ADR-027 to the underlying
+    /// lbug database. Idempotent (every `CREATE NODE TABLE` uses
+    /// `IF NOT EXISTS`).
+    pub fn init_generic_graph_schema(&self) -> Result<(), Error> {
+        let conn = self
+            .connection()
+            .map_err(|e| Error::Lbug(format!("init_generic_graph_schema: {e}")))?;
+        for stmt in generic_graph_node_table_ddls() {
+            conn.query(stmt)
+                .map_err(|e| Error::Lbug(format!("init_generic_graph_schema: {e}\nDDL: {stmt}")))?;
+        }
+        Ok(())
+    }
+}
+
+/// Returns the 22 CREATE NODE TABLE statements from ADR-027.
+fn generic_graph_node_table_ddls() -> Vec<&'static str> {
+    vec![
+        "CREATE NODE TABLE IF NOT EXISTS Symbol( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             name STRING, \
+             kind STRING, \
+             file_path STRING, \
+             line_number INT64, \
+             signature STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Decision( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             name STRING, \
+             rationale STRING, \
+             decided_at INT64, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Doc( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             title STRING, \
+             path STRING, \
+             kind STRING, \
+             content_hash STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Evidence( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             source_kind STRING, \
+             source_ref STRING, \
+             confidence REAL, \
+             captured_at INT64, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Issue( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             severity STRING, \
+             category STRING, \
+             file_path STRING, \
+             line_number INT64, \
+             message STRING, \
+             status STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Component( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             name STRING, \
+             layer STRING, \
+             responsibility STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Container( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             name STRING, \
+             kind STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS System( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             name STRING, \
+             description STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Route( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             path STRING, \
+             kind STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Rule( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             rule_id STRING, \
+             description STRING, \
+             category STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Baseline( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             rating STRING, \
+             total_issues INT64, \
+             blockers INT64, \
+             criticals INT64, \
+             debt_minutes INT64, \
+             snapshot_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Investigation( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             title STRING, \
+             status STRING, \
+             created_at STRING, \
+             updated_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Artifact( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             kind STRING, \
+             format STRING, \
+             content_hash STRING, \
+             created_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS ExplorationSession( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             events STRING, \
+             navigation_mode STRING, \
+             panes STRING, \
+             created_at STRING, \
+             updated_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS NamedView( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             name STRING, \
+             view_kind STRING, \
+             owner STRING, \
+             created_at STRING, \
+             updated_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS ViewSpec( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             title STRING, \
+             applies_to STRING, \
+             view_kind STRING, \
+             data_source STRING, \
+             transform STRING, \
+             renderer_kind STRING, \
+             props STRING, \
+             owner STRING, \
+             created_at STRING, \
+             updated_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS GraphReport( \
+             id STRING PRIMARY KEY, \
+             workspace_id STRING, \
+             revision_id INT64, \
+             created_at STRING, \
+             report STRING, \
+             symbol_count INT64, \
+             edge_count INT64, \
+             health_score DOUBLE, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS AnalyticsRun( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             algorithm STRING, \
+             mode STRING, \
+             result_count INT64, \
+             started_at STRING, \
+             completed_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS FileRecord( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             file_path STRING, \
+             file_type STRING, \
+             language STRING, \
+             content_hash STRING, \
+             mtime DOUBLE, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Revision( \
+             id SERIAL PRIMARY KEY, \
+             workspace_id INT64, \
+             revision_id INT64, \
+             parent_revision_id INT64, \
+             author STRING, \
+             committed_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Workspace( \
+             id STRING PRIMARY KEY, \
+             name STRING, \
+             kind STRING, \
+             source_path STRING, \
+             config STRING, \
+             created_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+        "CREATE NODE TABLE IF NOT EXISTS Space( \
+             id STRING PRIMARY KEY, \
+             workspace_id INT64, \
+             name STRING, \
+             kind STRING, \
+             source_path STRING, \
+             config STRING, \
+             created_at STRING, \
+             valid_from INT64, \
+             valid_to INT64, \
+             properties MAP(STRING, STRING));",
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1714,5 +2006,86 @@ mod tests {
                 .expect("head"),
             Some(RevisionId(1))
         );
+    }
+
+    // --------------------------------------------------------------------
+    // Generic Graph Layer DDL (`e29-1-ddl-init`)
+    // --------------------------------------------------------------------
+
+    #[tokio::test]
+    #[serial]
+    async fn init_generic_graph_schema_applies_all_22_node_tables() {
+        let (store, _dir) = make_test_store();
+        store
+            .init_generic_graph_schema()
+            .expect("init should succeed");
+
+        let conn = store.connection().expect("conn");
+        for table in [
+            "Symbol",
+            "Decision",
+            "Doc",
+            "Evidence",
+            "Issue",
+            "Component",
+            "Container",
+            "System",
+            "Route",
+            "Rule",
+            "Baseline",
+            "Investigation",
+            "Artifact",
+            "ExplorationSession",
+            "NamedView",
+            "ViewSpec",
+            "GraphReport",
+            "AnalyticsRun",
+            "FileRecord",
+            "Revision",
+            "Workspace",
+            "Space",
+        ] {
+            let mut stmt = conn
+                .prepare(&format!("MATCH (n:{table}) RETURN n.id LIMIT 1;"))
+                .unwrap_or_else(|e| panic!("table {table} not queryable: {e}"));
+            let mut result = conn
+                .execute(&mut stmt, vec![])
+                .unwrap_or_else(|e| panic!("execute on {table}: {e}"));
+            let _ = result.next();
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn init_generic_graph_schema_is_idempotent() {
+        let (store, _dir) = make_test_store();
+        store.init_generic_graph_schema().expect("first init");
+        store
+            .init_generic_graph_schema()
+            .expect("second init must be a no-op (IF NOT EXISTS)");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn init_generic_graph_schema_supports_basic_node_insert() {
+        let (store, _dir) = make_test_store();
+        store.init_generic_graph_schema().expect("init");
+        let conn = store.connection().expect("conn");
+        conn.query(
+            "CREATE (s:Symbol {                  id: 1, workspace_id: 1, revision_id: 1,                  name: 'foo', kind: 'function', file_path: 'src/foo.rs',                  line_number: 10, signature: 'fn() -> ()',                  valid_from: 1, valid_to: -1              });",
+        )
+        .expect("insert symbol");
+        let mut stmt = conn
+            .prepare(
+                "MATCH (s:Symbol) WHERE s.name = 'foo' RETURN s.kind, s.signature, s.line_number;",
+            )
+            .expect("prepare");
+        let mut result = conn.execute(&mut stmt, vec![]).expect("execute");
+        let Some(row) = result.next() else {
+            panic!("Symbol not found after insert")
+        };
+        assert_eq!(row[0].to_string(), "function");
+        assert_eq!(row[1].to_string(), "fn() -> ()");
+        assert_eq!(row[2].to_string(), "10");
     }
 }
