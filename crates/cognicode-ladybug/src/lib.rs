@@ -43,8 +43,8 @@
 //! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` | DONE (`bc4263ca`) |
 //! | 5 | `FederationStore` | Single-table CRUD on `spaces` | DONE (`feat/e29-1-priority-5-federation-store` — multimodal-gated, validated via cypher_probe) |
 //! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | DONE (`feat/e29-1-priority-6-view-spec-store`) |
-//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | DONE (this branch) |
-//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | pending |
+//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | DONE (`feat/e29-1-priority-7-quality-store`) |
+//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | DONE (this branch) |
 //! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports | pending |
 
 use std::path::Path;
@@ -57,16 +57,12 @@ use cognicode_core::domain::aggregates::CallGraph;
 use cognicode_core::domain::ports::{
     CallGraphError, CallGraphStore,
     manifest_store::{ManifestError, ManifestStore, ScanManifest},
-    quality_store::{
-        IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
-        RuleSummary, UpsertSummary,
-    },
     report_store::{ReportError, ReportStore, ReportSummary},
     revision_store::{RevisionError, RevisionStore},
     session_store::{SessionError, SessionRow, SessionStore},
     view_spec_store::{ViewSpecPayload, ViewSpecStore, ViewSpecStoreError},
 };
-use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
+use cognicode_core::domain::value_objects::{DependencyType, Provenance, RevisionId, WorkspaceId};
 
 // `FederationStore`, `IngestCommit`, and the `Space`/`SpaceId` value
 // objects they operate on are gated behind the `multimodal` feature
@@ -129,7 +125,6 @@ impl_stub_for!(
     ReportError,
     RevisionError,
     ViewSpecStoreError,
-    QualityError,
     CallGraphError,
     cognicode_core::domain::ports::graph_error::GraphError,
 );
@@ -517,468 +512,6 @@ impl ReportStore for LadybugStore {
     }
 }
 
-// `QualityStore` is a SYNC trait (no `#[async_trait]` in
-// `cognicode-core`'s definition — the PG adapter uses
-// `block_in_place + Handle::current + handle.block_on` to drive
-// async SQL through sync method signatures). Mirror that pattern
-// here for parity; tests use `tokio::test` so `Handle::current()`
-// resolves to the test's runtime.
-impl QualityStore for LadybugStore {
-    fn issues_for_file(&self, file: &str) -> Result<Vec<QualityIssue>, QualityError> {
-        // MATCH WHERE file_path = $file, ordered by id for stable reads.
-        let conn = self
-            .connection()
-            .map_err(|e| QualityError::Store(format!("issues_for_file: {e}")))?;
-        let mut stmt = conn
-            .prepare(
-                "MATCH (i:Issue) WHERE i.file_path = $file RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status ORDER BY i.id;",
-            )
-            .map_err(|e| QualityError::Store(format!("issues_for_file: prepare: {e}")))?;
-        let mut result = conn
-            .execute(
-                &mut stmt,
-                vec![("file", lbug::Value::String(file.to_string()))],
-            )
-            .map_err(|e| QualityError::Store(format!("issues_for_file: execute: {e}")))?;
-        let mut rows = Vec::new();
-        while let Some(row) = result.next() {
-            rows.push(parse_issue_row(&row)?);
-        }
-        Ok(rows)
-    }
-
-    fn issues_for_scope(&self, scope_prefix: &str) -> Result<Vec<QualityIssue>, QualityError> {
-        // Boundary-aware: $prefix matches exactly OR $prefix + "/"
-        // (the PG adapter's `WHERE file_path = $1 OR file_path LIKE
-        // $1 || '/%'` semantics). lbug's STARTS WITH is the same as
-        // LIKE 'prefix%' — combine with exact match via OR.
-        let conn = self
-            .connection()
-            .map_err(|e| QualityError::Store(format!("issues_for_scope: {e}")))?;
-        let mut stmt = conn
-            .prepare(
-                "MATCH (i:Issue) WHERE i.file_path = $p OR i.file_path STARTS WITH $p_slash RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status ORDER BY i.id;",
-            )
-            .map_err(|e| QualityError::Store(format!("issues_for_scope: prepare: {e}")))?;
-        let mut result = conn
-            .execute(
-                &mut stmt,
-                vec![
-                    ("p", lbug::Value::String(scope_prefix.to_string())),
-                    ("p_slash", lbug::Value::String(format!("{scope_prefix}/"))),
-                ],
-            )
-            .map_err(|e| QualityError::Store(format!("issues_for_scope: execute: {e}")))?;
-        let mut rows = Vec::new();
-        while let Some(row) = result.next() {
-            rows.push(parse_issue_row(&row)?);
-        }
-        Ok(rows)
-    }
-
-    fn issues_at_line(&self, file: &str, line: u32) -> Result<Vec<QualityIssue>, QualityError> {
-        let conn = self
-            .connection()
-            .map_err(|e| QualityError::Store(format!("issues_at_line: {e}")))?;
-        let mut stmt = conn
-            .prepare(
-                "MATCH (i:Issue) WHERE i.file_path = $file AND i.line = $line RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status ORDER BY i.id;",
-            )
-            .map_err(|e| QualityError::Store(format!("issues_at_line: prepare: {e}")))?;
-        let mut result = conn
-            .execute(
-                &mut stmt,
-                vec![
-                    ("file", lbug::Value::String(file.to_string())),
-                    ("line", lbug::Value::Int64(line as i64)),
-                ],
-            )
-            .map_err(|e| QualityError::Store(format!("issues_at_line: execute: {e}")))?;
-        let mut rows = Vec::new();
-        while let Some(row) = result.next() {
-            rows.push(parse_issue_row(&row)?);
-        }
-        Ok(rows)
-    }
-
-    fn issue_by_id(&self, id: i64) -> Result<Option<QualityIssue>, QualityError> {
-        let conn = self
-            .connection()
-            .map_err(|e| QualityError::Store(format!("issue_by_id: {e}")))?;
-        let mut stmt = conn
-            .prepare(
-                "MATCH (i:Issue) WHERE i.id = $id RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status;",
-            )
-            .map_err(|e| QualityError::Store(format!("issue_by_id: prepare: {e}")))?;
-        let mut result = conn
-            .execute(&mut stmt, vec![("id", lbug::Value::Int64(id))])
-            .map_err(|e| QualityError::Store(format!("issue_by_id: execute: {e}")))?;
-        let Some(row) = result.next() else {
-            return Ok(None);
-        };
-        Ok(Some(parse_issue_row(&row)?))
-    }
-
-    fn rule_summary(&self, rule_id: &str) -> Result<RuleSummary, QualityError> {
-        // Compact summary: description from Rule node + open count
-        // from Issue nodes with status = 'open' for this rule_id.
-        let conn = self
-            .connection()
-            .map_err(|e| QualityError::Store(format!("rule_summary: {e}")))?;
-        let mut stmt = conn
-            .prepare(
-                "MATCH (r:Rule) WHERE r.rule_id = $rid OPTIONAL MATCH (i:Issue) WHERE i.rule_id = $rid AND i.status = 'open' WITH r, count(i) AS open_cnt RETURN r.description, open_cnt;",
-            )
-            .map_err(|e| QualityError::Store(format!("rule_summary: prepare: {e}")))?;
-        let mut result = conn
-            .execute(
-                &mut stmt,
-                vec![("rid", lbug::Value::String(rule_id.to_string()))],
-            )
-            .map_err(|e| QualityError::Store(format!("rule_summary: execute: {e}")))?;
-        let Some(row) = result.next() else {
-            // No rule row — default description to rule_id with 0 count.
-            return Ok(RuleSummary {
-                rule_id: rule_id.to_string(),
-                description: rule_id.to_string(),
-                open_count: 0,
-            });
-        };
-        let description = match &row[0] {
-            lbug::Value::Null(_) => rule_id.to_string(),
-            other => other.to_string(),
-        };
-        let open_count = match &row[1] {
-            lbug::Value::Int64(n) => *n as usize,
-            lbug::Value::Int32(n) => *n as usize,
-            _ => 0,
-        };
-        Ok(RuleSummary {
-            rule_id: rule_id.to_string(),
-            description,
-            open_count,
-        })
-    }
-
-    fn quality_gate(&self, workspace_id: Option<&str>) -> Result<QualityGateSummary, QualityError> {
-        // Read the latest Baseline for the workspace (or default
-        // "default" workspace if None — matches the PG adapter's
-        // `workspace_id IS NULL OR = $1` semantics, but lbug needs
-        // the predicate expressed as a ternary).
-        let ws = workspace_id.unwrap_or("default");
-        let conn = self
-            .connection()
-            .map_err(|e| QualityError::Store(format!("quality_gate: {e}")))?;
-
-        // Latest baseline for this workspace.
-        let mut bl_stmt = conn
-            .prepare(
-                "MATCH (b:Baseline) WHERE b.workspace_id = $ws RETURN b.rating, b.total_issues, b.blockers, b.criticals, b.debt_minutes, b.snapshot_at;",
-            )
-            .map_err(|e| QualityError::Store(format!("quality_gate: baseline prepare: {e}")))?;
-        let mut bl_result = conn
-            .execute(
-                &mut bl_stmt,
-                vec![("ws", lbug::Value::String(ws.to_string()))],
-            )
-            .map_err(|e| QualityError::Store(format!("quality_gate: baseline execute: {e}")))?;
-        let Some(bl_row) = bl_result.next() else {
-            return Ok(QualityGateSummary::default());
-        };
-        let rating = match &bl_row[0] {
-            lbug::Value::Null(_) => None,
-            other => Some(other.to_string()),
-        };
-        let total_issues = match &bl_row[1] {
-            lbug::Value::Int64(n) => *n as usize,
-            lbug::Value::Int32(n) => *n as usize,
-            _ => 0,
-        };
-        let blockers = match &bl_row[2] {
-            lbug::Value::Int64(n) => *n as usize,
-            lbug::Value::Int32(n) => *n as usize,
-            _ => 0,
-        };
-        let criticals = match &bl_row[3] {
-            lbug::Value::Int64(n) => *n as usize,
-            lbug::Value::Int32(n) => *n as usize,
-            _ => 0,
-        };
-        let debt_minutes = match &bl_row[4] {
-            lbug::Value::Int64(n) => *n.max(&0) as u64,
-            lbug::Value::Int32(n) => *n.max(&0) as u64,
-            _ => 0,
-        };
-        let last_run = match &bl_row[5] {
-            lbug::Value::Null(_) => None,
-            other => Some(other.to_string()),
-        };
-        Ok(QualityGateSummary {
-            rating,
-            total_issues,
-            blockers,
-            criticals,
-            debt_minutes,
-            last_run,
-        })
-    }
-
-    fn open_issues_count(&self, workspace_id: Option<&str>) -> Result<usize, QualityError> {
-        let ws = workspace_id.unwrap_or("default");
-        let conn = self
-            .connection()
-            .map_err(|e| QualityError::Store(format!("open_issues_count: {e}")))?;
-        let mut stmt = conn
-            .prepare(
-                "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.status = 'open' RETURN count(i);",
-            )
-            .map_err(|e| QualityError::Store(format!("open_issues_count: prepare: {e}")))?;
-        let mut result = conn
-            .execute(&mut stmt, vec![("ws", lbug::Value::String(ws.to_string()))])
-            .map_err(|e| QualityError::Store(format!("open_issues_count: execute: {e}")))?;
-        let Some(row) = result.next() else {
-            return Ok(0);
-        };
-        let count = match &row[0] {
-            lbug::Value::Int64(n) => *n as usize,
-            lbug::Value::Int32(n) => *n as usize,
-            _ => 0,
-        };
-        Ok(count)
-    }
-
-    fn issues_for_workspace(
-        &self,
-        workspace_id: Option<&str>,
-        filter: &IssueFilter,
-    ) -> Result<Vec<QualityIssue>, QualityError> {
-        // Optional filters are AND-combined. Build the WHERE clause
-        // dynamically — `None` means "no filter on this dimension".
-        let ws = workspace_id.unwrap_or("default");
-        let mut cypher = String::from("MATCH (i:Issue) WHERE i.workspace_id = $ws");
-        if filter.severity.is_some() {
-            cypher.push_str(" AND i.severity = $sev");
-        }
-        if filter.category.is_some() {
-            cypher.push_str(" AND i.category = $cat");
-        }
-        if filter.status.is_some() {
-            cypher.push_str(" AND i.status = $stat");
-        }
-        if filter.file_prefix.is_some() {
-            // Same boundary-aware pattern as `issues_for_scope`.
-            cypher.push_str(" AND (i.file_path = $fp OR i.file_path STARTS WITH $fp_slash)");
-        }
-        cypher.push_str(" RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status ORDER BY i.id");
-        if let Some(limit) = filter.limit {
-            cypher.push_str(&format!(" LIMIT {limit}"));
-        }
-        cypher.push(';');
-
-        let conn = self
-            .connection()
-            .map_err(|e| QualityError::Store(format!("issues_for_workspace: {e}")))?;
-        let mut stmt = conn
-            .prepare(&cypher)
-            .map_err(|e| QualityError::Store(format!("issues_for_workspace: prepare: {e}")))?;
-
-        let mut params: Vec<(&str, lbug::Value)> =
-            vec![("ws", lbug::Value::String(ws.to_string()))];
-        if let Some(s) = &filter.severity {
-            params.push(("sev", lbug::Value::String(s.clone())));
-        }
-        if let Some(c) = &filter.category {
-            params.push(("cat", lbug::Value::String(c.clone())));
-        }
-        if let Some(s) = &filter.status {
-            params.push(("stat", lbug::Value::String(s.clone())));
-        }
-        if let Some(p) = &filter.file_prefix {
-            params.push(("fp", lbug::Value::String(p.clone())));
-            params.push(("fp_slash", lbug::Value::String(format!("{p}/"))));
-        }
-
-        let mut result = conn
-            .execute(&mut stmt, params)
-            .map_err(|e| QualityError::Store(format!("issues_for_workspace: execute: {e}")))?;
-        let mut rows = Vec::new();
-        while let Some(row) = result.next() {
-            rows.push(parse_issue_row(&row)?);
-        }
-        Ok(rows)
-    }
-
-    fn insert_issues(&self, issues: &[NewIssue]) -> Result<UpsertSummary, QualityError> {
-        // Upsert by natural key `(workspace_id, rule_id, file_path, line)`
-        // — same as the PG adapter's
-        // `ON CONFLICT (workspace_id, rule_id, file_path, line) DO UPDATE`
-        // semantics. For each issue, read-then-conditional-write.
-        let mut summary = UpsertSummary::default();
-        let conn = self
-            .connection()
-            .map_err(|e| QualityError::Store(format!("insert_issues: {e}")))?;
-
-        for issue in issues {
-            // Step 1: existence check.
-            let mut check_stmt = conn
-                .prepare(
-                    "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.rule_id = $rid AND i.file_path = $fp AND i.line = $line RETURN i.id;",
-                )
-                .map_err(|e| QualityError::Store(format!("insert_issues: check prepare: {e}")))?;
-            let mut existing = conn
-                .execute(
-                    &mut check_stmt,
-                    vec![
-                        ("ws", lbug::Value::String(issue.workspace_id.clone())),
-                        ("rid", lbug::Value::String(issue.rule_id.clone())),
-                        ("fp", lbug::Value::String(issue.file_path.clone())),
-                        ("line", lbug::Value::Int64(issue.line as i64)),
-                    ],
-                )
-                .map_err(|e| QualityError::Store(format!("insert_issues: check execute: {e}")))?;
-
-            if existing.next().is_some() {
-                // Step 2a: UPDATE the existing row.
-                let mut upd_stmt = conn
-                    .prepare(
-                        "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.rule_id = $rid AND i.file_path = $fp AND i.line = $line SET i.severity = $sev, i.category = $cat, i.message = $msg, i.status = $stat;",
-                    )
-                    .map_err(|e| {
-                        QualityError::Store(format!("insert_issues: update prepare: {e}"))
-                    })?;
-                conn.execute(
-                    &mut upd_stmt,
-                    vec![
-                        ("ws", lbug::Value::String(issue.workspace_id.clone())),
-                        ("rid", lbug::Value::String(issue.rule_id.clone())),
-                        ("fp", lbug::Value::String(issue.file_path.clone())),
-                        ("line", lbug::Value::Int64(issue.line as i64)),
-                        ("sev", lbug::Value::String(issue.severity.clone())),
-                        ("cat", lbug::Value::String(issue.category.clone())),
-                        ("msg", lbug::Value::String(issue.message.clone())),
-                        ("stat", lbug::Value::String(issue.status.clone())),
-                    ],
-                )
-                .map_err(|e| QualityError::Store(format!("insert_issues: update execute: {e}")))?;
-                summary.updated += 1;
-            } else {
-                // Step 2b: CREATE a new row.
-                let mut ins_stmt = conn
-                    .prepare(
-                        "CREATE (i:Issue {workspace_id: $ws, rule_id: $rid, severity: $sev, category: $cat, file_path: $fp, line: $line, message: $msg, status: $stat});",
-                    )
-                    .map_err(|e| {
-                        QualityError::Store(format!("insert_issues: insert prepare: {e}"))
-                    })?;
-                conn.execute(
-                    &mut ins_stmt,
-                    vec![
-                        ("ws", lbug::Value::String(issue.workspace_id.clone())),
-                        ("rid", lbug::Value::String(issue.rule_id.clone())),
-                        ("sev", lbug::Value::String(issue.severity.clone())),
-                        ("cat", lbug::Value::String(issue.category.clone())),
-                        ("fp", lbug::Value::String(issue.file_path.clone())),
-                        ("line", lbug::Value::Int64(issue.line as i64)),
-                        ("msg", lbug::Value::String(issue.message.clone())),
-                        ("stat", lbug::Value::String(issue.status.clone())),
-                    ],
-                )
-                .map_err(|e| QualityError::Store(format!("insert_issues: insert execute: {e}")))?;
-                summary.inserted += 1;
-            }
-        }
-        Ok(summary)
-    }
-
-    fn delete_issue(
-        &self,
-        workspace_id: &str,
-        rule_id: &str,
-        file_path: &str,
-        line: u32,
-    ) -> Result<bool, QualityError> {
-        // MATCH WHERE natural key + DELETE. Returns Ok(true) /
-        // Ok(false) via the same pre-check pattern used elsewhere.
-        let conn = self
-            .connection()
-            .map_err(|e| QualityError::Store(format!("delete_issue: {e}")))?;
-
-        // Step 1: existence check.
-        let mut check_stmt = conn
-            .prepare(
-                "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.rule_id = $rid AND i.file_path = $fp AND i.line = $line RETURN i.id;",
-            )
-            .map_err(|e| QualityError::Store(format!("delete_issue: check prepare: {e}")))?;
-        let mut existing = conn
-            .execute(
-                &mut check_stmt,
-                vec![
-                    ("ws", lbug::Value::String(workspace_id.to_string())),
-                    ("rid", lbug::Value::String(rule_id.to_string())),
-                    ("fp", lbug::Value::String(file_path.to_string())),
-                    ("line", lbug::Value::Int64(line as i64)),
-                ],
-            )
-            .map_err(|e| QualityError::Store(format!("delete_issue: check execute: {e}")))?;
-        if existing.next().is_none() {
-            return Ok(false);
-        }
-
-        // Step 2: DELETE.
-        let mut del_stmt = conn
-            .prepare(
-                "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.rule_id = $rid AND i.file_path = $fp AND i.line = $line DELETE i;",
-            )
-            .map_err(|e| QualityError::Store(format!("delete_issue: prepare: {e}")))?;
-        conn.execute(
-            &mut del_stmt,
-            vec![
-                ("ws", lbug::Value::String(workspace_id.to_string())),
-                ("rid", lbug::Value::String(rule_id.to_string())),
-                ("fp", lbug::Value::String(file_path.to_string())),
-                ("line", lbug::Value::Int64(line as i64)),
-            ],
-        )
-        .map_err(|e| QualityError::Store(format!("delete_issue: execute: {e}")))?;
-        Ok(true)
-    }
-}
-
-/// Row mapper for `Issue` queries — shared by `issues_for_file`,
-/// `issues_for_scope`, `issues_at_line`, `issue_by_id`, and
-/// `issues_for_workspace`. Column order must match the RETURN
-/// clauses above.
-fn parse_issue_row(row: &[lbug::Value]) -> Result<QualityIssue, QualityError> {
-    let id = match &row[0] {
-        lbug::Value::Int64(n) => *n,
-        lbug::Value::Int32(n) => *n as i64,
-        other => {
-            return Err(QualityError::Store(format!(
-                "parse_issue_row: unexpected id type: {other:?}"
-            )));
-        }
-    };
-    let line = match &row[5] {
-        lbug::Value::Int64(n) => (*n).max(0) as u32,
-        lbug::Value::Int32(n) => (*n).max(0) as u32,
-        other => {
-            return Err(QualityError::Store(format!(
-                "parse_issue_row: unexpected line type: {other:?}"
-            )));
-        }
-    };
-    Ok(QualityIssue {
-        id,
-        rule_id: row[1].to_string(),
-        severity: row[2].to_string(),
-        category: row[3].to_string(),
-        file_path: row[4].to_string(),
-        line,
-        message: row[6].to_string(),
-        status: row[7].to_string(),
-    })
-}
-
 #[async_trait]
 impl ViewSpecStore for LadybugStore {
     async fn save(
@@ -1044,28 +577,541 @@ impl ViewSpecStore for LadybugStore {
 impl CallGraphStore for LadybugStore {
     async fn save_call_graph_ws(
         &self,
-        _graph: &CallGraph,
-        _ws: &WorkspaceId,
+        graph: &CallGraph,
+        ws: &WorkspaceId,
     ) -> Result<RevisionId, CallGraphError> {
-        // PHASE 1 STUB.
-        Err(CallGraphError::Store(
-            "(phase 1 stub — see lib.rs port-impl)".into(),
-        ))
+        // ADR-028 §3 `save_call_graph_ws(graph, ws)` — atomic
+        // demote-prior-head + open-new-revision + delete-prior-nodes+edges
+        // + insert-new-nodes+edges. The PG adapter uses
+        // `PostgresRepository::save_call_graph_ws` which atomically
+        // composes the demote/create/delete/insert into one tx; lbug
+        // 0.19 has no public tx handle so we open a single
+        // `Connection` and run the demote+create as ONE multi-pattern
+        // Cypher (the same `WITH count()` pivot trick used by
+        // Priority 4 `RevisionStore::create_revision_for_ws` — see
+        // the comment there for why the parameter binding survives
+        // across the `SET` scope). The symbols + edges are inserted
+        // in two follow-up statements that share the connection; if
+        // any of the inserts fails, the graph is left in a partial
+        // state (a future follow-up can compose this into a single
+        // multi-statement Cypher per graph).
+        let conn = self
+            .connection()
+            .map_err(|e| CallGraphError::Store(format!("save_call_graph_ws: {e}")))?;
+
+        // Step 1: demote prior head + create new head in one Cypher.
+        let mut rev_stmt = conn
+            .prepare(
+                "MATCH (old:GraphRevision) WHERE old.workspace_id = $ws AND old.head_of = true SET old.head_of = false WITH count(old) AS _demoted OPTIONAL MATCH (r:GraphRevision) WHERE r.workspace_id = $ws WITH $ws AS ws, coalesce(max(r.revision_id), 0) AS max_rev CREATE (new:GraphRevision {workspace_id: ws, revision_id: max_rev + 1, head_of: true}) RETURN new.revision_id;",
+            )
+            .map_err(|e| CallGraphError::Store(format!("save_call_graph_ws: rev prepare: {e}")))?;
+        let mut rev_result = conn
+            .execute(
+                &mut rev_stmt,
+                vec![("ws", lbug::Value::String(ws.to_string()))],
+            )
+            .map_err(|e| CallGraphError::Store(format!("save_call_graph_ws: rev execute: {e}")))?;
+        let Some(rev_row) = rev_result.next() else {
+            return Err(CallGraphError::Store(
+                "save_call_graph_ws: CREATE revision produced no RETURN row".into(),
+            ));
+        };
+        let rev_id = match &rev_row[0] {
+            lbug::Value::Int64(n) => RevisionId(*n as u64),
+            lbug::Value::Int32(n) => RevisionId(*n as u64),
+            other => {
+                return Err(CallGraphError::Store(format!(
+                    "save_call_graph_ws: unexpected revision_id type: {other:?}"
+                )));
+            }
+        };
+
+        // Step 2: INSERT every symbol via read-then-conditional-write.
+        // Symbols are scoped by `(workspace_id, revision_id, fqn)` —
+        // the PG UNIQUE constraint. lbug 0.19 NODE TABLEs only
+        // support single-column PKs, so we use `id SERIAL PRIMARY
+        // KEY` (synthetic) and enforce the natural key at the
+        // application layer. The same FQN can appear in multiple
+        // revisions of the same workspace (this is the common case
+        // when re-saving an updated graph).
+        for symbol in graph.symbols() {
+            // Existence check on (ws, rev, fqn).
+            let mut check_stmt = conn
+                .prepare(
+                    "MATCH (s:GraphSymbol) WHERE s.workspace_id = $ws AND s.revision_id = $rev AND s.fqn = $fqn RETURN s.id;",
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: sym check prepare: {e}"))
+                })?;
+            let mut existing = conn
+                .execute(
+                    &mut check_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(ws.to_string())),
+                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
+                        (
+                            "fqn",
+                            lbug::Value::String(symbol.fully_qualified_name().to_string()),
+                        ),
+                    ],
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: sym check execute: {e}"))
+                })?;
+
+            let sig_str = match symbol.signature() {
+                Some(sig) => sig.to_string(),
+                None => String::new(),
+            };
+            if existing.next().is_some() {
+                // UPDATE existing row.
+                let mut upd_stmt = conn
+                    .prepare(
+                        "MATCH (s:GraphSymbol) WHERE s.workspace_id = $ws AND s.revision_id = $rev AND s.fqn = $fqn SET s.kind = $kind, s.name = $name, s.file_path = $file, s.line = $line, s.signature = $sig;",
+                    )
+                    .map_err(|e| {
+                        CallGraphError::Store(format!("save_call_graph_ws: sym update prepare: {e}"))
+                    })?;
+                conn.execute(
+                    &mut upd_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(ws.to_string())),
+                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
+                        (
+                            "fqn",
+                            lbug::Value::String(symbol.fully_qualified_name().to_string()),
+                        ),
+                        ("kind", lbug::Value::String(symbol.kind().to_string())),
+                        ("name", lbug::Value::String(symbol.name().to_string())),
+                        (
+                            "file",
+                            lbug::Value::String(symbol.location().file().to_string()),
+                        ),
+                        ("line", lbug::Value::Int64(symbol.location().line() as i64)),
+                        ("sig", lbug::Value::String(sig_str)),
+                    ],
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: sym update execute: {e}"))
+                })?;
+            } else {
+                // CREATE new row.
+                let mut ins_stmt = conn
+                    .prepare(
+                        "CREATE (s:GraphSymbol {workspace_id: $ws, revision_id: $rev, fqn: $fqn, kind: $kind, name: $name, file_path: $file, line: $line, signature: $sig});",
+                    )
+                    .map_err(|e| {
+                        CallGraphError::Store(format!("save_call_graph_ws: sym insert prepare: {e}"))
+                    })?;
+                conn.execute(
+                    &mut ins_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(ws.to_string())),
+                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
+                        (
+                            "fqn",
+                            lbug::Value::String(symbol.fully_qualified_name().to_string()),
+                        ),
+                        ("kind", lbug::Value::String(symbol.kind().to_string())),
+                        ("name", lbug::Value::String(symbol.name().to_string())),
+                        (
+                            "file",
+                            lbug::Value::String(symbol.location().file().to_string()),
+                        ),
+                        ("line", lbug::Value::Int64(symbol.location().line() as i64)),
+                        ("sig", lbug::Value::String(sig_str)),
+                    ],
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: sym insert execute: {e}"))
+                })?;
+            }
+        }
+
+        // Step 3: INSERT every edge. Edges are scoped by
+        // `(workspace_id, revision_id, source_id, target_id,
+        // dep_type)` — the PG UNIQUE constraint. Same synthetic
+        // PK + read-then-conditional-write pattern.
+        for (source, target, dep_type, provenance, confidence) in graph.edges_with_metadata() {
+            let mut check_stmt = conn
+                .prepare(
+                    "MATCH (e:GraphEdge) WHERE e.workspace_id = $ws AND e.revision_id = $rev AND e.source_id = $src AND e.target_id = $tgt AND e.dep_type = $dt RETURN e.id;",
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: edge check prepare: {e}"))
+                })?;
+            let mut existing = conn
+                .execute(
+                    &mut check_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(ws.to_string())),
+                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
+                        ("src", lbug::Value::String(source.to_string())),
+                        ("tgt", lbug::Value::String(target.to_string())),
+                        ("dt", lbug::Value::String(dep_type.to_string())),
+                    ],
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: edge check execute: {e}"))
+                })?;
+
+            if existing.next().is_some() {
+                let mut upd_stmt = conn
+                    .prepare(
+                        "MATCH (e:GraphEdge) WHERE e.workspace_id = $ws AND e.revision_id = $rev AND e.source_id = $src AND e.target_id = $tgt AND e.dep_type = $dt SET e.provenance = $prov, e.confidence = $conf;",
+                    )
+                    .map_err(|e| {
+                        CallGraphError::Store(format!("save_call_graph_ws: edge update prepare: {e}"))
+                    })?;
+                conn.execute(
+                    &mut upd_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(ws.to_string())),
+                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
+                        ("src", lbug::Value::String(source.to_string())),
+                        ("tgt", lbug::Value::String(target.to_string())),
+                        ("dt", lbug::Value::String(dep_type.to_string())),
+                        ("prov", lbug::Value::String(provenance.to_string())),
+                        ("conf", lbug::Value::Double(confidence)),
+                    ],
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: edge update execute: {e}"))
+                })?;
+            } else {
+                let mut ins_stmt = conn
+                    .prepare(
+                        "CREATE (e:GraphEdge {workspace_id: $ws, revision_id: $rev, source_id: $src, target_id: $tgt, dep_type: $dt, provenance: $prov, confidence: $conf});",
+                    )
+                    .map_err(|e| {
+                        CallGraphError::Store(format!("save_call_graph_ws: edge insert prepare: {e}"))
+                    })?;
+                conn.execute(
+                    &mut ins_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(ws.to_string())),
+                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
+                        ("src", lbug::Value::String(source.to_string())),
+                        ("tgt", lbug::Value::String(target.to_string())),
+                        ("dt", lbug::Value::String(dep_type.to_string())),
+                        ("prov", lbug::Value::String(provenance.to_string())),
+                        ("conf", lbug::Value::Double(confidence)),
+                    ],
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: edge insert execute: {e}"))
+                })?;
+            }
+        }
+
+        Ok(rev_id)
     }
 
     async fn load_call_graph_ws(
         &self,
-        _ws: &WorkspaceId,
-        _revision: RevisionId,
+        ws: &WorkspaceId,
+        revision: RevisionId,
     ) -> Result<Option<CallGraph>, CallGraphError> {
-        Ok(None)
+        // Read all symbols + edges for `(ws, revision)` and rebuild
+        // the CallGraph aggregate. We use the location.fqn as the
+        // primary lookup key for symbols (it's unique per workspace
+        // and stable across loads).
+        let conn = self
+            .connection()
+            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: {e}")))?;
+
+        // Pre-check: if there are NO symbols AND NO edges for this
+        // (ws, revision), return None — distinguishes "no data"
+        // from "empty data" (lbug has no way to know whether an
+        // empty graph was actually saved or just never existed).
+        // We use a single OPTIONAL MATCH per table and combine via
+        // WITH — only the first row's count is meaningful.
+        let mut pre_stmt = conn
+            .prepare(
+                "OPTIONAL MATCH (s:GraphSymbol) WHERE s.workspace_id = $ws AND s.revision_id = $rev WITH count(s) AS sym_cnt OPTIONAL MATCH (e:GraphEdge) WHERE e.workspace_id = $ws AND e.revision_id = $rev WITH sym_cnt, count(e) AS edge_cnt RETURN sym_cnt, edge_cnt;",
+            )
+            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: pre prepare: {e}")))?;
+        let mut pre_result = conn
+            .execute(
+                &mut pre_stmt,
+                vec![
+                    ("ws", lbug::Value::String(ws.to_string())),
+                    ("rev", lbug::Value::Int64(revision.get() as i64)),
+                ],
+            )
+            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: pre execute: {e}")))?;
+        let Some(pre_row) = pre_result.next() else {
+            return Ok(None);
+        };
+        let sym_cnt = match &pre_row[0] {
+            lbug::Value::Int64(n) => *n,
+            lbug::Value::Int32(n) => *n as i64,
+            _ => 0,
+        };
+        let edge_cnt = match &pre_row[1] {
+            lbug::Value::Int64(n) => *n,
+            lbug::Value::Int32(n) => *n as i64,
+            _ => 0,
+        };
+        if sym_cnt == 0 && edge_cnt == 0 {
+            return Ok(None);
+        }
+
+        // Symbols
+        let mut sym_stmt = conn
+            .prepare(
+                "MATCH (s:GraphSymbol) WHERE s.workspace_id = $ws AND s.revision_id = $rev RETURN s.id, s.fqn, s.kind, s.name, s.file_path, s.line, s.signature;",
+            )
+            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: sym prepare: {e}")))?;
+        let mut sym_result = conn
+            .execute(
+                &mut sym_stmt,
+                vec![
+                    ("ws", lbug::Value::String(ws.to_string())),
+                    ("rev", lbug::Value::Int64(revision.get() as i64)),
+                ],
+            )
+            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: sym execute: {e}")))?;
+
+        let mut graph = CallGraph::new();
+        let mut symbol_count = 0usize;
+        while let Some(row) = sym_result.next() {
+            let s = parse_graph_symbol_row(&row)?;
+            graph.add_symbol(s);
+            symbol_count += 1;
+        }
+
+        // Edges
+        let mut edge_stmt = conn
+            .prepare(
+                "MATCH (e:GraphEdge) WHERE e.workspace_id = $ws AND e.revision_id = $rev RETURN e.source_id, e.target_id, e.dep_type, e.provenance, e.confidence;",
+            )
+            .map_err(|e| {
+                CallGraphError::Store(format!("load_call_graph_ws: edge prepare: {e}"))
+            })?;
+        let mut edge_result = conn
+            .execute(
+                &mut edge_stmt,
+                vec![
+                    ("ws", lbug::Value::String(ws.to_string())),
+                    ("rev", lbug::Value::Int64(revision.get() as i64)),
+                ],
+            )
+            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: edge execute: {e}")))?;
+        while let Some(row) = edge_result.next() {
+            let (source_id, target_id, dep_type, confidence) = parse_graph_edge_row(&row)?;
+            let provenance = parse_provenance(&row[3])?;
+            graph
+                .add_dependency_with_provenance(
+                    &source_id,
+                    &target_id,
+                    dep_type,
+                    // Map the stored Provenance → ExtractionContext
+                    // the same way ConfidenceRules does it on the
+                    // write side: Extracted → DirectExtraction,
+                    // Inferred/Manual/Tested → matching variant,
+                    // Ambiguous → Unresolved.
+                    match provenance {
+                        Provenance::Extracted => {
+                            cognicode_core::domain::services::ExtractionContext::DirectExtraction
+                        }
+                        Provenance::Inferred => {
+                            cognicode_core::domain::services::ExtractionContext::Heuristic {
+                                score: confidence,
+                            }
+                        }
+                        Provenance::Ambiguous => {
+                            cognicode_core::domain::services::ExtractionContext::Unresolved
+                        }
+                        Provenance::Manual => {
+                            cognicode_core::domain::services::ExtractionContext::Manual
+                        }
+                        Provenance::Tested => {
+                            cognicode_core::domain::services::ExtractionContext::Tested
+                        }
+                    },
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("load_call_graph_ws: add_dependency: {e}"))
+                })?;
+        }
+
+        if symbol_count == 0 && edge_result.next().is_none() {
+            // The pre-check above already filtered the truly-empty
+            // (no rows) case; if we got here it means the pre-check
+            // said there ARE rows but the per-table queries returned
+            // none — a race condition between the pre-check and the
+            // per-table reads. Treat as None for consistency.
+            return Ok(None);
+        }
+
+        Ok(Some(graph))
     }
 
     async fn load_call_graph_current(
         &self,
-        _ws: &WorkspaceId,
+        ws: &WorkspaceId,
     ) -> Result<Option<CallGraph>, CallGraphError> {
-        Ok(None)
+        // Resolve the head revision for the workspace via the
+        // `&self`-only helper (Priority 4's trait method requires
+        // a `&mut PgConnection` that LadybugStore cannot honor — see
+        // the head_revision_for_ws comment).
+        let head = self
+            .head_revision_for_ws(ws)
+            .await
+            .map_err(|e| CallGraphError::Store(format!("load_call_graph_current: head: {e}")))?;
+        let Some(rev) = head else {
+            return Ok(None);
+        };
+        self.load_call_graph_ws(ws, rev).await
+    }
+}
+
+/// `RevisionStore::head_revision` body extracted to a
+/// `&self`-only helper so tests can exercise the head-resolution
+/// path without relying on the trait's `&mut PgConnection`
+/// parameter (which LadybugStore cannot honor — see the comment
+/// in the trait impl above for the limitation).
+///
+/// This duplicates the Cypher that Priority 4's
+/// `RevisionStore::head_revision` impl uses; when Priority 4 is
+/// merged, the trait method will be wired and the tests can drop
+/// this helper.
+impl LadybugStore {
+    pub(crate) async fn head_revision_for_ws(
+        &self,
+        ws: &WorkspaceId,
+    ) -> Result<Option<RevisionId>, CallGraphError> {
+        let conn = self
+            .connection()
+            .map_err(|e| CallGraphError::Store(format!("head_revision_for_ws: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:GraphRevision) WHERE r.workspace_id = $ws AND r.head_of = true RETURN r.revision_id;",
+            )
+            .map_err(|e| {
+                CallGraphError::Store(format!("head_revision_for_ws: prepare: {e}"))
+            })?;
+        let mut result = conn
+            .execute(&mut stmt, vec![("ws", lbug::Value::String(ws.to_string()))])
+            .map_err(|e| CallGraphError::Store(format!("head_revision_for_ws: execute: {e}")))?;
+        let Some(row) = result.next() else {
+            return Ok(None);
+        };
+        let rev = match &row[0] {
+            lbug::Value::Int64(n) => RevisionId(*n as u64),
+            lbug::Value::Int32(n) => RevisionId(*n as u64),
+            other => {
+                return Err(CallGraphError::Store(format!(
+                    "head_revision_for_ws: unexpected type: {other:?}"
+                )));
+            }
+        };
+        Ok(Some(rev))
+    }
+}
+
+/// Row mapper for `GraphSymbol` queries. Returns a fully-constructed
+/// [`Symbol`] (the file/line/kind/name/signature fields round-trip via
+/// the Display form — lbug 0.19 has no structured types).
+fn parse_graph_symbol_row(
+    row: &[lbug::Value],
+) -> Result<cognicode_core::domain::aggregates::Symbol, CallGraphError> {
+    use cognicode_core::domain::aggregates::Symbol;
+    use cognicode_core::domain::value_objects::{Location, SymbolKind};
+    let fqn = row[1].to_string();
+    let kind_str = row[2].to_string();
+    let kind = match kind_str.as_str() {
+        "Function" | "function" => SymbolKind::Function,
+        "Method" | "method" => SymbolKind::Method,
+        "Class" | "class" => SymbolKind::Class,
+        "Struct" | "struct" => SymbolKind::Struct,
+        "Enum" | "enum" => SymbolKind::Enum,
+        "Trait" | "trait" => SymbolKind::Trait,
+        "Variable" | "variable" => SymbolKind::Variable,
+        "Constant" | "constant" => SymbolKind::Constant,
+        "Module" | "module" => SymbolKind::Module,
+        "Interface" | "interface" => SymbolKind::Interface,
+        other => {
+            return Err(CallGraphError::Store(format!(
+                "parse_graph_symbol_row: unknown kind: {other}"
+            )));
+        }
+    };
+    let file = row[4].to_string();
+    let line = match &row[5] {
+        lbug::Value::Int64(n) => (*n).max(0) as u32,
+        lbug::Value::Int32(n) => (*n).max(0) as u32,
+        other => {
+            return Err(CallGraphError::Store(format!(
+                "parse_graph_symbol_row: unexpected line type: {other:?}"
+            )));
+        }
+    };
+    let name = row[3].to_string();
+    let mut symbol = Symbol::new(name, kind, Location::new(file, line, 0));
+    symbol.set_fqn_override(&fqn);
+    // Signature round-trip is lossy on the read side (the
+    // Display form drops parameter names' types and async-ness);
+    // the PG adapter has the same constraint — signatures are
+    // reconstructable but lossy. Future PR can move to a JSON
+    // column for full fidelity once lbug has a JSON type.
+    let _sig_str = row[6].to_string();
+    Ok(symbol)
+}
+
+/// Row mapper for `GraphEdge` queries. Returns
+/// `(source_id, target_id, dep_type, confidence)` — `provenance` is
+/// read separately via `parse_provenance` because the caller needs
+/// the discriminant to pick the right `ExtractionContext` when
+/// re-adding the edge to the aggregate.
+fn parse_graph_edge_row(
+    row: &[lbug::Value],
+) -> Result<
+    (
+        cognicode_core::domain::aggregates::SymbolId,
+        cognicode_core::domain::aggregates::SymbolId,
+        DependencyType,
+        f64,
+    ),
+    CallGraphError,
+> {
+    use cognicode_core::domain::aggregates::SymbolId;
+    let source_id = SymbolId::new(row[0].to_string());
+    let target_id = SymbolId::new(row[1].to_string());
+    let dep_type = match row[2].to_string().as_str() {
+        "calls" | "Calls" => DependencyType::Calls,
+        "imports" | "Imports" => DependencyType::Imports,
+        "inherits" | "Inherits" => DependencyType::Inherits,
+        "uses_generic" | "UsesGeneric" => DependencyType::UsesGeneric,
+        "references" | "References" => DependencyType::References,
+        "defines" | "Defines" => DependencyType::Defines,
+        "annotated_by" | "AnnotatedBy" => DependencyType::AnnotatedBy,
+        "contains" | "Contains" => DependencyType::Contains,
+        other => {
+            return Err(CallGraphError::Store(format!(
+                "parse_graph_edge_row: unknown dep_type: {other}"
+            )));
+        }
+    };
+    let confidence = match &row[4] {
+        lbug::Value::Double(n) => *n,
+        lbug::Value::Int64(n) => *n as f64,
+        _ => 0.0,
+    };
+    Ok((source_id, target_id, dep_type, confidence))
+}
+
+fn parse_provenance(value: &lbug::Value) -> Result<Provenance, CallGraphError> {
+    match value.to_string().as_str() {
+        "Extracted" | "extracted" => Ok(Provenance::Extracted),
+        "Inferred" | "inferred" => Ok(Provenance::Inferred),
+        "Ambiguous" | "ambiguous" => Ok(Provenance::Ambiguous),
+        "Manual" | "manual" => Ok(Provenance::Manual),
+        "Tested" | "tested" => Ok(Provenance::Tested),
+        other => Err(CallGraphError::Store(format!(
+            "parse_provenance: unknown: {other}"
+        ))),
     }
 }
 
@@ -1110,8 +1156,6 @@ impl IngestCommit for LadybugStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    // Force lbug-on-tempdir tests to run serially (see `Cargo.toml`
-    // dev-deps note on `serial_test`).
     use serial_test::serial;
 
     /// Smoke test: the `LadybugStore::open` constructor exists and
@@ -1214,6 +1258,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn manifest_get_returns_empty_for_fresh_db() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1222,6 +1267,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn manifest_upsert_then_get_round_trips() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1243,6 +1289,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn manifest_upsert_with_optional_nulls() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1258,6 +1305,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn manifest_delete_removes_target_row() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1276,6 +1324,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn manifest_upsert_overwrites_existing_row() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -1292,438 +1341,266 @@ mod tests {
     }
 
     // --------------------------------------------------------------------
-    // QualityStore (Priority 7)
+    // CallGraphStore (Priority 8)
     // --------------------------------------------------------------------
-    //
-    // Same pattern as the per-port tests above: real lbug db in a
-    // tempdir, schema-init helper(s), exercises the 10 trait
-    // methods.
 
-    /// Apply the three QualityStore NODE TABLE DDLs once per test
-    /// database. Idempotent via `IF NOT EXISTS`.
-    ///
-    /// Note: natural uniqueness key in the trait is
-    /// `(workspace_id, rule_id, file_path, line)` (the PG UNIQUE
-    /// constraint the PG adapter relies on). lbug 0.19 NODE TABLEs
-    /// only support single-column PRIMARY KEYs, so we use
-    /// `id SERIAL PRIMARY KEY` and enforce the natural uniqueness
-    /// at the application layer (via read-then-conditional-write
-    /// in `insert_issues`).
-    fn init_quality_schema(store: &LadybugStore) {
+    use cognicode_core::domain::aggregates::{CallGraph, Symbol};
+    use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
+
+    /// Apply the CallGraphStore NODE TABLEs. The store also needs
+    /// a `GraphRevision` table (used by `save_call_graph_ws`'s
+    /// single-Cypher demote+create revision step).
+    fn init_call_graph_schema(store: &LadybugStore) {
         let conn = store.connection().expect("schema-init connection");
         conn.query(
-            "CREATE NODE TABLE IF NOT EXISTS Issue( \
+            "CREATE NODE TABLE IF NOT EXISTS GraphRevision( \
                  id SERIAL PRIMARY KEY, \
                  workspace_id STRING, \
-                 rule_id STRING, \
-                 severity STRING, \
-                 category STRING, \
+                 revision_id INT64, \
+                 head_of BOOLEAN);",
+        )
+        .expect("create GraphRevision NODE TABLE");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS GraphSymbol( \
+                 id SERIAL PRIMARY KEY, \
+                 workspace_id STRING, \
+                 revision_id INT64, \
+                 fqn STRING, \
+                 kind STRING, \
+                 name STRING, \
                  file_path STRING, \
                  line INT64, \
-                 message STRING, \
-                 status STRING);",
+                 signature STRING);",
         )
-        .expect("create Issue NODE TABLE");
+        .expect("create GraphSymbol NODE TABLE");
         conn.query(
-            "CREATE NODE TABLE IF NOT EXISTS Rule( \
-                 rule_id STRING PRIMARY KEY, \
-                 description STRING);",
+            "CREATE NODE TABLE IF NOT EXISTS GraphEdge( \
+                 id SERIAL PRIMARY KEY, \
+                 workspace_id STRING, \
+                 revision_id INT64, \
+                 source_id STRING, \
+                 target_id STRING, \
+                 dep_type STRING, \
+                 provenance STRING, \
+                 confidence DOUBLE);",
         )
-        .expect("create Rule NODE TABLE");
-        conn.query(
-            "CREATE NODE TABLE IF NOT EXISTS Baseline( \
-                 workspace_id STRING PRIMARY KEY, \
-                 rating STRING, \
-                 total_issues INT64, \
-                 blockers INT64, \
-                 criticals INT64, \
-                 debt_minutes INT64, \
-                 snapshot_at STRING);",
-        )
-        .expect("create Baseline NODE TABLE");
+        .expect("create GraphEdge NODE TABLE");
     }
 
-    fn sample_issue(ws: &str, rule: &str, file: &str, line: u32) -> NewIssue {
-        NewIssue {
-            workspace_id: ws.to_string(),
-            rule_id: rule.to_string(),
-            severity: "warning".to_string(),
-            category: "lint".to_string(),
-            file_path: file.to_string(),
-            line,
-            message: format!("violation of {rule} at {file}:{line}"),
-            status: "open".to_string(),
+    fn ws_id(s: &str) -> WorkspaceId {
+        WorkspaceId::try_new(s).expect("workspace id must be non-empty")
+    }
+
+    fn build_small_graph() -> CallGraph {
+        // A → B (Calls), A → C (Imports), B → D (Calls)
+        let mut g = CallGraph::new();
+        let a = g.add_symbol(Symbol::new(
+            "foo",
+            SymbolKind::Function,
+            Location::new("src/foo.rs", 10, 1),
+        ));
+        let b = g.add_symbol(Symbol::new(
+            "bar",
+            SymbolKind::Function,
+            Location::new("src/bar.rs", 20, 1),
+        ));
+        let c = g.add_symbol(Symbol::new(
+            "Baz",
+            SymbolKind::Class,
+            Location::new("src/baz.rs", 30, 1),
+        ));
+        let d = g.add_symbol(Symbol::new(
+            "qux",
+            SymbolKind::Function,
+            Location::new("src/qux.rs", 40, 1),
+        ));
+        g.add_dependency(&a, &b, DependencyType::Calls)
+            .expect("a→b");
+        g.add_dependency(&a, &c, DependencyType::Imports)
+            .expect("a→c");
+        g.add_dependency(&b, &d, DependencyType::Calls)
+            .expect("b→d");
+        g
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[serial]
+    async fn call_graph_save_returns_first_revision_for_fresh_workspace() {
+        let (store, _dir) = make_test_store();
+        init_call_graph_schema(&store);
+        let g = build_small_graph();
+        let rev = store
+            .save_call_graph_ws(&g, &ws_id("ws-1"))
+            .await
+            .expect("save");
+        assert_eq!(rev.get(), 1, "first save in a fresh workspace → rev 1");
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[serial]
+    async fn call_graph_save_increments_monotonically() {
+        let (store, _dir) = make_test_store();
+        init_call_graph_schema(&store);
+        let g = build_small_graph();
+        let r1 = store
+            .save_call_graph_ws(&g, &ws_id("ws-x"))
+            .await
+            .expect("s1");
+        let r2 = store
+            .save_call_graph_ws(&g, &ws_id("ws-x"))
+            .await
+            .expect("s2");
+        let r3 = store
+            .save_call_graph_ws(&g, &ws_id("ws-x"))
+            .await
+            .expect("s3");
+        assert_eq!(r1.get(), 1);
+        assert_eq!(r2.get(), 2);
+        assert_eq!(r3.get(), 3);
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[serial]
+    async fn call_graph_save_demotes_prior_head() {
+        // After save, only the latest revision has head_of=true.
+        let (store, _dir) = make_test_store();
+        init_call_graph_schema(&store);
+        let g = build_small_graph();
+        store
+            .save_call_graph_ws(&g, &ws_id("ws-d"))
+            .await
+            .expect("s1");
+        store
+            .save_call_graph_ws(&g, &ws_id("ws-d"))
+            .await
+            .expect("s2");
+        // head_revision for ws-d must be 2 (the latest).
+        let head = store
+            .head_revision_for_ws(&ws_id("ws-d"))
+            .await
+            .expect("head");
+        assert_eq!(head, Some(RevisionId(2)));
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[serial]
+    async fn call_graph_load_returns_symbols_and_edges_round_trip() {
+        let (store, _dir) = make_test_store();
+        init_call_graph_schema(&store);
+        let g = build_small_graph();
+        let rev = store
+            .save_call_graph_ws(&g, &ws_id("ws-rt"))
+            .await
+            .expect("save");
+        let loaded = store
+            .load_call_graph_ws(&ws_id("ws-rt"), rev)
+            .await
+            .expect("load")
+            .expect("present");
+        // 4 symbols round-trip.
+        let count = loaded.symbols().count();
+        assert_eq!(count, 4, "all 4 symbols round-trip");
+        // 3 edges round-trip.
+        let mut edge_count = 0;
+        for _ in loaded.edges_with_metadata() {
+            edge_count += 1;
         }
+        assert_eq!(edge_count, 3, "all 3 edges round-trip");
     }
 
     #[tokio::test]
     #[serial]
-    async fn quality_issues_for_file_returns_matching_rows() {
+    #[serial]
+    async fn call_graph_load_returns_none_for_unknown_revision() {
         let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
+        init_call_graph_schema(&store);
+        let g = build_small_graph();
         store
-            .insert_issues(&[
-                sample_issue("ws-1", "R1", "src/a.rs", 10),
-                sample_issue("ws-1", "R2", "src/a.rs", 20),
-                sample_issue("ws-1", "R1", "src/b.rs", 5),
-            ])
-            .expect("insert");
-        let rows = store.issues_for_file("src/a.rs").expect("list");
-        assert_eq!(rows.len(), 2);
-        assert!(rows.iter().all(|r| r.file_path == "src/a.rs"));
+            .save_call_graph_ws(&g, &ws_id("ws-x"))
+            .await
+            .expect("save");
+        let loaded = store
+            .load_call_graph_ws(&ws_id("ws-x"), RevisionId(999))
+            .await
+            .expect("load");
+        assert!(loaded.is_none(), "unknown revision returns None");
     }
 
     #[tokio::test]
     #[serial]
-    async fn quality_issues_for_file_empty_when_no_match() {
+    #[serial]
+    async fn call_graph_load_current_returns_head_revision_graph() {
         let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
+        init_call_graph_schema(&store);
+        let g = build_small_graph();
         store
-            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
-            .expect("insert");
-        let rows = store.issues_for_file("src/none.rs").expect("list");
-        assert!(rows.is_empty());
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn quality_issues_for_scope_boundary_aware() {
-        let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
+            .save_call_graph_ws(&g, &ws_id("ws-c"))
+            .await
+            .expect("save 1");
         store
-            .insert_issues(&[
-                sample_issue("ws-1", "R1", "src", 1),
-                sample_issue("ws-1", "R1", "src/a.rs", 10),
-                sample_issue("ws-1", "R1", "src/sub/b.rs", 20),
-                sample_issue("ws-1", "R1", "src_extra.rs", 5),
-            ])
-            .expect("insert");
-        let rows = store.issues_for_scope("src").expect("list");
-        // Boundary-aware: must match `src` + `src/*`, NOT `src_extra.rs`.
-        assert_eq!(rows.len(), 3, "boundary must exclude src_extra.rs");
-        let paths: Vec<&str> = rows.iter().map(|r| r.file_path.as_str()).collect();
-        assert!(paths.contains(&"src"));
-        assert!(paths.contains(&"src/a.rs"));
-        assert!(paths.contains(&"src/sub/b.rs"));
-        assert!(!paths.contains(&"src_extra.rs"));
+            .save_call_graph_ws(&g, &ws_id("ws-c"))
+            .await
+            .expect("save 2");
+        // Current = revision 2 (the head).
+        let loaded = store
+            .load_call_graph_current(&ws_id("ws-c"))
+            .await
+            .expect("load current")
+            .expect("present");
+        let count = loaded.symbols().count();
+        assert_eq!(count, 4);
     }
 
     #[tokio::test]
     #[serial]
-    async fn quality_issues_at_line_filters_correctly() {
+    #[serial]
+    async fn call_graph_load_current_returns_none_for_unknown_workspace() {
         let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
+        init_call_graph_schema(&store);
+        let loaded = store
+            .load_call_graph_current(&ws_id("ws-unknown"))
+            .await
+            .expect("load");
+        assert!(loaded.is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[serial]
+    async fn call_graph_save_is_scoped_to_workspace() {
+        // Two workspaces, two saves — the head for each is independent.
+        let (store, _dir) = make_test_store();
+        init_call_graph_schema(&store);
+        let g = build_small_graph();
         store
-            .insert_issues(&[
-                sample_issue("ws-1", "R1", "src/a.rs", 10),
-                sample_issue("ws-1", "R1", "src/a.rs", 20),
-                sample_issue("ws-1", "R2", "src/a.rs", 10),
-            ])
-            .expect("insert");
-        let rows = store.issues_at_line("src/a.rs", 10).expect("list");
-        assert_eq!(rows.len(), 2);
-        assert!(
-            rows.iter()
-                .all(|r| r.file_path == "src/a.rs" && r.line == 10)
-        );
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn quality_issue_by_id_returns_some_and_none() {
-        let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
+            .save_call_graph_ws(&g, &ws_id("ws-A"))
+            .await
+            .expect("a1");
         store
-            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
-            .expect("insert");
-        let id = store
-            .issues_for_file("src/a.rs")
-            .expect("list")
-            .first()
-            .expect("at least one")
-            .id;
-        let issue = store.issue_by_id(id).expect("by_id");
-        assert!(issue.is_some(), "existing id returns Some");
-        let issue = issue.expect("present");
-        assert_eq!(issue.id, id);
-        assert_eq!(issue.rule_id, "R1");
-
-        let missing = store.issue_by_id(9999).expect("by_id missing");
-        assert!(missing.is_none(), "unknown id returns None");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn quality_rule_summary_counts_open_issues() {
-        let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
-        // Create the Rule row first — the Cypher's `MATCH (r:Rule)` is
-        // required for the OPTIONAL MATCH to compose into a row.
-        let conn = store.connection().expect("conn");
-        conn.query("CREATE (r:Rule {rule_id: 'R1', description: 'no-unused-vars'});")
-            .expect("rule insert");
-        // Insert 2 open + 1 closed under the same rule_id.
+            .save_call_graph_ws(&g, &ws_id("ws-A"))
+            .await
+            .expect("a2");
         store
-            .insert_issues(&[
-                NewIssue {
-                    workspace_id: "ws-1".to_string(),
-                    rule_id: "R1".to_string(),
-                    severity: "warning".to_string(),
-                    category: "lint".to_string(),
-                    file_path: "src/a.rs".to_string(),
-                    line: 10,
-                    message: "1".to_string(),
-                    status: "open".to_string(),
-                },
-                NewIssue {
-                    workspace_id: "ws-1".to_string(),
-                    rule_id: "R1".to_string(),
-                    severity: "warning".to_string(),
-                    category: "lint".to_string(),
-                    file_path: "src/a.rs".to_string(),
-                    line: 20,
-                    message: "2".to_string(),
-                    status: "open".to_string(),
-                },
-                NewIssue {
-                    workspace_id: "ws-1".to_string(),
-                    rule_id: "R1".to_string(),
-                    severity: "warning".to_string(),
-                    category: "lint".to_string(),
-                    file_path: "src/a.rs".to_string(),
-                    line: 30,
-                    message: "3".to_string(),
-                    status: "closed".to_string(),
-                },
-            ])
-            .expect("insert");
-        let summary = store.rule_summary("R1").expect("summary");
-        assert_eq!(summary.rule_id, "R1");
-        assert_eq!(summary.description, "no-unused-vars");
-        assert_eq!(summary.open_count, 2, "only status=open counted");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn quality_quality_gate_returns_baseline_fields() {
-        let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
-        // Insert a baseline row manually.
-        let conn = store.connection().expect("conn");
-        conn.query(
-            "CREATE (b:Baseline {workspace_id: 'ws-1', rating: 'B', total_issues: 12, blockers: 1, criticals: 4, debt_minutes: 90, snapshot_at: '2026-08-02T10:00:00Z'});",
-        )
-        .expect("baseline insert");
-        let gate = store.quality_gate(Some("ws-1")).expect("gate");
-        assert_eq!(gate.rating.as_deref(), Some("B"));
-        assert_eq!(gate.total_issues, 12);
-        assert_eq!(gate.blockers, 1);
-        assert_eq!(gate.criticals, 4);
-        assert_eq!(gate.debt_minutes, 90);
-        assert_eq!(gate.last_run.as_deref(), Some("2026-08-02T10:00:00Z"));
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn quality_quality_gate_returns_default_when_no_baseline() {
-        let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
-        let gate = store.quality_gate(Some("ws-1")).expect("gate");
-        assert_eq!(gate.rating, None);
-        assert_eq!(gate.total_issues, 0);
-        assert_eq!(gate.debt_minutes, 0);
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn quality_open_issues_count_filters_by_status() {
-        let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
-        store
-            .insert_issues(&[
-                NewIssue {
-                    status: "open".to_string(),
-                    ..sample_issue("ws-1", "R1", "src/a.rs", 10)
-                },
-                NewIssue {
-                    status: "open".to_string(),
-                    ..sample_issue("ws-1", "R1", "src/a.rs", 20)
-                },
-                NewIssue {
-                    status: "closed".to_string(),
-                    ..sample_issue("ws-1", "R1", "src/a.rs", 30)
-                },
-            ])
-            .expect("insert");
-        assert_eq!(store.open_issues_count(Some("ws-1")).expect("count"), 2);
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn quality_open_issues_count_scopes_to_workspace() {
-        let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
-        store
-            .insert_issues(&[
-                sample_issue("ws-A", "R1", "src/a.rs", 10),
-                sample_issue("ws-A", "R1", "src/a.rs", 20),
-                sample_issue("ws-B", "R1", "src/b.rs", 10),
-            ])
-            .expect("insert");
-        assert_eq!(store.open_issues_count(Some("ws-A")).expect("A"), 2);
-        assert_eq!(store.open_issues_count(Some("ws-B")).expect("B"), 1);
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn quality_issues_for_workspace_filters_combined() {
-        let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
-        store
-            .insert_issues(&[
-                NewIssue {
-                    severity: "blocker".to_string(),
-                    status: "open".to_string(),
-                    ..sample_issue("ws-1", "R1", "src/a.rs", 10)
-                },
-                NewIssue {
-                    severity: "blocker".to_string(),
-                    status: "closed".to_string(),
-                    ..sample_issue("ws-1", "R1", "src/a.rs", 20)
-                },
-                NewIssue {
-                    severity: "warning".to_string(),
-                    status: "open".to_string(),
-                    ..sample_issue("ws-1", "R2", "src/a.rs", 30)
-                },
-                NewIssue {
-                    severity: "blocker".to_string(),
-                    status: "open".to_string(),
-                    ..sample_issue("ws-2", "R1", "src/b.rs", 10)
-                },
-            ])
-            .expect("insert");
-
-        // Filter: ws-1 + severity=blocker + status=open → 1 row.
-        let filter = IssueFilter {
-            severity: Some("blocker".to_string()),
-            status: Some("open".to_string()),
-            ..IssueFilter::default()
-        };
-        let rows = store
-            .issues_for_workspace(Some("ws-1"), &filter)
-            .expect("list");
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].severity, "blocker");
-        assert_eq!(rows[0].status, "open");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn quality_issues_for_workspace_respects_limit() {
-        let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
-        store
-            .insert_issues(&[
-                sample_issue("ws-1", "R1", "src/a.rs", 10),
-                sample_issue("ws-1", "R1", "src/a.rs", 20),
-                sample_issue("ws-1", "R1", "src/a.rs", 30),
-            ])
-            .expect("insert");
-        let filter = IssueFilter {
-            limit: Some(2),
-            ..IssueFilter::default()
-        };
-        let rows = store
-            .issues_for_workspace(Some("ws-1"), &filter)
-            .expect("list");
-        assert_eq!(rows.len(), 2, "limit=2 must cap the result set");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn quality_insert_issues_upserts_on_natural_key() {
-        let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
-        // First insert: 1 new row.
-        let s1 = store
-            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
-            .expect("ins1");
+            .save_call_graph_ws(&g, &ws_id("ws-B"))
+            .await
+            .expect("b1");
         assert_eq!(
-            s1,
-            UpsertSummary {
-                inserted: 1,
-                updated: 0
-            }
+            store
+                .head_revision_for_ws(&ws_id("ws-A"))
+                .await
+                .expect("h-A"),
+            Some(RevisionId(2))
         );
-
-        // Second insert with same natural key → upsert (update), no new row.
-        let mut updated = sample_issue("ws-1", "R1", "src/a.rs", 10);
-        updated.message = "updated message".to_string();
-        updated.status = "closed".to_string();
-        let s2 = store.insert_issues(&[updated]).expect("ins2");
         assert_eq!(
-            s2,
-            UpsertSummary {
-                inserted: 0,
-                updated: 1
-            }
+            store
+                .head_revision_for_ws(&ws_id("ws-B"))
+                .await
+                .expect("h-B"),
+            Some(RevisionId(1))
         );
-
-        // Verify only 1 row exists.
-        let rows = store.issues_for_file("src/a.rs").expect("list");
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].message, "updated message");
-        assert_eq!(rows[0].status, "closed");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn quality_insert_issues_counts_separately() {
-        let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
-        // 1 existing + 1 new in one batch.
-        store
-            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
-            .expect("seed");
-        let batch = vec![
-            sample_issue("ws-1", "R1", "src/a.rs", 10), // existing
-            sample_issue("ws-1", "R2", "src/b.rs", 20), // new
-        ];
-        let s = store.insert_issues(&batch).expect("batch");
-        assert_eq!(
-            s,
-            UpsertSummary {
-                inserted: 1,
-                updated: 1
-            }
-        );
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn quality_delete_issue_removes_target_row() {
-        let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
-        store
-            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
-            .expect("seed");
-        let deleted = store
-            .delete_issue("ws-1", "R1", "src/a.rs", 10)
-            .expect("delete");
-        assert!(deleted, "delete must return Ok(true)");
-        let rows = store.issues_for_file("src/a.rs").expect("list");
-        assert!(rows.is_empty());
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn quality_delete_issue_missing_returns_false() {
-        let (store, _dir) = make_test_store();
-        init_quality_schema(&store);
-        let deleted = store
-            .delete_issue("ws-1", "R-missing", "src/a.rs", 10)
-            .expect("delete");
-        assert!(!deleted, "unknown natural key returns Ok(false)");
     }
 }
