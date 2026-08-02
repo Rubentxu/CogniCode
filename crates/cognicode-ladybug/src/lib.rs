@@ -759,21 +759,271 @@ impl CallGraphStore for LadybugStore {
 impl IngestCommit for LadybugStore {
     async fn commit_revision(
         &self,
-        _ws: &WorkspaceId,
+        ws: &WorkspaceId,
         _graph: GraphDelta,
-        _manifest: ManifestDelta,
-        _report: ReportIntent,
+        manifest: ManifestDelta,
+        report: ReportIntent,
     ) -> Result<RevisionId, cognicode_core::domain::ports::CommitError> {
-        // PHASE 1 STUB. Next change: single-tx commit_revision that
-        // delegates to RevisionStore::create_revision + ManifestStore
-        // upserts + ReportStore::save_report, all within one
-        // lbug::Connection tx (matches the PostgreSQL behavior
-        // shipped in `b01671f6`).
-        Err(cognicode_core::domain::ports::CommitError::Graph(
-            cognicode_core::domain::ports::graph_error::GraphError::Storage(
-                "(phase 1 stub — see lib.rs port-impl)".to_string(),
-            ),
-        ))
+        // ADR-028 §3 `commit_revision(ws, graph, manifest, report)` —
+        // atomic 3-stage commit. The PG adapter wraps this in a
+        // single `pool.begin()` tx (failures roll back the prior
+        // stages); lbug 0.19 has no public tx handle so we open a
+        // single `Connection` and run the 3 stages as a sequence of
+        // statements against it. lbug's per-`execute` auto-commit
+        // means a failure in stage 3 leaves the work from stages
+        // 1-2 persisted (best-effort atomicity, not transactional
+        // atomicity). A future PR can either:
+        //   - Use lbug's CHECKPOINT mechanism to wrap the sequence
+        //     in an explicit recovery unit, or
+        //   - Compose all 3 stages into a single multi-statement
+        //     Cypher (subject to lbug's parser limits).
+        //
+        // **Trait/tx limitation**: this adapter is gated behind
+        // `multimodal`, which transitively pulls in
+        // `cognicode-core/multimodal`. The cargo test invocation
+        // `--features multimodal` is currently blocked by pre-existing
+        // `cognicode-core --features multimodal` debt (5+ compile
+        // errors in `federation_store.rs` and `ingest_commit.rs` PG
+        // adapter — `Pool<Postgres>` deref + missing
+        // `PostgresManifestStore<'a>` lifetime + `chrono::DateTime<Utc>`
+        // not `sqlx::Decode`); the integration tests for this port are
+        // deferred to the `fix-multimodal-feature-compile-debt-2026-08-02`
+        // follow-up. Logic is validated against lbug 0.19 via the
+        // standalone `cypher_probe` harness.
+        let conn = self.connection().map_err(|e| {
+            cognicode_core::domain::ports::CommitError::Graph(
+                cognicode_core::domain::ports::graph_error::GraphError::Storage(format!(
+                    "commit_revision: connection: {e}"
+                )),
+            )
+        })?;
+
+        // Stage 1: open new revision. Same multi-pattern Cypher with
+        // `WITH count()` pivot used by Priority 4 / 8 — see those for
+        // the rationale on why the `WITH $ws AS ws` post-`SET` form
+        // loses the parameter binding in lbug 0.19.
+        let mut rev_stmt = conn
+            .prepare(
+                "MATCH (old:GraphRevision) WHERE old.workspace_id = $ws AND old.head_of = true SET old.head_of = false WITH count(old) AS _demoted OPTIONAL MATCH (r:GraphRevision) WHERE r.workspace_id = $ws WITH $ws AS ws, coalesce(max(r.revision_id), 0) AS max_rev CREATE (new:GraphRevision {workspace_id: ws, revision_id: max_rev + 1, head_of: true}) RETURN new.revision_id;",
+            )
+            .map_err(|e| {
+                cognicode_core::domain::ports::CommitError::Graph(
+                    cognicode_core::domain::ports::graph_error::GraphError::Storage(format!(
+                        "commit_revision stage 1 (revision open) prepare: {e}"
+                    )),
+                )
+            })?;
+        let mut rev_result = conn
+            .execute(
+                &mut rev_stmt,
+                vec![("ws", lbug::Value::String(ws.to_string()))],
+            )
+            .map_err(|e| {
+                cognicode_core::domain::ports::CommitError::Graph(
+                    cognicode_core::domain::ports::graph_error::GraphError::Storage(format!(
+                        "commit_revision stage 1 (revision open) execute: {e}"
+                    )),
+                )
+            })?;
+        let Some(rev_row) = rev_result.next() else {
+            return Err(cognicode_core::domain::ports::CommitError::Graph(
+                cognicode_core::domain::ports::graph_error::GraphError::Storage(
+                    "commit_revision stage 1: CREATE revision produced no RETURN row".to_string(),
+                ),
+            ));
+        };
+        let rev_id = match &rev_row[0] {
+            lbug::Value::Int64(n) => RevisionId(*n as u64),
+            lbug::Value::Int32(n) => RevisionId(*n as u64),
+            other => {
+                return Err(cognicode_core::domain::ports::CommitError::Graph(
+                    cognicode_core::domain::ports::graph_error::GraphError::Storage(format!(
+                        "commit_revision stage 1: unexpected revision_id type: {other:?}"
+                    )),
+                ));
+            }
+        };
+
+        // Stage 2: manifest upserts. Same read-then-conditional-write
+        // as Priority 1's `ManifestStore::upsert_manifest_entry` —
+        // natural uniqueness on (workspace_id, file_path) enforced at
+        // the application layer via per-row MATCH then UPDATE/CREATE.
+        for row in &manifest.upserts {
+            // Existence check.
+            let mut check_stmt = conn
+                .prepare("MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path RETURN s.id;")
+                .map_err(|e| {
+                    cognicode_core::domain::ports::CommitError::Manifest(
+                        cognicode_core::domain::ports::manifest_store::ManifestError::Store(format!(
+                            "commit_revision stage 2 (manifest check) prepare: {e}"
+                        )),
+                    )
+                })?;
+            let mut existing = conn
+                .execute(
+                    &mut check_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(row.workspace_id.clone())),
+                        ("path", lbug::Value::String(row.file_path.clone())),
+                    ],
+                )
+                .map_err(|e| {
+                    cognicode_core::domain::ports::CommitError::Manifest(
+                        cognicode_core::domain::ports::manifest_store::ManifestError::Store(
+                            format!("commit_revision stage 2 (manifest check) execute: {e}"),
+                        ),
+                    )
+                })?;
+
+            if existing.next().is_some() {
+                // UPDATE.
+                let mut upd_stmt = conn
+                    .prepare("MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path SET s.file_type = $ftype, s.language = $lang, s.content_hash = $hash, s.mtime = $mtime, s.symbol_count = $symcnt, s.edge_count = $edgecnt, s.status = $status, s.error_msg = $errmsg;")
+                    .map_err(|e| {
+                        cognicode_core::domain::ports::CommitError::Manifest(
+                            cognicode_core::domain::ports::manifest_store::ManifestError::Store(format!(
+                                "commit_revision stage 2 (manifest update) prepare: {e}"
+                            )),
+                        )
+                    })?;
+                conn.execute(
+                    &mut upd_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(row.workspace_id.clone())),
+                        ("path", lbug::Value::String(row.file_path.clone())),
+                        ("ftype", lbug::Value::String(row.file_type.clone())),
+                        (
+                            "lang",
+                            match &row.language {
+                                Some(s) => lbug::Value::String(s.clone()),
+                                None => lbug::Value::Null(lbug::LogicalType::String),
+                            },
+                        ),
+                        ("hash", lbug::Value::String(row.content_hash.clone())),
+                        ("mtime", lbug::Value::Double(row.mtime)),
+                        ("symcnt", lbug::Value::Int32(row.symbol_count)),
+                        ("edgecnt", lbug::Value::Int32(row.edge_count)),
+                        ("status", lbug::Value::String(row.status.clone())),
+                        (
+                            "errmsg",
+                            match &row.error_msg {
+                                Some(s) => lbug::Value::String(s.clone()),
+                                None => lbug::Value::Null(lbug::LogicalType::String),
+                            },
+                        ),
+                    ],
+                )
+                .map_err(|e| {
+                    cognicode_core::domain::ports::CommitError::Manifest(
+                        cognicode_core::domain::ports::manifest_store::ManifestError::Store(
+                            format!("commit_revision stage 2 (manifest update) execute: {e}"),
+                        ),
+                    )
+                })?;
+            } else {
+                // CREATE.
+                let mut ins_stmt = conn
+                    .prepare("CREATE (s:ScanManifest {workspace_id: $ws, file_path: $path, file_type: $ftype, language: $lang, content_hash: $hash, mtime: $mtime, symbol_count: $symcnt, edge_count: $edgecnt, status: $status, error_msg: $errmsg});")
+                    .map_err(|e| {
+                        cognicode_core::domain::ports::CommitError::Manifest(
+                            cognicode_core::domain::ports::manifest_store::ManifestError::Store(format!(
+                                "commit_revision stage 2 (manifest insert) prepare: {e}"
+                            )),
+                        )
+                    })?;
+                conn.execute(
+                    &mut ins_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(row.workspace_id.clone())),
+                        ("path", lbug::Value::String(row.file_path.clone())),
+                        ("ftype", lbug::Value::String(row.file_type.clone())),
+                        (
+                            "lang",
+                            match &row.language {
+                                Some(s) => lbug::Value::String(s.clone()),
+                                None => lbug::Value::Null(lbug::LogicalType::String),
+                            },
+                        ),
+                        ("hash", lbug::Value::String(row.content_hash.clone())),
+                        ("mtime", lbug::Value::Double(row.mtime)),
+                        ("symcnt", lbug::Value::Int32(row.symbol_count)),
+                        ("edgecnt", lbug::Value::Int32(row.edge_count)),
+                        ("status", lbug::Value::String(row.status.clone())),
+                        (
+                            "errmsg",
+                            match &row.error_msg {
+                                Some(s) => lbug::Value::String(s.clone()),
+                                None => lbug::Value::Null(lbug::LogicalType::String),
+                            },
+                        ),
+                    ],
+                )
+                .map_err(|e| {
+                    cognicode_core::domain::ports::CommitError::Manifest(
+                        cognicode_core::domain::ports::manifest_store::ManifestError::Store(
+                            format!("commit_revision stage 2 (manifest insert) execute: {e}"),
+                        ),
+                    )
+                })?;
+            }
+        }
+
+        // Stage 3: save the report. Mirrors `ReportStore::save_report`
+        // (Priority 3) — single CREATE with id STRING PK + JSON-as-STRING
+        // for the report column + null-safe health_score.
+        let report = &report.summary;
+        let report_json = serde_json::to_string(&report.report).map_err(|e| {
+            cognicode_core::domain::ports::CommitError::Report(
+                cognicode_core::domain::ports::report_store::ReportError::Store(format!(
+                    "commit_revision stage 3 serialize report: {e}"
+                )),
+            )
+        })?;
+        let mut rep_stmt = conn
+            .prepare(
+                "CREATE (r:GraphReport {id: $id, workspace_id: $ws, created_at: $ts, report: $json, symbol_count: $scnt, edge_count: $ecnt, health_score: $hscore});",
+            )
+            .map_err(|e| {
+                cognicode_core::domain::ports::CommitError::Report(
+                    cognicode_core::domain::ports::report_store::ReportError::Store(format!(
+                        "commit_revision stage 3 (report insert) prepare: {e}"
+                    )),
+                )
+            })?;
+        conn.execute(
+            &mut rep_stmt,
+            vec![
+                ("id", lbug::Value::String(report.id.clone())),
+                ("ws", lbug::Value::String(ws.to_string())),
+                ("ts", lbug::Value::String(report.created_at.clone())),
+                ("json", lbug::Value::String(report_json)),
+                ("scnt", lbug::Value::Int64(report.symbol_count as i64)),
+                ("ecnt", lbug::Value::Int64(report.edge_count as i64)),
+                (
+                    "hscore",
+                    match report.health_score {
+                        Some(v) => lbug::Value::Double(v as f64),
+                        None => lbug::Value::Null(lbug::LogicalType::Double),
+                    },
+                ),
+            ],
+        )
+        .map_err(|e| {
+            cognicode_core::domain::ports::CommitError::Report(
+                cognicode_core::domain::ports::report_store::ReportError::Store(format!(
+                    "commit_revision stage 3 (report insert) execute: {e}"
+                )),
+            )
+        })?;
+
+        // Stage 4 — graph upserts. The PG adapter takes the
+        // GraphDelta but ignores it (see the trait comment); a future
+        // PR will wire Stage 4 once the Generic Graph Layer's
+        // ports (GraphWritePort, GraphNodeStore, GraphEdgeStore)
+        // are defined for the lbug adapter. Today: no-op.
+        let _graph = _graph;
+
+        Ok(rev_id)
     }
 }
 
