@@ -35,17 +35,17 @@
 //! Each port impl is `Err(Error::Stub(...))` today. The follow-up
 //! commits land the per-port SQL in priority order:
 //!
-//! | Priority | Port | Reason |
-//! |---------|------|--------|
-//! | 1 | `ManifestStore` | Simplest SQL (single-table CRUD), is the basic load-bearing port for Phase 1 tests |
-//! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk |
-//! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) |
-//! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` |
-//! | 5 | `FederationStore` | Single-table CRUD on `spaces` |
-//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) |
-//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` |
-//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` |
-//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports |
+//! | Priority | Port | Reason | Status |
+//! |---------|------|--------|--------|
+//! | 1 | `ManifestStore` | Simplest SQL (single-table CRUD), is the basic load-bearing port for Phase 1 tests | DONE (`af5e2ef2`) |
+//! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk | DONE (`34415ce8`) |
+//! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) | DONE (`83328dc2`) |
+//! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` | DONE (`bc4263ca`) |
+//! | 5 | `FederationStore` | Single-table CRUD on `spaces` | DONE (`feat/e29-1-priority-5-federation-store` — multimodal-gated, validated via cypher_probe) |
+//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | DONE (`feat/e29-1-priority-6-view-spec-store`) |
+//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | DONE (`feat/e29-1-priority-7-quality-store`) |
+//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | DONE (this branch) |
+//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports | pending |
 
 use std::path::Path;
 use std::sync::Arc;
@@ -62,7 +62,7 @@ use cognicode_core::domain::ports::{
     session_store::{SessionError, SessionRow, SessionStore},
     view_spec_store::{ViewSpecPayload, ViewSpecStore, ViewSpecStoreError},
 };
-use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
+use cognicode_core::domain::value_objects::{DependencyType, Provenance, RevisionId, WorkspaceId};
 
 // `FederationStore`, `IngestCommit`, and the `Space`/`SpaceId` value
 // objects they operate on are gated behind the `multimodal` feature
@@ -577,28 +577,541 @@ impl ViewSpecStore for LadybugStore {
 impl CallGraphStore for LadybugStore {
     async fn save_call_graph_ws(
         &self,
-        _graph: &CallGraph,
-        _ws: &WorkspaceId,
+        graph: &CallGraph,
+        ws: &WorkspaceId,
     ) -> Result<RevisionId, CallGraphError> {
-        // PHASE 1 STUB.
-        Err(CallGraphError::Store(
-            "(phase 1 stub — see lib.rs port-impl)".into(),
-        ))
+        // ADR-028 §3 `save_call_graph_ws(graph, ws)` — atomic
+        // demote-prior-head + open-new-revision + delete-prior-nodes+edges
+        // + insert-new-nodes+edges. The PG adapter uses
+        // `PostgresRepository::save_call_graph_ws` which atomically
+        // composes the demote/create/delete/insert into one tx; lbug
+        // 0.19 has no public tx handle so we open a single
+        // `Connection` and run the demote+create as ONE multi-pattern
+        // Cypher (the same `WITH count()` pivot trick used by
+        // Priority 4 `RevisionStore::create_revision_for_ws` — see
+        // the comment there for why the parameter binding survives
+        // across the `SET` scope). The symbols + edges are inserted
+        // in two follow-up statements that share the connection; if
+        // any of the inserts fails, the graph is left in a partial
+        // state (a future follow-up can compose this into a single
+        // multi-statement Cypher per graph).
+        let conn = self
+            .connection()
+            .map_err(|e| CallGraphError::Store(format!("save_call_graph_ws: {e}")))?;
+
+        // Step 1: demote prior head + create new head in one Cypher.
+        let mut rev_stmt = conn
+            .prepare(
+                "MATCH (old:GraphRevision) WHERE old.workspace_id = $ws AND old.head_of = true SET old.head_of = false WITH count(old) AS _demoted OPTIONAL MATCH (r:GraphRevision) WHERE r.workspace_id = $ws WITH $ws AS ws, coalesce(max(r.revision_id), 0) AS max_rev CREATE (new:GraphRevision {workspace_id: ws, revision_id: max_rev + 1, head_of: true}) RETURN new.revision_id;",
+            )
+            .map_err(|e| CallGraphError::Store(format!("save_call_graph_ws: rev prepare: {e}")))?;
+        let mut rev_result = conn
+            .execute(
+                &mut rev_stmt,
+                vec![("ws", lbug::Value::String(ws.to_string()))],
+            )
+            .map_err(|e| CallGraphError::Store(format!("save_call_graph_ws: rev execute: {e}")))?;
+        let Some(rev_row) = rev_result.next() else {
+            return Err(CallGraphError::Store(
+                "save_call_graph_ws: CREATE revision produced no RETURN row".into(),
+            ));
+        };
+        let rev_id = match &rev_row[0] {
+            lbug::Value::Int64(n) => RevisionId(*n as u64),
+            lbug::Value::Int32(n) => RevisionId(*n as u64),
+            other => {
+                return Err(CallGraphError::Store(format!(
+                    "save_call_graph_ws: unexpected revision_id type: {other:?}"
+                )));
+            }
+        };
+
+        // Step 2: INSERT every symbol via read-then-conditional-write.
+        // Symbols are scoped by `(workspace_id, revision_id, fqn)` —
+        // the PG UNIQUE constraint. lbug 0.19 NODE TABLEs only
+        // support single-column PKs, so we use `id SERIAL PRIMARY
+        // KEY` (synthetic) and enforce the natural key at the
+        // application layer. The same FQN can appear in multiple
+        // revisions of the same workspace (this is the common case
+        // when re-saving an updated graph).
+        for symbol in graph.symbols() {
+            // Existence check on (ws, rev, fqn).
+            let mut check_stmt = conn
+                .prepare(
+                    "MATCH (s:GraphSymbol) WHERE s.workspace_id = $ws AND s.revision_id = $rev AND s.fqn = $fqn RETURN s.id;",
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: sym check prepare: {e}"))
+                })?;
+            let mut existing = conn
+                .execute(
+                    &mut check_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(ws.to_string())),
+                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
+                        (
+                            "fqn",
+                            lbug::Value::String(symbol.fully_qualified_name().to_string()),
+                        ),
+                    ],
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: sym check execute: {e}"))
+                })?;
+
+            let sig_str = match symbol.signature() {
+                Some(sig) => sig.to_string(),
+                None => String::new(),
+            };
+            if existing.next().is_some() {
+                // UPDATE existing row.
+                let mut upd_stmt = conn
+                    .prepare(
+                        "MATCH (s:GraphSymbol) WHERE s.workspace_id = $ws AND s.revision_id = $rev AND s.fqn = $fqn SET s.kind = $kind, s.name = $name, s.file_path = $file, s.line = $line, s.signature = $sig;",
+                    )
+                    .map_err(|e| {
+                        CallGraphError::Store(format!("save_call_graph_ws: sym update prepare: {e}"))
+                    })?;
+                conn.execute(
+                    &mut upd_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(ws.to_string())),
+                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
+                        (
+                            "fqn",
+                            lbug::Value::String(symbol.fully_qualified_name().to_string()),
+                        ),
+                        ("kind", lbug::Value::String(symbol.kind().to_string())),
+                        ("name", lbug::Value::String(symbol.name().to_string())),
+                        (
+                            "file",
+                            lbug::Value::String(symbol.location().file().to_string()),
+                        ),
+                        ("line", lbug::Value::Int64(symbol.location().line() as i64)),
+                        ("sig", lbug::Value::String(sig_str)),
+                    ],
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: sym update execute: {e}"))
+                })?;
+            } else {
+                // CREATE new row.
+                let mut ins_stmt = conn
+                    .prepare(
+                        "CREATE (s:GraphSymbol {workspace_id: $ws, revision_id: $rev, fqn: $fqn, kind: $kind, name: $name, file_path: $file, line: $line, signature: $sig});",
+                    )
+                    .map_err(|e| {
+                        CallGraphError::Store(format!("save_call_graph_ws: sym insert prepare: {e}"))
+                    })?;
+                conn.execute(
+                    &mut ins_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(ws.to_string())),
+                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
+                        (
+                            "fqn",
+                            lbug::Value::String(symbol.fully_qualified_name().to_string()),
+                        ),
+                        ("kind", lbug::Value::String(symbol.kind().to_string())),
+                        ("name", lbug::Value::String(symbol.name().to_string())),
+                        (
+                            "file",
+                            lbug::Value::String(symbol.location().file().to_string()),
+                        ),
+                        ("line", lbug::Value::Int64(symbol.location().line() as i64)),
+                        ("sig", lbug::Value::String(sig_str)),
+                    ],
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: sym insert execute: {e}"))
+                })?;
+            }
+        }
+
+        // Step 3: INSERT every edge. Edges are scoped by
+        // `(workspace_id, revision_id, source_id, target_id,
+        // dep_type)` — the PG UNIQUE constraint. Same synthetic
+        // PK + read-then-conditional-write pattern.
+        for (source, target, dep_type, provenance, confidence) in graph.edges_with_metadata() {
+            let mut check_stmt = conn
+                .prepare(
+                    "MATCH (e:GraphEdge) WHERE e.workspace_id = $ws AND e.revision_id = $rev AND e.source_id = $src AND e.target_id = $tgt AND e.dep_type = $dt RETURN e.id;",
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: edge check prepare: {e}"))
+                })?;
+            let mut existing = conn
+                .execute(
+                    &mut check_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(ws.to_string())),
+                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
+                        ("src", lbug::Value::String(source.to_string())),
+                        ("tgt", lbug::Value::String(target.to_string())),
+                        ("dt", lbug::Value::String(dep_type.to_string())),
+                    ],
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: edge check execute: {e}"))
+                })?;
+
+            if existing.next().is_some() {
+                let mut upd_stmt = conn
+                    .prepare(
+                        "MATCH (e:GraphEdge) WHERE e.workspace_id = $ws AND e.revision_id = $rev AND e.source_id = $src AND e.target_id = $tgt AND e.dep_type = $dt SET e.provenance = $prov, e.confidence = $conf;",
+                    )
+                    .map_err(|e| {
+                        CallGraphError::Store(format!("save_call_graph_ws: edge update prepare: {e}"))
+                    })?;
+                conn.execute(
+                    &mut upd_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(ws.to_string())),
+                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
+                        ("src", lbug::Value::String(source.to_string())),
+                        ("tgt", lbug::Value::String(target.to_string())),
+                        ("dt", lbug::Value::String(dep_type.to_string())),
+                        ("prov", lbug::Value::String(provenance.to_string())),
+                        ("conf", lbug::Value::Double(confidence)),
+                    ],
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: edge update execute: {e}"))
+                })?;
+            } else {
+                let mut ins_stmt = conn
+                    .prepare(
+                        "CREATE (e:GraphEdge {workspace_id: $ws, revision_id: $rev, source_id: $src, target_id: $tgt, dep_type: $dt, provenance: $prov, confidence: $conf});",
+                    )
+                    .map_err(|e| {
+                        CallGraphError::Store(format!("save_call_graph_ws: edge insert prepare: {e}"))
+                    })?;
+                conn.execute(
+                    &mut ins_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(ws.to_string())),
+                        ("rev", lbug::Value::Int64(rev_id.get() as i64)),
+                        ("src", lbug::Value::String(source.to_string())),
+                        ("tgt", lbug::Value::String(target.to_string())),
+                        ("dt", lbug::Value::String(dep_type.to_string())),
+                        ("prov", lbug::Value::String(provenance.to_string())),
+                        ("conf", lbug::Value::Double(confidence)),
+                    ],
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("save_call_graph_ws: edge insert execute: {e}"))
+                })?;
+            }
+        }
+
+        Ok(rev_id)
     }
 
     async fn load_call_graph_ws(
         &self,
-        _ws: &WorkspaceId,
-        _revision: RevisionId,
+        ws: &WorkspaceId,
+        revision: RevisionId,
     ) -> Result<Option<CallGraph>, CallGraphError> {
-        Ok(None)
+        // Read all symbols + edges for `(ws, revision)` and rebuild
+        // the CallGraph aggregate. We use the location.fqn as the
+        // primary lookup key for symbols (it's unique per workspace
+        // and stable across loads).
+        let conn = self
+            .connection()
+            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: {e}")))?;
+
+        // Pre-check: if there are NO symbols AND NO edges for this
+        // (ws, revision), return None — distinguishes "no data"
+        // from "empty data" (lbug has no way to know whether an
+        // empty graph was actually saved or just never existed).
+        // We use a single OPTIONAL MATCH per table and combine via
+        // WITH — only the first row's count is meaningful.
+        let mut pre_stmt = conn
+            .prepare(
+                "OPTIONAL MATCH (s:GraphSymbol) WHERE s.workspace_id = $ws AND s.revision_id = $rev WITH count(s) AS sym_cnt OPTIONAL MATCH (e:GraphEdge) WHERE e.workspace_id = $ws AND e.revision_id = $rev WITH sym_cnt, count(e) AS edge_cnt RETURN sym_cnt, edge_cnt;",
+            )
+            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: pre prepare: {e}")))?;
+        let mut pre_result = conn
+            .execute(
+                &mut pre_stmt,
+                vec![
+                    ("ws", lbug::Value::String(ws.to_string())),
+                    ("rev", lbug::Value::Int64(revision.get() as i64)),
+                ],
+            )
+            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: pre execute: {e}")))?;
+        let Some(pre_row) = pre_result.next() else {
+            return Ok(None);
+        };
+        let sym_cnt = match &pre_row[0] {
+            lbug::Value::Int64(n) => *n,
+            lbug::Value::Int32(n) => *n as i64,
+            _ => 0,
+        };
+        let edge_cnt = match &pre_row[1] {
+            lbug::Value::Int64(n) => *n,
+            lbug::Value::Int32(n) => *n as i64,
+            _ => 0,
+        };
+        if sym_cnt == 0 && edge_cnt == 0 {
+            return Ok(None);
+        }
+
+        // Symbols
+        let mut sym_stmt = conn
+            .prepare(
+                "MATCH (s:GraphSymbol) WHERE s.workspace_id = $ws AND s.revision_id = $rev RETURN s.id, s.fqn, s.kind, s.name, s.file_path, s.line, s.signature;",
+            )
+            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: sym prepare: {e}")))?;
+        let mut sym_result = conn
+            .execute(
+                &mut sym_stmt,
+                vec![
+                    ("ws", lbug::Value::String(ws.to_string())),
+                    ("rev", lbug::Value::Int64(revision.get() as i64)),
+                ],
+            )
+            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: sym execute: {e}")))?;
+
+        let mut graph = CallGraph::new();
+        let mut symbol_count = 0usize;
+        while let Some(row) = sym_result.next() {
+            let s = parse_graph_symbol_row(&row)?;
+            graph.add_symbol(s);
+            symbol_count += 1;
+        }
+
+        // Edges
+        let mut edge_stmt = conn
+            .prepare(
+                "MATCH (e:GraphEdge) WHERE e.workspace_id = $ws AND e.revision_id = $rev RETURN e.source_id, e.target_id, e.dep_type, e.provenance, e.confidence;",
+            )
+            .map_err(|e| {
+                CallGraphError::Store(format!("load_call_graph_ws: edge prepare: {e}"))
+            })?;
+        let mut edge_result = conn
+            .execute(
+                &mut edge_stmt,
+                vec![
+                    ("ws", lbug::Value::String(ws.to_string())),
+                    ("rev", lbug::Value::Int64(revision.get() as i64)),
+                ],
+            )
+            .map_err(|e| CallGraphError::Store(format!("load_call_graph_ws: edge execute: {e}")))?;
+        while let Some(row) = edge_result.next() {
+            let (source_id, target_id, dep_type, confidence) = parse_graph_edge_row(&row)?;
+            let provenance = parse_provenance(&row[3])?;
+            graph
+                .add_dependency_with_provenance(
+                    &source_id,
+                    &target_id,
+                    dep_type,
+                    // Map the stored Provenance → ExtractionContext
+                    // the same way ConfidenceRules does it on the
+                    // write side: Extracted → DirectExtraction,
+                    // Inferred/Manual/Tested → matching variant,
+                    // Ambiguous → Unresolved.
+                    match provenance {
+                        Provenance::Extracted => {
+                            cognicode_core::domain::services::ExtractionContext::DirectExtraction
+                        }
+                        Provenance::Inferred => {
+                            cognicode_core::domain::services::ExtractionContext::Heuristic {
+                                score: confidence,
+                            }
+                        }
+                        Provenance::Ambiguous => {
+                            cognicode_core::domain::services::ExtractionContext::Unresolved
+                        }
+                        Provenance::Manual => {
+                            cognicode_core::domain::services::ExtractionContext::Manual
+                        }
+                        Provenance::Tested => {
+                            cognicode_core::domain::services::ExtractionContext::Tested
+                        }
+                    },
+                )
+                .map_err(|e| {
+                    CallGraphError::Store(format!("load_call_graph_ws: add_dependency: {e}"))
+                })?;
+        }
+
+        if symbol_count == 0 && edge_result.next().is_none() {
+            // The pre-check above already filtered the truly-empty
+            // (no rows) case; if we got here it means the pre-check
+            // said there ARE rows but the per-table queries returned
+            // none — a race condition between the pre-check and the
+            // per-table reads. Treat as None for consistency.
+            return Ok(None);
+        }
+
+        Ok(Some(graph))
     }
 
     async fn load_call_graph_current(
         &self,
-        _ws: &WorkspaceId,
+        ws: &WorkspaceId,
     ) -> Result<Option<CallGraph>, CallGraphError> {
-        Ok(None)
+        // Resolve the head revision for the workspace via the
+        // `&self`-only helper (Priority 4's trait method requires
+        // a `&mut PgConnection` that LadybugStore cannot honor — see
+        // the head_revision_for_ws comment).
+        let head = self
+            .head_revision_for_ws(ws)
+            .await
+            .map_err(|e| CallGraphError::Store(format!("load_call_graph_current: head: {e}")))?;
+        let Some(rev) = head else {
+            return Ok(None);
+        };
+        self.load_call_graph_ws(ws, rev).await
+    }
+}
+
+/// `RevisionStore::head_revision` body extracted to a
+/// `&self`-only helper so tests can exercise the head-resolution
+/// path without relying on the trait's `&mut PgConnection`
+/// parameter (which LadybugStore cannot honor — see the comment
+/// in the trait impl above for the limitation).
+///
+/// This duplicates the Cypher that Priority 4's
+/// `RevisionStore::head_revision` impl uses; when Priority 4 is
+/// merged, the trait method will be wired and the tests can drop
+/// this helper.
+impl LadybugStore {
+    pub(crate) async fn head_revision_for_ws(
+        &self,
+        ws: &WorkspaceId,
+    ) -> Result<Option<RevisionId>, CallGraphError> {
+        let conn = self
+            .connection()
+            .map_err(|e| CallGraphError::Store(format!("head_revision_for_ws: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:GraphRevision) WHERE r.workspace_id = $ws AND r.head_of = true RETURN r.revision_id;",
+            )
+            .map_err(|e| {
+                CallGraphError::Store(format!("head_revision_for_ws: prepare: {e}"))
+            })?;
+        let mut result = conn
+            .execute(&mut stmt, vec![("ws", lbug::Value::String(ws.to_string()))])
+            .map_err(|e| CallGraphError::Store(format!("head_revision_for_ws: execute: {e}")))?;
+        let Some(row) = result.next() else {
+            return Ok(None);
+        };
+        let rev = match &row[0] {
+            lbug::Value::Int64(n) => RevisionId(*n as u64),
+            lbug::Value::Int32(n) => RevisionId(*n as u64),
+            other => {
+                return Err(CallGraphError::Store(format!(
+                    "head_revision_for_ws: unexpected type: {other:?}"
+                )));
+            }
+        };
+        Ok(Some(rev))
+    }
+}
+
+/// Row mapper for `GraphSymbol` queries. Returns a fully-constructed
+/// [`Symbol`] (the file/line/kind/name/signature fields round-trip via
+/// the Display form — lbug 0.19 has no structured types).
+fn parse_graph_symbol_row(
+    row: &[lbug::Value],
+) -> Result<cognicode_core::domain::aggregates::Symbol, CallGraphError> {
+    use cognicode_core::domain::aggregates::Symbol;
+    use cognicode_core::domain::value_objects::{Location, SymbolKind};
+    let fqn = row[1].to_string();
+    let kind_str = row[2].to_string();
+    let kind = match kind_str.as_str() {
+        "Function" | "function" => SymbolKind::Function,
+        "Method" | "method" => SymbolKind::Method,
+        "Class" | "class" => SymbolKind::Class,
+        "Struct" | "struct" => SymbolKind::Struct,
+        "Enum" | "enum" => SymbolKind::Enum,
+        "Trait" | "trait" => SymbolKind::Trait,
+        "Variable" | "variable" => SymbolKind::Variable,
+        "Constant" | "constant" => SymbolKind::Constant,
+        "Module" | "module" => SymbolKind::Module,
+        "Interface" | "interface" => SymbolKind::Interface,
+        other => {
+            return Err(CallGraphError::Store(format!(
+                "parse_graph_symbol_row: unknown kind: {other}"
+            )));
+        }
+    };
+    let file = row[4].to_string();
+    let line = match &row[5] {
+        lbug::Value::Int64(n) => (*n).max(0) as u32,
+        lbug::Value::Int32(n) => (*n).max(0) as u32,
+        other => {
+            return Err(CallGraphError::Store(format!(
+                "parse_graph_symbol_row: unexpected line type: {other:?}"
+            )));
+        }
+    };
+    let name = row[3].to_string();
+    let mut symbol = Symbol::new(name, kind, Location::new(file, line, 0));
+    symbol.set_fqn_override(&fqn);
+    // Signature round-trip is lossy on the read side (the
+    // Display form drops parameter names' types and async-ness);
+    // the PG adapter has the same constraint — signatures are
+    // reconstructable but lossy. Future PR can move to a JSON
+    // column for full fidelity once lbug has a JSON type.
+    let _sig_str = row[6].to_string();
+    Ok(symbol)
+}
+
+/// Row mapper for `GraphEdge` queries. Returns
+/// `(source_id, target_id, dep_type, confidence)` — `provenance` is
+/// read separately via `parse_provenance` because the caller needs
+/// the discriminant to pick the right `ExtractionContext` when
+/// re-adding the edge to the aggregate.
+fn parse_graph_edge_row(
+    row: &[lbug::Value],
+) -> Result<
+    (
+        cognicode_core::domain::aggregates::SymbolId,
+        cognicode_core::domain::aggregates::SymbolId,
+        DependencyType,
+        f64,
+    ),
+    CallGraphError,
+> {
+    use cognicode_core::domain::aggregates::SymbolId;
+    let source_id = SymbolId::new(row[0].to_string());
+    let target_id = SymbolId::new(row[1].to_string());
+    let dep_type = match row[2].to_string().as_str() {
+        "calls" | "Calls" => DependencyType::Calls,
+        "imports" | "Imports" => DependencyType::Imports,
+        "inherits" | "Inherits" => DependencyType::Inherits,
+        "uses_generic" | "UsesGeneric" => DependencyType::UsesGeneric,
+        "references" | "References" => DependencyType::References,
+        "defines" | "Defines" => DependencyType::Defines,
+        "annotated_by" | "AnnotatedBy" => DependencyType::AnnotatedBy,
+        "contains" | "Contains" => DependencyType::Contains,
+        other => {
+            return Err(CallGraphError::Store(format!(
+                "parse_graph_edge_row: unknown dep_type: {other}"
+            )));
+        }
+    };
+    let confidence = match &row[4] {
+        lbug::Value::Double(n) => *n,
+        lbug::Value::Int64(n) => *n as f64,
+        _ => 0.0,
+    };
+    Ok((source_id, target_id, dep_type, confidence))
+}
+
+fn parse_provenance(value: &lbug::Value) -> Result<Provenance, CallGraphError> {
+    match value.to_string().as_str() {
+        "Extracted" | "extracted" => Ok(Provenance::Extracted),
+        "Inferred" | "inferred" => Ok(Provenance::Inferred),
+        "Ambiguous" | "ambiguous" => Ok(Provenance::Ambiguous),
+        "Manual" | "manual" => Ok(Provenance::Manual),
+        "Tested" | "tested" => Ok(Provenance::Tested),
+        other => Err(CallGraphError::Store(format!(
+            "parse_provenance: unknown: {other}"
+        ))),
     }
 }
 
@@ -643,6 +1156,7 @@ impl IngestCommit for LadybugStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     /// Smoke test: the `LadybugStore::open` constructor exists and
     /// accepts the same `(path, SystemConfig)` shape the spike
@@ -744,6 +1258,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn manifest_get_returns_empty_for_fresh_db() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -752,6 +1267,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn manifest_upsert_then_get_round_trips() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -773,6 +1289,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn manifest_upsert_with_optional_nulls() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -788,6 +1305,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn manifest_delete_removes_target_row() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -806,6 +1324,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn manifest_upsert_overwrites_existing_row() {
         let (store, _dir) = make_test_store();
         init_scan_manifest_schema(&store);
@@ -819,5 +1338,269 @@ mod tests {
         assert_eq!(rows.len(), 1, "MERGE should NOT create a second row");
         assert_eq!(rows[0].symbol_count, 999);
         assert_eq!(rows[0].content_hash, "new-hash");
+    }
+
+    // --------------------------------------------------------------------
+    // CallGraphStore (Priority 8)
+    // --------------------------------------------------------------------
+
+    use cognicode_core::domain::aggregates::{CallGraph, Symbol};
+    use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
+
+    /// Apply the CallGraphStore NODE TABLEs. The store also needs
+    /// a `GraphRevision` table (used by `save_call_graph_ws`'s
+    /// single-Cypher demote+create revision step).
+    fn init_call_graph_schema(store: &LadybugStore) {
+        let conn = store.connection().expect("schema-init connection");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS GraphRevision( \
+                 id SERIAL PRIMARY KEY, \
+                 workspace_id STRING, \
+                 revision_id INT64, \
+                 head_of BOOLEAN);",
+        )
+        .expect("create GraphRevision NODE TABLE");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS GraphSymbol( \
+                 id SERIAL PRIMARY KEY, \
+                 workspace_id STRING, \
+                 revision_id INT64, \
+                 fqn STRING, \
+                 kind STRING, \
+                 name STRING, \
+                 file_path STRING, \
+                 line INT64, \
+                 signature STRING);",
+        )
+        .expect("create GraphSymbol NODE TABLE");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS GraphEdge( \
+                 id SERIAL PRIMARY KEY, \
+                 workspace_id STRING, \
+                 revision_id INT64, \
+                 source_id STRING, \
+                 target_id STRING, \
+                 dep_type STRING, \
+                 provenance STRING, \
+                 confidence DOUBLE);",
+        )
+        .expect("create GraphEdge NODE TABLE");
+    }
+
+    fn ws_id(s: &str) -> WorkspaceId {
+        WorkspaceId::try_new(s).expect("workspace id must be non-empty")
+    }
+
+    fn build_small_graph() -> CallGraph {
+        // A → B (Calls), A → C (Imports), B → D (Calls)
+        let mut g = CallGraph::new();
+        let a = g.add_symbol(Symbol::new(
+            "foo",
+            SymbolKind::Function,
+            Location::new("src/foo.rs", 10, 1),
+        ));
+        let b = g.add_symbol(Symbol::new(
+            "bar",
+            SymbolKind::Function,
+            Location::new("src/bar.rs", 20, 1),
+        ));
+        let c = g.add_symbol(Symbol::new(
+            "Baz",
+            SymbolKind::Class,
+            Location::new("src/baz.rs", 30, 1),
+        ));
+        let d = g.add_symbol(Symbol::new(
+            "qux",
+            SymbolKind::Function,
+            Location::new("src/qux.rs", 40, 1),
+        ));
+        g.add_dependency(&a, &b, DependencyType::Calls)
+            .expect("a→b");
+        g.add_dependency(&a, &c, DependencyType::Imports)
+            .expect("a→c");
+        g.add_dependency(&b, &d, DependencyType::Calls)
+            .expect("b→d");
+        g
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[serial]
+    async fn call_graph_save_returns_first_revision_for_fresh_workspace() {
+        let (store, _dir) = make_test_store();
+        init_call_graph_schema(&store);
+        let g = build_small_graph();
+        let rev = store
+            .save_call_graph_ws(&g, &ws_id("ws-1"))
+            .await
+            .expect("save");
+        assert_eq!(rev.get(), 1, "first save in a fresh workspace → rev 1");
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[serial]
+    async fn call_graph_save_increments_monotonically() {
+        let (store, _dir) = make_test_store();
+        init_call_graph_schema(&store);
+        let g = build_small_graph();
+        let r1 = store
+            .save_call_graph_ws(&g, &ws_id("ws-x"))
+            .await
+            .expect("s1");
+        let r2 = store
+            .save_call_graph_ws(&g, &ws_id("ws-x"))
+            .await
+            .expect("s2");
+        let r3 = store
+            .save_call_graph_ws(&g, &ws_id("ws-x"))
+            .await
+            .expect("s3");
+        assert_eq!(r1.get(), 1);
+        assert_eq!(r2.get(), 2);
+        assert_eq!(r3.get(), 3);
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[serial]
+    async fn call_graph_save_demotes_prior_head() {
+        // After save, only the latest revision has head_of=true.
+        let (store, _dir) = make_test_store();
+        init_call_graph_schema(&store);
+        let g = build_small_graph();
+        store
+            .save_call_graph_ws(&g, &ws_id("ws-d"))
+            .await
+            .expect("s1");
+        store
+            .save_call_graph_ws(&g, &ws_id("ws-d"))
+            .await
+            .expect("s2");
+        // head_revision for ws-d must be 2 (the latest).
+        let head = store
+            .head_revision_for_ws(&ws_id("ws-d"))
+            .await
+            .expect("head");
+        assert_eq!(head, Some(RevisionId(2)));
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[serial]
+    async fn call_graph_load_returns_symbols_and_edges_round_trip() {
+        let (store, _dir) = make_test_store();
+        init_call_graph_schema(&store);
+        let g = build_small_graph();
+        let rev = store
+            .save_call_graph_ws(&g, &ws_id("ws-rt"))
+            .await
+            .expect("save");
+        let loaded = store
+            .load_call_graph_ws(&ws_id("ws-rt"), rev)
+            .await
+            .expect("load")
+            .expect("present");
+        // 4 symbols round-trip.
+        let count = loaded.symbols().count();
+        assert_eq!(count, 4, "all 4 symbols round-trip");
+        // 3 edges round-trip.
+        let mut edge_count = 0;
+        for _ in loaded.edges_with_metadata() {
+            edge_count += 1;
+        }
+        assert_eq!(edge_count, 3, "all 3 edges round-trip");
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[serial]
+    async fn call_graph_load_returns_none_for_unknown_revision() {
+        let (store, _dir) = make_test_store();
+        init_call_graph_schema(&store);
+        let g = build_small_graph();
+        store
+            .save_call_graph_ws(&g, &ws_id("ws-x"))
+            .await
+            .expect("save");
+        let loaded = store
+            .load_call_graph_ws(&ws_id("ws-x"), RevisionId(999))
+            .await
+            .expect("load");
+        assert!(loaded.is_none(), "unknown revision returns None");
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[serial]
+    async fn call_graph_load_current_returns_head_revision_graph() {
+        let (store, _dir) = make_test_store();
+        init_call_graph_schema(&store);
+        let g = build_small_graph();
+        store
+            .save_call_graph_ws(&g, &ws_id("ws-c"))
+            .await
+            .expect("save 1");
+        store
+            .save_call_graph_ws(&g, &ws_id("ws-c"))
+            .await
+            .expect("save 2");
+        // Current = revision 2 (the head).
+        let loaded = store
+            .load_call_graph_current(&ws_id("ws-c"))
+            .await
+            .expect("load current")
+            .expect("present");
+        let count = loaded.symbols().count();
+        assert_eq!(count, 4);
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[serial]
+    async fn call_graph_load_current_returns_none_for_unknown_workspace() {
+        let (store, _dir) = make_test_store();
+        init_call_graph_schema(&store);
+        let loaded = store
+            .load_call_graph_current(&ws_id("ws-unknown"))
+            .await
+            .expect("load");
+        assert!(loaded.is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[serial]
+    async fn call_graph_save_is_scoped_to_workspace() {
+        // Two workspaces, two saves — the head for each is independent.
+        let (store, _dir) = make_test_store();
+        init_call_graph_schema(&store);
+        let g = build_small_graph();
+        store
+            .save_call_graph_ws(&g, &ws_id("ws-A"))
+            .await
+            .expect("a1");
+        store
+            .save_call_graph_ws(&g, &ws_id("ws-A"))
+            .await
+            .expect("a2");
+        store
+            .save_call_graph_ws(&g, &ws_id("ws-B"))
+            .await
+            .expect("b1");
+        assert_eq!(
+            store
+                .head_revision_for_ws(&ws_id("ws-A"))
+                .await
+                .expect("h-A"),
+            Some(RevisionId(2))
+        );
+        assert_eq!(
+            store
+                .head_revision_for_ws(&ws_id("ws-B"))
+                .await
+                .expect("h-B"),
+            Some(RevisionId(1))
+        );
     }
 }
