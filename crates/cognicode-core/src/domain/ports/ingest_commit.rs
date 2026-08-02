@@ -129,20 +129,20 @@ pub mod postgres_adapter {
     use std::sync::Arc;
 
     #[cfg(feature = "multimodal")]
-    pub struct PostgresIngestCommit {
+    pub struct PostgresIngestCommit<'a> {
         revision_store: Arc<PostgresRevisionStore>,
-        manifest_store: Arc<PostgresManifestStore>,
+        manifest_store: Arc<PostgresManifestStore<'a>>,
         report_store: Arc<PostgresReportStore>,
         federation_store: Arc<PostgresFederationStore>,
         pool: PgPool,
     }
 
     #[cfg(feature = "multimodal")]
-    impl PostgresIngestCommit {
+    impl<'a> PostgresIngestCommit<'a> {
         /// Build the adapter from its component stores and a `PgPool`.
         pub fn new(
             revision_store: Arc<PostgresRevisionStore>,
-            manifest_store: Arc<PostgresManifestStore>,
+            manifest_store: Arc<PostgresManifestStore<'a>>,
             report_store: Arc<PostgresReportStore>,
             federation_store: Arc<PostgresFederationStore>,
             pool: PgPool,
@@ -159,7 +159,7 @@ pub mod postgres_adapter {
 
     #[cfg(feature = "multimodal")]
     #[async_trait]
-    impl IngestCommit for PostgresIngestCommit {
+    impl<'a> IngestCommit for PostgresIngestCommit<'a> {
         async fn commit_revision(
             &self,
             ws: &WorkspaceId,

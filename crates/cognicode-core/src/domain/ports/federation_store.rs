@@ -65,7 +65,7 @@ pub mod postgres_adapter {
                 id: SpaceId(r.id),
                 name: r.name,
                 kind,
-                source_path: r.source_path,
+                source_path: r.source_path.map(std::path::PathBuf::from),
                 config: r.config,
             }
         }
@@ -106,7 +106,7 @@ pub mod postgres_adapter {
             .bind(kind_str)
             .bind(&source_path)
             .bind(&space.config)
-            .execute(&*self.pool)
+            .execute(&self.pool)
             .await
             .map_err(|e| FederationError::Store(format!("register_space: {e}")))?;
 
@@ -119,7 +119,7 @@ pub mod postgres_adapter {
                  FROM spaces \
                  ORDER BY created_at DESC",
             )
-            .fetch_all(&*self.pool)
+            .fetch_all(&self.pool)
             .await
             .map_err(|e| FederationError::Store(format!("list_spaces: {e}")))?;
 
@@ -133,7 +133,7 @@ pub mod postgres_adapter {
                  WHERE id = $1",
             )
             .bind(id.as_str())
-            .fetch_optional(&*self.pool)
+            .fetch_optional(&self.pool)
             .await
             .map_err(|e| FederationError::Store(format!("get_space: {e}")))?;
 
