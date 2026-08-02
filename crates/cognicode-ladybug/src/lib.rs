@@ -70,9 +70,11 @@ use cognicode_core::domain::value_objects::{DependencyType, Provenance, Revision
 // the follow-up PR that flips multimodal to ON also wires these.
 #[cfg(feature = "multimodal")]
 use cognicode_core::domain::ports::{
-    federation_store::{FederationError, FederationStore, Space, SpaceId},
+    federation_store::{FederationError, FederationStore},
     ingest_commit::{CommitError, GraphDelta, IngestCommit, ManifestDelta, ReportIntent},
 };
+#[cfg(feature = "multimodal")]
+use cognicode_core::domain::value_objects::{Space, SpaceId};
 
 // =============================================================================
 // Error type
