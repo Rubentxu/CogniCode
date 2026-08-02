@@ -35,16 +35,16 @@
 //! Each port impl is `Err(Error::Stub(...))` today. The follow-up
 //! commits land the per-port SQL in priority order:
 //!
-//! | Priority | Port | Reason |
-//! |---------|------|--------|
-//! | 1 | `ManifestStore` | Simplest SQL (single-table CRUD), is the basic load-bearing port for Phase 1 tests |
-//! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk |
-//! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) |
-//! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` |
-//! | 5 | `FederationStore` | Single-table CRUD on `spaces` |
-//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) |
-//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` |
-//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` |
+//! | Priority | Port | Reason | Status |
+//! |---------|------|--------|--------|
+//! | 1 | `ManifestStore` | Simplest SQL (single-table CRUD), is the basic load-bearing port for Phase 1 tests | DONE (`af5e2ef2`) |
+//! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk | DONE (`34415ce8`) |
+//! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) | DONE (`83328dc2`) |
+//! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` | DONE (`bc4263ca`) |
+//! | 5 | `FederationStore` | Single-table CRUD on `spaces` | DONE (this branch — Cypher validated via standalone probe; cargo test blocked by pre-existing `cognicode-core --features multimodal` debt) |
+//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | pending |
+//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | pending |
+//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | pending |
 //! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports |
 
 use std::path::Path;
@@ -231,22 +231,174 @@ impl RevisionStore for LadybugStore {
 #[cfg(feature = "multimodal")]
 #[async_trait]
 impl FederationStore for LadybugStore {
-    async fn register_space(&self, _space: &Space) -> Result<SpaceId, FederationError> {
-        // PHASE 1 STUB. Next change: INSERT INTO spaces ... RETURNING space_id.
-        Err(FederationError::Conflict(
-            "(phase 1 stub — impl lands in next change)".into(),
-        ))
+    async fn register_space(&self, space: &Space) -> Result<SpaceId, FederationError> {
+        // ADR-028 §3 `register_space(space)` — upsert by `id` (single
+        // STRING PK, same natural-key shape as SessionStore /
+        // ReportStore). Mirrors the PG adapter's
+        // `INSERT ... ON CONFLICT (id) DO UPDATE SET name` semantics:
+        // if the row exists, refresh `name` + the other mutable
+        // fields; otherwise create it.
+        //
+        // Pattern: read-then-conditional-write (same workaround as
+        // `ManifestStore::upsert_manifest_entry` — lbug 0.19 NODE
+        // TABLEs have no `MERGE` / `ON CONFLICT` primitive).
+        //
+        // `source_path: Option<PathBuf>` is serialized to its display
+        // form (string), and `config: serde_json::Value` to its
+        // serde_json text (same JSON-as-STRING pattern used by
+        // SessionStore and ReportStore). `created_at` is set here
+        // (the PG adapter relies on the column default — for parity
+        // we set it explicitly so lbug reads back the same value the
+        // caller can see).
+        let now = chrono::Utc::now().to_rfc3339();
+        let conn = self
+            .connection()
+            .map_err(|e| FederationError::Store(format!("register_space: {e}")))?;
+
+        // Step 1: existence check.
+        let mut check_stmt = conn
+            .prepare("MATCH (s:Space) WHERE s.id = $id RETURN s.id;")
+            .map_err(|e| FederationError::Store(format!("register_space: check prepare: {e}")))?;
+        let mut existing = conn
+            .execute(
+                &mut check_stmt,
+                vec![("id", lbug::Value::String(space.id.0.clone()))],
+            )
+            .map_err(|e| FederationError::Store(format!("register_space: check execute: {e}")))?;
+
+        if existing.next().is_some() {
+            // Step 2a: UPDATE existing row.
+            let mut upd_stmt = conn
+                .prepare(
+                    "MATCH (s:Space) WHERE s.id = $id SET s.name = $name, s.kind = $kind, s.source_path = $srcpath, s.config = $cfg;",
+                )
+                .map_err(|e| FederationError::Store(format!("register_space: update prepare: {e}")))?;
+            conn.execute(
+                &mut upd_stmt,
+                vec![
+                    ("id", lbug::Value::String(space.id.0.clone())),
+                    ("name", lbug::Value::String(space.name.clone())),
+                    ("kind", lbug::Value::String(space.kind.as_str().to_string())),
+                    (
+                        "srcpath",
+                        match &space.source_path {
+                            Some(p) => lbug::Value::String(p.display().to_string()),
+                            None => lbug::Value::Null(lbug::LogicalType::String),
+                        },
+                    ),
+                    (
+                        "cfg",
+                        lbug::Value::String(serde_json::to_string(&space.config).map_err(|e| {
+                            FederationError::Store(format!("register_space: serialize config: {e}"))
+                        })?),
+                    ),
+                ],
+            )
+            .map_err(|e| FederationError::Store(format!("register_space: update execute: {e}")))?;
+        } else {
+            // Step 2b: CREATE new row.
+            let mut ins_stmt = conn
+                .prepare(
+                    "CREATE (s:Space {id: $id, name: $name, kind: $kind, source_path: $srcpath, config: $cfg, created_at: $ts});",
+                )
+                .map_err(|e| FederationError::Store(format!("register_space: insert prepare: {e}")))?;
+            conn.execute(
+                &mut ins_stmt,
+                vec![
+                    ("id", lbug::Value::String(space.id.0.clone())),
+                    ("name", lbug::Value::String(space.name.clone())),
+                    ("kind", lbug::Value::String(space.kind.as_str().to_string())),
+                    (
+                        "srcpath",
+                        match &space.source_path {
+                            Some(p) => lbug::Value::String(p.display().to_string()),
+                            None => lbug::Value::Null(lbug::LogicalType::String),
+                        },
+                    ),
+                    (
+                        "cfg",
+                        lbug::Value::String(serde_json::to_string(&space.config).map_err(|e| {
+                            FederationError::Store(format!("register_space: serialize config: {e}"))
+                        })?),
+                    ),
+                    ("ts", lbug::Value::String(now)),
+                ],
+            )
+            .map_err(|e| FederationError::Store(format!("register_space: insert execute: {e}")))?;
+        }
+
+        Ok(space.id.clone())
     }
 
     async fn list_spaces(&self) -> Result<Vec<Space>, FederationError> {
-        // PHASE 1 STUB. Next change: SELECT ... FROM spaces.
-        Ok(Vec::new())
+        // ADR-028 §3 `list_spaces()` — every space, ordered by
+        // `created_at DESC` (newest-first). Same ORDER BY pattern as
+        // ReportStore.
+        let conn = self
+            .connection()
+            .map_err(|e| FederationError::Store(format!("list_spaces: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (s:Space) RETURN s.id, s.name, s.kind, s.source_path, s.config, s.created_at ORDER BY s.created_at DESC;",
+            )
+            .map_err(|e| FederationError::Store(format!("list_spaces: prepare: {e}")))?;
+        let mut result = conn
+            .execute(&mut stmt, vec![])
+            .map_err(|e| FederationError::Store(format!("list_spaces: execute: {e}")))?;
+
+        let mut rows = Vec::new();
+        while let Some(row) = result.next() {
+            rows.push(parse_space_row(&row)?);
+        }
+        Ok(rows)
     }
 
-    async fn get_space(&self, _id: &SpaceId) -> Result<Option<Space>, FederationError> {
-        // PHASE 1 STUB.
-        Ok(None)
+    async fn get_space(&self, id: &SpaceId) -> Result<Option<Space>, FederationError> {
+        // ADR-028 §3 `get_space(id)` — single MATCH WHERE id = $id, or
+        // None if absent.
+        let conn = self
+            .connection()
+            .map_err(|e| FederationError::Store(format!("get_space: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (s:Space) WHERE s.id = $id RETURN s.id, s.name, s.kind, s.source_path, s.config, s.created_at;",
+            )
+            .map_err(|e| FederationError::Store(format!("get_space: prepare: {e}")))?;
+        let mut result = conn
+            .execute(&mut stmt, vec![("id", lbug::Value::String(id.0.clone()))])
+            .map_err(|e| FederationError::Store(format!("get_space: execute: {e}")))?;
+
+        let Some(row) = result.next() else {
+            return Ok(None);
+        };
+        Ok(Some(parse_space_row(&row)?))
     }
+}
+
+/// Row mapper for `FederationStore` queries — shared by `list_spaces`
+/// and `get_space` so both stay in lock-step on column order. Column
+/// order must match the RETURN clauses above.
+#[cfg(feature = "multimodal")]
+fn parse_space_row(row: &[lbug::Value]) -> Result<Space, FederationError> {
+    use crate::domain::value_objects::SpaceKind;
+    let id = SpaceId(row[0].to_string());
+    let name = row[1].to_string();
+    let kind = SpaceKind::from_wire(&row[2].to_string()).ok_or_else(|| {
+        FederationError::Store(format!("parse_space_row: invalid kind: {}", row[2]))
+    })?;
+    let source_path = match &row[3] {
+        lbug::Value::Null(_) => None,
+        other => Some(std::path::PathBuf::from(other.to_string())),
+    };
+    let config: serde_json::Value = serde_json::from_str(&row[4].to_string())
+        .map_err(|e| FederationError::Store(format!("parse_space_row: config JSON: {e}")))?;
+    Ok(Space {
+        id,
+        name,
+        kind,
+        source_path,
+        config,
+    })
 }
 
 #[async_trait]
