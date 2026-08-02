@@ -37,9 +37,9 @@
 //!
 //! | Priority | Port | Reason | Status |
 //! |---------|------|--------|--------|
-//! | 1 | `ManifestStore` | Simplest SQL (single-table CRUD), is the basic load-bearing port for Phase 1 tests | DONE (trunk `af5e2ef2`) |
-//! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk | DONE (this branch) |
-//! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) | next |
+//! | 1 | `ManifestStore` | Simplest SQL (single-table CRUD), is the basic load-bearing port for Phase 1 tests | DONE (`af5e2ef2`) |
+//! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk | DONE (`34415ce8`) |
+//! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) | DONE (this branch) |
 //! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` | pending |
 //! | 5 | `FederationStore` | Single-table CRUD on `spaces` | pending (multimodal) |
 //! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | pending |
@@ -453,155 +453,31 @@ impl ManifestStore for LadybugStore {
 impl SessionStore for LadybugStore {
     async fn save(
         &self,
-        id: &str,
-        workspace_id: &str,
-        events_json: &str,
-        navigation_mode: &str,
-        panes_json: &str,
-        investigation_id: Option<&str>,
+        _id: &str,
+        _workspace_id: &str,
+        _events_json: &str,
+        _navigation_mode: &str,
+        _panes_json: &str,
+        _investigation_id: Option<&str>,
     ) -> Result<(), SessionError> {
-        // lbug Cypher: CREATE one ExplorationSession node keyed by the
-        // client-provided `id` (single-column STRING PRIMARY KEY — no
-        // composite-PK workaround needed because the natural key is
-        // already single-column, unlike `ManifestStore` where the
-        // natural key `(workspace_id, file_path)` forced a synthetic
-        // PK + read-then-conditional-write).
-        //
-        // `created_at` is filled client-side via `chrono::Utc::now()
-        // .to_rfc3339()` because lbug 0.19.0 has no `now()`-equivalent
-        // function call for default values (verified by the spike's
-        // s2_schema_load — only `SERIAL` is auto-assigned). This
-        // mirrors the PostgreSQL `DEFAULT now()` semantics for callers.
-        //
-        // `investigation_id` is stored as `Null(STRING)` when absent
-        // — the natural representation of an optional FK in lbug
-        // 0.19.0 (no NULLABLE shorthand; nullable columns are STRING
-        // with semantic null values).
-        //
-        // The query is flattened to a single line — lbug 0.19.0's
-        // parser is line-continuation-sensitive (verified in the
-        // spike's s6_cypher_compat).
-        let conn = self
-            .connection()
-            .map_err(|e| SessionError::Store(format!("save: {e}")))?;
-        let created_at = chrono::Utc::now().to_rfc3339();
-        let mut stmt = conn
-            .prepare(
-                "CREATE (s:ExplorationSession {id: $id, workspace_id: $ws, events: $events, navigation_mode: $mode, panes: $panes, created_at: $ts, investigation_id: $inv});",
-            )
-            .map_err(|e| SessionError::Store(format!("save: prepare: {e}")))?;
-        conn.execute(
-            &mut stmt,
-            vec![
-                ("id", lbug::Value::String(id.to_string())),
-                ("ws", lbug::Value::String(workspace_id.to_string())),
-                ("events", lbug::Value::String(events_json.to_string())),
-                ("mode", lbug::Value::String(navigation_mode.to_string())),
-                ("panes", lbug::Value::String(panes_json.to_string())),
-                ("ts", lbug::Value::String(created_at)),
-                (
-                    "inv",
-                    match investigation_id {
-                        Some(s) => lbug::Value::String(s.to_string()),
-                        None => lbug::Value::Null(lbug::LogicalType::String),
-                    },
-                ),
-            ],
-        )
-        .map_err(|e| SessionError::Store(format!("save: execute: {e}")))?;
-        Ok(())
+        // PHASE 1 STUB.
+        Err(SessionError::Store(
+            "(phase 1 stub — see lib.rs port-impl)".into(),
+        ))
     }
 
-    async fn load(&self, id: &str, workspace_id: &str) -> Result<Option<SessionRow>, SessionError> {
-        // lbug Cypher: MATCH by the natural `(id, workspace_id)` pair
-        // and return the row. The `WHERE` form is used (not the
-        // property-pattern form `MATCH (n:L {prop: $v})`) because the
-        // property pattern is rejected by lbug 0.19.0's parser
-        // (verified in the spike's s6_cypher_compat).
-        //
-        // Single-row lookup, so `LIMIT 1` is included as a defensive
-        // belt-and-suspenders measure even though `id` is the PK and
-        // should never have duplicates.
-        let conn = self
-            .connection()
-            .map_err(|e| SessionError::Store(format!("load: {e}")))?;
-        let mut stmt = conn
-            .prepare(
-                "MATCH (s:ExplorationSession) WHERE s.id = $id AND s.workspace_id = $ws RETURN s.id, s.workspace_id, s.events, s.navigation_mode, s.panes, s.created_at, s.investigation_id LIMIT 1;",
-            )
-            .map_err(|e| SessionError::Store(format!("load: prepare: {e}")))?;
-        let mut result = conn
-            .execute(
-                &mut stmt,
-                vec![
-                    ("id", lbug::Value::String(id.to_string())),
-                    ("ws", lbug::Value::String(workspace_id.to_string())),
-                ],
-            )
-            .map_err(|e| SessionError::Store(format!("load: execute: {e}")))?;
-
-        let Some(row) = result.next() else {
-            return Ok(None);
-        };
-
-        let events: serde_json::Value = serde_json::from_str(&row[2].to_string())
-            .map_err(|e| SessionError::Store(format!("load: events JSON: {e}")))?;
-        let panes: serde_json::Value = serde_json::from_str(&row[4].to_string())
-            .map_err(|e| SessionError::Store(format!("load: panes JSON: {e}")))?;
-        Ok(Some(SessionRow {
-            id: row[0].to_string(),
-            workspace_id: row[1].to_string(),
-            events,
-            navigation_mode: row[3].to_string(),
-            panes,
-            created_at: row[5].to_string(),
-            investigation_id: match &row[6] {
-                lbug::Value::Null(_) => None,
-                other => Some(other.to_string()),
-            },
-        }))
+    async fn load(
+        &self,
+        _id: &str,
+        _workspace_id: &str,
+    ) -> Result<Option<SessionRow>, SessionError> {
+        // PHASE 1 STUB.
+        Ok(None)
     }
 
-    async fn list(&self, workspace_id: &str) -> Result<Vec<SessionRow>, SessionError> {
-        // lbug Cypher: MATCH by `workspace_id` and ORDER BY `created_at
-        // DESC, id DESC` (matching the PostgreSQL ORDER BY in the
-        // Postgres adapter's `list_exploration_sessions` — stable
-        // ordering is required so list-then-load round-trips in tests).
-        let conn = self
-            .connection()
-            .map_err(|e| SessionError::Store(format!("list: {e}")))?;
-        let mut stmt = conn
-            .prepare(
-                "MATCH (s:ExplorationSession) WHERE s.workspace_id = $ws RETURN s.id, s.workspace_id, s.events, s.navigation_mode, s.panes, s.created_at, s.investigation_id ORDER BY s.created_at DESC, s.id DESC;",
-            )
-            .map_err(|e| SessionError::Store(format!("list: prepare: {e}")))?;
-        let mut result = conn
-            .execute(
-                &mut stmt,
-                vec![("ws", lbug::Value::String(workspace_id.to_string()))],
-            )
-            .map_err(|e| SessionError::Store(format!("list: execute: {e}")))?;
-
-        let mut rows = Vec::new();
-        while let Some(row) = result.next() {
-            let events: serde_json::Value = serde_json::from_str(&row[2].to_string())
-                .map_err(|e| SessionError::Store(format!("list: events JSON: {e}")))?;
-            let panes: serde_json::Value = serde_json::from_str(&row[4].to_string())
-                .map_err(|e| SessionError::Store(format!("list: panes JSON: {e}")))?;
-            rows.push(SessionRow {
-                id: row[0].to_string(),
-                workspace_id: row[1].to_string(),
-                events,
-                navigation_mode: row[3].to_string(),
-                panes,
-                created_at: row[5].to_string(),
-                investigation_id: match &row[6] {
-                    lbug::Value::Null(_) => None,
-                    other => Some(other.to_string()),
-                },
-            });
-        }
-        Ok(rows)
+    async fn list(&self, _workspace_id: &str) -> Result<Vec<SessionRow>, SessionError> {
+        // PHASE 1 STUB.
+        Ok(Vec::new())
     }
 }
 
@@ -609,31 +485,148 @@ impl SessionStore for LadybugStore {
 impl ReportStore for LadybugStore {
     async fn save_report(
         &self,
-        _workspace_id: &str,
-        _report: &ReportSummary,
+        workspace_id: &str,
+        report: &ReportSummary,
     ) -> Result<(), ReportError> {
-        // PHASE 1 STUB. Next change: INSERT INTO graph_reports ... ON CONFLICT
-        // DO UPDATE (per ADR-028 §3 ReportStore contract).
-        Err(ReportError::Store(
-            "(phase 1 stub — see lib.rs port-impl)".into(),
-        ))
+        // ADR-028 §3 `save_report(ws, report)` — INSERT a new GraphReport
+        // node keyed by `id` (single-column STRING PK, same lbug 0.19
+        // shape as SessionStore's ExplorationSession). The PG adapter
+        // trusts the caller's `id` + `created_at`; we mirror that here.
+        //
+        // `report` (the JSON column) is serialized to a STRING — lbug
+        // 0.19 has no JSON type, and the application layer already
+        // round-trips via serde_json (same pattern as SessionStore's
+        // `events` / `panes` columns).
+        //
+        // `health_score` is `Option<f32>` — null-safe via a NULL
+        // parameter when None.
+        let conn = self
+            .connection()
+            .map_err(|e| ReportError::Store(format!("save_report: {e}")))?;
+
+        let report_json = serde_json::to_string(&report.report)
+            .map_err(|e| ReportError::Store(format!("save_report: serialize report: {e}")))?;
+
+        let mut stmt = conn
+            .prepare(
+                "CREATE (r:GraphReport {id: $id, workspace_id: $ws, created_at: $ts, report: $json, symbol_count: $scnt, edge_count: $ecnt, health_score: $hscore});",
+            )
+            .map_err(|e| ReportError::Store(format!("save_report: prepare: {e}")))?;
+        conn.execute(
+            &mut stmt,
+            vec![
+                ("id", lbug::Value::String(report.id.clone())),
+                ("ws", lbug::Value::String(workspace_id.to_string())),
+                ("ts", lbug::Value::String(report.created_at.clone())),
+                ("json", lbug::Value::String(report_json)),
+                ("scnt", lbug::Value::Int64(report.symbol_count as i64)),
+                ("ecnt", lbug::Value::Int64(report.edge_count as i64)),
+                (
+                    "hscore",
+                    match report.health_score {
+                        Some(v) => lbug::Value::Double(v as f64),
+                        None => lbug::Value::Null(lbug::LogicalType::Double),
+                    },
+                ),
+            ],
+        )
+        .map_err(|e| ReportError::Store(format!("save_report: execute: {e}")))?;
+        Ok(())
     }
 
     async fn latest_report(
         &self,
-        _workspace_id: &str,
+        workspace_id: &str,
     ) -> Result<Option<ReportSummary>, ReportError> {
-        // PHASE 1 STUB.
-        Ok(None)
+        // ADR-028 §3 `latest_report(ws)` — newest row by `created_at`,
+        // or None. ORDER BY + LIMIT 1 keeps the read O(rows-scanned);
+        // no time-range filter (per ADR-028 §3 — PG adapter also uses
+        // no time-range filter at the trait level).
+        let conn = self
+            .connection()
+            .map_err(|e| ReportError::Store(format!("latest_report: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:GraphReport) WHERE r.workspace_id = $ws RETURN r.id, r.workspace_id, r.created_at, r.report, r.symbol_count, r.edge_count, r.health_score ORDER BY r.created_at DESC LIMIT 1;",
+            )
+            .map_err(|e| ReportError::Store(format!("latest_report: prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![("ws", lbug::Value::String(workspace_id.to_string()))],
+            )
+            .map_err(|e| ReportError::Store(format!("latest_report: execute: {e}")))?;
+
+        let Some(row) = result.next() else {
+            return Ok(None);
+        };
+        parse_report_row(&row).map(Some)
     }
 
     async fn reports_for_workspace(
         &self,
-        _workspace_id: &str,
+        workspace_id: &str,
     ) -> Result<Vec<ReportSummary>, ReportError> {
-        // PHASE 1 STUB.
-        Ok(Vec::new())
+        // ADR-028 §3 `reports_for_workspace(ws)` — every row for `ws`,
+        // ordered newest-first. No time-range filter (PG adapter also
+        // applies no range at the trait level; the underlying
+        // `load_report_range(days=365)` is adapter-local policy).
+        let conn = self
+            .connection()
+            .map_err(|e| ReportError::Store(format!("reports_for_workspace: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:GraphReport) WHERE r.workspace_id = $ws RETURN r.id, r.workspace_id, r.created_at, r.report, r.symbol_count, r.edge_count, r.health_score ORDER BY r.created_at DESC;",
+            )
+            .map_err(|e| ReportError::Store(format!("reports_for_workspace: prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![("ws", lbug::Value::String(workspace_id.to_string()))],
+            )
+            .map_err(|e| ReportError::Store(format!("reports_for_workspace: execute: {e}")))?;
+
+        let mut rows = Vec::new();
+        while let Some(row) = result.next() {
+            rows.push(parse_report_row(&row)?);
+        }
+        Ok(rows)
     }
+}
+
+/// Row mapper for `ReportStore` queries — shared by `latest_report`
+/// and `reports_for_workspace` so both stay in lock-step on column
+/// order. Column order must match the RETURN clauses above.
+fn parse_report_row(row: &[lbug::Value]) -> Result<ReportSummary, ReportError> {
+    let id = row[0].to_string();
+    let workspace_id = row[1].to_string();
+    let created_at = row[2].to_string();
+    let report: serde_json::Value = serde_json::from_str(&row[3].to_string())
+        .map_err(|e| ReportError::Store(format!("parse_report_row: report JSON: {e}")))?;
+    let symbol_count = match &row[4] {
+        lbug::Value::Int32(n) => *n,
+        lbug::Value::Int64(n) => *n as i32,
+        _ => 0,
+    };
+    let edge_count = match &row[5] {
+        lbug::Value::Int32(n) => *n,
+        lbug::Value::Int64(n) => *n as i32,
+        _ => 0,
+    };
+    let health_score = match &row[6] {
+        lbug::Value::Null(_) => None,
+        lbug::Value::Double(n) => Some(*n as f32),
+        _ => None,
+    };
+    Ok(ReportSummary {
+        id,
+        workspace_id,
+        created_at,
+        report,
+        symbol_count,
+        edge_count,
+        health_score,
+    })
 }
 
 #[async_trait]
@@ -731,271 +724,21 @@ impl CallGraphStore for LadybugStore {
 impl IngestCommit for LadybugStore {
     async fn commit_revision(
         &self,
-        ws: &WorkspaceId,
+        _ws: &WorkspaceId,
         _graph: GraphDelta,
-        manifest: ManifestDelta,
-        report: ReportIntent,
+        _manifest: ManifestDelta,
+        _report: ReportIntent,
     ) -> Result<RevisionId, cognicode_core::domain::ports::CommitError> {
-        // ADR-028 §3 `commit_revision(ws, graph, manifest, report)` —
-        // atomic 3-stage commit. The PG adapter wraps this in a
-        // single `pool.begin()` tx (failures roll back the prior
-        // stages); lbug 0.19 has no public tx handle so we open a
-        // single `Connection` and run the 3 stages as a sequence of
-        // statements against it. lbug's per-`execute` auto-commit
-        // means a failure in stage 3 leaves the work from stages
-        // 1-2 persisted (best-effort atomicity, not transactional
-        // atomicity). A future PR can either:
-        //   - Use lbug's CHECKPOINT mechanism to wrap the sequence
-        //     in an explicit recovery unit, or
-        //   - Compose all 3 stages into a single multi-statement
-        //     Cypher (subject to lbug's parser limits).
-        //
-        // **Trait/tx limitation**: this adapter is gated behind
-        // `multimodal`, which transitively pulls in
-        // `cognicode-core/multimodal`. The cargo test invocation
-        // `--features multimodal` is currently blocked by pre-existing
-        // `cognicode-core --features multimodal` debt (5+ compile
-        // errors in `federation_store.rs` and `ingest_commit.rs` PG
-        // adapter — `Pool<Postgres>` deref + missing
-        // `PostgresManifestStore<'a>` lifetime + `chrono::DateTime<Utc>`
-        // not `sqlx::Decode`); the integration tests for this port are
-        // deferred to the `fix-multimodal-feature-compile-debt-2026-08-02`
-        // follow-up. Logic is validated against lbug 0.19 via the
-        // standalone `cypher_probe` harness.
-        let conn = self.connection().map_err(|e| {
-            cognicode_core::domain::ports::CommitError::Graph(
-                cognicode_core::domain::ports::graph_error::GraphError::Storage(format!(
-                    "commit_revision: connection: {e}"
-                )),
-            )
-        })?;
-
-        // Stage 1: open new revision. Same multi-pattern Cypher with
-        // `WITH count()` pivot used by Priority 4 / 8 — see those for
-        // the rationale on why the `WITH $ws AS ws` post-`SET` form
-        // loses the parameter binding in lbug 0.19.
-        let mut rev_stmt = conn
-            .prepare(
-                "MATCH (old:GraphRevision) WHERE old.workspace_id = $ws AND old.head_of = true SET old.head_of = false WITH count(old) AS _demoted OPTIONAL MATCH (r:GraphRevision) WHERE r.workspace_id = $ws WITH $ws AS ws, coalesce(max(r.revision_id), 0) AS max_rev CREATE (new:GraphRevision {workspace_id: ws, revision_id: max_rev + 1, head_of: true}) RETURN new.revision_id;",
-            )
-            .map_err(|e| {
-                cognicode_core::domain::ports::CommitError::Graph(
-                    cognicode_core::domain::ports::graph_error::GraphError::Storage(format!(
-                        "commit_revision stage 1 (revision open) prepare: {e}"
-                    )),
-                )
-            })?;
-        let mut rev_result = conn
-            .execute(
-                &mut rev_stmt,
-                vec![("ws", lbug::Value::String(ws.to_string()))],
-            )
-            .map_err(|e| {
-                cognicode_core::domain::ports::CommitError::Graph(
-                    cognicode_core::domain::ports::graph_error::GraphError::Storage(format!(
-                        "commit_revision stage 1 (revision open) execute: {e}"
-                    )),
-                )
-            })?;
-        let Some(rev_row) = rev_result.next() else {
-            return Err(cognicode_core::domain::ports::CommitError::Graph(
-                cognicode_core::domain::ports::graph_error::GraphError::Storage(
-                    "commit_revision stage 1: CREATE revision produced no RETURN row".to_string(),
-                ),
-            ));
-        };
-        let rev_id = match &rev_row[0] {
-            lbug::Value::Int64(n) => RevisionId(*n as u64),
-            lbug::Value::Int32(n) => RevisionId(*n as u64),
-            other => {
-                return Err(cognicode_core::domain::ports::CommitError::Graph(
-                    cognicode_core::domain::ports::graph_error::GraphError::Storage(format!(
-                        "commit_revision stage 1: unexpected revision_id type: {other:?}"
-                    )),
-                ));
-            }
-        };
-
-        // Stage 2: manifest upserts. Same read-then-conditional-write
-        // as Priority 1's `ManifestStore::upsert_manifest_entry` —
-        // natural uniqueness on (workspace_id, file_path) enforced at
-        // the application layer via per-row MATCH then UPDATE/CREATE.
-        for row in &manifest.upserts {
-            // Existence check.
-            let mut check_stmt = conn
-                .prepare("MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path RETURN s.id;")
-                .map_err(|e| {
-                    cognicode_core::domain::ports::CommitError::Manifest(
-                        cognicode_core::domain::ports::manifest_store::ManifestError::Store(format!(
-                            "commit_revision stage 2 (manifest check) prepare: {e}"
-                        )),
-                    )
-                })?;
-            let mut existing = conn
-                .execute(
-                    &mut check_stmt,
-                    vec![
-                        ("ws", lbug::Value::String(row.workspace_id.clone())),
-                        ("path", lbug::Value::String(row.file_path.clone())),
-                    ],
-                )
-                .map_err(|e| {
-                    cognicode_core::domain::ports::CommitError::Manifest(
-                        cognicode_core::domain::ports::manifest_store::ManifestError::Store(
-                            format!("commit_revision stage 2 (manifest check) execute: {e}"),
-                        ),
-                    )
-                })?;
-
-            if existing.next().is_some() {
-                // UPDATE.
-                let mut upd_stmt = conn
-                    .prepare("MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path SET s.file_type = $ftype, s.language = $lang, s.content_hash = $hash, s.mtime = $mtime, s.symbol_count = $symcnt, s.edge_count = $edgecnt, s.status = $status, s.error_msg = $errmsg;")
-                    .map_err(|e| {
-                        cognicode_core::domain::ports::CommitError::Manifest(
-                            cognicode_core::domain::ports::manifest_store::ManifestError::Store(format!(
-                                "commit_revision stage 2 (manifest update) prepare: {e}"
-                            )),
-                        )
-                    })?;
-                conn.execute(
-                    &mut upd_stmt,
-                    vec![
-                        ("ws", lbug::Value::String(row.workspace_id.clone())),
-                        ("path", lbug::Value::String(row.file_path.clone())),
-                        ("ftype", lbug::Value::String(row.file_type.clone())),
-                        (
-                            "lang",
-                            match &row.language {
-                                Some(s) => lbug::Value::String(s.clone()),
-                                None => lbug::Value::Null(lbug::LogicalType::String),
-                            },
-                        ),
-                        ("hash", lbug::Value::String(row.content_hash.clone())),
-                        ("mtime", lbug::Value::Double(row.mtime)),
-                        ("symcnt", lbug::Value::Int32(row.symbol_count)),
-                        ("edgecnt", lbug::Value::Int32(row.edge_count)),
-                        ("status", lbug::Value::String(row.status.clone())),
-                        (
-                            "errmsg",
-                            match &row.error_msg {
-                                Some(s) => lbug::Value::String(s.clone()),
-                                None => lbug::Value::Null(lbug::LogicalType::String),
-                            },
-                        ),
-                    ],
-                )
-                .map_err(|e| {
-                    cognicode_core::domain::ports::CommitError::Manifest(
-                        cognicode_core::domain::ports::manifest_store::ManifestError::Store(
-                            format!("commit_revision stage 2 (manifest update) execute: {e}"),
-                        ),
-                    )
-                })?;
-            } else {
-                // CREATE.
-                let mut ins_stmt = conn
-                    .prepare("CREATE (s:ScanManifest {workspace_id: $ws, file_path: $path, file_type: $ftype, language: $lang, content_hash: $hash, mtime: $mtime, symbol_count: $symcnt, edge_count: $edgecnt, status: $status, error_msg: $errmsg});")
-                    .map_err(|e| {
-                        cognicode_core::domain::ports::CommitError::Manifest(
-                            cognicode_core::domain::ports::manifest_store::ManifestError::Store(format!(
-                                "commit_revision stage 2 (manifest insert) prepare: {e}"
-                            )),
-                        )
-                    })?;
-                conn.execute(
-                    &mut ins_stmt,
-                    vec![
-                        ("ws", lbug::Value::String(row.workspace_id.clone())),
-                        ("path", lbug::Value::String(row.file_path.clone())),
-                        ("ftype", lbug::Value::String(row.file_type.clone())),
-                        (
-                            "lang",
-                            match &row.language {
-                                Some(s) => lbug::Value::String(s.clone()),
-                                None => lbug::Value::Null(lbug::LogicalType::String),
-                            },
-                        ),
-                        ("hash", lbug::Value::String(row.content_hash.clone())),
-                        ("mtime", lbug::Value::Double(row.mtime)),
-                        ("symcnt", lbug::Value::Int32(row.symbol_count)),
-                        ("edgecnt", lbug::Value::Int32(row.edge_count)),
-                        ("status", lbug::Value::String(row.status.clone())),
-                        (
-                            "errmsg",
-                            match &row.error_msg {
-                                Some(s) => lbug::Value::String(s.clone()),
-                                None => lbug::Value::Null(lbug::LogicalType::String),
-                            },
-                        ),
-                    ],
-                )
-                .map_err(|e| {
-                    cognicode_core::domain::ports::CommitError::Manifest(
-                        cognicode_core::domain::ports::manifest_store::ManifestError::Store(
-                            format!("commit_revision stage 2 (manifest insert) execute: {e}"),
-                        ),
-                    )
-                })?;
-            }
-        }
-
-        // Stage 3: save the report. Mirrors `ReportStore::save_report`
-        // (Priority 3) — single CREATE with id STRING PK + JSON-as-STRING
-        // for the report column + null-safe health_score.
-        let report = &report.summary;
-        let report_json = serde_json::to_string(&report.report).map_err(|e| {
-            cognicode_core::domain::ports::CommitError::Report(
-                cognicode_core::domain::ports::report_store::ReportError::Store(format!(
-                    "commit_revision stage 3 serialize report: {e}"
-                )),
-            )
-        })?;
-        let mut rep_stmt = conn
-            .prepare(
-                "CREATE (r:GraphReport {id: $id, workspace_id: $ws, created_at: $ts, report: $json, symbol_count: $scnt, edge_count: $ecnt, health_score: $hscore});",
-            )
-            .map_err(|e| {
-                cognicode_core::domain::ports::CommitError::Report(
-                    cognicode_core::domain::ports::report_store::ReportError::Store(format!(
-                        "commit_revision stage 3 (report insert) prepare: {e}"
-                    )),
-                )
-            })?;
-        conn.execute(
-            &mut rep_stmt,
-            vec![
-                ("id", lbug::Value::String(report.id.clone())),
-                ("ws", lbug::Value::String(ws.to_string())),
-                ("ts", lbug::Value::String(report.created_at.clone())),
-                ("json", lbug::Value::String(report_json)),
-                ("scnt", lbug::Value::Int64(report.symbol_count as i64)),
-                ("ecnt", lbug::Value::Int64(report.edge_count as i64)),
-                (
-                    "hscore",
-                    match report.health_score {
-                        Some(v) => lbug::Value::Double(v as f64),
-                        None => lbug::Value::Null(lbug::LogicalType::Double),
-                    },
-                ),
-            ],
-        )
-        .map_err(|e| {
-            cognicode_core::domain::ports::CommitError::Report(
-                cognicode_core::domain::ports::report_store::ReportError::Store(format!(
-                    "commit_revision stage 3 (report insert) execute: {e}"
-                )),
-            )
-        })?;
-
-        // Stage 4 — graph upserts. The PG adapter takes the
-        // GraphDelta but ignores it (see the trait comment); a future
-        // PR will wire Stage 4 once the Generic Graph Layer's
-        // ports (GraphWritePort, GraphNodeStore, GraphEdgeStore)
-        // are defined for the lbug adapter. Today: no-op.
-        let _graph = _graph;
-
-        Ok(rev_id)
+        // PHASE 1 STUB. Next change: single-tx commit_revision that
+        // delegates to RevisionStore::create_revision + ManifestStore
+        // upserts + ReportStore::save_report, all within one
+        // lbug::Connection tx (matches the PostgreSQL behavior
+        // shipped in `b01671f6`).
+        Err(cognicode_core::domain::ports::CommitError::Graph(
+            cognicode_core::domain::ports::graph_error::GraphError::Storage(
+                "(phase 1 stub — see lib.rs port-impl)".to_string(),
+            ),
+        ))
     }
 }
 
@@ -1056,9 +799,7 @@ mod tests {
     }
 
     // ========================================================================
-    // Per-port integration tests — landed ports so far:
-    //   - ManifestStore (Priority 1, trunk `af5e2ef2`)
-    //   - SessionStore (Priority 2, this branch)
+    // Per-port integration tests — the first land: ManifestStore (Priority 1)
     // ========================================================================
 
     /// Create a temp lbug DB and return a `LadybugStore` + temp dir handle
@@ -1198,168 +939,204 @@ mod tests {
     }
 
     // --------------------------------------------------------------------
-    // SessionStore (Priority 2)
+    // ReportStore (Priority 3)
     // --------------------------------------------------------------------
     //
-    // Same pattern as ManifestStore tests above: real lbug db in a
-    // tempdir, schema-init helper, exercises save/load/list with the
-    // same JSON-string shapes the Postgres adapter uses.
+    // Same pattern as the ManifestStore / SessionStore tests above:
+    // real lbug db in a tempdir, schema-init helper, exercises
+    // save/latest/list with the same shapes the Postgres adapter uses.
 
-    /// Apply the ExplorationSession NODE TABLE DDL once per test
-    /// database. Idempotent via `IF NOT EXISTS`.
+    /// Apply the GraphReport NODE TABLE DDL once per test database.
+    /// Idempotent via `IF NOT EXISTS`.
     ///
-    /// Note: unlike `ScanManifest`, the natural PK here is
-    /// single-column (`id` STRING) — no synthetic PK needed. The
-    /// lbug 0.19.0 single-column-PK limitation only bites composite
-    /// natural keys.
+    /// Note: like ExplorationSession, the natural PK here is
+    /// single-column (`id` STRING) — no synthetic PK needed and no
+    /// read-then-conditional-write workaround. The PG adapter's
+    /// `save_report` is also a single-pass INSERT (or
+    /// INSERT-ON-CONFLICT-DO-UPDATE), so parity is direct.
     ///
-    /// `events` and `panes` are stored as STRING (the JSON text the
-    /// caller passes in via the port signature). lbug 0.19.0 has no
-    /// JSON type — callers serialize/deserialize via `serde_json` at
-    /// the application layer (same as how the port trait's
-    /// `SessionRow.events: serde_json::Value` is reconstructed on
-    /// read).
-    fn init_exploration_session_schema(store: &LadybugStore) {
+    /// `report` is stored as STRING (the JSON text). `health_score`
+    /// is nullable DOUBLE.
+    fn init_graph_report_schema(store: &LadybugStore) {
         let conn = store.connection().expect("schema-init connection");
         conn.query(
-            "CREATE NODE TABLE IF NOT EXISTS ExplorationSession( \
+            "CREATE NODE TABLE IF NOT EXISTS GraphReport( \
                  id STRING PRIMARY KEY, \
                  workspace_id STRING, \
-                 events STRING, \
-                 navigation_mode STRING, \
-                 panes STRING, \
                  created_at STRING, \
-                 investigation_id STRING);",
+                 report STRING, \
+                 symbol_count INT64, \
+                 edge_count INT64, \
+                 health_score DOUBLE);",
         )
-        .expect("create ExplorationSession NODE TABLE");
+        .expect("create GraphReport NODE TABLE");
+    }
+
+    fn sample_report(id: &str, ws: &str, ts: &str) -> ReportSummary {
+        ReportSummary {
+            id: id.to_string(),
+            workspace_id: ws.to_string(),
+            created_at: ts.to_string(),
+            report: serde_json::json!({
+                "summary": "test report",
+                "issues": 3,
+            }),
+            symbol_count: 100,
+            edge_count: 42,
+            health_score: Some(0.85),
+        }
     }
 
     #[tokio::test]
-    async fn session_list_returns_empty_for_fresh_db() {
+    async fn report_latest_returns_none_for_fresh_db() {
         let (store, _dir) = make_test_store();
-        init_exploration_session_schema(&store);
-        let rows = SessionStore::list(&store, "ws-unknown")
+        init_graph_report_schema(&store);
+        let r = ReportStore::latest_report(&store, "ws-unknown")
+            .await
+            .expect("latest");
+        assert!(r.is_none(), "fresh db should return None");
+    }
+
+    #[tokio::test]
+    async fn report_list_returns_empty_for_fresh_db() {
+        let (store, _dir) = make_test_store();
+        init_graph_report_schema(&store);
+        let rows = ReportStore::reports_for_workspace(&store, "ws-unknown")
             .await
             .expect("list");
         assert!(rows.is_empty(), "fresh db should return no rows");
     }
 
     #[tokio::test]
-    async fn session_save_then_load_round_trips() {
+    async fn report_save_then_latest_round_trips() {
         let (store, _dir) = make_test_store();
-        init_exploration_session_schema(&store);
-        let events_json = r#"[{"kind":"click","t":1},{"kind":"hover","t":2}]"#;
-        let panes_json = r#"{"left":"graph","right":"narrative"}"#;
-        SessionStore::save(
+        init_graph_report_schema(&store);
+        let report = sample_report("rep-1", "ws-1", "2026-08-02T10:00:00Z");
+        ReportStore::save_report(&store, "ws-1", &report)
+            .await
+            .expect("save");
+        let loaded = ReportStore::latest_report(&store, "ws-1")
+            .await
+            .expect("latest");
+        let loaded = loaded.expect("latest should return Some after save");
+        assert_eq!(loaded.id, "rep-1");
+        assert_eq!(loaded.workspace_id, "ws-1");
+        assert_eq!(loaded.created_at, "2026-08-02T10:00:00Z");
+        assert_eq!(loaded.report["summary"], "test report");
+        assert_eq!(loaded.report["issues"], 3);
+        assert_eq!(loaded.symbol_count, 100);
+        assert_eq!(loaded.edge_count, 42);
+        assert!(
+            (loaded.health_score.expect("health_score") - 0.85_f32).abs() < 1e-4,
+            "health_score should round-trip ~0.85",
+        );
+    }
+
+    #[tokio::test]
+    async fn report_save_with_null_health_score_round_trips() {
+        let (store, _dir) = make_test_store();
+        init_graph_report_schema(&store);
+        let mut report = sample_report("rep-2", "ws-2", "2026-08-02T10:05:00Z");
+        report.health_score = None;
+        ReportStore::save_report(&store, "ws-2", &report)
+            .await
+            .expect("save");
+        let loaded = ReportStore::latest_report(&store, "ws-2")
+            .await
+            .expect("latest")
+            .expect("present");
+        assert!(
+            loaded.health_score.is_none(),
+            "null health_score should round-trip None"
+        );
+    }
+
+    #[tokio::test]
+    async fn report_list_returns_rows_in_created_at_desc_order() {
+        // Save three reports in a known order; list must return them
+        // newest-first. Same determinism pattern as SessionStore's list
+        // ordering test: back-to-back saves may land in the same
+        // nanosecond, so we use distinct `created_at` values supplied
+        // by the caller (the PG adapter trusts the caller's
+        // `created_at`; we mirror that).
+        let (store, _dir) = make_test_store();
+        init_graph_report_schema(&store);
+        ReportStore::save_report(
             &store,
-            "sess-1",
-            "ws-1",
-            events_json,
-            "guided",
-            panes_json,
-            Some("inv-1"),
+            "ws-x",
+            &sample_report("rep-old", "ws-x", "2026-08-02T08:00:00Z"),
         )
         .await
-        .expect("save");
-        let row = SessionStore::load(&store, "sess-1", "ws-1")
+        .expect("save-old");
+        ReportStore::save_report(
+            &store,
+            "ws-x",
+            &sample_report("rep-mid", "ws-x", "2026-08-02T09:00:00Z"),
+        )
+        .await
+        .expect("save-mid");
+        ReportStore::save_report(
+            &store,
+            "ws-x",
+            &sample_report("rep-new", "ws-x", "2026-08-02T10:00:00Z"),
+        )
+        .await
+        .expect("save-new");
+        let rows = ReportStore::reports_for_workspace(&store, "ws-x")
             .await
-            .expect("load");
-        let row = row.expect("load should return Some after save");
-        assert_eq!(row.id, "sess-1");
-        assert_eq!(row.workspace_id, "ws-1");
-        assert_eq!(row.navigation_mode, "guided");
-        assert_eq!(row.investigation_id.as_deref(), Some("inv-1"));
-        assert_eq!(row.events.to_string(), events_json);
-        assert_eq!(row.panes.to_string(), panes_json);
-        assert!(
-            !row.created_at.is_empty(),
-            "created_at must be filled by the store"
-        );
-    }
-
-    #[tokio::test]
-    async fn session_save_with_null_investigation_id_round_trips() {
-        let (store, _dir) = make_test_store();
-        init_exploration_session_schema(&store);
-        SessionStore::save(&store, "sess-2", "ws-2", "[]", "free", "{}", None)
-            .await
-            .expect("save");
-        let row = SessionStore::load(&store, "sess-2", "ws-2")
-            .await
-            .expect("load");
-        let row = row.expect("present");
-        assert!(
-            row.investigation_id.is_none(),
-            "investigation_id should round-trip None"
-        );
-    }
-
-    #[tokio::test]
-    async fn session_load_with_wrong_workspace_returns_none() {
-        // Security check: load is scoped to `(id, workspace_id)`. A
-        // session that exists under `ws-A` must NOT be retrievable
-        // via `load(id, ws-B)` — this is the scope-isolation invariant
-        // the Postgres adapter also enforces (see
-        // `load_exploration_session`'s `WHERE id = $1 AND workspace_id
-        // = $2`).
-        let (store, _dir) = make_test_store();
-        init_exploration_session_schema(&store);
-        SessionStore::save(&store, "sess-3", "ws-A", "[]", "guided", "{}", None)
-            .await
-            .expect("save");
-        let row = SessionStore::load(&store, "sess-3", "ws-B")
-            .await
-            .expect("load");
-        assert!(
-            row.is_none(),
-            "cross-workspace load must return None (not the row)"
-        );
-    }
-
-    #[tokio::test]
-    async fn session_list_returns_rows_in_created_at_desc_order() {
-        // Saving three sessions in a known order; `list` must return
-        // them newest-first. The stored `created_at` is set at save
-        // time via `chrono::Utc::now()`, so even back-to-back saves
-        // can land in the same nanosecond — we therefore save with a
-        // tiny sleep between each call so the ORDER BY `created_at
-        // DESC` is deterministic in this test.
-        let (store, _dir) = make_test_store();
-        init_exploration_session_schema(&store);
-        for id in ["sess-old", "sess-mid", "sess-new"] {
-            SessionStore::save(&store, id, "ws-x", "[]", "guided", "{}", None)
-                .await
-                .expect("save");
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-        let rows = SessionStore::list(&store, "ws-x").await.expect("list");
+            .expect("list");
         assert_eq!(rows.len(), 3);
-        assert_eq!(rows[0].id, "sess-new");
-        assert_eq!(rows[1].id, "sess-mid");
-        assert_eq!(rows[2].id, "sess-old");
+        assert_eq!(rows[0].id, "rep-new");
+        assert_eq!(rows[1].id, "rep-mid");
+        assert_eq!(rows[2].id, "rep-old");
     }
 
     #[tokio::test]
-    async fn session_list_scopes_to_workspace() {
-        // Two workspaces, three sessions total — list(ws-A) must
-        // return only ws-A's sessions.
+    async fn report_latest_and_list_scopes_to_workspace() {
+        // Two workspaces, three reports total — `latest_report(ws-A)`
+        // and `reports_for_workspace(ws-A)` must only see ws-A's rows.
         let (store, _dir) = make_test_store();
-        init_exploration_session_schema(&store);
-        SessionStore::save(&store, "a-1", "ws-A", "[]", "guided", "{}", None)
-            .await
-            .expect("s1");
-        SessionStore::save(&store, "a-2", "ws-A", "[]", "guided", "{}", None)
-            .await
-            .expect("s2");
-        SessionStore::save(&store, "b-1", "ws-B", "[]", "guided", "{}", None)
-            .await
-            .expect("s3");
+        init_graph_report_schema(&store);
+        ReportStore::save_report(
+            &store,
+            "ws-A",
+            &sample_report("a-1", "ws-A", "2026-08-02T08:00:00Z"),
+        )
+        .await
+        .expect("a1");
+        ReportStore::save_report(
+            &store,
+            "ws-A",
+            &sample_report("a-2", "ws-A", "2026-08-02T09:00:00Z"),
+        )
+        .await
+        .expect("a2");
+        ReportStore::save_report(
+            &store,
+            "ws-B",
+            &sample_report("b-1", "ws-B", "2026-08-02T10:00:00Z"),
+        )
+        .await
+        .expect("b1");
 
-        let a_rows = SessionStore::list(&store, "ws-A").await.expect("la");
+        let a_latest = ReportStore::latest_report(&store, "ws-A")
+            .await
+            .expect("latest-A")
+            .expect("present");
+        assert_eq!(
+            a_latest.id, "a-2",
+            "latest for ws-A must be a-2 (newest ws-A report)"
+        );
+
+        let a_rows = ReportStore::reports_for_workspace(&store, "ws-A")
+            .await
+            .expect("list-A");
         assert_eq!(a_rows.len(), 2);
         assert!(a_rows.iter().all(|r| r.workspace_id == "ws-A"));
 
-        let b_rows = SessionStore::list(&store, "ws-B").await.expect("lb");
+        let b_rows = ReportStore::reports_for_workspace(&store, "ws-B")
+            .await
+            .expect("list-B");
         assert_eq!(b_rows.len(), 1);
         assert_eq!(b_rows[0].id, "b-1");
     }
