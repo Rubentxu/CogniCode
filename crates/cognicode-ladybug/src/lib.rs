@@ -35,17 +35,17 @@
 //! Each port impl is `Err(Error::Stub(...))` today. The follow-up
 //! commits land the per-port SQL in priority order:
 //!
-//! | Priority | Port | Reason |
-//! |---------|------|--------|
-//! | 1 | `ManifestStore` | Simplest SQL (single-table CRUD), is the basic load-bearing port for Phase 1 tests |
-//! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk |
-//! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) |
-//! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` |
-//! | 5 | `FederationStore` | Single-table CRUD on `spaces` |
-//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) |
-//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` |
-//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` |
-//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports |
+//! | Priority | Port | Reason | Status |
+//! |---------|------|--------|--------|
+//! | 1 | `ManifestStore` | Simplest SQL (single-table CRUD), is the basic load-bearing port for Phase 1 tests | DONE (trunk `af5e2ef2`) |
+//! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk | DONE (this branch) |
+//! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) | next |
+//! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` | pending |
+//! | 5 | `FederationStore` | Single-table CRUD on `spaces` | pending (multimodal) |
+//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | pending |
+//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | pending |
+//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | pending |
+//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports | pending |
 
 use std::path::Path;
 use std::sync::Arc;
@@ -453,31 +453,155 @@ impl ManifestStore for LadybugStore {
 impl SessionStore for LadybugStore {
     async fn save(
         &self,
-        _id: &str,
-        _workspace_id: &str,
-        _events_json: &str,
-        _navigation_mode: &str,
-        _panes_json: &str,
-        _investigation_id: Option<&str>,
+        id: &str,
+        workspace_id: &str,
+        events_json: &str,
+        navigation_mode: &str,
+        panes_json: &str,
+        investigation_id: Option<&str>,
     ) -> Result<(), SessionError> {
-        // PHASE 1 STUB.
-        Err(SessionError::Store(
-            "(phase 1 stub — see lib.rs port-impl)".into(),
-        ))
+        // lbug Cypher: CREATE one ExplorationSession node keyed by the
+        // client-provided `id` (single-column STRING PRIMARY KEY — no
+        // composite-PK workaround needed because the natural key is
+        // already single-column, unlike `ManifestStore` where the
+        // natural key `(workspace_id, file_path)` forced a synthetic
+        // PK + read-then-conditional-write).
+        //
+        // `created_at` is filled client-side via `chrono::Utc::now()
+        // .to_rfc3339()` because lbug 0.19.0 has no `now()`-equivalent
+        // function call for default values (verified by the spike's
+        // s2_schema_load — only `SERIAL` is auto-assigned). This
+        // mirrors the PostgreSQL `DEFAULT now()` semantics for callers.
+        //
+        // `investigation_id` is stored as `Null(STRING)` when absent
+        // — the natural representation of an optional FK in lbug
+        // 0.19.0 (no NULLABLE shorthand; nullable columns are STRING
+        // with semantic null values).
+        //
+        // The query is flattened to a single line — lbug 0.19.0's
+        // parser is line-continuation-sensitive (verified in the
+        // spike's s6_cypher_compat).
+        let conn = self
+            .connection()
+            .map_err(|e| SessionError::Store(format!("save: {e}")))?;
+        let created_at = chrono::Utc::now().to_rfc3339();
+        let mut stmt = conn
+            .prepare(
+                "CREATE (s:ExplorationSession {id: $id, workspace_id: $ws, events: $events, navigation_mode: $mode, panes: $panes, created_at: $ts, investigation_id: $inv});",
+            )
+            .map_err(|e| SessionError::Store(format!("save: prepare: {e}")))?;
+        conn.execute(
+            &mut stmt,
+            vec![
+                ("id", lbug::Value::String(id.to_string())),
+                ("ws", lbug::Value::String(workspace_id.to_string())),
+                ("events", lbug::Value::String(events_json.to_string())),
+                ("mode", lbug::Value::String(navigation_mode.to_string())),
+                ("panes", lbug::Value::String(panes_json.to_string())),
+                ("ts", lbug::Value::String(created_at)),
+                (
+                    "inv",
+                    match investigation_id {
+                        Some(s) => lbug::Value::String(s.to_string()),
+                        None => lbug::Value::Null(lbug::LogicalType::String),
+                    },
+                ),
+            ],
+        )
+        .map_err(|e| SessionError::Store(format!("save: execute: {e}")))?;
+        Ok(())
     }
 
-    async fn load(
-        &self,
-        _id: &str,
-        _workspace_id: &str,
-    ) -> Result<Option<SessionRow>, SessionError> {
-        // PHASE 1 STUB.
-        Ok(None)
+    async fn load(&self, id: &str, workspace_id: &str) -> Result<Option<SessionRow>, SessionError> {
+        // lbug Cypher: MATCH by the natural `(id, workspace_id)` pair
+        // and return the row. The `WHERE` form is used (not the
+        // property-pattern form `MATCH (n:L {prop: $v})`) because the
+        // property pattern is rejected by lbug 0.19.0's parser
+        // (verified in the spike's s6_cypher_compat).
+        //
+        // Single-row lookup, so `LIMIT 1` is included as a defensive
+        // belt-and-suspenders measure even though `id` is the PK and
+        // should never have duplicates.
+        let conn = self
+            .connection()
+            .map_err(|e| SessionError::Store(format!("load: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (s:ExplorationSession) WHERE s.id = $id AND s.workspace_id = $ws RETURN s.id, s.workspace_id, s.events, s.navigation_mode, s.panes, s.created_at, s.investigation_id LIMIT 1;",
+            )
+            .map_err(|e| SessionError::Store(format!("load: prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![
+                    ("id", lbug::Value::String(id.to_string())),
+                    ("ws", lbug::Value::String(workspace_id.to_string())),
+                ],
+            )
+            .map_err(|e| SessionError::Store(format!("load: execute: {e}")))?;
+
+        let Some(row) = result.next() else {
+            return Ok(None);
+        };
+
+        let events: serde_json::Value = serde_json::from_str(&row[2].to_string())
+            .map_err(|e| SessionError::Store(format!("load: events JSON: {e}")))?;
+        let panes: serde_json::Value = serde_json::from_str(&row[4].to_string())
+            .map_err(|e| SessionError::Store(format!("load: panes JSON: {e}")))?;
+        Ok(Some(SessionRow {
+            id: row[0].to_string(),
+            workspace_id: row[1].to_string(),
+            events,
+            navigation_mode: row[3].to_string(),
+            panes,
+            created_at: row[5].to_string(),
+            investigation_id: match &row[6] {
+                lbug::Value::Null(_) => None,
+                other => Some(other.to_string()),
+            },
+        }))
     }
 
-    async fn list(&self, _workspace_id: &str) -> Result<Vec<SessionRow>, SessionError> {
-        // PHASE 1 STUB.
-        Ok(Vec::new())
+    async fn list(&self, workspace_id: &str) -> Result<Vec<SessionRow>, SessionError> {
+        // lbug Cypher: MATCH by `workspace_id` and ORDER BY `created_at
+        // DESC, id DESC` (matching the PostgreSQL ORDER BY in the
+        // Postgres adapter's `list_exploration_sessions` — stable
+        // ordering is required so list-then-load round-trips in tests).
+        let conn = self
+            .connection()
+            .map_err(|e| SessionError::Store(format!("list: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (s:ExplorationSession) WHERE s.workspace_id = $ws RETURN s.id, s.workspace_id, s.events, s.navigation_mode, s.panes, s.created_at, s.investigation_id ORDER BY s.created_at DESC, s.id DESC;",
+            )
+            .map_err(|e| SessionError::Store(format!("list: prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![("ws", lbug::Value::String(workspace_id.to_string()))],
+            )
+            .map_err(|e| SessionError::Store(format!("list: execute: {e}")))?;
+
+        let mut rows = Vec::new();
+        while let Some(row) = result.next() {
+            let events: serde_json::Value = serde_json::from_str(&row[2].to_string())
+                .map_err(|e| SessionError::Store(format!("list: events JSON: {e}")))?;
+            let panes: serde_json::Value = serde_json::from_str(&row[4].to_string())
+                .map_err(|e| SessionError::Store(format!("list: panes JSON: {e}")))?;
+            rows.push(SessionRow {
+                id: row[0].to_string(),
+                workspace_id: row[1].to_string(),
+                events,
+                navigation_mode: row[3].to_string(),
+                panes,
+                created_at: row[5].to_string(),
+                investigation_id: match &row[6] {
+                    lbug::Value::Null(_) => None,
+                    other => Some(other.to_string()),
+                },
+            });
+        }
+        Ok(rows)
     }
 }
 
@@ -682,7 +806,9 @@ mod tests {
     }
 
     // ========================================================================
-    // Per-port integration tests — the first land: ManifestStore (Priority 1)
+    // Per-port integration tests — landed ports so far:
+    //   - ManifestStore (Priority 1, trunk `af5e2ef2`)
+    //   - SessionStore (Priority 2, this branch)
     // ========================================================================
 
     /// Create a temp lbug DB and return a `LadybugStore` + temp dir handle
@@ -819,5 +945,172 @@ mod tests {
         assert_eq!(rows.len(), 1, "MERGE should NOT create a second row");
         assert_eq!(rows[0].symbol_count, 999);
         assert_eq!(rows[0].content_hash, "new-hash");
+    }
+
+    // --------------------------------------------------------------------
+    // SessionStore (Priority 2)
+    // --------------------------------------------------------------------
+    //
+    // Same pattern as ManifestStore tests above: real lbug db in a
+    // tempdir, schema-init helper, exercises save/load/list with the
+    // same JSON-string shapes the Postgres adapter uses.
+
+    /// Apply the ExplorationSession NODE TABLE DDL once per test
+    /// database. Idempotent via `IF NOT EXISTS`.
+    ///
+    /// Note: unlike `ScanManifest`, the natural PK here is
+    /// single-column (`id` STRING) — no synthetic PK needed. The
+    /// lbug 0.19.0 single-column-PK limitation only bites composite
+    /// natural keys.
+    ///
+    /// `events` and `panes` are stored as STRING (the JSON text the
+    /// caller passes in via the port signature). lbug 0.19.0 has no
+    /// JSON type — callers serialize/deserialize via `serde_json` at
+    /// the application layer (same as how the port trait's
+    /// `SessionRow.events: serde_json::Value` is reconstructed on
+    /// read).
+    fn init_exploration_session_schema(store: &LadybugStore) {
+        let conn = store.connection().expect("schema-init connection");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS ExplorationSession( \
+                 id STRING PRIMARY KEY, \
+                 workspace_id STRING, \
+                 events STRING, \
+                 navigation_mode STRING, \
+                 panes STRING, \
+                 created_at STRING, \
+                 investigation_id STRING);",
+        )
+        .expect("create ExplorationSession NODE TABLE");
+    }
+
+    #[tokio::test]
+    async fn session_list_returns_empty_for_fresh_db() {
+        let (store, _dir) = make_test_store();
+        init_exploration_session_schema(&store);
+        let rows = SessionStore::list(&store, "ws-unknown")
+            .await
+            .expect("list");
+        assert!(rows.is_empty(), "fresh db should return no rows");
+    }
+
+    #[tokio::test]
+    async fn session_save_then_load_round_trips() {
+        let (store, _dir) = make_test_store();
+        init_exploration_session_schema(&store);
+        let events_json = r#"[{"kind":"click","t":1},{"kind":"hover","t":2}]"#;
+        let panes_json = r#"{"left":"graph","right":"narrative"}"#;
+        SessionStore::save(
+            &store,
+            "sess-1",
+            "ws-1",
+            events_json,
+            "guided",
+            panes_json,
+            Some("inv-1"),
+        )
+        .await
+        .expect("save");
+        let row = SessionStore::load(&store, "sess-1", "ws-1")
+            .await
+            .expect("load");
+        let row = row.expect("load should return Some after save");
+        assert_eq!(row.id, "sess-1");
+        assert_eq!(row.workspace_id, "ws-1");
+        assert_eq!(row.navigation_mode, "guided");
+        assert_eq!(row.investigation_id.as_deref(), Some("inv-1"));
+        assert_eq!(row.events.to_string(), events_json);
+        assert_eq!(row.panes.to_string(), panes_json);
+        assert!(
+            !row.created_at.is_empty(),
+            "created_at must be filled by the store"
+        );
+    }
+
+    #[tokio::test]
+    async fn session_save_with_null_investigation_id_round_trips() {
+        let (store, _dir) = make_test_store();
+        init_exploration_session_schema(&store);
+        SessionStore::save(&store, "sess-2", "ws-2", "[]", "free", "{}", None)
+            .await
+            .expect("save");
+        let row = SessionStore::load(&store, "sess-2", "ws-2")
+            .await
+            .expect("load");
+        let row = row.expect("present");
+        assert!(
+            row.investigation_id.is_none(),
+            "investigation_id should round-trip None"
+        );
+    }
+
+    #[tokio::test]
+    async fn session_load_with_wrong_workspace_returns_none() {
+        // Security check: load is scoped to `(id, workspace_id)`. A
+        // session that exists under `ws-A` must NOT be retrievable
+        // via `load(id, ws-B)` — this is the scope-isolation invariant
+        // the Postgres adapter also enforces (see
+        // `load_exploration_session`'s `WHERE id = $1 AND workspace_id
+        // = $2`).
+        let (store, _dir) = make_test_store();
+        init_exploration_session_schema(&store);
+        SessionStore::save(&store, "sess-3", "ws-A", "[]", "guided", "{}", None)
+            .await
+            .expect("save");
+        let row = SessionStore::load(&store, "sess-3", "ws-B")
+            .await
+            .expect("load");
+        assert!(
+            row.is_none(),
+            "cross-workspace load must return None (not the row)"
+        );
+    }
+
+    #[tokio::test]
+    async fn session_list_returns_rows_in_created_at_desc_order() {
+        // Saving three sessions in a known order; `list` must return
+        // them newest-first. The stored `created_at` is set at save
+        // time via `chrono::Utc::now()`, so even back-to-back saves
+        // can land in the same nanosecond — we therefore save with a
+        // tiny sleep between each call so the ORDER BY `created_at
+        // DESC` is deterministic in this test.
+        let (store, _dir) = make_test_store();
+        init_exploration_session_schema(&store);
+        for id in ["sess-old", "sess-mid", "sess-new"] {
+            SessionStore::save(&store, id, "ws-x", "[]", "guided", "{}", None)
+                .await
+                .expect("save");
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let rows = SessionStore::list(&store, "ws-x").await.expect("list");
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].id, "sess-new");
+        assert_eq!(rows[1].id, "sess-mid");
+        assert_eq!(rows[2].id, "sess-old");
+    }
+
+    #[tokio::test]
+    async fn session_list_scopes_to_workspace() {
+        // Two workspaces, three sessions total — list(ws-A) must
+        // return only ws-A's sessions.
+        let (store, _dir) = make_test_store();
+        init_exploration_session_schema(&store);
+        SessionStore::save(&store, "a-1", "ws-A", "[]", "guided", "{}", None)
+            .await
+            .expect("s1");
+        SessionStore::save(&store, "a-2", "ws-A", "[]", "guided", "{}", None)
+            .await
+            .expect("s2");
+        SessionStore::save(&store, "b-1", "ws-B", "[]", "guided", "{}", None)
+            .await
+            .expect("s3");
+
+        let a_rows = SessionStore::list(&store, "ws-A").await.expect("la");
+        assert_eq!(a_rows.len(), 2);
+        assert!(a_rows.iter().all(|r| r.workspace_id == "ws-A"));
+
+        let b_rows = SessionStore::list(&store, "ws-B").await.expect("lb");
+        assert_eq!(b_rows.len(), 1);
+        assert_eq!(b_rows[0].id, "b-1");
     }
 }
