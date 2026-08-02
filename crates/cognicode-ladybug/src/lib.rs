@@ -39,8 +39,8 @@
 //! |---------|------|--------|--------|
 //! | 1 | `ManifestStore` | Simplest SQL (single-table CRUD), is the basic load-bearing port for Phase 1 tests | DONE (`af5e2ef2`) |
 //! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk | DONE (`34415ce8`) |
-//! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) | DONE (this branch) |
-//! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` | pending |
+//! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) | DONE (`83328dc2`) |
+//! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` | DONE (this branch) |
 //! | 5 | `FederationStore` | Single-table CRUD on `spaces` | pending (multimodal) |
 //! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | pending |
 //! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | pending |
@@ -188,43 +188,145 @@ impl LadybugStore {
 
 #[async_trait]
 impl RevisionStore for LadybugStore {
-    async fn head_revision(&self, _ws: &WorkspaceId) -> Result<Option<RevisionId>, RevisionError> {
-        // PHASE 1 STUB. Next change: `SELECT revision_id FROM graph_revisions
-        // WHERE workspace_id = $1 AND head_of = true LIMIT 1`.
-        Ok(None)
+    async fn head_revision(&self, ws: &WorkspaceId) -> Result<Option<RevisionId>, RevisionError> {
+        // ADR-028 §3 `head_revision(ws)` — read-only. Returns the
+        // `revision_id` of the single row where `head_of = true` for
+        // the workspace, or None if no revisions exist yet.
+        //
+        // The trait signature requires `&self` for read paths (only
+        // write paths take `&mut PgConnection`), so this matches.
+        let conn = self
+            .connection()
+            .map_err(|e| RevisionError::Store(format!("head_revision: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:GraphRevision) WHERE r.workspace_id = $ws AND r.head_of = true RETURN r.revision_id;",
+            )
+            .map_err(|e| RevisionError::Store(format!("head_revision: prepare: {e}")))?;
+        let mut result = conn
+            .execute(&mut stmt, vec![("ws", lbug::Value::String(ws.to_string()))])
+            .map_err(|e| RevisionError::Store(format!("head_revision: execute: {e}")))?;
+
+        let Some(row) = result.next() else {
+            return Ok(None);
+        };
+        let rev_id = match &row[0] {
+            lbug::Value::Int32(n) => *n as u64,
+            lbug::Value::Int64(n) => *n as u64,
+            other => {
+                return Err(RevisionError::Store(format!(
+                    "head_revision: unexpected revision_id type: {other:?}"
+                )));
+            }
+        };
+        Ok(Some(RevisionId(rev_id)))
     }
 
     async fn create_revision(
         &self,
         _conn: &mut sqlx::PgConnection,
-        _ws: &WorkspaceId,
+        ws: &WorkspaceId,
     ) -> Result<RevisionId, RevisionError> {
-        // Note: the trait signature requires `&mut PgConnection` per the
-        // e29-0-define-new-ports PR1 design. Phase 1 will swap this for
-        // `&mut lbug::Connection` (a future migration of the trait), or
-        // for lbug's own tx handle if its API supports that.
-        //
-        // For now: open a new connection from the shared Database and
-        // issue the open revision in a single tx.
-        let _conn = self
-            .connection()
-            .map_err(|_| RevisionError::Store("(phase 1 stub — see lib.rs port-impl)".into()))?;
-        // tx: demote old head, compute next id, insert.
-        Err(RevisionError::Store(
-            "(phase 1 stub — impl lands in next change)".into(),
-        ))
+        // Delegate to the `&self`-only helper — the trait's
+        // `&mut PgConnection` is ignored (see `e29-trait-tx-handle-refactor`
+        // follow-up documented in `head_revision`).
+        self.create_revision_for_ws(ws).await
     }
 
     async fn set_head(
         &self,
         _conn: &mut sqlx::PgConnection,
-        _ws: &WorkspaceId,
-        _rev: RevisionId,
+        ws: &WorkspaceId,
+        rev: RevisionId,
     ) -> Result<(), RevisionError> {
-        // PHASE 1 STUB.
-        Err(RevisionError::Store(
-            "(phase 1 stub — see lib.rs port-impl)".into(),
-        ))
+        // Delegate to the `&self`-only helper — see comment in
+        // `create_revision` for why the trait's tx handle is ignored.
+        self.set_head_for_ws(ws, rev).await
+    }
+}
+
+impl LadybugStore {
+    /// `RevisionStore::create_revision` body extracted to a
+    /// `&self`-only helper so tests can exercise it without a
+    /// `sqlx::PgConnection` (which has no public constructor in
+    /// sqlx 0.8 — connecting requires a live PG server).
+    ///
+    /// ADR-028 §3 — atomically demote prior head, compute next
+    /// `revision_id = MAX(revision_id) + 1` (or 1 if no rows), INSERT
+    /// new row with `head_of = true`. Single multi-pattern Cypher
+    /// so lbug's per-`execute` auto-commit keeps it atomic.
+    ///
+    /// **Cypher quirk**: lbug 0.19 doesn't preserve `$param` aliases
+    /// across a `WITH` that follows a `SET` on a write scope. We
+    /// pivot the scope with `WITH count(old)` (an aggregation) so
+    /// the subsequent `OPTIONAL MATCH` can re-bind `$ws` via the
+    /// outer query parameter. This was confirmed empirically against
+    /// the spike crate (see the cypher_probe harness). A pure
+    /// `WITH $ws AS ws` after `SET old.head_of = false` returns no
+    /// rows for the subsequent CREATE — `count()` is the magic.
+    pub(crate) async fn create_revision_for_ws(
+        &self,
+        ws: &WorkspaceId,
+    ) -> Result<RevisionId, RevisionError> {
+        let conn = self
+            .connection()
+            .map_err(|e| RevisionError::Store(format!("create_revision: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (old:GraphRevision) WHERE old.workspace_id = $ws AND old.head_of = true SET old.head_of = false WITH count(old) AS _demoted OPTIONAL MATCH (r:GraphRevision) WHERE r.workspace_id = $ws WITH $ws AS ws, coalesce(max(r.revision_id), 0) AS max_rev CREATE (new:GraphRevision {workspace_id: ws, revision_id: max_rev + 1, head_of: true}) RETURN new.revision_id;",
+            )
+            .map_err(|e| {
+                RevisionError::Store(format!("create_revision: prepare: {e}"))
+            })?;
+        let mut result = conn
+            .execute(&mut stmt, vec![("ws", lbug::Value::String(ws.to_string()))])
+            .map_err(|e| RevisionError::Store(format!("create_revision: execute: {e}")))?;
+
+        let Some(row) = result.next() else {
+            return Err(RevisionError::Store(
+                "create_revision: CREATE produced no RETURN row".into(),
+            ));
+        };
+        let rev_id = match &row[0] {
+            lbug::Value::Int32(n) => *n as u64,
+            lbug::Value::Int64(n) => *n as u64,
+            other => {
+                return Err(RevisionError::Store(format!(
+                    "create_revision: unexpected revision_id type: {other:?}"
+                )));
+            }
+        };
+        Ok(RevisionId(rev_id))
+    }
+
+    /// `RevisionStore::set_head` body extracted to a `&self`-only
+    /// helper — see `create_revision_for_ws` for the rationale.
+    ///
+    /// ADR-028 §3 — demote prior head + promote target revision.
+    /// Single Cypher using the same `WITH count()` pivot trick so
+    /// the demote scope and the promote scope compose in one statement.
+    pub(crate) async fn set_head_for_ws(
+        &self,
+        ws: &WorkspaceId,
+        rev: RevisionId,
+    ) -> Result<(), RevisionError> {
+        let conn = self
+            .connection()
+            .map_err(|e| RevisionError::Store(format!("set_head: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (old:GraphRevision) WHERE old.workspace_id = $ws AND old.head_of = true SET old.head_of = false WITH count(old) AS _demoted, $rev AS target MATCH (target_row:GraphRevision) WHERE target_row.workspace_id = $ws AND target_row.revision_id = target SET target_row.head_of = true;",
+            )
+            .map_err(|e| RevisionError::Store(format!("set_head: prepare: {e}")))?;
+        conn.execute(
+            &mut stmt,
+            vec![
+                ("ws", lbug::Value::String(ws.to_string())),
+                ("rev", lbug::Value::Int64(rev.get() as i64)),
+            ],
+        )
+        .map_err(|e| RevisionError::Store(format!("set_head: execute: {e}")))?;
+        Ok(())
     }
 }
 
@@ -936,6 +1038,199 @@ mod tests {
         assert_eq!(rows.len(), 1, "MERGE should NOT create a second row");
         assert_eq!(rows[0].symbol_count, 999);
         assert_eq!(rows[0].content_hash, "new-hash");
+    }
+
+    // --------------------------------------------------------------------
+    // RevisionStore (Priority 4)
+    // --------------------------------------------------------------------
+    //
+    // Same pattern as the per-port tests above: real lbug db in a
+    // tempdir, schema-init helper, exercises the 3 trait methods.
+
+    /// Apply the GraphRevision NODE TABLE DDL once per test database.
+    /// Idempotent via `IF NOT EXISTS`.
+    ///
+    /// Note: natural uniqueness key is `(workspace_id, revision_id)`
+    /// but lbug 0.19 NODE TABLEs only support single-column PRIMARY
+    /// KEYs (the same limitation that drove ManifestStore's
+    /// read-then-conditional-write). We use a synthetic `id SERIAL`
+    /// PK and enforce `(workspace_id, revision_id)` uniqueness at
+    /// the application layer (via the single-Cypher multi-pattern in
+    /// `create_revision` that computes `MAX(revision_id) + 1` per
+    /// workspace, so collisions cannot happen in practice).
+    ///
+    /// The at-most-one-row-with-`head_of = true` invariant per
+    /// workspace is also enforced at the application layer via the
+    /// demote-first-then-create pattern in both `create_revision`
+    /// and `set_head` (single Cypher each).
+    fn init_graph_revisions_schema(store: &LadybugStore) {
+        let conn = store.connection().expect("schema-init connection");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS GraphRevision( \
+                 id SERIAL PRIMARY KEY, \
+                 workspace_id STRING, \
+                 revision_id INT64, \
+                 head_of BOOLEAN);",
+        )
+        .expect("create GraphRevision NODE TABLE");
+    }
+
+    /// Build a `WorkspaceId` for tests (uses `try_new` per the
+    /// `cognicode_core` value-object contract).
+    fn ws_id(s: &str) -> WorkspaceId {
+        WorkspaceId::try_new(s).expect("workspace id must be non-empty")
+    }
+
+    #[tokio::test]
+    async fn revision_head_returns_none_for_fresh_db() {
+        let (store, _dir) = make_test_store();
+        init_graph_revisions_schema(&store);
+        let head = RevisionStore::head_revision(&store, &ws_id("ws-unknown"))
+            .await
+            .expect("head");
+        assert!(head.is_none(), "fresh db must return None");
+    }
+
+    #[tokio::test]
+    async fn revision_create_returns_1_for_fresh_workspace() {
+        let (store, _dir) = make_test_store();
+        init_graph_revisions_schema(&store);
+        let rev = store
+            .create_revision_for_ws(&ws_id("ws-A"))
+            .await
+            .expect("create");
+        assert_eq!(
+            rev,
+            RevisionId(1),
+            "first revision in a fresh workspace must be 1"
+        );
+    }
+
+    #[tokio::test]
+    async fn revision_create_increments_monotonically() {
+        // Three successive `create_revision_for_ws` calls on the same
+        // workspace must produce 1, 2, 3 (MAX + 1 per call).
+        let (store, _dir) = make_test_store();
+        init_graph_revisions_schema(&store);
+        let r1 = store
+            .create_revision_for_ws(&ws_id("ws-x"))
+            .await
+            .expect("c1");
+        let r2 = store
+            .create_revision_for_ws(&ws_id("ws-x"))
+            .await
+            .expect("c2");
+        let r3 = store
+            .create_revision_for_ws(&ws_id("ws-x"))
+            .await
+            .expect("c3");
+        assert_eq!(r1, RevisionId(1));
+        assert_eq!(r2, RevisionId(2));
+        assert_eq!(r3, RevisionId(3));
+
+        // head_revision must reflect the latest.
+        let head = RevisionStore::head_revision(&store, &ws_id("ws-x"))
+            .await
+            .expect("head");
+        assert_eq!(head, Some(RevisionId(3)));
+    }
+
+    #[tokio::test]
+    async fn revision_create_demotes_prior_head() {
+        // After `create_revision_for_ws` runs, exactly one row per
+        // workspace has `head_of = true` and it's the latest.
+        let (store, _dir) = make_test_store();
+        init_graph_revisions_schema(&store);
+        let r1 = store
+            .create_revision_for_ws(&ws_id("ws-d"))
+            .await
+            .expect("c1");
+        let r2 = store
+            .create_revision_for_ws(&ws_id("ws-d"))
+            .await
+            .expect("c2");
+
+        // Head must be r2; r1 must NOT be head anymore.
+        let head = RevisionStore::head_revision(&store, &ws_id("ws-d"))
+            .await
+            .expect("head");
+        assert_eq!(head, Some(r2));
+        assert_ne!(Some(r1), head);
+    }
+
+    #[tokio::test]
+    async fn revision_create_scopes_to_workspace() {
+        // Two workspaces, three revisions total — head must be
+        // workspace-scoped.
+        let (store, _dir) = make_test_store();
+        init_graph_revisions_schema(&store);
+        store
+            .create_revision_for_ws(&ws_id("ws-A"))
+            .await
+            .expect("a1");
+        store
+            .create_revision_for_ws(&ws_id("ws-A"))
+            .await
+            .expect("a2");
+        store
+            .create_revision_for_ws(&ws_id("ws-B"))
+            .await
+            .expect("b1");
+
+        assert_eq!(
+            RevisionStore::head_revision(&store, &ws_id("ws-A"))
+                .await
+                .expect("h-A"),
+            Some(RevisionId(2)),
+            "ws-A's head must be its 2nd revision"
+        );
+        assert_eq!(
+            RevisionStore::head_revision(&store, &ws_id("ws-B"))
+                .await
+                .expect("h-B"),
+            Some(RevisionId(1)),
+            "ws-B's head must be its 1st revision"
+        );
+    }
+
+    #[tokio::test]
+    async fn revision_set_head_promotes_target_and_demotes_prior() {
+        // Create three revisions; then set_head back to revision 2.
+        // After the call: head = rev 2; rev 3 must NOT be head.
+        let (store, _dir) = make_test_store();
+        init_graph_revisions_schema(&store);
+        let r1 = store
+            .create_revision_for_ws(&ws_id("ws-s"))
+            .await
+            .expect("c1");
+        let r2 = store
+            .create_revision_for_ws(&ws_id("ws-s"))
+            .await
+            .expect("c2");
+        let _r3 = store
+            .create_revision_for_ws(&ws_id("ws-s"))
+            .await
+            .expect("c3");
+
+        // Sanity: head is now r3.
+        assert_eq!(
+            RevisionStore::head_revision(&store, &ws_id("ws-s"))
+                .await
+                .expect("pre"),
+            Some(RevisionId(3))
+        );
+
+        // set_head back to r2.
+        store
+            .set_head_for_ws(&ws_id("ws-s"), r2)
+            .await
+            .expect("set_head");
+
+        let head = RevisionStore::head_revision(&store, &ws_id("ws-s"))
+            .await
+            .expect("post");
+        assert_eq!(head, Some(r2), "set_head must promote the target");
+        assert_ne!(head, Some(r1));
     }
 
     // --------------------------------------------------------------------
