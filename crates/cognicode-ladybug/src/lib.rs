@@ -70,9 +70,11 @@ use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
 // the follow-up PR that flips multimodal to ON also wires these.
 #[cfg(feature = "multimodal")]
 use cognicode_core::domain::ports::{
-    federation_store::{FederationError, FederationStore, Space, SpaceId},
+    federation_store::{FederationError, FederationStore},
     ingest_commit::{CommitError, GraphDelta, IngestCommit, ManifestDelta, ReportIntent},
 };
+#[cfg(feature = "multimodal")]
+use cognicode_core::domain::value_objects::{Space, SpaceId};
 
 // =============================================================================
 // Error type
@@ -177,6 +179,41 @@ impl LadybugStore {
     }
 }
 
+#[cfg(feature = "multimodal")]
+impl LadybugStore {
+    pub(crate) async fn head_revision_for_ws(
+        &self,
+        ws: &WorkspaceId,
+    ) -> Result<Option<RevisionId>, FederationError> {
+        let conn = self
+            .connection()
+            .map_err(|e| FederationError::Store(format!("head_revision_for_ws: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:GraphRevision) WHERE r.workspace_id = $ws AND r.head_of = true RETURN r.revision_id;",
+            )
+            .map_err(|e| {
+                FederationError::Store(format!("head_revision_for_ws: prepare: {e}"))
+            })?;
+        let mut result = conn
+            .execute(&mut stmt, vec![("ws", lbug::Value::String(ws.to_string()))])
+            .map_err(|e| FederationError::Store(format!("head_revision_for_ws: execute: {e}")))?;
+        let Some(row) = result.next() else {
+            return Ok(None);
+        };
+        let rev = match &row[0] {
+            lbug::Value::Int64(n) => RevisionId(*n as u64),
+            lbug::Value::Int32(n) => RevisionId(*n as u64),
+            other => {
+                return Err(FederationError::Store(format!(
+                    "head_revision_for_ws: unexpected type: {other:?}"
+                )));
+            }
+        };
+        Ok(Some(rev))
+    }
+}
+
 // =============================================================================
 // Port impls (Phase 1 stubs)
 // =============================================================================
@@ -246,11 +283,7 @@ impl FederationStore for LadybugStore {
         // `source_path: Option<PathBuf>` is serialized to its display
         // form (string), and `config: serde_json::Value` to its
         // serde_json text (same JSON-as-STRING pattern used by
-        // SessionStore and ReportStore). `created_at` is set here
-        // (the PG adapter relies on the column default — for parity
-        // we set it explicitly so lbug reads back the same value the
-        // caller can see).
-        let now = chrono::Utc::now().to_rfc3339();
+        // SessionStore and ReportStore).
         let conn = self
             .connection()
             .map_err(|e| FederationError::Store(format!("register_space: {e}")))?;
@@ -321,7 +354,17 @@ impl FederationStore for LadybugStore {
                             FederationError::Store(format!("register_space: serialize config: {e}"))
                         })?),
                     ),
-                    ("ts", lbug::Value::String(now)),
+                    (
+                        "ts",
+                        lbug::Value::String(
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs())
+                                .unwrap_or(0)
+                                .to_string()
+                                + "Z",
+                        ),
+                    ),
                 ],
             )
             .map_err(|e| FederationError::Store(format!("register_space: insert execute: {e}")))?;
@@ -380,7 +423,7 @@ impl FederationStore for LadybugStore {
 /// order must match the RETURN clauses above.
 #[cfg(feature = "multimodal")]
 fn parse_space_row(row: &[lbug::Value]) -> Result<Space, FederationError> {
-    use crate::domain::value_objects::SpaceKind;
+    use cognicode_core::domain::value_objects::SpaceKind;
     let id = SpaceId(row[0].to_string());
     let name = row[1].to_string();
     let kind = SpaceKind::from_wire(&row[2].to_string()).ok_or_else(|| {
@@ -1045,6 +1088,13 @@ impl IngestCommit for LadybugStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "multimodal")]
+    use cognicode_core::domain::value_objects::{SpaceId, SpaceKind};
+    use serial_test::serial;
+
+    fn ws_id(s: &str) -> WorkspaceId {
+        WorkspaceId::try_new(s).expect("workspace id must be non-empty")
+    }
 
     /// Smoke test: the `LadybugStore::open` constructor exists and
     /// accepts the same `(path, SystemConfig)` shape the spike
@@ -1221,5 +1271,448 @@ mod tests {
         assert_eq!(rows.len(), 1, "MERGE should NOT create a second row");
         assert_eq!(rows[0].symbol_count, 999);
         assert_eq!(rows[0].content_hash, "new-hash");
+    }
+    // --------------------------------------------------------------------
+    // FederationStore (Priority 5, gated behind `multimodal`)
+    // --------------------------------------------------------------------
+
+    #[cfg(feature = "multimodal")]
+    fn sample_space(id: &str, name: &str, kind: SpaceKind) -> Space {
+        Space::try_new(
+            SpaceId::try_new(id.to_string()).expect("non-empty"),
+            name.to_string(),
+            kind,
+        )
+        .expect("non-empty name must succeed")
+    }
+
+    #[cfg(feature = "multimodal")]
+    fn init_space_schema(store: &LadybugStore) {
+        let conn = store.connection().expect("schema-init connection");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS Space( \
+                 id STRING PRIMARY KEY, \
+                 name STRING, \
+                 kind STRING, \
+                 source_path STRING, \
+                 config STRING, \
+                 created_at STRING);",
+        )
+        .expect("create Space NODE TABLE");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn federation_register_creates() {
+        let (store, _dir) = make_test_store();
+        init_space_schema(&store);
+        let s = sample_space("repo-1", "auth-repo", SpaceKind::Repo).with_source_path("/work/auth");
+        store.register_space(&s).await.expect("register");
+        let loaded = store
+            .get_space(&SpaceId::try_new("repo-1".to_string()).expect("non-empty"))
+            .await
+            .expect("get")
+            .expect("present");
+        assert_eq!(
+            loaded.id,
+            SpaceId::try_new("repo-1".to_string()).expect("non-empty")
+        );
+        assert_eq!(loaded.name, "auth-repo");
+        assert_eq!(loaded.kind, SpaceKind::Repo);
+        assert_eq!(
+            loaded.source_path.as_ref().map(|p| p.display().to_string()),
+            Some("/work/auth".to_string())
+        );
+        assert_eq!(loaded.config, serde_json::json!({}));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn federation_register_upserts_on_id_collision() {
+        let (store, _dir) = make_test_store();
+        init_space_schema(&store);
+        let s1 = sample_space("repo-1", "auth-repo", SpaceKind::Repo);
+        store.register_space(&s1).await.expect("s1");
+        let mut s2 = sample_space("repo-1", "auth-repo-renamed", SpaceKind::Repo);
+        s2.config = serde_json::json!({"branch": "dev"});
+        let s2 = s2.with_source_path("/work/auth");
+        store.register_space(&s2).await.expect("s2");
+        let loaded = store
+            .get_space(&SpaceId::try_new("repo-1".to_string()).expect("non-empty"))
+            .await
+            .expect("get")
+            .expect("present");
+        assert_eq!(loaded.name, "auth-repo-renamed", "name updated");
+        assert_eq!(loaded.config, serde_json::json!({"branch": "dev"}));
+        let all = store.list_spaces().await.expect("list");
+        assert_eq!(all.len(), 1, "upsert must NOT create a 2nd row");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn federation_get_unknown_returns_none() {
+        let (store, _dir) = make_test_store();
+        init_space_schema(&store);
+        let r = store
+            .get_space(&SpaceId::try_new("unknown".to_string()).expect("non-empty"))
+            .await
+            .expect("get");
+        assert!(r.is_none(), "unknown id returns None");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn federation_list_empty_when_fresh_db() {
+        let (store, _dir) = make_test_store();
+        init_space_schema(&store);
+        let all = store.list_spaces().await.expect("list");
+        assert!(all.is_empty(), "fresh db returns no rows");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn federation_list_null_source_path_round_trips() {
+        let (store, _dir) = make_test_store();
+        init_space_schema(&store);
+        let s = sample_space("docs-1", "adrs", SpaceKind::Docs);
+        store.register_space(&s).await.expect("save");
+        let loaded = store
+            .get_space(&SpaceId::try_new("docs-1".to_string()).expect("non-empty"))
+            .await
+            .expect("get")
+            .expect("present");
+        assert!(loaded.source_path.is_none(), "None source_path round-trips");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn federation_all_three_kinds_round_trip() {
+        let (store, _dir) = make_test_store();
+        init_space_schema(&store);
+        let s_repo = sample_space("repo-1", "auth", SpaceKind::Repo);
+        let s_docs = sample_space("docs-1", "adrs", SpaceKind::Docs);
+        let s_issues = sample_space("issues-1", "gh-issues", SpaceKind::Issues);
+        store.register_space(&s_repo).await.expect("r");
+        store.register_space(&s_docs).await.expect("d");
+        store.register_space(&s_issues).await.expect("i");
+        let all = store.list_spaces().await.expect("list");
+        assert_eq!(all.len(), 3);
+        let kinds: Vec<SpaceKind> = all.iter().map(|s| s.kind).collect();
+        assert!(kinds.contains(&SpaceKind::Repo));
+        assert!(kinds.contains(&SpaceKind::Docs));
+        assert!(kinds.contains(&SpaceKind::Issues));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn federation_idempotent_register_preserves_row_count() {
+        let (store, _dir) = make_test_store();
+        init_space_schema(&store);
+        let s = sample_space("repo-1", "auth", SpaceKind::Repo);
+        store.register_space(&s).await.expect("1");
+        store.register_space(&s).await.expect("2");
+        store.register_space(&s).await.expect("3");
+        let all = store.list_spaces().await.expect("list");
+        assert_eq!(all.len(), 1, "idempotent register preserves row count");
+    }
+
+    // --------------------------------------------------------------------
+    // IngestCommit (Priority 9, gated behind `multimodal`)
+    // --------------------------------------------------------------------
+
+    #[cfg(feature = "multimodal")]
+    fn init_ingest_schema(store: &LadybugStore) {
+        let conn = store.connection().expect("schema-init connection");
+        conn.query("CREATE NODE TABLE IF NOT EXISTS GraphRevision(id SERIAL PRIMARY KEY, workspace_id STRING, revision_id INT64, head_of BOOLEAN);")
+            .expect("GraphRevision");
+        conn.query("CREATE NODE TABLE IF NOT EXISTS ScanManifest(id SERIAL PRIMARY KEY, workspace_id STRING, file_path STRING, file_type STRING, language STRING, content_hash STRING, mtime DOUBLE, symbol_count INT64, edge_count INT64, status STRING, error_msg STRING);")
+            .expect("ScanManifest");
+        conn.query("CREATE NODE TABLE IF NOT EXISTS GraphReport(id STRING PRIMARY KEY, workspace_id STRING, created_at STRING, report STRING, symbol_count INT64, edge_count INT64, health_score DOUBLE);")
+            .expect("GraphReport");
+    }
+
+    #[cfg(feature = "multimodal")]
+    fn sample_manifest(ws: &str, path: &str) -> ScanManifest {
+        ScanManifest {
+            workspace_id: ws.to_string(),
+            file_path: path.to_string(),
+            file_type: "rust".to_string(),
+            language: Some("Rust".to_string()),
+            content_hash: format!("hash-{path}"),
+            mtime: 1.0,
+            symbol_count: 10,
+            edge_count: 5,
+            status: "scanned".to_string(),
+            error_msg: None,
+        }
+    }
+
+    #[cfg(feature = "multimodal")]
+    fn sample_report(id: &str, ws: &str, sym: i32, edge: i32) -> ReportIntent {
+        ReportIntent {
+            summary: ReportSummary {
+                id: id.to_string(),
+                workspace_id: ws.to_string(),
+                created_at: "2026-08-02T10:00:00Z".to_string(),
+                report: serde_json::json!({"summary": "test report"}),
+                symbol_count: sym,
+                edge_count: edge,
+                health_score: None,
+            },
+        }
+    }
+
+    #[cfg(feature = "multimodal")]
+    fn empty_graph_delta() -> GraphDelta {
+        GraphDelta {
+            nodes: vec![],
+            edges: vec![],
+            deleted_node_ids: vec![],
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn ingest_first_commit_returns_rev_1() {
+        let (store, _dir) = make_test_store();
+        init_ingest_schema(&store);
+        let manifest = ManifestDelta {
+            upserts: vec![sample_manifest("ws-1", "src/lib.rs")],
+            deleted_paths: vec![],
+        };
+        let report = sample_report("rep-1", "ws-1", 10, 5);
+        let rev = store
+            .commit_revision(&ws_id("ws-1"), empty_graph_delta(), manifest, report)
+            .await
+            .expect("commit");
+        assert_eq!(rev.get(), 1, "first commit in a fresh workspace → rev 1");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn ingest_second_commit_returns_rev_2_and_demotes_prior_head() {
+        let (store, _dir) = make_test_store();
+        init_ingest_schema(&store);
+        let m1 = ManifestDelta {
+            upserts: vec![sample_manifest("ws-1", "src/lib.rs")],
+            deleted_paths: vec![],
+        };
+        store
+            .commit_revision(
+                &ws_id("ws-1"),
+                empty_graph_delta(),
+                m1,
+                sample_report("rep-1", "ws-1", 10, 5),
+            )
+            .await
+            .expect("c1");
+        let mut m2_row = sample_manifest("ws-1", "src/lib.rs");
+        m2_row.content_hash = "hash-v2".to_string();
+        let m2 = ManifestDelta {
+            upserts: vec![m2_row],
+            deleted_paths: vec![],
+        };
+        let rev2 = store
+            .commit_revision(
+                &ws_id("ws-1"),
+                empty_graph_delta(),
+                m2,
+                sample_report("rep-2", "ws-1", 12, 6),
+            )
+            .await
+            .expect("c2");
+        assert_eq!(rev2.get(), 2);
+        let head = store
+            .head_revision_for_ws(&ws_id("ws-1"))
+            .await
+            .expect("head");
+        assert_eq!(head, Some(RevisionId(2)));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn ingest_manifest_upsert_does_not_create_second_row() {
+        let (store, _dir) = make_test_store();
+        init_ingest_schema(&store);
+        let m = ManifestDelta {
+            upserts: vec![sample_manifest("ws-1", "src/lib.rs")],
+            deleted_paths: vec![],
+        };
+        store
+            .commit_revision(
+                &ws_id("ws-1"),
+                empty_graph_delta(),
+                m,
+                sample_report("rep-1", "ws-1", 10, 5),
+            )
+            .await
+            .expect("1");
+        let m2 = ManifestDelta {
+            upserts: vec![sample_manifest("ws-1", "src/lib.rs")],
+            deleted_paths: vec![],
+        };
+        store
+            .commit_revision(
+                &ws_id("ws-1"),
+                empty_graph_delta(),
+                m2,
+                sample_report("rep-2", "ws-1", 12, 6),
+            )
+            .await
+            .expect("2");
+        let conn = store.connection().expect("conn");
+        let mut stmt = conn
+            .prepare(
+                "MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path RETURN s.id;",
+            )
+            .expect("prep");
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![
+                    ("ws", lbug::Value::String("ws-1".to_string())),
+                    ("path", lbug::Value::String("src/lib.rs".to_string())),
+                ],
+            )
+            .expect("exec");
+        let mut count = 0;
+        while result.next().is_some() {
+            count += 1;
+        }
+        assert_eq!(
+            count, 1,
+            "second commit must NOT duplicate the manifest row"
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn ingest_report_persists_with_unique_id() {
+        let (store, _dir) = make_test_store();
+        init_ingest_schema(&store);
+        let m = ManifestDelta {
+            upserts: vec![sample_manifest("ws-1", "src/lib.rs")],
+            deleted_paths: vec![],
+        };
+        store
+            .commit_revision(
+                &ws_id("ws-1"),
+                empty_graph_delta(),
+                m,
+                sample_report("rep-1", "ws-1", 42, 7),
+            )
+            .await
+            .expect("c");
+        let conn = store.connection().expect("conn");
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:GraphReport) WHERE r.id = $id RETURN r.symbol_count, r.edge_count, r.workspace_id;",
+            )
+            .expect("prep");
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![("id", lbug::Value::String("rep-1".to_string()))],
+            )
+            .expect("exec");
+        let Some(row) = result.next() else {
+            panic!("report row missing after commit");
+        };
+        assert_eq!(row[0], lbug::Value::Int64(42), "symbol_count persisted");
+        assert_eq!(row[1], lbug::Value::Int64(7), "edge_count persisted");
+        assert_eq!(row[2], lbug::Value::String("ws-1".to_string()));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn ingest_workspace_scoped_revision_counter() {
+        let (store, _dir) = make_test_store();
+        init_ingest_schema(&store);
+        store
+            .commit_revision(
+                &ws_id("ws-A"),
+                empty_graph_delta(),
+                ManifestDelta {
+                    upserts: vec![sample_manifest("ws-A", "src/a.rs")],
+                    deleted_paths: vec![],
+                },
+                sample_report("rep-A1", "ws-A", 5, 2),
+            )
+            .await
+            .expect("a1");
+        store
+            .commit_revision(
+                &ws_id("ws-A"),
+                empty_graph_delta(),
+                ManifestDelta {
+                    upserts: vec![sample_manifest("ws-A", "src/b.rs")],
+                    deleted_paths: vec![],
+                },
+                sample_report("rep-A2", "ws-A", 6, 3),
+            )
+            .await
+            .expect("a2");
+        store
+            .commit_revision(
+                &ws_id("ws-B"),
+                empty_graph_delta(),
+                ManifestDelta {
+                    upserts: vec![sample_manifest("ws-B", "src/c.rs")],
+                    deleted_paths: vec![],
+                },
+                sample_report("rep-B1", "ws-B", 7, 4),
+            )
+            .await
+            .expect("b1");
+        let h_a = store
+            .head_revision_for_ws(&ws_id("ws-A"))
+            .await
+            .expect("h-A");
+        let h_b = store
+            .head_revision_for_ws(&ws_id("ws-B"))
+            .await
+            .expect("h-B");
+        assert_eq!(h_a, Some(RevisionId(2)), "ws-A head = rev 2");
+        assert_eq!(h_b, Some(RevisionId(1)), "ws-B head = rev 1");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    #[serial]
+    async fn ingest_with_empty_manifest_still_opens_revision() {
+        let (store, _dir) = make_test_store();
+        init_ingest_schema(&store);
+        let rev = store
+            .commit_revision(
+                &ws_id("ws-empty"),
+                empty_graph_delta(),
+                ManifestDelta {
+                    upserts: vec![],
+                    deleted_paths: vec![],
+                },
+                sample_report("rep-empty", "ws-empty", 0, 0),
+            )
+            .await
+            .expect("commit");
+        assert_eq!(rev.get(), 1);
+        assert_eq!(
+            store
+                .head_revision_for_ws(&ws_id("ws-empty"))
+                .await
+                .expect("head"),
+            Some(RevisionId(1))
+        );
     }
 }
