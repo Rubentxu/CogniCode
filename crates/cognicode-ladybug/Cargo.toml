@@ -25,3 +25,11 @@ sqlx = { version = "0.8", features = ["postgres"], default-features = false }
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
+# `serial_test` forces lbug-on-tempdir tests to run sequentially —
+# lbug 0.19 holds an mmap on the `.lbdb` file and races with
+# sibling tests' cleanup if they touch the same path even with
+# unique filenames per test (the buffer manager races on the
+# temp directory's filesystem mtime). Defaulting to serial execution
+# is the lowest-friction fix; per-test path uniqueness is kept as
+# defence-in-depth in `make_test_store`.
+serial_test = "3"
