@@ -741,6 +741,7 @@ dependencies = [
  "clap",
  "cognicode-core",
  "cognicode-explorer",
+ "cognicode-ladybug",
  "rmcp",
  "tokio",
  "tracing",
