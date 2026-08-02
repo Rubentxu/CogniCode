@@ -35,17 +35,17 @@
 //! Each port impl is `Err(Error::Stub(...))` today. The follow-up
 //! commits land the per-port SQL in priority order:
 //!
-//! | Priority | Port | Reason |
-//! |---------|------|--------|
-//! | 1 | `ManifestStore` | Simplest SQL (single-table CRUD), is the basic load-bearing port for Phase 1 tests |
-//! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk |
-//! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) |
-//! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` |
-//! | 5 | `FederationStore` | Single-table CRUD on `spaces` |
-//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) |
-//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` |
-//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` |
-//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports |
+//! | Priority | Port | Reason | Status |
+//! |---------|------|--------|--------|
+//! | 1 | `ManifestStore` | Simplest SQL (single-table CRUD), is the basic load-bearing port for Phase 1 tests | DONE (`af5e2ef2`) |
+//! | 2 | `SessionStore` | Single-table CRUD on `exploration_sessions`, low risk | DONE (`34415ce8`) |
+//! | 3 | `ReportStore` | Single-table reads + the new `save_report` INSERT (no tx) | DONE (`83328dc2`) |
+//! | 4 | `RevisionStore` | UPDATE-only on `graph_revisions`, plus the read-only `head_revision` | DONE (`bc4263ca`) |
+//! | 5 | `FederationStore` | Single-table CRUD on `spaces` | DONE (`feat/e29-1-priority-5-federation-store` — multimodal-gated, validated via cypher_probe) |
+//! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | DONE (`feat/e29-1-priority-6-view-spec-store`) |
+//! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | DONE (this branch) |
+//! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | pending |
+//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports | pending |
 
 use std::path::Path;
 use std::sync::Arc;
@@ -57,6 +57,10 @@ use cognicode_core::domain::aggregates::CallGraph;
 use cognicode_core::domain::ports::{
     CallGraphError, CallGraphStore,
     manifest_store::{ManifestError, ManifestStore, ScanManifest},
+    quality_store::{
+        IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
+        RuleSummary, UpsertSummary,
+    },
     report_store::{ReportError, ReportStore, ReportSummary},
     revision_store::{RevisionError, RevisionStore},
     session_store::{SessionError, SessionRow, SessionStore},
@@ -125,6 +129,7 @@ impl_stub_for!(
     ReportError,
     RevisionError,
     ViewSpecStoreError,
+    QualityError,
     CallGraphError,
     cognicode_core::domain::ports::graph_error::GraphError,
 );
@@ -512,6 +517,468 @@ impl ReportStore for LadybugStore {
     }
 }
 
+// `QualityStore` is a SYNC trait (no `#[async_trait]` in
+// `cognicode-core`'s definition — the PG adapter uses
+// `block_in_place + Handle::current + handle.block_on` to drive
+// async SQL through sync method signatures). Mirror that pattern
+// here for parity; tests use `tokio::test` so `Handle::current()`
+// resolves to the test's runtime.
+impl QualityStore for LadybugStore {
+    fn issues_for_file(&self, file: &str) -> Result<Vec<QualityIssue>, QualityError> {
+        // MATCH WHERE file_path = $file, ordered by id for stable reads.
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("issues_for_file: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (i:Issue) WHERE i.file_path = $file RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status ORDER BY i.id;",
+            )
+            .map_err(|e| QualityError::Store(format!("issues_for_file: prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![("file", lbug::Value::String(file.to_string()))],
+            )
+            .map_err(|e| QualityError::Store(format!("issues_for_file: execute: {e}")))?;
+        let mut rows = Vec::new();
+        while let Some(row) = result.next() {
+            rows.push(parse_issue_row(&row)?);
+        }
+        Ok(rows)
+    }
+
+    fn issues_for_scope(&self, scope_prefix: &str) -> Result<Vec<QualityIssue>, QualityError> {
+        // Boundary-aware: $prefix matches exactly OR $prefix + "/"
+        // (the PG adapter's `WHERE file_path = $1 OR file_path LIKE
+        // $1 || '/%'` semantics). lbug's STARTS WITH is the same as
+        // LIKE 'prefix%' — combine with exact match via OR.
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("issues_for_scope: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (i:Issue) WHERE i.file_path = $p OR i.file_path STARTS WITH $p_slash RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status ORDER BY i.id;",
+            )
+            .map_err(|e| QualityError::Store(format!("issues_for_scope: prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![
+                    ("p", lbug::Value::String(scope_prefix.to_string())),
+                    ("p_slash", lbug::Value::String(format!("{scope_prefix}/"))),
+                ],
+            )
+            .map_err(|e| QualityError::Store(format!("issues_for_scope: execute: {e}")))?;
+        let mut rows = Vec::new();
+        while let Some(row) = result.next() {
+            rows.push(parse_issue_row(&row)?);
+        }
+        Ok(rows)
+    }
+
+    fn issues_at_line(&self, file: &str, line: u32) -> Result<Vec<QualityIssue>, QualityError> {
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("issues_at_line: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (i:Issue) WHERE i.file_path = $file AND i.line = $line RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status ORDER BY i.id;",
+            )
+            .map_err(|e| QualityError::Store(format!("issues_at_line: prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![
+                    ("file", lbug::Value::String(file.to_string())),
+                    ("line", lbug::Value::Int64(line as i64)),
+                ],
+            )
+            .map_err(|e| QualityError::Store(format!("issues_at_line: execute: {e}")))?;
+        let mut rows = Vec::new();
+        while let Some(row) = result.next() {
+            rows.push(parse_issue_row(&row)?);
+        }
+        Ok(rows)
+    }
+
+    fn issue_by_id(&self, id: i64) -> Result<Option<QualityIssue>, QualityError> {
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("issue_by_id: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (i:Issue) WHERE i.id = $id RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status;",
+            )
+            .map_err(|e| QualityError::Store(format!("issue_by_id: prepare: {e}")))?;
+        let mut result = conn
+            .execute(&mut stmt, vec![("id", lbug::Value::Int64(id))])
+            .map_err(|e| QualityError::Store(format!("issue_by_id: execute: {e}")))?;
+        let Some(row) = result.next() else {
+            return Ok(None);
+        };
+        Ok(Some(parse_issue_row(&row)?))
+    }
+
+    fn rule_summary(&self, rule_id: &str) -> Result<RuleSummary, QualityError> {
+        // Compact summary: description from Rule node + open count
+        // from Issue nodes with status = 'open' for this rule_id.
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("rule_summary: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:Rule) WHERE r.rule_id = $rid OPTIONAL MATCH (i:Issue) WHERE i.rule_id = $rid AND i.status = 'open' WITH r, count(i) AS open_cnt RETURN r.description, open_cnt;",
+            )
+            .map_err(|e| QualityError::Store(format!("rule_summary: prepare: {e}")))?;
+        let mut result = conn
+            .execute(
+                &mut stmt,
+                vec![("rid", lbug::Value::String(rule_id.to_string()))],
+            )
+            .map_err(|e| QualityError::Store(format!("rule_summary: execute: {e}")))?;
+        let Some(row) = result.next() else {
+            // No rule row — default description to rule_id with 0 count.
+            return Ok(RuleSummary {
+                rule_id: rule_id.to_string(),
+                description: rule_id.to_string(),
+                open_count: 0,
+            });
+        };
+        let description = match &row[0] {
+            lbug::Value::Null(_) => rule_id.to_string(),
+            other => other.to_string(),
+        };
+        let open_count = match &row[1] {
+            lbug::Value::Int64(n) => *n as usize,
+            lbug::Value::Int32(n) => *n as usize,
+            _ => 0,
+        };
+        Ok(RuleSummary {
+            rule_id: rule_id.to_string(),
+            description,
+            open_count,
+        })
+    }
+
+    fn quality_gate(&self, workspace_id: Option<&str>) -> Result<QualityGateSummary, QualityError> {
+        // Read the latest Baseline for the workspace (or default
+        // "default" workspace if None — matches the PG adapter's
+        // `workspace_id IS NULL OR = $1` semantics, but lbug needs
+        // the predicate expressed as a ternary).
+        let ws = workspace_id.unwrap_or("default");
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("quality_gate: {e}")))?;
+
+        // Latest baseline for this workspace.
+        let mut bl_stmt = conn
+            .prepare(
+                "MATCH (b:Baseline) WHERE b.workspace_id = $ws RETURN b.rating, b.total_issues, b.blockers, b.criticals, b.debt_minutes, b.snapshot_at;",
+            )
+            .map_err(|e| QualityError::Store(format!("quality_gate: baseline prepare: {e}")))?;
+        let mut bl_result = conn
+            .execute(
+                &mut bl_stmt,
+                vec![("ws", lbug::Value::String(ws.to_string()))],
+            )
+            .map_err(|e| QualityError::Store(format!("quality_gate: baseline execute: {e}")))?;
+        let Some(bl_row) = bl_result.next() else {
+            return Ok(QualityGateSummary::default());
+        };
+        let rating = match &bl_row[0] {
+            lbug::Value::Null(_) => None,
+            other => Some(other.to_string()),
+        };
+        let total_issues = match &bl_row[1] {
+            lbug::Value::Int64(n) => *n as usize,
+            lbug::Value::Int32(n) => *n as usize,
+            _ => 0,
+        };
+        let blockers = match &bl_row[2] {
+            lbug::Value::Int64(n) => *n as usize,
+            lbug::Value::Int32(n) => *n as usize,
+            _ => 0,
+        };
+        let criticals = match &bl_row[3] {
+            lbug::Value::Int64(n) => *n as usize,
+            lbug::Value::Int32(n) => *n as usize,
+            _ => 0,
+        };
+        let debt_minutes = match &bl_row[4] {
+            lbug::Value::Int64(n) => *n.max(&0) as u64,
+            lbug::Value::Int32(n) => *n.max(&0) as u64,
+            _ => 0,
+        };
+        let last_run = match &bl_row[5] {
+            lbug::Value::Null(_) => None,
+            other => Some(other.to_string()),
+        };
+        Ok(QualityGateSummary {
+            rating,
+            total_issues,
+            blockers,
+            criticals,
+            debt_minutes,
+            last_run,
+        })
+    }
+
+    fn open_issues_count(&self, workspace_id: Option<&str>) -> Result<usize, QualityError> {
+        let ws = workspace_id.unwrap_or("default");
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("open_issues_count: {e}")))?;
+        let mut stmt = conn
+            .prepare(
+                "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.status = 'open' RETURN count(i);",
+            )
+            .map_err(|e| QualityError::Store(format!("open_issues_count: prepare: {e}")))?;
+        let mut result = conn
+            .execute(&mut stmt, vec![("ws", lbug::Value::String(ws.to_string()))])
+            .map_err(|e| QualityError::Store(format!("open_issues_count: execute: {e}")))?;
+        let Some(row) = result.next() else {
+            return Ok(0);
+        };
+        let count = match &row[0] {
+            lbug::Value::Int64(n) => *n as usize,
+            lbug::Value::Int32(n) => *n as usize,
+            _ => 0,
+        };
+        Ok(count)
+    }
+
+    fn issues_for_workspace(
+        &self,
+        workspace_id: Option<&str>,
+        filter: &IssueFilter,
+    ) -> Result<Vec<QualityIssue>, QualityError> {
+        // Optional filters are AND-combined. Build the WHERE clause
+        // dynamically — `None` means "no filter on this dimension".
+        let ws = workspace_id.unwrap_or("default");
+        let mut cypher = String::from("MATCH (i:Issue) WHERE i.workspace_id = $ws");
+        if filter.severity.is_some() {
+            cypher.push_str(" AND i.severity = $sev");
+        }
+        if filter.category.is_some() {
+            cypher.push_str(" AND i.category = $cat");
+        }
+        if filter.status.is_some() {
+            cypher.push_str(" AND i.status = $stat");
+        }
+        if filter.file_prefix.is_some() {
+            // Same boundary-aware pattern as `issues_for_scope`.
+            cypher.push_str(" AND (i.file_path = $fp OR i.file_path STARTS WITH $fp_slash)");
+        }
+        cypher.push_str(" RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status ORDER BY i.id");
+        if let Some(limit) = filter.limit {
+            cypher.push_str(&format!(" LIMIT {limit}"));
+        }
+        cypher.push(';');
+
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("issues_for_workspace: {e}")))?;
+        let mut stmt = conn
+            .prepare(&cypher)
+            .map_err(|e| QualityError::Store(format!("issues_for_workspace: prepare: {e}")))?;
+
+        let mut params: Vec<(&str, lbug::Value)> =
+            vec![("ws", lbug::Value::String(ws.to_string()))];
+        if let Some(s) = &filter.severity {
+            params.push(("sev", lbug::Value::String(s.clone())));
+        }
+        if let Some(c) = &filter.category {
+            params.push(("cat", lbug::Value::String(c.clone())));
+        }
+        if let Some(s) = &filter.status {
+            params.push(("stat", lbug::Value::String(s.clone())));
+        }
+        if let Some(p) = &filter.file_prefix {
+            params.push(("fp", lbug::Value::String(p.clone())));
+            params.push(("fp_slash", lbug::Value::String(format!("{p}/"))));
+        }
+
+        let mut result = conn
+            .execute(&mut stmt, params)
+            .map_err(|e| QualityError::Store(format!("issues_for_workspace: execute: {e}")))?;
+        let mut rows = Vec::new();
+        while let Some(row) = result.next() {
+            rows.push(parse_issue_row(&row)?);
+        }
+        Ok(rows)
+    }
+
+    fn insert_issues(&self, issues: &[NewIssue]) -> Result<UpsertSummary, QualityError> {
+        // Upsert by natural key `(workspace_id, rule_id, file_path, line)`
+        // — same as the PG adapter's
+        // `ON CONFLICT (workspace_id, rule_id, file_path, line) DO UPDATE`
+        // semantics. For each issue, read-then-conditional-write.
+        let mut summary = UpsertSummary::default();
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("insert_issues: {e}")))?;
+
+        for issue in issues {
+            // Step 1: existence check.
+            let mut check_stmt = conn
+                .prepare(
+                    "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.rule_id = $rid AND i.file_path = $fp AND i.line = $line RETURN i.id;",
+                )
+                .map_err(|e| QualityError::Store(format!("insert_issues: check prepare: {e}")))?;
+            let mut existing = conn
+                .execute(
+                    &mut check_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(issue.workspace_id.clone())),
+                        ("rid", lbug::Value::String(issue.rule_id.clone())),
+                        ("fp", lbug::Value::String(issue.file_path.clone())),
+                        ("line", lbug::Value::Int64(issue.line as i64)),
+                    ],
+                )
+                .map_err(|e| QualityError::Store(format!("insert_issues: check execute: {e}")))?;
+
+            if existing.next().is_some() {
+                // Step 2a: UPDATE the existing row.
+                let mut upd_stmt = conn
+                    .prepare(
+                        "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.rule_id = $rid AND i.file_path = $fp AND i.line = $line SET i.severity = $sev, i.category = $cat, i.message = $msg, i.status = $stat;",
+                    )
+                    .map_err(|e| {
+                        QualityError::Store(format!("insert_issues: update prepare: {e}"))
+                    })?;
+                conn.execute(
+                    &mut upd_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(issue.workspace_id.clone())),
+                        ("rid", lbug::Value::String(issue.rule_id.clone())),
+                        ("fp", lbug::Value::String(issue.file_path.clone())),
+                        ("line", lbug::Value::Int64(issue.line as i64)),
+                        ("sev", lbug::Value::String(issue.severity.clone())),
+                        ("cat", lbug::Value::String(issue.category.clone())),
+                        ("msg", lbug::Value::String(issue.message.clone())),
+                        ("stat", lbug::Value::String(issue.status.clone())),
+                    ],
+                )
+                .map_err(|e| QualityError::Store(format!("insert_issues: update execute: {e}")))?;
+                summary.updated += 1;
+            } else {
+                // Step 2b: CREATE a new row.
+                let mut ins_stmt = conn
+                    .prepare(
+                        "CREATE (i:Issue {workspace_id: $ws, rule_id: $rid, severity: $sev, category: $cat, file_path: $fp, line: $line, message: $msg, status: $stat});",
+                    )
+                    .map_err(|e| {
+                        QualityError::Store(format!("insert_issues: insert prepare: {e}"))
+                    })?;
+                conn.execute(
+                    &mut ins_stmt,
+                    vec![
+                        ("ws", lbug::Value::String(issue.workspace_id.clone())),
+                        ("rid", lbug::Value::String(issue.rule_id.clone())),
+                        ("sev", lbug::Value::String(issue.severity.clone())),
+                        ("cat", lbug::Value::String(issue.category.clone())),
+                        ("fp", lbug::Value::String(issue.file_path.clone())),
+                        ("line", lbug::Value::Int64(issue.line as i64)),
+                        ("msg", lbug::Value::String(issue.message.clone())),
+                        ("stat", lbug::Value::String(issue.status.clone())),
+                    ],
+                )
+                .map_err(|e| QualityError::Store(format!("insert_issues: insert execute: {e}")))?;
+                summary.inserted += 1;
+            }
+        }
+        Ok(summary)
+    }
+
+    fn delete_issue(
+        &self,
+        workspace_id: &str,
+        rule_id: &str,
+        file_path: &str,
+        line: u32,
+    ) -> Result<bool, QualityError> {
+        // MATCH WHERE natural key + DELETE. Returns Ok(true) /
+        // Ok(false) via the same pre-check pattern used elsewhere.
+        let conn = self
+            .connection()
+            .map_err(|e| QualityError::Store(format!("delete_issue: {e}")))?;
+
+        // Step 1: existence check.
+        let mut check_stmt = conn
+            .prepare(
+                "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.rule_id = $rid AND i.file_path = $fp AND i.line = $line RETURN i.id;",
+            )
+            .map_err(|e| QualityError::Store(format!("delete_issue: check prepare: {e}")))?;
+        let mut existing = conn
+            .execute(
+                &mut check_stmt,
+                vec![
+                    ("ws", lbug::Value::String(workspace_id.to_string())),
+                    ("rid", lbug::Value::String(rule_id.to_string())),
+                    ("fp", lbug::Value::String(file_path.to_string())),
+                    ("line", lbug::Value::Int64(line as i64)),
+                ],
+            )
+            .map_err(|e| QualityError::Store(format!("delete_issue: check execute: {e}")))?;
+        if existing.next().is_none() {
+            return Ok(false);
+        }
+
+        // Step 2: DELETE.
+        let mut del_stmt = conn
+            .prepare(
+                "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.rule_id = $rid AND i.file_path = $fp AND i.line = $line DELETE i;",
+            )
+            .map_err(|e| QualityError::Store(format!("delete_issue: prepare: {e}")))?;
+        conn.execute(
+            &mut del_stmt,
+            vec![
+                ("ws", lbug::Value::String(workspace_id.to_string())),
+                ("rid", lbug::Value::String(rule_id.to_string())),
+                ("fp", lbug::Value::String(file_path.to_string())),
+                ("line", lbug::Value::Int64(line as i64)),
+            ],
+        )
+        .map_err(|e| QualityError::Store(format!("delete_issue: execute: {e}")))?;
+        Ok(true)
+    }
+}
+
+/// Row mapper for `Issue` queries — shared by `issues_for_file`,
+/// `issues_for_scope`, `issues_at_line`, `issue_by_id`, and
+/// `issues_for_workspace`. Column order must match the RETURN
+/// clauses above.
+fn parse_issue_row(row: &[lbug::Value]) -> Result<QualityIssue, QualityError> {
+    let id = match &row[0] {
+        lbug::Value::Int64(n) => *n,
+        lbug::Value::Int32(n) => *n as i64,
+        other => {
+            return Err(QualityError::Store(format!(
+                "parse_issue_row: unexpected id type: {other:?}"
+            )));
+        }
+    };
+    let line = match &row[5] {
+        lbug::Value::Int64(n) => (*n).max(0) as u32,
+        lbug::Value::Int32(n) => (*n).max(0) as u32,
+        other => {
+            return Err(QualityError::Store(format!(
+                "parse_issue_row: unexpected line type: {other:?}"
+            )));
+        }
+    };
+    Ok(QualityIssue {
+        id,
+        rule_id: row[1].to_string(),
+        severity: row[2].to_string(),
+        category: row[3].to_string(),
+        file_path: row[4].to_string(),
+        line,
+        message: row[6].to_string(),
+        status: row[7].to_string(),
+    })
+}
+
 #[async_trait]
 impl ViewSpecStore for LadybugStore {
     async fn save(
@@ -643,6 +1110,9 @@ impl IngestCommit for LadybugStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Force lbug-on-tempdir tests to run serially (see `Cargo.toml`
+    // dev-deps note on `serial_test`).
+    use serial_test::serial;
 
     /// Smoke test: the `LadybugStore::open` constructor exists and
     /// accepts the same `(path, SystemConfig)` shape the spike
@@ -819,5 +1289,441 @@ mod tests {
         assert_eq!(rows.len(), 1, "MERGE should NOT create a second row");
         assert_eq!(rows[0].symbol_count, 999);
         assert_eq!(rows[0].content_hash, "new-hash");
+    }
+
+    // --------------------------------------------------------------------
+    // QualityStore (Priority 7)
+    // --------------------------------------------------------------------
+    //
+    // Same pattern as the per-port tests above: real lbug db in a
+    // tempdir, schema-init helper(s), exercises the 10 trait
+    // methods.
+
+    /// Apply the three QualityStore NODE TABLE DDLs once per test
+    /// database. Idempotent via `IF NOT EXISTS`.
+    ///
+    /// Note: natural uniqueness key in the trait is
+    /// `(workspace_id, rule_id, file_path, line)` (the PG UNIQUE
+    /// constraint the PG adapter relies on). lbug 0.19 NODE TABLEs
+    /// only support single-column PRIMARY KEYs, so we use
+    /// `id SERIAL PRIMARY KEY` and enforce the natural uniqueness
+    /// at the application layer (via read-then-conditional-write
+    /// in `insert_issues`).
+    fn init_quality_schema(store: &LadybugStore) {
+        let conn = store.connection().expect("schema-init connection");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS Issue( \
+                 id SERIAL PRIMARY KEY, \
+                 workspace_id STRING, \
+                 rule_id STRING, \
+                 severity STRING, \
+                 category STRING, \
+                 file_path STRING, \
+                 line INT64, \
+                 message STRING, \
+                 status STRING);",
+        )
+        .expect("create Issue NODE TABLE");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS Rule( \
+                 rule_id STRING PRIMARY KEY, \
+                 description STRING);",
+        )
+        .expect("create Rule NODE TABLE");
+        conn.query(
+            "CREATE NODE TABLE IF NOT EXISTS Baseline( \
+                 workspace_id STRING PRIMARY KEY, \
+                 rating STRING, \
+                 total_issues INT64, \
+                 blockers INT64, \
+                 criticals INT64, \
+                 debt_minutes INT64, \
+                 snapshot_at STRING);",
+        )
+        .expect("create Baseline NODE TABLE");
+    }
+
+    fn sample_issue(ws: &str, rule: &str, file: &str, line: u32) -> NewIssue {
+        NewIssue {
+            workspace_id: ws.to_string(),
+            rule_id: rule.to_string(),
+            severity: "warning".to_string(),
+            category: "lint".to_string(),
+            file_path: file.to_string(),
+            line,
+            message: format!("violation of {rule} at {file}:{line}"),
+            status: "open".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_issues_for_file_returns_matching_rows() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[
+                sample_issue("ws-1", "R1", "src/a.rs", 10),
+                sample_issue("ws-1", "R2", "src/a.rs", 20),
+                sample_issue("ws-1", "R1", "src/b.rs", 5),
+            ])
+            .expect("insert");
+        let rows = store.issues_for_file("src/a.rs").expect("list");
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.file_path == "src/a.rs"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_issues_for_file_empty_when_no_match() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
+            .expect("insert");
+        let rows = store.issues_for_file("src/none.rs").expect("list");
+        assert!(rows.is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_issues_for_scope_boundary_aware() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[
+                sample_issue("ws-1", "R1", "src", 1),
+                sample_issue("ws-1", "R1", "src/a.rs", 10),
+                sample_issue("ws-1", "R1", "src/sub/b.rs", 20),
+                sample_issue("ws-1", "R1", "src_extra.rs", 5),
+            ])
+            .expect("insert");
+        let rows = store.issues_for_scope("src").expect("list");
+        // Boundary-aware: must match `src` + `src/*`, NOT `src_extra.rs`.
+        assert_eq!(rows.len(), 3, "boundary must exclude src_extra.rs");
+        let paths: Vec<&str> = rows.iter().map(|r| r.file_path.as_str()).collect();
+        assert!(paths.contains(&"src"));
+        assert!(paths.contains(&"src/a.rs"));
+        assert!(paths.contains(&"src/sub/b.rs"));
+        assert!(!paths.contains(&"src_extra.rs"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_issues_at_line_filters_correctly() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[
+                sample_issue("ws-1", "R1", "src/a.rs", 10),
+                sample_issue("ws-1", "R1", "src/a.rs", 20),
+                sample_issue("ws-1", "R2", "src/a.rs", 10),
+            ])
+            .expect("insert");
+        let rows = store.issues_at_line("src/a.rs", 10).expect("list");
+        assert_eq!(rows.len(), 2);
+        assert!(
+            rows.iter()
+                .all(|r| r.file_path == "src/a.rs" && r.line == 10)
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_issue_by_id_returns_some_and_none() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
+            .expect("insert");
+        let id = store
+            .issues_for_file("src/a.rs")
+            .expect("list")
+            .first()
+            .expect("at least one")
+            .id;
+        let issue = store.issue_by_id(id).expect("by_id");
+        assert!(issue.is_some(), "existing id returns Some");
+        let issue = issue.expect("present");
+        assert_eq!(issue.id, id);
+        assert_eq!(issue.rule_id, "R1");
+
+        let missing = store.issue_by_id(9999).expect("by_id missing");
+        assert!(missing.is_none(), "unknown id returns None");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_rule_summary_counts_open_issues() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        // Create the Rule row first — the Cypher's `MATCH (r:Rule)` is
+        // required for the OPTIONAL MATCH to compose into a row.
+        let conn = store.connection().expect("conn");
+        conn.query("CREATE (r:Rule {rule_id: 'R1', description: 'no-unused-vars'});")
+            .expect("rule insert");
+        // Insert 2 open + 1 closed under the same rule_id.
+        store
+            .insert_issues(&[
+                NewIssue {
+                    workspace_id: "ws-1".to_string(),
+                    rule_id: "R1".to_string(),
+                    severity: "warning".to_string(),
+                    category: "lint".to_string(),
+                    file_path: "src/a.rs".to_string(),
+                    line: 10,
+                    message: "1".to_string(),
+                    status: "open".to_string(),
+                },
+                NewIssue {
+                    workspace_id: "ws-1".to_string(),
+                    rule_id: "R1".to_string(),
+                    severity: "warning".to_string(),
+                    category: "lint".to_string(),
+                    file_path: "src/a.rs".to_string(),
+                    line: 20,
+                    message: "2".to_string(),
+                    status: "open".to_string(),
+                },
+                NewIssue {
+                    workspace_id: "ws-1".to_string(),
+                    rule_id: "R1".to_string(),
+                    severity: "warning".to_string(),
+                    category: "lint".to_string(),
+                    file_path: "src/a.rs".to_string(),
+                    line: 30,
+                    message: "3".to_string(),
+                    status: "closed".to_string(),
+                },
+            ])
+            .expect("insert");
+        let summary = store.rule_summary("R1").expect("summary");
+        assert_eq!(summary.rule_id, "R1");
+        assert_eq!(summary.description, "no-unused-vars");
+        assert_eq!(summary.open_count, 2, "only status=open counted");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_quality_gate_returns_baseline_fields() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        // Insert a baseline row manually.
+        let conn = store.connection().expect("conn");
+        conn.query(
+            "CREATE (b:Baseline {workspace_id: 'ws-1', rating: 'B', total_issues: 12, blockers: 1, criticals: 4, debt_minutes: 90, snapshot_at: '2026-08-02T10:00:00Z'});",
+        )
+        .expect("baseline insert");
+        let gate = store.quality_gate(Some("ws-1")).expect("gate");
+        assert_eq!(gate.rating.as_deref(), Some("B"));
+        assert_eq!(gate.total_issues, 12);
+        assert_eq!(gate.blockers, 1);
+        assert_eq!(gate.criticals, 4);
+        assert_eq!(gate.debt_minutes, 90);
+        assert_eq!(gate.last_run.as_deref(), Some("2026-08-02T10:00:00Z"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_quality_gate_returns_default_when_no_baseline() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        let gate = store.quality_gate(Some("ws-1")).expect("gate");
+        assert_eq!(gate.rating, None);
+        assert_eq!(gate.total_issues, 0);
+        assert_eq!(gate.debt_minutes, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_open_issues_count_filters_by_status() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[
+                NewIssue {
+                    status: "open".to_string(),
+                    ..sample_issue("ws-1", "R1", "src/a.rs", 10)
+                },
+                NewIssue {
+                    status: "open".to_string(),
+                    ..sample_issue("ws-1", "R1", "src/a.rs", 20)
+                },
+                NewIssue {
+                    status: "closed".to_string(),
+                    ..sample_issue("ws-1", "R1", "src/a.rs", 30)
+                },
+            ])
+            .expect("insert");
+        assert_eq!(store.open_issues_count(Some("ws-1")).expect("count"), 2);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_open_issues_count_scopes_to_workspace() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[
+                sample_issue("ws-A", "R1", "src/a.rs", 10),
+                sample_issue("ws-A", "R1", "src/a.rs", 20),
+                sample_issue("ws-B", "R1", "src/b.rs", 10),
+            ])
+            .expect("insert");
+        assert_eq!(store.open_issues_count(Some("ws-A")).expect("A"), 2);
+        assert_eq!(store.open_issues_count(Some("ws-B")).expect("B"), 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_issues_for_workspace_filters_combined() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[
+                NewIssue {
+                    severity: "blocker".to_string(),
+                    status: "open".to_string(),
+                    ..sample_issue("ws-1", "R1", "src/a.rs", 10)
+                },
+                NewIssue {
+                    severity: "blocker".to_string(),
+                    status: "closed".to_string(),
+                    ..sample_issue("ws-1", "R1", "src/a.rs", 20)
+                },
+                NewIssue {
+                    severity: "warning".to_string(),
+                    status: "open".to_string(),
+                    ..sample_issue("ws-1", "R2", "src/a.rs", 30)
+                },
+                NewIssue {
+                    severity: "blocker".to_string(),
+                    status: "open".to_string(),
+                    ..sample_issue("ws-2", "R1", "src/b.rs", 10)
+                },
+            ])
+            .expect("insert");
+
+        // Filter: ws-1 + severity=blocker + status=open → 1 row.
+        let filter = IssueFilter {
+            severity: Some("blocker".to_string()),
+            status: Some("open".to_string()),
+            ..IssueFilter::default()
+        };
+        let rows = store
+            .issues_for_workspace(Some("ws-1"), &filter)
+            .expect("list");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].severity, "blocker");
+        assert_eq!(rows[0].status, "open");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_issues_for_workspace_respects_limit() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[
+                sample_issue("ws-1", "R1", "src/a.rs", 10),
+                sample_issue("ws-1", "R1", "src/a.rs", 20),
+                sample_issue("ws-1", "R1", "src/a.rs", 30),
+            ])
+            .expect("insert");
+        let filter = IssueFilter {
+            limit: Some(2),
+            ..IssueFilter::default()
+        };
+        let rows = store
+            .issues_for_workspace(Some("ws-1"), &filter)
+            .expect("list");
+        assert_eq!(rows.len(), 2, "limit=2 must cap the result set");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_insert_issues_upserts_on_natural_key() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        // First insert: 1 new row.
+        let s1 = store
+            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
+            .expect("ins1");
+        assert_eq!(
+            s1,
+            UpsertSummary {
+                inserted: 1,
+                updated: 0
+            }
+        );
+
+        // Second insert with same natural key → upsert (update), no new row.
+        let mut updated = sample_issue("ws-1", "R1", "src/a.rs", 10);
+        updated.message = "updated message".to_string();
+        updated.status = "closed".to_string();
+        let s2 = store.insert_issues(&[updated]).expect("ins2");
+        assert_eq!(
+            s2,
+            UpsertSummary {
+                inserted: 0,
+                updated: 1
+            }
+        );
+
+        // Verify only 1 row exists.
+        let rows = store.issues_for_file("src/a.rs").expect("list");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].message, "updated message");
+        assert_eq!(rows[0].status, "closed");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_insert_issues_counts_separately() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        // 1 existing + 1 new in one batch.
+        store
+            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
+            .expect("seed");
+        let batch = vec![
+            sample_issue("ws-1", "R1", "src/a.rs", 10), // existing
+            sample_issue("ws-1", "R2", "src/b.rs", 20), // new
+        ];
+        let s = store.insert_issues(&batch).expect("batch");
+        assert_eq!(
+            s,
+            UpsertSummary {
+                inserted: 1,
+                updated: 1
+            }
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_delete_issue_removes_target_row() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        store
+            .insert_issues(&[sample_issue("ws-1", "R1", "src/a.rs", 10)])
+            .expect("seed");
+        let deleted = store
+            .delete_issue("ws-1", "R1", "src/a.rs", 10)
+            .expect("delete");
+        assert!(deleted, "delete must return Ok(true)");
+        let rows = store.issues_for_file("src/a.rs").expect("list");
+        assert!(rows.is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn quality_delete_issue_missing_returns_false() {
+        let (store, _dir) = make_test_store();
+        init_quality_schema(&store);
+        let deleted = store
+            .delete_issue("ws-1", "R-missing", "src/a.rs", 10)
+            .expect("delete");
+        assert!(!deleted, "unknown natural key returns Ok(false)");
     }
 }
