@@ -7,20 +7,18 @@ publish = false
 [features]
 default = ["default-7ports"]
 # passthrough features for cognicode-core
-postgres = ["cognicode-core/postgres"]
 multimodal = ["cognicode-core/multimodal"]
-default-7ports = ["postgres"]
-multimodal-9ports = ["postgres", "multimodal"]
+default-7ports = []
+multimodal-9ports = ["multimodal"]
 
 [dependencies]
-cognicode-core = { path = "../cognicode-core", features = ["postgres", "persistence"] }
+cognicode-core = { path = "../cognicode-core", features = ["persistence"] }
 lbug = "0.19"
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
-sqlx = { version = "0.8", features = ["postgres"], default-features = false }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
