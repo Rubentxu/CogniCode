@@ -39,7 +39,7 @@ use cognicode_explorer::facades::{SearchService, ViewService};
 use cognicode_explorer::mcp::handler::ToolHandlerRegistry;
 use cognicode_explorer::mcp::handler::context_builder::register_context_builder_handlers;
 use cognicode_explorer::mcp::{McpContext, TOOL_BUILD_CONTEXT};
-use cognicode_explorer::ports::quality_repository::{
+use cognicode_core::domain::ports::{
     IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
     RuleSummary, UpsertSummary,
 };

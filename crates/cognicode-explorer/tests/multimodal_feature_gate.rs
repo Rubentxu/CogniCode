@@ -19,7 +19,7 @@ use cognicode_core::domain::value_objects::node_kind::NodeKind;
 #[cfg(feature = "multimodal")]
 use cognicode_explorer::adapters::InMemoryGraphRepository;
 #[cfg(feature = "multimodal")]
-use cognicode_explorer::ports::graph_repository::GraphRepository;
+use cognicode_core::domain::ports::graph_repository::GraphRepository;
 
 // ============================================================================
 // Feature-gate assertions

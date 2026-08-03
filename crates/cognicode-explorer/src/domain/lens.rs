@@ -7,7 +7,7 @@
 //!
 //! Lenses are NOT new ports. They consume the existing
 //! [`crate::ports::SymbolRepository`], optional
-//! [`crate::ports::QualityStore`], and
+//! [`cognicode_core::domain::ports::QualityStore`], and
 //! [`crate::ports::SourceReader`]. Adding a new lens is OCP-compliant:
 //! implement the trait, register an instance, no service-dispatch changes.
 
@@ -17,7 +17,7 @@ use std::sync::Arc;
 use crate::domain::object_identity::ObjectIdentity;
 use crate::dto::{DesignFinding, InspectableObjectType, LensDescriptor, LensResult};
 use crate::error::ExplorerResult;
-use crate::ports::quality_repository::QualityStore;
+use cognicode_core::domain::ports::QualityStore;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::SymbolRepository;
 use cognicode_core::domain::traits::GraphQueryPort;

@@ -381,7 +381,7 @@ mod tests {
     use super::*;
     use crate::adapters::FsSourceReader;
     use crate::dto::InspectableObjectType;
-    use crate::ports::quality_repository::{
+    use cognicode_core::domain::ports::{
         IssueFilter, QualityGateSummary, QualityIssue, QualityStore, RuleSummary,
     };
     use crate::ports::symbol_repository::{
@@ -522,20 +522,20 @@ mod tests {
         fn issues_for_file(
             &self,
             f: &str,
-        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Vec<QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(self.by_file.get(f).cloned().unwrap_or_default())
         }
         fn issues_for_scope(
             &self,
             s: &str,
-        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Vec<QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(self.by_scope.get(s).cloned().unwrap_or_default())
         }
         fn issues_at_line(
             &self,
             f: &str,
             l: u32,
-        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Vec<QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(self
                 .by_line
                 .get(&(f.to_string(), l))
@@ -545,29 +545,29 @@ mod tests {
         fn issue_by_id(
             &self,
             _id: i64,
-        ) -> Result<Option<QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Option<QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(None)
         }
-        fn rule_summary(&self, _r: &str) -> Result<RuleSummary, crate::ports::QualityError> {
+        fn rule_summary(&self, _r: &str) -> Result<RuleSummary, cognicode_core::domain::ports::QualityError> {
             unimplemented!()
         }
         fn quality_gate(
             &self,
             _workspace_id: Option<&str>,
-        ) -> Result<QualityGateSummary, crate::ports::QualityError> {
+        ) -> Result<QualityGateSummary, cognicode_core::domain::ports::QualityError> {
             unimplemented!()
         }
         fn open_issues_count(
             &self,
             _workspace_id: Option<&str>,
-        ) -> Result<usize, crate::ports::QualityError> {
+        ) -> Result<usize, cognicode_core::domain::ports::QualityError> {
             Ok(0)
         }
         fn issues_for_workspace(
             &self,
             _workspace_id: Option<&str>,
             filter: &IssueFilter,
-        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Vec<QualityIssue>, cognicode_core::domain::ports::QualityError> {
             let mut out: Vec<QualityIssue> = self
                 .by_file
                 .values()
@@ -589,9 +589,9 @@ mod tests {
         }
         fn insert_issues(
             &self,
-            _issues: &[crate::ports::NewIssue],
-        ) -> Result<crate::ports::UpsertSummary, crate::ports::QualityError> {
-            Ok(crate::ports::UpsertSummary::default())
+            _issues: &[cognicode_core::domain::ports::NewIssue],
+        ) -> Result<cognicode_core::domain::ports::UpsertSummary, cognicode_core::domain::ports::QualityError> {
+            Ok(cognicode_core::domain::ports::UpsertSummary::default())
         }
         fn delete_issue(
             &self,
@@ -599,7 +599,7 @@ mod tests {
             _rule_id: &str,
             _file_path: &str,
             _line: u32,
-        ) -> Result<bool, crate::ports::QualityError> {
+        ) -> Result<bool, cognicode_core::domain::ports::QualityError> {
             Ok(false)
         }
     }

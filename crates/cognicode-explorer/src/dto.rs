@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 // Ports for InspectionTarget and ViewContext
-use crate::ports::quality_repository::{QualityIssue, QualityStore};
+use cognicode_core::domain::ports::{QualityIssue, QualityStore};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
 use cognicode_core::domain::traits::GraphQueryPort;

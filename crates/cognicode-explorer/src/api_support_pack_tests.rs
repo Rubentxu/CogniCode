@@ -26,7 +26,7 @@ use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
     graph::GraphServiceImpl,
 };
-use crate::ports::graph_repository::GraphRepository;
+use cognicode_core::domain::ports::graph_repository::GraphRepository;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{GraphStats, SymbolRepository};
 use cognicode_core::domain::aggregates::SymbolId;

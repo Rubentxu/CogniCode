@@ -167,7 +167,7 @@ impl Runtime {
             Arc::new(cognicode_explorer::facades::persistence::PersistenceServiceImpl::new(None));
 
         // Quality facade — wired from the backend port when available.
-        let quality: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> =
+        let quality: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>> =
             self.quality_store.clone();
 
         // Investigation facade — no postgres-backed store.
@@ -259,9 +259,9 @@ impl Runtime {
         let view_registry = Arc::new(cognicode_explorer::registry::ViewRegistry::new(None));
         let lens_registry = cognicode_explorer::domain::lens::default_registry();
 
-        let quality: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> =
+        let quality: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>> =
             self.quality_store.clone();
-        let quality_write: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> =
+        let quality_write: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>> =
             self.quality_store.clone();
 
         cognicode_explorer::mcp::ExplorerMcpHandler::with_graph(

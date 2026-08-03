@@ -40,7 +40,7 @@ use crate::facades::{
     SubgraphDirection as FacadeSubgraphDirection, ViewService, WorkspaceService,
 };
 #[cfg(feature = "multimodal")]
-use crate::ports::graph_repository::GraphRepository;
+use cognicode_core::domain::ports::graph_repository::GraphRepository;
 use crate::ports::symbol_repository::ResolvedSymbol;
 
 // ============================================================================
@@ -466,7 +466,7 @@ async fn get_decision_support_pack(
     Path(id): Path<String>,
 ) -> Result<Response, ApiError> {
     use crate::domain::decision_support_pack::DecisionSupportPackBuilder;
-    use crate::ports::graph_repository::GraphRepository;
+    use cognicode_core::domain::ports::graph_repository::GraphRepository;
 
     let id = validate_id(&id).map_err(ApiError)?;
 
