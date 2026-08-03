@@ -647,37 +647,37 @@ mod tests {
     // Phase A.3 — node_properties delegation (ADR-008)
     // =========================================================================
 
-    /// Verifies that `node_properties` returns `None` when `pg_repo` is `None`
-    /// (the no-delegation path). The delegation path (when `pg_repo` is `Some`)
-    /// requires a real `PostgresRepository` with an active database connection,
-    /// which is tested via integration tests in `cognicode-core`.
+    /// Verifies that `node_properties` returns `None` when no node property
+    /// reader is available (the no-delegation path). The delegation path
+    /// (when a reader is present) is covered by ownership integration tests
+    /// in `cognicode-core`.
     #[tokio::test]
     #[cfg(feature = "ownership")]
-    async fn node_properties_returns_none_when_pg_repo_is_none() {
+    async fn node_properties_returns_none_when_no_reader() {
         let repo = CallGraphRepository::new(Arc::new(build_graph()));
-        // pg_repo is None by default when constructed via new()
+        // no node property reader is wired by default via new()
         let id = SymbolId::new("src/a.rs:alpha:1");
         // Use the async NodePropertyReader explicitly to disambiguate from
         // the sync shim on GraphQueryPort.
         let result = <CallGraphRepository as NodePropertyReader>::node_properties(&repo, &id).await;
         assert!(
             result.is_none(),
-            "node_properties must return None when pg_repo is None"
+            "node_properties must return None when no reader is wired"
         );
     }
 
-    /// Verifies that `node_properties` with a `pg_repo = None` returns None
+    /// Verifies that `node_properties` with no reader wired returns None
     /// even when called from within a Tokio runtime context (no panic).
     #[tokio::test]
     #[cfg(feature = "ownership")]
-    async fn node_properties_none_pg_repo_returns_none_in_runtime() {
+    async fn node_properties_none_reader_returns_none_in_runtime() {
         let repo = CallGraphRepository::new(Arc::new(build_graph()));
         let id = SymbolId::new("src/missing.rs:ghost:99");
         // Should return None, not panic
         let result = <CallGraphRepository as NodePropertyReader>::node_properties(&repo, &id).await;
         assert!(
             result.is_none(),
-            "node_properties must return None when pg_repo is None"
+            "node_properties must return None when no reader is wired"
         );
     }
 }

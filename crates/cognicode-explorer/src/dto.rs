@@ -342,7 +342,7 @@ pub struct ViewContext<'a> {
     pub graph_repo: Option<&'a dyn cognicode_core::domain::ports::GraphRepository>,
     /// Optional async node property reader for ownership attribution.
     /// When provided, executors can read ownership data without `block_on`
-    /// gymnastics. `None` when no PostgresRepository is wired.
+    /// gymnastics. `None` when no node property reader is wired.
     pub node_property_reader: Option<&'a dyn cognicode_core::domain::ports::NodePropertyReader>,
 }
 
