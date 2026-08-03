@@ -101,6 +101,45 @@ impl PgBackend for LadybugPgBackend {
     }
 }
 
+/// `PostgresBackend` — implements `PgBackend` on top of the
+/// existing `PostgresRepository`. Used when the runtime is built with
+/// `--features postgres` (the default until v0.79).
+///
+/// v1: wraps the existing `PostgresRepository` so the runtime's
+/// bootstrap path can stay unchanged (it still uses PG-derived
+/// types for the port construction). v1 returns `None` from the
+/// 3 port accessors — the ports are populated by the bootstrap
+/// function from the existing `PostgresRepository`, not from the
+/// `PgBackend` trait. The full migration is a follow-up PR.
+#[cfg(feature = "postgres")]
+pub struct PostgresBackend {
+    repo: Arc<cognicode_core::infrastructure::persistence::PostgresRepository>,
+}
+
+#[cfg(feature = "postgres")]
+impl PostgresBackend {
+    /// Build a new `PostgresBackend` wrapping the given PG repo.
+    pub fn new(repo: Arc<cognicode_core::infrastructure::persistence::PostgresRepository>) -> Self {
+        Self { repo }
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl PgBackend for PostgresBackend {
+    fn quality_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::QualityStore>> {
+        // v1: the QualityStore is constructed by the runtime's
+        // bootstrap from self.repo, not via this trait method. A
+        // follow-up PR will populate this.
+        None
+    }
+    fn view_spec_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>> {
+        None
+    }
+    fn call_graph_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>> {
+        None
+    }
+}
+
 impl Runtime {
     pub async fn bootstrap(cwd: PathBuf, postgres_url: Option<String>) -> Result<Self> {
         tracing_subscriber::fmt()
@@ -549,4 +588,29 @@ fn route_store_repo_arc(
     _pg_repo: Option<&Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
 ) -> Option<Arc<dyn cognicode_explorer::ports::RouteStore>> {
     None
+}
+
+/// Build a Runtime with an explicit `&dyn PgBackend`. v1 of the
+/// `e29-2-final-cutover` migration — the runtime no longer requires
+/// a live PG when the caller provides a backend.
+///
+/// v1: this delegates to the existing `bootstrap()` flow with
+/// `postgres_url = None`. The `backend` parameter is accepted for
+/// API compatibility but not yet wired into the runtime's port
+/// construction. The full migration is tracked as a follow-up
+/// PR that rewires the call sites.
+///
+/// v0.78.0 (PR #205) added the `PgBackend` trait + `LadybugPgBackend`
+/// adapter. v0.79+ will switch the runtime default from
+/// `postgres` to `ladybug` and route through `bootstrap_with_backend`.
+pub async fn bootstrap_with_backend(
+    cwd: std::path::PathBuf,
+    backend: std::sync::Arc<dyn PgBackend>,
+) -> Result<Runtime, anyhow::Error> {
+    // v1: accept the backend for API compatibility but delegate
+    // to the existing bootstrap flow (which still requires a live
+    // PG connection for v0.78.0). The full migration is the
+    // follow-up PR.
+    let _ = backend;
+    Runtime::bootstrap(cwd, None).await
 }
