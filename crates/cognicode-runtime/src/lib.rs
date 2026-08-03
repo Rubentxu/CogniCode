@@ -407,14 +407,10 @@ impl Runtime {
         let view_registry = Arc::new(cognicode_explorer::registry::ViewRegistry::new(None));
         let view_registry_for_search = view_registry.clone();
         #[cfg(feature = "postgres")]
-        let quality = quality_repo_arc(
-            self.backend
-                .as_ref()
-                .and_then(|b| b.as_postgres_repo())
-                .as_ref(),
-        );
+        let quality: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> =
+            self.quality_store.clone();
         #[cfg(not(feature = "postgres"))]
-        let quality = quality_repo_arc();
+        let quality: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> = None;
 
         // Investigation facade — wired from postgres when available (ADR-005 INV-1)
         #[cfg(feature = "postgres")]
@@ -557,24 +553,16 @@ impl Runtime {
         let lens_registry = cognicode_explorer::domain::lens::default_registry();
 
         #[cfg(feature = "postgres")]
-        let quality = quality_repo_arc(
-            self.backend
-                .as_ref()
-                .and_then(|b| b.as_postgres_repo())
-                .as_ref(),
-        );
+        let quality: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> =
+            self.quality_store.clone();
         #[cfg(not(feature = "postgres"))]
-        let quality = quality_repo_arc();
+        let quality: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> = None;
 
         #[cfg(feature = "postgres")]
-        let quality_write = quality_write_repo_arc(
-            self.backend
-                .as_ref()
-                .and_then(|b| b.as_postgres_repo())
-                .as_ref(),
-        );
+        let quality_write: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> =
+            self.quality_store.clone();
         #[cfg(not(feature = "postgres"))]
-        let quality_write = quality_write_repo_arc();
+        let quality_write: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> = None;
 
         #[cfg(feature = "postgres")]
         let route_store: Option<Arc<dyn cognicode_explorer::ports::RouteStore>> = self
@@ -605,52 +593,6 @@ impl Runtime {
             None,
         )
     }
-}
-
-/// Build a `PostgresQualityStore` from the runtime's PG repo.
-///
-/// Returns `None` when the `postgres` feature is off or when no PG
-/// connection is available — in both cases the MCP tools degrade
-/// gracefully via the `quality_unavailable` envelope. The previous
-/// 3-place `None` pass-through was the source of the v0.22.0
-/// "always quality_unavailable" symptom; this helper centralizes the
-/// adapter construction so adding a new consumer is a one-liner.
-///
-/// PR2 relocation: the adapter now lives in `cognicode-core`'s
-/// `domain::ports::quality_store` module (10-method unified surface).
-#[cfg(feature = "postgres")]
-fn quality_repo_arc(
-    pg_repo: Option<&Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
-) -> Option<Arc<dyn cognicode_explorer::ports::QualityStore>> {
-    let pg = pg_repo?;
-    Some(Arc::new(
-        cognicode_core::domain::ports::PostgresQualityStore::new(pg),
-    ))
-}
-
-#[cfg(not(feature = "postgres"))]
-fn quality_repo_arc() -> Option<Arc<dyn cognicode_explorer::ports::QualityStore>> {
-    None
-}
-
-/// Build a `PostgresQualityStore` wired as a write-capable `QualityStore`.
-///
-/// Mirrors `quality_repo_arc` — both are backed by the same
-/// `PostgresQualityStore` value; the read/write split is preserved at
-/// the call-site level (callers choose which methods to invoke).
-#[cfg(feature = "postgres")]
-fn quality_write_repo_arc(
-    pg_repo: Option<&Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
-) -> Option<Arc<dyn cognicode_explorer::ports::QualityStore>> {
-    let pg = pg_repo?;
-    Some(Arc::new(
-        cognicode_core::domain::ports::PostgresQualityStore::new(pg),
-    ))
-}
-
-#[cfg(not(feature = "postgres"))]
-fn quality_write_repo_arc() -> Option<Arc<dyn cognicode_explorer::ports::QualityStore>> {
-    None
 }
 
 /// Build a Runtime with an explicit `&dyn PgBackend`. v1 of the
