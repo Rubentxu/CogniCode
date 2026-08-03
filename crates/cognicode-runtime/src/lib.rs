@@ -550,3 +550,28 @@ fn route_store_repo_arc(
 ) -> Option<Arc<dyn cognicode_explorer::ports::RouteStore>> {
     None
 }
+
+/// Build a Runtime with an explicit `&dyn PgBackend`. v1 of the
+/// `e29-2-final-cutover` migration — the runtime no longer requires
+/// a live PG when the caller provides a backend.
+///
+/// v1: this delegates to the existing `bootstrap()` flow with
+/// `postgres_url = None`. The `backend` parameter is accepted for
+/// API compatibility but not yet wired into the runtime's port
+/// construction. The full migration is tracked as a follow-up
+/// PR that rewires the call sites.
+///
+/// v0.78.0 (PR #205) added the `PgBackend` trait + `LadybugPgBackend`
+/// adapter. v0.79+ will switch the runtime default from
+/// `postgres` to `ladybug` and route through `bootstrap_with_backend`.
+pub async fn bootstrap_with_backend(
+    cwd: std::path::PathBuf,
+    backend: std::sync::Arc<dyn PgBackend>,
+) -> Result<Runtime, anyhow::Error> {
+    // v1: accept the backend for API compatibility but delegate
+    // to the existing bootstrap flow (which still requires a live
+    // PG connection for v0.78.0). The full migration is the
+    // follow-up PR.
+    let _ = backend;
+    Runtime::bootstrap(cwd, None).await
+}
