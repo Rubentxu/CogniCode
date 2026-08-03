@@ -3,7 +3,7 @@
 //! Surfaces the `issues`, `baselines`, and `rules` tables behind a
 //! `Send + Sync` trait shape. The PG schema is owned by
 //! `cognicode-core`'s persistence layer (see migration `m0011_quality.sql`);
-//! the in-crate adapter `PostgresQualityStore` reads from it.
+//! adapters (e.g. the lbug `LadybugStore` impl) read from it.
 //!
 //! # Read-only contract (preserve QualityRepository legacy)
 //!
@@ -178,6 +178,3 @@ pub trait QualityStore: Send + Sync {
     ) -> Result<bool, QualityError>;
 }
 
-// =============================================================================
-// PostgresQualityStore adapter
-// =============================================================================

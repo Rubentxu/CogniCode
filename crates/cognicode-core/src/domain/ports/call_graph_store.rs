@@ -3,7 +3,7 @@
 //! Surfaces `save_call_graph_ws` and `load_call_graph_ws` behind a
 //! `Send + Sync` trait shape so consumers (snapshot provider, graph
 //! executor, postgres bridge, ingest service) can depend on the
-//! port instead of the `PostgresRepository` concrete type.
+//! port instead of concrete adapter types.
 //!
 //! # Why a dedicated port (not `RevisionStore`)
 //!
@@ -33,7 +33,7 @@ pub trait CallGraphStore: Send + Sync {
     /// revision. Returns the newly-opened [`RevisionId`].
     ///
     /// The concrete PG implementation delegates to
-    /// `PostgresRepository::save_call_graph_ws`, which atomically
+    /// the canonical adapter's `save_call_graph_ws`, which atomically
     /// demotes the prior head, opens the new revision (via
     /// `PostgresRevisionStore::create_revision`), and writes the
     /// graph edges + nodes.

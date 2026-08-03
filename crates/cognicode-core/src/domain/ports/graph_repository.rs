@@ -3,7 +3,7 @@
 //! Defines the contract the `graph_search` MCP tool (T21) needs to
 //! query multimodal nodes + edges. The canonical adapter (in the
 //! `cognicode-explorer` crate) implements this trait on top of
-//! `PostgresRepository`; an in-memory mock (also in the explorer)
+//! concrete adapters; an in-memory mock (also in the explorer)
 //! is used by the unit tests.
 //!
 //! Why a separate port? The Generic Graph Layer has different

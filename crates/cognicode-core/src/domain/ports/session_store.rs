@@ -5,7 +5,7 @@
 //! active investigation (ADR-005 INV-1).
 //!
 //! This port exists so application code (the explorer persistence
-//! facade) can CRUD sessions without depending on `PostgresRepository`
+//! facade) can CRUD sessions without depending on concrete adapters
 //! concrete types.
 
 use async_trait::async_trait;

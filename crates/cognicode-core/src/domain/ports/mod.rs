@@ -5,23 +5,27 @@
 //! the canonical adapter) implement the trait; domain + service
 //! code depend on the trait, not on the concrete adapters.
 //!
-//! ## Port modules (8 trait modules total)
+//! ## Port modules (12 active ports + 1 utility = 13 modules)
 //!
 //! | Module | Trait | Status |
 //! |--------|-------|--------|
-//! | `graph_error` | `GraphError`, `GraphResult` | existing |
+//! | `graph_error` | `GraphError`, `GraphResult` | utility (not a port) |
+//! | `call_graph_projection` | `CallGraphProjectionPort` | new (e29-3) |
+//! | `call_graph_store` | `CallGraphStore` | existing |
+//! | `federation_store` | `FederationStore` | new (PR1) · cfg `multimodal` |
 //! | `graph_repository` | `GraphRepository` | existing |
+//! | `ingest_commit` | `IngestCommit` | new (PR1) · cfg `multimodal` |
 //! | `manifest_store` | `ManifestStore` | existing |
-//! | `node_property_repository` | `NodePropertyRepository` | existing |
-//! | `report_store` | `ReportStore` | existing |
-//! | `session_store` | `SessionStore` | existing |
-//! | `revision_store` | `RevisionStore` | new (PR1) |
-//! | `federation_store` | `FederationStore` | new (PR1) |
-//! | `ingest_commit` | `IngestCommit` | new (PR1) |
+//! | `node_property_repository` | `NodePropertyRepository` | renamed (e29-3) |
 //! | `quality_store` | `QualityStore` | new (PR2 — relocated from cognicode-explorer) |
+//! | `report_store` | `ReportStore` | existing |
+//! | `revision_store` | `RevisionStore` | new (PR1) |
+//! | `session_store` | `SessionStore` | existing |
 //! | `view_spec_store` | `ViewSpecStore` | new (PR2 — relocated from cognicode-explorer) |
 //!
-//! The `multimodal` feature gates the WRITE/exTRACTION path only.
+//! The `multimodal` feature gates the WRITE/exTRACTION path only;
+//! cfg-gated entries (`federation_store`, `ingest_commit`) appear only
+//! under `--features multimodal`.
 
 pub mod call_graph_projection;
 pub mod call_graph_store;

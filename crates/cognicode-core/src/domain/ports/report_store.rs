@@ -5,7 +5,7 @@
 //! MCP tools.
 //!
 //! This port exists so application code can read graph reports
-//! without depending on `PostgresRepository` concrete types.
+//! without depending on concrete adapter types.
 //!
 //! # ADR-028 §3 contract
 //!

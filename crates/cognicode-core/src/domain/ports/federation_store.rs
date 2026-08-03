@@ -6,7 +6,7 @@
 //! to back-reference.
 //!
 //! This port exists so the federation layer can manage spaces without
-//! depending on the `PostgresRepository` concrete type.
+//! depending on concrete adapters.
 
 use async_trait::async_trait;
 
