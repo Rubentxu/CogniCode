@@ -1,10 +1,10 @@
 //! CogniCode Runtime — shared bootstrap for API and MCP binaries.
 //!
 //! LadybugDB is the sole storage backend (e29-7 full postgres removal).
-//! The runtime carries an optional `backend: Option<Arc<dyn PgBackend>>`
-//! (ladybug path) that exposes the relocated domain ports
-//! (`quality_store` / `view_spec_store` / `call_graph_store`).
-//! `bootstrap_with_backend` is the canonical entry point.
+//! The runtime exposes the relocated domain ports directly
+//! (`quality_store` / `view_spec_store` / `call_graph_store`) via the
+//! `RuntimePorts` DTO. `bootstrap_with_backend` is the canonical entry
+//! point; `bootstrap` builds a Runtime with no ports wired.
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
@@ -20,17 +20,13 @@ pub struct Runtime {
     pub cwd: PathBuf,
     /// GraphCache for serving the in-memory graph (ArcSwap).
     pub graph_cache: Arc<cognicode_core::infrastructure::graph::graph_cache::GraphCache>,
-    /// `PgBackend` trait object — the storage backend contract
-    /// (`LadybugPgBackend` implements it). The runtime uses this for
-    /// port construction on the ladybug path.
-    pub backend: Option<Arc<dyn PgBackend>>,
     /// Shared revision tracker — bumped by `index_workspace` after each successful ingest.
     pub revision_tracker: Arc<AtomicU64>,
-    /// Optional `QualityStore` port (PR2 relocation: from
-    /// `cognicode_explorer::ports::quality_repository::QualityRepository`
-    /// to the unified `cognicode_core::domain::ports::QualityStore`).
-    pub quality_store: Option<Arc<dyn cognicode_explorer::ports::QualityStore>>,
-    /// Optional `ViewSpecStore` port (PR2 relocation from
+    /// Optional `QualityStore` port (relocated from
+    /// `cognicode_explorer::ports::quality_repository` to the unified
+    /// `cognicode_core::domain::ports::QualityStore`).
+    pub quality_store: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
+    /// Optional `ViewSpecStore` port (relocated from
     /// `cognicode_explorer::registry::ViewSpecStore` to
     /// `cognicode_core::domain::ports::ViewSpecStore`).
     pub view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>>,
@@ -41,59 +37,27 @@ pub struct Runtime {
     pub call_graph_store: Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>,
 }
 
-/// `PgBackend` trait — abstracts the subset of storage operations the
-/// runtime needs. Implemented by `LadybugPgBackend`.
-pub trait PgBackend: Send + Sync {
-    fn quality_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>;
-    fn view_spec_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>>;
-    fn call_graph_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>;
+/// Plain DTO carrying the three relocated domain ports into
+/// [`bootstrap_with_backend`]. Replaces the previous single-implementer
+/// backend trait indirection (collapsed into a struct of
+/// `Option<Arc<dyn *Port>>` slots — runtime-bootstrap-contract spec).
+#[derive(Default)]
+pub struct RuntimePorts {
+    pub quality_store: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
+    pub view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>>,
+    pub call_graph_store: Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>,
 }
 
-/// `LadybugPgBackend` — implements `PgBackend` on top of the
-/// `cognicode-ladybug` crate. Used when the runtime is built with
-/// `--features ladybug` (the default).
-pub struct LadybugPgBackend {
-    quality_store: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
-    view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>>,
-    call_graph_store: Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>,
-}
-
-impl LadybugPgBackend {
-    pub fn new(
-        quality_store: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
-        view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>>,
-        call_graph_store: Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>,
-    ) -> Self {
-        Self {
-            quality_store,
-            view_spec_store,
-            call_graph_store,
-        }
-    }
-}
-
-impl PgBackend for LadybugPgBackend {
-    fn quality_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::QualityStore>> {
-        self.quality_store.clone()
-    }
-    fn view_spec_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>> {
-        self.view_spec_store.clone()
-    }
-    fn call_graph_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>> {
-        self.call_graph_store.clone()
-    }
-}
-
-/// Build a Runtime with an explicit `&dyn PgBackend`. The canonical
-/// entry point (e29-2-final-cutover / e29-7 full postgres removal):
-/// the runtime no longer requires a live PG; the backend exposes the
-/// relocated domain ports.
+/// Build a Runtime from a [`RuntimePorts`] DTO. The canonical entry
+/// point (e29-2-final-cutover / e29-7 full postgres removal): the
+/// runtime no longer requires a live PG and no longer carries a backend
+/// indirection — the 3 port Arcs move verbatim onto the `Runtime`.
 ///
 /// `graph` stays `None` (ladybug limitation — the symbol repository is
 /// backed by an empty `CallGraph` so facade wiring stays functional).
 pub async fn bootstrap_with_backend(
     cwd: std::path::PathBuf,
-    backend: std::sync::Arc<dyn PgBackend>,
+    ports: RuntimePorts,
 ) -> Result<Runtime, anyhow::Error> {
     // Best-effort tracing init. `try_init` (not `init`) so repeated
     // calls from tests and multiple entry points don't panic on
@@ -109,11 +73,11 @@ pub async fn bootstrap_with_backend(
     let graph_cache =
         Arc::new(cognicode_core::infrastructure::graph::graph_cache::GraphCache::new());
 
-    // The 3 relocated ports are built from the backend's port
-    // accessors.
-    let quality_store = backend.quality_store();
-    let view_spec_store = backend.view_spec_store();
-    let call_graph_store = backend.call_graph_store();
+    // The 3 relocated ports move verbatim from the DTO (Arc identity
+    // preserved — same allocation).
+    let quality_store = ports.quality_store;
+    let view_spec_store = ports.view_spec_store;
+    let call_graph_store = ports.call_graph_store;
 
     // graph=None degraded: ladybug path uses no graph. The symbol
     // repository is backed by an empty CallGraph so the facade wiring
@@ -130,7 +94,6 @@ pub async fn bootstrap_with_backend(
         graph,
         cwd,
         graph_cache,
-        backend: Some(backend),
         revision_tracker: Arc::new(AtomicU64::new(1)),
         quality_store,
         view_spec_store,
@@ -165,7 +128,6 @@ pub async fn bootstrap(cwd: std::path::PathBuf) -> Result<Runtime, anyhow::Error
         graph: None,
         cwd,
         graph_cache,
-        backend: None,
         revision_tracker: Arc::new(AtomicU64::new(1)),
         quality_store: None,
         view_spec_store: None,
@@ -321,7 +283,7 @@ impl Runtime {
 mod tests {
     use std::sync::Arc;
 
-    use super::{bootstrap_with_backend, LadybugPgBackend};
+    use super::{bootstrap_with_backend, RuntimePorts};
     use cognicode_core::domain::aggregates::CallGraph;
     use cognicode_core::domain::ports::{CallGraphStore, QualityStore, ViewSpecStore};
     use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
@@ -511,34 +473,34 @@ mod tests {
         }
     }
 
-    /// The 3 relocated ports are populated FROM the backend's port
-    /// accessors — identity preserved (same Arc).
+    /// The 3 relocated ports are moved FROM the RuntimePorts DTO —
+    /// identity preserved (same Arc).
     #[tokio::test]
     async fn bootstrap_with_backend_populates_ports_from_backend() {
         let quality: Arc<dyn QualityStore> = Arc::new(TestQualityStore);
         let view_spec: Arc<dyn ViewSpecStore> = Arc::new(TestViewSpecStore);
         let cg_store: Arc<dyn CallGraphStore> = Arc::new(TestCallGraphStore);
-        let backend = Arc::new(LadybugPgBackend::new(
-            Some(quality.clone()),
-            Some(view_spec.clone()),
-            Some(cg_store.clone()),
-        ));
+        let ports = RuntimePorts {
+            quality_store: Some(quality.clone()),
+            view_spec_store: Some(view_spec.clone()),
+            call_graph_store: Some(cg_store.clone()),
+        };
 
-        let runtime = bootstrap_with_backend(std::env::temp_dir(), backend)
+        let runtime = bootstrap_with_backend(std::env::temp_dir(), ports)
             .await
-            .expect("bootstrap_with_backend succeeds with a provided backend");
+            .expect("bootstrap_with_backend succeeds with a RuntimePorts DTO");
 
         assert!(
             Arc::ptr_eq(runtime.quality_store.as_ref().unwrap(), &quality),
-            "quality_store must be the SAME Arc the backend returned"
+            "quality_store must be the SAME Arc the DTO carried"
         );
         assert!(
             Arc::ptr_eq(runtime.view_spec_store.as_ref().unwrap(), &view_spec),
-            "view_spec_store must be the SAME Arc the backend returned"
+            "view_spec_store must be the SAME Arc the DTO carried"
         );
         assert!(
             Arc::ptr_eq(runtime.call_graph_store.as_ref().unwrap(), &cg_store),
-            "call_graph_store must be the SAME Arc the backend returned"
+            "call_graph_store must be the SAME Arc the DTO carried"
         );
     }
 }
