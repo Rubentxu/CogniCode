@@ -858,9 +858,9 @@ fn simple_function() {
         /// rmcp_adapter::call_tool_handler, then add the name here.
         /// To remove a tool: remove the dispatch arm, then remove the name here.
         ///
-        /// GATED_OK tools (graph_diff, graph_timeline, generate_contract) are
-        /// listed here because they have real dispatch arms that return explicit
-        /// capability/configuration errors at runtime, not ToolNotFound.
+        /// GATED_OK tools (generate_contract) are listed here because they
+        /// have real dispatch arms that return explicit capability/config
+        /// errors at runtime, not ToolNotFound.
         fn dispatchable_tool_names() -> &'static [&'static str] {
             &[
                 "analyze_impact",
@@ -870,7 +870,6 @@ fn simple_function() {
                 "build_lightweight_index",
                 "check_architecture",
                 "codebase_map",
-                "compare_graph",
                 "detect_drift",
                 "detect_god_functions",
                 "detect_long_parameter_lists",
@@ -900,7 +899,6 @@ fn simple_function() {
                 "graph_communities",
                 "graph_community_detail",
                 "graph_condensed",
-                "graph_diff",
                 "graph_explain",
                 "graph_feedback_arcs",
                 "graph_god_nodes",
@@ -912,10 +910,8 @@ fn simple_function() {
                 "graph_search_idf",
                 "graph_suggest_questions",
                 "graph_surprising_connections",
-                "graph_timeline",
                 "iac_query",
                 "hover",
-                "ingest",
                 "list_files",
                 "list_view_specs",
                 "merge_graphs",

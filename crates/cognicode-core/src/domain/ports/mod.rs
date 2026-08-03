@@ -44,44 +44,22 @@ pub mod session_store;
 pub mod view_spec_store;
 
 pub use call_graph_store::{CallGraphError, CallGraphStore};
-#[cfg(all(feature = "postgres", feature = "multimodal"))]
-pub use call_graph_store::PostgresCallGraphStore;
 #[cfg(feature = "multimodal")]
 pub use federation_store::{FederationError, FederationStore};
-#[cfg(all(feature = "postgres", feature = "multimodal"))]
-pub use federation_store::PostgresFederationStore;
 pub use graph_error::{GraphError, GraphResult};
 pub use graph_repository::{GraphRepository, SearchPage};
 #[cfg(feature = "multimodal")]
 pub use graph_write_port::GraphWritePort;
-#[cfg(all(feature = "postgres", feature = "multimodal"))]
-pub use graph_write_port::PostgresGraphWritePort;
 #[cfg(feature = "multimodal")]
 pub use ingest_commit::{CommitError, GraphDelta, IngestCommit, ManifestDelta, ReportIntent};
-#[cfg(all(feature = "postgres", feature = "multimodal"))]
-pub use ingest_commit::PostgresIngestCommit;
 pub use manifest_store::{ManifestError, ManifestStore, ScanManifest};
-#[cfg(feature = "postgres")]
-pub use manifest_store::PostgresManifestStore;
 pub use named_view_store::{NamedView, NamedViewError, NamedViewStore};
-#[cfg(feature = "postgres")]
-pub use named_view_store::PostgresNamedViewStore;
 pub use node_property_reader::NodePropertyReader;
 pub use quality_store::{
     IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
     RuleSummary, UpsertSummary,
 };
-#[cfg(feature = "postgres")]
-pub use quality_store::PostgresQualityStore;
 pub use report_store::{ReportError, ReportStore, ReportSummary};
-#[cfg(feature = "postgres")]
-pub use report_store::PostgresReportStore;
 pub use revision_store::{RevisionError, RevisionStore};
-#[cfg(feature = "postgres")]
-pub use revision_store::PostgresRevisionStore;
 pub use session_store::{SessionError, SessionRow, SessionStore};
-#[cfg(feature = "postgres")]
-pub use session_store::PostgresSessionStore;
 pub use view_spec_store::{ViewSpecPayload, ViewSpecStore, ViewSpecStoreError};
-#[cfg(feature = "postgres")]
-pub use view_spec_store::PostgresViewSpecStore;

@@ -496,8 +496,6 @@ pub struct ApiState {
     pub investigation: Option<Arc<dyn InvestigationFacade>>,
     #[cfg(feature = "multimodal")]
     pub graph_repo: Option<Arc<dyn GraphRepository>>,
-    /// Optional ingest controller for pipeline scan operations.
-    pub ingest: Option<Arc<cognicode_core::application::ingest::IngestController>>,
     /// Optional snapshot rendering service (requires mmdc on PATH).
     pub snapshot: Option<Arc<SnapshotService>>,
     /// Monotonically-increasing counter incremented after each successful ingest.
@@ -505,11 +503,11 @@ pub struct ApiState {
     /// when the caller doesn't supply one.
     pub revision_tracker: Arc<AtomicU64>,
     /// Optional analytics algorithm registry (E28.4).
-    /// Wired when postgres feature is enabled and lineage store is available.
+    /// Wired when a lineage store is available.
     pub analytics_registry:
         Option<Arc<cognicode_core::application::services::graph_analytics::AlgorithmRegistry>>,
     /// Optional analytics lineage store (E28.4).
-    /// Wired when postgres feature is enabled.
+    /// Wired when a lineage store is available.
     pub analytics_lineage_store:
         Option<Arc<dyn cognicode_core::domain::analytics::RunLineageStore>>,
 }
@@ -533,20 +531,11 @@ impl ApiState {
             investigation: None,
             #[cfg(feature = "multimodal")]
             graph_repo: None,
-            ingest: None,
             snapshot: None,
             revision_tracker: Arc::new(AtomicU64::new(1)),
             analytics_registry: None,
             analytics_lineage_store: None,
         }
-    }
-
-    pub fn with_ingest(
-        mut self,
-        ingest: Arc<cognicode_core::application::ingest::IngestController>,
-    ) -> Self {
-        self.ingest = Some(ingest);
-        self
     }
 
     /// Wire a generic graph repository so multimodal endpoints
@@ -617,13 +606,7 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/health", get(health))
         .route("/api/health", get(health))
         .route("/api/workspaces/open", post(open_workspace))
-        .route("/api/workspaces/:workspace_id/index", post(index_workspace))
         .route("/api/workspaces/:workspace_id/spotter", get(spotter))
-        .route("/api/workspaces/:workspace_id/scan", post(index_workspace))
-        .route(
-            "/api/workspaces/:workspace_id/graph/stats",
-            get(graph_stats_handler),
-        )
         .route(
             "/api/workspaces/:workspace_id/landing",
             get(landing_handler),
@@ -633,7 +616,6 @@ pub fn router_with_state(state: ApiState) -> Router {
             get(architecture_handler),
         )
         .route("/api/workspaces/:workspace_id/drift", get(drift_handler))
-        .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
         .route(
             "/api/affordances/:object_type",
@@ -746,13 +728,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/health", get(health))
         .route("/api/health", get(health))
         .route("/api/workspaces/open", post(open_workspace))
-        .route("/api/workspaces/:workspace_id/index", post(index_workspace))
         .route("/api/workspaces/:workspace_id/spotter", get(spotter))
-        .route("/api/workspaces/:workspace_id/scan", post(index_workspace))
-        .route(
-            "/api/workspaces/:workspace_id/graph/stats",
-            get(graph_stats_handler),
-        )
         .route(
             "/api/workspaces/:workspace_id/landing",
             get(landing_handler),
@@ -762,7 +738,6 @@ pub fn router(state: ApiState) -> Router {
             get(architecture_handler),
         )
         .route("/api/workspaces/:workspace_id/drift", get(drift_handler))
-        .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
         .route(
             "/api/affordances/:object_type",
@@ -1007,7 +982,7 @@ async fn analytics_lineage_list_handler(
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({
                     "error": "analytics_not_available",
-                    "message": "analytics lineage store not wired (requires postgres)"
+                    "message": "analytics lineage store not wired"
                 })),
             )
                 .into_response();
@@ -1087,7 +1062,7 @@ async fn analytics_lineage_get_handler(
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({
                     "error": "analytics_not_available",
-                    "message": "analytics lineage store not wired (requires postgres)"
+                    "message": "analytics lineage store not wired"
                 })),
             )
                 .into_response();
@@ -1153,68 +1128,6 @@ async fn open_workspace(
     Ok(Json(summary).into_response())
 }
 
-pub async fn index_workspace(
-    State(state): State<ApiState>,
-    Path(workspace_id): Path<String>,
-) -> Result<Response, ApiError> {
-    let ingest = state.ingest.as_ref().ok_or_else(|| {
-        ApiError(ExplorerError::NotImplemented(
-            "ingest controller not wired (PG unavailable)".into(),
-        ))
-    })?;
-
-    match ingest.start_scan(&workspace_id).await {
-        Ok(accepted) => {
-            // Bump revision tracker after each successful ingest.
-            state.revision_tracker.fetch_add(1, Ordering::SeqCst);
-            Ok((
-                axum::http::StatusCode::ACCEPTED,
-                Json(serde_json::json!({
-                    "job_id": accepted.job_id,
-                    "status": accepted.status,
-                    "message": accepted.message,
-                })),
-            )
-                .into_response())
-        }
-        Err(e) => Err(ApiError(ExplorerError::InvalidInput(e))),
-    }
-}
-
-async fn job_status(
-    State(state): State<ApiState>,
-    Path(job_id): Path<String>,
-) -> Result<Response, ApiError> {
-    let ingest = state.ingest.as_ref().ok_or_else(|| {
-        ApiError(ExplorerError::NotImplemented(
-            "ingest controller not wired".into(),
-        ))
-    })?;
-
-    match ingest.get_job(&job_id).await {
-        Some(status) => Ok(Json(status).into_response()),
-        None => Ok((
-            axum::http::StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": "job not found"})),
-        )
-            .into_response()),
-    }
-}
-
-async fn graph_stats_handler(
-    State(state): State<ApiState>,
-    Path(workspace_id): Path<String>,
-) -> Result<Response, ApiError> {
-    let ingest = state.ingest.as_ref().ok_or_else(|| {
-        ApiError(ExplorerError::NotImplemented(
-            "ingest controller not wired".into(),
-        ))
-    })?;
-
-    let stats = ingest.graph_stats(&workspace_id).await;
-    Ok(Json(stats).into_response())
-}
-
 /// Handler for `GET /api/workspaces/:workspace_id/landing`.
 ///
 /// Returns a `LandingPayload` with workspace summary, graph nodes/edges,
@@ -1229,21 +1142,11 @@ async fn landing_handler(
     // Get workspace summary
     let workspace = state.workspace.current_workspace().map_err(ApiError)?;
 
-    // Get graph stats from ingest controller
-    let (symbol_count, relation_count, graph_status) = if let Some(ingest) = &state.ingest {
-        let stats = ingest.graph_stats(&workspace_id).await;
-        (
-            stats.symbol_count,
-            stats.edge_count,
-            if stats.symbol_count > 0 {
-                crate::dto::GraphStatus::Ready
-            } else {
-                crate::dto::GraphStatus::Missing
-            },
-        )
-    } else {
-        (0, 0, crate::dto::GraphStatus::Missing)
-    };
+    // Graph stats — the PG-backed ingest controller was removed with
+    // e29-7; the landing surface reports Missing/0 until a graph is
+    // available (the graph facade below computes the semantic payload).
+    let (symbol_count, relation_count, graph_status) =
+        (0, 0, crate::dto::GraphStatus::Missing);
 
     // Landing semantic seeds.
     // NOTE: `GraphService` computes these from the Explorer seam

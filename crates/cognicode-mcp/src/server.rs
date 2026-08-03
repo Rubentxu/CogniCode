@@ -44,8 +44,6 @@ struct Args {
     cwd: PathBuf,
     #[arg(long, default_value = "0.0.0.0:9847")]
     listen: SocketAddr,
-    #[arg(long)]
-    postgres: Option<String>,
 }
 
 /// Handler for `/health` — process alive, always 200 OK.
@@ -170,12 +168,7 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let pg_url = args.postgres.or_else(|| std::env::var("DATABASE_URL").ok());
-    if pg_url.is_some() {
-        tracing::info!("Mode B: PG-connected");
-    } else {
-        tracing::info!("Mode A: standalone");
-    }
+    tracing::info!("Standalone in-memory handler");
 
     // M3.5: surface whether the auth gate is active at startup. This
     // makes the security posture obvious in container logs and is the

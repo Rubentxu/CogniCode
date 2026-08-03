@@ -21,18 +21,13 @@ path = "src/main.rs"
 [[bin]]
 name = "cognicode-mcp-server"
 path = "src/server.rs"
-required-features = ["postgres"]
 
 [[bin]]
 name = "mcp-client"
 path = "src/mcp_client.rs"
 
 [features]
-# Default is empty — the workspace default (PG-only) is used when no
-# features are specified.
 default = []
-# Forwarded to `cognicode-core` so MCP handlers can use PostgreSQL.
-postgres = ["cognicode-core/postgres"]
 # `multimodal` is an opt-in feature that enables the multimodal MCP
 # tools (`docs_ingest`, `graph_search`). Off by default.
 multimodal = ["cognicode-core/multimodal"]

@@ -11,7 +11,7 @@
 //! | R5       | quality identity preserved — runtime field IS the backend's Arc (single source for all 3 sites) |
 //! | R6       | investigation constructed ONCE and shared (state == search) |
 //!
-//! PG-dependent scenarios skip cleanly when `TEST_DATABASE_URL` is unset
+//! Postgres-dependent scenarios were removed with e29-7.
 //! (no live PG in the apply sandbox).
 
 use std::sync::Arc;
@@ -230,45 +230,11 @@ fn ladybug_pg_backend_implements_pg_backend_for_bootstrap_with_backend() {
 // R1 — pg_repo
 // ---------------------------------------------------------------------------
 
-/// R1 (ladybug arm): the `pg_repo` field is cfg(postgres)-gated, so it
-/// does not exist on the ladybug build ("None on ladybug" at the type
-/// level). Referencing `runtime.pg_repo` here would not compile.
-#[cfg(not(feature = "postgres"))]
+/// R1: the postgres `pg_repo` field was removed with the full postgres
+/// removal (e29-7) — the runtime no longer has any PG-specific field.
 #[test]
-fn r1_pg_repo_absent_on_ladybug() {
+fn r1_pg_repo_absent() {
     fn _assert_no_pg_repo_field(_r: &cognicode_runtime::Runtime) {}
-}
-
-/// R1 + R3 (postgres path, live PG): after `bootstrap(Some(url))` the
-/// `pg_repo` field is Some, the 3 ports are Some, and `backend` is None
-/// (the PgBackend abstraction is fully removed from the postgres path).
-#[cfg(feature = "postgres")]
-#[test]
-fn r1_r3_postgres_bootstrap_path() {
-    let Some(url) = std::env::var("TEST_DATABASE_URL").ok() else {
-        return; // no live PG — skip
-    };
-    let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
-    let runtime = rt
-        .block_on(cognicode_runtime::Runtime::bootstrap(
-            std::env::temp_dir(),
-            Some(url),
-        ))
-        .expect("bootstrap(Some(url)) with live PG");
-    assert!(runtime.pg_repo.is_some(), "R1: pg_repo must be Some");
-    assert!(
-        runtime.quality_store.is_some(),
-        "R3: quality_store must be Some"
-    );
-    assert!(
-        runtime.view_spec_store.is_some(),
-        "R3: view_spec_store must be Some"
-    );
-    assert!(
-        runtime.call_graph_store.is_some(),
-        "R3: call_graph_store must be Some"
-    );
-    assert!(runtime.backend.is_none(), "R3: backend must be None");
 }
 
 // ---------------------------------------------------------------------------
@@ -323,24 +289,22 @@ async fn r3_r5_ports_populated_from_backend_with_identity() {
 }
 
 // ---------------------------------------------------------------------------
-// R6 — investigation constructed ONCE and shared (state == search)
+// R6 — investigation
 // ---------------------------------------------------------------------------
 
-/// R6: the investigation service must be constructed ONCE from the
-/// shared pg_repo and wired into BOTH the SearchService and
-/// ApiState.investigation (same Arc). The duplicate construction site
-/// was deleted, so `new_investigation_service_from_postgres` has
-/// exactly 1 call site in the runtime source.
+/// R6: the postgres-backed investigation service
+/// (`new_investigation_service_from_postgres`) was removed with the
+/// full postgres removal (e29-7). `ApiState.investigation` stays None
+/// on the ladybug path — verify the runtime no longer wires it.
 #[test]
-fn r6_investigation_constructed_once_and_shared() {
+fn r6_investigation_postgres_path_removed() {
     let src = include_str!("../src/lib.rs");
     let sites = src
         .matches("new_investigation_service_from_postgres")
         .count();
     assert_eq!(
-        sites, 1,
-        "R6: new_investigation_service_from_postgres must have exactly 1 \
-         construction site (state.investigation == search investigation). \
-         Found {sites}"
+        sites, 0,
+        "R6: new_investigation_service_from_postgres must be gone after \
+         the full postgres removal. Found {sites}"
     );
 }

@@ -14,16 +14,11 @@ use tracing::info;
 #[command(
     name = "cognicode-mcp",
     version,
-    about = "CogniCode MCP Server — dual mode: standalone (default) or PG-connected (--postgres)"
+    about = "CogniCode MCP Server"
 )]
 struct Args {
     #[arg(short, long, default_value = ".")]
     cwd: PathBuf,
-
-    /// Optional PostgreSQL connection URL (or set DATABASE_URL env var).
-    /// When set, the graph is loaded from PG at startup (ADR-025 Mode B).
-    #[arg(long)]
-    postgres: Option<String>,
 }
 
 #[tokio::main]
@@ -89,19 +84,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         env!("CARGO_PKG_VERSION")
     );
 
-    // Mode A (standalone) or Mode B (PG-connected) — both supported
-    // (ADR-025). Falls back to DATABASE_URL env var when --postgres
-    // is not provided.
-    let pg_url = args.postgres.or_else(|| std::env::var("DATABASE_URL").ok());
-    let handler = if let Some(ref url) = pg_url {
-        info!("Mode B: connecting to PostgreSQL at {}", url);
-        CogniCodeHandler::with_pg(args.cwd, url)
-            .await
-            .map_err(|e| format!("Failed to initialize PG-backed handler: {}", e))?
-    } else {
-        info!("Mode A: standalone in-memory");
-        CogniCodeHandler::new(args.cwd)
-    };
+    // Standalone in-memory handler — the PG-connected Mode B was
+    // removed with the full postgres removal (e29-7).
+    info!("Starting standalone in-memory handler");
+    let handler = CogniCodeHandler::new(args.cwd);
     let transport = stdio();
     let server = rmcp::serve_server(handler, transport).await?;
 

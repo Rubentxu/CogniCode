@@ -386,9 +386,6 @@ impl ExplorerMcpHandler {
         quality_write: Option<Arc<dyn crate::ports::QualityStore>>,
         revision_tracker: Arc<std::sync::atomic::AtomicU64>,
         #[allow(unused_variables)] route_store: Option<Arc<dyn crate::ports::RouteStore>>,
-        #[allow(unused_variables)] pg_repo: Option<
-            Arc<cognicode_core::infrastructure::persistence::PostgresRepository>,
-        >,
     ) -> Self {
         // GraphQueryPort may be None when no call graph is loaded.
         #[cfg(not(feature = "ownership"))]
@@ -398,10 +395,8 @@ impl ExplorerMcpHandler {
         });
         #[cfg(feature = "ownership")]
         let graph_query: Option<Arc<dyn GraphQueryPort>> = graph.as_ref().map(|g| {
-            Arc::new(crate::adapters::CallGraphRepository::new_with_pg_repo(
-                g.clone(),
-                pg_repo.clone(),
-            )) as Arc<dyn GraphQueryPort>
+            Arc::new(crate::adapters::CallGraphRepository::new(g.clone()))
+                as Arc<dyn GraphQueryPort>
         });
 
         // Workspace facade.
@@ -421,15 +416,8 @@ impl ExplorerMcpHandler {
         ));
 
         // Persistence facade (created before view_impl so it can be wired in).
-        #[cfg(feature = "postgres")]
         let persistence: Arc<dyn PersistenceService> = Arc::new(PersistenceServiceImpl::new(
             None, // view_spec_store
-            None, // postgres_repo
-        ));
-        #[cfg(not(feature = "postgres"))]
-        let persistence: Arc<dyn PersistenceService> = Arc::new(PersistenceServiceImpl::new(
-            None, // view_spec_store
-            None, // postgres_repo
         ));
 
         // View facade (also provides LensService for MoldQL).
@@ -488,29 +476,6 @@ impl ExplorerMcpHandler {
         {
             let snapshot = Arc::new(SnapshotService::new());
             ctx_builder = ctx_builder.with_snapshot(snapshot);
-        }
-
-        // Wire analytics registry and lineage store when postgres is available.
-        #[cfg(feature = "postgres")]
-        if let Some(ref pg) = pg_repo {
-            use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
-            use cognicode_core::domain::analytics::RunLineageStore;
-            use cognicode_core::infrastructure::persistence::PostgresLineageStore;
-
-            // Create lineage store from postgres pool.
-            let lineage_store: Arc<dyn RunLineageStore> =
-                Arc::new(PostgresLineageStore::new(pg.with_pool(|p| p.clone())));
-
-            // Create registry with lineage store and default boundary guard.
-            let registry = Arc::new(
-                cognicode_core::application::services::graph_analytics::default_analytics_registry(
-                    lineage_store.clone(),
-                ),
-            );
-
-            ctx_builder = ctx_builder
-                .with_analytics_registry(registry)
-                .with_analytics_lineage_store(lineage_store);
         }
 
         let ctx = ctx_builder.build();

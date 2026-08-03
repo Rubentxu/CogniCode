@@ -1690,7 +1690,7 @@ pub async fn handle_generate_contract(
     _input: GenerateContractInput,
 ) -> HandlerResult<AvcContract> {
     Err(HandlerError::Internal(
-        "generate_contract requires a persistence layer (PostgreSQL via the `postgres` feature)"
+        "generate_contract requires a persistence layer"
             .to_string(),
     ))
 }
@@ -1709,7 +1709,7 @@ pub async fn handle_validate_contract(
     _input: ValidateContractInput,
 ) -> HandlerResult<AvcValidationResult> {
     Err(HandlerError::Internal(
-        "validate_contract requires a persistence layer (PostgreSQL via the `postgres` feature)"
+        "validate_contract requires a persistence layer"
             .to_string(),
     ))
 }
@@ -2533,7 +2533,7 @@ pub async fn handle_complete_task(
         success: false,
         message: format!(
             "Task {} cannot be marked as {} — persistence layer is unavailable \
-             (enable the `postgres` feature for a working implementation)",
+             (no persistence layer configured)",
             input.task_id, status
         ),
     })

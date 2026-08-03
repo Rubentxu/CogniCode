@@ -3,8 +3,6 @@
 //! Phase 5.2: Smart composites that replace groups of individual tools.
 //! Phase 5.3: New tools combining Graphify + CogniCode capabilities.
 
-#[cfg(feature = "postgres")]
-use crate::domain::ports::{PostgresReportStore, ReportStore};
 use crate::domain::services::CycleDetector;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::mcp::schemas::{
@@ -264,100 +262,6 @@ pub async fn handle_project_overview(
     })
 }
 
-// ── compare_graph ────────────────────────────────────────────────────────────
-
-pub async fn handle_compare_graph(
-    ctx: &HandlerContext,
-    _input: CompareGraphInput,
-) -> HandlerResult<CompareGraphOutput> {
-    // Requires PG persistence
-    let pg_repo = match &ctx.postgres_repo {
-        Some(repo) => repo,
-        None => {
-            return Err(HandlerError::Internal(
-                "GATED: compare_graph requires PostgreSQL persistence. \
-                 Configure --postgres flag or set DATABASE_URL."
-                    .into(),
-            ));
-        }
-    };
-
-    let workspace_id = crate::application::ingest::workspace_id_for_path(&ctx.working_dir);
-
-    // Load latest report from PG
-    let report = match PostgresReportStore::new(pg_repo.clone())
-        .latest_report(&workspace_id)
-        .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to load report: {e}")))?
-    {
-        Some(r) => r,
-        None => {
-            return Err(HandlerError::Internal(
-                "No baseline graph_report found. Run build_graph with \
-                 --postgres first to create a baseline."
-                    .into(),
-            ));
-        }
-    };
-
-    // Get current graph snapshot
-    let graph = ctx.analysis_service.get_project_graph();
-
-    // Compare: extract symbol names from current graph vs baseline report
-    let current_symbols: std::collections::HashSet<String> = graph
-        .symbols()
-        .map(|s| s.fully_qualified_name().to_string())
-        .collect();
-
-    // Baseline symbols come from the report's JSON payload
-    let report_symbols: std::collections::HashSet<String> = report
-        .report
-        .get("symbols")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|s| {
-                    s.get("name")
-                        .and_then(|v| v.as_str())
-                        .map(|n| n.to_string())
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    // Compute diffs
-    let mut added: Vec<String> = current_symbols
-        .difference(&report_symbols)
-        .cloned()
-        .collect();
-    let mut removed: Vec<String> = report_symbols
-        .difference(&current_symbols)
-        .cloned()
-        .collect();
-    added.sort();
-    removed.sort();
-
-    let health_score_delta = report.health_score.map(|baseline| {
-        // Compute current health score
-        let current_health =
-            crate::application::services::graph_insights::GraphInsightsService::analyze(&graph)
-                .health_score;
-        current_health - baseline as f64
-    });
-
-    Ok(CompareGraphOutput {
-        baseline_date: report.created_at,
-        added_symbols: added,
-        removed_symbols: removed,
-        current_symbol_count: current_symbols.len(),
-        baseline_symbol_count: report_symbols.len(),
-        metric_deltas: MetricDeltas { health_score_delta },
-    })
-}
-
-// ============================================================================
-// Phase 5.3 — High-Value Tools (ADR-028)
-// ============================================================================
 
 // ── codebase_map ─────────────────────────────────────────────────────────────
 
@@ -780,364 +684,8 @@ pub async fn handle_iac_query(
     })
 }
 
-// ── graph_diff ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, serde::Deserialize)]
-pub struct GraphDiffInput {
-    pub baseline_date: String,
-    #[serde(default)]
-    pub current: bool,
-}
 
-#[derive(Debug, serde::Serialize)]
-pub struct GraphDiffOutput {
-    pub baseline_date: String,
-    pub current_date: String,
-    pub baseline_report: Option<serde_json::Value>,
-    pub current_report: Option<serde_json::Value>,
-    pub symbol_delta: i32,
-    pub edge_delta: i32,
-    pub health_delta: f32,
-    pub changes: Vec<GraphDiffChange>,
-    pub summary: String,
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct GraphDiffChange {
-    pub change_type: String,
-    pub description: String,
-}
-
-pub async fn handle_graph_diff(
-    ctx: &HandlerContext,
-    input: GraphDiffInput,
-) -> HandlerResult<GraphDiffOutput> {
-    let repo = ctx.postgres_repo.as_ref().ok_or_else(|| {
-        HandlerError::Internal(
-            "PostgresRepository not configured. graph_diff requires database access.".into(),
-        )
-    })?;
-
-    let workspace_id = crate::application::ingest::workspace_id_for_path(&ctx.working_dir);
-
-    // Parse baseline date
-    let baseline_date = &input.baseline_date;
-    #[cfg(feature = "postgres")]
-    let baseline_reports = {
-        let store = PostgresReportStore::new(repo.clone());
-        store
-            .reports_for_workspace(&workspace_id)
-            .await
-            .map_err(|e| HandlerError::Internal(format!("Failed to load reports: {e}")))?
-    };
-    #[cfg(not(feature = "postgres"))]
-    let baseline_reports: Vec<crate::domain::ports::ReportSummary> = Vec::new();
-
-    let baseline_report = baseline_reports
-        .iter()
-        .find(|r| r.created_at.starts_with(baseline_date))
-        .or_else(|| baseline_reports.first());
-
-    let current_report = if input.current {
-        #[cfg(feature = "postgres")]
-        {
-            let store = PostgresReportStore::new(repo.clone());
-            store.latest_report(&workspace_id).await.map_err(|e| {
-                HandlerError::Internal(format!("Failed to load current report: {e}"))
-            })?
-        }
-        #[cfg(not(feature = "postgres"))]
-        None
-    } else {
-        None
-    };
-
-    let (symbol_delta, edge_delta, health_delta) = match (&baseline_report, &current_report) {
-        (Some(b), Some(c)) => (
-            c.symbol_count - b.symbol_count,
-            c.edge_count - b.edge_count,
-            c.health_score.unwrap_or(0.0) - b.health_score.unwrap_or(0.0),
-        ),
-        _ => (0, 0, 0.0),
-    };
-
-    let mut changes = Vec::new();
-    if symbol_delta != 0 {
-        changes.push(GraphDiffChange {
-            change_type: "symbol_count".into(),
-            description: format!(
-                "{} symbols ({})",
-                if symbol_delta > 0 { "Added" } else { "Removed" },
-                symbol_delta
-            ),
-        });
-    }
-    if edge_delta != 0 {
-        changes.push(GraphDiffChange {
-            change_type: "edge_count".into(),
-            description: format!(
-                "{} edges ({})",
-                if edge_delta > 0 { "Added" } else { "Removed" },
-                edge_delta
-            ),
-        });
-    }
-    if health_delta.abs() > 0.5 {
-        changes.push(GraphDiffChange {
-            change_type: "health_score".into(),
-            description: format!("Health score changed by {:.1}", health_delta),
-        });
-    }
-
-    let current_date = current_report
-        .as_ref()
-        .map(|r| r.created_at.clone())
-        .unwrap_or_else(|| "current".into());
-
-    let summary = if changes.is_empty() {
-        "No significant changes detected between baseline and current.".into()
-    } else {
-        format!(
-            "Detected {} change(s) between {} and {}",
-            changes.len(),
-            baseline_date,
-            current_date
-        )
-    };
-
-    Ok(GraphDiffOutput {
-        baseline_date: baseline_date.clone(),
-        current_date,
-        baseline_report: baseline_report.map(|r| r.report.clone()),
-        current_report: current_report.map(|r| r.report.clone()),
-        symbol_delta,
-        edge_delta,
-        health_delta,
-        changes,
-        summary,
-    })
-}
-
-// ── ingest ───────────────────────────────────────────────────────────────────
-
-/// Ingest workspace files into PostgreSQL via the full ingest pipeline.
-/// This populates the graph with IaC resources (Terraform, Ansible) and code
-/// symbols, enabling iac_query to find resources. Must be called before
-/// iac_query when using Mode B (--postgres). Requires PostgreSQL connection.
-#[derive(Debug, serde::Deserialize)]
-pub struct IngestInput {
-    /// Directory to scan (defaults to working dir if not specified)
-    #[serde(default)]
-    pub directory: Option<String>,
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct IngestOutput {
-    pub workspace_id: String,
-    pub extracted_symbols: usize,
-    pub extracted_edges: usize,
-    pub failed_files: usize,
-    pub duration_ms: u64,
-    pub summary: String,
-}
-
-pub async fn handle_ingest(
-    ctx: &HandlerContext,
-    input: IngestInput,
-) -> HandlerResult<IngestOutput> {
-    use crate::application::ingest::service::run_scan;
-    use std::time::Instant;
-
-    let directory = if input.directory.is_some() {
-        super::resolve_directory(input.directory.clone(), &ctx.working_dir)
-    } else {
-        ctx.working_dir.clone()
-    };
-
-    let Some(ref pg_repo) = ctx.postgres_repo else {
-        return Err(HandlerError::NotFound(
-            "Ingest requires PostgreSQL (Mode B). Start with --postgres <URL>.".into(),
-        ));
-    };
-
-    let workspace_id = crate::application::ingest::workspace_id_for_path(&directory);
-
-    // Run the full ingest pipeline: scan → extract → pg_upsert → refresh
-    let scan_result = run_scan(
-        pg_repo,
-        &ctx.analysis_service.graph_cache(),
-        &workspace_id,
-        &directory,
-        None,
-    )
-    .await;
-
-    Ok(IngestOutput {
-        workspace_id,
-        extracted_symbols: scan_result.symbols,
-        extracted_edges: scan_result.edges,
-        failed_files: scan_result.failed_files.len(),
-        duration_ms: scan_result.duration_ms,
-        summary: format!(
-            "Extracted {} symbols and {} edges in {}ms ({} failed files)",
-            scan_result.symbols,
-            scan_result.edges,
-            scan_result.duration_ms,
-            scan_result.failed_files.len()
-        ),
-    })
-}
-
-// ── graph_timeline ────────────────────────────────────────────────────────────
-
-#[derive(Debug, serde::Deserialize)]
-pub struct GraphTimelineInput {
-    #[serde(default = "default_timeline_days")]
-    pub days: i32,
-}
-
-fn default_timeline_days() -> i32 {
-    30
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct GraphTimelineOutput {
-    pub days: i32,
-    pub reports: Vec<TimelineReportEntry>,
-    pub trend: GraphTimelineTrend,
-    pub summary: String,
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct TimelineReportEntry {
-    pub date: String,
-    pub symbol_count: i32,
-    pub edge_count: i32,
-    pub health_score: Option<f32>,
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct GraphTimelineTrend {
-    pub symbol_trend: String,
-    pub edge_trend: String,
-    pub health_trend: String,
-    pub direction: String,
-}
-
-pub async fn handle_graph_timeline(
-    ctx: &HandlerContext,
-    input: GraphTimelineInput,
-) -> HandlerResult<GraphTimelineOutput> {
-    let repo = ctx.postgres_repo.as_ref().ok_or_else(|| {
-        HandlerError::Internal(
-            "PostgresRepository not configured. graph_timeline requires database access.".into(),
-        )
-    })?;
-
-    let workspace_id = crate::application::ingest::workspace_id_for_path(&ctx.working_dir);
-
-    let reports = PostgresReportStore::new(repo.clone())
-        .reports_for_workspace(&workspace_id)
-        .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to load reports: {e}")))?;
-
-    let entries: Vec<TimelineReportEntry> = reports
-        .iter()
-        .map(|r| TimelineReportEntry {
-            date: r.created_at.clone(),
-            symbol_count: r.symbol_count,
-            edge_count: r.edge_count,
-            health_score: r.health_score,
-        })
-        .collect();
-
-    let (symbol_trend, edge_trend, health_trend, direction) = if entries.len() >= 2 {
-        let first = entries.last().unwrap();
-        let last = entries.first().unwrap();
-
-        let sym_dir = last.symbol_count - first.symbol_count;
-        let edge_dir = last.edge_count - first.edge_count;
-        let health_dir = last.health_score.unwrap_or(0.0) - first.health_score.unwrap_or(0.0);
-
-        let direction = match (sym_dir > 0, edge_dir > 0, health_dir > 0.0) {
-            (true, true, true) => "growing_healthy".into(),
-            (false, false, false) => "shrinking_degraded".into(),
-            _ => "mixed".into(),
-        };
-
-        (
-            format!(
-                "{} ({} symbols)",
-                if sym_dir > 0 {
-                    "increasing"
-                } else if sym_dir < 0 {
-                    "decreasing"
-                } else {
-                    "stable"
-                },
-                sym_dir
-            ),
-            format!(
-                "{} ({} edges)",
-                if edge_dir > 0 {
-                    "increasing"
-                } else if edge_dir < 0 {
-                    "decreasing"
-                } else {
-                    "stable"
-                },
-                edge_dir
-            ),
-            format!(
-                "{} ({:.1} pts)",
-                if health_dir > 0.0 {
-                    "improving"
-                } else if health_dir < 0.0 {
-                    "declining"
-                } else {
-                    "stable"
-                },
-                health_dir
-            ),
-            direction,
-        )
-    } else {
-        (
-            "insufficient_data".into(),
-            "insufficient_data".into(),
-            "insufficient_data".into(),
-            "unknown".into(),
-        )
-    };
-
-    let summary = if entries.is_empty() {
-        format!(
-            "No reports found in the last {} days. Run a scan to generate reports.",
-            input.days
-        )
-    } else {
-        format!(
-            "Analyzed {} report(s) over {} days: symbols {}, edges {}, health {}",
-            entries.len(),
-            input.days,
-            symbol_trend,
-            edge_trend,
-            health_trend
-        )
-    };
-
-    Ok(GraphTimelineOutput {
-        days: input.days,
-        reports: entries,
-        trend: GraphTimelineTrend {
-            symbol_trend,
-            edge_trend,
-            health_trend,
-            direction,
-        },
-        summary,
-    })
-}
 
 // ── graph_checkpoint ──────────────────────────────────────────────────────────
 
@@ -1265,56 +813,19 @@ use crate::schemas::builtin_descriptors;
 /// MCP default owner for runtime ViewSpecs.
 const MCP_DEFAULT_OWNER: &str = "mcp";
 
-/// List all ViewSpecs visible to the workspace (built-in + runtime).
+/// List all ViewSpecs visible to the workspace (built-in only).
 ///
-/// Built-in descriptors are returned first (sorted alphabetically),
-/// then runtime specs from postgres_repo (sorted by title).
+/// Built-in descriptors are returned (sorted alphabetically). Runtime
+/// specs were loaded from postgres_repo before the full postgres
+/// removal (e29-7); only built-ins remain.
 pub async fn handle_list_view_specs(
     ctx: &HandlerContext,
     _input: ListViewSpecsInput,
 ) -> HandlerResult<ListViewSpecsOutput> {
-    let workspace_id = ctx
-        .working_dir
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "default".into());
-
+    let _ = ctx;
     // Built-in descriptors (hard-coded, sorted alphabetically by id)
-    let mut builtins = builtin_descriptors();
-    builtins.sort_by_key(|d| d.id.clone());
-
-    // Runtime specs from postgres_repo (ViewSpecRepository port was removed 2026-07-30
-    // because it was a partial duplicate of the more complete ViewSpecStore).
-    let mut runtime_descriptors: Vec<ViewDescriptor> = Vec::new();
-    let runtime_specs_result = if let Some(ref pg_repo) = ctx.postgres_repo {
-        pg_repo
-            .list_view_specs(&workspace_id, MCP_DEFAULT_OWNER)
-            .await
-    } else {
-        Ok(Vec::new())
-    };
-
-    match runtime_specs_result {
-        Ok(rows) => {
-            for row in rows {
-                runtime_descriptors.push(ViewDescriptor {
-                    id: row.id,
-                    title: row.title,
-                    view_kind: row.view_kind,
-                    is_builtin: false,
-                    source: Some("runtime".into()),
-                });
-            }
-        }
-        Err(e) => {
-            tracing::warn!("list_view_specs: failed to load runtime specs: {}", e);
-        }
-    }
-    runtime_descriptors.sort_by_key(|d| d.title.clone());
-
-    // Merge: built-ins first, then runtime
-    let mut views = builtins;
-    views.extend(runtime_descriptors);
+    let mut views = builtin_descriptors();
+    views.sort_by_key(|d| d.id.clone());
 
     let count = views.len();
     Ok(ListViewSpecsOutput { count, views })
@@ -1324,18 +835,12 @@ pub async fn handle_list_view_specs(
 ///
 /// For built-in ids (overview, call-graph, etc.), synthesizes a ViewSpec
 /// with empty data_source/transform/props.
-/// For runtime ids (UUIDs), loads from postgres_repo.
-/// Returns view_spec_not_found error for unknown ids.
+/// Runtime (UUID) ids loaded from postgres_repo before the full postgres
+/// removal (e29-7) now return view_spec_not_found.
 pub async fn handle_read_view_spec(
-    ctx: &HandlerContext,
+    _ctx: &HandlerContext,
     input: ReadViewSpecInput,
 ) -> HandlerResult<ReadViewSpecOutput> {
-    let workspace_id = ctx
-        .working_dir
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "default".into());
-
     // Check if it's a built-in id
     let builtin = builtin_descriptors().into_iter().find(|d| d.id == input.id);
 
@@ -1362,57 +867,15 @@ pub async fn handle_read_view_spec(
         return Ok(ReadViewSpecOutput { view });
     }
 
-    // Not a built-in - load from postgres_repo (ViewSpecRepository port was removed
-    // 2026-07-30 because it was a partial duplicate of ViewSpecStore).
-    let row = if let Some(ref pg_repo) = ctx.postgres_repo {
-        pg_repo
-            .load_view_spec(&input.id, &workspace_id, MCP_DEFAULT_OWNER)
-            .await
-            .map_err(|e| HandlerError::Internal(format!("load_view_spec failed: {}", e)))?
-    } else {
-        return Err(HandlerError::Internal(
-            "postgres_repo not configured".into(),
-        ));
-    };
-
-    match row {
-        Some(row) => {
-            let data_source =
-                serde_json::from_str(&row.data_source).unwrap_or_else(|_| serde_json::json!({}));
-            let transform = row
-                .transform
-                .as_ref()
-                .and_then(|s| serde_json::from_str(s).ok());
-            let props = serde_json::from_str(&row.props).unwrap_or_else(|_| serde_json::json!({}));
-            let view = ViewSpec {
-                id: row.id,
-                title: row.title,
-                applies_to: row.applies_to,
-                view_kind: row.view_kind,
-                data_source,
-                transform,
-                renderer_kind: row.renderer_kind,
-                props,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                owner: row.owner,
-                seed_object_id: row.seed_object_id,
-                seed_view_id: row.seed_view_id,
-                applies_when: row.applies_when,
-            };
-            Ok(ReadViewSpecOutput { view })
-        }
-        None => Err(HandlerError::NotFound(format!(
-            "view_spec_not_found: {}",
-            input.id
-        ))),
-    }
+    Err(HandlerError::NotFound(format!(
+        "view_spec_not_found: {}",
+        input.id
+    )))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::persistence::ViewSpecRow;
     use std::sync::Arc;
 
     /// Helper to create a minimal HandlerContext for testing.
@@ -1425,7 +888,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_view_specs_returns_builtins() {
-        // Without postgres_repo, should still return the 8 built-in descriptors
+        // Returns the built-in descriptors
         let ctx = test_ctx();
         let input = ListViewSpecsInput {};
         let output = handle_list_view_specs(&ctx, input).await.unwrap();
@@ -1504,25 +967,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_read_view_spec_unknown_id_no_postgres_returns_error() {
-        // Without postgres_repo, unknown ids should return error
+    async fn test_read_view_spec_unknown_id_returns_error() {
+        // Unknown (non-built-in) ids return view_spec_not_found — the
+        // postgres-backed runtime-spec path was removed with e29-7.
         let ctx = test_ctx();
         let input = ReadViewSpecInput {
             id: "unknown-id-xyz".into(),
         };
         let result = handle_read_view_spec(&ctx, input).await;
 
-        // Should fail because postgres_repo is not configured and it's not a built-in
         assert!(
             result.is_err(),
-            "Unknown id without postgres_repo should error"
+            "Unknown id should error"
         );
         let err = result.unwrap_err();
-        // Without postgres_repo, we get Internal("postgres_repo not configured") error
         assert!(
-            matches!(err, HandlerError::Internal(ref msg) if msg.contains("postgres_repo") |
-                     matches!(err, HandlerError::NotFound(_))),
-            "Should be Internal or NotFound error, got: {:?}",
+            matches!(err, HandlerError::NotFound(_)),
+            "Should be NotFound error, got: {:?}",
             err
         );
     }

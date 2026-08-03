@@ -444,7 +444,7 @@ pub(crate) mod handlers {
                     return err_envelope(
                         TOOL_INGEST_OPENAPI,
                         "feature_disabled",
-                        "ingest_openapi: route_store port not wired (ensure --postgres flag is set)",
+                        "ingest_openapi: route_store port not wired",
                     );
                 }
             };
@@ -652,7 +652,7 @@ pub(crate) mod handlers {
                     return err_envelope(
                         TOOL_TRACE_ROUTE,
                         "feature_disabled",
-                        "trace_route: route_store port not wired (ensure --postgres flag is set)",
+                        "trace_route: route_store port not wired",
                     );
                 }
             };
