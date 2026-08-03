@@ -35,10 +35,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          version: stable
+      - name: Install Rust toolchain (pinned via rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@master
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -57,9 +55,6 @@ jobs:
         with:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Start postgres (services block handles this, but justfile dev-pg needs docker)
-        run: docker compose -f docker-compose.yml up -d postgres
 
       - name: Wait for postgres
         run: |
@@ -82,10 +77,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          version: stable
+      - name: Install Rust toolchain (pinned via rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@master
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -116,10 +109,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          version: stable
+      - name: Install Rust toolchain (pinned via rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@master
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -138,9 +129,6 @@ jobs:
         with:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Start postgres
-        run: docker compose -f docker-compose.yml up -d postgres
 
       - name: Wait for postgres
         run: |
