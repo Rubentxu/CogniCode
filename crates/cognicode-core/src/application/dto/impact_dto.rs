@@ -140,7 +140,7 @@ impl SccDto {
 // mcp-graph-primitives DTOs — graph_subgraph, graph_cluster, graph_explain.
 // ============================================================================
 
-use crate::infrastructure::graph::{ExplanationView, SubgraphView};
+use crate::domain::ports::call_graph_projection::{ExplanationView, SubgraphView};
 
 /// DTO for a single edge in a [`SubgraphResultDto`].
 ///
