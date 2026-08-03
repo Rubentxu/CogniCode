@@ -101,6 +101,45 @@ impl PgBackend for LadybugPgBackend {
     }
 }
 
+/// `PostgresBackend` — implements `PgBackend` on top of the
+/// existing `PostgresRepository`. Used when the runtime is built with
+/// `--features postgres` (the default until v0.79).
+///
+/// v1: wraps the existing `PostgresRepository` so the runtime's
+/// bootstrap path can stay unchanged (it still uses PG-derived
+/// types for the port construction). v1 returns `None` from the
+/// 3 port accessors — the ports are populated by the bootstrap
+/// function from the existing `PostgresRepository`, not from the
+/// `PgBackend` trait. The full migration is a follow-up PR.
+#[cfg(feature = "postgres")]
+pub struct PostgresBackend {
+    repo: Arc<cognicode_core::infrastructure::persistence::PostgresRepository>,
+}
+
+#[cfg(feature = "postgres")]
+impl PostgresBackend {
+    /// Build a new `PostgresBackend` wrapping the given PG repo.
+    pub fn new(repo: Arc<cognicode_core::infrastructure::persistence::PostgresRepository>) -> Self {
+        Self { repo }
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl PgBackend for PostgresBackend {
+    fn quality_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::QualityStore>> {
+        // v1: the QualityStore is constructed by the runtime's
+        // bootstrap from self.repo, not via this trait method. A
+        // follow-up PR will populate this.
+        None
+    }
+    fn view_spec_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>> {
+        None
+    }
+    fn call_graph_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>> {
+        None
+    }
+}
+
 impl Runtime {
     pub async fn bootstrap(cwd: PathBuf, postgres_url: Option<String>) -> Result<Self> {
         tracing_subscriber::fmt()
