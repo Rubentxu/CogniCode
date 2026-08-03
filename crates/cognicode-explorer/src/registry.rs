@@ -40,8 +40,13 @@ use crate::dto::{InspectableObjectType, RendererKind, ViewDescriptorDto, ViewKin
 /// at the consumer boundary via `serde` — see the helper
 /// `view_spec_from_payload` / `payload_from_view_spec` in
 /// [`crate::view_spec_store`] for the bridge fns.
+#[cfg(feature = "postgres")]
 pub use crate::view_spec_store::{
     PostgresViewSpecStore, ViewSpecPayload, ViewSpecStore, ViewSpecStoreError,
+};
+#[cfg(not(feature = "postgres"))]
+pub use cognicode_core::domain::ports::view_spec_store::{
+    ViewSpecPayload, ViewSpecStore, ViewSpecStoreError,
 };
 
 /// A provider of one view's metadata.

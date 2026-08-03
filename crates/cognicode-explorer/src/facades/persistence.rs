@@ -11,7 +11,6 @@ use serde_json::json;
 
 #[cfg(feature = "postgres")]
 use cognicode_core::domain::ports::{PostgresSessionStore, SessionStore};
-#[cfg(feature = "postgres")]
 use cognicode_core::infrastructure::persistence::PostgresRepository;
 
 use crate::dto::{
@@ -59,7 +58,7 @@ impl PersistenceServiceImpl {
     /// the `postgres` feature is enabled.
     pub fn new(
         view_spec_store: Option<Arc<dyn ViewSpecStore>>,
-        #[cfg(feature = "postgres")] postgres_repo: Option<Arc<PostgresRepository>>,
+        #[allow(unused_variables)] postgres_repo: Option<Arc<PostgresRepository>>,
     ) -> Self {
         #[cfg(feature = "postgres")]
         let session_store = postgres_repo
