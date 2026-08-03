@@ -28,6 +28,13 @@ pub struct Runtime {
     /// construction. `None` when no backend was provided (legacy
     /// bootstrap path).
     pub backend: Option<Arc<dyn PgBackend>>,
+    /// Shared `PostgresRepository` Arc (e29-7 task-2). This is the
+    /// single canonical source for the relocated port adapters
+    /// (`quality_store` / `view_spec_store` / `call_graph_store`) and
+    /// the legacy PG call sites that still need the concrete repo
+    /// type. `Some` on the postgres bootstrap path, `None` on ladybug.
+    #[cfg(feature = "postgres")]
+    pub pg_repo: Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
     /// Shared revision tracker — bumped by `index_workspace` after each successful ingest.
     pub revision_tracker: Arc<AtomicU64>,
     /// Optional `QualityStore` port (PR2 relocation: from
@@ -187,15 +194,30 @@ impl Runtime {
             None => None,
         };
 
+        // Build the shared `pg_repo` Arc (e29-7 task-2). This is the
+        // single canonical source for the relocated port adapters and
+        // for the legacy PG call sites that still need the concrete
+        // `PostgresRepository` type.
         #[cfg(feature = "postgres")]
-        let backend: Option<Arc<dyn PgBackend>> = if let Some(ref url) = pg_url {
-            let repo = cognicode_core::infrastructure::persistence::PostgresRepository::new(url)
-                .await
-                .map_err(|e| anyhow::anyhow!("PG connect: {e}"))?;
-            Some(Arc::new(PostgresBackend::new(Arc::new(repo))))
+        let pg_repo: Option<
+            Arc<cognicode_core::infrastructure::persistence::PostgresRepository>,
+        > = if let Some(ref url) = pg_url {
+            let repo = Arc::new(
+                cognicode_core::infrastructure::persistence::PostgresRepository::new(url)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("PG connect: {e}"))?,
+            );
+            Some(repo)
         } else {
             None
         };
+
+        // The `PgBackend` trait object is kept for the postgres path
+        // (task-2 → task-6 removes it entirely, setting `backend: None`).
+        #[cfg(feature = "postgres")]
+        let backend: Option<Arc<dyn PgBackend>> = pg_repo
+            .as_ref()
+            .map(|repo| Arc::new(PostgresBackend::new(Arc::clone(repo))) as Arc<dyn PgBackend>);
         #[cfg(not(feature = "postgres"))]
         let backend: Option<Arc<dyn PgBackend>> = None;
 
@@ -226,13 +248,23 @@ impl Runtime {
 
         // Construct the relocated port adapters BEFORE we move
         // pg_repo into the struct (PR2 WU2.9 — wiring happens up front).
+        // e29-7 task-2: built directly from the shared `pg_repo` Arc
+        // (the dead `PgBackend` port accessors are no longer used).
         #[cfg(feature = "postgres")]
-        let quality_store = backend.as_ref().and_then(|b| b.quality_store());
+        let quality_store: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> =
+            pg_repo.as_ref().map(|repo| {
+                Arc::new(cognicode_core::domain::ports::PostgresQualityStore::new(repo))
+                    as Arc<dyn cognicode_explorer::ports::QualityStore>
+            });
         #[cfg(not(feature = "postgres"))]
         let quality_store: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> = None;
         #[cfg(feature = "postgres")]
         let view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>> =
-            backend.as_ref().and_then(|b| b.view_spec_store());
+            pg_repo.as_ref().map(|repo| {
+                Arc::new(cognicode_core::domain::ports::PostgresViewSpecStore::new(
+                    Arc::clone(repo),
+                )) as Arc<dyn cognicode_core::domain::ports::ViewSpecStore>
+            });
         #[cfg(not(feature = "postgres"))]
         let view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>> = None;
 
@@ -243,7 +275,11 @@ impl Runtime {
         #[cfg(feature = "postgres")]
         let call_graph_store: Option<
             Arc<dyn cognicode_core::domain::ports::CallGraphStore>,
-        > = backend.as_ref().and_then(|b| b.call_graph_store());
+        > = pg_repo.as_ref().map(|repo| {
+            Arc::new(cognicode_core::domain::ports::PostgresCallGraphStore::new(
+                Arc::clone(repo),
+            )) as Arc<dyn cognicode_core::domain::ports::CallGraphStore>
+        });
         #[cfg(not(feature = "postgres"))]
         let call_graph_store: Option<
             Arc<dyn cognicode_core::domain::ports::CallGraphStore>,
@@ -256,6 +292,8 @@ impl Runtime {
             cwd,
             graph_cache,
             backend,
+            #[cfg(feature = "postgres")]
+            pg_repo,
             revision_tracker: Arc::new(AtomicU64::new(1)),
             quality_store,
             view_spec_store,
