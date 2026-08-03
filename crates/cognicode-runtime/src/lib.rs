@@ -198,8 +198,9 @@ impl Runtime {
         #[cfg(feature = "postgres")]
         let quality_store: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> =
             pg_repo.as_ref().map(|repo| {
-                Arc::new(cognicode_core::domain::ports::PostgresQualityStore::new(repo))
-                    as Arc<dyn cognicode_explorer::ports::QualityStore>
+                Arc::new(cognicode_core::domain::ports::PostgresQualityStore::new(
+                    repo,
+                )) as Arc<dyn cognicode_explorer::ports::QualityStore>
             });
         #[cfg(not(feature = "postgres"))]
         let quality_store: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> = None;
@@ -507,10 +508,8 @@ impl Runtime {
         let quality_write: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> = None;
 
         #[cfg(feature = "postgres")]
-        let route_store: Option<Arc<dyn cognicode_explorer::ports::RouteStore>> = self
-            .pg_repo
-            .as_ref()
-            .map(|repo| {
+        let route_store: Option<Arc<dyn cognicode_explorer::ports::RouteStore>> =
+            self.pg_repo.as_ref().map(|repo| {
                 Arc::new(cognicode_explorer::adapters::PostgresRouteStore::from_pool(
                     repo.with_pool(|p| p.clone()),
                 )) as Arc<dyn cognicode_explorer::ports::RouteStore>
@@ -585,10 +584,7 @@ pub async fn bootstrap_with_backend(
     );
     #[cfg(feature = "ownership")]
     let symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository> = Arc::new(
-        cognicode_explorer::adapters::CallGraphRepository::new_with_pg_repo(
-            empty_graph,
-            None,
-        ),
+        cognicode_explorer::adapters::CallGraphRepository::new_with_pg_repo(empty_graph, None),
     );
 
     Ok(Runtime {
@@ -623,38 +619,56 @@ mod tests {
         fn issues_for_file(
             &self,
             _file: &str,
-        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Vec<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             unimplemented!()
         }
         fn issues_for_scope(
             &self,
             _scope_prefix: &str,
-        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Vec<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             unimplemented!()
         }
         fn issues_at_line(
             &self,
             _file: &str,
             _line: u32,
-        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Vec<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             unimplemented!()
         }
         fn issue_by_id(
             &self,
             _id: i64,
-        ) -> Result<Option<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Option<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             unimplemented!()
         }
         fn rule_summary(
             &self,
             _rule_id: &str,
-        ) -> Result<cognicode_core::domain::ports::RuleSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::RuleSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             unimplemented!()
         }
         fn quality_gate(
             &self,
             _workspace_id: Option<&str>,
-        ) -> Result<cognicode_core::domain::ports::QualityGateSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::QualityGateSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             unimplemented!()
         }
         fn open_issues_count(
@@ -667,13 +681,19 @@ mod tests {
             &self,
             _workspace_id: Option<&str>,
             _filter: &cognicode_core::domain::ports::IssueFilter,
-        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Vec<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             unimplemented!()
         }
         fn insert_issues(
             &self,
             _issues: &[cognicode_core::domain::ports::NewIssue],
-        ) -> Result<cognicode_core::domain::ports::UpsertSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::UpsertSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             unimplemented!()
         }
         fn delete_issue(
@@ -704,14 +724,20 @@ mod tests {
             _id: &str,
             _workspace_id: &str,
             _owner: &str,
-        ) -> Result<Option<cognicode_core::domain::ports::ViewSpecPayload>, cognicode_core::domain::ports::ViewSpecStoreError> {
+        ) -> Result<
+            Option<cognicode_core::domain::ports::ViewSpecPayload>,
+            cognicode_core::domain::ports::ViewSpecStoreError,
+        > {
             unimplemented!()
         }
         async fn list(
             &self,
             _workspace_id: &str,
             _owner: &str,
-        ) -> Result<Vec<cognicode_core::domain::ports::ViewSpecPayload>, cognicode_core::domain::ports::ViewSpecStoreError> {
+        ) -> Result<
+            Vec<cognicode_core::domain::ports::ViewSpecPayload>,
+            cognicode_core::domain::ports::ViewSpecStoreError,
+        > {
             unimplemented!()
         }
         async fn delete(
@@ -726,7 +752,10 @@ mod tests {
             &self,
             _workspace_id: &str,
             _applies_to_kind: &str,
-        ) -> Result<Vec<cognicode_core::domain::ports::ViewSpecPayload>, cognicode_core::domain::ports::ViewSpecStoreError> {
+        ) -> Result<
+            Vec<cognicode_core::domain::ports::ViewSpecPayload>,
+            cognicode_core::domain::ports::ViewSpecStoreError,
+        > {
             unimplemented!()
         }
         async fn update(
