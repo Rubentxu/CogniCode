@@ -69,8 +69,15 @@ fn r1_pg_repo_absent_on_ladybug() {
 /// compile and this test passes.
 #[test]
 fn r2_as_postgres_repo_is_absent_from_pg_backend_trait() {
+    let ui = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("ui");
     let t = trybuild::TestCases::new();
-    t.compile_fail("ui/r2_as_postgres_repo_absent.rs");
+    t.compile_fail(
+        ui.join("r2_as_postgres_repo_absent.rs")
+            .to_str()
+            .expect("ui path is valid utf8"),
+    );
 }
 
 // ---------------------------------------------------------------------------

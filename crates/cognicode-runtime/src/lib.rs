@@ -56,23 +56,16 @@ pub struct Runtime {
 }
 
 /// `PgBackend` trait — abstracts the subset of `PostgresRepository`
-/// operations the runtime needs. Implemented by both the live
-/// `PostgresBackend` (PR follow-up) and `LadybugPgBackend` (this PR).
+/// operations the runtime needs. Implemented by `LadybugPgBackend`
+/// (the lbug adapter used by `bootstrap_with_backend`).
 ///
-/// v1 of the migration adds the trait + the lbug-based adapter. The
-/// runtime's `bootstrap` function still uses `PostgresRepository`
-/// directly; a follow-up PR will switch it to use `&dyn PgBackend`.
+/// e29-7 task-6: `as_postgres_repo` was removed — the runtime's
+/// call sites use `self.pg_repo` directly, so the escape-hatch that
+/// exposed the concrete `PostgresRepository` no longer exists.
 pub trait PgBackend: Send + Sync {
     fn quality_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>;
     fn view_spec_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>>;
     fn call_graph_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>;
-    /// Returns the concrete `PostgresRepository` if this backend is
-    /// the PG-backed one. Used by legacy call sites that need the
-    /// concrete repo type (e.g. `new_with_pg_repo` in
-    /// CallGraphRepository). Returns `None` for non-PG backends.
-    fn as_postgres_repo(
-        &self,
-    ) -> Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>;
 }
 
 /// `LadybugPgBackend` — implements `PgBackend` on top of the
@@ -103,11 +96,6 @@ impl LadybugPgBackend {
 }
 
 impl PgBackend for LadybugPgBackend {
-    fn as_postgres_repo(
-        &self,
-    ) -> Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>> {
-        None
-    }
     fn quality_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::QualityStore>> {
         self.quality_store.clone()
     }
@@ -116,53 +104,6 @@ impl PgBackend for LadybugPgBackend {
     }
     fn call_graph_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>> {
         self.call_graph_store.clone()
-    }
-}
-
-/// `PostgresBackend` — implements `PgBackend` on top of the
-/// existing `PostgresRepository`. Used when the runtime is built with
-/// `--features postgres` (the default until v0.79).
-///
-/// v1: wraps the existing `PostgresRepository` so the runtime's
-/// bootstrap path can stay unchanged (it still uses PG-derived
-/// types for the port construction). v1 returns `None` from the
-/// 3 port accessors — the ports are populated by the bootstrap
-/// function from the existing `PostgresRepository`, not from the
-/// `PgBackend` trait. The full migration is a follow-up PR.
-#[cfg(feature = "postgres")]
-pub struct PostgresBackend {
-    repo: Arc<cognicode_core::infrastructure::persistence::PostgresRepository>,
-}
-
-#[cfg(feature = "postgres")]
-impl PostgresBackend {
-    /// Build a new `PostgresBackend` wrapping the given PG repo.
-    pub fn new(repo: Arc<cognicode_core::infrastructure::persistence::PostgresRepository>) -> Self {
-        Self { repo }
-    }
-}
-
-#[cfg(feature = "postgres")]
-impl PgBackend for PostgresBackend {
-    fn as_postgres_repo(
-        &self,
-    ) -> Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>> {
-        Some(self.repo.clone())
-    }
-    fn quality_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::QualityStore>> {
-        // v1: the runtime's bootstrap constructs the QualityStore
-        // from self.repo directly (the pre-cutover path). This
-        // trait method returns None for now — a follow-up PR will
-        // populate it from self.repo.
-        None
-    }
-    fn view_spec_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>> {
-        // Same v1 limitation as quality_store.
-        None
-    }
-    fn call_graph_store(&self) -> Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>> {
-        // Same v1 limitation as quality_store.
-        None
     }
 }
 
@@ -212,13 +153,10 @@ impl Runtime {
             None
         };
 
-        // The `PgBackend` trait object is kept for the postgres path
-        // (task-2 → task-6 removes it entirely, setting `backend: None`).
-        #[cfg(feature = "postgres")]
-        let backend: Option<Arc<dyn PgBackend>> = pg_repo
-            .as_ref()
-            .map(|repo| Arc::new(PostgresBackend::new(Arc::clone(repo))) as Arc<dyn PgBackend>);
-        #[cfg(not(feature = "postgres"))]
+        // The `PgBackend` trait object is no longer constructed on the
+        // postgres path (e29-7 task-6): the runtime owns the ports +
+        // `pg_repo` directly. `backend` stays `None` here; the ladybug
+        // path populates it via `bootstrap_with_backend`.
         let backend: Option<Arc<dyn PgBackend>> = None;
 
         let symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository> =

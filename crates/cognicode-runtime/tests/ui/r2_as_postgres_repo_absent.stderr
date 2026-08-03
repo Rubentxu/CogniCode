@@ -1,0 +1,5 @@
+error[E0599]: no method named `as_postgres_repo` found for reference `&dyn PgBackend` in the current scope
+ --> tests/ui/r2_as_postgres_repo_absent.rs
+  |
+  |         let _ = b.as_postgres_repo();
+  |                   ^^^^^^^^^^^^^^^^ method not found in `&dyn PgBackend`
