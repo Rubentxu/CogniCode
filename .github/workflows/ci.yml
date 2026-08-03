@@ -35,9 +35,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain (pinned via rust-toolchain.toml)
-        uses: dtolnay/rust-toolchain@master
-
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -77,9 +74,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain (pinned via rust-toolchain.toml)
-        uses: dtolnay/rust-toolchain@master
-
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -108,9 +102,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Install Rust toolchain (pinned via rust-toolchain.toml)
-        uses: dtolnay/rust-toolchain@master
 
       - name: Cache cargo registry
         uses: actions/cache@v4
