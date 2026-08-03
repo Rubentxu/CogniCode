@@ -1,20 +1,19 @@
 //! CogniCode Runtime — shared bootstrap for API and MCP binaries.
 //!
-//! v1 of `e29-2-remove-pg` migration is in progress. The runtime
-//! still uses `PostgresRepository` directly; a follow-up PR will
-//! migrate the call sites to use the `PgBackend` trait (below) +
-//! `LadybugPgBackend` adapter (e29-2-switch-default, PR #204).
+//! e29-7 completed the `PgBackend` split: the runtime carries a
+//! `pg_repo: Option<Arc<PostgresRepository>>` field (postgres path)
+//! and an optional `backend: Option<Arc<dyn PgBackend>>` (ladybug
+//! path). `as_postgres_repo` was removed from `PgBackend`; the
+//! postgres path uses the concrete `PostgresRepository` directly,
+//! while the ladybug path builds the relocated ports from
+//! `LadybugPgBackend` (e29-2-switch-default, PR #204).
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use anyhow::Result;
 use tracing_subscriber::EnvFilter;
-
-use cognicode_core::infrastructure::graph::graph_cache::GraphCache;
-#[cfg(feature = "postgres")]
-use cognicode_core::infrastructure::persistence::PostgresRepository;
 
 pub struct Runtime {
     pub symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository>,
@@ -23,16 +22,18 @@ pub struct Runtime {
     pub cwd: PathBuf,
     /// GraphCache for serving the in-memory graph (ArcSwap).
     pub graph_cache: Arc<cognicode_core::infrastructure::graph::graph_cache::GraphCache>,
-    /// `PgBackend` trait object — abstracts the storage backend (PG
-    /// live or lbug 0.19). The runtime uses this for port
-    /// construction. `None` when no backend was provided (legacy
-    /// bootstrap path).
+    /// `PgBackend` trait object — the ladybug-only storage backend
+    /// contract (`LadybugPgBackend` implements it; the concrete
+    /// `PostgresBackend` was deleted in e29-7). The runtime uses this
+    /// for port construction on the ladybug path. `None` when no
+    /// backend was provided (postgres bootstrap path or legacy).
     pub backend: Option<Arc<dyn PgBackend>>,
-    /// Shared `PostgresRepository` Arc (e29-7 task-2). This is the
-    /// single canonical source for the relocated port adapters
-    /// (`quality_store` / `view_spec_store` / `call_graph_store`) and
-    /// the legacy PG call sites that still need the concrete repo
-    /// type. `Some` on the postgres bootstrap path, `None` on ladybug.
+    /// Shared `PostgresRepository` Arc (e29-7 task-2). The canonical
+    /// source for the relocated port adapters (`quality_store` /
+    /// `view_spec_store` / `call_graph_store`) and the legacy PG call
+    /// sites that still need the concrete repo type — on the POSTGRES
+    /// path only. `Some` after `bootstrap(Some(url))`; always `None`
+    /// on the ladybug path, where the backend ports are the source.
     #[cfg(feature = "postgres")]
     pub pg_repo: Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
     /// Shared revision tracker — bumped by `index_workspace` after each successful ingest.
@@ -109,9 +110,12 @@ impl PgBackend for LadybugPgBackend {
 
 impl Runtime {
     pub async fn bootstrap(cwd: PathBuf, postgres_url: Option<String>) -> Result<Self> {
-        tracing_subscriber::fmt()
+        // Best-effort tracing init. `try_init` (not `init`) so repeated
+        // calls from tests and multiple entry points don't panic on
+        // double-init (matches `bootstrap_with_backend`).
+        let _ = tracing_subscriber::fmt()
             .with_env_filter(EnvFilter::from_default_env())
-            .init();
+            .try_init();
 
         let source_reader: Arc<dyn cognicode_explorer::ports::SourceReader> = Arc::new(
             cognicode_explorer::adapters::FsSourceReader::new(cwd.clone()),
