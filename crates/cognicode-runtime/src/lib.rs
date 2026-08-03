@@ -234,7 +234,10 @@ impl Runtime {
                     Arc::new(
                         cognicode_explorer::adapters::CallGraphRepository::new_with_pg_repo(
                             g.clone(),
-                            backend.as_ref().and_then(|b| b.as_postgres_repo()),
+                            #[cfg(feature = "postgres")]
+                            pg_repo.clone(),
+                            #[cfg(not(feature = "postgres"))]
+                            None,
                         ),
                     )
                 }
@@ -319,7 +322,10 @@ impl Runtime {
             Arc::new(
                 cognicode_explorer::adapters::CallGraphRepository::new_with_pg_repo(
                     g,
-                    self.backend.as_ref().and_then(|b| b.as_postgres_repo()),
+                    #[cfg(feature = "postgres")]
+                    self.pg_repo.clone(),
+                    #[cfg(not(feature = "postgres"))]
+                    None,
                 ),
             ) as Arc<dyn GraphQueryPort>
         });
@@ -328,19 +334,26 @@ impl Runtime {
         #[cfg(feature = "postgres")]
         let graph_executor: Option<
             Arc<dyn cognicode_core::domain::plan::executor::GraphExecutor>,
-        > = self.backend.as_ref().and_then(|b| b.as_postgres_repo()).as_ref().map(|repo| {
+        > = self.pg_repo.as_ref().map(|repo| {
             let pool = repo.with_pool(|p| p.clone());
-            let pg_repo =
-                cognicode_core::infrastructure::persistence::PostgresRepository::from_pool(pool);
-            let pg_repo_arc = Arc::new(pg_repo);
+            // `PgGraphExecutor::new` takes an OWNED `PostgresRepository`
+            // and `PostgresRepository` is NOT `Clone`, so the executor
+            // and the `CallGraphStore` each wrap a `from_pool` view of
+            // the same PgPool. (Previously `Arc::try_unwrap` panicked
+            // whenever the cg_store held a second Arc clone — e29-7
+            // task-3 removes that runtime panic.)
             let cg_store: Arc<dyn cognicode_core::domain::ports::CallGraphStore> = Arc::new(
-                cognicode_core::domain::ports::PostgresCallGraphStore::new(pg_repo_arc.clone()),
+                cognicode_core::domain::ports::PostgresCallGraphStore::new(Arc::new(
+                    cognicode_core::infrastructure::persistence::PostgresRepository::from_pool(
+                        pool.clone(),
+                    ),
+                )),
             );
             Arc::new(
                 cognicode_core::infrastructure::persistence::pg_graph_executor::PgGraphExecutor::new(
-                    Arc::try_unwrap(pg_repo_arc)
-                        .ok()
-                        .expect("pg_repo Arc still held elsewhere — refactor to Arc::new(from_pool) earlier"),
+                    cognicode_core::infrastructure::persistence::PostgresRepository::from_pool(
+                        pool,
+                    ),
                     cg_store,
                 ),
             ) as Arc<dyn cognicode_core::domain::plan::executor::GraphExecutor>
@@ -359,18 +372,13 @@ impl Runtime {
 
         // IngestController — only when PG is available.
         #[cfg(feature = "postgres")]
-        let ingest = self
-            .backend
-            .as_ref()
-            .and_then(|b| b.as_postgres_repo())
-            .as_ref()
-            .map(|repo| {
-                Arc::new(cognicode_core::application::ingest::IngestController::new(
-                    repo.clone(),
-                    self.graph_cache.clone(),
-                    ws_resolver_dyn.clone(),
-                ))
-            });
+        let ingest = self.pg_repo.as_ref().map(|repo| {
+            Arc::new(cognicode_core::application::ingest::IngestController::new(
+                repo.clone(),
+                self.graph_cache.clone(),
+                ws_resolver_dyn.clone(),
+            ))
+        });
         #[cfg(not(feature = "postgres"))]
         let ingest: Option<Arc<cognicode_core::application::ingest::IngestController>> = None;
 
@@ -388,7 +396,10 @@ impl Runtime {
             cognicode_explorer::facades::persistence::PersistenceServiceImpl::new(
                 None, // view_spec_store
                 // postgres_repo — None when the backend is lbug
-                self.backend.as_ref().and_then(|b| b.as_postgres_repo()),
+                #[cfg(feature = "postgres")]
+                self.pg_repo.clone(),
+                #[cfg(not(feature = "postgres"))]
+                None,
             ),
         );
 
@@ -409,7 +420,7 @@ impl Runtime {
         #[cfg(feature = "postgres")]
         let investigation: Option<
             Arc<dyn cognicode_explorer::facades::InvestigationFacade>,
-        > = if let Some(ref repo) = self.backend.as_ref().and_then(|b| b.as_postgres_repo()) {
+        > = if let Some(ref repo) = self.pg_repo {
             let pool = repo.with_pool(|p| p.clone());
             Some(
                 cognicode_explorer::facades::investigation::new_investigation_service_from_postgres(
@@ -431,7 +442,7 @@ impl Runtime {
         // postgres-only is deferred to a follow-up that un-gates those domain types.
         #[cfg(all(feature = "multimodal", feature = "postgres"))]
         let graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>> =
-            if let Some(ref pg) = self.backend.as_ref().and_then(|b| b.as_postgres_repo()) {
+            if let Some(ref pg) = self.pg_repo {
                 Some(Arc::new(
                     cognicode_explorer::adapters::PgGraphRepository::new(
                         pg.with_pool(|p| p.clone()),
@@ -459,7 +470,13 @@ impl Runtime {
                 None,                      // view_spec_store
                 quality.clone(),           // quality_repo — wired from PG (PR #55)
                 Some(persistence.clone()), // persistence — for SavedExploration search
-                investigation,             // investigation — wired from PG (e13-wave-1)
+                // investigation — wired from PG (e13-wave-1). Cloned so
+                // the SAME Arc is also wired into ApiState below (e29-7
+                // task-3: state.investigation == search investigation).
+                #[cfg(feature = "postgres")]
+                investigation.clone(),
+                #[cfg(not(feature = "postgres"))]
+                investigation,
                 graph_repo.clone(),
             ));
 
@@ -519,12 +536,13 @@ impl Runtime {
             state = state.with_snapshot(snapshot_service);
         }
 
-        // Investigation service — ADR-005 INV-1
+        // Investigation service — ADR-005 INV-1. Wired from the SAME
+        // Arc passed to the search facade above (e29-7 task-3): the
+        // duplicate construction site was deleted, so
+        // `state.investigation` and the search facade share one
+        // service instance.
         #[cfg(feature = "postgres")]
-        if let Some(ref pg_repo) = self.backend.as_ref().and_then(|b| b.as_postgres_repo()) {
-            use cognicode_explorer::facades::investigation::new_investigation_service_from_postgres;
-            let pool = pg_repo.with_pool(|p| p.clone());
-            let investigation = new_investigation_service_from_postgres(&pool);
+        if let Some(investigation) = investigation {
             state = state.with_investigation(investigation);
         }
 
@@ -559,12 +577,14 @@ impl Runtime {
         let quality_write = quality_write_repo_arc();
 
         #[cfg(feature = "postgres")]
-        let route_store = route_store_repo_arc(
-            self.backend
-                .as_ref()
-                .and_then(|b| b.as_postgres_repo())
-                .as_ref(),
-        );
+        let route_store: Option<Arc<dyn cognicode_explorer::ports::RouteStore>> = self
+            .pg_repo
+            .as_ref()
+            .map(|repo| {
+                Arc::new(cognicode_explorer::adapters::PostgresRouteStore::from_pool(
+                    repo.with_pool(|p| p.clone()),
+                )) as Arc<dyn cognicode_explorer::ports::RouteStore>
+            });
         #[cfg(not(feature = "postgres"))]
         let route_store: Option<Arc<dyn cognicode_explorer::ports::RouteStore>> = None;
 
@@ -579,7 +599,10 @@ impl Runtime {
             quality_write,
             self.revision_tracker,
             route_store,
-            self.backend.as_ref().and_then(|b| b.as_postgres_repo()),
+            #[cfg(feature = "postgres")]
+            self.pg_repo.clone(),
+            #[cfg(not(feature = "postgres"))]
+            None,
         )
     }
 }
@@ -627,28 +650,6 @@ fn quality_write_repo_arc(
 
 #[cfg(not(feature = "postgres"))]
 fn quality_write_repo_arc() -> Option<Arc<dyn cognicode_explorer::ports::QualityStore>> {
-    None
-}
-
-/// Build a `PostgresRouteStore` wired as an `RouteStore` port.
-///
-/// Returns `None` when the `postgres` feature is off or when no PG
-/// connection is available — the `ingest_openapi` and `trace_route`
-/// tools degrade gracefully with a `feature_disabled` envelope.
-#[cfg(feature = "postgres")]
-fn route_store_repo_arc(
-    pg_repo: Option<&Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
-) -> Option<Arc<dyn cognicode_explorer::ports::RouteStore>> {
-    let pg = pg_repo?;
-    Some(Arc::new(
-        cognicode_explorer::adapters::PostgresRouteStore::from_pool(pg.with_pool(|p| p.clone())),
-    ))
-}
-
-#[cfg(not(feature = "postgres"))]
-fn route_store_repo_arc(
-    _pg_repo: Option<&Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
-) -> Option<Arc<dyn cognicode_explorer::ports::RouteStore>> {
     None
 }
 
