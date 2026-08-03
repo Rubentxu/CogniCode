@@ -8,7 +8,6 @@ pub mod affordance;
 pub mod api;
 pub mod ask;
 pub mod boundary;
-pub mod cli_dispatch;
 pub mod domain;
 pub mod dto;
 pub mod error;
@@ -20,8 +19,6 @@ pub mod registry;
 pub mod scaffold;
 pub mod session;
 pub mod view_spec_payload;
-#[cfg(feature = "postgres")]
-pub mod view_spec_store;
 
 // Multimodal (brain-federation) — `FederatedNodeId`,
 // `FederatedGraphService`, `SpaceRegistry`, `MergeDetector`. Hidden
@@ -37,12 +34,6 @@ mod api_rationale_tests;
 mod api_support_pack_tests;
 #[cfg(test)]
 mod dto_tests;
-
-// In-Memory Bridge for loading a `CallGraph` from PostgreSQL into the
-// explorer at binary startup. Feature-gated: when the `postgres`
-// feature is off, the helper (and its sqlx dependency) is unreachable.
-#[cfg(feature = "postgres")]
-pub mod postgres_bridge;
 
 pub use domain::ObjectIdentity;
 pub use domain::lens::{Lens, LensContext, LensRegistry};

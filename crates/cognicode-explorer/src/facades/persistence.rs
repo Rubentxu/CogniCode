@@ -9,10 +9,6 @@ use async_trait::async_trait;
 use chrono::Utc;
 use serde_json::json;
 
-#[cfg(feature = "postgres")]
-use cognicode_core::domain::ports::{PostgresSessionStore, SessionStore};
-use cognicode_core::infrastructure::persistence::PostgresRepository;
-
 use crate::dto::{
     DecisionArtifactSummary, ExplorationSession, GenerateArtifactRequest,
     SaveExplorationSessionRequest, ViewSpec,
@@ -29,47 +25,24 @@ type ExplorationSessionStore = Mutex<HashMap<String, ExplorationSession>>;
 ///
 /// Holds:
 /// - `view_spec_store` — optional ViewSpec persistence backend
-/// - `session_store` — optional PostgreSQL session persistence (Phase A
-///   of the god-object split; replaces the direct
-///   `postgres_repo: Arc<PostgresRepository>` dependency for session
-///   operations).
-/// - `postgres_repo` — retained for non-session operations that still
-///   have no port abstraction (will be eliminated in subsequent
-///   phases).
 /// - `sessions` — in-memory exploration session store (ADR-016 Fase 3)
+///
+/// The PostgreSQL session persistence (`PostgresSessionStore`) was
+/// removed with the full postgres removal (e29-7); sessions are
+/// in-memory only.
 pub struct PersistenceServiceImpl {
     view_spec_store: Option<Arc<dyn ViewSpecStore>>,
-    #[cfg(feature = "postgres")]
-    session_store: Option<Arc<dyn SessionStore>>,
-    /// Kept for `save_call_graph_ws`, `load_call_graph_ws`, and
-    /// `save_investigation_*` operations that don't yet have ports.
-    /// Will be removed when those domains get their own ports.
-    #[cfg(feature = "postgres")]
-    postgres_repo: Option<Arc<PostgresRepository>>,
     sessions: Arc<ExplorationSessionStore>,
 }
 
 impl PersistenceServiceImpl {
     /// Construct a new `PersistenceServiceImpl`.
     ///
-    /// `postgres_repo` is still required for non-session operations
-    /// (call graph persistence, investigations). It is also used
-    /// internally to construct the [`SessionStore`] adapter when
-    /// the `postgres` feature is enabled.
-    pub fn new(
-        view_spec_store: Option<Arc<dyn ViewSpecStore>>,
-        #[allow(unused_variables)] postgres_repo: Option<Arc<PostgresRepository>>,
-    ) -> Self {
-        #[cfg(feature = "postgres")]
-        let session_store = postgres_repo
-            .as_ref()
-            .map(|repo| Arc::new(PostgresSessionStore::new(repo.clone())) as Arc<dyn SessionStore>);
+    /// `view_spec_store` is the optional ViewSpec persistence backend
+    /// (None → ViewSpec operations return `FeatureDisabled`).
+    pub fn new(view_spec_store: Option<Arc<dyn ViewSpecStore>>) -> Self {
         Self {
             view_spec_store,
-            #[cfg(feature = "postgres")]
-            session_store,
-            #[cfg(feature = "postgres")]
-            postgres_repo,
             sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -130,7 +103,7 @@ impl PersistenceService for PersistenceServiceImpl {
         owner: &str,
     ) -> ExplorerResult<()> {
         let store = self.view_spec_store.as_ref().ok_or_else(|| {
-            ExplorerError::FeatureDisabled("view_spec_store requires postgres feature".into())
+            ExplorerError::FeatureDisabled("view_spec_store not configured".into())
         })?;
         let payload = view_spec_to_payload(spec)?;
         store
@@ -146,7 +119,7 @@ impl PersistenceService for PersistenceServiceImpl {
         owner: &str,
     ) -> ExplorerResult<Option<ViewSpec>> {
         let store = self.view_spec_store.as_ref().ok_or_else(|| {
-            ExplorerError::FeatureDisabled("view_spec_store requires postgres feature".into())
+            ExplorerError::FeatureDisabled("view_spec_store not configured".into())
         })?;
         let payload = store
             .load(id, workspace_id, owner)
@@ -164,7 +137,7 @@ impl PersistenceService for PersistenceServiceImpl {
         owner: &str,
     ) -> ExplorerResult<Vec<ViewSpec>> {
         let store = self.view_spec_store.as_ref().ok_or_else(|| {
-            ExplorerError::FeatureDisabled("view_spec_store requires postgres feature".into())
+            ExplorerError::FeatureDisabled("view_spec_store not configured".into())
         })?;
         let payloads = store
             .list(workspace_id, owner)
@@ -183,7 +156,7 @@ impl PersistenceService for PersistenceServiceImpl {
         owner: &str,
     ) -> ExplorerResult<bool> {
         let store = self.view_spec_store.as_ref().ok_or_else(|| {
-            ExplorerError::FeatureDisabled("view_spec_store requires postgres feature".into())
+            ExplorerError::FeatureDisabled("view_spec_store not configured".into())
         })?;
         store
             .delete(id, workspace_id, owner)
@@ -197,32 +170,12 @@ impl PersistenceService for PersistenceServiceImpl {
     ///
     /// - Debt 1 ✅: Orphaned `GET /api/explorations/:id` route removed.
     /// - Debt 2 ✅: Dual model unified onto `ExplorationSession` (ADR-040 Wave 3 aligned).
-    /// - Debt 3 ✅: Postgres persistence added — exploration sessions survive server restarts (v0.12.6).
+    /// - Debt 3 ✅: In-memory store — sessions do not survive server
+    ///   restarts (PostgreSQL persistence removed with e29-7).
     async fn list_explorations(
         &self,
         workspace_id: &str,
     ) -> ExplorerResult<Vec<ExplorationSession>> {
-        #[cfg(feature = "postgres")]
-        if let Some(ref session_store) = self.session_store {
-            let rows = session_store
-                .list(workspace_id)
-                .await
-                .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("list_explorations: {e}")))?;
-            let sessions: Vec<ExplorationSession> = rows
-                .into_iter()
-                .map(|row| ExplorationSession {
-                    id: row.id,
-                    workspace_id: row.workspace_id,
-                    events: serde_json::from_str(&row.events.to_string()).unwrap_or_default(),
-                    navigation_mode: row.navigation_mode,
-                    panes: serde_json::from_str(&row.panes.to_string()).unwrap_or_default(),
-                    created_at: row.created_at,
-                    investigation_id: row.investigation_id,
-                })
-                .collect();
-            return Ok(sessions);
-        }
-
         let sessions = self.sessions.lock().map_err(|_| {
             ExplorerError::Anyhow(anyhow::anyhow!("exploration session store poisoned"))
         })?;
@@ -258,28 +211,6 @@ impl PersistenceService for PersistenceServiceImpl {
             investigation_id: investigation_id.clone(),
         };
 
-        #[cfg(feature = "postgres")]
-        if let Some(ref session_store) = self.session_store {
-            let events_json = serde_json::to_string(&request.events)
-                .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("serialize events: {e}")))?;
-            let panes_json = serde_json::to_string(&request.panes)
-                .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("serialize panes: {e}")))?;
-            session_store
-                .save(
-                    &id,
-                    &request.workspace_id,
-                    &events_json,
-                    &request.navigation_mode,
-                    &panes_json,
-                    investigation_id.as_deref(),
-                )
-                .await
-                .map_err(|e| {
-                    ExplorerError::Anyhow(anyhow::anyhow!("save_exploration_session: {e}"))
-                })?;
-            return Ok(session);
-        }
-
         self.sessions
             .lock()
             .map_err(|_| ExplorerError::Anyhow(anyhow::anyhow!("session store poisoned")))?
@@ -292,31 +223,6 @@ impl PersistenceService for PersistenceServiceImpl {
         &self,
         session_id: &str,
     ) -> ExplorerResult<Option<ExplorationSession>> {
-        #[cfg(feature = "postgres")]
-        if let Some(ref session_store) = self.session_store {
-            // Try to find the workspace_id from in-memory store first
-            // to scope the PG query correctly
-            let workspace_id = {
-                let guard = self.sessions.lock().map_err(|_| {
-                    ExplorerError::Anyhow(anyhow::anyhow!("session store poisoned"))
-                })?;
-                guard.get(session_id).map(|s| s.workspace_id.clone())
-            };
-            if let Some(ws_id) = workspace_id {
-                if let Ok(Some(row)) = session_store.load(session_id, &ws_id).await {
-                    return Ok(Some(ExplorationSession {
-                        id: row.id,
-                        workspace_id: row.workspace_id,
-                        events: serde_json::from_str(&row.events.to_string()).unwrap_or_default(),
-                        navigation_mode: row.navigation_mode,
-                        panes: serde_json::from_str(&row.panes.to_string()).unwrap_or_default(),
-                        created_at: row.created_at,
-                        investigation_id: row.investigation_id,
-                    }));
-                }
-            }
-        }
-
         let guard = self
             .sessions
             .lock()

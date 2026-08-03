@@ -10,7 +10,7 @@
 //!
 //! The struct is intentionally **ungated** — it is reachable from a
 //! default build (no `postgres` feature required). The only place
-//! `sqlx` is involved is the private `EdgeRow` mapping struct inside
+//! backend-specific row mapping is the private `EdgeRow` struct inside
 //! the feature-gated `postgres_repository` module.
 //!
 //! The `id` surrogate key is **NOT** a field here: it is a persistence

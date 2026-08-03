@@ -664,12 +664,7 @@ fn execute_scenario(
                 && container_config.is_some()
                 && scenario.scenario_class != "mutation";
             let read_only = scenario.scenario_class != "mutation";
-            let db_url = std::env::var("DATABASE_URL").ok();
             let mut extra: Vec<String> = Vec::new();
-            if let Some(ref url) = db_url {
-                extra.push("--postgres".into());
-                extra.push(url.clone());
-            }
 
             let spawned: Option<McpServer> = if use_container {
                 let img = container_config.as_ref().unwrap().podman_image();
@@ -3719,18 +3714,9 @@ fn benchmark(args: BenchmarkArgs, verbose: bool) -> Result<i32, String> {
     let arguments: serde_json::Value = serde_json::from_str(&args.arguments)
         .map_err(|e| format!("Invalid JSON arguments: {}", e))?;
 
-    // Spawn MCP server (forward --postgres if DATABASE_URL is set)
-    let mut server = if let Ok(db_url) = std::env::var("DATABASE_URL") {
-        McpServer::spawn_with_env(
-            &server_binary,
-            &args.workspace,
-            &[],
-            &["--postgres", &db_url],
-        )
-    } else {
-        McpServer::spawn(&server_binary, &args.workspace)
-    }
-    .map_err(|e| format!("Failed to spawn MCP server: {}", e))?;
+    // Spawn MCP server (in-memory; --postgres forwarding removed with e29-7)
+    let mut server = McpServer::spawn(&server_binary, &args.workspace)
+        .map_err(|e| format!("Failed to spawn MCP server: {}", e))?;
 
     // Initialize MCP connection
     server

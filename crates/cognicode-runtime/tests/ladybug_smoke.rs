@@ -5,10 +5,9 @@
 // if the runtime's `ladybug` feature is broken or the underlying
 // types change.
 //
-// The v1 switch-default is a compile-time check only — actually
-// switching the runtime default to `ladybug` requires migrating
-// many call sites that depend on `PostgresRepository` directly.
-// That work is tracked as `e29-2-remove-pg`.
+// LadybugDB is the sole backend (e29-7 full postgres removal);
+// `bootstrap` (in-memory, no ports) and `bootstrap_with_backend`
+// are the entry points.
 
 #![cfg(feature = "ladybug")]
 
@@ -23,10 +22,10 @@ fn runtime_ladybug_feature_exposes_lbug_types() {
 
 #[test]
 fn runtime_ladybug_feature_compiles() {
-    // The `bootstrap` function should be callable with `ladybug`
+    // The `bootstrap` free fn should be callable with `ladybug`
     // feature (it's async and requires a runtime, so we just
     // verify the type signature compiles by taking a reference).
     fn _bootstrap_takes_path(p: PathBuf) {
-        let _future = cognicode_runtime::Runtime::bootstrap(p, None);
+        let _future = cognicode_runtime::bootstrap(p);
     }
 }

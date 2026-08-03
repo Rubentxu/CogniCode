@@ -592,9 +592,7 @@ pub fn run(
             // without panicking. The MCP caller treats this as a
             // graceful degradation.
             Err(crate::error::ExplorerError::FeatureDisabled(
-                "postgres feature disabled at build time — enable `--features postgres` to \
-                 run PG-compiled queries"
-                    .into(),
+                "postgres-compiled queries require a postgres adapter — removed with e29-7".into(),
             ))
         }
         (CompiledQuery::Petgraph(plan), CompileTarget::Petgraph) => run_petgraph_plan(plan, view),

@@ -39,12 +39,7 @@ use crate::dto::{InspectableObjectType, RendererKind, ViewDescriptorDto, ViewKin
 /// `cognicode_explorer::dto::ViewSpec` directly. Conversions happen
 /// at the consumer boundary via `serde` — see the helper
 /// `view_spec_from_payload` / `payload_from_view_spec` in
-/// [`crate::view_spec_store`] for the bridge fns.
-#[cfg(feature = "postgres")]
-pub use crate::view_spec_store::{
-    PostgresViewSpecStore, ViewSpecPayload, ViewSpecStore, ViewSpecStoreError,
-};
-#[cfg(not(feature = "postgres"))]
+/// [`crate::view_spec_payload`] for the bridge fns.
 pub use cognicode_core::domain::ports::view_spec_store::{
     ViewSpecPayload, ViewSpecStore, ViewSpecStoreError,
 };

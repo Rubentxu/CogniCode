@@ -25,61 +25,41 @@
 //!
 //! The `multimodal` feature gates the WRITE/exTRACTION path only.
 
-#[cfg(feature = "postgres")]
 pub mod call_graph_store;
-#[cfg(all(feature = "postgres", feature = "multimodal"))]
+#[cfg(feature = "multimodal")]
 pub mod federation_store;
 pub mod graph_error;
 pub mod graph_repository;
-#[cfg(all(feature = "postgres", feature = "multimodal"))]
+#[cfg(feature = "multimodal")]
 pub mod graph_write_port;
 #[cfg(feature = "multimodal")]
 pub mod ingest_commit;
-#[cfg(feature = "postgres")]
 pub mod manifest_store;
-#[cfg(feature = "postgres")]
 pub mod named_view_store;
 pub mod node_property_reader;
-#[cfg(feature = "postgres")]
 pub mod quality_store;
-#[cfg(feature = "postgres")]
 pub mod report_store;
-#[cfg(feature = "postgres")]
 pub mod revision_store;
-#[cfg(feature = "postgres")]
 pub mod session_store;
-#[cfg(feature = "postgres")]
 pub mod view_spec_store;
 
-#[cfg(feature = "postgres")]
-pub use call_graph_store::{CallGraphError, CallGraphStore, PostgresCallGraphStore};
-#[cfg(all(feature = "postgres", feature = "multimodal"))]
-pub use federation_store::{FederationError, FederationStore, PostgresFederationStore};
+pub use call_graph_store::{CallGraphError, CallGraphStore};
+#[cfg(feature = "multimodal")]
+pub use federation_store::{FederationError, FederationStore};
 pub use graph_error::{GraphError, GraphResult};
 pub use graph_repository::{GraphRepository, SearchPage};
-#[cfg(all(feature = "postgres", feature = "multimodal"))]
-pub use graph_write_port::{GraphWritePort, PostgresGraphWritePort};
 #[cfg(feature = "multimodal")]
-pub use ingest_commit::{
-    CommitError, GraphDelta, IngestCommit, ManifestDelta, PostgresIngestCommit, ReportIntent,
-};
-#[cfg(feature = "postgres")]
-pub use manifest_store::{ManifestError, ManifestStore, PostgresManifestStore};
-#[cfg(feature = "postgres")]
-pub use named_view_store::{NamedViewError, NamedViewStore, PostgresNamedViewStore};
+pub use graph_write_port::GraphWritePort;
+#[cfg(feature = "multimodal")]
+pub use ingest_commit::{CommitError, GraphDelta, IngestCommit, ManifestDelta, ReportIntent};
+pub use manifest_store::{ManifestError, ManifestStore, ScanManifest};
+pub use named_view_store::{NamedView, NamedViewError, NamedViewStore};
 pub use node_property_reader::NodePropertyReader;
-#[cfg(feature = "postgres")]
 pub use quality_store::{
-    IssueFilter, NewIssue, PostgresQualityStore, QualityError, QualityGateSummary, QualityIssue,
-    QualityStore, RuleSummary, UpsertSummary,
+    IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
+    RuleSummary, UpsertSummary,
 };
-#[cfg(feature = "postgres")]
-pub use report_store::{PostgresReportStore, ReportError, ReportStore};
-#[cfg(feature = "postgres")]
-pub use revision_store::{PostgresRevisionStore, RevisionError, RevisionStore};
-#[cfg(feature = "postgres")]
-pub use session_store::{PostgresSessionStore, SessionError, SessionRow, SessionStore};
-#[cfg(feature = "postgres")]
-pub use view_spec_store::{
-    PostgresViewSpecStore, ViewSpecPayload, ViewSpecStore, ViewSpecStoreError,
-};
+pub use report_store::{ReportError, ReportStore, ReportSummary};
+pub use revision_store::{RevisionError, RevisionStore};
+pub use session_store::{SessionError, SessionRow, SessionStore};
+pub use view_spec_store::{ViewSpecPayload, ViewSpecStore, ViewSpecStoreError};

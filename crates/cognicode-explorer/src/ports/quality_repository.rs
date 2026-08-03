@@ -13,6 +13,6 @@
 //! `QualityStore` / `PostgresQualityStore` names (PR2 WU2.3).
 
 pub use cognicode_core::domain::ports::quality_store::{
-    IssueFilter, NewIssue, PostgresQualityStore, QualityError, QualityGateSummary, QualityIssue,
-    QualityStore, RuleSummary, UpsertSummary,
+    IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
+    RuleSummary, UpsertSummary,
 };

@@ -11,20 +11,12 @@ use crate::interface::mcp::error::{InterfaceError, InterfaceResult};
 const STUB_TOOLS: &[&str] = &[];
 
 /// Tools that return gated errors when capability is not configured.
-/// These tools detect missing PostgreSQL adapter or persistence.
-const GATED_TOOLS: &[&str] = &[
-    "graph_diff",
-    "graph_timeline",
-    "generate_contract",
-    "compare_graph",
-];
+/// The PG-backed tools (graph_diff, graph_timeline, compare_graph,
+/// ingest) were removed with the full postgres removal (e29-7).
+const GATED_TOOLS: &[&str] = &["generate_contract"];
 
 /// Gated error message patterns indicating capability not configured.
-const GATED_PATTERNS: &[&str] = &[
-    "not configured",
-    "requires persistence",
-    "PostgreSQL adapter",
-];
+const GATED_PATTERNS: &[&str] = &["not configured", "requires persistence"];
 
 /// Classifies a tool call result into a status label.
 ///
@@ -121,9 +113,9 @@ mod tests {
     #[test]
     fn test_gated_status() {
         let result: InterfaceResult<String> = Err(InterfaceError::Internal(
-            "PostgreSQL adapter not configured for graph operations".to_string(),
+            "persistence adapter not configured for graph operations".to_string(),
         ));
-        assert_eq!(classify_status("graph_diff", &result), "gated");
+        assert_eq!(classify_status("generate_contract", &result), "gated");
     }
 
     #[test]
@@ -131,7 +123,7 @@ mod tests {
         let result: InterfaceResult<String> = Err(InterfaceError::Internal(
             "This operation requires persistence".to_string(),
         ));
-        assert_eq!(classify_status("graph_timeline", &result), "gated");
+        assert_eq!(classify_status("generate_contract", &result), "gated");
     }
 
     #[test]

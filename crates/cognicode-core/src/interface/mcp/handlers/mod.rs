@@ -350,12 +350,6 @@ pub struct HandlerContext {
     /// Optional FileOperationsService for shared file operation handlers. If None, handlers create their own.
     pub file_ops_service:
         Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
-    /// Optional PostgresRepository for graph_reports queries. Used by graph_diff and graph_timeline tools.
-    /// Also serves ViewSpec queries (list_view_specs, read_view_spec) — the
-    /// ViewSpecRepository port that previously abstracted this was a partial
-    /// duplicate of the more complete `ViewSpecStore` port (in
-    /// `cognicode-explorer/src/registry.rs`) and has been removed (2026-07-30).
-    pub postgres_repo: Option<Arc<crate::infrastructure::persistence::PostgresRepository>>,
     /// Optional IacRepository for IaC resource queries. Used by iac_query tool.
     pub iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
     /// Cached InMemoryGraphStore fallback, lazily created on first
@@ -502,7 +496,6 @@ pub struct HandlerContextBuilder {
     code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
     file_ops_service:
         Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
-    postgres_repo: Option<Arc<crate::infrastructure::persistence::PostgresRepository>>,
     iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
 }
 
@@ -644,26 +637,6 @@ impl HandlerContextBuilder {
         self
     }
 
-    /// Sets the PostgresRepository for graph_reports queries.
-    ///
-    /// If not set, graph_diff and graph_timeline tools will return an error.
-    #[cfg(feature = "postgres")]
-    pub fn with_postgres_repo(
-        mut self,
-        repo: Arc<crate::infrastructure::persistence::PostgresRepository>,
-    ) -> Self {
-        self.postgres_repo = Some(repo);
-        self
-    }
-
-    #[cfg(not(feature = "postgres"))]
-    pub fn with_postgres_repo(
-        self,
-        _repo: Arc<crate::infrastructure::persistence::PostgresRepository>,
-    ) -> Self {
-        self
-    }
-
     /// Sets the IacRepository for IaC resource queries.
     ///
     /// If not set, iac_query will fall back to in-memory graph or return an error.
@@ -722,7 +695,6 @@ impl HandlerContextBuilder {
             graph_store: self.graph_store,
             code_intelligence_provider: self.code_intelligence_provider,
             file_ops_service: self.file_ops_service,
-            postgres_repo: self.postgres_repo,
             iac_repo: self.iac_repo,
             fallback_store: Arc::new(OnceLock::new()),
             graph_loaded: Arc::new(AtomicBool::new(false)),

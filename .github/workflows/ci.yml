@@ -7,29 +7,11 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Shared by all test jobs
-  TEST_DATABASE_URL: postgres://cognicode:cognicode@localhost:5432/cognicode
-  DATABASE_URL: postgres://cognicode:cognicode@localhost:5432/cognicode
 
 jobs:
   test:
     name: Test Suite
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: cognicode
-          POSTGRES_PASSWORD: cognicode
-          POSTGRES_DB: cognicode
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
 
     steps:
       - name: Checkout code
@@ -52,13 +34,6 @@ jobs:
         with:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Wait for postgres
-        run: |
-          for i in $(seq 1 30); do
-            pg_isready -h localhost -p 5432 -U cognicode && break
-            sleep 1
-          done
 
       - name: Run unit tests
         run: cargo test --workspace --no-fail-fast
@@ -84,21 +59,6 @@ jobs:
     name: Ownership Feature Test
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: cognicode
-          POSTGRES_PASSWORD: cognicode
-          POSTGRES_DB: cognicode
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -120,13 +80,6 @@ jobs:
         with:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Wait for postgres
-        run: |
-          for i in $(seq 1 30); do
-            pg_isready -h localhost -p 5432 -U cognicode && break
-            sleep 1
-          done
 
       - name: Run tests with ownership feature
         run: cargo test --workspace --features ownership --no-fail-fast

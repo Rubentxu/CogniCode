@@ -19,7 +19,7 @@ pub use evidence_store::{EvidenceKind, EvidenceStore, EvidenceSummary, InMemoryE
 pub use graph_repository::{GraphRepository, SearchPage};
 pub use quality_repository::{NewIssue, UpsertSummary};
 pub use quality_repository::{
-    PostgresQualityStore, QualityError, QualityGateSummary, QualityIssue, QualityStore, RuleSummary,
+    QualityError, QualityGateSummary, QualityIssue, QualityStore, RuleSummary,
 };
 pub use route_store::{
     ApiRoute, ApiRouteEdge, BatchStats, EDGE_KIND_GRAPHQL_CALLS, EDGE_KIND_GRPC_CALLS,

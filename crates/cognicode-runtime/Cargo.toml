@@ -28,19 +28,11 @@ trybuild = "1"
 
 [features]
 # v0.78.0: lbug 0.19 as the canonical store (E29 final cutover).
-# The `postgres` feature remains available for backward compat
-# (the legacy bootstrap path + `PostgresRepository`).
+# PostgreSQL was removed entirely (e29-7); LadybugDB is the sole backend.
 default = ["ladybug"]
-postgres = ["cognicode-explorer/postgres"]
 # Multimodal: enables OpenAPI/GraphQL/gRPC/tRPC ingestion (cycle e15.5)
 multimodal = ["cognicode-explorer/multimodal"]
 # Ownership: enables CODEOWNERS/git-blame ownership attribution
 ownership = ["cognicode-explorer/ownership"]
-# Ladybug: enables lbug 0.19 as the runtime's canonical graph store
-# (E29 Phase 2 / e29-2-switch-default). The default is still
-# `postgres` (a future PR will switch the default after all
-# downstream code migrates from PG-specific types to the lbug
-# equivalents). The runtime supports BOTH backends — pick the
-# canonical one with `default-features = ["ladybug"]` or
-# `default-features = ["postgres"]`.
+# Ladybug: enables lbug 0.19 as the runtime's canonical graph store.
 ladybug = ["cognicode-ladybug", "cognicode-ladybug/multimodal-9ports"]

@@ -250,8 +250,8 @@ impl ToolHandler for ViewSaveHandler {
             None => {
                 return err_envelope(
                     TOOL_VIEW_SAVE,
-                    "view_specs_require_postgres_feature",
-                    "view_specs_require_postgres_feature",
+                    "view_specs_require_persistence",
+                    "view_specs_require_persistence",
                 );
             }
         };
@@ -304,8 +304,8 @@ impl ToolHandler for ViewSaveHandler {
             ),
             Err(ExplorerError::FeatureDisabled(_)) => err_envelope(
                 TOOL_VIEW_SAVE,
-                "view_specs_require_postgres_feature",
-                "view_specs_require_postgres_feature",
+                "view_specs_require_persistence",
+                "view_specs_require_persistence",
             ),
             Err(ExplorerError::InvalidInput(msg)) => {
                 err_envelope(TOOL_VIEW_SAVE, "invalid_input", &msg)
@@ -397,8 +397,8 @@ impl ToolHandler for ViewLoadHandler {
             None => {
                 return err_envelope(
                     TOOL_VIEW_LOAD,
-                    "view_specs_require_postgres_feature",
-                    "view_specs_require_postgres_feature",
+                    "view_specs_require_persistence",
+                    "view_specs_require_persistence",
                 );
             }
         };
@@ -408,8 +408,8 @@ impl ToolHandler for ViewLoadHandler {
             Ok(None) => err_envelope(TOOL_VIEW_LOAD, "not_found", "not_found"),
             Err(ExplorerError::FeatureDisabled(_)) => err_envelope(
                 TOOL_VIEW_LOAD,
-                "view_specs_require_postgres_feature",
-                "view_specs_require_postgres_feature",
+                "view_specs_require_persistence",
+                "view_specs_require_persistence",
             ),
             Err(ExplorerError::NotFound(_)) => {
                 err_envelope(TOOL_VIEW_LOAD, "not_found", "not_found")
@@ -484,8 +484,8 @@ impl ToolHandler for ViewListHandler {
             None => {
                 return err_envelope(
                     TOOL_VIEW_LIST,
-                    "view_specs_require_postgres_feature",
-                    "view_specs_require_postgres_feature",
+                    "view_specs_require_persistence",
+                    "view_specs_require_persistence",
                 );
             }
         };
@@ -494,8 +494,8 @@ impl ToolHandler for ViewListHandler {
             Ok(specs) => ok_envelope(TOOL_VIEW_LIST, &specs),
             Err(ExplorerError::FeatureDisabled(_)) => err_envelope(
                 TOOL_VIEW_LIST,
-                "view_specs_require_postgres_feature",
-                "view_specs_require_postgres_feature",
+                "view_specs_require_persistence",
+                "view_specs_require_persistence",
             ),
             Err(ExplorerError::InvalidInput(msg)) => {
                 err_envelope(TOOL_VIEW_LIST, "invalid_input", &msg)
@@ -584,8 +584,8 @@ impl ToolHandler for ViewDeleteHandler {
             None => {
                 return err_envelope(
                     TOOL_VIEW_DELETE,
-                    "view_specs_require_postgres_feature",
-                    "view_specs_require_postgres_feature",
+                    "view_specs_require_persistence",
+                    "view_specs_require_persistence",
                 );
             }
         };
@@ -599,8 +599,8 @@ impl ToolHandler for ViewDeleteHandler {
             }
             Err(ExplorerError::FeatureDisabled(_)) => err_envelope(
                 TOOL_VIEW_DELETE,
-                "view_specs_require_postgres_feature",
-                "view_specs_require_postgres_feature",
+                "view_specs_require_persistence",
+                "view_specs_require_persistence",
             ),
             Err(ExplorerError::NotFound(_)) => {
                 err_envelope(TOOL_VIEW_DELETE, "not_found", "not_found")
