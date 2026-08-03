@@ -1,29 +1,23 @@
-//! Integration test: verify the runtime can hold either a
-//! PostgresBackend or a LadybugPgBackend as &dyn PgBackend,
-//! exercising the cross-backend compatibility foundation for
-//! the v0.79+ cutover.
+//! Integration test: the runtime's `PgBackend` trait object and
+//! cross-backend compatibility surface.
+//!
+//! e29-7 task-7: the postgres arm (`PostgresBackend`) was dropped per
+//! the spec coherence amendment — the concrete postgres backend no
+//! longer exists. The trait is now implemented by `LadybugPgBackend`
+//! only, and the escape-hatch `as_postgres_repo` method is gone
+//! (verified by the R2 compile-fail test below).
 
-#![cfg(feature = "postgres")]
-
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use cognicode_core::domain::ports::{CallGraphStore, QualityStore, ViewSpecStore};
-use cognicode_runtime::{LadybugPgBackend, PgBackend, PostgresBackend};
+use cognicode_runtime::{LadybugPgBackend, PgBackend};
 
-/// `PgBackend` is a Send+Sync trait object that both the PG-side
-/// (PostgresBackend) and the lbug-side (LadybugPgBackend) adapters
-/// implement. This is the foundation for the v0.79+ cutover where
-/// the runtime picks the canonical backend at build time.
-///
-/// v1: this is a compile-only check (the actual
-/// `PostgresBackend::new` requires a live PG). The trait object
-/// pattern is verified at compile time — if either backend stops
-/// implementing `PgBackend`, this test fails to compile.
+/// `PgBackend` is a Send+Sync trait object implemented by the lbug-side
+/// adapter. This is the foundation for the ladybug cutover where the
+/// runtime picks the canonical backend at build time.
 #[test]
 fn pg_backend_trait_object_supports_ladybug_backend() {
-    // LadybugPgBackend can be Box<dyn PgBackend> (no PG live
-    // needed). This is the cross-backend compatibility test that
-    // doesn't require live infrastructure.
     let _ladybug: Box<dyn PgBackend> = Box::new(LadybugPgBackend::new(
         None::<Arc<dyn QualityStore>>,
         None::<Arc<dyn ViewSpecStore>>,
@@ -31,19 +25,20 @@ fn pg_backend_trait_object_supports_ladybug_backend() {
     ));
 }
 
-/// `bootstrap_with_backend` accepts either backend as `Arc<dyn PgBackend>`.
-/// This is the type-level guarantee that the v0.79+ runtime will
-/// compile with both backends.
+/// R2 (moved from the task-1 RED scaffolding): compile-fail —
+/// `PgBackend::as_postgres_repo` must be ABSENT from the trait. The
+/// runtime's call sites use `self.pg_repo` directly, so the
+/// escape-hatch method that exposed the concrete `PostgresRepository`
+/// no longer exists.
 #[test]
-fn bootstrap_with_backend_accepts_either_backend() {
-    fn _accepts(_b: Arc<dyn PgBackend>) {}
-    fn _accept_pg(_b: Arc<PostgresBackend>) {
-        _accepts(_b);
-    }
-    fn _accept_ladybug(_b: Arc<LadybugPgBackend>) {
-        _accepts(_b);
-    }
-    // Verify both functions exist (type-level coercion check).
-    let _ = _accept_pg;
-    let _ = _accept_ladybug;
+fn r2_as_postgres_repo_is_absent_from_pg_backend_trait() {
+    let ui = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("ui");
+    let t = trybuild::TestCases::new();
+    t.compile_fail(
+        ui.join("r2_as_postgres_repo_absent.rs")
+            .to_str()
+            .expect("ui path is valid utf8"),
+    );
 }

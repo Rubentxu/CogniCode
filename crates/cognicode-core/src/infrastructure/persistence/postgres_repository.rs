@@ -1364,9 +1364,9 @@ impl PostgresRepository {
     ) -> Result<bool, CallGraphStoreError> {
         let result = sqlx::query(
             "UPDATE view_specs \
-             SET seed_object_id = $4, \
-                 seed_view_id = $5, \
-                 applies_when = $6, \
+             SET seed_object_id = COALESCE($4, seed_object_id), \
+                 seed_view_id = COALESCE($5, seed_view_id), \
+                 applies_when = COALESCE($6, applies_when), \
                  updated_at = now() \
              WHERE id = $1 AND workspace_id = $2 AND owner = $3",
         )
