@@ -424,10 +424,7 @@ mod tests {
 
     #[test]
     fn repository_from_graph_errors_when_none() {
-        #[cfg(not(feature = "ownership"))]
         let result = repository_from_graph(None);
-        #[cfg(feature = "ownership")]
-        let result = repository_from_graph(None, None);
         assert!(result.is_err());
         match result.err() {
             Some(ExplorerError::GraphNotReady) => {}
