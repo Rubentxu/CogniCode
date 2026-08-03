@@ -11,7 +11,7 @@ use crate::domain::analytics::{
     FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
-use crate::infrastructure::graph::CallGraphProjection;
+use crate::domain::ports::call_graph_projection::{project_call_graph, CallGraphProjectionPort};
 use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
@@ -182,13 +182,13 @@ impl AlgorithmExecute for DominatorsDescriptor {
                 AnalyticsError::Internal("missing required param: root_symbol".into())
             })?;
 
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
 
         let root_id = crate::domain::aggregates::SymbolId::new(root_symbol.to_string());
         let root_idx = projection
-            .id_to_index()
+            .symbol_index()
             .get(&root_id)
             .copied()
             .map(|ni| ni.index())

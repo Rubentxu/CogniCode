@@ -11,7 +11,7 @@ use crate::domain::analytics::{
     FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
-use crate::infrastructure::graph::CallGraphProjection;
+use crate::domain::ports::call_graph_projection::{project_call_graph, CallGraphProjectionPort};
 use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
@@ -284,7 +284,7 @@ impl AlgorithmExecute for BoundedShortestPathsDescriptor {
             .and_then(|v| v.as_u64())
             .map(|v| v as usize);
 
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
 
@@ -292,8 +292,8 @@ impl AlgorithmExecute for BoundedShortestPathsDescriptor {
         let to_id = SymbolId::new(to_symbol.to_string());
 
         let (Some(&from_idx), Some(&to_idx)) = (
-            projection.id_to_index().get(&from_id),
-            projection.id_to_index().get(&to_id),
+            projection.symbol_index().get(&from_id),
+            projection.symbol_index().get(&to_id),
         ) else {
             // Unknown symbols - return empty result
             let empty: Vec<serde_json::Value> = vec![];
@@ -327,7 +327,7 @@ impl AlgorithmExecute for BoundedShortestPathsDescriptor {
                     .into_iter()
                     .filter_map(|idx| {
                         projection
-                            .id_to_index()
+                            .symbol_index()
                             .iter()
                             .find(|(_, ni)| ni.index() == idx)
                             .map(|(sid, _)| sid.as_str().to_string())

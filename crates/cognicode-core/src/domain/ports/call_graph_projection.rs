@@ -147,6 +147,10 @@ pub trait CallGraphProjectionPort: Send + Sync {
     /// `out_neighbors[u]` lists every `v` with edge `u → v`.
     fn build_out_neighbors(&self) -> Vec<Vec<usize>>;
 
+    /// Build directed adjacency list: `out_neighbors[v]` contains every `w`
+    /// such that edge `v → w` exists (callees of `v`).
+    fn build_directed_adjacency(&self) -> Vec<Vec<usize>>;
+
     /// Build undirected adjacency (union of incoming and outgoing edges).
     fn build_undirected_neighbors(&self) -> Vec<Vec<usize>>;
 

@@ -15,6 +15,7 @@
 //! - `SnapshotProvider`: Domain port for versioned graph snapshots (ADR-035).
 
 mod call_graph_projection;
+pub mod analytics;
 pub mod checkpoint;
 pub mod graph_cache;
 mod lightweight_index;

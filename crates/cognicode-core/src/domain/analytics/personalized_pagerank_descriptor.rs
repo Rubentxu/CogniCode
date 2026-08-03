@@ -12,7 +12,7 @@ use crate::domain::analytics::{
     FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
-use crate::infrastructure::graph::CallGraphProjection;
+use crate::domain::ports::call_graph_projection::{project_call_graph, CallGraphProjectionPort};
 use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
@@ -243,7 +243,7 @@ impl AlgorithmExecute for PersonalizedPageRankDescriptor {
             .map(|v| v as usize)
             .unwrap_or(100);
 
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let (in_neighbors, out_degree) = projection.build_adjacency();
         let n = projection.node_count();
 
@@ -254,7 +254,7 @@ impl AlgorithmExecute for PersonalizedPageRankDescriptor {
             .and_then(|arr| {
                 // Count how many times each node index appears in the array
                 let mut counts = vec![0usize; n];
-                let id_to_idx = projection.id_to_index();
+                let id_to_idx = projection.symbol_index();
                 for item in arr {
                     // NodeId could be a string (symbol ID) or number (index)
                     if let Some(sid_str) = item.as_str() {
@@ -293,7 +293,7 @@ impl AlgorithmExecute for PersonalizedPageRankDescriptor {
 
         // Map back to SymbolId and serialize
         let mut scores: HashMap<String, f64> = HashMap::new();
-        for (sid, ni) in projection.id_to_index() {
+        for (sid, ni) in projection.symbol_index() {
             if let Some(&score) = raw_scores.get(&ni.index()) {
                 scores.insert(sid.as_str().to_string(), score);
             }

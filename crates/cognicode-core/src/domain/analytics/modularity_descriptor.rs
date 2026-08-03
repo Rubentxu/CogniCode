@@ -11,7 +11,7 @@ use crate::domain::analytics::{
     FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
-use crate::infrastructure::graph::CallGraphProjection;
+use crate::domain::ports::call_graph_projection::{project_call_graph, CallGraphProjectionPort};
 use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
@@ -247,7 +247,7 @@ impl AlgorithmExecute for ModularityDescriptor {
             .and_then(|v| v.as_array())
             .ok_or_else(|| AnalyticsError::Internal("missing community_assignment".into()))?;
 
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let out_neighbors = projection.build_directed_adjacency();
 
         // Parse community_assignment from params

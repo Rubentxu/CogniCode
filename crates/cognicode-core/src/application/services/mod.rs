@@ -2,7 +2,6 @@
 
 pub mod analysis_service;
 pub mod analytics_oracle_harness;
-pub mod community_detector;
 pub mod context_compressor;
 pub mod file_operations;
 pub mod graph_analytics;
@@ -11,4 +10,3 @@ pub mod impact_analysis;
 pub mod lsp_proxy_service;
 pub mod refactor_service;
 pub mod relation_candidates;
-pub mod search_ranker;

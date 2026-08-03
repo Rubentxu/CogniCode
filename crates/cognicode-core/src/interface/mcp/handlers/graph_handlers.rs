@@ -298,7 +298,7 @@ pub async fn handle_graph_communities(
     match ctx.get_graph_store().load_graph() {
         Ok(Some(graph)) => {
             let result =
-                crate::application::services::community_detector::CommunityDetector::detect(
+                crate::infrastructure::graph::analytics::community_detector::CommunityDetector::detect(
                     &graph,
                     input.max_iterations as usize,
                 );
@@ -343,7 +343,7 @@ pub async fn handle_graph_community_detail(
     match ctx.get_graph_store().load_graph() {
         Ok(Some(graph)) => {
             let result =
-                crate::application::services::community_detector::CommunityDetector::detect(
+                crate::infrastructure::graph::analytics::community_detector::CommunityDetector::detect(
                     &graph,
                     input.max_iterations as usize,
                 );
@@ -354,7 +354,7 @@ pub async fn handle_graph_community_detail(
             {
                 Some(c) => {
                     // Top god nodes within this community.
-                    let god = crate::application::services::community_detector::CommunityDetector::community_god_nodes(
+                    let god = crate::infrastructure::graph::analytics::community_detector::CommunityDetector::community_god_nodes(
                         &graph,
                         std::slice::from_ref(c),
                         5,
@@ -412,7 +412,7 @@ pub async fn handle_graph_surprising_connections(
     match ctx.get_graph_store().load_graph() {
         Ok(Some(graph)) => {
             let result =
-                crate::application::services::community_detector::CommunityDetector::detect(
+                crate::infrastructure::graph::analytics::community_detector::CommunityDetector::detect(
                     &graph,
                     input.max_iterations as usize,
                 );
@@ -421,7 +421,7 @@ pub async fn handle_graph_surprising_connections(
             } else {
                 input.top_n as usize
             };
-            let crosses = crate::application::services::community_detector::CommunityDetector::surprising_connections(
+            let crosses = crate::infrastructure::graph::analytics::community_detector::CommunityDetector::surprising_connections(
                 &graph,
                 &result,
                 top_n,
@@ -476,7 +476,7 @@ pub async fn handle_graph_search_idf(
             } else {
                 input.max_results as usize
             };
-            let results = crate::application::services::search_ranker::SearchRanker::search(
+            let results = crate::infrastructure::graph::analytics::search_ranker::SearchRanker::search(
                 &graph,
                 &input.query,
                 max_results,

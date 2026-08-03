@@ -716,6 +716,10 @@ impl CallGraphProjectionPort for CallGraphProjection {
         self.build_out_neighbors()
     }
 
+    fn build_directed_adjacency(&self) -> Vec<Vec<usize>> {
+        GraphBuilder::build_directed_adjacency(self)
+    }
+
     fn build_undirected_neighbors(&self) -> Vec<Vec<usize>> {
         self.build_undirected_neighbors()
     }
