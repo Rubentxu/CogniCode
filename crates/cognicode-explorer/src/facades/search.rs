@@ -31,7 +31,7 @@ pub struct SearchServiceImpl {
     search: Option<Arc<dyn crate::ports::FuzzySymbolSearch>>,
     view_registry: Arc<ViewRegistry>,
     view_spec_store: Option<Arc<dyn ViewSpecStore>>,
-    quality: Option<Arc<dyn crate::ports::QualityStore>>,
+    quality: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
     persistence: Option<Arc<dyn PersistenceService>>,
     investigation: Option<Arc<dyn crate::facades::InvestigationFacade>>,
     /// Graph repository for Doc/Decision/Evidence families.
@@ -50,7 +50,7 @@ impl SearchServiceImpl {
         search: Option<Arc<dyn crate::ports::FuzzySymbolSearch>>,
         view_registry: Arc<ViewRegistry>,
         view_spec_store: Option<Arc<dyn ViewSpecStore>>,
-        quality: Option<Arc<dyn crate::ports::QualityStore>>,
+        quality: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
         persistence: Option<Arc<dyn PersistenceService>>,
         investigation: Option<Arc<dyn crate::facades::InvestigationFacade>>,
         graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
@@ -272,7 +272,7 @@ impl SearchService for SearchServiceImpl {
             {
                 let q = query_lower.clone();
                 let vr_clone = view_registry.clone();
-                let filter = crate::ports::quality_repository::IssueFilter {
+                let filter = cognicode_core::domain::ports::IssueFilter {
                     severity: None,
                     category: None,
                     status: None,
@@ -319,7 +319,7 @@ impl SearchService for SearchServiceImpl {
             {
                 let q = query_lower.clone();
                 let vr_clone = view_registry.clone();
-                let filter = crate::ports::quality_repository::IssueFilter {
+                let filter = cognicode_core::domain::ports::IssueFilter {
                     severity: None,
                     category: None,
                     status: None,
@@ -916,7 +916,7 @@ fn inspect_object_impl(
     repo: &Arc<dyn SymbolRepository>,
     _search: Option<&Arc<dyn crate::ports::FuzzySymbolSearch>>,
     view_registry: &Arc<ViewRegistry>,
-    quality: Option<&dyn crate::ports::QualityStore>,
+    quality: Option<&dyn cognicode_core::domain::ports::QualityStore>,
     _persistence: Option<&Arc<dyn PersistenceService>>,
     object_id: &str,
 ) -> ExplorerResult<InspectableObjectSummary> {
@@ -1097,7 +1097,7 @@ fn inspect_scope_impl(
 }
 
 fn inspect_quality_issue_impl(
-    quality: Option<&dyn crate::ports::QualityStore>,
+    quality: Option<&dyn cognicode_core::domain::ports::QualityStore>,
     view_registry: &Arc<ViewRegistry>,
     identity: &ObjectIdentity,
     id: i64,
@@ -1179,7 +1179,7 @@ fn inspect_quality_issue_impl(
 }
 
 fn inspect_rule_impl(
-    quality: Option<&dyn crate::ports::QualityStore>,
+    quality: Option<&dyn cognicode_core::domain::ports::QualityStore>,
     view_registry: &Arc<ViewRegistry>,
     identity: &ObjectIdentity,
     rule_id: &str,

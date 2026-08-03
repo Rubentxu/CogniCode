@@ -21,7 +21,7 @@ use crate::mcp::handler::ToolHandler;
 use crate::mcp::{McpContext, TOOL_DOCS_INGEST, TOOL_GRAPH_SEARCH, TOOL_ISSUES_INGEST};
 
 #[cfg(feature = "multimodal")]
-use crate::ports::GraphRepository;
+use cognicode_core::domain::ports::GraphRepository;
 
 #[cfg(feature = "multimodal")]
 use crate::mcp::{DEFAULT_GRAPH_SEARCH_LIMIT, MAX_GRAPH_SEARCH_LIMIT};

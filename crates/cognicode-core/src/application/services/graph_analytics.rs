@@ -43,7 +43,7 @@ use crate::domain::analytics::{
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::domain::value_objects::{RevisionId, WorkspaceId};
-use crate::infrastructure::graph::CallGraphProjection;
+use crate::domain::ports::call_graph_projection::{project_call_graph, CallGraphProjectionPort};
 use cognicode_graph_algos::{self, GraphBuilder};
 
 /// Graph analytics service wrapping petgraph algorithms.
@@ -88,14 +88,14 @@ impl GraphAnalyticsService {
         alpha: f64,
         max_iterations: usize,
     ) -> HashMap<SymbolId, f64> {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let (in_neighbors, out_degree) = projection.build_adjacency();
         let n = projection.node_count();
         let raw_scores =
             cognicode_graph_algos::page_rank(&in_neighbors, &out_degree, n, alpha, max_iterations);
-        // Map usize indices back to SymbolId via projection.id_to_index().
+        // Map usize indices back to SymbolId via projection.symbol_index().
         let mut out: HashMap<SymbolId, f64> = HashMap::with_capacity(n);
-        for (sid, ni) in projection.id_to_index() {
+        for (sid, ni) in projection.symbol_index() {
             let idx = ni.index();
             if let Some(&score) = raw_scores.get(&idx) {
                 out.insert(sid.clone(), score);
@@ -121,13 +121,13 @@ impl GraphAnalyticsService {
         to: &SymbolId,
         max_hops: usize,
     ) -> Vec<Vec<SymbolId>> {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
 
         let (Some(&from_idx), Some(&to_idx)) = (
-            projection.id_to_index().get(from),
-            projection.id_to_index().get(to),
+            projection.symbol_index().get(from),
+            projection.symbol_index().get(to),
         ) else {
             return Vec::new();
         };
@@ -143,7 +143,7 @@ impl GraphAnalyticsService {
                 path.into_iter()
                     .filter_map(|idx| {
                         projection
-                            .id_to_index()
+                            .symbol_index()
                             .iter()
                             .find(|(_, ni)| ni.index() == idx)
                             .map(|(sid, _)| sid.clone())
@@ -161,7 +161,7 @@ impl GraphAnalyticsService {
     /// (post-order on the DFS tree, alphabetic sort within each SCC).
     /// Self-loops surface as singleton components.
     pub fn condensation(graph: &CallGraph) -> Vec<Vec<SymbolId>> {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
         let raw = cognicode_graph_algos::condensation(&out_neighbors, n);
@@ -170,7 +170,7 @@ impl GraphAnalyticsService {
                 scc.into_iter()
                     .filter_map(|idx| {
                         projection
-                            .id_to_index()
+                            .symbol_index()
                             .iter()
                             .find(|(_, ni)| ni.index() == idx)
                             .map(|(sid, _)| sid.clone())
@@ -197,10 +197,10 @@ impl GraphAnalyticsService {
             return Vec::new();
         }
         // Map SymbolId -> usize (positional) for the new API, then back.
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let mut usize_scores: HashMap<usize, f64> = HashMap::with_capacity(scores.len());
         for (sid, score) in &scores {
-            if let Some(ni) = projection.id_to_index().get(sid) {
+            if let Some(ni) = projection.symbol_index().get(sid) {
                 usize_scores.insert(ni.index(), *score);
             }
         }
@@ -209,7 +209,7 @@ impl GraphAnalyticsService {
             .into_iter()
             .filter_map(|(idx, score)| {
                 projection
-                    .id_to_index()
+                    .symbol_index()
                     .iter()
                     .find(|(_, ni)| ni.index() == idx)
                     .map(|(sid, _)| (sid.clone(), score))
@@ -226,7 +226,7 @@ impl GraphAnalyticsService {
     /// For cyclic graphs, all edges are returned (identity reduction)
     /// since no edge is implied by a strictly longer simple path.
     pub fn transitive_reduction(graph: &CallGraph) -> Vec<(SymbolId, SymbolId)> {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let (in_neighbors, _) = projection.build_adjacency();
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
@@ -234,12 +234,12 @@ impl GraphAnalyticsService {
         raw.into_iter()
             .filter_map(|(s, t)| {
                 let sid_s = projection
-                    .id_to_index()
+                    .symbol_index()
                     .iter()
                     .find(|(_, ni)| ni.index() == s)
                     .map(|(sid, _)| sid.clone());
                 let sid_t = projection
-                    .id_to_index()
+                    .symbol_index()
                     .iter()
                     .find(|(_, ni)| ni.index() == t)
                     .map(|(sid, _)| sid.clone());
@@ -258,7 +258,7 @@ impl GraphAnalyticsService {
     /// are the cheapest candidates to break first (per the
     /// Eades-Lin-Smyth heuristic). Returns an empty vec for a DAG.
     pub fn feedback_arc_set(graph: &CallGraph) -> Vec<(SymbolId, SymbolId)> {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let (in_neighbors, _) = projection.build_adjacency();
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
@@ -266,12 +266,12 @@ impl GraphAnalyticsService {
         raw.into_iter()
             .filter_map(|(s, t)| {
                 let sid_s = projection
-                    .id_to_index()
+                    .symbol_index()
                     .iter()
                     .find(|(_, ni)| ni.index() == s)
                     .map(|(sid, _)| sid.clone());
                 let sid_t = projection
-                    .id_to_index()
+                    .symbol_index()
                     .iter()
                     .find(|(_, ni)| ni.index() == t)
                     .map(|(sid, _)| sid.clone());

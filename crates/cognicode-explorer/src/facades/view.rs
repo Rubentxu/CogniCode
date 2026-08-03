@@ -19,7 +19,7 @@ use crate::dto::{InspectableObjectType, InspectionTarget, ViewContext};
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::PersistenceService;
 use crate::facades::{LensService, ViewService};
-use crate::ports::quality_repository::QualityStore;
+use cognicode_core::domain::ports::QualityStore;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
 use crate::registry::ViewRegistry;
@@ -408,7 +408,7 @@ impl ViewService for ViewServiceImpl {
             quality: self.quality.as_ref().map(|q| q.as_ref()),
             graph_query: self.graph_query.as_ref().map(|g| g.as_ref()),
             graph_repo: self.graph_repo.as_ref().map(|g| g.as_ref()),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         // AD-2: stamp descriptor metadata onto DTO at single seam

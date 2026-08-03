@@ -382,8 +382,8 @@ impl ExplorerMcpHandler {
         lens_registry: crate::domain::lens::LensRegistry,
         cwd: PathBuf,
         graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>>,
-        quality_repo: Option<Arc<dyn crate::ports::QualityStore>>,
-        quality_write: Option<Arc<dyn crate::ports::QualityStore>>,
+        quality_repo: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
+        quality_write: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
         revision_tracker: Arc<std::sync::atomic::AtomicU64>,
         #[allow(unused_variables)] route_store: Option<Arc<dyn crate::ports::RouteStore>>,
     ) -> Self {

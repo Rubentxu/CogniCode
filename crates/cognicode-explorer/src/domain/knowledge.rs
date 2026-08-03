@@ -10,7 +10,7 @@
 //! → same `InspectableObjectSummary`.
 
 use crate::dto::{InspectableObjectSummary, InspectableObjectType, Property};
-use crate::ports::graph_repository::GraphRepository;
+use cognicode_core::domain::ports::GraphRepository;
 use cognicode_core::domain::aggregates::generic_graph::GraphNode;
 
 /// Generic projector for Doc/Decision/Evidence nodes.

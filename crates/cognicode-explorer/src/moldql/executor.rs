@@ -11,7 +11,7 @@
 //! ## Quality backend
 //!
 //! Quality conditions (`quality.<level>`, `issue_count`, `severity`)
-//! evaluate `false` when no [`crate::ports::QualityStore`] is
+//! evaluate `false` when no [`cognicode_core::domain::ports::QualityStore`] is
 //! wired — callers that skip the quality backend still get a correct
 //! (empty) result without an error.
 
@@ -541,7 +541,7 @@ impl<'a> MoldQLExecutor<'a> {
     fn conditions_pass_for_issue(
         &self,
         find: &crate::moldql::ast::FindQuery,
-        issue: &crate::ports::QualityIssue,
+        issue: &cognicode_core::domain::ports::QualityIssue,
     ) -> bool {
         for cond in &find.conditions {
             if !self.eval_issue_condition(cond, issue) {
@@ -551,7 +551,7 @@ impl<'a> MoldQLExecutor<'a> {
         true
     }
 
-    fn eval_issue_condition(&self, cond: &Condition, issue: &crate::ports::QualityIssue) -> bool {
+    fn eval_issue_condition(&self, cond: &Condition, issue: &cognicode_core::domain::ports::QualityIssue) -> bool {
         let field = &cond.field;
         let raw = match field.head() {
             "severity" => Some(Value::String(issue.severity.clone())),
@@ -602,7 +602,7 @@ impl<'a> MoldQLExecutor<'a> {
         self.issues_for_file_list(file).len()
     }
 
-    fn issues_for_file_list(&self, file: &str) -> Vec<crate::ports::QualityIssue> {
+    fn issues_for_file_list(&self, file: &str) -> Vec<cognicode_core::domain::ports::QualityIssue> {
         match self.view.quality.as_deref() {
             Some(q) => q.issues_for_file(file).unwrap_or_default(),
             None => Vec::new(),
@@ -662,7 +662,7 @@ impl<'a> MoldQLExecutor<'a> {
 /// service-owned data does not need to be public.
 pub struct MoldQLView {
     pub repo: Arc<dyn SymbolRepository>,
-    pub quality: Option<Arc<dyn crate::ports::QualityStore>>,
+    pub quality: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
     pub reader: Arc<dyn crate::ports::SourceReader>,
     /// `apply_lens(mvp, lens_id)` is delegated so the executor never
     /// needs to know about the lens registry. The `Arc` keeps the
@@ -673,7 +673,7 @@ pub struct MoldQLView {
     /// Generic Graph Layer port. Populated when `multimodal` feature
     /// is enabled; the executor uses this for `FIND decisions/docs`.
     #[cfg(feature = "multimodal")]
-    pub graph_repo: Option<Arc<dyn crate::ports::GraphRepository>>,
+    pub graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
     /// Optional GraphQueryPort for call graph traversal (callers, callees,
     /// fan_in, fan_out). When `None`, these methods degrade gracefully.
     pub graph_query: Option<Arc<dyn GraphQueryPort>>,
@@ -708,7 +708,7 @@ fn matches_scope(scope: Option<&str>, file: &str) -> bool {
     }
 }
 
-fn count_by_severity(issues: &[crate::ports::QualityIssue], level: &str) -> usize {
+fn count_by_severity(issues: &[cognicode_core::domain::ports::QualityIssue], level: &str) -> usize {
     issues
         .iter()
         .filter(|i| i.severity.eq_ignore_ascii_case(level))
@@ -817,7 +817,7 @@ fn render_explore(e: &crate::moldql::ast::ExploreQuery) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ports::QualityStore;
+    use cognicode_core::domain::ports::QualityStore;
     use cognicode_core::domain::plan::{
         ConstructId, ExecutorError, GraphPlan, NeighborKind, NodeResult, Path as GraphPath,
         PathHop, PathQuantifier, ResultSet, UnsupportedConstruct,
@@ -1194,33 +1194,33 @@ mod tests {
         fn issues_for_file(
             &self,
             _file: &str,
-        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(Vec::new())
         }
         fn issues_for_scope(
             &self,
             _scope_prefix: &str,
-        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(Vec::new())
         }
         fn issues_at_line(
             &self,
             _file: &str,
             _line: u32,
-        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(Vec::new())
         }
         fn issue_by_id(
             &self,
             _id: i64,
-        ) -> Result<Option<crate::ports::QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Option<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(None)
         }
         fn rule_summary(
             &self,
             _rule_id: &str,
-        ) -> Result<crate::ports::RuleSummary, crate::ports::QualityError> {
-            Ok(crate::ports::RuleSummary {
+        ) -> Result<cognicode_core::domain::ports::RuleSummary, cognicode_core::domain::ports::QualityError> {
+            Ok(cognicode_core::domain::ports::RuleSummary {
                 rule_id: String::new(),
                 description: String::new(),
                 open_count: 0,
@@ -1229,28 +1229,28 @@ mod tests {
         fn quality_gate(
             &self,
             _workspace_id: Option<&str>,
-        ) -> Result<crate::ports::QualityGateSummary, crate::ports::QualityError> {
-            Ok(crate::ports::QualityGateSummary::default())
+        ) -> Result<cognicode_core::domain::ports::QualityGateSummary, cognicode_core::domain::ports::QualityError> {
+            Ok(cognicode_core::domain::ports::QualityGateSummary::default())
         }
         fn open_issues_count(
             &self,
             _workspace_id: Option<&str>,
-        ) -> Result<usize, crate::ports::QualityError> {
+        ) -> Result<usize, cognicode_core::domain::ports::QualityError> {
             Ok(0)
         }
         fn issues_for_workspace(
             &self,
             _workspace_id: Option<&str>,
-            _filter: &crate::ports::quality_repository::IssueFilter,
-        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
+            _filter: &cognicode_core::domain::ports::IssueFilter,
+        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(Vec::new())
         }
 
         fn insert_issues(
             &self,
-            _issues: &[crate::ports::NewIssue],
-        ) -> Result<crate::ports::UpsertSummary, crate::ports::QualityError> {
-            Ok(crate::ports::UpsertSummary::default())
+            _issues: &[cognicode_core::domain::ports::NewIssue],
+        ) -> Result<cognicode_core::domain::ports::UpsertSummary, cognicode_core::domain::ports::QualityError> {
+            Ok(cognicode_core::domain::ports::UpsertSummary::default())
         }
         fn delete_issue(
             &self,
@@ -1258,7 +1258,7 @@ mod tests {
             _rule_id: &str,
             _file_path: &str,
             _line: u32,
-        ) -> Result<bool, crate::ports::QualityError> {
+        ) -> Result<bool, cognicode_core::domain::ports::QualityError> {
             Ok(false)
         }
     }
@@ -1267,10 +1267,10 @@ mod tests {
     /// `find_files_with_quality_filter` to exercise the
     /// `quality.<level>` / `issue_count` code path.
     struct StaticQuality {
-        issues: Vec<crate::ports::QualityIssue>,
+        issues: Vec<cognicode_core::domain::ports::QualityIssue>,
     }
     impl StaticQuality {
-        fn new(issues: Vec<crate::ports::QualityIssue>) -> Self {
+        fn new(issues: Vec<cognicode_core::domain::ports::QualityIssue>) -> Self {
             Self { issues }
         }
     }
@@ -1278,7 +1278,7 @@ mod tests {
         fn issues_for_file(
             &self,
             file: &str,
-        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(self
                 .issues
                 .iter()
@@ -1289,7 +1289,7 @@ mod tests {
         fn issues_for_scope(
             &self,
             scope: &str,
-        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(self
                 .issues
                 .iter()
@@ -1301,7 +1301,7 @@ mod tests {
             &self,
             file: &str,
             line: u32,
-        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(self
                 .issues
                 .iter()
@@ -1312,15 +1312,15 @@ mod tests {
         fn issue_by_id(
             &self,
             id: i64,
-        ) -> Result<Option<crate::ports::QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Option<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(self.issues.iter().find(|i| i.id == id).cloned())
         }
         fn rule_summary(
             &self,
             rule_id: &str,
-        ) -> Result<crate::ports::RuleSummary, crate::ports::QualityError> {
+        ) -> Result<cognicode_core::domain::ports::RuleSummary, cognicode_core::domain::ports::QualityError> {
             let count = self.issues.iter().filter(|i| i.rule_id == rule_id).count();
-            Ok(crate::ports::RuleSummary {
+            Ok(cognicode_core::domain::ports::RuleSummary {
                 rule_id: rule_id.to_string(),
                 description: rule_id.to_string(),
                 open_count: count,
@@ -1329,21 +1329,21 @@ mod tests {
         fn quality_gate(
             &self,
             _workspace_id: Option<&str>,
-        ) -> Result<crate::ports::QualityGateSummary, crate::ports::QualityError> {
-            Ok(crate::ports::QualityGateSummary::default())
+        ) -> Result<cognicode_core::domain::ports::QualityGateSummary, cognicode_core::domain::ports::QualityError> {
+            Ok(cognicode_core::domain::ports::QualityGateSummary::default())
         }
         fn open_issues_count(
             &self,
             _workspace_id: Option<&str>,
-        ) -> Result<usize, crate::ports::QualityError> {
+        ) -> Result<usize, cognicode_core::domain::ports::QualityError> {
             Ok(self.issues.len())
         }
         fn issues_for_workspace(
             &self,
             _workspace_id: Option<&str>,
-            filter: &crate::ports::quality_repository::IssueFilter,
-        ) -> Result<Vec<crate::ports::QualityIssue>, crate::ports::QualityError> {
-            let mut out: Vec<crate::ports::QualityIssue> = self
+            filter: &cognicode_core::domain::ports::IssueFilter,
+        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+            let mut out: Vec<cognicode_core::domain::ports::QualityIssue> = self
                 .issues
                 .iter()
                 .filter(|i| filter.severity.as_deref().is_none_or(|s| i.severity == s))
@@ -1363,9 +1363,9 @@ mod tests {
 
         fn insert_issues(
             &self,
-            _issues: &[crate::ports::NewIssue],
-        ) -> Result<crate::ports::UpsertSummary, crate::ports::QualityError> {
-            Ok(crate::ports::UpsertSummary::default())
+            _issues: &[cognicode_core::domain::ports::NewIssue],
+        ) -> Result<cognicode_core::domain::ports::UpsertSummary, cognicode_core::domain::ports::QualityError> {
+            Ok(cognicode_core::domain::ports::UpsertSummary::default())
         }
         fn delete_issue(
             &self,
@@ -1373,7 +1373,7 @@ mod tests {
             _rule_id: &str,
             _file_path: &str,
             _line: u32,
-        ) -> Result<bool, crate::ports::QualityError> {
+        ) -> Result<bool, cognicode_core::domain::ports::QualityError> {
             Ok(false)
         }
     }
@@ -1420,7 +1420,7 @@ mod tests {
     /// Used by tests that exercise the `quality.<level>` fields.
     fn build_view_with_quality(
         repo: Arc<MockRepo>,
-        quality: Arc<dyn crate::ports::QualityStore>,
+        quality: Arc<dyn cognicode_core::domain::ports::QualityStore>,
     ) -> MoldQLView {
         use crate::adapters::FsSourceReader;
         use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
@@ -1881,7 +1881,7 @@ mod tests {
             r.with_sym("c1", "src/c.rs", 1);
         });
         let quality = StaticQuality::new(vec![
-            crate::ports::QualityIssue {
+            cognicode_core::domain::ports::QualityIssue {
                 id: 1,
                 rule_id: "rust:S100".into(),
                 severity: "Critical".into(),
@@ -1891,7 +1891,7 @@ mod tests {
                 message: "msg".into(),
                 status: "open".into(),
             },
-            crate::ports::QualityIssue {
+            cognicode_core::domain::ports::QualityIssue {
                 id: 2,
                 rule_id: "rust:S101".into(),
                 severity: "Major".into(),
@@ -1901,7 +1901,7 @@ mod tests {
                 message: "msg".into(),
                 status: "open".into(),
             },
-            crate::ports::QualityIssue {
+            cognicode_core::domain::ports::QualityIssue {
                 id: 3,
                 rule_id: "rust:S102".into(),
                 severity: "Info".into(),
@@ -1912,7 +1912,7 @@ mod tests {
                 status: "open".into(),
             },
         ]);
-        let quality_arc: Arc<dyn crate::ports::QualityStore> = Arc::new(quality);
+        let quality_arc: Arc<dyn cognicode_core::domain::ports::QualityStore> = Arc::new(quality);
         let view = build_view_with_quality(repo.clone(), quality_arc);
 
         let r = run_find(&view, "FIND files WHERE issue_count > 0").await;
@@ -2023,7 +2023,7 @@ mod tests {
     // backend without actually supplying one.
     #[test]
     fn no_quality_backend_returns_empty_for_issues_queries() {
-        let no_q: Arc<dyn crate::ports::QualityStore> = Arc::new(NoQuality);
+        let no_q: Arc<dyn cognicode_core::domain::ports::QualityStore> = Arc::new(NoQuality);
         let issues = no_q.issues_for_file("anything").expect("ok");
         assert!(issues.is_empty());
     }

@@ -9,7 +9,7 @@ use crate::dto::{
     ContextualView, DesignFinding, EvidenceBlock, FindingSeverity, LineRange, RelationDirection,
     TypedRelation, ViewBlock, ViewDiagnostic,
 };
-use crate::ports::quality_repository::{QualityIssue, QualityStore, RuleSummary};
+use cognicode_core::domain::ports::{QualityIssue, QualityStore, RuleSummary};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
 use cognicode_core::domain::aggregates::call_graph::CallEntry;
@@ -5526,7 +5526,7 @@ mod tests {
     // Phase 3 — Quality view builders
     // -----------------------------------------------------------------------
 
-    use crate::ports::quality_repository::{IssueFilter, QualityGateSummary, QualityStore};
+    use cognicode_core::domain::ports::{IssueFilter, QualityGateSummary, QualityStore};
     use std::collections::HashMap as StdHashMap;
 
     /// Hand-rolled mock quality repository. Returns pre-baked answers
@@ -5580,30 +5580,30 @@ mod tests {
         fn issues_for_file(
             &self,
             file: &str,
-        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Vec<QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(self.by_file.get(file).cloned().unwrap_or_default())
         }
         fn issues_for_scope(
             &self,
             scope: &str,
-        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Vec<QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(self.by_scope.get(scope).cloned().unwrap_or_default())
         }
         fn issues_at_line(
             &self,
             file: &str,
             line: u32,
-        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Vec<QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(self
                 .by_line
                 .get(&(file.to_string(), line))
                 .cloned()
                 .unwrap_or_default())
         }
-        fn issue_by_id(&self, id: i64) -> Result<Option<QualityIssue>, crate::ports::QualityError> {
+        fn issue_by_id(&self, id: i64) -> Result<Option<QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(self.by_id.get(&id).cloned())
         }
-        fn rule_summary(&self, rule_id: &str) -> Result<RuleSummary, crate::ports::QualityError> {
+        fn rule_summary(&self, rule_id: &str) -> Result<RuleSummary, cognicode_core::domain::ports::QualityError> {
             Ok(self
                 .rules
                 .get(rule_id)
@@ -5617,20 +5617,20 @@ mod tests {
         fn quality_gate(
             &self,
             _workspace_id: Option<&str>,
-        ) -> Result<QualityGateSummary, crate::ports::QualityError> {
+        ) -> Result<QualityGateSummary, cognicode_core::domain::ports::QualityError> {
             Ok(self.gate.clone())
         }
         fn open_issues_count(
             &self,
             _workspace_id: Option<&str>,
-        ) -> Result<usize, crate::ports::QualityError> {
+        ) -> Result<usize, cognicode_core::domain::ports::QualityError> {
             Ok(self.open_count)
         }
         fn issues_for_workspace(
             &self,
             _workspace_id: Option<&str>,
             filter: &IssueFilter,
-        ) -> Result<Vec<QualityIssue>, crate::ports::QualityError> {
+        ) -> Result<Vec<QualityIssue>, cognicode_core::domain::ports::QualityError> {
             let mut out: Vec<QualityIssue> = self
                 .by_file
                 .values()
@@ -5653,9 +5653,9 @@ mod tests {
 
         fn insert_issues(
             &self,
-            _issues: &[crate::ports::NewIssue],
-        ) -> Result<crate::ports::UpsertSummary, crate::ports::QualityError> {
-            Ok(crate::ports::UpsertSummary::default())
+            _issues: &[cognicode_core::domain::ports::NewIssue],
+        ) -> Result<cognicode_core::domain::ports::UpsertSummary, cognicode_core::domain::ports::QualityError> {
+            Ok(cognicode_core::domain::ports::UpsertSummary::default())
         }
         fn delete_issue(
             &self,
@@ -5663,7 +5663,7 @@ mod tests {
             _rule_id: &str,
             _file_path: &str,
             _line: u32,
-        ) -> Result<bool, crate::ports::QualityError> {
+        ) -> Result<bool, cognicode_core::domain::ports::QualityError> {
             Ok(false)
         }
     }
@@ -6078,7 +6078,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6116,7 +6116,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6145,7 +6145,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6170,7 +6170,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6204,7 +6204,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6232,7 +6232,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6265,7 +6265,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6291,7 +6291,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6320,7 +6320,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6364,7 +6364,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -6401,7 +6401,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6430,7 +6430,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -6465,7 +6465,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6499,7 +6499,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -6544,7 +6544,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let registry = crate::registry::ViewRegistry::new(None);
@@ -6585,7 +6585,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -6883,7 +6883,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -6912,7 +6912,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -6941,7 +6941,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -7028,7 +7028,7 @@ mod tests {
             quality: None,
             graph_query: Some(&mock_gq as &dyn GraphQueryPort),
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -7095,7 +7095,7 @@ mod tests {
             quality: None,
             graph_query: Some(&mock_gq as &dyn GraphQueryPort),
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -7178,7 +7178,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = super::DecisionGraphExecutor;
@@ -7209,7 +7209,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = super::DecisionGraphExecutor;
@@ -7251,7 +7251,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = super::ArchitectureRationaleExecutor;
@@ -7277,7 +7277,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = super::ArchitectureRationaleExecutor;
@@ -7303,7 +7303,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = super::ArchitectureRationaleExecutor;
@@ -7377,7 +7377,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = super::DecisionSupportPackExecutor;
@@ -7426,7 +7426,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = super::DecisionSupportPackExecutor;
@@ -7453,7 +7453,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = super::DecisionSupportPackExecutor;
@@ -7581,7 +7581,7 @@ mod tests {
             graph_query: None,
             #[cfg(feature = "multimodal")]
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = super::DecisionGraphExecutor;
@@ -7638,7 +7638,7 @@ mod tests {
             graph_query: None,
             #[cfg(feature = "multimodal")]
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = super::DecisionGraphExecutor;
@@ -7681,7 +7681,7 @@ mod tests {
             quality: None,
             graph_query: None,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = super::DecisionGraphExecutor;
@@ -7746,7 +7746,7 @@ mod tests {
             graph_query: None,
             #[cfg(feature = "multimodal")]
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = super::DecisionGraphExecutor;
@@ -8156,7 +8156,7 @@ mod view_seam_tests {
             quality: None,
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
@@ -8220,7 +8220,7 @@ mod view_seam_tests {
             quality: None,
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
@@ -8284,7 +8284,7 @@ mod view_seam_tests {
             quality: None,
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
@@ -8328,7 +8328,7 @@ mod view_seam_tests {
             quality: None,
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
@@ -8359,7 +8359,7 @@ mod view_seam_tests {
             quality: None,
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
@@ -8478,7 +8478,7 @@ mod view_seam_tests {
             quality: None,
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = &super::CONCEPT_MAP_EXECUTOR;
@@ -8558,7 +8558,7 @@ mod view_seam_tests {
             quality: None,
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = &super::CONCEPT_MAP_EXECUTOR;
@@ -8629,7 +8629,7 @@ mod view_seam_tests {
             quality: None,
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = &super::CONCEPT_MAP_EXECUTOR;
@@ -8677,7 +8677,7 @@ mod view_seam_tests {
             quality: None,
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = &super::CONCEPT_MAP_EXECUTOR;
@@ -8742,7 +8742,7 @@ mod view_seam_tests {
             quality: None,
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let executor = &super::CONCEPT_MAP_EXECUTOR;
@@ -8987,7 +8987,7 @@ mod view_seam_tests {
             quality: None,
             graph_query: None,
             graph_repo: Some(&mock),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let result = super::build_node_source_view(
@@ -9034,7 +9034,7 @@ mod view_seam_tests {
             quality: None,
             graph_query: None,
             graph_repo: Some(&mock),
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         let result = super::build_node_source_view(

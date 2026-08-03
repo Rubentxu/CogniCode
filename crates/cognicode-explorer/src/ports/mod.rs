@@ -6,8 +6,6 @@
 pub mod adr_repository;
 pub mod doc_repository;
 pub mod evidence_store;
-pub mod graph_repository;
-pub mod quality_repository;
 pub mod route_store;
 pub mod search_repository;
 pub mod source_reader;
@@ -16,11 +14,6 @@ pub mod symbol_repository;
 pub use adr_repository::{AdrRepository, AdrStatus, AdrSummary, InMemoryAdrRepository};
 pub use doc_repository::{DocRepository, DocSummary, InMemoryDocRepository};
 pub use evidence_store::{EvidenceKind, EvidenceStore, EvidenceSummary, InMemoryEvidenceStore};
-pub use graph_repository::{GraphRepository, SearchPage};
-pub use quality_repository::{NewIssue, UpsertSummary};
-pub use quality_repository::{
-    QualityError, QualityGateSummary, QualityIssue, QualityStore, RuleSummary,
-};
 pub use route_store::{
     ApiRoute, ApiRouteEdge, BatchStats, EDGE_KIND_GRAPHQL_CALLS, EDGE_KIND_GRPC_CALLS,
     EDGE_KIND_HTTP_CALLS, EDGE_KIND_TRPC_CALLS, PROTOCOL_GRAPHQL, PROTOCOL_GRPC, PROTOCOL_HTTP,

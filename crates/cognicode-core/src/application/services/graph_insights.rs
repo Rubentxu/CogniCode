@@ -3,11 +3,11 @@
 //! Combines: god nodes, cycles, community overview, surprising connections,
 //! architecture health, and suggested questions.
 
-use crate::application::services::community_detector::CommunityDetector;
+use crate::infrastructure::graph::analytics::community_detector::CommunityDetector;
 use crate::application::services::graph_analytics::GraphAnalyticsService;
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
-use crate::infrastructure::graph::CallGraphProjection;
+use crate::domain::ports::call_graph_projection::{project_call_graph, CallGraphProjectionPort};
 
 /// A complete graph insights report.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -90,7 +90,7 @@ impl GraphInsightsService {
     /// of `100.0` (a vacuum has perfect architecture) and an empty
     /// `suggested_questions` list.
     pub fn analyze(graph: &CallGraph) -> InsightsReport {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
 
         // Summary
         let summary = GraphSummary {

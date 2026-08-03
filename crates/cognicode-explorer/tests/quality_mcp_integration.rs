@@ -24,7 +24,7 @@ use cognicode_explorer::error::ExplorerResult;
 use cognicode_explorer::mcp::handler::ToolHandlerRegistry;
 use cognicode_explorer::mcp::handler::quality_mcp::register_quality_mcp_handlers;
 use cognicode_explorer::mcp::{McpContext, TOOL_FIND_QUALITY_ISSUES, TOOL_QUALITY_GATE};
-use cognicode_explorer::ports::quality_repository::{
+use cognicode_core::domain::ports::{
     IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
     RuleSummary, UpsertSummary,
 };

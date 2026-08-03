@@ -1,25 +1,20 @@
 //! Smoke tests for `bootstrap_with_backend` — the canonical entry
 //! point for the E29 v0.79+ runtime (ladybug path).
 //!
-//! e29-7 task-7: extended with the R1/R3/R5/R6 scenario assertions
-//! (previously the RED scaffolding in `runtime_backend_wiring.rs`):
-//!
-//! | Scenario | Contract |
-//! |----------|----------|
-//! | R1       | `pg_repo` absent on ladybug / Some on cfg(postgres) after `bootstrap(Some(url))` |
-//! | R3       | 3 ports populated FROM the backend; postgres path → 3 ports Some + `backend` None |
-//! | R5       | quality identity preserved — runtime field IS the backend's Arc (single source for all 3 sites) |
-//! | R6       | investigation constructed ONCE and shared (state == search) |
-//!
-//! Postgres-dependent scenarios were removed with e29-7.
-//! (no live PG in the apply sandbox).
+//! e29-3 (port-abstraction-audit, Phase 5): the composition seam
+//! collapsed from a single-implementer trait indirection (`PgBackend` +
+//! `LadybugPgBackend`) into a plain `RuntimePorts` DTO carrying the
+//! three relocated `Option<Arc<dyn *Port>>` slots. The 2
+//! PgBackend-self-justifying compile-only tests were deleted; the
+//! functional R3+R5 test migrates to the new DTO (runtime-bootstrap-contract
+//! spec S2: Arc identity preserved through `bootstrap_with_backend`).
 
 use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::CallGraph;
 use cognicode_core::domain::ports::{CallGraphStore, QualityStore, ViewSpecStore};
 use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
-use cognicode_runtime::{bootstrap_with_backend, LadybugPgBackend, PgBackend};
+use cognicode_runtime::{bootstrap_with_backend, RuntimePorts};
 
 // ---------------------------------------------------------------------------
 // Identity stubs for the relocated ports — never called, only held and
@@ -208,25 +203,6 @@ impl CallGraphStore for TestCallGraphStore {
 }
 
 // ---------------------------------------------------------------------------
-// Existing compile-only smoke tests (kept).
-// ---------------------------------------------------------------------------
-
-#[test]
-fn bootstrap_with_backend_signature_compiles() {
-    let _: fn(std::path::PathBuf, std::sync::Arc<dyn PgBackend>) -> _ = bootstrap_with_backend;
-}
-
-#[test]
-fn ladybug_pg_backend_implements_pg_backend_for_bootstrap_with_backend() {
-    let _backend: Box<dyn PgBackend> = Box::new(LadybugPgBackend::new(
-        None::<Arc<dyn QualityStore>>,
-        None::<Arc<dyn ViewSpecStore>>,
-        None::<Arc<dyn CallGraphStore>>,
-    ));
-    let _f: fn(std::path::PathBuf, std::sync::Arc<dyn PgBackend>) -> _ = bootstrap_with_backend;
-}
-
-// ---------------------------------------------------------------------------
 // R1 — pg_repo
 // ---------------------------------------------------------------------------
 
@@ -238,29 +214,29 @@ fn r1_pg_repo_absent() {
 }
 
 // ---------------------------------------------------------------------------
-// R3 + R5 — ports populated FROM the backend with Arc identity
+// R3 + R5 — ports populated FROM the RuntimePorts DTO with Arc identity
 // ---------------------------------------------------------------------------
 
-/// R3 (ladybug arm) + R5: `bootstrap_with_backend` must build the 3
-/// ports from the backend's port accessors, preserving Arc identity —
-/// the runtime field IS the Arc the caller provided (the single source
-/// all 3 quality consumer sites clone from).
+/// R3 + R5 (runtime-bootstrap-contract S2): `bootstrap_with_backend`
+/// must move the 3 port Arcs from the `RuntimePorts` DTO onto the
+/// `Runtime` verbatim — the runtime field IS the Arc the caller
+/// provided (same allocation). The Runtime carries no `backend` field.
 #[tokio::test]
-async fn r3_r5_ports_populated_from_backend_with_identity() {
+async fn r3_r5_ports_populated_from_runtime_ports_with_identity() {
     let quality: Arc<dyn QualityStore> = Arc::new(TestQualityStore);
     let view_spec: Arc<dyn ViewSpecStore> = Arc::new(TestViewSpecStore);
     let cg_store: Arc<dyn CallGraphStore> = Arc::new(TestCallGraphStore);
-    let backend = Arc::new(LadybugPgBackend::new(
-        Some(quality.clone()),
-        Some(view_spec.clone()),
-        Some(cg_store.clone()),
-    ));
+    let ports = RuntimePorts {
+        quality_store: Some(quality.clone()),
+        view_spec_store: Some(view_spec.clone()),
+        call_graph_store: Some(cg_store.clone()),
+    };
 
-    let runtime = bootstrap_with_backend(std::env::temp_dir(), backend)
+    let runtime = bootstrap_with_backend(std::env::temp_dir(), ports)
         .await
-        .expect("bootstrap_with_backend succeeds with a provided backend");
+        .expect("bootstrap_with_backend succeeds with a RuntimePorts DTO");
 
-    // R3: ports populated (Some when the backend provides Some).
+    // R3: ports populated (Some when the DTO provides Some).
     assert!(runtime.quality_store.is_some(), "R3: quality_store Some");
     assert!(
         runtime.view_spec_store.is_some(),
@@ -271,21 +247,26 @@ async fn r3_r5_ports_populated_from_backend_with_identity() {
         "R3: call_graph_store Some"
     );
 
-    // R5: the runtime stores the SAME Arc the backend returned — the
-    // 3 quality consumer sites (search/view/moldql + mcp
-    // quality/quality_write) all clone from this single field.
+    // R5: Arc identity preserved — same allocation, not a clone.
     assert!(
         Arc::ptr_eq(runtime.quality_store.as_ref().unwrap(), &quality),
-        "R5: quality_store must be the SAME Arc the backend returned"
+        "R5: quality_store must be the SAME Arc the DTO carried"
     );
     assert!(
         Arc::ptr_eq(runtime.view_spec_store.as_ref().unwrap(), &view_spec),
-        "R5: view_spec_store must be the SAME Arc the backend returned"
+        "R5: view_spec_store must be the SAME Arc the DTO carried"
     );
     assert!(
         Arc::ptr_eq(runtime.call_graph_store.as_ref().unwrap(), &cg_store),
-        "R5: call_graph_store must be the SAME Arc the backend returned"
+        "R5: call_graph_store must be the SAME Arc the DTO carried"
     );
+}
+
+/// The Runtime must not carry a `backend` field after the PgBackend
+/// indirection is deleted.
+#[test]
+fn runtime_has_no_backend_field() {
+    fn _assert_no_backend_field(_r: &cognicode_runtime::Runtime) {}
 }
 
 // ---------------------------------------------------------------------------

@@ -20,8 +20,8 @@ use serde_json::Value;
 use crate::domain::decision_graph_topology::DecisionGraphTopology;
 use crate::dto::{ContextualView, EvidenceBlock, ViewBlock};
 use crate::error::ExplorerResult;
-use crate::ports::graph_repository::GraphRepository as PortsGraphRepository;
-use crate::ports::quality_repository::QualityStore;
+use cognicode_core::domain::ports::graph_repository::GraphRepository as PortsGraphRepository;
+use cognicode_core::domain::ports::QualityStore;
 use crate::ports::symbol_repository::ResolvedSymbol;
 
 /// Maximum traversal depth for rationale subgraph in pack builder.
@@ -307,7 +307,7 @@ impl DecisionSupportPackBuilder {
             quality,
             graph_query,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         // Call build via ViewExecutor trait object
@@ -353,7 +353,7 @@ impl DecisionSupportPackBuilder {
             quality: None,
             graph_query,
             graph_repo: None,
-            node_property_reader: None,
+            node_property_repository: None,
         };
 
         // Call build via ViewExecutor trait object

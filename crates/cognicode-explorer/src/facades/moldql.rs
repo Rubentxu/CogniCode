@@ -11,12 +11,12 @@ use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::LensService;
 use crate::facades::MoldQLService;
 use crate::moldql::{MoldQLExecutor, MoldQLResult, MoldQLView};
-use crate::ports::quality_repository::QualityStore;
+use cognicode_core::domain::ports::QualityStore;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::SymbolRepository;
 
 #[cfg(feature = "multimodal")]
-use crate::ports::GraphRepository;
+use cognicode_core::domain::ports::GraphRepository;
 
 /// Cap on the number of nodes returned by MoldQL queries.
 const MOLDQL_RESULT_LIMIT: usize = 100;

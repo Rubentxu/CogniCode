@@ -11,7 +11,7 @@ use crate::domain::analytics::{
     FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
-use crate::infrastructure::graph::CallGraphProjection;
+use crate::domain::ports::call_graph_projection::{project_call_graph, CallGraphProjectionPort};
 use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
@@ -189,7 +189,7 @@ impl AlgorithmExecute for KCoreDescriptor {
             .map(|v| v as u32)
             .unwrap_or(1);
 
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let undirected = projection.build_undirected_neighbors();
         let n = projection.node_count();
 

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 // Ports for InspectionTarget and ViewContext
-use crate::ports::quality_repository::{QualityIssue, QualityStore};
+use cognicode_core::domain::ports::{QualityIssue, QualityStore};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
 use cognicode_core::domain::traits::GraphQueryPort;
@@ -343,7 +343,7 @@ pub struct ViewContext<'a> {
     /// Optional async node property reader for ownership attribution.
     /// When provided, executors can read ownership data without `block_on`
     /// gymnastics. `None` when no node property reader is wired.
-    pub node_property_reader: Option<&'a dyn cognicode_core::domain::ports::NodePropertyReader>,
+    pub node_property_repository: Option<&'a dyn cognicode_core::domain::ports::NodePropertyRepository>,
 }
 
 // ============================================================================

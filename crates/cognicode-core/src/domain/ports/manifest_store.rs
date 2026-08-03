@@ -7,7 +7,7 @@
 //!
 //! This port exists so application code (the Ingest pipeline's
 //! service layer) can call into the persistence layer without
-//! depending on `PostgresRepository` concrete types.
+//! depending on concrete adapter types.
 
 use async_trait::async_trait;
 

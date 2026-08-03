@@ -35,7 +35,7 @@ use crate::application::dto::{
 };
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
-use crate::infrastructure::graph::{CallGraphProjection, SubgraphDirection};
+use crate::domain::ports::call_graph_projection::{project_call_graph, CallGraphProjectionPort, SubgraphDirection};
 use cognicode_graph_algos::GraphBuilder;
 
 /// Application service for graph-aware impact analysis.
@@ -75,7 +75,7 @@ impl ImpactAnalysisService {
         root: &SymbolId,
         max_depth: usize,
     ) -> Vec<SymbolId> {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         projection.find_impact_radius(root, max_depth)
     }
 
@@ -105,7 +105,7 @@ impl ImpactAnalysisService {
         root: &SymbolId,
         max_depth: usize,
     ) -> Vec<SymbolId> {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         projection.find_forward_reach(root, max_depth)
     }
 
@@ -115,7 +115,7 @@ impl ImpactAnalysisService {
     /// graph. The trivial self-path `A -> A` returns `true` when `A` is
     /// present.
     pub fn has_path(&self, graph: &CallGraph, from: &SymbolId, to: &SymbolId) -> bool {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         projection.has_path(from, to)
     }
 
@@ -132,7 +132,7 @@ impl ImpactAnalysisService {
         from: &SymbolId,
         to: &SymbolId,
     ) -> Option<PathResultDto> {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         projection
             .dijkstra(from, to)
             .map(|(path, cost)| PathResultDto::from_path(path, cost))
@@ -146,7 +146,7 @@ impl ImpactAnalysisService {
     /// dependencies, not isolated nodes whose only cycle is a
     /// degenerate self-loop. An empty graph returns `vec![]`.
     pub fn detect_cycles(&self, graph: &CallGraph) -> Vec<Vec<SymbolId>> {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         projection
             .strongly_connected_components()
             .into_iter()
@@ -160,7 +160,7 @@ impl ImpactAnalysisService {
     /// isolated node (no edges) is its own component and returns
     /// `Some(vec![id])`.
     pub fn containing_component(&self, graph: &CallGraph, id: &SymbolId) -> Option<Vec<SymbolId>> {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         projection
             .connected_components()
             .into_iter()
@@ -171,7 +171,7 @@ impl ImpactAnalysisService {
     /// hops in `direction`.
     ///
     /// Thin wrapper around [`CallGraphProjection::extract_subgraph`]
-    /// that converts the projection-level [`SubgraphView`](crate::infrastructure::graph::SubgraphView)
+    /// that converts the projection-level [`SubgraphView`](crate::domain::ports::call_graph_projection::SubgraphView)
     /// into the wire-friendly [`SubgraphResultDto`].
     ///
     /// Edge cases (mirrored from the projection layer):
@@ -185,7 +185,7 @@ impl ImpactAnalysisService {
         direction: SubgraphDirection,
         max_depth: usize,
     ) -> SubgraphResultDto {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         SubgraphResultDto::from_view(projection.extract_subgraph(root, direction, max_depth))
     }
 
@@ -202,7 +202,7 @@ impl ImpactAnalysisService {
     /// order-insensitive equality should sort by `ClusterDto::members`
     /// (string form).
     pub fn cluster_components(&self, graph: &CallGraph, method: &str) -> ClusterResultDto {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let (in_neighbors, _) = projection.build_adjacency();
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
@@ -214,7 +214,7 @@ impl ImpactAnalysisService {
                     .into_iter()
                     .filter_map(|idx| {
                         projection
-                            .id_to_index()
+                            .symbol_index()
                             .iter()
                             .find(|(_, ni)| ni.index() == idx)
                             .map(|(sid, _)| sid.clone())
@@ -246,7 +246,7 @@ impl ImpactAnalysisService {
         from: &SymbolId,
         to: &SymbolId,
     ) -> Option<ExplainResultDto> {
-        let projection = CallGraphProjection::from_call_graph(graph);
+        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let view = projection.explain_path(from, to);
         Some(match view {
             Some(view) => ExplainResultDto::from_view(&view, true),
@@ -678,7 +678,7 @@ mod tests {
     /// `forward_radius` is implemented.
     #[test]
     fn test_forward_radius_mirrors_find_forward_reach() {
-        use crate::infrastructure::graph::CallGraphProjection;
+        use crate::domain::ports::call_graph_projection::project_call_graph;
 
         let g = make_graph(|g| {
             add_edge(g, "A", "B", DependencyType::Calls);
@@ -688,7 +688,7 @@ mod tests {
         let svc = ImpactAnalysisService::new();
 
         let svc_result = svc.forward_radius(&g, &id("A"), 2);
-        let projection = CallGraphProjection::from_call_graph(&g);
+        let projection = project_call_graph(&g);
         let projection_result = projection.find_forward_reach(&id("A"), 2);
 
         assert_eq!(
@@ -850,7 +850,7 @@ mod tests {
     // ---------------------------------------------------------------------
 
     use crate::application::dto::{ClusterResultDto, ExplainResultDto, SubgraphResultDto};
-    use crate::infrastructure::graph::SubgraphDirection;
+    use crate::domain::ports::call_graph_projection::SubgraphDirection;
 
     /// Service `subgraph` MUST mirror the projection `extract_subgraph`
     /// exactly. We use an outgoing 2-hop chain to assert both the node

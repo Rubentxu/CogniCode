@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use crate::application::dto::{
     CONFIDENCE_NAME_MATCH, CONFIDENCE_SAME_COMMUNITY, CONFIDENCE_SAME_FILE, RelationCandidate,
 };
-use crate::application::services::community_detector::CommunityDetector;
+use crate::infrastructure::graph::analytics::community_detector::CommunityDetector;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 
 /// Confidence thresholds for deduplication

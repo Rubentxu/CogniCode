@@ -18,7 +18,7 @@
 //! where they belong.
 //!
 //! This preserves the original trait semantics (the existing
-//! `PostgresViewSpecStore` adapter already serialized the rich fields
+//! the adapter already serialized the rich fields
 //! to JSON before persisting; the wire-format struct is the explicit
 //! port type that replaces the implicit JSON round-trip).
 
@@ -168,6 +168,3 @@ pub trait ViewSpecStore: Send + Sync + 'static {
     ) -> Result<bool, ViewSpecStoreError>;
 }
 
-// =============================================================================
-// PostgresViewSpecStore adapter
-// =============================================================================

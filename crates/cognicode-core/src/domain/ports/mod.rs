@@ -5,56 +5,57 @@
 //! the canonical adapter) implement the trait; domain + service
 //! code depend on the trait, not on the concrete adapters.
 //!
-//! ## Port modules (8 trait modules total)
+//! ## Port modules (12 active ports + 1 utility = 13 modules)
 //!
 //! | Module | Trait | Status |
 //! |--------|-------|--------|
-//! | `graph_error` | `GraphError`, `GraphResult` | existing |
+//! | `graph_error` | `GraphError`, `GraphResult` | utility (not a port) |
+//! | `call_graph_projection` | `CallGraphProjectionPort` | new (e29-3) |
+//! | `call_graph_store` | `CallGraphStore` | existing |
+//! | `federation_store` | `FederationStore` | new (PR1) · cfg `multimodal` |
 //! | `graph_repository` | `GraphRepository` | existing |
-//! | `graph_write_port` | `GraphWritePort` | existing (multimodal) |
+//! | `ingest_commit` | `IngestCommit` | new (PR1) · cfg `multimodal` |
 //! | `manifest_store` | `ManifestStore` | existing |
-//! | `named_view_store` | `NamedViewStore` | existing |
-//! | `node_property_reader` | `NodePropertyReader` | existing |
-//! | `report_store` | `ReportStore` | existing |
-//! | `session_store` | `SessionStore` | existing |
-//! | `revision_store` | `RevisionStore` | new (PR1) |
-//! | `federation_store` | `FederationStore` | new (PR1) |
-//! | `ingest_commit` | `IngestCommit` | new (PR1) |
+//! | `node_property_repository` | `NodePropertyRepository` | renamed (e29-3) |
 //! | `quality_store` | `QualityStore` | new (PR2 — relocated from cognicode-explorer) |
+//! | `report_store` | `ReportStore` | existing |
+//! | `revision_store` | `RevisionStore` | new (PR1) |
+//! | `session_store` | `SessionStore` | existing |
 //! | `view_spec_store` | `ViewSpecStore` | new (PR2 — relocated from cognicode-explorer) |
 //!
-//! The `multimodal` feature gates the WRITE/exTRACTION path only.
+//! The `multimodal` feature gates the WRITE/exTRACTION path only;
+//! cfg-gated entries (`federation_store`, `ingest_commit`) appear only
+//! under `--features multimodal`.
 
+pub mod call_graph_projection;
 pub mod call_graph_store;
 #[cfg(feature = "multimodal")]
 pub mod federation_store;
 pub mod graph_error;
 pub mod graph_repository;
 #[cfg(feature = "multimodal")]
-pub mod graph_write_port;
-#[cfg(feature = "multimodal")]
 pub mod ingest_commit;
 pub mod manifest_store;
-pub mod named_view_store;
-pub mod node_property_reader;
+pub mod node_property_repository;
 pub mod quality_store;
 pub mod report_store;
 pub mod revision_store;
 pub mod session_store;
 pub mod view_spec_store;
 
+pub use call_graph_projection::{
+    project_call_graph, CallGraphProjectionPort, ExplanationHop, ExplanationView, ProjectionError,
+    SubgraphDirection, SubgraphEdge, SubgraphView,
+};
 pub use call_graph_store::{CallGraphError, CallGraphStore};
 #[cfg(feature = "multimodal")]
 pub use federation_store::{FederationError, FederationStore};
 pub use graph_error::{GraphError, GraphResult};
 pub use graph_repository::{GraphRepository, SearchPage};
 #[cfg(feature = "multimodal")]
-pub use graph_write_port::GraphWritePort;
-#[cfg(feature = "multimodal")]
 pub use ingest_commit::{CommitError, GraphDelta, IngestCommit, ManifestDelta, ReportIntent};
 pub use manifest_store::{ManifestError, ManifestStore, ScanManifest};
-pub use named_view_store::{NamedView, NamedViewError, NamedViewStore};
-pub use node_property_reader::NodePropertyReader;
+pub use node_property_repository::NodePropertyRepository;
 pub use quality_store::{
     IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
     RuleSummary, UpsertSummary,

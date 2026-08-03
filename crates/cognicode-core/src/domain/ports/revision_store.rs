@@ -7,7 +7,7 @@
 //! insert the new row, and bump the counter.
 //!
 //! This port exists so `save_call_graph_ws` can open revisions without
-//! depending on the `PostgresRepository` concrete type directly.
+//! depending on concrete adapter types directly.
 //!
 //! # Method shape
 //!

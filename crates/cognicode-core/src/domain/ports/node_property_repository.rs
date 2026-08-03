@@ -14,7 +14,7 @@
 //! # Implementations
 //!
 //! - `CallGraphRepository` implements this trait when built with `--features ownership`
-//!   by delegating to `PostgresRepository::node_properties` (which is itself async).
+//!   by delegating to the canonical adapter's async `node_properties`.
 //! - Mocks can provide a trivial async stub.
 
 use crate::domain::aggregates::SymbolId;
@@ -27,7 +27,7 @@ use std::collections::HashMap;
 /// the underlying repository has no data for the given id (or when no
 /// repository is wired).
 #[async_trait]
-pub trait NodePropertyReader: Send + Sync {
+pub trait NodePropertyRepository: Send + Sync {
     /// Return the JSONB properties map for `id`, or `None` if not present.
     async fn node_properties(&self, id: &SymbolId) -> Option<HashMap<String, String>>;
 }
