@@ -24,6 +24,9 @@ clap.workspace = true
 rmcp.workspace = true
 
 [features]
+# v0.79+ (planned): lbug 0.19 as the canonical store (E29 final
+# cutover). Until cognicode-explorer is migrated to use the PgBackend
+# trait, the default stays on postgres (backward compat).
 default = ["postgres"]
 postgres = ["cognicode-explorer/postgres"]
 # Multimodal: enables OpenAPI/GraphQL/gRPC/tRPC ingestion (cycle e15.5)
