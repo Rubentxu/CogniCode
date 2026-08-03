@@ -45,7 +45,7 @@
 //! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | DONE (12 in-crate tests) |
 //! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | DONE (12 in-crate tests; SYNC trait) |
 //! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | DONE (8 in-crate tests) |
-//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports | DONE (multimodal-gated; 6 in-crate tests) |
+//! | 9 | `IngestCommitPort` | Composite atomic tx (per ADR-015) — requires all 8 prior ports | DONE (multimodal-gated; 6 in-crate tests) |
 
 use std::path::Path;
 use std::sync::Arc;
@@ -72,14 +72,14 @@ use cognicode_core::domain::ports::{
 };
 use cognicode_core::domain::value_objects::{DependencyType, RevisionId, WorkspaceId};
 
-// `FederationStore`, `IngestCommit`, and the `Space`/`SpaceId` value
+// `FederationStore`, `IngestCommitPort`, and the `Space`/`SpaceId` value
 // objects they operate on are gated behind the `multimodal` feature
 // in `cognicode-core`. The default build (no multimodal) skips them;
 // the follow-up PR that flips multimodal to ON also wires these.
 #[cfg(feature = "multimodal")]
 use cognicode_core::domain::ports::{
     federation_store::{FederationError, FederationStore},
-    ingest_commit::{CommitError, GraphDelta, IngestCommit, ManifestDelta, ReportIntent},
+    ingest_commit_port::{CommitError, GraphDelta, IngestCommitPort, ManifestDelta, ReportIntent},
 };
 #[cfg(feature = "multimodal")]
 use cognicode_core::domain::value_objects::{Space, SpaceId};
@@ -1082,7 +1082,7 @@ impl CallGraphStore for LadybugStore {
 
 #[cfg(feature = "multimodal")]
 #[async_trait]
-impl IngestCommit for LadybugStore {
+impl IngestCommitPort for LadybugStore {
     async fn commit_revision(
         &self,
         ws: &WorkspaceId,
@@ -1357,9 +1357,10 @@ impl IngestCommit for LadybugStore {
 // QualityStore — first non-stub impl (e29-3 Phase 3)
 // =============================================================================
 //
-// `QualityStore` is the 10-method port split across the `issues`,
-// `baselines`, and `rules` node tables. This is the first real lbug SQL
-// implementation (all other ports remain stubs).
+// `QualityStore` is the 10-method port split across the
+// `QualityIssue`, `QualityBaseline`, and `QualityRule` node tables. This
+// is the first real lbug SQL implementation (all other ports remain
+// stubs).
 //
 // Contracts (mirror `domain/ports/quality_store.rs`):
 // - The 8 read methods degrade gracefully when the tables are missing
@@ -1368,9 +1369,9 @@ impl IngestCommit for LadybugStore {
 //   missing table / I/O failure.
 
 impl LadybugStore {
-    /// Create the `Issue`, `Baseline`, and `Rule` NODE TABLEs backing
-    /// the [`QualityStore`] port (per ADR-028). Idempotent — every
-    /// statement uses `IF NOT EXISTS`.
+    /// Create the `QualityIssue`, `QualityBaseline`, and `QualityRule`
+    /// NODE TABLEs backing the [`QualityStore`] port (per ADR-028).
+    /// Idempotent — every statement uses `IF NOT EXISTS`.
     ///
     /// Called automatically by [`LadybugStore::open`]; the raw sharing
     /// constructor [`LadybugStore::new`] does NOT apply it so tests can
@@ -1391,7 +1392,7 @@ impl LadybugStore {
 /// Returns the 3 CREATE NODE TABLE statements for the QualityStore port.
 fn quality_schema_ddls() -> Vec<&'static str> {
     vec![
-        "CREATE NODE TABLE IF NOT EXISTS Issue( \
+        "CREATE NODE TABLE IF NOT EXISTS QualityIssue( \
              id SERIAL PRIMARY KEY, \
              workspace_id STRING, \
              rule_id STRING, \
@@ -1401,7 +1402,7 @@ fn quality_schema_ddls() -> Vec<&'static str> {
              line INT64, \
              message STRING, \
              status STRING);",
-        "CREATE NODE TABLE IF NOT EXISTS Baseline( \
+        "CREATE NODE TABLE IF NOT EXISTS QualityBaseline( \
              id SERIAL PRIMARY KEY, \
              workspace_id STRING, \
              rating STRING, \
@@ -1410,7 +1411,7 @@ fn quality_schema_ddls() -> Vec<&'static str> {
              criticals INT64, \
              debt_minutes INT64, \
              snapshot_at STRING);",
-        "CREATE NODE TABLE IF NOT EXISTS Rule( \
+        "CREATE NODE TABLE IF NOT EXISTS QualityRule( \
              id SERIAL PRIMARY KEY, \
              rule_id STRING, \
              description STRING, \
@@ -1421,7 +1422,7 @@ fn quality_schema_ddls() -> Vec<&'static str> {
 impl QualityStore for LadybugStore {
     fn issues_for_file(&self, file: &str) -> Result<Vec<QualityIssue>, QualityError> {
         self.query_issues(
-            "MATCH (i:Issue) WHERE i.file_path = $file \
+            "MATCH (i:QualityIssue) WHERE i.file_path = $file \
              RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status;",
             vec![("file", lbug::Value::String(file.to_string()))],
         )
@@ -1430,7 +1431,7 @@ impl QualityStore for LadybugStore {
     fn issues_for_scope(&self, scope_prefix: &str) -> Result<Vec<QualityIssue>, QualityError> {
         let prefix = format!("{scope_prefix}/");
         self.query_issues(
-            "MATCH (i:Issue) WHERE i.file_path = $scope OR i.file_path STARTS WITH $prefix \
+            "MATCH (i:QualityIssue) WHERE i.file_path = $scope OR i.file_path STARTS WITH $prefix \
              RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status;",
             vec![
                 ("scope", lbug::Value::String(scope_prefix.to_string())),
@@ -1441,7 +1442,7 @@ impl QualityStore for LadybugStore {
 
     fn issues_at_line(&self, file: &str, line: u32) -> Result<Vec<QualityIssue>, QualityError> {
         self.query_issues(
-            "MATCH (i:Issue) WHERE i.file_path = $file AND i.line = $line \
+            "MATCH (i:QualityIssue) WHERE i.file_path = $file AND i.line = $line \
              RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status;",
             vec![
                 ("file", lbug::Value::String(file.to_string())),
@@ -1452,7 +1453,7 @@ impl QualityStore for LadybugStore {
 
     fn issue_by_id(&self, id: i64) -> Result<Option<QualityIssue>, QualityError> {
         let mut issues = self.query_issues(
-            "MATCH (i:Issue) WHERE i.id = $id \
+            "MATCH (i:QualityIssue) WHERE i.id = $id \
              RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status;",
             vec![("id", lbug::Value::Int64(id))],
         )?;
@@ -1468,7 +1469,7 @@ impl QualityStore for LadybugStore {
 
         let description = {
             let mut stmt = match conn.prepare(
-                "MATCH (r:Rule) WHERE r.rule_id = $rid RETURN r.description, r.category;",
+                "MATCH (r:QualityRule) WHERE r.rule_id = $rid RETURN r.description, r.category;",
             ) {
                 Ok(stmt) => stmt,
                 Err(e) if is_missing_table(&e) => return Ok(RuleSummary {
@@ -1496,7 +1497,7 @@ impl QualityStore for LadybugStore {
         };
 
         let open_count: usize = match conn.prepare(
-            "MATCH (i:Issue) WHERE i.rule_id = $rid AND i.status = 'open' RETURN count(i);",
+            "MATCH (i:QualityIssue) WHERE i.rule_id = $rid AND i.status = 'open' RETURN count(i);",
         ) {
             Err(e) if is_missing_table(&e) => 0,
             Err(e) => {
@@ -1530,13 +1531,13 @@ impl QualityStore for LadybugStore {
 
         let (cypher, params): (&str, Vec<(&str, lbug::Value)>) = match workspace_id {
             Some(ws) => (
-                "MATCH (b:Baseline) WHERE b.workspace_id = $ws \
+                "MATCH (b:QualityBaseline) WHERE b.workspace_id = $ws \
                  RETURN b.rating, b.total_issues, b.blockers, b.criticals, b.debt_minutes, b.snapshot_at \
                  ORDER BY b.snapshot_at DESC LIMIT 1;",
                 vec![("ws", lbug::Value::String(ws.to_string()))],
             ),
             None => (
-                "MATCH (b:Baseline) \
+                "MATCH (b:QualityBaseline) \
                  RETURN b.rating, b.total_issues, b.blockers, b.criticals, b.debt_minutes, b.snapshot_at \
                  ORDER BY b.snapshot_at DESC LIMIT 1;",
                 Vec::new(),
@@ -1583,11 +1584,11 @@ impl QualityStore for LadybugStore {
             .map_err(|e| QualityError::Store(format!("open_issues_count connection: {e}")))?;
         let (cypher, params): (&str, Vec<(&str, lbug::Value)>) = match workspace_id {
             Some(ws) => (
-                "MATCH (i:Issue) WHERE i.status = 'open' AND i.workspace_id = $ws RETURN count(i);",
+                "MATCH (i:QualityIssue) WHERE i.status = 'open' AND i.workspace_id = $ws RETURN count(i);",
                 vec![("ws", lbug::Value::String(ws.to_string()))],
             ),
             None => (
-                "MATCH (i:Issue) WHERE i.status = 'open' RETURN count(i);",
+                "MATCH (i:QualityIssue) WHERE i.status = 'open' RETURN count(i);",
                 Vec::new(),
             ),
         };
@@ -1653,7 +1654,7 @@ impl QualityStore for LadybugStore {
         };
 
         let cypher = format!(
-            "MATCH (i:Issue){where_clause} \
+            "MATCH (i:QualityIssue){where_clause} \
              RETURN i.id, i.rule_id, i.severity, i.category, i.file_path, i.line, i.message, i.status{limit_clause};"
         );
         self.query_issues(&cypher, params)
@@ -1664,7 +1665,7 @@ impl QualityStore for LadybugStore {
             .connection()
             .map_err(|e| QualityError::Store(format!("insert_issues connection: {e}")))?;
         for issue in issues {
-            let cypher = "CREATE (i:Issue {workspace_id: $ws, rule_id: $rid, severity: $sev, \
+            let cypher = "CREATE (i:QualityIssue {workspace_id: $ws, rule_id: $rid, severity: $sev, \
                  category: $cat, file_path: $file, line: $line, message: $msg, status: $status});";
             let mut stmt = conn
                 .prepare(cypher)
@@ -1704,7 +1705,7 @@ impl QualityStore for LadybugStore {
             .map_err(|e| QualityError::Store(format!("delete_issue connection: {e}")))?;
         let mut stmt = conn
             .prepare(
-                "MATCH (i:Issue) WHERE i.workspace_id = $ws AND i.rule_id = $rid \
+                "MATCH (i:QualityIssue) WHERE i.workspace_id = $ws AND i.rule_id = $rid \
                  AND i.file_path = $file AND i.line = $line DELETE i RETURN count(i);",
             )
             .map_err(|e| QualityError::Store(format!("delete_issue prepare: {e}")))?;
@@ -2588,7 +2589,7 @@ mod tests {
         fn _check<T: Send + Sync>()
         where
             T: FederationStore,
-            T: IngestCommit,
+            T: IngestCommitPort,
         {
         }
     }
@@ -3051,7 +3052,7 @@ mod tests {
     }
 
     // --------------------------------------------------------------------
-    // IngestCommit (Priority 9, gated behind `multimodal`)
+    // IngestCommitPort (Priority 9, gated behind `multimodal`)
     // --------------------------------------------------------------------
 
     #[cfg(feature = "multimodal")]
@@ -4226,7 +4227,7 @@ mod quality_store_tests {
         let (store, _dir) = make_store();
         let conn = store.connection().expect("conn");
         conn.query(
-            "CREATE (r:Rule {rule_id: 'R1', description: 'no debug prints', category: 'style'});",
+            "CREATE (r:QualityRule {rule_id: 'R1', description: 'no debug prints', category: 'style'});",
         )
         .expect("create rule");
         store
@@ -4253,7 +4254,7 @@ mod quality_store_tests {
 
         let conn = store.connection().expect("conn");
         conn.query(
-            "CREATE (b:Baseline {workspace_id: 'ws', rating: 'B', total_issues: 4, blockers: 1, \
+            "CREATE (b:QualityBaseline {workspace_id: 'ws', rating: 'B', total_issues: 4, blockers: 1, \
              criticals: 2, debt_minutes: 30, snapshot_at: '2026-08-03T00:00:00Z'});",
         )
         .expect("create baseline");

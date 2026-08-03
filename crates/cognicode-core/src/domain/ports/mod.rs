@@ -14,7 +14,7 @@
 //! | `call_graph_store` | `CallGraphStore` | existing |
 //! | `federation_store` | `FederationStore` | new (PR1) · cfg `multimodal` |
 //! | `graph_repository` | `GraphRepository` | existing |
-//! | `ingest_commit` | `IngestCommit` | new (PR1) · cfg `multimodal` |
+//! | `ingest_commit_port` | `IngestCommitPort` | new (PR1) · cfg `multimodal` |
 //! | `manifest_store` | `ManifestStore` | existing |
 //! | `node_property_repository` | `NodePropertyRepository` | renamed (e29-3) |
 //! | `quality_store` | `QualityStore` | new (PR2 — relocated from cognicode-explorer) |
@@ -24,8 +24,8 @@
 //! | `view_spec_store` | `ViewSpecStore` | new (PR2 — relocated from cognicode-explorer) |
 //!
 //! The `multimodal` feature gates the WRITE/exTRACTION path only;
-//! cfg-gated entries (`federation_store`, `ingest_commit`) appear only
-//! under `--features multimodal`.
+//! cfg-gated entries (`federation_store`, `ingest_commit_port`) appear
+//! only under `--features multimodal`.
 
 pub mod call_graph_projection;
 pub mod call_graph_store;
@@ -34,7 +34,7 @@ pub mod federation_store;
 pub mod graph_error;
 pub mod graph_repository;
 #[cfg(feature = "multimodal")]
-pub mod ingest_commit;
+pub mod ingest_commit_port;
 pub mod manifest_store;
 pub mod node_property_repository;
 pub mod quality_store;
@@ -53,7 +53,7 @@ pub use federation_store::{FederationError, FederationStore};
 pub use graph_error::{GraphError, GraphResult};
 pub use graph_repository::{GraphRepository, SearchPage};
 #[cfg(feature = "multimodal")]
-pub use ingest_commit::{CommitError, GraphDelta, IngestCommit, ManifestDelta, ReportIntent};
+pub use ingest_commit_port::{CommitError, GraphDelta, IngestCommitPort, ManifestDelta, ReportIntent};
 pub use manifest_store::{ManifestError, ManifestStore, ScanManifest};
 pub use node_property_repository::NodePropertyRepository;
 pub use quality_store::{
