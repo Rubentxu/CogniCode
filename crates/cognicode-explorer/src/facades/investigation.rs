@@ -207,13 +207,3 @@ impl<S: cognicode_core::domain::investigation_store::InvestigationStore + 'stati
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!(e.to_string())))
     }
 }
-
-/// Create an investigation service from a postgres store.
-#[cfg(feature = "postgres")]
-pub fn new_investigation_service_from_postgres(
-    pool: &sqlx::PgPool,
-) -> Arc<dyn InvestigationFacade> {
-    let store =
-        cognicode_core::infrastructure::persistence::PostgresInvestigationStore::new(pool.clone());
-    Arc::new(InvestigationServiceImpl::new(store))
-}

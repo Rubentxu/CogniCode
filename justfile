@@ -64,8 +64,7 @@ run: stop build-release
     @if curl -s --max-time 1 http://localhost:{{ PORT }}/health > /dev/null 2>&1; then \
         echo "❌ Port {{ PORT }} still in use. Try: just stop && just run"; exit 1; \
     fi
-    DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
-        ./{{ EXPLORER_API_RELEASE }} --listen 127.0.0.1:{{ PORT }}
+    ./{{ EXPLORER_API_RELEASE }} --listen 127.0.0.1:{{ PORT }}
 
 # Start server (without rebuilding)
 start: stop
@@ -73,8 +72,7 @@ start: stop
     @if curl -s --max-time 1 http://localhost:{{ PORT }}/health > /dev/null 2>&1; then \
         echo "❌ Port {{ PORT }} still in use. Try: just stop"; exit 1; \
     fi
-    DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
-        ./{{ EXPLORER_API_RELEASE }} --listen 127.0.0.1:{{ PORT }}
+    ./{{ EXPLORER_API_RELEASE }} --listen 127.0.0.1:{{ PORT }}
 
 # Run in dev mode — one command to start everything: PG + API + Frontend
 dev:
@@ -91,42 +89,13 @@ dev:
     echo "═══════════════════════════════════════════════════════"
     echo ""
 
-    # 1. PostgreSQL via quadlet (systemd + podman)
-    echo "🐘 [1/4] Starting PostgreSQL..."
-    # Ensure quadlet files are installed
-    QUADLET_DIR="$HOME/.config/containers/systemd"
-    if [ ! -f "$QUADLET_DIR/cognicode-postgres.container" ]; then
-        echo "   📋 Installing quadlet files..."
-        cp "$ROOT/quadlets/cognicode-postgres.container" "$QUADLET_DIR/"
-        cp "$ROOT/quadlets/cognicode-pgdata.volume" "$QUADLET_DIR/"
-        systemctl --user daemon-reload
-    fi
-    systemctl --user start cognicode-postgres 2>/dev/null || true
-    # Unset LD_LIBRARY_PATH to avoid flatpak lib conflicts (e.g. Zed's libselinux.so.1)
-    for i in $(seq 1 30); do
-        PG_CHECK=$(env -u LD_LIBRARY_PATH podman exec cognicode-postgres pg_isready -U cognicode -d cognicode 2>&1) && PG_OK=true || PG_OK=false
-        if [ "$PG_OK" = "true" ]; then
-            echo "   ✅ PostgreSQL ready"
-            break
-        fi
-        if [ "$i" -eq 30 ]; then
-            echo "   ❌ PostgreSQL not ready after 30s"
-            echo "   pg_isready output: $PG_CHECK"
-            echo "   Container status:"
-            env -u LD_LIBRARY_PATH podman ps -a --filter name=cognicode-postgres 2>&1 || true
-            echo "   Try: just dev-pg-status"
-            exit 1
-        fi
-        sleep 1
-    done
-
-    # 2. Build API binary
-    echo "🔨 [2/4] Building Explorer API..."
+    # 1. Build API binary
+    echo "🔨 [1/3] Building Explorer API..."
     cargo build -p cognicode-runtime --bin explorer-api --release
     echo "   ✅ API binary ready"
 
-    # 3. Install frontend deps
-    echo "📦 [3/4] Installing frontend deps..."
+    # 2. Install frontend deps
+    echo "📦 [2/3] Installing frontend deps..."
     (cd "$UI_DIR" && npm ci --prefer-offline 2>/dev/null || npm install)
     echo "   ✅ Frontend deps ready"
 
@@ -142,8 +111,7 @@ dev:
     echo ""
 
     # Start API in background
-    DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
-        "$API_BIN" --listen "127.0.0.1:$API_PORT" &
+    "$API_BIN" --listen "127.0.0.1:$API_PORT" &
     API_PID=$!
 
     # Start frontend dev server in foreground (so Ctrl+C works naturally)
@@ -184,12 +152,6 @@ test-unit:
     @echo "🧪 Running unit tests..."
     cargo test --workspace --no-fail-fast
 
-# Run unit tests with PostgreSQL backend
-test-pg:
-    @echo "🧪 Running unit tests (with PG)..."
-    TEST_DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode_TEST \
-    	cargo test --workspace --no-fail-fast --features postgres
-
 # Run ignored tests (flaky, slow, requires external tools)
 test-ignored:
     @echo "🧪 Running ignored tests (single-threaded)..."
@@ -216,8 +178,7 @@ start-server:
         echo "🔄 Server already running"; \
     else \
         echo "🔄 Starting server..."; \
-        DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
-            nohup ./{{ EXPLORER_API_RELEASE }} --listen 127.0.0.1:{{ PORT }} > /tmp/cognicode-server.log 2>&1 & \
+        nohup ./{{ EXPLORER_API_RELEASE }} --listen 127.0.0.1:{{ PORT }} > /tmp/cognicode-server.log 2>&1 & \
         sleep 2; \
         echo "Server started"; \
     fi
@@ -422,8 +383,7 @@ explorer-api:
     @echo "🔨 Building Explorer API..."
     cargo build -p cognicode-runtime --bin explorer-api --release
     @echo "🚀 Starting Explorer API on http://127.0.0.1:{{ EXPLORER_API_PORT }}..."
-    DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
-        cargo run -p cognicode-runtime --bin explorer-api --release -- --listen 127.0.0.1:{{ EXPLORER_API_PORT }}
+    cargo run -p cognicode-runtime --bin explorer-api --release -- --listen 127.0.0.1:{{ EXPLORER_API_PORT }}
 
 # Build Explorer frontend for production
 explorer-build:
@@ -467,70 +427,6 @@ explorer-screenshots:
     @test -d docs/explorer-ui/screenshots || mkdir -p docs/explorer-ui/screenshots
     @echo "Run 'just explorer-dev' first, then use playwright-cli to capture."
 
-# ─── PostgreSQL local dev (quadlet: systemd + podman) ──────────────────
-
-# Install the quadlet files and start PostgreSQL.
-# The container is managed by systemd user units; data persists
-# in the named volume `cognicode-pgdata`.
-dev-pg:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    QUADLET_DIR="$HOME/.config/containers/systemd"
-    SRC_DIR="quadlets"
-    # Install quadlet files if not present
-    for f in cognicode-postgres.container cognicode-pgdata.volume; do
-        if [ ! -f "$QUADLET_DIR/$f" ]; then
-            echo "📋 Installing quadlet: $f"
-            cp "$SRC_DIR/$f" "$QUADLET_DIR/$f"
-        fi
-    done
-    # Reload systemd to pick up new units
-    systemctl --user daemon-reload
-    # Start PostgreSQL
-    echo "🐘 Starting cognicode-postgres..."
-    systemctl --user start cognicode-postgres
-    echo "⏳ Waiting for PostgreSQL..."
-    for i in $(seq 1 30); do
-        if env -u LD_LIBRARY_PATH podman exec cognicode-postgres pg_isready -U cognicode -d cognicode > /dev/null 2>&1; then
-            echo "✅ PostgreSQL is ready."
-            echo "DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode"
-            exit 0
-        fi
-        sleep 1
-    done
-    echo "❌ PostgreSQL failed to become ready in 30s"; exit 1
-
-# Stop PostgreSQL (preserves data volume).
-dev-pg-stop:
-    @echo "🛑 Stopping PostgreSQL..."
-    systemctl --user stop cognicode-postgres
-    @echo "✅ PostgreSQL stopped (data preserved)."
-
-# Tear down PostgreSQL + remove volume (DESTRUCTIVE — drops all data).
-dev-pg-down:
-    @echo "🛑 Stopping and removing PostgreSQL..."
-    systemctl --user stop cognicode-postgres 2>/dev/null || true
-    systemctl --user reset-failed cognicode-postgres 2>/dev/null || true
-    env -u LD_LIBRARY_PATH podman rm -f cognicode-postgres 2>/dev/null || true
-    env -u LD_LIBRARY_PATH podman volume rm cognicode-pgdata 2>/dev/null || true
-    @echo "✅ PostgreSQL and volume removed."
-
-# Show PostgreSQL status
-dev-pg-status:
-    @echo "📊 PostgreSQL Status"
-    systemctl --user status cognicode-postgres 2>/dev/null || echo "Not installed. Run: just dev-pg"
-    @echo ""
-    @env -u LD_LIBRARY_PATH podman exec cognicode-postgres pg_isready -U cognicode -d cognicode 2>/dev/null || echo "Not responding"
-
-# Uninstall quadlet files from systemd
-dev-pg-uninstall:
-    @echo "🗑️  Removing quadlet files..."
-    systemctl --user stop cognicode-postgres 2>/dev/null || true
-    rm -f ~/.config/containers/systemd/cognicode-postgres.container
-    rm -f ~/.config/containers/systemd/cognicode-pgdata.volume
-    systemctl --user daemon-reload
-    @echo "✅ Quadlet files removed."
-
 # ─── Performance budget ──────────────────────────────────────────────────────
 
 # Run the performance budget gate (bench + compare against perf-budget.toml)
@@ -544,37 +440,6 @@ perf-bench:
 
 # ─── Sandbox ─────────────────────────────────────────────────────────────────
 
-# Reset PG sandbox schema (drops legacy tables, applies new pipeline schema)
-sandbox-pg-reset:
-    #!/usr/bin/env bash
-    set -e
-    DB_NAME="${1:-cognicode}"
-    DB_USER="${2:-cognicode}"
-    CONTAINER_NAME="${3:-cognicode-postgres}"
-    SCRIPT_DIR="$(cd "$(dirname "$(which just)")/../lib" && pwd)"
-    SCHEMA_FILE="crates/cognicode-core/src/infrastructure/persistence/m0010_pipeline_schema.sql"
-    echo "=== Resetting PG sandbox ==="
-    echo "Database: $DB_NAME, User: $DB_USER, Container: $CONTAINER_NAME"
-    echo "--- Dropping tables ---"
-    env -u LD_LIBRARY_PATH podman exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -t -c "
-    DROP TABLE IF EXISTS call_edges CASCADE;
-    DROP TABLE IF EXISTS symbols CASCADE;
-    DROP TABLE IF EXISTS graph_edges CASCADE;
-    DROP TABLE IF EXISTS graph_nodes CASCADE;
-    DROP TABLE IF EXISTS scan_manifest CASCADE;
-    DROP TABLE IF EXISTS graph_reports CASCADE;
-    DROP VIEW IF EXISTS call_edges CASCADE;
-    DROP VIEW IF EXISTS symbols CASCADE;
-    DROP TRIGGER IF EXISTS graph_nodes_notify ON graph_nodes;
-    DROP FUNCTION IF EXISTS notify_graph_change();
-    " 2>&1 || true
-    echo "--- Applying new schema ---"
-    env -u LD_LIBRARY_PATH podman exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$SCHEMA_FILE" 2>&1
-    echo "--- Verifying ---"
-    env -u LD_LIBRARY_PATH podman exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -c '\dt' 2>&1
-    echo "=== Schema reset complete ==="
-
-# Run sandbox IaC tests (Terraform + Ansible — requires PG)
 sandbox-iac:
     #!/usr/bin/env bash
     set -e

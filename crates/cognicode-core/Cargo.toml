@@ -6,18 +6,15 @@ edition.workspace = true
 authors.workspace = true
 
 [features]
-# Default is `["persistence", "postgres"]`. The Graph Intelligence v2
-# cleanup removed the `sqlite` feature and its gated code paths
-# (`open_db`, `open_fts_db`, `record_tool_usage`, agent_outputs
-# persistence, dashboard telemetry) — the workspace default build is
-# rusqlite-free. PostgreSQL remains the canonical persistence layer.
-default = ["persistence", "postgres"]
+# Default is `["persistence"]`. The Graph Intelligence v2 cleanup removed
+# the `sqlite` feature and its gated code paths (`open_db`, `open_fts_db`,
+# `record_tool_usage`, agent_outputs persistence, dashboard telemetry) —
+# the workspace default build is rusqlite-free. LadybugDB is the canonical
+# persistence backend (e29-7 full postgres removal); the domain ports are
+# unconditionally available and adapters implement them against lbug.
+default = ["persistence"]
 rig = ["dep:rig-core"]
 persistence = ["dep:blake3"]
-# `postgres` is additive to `persistence` — both can be active simultaneously.
-# When enabled, the workspace `sqlx` dep is pulled in with its
-# `runtime-tokio` + `postgres` features.
-postgres = ["dep:sqlx", "dep:sqlx-postgres"]
 # `multimodal` is an opt-in feature that enables the Generic Graph
 # Layer (`NodeKind`, `EdgeKind`, `NodeId`, `GraphNode`, `GraphEdge`)
 # and the docs-source adapter (`SourceExtractor`, `DocsExtractor`,
@@ -145,14 +142,6 @@ process-wrap.workspace = true
 # can `use pulldown_cmark::…` behind a `#[cfg(feature = "multimodal")]`
 # guard without needing the dep to be optional.
 pulldown-cmark.workspace = true
-
-# PostgreSQL async driver — optional, gated behind the `postgres` feature.
-# When the feature is off, this dep is absent from the build graph.
-sqlx = { workspace = true, optional = true }
-
-# sqlx-postgres internals (for PgListener — NOT re-exported from the main sqlx crate).
-# Version must track the workspace sqlx version (0.8).
-sqlx-postgres = { version = "0.8", optional = true }
 
 # UUID v4 — CSPRNG-based, replaces hand-rolled implementation.
 uuid = { workspace = true, features = ["v4", "serde"] }

@@ -77,110 +77,28 @@ impl CogniCodeHandler {
         }
     }
 
-    /// M3.1: Creates a CogniCodeHandler with an IacRepository wired from pg_repo.
+    /// Creates a CogniCodeHandler with an optional IacRepository.
     ///
     /// When `iac_repo` is `Some`, the handler will use it for `iac_query`
-    /// instead of falling back to the in-memory graph. This is the preferred
-    /// constructor when running with PostgreSQL persistence.
-    #[cfg(feature = "postgres")]
+    /// instead of falling back to the in-memory graph.
     pub fn with_iac_repo(
         project_root: PathBuf,
         store: Arc<dyn crate::domain::traits::GraphStore>,
-        iac_repo: Arc<dyn crate::domain::traits::iac_repository::IacRepository>,
+        iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
     ) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
         let mut ctx = HandlerContext::builder()
             .with_working_dir(project_root)
-            .with_graph_store_arc(store)
-            .with_iac_repo(iac_repo)
-            .build();
+            .with_graph_store_arc(store);
+        if let Some(repo) = iac_repo {
+            ctx = ctx.with_iac_repo(repo);
+        }
+        let mut ctx = ctx.build();
         ctx.cancellation_token = cancellation_token.clone();
         Self {
             ctx: Arc::new(ctx),
             cancellation_token,
         }
-    }
-
-    /// Fallback for no-cfg builds
-    #[cfg(not(feature = "postgres"))]
-    pub fn with_iac_repo(
-        project_root: PathBuf,
-        store: Arc<dyn crate::domain::traits::GraphStore>,
-        _iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
-    ) -> Self {
-        let cancellation_token = Arc::new(AtomicBool::new(false));
-        let mut ctx = HandlerContext::builder()
-            .with_working_dir(project_root)
-            .with_graph_store_arc(store)
-            .build();
-        ctx.cancellation_token = cancellation_token.clone();
-        Self {
-            ctx: Arc::new(ctx),
-            cancellation_token,
-        }
-    }
-
-    /// Mode B: Creates a CogniCodeHandler with PostgreSQL-backed repositories.
-    ///
-    /// Wires both `postgres_repo` (for graph_diff, graph_timeline) and `iac_repo`
-    /// (for iac_query) from a single PG connection pool. This is the preferred
-    /// constructor when `--postgres <URL>` is provided to `cognicode-mcp`.
-    ///
-    /// Returns an error if the PostgreSQL connection fails.
-    #[cfg(feature = "postgres")]
-    pub async fn with_pg(project_root: PathBuf, pg_url: &str) -> Result<Self, String> {
-        use crate::infrastructure::persistence::{PostgresIacRepository, PostgresRepository};
-        use sqlx::PgPool;
-
-        // Connect to PostgreSQL
-        let pool = PgPool::connect(pg_url)
-            .await
-            .map_err(|e| format!("Failed to connect to PostgreSQL: {}", e))?;
-
-        // Wrap in PostgresRepository (provides run_migrations if needed)
-        let pg_repo = Arc::new(PostgresRepository::from_pool(pool.clone()));
-
-        // Create IacRepository from the same pool
-        let iac_repo: Arc<dyn crate::domain::traits::iac_repository::IacRepository> =
-            Arc::new(PostgresIacRepository::new(pool));
-
-        // Build HandlerContext with PG-backed repos (mirrors build_ctx structure)
-        let cancellation_token = Arc::new(AtomicBool::new(false));
-        let canonical_root =
-            std::fs::canonicalize(&project_root).unwrap_or_else(|_| project_root.clone());
-
-        let validator = Arc::new(
-            crate::interface::mcp::security::InputValidator::new()
-                .with_workspace(vec![canonical_root.clone()]),
-        );
-        let file_ops_service = Arc::new(FileOperationsService::new(
-            canonical_root.to_string_lossy().as_ref(),
-            validator,
-            Arc::new(RustVerifier::new()),
-        ));
-
-        let mut ctx = HandlerContext::builder()
-            .with_working_dir(canonical_root)
-            .with_file_ops_service(file_ops_service)
-            .with_postgres_repo(pg_repo)
-            .with_iac_repo(iac_repo)
-            .build();
-        ctx.cancellation_token = cancellation_token.clone();
-
-        Ok(Self {
-            ctx: Arc::new(ctx),
-            cancellation_token,
-        })
-    }
-
-    /// Fallback `with_pg` for builds without the `postgres` feature.
-    /// Mirrors the pattern used by `with_iac_repo`: callers can reference
-    /// `CogniCodeHandler::with_pg(...)` unconditionally, but the build
-    /// without `postgres` will short-circuit with a clear error message
-    /// at runtime instead of failing at link time.
-    #[cfg(not(feature = "postgres"))]
-    pub async fn with_pg(_project_root: PathBuf, _pg_url: &str) -> Result<Self, String> {
-        Err("with_pg requires the `postgres` feature on cognicode-core".to_string())
     }
 
     fn build_ctx(project_root: PathBuf) -> HandlerContext {
@@ -1059,40 +977,6 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     .with_meta(cognicode_meta("stable", "quality", true, false, 2000)),
 
     // Batch D: Agent Task Tools (bidirectional interaction)
-                    // Sprint 5.3: graph_diff and graph_timeline tools
-                    Tool::new(
-                        "graph_diff",
-                        "Compare two graph reports by date to show changes in symbol count, edge count, and health score. Requires PostgresRepository.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "baseline_date": {
-                                    "type": "string",
-                                    "description": "Baseline date to compare against (YYYY-MM-DD format)"
-                                },
-                                "current": {
-                                    "type": "boolean",
-                                    "description": "If true, compare against the latest report (default: false)"
-                                }
-                            },
-                            "required": ["baseline_date"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("gated", "graph", true, true, 2000)),
-                    Tool::new(
-                        "graph_timeline",
-                        "Show trend data over N days for symbol count, edge count, and health score. Requires PostgresRepository.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "days": {
-                                    "type": "integer",
-                                    "description": "Number of days to look back (default: 30)"
-                                }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("gated", "graph", true, true, 2000)),
                     Tool::new(
                         "graph_analyze",
                         "Run advanced graph algorithms: scc, reduced, or feedback_arcs.",
@@ -1130,17 +1014,6 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                         }).as_object().cloned().unwrap()),
                     )
                     .with_meta(cognicode_meta("stable", "composite", true, false, 2000)),
-                    Tool::new(
-                        "compare_graph",
-                        "Compare the current call graph snapshot vs the latest PostgreSQL graph_report. Shows added/removed symbols and metric deltas. Requires PostgreSQL persistence.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "baseline": { "type": "string", "description": "Baseline reference: 'latest' or a date string YYYY-MM-DD (default: 'latest')" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("gated", "composite", true, true, 2000)),
                     Tool::new(
                         "check_architecture",
                         "Detect cycles and architecture violations using Tarjan SCC algorithm. Requires build_graph first.",
@@ -1202,7 +1075,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     .with_meta(cognicode_meta("experimental", "graph", false, true, 200)),
                     Tool::new(
                         "iac_query",
-                        "Query infrastructure-as-code resources (Terraform, Ansible) and their dependencies from the graph. Requires build_graph first. Accepts bare resource names (aws_instance.web) or canonical IDs (tf:main.tf:aws_instance.web). Returns resource type, dependencies, and dependents. Uses PostgreSQL when available for persistent storage; falls back to in-memory graph.",
+                        "Query infrastructure-as-code resources (Terraform, Ansible) and their dependencies from the graph. Requires build_graph first. Accepts bare resource names (aws_instance.web) or canonical IDs (tf:main.tf:aws_instance.web). Returns resource type, dependencies, and dependents. Uses the in-memory graph (ladybug persistence is wired at the runtime layer).",
                         Arc::new(serde_json::json!({
                             "type": "object",
                             "properties": {
@@ -1213,17 +1086,6 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                         }).as_object().cloned().unwrap()),
                     )
                     .with_meta(cognicode_meta("experimental", "infra", true, true, 500)),
-                    Tool::new(
-                        "ingest",
-                        "Run the full ingest pipeline (scan + extract + pg_upsert) on a workspace directory. Populates PostgreSQL with graph nodes and edges for IaC resources (Terraform, Ansible) and code symbols. Must be called before iac_query when using Mode B (--postgres). Requires PostgreSQL connection (build_graph is not a dependency).",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "directory": { "type": "string", "description": "Directory to ingest (defaults to working directory)" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "infra", true, true, 30000)),
                     Tool::new(
                         "review_pr",
                         "Analyze PR impact: provide changed files, get risk level, impacted files, and breaking changes.",
@@ -1973,16 +1835,6 @@ async fn call_tool_handler(
                 .await?;
                 Ok(serde_json::to_string_pretty(&output)?)
             }
-            "compare_graph" => {
-                let input: crate::interface::mcp::schemas::CompareGraphInput =
-                    serde_json::from_value(arguments.into())?;
-                let output =
-                    crate::interface::mcp::handlers::consolidated_handlers::handle_compare_graph(
-                        ctx, input,
-                    )
-                    .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
-            }
             "codebase_map" => {
                 let input: crate::interface::mcp::handlers::consolidated_handlers::CodebaseMapInput =
                 serde_json::from_value(arguments.into())?;
@@ -2020,15 +1872,6 @@ async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
-            }
-            "ingest" => {
-                let input: crate::interface::mcp::handlers::consolidated_handlers::IngestInput =
-                    serde_json::from_value(arguments.into())?;
-                let output = crate::interface::mcp::handlers::consolidated_handlers::handle_ingest(
-                    ctx, input,
-                )
-                .await?;
                 Ok(serde_json::to_string_pretty(&output)?)
             }
             // SOLID Audit tool
@@ -2082,26 +1925,6 @@ async fn call_tool_handler(
                 Ok(serde_json::to_string_pretty(&output)?)
             }
             // Sprint 5.3: graph_diff and graph_timeline tools
-            "graph_diff" => {
-                let input: crate::interface::mcp::handlers::consolidated_handlers::GraphDiffInput =
-                    serde_json::from_value(arguments.into())?;
-                let output =
-                    crate::interface::mcp::handlers::consolidated_handlers::handle_graph_diff(
-                        ctx, input,
-                    )
-                    .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
-            }
-            "graph_timeline" => {
-                let input: crate::interface::mcp::handlers::consolidated_handlers::GraphTimelineInput =
-                serde_json::from_value(arguments.into())?;
-                let output =
-                    crate::interface::mcp::handlers::consolidated_handlers::handle_graph_timeline(
-                        ctx, input,
-                    )
-                    .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
-            }
             // ViewSpec tools (ADR-008)
             "list_view_specs" => {
                 let input: crate::interface::mcp::schemas::ListViewSpecsInput =

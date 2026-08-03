@@ -1,6 +1,6 @@
 //! Compile fixture graph — a 10-node / 15-edge call graph used by
 //! the compile + parity tests. Edges carry provenance (lsp, tree_sitter,
-//! postgres) and a confidence value in [0.0, 1.0] so the WHERE-filter
+//! snapshot) and a confidence value in [0.0, 1.0] so the WHERE-filter
 //! branch tests have real data to filter against.
 //!
 //! ## Layout
@@ -17,7 +17,7 @@
 //!
 //! Edges from `1→2`, `1→5`, `7→8`, `9→8` are `lsp`.
 //! Edges from `2→3`, `2→6`, `8→9` are `tree_sitter`.
-//! Edges from `3→4`, `5→6` are `postgres`.
+//! Edges from `3→4`, `5→6` are `snapshot`.
 //!
 //! ## Confidence
 //!
@@ -67,13 +67,13 @@ pub const FIXTURE_EDGES: &[FixtureEdge] = &[
     FixtureEdge {
         from: 3,
         to: 4,
-        provenance: "postgres",
+        provenance: "snapshot",
         confidence: 0.0,
     },
     FixtureEdge {
         from: 5,
         to: 6,
-        provenance: "postgres",
+        provenance: "snapshot",
         confidence: 0.0,
     },
     FixtureEdge {
@@ -98,13 +98,13 @@ pub const FIXTURE_EDGES: &[FixtureEdge] = &[
     FixtureEdge {
         from: 1,
         to: 3,
-        provenance: "postgres",
+        provenance: "snapshot",
         confidence: 0.5,
     },
     FixtureEdge {
         from: 1,
         to: 4,
-        provenance: "postgres",
+        provenance: "snapshot",
         confidence: 0.3,
     },
     FixtureEdge {
@@ -116,19 +116,19 @@ pub const FIXTURE_EDGES: &[FixtureEdge] = &[
     FixtureEdge {
         from: 2,
         to: 4,
-        provenance: "postgres",
+        provenance: "snapshot",
         confidence: 0.0,
     },
     FixtureEdge {
         from: 5,
         to: 3,
-        provenance: "postgres",
+        provenance: "snapshot",
         confidence: 0.0,
     },
     FixtureEdge {
         from: 6,
         to: 4,
-        provenance: "postgres",
+        provenance: "snapshot",
         confidence: 0.0,
     },
 ];

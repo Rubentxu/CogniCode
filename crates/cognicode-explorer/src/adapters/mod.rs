@@ -7,18 +7,6 @@ pub mod call_graph_repository;
 pub mod fs_source_reader;
 pub mod in_memory_graph_repository;
 
-/// PG-backed adapter for the `RouteStore` port (cycle e15.5).
-/// Compiled only when the `postgres` feature is enabled; backs the
-/// `cognicode_ingest_openapi` handler's persistence path and the
-/// `cognicode_trace_route` tool's reverse lookup.
-#[cfg(feature = "postgres")]
-pub mod postgres_route_store;
-
-/// PG-backed adapter for the `GraphRepository` port (read+write).
-/// Compiled only when the `postgres` feature is enabled.
-#[cfg(feature = "postgres")]
-pub mod pg_graph_repository;
-
 /// Graph-shaped quality hotspot adapter combining fan-in with weighted issue counts.
 /// Used by the `RiskMap` view.
 pub mod quality_graph_repository;
@@ -26,15 +14,4 @@ pub mod quality_graph_repository;
 pub use call_graph_repository::CallGraphRepository;
 pub use fs_source_reader::FsSourceReader;
 pub use in_memory_graph_repository::InMemoryGraphRepository;
-#[cfg(feature = "postgres")]
-pub use pg_graph_repository::PgGraphRepository;
-#[cfg(feature = "postgres")]
-pub use postgres_route_store::PostgresRouteStore;
 pub use quality_graph_repository::{HotspotNode, QualityGraphRepository, RelEdge, TraversalFilter};
-
-/// Re-export the Postgres-backed `QualityStore` adapter from
-/// `cognicode-core` so the runtime and existing explorer consumers can
-/// continue to use `cognicode_explorer::adapters::PostgresQualityStore`
-/// (PR2 port relocation).
-#[cfg(feature = "postgres")]
-pub use cognicode_core::domain::ports::PostgresQualityStore;

@@ -46,8 +46,6 @@ pub use on_demand_graph::{
 };
 pub use per_file_graph::PerFileGraphCache;
 pub use pet_graph_store::PetGraphStore;
-#[cfg(feature = "postgres")]
-pub use snapshot_provider::SnapshotProviderImpl;
 pub use snapshot_provider::{SnapshotError, SnapshotEvent, SnapshotProvider};
 pub use strategy::{
     FullGraphStrategy, GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy,
