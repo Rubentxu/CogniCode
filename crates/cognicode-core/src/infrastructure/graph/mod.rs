@@ -34,8 +34,9 @@ mod incremental_scanner;
 #[cfg(test)]
 mod checkpoint_tests;
 
-pub use call_graph_projection::{
-    CallGraphProjection, ExplanationHop, ExplanationView, ProjectionError, SubgraphDirection,
+pub use call_graph_projection::CallGraphProjection;
+pub use crate::domain::ports::call_graph_projection::{
+    CallGraphProjectionPort, ExplanationHop, ExplanationView, ProjectionError, SubgraphDirection,
     SubgraphEdge, SubgraphView,
 };
 pub use checkpoint::{CheckpointId, VersionedGraphCache};

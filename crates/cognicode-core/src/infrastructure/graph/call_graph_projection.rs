@@ -64,6 +64,10 @@ use petgraph::visit::{EdgeRef, IntoEdgeReferences, NodeIndexable};
 use cognicode_graph_algos::GraphBuilder;
 
 use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
+use crate::domain::ports::call_graph_projection::{
+    CallGraphProjectionPort, ExplanationHop, ExplanationView, SubgraphDirection, SubgraphEdge,
+    SubgraphView,
+};
 use crate::domain::value_objects::DependencyType;
 
 /// Edge weight stored on the projection: `(dependency_type, sanitized_confidence)`.
@@ -85,19 +89,10 @@ pub struct CallGraphProjection {
     id_to_index: HashMap<SymbolId, NodeIndex>,
 }
 
-/// Errors that a projection algorithm can return.
-///
-/// Currently only [`ProjectionError::CycleDetected`] is reachable from
-/// [`CallGraphProjection::topological_sort`]. Additional variants are kept
-/// private to the module so the public surface is the minimum required by
-/// the spec.
-#[derive(Debug, thiserror::Error)]
-pub enum ProjectionError {
-    /// The graph contains a directed cycle and a topological ordering is
-    /// therefore impossible.
-    #[error("cycle detected in graph")]
-    CycleDetected,
-}
+// Re-export the domain-declared error type so the existing public path
+// `cognicode_core::infrastructure::graph::ProjectionError` keeps working
+// for external consumers (explorer, MCP handlers, benches).
+pub use crate::domain::ports::call_graph_projection::ProjectionError;
 
 /// Normalize a raw `f64` confidence value into the closed interval
 /// `[0.0, 1.0]`.
@@ -210,6 +205,16 @@ impl CallGraphProjection {
     /// Used to translate algorithm results (which use `NodeIndex`) back
     /// to the domain-level `SymbolId` for MCP/tool output.
     pub fn id_to_index(&self) -> &HashMap<SymbolId, NodeIndex> {
+        &self.id_to_index
+    }
+
+    /// Access the `SymbolId` -> `NodeIndex` mapping (read-only).
+    ///
+    /// Port-surface name for [`Self::id_to_index`]: consumers migrating to
+    /// [`CallGraphProjectionPort`] call `symbol_index()` instead of the
+    /// infra-specific `id_to_index()`. The two accessors return the same
+    /// map (approval-pinned by `symbol_index_mirrors_id_to_index`).
+    pub fn symbol_index(&self) -> &HashMap<SymbolId, NodeIndex> {
         &self.id_to_index
     }
 
@@ -615,7 +620,7 @@ impl CallGraphProjection {
     /// that treat the call graph as an undirected connectivity graph.
     pub fn build_undirected_neighbors(&self) -> Vec<Vec<usize>> {
         let bound = self.graph.node_bound();
-        let (in_neighbors, _) = self.build_adjacency();
+        let (in_neighbors, _) = GraphBuilder::build_adjacency(self);
         let out_neighbors = self.build_out_neighbors();
 
         let mut undirected: Vec<Vec<usize>> = vec![Vec::new(); bound];
@@ -682,65 +687,96 @@ impl GraphBuilder for CallGraphProjection {
     }
 }
 
+impl CallGraphProjectionPort for CallGraphProjection {
+    fn node_count(&self) -> usize {
+        self.node_count()
+    }
+
+    fn edge_count(&self) -> usize {
+        self.edge_count()
+    }
+
+    fn symbol_count(&self) -> usize {
+        self.symbol_count()
+    }
+
+    fn resolve_symbol(&self, id: &SymbolId) -> Option<&Symbol> {
+        self.resolve_symbol(id)
+    }
+
+    fn symbol_index(&self) -> &HashMap<SymbolId, NodeIndex> {
+        self.symbol_index()
+    }
+
+    fn build_adjacency(&self) -> (Vec<Vec<usize>>, Vec<usize>) {
+        GraphBuilder::build_adjacency(self)
+    }
+
+    fn build_out_neighbors(&self) -> Vec<Vec<usize>> {
+        self.build_out_neighbors()
+    }
+
+    fn build_undirected_neighbors(&self) -> Vec<Vec<usize>> {
+        self.build_undirected_neighbors()
+    }
+
+    fn topological_sort(&self) -> Result<Vec<SymbolId>, ProjectionError> {
+        self.topological_sort()
+    }
+
+    fn strongly_connected_components(&self) -> Vec<Vec<SymbolId>> {
+        self.strongly_connected_components()
+    }
+
+    fn connected_components(&self) -> Vec<Vec<SymbolId>> {
+        self.connected_components()
+    }
+
+    fn detect_cycles(&self) -> bool {
+        self.detect_cycles()
+    }
+
+    fn has_path(&self, from: &SymbolId, to: &SymbolId) -> bool {
+        self.has_path(from, to)
+    }
+
+    fn dijkstra(&self, from: &SymbolId, to: &SymbolId) -> Option<(Vec<SymbolId>, f64)> {
+        self.dijkstra(from, to)
+    }
+
+    fn find_impact_radius(&self, root: &SymbolId, max_depth: usize) -> Vec<SymbolId> {
+        self.find_impact_radius(root, max_depth)
+    }
+
+    fn find_forward_reach(&self, root: &SymbolId, max_depth: usize) -> Vec<SymbolId> {
+        self.find_forward_reach(root, max_depth)
+    }
+
+    fn extract_subgraph(
+        &self,
+        root: &SymbolId,
+        direction: SubgraphDirection,
+        max_depth: usize,
+    ) -> SubgraphView {
+        self.extract_subgraph(root, direction, max_depth)
+    }
+
+    fn explain_path(&self, from: &SymbolId, to: &SymbolId) -> Option<ExplanationView> {
+        self.explain_path(from, to)
+    }
+}
+
 // ============================================================================
-// Subgraph primitives
+// Subgraph / explain primitives
 // ============================================================================
-
-/// Direction selector for [`CallGraphProjection::extract_subgraph`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SubgraphDirection {
-    /// Walk outgoing edges (successors of the root).
-    Outgoing,
-    /// Walk incoming edges (predecessors of the root).
-    Incoming,
-    /// Walk both outgoing and incoming edges (BFS treats them as one
-    /// unified frontier; the BFS depth still increases by 1 per
-    /// traversal step, regardless of direction).
-    Both,
-}
-
-/// A typed edge in a [`SubgraphView`]: carries the symbol endpoints,
-/// the [`DependencyType`] and the sanitized confidence.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SubgraphEdge {
-    pub source: SymbolId,
-    pub target: SymbolId,
-    pub dependency_type: DependencyType,
-    pub confidence: f64,
-}
-
-/// A neighborhood subgraph of a [`CallGraphProjection`]: the set of
-/// nodes reachable from `root` within `max_depth` hops in the chosen
-/// direction, plus every edge traversed.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct SubgraphView {
-    pub nodes: Vec<SymbolId>,
-    pub edges: Vec<SubgraphEdge>,
-}
-
-// ============================================================================
-// Explain primitives
-// ============================================================================
-
-/// A single hop on an explanation path: the (from, to) symbols, the
-/// edge's [`DependencyType`] and confidence, plus a human-readable
-/// `rationale` string (e.g. `"calls"`, `"inherits from"`).
-#[derive(Debug, Clone, PartialEq)]
-pub struct ExplanationHop {
-    pub from: SymbolId,
-    pub to: SymbolId,
-    pub dependency_type: DependencyType,
-    pub confidence: f64,
-    pub rationale: String,
-}
-
-/// A complete explanation: ordered list of hops plus the sum of edge
-/// costs along the chosen path.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ExplanationView {
-    pub hops: Vec<ExplanationHop>,
-    pub total_cost: f64,
-}
+//
+// The `SubgraphDirection`, `SubgraphEdge`, `SubgraphView`, `ExplanationHop`,
+// and `ExplanationView` types moved to the domain port module
+// (`crate::domain::ports::call_graph_projection`) so the port trait can
+// reference them without depending on infrastructure. This module imports
+// them at the top of the file; the public paths under
+// `cognicode_core::infrastructure::graph::*` are re-exported from
+// `infrastructure/graph/mod.rs`.
 
 /// Map a [`DependencyType`] to a human-readable verb phrase used by
 /// `graph_explain` as the `rationale` of each hop.
@@ -1483,5 +1519,57 @@ mod tests {
                 view.hops[0].dependency_type,
             );
         }
+    }
+
+    // e29-3 Phase 1 (RED): the domain port trait must exist and the infra
+    // projection must dispatch through it with identical behavior.
+    #[test]
+    fn port_dispatch_via_call_graph_projection_port() {
+        use crate::domain::ports::call_graph_projection::CallGraphProjectionPort;
+
+        let g = build_graph(|g| {
+            g.add_symbol(sym("A"));
+            g.add_symbol(sym("B"));
+            g.add_symbol(sym("C"));
+            add_edge(g, "A", "B", DependencyType::Calls);
+            add_edge(g, "B", "C", DependencyType::Imports);
+        });
+        let concrete = CallGraphProjection::from_call_graph(&g);
+        let port: &dyn CallGraphProjectionPort = &concrete;
+
+        assert_eq!(port.node_count(), 3);
+        assert_eq!(port.edge_count(), 2);
+        assert_eq!(port.symbol_count(), 3);
+        assert!(port.has_path(&id("A"), &id("C")));
+        assert!(!port.has_path(&id("C"), &id("A")));
+        assert_eq!(
+            port.topological_sort().unwrap(),
+            vec![id("A"), id("B"), id("C")]
+        );
+    }
+
+    // e29-3 Phase 1 (RED): the inherent `symbol_index` accessor must mirror
+    // `id_to_index` exactly (approval test — refactoring the accessor name).
+    #[test]
+    fn symbol_index_mirrors_id_to_index() {
+        let g = build_graph(|g| {
+            g.add_symbol(sym("A"));
+            g.add_symbol(sym("B"));
+            add_edge(g, "A", "B", DependencyType::Calls);
+        });
+        let projection = CallGraphProjection::from_call_graph(&g);
+
+        assert_eq!(projection.symbol_index().len(), 2);
+        for (sid, ni) in projection.id_to_index() {
+            assert_eq!(
+                projection.symbol_index().get(sid),
+                Some(ni),
+                "symbol_index must mirror id_to_index for {sid:?}"
+            );
+        }
+        assert_eq!(
+            projection.symbol_index().get(&id("A")),
+            projection.id_to_index().get(&id("A")),
+        );
     }
 }

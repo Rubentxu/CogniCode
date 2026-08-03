@@ -25,6 +25,7 @@
 //!
 //! The `multimodal` feature gates the WRITE/exTRACTION path only.
 
+pub mod call_graph_projection;
 pub mod call_graph_store;
 #[cfg(feature = "multimodal")]
 pub mod federation_store;
@@ -43,6 +44,10 @@ pub mod revision_store;
 pub mod session_store;
 pub mod view_spec_store;
 
+pub use call_graph_projection::{
+    project_call_graph, CallGraphProjectionPort, ExplanationHop, ExplanationView, ProjectionError,
+    SubgraphDirection, SubgraphEdge, SubgraphView,
+};
 pub use call_graph_store::{CallGraphError, CallGraphStore};
 #[cfg(feature = "multimodal")]
 pub use federation_store::{FederationError, FederationStore};
