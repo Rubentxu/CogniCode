@@ -1,12 +1,12 @@
 //! Domain port for atomic revision publication.
 //!
-//! `IngestCommit` is the transactional unit-of-work for the Ingest pipeline.
+//! `IngestCommitPort` is the transactional unit-of-work for the Ingest pipeline.
 //! It accepts a delta for each stage (graph, manifest, report) and produces
 //! a new revision id, effectively "publishing" a coherent snapshot.
 //!
 //! ## Phase 0 reconciliation
 //!
-//! The [`PostgresIngestCommit`] adapter below now wraps the three stages in
+//! The [`PostgresIngestCommitPort`] adapter below now wraps the three stages in
 //! a single `pool.begin()` transaction so failures in any stage roll back
 //! the whole commit (no orphan revisions on a partial failure). Each
 //! stage's SQL lives inside the tx via the underlying `&mut PgConnection`
@@ -14,7 +14,7 @@
 //! stages execute inline SQL through the same tx because the per-row
 //! port methods deliberately use their own connection (per ADR-028 §3
 //! `ManifestStore::upsert_manifest_entry(&self, row)` is a tx-free
-//! convenience for individual ingest rows; the IngestCommit contract
+//! convenience for individual ingest rows; the IngestCommitPort contract
 //! overrides that contract to require tx-atomicity).
 //!
 //! This module is gated behind `#[cfg(feature = "multimodal")]` because
@@ -76,7 +76,7 @@ pub struct ReportIntent {
 /// Port for atomic revision publication.
 #[async_trait]
 #[cfg(feature = "multimodal")]
-pub trait IngestCommit: Send + Sync {
+pub trait IngestCommitPort: Send + Sync {
     /// Commit a new revision, atomically publishing the given deltas.
     ///
     /// In Phase 0 this is a sequential wrapper around the per-stage
@@ -94,7 +94,7 @@ pub trait IngestCommit: Send + Sync {
 // Error type
 // ---------------------------------------------------------------------------
 
-/// Error type for [`IngestCommit`] operations.
+/// Error type for [`IngestCommitPort`] operations.
 ///
 /// Three variants — one per domain stage — allow callers to distinguish
 /// which stage failed without propagating infrastructure types across the

@@ -45,7 +45,7 @@
 //! | 6 | `ViewSpecStore` | JSON-payload CRD store (post `ViewSpecPayload` bridge) | DONE (12 in-crate tests) |
 //! | 7 | `QualityStore` | 10-method port split across `issues`, `baselines`, `rules` | DONE (12 in-crate tests; SYNC trait) |
 //! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | DONE (8 in-crate tests) |
-//! | 9 | `IngestCommit` | Composite atomic tx (per ADR-015) — requires all 8 prior ports | DONE (multimodal-gated; 6 in-crate tests) |
+//! | 9 | `IngestCommitPort` | Composite atomic tx (per ADR-015) — requires all 8 prior ports | DONE (multimodal-gated; 6 in-crate tests) |
 
 use std::path::Path;
 use std::sync::Arc;
@@ -72,14 +72,14 @@ use cognicode_core::domain::ports::{
 };
 use cognicode_core::domain::value_objects::{DependencyType, RevisionId, WorkspaceId};
 
-// `FederationStore`, `IngestCommit`, and the `Space`/`SpaceId` value
+// `FederationStore`, `IngestCommitPort`, and the `Space`/`SpaceId` value
 // objects they operate on are gated behind the `multimodal` feature
 // in `cognicode-core`. The default build (no multimodal) skips them;
 // the follow-up PR that flips multimodal to ON also wires these.
 #[cfg(feature = "multimodal")]
 use cognicode_core::domain::ports::{
     federation_store::{FederationError, FederationStore},
-    ingest_commit::{CommitError, GraphDelta, IngestCommit, ManifestDelta, ReportIntent},
+    ingest_commit_port::{CommitError, GraphDelta, IngestCommitPort, ManifestDelta, ReportIntent},
 };
 #[cfg(feature = "multimodal")]
 use cognicode_core::domain::value_objects::{Space, SpaceId};
@@ -1082,7 +1082,7 @@ impl CallGraphStore for LadybugStore {
 
 #[cfg(feature = "multimodal")]
 #[async_trait]
-impl IngestCommit for LadybugStore {
+impl IngestCommitPort for LadybugStore {
     async fn commit_revision(
         &self,
         ws: &WorkspaceId,
@@ -2589,7 +2589,7 @@ mod tests {
         fn _check<T: Send + Sync>()
         where
             T: FederationStore,
-            T: IngestCommit,
+            T: IngestCommitPort,
         {
         }
     }
@@ -3052,7 +3052,7 @@ mod tests {
     }
 
     // --------------------------------------------------------------------
-    // IngestCommit (Priority 9, gated behind `multimodal`)
+    // IngestCommitPort (Priority 9, gated behind `multimodal`)
     // --------------------------------------------------------------------
 
     #[cfg(feature = "multimodal")]

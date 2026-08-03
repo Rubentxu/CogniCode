@@ -4,7 +4,7 @@
 //! The PG-bound stages (pg_upsert_stage, service run_scan, and the
 //! `IngestController` job orchestrator) were removed with the full
 //! postgres removal (e29-7). The remaining stages are PG-free; the
-//! IngestCommit port (implemented by ladybug) is the persistence seam.
+//! IngestCommitPort (implemented by ladybug) is the persistence seam.
 
 pub mod analyzer;
 pub mod edge_diff;
