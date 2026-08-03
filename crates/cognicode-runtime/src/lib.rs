@@ -27,7 +27,6 @@ pub struct Runtime {
     /// live or lbug 0.19). The runtime uses this for port
     /// construction. `None` when no backend was provided (legacy
     /// bootstrap path).
-    #[cfg(feature = "postgres")]
     pub backend: Option<Arc<dyn PgBackend>>,
     /// Shared revision tracker — bumped by `index_workspace` after each successful ingest.
     pub revision_tracker: Arc<AtomicU64>,
@@ -35,12 +34,10 @@ pub struct Runtime {
     /// `cognicode_explorer::ports::quality_repository::QualityRepository`
     /// to the unified `cognicode_core::domain::ports::QualityStore`).
     /// `None` when the PG adapter couldn't be constructed.
-    #[cfg(feature = "postgres")]
     pub quality_store: Option<Arc<dyn cognicode_explorer::ports::QualityStore>>,
     /// Optional `ViewSpecStore` port (PR2 relocation from
     /// `cognicode_explorer::registry::ViewSpecStore` to
     /// `cognicode_core::domain::ports::ViewSpecStore`).
-    #[cfg(feature = "postgres")]
     pub view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>>,
     /// Optional `CallGraphStore` port (e29-0-refactor-call-sites).
     /// Mirrors the `PostgresRepository::save_call_graph_ws` /
@@ -48,7 +45,6 @@ pub struct Runtime {
     /// surfaces behind the new domain port so consumers (`PgGraphExecutor`,
     /// `postgres_bridge`) depend on `Arc<dyn CallGraphStore>` instead
     /// of the concrete `PostgresRepository` for this aggregate.
-    #[cfg(feature = "postgres")]
     pub call_graph_store: Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>,
 }
 
@@ -200,6 +196,8 @@ impl Runtime {
         } else {
             None
         };
+        #[cfg(not(feature = "postgres"))]
+        let backend: Option<Arc<dyn PgBackend>> = None;
 
         let symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository> =
             if let Some(ref g) = graph {
@@ -257,21 +255,11 @@ impl Runtime {
             graph,
             cwd,
             graph_cache,
-            #[cfg(feature = "postgres")]
             backend,
             revision_tracker: Arc::new(AtomicU64::new(1)),
-            #[cfg(feature = "postgres")]
             quality_store,
-            #[cfg(not(feature = "postgres"))]
-            quality_store: None,
-            #[cfg(feature = "postgres")]
             view_spec_store,
-            #[cfg(not(feature = "postgres"))]
-            view_spec_store: None,
-            #[cfg(feature = "postgres")]
             call_graph_store,
-            #[cfg(not(feature = "postgres"))]
-            call_graph_store: None,
         })
     }
 
@@ -361,8 +349,8 @@ impl Runtime {
         let persistence: Arc<dyn cognicode_explorer::facades::PersistenceService> = Arc::new(
             cognicode_explorer::facades::persistence::PersistenceServiceImpl::new(
                 None, // view_spec_store
-                #[cfg(feature = "postgres")]
-                self.backend.as_ref().and_then(|b| b.as_postgres_repo()), // postgres_repo
+                // postgres_repo — None when the backend is lbug
+                self.backend.as_ref().and_then(|b| b.as_postgres_repo()),
             ),
         );
 
@@ -540,7 +528,7 @@ impl Runtime {
                 .as_ref(),
         );
         #[cfg(not(feature = "postgres"))]
-        let route_store = None;
+        let route_store: Option<Arc<dyn cognicode_explorer::ports::RouteStore>> = None;
 
         cognicode_explorer::mcp::ExplorerMcpHandler::with_graph(
             self.symbol_repo,
@@ -552,9 +540,7 @@ impl Runtime {
             quality,
             quality_write,
             self.revision_tracker,
-            #[cfg(feature = "multimodal")]
             route_store,
-            #[cfg(feature = "postgres")]
             self.backend.as_ref().and_then(|b| b.as_postgres_repo()),
         )
     }

@@ -385,8 +385,8 @@ impl ExplorerMcpHandler {
         quality_repo: Option<Arc<dyn crate::ports::QualityStore>>,
         quality_write: Option<Arc<dyn crate::ports::QualityStore>>,
         revision_tracker: Arc<std::sync::atomic::AtomicU64>,
-        #[cfg(feature = "multimodal")] route_store: Option<Arc<dyn crate::ports::RouteStore>>,
-        #[cfg(feature = "postgres")] pg_repo: Option<
+        #[allow(unused_variables)] route_store: Option<Arc<dyn crate::ports::RouteStore>>,
+        #[allow(unused_variables)] pg_repo: Option<
             Arc<cognicode_core::infrastructure::persistence::PostgresRepository>,
         >,
     ) -> Self {
@@ -429,6 +429,7 @@ impl ExplorerMcpHandler {
         #[cfg(not(feature = "postgres"))]
         let persistence: Arc<dyn PersistenceService> = Arc::new(PersistenceServiceImpl::new(
             None, // view_spec_store
+            None, // postgres_repo
         ));
 
         // View facade (also provides LensService for MoldQL).
