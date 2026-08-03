@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::{CallEntry, CallGraph, Symbol, SymbolId};
-use cognicode_core::domain::ports::NodePropertyReader;
+use cognicode_core::domain::ports::NodePropertyRepository;
 use cognicode_core::domain::traits::graph_query_port::{
     CalleeWithMetadata, CallerWithMetadata, EdgeWithMetadata, GraphQueryPort, RelationTarget,
     RelationTargetWithMetadata,
@@ -263,11 +263,11 @@ impl GraphQueryPort for CallGraphRepository {
     }
 
     /// Sync shim — ownership node properties were PG-backed and are
-    /// removed with e29-7. The async [`NodePropertyReader`] path returns
+    /// removed with e29-7. The async [`NodePropertyRepository`] path returns
     /// None as well.
     #[cfg(feature = "ownership")]
     fn node_properties(&self, _id: &SymbolId) -> Option<std::collections::HashMap<String, String>> {
-        // Sync shim returns None — async NodePropertyReader is the real path.
+        // Sync shim returns None — async NodePropertyRepository is the real path.
         // Keeping the method on the trait (returning None by default) avoids
         // forcing every implementor to do the unsafe block_on dance.
         None
@@ -276,7 +276,7 @@ impl GraphQueryPort for CallGraphRepository {
 
 #[cfg(feature = "ownership")]
 #[async_trait::async_trait]
-impl NodePropertyReader for CallGraphRepository {
+impl NodePropertyRepository for CallGraphRepository {
     async fn node_properties(
         &self,
         _id: &SymbolId,
@@ -657,9 +657,9 @@ mod tests {
         let repo = CallGraphRepository::new(Arc::new(build_graph()));
         // no node property reader is wired by default via new()
         let id = SymbolId::new("src/a.rs:alpha:1");
-        // Use the async NodePropertyReader explicitly to disambiguate from
+        // Use the async NodePropertyRepository explicitly to disambiguate from
         // the sync shim on GraphQueryPort.
-        let result = <CallGraphRepository as NodePropertyReader>::node_properties(&repo, &id).await;
+        let result = <CallGraphRepository as NodePropertyRepository>::node_properties(&repo, &id).await;
         assert!(
             result.is_none(),
             "node_properties must return None when no reader is wired"
@@ -674,7 +674,7 @@ mod tests {
         let repo = CallGraphRepository::new(Arc::new(build_graph()));
         let id = SymbolId::new("src/missing.rs:ghost:99");
         // Should return None, not panic
-        let result = <CallGraphRepository as NodePropertyReader>::node_properties(&repo, &id).await;
+        let result = <CallGraphRepository as NodePropertyRepository>::node_properties(&repo, &id).await;
         assert!(
             result.is_none(),
             "node_properties must return None when no reader is wired"

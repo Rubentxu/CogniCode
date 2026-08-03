@@ -12,7 +12,7 @@
 //! | `graph_error` | `GraphError`, `GraphResult` | existing |
 //! | `graph_repository` | `GraphRepository` | existing |
 //! | `manifest_store` | `ManifestStore` | existing |
-//! | `node_property_reader` | `NodePropertyReader` | existing |
+//! | `node_property_repository` | `NodePropertyRepository` | existing |
 //! | `report_store` | `ReportStore` | existing |
 //! | `session_store` | `SessionStore` | existing |
 //! | `revision_store` | `RevisionStore` | new (PR1) |
@@ -32,7 +32,7 @@ pub mod graph_repository;
 #[cfg(feature = "multimodal")]
 pub mod ingest_commit;
 pub mod manifest_store;
-pub mod node_property_reader;
+pub mod node_property_repository;
 pub mod quality_store;
 pub mod report_store;
 pub mod revision_store;
@@ -51,7 +51,7 @@ pub use graph_repository::{GraphRepository, SearchPage};
 #[cfg(feature = "multimodal")]
 pub use ingest_commit::{CommitError, GraphDelta, IngestCommit, ManifestDelta, ReportIntent};
 pub use manifest_store::{ManifestError, ManifestStore, ScanManifest};
-pub use node_property_reader::NodePropertyReader;
+pub use node_property_repository::NodePropertyRepository;
 pub use quality_store::{
     IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
     RuleSummary, UpsertSummary,
