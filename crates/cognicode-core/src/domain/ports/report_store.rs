@@ -71,5 +71,3 @@ pub enum ReportError {
     #[error("graph report store error: {0}")]
     Store(String),
 }
-
-

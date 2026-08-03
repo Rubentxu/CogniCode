@@ -1145,8 +1145,7 @@ async fn landing_handler(
     // Graph stats — the PG-backed ingest controller was removed with
     // e29-7; the landing surface reports Missing/0 until a graph is
     // available (the graph facade below computes the semantic payload).
-    let (symbol_count, relation_count, graph_status) =
-        (0, 0, crate::dto::GraphStatus::Missing);
+    let (symbol_count, relation_count, graph_status) = (0, 0, crate::dto::GraphStatus::Missing);
 
     // Landing semantic seeds.
     // NOTE: `GraphService` computes these from the Explorer seam

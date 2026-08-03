@@ -47,11 +47,7 @@ pub trait RevisionStore: Send + Sync {
 
     /// Promote an existing revision to be the new head of the workspace.
     /// Demotes any prior head atomically.
-    async fn set_head(
-        &self,
-        ws: &WorkspaceId,
-        rev: RevisionId,
-    ) -> Result<(), RevisionError>;
+    async fn set_head(&self, ws: &WorkspaceId, rev: RevisionId) -> Result<(), RevisionError>;
 }
 
 /// Error type for [`RevisionStore`] operations.
@@ -63,5 +59,3 @@ pub enum RevisionError {
     #[error("revision not found for workspace {0}")]
     NotFound(WorkspaceId),
 }
-
-

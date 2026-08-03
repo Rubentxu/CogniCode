@@ -75,5 +75,3 @@ pub trait GraphWritePort: Send + Sync {
         crate::domain::traits::repository::CallGraphStoreError,
     >;
 }
-
-

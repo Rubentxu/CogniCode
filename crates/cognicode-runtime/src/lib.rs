@@ -120,8 +120,9 @@ pub async fn bootstrap_with_backend(
     // stays functional (searches return empty results).
     let graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>> = None;
     let empty_graph = Arc::new(cognicode_core::domain::aggregates::CallGraph::new());
-    let symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository> =
-        Arc::new(cognicode_explorer::adapters::CallGraphRepository::new(empty_graph));
+    let symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository> = Arc::new(
+        cognicode_explorer::adapters::CallGraphRepository::new(empty_graph),
+    );
 
     Ok(Runtime {
         symbol_repo,
@@ -154,8 +155,9 @@ pub async fn bootstrap(cwd: std::path::PathBuf) -> Result<Runtime, anyhow::Error
         Arc::new(cognicode_core::infrastructure::graph::graph_cache::GraphCache::new());
 
     let empty_graph = Arc::new(cognicode_core::domain::aggregates::CallGraph::new());
-    let symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository> =
-        Arc::new(cognicode_explorer::adapters::CallGraphRepository::new(empty_graph));
+    let symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository> = Arc::new(
+        cognicode_explorer::adapters::CallGraphRepository::new(empty_graph),
+    );
 
     Ok(Runtime {
         symbol_repo,
@@ -199,9 +201,8 @@ impl Runtime {
         );
 
         // Persistence facade — in-memory only (postgres removed).
-        let persistence: Arc<dyn cognicode_explorer::facades::PersistenceService> = Arc::new(
-            cognicode_explorer::facades::persistence::PersistenceServiceImpl::new(None),
-        );
+        let persistence: Arc<dyn cognicode_explorer::facades::PersistenceService> =
+            Arc::new(cognicode_explorer::facades::persistence::PersistenceServiceImpl::new(None));
 
         // Quality facade — wired from the backend port when available.
         let quality: Option<Arc<dyn cognicode_explorer::ports::QualityStore>> =

@@ -9,11 +9,9 @@
 //! so the composition root can wire a single instance and hand clones to
 //! every consumer.
 
-
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::value_objects::{RevisionId, WorkspaceId};
 use std::sync::Arc;
-
 
 /// Errors returned by [`SnapshotProvider`] operations.
 #[derive(Debug, Clone, thiserror::Error)]
@@ -69,10 +67,8 @@ pub trait SnapshotProvider: Send + Sync {
     ///
     /// Implementations MAY batch notifications (e.g. 100ms debounce) to
     /// avoid flooding during bulk ingest operations.
-    fn subscribe(
-        &self,
-        workspace: &WorkspaceId,
-    ) -> tokio::sync::broadcast::Receiver<SnapshotEvent>;
+    fn subscribe(&self, workspace: &WorkspaceId)
+    -> tokio::sync::broadcast::Receiver<SnapshotEvent>;
 }
 
 /// Events emitted by [`SnapshotProvider::subscribe`].

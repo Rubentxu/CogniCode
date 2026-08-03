@@ -262,7 +262,6 @@ pub async fn handle_project_overview(
     })
 }
 
-
 // ── codebase_map ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
@@ -684,9 +683,6 @@ pub async fn handle_iac_query(
     })
 }
 
-
-
-
 // ── graph_checkpoint ──────────────────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
@@ -976,10 +972,7 @@ mod tests {
         };
         let result = handle_read_view_spec(&ctx, input).await;
 
-        assert!(
-            result.is_err(),
-            "Unknown id should error"
-        );
+        assert!(result.is_err(), "Unknown id should error");
         let err = result.unwrap_err();
         assert!(
             matches!(err, HandlerError::NotFound(_)),

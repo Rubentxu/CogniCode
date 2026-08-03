@@ -64,5 +64,3 @@ pub enum ManifestError {
     #[error("scan manifest store error: {0}")]
     Store(String),
 }
-
-

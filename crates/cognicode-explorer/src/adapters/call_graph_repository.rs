@@ -27,8 +27,6 @@ impl CallGraphRepository {
         Self { graph }
     }
 
-
-
     /// Borrow the underlying graph — used by the integration test that needs
     /// to seed a graph with `add_symbol` and `add_dependency`.
     #[allow(dead_code)]
@@ -84,7 +82,6 @@ impl CallGraphRepository {
             graph: Arc::new(graph),
         }
     }
-
 }
 
 /// Convert a `Symbol` aggregate into a `ResolvedSymbol` DTO.

@@ -11,11 +11,7 @@ use std::path::PathBuf;
 use tracing::info;
 
 #[derive(Parser)]
-#[command(
-    name = "cognicode-mcp",
-    version,
-    about = "CogniCode MCP Server"
-)]
+#[command(name = "cognicode-mcp", version, about = "CogniCode MCP Server")]
 struct Args {
     #[arg(short, long, default_value = ".")]
     cwd: PathBuf,

@@ -517,10 +517,7 @@ impl RevisionStore for LadybugStore {
         Ok(None)
     }
 
-    async fn create_revision(
-        &self,
-        _ws: &WorkspaceId,
-    ) -> Result<RevisionId, RevisionError> {
+    async fn create_revision(&self, _ws: &WorkspaceId) -> Result<RevisionId, RevisionError> {
         // Note: the trait is connection-agnostic (the previous
         // `&mut PgConnection` parameter was a PostgreSQL-typed leak
         // and was removed). For now: open a new connection from the
@@ -534,11 +531,7 @@ impl RevisionStore for LadybugStore {
         ))
     }
 
-    async fn set_head(
-        &self,
-        _ws: &WorkspaceId,
-        _rev: RevisionId,
-    ) -> Result<(), RevisionError> {
+    async fn set_head(&self, _ws: &WorkspaceId, _rev: RevisionId) -> Result<(), RevisionError> {
         // PHASE 1 STUB.
         Err(RevisionError::Store(
             "(phase 1 stub — see lib.rs port-impl)".into(),
@@ -2106,7 +2099,6 @@ fn generic_graph_rel_table_ddls() -> Vec<&'static str> {
              properties MAP(STRING, STRING));",
     ]
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -34,5 +34,3 @@ pub enum FederationError {
     #[error("space already exists: {0}")]
     Conflict(SpaceId),
 }
-
-

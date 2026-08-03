@@ -1690,8 +1690,7 @@ pub async fn handle_generate_contract(
     _input: GenerateContractInput,
 ) -> HandlerResult<AvcContract> {
     Err(HandlerError::Internal(
-        "generate_contract requires a persistence layer"
-            .to_string(),
+        "generate_contract requires a persistence layer".to_string(),
     ))
 }
 
@@ -1709,8 +1708,7 @@ pub async fn handle_validate_contract(
     _input: ValidateContractInput,
 ) -> HandlerResult<AvcValidationResult> {
     Err(HandlerError::Internal(
-        "validate_contract requires a persistence layer"
-            .to_string(),
+        "validate_contract requires a persistence layer".to_string(),
     ))
 }
 

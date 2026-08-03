@@ -25,9 +25,7 @@ pub mod blame;
 pub use blame::enrich_with_blame;
 
 pub use analyzer::{AnalysisSummary, run_analyze};
-pub use controller::{
-    StaticWorkspaceResolver, WorkspaceResolver, workspace_id_for_path,
-};
+pub use controller::{StaticWorkspaceResolver, WorkspaceResolver, workspace_id_for_path};
 pub mod controller;
 pub use extract_stage::{extract_all, extract_streaming};
 pub use extractor::extract_file;

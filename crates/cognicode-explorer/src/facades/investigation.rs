@@ -207,4 +207,3 @@ impl<S: cognicode_core::domain::investigation_store::InvestigationStore + 'stati
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!(e.to_string())))
     }
 }
-

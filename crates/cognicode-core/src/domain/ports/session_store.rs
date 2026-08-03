@@ -56,5 +56,3 @@ pub enum SessionError {
     #[error("session store error: {0}")]
     Store(String),
 }
-
-

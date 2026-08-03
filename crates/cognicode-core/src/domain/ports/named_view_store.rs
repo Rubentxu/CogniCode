@@ -86,5 +86,3 @@ pub enum NamedViewError {
     #[error("named_view store error: {0}")]
     Store(String),
 }
-
-

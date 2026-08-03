@@ -72,5 +72,3 @@ pub enum CallGraphError {
     #[error("call graph store conflict: {0}")]
     Conflict(String),
 }
-
-
