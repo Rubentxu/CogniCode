@@ -519,16 +519,12 @@ impl RevisionStore for LadybugStore {
 
     async fn create_revision(
         &self,
-        _conn: &mut sqlx::PgConnection,
         _ws: &WorkspaceId,
     ) -> Result<RevisionId, RevisionError> {
-        // Note: the trait signature requires `&mut PgConnection` per the
-        // e29-0-define-new-ports PR1 design. Phase 1 will swap this for
-        // `&mut lbug::Connection` (a future migration of the trait), or
-        // for lbug's own tx handle if its API supports that.
-        //
-        // For now: open a new connection from the shared Database and
-        // issue the open revision in a single tx.
+        // Note: the trait is connection-agnostic (the previous
+        // `&mut PgConnection` parameter was a PostgreSQL-typed leak
+        // and was removed). For now: open a new connection from the
+        // shared Database and issue the open revision in a single tx.
         let _conn = self
             .connection()
             .map_err(|_| RevisionError::Store("(phase 1 stub — see lib.rs port-impl)".into()))?;
@@ -540,7 +536,6 @@ impl RevisionStore for LadybugStore {
 
     async fn set_head(
         &self,
-        _conn: &mut sqlx::PgConnection,
         _ws: &WorkspaceId,
         _rev: RevisionId,
     ) -> Result<(), RevisionError> {

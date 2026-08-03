@@ -554,7 +554,7 @@ impl PostgresRepository {
                 self.pool.clone(),
             );
         let revision_id = revision_store
-            .create_revision(&mut tx, workspace_id)
+            .create_revision(workspace_id)
             .await
             .map_err(|e| {
                 CallGraphStoreError::Store(format!("save_call_graph_ws create_revision: {e}"))

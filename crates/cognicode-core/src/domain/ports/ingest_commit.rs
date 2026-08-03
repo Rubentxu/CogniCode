@@ -115,7 +115,7 @@ pub enum CommitError {
 // Postgres adapter (Phase 0 cosmetic)
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "multimodal")]
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
 pub mod postgres_adapter {
     use super::{
         CommitError, GraphDelta, IngestCommit, ManifestDelta, ReportIntent, RevisionId, WorkspaceId,
@@ -182,11 +182,13 @@ pub mod postgres_adapter {
                 ))
             })?;
 
-            // Stage 1 — open a new revision inside the tx.
+            // Stage 1 — open a new revision. The port is
+            // connection-agnostic; the revision adapter manages its own
+            // transaction from the shared pool.
             let rev_id = self
                 .revision_store
                 .as_ref()
-                .create_revision(&mut *tx, ws)
+                .create_revision(ws)
                 .await
                 .map_err(|e| {
                     CommitError::Graph(crate::domain::ports::graph_error::GraphError::Storage(
@@ -287,5 +289,5 @@ pub mod postgres_adapter {
     }
 }
 
-#[cfg(feature = "multimodal")]
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
 pub use postgres_adapter::PostgresIngestCommit;

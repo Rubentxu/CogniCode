@@ -14,14 +14,14 @@
 //! The 3 methods split along the read/write boundary:
 //!
 //! - [`head_revision`](RevisionStore::head_revision) — **read-only**,
-//!   takes only the workspace. The PG adapter issues a single
-//!   `SELECT ... FROM graph_revisions` from the shared pool.
-//! - [`create_revision`](RevisionStore::create_revision) — **write**,
-//!   takes the caller's `&mut sqlx::PgConnection` so the open is
-//!   part of the caller's transaction (atomicity preserved with the
-//!   surrounding ingest-state work — see [`crate::domain::ports::IngestCommit`]).
-//! - [`set_head`](RevisionStore::set_head) — **write**, also takes
-//!   `&mut sqlx::PgConnection` for the same atomicity reason.
+//!   takes only the workspace.
+//! - [`create_revision`](RevisionStore::create_revision) — **write**.
+//!   Connection-agnostic: no backend-specific transaction handle is
+//!   threaded through the trait (the previous `&mut sqlx::PgConnection`
+//!   parameter was a PostgreSQL-typed leak; the lbug adapter ignores it
+//!   and opens its own connection from the shared `Database`).
+//! - [`set_head`](RevisionStore::set_head) — **write**, same
+//!   connection-agnostic shape.
 
 use async_trait::async_trait;
 
@@ -39,23 +39,16 @@ pub trait RevisionStore: Send + Sync {
     /// Open a new revision for `workspace_id`, atomically demoting the
     /// prior head (if any) and inserting the new row with `head_of = true`.
     ///
-    /// The `&mut PgConnection` is required so the open is part of the
-    /// caller's transaction (the typical caller is
-    /// `IngestCommit::commit_revision` which fuses the open with the
-    /// surrounding graph delta work).
+    /// Connection-agnostic (no `PgConnection` leak): adapters manage
+    /// their own transaction/connection from the shared store handle.
     ///
     /// Returns the newly-opened [`RevisionId`].
-    async fn create_revision(
-        &self,
-        conn: &mut sqlx::PgConnection,
-        ws: &WorkspaceId,
-    ) -> Result<RevisionId, RevisionError>;
+    async fn create_revision(&self, ws: &WorkspaceId) -> Result<RevisionId, RevisionError>;
 
     /// Promote an existing revision to be the new head of the workspace.
-    /// Demotes any prior head atomically within the caller's transaction.
+    /// Demotes any prior head atomically.
     async fn set_head(
         &self,
-        conn: &mut sqlx::PgConnection,
         ws: &WorkspaceId,
         rev: RevisionId,
     ) -> Result<(), RevisionError>;
@@ -117,9 +110,14 @@ pub mod postgres_adapter {
 
         async fn create_revision(
             &self,
-            conn: &mut sqlx::PgConnection,
             ws: &WorkspaceId,
         ) -> Result<RevisionId, RevisionError> {
+            // Connection-agnostic port: open a short-lived tx from the
+            // shared pool (the caller no longer threads a PgConnection).
+            let mut tx = self.pool.begin().await.map_err(|e| {
+                RevisionError::Store(format!("create_revision begin tx: {e}"))
+            })?;
+
             // Demote the existing head (if any) to `head_of = false`.
             sqlx::query(
                 "UPDATE graph_revisions \
@@ -127,7 +125,7 @@ pub mod postgres_adapter {
                  WHERE workspace_id = $1 AND head_of = true",
             )
             .bind(ws.as_str())
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await
             .map_err(|e| RevisionError::Store(format!("create_revision demote head: {e}")))?;
 
@@ -139,7 +137,7 @@ pub mod postgres_adapter {
                  WHERE workspace_id = $1",
             )
             .bind(ws.as_str())
-            .fetch_one(&mut *conn)
+            .fetch_one(&mut *tx)
             .await
             .map_err(|e| {
                 RevisionError::Store(format!("create_revision compute next revision: {e}"))
@@ -152,19 +150,27 @@ pub mod postgres_adapter {
             )
             .bind(ws.as_str())
             .bind(next_rev)
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await
             .map_err(|e| RevisionError::Store(format!("create_revision insert revision: {e}")))?;
+
+            tx.commit().await.map_err(|e| {
+                RevisionError::Store(format!("create_revision commit tx: {e}"))
+            })?;
 
             Ok(RevisionId(next_rev as u64))
         }
 
         async fn set_head(
             &self,
-            conn: &mut sqlx::PgConnection,
             ws: &WorkspaceId,
             rev: RevisionId,
         ) -> Result<(), RevisionError> {
+            // Connection-agnostic port: short-lived tx from the pool.
+            let mut tx = self.pool.begin().await.map_err(|e| {
+                RevisionError::Store(format!("set_head begin tx: {e}"))
+            })?;
+
             // Demote the existing head (if any).
             sqlx::query(
                 "UPDATE graph_revisions \
@@ -172,7 +178,7 @@ pub mod postgres_adapter {
                  WHERE workspace_id = $1 AND head_of = true",
             )
             .bind(ws.as_str())
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await
             .map_err(|e| RevisionError::Store(format!("set_head demote: {e}")))?;
 
@@ -184,9 +190,13 @@ pub mod postgres_adapter {
             )
             .bind(ws.as_str())
             .bind(rev.get() as i64)
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await
             .map_err(|e| RevisionError::Store(format!("set_head promote: {e}")))?;
+
+            tx.commit().await.map_err(|e| {
+                RevisionError::Store(format!("set_head commit tx: {e}"))
+            })?;
 
             Ok(())
         }
