@@ -595,27 +595,270 @@ impl Runtime {
     }
 }
 
-/// Build a Runtime with an explicit `&dyn PgBackend`. v1 of the
-/// `e29-2-final-cutover` migration — the runtime no longer requires
-/// a live PG when the caller provides a backend.
+/// Build a Runtime with an explicit `&dyn PgBackend`. The canonical
+/// entry point for the ladybug path (e29-2-final-cutover): the runtime
+/// no longer requires a live PG when the caller provides a backend.
 ///
-/// v1: this delegates to the existing `bootstrap()` flow with
-/// `postgres_url = None`. The `backend` parameter is accepted for
-/// API compatibility but not yet wired into the runtime's port
-/// construction. The full migration is tracked as a follow-up
-/// PR that rewires the call sites.
+/// e29-7 task-5 (real implementation): the 3 relocated ports are built
+/// from the backend's port accessors (`quality_store` /
+/// `view_spec_store` / `call_graph_store`). `pg_repo` is always `None`
+/// on this path — the backend owns any concrete storage handle.
 ///
-/// v0.78.0 (PR #205) added the `PgBackend` trait + `LadybugPgBackend`
-/// adapter. v0.79+ will switch the runtime default from
-/// `postgres` to `ladybug` and route through `bootstrap_with_backend`.
+/// `graph` stays `None` (pre-existing ladybug limitation — the symbol
+/// repository is backed by an empty `CallGraph` so facade wiring stays
+/// functional).
 pub async fn bootstrap_with_backend(
     cwd: std::path::PathBuf,
     backend: std::sync::Arc<dyn PgBackend>,
 ) -> Result<Runtime, anyhow::Error> {
-    // v1: accept the backend for API compatibility but delegate
-    // to the existing bootstrap flow (which still requires a live
-    // PG connection for v0.78.0). The full migration is the
-    // follow-up PR.
-    let _ = backend;
-    Runtime::bootstrap(cwd, None).await
+    // Best-effort tracing init. `try_init` (not `init`) so repeated
+    // calls from tests and multiple entry points don't panic on
+    // double-init.
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .try_init();
+
+    let source_reader: Arc<dyn cognicode_explorer::ports::SourceReader> = Arc::new(
+        cognicode_explorer::adapters::FsSourceReader::new(cwd.clone()),
+    );
+
+    let graph_cache =
+        Arc::new(cognicode_core::infrastructure::graph::graph_cache::GraphCache::new());
+
+    // The 3 relocated ports are built from the backend's port
+    // accessors (e29-7 task-5).
+    let quality_store = backend.quality_store();
+    let view_spec_store = backend.view_spec_store();
+    let call_graph_store = backend.call_graph_store();
+
+    // graph=None degraded: ladybug path uses no graph (pre-existing
+    // limitation — out of scope for e29-7). The symbol repository is
+    // backed by an empty CallGraph so the facade wiring stays
+    // functional (searches return empty results).
+    let graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>> = None;
+    let empty_graph = Arc::new(cognicode_core::domain::aggregates::CallGraph::new());
+    #[cfg(not(feature = "ownership"))]
+    let symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository> = Arc::new(
+        cognicode_explorer::adapters::CallGraphRepository::new(empty_graph),
+    );
+    #[cfg(feature = "ownership")]
+    let symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository> = Arc::new(
+        cognicode_explorer::adapters::CallGraphRepository::new_with_pg_repo(
+            empty_graph,
+            None,
+        ),
+    );
+
+    Ok(Runtime {
+        symbol_repo,
+        source_reader,
+        graph,
+        cwd,
+        graph_cache,
+        backend: Some(backend),
+        #[cfg(feature = "postgres")]
+        pg_repo: None,
+        revision_tracker: Arc::new(AtomicU64::new(1)),
+        quality_store,
+        view_spec_store,
+        call_graph_store,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::{bootstrap_with_backend, LadybugPgBackend};
+    use cognicode_core::domain::aggregates::CallGraph;
+    use cognicode_core::domain::ports::{CallGraphStore, QualityStore, ViewSpecStore};
+    use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
+
+    /// Identity stub for [`QualityStore`] — never called in this test,
+    /// only held and compared by Arc identity.
+    struct TestQualityStore;
+    impl QualityStore for TestQualityStore {
+        fn issues_for_file(
+            &self,
+            _file: &str,
+        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+            unimplemented!()
+        }
+        fn issues_for_scope(
+            &self,
+            _scope_prefix: &str,
+        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+            unimplemented!()
+        }
+        fn issues_at_line(
+            &self,
+            _file: &str,
+            _line: u32,
+        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+            unimplemented!()
+        }
+        fn issue_by_id(
+            &self,
+            _id: i64,
+        ) -> Result<Option<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+            unimplemented!()
+        }
+        fn rule_summary(
+            &self,
+            _rule_id: &str,
+        ) -> Result<cognicode_core::domain::ports::RuleSummary, cognicode_core::domain::ports::QualityError> {
+            unimplemented!()
+        }
+        fn quality_gate(
+            &self,
+            _workspace_id: Option<&str>,
+        ) -> Result<cognicode_core::domain::ports::QualityGateSummary, cognicode_core::domain::ports::QualityError> {
+            unimplemented!()
+        }
+        fn open_issues_count(
+            &self,
+            _workspace_id: Option<&str>,
+        ) -> Result<usize, cognicode_core::domain::ports::QualityError> {
+            unimplemented!()
+        }
+        fn issues_for_workspace(
+            &self,
+            _workspace_id: Option<&str>,
+            _filter: &cognicode_core::domain::ports::IssueFilter,
+        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+            unimplemented!()
+        }
+        fn insert_issues(
+            &self,
+            _issues: &[cognicode_core::domain::ports::NewIssue],
+        ) -> Result<cognicode_core::domain::ports::UpsertSummary, cognicode_core::domain::ports::QualityError> {
+            unimplemented!()
+        }
+        fn delete_issue(
+            &self,
+            _workspace_id: &str,
+            _rule_id: &str,
+            _file_path: &str,
+            _line: u32,
+        ) -> Result<bool, cognicode_core::domain::ports::QualityError> {
+            unimplemented!()
+        }
+    }
+
+    /// Identity stub for [`ViewSpecStore`] — never called in this test.
+    struct TestViewSpecStore;
+    #[async_trait::async_trait]
+    impl ViewSpecStore for TestViewSpecStore {
+        async fn save(
+            &self,
+            _payload: &cognicode_core::domain::ports::ViewSpecPayload,
+            _workspace_id: &str,
+            _owner: &str,
+        ) -> Result<(), cognicode_core::domain::ports::ViewSpecStoreError> {
+            unimplemented!()
+        }
+        async fn load(
+            &self,
+            _id: &str,
+            _workspace_id: &str,
+            _owner: &str,
+        ) -> Result<Option<cognicode_core::domain::ports::ViewSpecPayload>, cognicode_core::domain::ports::ViewSpecStoreError> {
+            unimplemented!()
+        }
+        async fn list(
+            &self,
+            _workspace_id: &str,
+            _owner: &str,
+        ) -> Result<Vec<cognicode_core::domain::ports::ViewSpecPayload>, cognicode_core::domain::ports::ViewSpecStoreError> {
+            unimplemented!()
+        }
+        async fn delete(
+            &self,
+            _id: &str,
+            _workspace_id: &str,
+            _owner: &str,
+        ) -> Result<bool, cognicode_core::domain::ports::ViewSpecStoreError> {
+            unimplemented!()
+        }
+        async fn list_for_workspace(
+            &self,
+            _workspace_id: &str,
+            _applies_to_kind: &str,
+        ) -> Result<Vec<cognicode_core::domain::ports::ViewSpecPayload>, cognicode_core::domain::ports::ViewSpecStoreError> {
+            unimplemented!()
+        }
+        async fn update(
+            &self,
+            _id: &str,
+            _workspace_id: &str,
+            _owner: &str,
+            _seed_object_id: Option<&str>,
+            _seed_view_id: Option<&str>,
+            _applies_when: Option<&str>,
+        ) -> Result<bool, cognicode_core::domain::ports::ViewSpecStoreError> {
+            unimplemented!()
+        }
+    }
+
+    /// Identity stub for [`CallGraphStore`] — never called in this test.
+    struct TestCallGraphStore;
+    #[async_trait::async_trait]
+    impl CallGraphStore for TestCallGraphStore {
+        async fn save_call_graph_ws(
+            &self,
+            _graph: &CallGraph,
+            _ws: &WorkspaceId,
+        ) -> Result<RevisionId, cognicode_core::domain::ports::CallGraphError> {
+            unimplemented!()
+        }
+        async fn load_call_graph_ws(
+            &self,
+            _ws: &WorkspaceId,
+            _revision: RevisionId,
+        ) -> Result<Option<CallGraph>, cognicode_core::domain::ports::CallGraphError> {
+            unimplemented!()
+        }
+        async fn load_call_graph_current(
+            &self,
+            _ws: &WorkspaceId,
+        ) -> Result<Option<CallGraph>, cognicode_core::domain::ports::CallGraphError> {
+            unimplemented!()
+        }
+    }
+
+    /// e29-7 task-5: the 3 relocated ports are populated FROM the
+    /// backend's port accessors — identity preserved (same Arc).
+    #[tokio::test]
+    async fn bootstrap_with_backend_populates_ports_from_backend() {
+        let quality: Arc<dyn QualityStore> = Arc::new(TestQualityStore);
+        let view_spec: Arc<dyn ViewSpecStore> = Arc::new(TestViewSpecStore);
+        let cg_store: Arc<dyn CallGraphStore> = Arc::new(TestCallGraphStore);
+        let backend = Arc::new(LadybugPgBackend::new(
+            Some(quality.clone()),
+            Some(view_spec.clone()),
+            Some(cg_store.clone()),
+        ));
+
+        let runtime = bootstrap_with_backend(std::env::temp_dir(), backend)
+            .await
+            .expect("bootstrap_with_backend succeeds with a provided backend");
+
+        assert!(
+            Arc::ptr_eq(runtime.quality_store.as_ref().unwrap(), &quality),
+            "quality_store must be the SAME Arc the backend returned"
+        );
+        assert!(
+            Arc::ptr_eq(runtime.view_spec_store.as_ref().unwrap(), &view_spec),
+            "view_spec_store must be the SAME Arc the backend returned"
+        );
+        assert!(
+            Arc::ptr_eq(runtime.call_graph_store.as_ref().unwrap(), &cg_store),
+            "call_graph_store must be the SAME Arc the backend returned"
+        );
+        // pg_repo is never populated on the backend path (backend owns
+        // the storage handle) — the field is postgres-only, so this is
+        // a compile-level assertion in postgres builds only.
+        #[cfg(feature = "postgres")]
+        assert!(runtime.pg_repo.is_none());
+    }
 }
