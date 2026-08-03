@@ -11,9 +11,7 @@
 //! |--------|-------|--------|
 //! | `graph_error` | `GraphError`, `GraphResult` | existing |
 //! | `graph_repository` | `GraphRepository` | existing |
-//! | `graph_write_port` | `GraphWritePort` | existing (multimodal) |
 //! | `manifest_store` | `ManifestStore` | existing |
-//! | `named_view_store` | `NamedViewStore` | existing |
 //! | `node_property_reader` | `NodePropertyReader` | existing |
 //! | `report_store` | `ReportStore` | existing |
 //! | `session_store` | `SessionStore` | existing |
@@ -32,11 +30,8 @@ pub mod federation_store;
 pub mod graph_error;
 pub mod graph_repository;
 #[cfg(feature = "multimodal")]
-pub mod graph_write_port;
-#[cfg(feature = "multimodal")]
 pub mod ingest_commit;
 pub mod manifest_store;
-pub mod named_view_store;
 pub mod node_property_reader;
 pub mod quality_store;
 pub mod report_store;
@@ -54,11 +49,8 @@ pub use federation_store::{FederationError, FederationStore};
 pub use graph_error::{GraphError, GraphResult};
 pub use graph_repository::{GraphRepository, SearchPage};
 #[cfg(feature = "multimodal")]
-pub use graph_write_port::GraphWritePort;
-#[cfg(feature = "multimodal")]
 pub use ingest_commit::{CommitError, GraphDelta, IngestCommit, ManifestDelta, ReportIntent};
 pub use manifest_store::{ManifestError, ManifestStore, ScanManifest};
-pub use named_view_store::{NamedView, NamedViewError, NamedViewStore};
 pub use node_property_reader::NodePropertyReader;
 pub use quality_store::{
     IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,

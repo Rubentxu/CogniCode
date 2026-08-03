@@ -1345,7 +1345,7 @@ impl IngestCommit for LadybugStore {
         // Stage 4 — graph upserts. The PG adapter takes the
         // GraphDelta but ignores it (see the trait comment); a future
         // PR will wire Stage 4 once the Generic Graph Layer's
-        // ports (GraphWritePort, GraphNodeStore, GraphEdgeStore)
+        // ports (GraphNodeStore, GraphEdgeStore)
         // are defined for the lbug adapter. Today: no-op.
         let _graph = _graph;
 

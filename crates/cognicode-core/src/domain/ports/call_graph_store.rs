@@ -5,13 +5,13 @@
 //! executor, postgres bridge, ingest service) can depend on the
 //! port instead of the `PostgresRepository` concrete type.
 //!
-//! # Why a dedicated port (not `RevisionStore` or `GraphWritePort`)
+//! # Why a dedicated port (not `RevisionStore`)
 //!
 //! - `RevisionStore` is the workspace-scoped revision head *counter*
 //!   (3 methods: `create_revision`, `set_head`, `head_revision`).
 //!   It manipulates the `graph_revisions` table; no `CallGraph`
 //!   aggregate is involved.
-//! - `GraphWritePort` is the generic graph layer (the
+//! - The generic graph layer (the
 //!   `graph_nodes` + `graph_edges` tables populated by the docs
 //!   extractor). It carries no workspace/revision concept.
 //!
