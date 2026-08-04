@@ -12,7 +12,7 @@ use crate::domain::analytics::{
     FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
-use crate::domain::ports::call_graph_projection::{project_call_graph, CallGraphProjectionPort};
+use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
 use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================

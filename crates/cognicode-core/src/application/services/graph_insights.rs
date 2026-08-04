@@ -3,11 +3,11 @@
 //! Combines: god nodes, cycles, community overview, surprising connections,
 //! architecture health, and suggested questions.
 
-use crate::infrastructure::graph::analytics::community_detector::CommunityDetector;
 use crate::application::services::graph_analytics::GraphAnalyticsService;
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
-use crate::domain::ports::call_graph_projection::{project_call_graph, CallGraphProjectionPort};
+use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
+use crate::infrastructure::graph::analytics::community_detector::CommunityDetector;
 
 /// A complete graph insights report.
 #[derive(Debug, Clone, serde::Serialize)]

@@ -59,12 +59,12 @@ use cognicode_core::domain::plan::{
     UnsupportedConstruct,
 };
 use cognicode_core::domain::ports::{
+    CallGraphError, CallGraphStore,
+    manifest_store::{ManifestError, ManifestStore, ScanManifest},
     quality_store::{
         IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
         RuleSummary, UpsertSummary,
     },
-    CallGraphError, CallGraphStore,
-    manifest_store::{ManifestError, ManifestStore, ScanManifest},
     report_store::{ReportError, ReportStore, ReportSummary},
     revision_store::{RevisionError, RevisionStore},
     session_store::{SessionError, SessionRow, SessionStore},
@@ -1381,9 +1381,8 @@ impl LadybugStore {
             .connection()
             .map_err(|e| Error::Lbug(format!("init_quality_schema: {e}")))?;
         for stmt in quality_schema_ddls() {
-            conn.query(stmt).map_err(|e| {
-                Error::Lbug(format!("init_quality_schema: {e}\nDDL: {stmt}"))
-            })?;
+            conn.query(stmt)
+                .map_err(|e| Error::Lbug(format!("init_quality_schema: {e}\nDDL: {stmt}")))?;
         }
         Ok(())
     }
@@ -1467,8 +1466,9 @@ impl QualityStore for LadybugStore {
             .connection()
             .map_err(|e| QualityError::Store(format!("rule_summary connection: {e}")))?;
 
-        let description = {
-            let mut stmt = match conn.prepare(
+        let description =
+            {
+                let mut stmt = match conn.prepare(
                 "MATCH (r:QualityRule) WHERE r.rule_id = $rid RETURN r.description, r.category;",
             ) {
                 Ok(stmt) => stmt,
@@ -1481,38 +1481,48 @@ impl QualityStore for LadybugStore {
                     return Err(QualityError::Store(format!("rule_summary rule prepare: {e}")));
                 }
             };
-            match conn.execute(&mut stmt, vec![("rid", lbug::Value::String(rule_id.to_string()))]) {
-                Ok(mut result) => match result.next() {
-                    Some(row) => match &row[0] {
-                        lbug::Value::String(s) if !s.is_empty() => s.clone(),
-                        _ => rule_id.to_string(),
+                match conn.execute(
+                    &mut stmt,
+                    vec![("rid", lbug::Value::String(rule_id.to_string()))],
+                ) {
+                    Ok(mut result) => match result.next() {
+                        Some(row) => match &row[0] {
+                            lbug::Value::String(s) if !s.is_empty() => s.clone(),
+                            _ => rule_id.to_string(),
+                        },
+                        None => rule_id.to_string(),
                     },
-                    None => rule_id.to_string(),
-                },
-                Err(e) if is_missing_table(&e) => rule_id.to_string(),
-                Err(e) => {
-                    return Err(QualityError::Store(format!("rule_summary rule execute: {e}")));
+                    Err(e) if is_missing_table(&e) => rule_id.to_string(),
+                    Err(e) => {
+                        return Err(QualityError::Store(format!(
+                            "rule_summary rule execute: {e}"
+                        )));
+                    }
                 }
-            }
-        };
+            };
 
         let open_count: usize = match conn.prepare(
             "MATCH (i:QualityIssue) WHERE i.rule_id = $rid AND i.status = 'open' RETURN count(i);",
         ) {
             Err(e) if is_missing_table(&e) => 0,
             Err(e) => {
-                return Err(QualityError::Store(format!("rule_summary count prepare: {e}")));
+                return Err(QualityError::Store(format!(
+                    "rule_summary count prepare: {e}"
+                )));
             }
-            Ok(mut stmt) => match conn
-                .execute(&mut stmt, vec![("rid", lbug::Value::String(rule_id.to_string()))])
-            {
+            Ok(mut stmt) => match conn.execute(
+                &mut stmt,
+                vec![("rid", lbug::Value::String(rule_id.to_string()))],
+            ) {
                 Ok(mut result) => match result.next() {
                     Some(row) => value_to_usize(&row[0]),
                     None => 0,
                 },
                 Err(e) if is_missing_table(&e) => 0,
                 Err(e) => {
-                    return Err(QualityError::Store(format!("rule_summary count execute: {e}")));
+                    return Err(QualityError::Store(format!(
+                        "rule_summary count execute: {e}"
+                    )));
                 }
             },
         };
@@ -1596,14 +1606,18 @@ impl QualityStore for LadybugStore {
             Ok(stmt) => stmt,
             Err(e) if is_missing_table(&e) => return Ok(0),
             Err(e) => {
-                return Err(QualityError::Store(format!("open_issues_count prepare: {e}")));
+                return Err(QualityError::Store(format!(
+                    "open_issues_count prepare: {e}"
+                )));
             }
         };
         let mut result = match conn.execute(&mut stmt, params) {
             Ok(result) => result,
             Err(e) if is_missing_table(&e) => return Ok(0),
             Err(e) => {
-                return Err(QualityError::Store(format!("open_issues_count execute: {e}")));
+                return Err(QualityError::Store(format!(
+                    "open_issues_count execute: {e}"
+                )));
             }
         };
         Ok(match result.next() {
@@ -4134,7 +4148,7 @@ mod quality_store_tests {
     }
 
     #[serial]
-#[test]
+    #[test]
     fn quality_issues_for_file_round_trip() {
         let (store, _dir) = make_store();
         store
@@ -4160,7 +4174,7 @@ mod quality_store_tests {
     }
 
     #[serial]
-#[test]
+    #[test]
     fn quality_issues_for_scope_is_boundary_aware() {
         let (store, _dir) = make_store();
         store
@@ -4182,7 +4196,7 @@ mod quality_store_tests {
     }
 
     #[serial]
-#[test]
+    #[test]
     fn quality_issues_at_line_round_trip() {
         let (store, _dir) = make_store();
         store
@@ -4200,14 +4214,16 @@ mod quality_store_tests {
     }
 
     #[serial]
-#[test]
+    #[test]
     fn quality_issue_by_id_round_trip() {
         let (store, _dir) = make_store();
         store
             .insert_issues(&[sample_issue("ws", "R1", "src/a.rs", 7, "critical", "open")])
             .expect("insert");
 
-        let all = store.issues_for_workspace(Some("ws"), &IssueFilter::default()).expect("read");
+        let all = store
+            .issues_for_workspace(Some("ws"), &IssueFilter::default())
+            .expect("read");
         assert_eq!(all.len(), 1);
         let id = all[0].id;
 
@@ -4222,7 +4238,7 @@ mod quality_store_tests {
     }
 
     #[serial]
-#[test]
+    #[test]
     fn quality_rule_summary_round_trip() {
         let (store, _dir) = make_store();
         let conn = store.connection().expect("conn");
@@ -4244,7 +4260,7 @@ mod quality_store_tests {
     }
 
     #[serial]
-#[test]
+    #[test]
     fn quality_gate_round_trip() {
         let (store, _dir) = make_store();
 
@@ -4269,7 +4285,7 @@ mod quality_store_tests {
     }
 
     #[serial]
-#[test]
+    #[test]
     fn quality_open_issues_count_round_trip() {
         let (store, _dir) = make_store();
         store
@@ -4294,7 +4310,7 @@ mod quality_store_tests {
     }
 
     #[serial]
-#[test]
+    #[test]
     fn quality_issues_for_workspace_applies_filters() {
         let (store, _dir) = make_store();
         store
@@ -4353,7 +4369,7 @@ mod quality_store_tests {
     }
 
     #[serial]
-#[test]
+    #[test]
     fn quality_insert_issues_reports_upsert_summary() {
         let (store, _dir) = make_store();
         let summary: UpsertSummary = store
@@ -4367,7 +4383,7 @@ mod quality_store_tests {
     }
 
     #[serial]
-#[test]
+    #[test]
     fn quality_delete_issue_round_trip() {
         let (store, _dir) = make_store();
         store
@@ -4389,7 +4405,7 @@ mod quality_store_tests {
     }
 
     #[serial]
-#[test]
+    #[test]
     fn quality_reads_degrade_empty_on_missing_table() {
         // Construct via `new` (raw sharing constructor) so the quality
         // schema DDL is never applied: reads must degrade gracefully.
@@ -4403,18 +4419,22 @@ mod quality_store_tests {
         assert!(store.issues_at_line("src/a.rs", 1).unwrap().is_empty());
         assert!(store.issue_by_id(1).unwrap().is_none());
         assert_eq!(store.open_issues_count(Some("ws")).unwrap(), 0);
-        assert_eq!(store.quality_gate(Some("ws")).unwrap(), QualityGateSummary::default());
+        assert_eq!(
+            store.quality_gate(Some("ws")).unwrap(),
+            QualityGateSummary::default()
+        );
     }
 
     #[serial]
-#[test]
+    #[test]
     fn quality_writes_error_on_missing_table() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("raw.lbdb");
         let db = lbug::Database::new(&path, SystemConfig::default()).expect("open db");
         let store = LadybugStore::new(Arc::new(db));
 
-        let insert = store.insert_issues(&[sample_issue("ws", "R1", "src/a.rs", 1, "major", "open")]);
+        let insert =
+            store.insert_issues(&[sample_issue("ws", "R1", "src/a.rs", 1, "major", "open")]);
         assert!(insert.is_err(), "insert must error on missing table");
 
         let delete = store.delete_issue("ws", "R1", "src/a.rs", 1);

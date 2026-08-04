@@ -167,4 +167,3 @@ pub trait ViewSpecStore: Send + Sync + 'static {
         applies_when: Option<&str>,
     ) -> Result<bool, ViewSpecStoreError>;
 }
-

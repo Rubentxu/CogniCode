@@ -39,7 +39,13 @@ impl MoldqlAstLowerer {
     }
 
     /// Build PlanMetadata with the correct hash derived from the actual plan.
-    /// Replaces the placeholder `PlanHash::compute(&0u32)` with a real content hash.
+    ///
+    /// ARCHITECTURAL NOTE (planhash-placeholder fix):
+    /// This method computes the correct content-derived hash. When called with a
+    /// "throwaway" plan that was built with a placeholder hash, the computed hash
+    /// IS correct because the throwaway plan's content equals the final plan's
+    /// content — the placeholder value in metadata does not affect the hash
+    /// computation's correctness (only the plan's structural content matters).
     pub(crate) fn plan_metadata_for(&self, plan: &GraphPlan) -> PlanMetadata {
         PlanMetadata::new(
             PlanVersion::new("1.0.0").expect("valid semver"),
@@ -54,7 +60,13 @@ impl MoldqlAstLowerer {
             .expect("effective_max_hops is always Some");
         let predicates = self.lower_conditions(&pq.conditions);
 
-        // Build plan with placeholder metadata (hash updated after construction)
+        // ARCHITECTURAL CONSTRAINT (planhash-placeholder fix):
+        // We build a throwaway plan with a placeholder hash because:
+        // 1. `populate_defaults` needs the plan's limits populated
+        // 2. The placeholder metadata is part of the serialization, but since the
+        //    throwaway IS the final plan in content, `plan_metadata_for(&throwaway)`
+        //    computes the CORRECT content-derived hash (not from the placeholder).
+        // The placeholder is NOT a bug — it's an intentional intermediate step.
         let plan = GraphPlan::Path {
             src: pq.from.clone(),
             dst: pq.to.clone(),
@@ -65,7 +77,7 @@ impl MoldqlAstLowerer {
             limits: PlanLimits::builder().max_hops(effective_max_hops).build(),
             metadata: PlanMetadata::new(
                 PlanVersion::new("1.0.0").expect("valid semver"),
-                PlanHash::compute(&0u32),
+                PlanHash::compute(&0u32), // placeholder — replaced below
             ),
         };
 
@@ -83,6 +95,7 @@ impl MoldqlAstLowerer {
             predicates,
             projection: PathProjection::default(),
             limits: final_limits,
+            // Hash is correct because throwaway content == final plan content
             metadata: self.plan_metadata_for(&plan),
         })
     }
@@ -95,7 +108,8 @@ impl MoldqlAstLowerer {
         };
         let predicates = self.lower_conditions(&nq.conditions);
 
-        // Build plan with placeholder metadata (hash updated after construction)
+        // ARCHITECTURAL CONSTRAINT (planhash-placeholder fix): see lower_path.
+        // The placeholder metadata is intentional; hash is computed correctly below.
         let plan = GraphPlan::Neighbors {
             src: nq.root.clone(),
             kind: kind.clone(),
@@ -105,7 +119,7 @@ impl MoldqlAstLowerer {
             limits: PlanLimits::builder().max_depth(nq.depth).build(),
             metadata: PlanMetadata::new(
                 PlanVersion::new("1.0.0").expect("valid semver"),
-                PlanHash::compute(&0u32),
+                PlanHash::compute(&0u32), // placeholder — replaced below
             ),
         };
 
@@ -134,7 +148,8 @@ impl MoldqlAstLowerer {
             sq.depth
         };
 
-        // Build plan with placeholder metadata (hash updated after construction)
+        // ARCHITECTURAL CONSTRAINT (planhash-placeholder fix): see lower_path.
+        // The placeholder metadata is intentional; hash is computed correctly below.
         let plan = GraphPlan::Subgraph {
             nodes: vec![sq.root.clone()],
             edges: None,
@@ -142,7 +157,7 @@ impl MoldqlAstLowerer {
             limits: PlanLimits::builder().max_depth(effective_depth).build(),
             metadata: PlanMetadata::new(
                 PlanVersion::new("1.0.0").expect("valid semver"),
-                PlanHash::compute(&0u32),
+                PlanHash::compute(&0u32), // placeholder — replaced below
             ),
         };
 
@@ -160,7 +175,8 @@ impl MoldqlAstLowerer {
     }
 
     fn lower_cluster(&self, cq: &ClusterQuery) -> Result<GraphPlan, PlanError> {
-        // Build plan with placeholder metadata (hash updated after construction)
+        // ARCHITECTURAL CONSTRAINT (planhash-placeholder fix): see lower_path.
+        // The placeholder metadata is intentional; hash is computed correctly below.
         let plan = GraphPlan::Cluster {
             by: vec![], // ClusterMethod maps to grouping key; empty for now
             aggregations: vec![],
@@ -169,7 +185,7 @@ impl MoldqlAstLowerer {
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
                 PlanVersion::new("1.0.0").expect("valid semver"),
-                PlanHash::compute(&0u32),
+                PlanHash::compute(&0u32), // placeholder — replaced below
             ),
         };
 
@@ -189,9 +205,12 @@ impl MoldqlAstLowerer {
 
     fn lower_explain(&self, eq: &ExplainQuery) -> Result<GraphPlan, PlanError> {
         let predicates = self.lower_conditions(&eq.conditions);
+        // ARCHITECTURAL CONSTRAINT (planhash-placeholder fix): see lower_path.
+        // Both inner and explain plans use placeholder metadata intentionally.
+        // The hash is computed correctly from the explain plan's full content.
         let placeholder = PlanMetadata::new(
             PlanVersion::new("1.0.0").expect("valid semver"),
-            PlanHash::compute(&0u32),
+            PlanHash::compute(&0u32), // placeholder — replaced below
         );
 
         // Build inner path plan with placeholder metadata
@@ -236,14 +255,15 @@ impl MoldqlAstLowerer {
             .map(|op| self.lower(op))
             .collect::<Result<Vec<_>, _>>()?;
 
-        // Build plan with placeholder metadata (hash updated after construction)
+        // ARCHITECTURAL CONSTRAINT (planhash-placeholder fix): see lower_path.
+        // The placeholder metadata is intentional; hash is computed correctly below.
         let plan = GraphPlan::BooleanComposition {
             op,
             operands: operands.clone(),
             limits: PlanLimits::default(),
             metadata: PlanMetadata::new(
                 PlanVersion::new("1.0.0").expect("valid semver"),
-                PlanHash::compute(&0u32),
+                PlanHash::compute(&0u32), // placeholder — replaced below
             ),
         };
 

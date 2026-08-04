@@ -11,8 +11,8 @@ use crate::domain::lens::severity_weight;
 use crate::domain::lenses::hotspots::compute_risk;
 use crate::dto::InspectionTarget;
 use crate::error::{ExplorerError, ExplorerResult};
-use cognicode_core::domain::ports::QualityStore;
 use cognicode_core::domain::aggregates::SymbolId;
+use cognicode_core::domain::ports::QualityStore;
 use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 use serde::{Deserialize, Serialize};
 
@@ -226,8 +226,8 @@ impl<'a> QualityGraphRepository<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cognicode_core::domain::ports::{IssueFilter, QualityIssue};
     use crate::ports::symbol_repository::ResolvedSymbol;
+    use cognicode_core::domain::ports::{IssueFilter, QualityIssue};
     use cognicode_core::domain::value_objects::Provenance;
 
     /// Mock QualityStore that returns configurable issues.
@@ -275,7 +275,10 @@ mod tests {
         fn rule_summary(
             &self,
             _rule_id: &str,
-        ) -> Result<cognicode_core::domain::ports::RuleSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::RuleSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(cognicode_core::domain::ports::RuleSummary {
                 rule_id: String::new(),
                 description: String::new(),
@@ -285,7 +288,10 @@ mod tests {
         fn quality_gate(
             &self,
             _workspace_id: Option<&str>,
-        ) -> Result<cognicode_core::domain::ports::QualityGateSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::QualityGateSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(Default::default())
         }
         fn open_issues_count(
@@ -305,7 +311,10 @@ mod tests {
         fn insert_issues(
             &self,
             _issues: &[cognicode_core::domain::ports::NewIssue],
-        ) -> Result<cognicode_core::domain::ports::UpsertSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::UpsertSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(cognicode_core::domain::ports::UpsertSummary::default())
         }
         fn delete_issue(

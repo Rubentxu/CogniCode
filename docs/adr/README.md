@@ -22,14 +22,16 @@ This directory holds the architecture decision records (ADRs) for the CogniCode 
 | [ADR-016](./ADR-016-renderer-neutral-semantic-projections.md) | Renderer-Neutral Semantic Projections | PROPOSED | 2026-06-15 |
 | [ADR-017](./ADR-017-postgresql-native-ingest-pipeline.md) | PostgreSQL-Native Ingest Pipeline | SUPERSEDED | 2026-06-15 |
 | [ADR-018](./ADR-018-evidence-gated-product-operability.md) | Evidence-Gated Product Operability | PROPOSED | 2026-07-29 |
-| [ADR-026](./ADR-026-ladybugdb-canonical-migration.md) | LadybugDB as Sole Canonical Graph Store | PROPOSED | 2026-07-30 |
-| [ADR-027](./ADR-027-ladybugdb-hybrid-schema-strategy.md) | LadybugDB Hybrid Schema Strategy | PROPOSED | 2026-07-30 |
-| [ADR-028](./ADR-028-ladybugdb-port-abstraction-architecture.md) | Port Abstraction Architecture for LadybugDB Migration | PROPOSED | 2026-07-30 |
+| [ADR-026](./ADR-026-ladybugdb-canonical-migration.md) | LadybugDB as Sole Canonical Graph Store | EXECUTED | 2026-07-30 |
+| [ADR-027](./ADR-027-ladybugdb-hybrid-schema-strategy.md) | LadybugDB Hybrid Schema Strategy | ACCEPTED | 2026-07-30 |
+| [ADR-028](./ADR-028-ladybugdb-port-abstraction-architecture.md) | Port Abstraction Architecture for LadybugDB Migration | ACCEPTED | 2026-07-30 |
+| [ADR-029](./ADR-029-callgraph-projection-port-seam.md) | CallGraphProjectionPort Seam | ACCEPTED | 2026-08-03 |
+| [ADR-030](./ADR-030-quality-store-ladybug-schema.md) | QualityStore Schema: LadybugDB Backend | ACCEPTED | 2026-08-03 |
 
 ## Format
 
 Each ADR follows the standard structure:
-- **Status**: PROPOSED / ACCEPTED / DEPRECATED / SUPERSEDED
+- **Status**: PROPOSED / ACCEPTED / EXECUTED / DEPRECATED / SUPERSEDED (EXECUTED = decisión aplicada y verificada en código; ACCEPTED = decisión ratificada pero aún sin ejecutar)
 - **Date**: ISO date of decision
 - **Deciders**: who made the decision
 - **Context**: why the decision is needed

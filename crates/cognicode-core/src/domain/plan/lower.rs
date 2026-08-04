@@ -79,6 +79,24 @@ pub fn populate_defaults(plan: &GraphPlan, query_shape: &QueryShape) -> PlanLimi
     result
 }
 
+/// Populate PlanLimits defaults based on query shape (limits-only version).
+///
+/// Does NOT require a full GraphPlan — accepts limits directly.
+/// - `Subgraph { depth: 0 }` → `max_depth = Some(5)`
+/// - `Path { max_hops: None }` → `max_hops = Some(6)`
+/// - Other graph variants → no changes
+pub fn populate_limits(current_limits: &PlanLimits, query_shape: &QueryShape) -> PlanLimits {
+    let shape_defaults = query_shape.default_limits();
+    let mut result = current_limits.clone();
+    if result.max_depth.is_none() {
+        result.max_depth = shape_defaults.max_depth;
+    }
+    if result.max_hops.is_none() {
+        result.max_hops = shape_defaults.max_hops;
+    }
+    result
+}
+
 /// Handles lowering of a MoldQL AST to a [`GraphPlan`].
 ///
 /// Implementors must be provided by the infrastructure layer (e.g., `cognicode-explorer`).

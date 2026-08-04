@@ -13,11 +13,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use cognicode_core::infrastructure::graph::analytics::community_detector::CommunityDetector;
 use cognicode_core::application::services::graph_analytics::GraphAnalyticsService;
 use cognicode_core::domain::aggregates::{CallGraph, Symbol, SymbolId};
 use cognicode_core::domain::services::ExtractionContext;
 use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
+use cognicode_core::infrastructure::graph::analytics::community_detector::CommunityDetector;
 use cognicode_core::infrastructure::graph::{CallGraphProjection, SubgraphDirection};
 use rmcp::model::CallToolResult;
 use serde::Deserialize;

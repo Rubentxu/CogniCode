@@ -476,11 +476,12 @@ pub async fn handle_graph_search_idf(
             } else {
                 input.max_results as usize
             };
-            let results = crate::infrastructure::graph::analytics::search_ranker::SearchRanker::search(
-                &graph,
-                &input.query,
-                max_results,
-            );
+            let results =
+                crate::infrastructure::graph::analytics::search_ranker::SearchRanker::search(
+                    &graph,
+                    &input.query,
+                    max_results,
+                );
             let payload = serde_json::json!({
                 "algorithm": "idf_search",
                 "query": input.query,

@@ -381,13 +381,13 @@ mod tests {
     use super::*;
     use crate::adapters::FsSourceReader;
     use crate::dto::InspectableObjectType;
-    use cognicode_core::domain::ports::{
-        IssueFilter, QualityGateSummary, QualityIssue, QualityStore, RuleSummary,
-    };
     use crate::ports::symbol_repository::{
         GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
     };
     use cognicode_core::domain::aggregates::SymbolId;
+    use cognicode_core::domain::ports::{
+        IssueFilter, QualityGateSummary, QualityIssue, QualityStore, RuleSummary,
+    };
     use cognicode_core::domain::value_objects::SymbolKind;
     use std::collections::HashMap as StdHashMap;
     use std::sync::Arc;
@@ -548,7 +548,10 @@ mod tests {
         ) -> Result<Option<QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(None)
         }
-        fn rule_summary(&self, _r: &str) -> Result<RuleSummary, cognicode_core::domain::ports::QualityError> {
+        fn rule_summary(
+            &self,
+            _r: &str,
+        ) -> Result<RuleSummary, cognicode_core::domain::ports::QualityError> {
             unimplemented!()
         }
         fn quality_gate(
@@ -590,7 +593,10 @@ mod tests {
         fn insert_issues(
             &self,
             _issues: &[cognicode_core::domain::ports::NewIssue],
-        ) -> Result<cognicode_core::domain::ports::UpsertSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::UpsertSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(cognicode_core::domain::ports::UpsertSummary::default())
         }
         fn delete_issue(

@@ -22,8 +22,8 @@ use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
 };
 use crate::ports::RouteStore;
-use cognicode_core::domain::ports::QualityStore;
 use crate::session::SessionRegistry;
+use cognicode_core::domain::ports::QualityStore;
 
 /// Optional Generic Graph Layer port for multimodal queries.
 /// Populated when `multimodal` feature is enabled and a
@@ -239,7 +239,8 @@ pub struct McpContextBuilder {
     analytics_registry: Option<Arc<AlgorithmRegistry>>,
     analytics_lineage_store: Option<Arc<dyn RunLineageStore>>,
     #[cfg(feature = "multimodal")]
-    graph_repo: Option<Option<Arc<dyn cognicode_core::domain::ports::graph_repository::GraphRepository>>>,
+    graph_repo:
+        Option<Option<Arc<dyn cognicode_core::domain::ports::graph_repository::GraphRepository>>>,
 }
 
 impl McpContextBuilder {

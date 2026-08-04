@@ -20,9 +20,9 @@ use serde_json::Value;
 use crate::domain::decision_graph_topology::DecisionGraphTopology;
 use crate::dto::{ContextualView, EvidenceBlock, ViewBlock};
 use crate::error::ExplorerResult;
-use cognicode_core::domain::ports::graph_repository::GraphRepository as PortsGraphRepository;
-use cognicode_core::domain::ports::QualityStore;
 use crate::ports::symbol_repository::ResolvedSymbol;
+use cognicode_core::domain::ports::QualityStore;
+use cognicode_core::domain::ports::graph_repository::GraphRepository as PortsGraphRepository;
 
 /// Maximum traversal depth for rationale subgraph in pack builder.
 pub(crate) const PACK_RATIONALE_MAX_DEPTH: u32 = 3;

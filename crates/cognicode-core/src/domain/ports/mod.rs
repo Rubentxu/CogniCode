@@ -44,8 +44,8 @@ pub mod session_store;
 pub mod view_spec_store;
 
 pub use call_graph_projection::{
-    project_call_graph, CallGraphProjectionPort, ExplanationHop, ExplanationView, ProjectionError,
-    SubgraphDirection, SubgraphEdge, SubgraphView,
+    CallGraphProjectionPort, ExplanationHop, ExplanationView, ProjectionError, SubgraphDirection,
+    SubgraphEdge, SubgraphView, project_call_graph,
 };
 pub use call_graph_store::{CallGraphError, CallGraphStore};
 #[cfg(feature = "multimodal")]
@@ -53,7 +53,9 @@ pub use federation_store::{FederationError, FederationStore};
 pub use graph_error::{GraphError, GraphResult};
 pub use graph_repository::{GraphRepository, SearchPage};
 #[cfg(feature = "multimodal")]
-pub use ingest_commit_port::{CommitError, GraphDelta, IngestCommitPort, ManifestDelta, ReportIntent};
+pub use ingest_commit_port::{
+    CommitError, GraphDelta, IngestCommitPort, ManifestDelta, ReportIntent,
+};
 pub use manifest_store::{ManifestError, ManifestStore, ScanManifest};
 pub use node_property_repository::NodePropertyRepository;
 pub use quality_store::{

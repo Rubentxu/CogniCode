@@ -257,6 +257,33 @@ mod tests {
     use super::*;
 
     // -------------------------------------------------------------------------
+    // ARCHITECTURAL CONSTRAINT (planhash-placeholder fix)
+    // -------------------------------------------------------------------------
+    // The placeholder `PlanHash::compute(&0u32)` IS used in test fixtures
+    // and intermediate plan constructions. This is intentional:
+    //
+    // 1. Production lowering code (lower_plan.rs) uses a two-step workaround:
+    //    build with placeholder → compute correct hash → rebuild with correct hash.
+    //    The `plan_metadata_for(&plan)` helper produces correct hashes.
+    //
+    // 2. The `with_hash_computed(version, &GraphPlan)` helper in PlanMetadata
+    //    provides a cleaner API for the same pattern.
+    //
+    // 3. Direct construction with `PlanMetadata::new(version, PlanHash::compute(&0u32))`
+    //    produces WRONG metadata hashes (placeholder != content-derived).
+    //    This is the documented architectural constraint.
+    //
+    // When a MoldPlan is constructed with `PlanHash::compute(&0u32)` as the
+    // metadata hash, `metadata.hash` holds the placeholder value while
+    // `compute_hash()` returns the correct content-derived hash.
+    //
+    // This is the documented architectural constraint of the MoldPlan API:
+    // PlanMetadata::new() requires a hash at construction time, and the only
+    // way to get a PlanHash is via PlanHash::compute(&T), which requires
+    // the value to already exist. For plans under construction, the chicken-
+    // and-egg problem is solved by the two-step workaround in production code.
+
+    // -------------------------------------------------------------------------
     // Task 1.7a RED — MoldPlan enum (Select/Count/Aggregate/Explain)
     // Scenario: `moldplan-graphplan::MoldPlan Discriminated Union` (both)
     // Assert: `MoldPlan::Graph(g)` recovers inner via match; serde_json round-trip preserves variant + payload

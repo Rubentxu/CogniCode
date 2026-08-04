@@ -9,10 +9,10 @@ use crate::dto::{
     ContextualView, DesignFinding, EvidenceBlock, FindingSeverity, LineRange, RelationDirection,
     TypedRelation, ViewBlock, ViewDiagnostic,
 };
-use cognicode_core::domain::ports::{QualityIssue, QualityStore, RuleSummary};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
 use cognicode_core::domain::aggregates::call_graph::CallEntry;
+use cognicode_core::domain::ports::{QualityIssue, QualityStore, RuleSummary};
 
 use crate::adapters::QualityGraphRepository;
 use crate::domain::evidence::build_evidence_blocks;
@@ -5600,10 +5600,16 @@ mod tests {
                 .cloned()
                 .unwrap_or_default())
         }
-        fn issue_by_id(&self, id: i64) -> Result<Option<QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        fn issue_by_id(
+            &self,
+            id: i64,
+        ) -> Result<Option<QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(self.by_id.get(&id).cloned())
         }
-        fn rule_summary(&self, rule_id: &str) -> Result<RuleSummary, cognicode_core::domain::ports::QualityError> {
+        fn rule_summary(
+            &self,
+            rule_id: &str,
+        ) -> Result<RuleSummary, cognicode_core::domain::ports::QualityError> {
             Ok(self
                 .rules
                 .get(rule_id)
@@ -5654,7 +5660,10 @@ mod tests {
         fn insert_issues(
             &self,
             _issues: &[cognicode_core::domain::ports::NewIssue],
-        ) -> Result<cognicode_core::domain::ports::UpsertSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::UpsertSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(cognicode_core::domain::ports::UpsertSummary::default())
         }
         fn delete_issue(

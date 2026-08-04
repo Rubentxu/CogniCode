@@ -98,6 +98,8 @@ impl super::MoldqlAstLowerer {
         match &q.projection {
             PatternProjection::Row { .. } => {
                 // COUNT / ORDER BY / LIMIT → Cluster variant.
+                // ARCHITECTURAL CONSTRAINT (planhash-placeholder fix):
+                // See lower_plan.rs: lower_path. Placeholder hash is replaced below.
                 let (by, aggregations, ordering, limit) = self.lower_row_projection(&q.projection);
                 let plan_limits = PlanLimits::builder().max_hops(max_hops).build();
                 let placeholder = GraphPlan::Cluster {
@@ -108,7 +110,7 @@ impl super::MoldqlAstLowerer {
                     limits: plan_limits.clone(),
                     metadata: PlanMetadata::new(
                         PlanVersion::new("1.0.0").expect("valid semver"),
-                        PlanHash::compute(&0u32),
+                        PlanHash::compute(&0u32), // placeholder — replaced below
                     ),
                 };
                 let metadata = self.plan_metadata_for(&placeholder);
@@ -123,6 +125,8 @@ impl super::MoldqlAstLowerer {
             }
             _ => {
                 // Path variant.
+                // ARCHITECTURAL CONSTRAINT (planhash-placeholder fix):
+                // See lower_plan.rs: lower_path. Placeholder hash is replaced below.
                 let quantifier = q
                     .edges
                     .first()
@@ -143,7 +147,7 @@ impl super::MoldqlAstLowerer {
                     limits: plan_limits.clone(),
                     metadata: PlanMetadata::new(
                         PlanVersion::new("1.0.0").expect("valid semver"),
-                        PlanHash::compute(&0u32),
+                        PlanHash::compute(&0u32), // placeholder — replaced below
                     ),
                 };
                 let metadata = self.plan_metadata_for(&placeholder);
