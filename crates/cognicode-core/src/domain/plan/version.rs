@@ -21,6 +21,9 @@ use sha2::{Digest, Sha256};
 // Sealed trait — implemented by all plan types to certify backend-neutrality.
 use super::neutrality::Sealed;
 
+// GraphPlan is in a sibling module — used in with_hash_computed.
+use super::graph_plan::GraphPlan;
+
 // ============================================================================
 // PlanVersion
 // ============================================================================
@@ -196,6 +199,16 @@ impl Sealed for PlanMetadata {}
 impl PlanMetadata {
     pub fn new(version: PlanVersion, hash: PlanHash) -> Self {
         Self { version, hash }
+    }
+
+    /// Construct `PlanMetadata` by computing the hash from the given plan.
+    ///
+    /// This eliminates the need for an intermediate plan with placeholder hash.
+    pub fn with_hash_computed(version: PlanVersion, plan: &GraphPlan) -> Self {
+        Self {
+            version,
+            hash: plan.compute_hash(),
+        }
     }
 
     /// Returns the plan version string.

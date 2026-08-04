@@ -257,6 +257,48 @@ mod tests {
     use super::*;
 
     // -------------------------------------------------------------------------
+    // RED — PlanHash placeholder causes metadata.hash != compute_hash()
+    // Scenario: `fix-planhash-placeholder::Placeholder Identity Bug`
+    // Assert: A plan built with PlanHash::compute(&0u32) has metadata.hash
+    //         that differs from the content-derived compute_hash().
+    //         This proves the bug: placeholder hash breaks identity.
+    // -------------------------------------------------------------------------
+
+    /// BUG REPRODUCTION TEST (RED) — fails on main, passes after fix.
+    ///
+    /// When a MoldPlan is constructed with `PlanHash::compute(&0u32)` as the
+    /// metadata hash, `metadata.hash` holds the placeholder value while
+    /// `compute_hash()` returns the correct content-derived hash.
+    ///
+    /// This mismatch causes incorrect behavior when plans are used as
+    /// `HashMap` keys or for identity-based deduplication: two structurally
+    /// identical plans built with different hash construction approaches would
+    /// be treated as distinct keys.
+    #[test]
+    fn test_metadata_hash_should_equal_compute_hash() {
+        // Build a plan with PLACEHOLDER hash — the common workaround pattern
+        let plan = MoldPlan::Select {
+            from: "test_nodes".into(),
+            r#where: vec![],
+            projection: vec![],
+            limits: PlanLimits::default(),
+            metadata: PlanMetadata::new(
+                PlanVersion::new("1.0.0").unwrap(),
+                PlanHash::compute(&0u32), // placeholder — the bug trigger
+            ),
+        };
+
+        // BUG: metadata.hash is placeholder (sha256 of 0u32),
+        // but compute_hash() returns the content-derived hash.
+        // This FAILS on main, PASSES after fix (production code uses correct hash).
+        assert_eq!(
+            plan.metadata().hash,
+            plan.compute_hash(),
+            "BUG: metadata.hash should equal content-derived compute_hash()"
+        );
+    }
+
+    // -------------------------------------------------------------------------
     // Task 1.7a RED — MoldPlan enum (Select/Count/Aggregate/Explain)
     // Scenario: `moldplan-graphplan::MoldPlan Discriminated Union` (both)
     // Assert: `MoldPlan::Graph(g)` recovers inner via match; serde_json round-trip preserves variant + payload
