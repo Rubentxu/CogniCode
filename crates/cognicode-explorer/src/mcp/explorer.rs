@@ -386,6 +386,8 @@ impl ExplorerMcpHandler {
         quality_write: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
         revision_tracker: Arc<std::sync::atomic::AtomicU64>,
         #[allow(unused_variables)] route_store: Option<Arc<dyn crate::ports::RouteStore>>,
+        analytics_registry: Option<Arc<cognicode_core::application::services::graph_analytics::AlgorithmRegistry>>,
+        analytics_lineage_store: Option<Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>>,
     ) -> Self {
         // GraphQueryPort may be None when no call graph is loaded.
         #[cfg(not(feature = "ownership"))]
@@ -467,6 +469,12 @@ impl ExplorerMcpHandler {
         }
         if let Some(qw) = quality_write {
             ctx_builder = ctx_builder.with_quality_write(qw);
+        }
+        if let Some(r) = analytics_registry {
+            ctx_builder = ctx_builder.with_analytics_registry(r);
+        }
+        if let Some(l) = analytics_lineage_store {
+            ctx_builder = ctx_builder.with_analytics_lineage_store(l);
         }
         #[cfg(feature = "multimodal")]
         if let Some(ee) = route_store {

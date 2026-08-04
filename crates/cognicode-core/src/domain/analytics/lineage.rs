@@ -255,6 +255,96 @@ pub struct LineagePage {
 }
 
 // ============================================================================
+// InMemoryLineageStore
+// ============================================================================
+
+/// A `Vec`-backed, in-process implementation of [`RunLineageStore`].
+///
+/// **This store is ephemeral — it is NOT durable and data is lost on process
+/// exit.** Use it for single-node deployments, local development, or when no
+/// persistent backend (e.g., PostgreSQL/LadybugDB) is configured.
+///
+/// Queries against an empty store return empty results; `insert` appends to the
+/// internal `Vec` in memory.
+#[derive(Debug, Default)]
+pub struct InMemoryLineageStore {
+    records: std::sync::RwLock<Vec<RunLineage>>,
+    limits: std::sync::RwLock<std::collections::HashMap<(AlgorithmId, String), crate::domain::plan::limits::PlanLimits>>,
+}
+
+impl InMemoryLineageStore {
+    /// Construct a new empty `InMemoryLineageStore`.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[async_trait::async_trait]
+impl RunLineageStore for InMemoryLineageStore {
+    async fn insert(&self, lineage: &RunLineage) -> Result<(), AnalyticsError> {
+        // Clone and store to simulate durable insert
+        let record = lineage.clone();
+        self.records.write().unwrap().push(record);
+        Ok(())
+    }
+
+    async fn get(&self, run_id: Uuid) -> Result<RunLineage, AnalyticsError> {
+        let records = self.records.read().unwrap();
+        records
+            .iter()
+            .find(|r| r.run_id == run_id)
+            .cloned()
+            .ok_or_else(|| AnalyticsError::RunNotFound(format!("run {} not found", run_id)))
+    }
+
+    async fn query(
+        &self,
+        filter: RunLineageFilter,
+        limit: Option<u64>,
+    ) -> Result<Vec<RunLineage>, AnalyticsError> {
+        let records = self.records.read().unwrap();
+        let mut results: Vec<RunLineage> = records
+            .iter()
+            .filter(|r| {
+                filter.workspace_id.as_ref().map_or(true, |wid| &r.workspace_id == wid)
+                    && filter.revision_id.as_ref().map_or(true, |rid| &r.revision_id == rid)
+                    && filter.algorithm_id.as_ref().map_or(true, |aid| &r.algorithm_id == aid)
+                    && filter.status.as_ref().map_or(true, |s| &r.status == s)
+            })
+            .cloned()
+            .collect();
+
+        results.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+
+        if let Some(limit) = limit {
+            results.truncate(limit as usize);
+        }
+
+        Ok(results)
+    }
+
+    async fn upsert_descriptor_limits(
+        &self,
+        algorithm_id: &AlgorithmId,
+        version: &str,
+        limits: &crate::domain::plan::limits::PlanLimits,
+    ) -> Result<(), AnalyticsError> {
+        let key = (algorithm_id.clone(), version.to_string());
+        self.limits.write().unwrap().insert(key, limits.clone());
+        Ok(())
+    }
+
+    async fn get_descriptor_limits(
+        &self,
+        algorithm_id: &AlgorithmId,
+        version: &str,
+    ) -> Result<Option<crate::domain::plan::limits::PlanLimits>, AnalyticsError> {
+        let key = (algorithm_id.clone(), version.to_string());
+        Ok(self.limits.read().unwrap().get(&key).cloned())
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -345,5 +435,122 @@ mod tests {
         assert_eq!(lineage.status, RunStatus::Failed);
         assert_eq!(lineage.error_kind, Some("LimitExceeded(Memory)".into()));
         assert_eq!(lineage.error_message, Some("out of memory".into()));
+    }
+
+    // ========================================================================
+    // InMemoryLineageStore tests
+    // ========================================================================
+
+    use super::{InMemoryLineageStore, RunLineageFilter, RunLineageStore, TruncationMarker};
+
+    #[tokio::test]
+    async fn in_memory_lineage_store_insert_and_get() {
+        let store = InMemoryLineageStore::new();
+        let lineage = RunLineage::new(
+            dummy_workspace(),
+            dummy_revision(),
+            AlgorithmId::from_static("pagerank"),
+            "v1.0.0".into(),
+            vec![],
+            serde_json::json!({}),
+            None,
+            AnalyticsMode::Stream,
+        );
+        let run_id = lineage.run_id.clone();
+        store.insert(&lineage).await.unwrap();
+
+        let retrieved = store.get(run_id).await.unwrap();
+        assert_eq!(retrieved.algorithm_id.as_str(), "pagerank");
+    }
+
+    #[tokio::test]
+    async fn in_memory_lineage_store_query_empty() {
+        let store = InMemoryLineageStore::new();
+        let results = store
+            .query(RunLineageFilter::default(), None)
+            .await
+            .unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn in_memory_lineage_store_query_by_workspace() {
+        let store = InMemoryLineageStore::new();
+        let ws = dummy_workspace();
+        let lineage = RunLineage::new(
+            ws.clone(),
+            dummy_revision(),
+            AlgorithmId::from_static("pagerank"),
+            "v1.0.0".into(),
+            vec![],
+            serde_json::json!({}),
+            None,
+            AnalyticsMode::Stream,
+        );
+        store.insert(&lineage).await.unwrap();
+
+        let filter = RunLineageFilter {
+            workspace_id: Some(ws),
+            ..Default::default()
+        };
+        let results = store.query(filter, None).await.unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn in_memory_lineage_store_query_with_limit() {
+        let store = InMemoryLineageStore::new();
+        for i in 0..5 {
+            let mut lineage = RunLineage::new(
+                dummy_workspace(),
+                dummy_revision(),
+                AlgorithmId::from_static("pagerank"),
+                "v1.0.0".into(),
+                vec![],
+                serde_json::json!({"i": i}),
+                None,
+                AnalyticsMode::Stream,
+            );
+            lineage.succeed(i);
+            store.insert(&lineage).await.unwrap();
+        }
+
+        let results = store
+            .query(RunLineageFilter::default(), Some(3))
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn in_memory_lineage_store_get_not_found() {
+        let store = InMemoryLineageStore::new();
+        let result = store.get(Uuid::new_v4()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn in_memory_lineage_store_ephemeral_nature() {
+        // Verify that data is in-memory only by checking that a new store instance
+        // does not retain data from a previous one.
+        let store1 = InMemoryLineageStore::new();
+        let lineage = RunLineage::new(
+            dummy_workspace(),
+            dummy_revision(),
+            AlgorithmId::from_static("pagerank"),
+            "v1.0.0".into(),
+            vec![],
+            serde_json::json!({}),
+            None,
+            AnalyticsMode::Stream,
+        );
+        store1.insert(&lineage).await.unwrap();
+
+        let store2 = InMemoryLineageStore::new();
+        let results = store2
+            .query(RunLineageFilter::default(), None)
+            .await
+            .unwrap();
+        assert!(results.is_empty());
     }
 }
