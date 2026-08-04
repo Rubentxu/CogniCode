@@ -93,6 +93,17 @@ impl From<cognicode_core::domain::ports::GraphError> for ExplorerError {
     }
 }
 
+/// Fallback `From<GraphError>` for the default (non-multimodal) build.
+/// In the default build, `GraphRepository::example_blocks_for_symbol` returns
+/// an empty Vec via the default implementation, so errors shouldn't occur.
+/// This impl exists so call sites using `?` compile in both build modes.
+#[cfg(not(feature = "multimodal"))]
+impl From<cognicode_core::domain::ports::GraphError> for ExplorerError {
+    fn from(err: cognicode_core::domain::ports::GraphError) -> Self {
+        ExplorerError::Anyhow(anyhow::anyhow!("graph error: {:?}", err))
+    }
+}
+
 /// Map `cognicode_core::domain::ports::QualityError` onto
 /// `ExplorerError` so existing `?` chain call sites keep working
 /// after PR2 (port trait relocation).

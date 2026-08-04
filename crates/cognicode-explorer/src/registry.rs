@@ -347,6 +347,16 @@ fn real_executors() -> &'static ViewExecutorMap {
                 executor: &crate::domain::views::CONCEPT_MAP_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
             },
+            ExecutorEntry {
+                id: "project-diary",
+                executor: &crate::domain::views::PROJECT_DIARY_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            },
+            ExecutorEntry {
+                id: "example-object",
+                executor: &crate::domain::views::EXAMPLE_OBJECT_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            },
         ];
 
         // Build map first, then derive pairs from the live trait method.

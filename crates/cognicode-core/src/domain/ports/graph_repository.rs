@@ -27,6 +27,8 @@
 //! calling convention changed from sync `fn` to `async fn` with `#[async_trait]`.
 
 use crate::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
+use crate::domain::aggregates::SymbolId;
+use crate::domain::example_block::ExampleBlock;
 use crate::domain::ports::graph_error::GraphResult;
 use crate::domain::value_objects::edge_kind::EdgeKind;
 use crate::domain::value_objects::node_kind::NodeKind;
@@ -97,6 +99,18 @@ pub trait GraphRepository: Send + Sync {
     /// highest confidence for duplicate tuples.
     async fn edges_by_kind(&self, node: &NodeId, kinds: &[EdgeKind])
     -> GraphResult<Vec<GraphEdge>>;
+
+    /// Return code usage examples for a symbol.
+    ///
+    /// Returns example blocks that demonstrate how the given symbol is used,
+    /// tested, or benchmarked. Used by the ExampleObject view to populate
+    /// the narrative runtime.
+    ///
+    /// Default implementation returns an empty vector — the LadybugDB adapter
+    /// provides the production implementation.
+    async fn example_blocks_for_symbol(&self, _symbol_id: &SymbolId) -> GraphResult<Vec<ExampleBlock>> {
+        Ok(Vec::new())
+    }
 
     /// BFS traversal of the multimodal sub-graph from `focus`, following
     /// only multimodal edges (Justifies, Cites, Resolves, CorroboratedBy).

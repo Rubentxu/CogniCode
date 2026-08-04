@@ -50,6 +50,8 @@ pub enum ObjectIdentity {
     Decision { id: String },
     /// `evidence:{id}` — an evidence node from the graph, by node id.
     Evidence { id: String },
+    /// `workspace:{id}` — a workspace, by workspace id.
+    Workspace { id: String },
 }
 
 impl ObjectIdentity {
@@ -109,6 +111,11 @@ impl ObjectIdentity {
         Self::Evidence { id: id.into() }
     }
 
+    /// Build a workspace identity from a workspace id.
+    pub fn new_workspace(id: impl Into<String>) -> Self {
+        Self::Workspace { id: id.into() }
+    }
+
     /// Parse an MVP id. The accepted shapes are:
     /// - `symbol:{file}:{name}:{line}` (line > 0, file + name non-empty)
     /// - `file:{path}` (path non-empty)
@@ -140,6 +147,7 @@ impl ObjectIdentity {
             "doc" => Self::parse_doc(rest, raw),
             "decision" => Self::parse_decision(rest, raw),
             "evidence" => Self::parse_evidence(rest, raw),
+            "workspace" => Self::parse_workspace(rest, raw),
             _ => Err(ExplorerError::ResolutionFailed(raw.to_string())),
         }
     }
@@ -260,6 +268,15 @@ impl ObjectIdentity {
         })
     }
 
+    fn parse_workspace(rest: &str, raw: &str) -> ExplorerResult<Self> {
+        if rest.is_empty() {
+            return Err(ExplorerError::ResolutionFailed(raw.to_string()));
+        }
+        Ok(Self::Workspace {
+            id: rest.to_string(),
+        })
+    }
+
     /// The lowercase tag used in MVP ids and on the wire:
     /// `"symbol"`, `"file"`, `"scope"`, `"issue"`, `"rule"`, `"exploration"`,
     /// `"investigation"`, `"doc"`, `"decision"`, or `"evidence"`.
@@ -275,6 +292,7 @@ impl ObjectIdentity {
             Self::Doc { .. } => "doc",
             Self::Decision { .. } => "decision",
             Self::Evidence { .. } => "evidence",
+            Self::Workspace { .. } => "workspace",
         }
     }
 
@@ -299,7 +317,8 @@ impl ObjectIdentity {
             | Self::Investigation { .. }
             | Self::Doc { .. }
             | Self::Decision { .. }
-            | Self::Evidence { .. } => None,
+            | Self::Evidence { .. }
+            | Self::Workspace { .. } => None,
         }
     }
 
@@ -348,6 +367,11 @@ impl ObjectIdentity {
         matches!(self, Self::Evidence { .. })
     }
 
+    /// `true` for the workspace variant.
+    pub fn is_workspace(&self) -> bool {
+        matches!(self, Self::Workspace { .. })
+    }
+
     /// Render the canonical MVP id (`symbol:...` / `file:...` /
     /// `scope:...` / `issue:...` / `rule:...` / `exploration:...` /
     /// `investigation:...` / `doc:...` / `decision:...` / `evidence:...`).
@@ -363,6 +387,7 @@ impl ObjectIdentity {
             Self::Doc { id } => format!("doc:{id}"),
             Self::Decision { id } => format!("decision:{id}"),
             Self::Evidence { id } => format!("evidence:{id}"),
+            Self::Workspace { id } => format!("workspace:{id}"),
         }
     }
 
@@ -396,6 +421,7 @@ impl ObjectIdentity {
             Self::SavedExploration { id } => id.clone(),
             Self::Investigation { id } => id.clone(),
             Self::Doc { id } | Self::Decision { id } | Self::Evidence { id } => id.clone(),
+            Self::Workspace { id } => id.clone(),
         }
     }
 }
@@ -623,6 +649,8 @@ mod tests {
         assert_eq!(rule.to_mvp_id(), "rule:rust:S100");
         let exploration = ObjectIdentity::new_saved_exploration("abc-123");
         assert_eq!(exploration.to_mvp_id(), "exploration:abc-123");
+        let workspace = ObjectIdentity::new_workspace("ws-1");
+        assert_eq!(workspace.to_mvp_id(), "workspace:ws-1");
     }
 
     #[test]
@@ -645,6 +673,31 @@ mod tests {
     #[test]
     fn rejects_exploration_with_empty_id() {
         let err = ObjectIdentity::parse_mvp_id("exploration:").unwrap_err();
+        assert!(matches!(err, ExplorerError::ResolutionFailed(_)));
+    }
+
+    #[test]
+    fn parses_valid_workspace_mvp_id() {
+        let id = ObjectIdentity::parse_mvp_id("workspace:ws-42").unwrap();
+        assert_eq!(id, ObjectIdentity::Workspace { id: "ws-42".into() });
+        assert_eq!(id.object_type_str(), "workspace");
+        assert!(id.is_workspace());
+        assert!(id.path().is_none());
+        assert_eq!(id.to_mvp_id(), "workspace:ws-42");
+        assert_eq!(id.natural_key(), "ws-42");
+        assert!(id.to_symbol_id().is_none());
+    }
+
+    #[test]
+    fn new_workspace_constructor() {
+        let ws = ObjectIdentity::new_workspace("my-workspace");
+        assert_eq!(ws.to_mvp_id(), "workspace:my-workspace");
+        assert!(ws.is_workspace());
+    }
+
+    #[test]
+    fn rejects_workspace_with_empty_id() {
+        let err = ObjectIdentity::parse_mvp_id("workspace:").unwrap_err();
         assert!(matches!(err, ExplorerError::ResolutionFailed(_)));
     }
 }

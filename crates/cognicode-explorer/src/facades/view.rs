@@ -40,6 +40,7 @@ fn identity_to_inspectable_type(identity: &ObjectIdentity) -> InspectableObjectT
         ObjectIdentity::Doc { .. } => InspectableObjectType::Doc,
         ObjectIdentity::Decision { .. } => InspectableObjectType::DecisionArtifact,
         ObjectIdentity::Evidence { .. } => InspectableObjectType::Evidence,
+        ObjectIdentity::Workspace { .. } => InspectableObjectType::Workspace,
     }
 }
 
@@ -190,6 +191,14 @@ impl ViewServiceImpl {
                 })?;
                 Ok(InspectionTarget::Evidence { id: id.clone() })
             }
+            // Workspace requires async persistence to load sessions — handled in
+            // contextual_view before this function is called. The sync path
+            // returns a feature-disabled error since sessions cannot be loaded
+            // synchronously.
+            ObjectIdentity::Workspace { .. } => Err(ExplorerError::FeatureDisabled(
+                "Workspace view resolution requires async persistence (not available in sync path)"
+                    .into(),
+            )),
         }
     }
 
@@ -393,6 +402,37 @@ impl ViewService for ViewServiceImpl {
                     ))
                 })?;
             InspectionTarget::SavedExploration(session)
+        } else if matches!(identity, ObjectIdentity::Workspace { .. }) {
+            // Handle Workspace with async persistence fetch — loads all sessions
+            // for the workspace and constructs WorkspaceTarget.
+            let workspace_id = match &identity {
+                ObjectIdentity::Workspace { id } => id.clone(),
+                _ => {
+                    return Err(ExplorerError::ResolutionFailed(
+                        "invalid Workspace identity".into(),
+                    ));
+                }
+            };
+            let persistence = self.persistence.as_ref().ok_or_else(|| {
+                ExplorerError::ResolutionFailed(
+                    "persistence not wired for Workspace view resolution".into(),
+                )
+            })?;
+            let sessions = persistence
+                .list_explorations(&workspace_id)
+                .await
+                .unwrap_or_default();
+            let graph_status = if sessions.is_empty() {
+                crate::dto::GraphStatus::Missing
+            } else {
+                crate::dto::GraphStatus::Ready
+            };
+            InspectionTarget::Workspace(crate::dto::WorkspaceTarget {
+                id: workspace_id,
+                root_path: String::new(),
+                sessions,
+                graph_status,
+            })
         } else {
             self.resolve_inspection_target(&identity)?
         };
@@ -856,6 +896,18 @@ mod view_service_tests {
     fn resolve_inspection_target_issue_requires_quality_repo() {
         let service = make_service(MockRepo::new());
         let identity = ObjectIdentity::parse_mvp_id("issue:42").unwrap();
+        let result = service.resolve_inspection_target(&identity);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ExplorerError::FeatureDisabled(_)));
+    }
+
+    // --- resolve_inspection_target for Workspace (returns FeatureDisabled in sync path) ---
+
+    #[test]
+    fn resolve_inspection_target_workspace_returns_feature_disabled() {
+        let service = make_service(MockRepo::new());
+        let identity = ObjectIdentity::parse_mvp_id("workspace:ws-1").unwrap();
         let result = service.resolve_inspection_target(&identity);
         assert!(result.is_err());
         let err = result.unwrap_err();

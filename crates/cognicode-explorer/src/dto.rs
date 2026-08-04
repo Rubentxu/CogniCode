@@ -325,7 +325,28 @@ pub enum InspectionTarget {
     Evidence {
         id: String,
     },
+    /// A workspace with pre-resolved exploration sessions, used by ProjectDiary view.
+    Workspace(WorkspaceTarget),
 }
+
+/// Target for ProjectDiary view — carries workspace identity and pre-resolved sessions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceTarget {
+    /// Unique workspace identifier.
+    pub id: String,
+    /// Root path of the workspace on disk.
+    pub root_path: String,
+    /// All saved exploration sessions for this workspace.
+    pub sessions: Vec<ExplorationSession>,
+    /// Current graph indexing status.
+    pub graph_status: GraphStatus,
+}
+
+// Re-export ExampleBlock and ExampleKind from core's domain layer so the
+// explorer DTO layer stays consistent. The core definitions use the same
+// serde attributes (block_type for kind), preserving the JSON wire format.
+pub use cognicode_core::domain::ExampleKind;
+pub use cognicode_core::domain::ExampleBlock;
 
 /// Context passed to ViewExecutor::build(). The service populates all
 /// fields before calling build(); capabilities MUST NOT re-resolve identity.
