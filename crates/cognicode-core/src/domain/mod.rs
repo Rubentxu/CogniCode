@@ -8,6 +8,7 @@ pub mod aggregates;
 pub mod analytics;
 pub mod error;
 pub mod events;
+pub mod example_block;
 // Multimodal (brain-federation) primitives — `FederatedNodeId`,
 // `FederatedNode`, `SpaceRegistry`, `MergeDetector`,
 // `MergeCandidate`, `FederatedGraphService`. Hidden on default
@@ -28,6 +29,7 @@ pub mod value_objects;
 pub use aggregates::{CallGraph, Refactor, Symbol};
 pub use error::DomainError;
 pub use events::{GraphDiffCalculator, GraphEvent};
+pub use example_block::{ExampleBlock, ExampleKind};
 pub use services::{ComplexityCalculator, CycleDetector, ImpactAnalyzer};
 pub use value_objects::{DependencyType, Location, SourceRange, SymbolKind};
 

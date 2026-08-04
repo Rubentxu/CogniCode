@@ -943,6 +943,12 @@ fn inspect_object_impl(
                 "Investigation inspection requires async context"
             )))
         }
+        ObjectIdentity::Workspace { .. } => {
+            // Async path — handled in contextual_view before calling this
+            Err(ExplorerError::Anyhow(anyhow::anyhow!(
+                "Workspace inspection requires async context"
+            )))
+        }
         ObjectIdentity::Doc { .. } => {
             // Graph path — requires graph_repo wired. Return FeatureDisabled error
             // when graph_repo is not available (C-ARCH-03 conformance).

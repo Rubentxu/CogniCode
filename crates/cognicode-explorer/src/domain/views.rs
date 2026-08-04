@@ -6,9 +6,10 @@
 use serde_json::json;
 
 use crate::dto::{
-    ContextualView, DesignFinding, EvidenceBlock, FindingSeverity, LineRange, RelationDirection,
-    TypedRelation, ViewBlock, ViewDiagnostic,
+    ContextualView, DesignFinding, EvidenceBlock, FindingSeverity, LineRange,
+    RelationDirection, TypedRelation, ViewBlock, ViewDiagnostic,
 };
+use crate::error::ExplorerError;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
 use cognicode_core::domain::aggregates::call_graph::CallEntry;
@@ -5046,7 +5047,7 @@ pub fn build_example_object(symbol: &ResolvedSymbol, examples: &[ExampleBlock]) 
                 id: example.symbol_id.clone(),
                 title: example.source_location.clone(),
                 body: serde_json::json!({
-                    "block_type": example.block_type,
+                    "block_type": example.kind,
                     "symbol_id": example.symbol_id,
                     "example_text": example.example_text,
                     "source_location": example.source_location,
@@ -5094,10 +5095,18 @@ impl ViewExecutor for ExampleObjectExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
             InspectionTarget::Symbol(symbol) => {
-                // TODO: Wire example_blocks_for_symbol from graph_repo once the method
-                // is added to the GraphRepository port (see design open questions).
-                // For now, return empty examples — the placeholder block signals "no examples".
-                let examples: Vec<ExampleBlock> = Vec::new();
+                // Fetch example blocks from the graph repository.
+                // The graph_repo may be None when the graph layer is not wired;
+                // in that case we fall back to an empty list (placeholder block
+                // signals "no examples" to the caller).
+                let examples: Vec<ExampleBlock> = match ctx.graph_repo {
+                    Some(repo) => {
+                        repo.example_blocks_for_symbol(&symbol.id)
+                            .await
+                            .map_err(ExplorerError::from)?
+                    }
+                    None => Vec::new(),
+                };
                 Ok(build_example_object(symbol, &examples))
             }
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
@@ -8097,13 +8106,13 @@ mod tests {
                 symbol_id: "test.rs:foo:10".into(),
                 example_text: "foo();".into(),
                 source_location: "test.rs:42".into(),
-                block_type: "usage".into(),
+                kind: crate::dto::ExampleKind::Usage,
             },
             ExampleBlock {
                 symbol_id: "test.rs:foo:10".into(),
                 example_text: "let x = foo();".into(),
                 source_location: "other.rs:100".into(),
-                block_type: "usage".into(),
+                kind: crate::dto::ExampleKind::Usage,
             },
         ];
 
