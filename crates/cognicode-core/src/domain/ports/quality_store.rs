@@ -177,4 +177,3 @@ pub trait QualityStore: Send + Sync {
         line: u32,
     ) -> Result<bool, QualityError>;
 }
-

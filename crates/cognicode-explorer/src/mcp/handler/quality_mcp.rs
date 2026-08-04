@@ -270,7 +270,9 @@ impl ToolHandler for FindQualityIssuesHandler {
 /// callers fall back to other sources or accept empty results.
 /// This is intentionally best-effort: aggregation across an entire
 /// workspace requires cooperation from the port, which is a v2 concern.
-fn list_known_files(_q: &Arc<dyn cognicode_core::domain::ports::QualityStore>) -> Result<Vec<String>, ()> {
+fn list_known_files(
+    _q: &Arc<dyn cognicode_core::domain::ports::QualityStore>,
+) -> Result<Vec<String>, ()> {
     // v1: QualityStore doesn't expose a file index. The
     // aggregation path returns an empty file list, so the handler
     // will produce an empty issues array — callers should narrow by
@@ -490,10 +492,10 @@ fn _rule_summary_marker(_r: &RuleSummary) {}
 mod tests {
     use super::*;
     use crate::error::{ExplorerError, ExplorerResult};
+    use async_trait::async_trait;
     use cognicode_core::domain::ports::{
         IssueFilter, QualityGateSummary, QualityIssue, QualityStore, RuleSummary,
     };
-    use async_trait::async_trait;
     use std::collections::HashMap;
 
     // ---------------------------------------------------------------------
@@ -567,7 +569,10 @@ mod tests {
         ) -> Result<Option<QualityIssue>, cognicode_core::domain::ports::QualityError> {
             Ok(None)
         }
-        fn rule_summary(&self, _rule_id: &str) -> Result<RuleSummary, cognicode_core::domain::ports::QualityError> {
+        fn rule_summary(
+            &self,
+            _rule_id: &str,
+        ) -> Result<RuleSummary, cognicode_core::domain::ports::QualityError> {
             Ok(RuleSummary {
                 rule_id: "mock".to_string(),
                 description: "mock".to_string(),
@@ -612,7 +617,10 @@ mod tests {
         fn insert_issues(
             &self,
             _issues: &[cognicode_core::domain::ports::NewIssue],
-        ) -> Result<cognicode_core::domain::ports::UpsertSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::UpsertSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(cognicode_core::domain::ports::UpsertSummary::default())
         }
         fn delete_issue(

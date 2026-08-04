@@ -42,8 +42,8 @@ use crate::domain::analytics::{
     AnalyticsMode, DeterminismKind, RunLineage, RunLineageFilter, RunLineageStore, RunStatus,
 };
 use crate::domain::plan::limits::PlanLimits;
+use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
 use crate::domain::value_objects::{RevisionId, WorkspaceId};
-use crate::domain::ports::call_graph_projection::{project_call_graph, CallGraphProjectionPort};
 use cognicode_graph_algos::{self, GraphBuilder};
 
 /// Graph analytics service wrapping petgraph algorithms.

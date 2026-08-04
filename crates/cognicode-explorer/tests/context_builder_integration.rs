@@ -24,6 +24,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use cognicode_core::domain::aggregates::CallEntry;
 use cognicode_core::domain::aggregates::{CallGraph, Symbol, SymbolId};
+use cognicode_core::domain::ports::{
+    IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
+    RuleSummary, UpsertSummary,
+};
 use cognicode_core::domain::traits::{
     CalleeWithMetadata, CallerWithMetadata, GraphQueryPort, RelationTarget,
     RelationTargetWithMetadata,
@@ -39,10 +43,6 @@ use cognicode_explorer::facades::{SearchService, ViewService};
 use cognicode_explorer::mcp::handler::ToolHandlerRegistry;
 use cognicode_explorer::mcp::handler::context_builder::register_context_builder_handlers;
 use cognicode_explorer::mcp::{McpContext, TOOL_BUILD_CONTEXT};
-use cognicode_core::domain::ports::{
-    IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
-    RuleSummary, UpsertSummary,
-};
 use cognicode_explorer::session::SessionRegistry;
 use rmcp::model::CallToolResult;
 use serde_json::{Value, json};

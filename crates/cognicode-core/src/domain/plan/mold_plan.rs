@@ -273,32 +273,15 @@ mod tests {
     //    produces WRONG metadata hashes (placeholder != content-derived).
     //    This is the documented architectural constraint.
     //
-    // Direct test (kept as documentation):
-    #[test]
-    fn _placeholder_hash_mismatch_is_architectural_constraint() {
-        // When a MoldPlan is constructed with `PlanHash::compute(&0u32)` as the
-        // metadata hash, `metadata.hash` holds the placeholder value while
-        // `compute_hash()` returns the correct content-derived hash.
-        //
-        // This is the documented architectural constraint of the MoldPlan API:
-        // PlanMetadata::new() requires a hash at construction time, and the only
-        // way to get a PlanHash is via PlanHash::compute(&T), which requires
-        // the value to already exist. For plans under construction, the chicken-
-        // and-egg problem is solved by the two-step workaround in production code.
-        let plan = MoldPlan::Select {
-            from: "test_nodes".into(),
-            r#where: vec![],
-            projection: vec![],
-            limits: PlanLimits::default(),
-            metadata: PlanMetadata::new(
-                PlanVersion::new("1.0.0").unwrap(),
-                PlanHash::compute(&0u32),
-            ),
-        };
-        // This assertion would FAIL — proving the architectural mismatch exists.
-        // It is kept as documentation; production code avoids this pattern.
-        let _ = plan; // suppress unused warning
-    }
+    // When a MoldPlan is constructed with `PlanHash::compute(&0u32)` as the
+    // metadata hash, `metadata.hash` holds the placeholder value while
+    // `compute_hash()` returns the correct content-derived hash.
+    //
+    // This is the documented architectural constraint of the MoldPlan API:
+    // PlanMetadata::new() requires a hash at construction time, and the only
+    // way to get a PlanHash is via PlanHash::compute(&T), which requires
+    // the value to already exist. For plans under construction, the chicken-
+    // and-egg problem is solved by the two-step workaround in production code.
 
     // -------------------------------------------------------------------------
     // Task 1.7a RED — MoldPlan enum (Select/Count/Aggregate/Explain)

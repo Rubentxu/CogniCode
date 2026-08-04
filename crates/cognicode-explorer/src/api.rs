@@ -39,9 +39,9 @@ use crate::facades::{
     GraphService, InvestigationFacade, MoldQLService, PersistenceService, SearchService,
     SubgraphDirection as FacadeSubgraphDirection, ViewService, WorkspaceService,
 };
+use crate::ports::symbol_repository::ResolvedSymbol;
 #[cfg(feature = "multimodal")]
 use cognicode_core::domain::ports::graph_repository::GraphRepository;
-use crate::ports::symbol_repository::ResolvedSymbol;
 
 // ============================================================================
 // Style-class taxonomy

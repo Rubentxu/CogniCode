@@ -14,8 +14,8 @@
 //!   mtime + blake3 content-hash tracking for incremental graph rescans.
 //! - `SnapshotProvider`: Domain port for versioned graph snapshots (ADR-035).
 
-mod call_graph_projection;
 pub mod analytics;
+mod call_graph_projection;
 pub mod checkpoint;
 pub mod graph_cache;
 mod lightweight_index;
@@ -35,11 +35,11 @@ mod incremental_scanner;
 #[cfg(test)]
 mod checkpoint_tests;
 
-pub use call_graph_projection::CallGraphProjection;
 pub use crate::domain::ports::call_graph_projection::{
     CallGraphProjectionPort, ExplanationHop, ExplanationView, ProjectionError, SubgraphDirection,
     SubgraphEdge, SubgraphView,
 };
+pub use call_graph_projection::CallGraphProjection;
 pub use checkpoint::{CheckpointId, VersionedGraphCache};
 pub use graph_cache::{DEFAULT_RETENTION, GraphCache};
 pub use lightweight_index::{LightweightIndex, SymbolLocation};

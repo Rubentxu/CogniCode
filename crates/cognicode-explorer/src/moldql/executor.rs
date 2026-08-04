@@ -551,7 +551,11 @@ impl<'a> MoldQLExecutor<'a> {
         true
     }
 
-    fn eval_issue_condition(&self, cond: &Condition, issue: &cognicode_core::domain::ports::QualityIssue) -> bool {
+    fn eval_issue_condition(
+        &self,
+        cond: &Condition,
+        issue: &cognicode_core::domain::ports::QualityIssue,
+    ) -> bool {
         let field = &cond.field;
         let raw = match field.head() {
             "severity" => Some(Value::String(issue.severity.clone())),
@@ -817,11 +821,11 @@ fn render_explore(e: &crate::moldql::ast::ExploreQuery) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cognicode_core::domain::ports::QualityStore;
     use cognicode_core::domain::plan::{
         ConstructId, ExecutorError, GraphPlan, NeighborKind, NodeResult, Path as GraphPath,
         PathHop, PathQuantifier, ResultSet, UnsupportedConstruct,
     };
+    use cognicode_core::domain::ports::QualityStore;
     use cognicode_core::domain::value_objects::{
         DependencyType, EdgeKind, RevisionId, SymbolKind, WorkspaceId,
     };
@@ -1194,32 +1198,47 @@ mod tests {
         fn issues_for_file(
             &self,
             _file: &str,
-        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Vec<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(Vec::new())
         }
         fn issues_for_scope(
             &self,
             _scope_prefix: &str,
-        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Vec<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(Vec::new())
         }
         fn issues_at_line(
             &self,
             _file: &str,
             _line: u32,
-        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Vec<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(Vec::new())
         }
         fn issue_by_id(
             &self,
             _id: i64,
-        ) -> Result<Option<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Option<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(None)
         }
         fn rule_summary(
             &self,
             _rule_id: &str,
-        ) -> Result<cognicode_core::domain::ports::RuleSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::RuleSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(cognicode_core::domain::ports::RuleSummary {
                 rule_id: String::new(),
                 description: String::new(),
@@ -1229,7 +1248,10 @@ mod tests {
         fn quality_gate(
             &self,
             _workspace_id: Option<&str>,
-        ) -> Result<cognicode_core::domain::ports::QualityGateSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::QualityGateSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(cognicode_core::domain::ports::QualityGateSummary::default())
         }
         fn open_issues_count(
@@ -1242,14 +1264,20 @@ mod tests {
             &self,
             _workspace_id: Option<&str>,
             _filter: &cognicode_core::domain::ports::IssueFilter,
-        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Vec<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(Vec::new())
         }
 
         fn insert_issues(
             &self,
             _issues: &[cognicode_core::domain::ports::NewIssue],
-        ) -> Result<cognicode_core::domain::ports::UpsertSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::UpsertSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(cognicode_core::domain::ports::UpsertSummary::default())
         }
         fn delete_issue(
@@ -1278,7 +1306,10 @@ mod tests {
         fn issues_for_file(
             &self,
             file: &str,
-        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Vec<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(self
                 .issues
                 .iter()
@@ -1289,7 +1320,10 @@ mod tests {
         fn issues_for_scope(
             &self,
             scope: &str,
-        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Vec<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(self
                 .issues
                 .iter()
@@ -1301,7 +1335,10 @@ mod tests {
             &self,
             file: &str,
             line: u32,
-        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Vec<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(self
                 .issues
                 .iter()
@@ -1312,13 +1349,19 @@ mod tests {
         fn issue_by_id(
             &self,
             id: i64,
-        ) -> Result<Option<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Option<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(self.issues.iter().find(|i| i.id == id).cloned())
         }
         fn rule_summary(
             &self,
             rule_id: &str,
-        ) -> Result<cognicode_core::domain::ports::RuleSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::RuleSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             let count = self.issues.iter().filter(|i| i.rule_id == rule_id).count();
             Ok(cognicode_core::domain::ports::RuleSummary {
                 rule_id: rule_id.to_string(),
@@ -1329,7 +1372,10 @@ mod tests {
         fn quality_gate(
             &self,
             _workspace_id: Option<&str>,
-        ) -> Result<cognicode_core::domain::ports::QualityGateSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::QualityGateSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(cognicode_core::domain::ports::QualityGateSummary::default())
         }
         fn open_issues_count(
@@ -1342,7 +1388,10 @@ mod tests {
             &self,
             _workspace_id: Option<&str>,
             filter: &cognicode_core::domain::ports::IssueFilter,
-        ) -> Result<Vec<cognicode_core::domain::ports::QualityIssue>, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            Vec<cognicode_core::domain::ports::QualityIssue>,
+            cognicode_core::domain::ports::QualityError,
+        > {
             let mut out: Vec<cognicode_core::domain::ports::QualityIssue> = self
                 .issues
                 .iter()
@@ -1364,7 +1413,10 @@ mod tests {
         fn insert_issues(
             &self,
             _issues: &[cognicode_core::domain::ports::NewIssue],
-        ) -> Result<cognicode_core::domain::ports::UpsertSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::UpsertSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Ok(cognicode_core::domain::ports::UpsertSummary::default())
         }
         fn delete_issue(

@@ -659,7 +659,8 @@ mod tests {
         let id = SymbolId::new("src/a.rs:alpha:1");
         // Use the async NodePropertyRepository explicitly to disambiguate from
         // the sync shim on GraphQueryPort.
-        let result = <CallGraphRepository as NodePropertyRepository>::node_properties(&repo, &id).await;
+        let result =
+            <CallGraphRepository as NodePropertyRepository>::node_properties(&repo, &id).await;
         assert!(
             result.is_none(),
             "node_properties must return None when no reader is wired"
@@ -674,7 +675,8 @@ mod tests {
         let repo = CallGraphRepository::new(Arc::new(build_graph()));
         let id = SymbolId::new("src/missing.rs:ghost:99");
         // Should return None, not panic
-        let result = <CallGraphRepository as NodePropertyRepository>::node_properties(&repo, &id).await;
+        let result =
+            <CallGraphRepository as NodePropertyRepository>::node_properties(&repo, &id).await;
         assert!(
             result.is_none(),
             "node_properties must return None when no reader is wired"

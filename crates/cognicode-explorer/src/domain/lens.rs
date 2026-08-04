@@ -17,9 +17,9 @@ use std::sync::Arc;
 use crate::domain::object_identity::ObjectIdentity;
 use crate::dto::{DesignFinding, InspectableObjectType, LensDescriptor, LensResult};
 use crate::error::ExplorerResult;
-use cognicode_core::domain::ports::QualityStore;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::SymbolRepository;
+use cognicode_core::domain::ports::QualityStore;
 use cognicode_core::domain::traits::GraphQueryPort;
 
 /// Bundles every port a lens is allowed to touch, plus the resolved

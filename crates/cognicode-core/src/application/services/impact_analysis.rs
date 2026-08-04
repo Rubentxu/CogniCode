@@ -35,7 +35,9 @@ use crate::application::dto::{
 };
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
-use crate::domain::ports::call_graph_projection::{project_call_graph, CallGraphProjectionPort, SubgraphDirection};
+use crate::domain::ports::call_graph_projection::{
+    CallGraphProjectionPort, SubgraphDirection, project_call_graph,
+};
 use cognicode_graph_algos::GraphBuilder;
 
 /// Application service for graph-aware impact analysis.

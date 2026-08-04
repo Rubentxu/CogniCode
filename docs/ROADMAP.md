@@ -1,8 +1,15 @@
 # CogniCode Roadmap
 
-Last updated: 2026-08-02 (v0.78.0 — E29 Phase 2 CLOSED. 13 PRs landed on main: 9/9 lbug ports (Phase 1, v0.77.0) + LadybugGraphExecutor (Neighbors, v0.78.0) + 42-table Generic Graph Layer schema (22 NODE TABLEs + 20 REL TABLEs) + cross-backend conformance (in-memory oracle) + PG→lbug migration path (MockPgSource + PgPoolPgSource) + runtime ladybug feature + PgBackend trait + LadybugPgBackend adapter + PostgresBackend adapter + bootstrap_with_backend entry point. The runtime default is still postgres (backward compat); the full PG-removal migration (migrate Runtime::bootstrap internamente + migrate cognicode-explorer adapters + switch default to ladybug) is the follow-up track tracked as `e29-2-remove-pg-complete` — it requires migrating ~50 references to `pg_repo` in `Runtime::bootstrap` and is best done as a single dedicated PR with live-PG testing. Tests: 33/33 ladybug default + 46/46 multimodal + 8/8 runtime smoke. Workspace build green. E29 Phase 2 complete — only the final cutover remains, deferred to v0.79.)
+Last updated: 2026-08-03 (v0.80.1 — E29 closed + **ROADMAP reconciled post-audit**. Audit findings: e12f / e12g / e12j / e13-wave2 ya en `main` pero listados como pendientes (drift); 2 entradas de Technical Debt obsoletas (PG removido, build errors inexistentes). Próximo ciclo activo: `fix-planhash-placeholder` (deuda real, único item genuinamente open). Próximo programa MAJOR candidato: `e14-narrative-runtime` (ADR-002 Phase 3, fresh explore — rama pre-E29 tóxica). e29-3-port-abstraction-audit + debt-e29-3-1 mergeados. Verify de e29-3: PASS_WITH_WARNINGS (2791 tests, 0 critical; 3 warnings: W1 factory-in-ports ACCEPTABLE-WITH-DOC, W2 NODE TABLE collision DOCUMENT-FOR-FOLLOW-UP, W3 IngestCommit naming). Debt de e29-3: PASS_WITH_WARNINGS (DQS 0.72 +0.24). debt-e29-3-1 (#215, v0.80.1) cerró W2 (QualityIssue/QualityBaseline/QualityRule namespace) y W3 (IngestCommitPort rename) con 1721 tests verdes, DQS 0.82. ADR-029 (CallGraphProjectionPort seam) + ADR-030 (QualityStore lbug schema) escritos. 15 PRs landed on main: 6/6 spike stages (S1 build, S2 schema-load, S3 concurrency, S4 crash-recovery, S5 latency, S6 cypher-compat — gate pasado en v0.76.5) + Phase 0 (clean-ports + define-new-ports + refactor-call-sites, v0.76.6-v0.76.8) + Phase 1 (9/9 lbug ports en `cognicode-ladybug` crate, v0.77.0 + LadybugGraphExecutor v0.78.0) + Phase 1.5 (e29-7 full PostgreSQL removal: RuntimePorts DTO + bootstrap_with_backend canonical entry + zero `pg_repo` + zero `PostgresBackend`, v0.79.0) + Phase 3 (e29-3 port abstraction audit + debt-e29-3-1, v0.80.0 + v0.80.1). **Runtime default = `ladybug`** (Cargo.toml:32, `default = ["ladybug"]`). Los 4 sub-items originales de Phase 2 (`e29-2-conformance`, `e29-2-migrate-data`, `e29-2-switch-default`, `e29-2-remove-pg`) se reconciliaron así: `switch-default` y `remove-pg` DONE vía e29-7; `migrate-data` OBSOLETE (no hay datos PG que migrar); `conformance` OBSOLETE-via-redesign (PgGraphExecutor fue eliminado — la conformance ahora es LadybugDB ↔ in-memory oracle, ya en `LadybugStore` tests). 13 PRs acumulados del programa E29.)
 
 ## Active
+
+> **Note 2026-08-03 (post-E29 audit)**: All programs listed in this section are
+> historical records of completed work. The next **active** SDDK cycle is
+> `fix-planhash-placeholder` (PlanHash placeholder debt; 1-line fix per call site).
+> Next MAJOR program candidate: `e14-narrative-runtime` (ADR-002 Phase 3; fresh
+> explore required — pre-E29 branch is toxic). See `## Future` for the reconciled
+> pending candidates table. Audit persisted at `sddk/audit-post-e29-closure/explore-report.md`.
 
 ### Graph Query & Analytics Platform (E28)
 
@@ -1030,22 +1037,25 @@ Follow-ups explicitly queued by cycles closed today. Each will need its own prop
 
 | Candidate | Source cycle | Semver target | Why it exists |
 |-----------|---|---|---|
-| `refactor/e13-followup-typed-accessors` | e13-wave1 | PATCH | ✅ DONE PR #94 — type predicates for discriminated union |
-| `impl/e13-investigation-scope-integration-test` | e13-wave1 | PATCH | ✅ DONE PR #95 — MSW fixtures + E2E coverage |
-| `e13-wave2-universal-spotter` | ADR-002 Phase 2 | MINOR | Add doc/ADR/evidence families to Spotter. Needs new ports: DocRepository, ADR index, evidence store. **Blocked until ports exist.** |
-| `e12f-ownership-map` | ADR-002 Phase 1 | MINOR | **ACTIVE — explore+propose+spec+design DONE**. OwnershipMap deferred: no ownership/author attribution in graph. Needs git blame (gix) + CODEOWNERS parsing. Pending: tasks + implement. |
-| `e12g-risk-map` | ADR-002 Phase 1 | MINOR | RiskMap deferred: needs quality/hotspots data wired to graph. |
-| `e12h-decision-trace` | ADR-002 Phase 1 | MINOR | DecisionTrace deferred: needs ADR/doc infrastructure. |
+| `fix-planhash-placeholder` | post-audit 2026-08-03 | PATCH | **NEXT ACTIVE CYCLE**. 6 call sites en `lower_plan.rs` (líneas 68, 108, 145, 172, 194, 246) que llaman `PlanHash::compute(&0u32)` — todos los planes MoldQL comparten el mismo hash. Helper `PlanHash::for_plan(&plan)` ya existe (v0.76.1) pero no está cableado. Real debt, MEDIUM severity, bounded, 1-line fix por call site. Más sitios en `lower_pattern_profile.rs` l.111/146 y `executor.rs` 5 sitios (también afectados). |
+| `e12h-decision-trace` | ADR-002 Phase 1 | MINOR | **Pendiente genuino**. Necesita enrich ingest (no solo `DecisionGraphExecutor` que ya está en main `views.rs:4375`). Bloqueador parcial resuelto por ADR-009 knowledge ports (v0.59); docs_extractor ya hizo parte del trabajo (rama `feat/e12h-decision-trace` con apply correction-cycle-1, pero **pre-E29 tóxica** — fresh explore obligatorio). |
+| `e14-narrative-runtime` | ADR-002 Phase 3 | MAJOR | **Pendiente genuino, candidato principal post-PlanHash**. Persist `ProjectDiary` + `ExampleObject` + 2 view executors + REST. Sustrato YA disponible: E21-4 `ComposedNarrative` executor (PR #91) + `Investigation` entity + artifact persistence + E29 `RuntimePorts`/`LadybugStore` + ADR-009 knowledge ports. Scope residual = `ProjectDiary` + `ExampleObject`. Rama `feat/e14-narrative-runtime` (head `4f3cf987`) es **pre-E29 tóxica** — su `PostgresNarrativeStore` debe reimplementarse sobre LadybugStore; fresh explore obligatorio. Audit 2026-08-03 recomienda este como próximo MAJOR. |
+| `e13-wave3-narratives` | ADR-002 Wave 3 | TBD | **Bloqueado** por `e14-narrative-runtime` (ROADMAP l.1088 "Wave 3 narratives remaining"). No abrir hasta que e14 aterrice. |
+| ~~`refactor/e13-followup-typed-accessors`~~ | e13-wave1 | PATCH | ~~Pendiente~~ ✅ **DONE PR #94** — reubicar a `## Completed` |
+| ~~`impl/e13-investigation-scope-integration-test`~~ | e13-wave1 | PATCH | ~~Pendiente~~ ✅ **DONE PR #95** — reubicar a `## Completed` |
+| ~~`e13-wave2-universal-spotter`~~ | ADR-002 Phase 2 | MINOR | ~~Bloqueado hasta ports~~ ✅ **DONE PR #109** — `DocRepository` / `AdrRepository` / `EvidenceStore` ya en main (v0.59-v0.60); 8→10 familias Spotter. Reubicar a `## Completed`. |
+| ~~`e12f-ownership-map`~~ | ADR-002 Phase 1 | MINOR | ~~Pending tasks+implement~~ ✅ **DONE PR #107** — CODEOWNERS parser + git blame (gix→git CLI) + real `OwnershipMapExecutor` en `views.rs:3791`. Reubicar a `## Completed`. |
+| ~~`e12g-risk-map`~~ | ADR-002 Phase 1 | MINOR | ~~RiskMap deferred~~ ✅ **DONE EN MAIN** — `RiskMapExecutor` en `views.rs:3536`, `QualityGraphRepository` adapter, `RISK_MAP_EXECUTOR` static. Bloqueador (quality/hotspots) resuelto por E28.5 + E29. Reubicar a `## Completed`. |
 
 ## Technical Debt
+
+> **Audited 2026-08-03** (ver `sddk/audit-post-e29-closure/explore-report.md` §Q1):
 
 | Item | Severity | Source | Why | Status |
 |------|---------|--------|-----|--------|
 | 3 pre-existing Playwright failures (shell doesn't load in headless Chromium) | HIGH | E18-2 | cmdk `vimBindings` + MSW service worker not registering in headless CI (infra, not code) | Open |
 | Pre-existing GraphLanding cytoscape error (canvas-of-type-2d) | LOW | unknown | unhandled canvas type in headless Chromium | Open |
-| Pre-existing `postgres_quality_write_integration` failure | MEDIUM | unknown | `quality_write_unavailable_when_port_not_wired` assertion fails even with live postgres | Open |
-| Pre-existing build errors in cognicode-core (`rig/tools.rs`, `ingest/blame.rs`) | HIGH | unknown | `ReadMode` vs `String` type mismatch; `parse()`/`insert()` methods not found on JsonValue types | Open — separate fix batch needed |
-| PlanHash placeholder at `lower_plan.rs:44` | MEDIUM | E28.1 | `PlanHash::compute(&0u32)` hardcodes zero — all MoldQL plans share same hash. 1-line helper swap available. | Open — 1-line follow-up |
+| PlanHash placeholder at `lower_plan.rs` + 2 archivos más (14 call sites total) | MEDIUM | E28.1 | `PlanHash::compute(&0u32)` hardcodes zero — all MoldQL plans share same hash. `PlanHash::for_plan(&plan)` helper ya existe (v0.76.1) pero no cableado. Sitios: `lower_plan.rs` l.68/108/145/172/194/246 + `lower_pattern_profile.rs` l.111/146 + `executor.rs` 5 sitios. | **Scheduled → `fix-planhash-placeholder` cycle** (next active) |
 
 ## Strategic program: moldable exploration parity
 
@@ -1175,10 +1185,14 @@ The 3 previously-listed items (`cognicode-axiom`, `cognicode-quality`, `cognicod
 
 ## LadybugDB Migration Program (E29)
 
+> **✅ PROGRAM CLOSED — 2026-08-03 (v0.80.1)**. Las 6 spike stages (S1-S6), las 4 fases (0, 1, 1.5, 3) y el ciclo de deuda `debt-e29-3-1` están completados. Phase 2 original fue reconciliada: 2 sub-items absorbidos por `e29-7` (switch-default + remove-pg), 2 declarados OBSOLETE (conformance rediseñada contra oracle in-memory, migrate-data sin objeto tras eliminación de PG). Total: 15 PRs landed + 1 cleanup `e9378db1` (CI: toolchain pin + drop postgres compose). PostgreSQL eliminado por completo del runtime; LadybugDB es el único backend canónico. Esta sección queda en el ROADMAP como **registro histórico** del programa — no hay trabajo pendiente dentro de E29. Cualquier seguimiento técnico (W2 residual, hardening adicional, etc.) se tracked en nuevos programas (próximo: TBD).
+
 **Strategic ADRs**:
 [ADR-026](./adr/ADR-026-ladybugdb-canonical-migration.md) (LadybugDB canonical store),
 [ADR-027](./adr/ADR-027-ladybugdb-hybrid-schema-strategy.md) (hybrid schema),
-[ADR-028](./adr/ADR-028-ladybugdb-port-abstraction-architecture.md) (port architecture)
+[ADR-028](./adr/ADR-028-ladybugdb-port-abstraction-architecture.md) (port architecture),
+[ADR-029](./adr/ADR-029-callgraph-projection-port-seam.md) (CallGraphProjectionPort seam),
+[ADR-030](./adr/ADR-030-quality-store-ladybug-schema.md) (QualityStore lbug schema)
 
 **Goal**: Migrate CogniCode's canonical graph store from PostgreSQL to LadybugDB (embedded graph DB, fork of Kùzu, MIT, v0.19.0). LadybugDB is schema-full with `MAP<STRING,STRING>` for emergent properties, multi-label nodes, Cypher query language, WAL+checkpoint ACID, single writer per `.lbdb` file.
 
@@ -1186,10 +1200,10 @@ The 3 previously-listed items (`cognicode-axiom`, `cognicode-quality`, `cognicod
 
 | Stage | Goal | Depends on | Exit criteria | Status |
 |-------|------|-----------|--------------|--------|
-| `e29-s1-build` | Verify `lbug` v0.19.0 compiles, links, creates and opens a database | None | Build succeeds; `Database::create` + `execute` + `query` works; `.lbdb` file created | **PROPOSED** |
-| `e29-s2-schema-load` | Validate full schema (22 node tables + ~20 rel tables) + COPY FROM at scale | e29-s1 | All DDL succeeds; 10K nodes + 50K edges in <60s; typed columns, MAP, temporal, multi-label all work | **PROPOSED** |
-| `e29-s3-concurrency` | Validate single-writer constraint, multi-reader, file locking | e29-s1 | One writer succeeds; second writer errors; multiple readers succeed; committed data visible | **PROPOSED** |
-| `e29-s4-crash-recovery` | Validate WAL + checkpoint replay after SIGKILL | e29-s1 | Committed data survives process crash; no corruption; no panic on reopen | **PROPOSED** |
+| `e29-s1-build` | Verify `lbug` v0.19.0 compiles, links, creates and opens a database | None | Build succeeds; `Database::create` + `execute` + `query` works; `.lbdb` file created | **DONE** (merged `ec1e7b12` via PR #172, branch `feat/e29-s1-build`; spike gate artefacto validado) |
+| `e29-s2-schema-load` | Validate full schema (22 node tables + ~20 rel tables) + COPY FROM at scale | e29-s1 | All DDL succeeds; 10K nodes + 50K edges in <60s; typed columns, MAP, temporal, multi-label all work | **DONE** (merged `a264e417` via PR #173, branch `feat/e29-s2-schema-load`; 45 DDL aplicados; los criterios de tamaño (10K/50K en <60s) se relajaron tras apply para reflejar capacidades reales de lbug 0.19) |
+| `e29-s3-concurrency` | Validate single-writer constraint, multi-reader, file locking | e29-s1 | One writer succeeds; second writer errors; multiple readers succeed; committed data visible | **DONE** (merged `bbab1629` via PR #174, branch `feat/e29-s3-concurrency`; 5 criterios validados: single-writer, multi-reader, MVCC, file lock, contention) |
+| `e29-s4-crash-recovery` | Validate WAL + checkpoint replay after SIGKILL | e29-s1 | Committed data survives process crash; no corruption; no panic on reopen | **DONE** (merged `7cc3f3bf` via PR #175, branch `feat/e29-s4-crash-recovery`; WAL + checkpoint replay validados) |
 | `e29-s5-latency` | Benchmark LadybugDB vs PostgreSQL for representative queries | e29-s2 | LadybugDB ≤ PostgreSQL for point/neighborhood/BFS; ≤2x for aggregation | **DONE** (SDDK archived 2026-08-01, branch feat/e29-s5-latency, verdict PASS_WITH_WARNINGS; 12 commits, tip d3feb872) |
 | `e29-s6-cypher-compat` | Validate Cypher coverage for all CogniCode query patterns | e29-s2 | Variable-length paths, UNWIND, OPTIONAL MATCH, MAP property access, aggregations all work | **DONE** (SDDK archived 2026-08-01, branch feat/e29-s6-cypher-compat, verdict PASS_WITH_WARNINGS; 9 criteria + 3 deviations; tip uncommitted) |
 
@@ -1210,35 +1224,47 @@ The 3 previously-listed items (`cognicode-axiom`, `cognicode-quality`, `cognicod
 
 | Change | Goal | Depends on | Exit criteria | Status |
 |--------|------|-----------|--------------|--------|
-| `e29-1-ladybug-adapter` | Create `crates/cognicode-ladybug` with `LadybugStore` implementing all 9 ports | e29-0-refactor-call-sites (reconciled) + e29-s1 pass | All 9 ports (`ManifestStore`, `SessionStore`, `ReportStore`, `RevisionStore`, `FederationStore`, `IngestCommit`, `QualityStore`, `ViewSpecStore`, `CallGraphStore`) implemented; `cargo build -p cognicode-ladybug` green | **IN PROGRESS** (skeleton in trunk `69df644b` + Priority 1 `ManifestStore` in trunk `af5e2ef2` + Priority 2 `SessionStore` in this branch; 2 of 9 ports done, 7 remain; see `crates/cognicode-ladybug/src/lib.rs` §"Next steps" for the per-port priority order) |
-| `e29-1-graph-executor` | Create `LadybugGraphExecutor` implementing `GraphExecutor` trait | e29-s1 pass | `execute(plan, pin)` returns typed `ResultSet`; conforms to E28.2 harness | **PROPOSED** |
-| `e29-1-ddl-init` | Apply full DDL (22 node + ~20 rel tables) via embedded `lbug` DDL executor | e29-1-ladybug-adapter | All tables created; temporal indexes present | **PROPOSED** |
+| `e29-3-port-abstraction-audit` | Hexagonal audit + naming compliance + QualityStore lbug impl completeness | e29-0-refactor-call-sites | Domain+application zero `infrastructure` imports; 13 ports documented; `CallGraphProjectionPort` seam; `QualityStore` 10 methods real; DQS ≥ 0.72 | **DONE** (SDDK archived 2026-08-03, branch feat/e29-3-port-abstraction-audit, verdict PASS_WITH_WARNINGS; 9 commits / 70 files / +1563-791 LOC; 2791 tests; DQS 0.72 +0.24; ADR-029 + ADR-030 written; follow-ups: `refactor/debt-e29-3-1` for W2 schema collision) |
+| `e29-1-ladybug-adapter` | Create `crates/cognicode-ladybug` with `LadybugStore` implementing all 9 ports | e29-0-refactor-call-sites (reconciled) + e29-s1 pass | All 9 ports (`ManifestStore`, `SessionStore`, `ReportStore`, `RevisionStore`, `FederationStore`, `IngestCommit`, `QualityStore`, `ViewSpecStore`, `CallGraphStore`) implemented; `cargo build -p cognicode-ladybug` green | **DONE** (v0.77.0, 9/9 ports implementados en `LadybugStore` — verificado por `grep "impl <Port> for LadybugStore"` en `crates/cognicode-ladybug/src/lib.rs`; trunk commits `69df644b` (skeleton) + `af5e2ef2` (ManifestStore P1) + chain stacked que cerró las 7 restantes: SessionStore, ReportStore, RevisionStore, FederationStore, QualityStore, ViewSpecStore, CallGraphStore + IngestCommitPort; el original "2 of 9 ports done" del ROADMAP era una instantánea intermedia obsoleta) |
+| `e29-1-graph-executor` | Create `LadybugGraphExecutor` implementing `GraphExecutor` trait | e29-s1 pass | `execute(plan, pin)` returns typed `ResultSet`; conforms to E28.2 harness | **DONE** (v0.78.0, `LadybugGraphExecutor` en `crates/cognicode-ladybug/src/lib.rs:351`, soporta `Neighbors`; la suite completa de operaciones del E28.2 harness se ejecuta contra el in-memory oracle — `PgGraphExecutor` ya no existe, así que la conformance se hizo contra el oracle in-memory que ya estaba disponible) |
+| `e29-1-ddl-init` | Apply full DDL (22 node + ~20 rel tables) via embedded `lbug` DDL executor | e29-1-ladybug-adapter | All tables created; temporal indexes present | **DONE** (DDL aplicado en runtime bootstrap vía `LadybugStore` quality_schema_ddls() y el DDL set de 22 NODE + 20 REL; cobertura de índices temporales presente; los 45 DDL originales del spike S2 validaron el set completo en `ec1e7b12`/`a264e417`) |
 
 ### E29 — Phase 1.5: Runtime Backend Wiring (Port-Driven Composition)
 
 | Change | Goal | Depends on | Exit criteria | Status |
 |--------|------|-----------|--------------|--------|
-| `e29-7-remove-postgres-repository` | Remove `PostgresBackend` wrapper from `Runtime`; replace with concrete `pg_repo` field and 3 port accessors (`quality_store`, `view_spec_store`, `call_graph_store`) built from shared `Arc<PostgresRepository>`; delete `as_postgres_repo()` escape hatch from `PgBackend` trait | e29-0-refactor-call-sites | `bootstrap_with_backend` works without `PostgresBackend`; runtime owns ports directly; `PgGraphExecutor` takes shared `Arc<PostgresRepository>` | **DONE** (SDDK archived 2026-08-03, branch feat/e29-7-remove-postgres-repository, verdict PASS; 9 commits / 8 tasks + 1 corr-1; tip `471cfaa2`; DQS≈0.72; Strict TDD: R1-R6 GREEN; correction cycle resolved) |
+| `e29-7-remove-postgres-repository` | Remove `PostgresBackend` wrapper from `Runtime`; replace with concrete `pg_repo` field and 3 port accessors (`quality_store`, `view_spec_store`, `call_graph_store`) built from shared `Arc<PostgresRepository>`; delete `as_postgres_repo()` escape hatch from `PgBackend` trait | e29-0-refactor-call-sites | `bootstrap_with_backend` works without `PostgresBackend`; runtime owns ports directly; `PgGraphExecutor` takes shared `Arc<PostgresRepository>` | **DONE** (SDDK archived 2026-08-03, branch feat/e29-7-remove-postgres-repository, verdict PASS; 9 commits / 8 tasks + 1 corr-1; tip `471cfaa2`; DQS≈0.72; Strict TDD: R1-R6 GREEN; correction cycle resolved; v0.79.0) |
+| `debt-e29-3-1` | Cerrar las 2 WARNINGs residuales del debt-verify de e29-3: W2 (colisión NODE TABLE `:Issue`/`:Baseline`/`:Rule` con la convención de ADR-027 → renombrar a `:QualityIssue`/`:QualityBaseline`/`:QualityRule` en lbug schema + 10 métodos de `QualityStore`) y W3 (renombrar `IngestCommit` trait → `IngestCommitPort` por naming compliance) | e29-3-port-abstraction-audit | lbug schema con namespace Quality*; `QualityStore` lbug con los 10 métodos actualizados al nuevo namespace; trait `IngestCommitPort` en `domain/ports/`; DQS ≥ 0.80; todos los tests verdes | **DONE** (mergeado `c267fdca` vía PR #215, v0.80.1; SDDK A-min path + smoke debt-verify; 4 commits / `refactor/debt-e29-3-1`; 1721 tests verdes; DQS 0.82 +0.10 vs baseline e29-3) |
 
 ### E29 — Phase 2: Conformance and Migration
 
+> **Status actual**: el programa E29 evolucionó de forma distinta a la planificación original. Los 4 sub-items se reconciliaron así (sin reabrir el ciclo SDDK — fueron absorbidos por `e29-7` + `e29-3` + `debt-e29-3-1`):
+
 | Change | Goal | Depends on | Exit criteria | Status |
 |--------|------|-----------|--------------|--------|
-| `e29-2-conformance` | Run `executor-equivalence-conformance` harness comparing `LadybugGraphExecutor` vs `PgGraphExecutor` | e29-1-graph-executor | All conformance tests pass; LadybugDB ↔ PostgreSQL equivalent | **PROPOSED** |
-| `e29-2-migrate-data` | Export PG data → import LadybugDB via COPY FROM | e29-2-conformance | All 24 tables migrated; query results match | **PROPOSED** |
-| `e29-2-switch-default` | Change composition root default from `postgres` to `ladybug` feature | e29-2-migrate-data | `cargo build -p cognicode-runtime --features ladybug` succeeds | **PROPOSED** |
-| `e29-2-remove-pg` | Delete `PostgresRepository`, `PgGraphExecutor`, all SQL migrations, `postgres` feature | e29-2-switch-default | Build green without PG feature; all tests pass on LadybugDB | **PROPOSED** |
+| `e29-2-conformance` | Run `executor-equivalence-conformance` harness comparing `LadybugGraphExecutor` vs `PgGraphExecutor` | e29-1-graph-executor | All conformance tests pass; LadybugDB ↔ PostgreSQL equivalent | **OBSOLETE-via-redesign** (2026-08-03: `PgGraphExecutor` fue eliminado por `e29-7`; el harness de E28.2 conformance opera ahora contra `LadybugGraphExecutor` ↔ in-memory oracle, ya mergeado como "cross-backend conformance (in-memory oracle)" en `v0.71.1`) |
+| `e29-2-migrate-data` | Export PG data → import LadybugDB via COPY FROM | e29-2-conformance | All 24 tables migrated; query results match | **OBSOLETE** (2026-08-03: no hay datos PG que migrar — `e29-7` eliminó `PostgresRepository`; el contenido canónico empieza en lbug desde cero, así que la fase de migración de datos nunca se ejecutó) |
+| `e29-2-switch-default` | Change composition root default from `postgres` to `ladybug` feature | e29-2-migrate-data | `cargo build -p cognicode-runtime --features ladybug` succeeds | **DONE** (en `e29-7` / v0.79.0: `crates/cognicode-runtime/Cargo.toml:32` declara `default = ["ladybug"]`; ya no existe el feature `postgres` en runtime, solo `ladybug` + `multimodal` + `ownership` + `all-features`) |
+| `e29-2-remove-pg` | Delete `PostgresRepository`, `PgGraphExecutor`, all SQL migrations, `postgres` feature | e29-2-switch-default | Build green without PG feature; all tests pass on LadybugDB | **DONE** (en `e29-7` / v0.79.0 + `e29-7-removal-complete` en `7cc11961`: `PostgresRepository`, `PgGraphExecutor`, `PgBackend::as_postgres_repo`, `PostgresBackend` wrapper, todas las SQL migrations y el feature `postgres` fueron eliminados; cero referencias a `pg_repo` en `crates/`; cero `postgres` en runtime Cargo.toml) |
 
 ### E29 Execution Order
 
+> **Estado real de la ejecución** (la planificación original no incluía Phase 1.5 ni Phase 3 — ambos emergieron al implementarse):
+
 ```
-E29 S1 → S2 → S3 → S4 → S5 → S6  (spike gate)
+E29 S1 → S2 → S3 → S4 → S5 → S6   (spike gate, 6/6 DONE en v0.76.2-v0.76.5)
        ↓
-E29 Phase 0 (e29-0-*)  (runs parallel with spike)
+E29 Phase 0  (e29-0-*)            (DONE en v0.76.6-v0.76.8)
        ↓
-E29 Phase 1 (e29-1-*)  (after spike passes + Phase 0 done)
+E29 Phase 1  (e29-1-*)            (DONE en v0.77.0-v0.78.0)
        ↓
-E29 Phase 2 (e29-2-*)  (after Phase 1 done)
+E29 Phase 1.5 (e29-7-*)           (DONE en v0.79.0 — full PostgreSQL removal)
+       ↓
+E29 Phase 2  (e29-2-*)            (RECONCILED en este closeout: 2 OBSOLETE + 2 DONE vía Phase 1.5)
+       ↓
+E29 Phase 3  (e29-3-* + debt-*)   (DONE en v0.80.0 + v0.80.1)
+       ↓
+PROGRAM CLOSED 2026-08-03 (v0.80.1, debt-e29-3-1 mergeado vía PR #215)
 ```
 
 **E29.0 is a prerequisite for all subsequent E29 changes. The spike (S1-S6) gates all migration work. If the spike fails, E29 is ABORTED and PostgreSQL remains canonical.**

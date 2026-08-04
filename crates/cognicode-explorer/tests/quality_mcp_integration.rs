@@ -20,14 +20,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use cognicode_explorer::error::ExplorerResult;
-use cognicode_explorer::mcp::handler::ToolHandlerRegistry;
-use cognicode_explorer::mcp::handler::quality_mcp::register_quality_mcp_handlers;
-use cognicode_explorer::mcp::{McpContext, TOOL_FIND_QUALITY_ISSUES, TOOL_QUALITY_GATE};
 use cognicode_core::domain::ports::{
     IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
     RuleSummary, UpsertSummary,
 };
+use cognicode_explorer::error::ExplorerResult;
+use cognicode_explorer::mcp::handler::ToolHandlerRegistry;
+use cognicode_explorer::mcp::handler::quality_mcp::register_quality_mcp_handlers;
+use cognicode_explorer::mcp::{McpContext, TOOL_FIND_QUALITY_ISSUES, TOOL_QUALITY_GATE};
 use cognicode_explorer::session::SessionRegistry;
 use rmcp::model::CallToolResult;
 use serde_json::{Value, json};

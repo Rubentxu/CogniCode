@@ -11,9 +11,9 @@ use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::LensService;
 use crate::facades::MoldQLService;
 use crate::moldql::{MoldQLExecutor, MoldQLResult, MoldQLView};
-use cognicode_core::domain::ports::QualityStore;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::SymbolRepository;
+use cognicode_core::domain::ports::QualityStore;
 
 #[cfg(feature = "multimodal")]
 use cognicode_core::domain::ports::GraphRepository;

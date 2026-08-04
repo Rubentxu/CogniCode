@@ -19,10 +19,10 @@ use crate::dto::{InspectableObjectType, InspectionTarget, ViewContext};
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::PersistenceService;
 use crate::facades::{LensService, ViewService};
-use cognicode_core::domain::ports::QualityStore;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
 use crate::registry::ViewRegistry;
+use cognicode_core::domain::ports::QualityStore;
 
 /// Map an `ObjectIdentity` to its corresponding `InspectableObjectType`.
 ///
