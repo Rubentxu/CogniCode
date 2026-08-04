@@ -35,6 +35,12 @@ pub struct Runtime {
     /// port so consumers depend on `Arc<dyn CallGraphStore>` instead of
     /// a concrete backend.
     pub call_graph_store: Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>,
+    /// Optional `AlgorithmRegistry` for analytics execution (E28.4).
+    /// Wired via `bootstrap_with_backend` when `analytics_lineage_store` is `Some`.
+    pub analytics_registry: Option<Arc<cognicode_core::application::services::graph_analytics::AlgorithmRegistry>>,
+    /// Optional lineage store for analytics run records (E28.4).
+    /// When `Some`, `bootstrap_with_backend` constructs the registry automatically.
+    pub analytics_lineage_store: Option<Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>>,
 }
 
 /// Plain DTO carrying the three relocated domain ports into
@@ -46,6 +52,10 @@ pub struct RuntimePorts {
     pub quality_store: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
     pub view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>>,
     pub call_graph_store: Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>,
+    /// Optional lineage store for analytics run records (E28.4).
+    /// When `Some`, `bootstrap_with_backend` constructs an `AlgorithmRegistry`
+    /// automatically via `default_analytics_registry`.
+    pub analytics_lineage_store: Option<Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>>,
 }
 
 /// Build a Runtime from a [`RuntimePorts`] DTO. The canonical entry
@@ -79,6 +89,15 @@ pub async fn bootstrap_with_backend(
     let view_spec_store = ports.view_spec_store;
     let call_graph_store = ports.call_graph_store;
 
+    // Analytics wiring: when lineage store is provided, construct the registry
+    // automatically so analytics tools can execute (E28.4).
+    let analytics_lineage_store = ports.analytics_lineage_store;
+    let analytics_registry = analytics_lineage_store.as_ref().map(|lineage| {
+        Arc::new(cognicode_core::application::services::graph_analytics::default_analytics_registry(
+            lineage.clone(),
+        ))
+    });
+
     // graph=None degraded: ladybug path uses no graph. The symbol
     // repository is backed by an empty CallGraph so the facade wiring
     // stays functional (searches return empty results).
@@ -98,6 +117,8 @@ pub async fn bootstrap_with_backend(
         quality_store,
         view_spec_store,
         call_graph_store,
+        analytics_registry,
+        analytics_lineage_store,
     })
 }
 
@@ -132,6 +153,8 @@ pub async fn bootstrap(cwd: std::path::PathBuf) -> Result<Runtime, anyhow::Error
         quality_store: None,
         view_spec_store: None,
         call_graph_store: None,
+        analytics_registry: None,
+        analytics_lineage_store: None,
     })
 }
 
@@ -252,6 +275,13 @@ impl Runtime {
         // Wire the shared revision tracker so MoldQL REST endpoints can pin queries.
         state = state.with_revision_tracker(self.revision_tracker.clone());
 
+        // Wire analytics when both registry and lineage store are present (E28.4).
+        if let (Some(registry), Some(lineage_store)) =
+            (self.analytics_registry.clone(), self.analytics_lineage_store.clone())
+        {
+            state = state.with_analytics(registry, lineage_store);
+        }
+
         state
     }
 
@@ -275,6 +305,8 @@ impl Runtime {
             quality_write,
             self.revision_tracker,
             None, // route_store — postgres-backed adapter removed
+            self.analytics_registry,
+            self.analytics_lineage_store,
         )
     }
 }
@@ -484,6 +516,7 @@ mod tests {
             quality_store: Some(quality.clone()),
             view_spec_store: Some(view_spec.clone()),
             call_graph_store: Some(cg_store.clone()),
+            analytics_lineage_store: None,
         };
 
         let runtime = bootstrap_with_backend(std::env::temp_dir(), ports)
@@ -501,6 +534,57 @@ mod tests {
         assert!(
             Arc::ptr_eq(runtime.call_graph_store.as_ref().unwrap(), &cg_store),
             "call_graph_store must be the SAME Arc the DTO carried"
+        );
+    }
+
+    /// When `analytics_lineage_store` is provided, `bootstrap_with_backend`
+    /// automatically constructs an `AlgorithmRegistry` (E28.4).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn bootstrap_with_backend_constructs_analytics_registry_when_lineage_provided() {
+        use cognicode_core::domain::analytics::lineage::{InMemoryLineageStore, RunLineageStore};
+
+        let lineage_store: Arc<dyn RunLineageStore> = Arc::new(InMemoryLineageStore::new());
+        let ports = RuntimePorts {
+            analytics_lineage_store: Some(lineage_store.clone()),
+            ..Default::default()
+        };
+
+        let runtime = bootstrap_with_backend(std::env::temp_dir(), ports)
+            .await
+            .expect("bootstrap_with_backend succeeds with analytics lineage store");
+
+        // Registry must be constructed automatically
+        assert!(
+            runtime.analytics_registry.is_some(),
+            "analytics_registry must be Some when lineage store is provided"
+        );
+        // Lineage store must be preserved (same Arc)
+        assert!(
+            Arc::ptr_eq(
+                runtime.analytics_lineage_store.as_ref().unwrap(),
+                &lineage_store
+            ),
+            "analytics_lineage_store must be the SAME Arc the DTO carried"
+        );
+    }
+
+    /// When `analytics_lineage_store` is NOT provided, both analytics fields
+    /// remain `None` (backwards compatible).
+    #[tokio::test]
+    async fn bootstrap_with_backend_leaves_analytics_none_when_no_lineage() {
+        let ports = RuntimePorts::default();
+
+        let runtime = bootstrap_with_backend(std::env::temp_dir(), ports)
+            .await
+            .expect("bootstrap_with_backend succeeds with empty RuntimePorts");
+
+        assert!(
+            runtime.analytics_registry.is_none(),
+            "analytics_registry must be None when no lineage store is provided"
+        );
+        assert!(
+            runtime.analytics_lineage_store.is_none(),
+            "analytics_lineage_store must be None when not provided"
         );
     }
 }

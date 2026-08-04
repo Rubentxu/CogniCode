@@ -230,6 +230,7 @@ async fn r3_r5_ports_populated_from_runtime_ports_with_identity() {
         quality_store: Some(quality.clone()),
         view_spec_store: Some(view_spec.clone()),
         call_graph_store: Some(cg_store.clone()),
+        analytics_lineage_store: None,
     };
 
     let runtime = bootstrap_with_backend(std::env::temp_dir(), ports)
