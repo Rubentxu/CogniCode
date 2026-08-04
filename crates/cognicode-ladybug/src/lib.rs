@@ -54,6 +54,10 @@ use async_trait::async_trait;
 use lbug::{Connection, Database, SystemConfig};
 
 use cognicode_core::domain::aggregates::CallGraph;
+use cognicode_core::domain::analytics::{
+    AlgorithmId, AnalyticsError, AnalyticsMode, RunLineage, RunLineageFilter, RunLineageStore,
+    RunStatus, Uuid,
+};
 use cognicode_core::domain::plan::{
     ExecutorError, GraphExecutor, GraphPlan, PlanLimits, ResultSet, TruncationMarker,
     UnsupportedConstruct,
@@ -136,6 +140,7 @@ impl_stub_for!(
     RevisionError,
     ViewSpecStoreError,
     CallGraphError,
+    AnalyticsError,
     cognicode_core::domain::ports::graph_error::GraphError,
 );
 
@@ -1418,6 +1423,510 @@ fn quality_schema_ddls() -> Vec<&'static str> {
     ]
 }
 
+// =============================================================================
+// Analytics lineage schema (D5 — LadybugLineageStore)
+// =============================================================================
+
+/// DDL for the `AnalyticsRunLineage` node table.
+///
+/// Stores immutable run lineage records. The `idempotency_key` field
+/// (combined with `workspace_id`) enforces the unique constraint for
+/// persist-mode deduplication.
+fn lineage_schema_ddls() -> Vec<&'static str> {
+    vec![
+        "CREATE NODE TABLE IF NOT EXISTS AnalyticsRunLineage( \
+             id SERIAL PRIMARY KEY, \
+             run_id STRING, \
+             workspace_id STRING, \
+             revision_id INT64, \
+             algorithm_id STRING, \
+             algorithm_version STRING, \
+             plan_hash STRING, \
+             params STRING, \
+             seed INT64, \
+             mode STRING, \
+             status STRING, \
+             started_at STRING, \
+             finished_at STRING, \
+             row_count INT64, \
+             truncation_marker STRING, \
+             idempotency_key STRING, \
+             error_kind STRING, \
+             error_message STRING);",
+        "CREATE NODE TABLE IF NOT EXISTS AnalyticsDescriptorLimits( \
+             id SERIAL PRIMARY KEY, \
+             algorithm_id STRING, \
+             version STRING, \
+             limits_payload STRING);",
+    ]
+}
+
+impl LadybugStore {
+    /// Create the lineage and descriptor-limits NODE TABLEs backing the
+    /// [`RunLineageStore`] port.
+    ///
+    /// Idempotent — every statement uses `IF NOT EXISTS`.
+    ///
+    /// Called automatically by [`LadybugStore::open`]; the raw sharing
+    /// constructor [`LadybugStore::new`] does NOT apply it so tests can
+    /// exercise the graceful-degradation contract on a schema-less db.
+    pub fn init_lineage_schema(&self) -> Result<(), Error> {
+        let conn = self
+            .connection()
+            .map_err(|e| Error::Lbug(format!("init_lineage_schema: {e}")))?;
+        for stmt in lineage_schema_ddls() {
+            conn.query(stmt)
+                .map_err(|e| Error::Lbug(format!("init_lineage_schema: {e}\nDDL: {stmt}")))?;
+        }
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl RunLineageStore for LadybugStore {
+    async fn insert(&self, lineage: &RunLineage) -> Result<(), AnalyticsError> {
+        let conn = self
+            .connection()
+            .map_err(|e| AnalyticsError::Internal(format!("lineage insert: {e}")))?;
+
+        // Check idempotency conflict for persist mode
+        if let Some(ref key) = lineage.idempotency_key {
+            let params = vec![
+                ("ws", lbug::Value::String(lineage.workspace_id.to_string())),
+                ("key", lbug::Value::String(key.clone())),
+            ];
+            let mut result = conn
+                .prepare(
+                    "MATCH (r:AnalyticsRunLineage) \
+                     WHERE r.workspace_id = $ws AND r.idempotency_key = $key \
+                     RETURN r.run_id;",
+                )
+                .map_err(|e| AnalyticsError::Internal(format!("idempotency check prepare: {e}")))?;
+            let rows: Vec<String> = conn
+                .execute(&mut result, params)
+                .map_err(|e| AnalyticsError::Internal(format!("idempotency check: {e}")))?
+                .map(|row| row[0].to_string())
+                .collect();
+            if !rows.is_empty() {
+                return Err(AnalyticsError::IdempotencyConflict);
+            }
+        }
+
+        let plan_hash_hex = hex::encode(&lineage.plan_hash);
+        let params_json = serde_json::to_string(&lineage.params)
+            .map_err(|e| AnalyticsError::Internal(format!("params serialize: {e}")))?;
+        let started_at = lineage.started_at.to_rfc3339();
+        let finished_at = lineage.finished_at.map(|dt| dt.to_rfc3339());
+
+        let seed = lineage.seed.map(|s| lbug::Value::Int64(s as i64));
+        let row_count = lineage.row_count.map(|rc| lbug::Value::Int64(rc));
+        let truncation_marker = lineage
+            .truncation_marker
+            .as_ref()
+            .map(|tm| lbug::Value::String(tm.to_string()));
+        let idempotency_key = lineage
+            .idempotency_key
+            .as_ref()
+            .map(|k| lbug::Value::String(k.clone()));
+        let error_kind = lineage
+            .error_kind
+            .as_ref()
+            .map(|e| lbug::Value::String(e.clone()));
+        let error_message = lineage
+            .error_message
+            .as_ref()
+            .map(|e| lbug::Value::String(e.clone()));
+
+        let cypher_params = vec![
+            ("run_id", lbug::Value::String(lineage.run_id.to_string())),
+            ("ws", lbug::Value::String(lineage.workspace_id.to_string())),
+            ("rev", lbug::Value::Int64(lineage.revision_id.get() as i64)),
+            ("alg", lbug::Value::String(lineage.algorithm_id.to_string())),
+            (
+                "ver",
+                lbug::Value::String(lineage.algorithm_version.clone()),
+            ),
+            ("ph", lbug::Value::String(plan_hash_hex)),
+            ("params", lbug::Value::String(params_json)),
+            (
+                "seed",
+                seed.unwrap_or(lbug::Value::Null(lbug::LogicalType::Int64)),
+            ),
+            ("mode", lbug::Value::String(lineage.mode.to_string())),
+            ("status", lbug::Value::String(lineage.status.to_string())),
+            ("sat", lbug::Value::String(started_at)),
+            (
+                "fat",
+                finished_at
+                    .map(lbug::Value::String)
+                    .unwrap_or(lbug::Value::Null(lbug::LogicalType::String)),
+            ),
+            (
+                "rc",
+                row_count.unwrap_or(lbug::Value::Null(lbug::LogicalType::Int64)),
+            ),
+            (
+                "tm",
+                truncation_marker.unwrap_or(lbug::Value::Null(lbug::LogicalType::String)),
+            ),
+            (
+                "ik",
+                idempotency_key.unwrap_or(lbug::Value::Null(lbug::LogicalType::String)),
+            ),
+            (
+                "ek",
+                error_kind.unwrap_or(lbug::Value::Null(lbug::LogicalType::String)),
+            ),
+            (
+                "ems",
+                error_message.unwrap_or(lbug::Value::Null(lbug::LogicalType::String)),
+            ),
+        ];
+
+        conn.query(
+            "CREATE (r:AnalyticsRunLineage {\
+             run_id: $run_id, \
+             workspace_id: $ws, \
+             revision_id: $rev, \
+             algorithm_id: $alg, \
+             algorithm_version: $ver, \
+             plan_hash: $ph, \
+             params: $params, \
+             seed: $seed, \
+             mode: $mode, \
+             status: $status, \
+             started_at: $sat, \
+             finished_at: $fat, \
+             row_count: $rc, \
+             truncation_marker: $tm, \
+             idempotency_key: $ik, \
+             error_kind: $ek, \
+             error_message: $ems});",
+        )
+        .map_err(|e| AnalyticsError::Internal(format!("lineage insert: {e}")))?;
+
+        Ok(())
+    }
+
+    async fn get(&self, run_id: Uuid) -> Result<RunLineage, AnalyticsError> {
+        let conn = self
+            .connection()
+            .map_err(|e| AnalyticsError::Internal(format!("lineage get: {e}")))?;
+
+        let params = vec![("id", lbug::Value::String(run_id.to_string()))];
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:AnalyticsRunLineage) WHERE r.run_id = $id \
+                 RETURN r.run_id, r.workspace_id, r.revision_id, r.algorithm_id, \
+                        r.algorithm_version, r.plan_hash, r.params, r.seed, r.mode, \
+                        r.status, r.started_at, r.finished_at, r.row_count, \
+                        r.truncation_marker, r.idempotency_key, r.error_kind, r.error_message;",
+            )
+            .map_err(|e| AnalyticsError::Internal(format!("lineage get prepare: {e}")))?;
+        let mut result = conn
+            .execute(&mut stmt, params)
+            .map_err(|e| AnalyticsError::Internal(format!("lineage get: {e}")))?;
+
+        if let Some(row) = result.next() {
+            let run_id_str = row[0].to_string();
+            let ws = row[1].to_string();
+            let rev = req_i64_at(&row, 2) as u64;
+            let alg = row[3].to_string();
+            let ver = row[4].to_string();
+            let ph = row[5].to_string();
+            let params_str = row[6].to_string();
+            let seed = opt_i64_at(&row, 7);
+            let mode_str = row[8].to_string();
+            let status_str = row[9].to_string();
+            let sat = row[10].to_string();
+            let fat = opt_str_at(&row, 11);
+            let rc = opt_i64_at(&row, 12);
+            let tm_str = opt_str_at(&row, 13);
+            let ik = opt_str_at(&row, 14);
+            let ek = opt_str_at(&row, 15);
+            let ems = opt_str_at(&row, 16);
+
+            let mode = match mode_str.as_str() {
+                "stream" => AnalyticsMode::Stream,
+                "stats" => AnalyticsMode::Stats,
+                "annotate" => AnalyticsMode::Annotate,
+                "persist" => AnalyticsMode::Persist,
+                _ => AnalyticsMode::Stream,
+            };
+            let status = match status_str.as_str() {
+                "pending" => RunStatus::Pending,
+                "running" => RunStatus::Running,
+                "succeeded" => RunStatus::Succeeded,
+                "truncated" => RunStatus::Truncated,
+                "failed" => RunStatus::Failed,
+                _ => RunStatus::Pending,
+            };
+            let started_at = chrono::DateTime::parse_from_rfc3339(&sat)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_else(|_| chrono::Utc::now());
+            let finished_at = fat
+                .as_ref()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+            let truncation_marker = tm_str.as_ref().and_then(|s| match s.as_str() {
+                "ResultRowsLimit" => {
+                    Some(cognicode_core::domain::analytics::TruncationMarker::ResultRowsLimit)
+                }
+                "PathCountLimit" => {
+                    Some(cognicode_core::domain::analytics::TruncationMarker::PathCountLimit)
+                }
+                "VisitedNodesLimit" => {
+                    Some(cognicode_core::domain::analytics::TruncationMarker::VisitedNodesLimit)
+                }
+                "VisitedEdgesLimit" => {
+                    Some(cognicode_core::domain::analytics::TruncationMarker::VisitedEdgesLimit)
+                }
+                _ => None,
+            });
+
+            Ok(RunLineage {
+                run_id: Uuid::from_string(run_id_str),
+                workspace_id: WorkspaceId::try_new(ws).unwrap(),
+                revision_id: RevisionId(rev),
+                algorithm_id: AlgorithmId::from_string(alg),
+                algorithm_version: ver,
+                plan_hash: hex::decode(ph).unwrap_or_default(),
+                params: serde_json::from_str(&params_str).unwrap_or(serde_json::Value::Null),
+                seed: seed.map(|i| i as u64),
+                mode,
+                status,
+                started_at,
+                finished_at,
+                row_count: rc,
+                truncation_marker,
+                idempotency_key: ik,
+                error_kind: ek,
+                error_message: ems,
+            })
+        } else {
+            Err(AnalyticsError::RunNotFound(run_id.to_string()))
+        }
+    }
+
+    async fn query(
+        &self,
+        filter: RunLineageFilter,
+        limit: Option<u64>,
+    ) -> Result<Vec<RunLineage>, AnalyticsError> {
+        let conn = self
+            .connection()
+            .map_err(|e| AnalyticsError::Internal(format!("lineage query: {e}")))?;
+
+        let limit = limit.unwrap_or(u64::MAX) as usize;
+        let mut results = Vec::new();
+
+        let mut stmt = conn
+            .prepare(
+                "MATCH (r:AnalyticsRunLineage) \
+                 RETURN r.run_id, r.workspace_id, r.revision_id, r.algorithm_id, \
+                        r.algorithm_version, r.plan_hash, r.params, r.seed, r.mode, \
+                        r.status, r.started_at, r.finished_at, r.row_count, \
+                        r.truncation_marker, r.idempotency_key, r.error_kind, r.error_message \
+                 ORDER BY r.started_at DESC;",
+            )
+            .map_err(|e| AnalyticsError::Internal(format!("lineage query prepare: {e}")))?;
+        let mut rows = conn
+            .execute(&mut stmt, vec![])
+            .map_err(|e| AnalyticsError::Internal(format!("lineage query: {e}")))?;
+
+        while let Some(row) = rows.next() {
+            let run_id_str = row[0].to_string();
+            let ws = row[1].to_string();
+            let rev = req_i64_at(&row, 2) as u64;
+            let alg = row[3].to_string();
+            let ver = row[4].to_string();
+            let ph = row[5].to_string();
+            let params_str = row[6].to_string();
+            let seed = opt_i64_at(&row, 7);
+            let mode_str = row[8].to_string();
+            let status_str = row[9].to_string();
+            let sat = row[10].to_string();
+            let fat = opt_str_at(&row, 11);
+            let rc = opt_i64_at(&row, 12);
+            let tm_str = opt_str_at(&row, 13);
+            let ik = opt_str_at(&row, 14);
+            let ek = opt_str_at(&row, 15);
+            let ems = opt_str_at(&row, 16);
+
+            let mode = match mode_str.as_str() {
+                "stream" => AnalyticsMode::Stream,
+                "stats" => AnalyticsMode::Stats,
+                "annotate" => AnalyticsMode::Annotate,
+                "persist" => AnalyticsMode::Persist,
+                _ => AnalyticsMode::Stream,
+            };
+            let status = match status_str.as_str() {
+                "pending" => RunStatus::Pending,
+                "running" => RunStatus::Running,
+                "succeeded" => RunStatus::Succeeded,
+                "truncated" => RunStatus::Truncated,
+                "failed" => RunStatus::Failed,
+                _ => RunStatus::Pending,
+            };
+            let started_at = chrono::DateTime::parse_from_rfc3339(&sat)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_else(|_| chrono::Utc::now());
+            let finished_at = fat
+                .as_ref()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+            let truncation_marker = tm_str.as_ref().and_then(|s| match s.as_str() {
+                "ResultRowsLimit" => {
+                    Some(cognicode_core::domain::analytics::TruncationMarker::ResultRowsLimit)
+                }
+                "PathCountLimit" => {
+                    Some(cognicode_core::domain::analytics::TruncationMarker::PathCountLimit)
+                }
+                "VisitedNodesLimit" => {
+                    Some(cognicode_core::domain::analytics::TruncationMarker::VisitedNodesLimit)
+                }
+                "VisitedEdgesLimit" => {
+                    Some(cognicode_core::domain::analytics::TruncationMarker::VisitedEdgesLimit)
+                }
+                _ => None,
+            });
+
+            let lineage = RunLineage {
+                run_id: Uuid::from_string(run_id_str.clone()),
+                workspace_id: WorkspaceId::try_new(ws.clone()).unwrap(),
+                revision_id: RevisionId(rev),
+                algorithm_id: AlgorithmId::from_string(alg.clone()),
+                algorithm_version: ver.clone(),
+                plan_hash: hex::decode(ph.clone()).unwrap_or_default(),
+                params: serde_json::from_str(&params_str).unwrap_or(serde_json::Value::Null),
+                seed: seed.map(|i| i as u64),
+                mode,
+                status,
+                started_at,
+                finished_at,
+                row_count: rc,
+                truncation_marker,
+                idempotency_key: ik.clone(),
+                error_kind: ek.clone(),
+                error_message: ems.clone(),
+            };
+
+            // Apply filters (same logic as InMemoryLineageStore)
+            if filter
+                .workspace_id
+                .as_ref()
+                .map_or(false, |wid| &lineage.workspace_id != wid)
+                || filter
+                    .revision_id
+                    .as_ref()
+                    .map_or(false, |rid| &lineage.revision_id != rid)
+                || filter
+                    .algorithm_id
+                    .as_ref()
+                    .map_or(false, |aid| &lineage.algorithm_id != aid)
+                || filter
+                    .status
+                    .as_ref()
+                    .map_or(false, |s| &lineage.status != s)
+            {
+                continue;
+            }
+
+            results.push(lineage);
+            if results.len() >= limit {
+                break;
+            }
+        }
+
+        Ok(results)
+    }
+
+    async fn upsert_descriptor_limits(
+        &self,
+        algorithm_id: &AlgorithmId,
+        version: &str,
+        limits: &PlanLimits,
+    ) -> Result<(), AnalyticsError> {
+        let conn = self
+            .connection()
+            .map_err(|e| AnalyticsError::Internal(format!("upsert limits: {e}")))?;
+
+        let payload = serde_json::to_string(limits)
+            .map_err(|e| AnalyticsError::Internal(format!("limits serialize: {e}")))?;
+
+        // Try update first
+        let params: Vec<(&str, lbug::Value)> = vec![
+            ("alg", lbug::Value::String(algorithm_id.to_string())),
+            ("ver", lbug::Value::String(version.to_string())),
+            ("payload", lbug::Value::String(payload.clone())),
+        ];
+        let mut stmt = conn
+            .prepare(
+                "MATCH (d:AnalyticsDescriptorLimits) \
+                 WHERE d.algorithm_id = $alg AND d.version = $ver \
+                 SET d.limits_payload = $payload \
+                 RETURN count(d);",
+            )
+            .map_err(|e| AnalyticsError::Internal(format!("upsert limits prepare: {e}")))?;
+        let mut result = conn
+            .execute(&mut stmt, params)
+            .map_err(|e| AnalyticsError::Internal(format!("upsert limits: {e}")))?;
+
+        let updated = result.next().map(|row| req_i64_at(&row, 0)).unwrap_or(0);
+
+        if updated == 0 {
+            // Insert new record
+            let params: Vec<(&str, lbug::Value)> = vec![
+                ("alg", lbug::Value::String(algorithm_id.to_string())),
+                ("ver", lbug::Value::String(version.to_string())),
+                ("payload", lbug::Value::String(payload)),
+            ];
+            conn.query(
+                "CREATE (d:AnalyticsDescriptorLimits {\
+                 algorithm_id: $alg, version: $ver, limits_payload: $payload});",
+            )
+            .map_err(|e| AnalyticsError::Internal(format!("insert limits: {e}")))?;
+        }
+
+        Ok(())
+    }
+
+    async fn get_descriptor_limits(
+        &self,
+        algorithm_id: &AlgorithmId,
+        version: &str,
+    ) -> Result<Option<PlanLimits>, AnalyticsError> {
+        let conn = self
+            .connection()
+            .map_err(|e| AnalyticsError::Internal(format!("get limits: {e}")))?;
+
+        let params: Vec<(&str, lbug::Value)> = vec![
+            ("alg", lbug::Value::String(algorithm_id.to_string())),
+            ("ver", lbug::Value::String(version.to_string())),
+        ];
+        let mut stmt = conn
+            .prepare(
+                "MATCH (d:AnalyticsDescriptorLimits) \
+                 WHERE d.algorithm_id = $alg AND d.version = $ver \
+                 RETURN d.limits_payload;",
+            )
+            .map_err(|e| AnalyticsError::Internal(format!("get limits prepare: {e}")))?;
+        let mut result = conn
+            .execute(&mut stmt, params)
+            .map_err(|e| AnalyticsError::Internal(format!("get limits: {e}")))?;
+
+        match result.next() {
+            Some(row) => {
+                let payload = row[0].to_string();
+                let limits: PlanLimits = serde_json::from_str(&payload)
+                    .map_err(|e| AnalyticsError::Internal(format!("limits deserialize: {e}")))?;
+                Ok(Some(limits))
+            }
+            None => Ok(None),
+        }
+    }
+}
+
 impl QualityStore for LadybugStore {
     fn issues_for_file(&self, file: &str) -> Result<Vec<QualityIssue>, QualityError> {
         self.query_issues(
@@ -1765,6 +2274,30 @@ fn value_to_usize(v: &lbug::Value) -> usize {
         lbug::Value::UInt8(n) => *n as usize,
         _ => 0,
     }
+}
+
+/// Extract a nullable STRING column from a lbug row.
+fn opt_str_at(row: &[lbug::Value], idx: usize) -> Option<String> {
+    match row.get(idx) {
+        Some(lbug::Value::String(s)) => Some(s.clone()),
+        Some(lbug::Value::Null(_)) => None,
+        _ => None,
+    }
+}
+
+/// Extract a nullable INT64 column from a lbug row.
+fn opt_i64_at(row: &[lbug::Value], idx: usize) -> Option<i64> {
+    match row.get(idx) {
+        Some(lbug::Value::Int64(n)) => Some(*n),
+        Some(lbug::Value::Int32(n)) => Some(*n as i64),
+        Some(lbug::Value::Null(_)) => None,
+        _ => None,
+    }
+}
+
+/// Extract a required INT64 column from a lbug row, returning 0 for NULL.
+fn req_i64_at(row: &[lbug::Value], idx: usize) -> i64 {
+    opt_i64_at(row, idx).unwrap_or(0)
 }
 
 impl LadybugStore {
