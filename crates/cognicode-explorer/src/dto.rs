@@ -325,6 +325,34 @@ pub enum InspectionTarget {
     Evidence {
         id: String,
     },
+    /// A workspace with pre-resolved exploration sessions, used by ProjectDiary view.
+    Workspace(WorkspaceTarget),
+}
+
+/// Target for ProjectDiary view — carries workspace identity and pre-resolved sessions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceTarget {
+    /// Unique workspace identifier.
+    pub id: String,
+    /// Root path of the workspace on disk.
+    pub root_path: String,
+    /// All saved exploration sessions for this workspace.
+    pub sessions: Vec<ExplorationSession>,
+    /// Current graph indexing status.
+    pub graph_status: GraphStatus,
+}
+
+/// A code usage example block, used by ExampleObject view.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExampleBlock {
+    /// The symbol this example demonstrates.
+    pub symbol_id: String,
+    /// The example code snippet.
+    pub example_text: String,
+    /// Source location of the example (file path and line).
+    pub source_location: String,
+    /// Type discriminator for the example block.
+    pub block_type: String,
 }
 
 /// Context passed to ViewExecutor::build(). The service populates all

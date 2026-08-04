@@ -1242,6 +1242,7 @@ fn other_scope(current_scope: &str, other_file: &str) -> String {
 //   ViewExecutor    — ViewDescriptor + async build()
 
 use crate::dto::ExplorationSession;
+use crate::dto::{ExampleBlock, WorkspaceTarget};
 use crate::error::ExplorerResult;
 use async_trait::async_trait;
 
@@ -1442,7 +1443,8 @@ impl ViewExecutor for OverviewExecutor {
             | InspectionTarget::Investigation(_)
             | InspectionTarget::Decision { .. }
             | InspectionTarget::Doc { .. }
-            | InspectionTarget::Evidence { .. } => {
+            | InspectionTarget::Evidence { .. }
+            | InspectionTarget::Workspace(_) => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "overview".into(),
@@ -2559,7 +2561,8 @@ impl ViewExecutor for QualityExecutor {
             | InspectionTarget::Investigation(_)
             | InspectionTarget::Decision { .. }
             | InspectionTarget::Doc { .. }
-            | InspectionTarget::Evidence { .. } => {
+            | InspectionTarget::Evidence { .. }
+            | InspectionTarget::Workspace(_) => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "quality".into(),
@@ -3575,7 +3578,8 @@ impl ViewExecutor for RiskMapExecutor {
             | InspectionTarget::Investigation(_)
             | InspectionTarget::Decision { .. }
             | InspectionTarget::Doc { .. }
-            | InspectionTarget::Evidence { .. } => {
+            | InspectionTarget::Evidence { .. }
+            | InspectionTarget::Workspace(_) => {
                 return Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "risk_map".into(),
@@ -3783,6 +3787,8 @@ pub static DOC_SOURCE_EXECUTOR: DocSourceExecutor = DocSourceExecutor;
 pub static EVIDENCE_OVERVIEW_EXECUTOR: EvidenceOverviewExecutor = EvidenceOverviewExecutor;
 pub static DOC_CODE_ALIGNMENT_EXECUTOR: DocCodeAlignmentExecutor = DocCodeAlignmentExecutor;
 pub static CONCEPT_MAP_EXECUTOR: ConceptMapExecutor = ConceptMapExecutor;
+pub static PROJECT_DIARY_EXECUTOR: ProjectDiaryExecutor = ProjectDiaryExecutor;
+pub static EXAMPLE_OBJECT_EXECUTOR: ExampleObjectExecutor = ExampleObjectExecutor;
 
 /// Ownership Map capability — applies to Issue (QualityIssue).
 ///
@@ -4926,6 +4932,177 @@ impl ViewExecutor for ComposedNarrativeExecutor {
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
                 view_id: "composed-narrative".into(),
+            }),
+        }
+    }
+}
+
+// ============================================================================
+// ProjectDiary — workspace exploration history as navigable narrative
+// ============================================================================
+
+/// Pure shaper for ProjectDiary — no I/O, no async.
+/// Transforms workspace sessions into a ContextualView with one ViewBlock per session.
+pub fn build_project_diary(target: &WorkspaceTarget) -> ContextualView {
+    use crate::dto::ViewBlock;
+
+    let blocks: Vec<ViewBlock> = if target.sessions.is_empty() {
+        vec![ViewBlock {
+            id: "empty".into(),
+            title: "No sessions".into(),
+            body: serde_json::json!({
+                "block_type": "placeholder",
+                "message": "No exploration sessions"
+            }),
+        }]
+    } else {
+        target
+            .sessions
+            .iter()
+            .enumerate()
+            .map(|(i, session)| ViewBlock {
+                id: format!("session:{}", i),
+                title: session.id.clone(),
+                body: serde_json::json!({
+                    "block_type": "session",
+                    "session_id": session.id,
+                    "event_count": session.events.len(),
+                    "created_at": session.created_at,
+                    "investigation_id": session.investigation_id,
+                }),
+            })
+            .collect()
+    };
+
+    ContextualView {
+        object_id: target.id.clone(),
+        view_id: "project-diary".into(),
+        title: "Project Diary".into(),
+        view_kind: ViewKind::ProjectDiary,
+        renderer_kind: RendererKind::Composite,
+        blocks,
+        relations: vec![],
+        evidence: vec![],
+        findings: vec![],
+    }
+}
+
+/// ViewExecutor for ProjectDiary — receives WorkspaceTarget and delegates to the shaper.
+pub struct ProjectDiaryExecutor;
+
+impl ViewDescriptor for ProjectDiaryExecutor {
+    fn id(&self) -> &'static str {
+        "project-diary"
+    }
+    fn title(&self) -> &'static str {
+        "Project Diary"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Workspace]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::ProjectDiary
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Composite
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for ProjectDiaryExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match ctx.target {
+            InspectionTarget::Workspace(target) => Ok(build_project_diary(target)),
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "project-diary".into(),
+            }),
+        }
+    }
+}
+
+// ============================================================================
+// ExampleObject — code usage examples as navigable narrative
+// ============================================================================
+
+/// Pure shaper for ExampleObject — no I/O, no async.
+/// Transforms resolved symbol and example blocks into a ContextualView.
+pub fn build_example_object(symbol: &ResolvedSymbol, examples: &[ExampleBlock]) -> ContextualView {
+    use crate::dto::ViewBlock;
+
+    let blocks: Vec<ViewBlock> = if examples.is_empty() {
+        vec![ViewBlock {
+            id: "empty".into(),
+            title: "No examples".into(),
+            body: serde_json::json!({
+                "block_type": "placeholder",
+                "message": "No usage examples found"
+            }),
+        }]
+    } else {
+        examples
+            .iter()
+            .map(|example| ViewBlock {
+                id: example.symbol_id.clone(),
+                title: example.source_location.clone(),
+                body: serde_json::json!({
+                    "block_type": example.block_type,
+                    "symbol_id": example.symbol_id,
+                    "example_text": example.example_text,
+                    "source_location": example.source_location,
+                }),
+            })
+            .collect()
+    };
+
+    ContextualView {
+        object_id: symbol.id.to_string(),
+        view_id: "example-object".into(),
+        title: format!("Examples: {}", symbol.name),
+        view_kind: ViewKind::ExampleObject,
+        renderer_kind: RendererKind::Composite,
+        blocks,
+        relations: vec![],
+        evidence: vec![],
+        findings: vec![],
+    }
+}
+
+/// ViewExecutor for ExampleObject — resolves examples from graph repo then delegates to shaper.
+pub struct ExampleObjectExecutor;
+
+impl ViewDescriptor for ExampleObjectExecutor {
+    fn id(&self) -> &'static str {
+        "example-object"
+    }
+    fn title(&self) -> &'static str {
+        "Example Object"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Symbol]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::ExampleObject
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Composite
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for ExampleObjectExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match ctx.target {
+            InspectionTarget::Symbol(symbol) => {
+                // TODO: Wire example_blocks_for_symbol from graph_repo once the method
+                // is added to the GraphRepository port (see design open questions).
+                // For now, return empty examples — the placeholder block signals "no examples".
+                let examples: Vec<ExampleBlock> = Vec::new();
+                Ok(build_example_object(symbol, &examples))
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "example-object".into(),
             }),
         }
     }
@@ -7792,6 +7969,213 @@ mod tests {
         // Relations must reflect the single justifies edge
         assert_eq!(view.relations.len(), 1);
         assert_eq!(view.relations[0].relation_type, "Justifies");
+    }
+
+    // -------------------------------------------------------------------------
+    // ProjectDiary — shaper and executor tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_build_project_diary_with_sessions() {
+        let session1 = ExplorationSession {
+            id: "session-1".into(),
+            workspace_id: "ws-1".into(),
+            events: vec![],
+            navigation_mode: "pane-stack".into(),
+            panes: vec![],
+            created_at: "2024-01-01T00:00:00Z".into(),
+            investigation_id: Some("inv-1".into()),
+        };
+        let session2 = ExplorationSession {
+            id: "session-2".into(),
+            workspace_id: "ws-1".into(),
+            events: vec![],
+            navigation_mode: "pane-stack".into(),
+            panes: vec![],
+            created_at: "2024-01-02T00:00:00Z".into(),
+            investigation_id: None,
+        };
+
+        let target = WorkspaceTarget {
+            id: "ws-1".into(),
+            root_path: "/tmp/workspace".into(),
+            sessions: vec![session1.clone(), session2.clone()],
+            graph_status: crate::dto::GraphStatus::Ready,
+        };
+
+        let view = super::build_project_diary(&target);
+
+        // ViewKind must be ProjectDiary
+        assert_eq!(view.view_kind, super::ViewKind::ProjectDiary);
+        assert_eq!(view.renderer_kind, super::RendererKind::Composite);
+
+        // Must have one block per session
+        assert_eq!(view.blocks.len(), 2);
+
+        // First block corresponds to session1
+        assert_eq!(view.blocks[0].id, "session:0");
+        assert_eq!(view.blocks[0].title, "session-1");
+        let body = &view.blocks[0].body;
+        assert_eq!(body.get("block_type").and_then(|v| v.as_str()), Some("session"));
+        assert_eq!(body.get("session_id").and_then(|v| v.as_str()), Some("session-1"));
+        assert_eq!(body.get("investigation_id").and_then(|v| v.as_str()), Some("inv-1"));
+
+        // Second block corresponds to session2
+        assert_eq!(view.blocks[1].id, "session:1");
+        assert_eq!(view.blocks[1].title, "session-2");
+    }
+
+    #[test]
+    fn test_build_project_diary_empty() {
+        let target = WorkspaceTarget {
+            id: "ws-empty".into(),
+            root_path: "/tmp/empty".into(),
+            sessions: vec![],
+            graph_status: crate::dto::GraphStatus::Missing,
+        };
+
+        let view = super::build_project_diary(&target);
+
+        // Must return a placeholder block, not an error
+        assert_eq!(view.blocks.len(), 1);
+        assert_eq!(view.blocks[0].id, "empty");
+        assert_eq!(view.blocks[0].title, "No sessions");
+        let body = &view.blocks[0].body;
+        assert_eq!(body.get("block_type").and_then(|v| v.as_str()), Some("placeholder"));
+    }
+
+    #[tokio::test]
+    async fn test_project_diary_executor_dispatch() {
+        let target = WorkspaceTarget {
+            id: "ws-1".into(),
+            root_path: "/tmp/workspace".into(),
+            sessions: vec![],
+            graph_status: crate::dto::GraphStatus::Ready,
+        };
+
+        let ctx = super::ViewContext {
+            target: &super::InspectionTarget::Workspace(target),
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: None,
+            node_property_repository: None,
+        };
+
+        let executor = super::ProjectDiaryExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        assert_eq!(view.view_kind, super::ViewKind::ProjectDiary);
+
+        // Non-Workspace target must return ViewNotAvailable
+        let symbol = make_resolved("test.rs", "foo", 10, SymbolKind::Function);
+        let ctx_symbol = super::ViewContext {
+            target: &super::InspectionTarget::Symbol(symbol),
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: None,
+            node_property_repository: None,
+        };
+        let result = executor.build(&ctx_symbol).await;
+        assert!(result.is_err());
+    }
+
+    // -------------------------------------------------------------------------
+    // ExampleObject — shaper and executor tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_build_example_object_with_examples() {
+        let symbol = make_resolved("test.rs", "foo", 10, SymbolKind::Function);
+
+        let examples = vec![
+            ExampleBlock {
+                symbol_id: "test.rs:foo:10".into(),
+                example_text: "foo();".into(),
+                source_location: "test.rs:42".into(),
+                block_type: "usage".into(),
+            },
+            ExampleBlock {
+                symbol_id: "test.rs:foo:10".into(),
+                example_text: "let x = foo();".into(),
+                source_location: "other.rs:100".into(),
+                block_type: "usage".into(),
+            },
+        ];
+
+        let view = super::build_example_object(&symbol, &examples);
+
+        assert_eq!(view.view_kind, super::ViewKind::ExampleObject);
+        assert_eq!(view.renderer_kind, super::RendererKind::Composite);
+        assert_eq!(view.blocks.len(), 2);
+
+        // Each block should have the example data
+        assert_eq!(view.blocks[0].title, "test.rs:42");
+        let body0 = &view.blocks[0].body;
+        assert_eq!(body0.get("block_type").and_then(|v| v.as_str()), Some("usage"));
+        assert_eq!(body0.get("example_text").and_then(|v| v.as_str()), Some("foo();"));
+
+        assert_eq!(view.blocks[1].title, "other.rs:100");
+        let body1 = &view.blocks[1].body;
+        assert_eq!(body1.get("example_text").and_then(|v| v.as_str()), Some("let x = foo();"));
+    }
+
+    #[test]
+    fn test_build_example_object_empty() {
+        let symbol = make_resolved("test.rs", "foo", 10, SymbolKind::Function);
+
+        let view = super::build_example_object(&symbol, &[]);
+
+        // Must return a placeholder block, not an error
+        assert_eq!(view.blocks.len(), 1);
+        assert_eq!(view.blocks[0].id, "empty");
+        assert_eq!(view.blocks[0].title, "No examples");
+        let body = &view.blocks[0].body;
+        assert_eq!(body.get("block_type").and_then(|v| v.as_str()), Some("placeholder"));
+    }
+
+    #[tokio::test]
+    async fn test_example_object_executor_dispatch() {
+        let symbol = make_resolved("test.rs", "foo", 10, SymbolKind::Function);
+
+        let ctx = super::ViewContext {
+            target: &super::InspectionTarget::Symbol(symbol.clone()),
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: None,
+            node_property_repository: None,
+        };
+
+        let executor = super::ExampleObjectExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok());
+        let view = result.unwrap();
+        assert_eq!(view.view_kind, super::ViewKind::ExampleObject);
+
+        // Non-Symbol target must return ViewNotAvailable
+        let target = WorkspaceTarget {
+            id: "ws-1".into(),
+            root_path: "/tmp/workspace".into(),
+            sessions: vec![],
+            graph_status: crate::dto::GraphStatus::Ready,
+        };
+        let ctx_workspace = super::ViewContext {
+            target: &super::InspectionTarget::Workspace(target),
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: None,
+            node_property_repository: None,
+        };
+        let result = executor.build(&ctx_workspace).await;
+        assert!(result.is_err());
     }
 }
 
