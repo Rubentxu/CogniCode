@@ -247,13 +247,6 @@ pub struct RunLineageFilter {
     pub status: Option<RunStatus>,
 }
 
-/// Lineage query result with optional truncation marker.
-#[derive(Debug, Clone)]
-pub struct LineagePage {
-    pub records: Vec<RunLineage>,
-    pub truncation_marker: Option<TruncationMarker>,
-}
-
 // ============================================================================
 // InMemoryLineageStore
 // ============================================================================
