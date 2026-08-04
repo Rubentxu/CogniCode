@@ -289,25 +289,22 @@ impl Runtime {
         let view_registry = Arc::new(cognicode_explorer::registry::ViewRegistry::new(None));
         let lens_registry = cognicode_explorer::domain::lens::default_registry();
 
-        let quality: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>> =
-            self.quality_store.clone();
-        let quality_write: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>> =
-            self.quality_store.clone();
-
-        cognicode_explorer::mcp::ExplorerMcpHandler::with_graph(
-            self.symbol_repo,
-            self.source_reader,
+        let ports = cognicode_explorer::mcp::explorer::McpHandlerPorts {
+            symbol_repo: self.symbol_repo,
+            source_reader: self.source_reader,
             view_registry,
             lens_registry,
-            self.cwd,
-            self.graph,
-            quality,
-            quality_write,
-            self.revision_tracker,
-            None, // route_store — postgres-backed adapter removed
-            self.analytics_registry,
-            self.analytics_lineage_store,
-        )
+            cwd: self.cwd,
+            graph: self.graph,
+            quality_store: self.quality_store.clone(),
+            quality_write: self.quality_store.clone(),
+            revision_tracker: self.revision_tracker,
+            route_store: None, // postgres-backed adapter removed
+            analytics_registry: self.analytics_registry,
+            analytics_lineage_store: self.analytics_lineage_store,
+        };
+
+        cognicode_explorer::mcp::ExplorerMcpHandler::with_graph(ports)
     }
 }
 

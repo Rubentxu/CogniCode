@@ -338,6 +338,48 @@ pub struct EnvelopeError {
 }
 
 // ============================================================================
+// McpHandlerPorts
+// ============================================================================
+
+ /// Ports DTO for constructing an [`ExplorerMcpHandler`][super::ExplorerMcpHandler].
+ ///
+ /// Mirrors the [`RuntimePorts`] pattern from the runtime layer — bundles all
+ /// infrastructure ports into a single struct so [`with_graph`] has a stable
+ /// typed contract instead of 12 individual parameters.
+ ///
+ /// Created in `Runtime::into_mcp_handler()` and passed directly to
+ /// [`ExplorerMcpHandler::with_graph`].
+ pub struct McpHandlerPorts {
+     /// Core symbol repository.
+     pub symbol_repo: Arc<dyn SymbolRepository>,
+     /// Source file reader.
+     pub source_reader: Arc<dyn SourceReader>,
+     /// View registry for narrative blocks.
+     pub view_registry: Arc<crate::registry::ViewRegistry>,
+     /// Lens registry for MoldQL.
+     pub lens_registry: crate::domain::lens::LensRegistry,
+     /// Working directory for workspace-relative resolution.
+     pub cwd: PathBuf,
+     /// Optional call graph (None when no graph is loaded).
+     pub graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>>,
+     /// Quality store for search and view services.
+     pub quality_store: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
+     /// Write-capable quality store (may be same as [`quality_store`]).
+     pub quality_write: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
+     /// Revision tracker incremented after each ingest.
+     pub revision_tracker: Arc<std::sync::atomic::AtomicU64>,
+     /// Route store (multimodal feature — postgres-backed adapter removed).
+     #[allow(dead_code)]
+     pub route_store: Option<Arc<dyn crate::ports::RouteStore>>,
+     /// Analytics registry (E28.4).
+     pub analytics_registry:
+         Option<Arc<cognicode_core::application::services::graph_analytics::AlgorithmRegistry>>,
+     /// Lineage store for analytics run records (E28.4).
+     pub analytics_lineage_store:
+         Option<Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>>,
+ }
+
+// ============================================================================
 // ExplorerMcpHandler
 // ============================================================================
 
@@ -360,58 +402,39 @@ impl ExplorerMcpHandler {
         }
     }
 
-    /// Build an `ExplorerMcpHandler` from raw infrastructure components.
+    /// Build an `ExplorerMcpHandler` from a [`McpHandlerPorts`] DTO.
     ///
     /// This constructor wires all 6 ISP-segregated facades into the
     /// [`McpContext`] and populates the [`ToolHandlerRegistry`] with
     /// all registered tool families. Used by the MCP binary bootstrap.
     ///
-    /// # Parameters
-    ///
-    /// * `symbol_repo` — Symbol resolution port.
-    /// * `source_reader` — Source file read port.
-    /// * `quality_repo` — Optional `QualityStore` port backing the
-    ///   quality-MCP tools (`find_quality_issues`, `quality_gate`) and the
-    ///   internal lenses that surface quality findings. Wired from
-    ///   `cognicode-runtime` via `PostgresQualityStore` (PG-canonical).
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_graph(
-        symbol_repo: Arc<dyn SymbolRepository>,
-        source_reader: Arc<dyn SourceReader>,
-        view_registry: Arc<crate::registry::ViewRegistry>,
-        lens_registry: crate::domain::lens::LensRegistry,
-        cwd: PathBuf,
-        graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>>,
-        quality_repo: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
-        quality_write: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
-        revision_tracker: Arc<std::sync::atomic::AtomicU64>,
-        #[allow(unused_variables)] route_store: Option<Arc<dyn crate::ports::RouteStore>>,
-        analytics_registry: Option<Arc<cognicode_core::application::services::graph_analytics::AlgorithmRegistry>>,
-        analytics_lineage_store: Option<Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>>,
-    ) -> Self {
+    /// The [`McpHandlerPorts`] DTO replaces the previous 12-parameter signature,
+    /// eliminating the `#[allow(clippy::too_many_arguments)]` violation from
+    /// the debt-verify coupling-smoke audit.
+    pub fn with_graph(ports: McpHandlerPorts) -> Self {
         // GraphQueryPort may be None when no call graph is loaded.
         #[cfg(not(feature = "ownership"))]
-        let graph_query: Option<Arc<dyn GraphQueryPort>> = graph.as_ref().map(|g| {
+        let graph_query: Option<Arc<dyn GraphQueryPort>> = ports.graph.as_ref().map(|g| {
             Arc::new(crate::adapters::CallGraphRepository::new(g.clone()))
                 as Arc<dyn GraphQueryPort>
         });
         #[cfg(feature = "ownership")]
-        let graph_query: Option<Arc<dyn GraphQueryPort>> = graph.as_ref().map(|g| {
+        let graph_query: Option<Arc<dyn GraphQueryPort>> = ports.graph.as_ref().map(|g| {
             Arc::new(crate::adapters::CallGraphRepository::new(g.clone()))
                 as Arc<dyn GraphQueryPort>
         });
 
         // Workspace facade.
         let workspace: Arc<dyn WorkspaceService> =
-            Arc::new(WorkspaceServiceImpl::new(symbol_repo.clone(), cwd, None));
+            Arc::new(WorkspaceServiceImpl::new(ports.symbol_repo.clone(), ports.cwd, None));
 
         // Search facade.
         let search: Arc<dyn SearchService> = Arc::new(SearchServiceImpl::new(
-            symbol_repo.clone(),
+            ports.symbol_repo.clone(),
             None, // search_repo
-            view_registry.clone(),
+            ports.view_registry.clone(),
             None, // view_spec_store
-            quality_repo.clone(),
+            ports.quality_store.clone(),
             None, // persistence
             None, // investigation
             None, // graph_repo — wired from runtime when available
@@ -424,12 +447,12 @@ impl ExplorerMcpHandler {
 
         // View facade (also provides LensService for MoldQL).
         let view_impl: Arc<ViewServiceImpl> = Arc::new(ViewServiceImpl::new(
-            symbol_repo.clone(),
-            source_reader.clone(),
-            quality_repo.clone(),
-            lens_registry,
+            ports.symbol_repo.clone(),
+            ports.source_reader.clone(),
+            ports.quality_store.clone(),
+            ports.lens_registry,
             graph_query.clone(),
-            view_registry.clone(),
+            ports.view_registry.clone(),
             Some(persistence.clone()),
             None, // graph_repo
         ));
@@ -438,9 +461,9 @@ impl ExplorerMcpHandler {
 
         // MoldQL facade.
         let moldql: Arc<dyn MoldQLService> = Arc::new(MoldQLServiceImpl::new(
-            symbol_repo.clone(),
-            quality_repo.clone(),
-            source_reader,
+            ports.symbol_repo.clone(),
+            ports.quality_store.clone(),
+            ports.source_reader,
             lens_executor,
             #[cfg(feature = "multimodal")]
             None, // graph_repo
@@ -451,11 +474,11 @@ impl ExplorerMcpHandler {
 
         // Graph facade.
         let graph_facade: Arc<dyn GraphService> =
-            Arc::new(GraphServiceImpl::new(symbol_repo.clone(), graph_query));
+            Arc::new(GraphServiceImpl::new(ports.symbol_repo.clone(), graph_query));
 
         // Build McpContext with all facades wired.
         let mut ctx_builder = McpContext::builder()
-            .with_graph(graph)
+            .with_graph(ports.graph)
             .with_session_registry(SessionRegistry::new())
             .with_workspace(workspace.clone())
             .with_search(search.clone())
@@ -463,21 +486,21 @@ impl ExplorerMcpHandler {
             .with_moldql(moldql.clone())
             .with_persistence(persistence)
             .with_graph_service(graph_facade.clone())
-            .with_revision_tracker(revision_tracker);
-        if let Some(q) = quality_repo {
+            .with_revision_tracker(ports.revision_tracker);
+        if let Some(q) = ports.quality_store {
             ctx_builder = ctx_builder.with_quality(q);
         }
-        if let Some(qw) = quality_write {
+        if let Some(qw) = ports.quality_write {
             ctx_builder = ctx_builder.with_quality_write(qw);
         }
-        if let Some(r) = analytics_registry {
+        if let Some(r) = ports.analytics_registry {
             ctx_builder = ctx_builder.with_analytics_registry(r);
         }
-        if let Some(l) = analytics_lineage_store {
+        if let Some(l) = ports.analytics_lineage_store {
             ctx_builder = ctx_builder.with_analytics_lineage_store(l);
         }
         #[cfg(feature = "multimodal")]
-        if let Some(ee) = route_store {
+        if let Some(ee) = ports.route_store {
             ctx_builder = ctx_builder.with_route_store(ee);
         }
         #[cfg(feature = "multimodal")]
