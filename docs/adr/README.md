@@ -27,6 +27,8 @@ This directory holds the architecture decision records (ADRs) for the CogniCode 
 | [ADR-028](./ADR-028-ladybugdb-port-abstraction-architecture.md) | Port Abstraction Architecture for LadybugDB Migration | ACCEPTED | 2026-07-30 |
 | [ADR-029](./ADR-029-callgraph-projection-port-seam.md) | CallGraphProjectionPort Seam | ACCEPTED | 2026-08-03 |
 | [ADR-030](./ADR-030-quality-store-ladybug-schema.md) | QualityStore Schema: LadybugDB Backend | ACCEPTED | 2026-08-03 |
+| [ADR-031](./ADR-031-release-1.0.0-definition.md) | Release 1.0.0: Definition of Production-Ready | PROPOSED | 2026-08-05 |
+| [ADR-032](./ADR-032-sandbox-validation-system.md) | Sandbox Validation System: Podman Quadlets + Real Repos + Scoring | PROPOSED | 2026-08-05 |
 
 ## Format
 

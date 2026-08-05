@@ -1,15 +1,15 @@
 # CogniCode Roadmap
 
-Last updated: 2026-08-05 (v0.84.0 — e12h-decision-trace COMPLETED: DecisionTraceExecutor 2-block view (Mermaid graph + ADR markdown) for DecisionArtifact, PR #224 mergeado, v0.84.0 taggeado; e14-narrative-runtime Cycle 1 DONE (v0.83.0); fix-planhash-placeholder DONE (PR #216). **Próximo ciclo activo: e14-narrative-runtime Cycle 2 (LadybugDB persistence)**) (v0.83.0 — e14-narrative-runtime COMPLETED: EmbedResolver + wiring en 4 narrative shapers, PR #217 implementó, PR #222 fix bugs, PR #223 smell-004 LSP fix; 942 tests; E14 Cycle 1 DONE; Cycle 2 (LadybugDB persistence) pending) (v0.82.0 — HIGH coupling-smoke resolved: with_graph refactored to McpHandlerPorts DTO; v0.81.2: E28.4 D4 resolved + cohort-3 conformance + 7 specs OBSOLETE + 7 stale branches closed) — `fix-planhash-placeholder` DONE (PR #216, v0.83.0, ya mergeado). e29-3-port-abstraction-audit + debt-e29-3-1 mergeados. Verify de e29-3: PASS_WITH_WARNINGS (2791 tests, 0 critical; 3 warnings: W1 factory-in-ports ACCEPTABLE-WITH-DOC, W2 NODE TABLE collision DOCUMENT-FOR-FOLLOW-UP, W3 IngestCommit naming). Debt de e29-3: PASS_WITH_WARNINGS (DQS 0.72 +0.24). debt-e29-3-1 (#215, v0.80.1) cerró W2 (QualityIssue/QualityBaseline/QualityRule namespace) y W3 (IngestCommitPort rename) con 1721 tests verdes, DQS 0.82. ADR-029 (CallGraphProjectionPort seam) + ADR-030 (QualityStore lbug schema) escritos. 15 PRs landed on main: 6/6 spike stages (S1 build, S2 schema-load, S3 concurrency, S4 crash-recovery, S5 latency, S6 cypher-compat — gate pasado en v0.76.5) + Phase 0 (clean-ports + define-new-ports + refactor-call-sites, v0.76.6-v0.76.8) + Phase 1 (9/9 lbug ports en `cognicode-ladybug` crate, v0.77.0 + LadybugGraphExecutor v0.78.0) + Phase 1.5 (e29-7 full PostgreSQL removal: RuntimePorts DTO + bootstrap_with_backend canonical entry + zero `pg_repo` + zero `PostgresBackend`, v0.79.0) + Phase 3 (e29-3 port abstraction audit + debt-e29-3-1, v0.80.0 + v0.80.1). **Runtime default = `ladybug`**bug`** (Cargo.toml:32, `default = ["ladybug"]`). Los 4 sub-items originales de Phase 2 (`e29-2-conformance`, `e29-2-migrate-data`, `e29-2-switch-default`, `e29-2-remove-pg`) se reconciliaron así: `switch-default` y `remove-pg` DONE vía e29-7; `migrate-data` OBSOLETE (no hay datos PG que migrar); `conformance` OBSOLETE-via-redesign (PgGraphExecutor fue eliminado — la conformance ahora es LadybugDB ↔ in-memory oracle, ya en `LadybugStore` tests). 13 PRs acumulados del programa E29.)
+Last updated: 2026-08-05 (v0.85.0 — e14-C2 COMPLETED: NarrativeStore port + LadybugDB adapter + runtime wiring, PR #225 mergeado, v0.85.0 taggeado. **Programa activo: Release 1.0.0 (E30)** — ver `## Release 1.0.0 Program (E30)`. e13-wave2 Phase 1 ports sync en rama `feat/e13-wave2-knowledge-layer-ports` (`aa23af61`, build green, 949 explorer tests); ADR-031 (definición 1.0.0 + 12 gates) + ADR-032 (sandbox validation) escritos; specs `release-readiness-gate` + `sandbox-validation-system` creadas; plan maestro en `docs/RELEASE-1.0.0-PLAN.md`.) (v0.84.0 — e12h-decision-trace COMPLETED: DecisionTraceExecutor 2-block view (Mermaid graph + ADR markdown) for DecisionArtifact, PR #224 mergeado, v0.84.0 taggeado; e14-narrative-runtime Cycle 1 DONE (v0.83.0); fix-planhash-placeholder DONE (PR #216). **Próximo ciclo activo: e14-narrative-runtime Cycle 2 (LadybugDB persistence)**) (v0.83.0 — e14-narrative-runtime COMPLETED: EmbedResolver + wiring en 4 narrative shapers, PR #217 implementó, PR #222 fix bugs, PR #223 smell-004 LSP fix; 942 tests; E14 Cycle 1 DONE; Cycle 2 (LadybugDB persistence) pending) (v0.82.0 — HIGH coupling-smoke resolved: with_graph refactored to McpHandlerPorts DTO; v0.81.2: E28.4 D4 resolved + cohort-3 conformance + 7 specs OBSOLETE + 7 stale branches closed) — `fix-planhash-placeholder` DONE (PR #216, v0.83.0, ya mergeado). e29-3-port-abstraction-audit + debt-e29-3-1 mergeados. Verify de e29-3: PASS_WITH_WARNINGS (2791 tests, 0 critical; 3 warnings: W1 factory-in-ports ACCEPTABLE-WITH-DOC, W2 NODE TABLE collision DOCUMENT-FOR-FOLLOW-UP, W3 IngestCommit naming). Debt de e29-3: PASS_WITH_WARNINGS (DQS 0.72 +0.24). debt-e29-3-1 (#215, v0.80.1) cerró W2 (QualityIssue/QualityBaseline/QualityRule namespace) y W3 (IngestCommitPort rename) con 1721 tests verdes, DQS 0.82. ADR-029 (CallGraphProjectionPort seam) + ADR-030 (QualityStore lbug schema) escritos. 15 PRs landed on main: 6/6 spike stages (S1 build, S2 schema-load, S3 concurrency, S4 crash-recovery, S5 latency, S6 cypher-compat — gate pasado en v0.76.5) + Phase 0 (clean-ports + define-new-ports + refactor-call-sites, v0.76.6-v0.76.8) + Phase 1 (9/9 lbug ports en `cognicode-ladybug` crate, v0.77.0 + LadybugGraphExecutor v0.78.0) + Phase 1.5 (e29-7 full PostgreSQL removal: RuntimePorts DTO + bootstrap_with_backend canonical entry + zero `pg_repo` + zero `PostgresBackend`, v0.79.0) + Phase 3 (e29-3 port abstraction audit + debt-e29-3-1, v0.80.0 + v0.80.1). **Runtime default = `ladybug`**bug`** (Cargo.toml:32, `default = ["ladybug"]`). Los 4 sub-items originales de Phase 2 (`e29-2-conformance`, `e29-2-migrate-data`, `e29-2-switch-default`, `e29-2-remove-pg`) se reconciliaron así: `switch-default` y `remove-pg` DONE vía e29-7; `migrate-data` OBSOLETE (no hay datos PG que migrar); `conformance` OBSOLETE-via-redesign (PgGraphExecutor fue eliminado — la conformance ahora es LadybugDB ↔ in-memory oracle, ya en `LadybugStore` tests). 13 PRs acumulados del programa E29.)
 
 ## Active
 
-> **Note 2026-08-03 (post-E29 audit)**: All programs listed in this section are
-> historical records of completed work. The next **active** SDDK cycle is
-> `fix-planhash-placeholder` (PlanHash placeholder debt; 1-line fix per call site).
-> Next MAJOR program candidate: `e14-narrative-runtime` (ADR-002 Phase 3; fresh
-> explore required — pre-E29 branch is toxic). See `## Future` for the reconciled
-> pending candidates table. Audit persisted at `sddk/audit-post-e29-closure/explore-report.md`.
+> **Note 2026-08-05**: All programs in this section are historical records of
+> completed work. The **active program** is `## Release 1.0.0 Program (E30)` —
+> 1.0.0 = production ready con verificación estricta contra proyectos reales
+> (ADR-031, ADR-032). El ciclo SDDK inmediato es `e13-wave2-knowledge-layer-ports`
+> Phase 2 (rama `feat/e13-wave2-knowledge-layer-ports`, Phase 1 ya commiteada en
+> `aa23af61`). Audit persistido en `sddk/audit-post-e29-closure/explore-report.md`.
 
 ### Graph Query & Analytics Platform (E28)
 
@@ -1033,6 +1033,47 @@ Closed before resuming new cycles:
 | `quality-stack-evolution` | v0.24.0 | 2026-06-25 | [#55](https://github.com/Rubentxu/CogniCode/pull/55) | C5 rename (`QualityIssue.file → file_path` with serde wire compat per D-1 B.1) + multi-workspace `quality_gate` scoping (`workspace_id: Option<&str>` per D-2) + quality agent ingest write-path (`QualityWritePort` trait + `PostgresQualityRepository` impl + `ingest_quality_issues` MCP tool with natural-key idempotency per D-3) |
 | `quality-stack-pg-canonical` (+ v2) | v0.23.0 | 2026-06-25 | [#52](https://github.com/Rubentxu/CogniCode/pull/52) + follow-up `ad35e06` | Postgres-canonical quality stack: m0011_quality.sql migration + PostgresQualityRepository + issues_for_workspace + runtime wiring + 6 test mocks + 8 integration tests + parked-crates ADR |
 
+## Release 1.0.0 Program (E30)
+
+> **Añadido 2026-08-05** — 1.0.0 = **production ready con verificación estricta y automatizada contra proyectos reales**. No se taggea sin prueba. Fuente de verdad: [ADR-031](./adr/ADR-031-release-1.0.0-definition.md) (definición + 12 gates), [ADR-032](./adr/ADR-032-sandbox-validation-system.md) (sistema de validación), [RELEASE-1.0.0-PLAN.md](./RELEASE-1.0.0-PLAN.md) (plan maestro 5 fases), specs [`release-readiness-gate`](../openspec/specs/release-readiness-gate/spec.md) y [`sandbox-validation-system`](../openspec/specs/sandbox-validation-system/spec.md).
+
+**Gate**: Release Readiness Scorecard — 12 criterios (G1–G12) con target medible, valor actual y evidencia. Los 12 GREEN en 3 ejecuciones consecutivas → candidato a `v1.0.0` (MINOR bump desde v0.85.0).
+
+| # | Criterio | Target | Fuente |
+|---|----------|--------|--------|
+| G1 | e13-wave2 knowledge layer | 100% tasks (3 PRs) | git + branches |
+| G2 | Cobertura MCP tools | 43/43 tools con ≥1 scenario | coverage matrix |
+| G3 | MCP Health Score | ≥ 85 en 3 runs consecutivos | scoring engine |
+| G4 | Correctitud Tier-1 | ≥ 90% (ripgrep/serde/anyhow/tokio/clap) | ground-truth matchers |
+| G5 | Latencia | search < 500ms p95; call-graph < 2s p95; analytics < 5s p95 | benchmark |
+| G6 | Consistencia | varianza < 10% | stability.json |
+| G7 | Robustez | 0 crashes | failure classes |
+| G8 | Escalabilidad | ingest 100k+ LOC sin timeout/OOM | tier-3 corpus |
+| G9 | Sin regresiones | 0 unexpected vs baseline | report --baseline |
+| G10 | Conformance openspec | 401/401 requirements | conformance audit |
+| G11 | Documentación | MCP-TOOLS/ADRs/ROADMAP al día | doc audit |
+| G12 | Higiene release | changelog + semver + sin stale branches | git audit |
+
+### Fases
+
+| Fase | Cambio | Goal | Depends on | Exit criteria | Status |
+|------|--------|------|------------|---------------|--------|
+| 0 | `e30-sandbox-infra` | Quadlets reales (digest pins), Maven, smoke lane verde, workflow nightly | None | `just sandbox-ci-smoke` exit 0; 6 servicios activos | PROPOSED |
+| 1 | `e13-wave2-knowledge-layer-ports` (PR 2+3) | AdrInspectorExecutor + EvidenceStore wiring + Ladybug stubs + UI tests | Phase 1 (aa23af61) | G1 green — tasks 2.1–2.5, 3.1–3.5, 4.1–4.3 | IN PROGRESS |
+| 2 | `e30-corpus-expansion` | tokio/clap (Tier-1), rust-analyzer/typescript/react (Tier-3), ground truth, cobertura 43 tools | Fase 0 | G2 green — coverage matrix 100% | PROPOSED |
+| 3 | `e30-metric-baseline` | 3× campaña full, baseline congelado, benchmark, primer scorecard | Fase 2 | G5/G6/G8 medidos; baseline `sandbox/results/baseline/` | PROPOSED |
+| 4 | `e30-conformance-audit` | 401 requirements → tests; cerrar gaps; docs al día; higiene git | Fase 3 | G10/G11/G12 green | PROPOSED |
+| 5 | `e30-release-gate` | 3 noches 12/12 GREEN; tag v1.0.0; scorecard archivado | Fase 4 | `git tag v1.0.0` pushed; `docs/analysis/release-1.0.0-scorecard.md` | PROPOSED |
+
+### Estado actual del sandbox (audit 2026-08-05)
+
+- ✅ `sandbox-orchestrator` compila; scoring 5D implementado; history/trends; stability; HTML reports
+- ✅ 22 repos clonados; 40+ manifests; schema.json; tiers A/B/C
+- ❌ Quadlets plantilla con digest pins falsos (`sandbox/containers/*.container`)
+- ❌ Maven missing (spring-petclinic)
+- ❌ Últimos results-runs: 2026-06-19 (infra desusada)
+- ❌ Sin workflow sandbox en GitHub Actions (solo `ci.yml` unit tests)
+
 ## Future
 
 Follow-ups explicitly queued by cycles closed today. Each will need its own proposal + spec before becoming Active.
@@ -1057,7 +1098,7 @@ Follow-ups explicitly queued by cycles closed today. Each will need its own prop
 |------|---------|--------|-----|--------|
 | 3 pre-existing Playwright failures (shell doesn't load in headless Chromium) | HIGH | E18-2 | cmdk `vimBindings` + MSW service worker not registering in headless CI (infra, not code) | Open |
 | Pre-existing GraphLanding cytoscape error (canvas-of-type-2d) | LOW | unknown | unhandled canvas type in headless Chromium | Open |
-| PlanHash placeholder at `lower_plan.rs` + 2 archivos más (14 call sites total) | MEDIUM | E28.1 | `PlanHash::compute(&0u32)` hardcodes zero — all MoldQL plans share same hash. `PlanHash::for_plan(&plan)` helper ya existe (v0.76.1) pero no cableado. Sitios: `lower_plan.rs` l.68/108/145/172/194/246 + `lower_pattern_profile.rs` l.111/146 + `executor.rs` 5 sitios. | **Scheduled → `fix-planhash-placeholder` cycle** (next active) |
+| PlanHash placeholder at `lower_plan.rs` + 2 archivos más (14 call sites total) | MEDIUM | E28.1 | `PlanHash::compute(&0u32)` hardcodes zero — all MoldQL plans share same hash. `PlanHash::for_plan(&plan)` helper ya existe (v0.76.1) pero no cableado. Sitios: `lower_plan.rs` l.68/108/145/172/194/246 + `lower_pattern_profile.rs` l.111/146 + `executor.rs` 5 sitios. | **Scheduled → `fix-planhash-placeholder` cycle** (post-E30 Phase 1) |
 
 ## Strategic program: moldable exploration parity
 
