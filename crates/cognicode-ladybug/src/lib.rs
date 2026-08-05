@@ -456,6 +456,12 @@ impl LadybugStore {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         let db = Database::new(path, SystemConfig::default())?;
         let store = Self { db: Arc::new(db) };
+        // e29-6: initialize all schema layers so any port works out-of-the-box.
+        // All are idempotent (IF NOT EXISTS). Order matters only for
+        // error clarity — rels reference node PKs but lbug has no FK enforcement.
+        store.init_generic_graph_schema()?;
+        store.init_generic_graph_rels_schema()?;
+        store.init_lineage_schema()?;
         // e29-3 Phase 3: a freshly-opened store is quality-schema-ready.
         // Idempotent (IF NOT EXISTS); failures surface so callers know
         // the DB file could not host the quality tables.
@@ -4972,5 +4978,87 @@ mod quality_store_tests {
 
         let delete = store.delete_issue("ws", "R1", "src/a.rs", 1);
         assert!(delete.is_err(), "delete must error on missing table");
+    }
+}
+
+// =============================================================================
+// RunLineageStore tests (e29-6 — LadybugStore wiring)
+// =============================================================================
+//
+// RED test: LadybugStore::open() must initialize the lineage schema so that
+// RunLineageStore::insert() works out-of-the-box on a fresh DB.
+
+#[cfg(test)]
+mod lineage_store_open_tests {
+    use super::*;
+
+    use cognicode_core::domain::analytics::{
+        AnalyticsMode, RunLineage, RunLineageFilter, RunStatus, Uuid,
+    };
+    use cognicode_core::domain::value_objects::WorkspaceId;
+    use serial_test::serial;
+
+    fn sample_lineage(ws: &str) -> RunLineage {
+        RunLineage {
+            run_id: Uuid::new_v4(),
+            workspace_id: WorkspaceId::try_new(ws.to_string()).unwrap(),
+            revision_id: RevisionId(1),
+            algorithm_id: AlgorithmId::from_string("test-algo".to_string()),
+            algorithm_version: "1.0.0".to_string(),
+            plan_hash: vec![0u8; 32],
+            params: serde_json::json!({}),
+            seed: None,
+            mode: AnalyticsMode::Stream,
+            status: RunStatus::Succeeded,
+            started_at: chrono::Utc::now(),
+            finished_at: Some(chrono::Utc::now()),
+            row_count: Some(100),
+            truncation_marker: None,
+            idempotency_key: None,
+            error_kind: None,
+            error_message: None,
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn open_initializes_lineage_schema_for_insert() {
+        // RED: a freshly-opened store should have lineage schema ready.
+        // Before the fix, this fails because open() doesn't call init_lineage_schema().
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("lineage_test.lbdb");
+        let store = LadybugStore::open(&path).expect("open should succeed");
+
+        // After open(), the lineage table should exist — insert should not error.
+        let lineage = sample_lineage("ws-open-test");
+        let result = store.insert(&lineage).await;
+        // If the table was not created, this returns Err(AnalyticsError::Internal(...))
+        // because the MATCH query in insert() fails on a missing table.
+        assert!(
+            result.is_ok(),
+            "insert on fresh open() store should succeed when lineage schema is initialized; \
+             got: {:?}",
+            result
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn open_initializes_lineage_schema_for_query() {
+        // Complementary RED test: query on a fresh open() store should work
+        // (not error on a missing table).
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("lineage_query_test.lbdb");
+        let store = LadybugStore::open(&path).expect("open should succeed");
+
+        // Query should return empty vec, not an error about missing table.
+        let result = store
+            .query(RunLineageFilter::default(), None)
+            .await;
+        assert!(
+            result.is_ok(),
+            "query on fresh open() store should succeed; got: {:?}",
+            result
+        );
     }
 }

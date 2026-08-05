@@ -17,13 +17,26 @@ struct Args {
 
     #[arg(long, default_value = "127.0.0.1:8010")]
     listen: SocketAddr,
+
+    /// Path to the LadybugDB database file.
+    /// Defaults to `./cognicode.lbug` relative to cwd.
+    #[arg(long)]
+    db: Option<PathBuf>,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    let runtime = cognicode_runtime::bootstrap(args.cwd).await?;
+    let runtime = if let Some(db_path) = args.db {
+        // Use explicit db path via bootstrap_ladybug.
+        let runtime = cognicode_runtime::bootstrap_ladybug(args.cwd.clone(), db_path)?;
+        runtime
+    } else {
+        // Use default `./cognicode.lbug` path.
+        let runtime = cognicode_runtime::bootstrap_ladybug_default(args.cwd.clone())?;
+        runtime
+    };
     let state = runtime.into_api_state();
     tracing::info!(listen = %args.listen, "starting cognicode explorer API");
     api::serve(state, args.listen).await

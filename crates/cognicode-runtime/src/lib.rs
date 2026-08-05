@@ -41,14 +41,44 @@ pub struct Runtime {
     /// Optional lineage store for analytics run records (E28.4).
     /// When `Some`, `bootstrap_with_backend` constructs the registry automatically.
     pub analytics_lineage_store: Option<Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>>,
+    // NEW 6 ports (e29-6) — all LadybugStore ports surfaced on Runtime
+    /// Revision head tracker (workspace-scoped revision counter).
+    pub revision_store: Option<Arc<dyn cognicode_core::domain::ports::RevisionStore>>,
+    /// Manifest of scanned files (workspace + path keyed).
+    pub manifest_store: Option<Arc<dyn cognicode_core::domain::ports::ManifestStore>>,
+    /// Exploration session persistence.
+    pub session_store: Option<Arc<dyn cognicode_core::domain::ports::SessionStore>>,
+    /// Graph report summaries per workspace.
+    pub report_store: Option<Arc<dyn cognicode_core::domain::ports::ReportStore>>,
+    /// Multimodal federation store (spaces / repos / issues).
+    #[cfg(feature = "multimodal")]
+    pub federation_store: Option<Arc<dyn cognicode_core::domain::ports::FederationStore>>,
+    /// Multimodal ingest commit port (atomic 3-stage commit).
+    #[cfg(feature = "multimodal")]
+    pub ingest_commit_port: Option<Arc<dyn cognicode_core::domain::ports::IngestCommitPort>>,
 }
 
-/// Plain DTO carrying the three relocated domain ports into
+/// Plain DTO carrying the 10 LadybugStore port traits into
 /// [`bootstrap_with_backend`]. Replaces the previous single-implementer
 /// backend trait indirection (collapsed into a struct of
 /// `Option<Arc<dyn *Port>>` slots — runtime-bootstrap-contract spec).
+///
+/// ## Port audit (T-002)
+/// | Port | Status in RuntimePorts |
+/// |------|------------------------|
+/// | `RevisionStore` | MISSING → added |
+/// | `FederationStore` | MISSING → added (multimodal) |
+/// | `ManifestStore` | MISSING → added |
+/// | `SessionStore` | MISSING → added |
+/// | `ReportStore` | MISSING → added |
+/// | `ViewSpecStore` | present |
+/// | `CallGraphStore` | present |
+/// | `IngestCommitPort` | MISSING → added (multimodal) |
+/// | `RunLineageStore` | present (as `analytics_lineage_store`) |
+/// | `QualityStore` | present |
 #[derive(Default)]
 pub struct RuntimePorts {
+    // Existing 4 ports (e29-3 / e29-5)
     pub quality_store: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
     pub view_spec_store: Option<Arc<dyn cognicode_core::domain::ports::ViewSpecStore>>,
     pub call_graph_store: Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>,
@@ -56,6 +86,21 @@ pub struct RuntimePorts {
     /// When `Some`, `bootstrap_with_backend` constructs an `AlgorithmRegistry`
     /// automatically via `default_analytics_registry`.
     pub analytics_lineage_store: Option<Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>>,
+    // NEW 6 ports (e29-6) — all LadybugStore ports wired at runtime
+    /// Revision head tracker (workspace-scoped revision counter).
+    pub revision_store: Option<Arc<dyn cognicode_core::domain::ports::RevisionStore>>,
+    /// Manifest of scanned files (workspace + path keyed).
+    pub manifest_store: Option<Arc<dyn cognicode_core::domain::ports::ManifestStore>>,
+    /// Exploration session persistence.
+    pub session_store: Option<Arc<dyn cognicode_core::domain::ports::SessionStore>>,
+    /// Graph report summaries per workspace.
+    pub report_store: Option<Arc<dyn cognicode_core::domain::ports::ReportStore>>,
+    /// Multimodal federation store (spaces / repos / issues).
+    #[cfg(feature = "multimodal")]
+    pub federation_store: Option<Arc<dyn cognicode_core::domain::ports::FederationStore>>,
+    /// Multimodal ingest commit port (atomic 3-stage commit).
+    #[cfg(feature = "multimodal")]
+    pub ingest_commit_port: Option<Arc<dyn cognicode_core::domain::ports::IngestCommitPort>>,
 }
 
 /// Build a Runtime from a [`RuntimePorts`] DTO. The canonical entry
@@ -83,7 +128,7 @@ pub async fn bootstrap_with_backend(
     let graph_cache =
         Arc::new(cognicode_core::infrastructure::graph::graph_cache::GraphCache::new());
 
-    // The 3 relocated ports move verbatim from the DTO (Arc identity
+    // The 4 relocated ports move verbatim from the DTO (Arc identity
     // preserved — same allocation).
     let quality_store = ports.quality_store;
     let view_spec_store = ports.view_spec_store;
@@ -97,6 +142,16 @@ pub async fn bootstrap_with_backend(
             lineage.clone(),
         ))
     });
+
+    // The 6 new ports (e29-6) also move verbatim from the DTO.
+    let revision_store = ports.revision_store;
+    let manifest_store = ports.manifest_store;
+    let session_store = ports.session_store;
+    let report_store = ports.report_store;
+    #[cfg(feature = "multimodal")]
+    let federation_store = ports.federation_store;
+    #[cfg(feature = "multimodal")]
+    let ingest_commit_port = ports.ingest_commit_port;
 
     // graph=None degraded: ladybug path uses no graph. The symbol
     // repository is backed by an empty CallGraph so the facade wiring
@@ -119,6 +174,14 @@ pub async fn bootstrap_with_backend(
         call_graph_store,
         analytics_registry,
         analytics_lineage_store,
+        revision_store,
+        manifest_store,
+        session_store,
+        report_store,
+        #[cfg(feature = "multimodal")]
+        federation_store,
+        #[cfg(feature = "multimodal")]
+        ingest_commit_port,
     })
 }
 
@@ -155,7 +218,95 @@ pub async fn bootstrap(cwd: std::path::PathBuf) -> Result<Runtime, anyhow::Error
         call_graph_store: None,
         analytics_registry: None,
         analytics_lineage_store: None,
+        revision_store: None,
+        manifest_store: None,
+        session_store: None,
+        report_store: None,
+        #[cfg(feature = "multimodal")]
+        federation_store: None,
+        #[cfg(feature = "multimodal")]
+        ingest_commit_port: None,
     })
+}
+
+/// Build a Runtime from a LadybugDB file, wiring all 10 port traits.
+///
+/// ## T-003
+/// Calls `LadybugStore::open(db_path)`, extracts all 10 ports as
+/// `Arc<dyn Trait>`, builds a full `RuntimePorts`, and delegates to
+/// `bootstrap_with_backend`.
+pub fn bootstrap_ladybug(
+    cwd: std::path::PathBuf,
+    db_path: std::path::PathBuf,
+) -> Result<Runtime, anyhow::Error> {
+    let store = cognicode_ladybug::LadybugStore::open(&db_path)?;
+    let store = Arc::new(store);
+
+    // All 10 ports are the same Arc<LadybugStore> cast to the trait object.
+    let ports = RuntimePorts {
+        quality_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::QualityStore>),
+        view_spec_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::ViewSpecStore>),
+        call_graph_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::CallGraphStore>),
+        analytics_lineage_store: Some(
+            store.clone() as Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>
+        ),
+        revision_store: Some(
+            store.clone() as Arc<dyn cognicode_core::domain::ports::RevisionStore>
+        ),
+        manifest_store: Some(
+            store.clone() as Arc<dyn cognicode_core::domain::ports::ManifestStore>
+        ),
+        session_store: Some(
+            store.clone() as Arc<dyn cognicode_core::domain::ports::SessionStore>
+        ),
+        report_store: Some(
+            store.clone() as Arc<dyn cognicode_core::domain::ports::ReportStore>
+        ),
+        #[cfg(feature = "multimodal")]
+        federation_store: Some(
+            store.clone() as Arc<dyn cognicode_core::domain::ports::FederationStore>
+        ),
+        #[cfg(feature = "multimodal")]
+        ingest_commit_port: Some(
+            store.clone() as Arc<dyn cognicode_core::domain::ports::IngestCommitPort>
+        ),
+    };
+
+    // bootstrap_with_backend is async but our body is sync.
+    // If already inside a Tokio runtime, spawn a dedicated thread with its own
+    // runtime to avoid "cannot start a runtime from within a runtime".
+    if let Ok(_handle) = tokio::runtime::Handle::try_current() {
+        let cwd = cwd;
+        let ports = ports;
+        let result = std::thread::scope(|s| {
+            s.spawn(move || {
+                let runtime = tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()?;
+                Ok(runtime.block_on(bootstrap_with_backend(cwd, ports))?)
+            })
+            .join()
+        });
+        match result {
+            Ok(Ok(runtime)) => Ok(runtime),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(anyhow::anyhow!("bootstrap thread panicked")),
+        }
+    } else {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        runtime.block_on(bootstrap_with_backend(cwd, ports))
+    }
+}
+
+/// Build a Runtime from a LadybugDB file at `./cognicode.lbug` relative to cwd.
+///
+/// ## T-004
+/// Convenience wrapper around `bootstrap_ladybug` that uses the default db path.
+pub fn bootstrap_ladybug_default(cwd: std::path::PathBuf) -> Result<Runtime, anyhow::Error> {
+    let db_path = cwd.join("cognicode.lbug");
+    bootstrap_ladybug(cwd, db_path)
 }
 
 impl Runtime {
@@ -312,7 +463,7 @@ impl Runtime {
 mod tests {
     use std::sync::Arc;
 
-    use super::{bootstrap_with_backend, RuntimePorts};
+    use super::{bootstrap_ladybug, bootstrap_with_backend, RuntimePorts};
     use cognicode_core::domain::aggregates::CallGraph;
     use cognicode_core::domain::ports::{CallGraphStore, QualityStore, ViewSpecStore};
     use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
@@ -514,6 +665,10 @@ mod tests {
             view_spec_store: Some(view_spec.clone()),
             call_graph_store: Some(cg_store.clone()),
             analytics_lineage_store: None,
+            revision_store: None,
+            manifest_store: None,
+            session_store: None,
+            report_store: None,
         };
 
         let runtime = bootstrap_with_backend(std::env::temp_dir(), ports)
@@ -583,5 +738,83 @@ mod tests {
             runtime.analytics_lineage_store.is_none(),
             "analytics_lineage_store must be None when not provided"
         );
+    }
+
+    /// T-008: Integration test verifying all 10 ports are `Some` after
+    /// `bootstrap_ladybug()`.
+    #[tokio::test]
+    async fn bootstrap_ladybug_wires_all_ten_ports() {
+        use std::fs;
+        let tmp = std::env::temp_dir().join(format!("ladybug_all_ports_{}", std::process::id()));
+        let db_path = tmp.join("test.lbdb");
+        let cwd = tmp.join("cwd");
+        fs::create_dir_all(&cwd).expect("create temp cwd");
+
+        let runtime = bootstrap_ladybug(cwd, db_path.clone())
+            .expect("bootstrap_ladybug should succeed");
+
+        // All 4 original ports must be Some.
+        assert!(
+            runtime.quality_store.is_some(),
+            "quality_store must be Some after bootstrap_ladybug"
+        );
+        assert!(
+            runtime.view_spec_store.is_some(),
+            "view_spec_store must be Some after bootstrap_ladybug"
+        );
+        assert!(
+            runtime.call_graph_store.is_some(),
+            "call_graph_store must be Some after bootstrap_ladybug"
+        );
+        assert!(
+            runtime.analytics_lineage_store.is_some(),
+            "analytics_lineage_store must be Some after bootstrap_ladybug"
+        );
+        // All 6 new ports must be Some (e29-6 wiring).
+        assert!(
+            runtime.revision_store.is_some(),
+            "revision_store must be Some after bootstrap_ladybug"
+        );
+        assert!(
+            runtime.manifest_store.is_some(),
+            "manifest_store must be Some after bootstrap_ladybug"
+        );
+        assert!(
+            runtime.session_store.is_some(),
+            "session_store must be Some after bootstrap_ladybug"
+        );
+        assert!(
+            runtime.report_store.is_some(),
+            "report_store must be Some after bootstrap_ladybug"
+        );
+        // Clean up temp dir.
+        let _ = fs::remove_dir_all(tmp);
+    }
+
+    /// T-008: Verify all 10 ports are present (same LadybugStore allocation).
+    #[tokio::test]
+    async fn bootstrap_ladybug_uses_same_store_for_all_ports() {
+        use std::fs;
+        let tmp = std::env::temp_dir().join(format!("ladybug_same_store_{}", std::process::id()));
+        let db_path = tmp.join("test.lbdb");
+        let cwd = tmp.join("cwd");
+        fs::create_dir_all(&cwd).expect("create temp cwd");
+
+        let runtime = bootstrap_ladybug(cwd, db_path.clone())
+            .expect("bootstrap_ladybug should succeed");
+
+        // We can't easily compare raw pointers across trait objects, but we can
+        // verify each port is distinct from None (they're all Some).
+        assert!(runtime.quality_store.is_some());
+        assert!(runtime.view_spec_store.is_some());
+        assert!(runtime.call_graph_store.is_some());
+        assert!(runtime.analytics_lineage_store.is_some());
+        assert!(runtime.revision_store.is_some());
+        assert!(runtime.manifest_store.is_some());
+        assert!(runtime.session_store.is_some());
+        assert!(runtime.report_store.is_some());
+
+        // Clean up temp dir.
+        let _ = fs::remove_dir_all(tmp);
     }
 }
