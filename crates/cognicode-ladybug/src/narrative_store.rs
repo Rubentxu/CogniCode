@@ -3,6 +3,7 @@
 //! Mirrors the [`QualityStore`] pattern: synthetic `id`, read-then-conditional-write
 //! for upserts, and graceful degradation on missing tables.
 
+#[cfg(test)]
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -11,8 +12,10 @@ use cognicode_core::domain::ports::narrative_store::{
     NarrativeError, NarrativeSnapshot, NarrativeStore,
 };
 
-use crate::{Error, LadybugStore};
-use lbug::Connection;
+#[cfg(test)]
+use tempfile::TempDir;
+
+use crate::LadybugStore;
 
 /// Return `true` when an lbug error is caused by a missing node table.
 fn is_missing_table(e: &lbug::Error) -> bool {
@@ -34,32 +37,8 @@ impl NarrativeStore for LadybugStore {
         // Synthetic PK: {}::{}::{} of (workspace_id, view_id, object_id)
         let id = format!("{}::{}::{}", snap.workspace_id, snap.view_id, snap.object_id);
 
-        // Try UPDATE first (lbug 0.19 has no MERGE).
-        let update_cypher = "MATCH (n:NarrativeView) WHERE n.id = $id \
-             SET n.workspace_id = $ws, n.view_id = $vid, n.object_id = $oid, \
-                 n.view_kind = $kind, n.payload = $payload, n.source_rev = $rev, n.created_at = $ts \
-             RETURN count(n);";
-
-        let mut upd_stmt = match conn.prepare(update_cypher) {
-            Ok(stmt) => stmt,
-            Err(e) if is_missing_table(&e) => {
-                // Table missing — degrade gracefully by creating the row.
-                let ins_cypher = "CREATE (n:NarrativeView {id: $id, workspace_id: $ws, \
-                     view_id: $vid, object_id: $oid, view_kind: $kind, payload: $payload, \
-                     source_rev: $rev, created_at: $ts});";
-                conn.query(ins_cypher)
-                    .map_err(|e| NarrativeError::Database(format!("save_snapshot insert: {e}")))?;
-                return Ok(());
-            }
-            Err(e) => {
-                return Err(NarrativeError::Database(format!(
-                    "save_snapshot update prepare: {e}"
-                )));
-            }
-        };
-
         let params = vec![
-            ("id", lbug::Value::String(id)),
+            ("id", lbug::Value::String(id.clone())),
             ("ws", lbug::Value::String(snap.workspace_id.clone())),
             ("vid", lbug::Value::String(snap.view_id.clone())),
             ("oid", lbug::Value::String(snap.object_id.clone())),
@@ -69,8 +48,34 @@ impl NarrativeStore for LadybugStore {
             ("ts", lbug::Value::String(snap.created_at.clone())),
         ];
 
+        let update_cypher = "MATCH (n:NarrativeView) WHERE n.id = $id \
+             SET n.workspace_id = $ws, n.view_id = $vid, n.object_id = $oid, \
+                 n.view_kind = $kind, n.payload = $payload, n.source_rev = $rev, n.created_at = $ts \
+             RETURN count(n);";
+
+        // Try UPDATE first (lbug 0.19 has no MERGE).
+        let mut upd_stmt = match conn.prepare(update_cypher) {
+            Ok(stmt) => stmt,
+            Err(e) if is_missing_table(&e) => {
+                // Table missing — degrade gracefully by creating the row.
+                let ins_cypher = "CREATE (n:NarrativeView {id: $id, workspace_id: $ws, \
+                     view_id: $vid, object_id: $oid, view_kind: $kind, payload: $payload, \
+                     source_rev: $rev, created_at: $ts});";
+                let mut stmt = conn.prepare(ins_cypher)
+                    .map_err(|e| NarrativeError::Database(format!("save_snapshot insert prepare: {e}")))?;
+                conn.execute(&mut stmt, params)
+                    .map_err(|e| NarrativeError::Database(format!("save_snapshot insert exec: {e}")))?;
+                return Ok(());
+            }
+            Err(e) => {
+                return Err(NarrativeError::Database(format!(
+                    "save_snapshot update prepare: {e}"
+                )));
+            }
+        };
+
         let mut result = conn
-            .execute(&mut upd_stmt, params)
+            .execute(&mut upd_stmt, params.clone())
             .map_err(|e| NarrativeError::Database(format!("save_snapshot update execute: {e}")))?;
 
         let updated: i64 = result
@@ -84,15 +89,14 @@ impl NarrativeStore for LadybugStore {
 
         if updated == 0 {
             // Row doesn't exist — INSERT.
-            let id = format!(
-                "{}::{}::{}",
-                snap.workspace_id, snap.view_id, snap.object_id
-            );
             let ins_cypher = "CREATE (n:NarrativeView {id: $id, workspace_id: $ws, \
                  view_id: $vid, object_id: $oid, view_kind: $kind, payload: $payload, \
                  source_rev: $rev, created_at: $ts});";
-            conn.query(ins_cypher)
-                .map_err(|e| NarrativeError::Database(format!("save_snapshot insert: {e}")))?;
+            drop(upd_stmt);
+            let mut stmt = conn.prepare(ins_cypher)
+                .map_err(|e| NarrativeError::Database(format!("save_snapshot insert prepare: {e}")))?;
+            conn.execute(&mut stmt, params)
+                .map_err(|e| NarrativeError::Database(format!("save_snapshot insert exec: {e}")))?;
         }
 
         Ok(())
@@ -263,25 +267,24 @@ fn narrative_snapshot_from_row(row: &[lbug::Value]) -> Result<NarrativeSnapshot,
 mod tests {
     use super::*;
     use std::sync::Arc;
+    use tempfile::TempDir;
 
     /// Helper: open a temporary LadybugDB with narrative schema initialized.
-    fn temp_store() -> LadybugStore {
-        let tmp = std::env::temp_dir().join(format!(
-            "narrative_store_test_{}",
-            std::process::id()
-        ));
-        let store = LadybugStore::open(&tmp).expect("open temp store");
+    fn temp_store() -> (LadybugStore, TempDir) {
+        let tmp_dir = tempfile::tempdir().expect("tempdir");
+        let path = tmp_dir.path().join("narrative.lbdb");
+        let store = LadybugStore::open(&path).expect("open temp store");
         // Manually init the narrative schema (LadybugStore::new bypasses open()).
         let store2 = LadybugStore::new(Arc::clone(&store.db));
         store2
             .init_narrative_view_schema()
             .expect("init narrative schema");
-        store
+        (store, tmp_dir)  // TempDir kept alive to keep path valid
     }
 
     #[tokio::test]
     async fn test_save_and_load_snapshot() {
-        let store = temp_store();
+        let (store, _tmp) = temp_store();
         let snap = NarrativeSnapshot {
             id: "ws1::view1::obj1".to_string(),
             workspace_id: "ws1".to_string(),
@@ -316,7 +319,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_upsert_updates_existing() {
-        let store = temp_store();
+        let (store, _tmp) = temp_store();
 
         let snap1 = NarrativeSnapshot {
             id: "ws1::view1::obj1".to_string(),
@@ -360,7 +363,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_returns_none_on_miss() {
-        let store = temp_store();
+        let (store, _tmp) = temp_store();
         let result = store
             .load_snapshot("nonexistent", "view", "obj")
             .await
@@ -370,7 +373,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_for_workspace() {
-        let store = temp_store();
+        let (store, _tmp) = temp_store();
 
         for i in 1..=3 {
             let snap = NarrativeSnapshot {
@@ -411,7 +414,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_filtered_by_view_kind() {
-        let store = temp_store();
+        let (store, _tmp) = temp_store();
 
         let file_snap = NarrativeSnapshot {
             id: "ws1::view_file::obj1".to_string(),
@@ -460,7 +463,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalidate_deletes_by_source_rev() {
-        let store = temp_store();
+        let (store, _tmp) = temp_store();
 
         // Save 3 snapshots with different source_rev.
         for rev in [1u64, 2, 3] {
@@ -491,5 +494,66 @@ mod tests {
             .expect("list after invalidate");
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].source_rev, 3);
+    }
+
+    /// Scenario 8: invalidate returns 0 when no snapshots match.
+    #[tokio::test]
+    async fn test_invalidate_returns_zero_when_no_match() {
+        let (store, _tmp) = temp_store();
+
+        let deleted = store
+            .invalidate("ws_nonexistent", 99)
+            .await
+            .expect("invalidate should succeed");
+        assert_eq!(deleted, 0);
+    }
+
+    /// Scenario 9: save_snapshot gracefully creates row on missing table
+    /// (follows QualityStore pattern — table auto-creation via CREATE).
+    #[tokio::test]
+    async fn test_save_snapshot_on_missing_table() {
+        let tmp_dir = tempfile::tempdir().expect("tempdir");
+        let path = tmp_dir.path().join("narrative_missing.lbdb");
+        let store = LadybugStore::open(&path).expect("open store");
+
+        let snap = NarrativeSnapshot {
+            id: "ws1::view1::obj1".to_string(),
+            workspace_id: "ws1".to_string(),
+            view_id: "view1".to_string(),
+            object_id: "obj1".to_string(),
+            view_kind: "file".to_string(),
+            payload: r#"{"key":"value"}"#.to_string(),
+            source_rev: 1,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+        };
+
+        // Must not error — table doesn't exist but save degrades gracefully.
+        store
+            .save_snapshot(&snap)
+            .await
+            .expect("save_snapshot should degrade gracefully on missing table");
+
+        // Verify it was persisted.
+        let loaded = store
+            .load_snapshot("ws1", "view1", "obj1")
+            .await
+            .expect("load after graceful save")
+            .expect("snapshot should exist after graceful save");
+        assert_eq!(loaded.payload, r#"{"key":"value"}"#);
+    }
+
+    /// Scenario 10: load_snapshot returns None on missing table
+    /// (follows QualityStore pattern — missing table means empty).
+    #[tokio::test]
+    async fn test_load_snapshot_on_missing_table() {
+        let tmp_dir = tempfile::tempdir().expect("tempdir");
+        let path = tmp_dir.path().join("narrative_missing_load.lbdb");
+        let store = LadybugStore::open(&path).expect("open store");
+
+        let result = store
+            .load_snapshot("ws1", "view1", "obj1")
+            .await
+            .expect("load_snapshot should not error on missing table");
+        assert!(result.is_none(), "missing table should return None, not error");
     }
 }

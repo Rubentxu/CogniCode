@@ -14,16 +14,14 @@ use crate::Error;
 fn narrative_view_ddls() -> Vec<&'static str> {
     vec![
         "CREATE NODE TABLE IF NOT EXISTS NarrativeView(\
-             id TEXT PRIMARY KEY,\
-             workspace_id TEXT NOT NULL,\
-             view_id TEXT NOT NULL,\
-             object_id TEXT NOT NULL,\
-             view_kind TEXT NOT NULL,\
-             payload TEXT NOT NULL,\
-             source_rev INT64 NOT NULL,\
-             created_at TEXT NOT NULL);",
-        "CREATE INDEX IF NOT EXISTS idx_narrative_view_ws ON NarrativeView(workspace_id);",
-        "CREATE INDEX IF NOT EXISTS idx_narrative_view_ws_kind ON NarrativeView(workspace_id, view_kind);",
+             id STRING PRIMARY KEY,\
+             workspace_id STRING,\
+             view_id STRING,\
+             object_id STRING,\
+             view_kind STRING,\
+             payload STRING,\
+             source_rev INT64,\
+             created_at STRING);",
     ]
 }
 
