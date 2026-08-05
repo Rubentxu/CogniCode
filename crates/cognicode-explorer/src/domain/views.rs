@@ -4585,31 +4585,56 @@ fn build_adr_markdown(
     source_path: Option<&std::path::Path>,
     reader: &dyn crate::ports::source_reader::SourceReader,
     decision_id: &str,
+    truncated: bool,
+    node_count: usize,
+    edge_count: usize,
 ) -> String {
     let Some(path) = source_path else {
-        return format!(
+        let mut body = format!(
             "## Decision Artifact\n\n**ID:** {}\n\n_Source not available — no file path recorded._",
             decision_id
         );
+        if edge_count == 0 {
+            body.push_str("\n\n> **No traced artifacts** — this decision has no rationale edges recorded.");
+        }
+        return body;
     };
 
     let path_str = path.to_string_lossy();
 
     match reader.read_source(&path_str) {
         Ok(content) => {
-            // Extract frontmatter fields (title, status) and decision section
-            let title = extract_frontmatter_field(&content, "title")
+            // Extract bold-markdown fields (ADR files use **Field**: VALUE format)
+            // Title fallback: first `# Heading` line if no **title**: field
+            let title = extract_bold_field(&content, "title")
+                .or_else(|| extract_first_heading(&content))
                 .unwrap_or_else(|| "Untitled Decision".to_string());
-            let status = extract_frontmatter_field(&content, "status")
+            let status = extract_bold_field(&content, "status")
                 .unwrap_or_else(|| "unknown".to_string());
 
-            // Extract Decision section (everything after "## Decision" or "## Decision\n")
+            // Extract Decision section (everything after "## Decision" heading)
             let decision_section = extract_decision_section(&content);
 
-            format!(
+            // Build the base markdown
+            let mut body = format!(
                 "## {}\n\n**Status:** {}\n\n---\n\n{}",
                 title, status, decision_section
-            )
+            );
+
+            // Add truncation note if graph was truncated
+            if truncated {
+                body.push_str(&format!(
+                    "\n\n> **Note:** Showing {} of {} traced nodes (limit reached).",
+                    DECISION_TRACE_MAX_NODES, node_count
+                ));
+            }
+
+            // Add "no traced artifacts" note if there are no edges
+            if edge_count == 0 {
+                body.push_str("\n\n> **No traced artifacts** — this decision has no rationale edges recorded.");
+            }
+
+            body
         }
         Err(_) => format!(
             "## Decision Artifact\n\n**ID:** {}\n\n_Source not available — could not read file: {}_",
@@ -4618,32 +4643,26 @@ fn build_adr_markdown(
     }
 }
 
-/// Extract a field value from YAML frontmatter.
-fn extract_frontmatter_field(content: &str, field: &str) -> Option<String> {
-    // Simple frontmatter extraction: look for `field: value` at the start of lines
-    // after `---` and before another `---` or end of frontmatter
-    let frontmatter_start = content.find("---").and_then(|i| {
-        if i == 0 {
-            Some(i)
-        } else {
-            None
-        }
-    })?;
+/// Extract a field value from bold markdown (e.g. `**Status**: PROPOSED`).
+/// Case-insensitive field name matching.
+fn extract_bold_field(content: &str, field: &str) -> Option<String> {
+    // ADR files use `**Field**: value` format (case-insensitive field name)
+    let lc = content.to_lowercase();
+    let needle = format!("**{}**:", field.to_lowercase());
+    let pos = lc.find(&needle)?;
+    // Extract from original content at the same position (same byte index)
+    let rest = &content[pos + needle.len()..];
+    let value = rest.lines().next()?.trim();
+    // Remove surrounding bold markers if present (e.g. `**PROPOSED**` -> `PROPOSED`)
+    let value = value.trim_start_matches("**").trim_end_matches("**").to_lowercase();
+    Some(value)
+}
 
-    let after_dash = &content[frontmatter_start + 3..];
-    let frontmatter_end = after_dash.find("---").unwrap_or(after_dash.len());
-    let frontmatter = &after_dash[..frontmatter_end];
-
-    for line in frontmatter.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with(&format!("{}:", field)) {
-            let value = trimmed[format!("{}:", field).len()..].trim();
-            // Remove quotes if present
-            let value = value.trim_matches('"').trim_matches('\'');
-            return Some(value.to_string());
-        }
-    }
-    None
+/// Extract the first `# Heading` as the document title.
+fn extract_first_heading(content: &str) -> Option<String> {
+    content.lines()
+        .find(|line| line.trim().starts_with("# "))
+        .map(|line| line.trim().trim_start_matches("# ").trim().to_string())
 }
 
 /// Extract the "## Decision" section from an ADR document.
@@ -4739,12 +4758,18 @@ impl ViewExecutor for DecisionTraceExecutor {
                         })?;
 
                     // Build Mermaid graph block
-                    let (mermaid_content, _truncated) =
+                    let (mermaid_content, truncated) =
                         to_mermaid_subgraph(&nodes, &edges, &node_id, DECISION_TRACE_MAX_NODES);
 
-                    // Build ADR markdown block
-                    let adr_markdown =
-                        build_adr_markdown(decision_node.source_path.as_deref(), ctx.reader, id);
+                    // Build ADR markdown block (with truncation note if applicable)
+                    let adr_markdown = build_adr_markdown(
+                        decision_node.source_path.as_deref(),
+                        ctx.reader,
+                        id,
+                        truncated,
+                        nodes.len(),
+                        edges.len(),
+                    );
 
                     let evidence_id = "evidence:decision_trace".to_string();
                     let evidence = vec![EvidenceBlock {
@@ -7015,7 +7040,7 @@ mod tests {
         }
 
         let reader = FakeReader;
-        let result = super::build_adr_markdown(None, &reader, "ADR-001");
+        let result = super::build_adr_markdown(None, &reader, "ADR-001", false, 1, 0);
         assert!(result.contains("Source not available"));
         assert!(result.contains("ADR-001"));
     }
@@ -7042,11 +7067,11 @@ mod tests {
             }
         }
 
-        let content = r#"---
-title: Use PostgreSQL for persistence
-status: accepted
----
-# ADR-001
+        let content = r#"# ADR-001
+
+**Status**: Accepted
+**Title**: Use PostgreSQL for persistence
+**Date**: 2026-06-25
 
 ## Context
 
@@ -7064,7 +7089,7 @@ Positive outcomes.
             content: content.to_string(),
         };
         let path = std::path::PathBuf::from("docs/adr/ADR-001.md");
-        let result = super::build_adr_markdown(Some(&path), &reader, "ADR-001");
+        let result = super::build_adr_markdown(Some(&path), &reader, "ADR-001", false, 1, 0);
 
         assert!(result.contains("Use PostgreSQL for persistence"));
         assert!(result.contains("accepted"));
