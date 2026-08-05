@@ -12,7 +12,11 @@ use cognicode_core::domain::ports::adr_repository::{
 use crate::LadybugStore;
 
 impl AdrRepository for LadybugStore {
-    fn list_adrs(&self, _workspace: &str) -> Result<Vec<AdrSummary>, AdrError> {
+    fn list_adrs(
+        &self,
+        _workspace: &str,
+        _status: Option<AdrStatus>,
+    ) -> Result<Vec<AdrSummary>, AdrError> {
         Err(AdrError::Store(
             "LadybugAdrRepository not yet implemented".into(),
         ))

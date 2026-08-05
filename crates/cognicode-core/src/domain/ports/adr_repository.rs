@@ -43,10 +43,15 @@ pub enum AdrError {
 
 /// Read-only port for ADR discovery.
 pub trait AdrRepository: Send + Sync {
-    /// List all ADRs for a workspace.
+    /// List all ADRs for a workspace, optionally filtered by status.
     ///
-    /// Empty `workspace` returns the global ADR set.
-    fn list_adrs(&self, workspace: &str) -> Result<Vec<AdrSummary>, AdrError>;
+    /// Empty `workspace` returns the global ADR set. `None` status
+    /// returns all ADRs regardless of lifecycle status.
+    fn list_adrs(
+        &self,
+        workspace: &str,
+        status: Option<AdrStatus>,
+    ) -> Result<Vec<AdrSummary>, AdrError>;
 
     /// Full-text search across ADR titles and topics.
     fn search_adrs(

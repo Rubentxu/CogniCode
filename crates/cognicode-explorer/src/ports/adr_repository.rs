@@ -26,8 +26,20 @@ impl InMemoryAdrRepository {
 }
 
 impl AdrRepository for InMemoryAdrRepository {
-    fn list_adrs(&self, _workspace: &str) -> Result<Vec<AdrSummary>, AdrError> {
-        Ok(self.adrs.clone())
+    fn list_adrs(
+        &self,
+        _workspace: &str,
+        status: Option<AdrStatus>,
+    ) -> Result<Vec<AdrSummary>, AdrError> {
+        Ok(match status {
+            Some(status) => self
+                .adrs
+                .iter()
+                .filter(|a| a.status == status)
+                .cloned()
+                .collect(),
+            None => self.adrs.clone(),
+        })
     }
 
     fn search_adrs(
@@ -90,8 +102,18 @@ mod tests {
     #[tokio::test]
     async fn list_adrs_returns_all() {
         let r = fixture();
-        let all = r.list_adrs("ws-1").unwrap();
+        let all = r.list_adrs("ws-1", None).unwrap();
         assert_eq!(all.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn list_adrs_filters_by_status() {
+        let r = fixture();
+        let superseded = r.list_adrs("ws-1", Some(AdrStatus::Superseded)).unwrap();
+        assert_eq!(superseded.len(), 1);
+        assert_eq!(superseded[0].id, "ADR-003");
+        let accepted = r.list_adrs("ws-1", Some(AdrStatus::Accepted)).unwrap();
+        assert_eq!(accepted.len(), 2);
     }
 
     #[tokio::test]

@@ -49,7 +49,12 @@ impl EvidenceStore for InMemoryEvidenceStore {
         Ok(self
             .evidence
             .iter()
-            .filter(|e| e.title.to_lowercase().contains(&q))
+            .filter(|e| {
+                e.title.to_lowercase().contains(&q)
+                    || e.excerpt
+                        .as_deref()
+                        .is_some_and(|x| x.to_lowercase().contains(&q))
+            })
             .cloned()
             .collect())
     }
@@ -109,5 +114,13 @@ mod tests {
         let hits = s.search_evidence("ws-1", "REGRESSION", 20).unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].id, "evidence:inv-1-ev-2");
+    }
+
+    #[tokio::test]
+    async fn search_evidence_matches_excerpt() {
+        let s = fixture();
+        let hits = s.search_evidence("ws-1", "moldable", 20).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "evidence:inv-2-ev-1");
     }
 }
