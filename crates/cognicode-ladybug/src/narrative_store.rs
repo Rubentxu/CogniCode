@@ -266,19 +266,14 @@ fn narrative_snapshot_from_row(row: &[lbug::Value]) -> Result<NarrativeSnapshot,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use tempfile::TempDir;
 
     /// Helper: open a temporary LadybugDB with narrative schema initialized.
+    /// LadybugStore::open() already calls init_narrative_view_schema() idempotently.
     fn temp_store() -> (LadybugStore, TempDir) {
         let tmp_dir = tempfile::tempdir().expect("tempdir");
         let path = tmp_dir.path().join("narrative.lbdb");
         let store = LadybugStore::open(&path).expect("open temp store");
-        // Manually init the narrative schema (LadybugStore::new bypasses open()).
-        let store2 = LadybugStore::new(Arc::clone(&store.db));
-        store2
-            .init_narrative_view_schema()
-            .expect("init narrative schema");
         (store, tmp_dir)  // TempDir kept alive to keep path valid
     }
 
