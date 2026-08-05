@@ -4501,6 +4501,342 @@ impl ViewExecutor for ArchitectureRationaleExecutor {
     }
 }
 
+// ============================================================================
+// Decision Trace — E24.3
+// ============================================================================
+
+/// Constants for DecisionTrace rendering.
+const DECISION_TRACE_MAX_DEPTH: u32 = 3;
+const DECISION_TRACE_MAX_NODES: usize = 30;
+
+/// Edge label mapping for Mermaid rendering.
+fn edge_kind_label(kind: &cognicode_core::domain::value_objects::edge_kind::EdgeKind) -> &'static str {
+    match kind {
+        cognicode_core::domain::value_objects::edge_kind::EdgeKind::Justifies => "justifies",
+        cognicode_core::domain::value_objects::edge_kind::EdgeKind::Cites => "cites",
+        cognicode_core::domain::value_objects::edge_kind::EdgeKind::Resolves => "resolves",
+        cognicode_core::domain::value_objects::edge_kind::EdgeKind::CorroboratedBy => "corroborates",
+        _ => "relates",
+    }
+}
+
+/// Render a rationale subgraph as a Mermaid `flowchart LR` diagram.
+///
+/// Caps nodes at `max_display` and returns a truncation note if exceeded.
+fn to_mermaid_subgraph(
+    nodes: &[cognicode_core::domain::aggregates::generic_graph::GraphNode],
+    edges: &[cognicode_core::domain::aggregates::generic_graph::GraphEdge],
+    focus_id: &cognicode_core::domain::aggregates::generic_graph::NodeId,
+    max_display: usize,
+) -> (String, bool) {
+    use cognicode_core::domain::aggregates::generic_graph::NodeId;
+    use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
+
+    // Collect node ids in traversal order for consistent display
+    let display_nodes: Vec<&cognicode_core::domain::aggregates::generic_graph::GraphNode> =
+        nodes.iter().take(max_display).collect();
+
+    let truncated = nodes.len() > max_display;
+
+    let mut lines = vec!["flowchart LR".to_string()];
+
+    // Add nodes
+    for node in &display_nodes {
+        let safe_id = crate::domain::mermaid_util::sanitize_id(node.id.as_str());
+        let label = &node.label;
+        let shape = if node.id == *focus_id {
+            format!("{}[{}]", safe_id, label)
+        } else {
+            format!("{}[{}]", safe_id, label)
+        };
+        lines.push(format!("    {}", shape));
+    }
+
+    // Add edges
+    for edge in edges {
+        // Skip edges where source or target is beyond the display limit
+        let source_in_display = display_nodes.iter().any(|n| n.id == edge.source);
+        let target_in_display = display_nodes.iter().any(|n| n.id == edge.target);
+        if !source_in_display || !target_in_display {
+            continue;
+        }
+
+        let source_id = crate::domain::mermaid_util::sanitize_id(edge.source.as_str());
+        let target_id = crate::domain::mermaid_util::sanitize_id(edge.target.as_str());
+        let label = edge_kind_label(&edge.kind);
+        lines.push(format!("    {} --{}--> {}", source_id, label, target_id));
+    }
+
+    if truncated {
+        lines.push(format!(
+            "    subgraph truncation_note[\"\"]\n        truncation[\"... and {} more nodes (truncated)\"]\n    end",
+            nodes.len() - max_display
+        ));
+    }
+
+    (lines.join("\n"), truncated)
+}
+
+/// Read the ADR file from disk and extract title, status, and decision section.
+///
+/// Returns markdown formatted content, or a graceful fallback message if the file
+/// cannot be read.
+fn build_adr_markdown(
+    source_path: Option<&std::path::Path>,
+    reader: &dyn crate::ports::source_reader::SourceReader,
+    decision_id: &str,
+) -> String {
+    let Some(path) = source_path else {
+        return format!(
+            "## Decision Artifact\n\n**ID:** {}\n\n_Source not available — no file path recorded._",
+            decision_id
+        );
+    };
+
+    let path_str = path.to_string_lossy();
+
+    match reader.read_source(&path_str) {
+        Ok(content) => {
+            // Extract frontmatter fields (title, status) and decision section
+            let title = extract_frontmatter_field(&content, "title")
+                .unwrap_or_else(|| "Untitled Decision".to_string());
+            let status = extract_frontmatter_field(&content, "status")
+                .unwrap_or_else(|| "unknown".to_string());
+
+            // Extract Decision section (everything after "## Decision" or "## Decision\n")
+            let decision_section = extract_decision_section(&content);
+
+            format!(
+                "## {}\n\n**Status:** {}\n\n---\n\n{}",
+                title, status, decision_section
+            )
+        }
+        Err(_) => format!(
+            "## Decision Artifact\n\n**ID:** {}\n\n_Source not available — could not read file: {}_",
+            decision_id, path_str
+        ),
+    }
+}
+
+/// Extract a field value from YAML frontmatter.
+fn extract_frontmatter_field(content: &str, field: &str) -> Option<String> {
+    // Simple frontmatter extraction: look for `field: value` at the start of lines
+    // after `---` and before another `---` or end of frontmatter
+    let frontmatter_start = content.find("---").and_then(|i| {
+        if i == 0 {
+            Some(i)
+        } else {
+            None
+        }
+    })?;
+
+    let after_dash = &content[frontmatter_start + 3..];
+    let frontmatter_end = after_dash.find("---").unwrap_or(after_dash.len());
+    let frontmatter = &after_dash[..frontmatter_end];
+
+    for line in frontmatter.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with(&format!("{}:", field)) {
+            let value = trimmed[format!("{}:", field).len()..].trim();
+            // Remove quotes if present
+            let value = value.trim_matches('"').trim_matches('\'');
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+/// Extract the "## Decision" section from an ADR document.
+fn extract_decision_section(content: &str) -> String {
+    let lc = content.to_lowercase();
+    // Find "## decision" heading (case-insensitive)
+    if let Some(start) = lc.find("## decision") {
+        let after = &lc[start..];
+        // Valid if followed by newline, space, or end of string
+        let valid = after.len() >= 17
+            && (after.len() == 17 || after[17..].starts_with(' ') || after[17..].starts_with('\n'));
+        if valid {
+            // Skip to the next line after the heading
+            let rest = &content[start..];
+            let heading_end = rest.find('\n').unwrap_or(rest.len());
+            let after_heading = &rest[heading_end..];
+            let section_end = after_heading.find("\n## ").unwrap_or(after_heading.len());
+            return after_heading[..section_end].trim().to_string();
+        }
+    }
+    // Fallback: return first 500 chars of content as a preview
+    let preview = &content[..content.len().min(500)];
+    format!("_Decision section not found. Preview:_\n\n{}...", preview.trim())
+}
+
+/// Decision Trace capability — applies to DecisionArtifact.
+///
+/// Shows the rationale trace as a Mermaid graph and the ADR content as markdown.
+/// Uses `rationale_subgraph` (BFS over Justifies, Cites, Resolves, CorroboratedBy)
+/// and reads the ADR file via SourceReader.
+pub struct DecisionTraceExecutor;
+
+impl ViewDescriptor for DecisionTraceExecutor {
+    fn id(&self) -> &'static str {
+        "decision-trace"
+    }
+    fn title(&self) -> &'static str {
+        "Decision Trace"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::DecisionArtifact]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::DecisionTrace
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Composite
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for DecisionTraceExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match ctx.target {
+            InspectionTarget::Decision { id } => {
+                #[cfg(feature = "multimodal")]
+                {
+                    use cognicode_core::domain::aggregates::generic_graph::NodeId;
+                    use cognicode_core::domain::ports::GraphRepository;
+
+                    let mvp = format!("decision:{id}");
+
+                    let Some(repo) = ctx.graph_repo else {
+                        return Err(crate::error::ExplorerError::FeatureDisabled(
+                            "graph repository not wired".into(),
+                        ));
+                    };
+
+                    let node_id = NodeId::new(id.to_string());
+                    let decision_node = match repo.get_node(&node_id).await {
+                        Ok(Some(node)) => node,
+                        Ok(None) => {
+                            return Err(crate::error::ExplorerError::NotFound(format!(
+                                "Decision '{id}' not found in graph"
+                            )));
+                        }
+                        Err(e) => {
+                            return Err(crate::error::ExplorerError::NotFound(format!(
+                                "Failed to fetch decision: {e}"
+                            )));
+                        }
+                    };
+
+                    // Fetch rationale subgraph
+                    let (nodes, edges, truncated) = repo
+                        .rationale_subgraph(&node_id, DECISION_TRACE_MAX_DEPTH, DECISION_TRACE_MAX_NODES)
+                        .await
+                        .map_err(|e| {
+                            crate::error::ExplorerError::NotFound(format!(
+                                "rationale_subgraph: {}",
+                                e
+                            ))
+                        })?;
+
+                    // Build Mermaid graph block
+                    let (mermaid_content, _truncated) =
+                        to_mermaid_subgraph(&nodes, &edges, &node_id, DECISION_TRACE_MAX_NODES);
+
+                    // Build ADR markdown block
+                    let adr_markdown =
+                        build_adr_markdown(decision_node.source_path.as_deref(), ctx.reader, id);
+
+                    let evidence_id = "evidence:decision_trace".to_string();
+                    let evidence = vec![EvidenceBlock {
+                        id: evidence_id.clone(),
+                        kind: "decision_trace".into(),
+                        title: format!("Decision Trace: {}", decision_node.label),
+                        file: decision_node
+                            .source_path
+                            .as_ref()
+                            .map(|p| p.to_string_lossy().into_owned()),
+                        line_range: None,
+                        source_tool_or_query: "GraphRepository::rationale_subgraph + SourceReader::read_source"
+                            .into(),
+                        confidence: Some(1.0),
+                        freshness: Some("unknown".into()),
+                        provenance: None,
+                    }];
+
+                    // Build typed relations from edges
+                    let relations = edges.iter().map(|e| {
+                        let (target_id, direction) =
+                            if e.source == decision_node.id {
+                                (e.target.to_string(), RelationDirection::Outgoing)
+                            } else {
+                                (e.source.to_string(), RelationDirection::Incoming)
+                            };
+                        TypedRelation {
+                            relation_type: format!("{:?}", e.kind),
+                            direction,
+                            target_object_id: target_id,
+                            target_label: "related node".to_string(),
+                            evidence_ids: vec![evidence_id.clone()],
+                            provenance: None,
+                            confidence: Some(e.confidence),
+                        }
+                    }).collect();
+
+                    let node_count = nodes.len();
+                    let blocks = vec![
+                        ViewBlock {
+                            id: "graph".into(),
+                            title: format!(
+                                "Rationale Graph ({}{})",
+                                node_count,
+                                if truncated { "+" } else { "" }
+                            ),
+                            body: serde_json::json!({
+                                "mermaid": mermaid_content,
+                                "truncated": truncated,
+                                "node_count": node_count,
+                            }),
+                        },
+                        ViewBlock {
+                            id: "adr_markdown".into(),
+                            title: "ADR Content".into(),
+                            body: serde_json::json!({
+                                "markdown": adr_markdown,
+                            }),
+                        },
+                    ];
+
+                    Ok(ContextualView {
+                        object_id: mvp,
+                        view_id: "decision-trace".into(),
+                        title: format!("Decision Trace: {}", decision_node.label),
+                        view_kind: ViewKind::DecisionTrace,
+                        blocks,
+                        relations,
+                        evidence,
+                        findings: Vec::new(),
+                        renderer_kind: RendererKind::Composite,
+                    })
+                }
+                #[cfg(not(feature = "multimodal"))]
+                {
+                    let _ = ctx;
+                    Err(crate::error::ExplorerError::FeatureDisabled(
+                        "DecisionTrace requires multimodal feature".into(),
+                    ))
+                }
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "decision-trace".into(),
+            }),
+        }
+    }
+}
+
+// Static declaration placed after struct/impl to satisfy Rust's forward-reference rules.
+pub static DECISION_TRACE_EXECUTOR: DecisionTraceExecutor = DecisionTraceExecutor;
+
 /// Decision Support Pack capability — applies to Decision.
 ///
 /// E25 PR3: Produces a composite five-pane pack wrapping DecisionSupportPackBuilder.
@@ -6572,6 +6908,283 @@ mod tests {
         assert!(
             !node_val.as_str().unwrap().contains("ownership unavailable"),
             "Real ownership data must be rendered, not placeholder"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // DecisionTraceExecutor tests — E24.3
+    // -------------------------------------------------------------------------
+
+    /// E24.3: applies_to returns DecisionArtifact.
+    #[test]
+    fn decision_trace_executor_applies_to_decision_artifact() {
+        let exec = &super::DECISION_TRACE_EXECUTOR;
+        assert_eq!(exec.id(), "decision-trace");
+        assert_eq!(exec.title(), "Decision Trace");
+        assert!(
+            exec.applies_to()
+                .contains(&crate::dto::InspectableObjectType::DecisionArtifact)
+        );
+        assert_eq!(exec.view_kind(), crate::dto::ViewKind::DecisionTrace);
+        assert_eq!(exec.renderer_kind(), crate::dto::RendererKind::Composite);
+    }
+
+    /// E24.3: applies_to does NOT return non-DecisionArtifact types.
+    #[test]
+    fn decision_trace_executor_does_not_apply_to_symbol() {
+        let exec = &super::DECISION_TRACE_EXECUTOR;
+        assert!(
+            !exec.applies_to().contains(&crate::dto::InspectableObjectType::Symbol)
+        );
+        assert!(
+            !exec.applies_to().contains(&crate::dto::InspectableObjectType::File)
+        );
+        assert!(
+            !exec.applies_to().contains(&crate::dto::InspectableObjectType::Doc)
+        );
+    }
+
+    /// E24.3: to_mermaid helper produces valid output for empty subgraph.
+    #[test]
+    fn to_mermaid_subgraph_empty() {
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+
+        let nodes: Vec<cognicode_core::domain::aggregates::generic_graph::GraphNode> = vec![];
+        let edges: Vec<cognicode_core::domain::aggregates::generic_graph::GraphEdge> = vec![];
+        let focus_id = NodeId::new("test-focus");
+
+        let (mermaid, truncated) =
+            super::to_mermaid_subgraph(&nodes, &edges, &focus_id, 30);
+
+        // Empty graph should still produce a valid flowchart
+        assert!(mermaid.starts_with("flowchart LR"));
+        assert!(!truncated);
+    }
+
+    /// E24.3: to_mermaid helper respects node cap.
+    #[test]
+    fn to_mermaid_subgraph_respects_node_cap() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::GraphNode;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+        use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
+        use cognicode_core::domain::value_objects::node_kind::NodeKind;
+
+        // Create 5 nodes (exceeds cap of 3)
+        let nodes: Vec<GraphNode> = (0..5)
+            .map(|i| GraphNode {
+                id: NodeId::new(format!("node-{}", i)),
+                kind: NodeKind::Decision,
+                label: format!("Node {}", i),
+                source_path: None,
+                properties: serde_json::Value::Object(Default::default()),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            })
+            .collect();
+
+        let edges: Vec<cognicode_core::domain::aggregates::generic_graph::GraphEdge> = vec![];
+        let focus_id = NodeId::new("node-0");
+        let cap = 3;
+
+        let (mermaid, truncated) = super::to_mermaid_subgraph(&nodes, &edges, &focus_id, cap);
+
+        assert!(truncated, "Should be truncated when nodes exceed cap");
+        assert!(mermaid.contains("truncated"), "Should mention truncation");
+    }
+
+    /// E24.3: build_adr_markdown returns graceful fallback when source_path is None.
+    #[test]
+    fn build_adr_markdown_no_source_path() {
+        use std::collections::HashMap;
+        use crate::ports::source_reader::SourceReader;
+
+        struct FakeReader;
+        impl SourceReader for FakeReader {
+            fn read_source(&self, _file: &str) -> crate::error::ExplorerResult<String> {
+                Ok("content".to_string())
+            }
+            fn read_lines(
+                &self,
+                _file: &str,
+                _start: u32,
+                _end: u32,
+            ) -> crate::error::ExplorerResult<Vec<(u32, String)>> {
+                Ok(vec![])
+            }
+        }
+
+        let reader = FakeReader;
+        let result = super::build_adr_markdown(None, &reader, "ADR-001");
+        assert!(result.contains("Source not available"));
+        assert!(result.contains("ADR-001"));
+    }
+
+    /// E24.3: build_adr_markdown extracts frontmatter correctly.
+    #[test]
+    fn build_adr_markdown_extracts_frontmatter() {
+        use crate::ports::source_reader::SourceReader;
+
+        struct FakeReader {
+            content: String,
+        }
+        impl SourceReader for FakeReader {
+            fn read_source(&self, _file: &str) -> crate::error::ExplorerResult<String> {
+                Ok(self.content.clone())
+            }
+            fn read_lines(
+                &self,
+                _file: &str,
+                _start: u32,
+                _end: u32,
+            ) -> crate::error::ExplorerResult<Vec<(u32, String)>> {
+                Ok(vec![])
+            }
+        }
+
+        let content = r#"---
+title: Use PostgreSQL for persistence
+status: accepted
+---
+# ADR-001
+
+## Context
+
+We need a database.
+
+## Decision
+
+We will use PostgreSQL.
+
+## Consequences
+
+Positive outcomes.
+"#;
+        let reader = FakeReader {
+            content: content.to_string(),
+        };
+        let path = std::path::PathBuf::from("docs/adr/ADR-001.md");
+        let result = super::build_adr_markdown(Some(&path), &reader, "ADR-001");
+
+        assert!(result.contains("Use PostgreSQL for persistence"));
+        assert!(result.contains("accepted"));
+        assert!(result.contains("We will use PostgreSQL"));
+    }
+
+    /// E24.3: DecisionTraceExecutor requires multimodal feature.
+    #[tokio::test]
+    #[cfg(not(feature = "multimodal"))]
+    async fn decision_trace_requires_multimodal_feature() {
+        let target = super::InspectionTarget::Decision { id: "ADR-002".into() };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: None,
+            node_property_repository: None,
+        };
+
+        let executor = super::DecisionTraceExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::ExplorerError::FeatureDisabled { .. }
+        ));
+    }
+
+    /// E24.3: DecisionTraceExecutor rejects non-Decision targets.
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn decision_trace_rejects_symbol_target() {
+        use cognicode_core::domain::value_objects::SymbolKind;
+
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let target = super::InspectionTarget::Symbol(sym);
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: None,
+            node_property_repository: None,
+        };
+
+        let executor = super::DecisionTraceExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::ExplorerError::ViewNotAvailable { .. }
+        ));
+    }
+
+    /// E24.3: DecisionTraceExecutor returns two blocks for Decision target.
+    #[tokio::test]
+    #[cfg(feature = "multimodal")]
+    async fn decision_trace_builds_two_blocks() {
+        use chrono::Utc;
+        use cognicode_core::domain::aggregates::generic_graph::GraphNode;
+        use cognicode_core::domain::aggregates::generic_graph::NodeId;
+        use cognicode_core::domain::ports::GraphRepository;
+        use cognicode_core::domain::value_objects::node_kind::NodeKind;
+
+        let mut mock = MockGraphRepo::new();
+        mock.with_node(GraphNode {
+            id: NodeId::new("ADR-001".to_string()),
+            kind: NodeKind::Decision,
+            label: "ADR-001".to_string(),
+            source_path: Some(std::path::PathBuf::from("docs/adr/ADR-001.md")),
+            properties: serde_json::Value::Object(Default::default()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+
+        let target = super::InspectionTarget::Decision {
+            id: "ADR-001".to_string(),
+        };
+        let ctx = super::ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: Some(&mock as &dyn GraphRepository),
+            node_property_repository: None,
+        };
+
+        let executor = super::DecisionTraceExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_ok(), "Expected Ok but got: {:?}", result);
+        let view = result.unwrap();
+        assert_eq!(view.view_id, "decision-trace");
+
+        // Should have exactly 2 blocks: graph + adr_markdown
+        assert_eq!(view.blocks.len(), 2);
+        let block_ids: Vec<&str> = view.blocks.iter().map(|b| b.id.as_str()).collect();
+        assert!(block_ids.contains(&"graph"), "Should have graph block");
+        assert!(
+            block_ids.contains(&"adr_markdown"),
+            "Should have adr_markdown block"
+        );
+
+        // Graph block should contain mermaid content
+        let graph_block = view.blocks.iter().find(|b| b.id == "graph").unwrap();
+        assert!(
+            graph_block.body.get("mermaid").is_some(),
+            "Graph block should contain mermaid field"
+        );
+
+        // ADR markdown block should contain markdown content
+        let adr_block = view.blocks.iter().find(|b| b.id == "adr_markdown").unwrap();
+        assert!(
+            adr_block.body.get("markdown").is_some(),
+            "ADR block should contain markdown field"
         );
     }
 
