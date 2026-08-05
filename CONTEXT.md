@@ -13,10 +13,10 @@ CogniCode is a code intelligence platform that provides graph-based exploration,
 - **SymbolRepository**: Read-only port for symbol identity resolution — `resolve`, `find_symbols_by_name`, `find_symbols_by_file`, `all_symbols`, `graph_stats`, `module_list`. Does NOT navigate the call graph.
 - **GraphQueryPort**: Read-only port for structural graph navigation — neighbors with metadata (`provenance`, `confidence`), multi-hop traversals (`traverse`, `subgraph`). MoldQL compiles its queries to operations of this port. Replaces the deprecated `MetadataAwareRepository` + `as_metadata_aware()` escape hatch.
 - **MoldPlan**: Versioned, backend-neutral normalized plan for every MoldQL operation. Graph-selecting operations contain a `GraphPlan`; object selection, quality, lens, and view execution retain their own typed operations. See [ADR-014 §3](docs/adr/ADR-014-moldql-pattern-graph-analytics-platform.md) and the executable spec at [`openspec/specs/moldplan-graphplan/spec.md`](openspec/specs/moldplan-graphplan/spec.md).
-- **GraphPlan**: Read-only graph execution contract shared by PostgreSQL and immutable snapshot executors. Each execution is pinned to one workspace and graph revision and declares resource limits. See [ADR-014 §4](docs/adr/ADR-014-moldql-pattern-graph-analytics-platform.md) and the executable spec at [`openspec/specs/graph-executor-port/spec.md`](openspec/specs/graph-executor-port/spec.md).
-- **GraphExecutor**: Object-safe, `Send + Sync + 'static` trait that every concrete executor implements. Two reference implementations currently ship in `cognicode-core`: `PgGraphExecutor` (PostgreSQL-backed, recursive CTE — see [`openspec/specs/pg-graph-executor/spec.md`](openspec/specs/pg-graph-executor/spec.md)) and `SnapshotGraphExecutor<'a>` (in-memory over `StableGraph<String, DependencyType>` from a `SnapshotProvider` — see [`openspec/specs/snapshot-graph-executor/spec.md`](openspec/specs/snapshot-graph-executor/spec.md)). Executor equivalence between the two is enforced by the conformance spec at [`openspec/specs/executor-equivalence-conformance/spec.md`](openspec/specs/executor-equivalence-conformance/spec.md).
+- **GraphPlan**: Read-only graph execution contract shared by the graph executors. Each execution is pinned to one workspace and graph revision and declares resource limits. See [ADR-014 §4](docs/adr/ADR-014-moldql-pattern-graph-analytics-platform.md) and the executable spec at [`openspec/specs/graph-executor-port/spec.md`](openspec/specs/graph-executor-port/spec.md).
+- **GraphExecutor**: Object-safe, `Send + Sync + 'static` trait that every concrete executor implements. Reference implementations ship in `cognicode-core` (`SnapshotGraphExecutor<'a>`, in-memory over `StableGraph<String, DependencyType>` from a `SnapshotProvider` — see [`openspec/specs/snapshot-graph-executor/spec.md`](openspec/specs/snapshot-graph-executor/spec.md)) and `cognicode-ladybug` (`LadybugGraphExecutor`). Executor equivalence is enforced by the conformance spec at [`openspec/specs/executor-equivalence-conformance/spec.md`](openspec/specs/executor-equivalence-conformance/spec.md).
 - **ExecutorError**: Typed error envelope returned by `GraphExecutor::execute` — variants `RevisionUnknown(String)`, `LimitExceeded { dimension, observed }`, `UnsupportedConstruct(String)`, `InternalError(String)`. Translated from `RepositoryError` (`UnknownRevision` → `RevisionUnknown`) and from in-process checks (PlanLimits → `LimitExceeded`). See [graph-executor-port spec §Error types](openspec/specs/graph-executor-port/spec.md).
-- **ProvenanceEnvelope**: Per-result provenance metadata — `{ backend: &'static str ("postgres" | "snapshot"), revision_id, workspace_id, computed_at_ms, lineage }`. Used by `assert_equivalent` to normalize backend identity before multiset comparison.
+- **ProvenanceEnvelope**: Per-result provenance metadata — `{ backend: &'static str ("ladybug" | "snapshot"), revision_id, workspace_id, computed_at_ms, lineage }`. Used by `assert_equivalent` to normalize backend identity before multiset comparison.
 - **Pattern Profile**: Proposed GQL/openCypher-inspired MoldQL profile for typed, directed, bounded graph patterns. It does not imply Cypher, openCypher, or ISO GQL compatibility. See [ADR-014 §2](docs/adr/ADR-014-moldql-pattern-graph-analytics-platform.md) and [graph query execution specification](docs/specs/graph-query-execution.md).
 - **Graph Analytics Registry**: Proposed descriptor-driven catalog for reproducible, resource-governed algorithms with `stream`, `stats`, `annotate`, and authorized `persist` modes. Analytics never mutate canonical graph facts. See [ADR-014 §6](docs/adr/ADR-014-moldql-pattern-graph-analytics-platform.md) and [graph analytics execution specification](docs/specs/graph-analytics-execution.md).
 - **CallGraphProjectionPort**: Domain port trait for the petgraph-backed call-graph projection. Analytics descriptors and services depend on `&dyn CallGraphProjectionPort` rather than the concrete `infrastructure::graph::CallGraphProjection` struct. Factory: `project_call_graph(&CallGraph) → Arc<dyn CallGraphProjectionPort>`. See [ADR-029](docs/adr/ADR-029-callgraph-projection-port-seam.md).
@@ -88,7 +88,7 @@ rendered differently, saved as a ViewSpec, or opened as inspector panes.
 - **Two intelligence sources**: MCP tools (structured) + LLM (unstructured reasoning)
 - **Explorer-first moldability**: The Explorer UI is the primary consumer of custom runtime views; MCP may expose degraded non-visual access to ViewSpecs
 - **Hybrid navigation**: Frontend owns rich visual navigation state; backend persists semantic exploration state for restore, sharing, and MCP
-- **Composition root**: `cognicode-runtime` crate is the single place where concrete implementations are selected and dependencies assembled. Binaries are thin: parse args → bootstrap → serve. PostgreSQL is the only persistence backend.
+- **Composition root**: `cognicode-runtime` crate is the single place where concrete implementations are selected and dependencies assembled. Binaries are thin: parse args → bootstrap → serve. LadybugDB is the sole persistence backend (PostgreSQL removed in e29-7).
 
 ### LLM Integration (gt4llm patterns)
 - **Chat Registry**: Named chat sessions with world-view scope
@@ -295,7 +295,7 @@ This preserves the exploration narrative:
 ```
 
 ### Ingest Pipeline
-- **Ingest**: The process of scanning a workspace's source files, extracting structural information, and persisting it as a queryable graph in PostgreSQL. The canonical trigger for graph creation and updates.
+- **Ingest**: The process of scanning a workspace's source files, extracting structural information, and persisting it as a queryable graph. The canonical trigger for graph creation and updates.
 _Avoid_: index, build, scan (scan is a phase within ingest, not the whole process)
 
 - **Scan**: The first phase of ingest — walking the filesystem, classifying files by type, computing content hashes, and detecting changes against the `scan_manifest` table. Output: a set of file changes (New, Changed, Deleted, Unchanged).
@@ -313,25 +313,24 @@ _Avoid_: config parsing, deployment analysis
 - **GraphQuery**: A natural-language query over the graph's topology. The agent asks "what connects X to Y?" and the tool returns a subgraph grounded in real edges with provenance. The query is deterministic (keyword extraction + IDF matching + BFS expansion), not LLM-based — the AI agent calling the tool provides the intelligence.
 _Avoid_: semantic search (which is keyword-based, not topology-based), graph_search (too generic)
 
-- **GraphReport**: An auto-generated summary of the graph's key structural properties, produced at the end of each ingest. Contains community clusters, god nodes (high PageRank), surprising cross-community connections, and dead code candidates. Cached in PostgreSQL for temporal diffing.
+- **GraphReport**: An auto-generated summary of the graph's key structural properties, produced at the end of each ingest. Contains community clusters, god nodes (high PageRank), surprising cross-community connections, and dead code candidates. Cached for temporal diffing.
 _Avoid_: analysis output, metrics report
 
 - **Job**: An asynchronous unit of work in the Explorer API. Scan and analyze operations run as jobs with progress tracking (`scanned`, `total`, `stage`) and status polling via `GET /api/jobs/:id`. Jobs use `tokio::spawn_blocking` internally.
 _Avoid_: task, operation, request
 
-- **ScanManifest**: A PostgreSQL table (`scan_manifest`) that tracks `{file_path, content_hash, language, scanned_at}` per file. Serves as both the change-detection manifest and the extraction cache invalidation key. Replaces file-based JSON manifests.
+- **ScanManifest**: A table that tracks `{file_path, content_hash, language, scanned_at}` per file. Serves as both the change-detection manifest and the extraction cache invalidation key. Replaces file-based JSON manifests.
 _Avoid_: cache file, manifest.json
 
 The ingest pipeline is a streaming, PG-native sequence:
 
 ```text
-Scan ──▶ Extract ──▶ PgUpsert ──▶ Resolve ──▶ Cluster ──▶ Analyze ──▶ Report ──▶ Refresh ──▶ Notify
+Scan ──▶ Extract ──▶ Resolve ──▶ Cluster ──▶ Analyze ──▶ Report ──▶ Refresh ──▶ Notify
 ```
 
 Each stage communicates through typed channels. Extraction (CPU-bound, `rayon`)
-and PgUpsert (I/O-bound, `sqlx`) overlap via a `tokio::sync::mpsc` channel.
-PostgreSQL is the sole persistence layer: graph store, manifest, and report
-cache. No intermediate files.
+feeds the persistence seam via the `IngestCommit` domain port (implemented
+by LadybugDB). No intermediate files.
 
 ## Terminology (vs gtoolkit)
 | CogniCode | gtoolkit | Notes |
@@ -356,15 +355,15 @@ cache. No intermediate files.
 ## Terminology (vs Graphify)
 | CogniCode | Graphify | Notes |
 |-----------|----------|-------|
-| Ingest Pipeline | detect → extract → build → cluster → analyze → report | PG-native streaming, no JSON files |
+| Ingest Pipeline | detect → extract → build → cluster → analyze → report | lbug-backed streaming, no JSON files |
 | Scan | detect() | Walk FS + classify + hash + diff vs `scan_manifest` |
 | Extraction | extract() | tree-sitter AST, 36+ languages via LanguageConfig |
 | LanguageConfig | LanguageConfig dataclass | Data-driven per-language tree-sitter config |
-| GraphReport | GRAPH_REPORT.md | Auto-generated insights, cached in PG |
-| ScanManifest | manifest.json | PG table, not a file |
-| GenericGraph | nx.Graph | petgraph + PG, not NetworkX + JSON |
+| GraphReport | GRAPH_REPORT.md | Auto-generated insights |
+| ScanManifest | manifest.json | persistence table, not a file |
+| GenericGraph | nx.Graph | petgraph-backed, not NetworkX + JSON |
 | CallGraph | (no equivalent) | Code-only projection of GenericGraph |
-| Dual-write projection | (no equivalent) | GenericGraph → CallGraph via PG dual-write |
+| Dual-write projection | (no equivalent) | GenericGraph → CallGraph via port abstraction |
 | ArcSwap GraphCache | (no equivalent) | Lock-free serving with broadcast events |
 | SolidLens | (no equivalent) | SOLID principle analysis as a Lens on the graph |
 | PG NOTIFY/LISTEN | (no equivalent) | Real-time graph update notifications to Explorer |
