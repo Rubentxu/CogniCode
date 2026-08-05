@@ -730,7 +730,12 @@ mod tests {
     #[test]
     fn parses_valid_adr_mvp_id() {
         let id = ObjectIdentity::parse_mvp_id("adr:ADR-001").unwrap();
-        assert_eq!(id, ObjectIdentity::Adr { id: "ADR-001".into() });
+        assert_eq!(
+            id,
+            ObjectIdentity::Adr {
+                id: "ADR-001".into()
+            }
+        );
         assert_eq!(id.object_type_str(), "adr");
         assert!(id.is_adr());
         assert!(id.path().is_none());

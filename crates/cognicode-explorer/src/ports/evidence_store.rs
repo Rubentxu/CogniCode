@@ -4,7 +4,9 @@
 //! tracked by the graph. They carry supporting data (logs, traces,
 //! screenshots, measurements) that backs up a claim or a decision.
 
-pub use cognicode_core::domain::ports::evidence_store::{EvidenceError, EvidenceKind, EvidenceStore, EvidenceSummary};
+pub use cognicode_core::domain::ports::evidence_store::{
+    EvidenceError, EvidenceKind, EvidenceStore, EvidenceSummary,
+};
 
 /// In-memory adapter backed by a Vec — useful for tests and previews.
 #[derive(Debug, Default, Clone)]

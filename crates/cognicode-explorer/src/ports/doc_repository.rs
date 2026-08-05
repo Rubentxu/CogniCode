@@ -24,18 +24,25 @@ impl InMemoryDocRepository {
 }
 
 impl DocRepository for InMemoryDocRepository {
-    fn list_docs(&self, _workspace: &str, section: Option<&str>) -> Result<Vec<DocSummary>, DocError> {
+    fn list_docs(
+        &self,
+        _workspace: &str,
+        section: Option<&str>,
+    ) -> Result<Vec<DocSummary>, DocError> {
         Ok(self
             .docs
             .iter()
-            .filter(|d| {
-                section.map(|s| d.section == s).unwrap_or(true)
-            })
+            .filter(|d| section.map(|s| d.section == s).unwrap_or(true))
             .cloned()
             .collect())
     }
 
-    fn search_docs(&self, _workspace: &str, query: &str, _limit: usize) -> Result<Vec<DocSummary>, DocError> {
+    fn search_docs(
+        &self,
+        _workspace: &str,
+        query: &str,
+        _limit: usize,
+    ) -> Result<Vec<DocSummary>, DocError> {
         let q = query.to_lowercase();
         Ok(self
             .docs

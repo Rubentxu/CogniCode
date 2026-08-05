@@ -41,6 +41,8 @@ pub struct SearchServiceImpl {
     adr_repo: Option<Arc<dyn crate::ports::AdrRepository>>,
     /// Doc repository for the "doc" Spotter family (Plan 012).
     doc_repo: Option<Arc<dyn crate::ports::DocRepository>>,
+    /// Evidence store for the "evidence" Spotter family (Plan 012).
+    evidence_store: Option<Arc<dyn crate::ports::EvidenceStore>>,
 }
 
 impl SearchServiceImpl {
@@ -66,6 +68,7 @@ impl SearchServiceImpl {
             graph_repo,
             adr_repo: None,
             doc_repo: None,
+            evidence_store: None,
         }
     }
 
@@ -78,6 +81,15 @@ impl SearchServiceImpl {
     /// Set the Doc repository (Plan 012 — knowledge layer ports).
     pub fn with_doc_repo(mut self, doc_repo: Option<Arc<dyn crate::ports::DocRepository>>) -> Self {
         self.doc_repo = doc_repo;
+        self
+    }
+
+    /// Set the evidence store (e13-wave2 — knowledge layer ports).
+    pub fn with_evidence_store(
+        mut self,
+        evidence_store: Option<Arc<dyn crate::ports::EvidenceStore>>,
+    ) -> Self {
+        self.evidence_store = evidence_store;
         self
     }
 }

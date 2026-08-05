@@ -4,7 +4,9 @@
 //! ISP: "find me an ADR by identity / status / workspace" is a distinct
 //! concern from full-text symbol search.
 
-pub use cognicode_core::domain::ports::adr_repository::{AdrError, AdrRepository, AdrStatus, AdrSummary};
+pub use cognicode_core::domain::ports::adr_repository::{
+    AdrError, AdrRepository, AdrStatus, AdrSummary,
+};
 
 /// In-memory adapter backed by a Vec — useful for tests and previews.
 #[derive(Debug, Default, Clone)]
@@ -28,7 +30,12 @@ impl AdrRepository for InMemoryAdrRepository {
         Ok(self.adrs.clone())
     }
 
-    fn search_adrs(&self, _workspace: &str, query: &str, _limit: usize) -> Result<Vec<AdrSummary>, AdrError> {
+    fn search_adrs(
+        &self,
+        _workspace: &str,
+        query: &str,
+        _limit: usize,
+    ) -> Result<Vec<AdrSummary>, AdrError> {
         let q = query.to_lowercase();
         Ok(self
             .adrs
