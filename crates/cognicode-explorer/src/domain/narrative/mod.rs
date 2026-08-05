@@ -177,7 +177,10 @@ impl ViewDescriptorProvider for ComposedNarrativeProvider {
         "Composed Narrative"
     }
     fn applies_to(&self) -> &'static [InspectableObjectType] {
-        &[InspectableObjectType::SavedExploration]
+        &[
+            InspectableObjectType::SavedExploration,
+            InspectableObjectType::Investigation,
+        ]
     }
     fn view_kind(&self) -> ViewKind {
         ViewKind::ComposedNarrative
