@@ -27,10 +27,13 @@
 //! cfg-gated entries (`federation_store`, `ingest_commit_port`) appear
 //! only under `--features multimodal`.
 
+pub mod adr_repository;
 pub mod call_graph_projection;
 pub mod call_graph_store;
+pub mod doc_repository;
 #[cfg(feature = "multimodal")]
 pub mod federation_store;
+pub mod evidence_store;
 pub mod graph_error;
 pub mod graph_repository;
 #[cfg(feature = "multimodal")]
@@ -44,13 +47,16 @@ pub mod revision_store;
 pub mod session_store;
 pub mod view_spec_store;
 
+pub use adr_repository::{AdrError, AdrRepository, AdrStatus, AdrSummary};
 pub use call_graph_projection::{
     CallGraphProjectionPort, ExplanationHop, ExplanationView, ProjectionError, SubgraphDirection,
     SubgraphEdge, SubgraphView, project_call_graph,
 };
 pub use call_graph_store::{CallGraphError, CallGraphStore};
+pub use doc_repository::{DocError, DocRepository, DocSummary};
 #[cfg(feature = "multimodal")]
 pub use federation_store::{FederationError, FederationStore};
+pub use evidence_store::{EvidenceError, EvidenceKind, EvidenceStore, EvidenceSummary};
 pub use graph_error::{GraphError, GraphResult};
 pub use graph_repository::{GraphRepository, SearchPage};
 #[cfg(feature = "multimodal")]

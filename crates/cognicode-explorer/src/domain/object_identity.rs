@@ -52,6 +52,8 @@ pub enum ObjectIdentity {
     Evidence { id: String },
     /// `workspace:{id}` — a workspace, by workspace id.
     Workspace { id: String },
+    /// `adr:{id}` — an ADR (Architecture Decision Record), by id.
+    Adr { id: String },
 }
 
 impl ObjectIdentity {
@@ -116,6 +118,11 @@ impl ObjectIdentity {
         Self::Workspace { id: id.into() }
     }
 
+    /// Build an ADR identity from an ADR id.
+    pub fn new_adr(id: impl Into<String>) -> Self {
+        Self::Adr { id: id.into() }
+    }
+
     /// Parse an MVP id. The accepted shapes are:
     /// - `symbol:{file}:{name}:{line}` (line > 0, file + name non-empty)
     /// - `file:{path}` (path non-empty)
@@ -148,6 +155,7 @@ impl ObjectIdentity {
             "decision" => Self::parse_decision(rest, raw),
             "evidence" => Self::parse_evidence(rest, raw),
             "workspace" => Self::parse_workspace(rest, raw),
+            "adr" => Self::parse_adr(rest, raw),
             _ => Err(ExplorerError::ResolutionFailed(raw.to_string())),
         }
     }
@@ -277,6 +285,15 @@ impl ObjectIdentity {
         })
     }
 
+    fn parse_adr(rest: &str, raw: &str) -> ExplorerResult<Self> {
+        if rest.is_empty() {
+            return Err(ExplorerError::ResolutionFailed(raw.to_string()));
+        }
+        Ok(Self::Adr {
+            id: rest.to_string(),
+        })
+    }
+
     /// The lowercase tag used in MVP ids and on the wire:
     /// `"symbol"`, `"file"`, `"scope"`, `"issue"`, `"rule"`, `"exploration"`,
     /// `"investigation"`, `"doc"`, `"decision"`, or `"evidence"`.
@@ -293,6 +310,7 @@ impl ObjectIdentity {
             Self::Decision { .. } => "decision",
             Self::Evidence { .. } => "evidence",
             Self::Workspace { .. } => "workspace",
+            Self::Adr { .. } => "adr",
         }
     }
 
@@ -318,7 +336,8 @@ impl ObjectIdentity {
             | Self::Doc { .. }
             | Self::Decision { .. }
             | Self::Evidence { .. }
-            | Self::Workspace { .. } => None,
+            | Self::Workspace { .. }
+            | Self::Adr { .. } => None,
         }
     }
 
@@ -372,6 +391,11 @@ impl ObjectIdentity {
         matches!(self, Self::Workspace { .. })
     }
 
+    /// `true` for the ADR variant.
+    pub fn is_adr(&self) -> bool {
+        matches!(self, Self::Adr { .. })
+    }
+
     /// Render the canonical MVP id (`symbol:...` / `file:...` /
     /// `scope:...` / `issue:...` / `rule:...` / `exploration:...` /
     /// `investigation:...` / `doc:...` / `decision:...` / `evidence:...`).
@@ -388,6 +412,7 @@ impl ObjectIdentity {
             Self::Decision { id } => format!("decision:{id}"),
             Self::Evidence { id } => format!("evidence:{id}"),
             Self::Workspace { id } => format!("workspace:{id}"),
+            Self::Adr { id } => format!("adr:{id}"),
         }
     }
 
@@ -422,6 +447,7 @@ impl ObjectIdentity {
             Self::Investigation { id } => id.clone(),
             Self::Doc { id } | Self::Decision { id } | Self::Evidence { id } => id.clone(),
             Self::Workspace { id } => id.clone(),
+            Self::Adr { id } => id.clone(),
         }
     }
 }
@@ -699,5 +725,38 @@ mod tests {
     fn rejects_workspace_with_empty_id() {
         let err = ObjectIdentity::parse_mvp_id("workspace:").unwrap_err();
         assert!(matches!(err, ExplorerError::ResolutionFailed(_)));
+    }
+
+    #[test]
+    fn parses_valid_adr_mvp_id() {
+        let id = ObjectIdentity::parse_mvp_id("adr:ADR-001").unwrap();
+        assert_eq!(id, ObjectIdentity::Adr { id: "ADR-001".into() });
+        assert_eq!(id.object_type_str(), "adr");
+        assert!(id.is_adr());
+        assert!(id.path().is_none());
+        assert_eq!(id.to_mvp_id(), "adr:ADR-001");
+        assert_eq!(id.natural_key(), "ADR-001");
+        assert!(id.to_symbol_id().is_none());
+    }
+
+    #[test]
+    fn new_adr_constructor() {
+        let adr = ObjectIdentity::new_adr("ADR-042");
+        assert_eq!(adr.to_mvp_id(), "adr:ADR-042");
+        assert!(adr.is_adr());
+    }
+
+    #[test]
+    fn rejects_adr_with_empty_id() {
+        let err = ObjectIdentity::parse_mvp_id("adr:").unwrap_err();
+        assert!(matches!(err, ExplorerError::ResolutionFailed(_)));
+    }
+
+    #[test]
+    fn adr_to_mvp_id_roundtrip() {
+        let adr = ObjectIdentity::new_adr("ADR-999");
+        let mvp_id = adr.to_mvp_id();
+        let parsed = ObjectIdentity::parse_mvp_id(&mvp_id).unwrap();
+        assert_eq!(parsed, adr);
     }
 }

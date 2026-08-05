@@ -327,6 +327,10 @@ pub enum InspectionTarget {
     },
     /// A workspace with pre-resolved exploration sessions, used by ProjectDiary view.
     Workspace(WorkspaceTarget),
+    /// An ADR (Architecture Decision Record), addressed by its id.
+    Adr {
+        id: String,
+    },
 }
 
 /// Target for ProjectDiary view — carries workspace identity and pre-resolved sessions.

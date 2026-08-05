@@ -1445,6 +1445,7 @@ impl ViewExecutor for OverviewExecutor {
             | InspectionTarget::Decision { .. }
             | InspectionTarget::Doc { .. }
             | InspectionTarget::Evidence { .. }
+            | InspectionTarget::Adr { .. }
             | InspectionTarget::Workspace(_) => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
@@ -2563,6 +2564,7 @@ impl ViewExecutor for QualityExecutor {
             | InspectionTarget::Decision { .. }
             | InspectionTarget::Doc { .. }
             | InspectionTarget::Evidence { .. }
+            | InspectionTarget::Adr { .. }
             | InspectionTarget::Workspace(_) => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
@@ -3580,6 +3582,7 @@ impl ViewExecutor for RiskMapExecutor {
             | InspectionTarget::Decision { .. }
             | InspectionTarget::Doc { .. }
             | InspectionTarget::Evidence { .. }
+            | InspectionTarget::Adr { .. }
             | InspectionTarget::Workspace(_) => {
                 return Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),

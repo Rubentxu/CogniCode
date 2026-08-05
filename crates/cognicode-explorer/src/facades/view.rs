@@ -41,6 +41,7 @@ fn identity_to_inspectable_type(identity: &ObjectIdentity) -> InspectableObjectT
         ObjectIdentity::Decision { .. } => InspectableObjectType::DecisionArtifact,
         ObjectIdentity::Evidence { .. } => InspectableObjectType::Evidence,
         ObjectIdentity::Workspace { .. } => InspectableObjectType::Workspace,
+        ObjectIdentity::Adr { .. } => InspectableObjectType::Adr,
     }
 }
 
@@ -191,6 +192,11 @@ impl ViewServiceImpl {
                 })?;
                 Ok(InspectionTarget::Evidence { id: id.clone() })
             }
+            // ADR requires adr_repository wired to ViewService.
+            // Returns FeatureDisabled since the ADR repository is not yet wired.
+            ObjectIdentity::Adr { id } => Err(ExplorerError::FeatureDisabled(
+                "ADR resolution requires ADR repository (not wired in ViewService)".into(),
+            )),
             // Workspace requires async persistence to load sessions — handled in
             // contextual_view before this function is called. The sync path
             // returns a feature-disabled error since sessions cannot be loaded

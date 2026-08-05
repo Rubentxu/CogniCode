@@ -962,6 +962,9 @@ fn inspect_object_impl(
         ObjectIdentity::Evidence { .. } => Err(ExplorerError::FeatureDisabled(
             "graph_repo not wired".into(),
         )),
+        ObjectIdentity::Adr { .. } => Err(ExplorerError::FeatureDisabled(
+            "adr_repository not wired".into(),
+        )),
     }
 }
 
