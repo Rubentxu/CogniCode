@@ -318,6 +318,11 @@ fn real_executors() -> &'static ViewExecutorMap {
                     as &dyn crate::domain::views::ViewExecutor,
             },
             ExecutorEntry {
+                id: "decision-trace",
+                executor: &crate::domain::views::DECISION_TRACE_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            },
+            ExecutorEntry {
                 id: "decision-support-pack",
                 executor: &crate::domain::views::DECISION_SUPPORT_PACK_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
