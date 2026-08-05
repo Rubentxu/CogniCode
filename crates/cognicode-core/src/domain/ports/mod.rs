@@ -36,6 +36,7 @@ pub mod graph_repository;
 #[cfg(feature = "multimodal")]
 pub mod ingest_commit_port;
 pub mod manifest_store;
+pub mod narrative_store;
 pub mod node_property_repository;
 pub mod quality_store;
 pub mod report_store;
@@ -57,6 +58,7 @@ pub use ingest_commit_port::{
     CommitError, GraphDelta, IngestCommitPort, ManifestDelta, ReportIntent,
 };
 pub use manifest_store::{ManifestError, ManifestStore, ScanManifest};
+pub use narrative_store::{NarrativeError, NarrativeSnapshot, NarrativeStore};
 pub use node_property_repository::NodePropertyRepository;
 pub use quality_store::{
     IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,

@@ -65,6 +65,7 @@ use cognicode_core::domain::plan::{
 use cognicode_core::domain::ports::{
     CallGraphError, CallGraphStore,
     manifest_store::{ManifestError, ManifestStore, ScanManifest},
+    narrative_store::NarrativeStore,
     quality_store::{
         IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
         RuleSummary, UpsertSummary,
@@ -75,6 +76,9 @@ use cognicode_core::domain::ports::{
     view_spec_store::{ViewSpecPayload, ViewSpecStore, ViewSpecStoreError},
 };
 use cognicode_core::domain::value_objects::{DependencyType, RevisionId, WorkspaceId};
+
+pub mod init_schema;
+pub mod narrative_store;
 
 // `FederationStore`, `IngestCommitPort`, and the `Space`/`SpaceId` value
 // objects they operate on are gated behind the `multimodal` feature
@@ -146,6 +150,22 @@ impl_stub_for!(
 
 #[cfg(feature = "multimodal")]
 impl_stub_for!(FederationError,);
+
+impl From<cognicode_core::domain::ports::NarrativeError> for Error {
+    fn from(e: cognicode_core::domain::ports::NarrativeError) -> Self {
+        match e {
+            cognicode_core::domain::ports::NarrativeError::Serialization(s) => {
+                Error::Lbug(format!("narrative serialization: {s}"))
+            }
+            cognicode_core::domain::ports::NarrativeError::Database(s) => {
+                Error::Lbug(format!("narrative database: {s}"))
+            }
+            cognicode_core::domain::ports::NarrativeError::NotFound => {
+                Error::Lbug("narrative snapshot not found".to_string())
+            }
+        }
+    }
+}
 
 // =============================================================================
 // LadybugStore
@@ -466,6 +486,8 @@ impl LadybugStore {
         // Idempotent (IF NOT EXISTS); failures surface so callers know
         // the DB file could not host the quality tables.
         store.init_quality_schema()?;
+        // e14-c2: narrative view schema for the NarrativeStore port.
+        store.init_narrative_view_schema()?;
         Ok(store)
     }
 
@@ -1485,6 +1507,20 @@ impl LadybugStore {
                 .map_err(|e| Error::Lbug(format!("init_lineage_schema: {e}\nDDL: {stmt}")))?;
         }
         Ok(())
+    }
+
+    /// Create the `NarrativeView` node table backing the [`NarrativeStore`] port.
+    ///
+    /// Idempotent — every statement uses `IF NOT EXISTS`.
+    ///
+    /// Called automatically by [`LadybugStore::open`]; the raw sharing
+    /// constructor [`LadybugStore::new`] does NOT apply it so tests can
+    /// exercise the graceful-degradation contract on a schema-less db.
+    pub fn init_narrative_view_schema(&self) -> Result<(), Error> {
+        let conn = self
+            .connection()
+            .map_err(|e| Error::Lbug(format!("init_narrative_view_schema: {e}")))?;
+        init_schema::init_narrative_view_schema(&conn)
     }
 }
 

@@ -52,6 +52,8 @@ pub struct Runtime {
     pub session_store: Option<Arc<dyn cognicode_core::domain::ports::SessionStore>>,
     /// Graph report summaries per workspace.
     pub report_store: Option<Arc<dyn cognicode_core::domain::ports::ReportStore>>,
+    /// Narrative view snapshots (e14-c2).
+    pub narrative_store: Option<Arc<dyn cognicode_core::domain::ports::NarrativeStore>>,
     /// Multimodal federation store (spaces / repos / issues).
     #[cfg(feature = "multimodal")]
     pub federation_store: Option<Arc<dyn cognicode_core::domain::ports::FederationStore>>,
@@ -98,6 +100,8 @@ pub struct RuntimePorts {
     pub session_store: Option<Arc<dyn cognicode_core::domain::ports::SessionStore>>,
     /// Graph report summaries per workspace.
     pub report_store: Option<Arc<dyn cognicode_core::domain::ports::ReportStore>>,
+    /// Narrative view snapshots (e14-c2).
+    pub narrative_store: Option<Arc<dyn cognicode_core::domain::ports::NarrativeStore>>,
     /// Multimodal federation store (spaces / repos / issues).
     #[cfg(feature = "multimodal")]
     pub federation_store: Option<Arc<dyn cognicode_core::domain::ports::FederationStore>>,
@@ -153,6 +157,7 @@ pub async fn bootstrap_with_backend(
     let manifest_store = ports.manifest_store;
     let session_store = ports.session_store;
     let report_store = ports.report_store;
+    let narrative_store = ports.narrative_store;
     #[cfg(feature = "multimodal")]
     let federation_store = ports.federation_store;
     #[cfg(feature = "multimodal")]
@@ -183,6 +188,7 @@ pub async fn bootstrap_with_backend(
         manifest_store,
         session_store,
         report_store,
+        narrative_store,
         #[cfg(feature = "multimodal")]
         federation_store,
         #[cfg(feature = "multimodal")]
@@ -227,6 +233,7 @@ pub async fn bootstrap(cwd: std::path::PathBuf) -> Result<Runtime, anyhow::Error
         manifest_store: None,
         session_store: None,
         report_store: None,
+        narrative_store: None,
         #[cfg(feature = "multimodal")]
         federation_store: None,
         #[cfg(feature = "multimodal")]
@@ -263,6 +270,7 @@ pub fn bootstrap_ladybug(
         manifest_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::ManifestStore>),
         session_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::SessionStore>),
         report_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::ReportStore>),
+        narrative_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::NarrativeStore>),
         #[cfg(feature = "multimodal")]
         federation_store: Some(
             store.clone() as Arc<dyn cognicode_core::domain::ports::FederationStore>
@@ -467,7 +475,7 @@ mod tests {
 
     use super::{bootstrap_ladybug, bootstrap_with_backend, RuntimePorts};
     use cognicode_core::domain::aggregates::CallGraph;
-    use cognicode_core::domain::ports::{CallGraphStore, QualityStore, ViewSpecStore};
+    use cognicode_core::domain::ports::{CallGraphStore, NarrativeStore, QualityStore, ViewSpecStore};
     use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
 
     /// Identity stub for [`QualityStore`] — never called in this test,
@@ -789,11 +797,15 @@ mod tests {
             runtime.report_store.is_some(),
             "report_store must be Some after bootstrap_ladybug"
         );
+        assert!(
+            runtime.narrative_store.is_some(),
+            "narrative_store must be Some after bootstrap_ladybug"
+        );
         // Clean up temp dir.
         let _ = fs::remove_dir_all(tmp);
     }
 
-    /// T-008: Verify all 10 ports are present (same LadybugStore allocation).
+    /// T-008: Verify all 11 ports are present (same LadybugStore allocation).
     #[tokio::test]
     async fn bootstrap_ladybug_uses_same_store_for_all_ports() {
         use std::fs;
@@ -815,6 +827,7 @@ mod tests {
         assert!(runtime.manifest_store.is_some());
         assert!(runtime.session_store.is_some());
         assert!(runtime.report_store.is_some());
+        assert!(runtime.narrative_store.is_some());
 
         // Clean up temp dir.
         let _ = fs::remove_dir_all(tmp);
