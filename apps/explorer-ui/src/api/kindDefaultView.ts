@@ -10,6 +10,7 @@
  *   - doc                → doc_code_alignment (E23: Doc/Code alignment)
  *   - decision_artifact  → doc_code_alignment (E23: Doc/Code alignment)
  *   - evidence           → evidence (pin it)
+ *   - adr                → adr-source (ADR markdown source)
  *   - workspace|module   → overview
  *   - quality_issue|rule → quality
  *   - investigation      → overview (default; no dedicated view kind yet)
@@ -31,6 +32,7 @@ const KIND_TO_DEFAULT_VIEW: Readonly<Record<InspectableObjectType, string>> = {
   quality_issue: "quality",
   rule: "quality",
   investigation: "overview",
+  adr: "adr-source",
 };
 
 /**

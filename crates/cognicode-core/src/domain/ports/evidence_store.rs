@@ -46,8 +46,17 @@ pub enum EvidenceError {
 /// Read-only port for evidence discovery.
 pub trait EvidenceStore: Send + Sync {
     /// List evidence for a workspace, optionally filtered by kind.
-    fn list_evidence(&self, workspace: &str, kind: Option<EvidenceKind>) -> Result<Vec<EvidenceSummary>, EvidenceError>;
+    fn list_evidence(
+        &self,
+        workspace: &str,
+        kind: Option<EvidenceKind>,
+    ) -> Result<Vec<EvidenceSummary>, EvidenceError>;
 
     /// Full-text search across evidence titles and excerpts.
-    fn search_evidence(&self, workspace: &str, query: &str, limit: usize) -> Result<Vec<EvidenceSummary>, EvidenceError>;
+    fn search_evidence(
+        &self,
+        workspace: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<EvidenceSummary>, EvidenceError>;
 }

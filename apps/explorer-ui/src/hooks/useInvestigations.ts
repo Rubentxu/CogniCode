@@ -159,7 +159,6 @@ export async function pinEvidence(
 }
 
 // Re-export z for use in the file
-import { z } from "zod";
 import { apiDelete } from "../api/client";
 
 /**
@@ -258,8 +257,6 @@ export async function addPngArtifact(
 }
 
 // Re-export z for use in this file
-import { z } from "zod";
-
 const evidencePackFetcher = makeSwrFetcher(contextualViewSchema);
 const composedNarrativeFetcher = makeSwrFetcher(contextualViewSchema);
 

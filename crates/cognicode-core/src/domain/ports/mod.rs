@@ -31,9 +31,9 @@ pub mod adr_repository;
 pub mod call_graph_projection;
 pub mod call_graph_store;
 pub mod doc_repository;
+pub mod evidence_store;
 #[cfg(feature = "multimodal")]
 pub mod federation_store;
-pub mod evidence_store;
 pub mod graph_error;
 pub mod graph_repository;
 #[cfg(feature = "multimodal")]
@@ -54,9 +54,9 @@ pub use call_graph_projection::{
 };
 pub use call_graph_store::{CallGraphError, CallGraphStore};
 pub use doc_repository::{DocError, DocRepository, DocSummary};
+pub use evidence_store::{EvidenceError, EvidenceKind, EvidenceStore, EvidenceSummary};
 #[cfg(feature = "multimodal")]
 pub use federation_store::{FederationError, FederationStore};
-pub use evidence_store::{EvidenceError, EvidenceKind, EvidenceStore, EvidenceSummary};
 pub use graph_error::{GraphError, GraphResult};
 pub use graph_repository::{GraphRepository, SearchPage};
 #[cfg(feature = "multimodal")]

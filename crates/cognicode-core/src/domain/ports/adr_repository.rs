@@ -49,7 +49,12 @@ pub trait AdrRepository: Send + Sync {
     fn list_adrs(&self, workspace: &str) -> Result<Vec<AdrSummary>, AdrError>;
 
     /// Full-text search across ADR titles and topics.
-    fn search_adrs(&self, workspace: &str, query: &str, limit: usize) -> Result<Vec<AdrSummary>, AdrError>;
+    fn search_adrs(
+        &self,
+        workspace: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<AdrSummary>, AdrError>;
 
     /// Get a single ADR by id, returning its raw markdown content.
     fn get_adr(&self, id: &str) -> Result<String, AdrError>;

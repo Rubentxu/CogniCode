@@ -61,15 +61,13 @@ test.describe("Spotter multi-family (e13 parity)", () => {
   });
 
   // ────────────────────────────────────────────────────────────────
-  // SKIPPED — e13-wave-1.1 debt (bug #1 in e17-deferred-bugs.md)
-  //
-  // The frontend Zod schema (apps/explorer-ui/src/api/schemas.ts:769-778)
-  // only accepts `kind: "symbol" | "viewspec"`. The backend already returns
-  // 4 additional families but they fail Zod parsing and never render in the
-  // Spotter UI. Re-enable these tests once the schema is extended.
+  // e13-wave-1.1 debt (bug #1 in e17-deferred-bugs.md) — RESOLVED.
+  // The frontend Zod schema now accepts all families (see
+  // schemas.ts spotterSearchResultSchema) and the MSW fixture serves
+  // the knowledge-layer + quality families (handlers.ts).
   // ────────────────────────────────────────────────────────────────
 
-  test.skip("File family returns file hits [DEBT: bug #1]", async ({ page }) => {
+  test("File family returns file hits", async ({ page }) => {
     const input = page.getByTestId("spotter-input");
     await input.fill(".");
     const results = page.getByTestId("spotter-results");
@@ -78,7 +76,7 @@ test.describe("Spotter multi-family (e13 parity)", () => {
     await snapshot(page, "spotter-multifamily-file.png");
   });
 
-  test.skip("SavedExploration family returns saved hits [DEBT: bug #1]", async ({ page }) => {
+  test("SavedExploration family returns saved hits", async ({ page }) => {
     const input = page.getByTestId("spotter-input");
     await input.fill("exp");
     const results = page.getByTestId("spotter-results");
@@ -87,7 +85,7 @@ test.describe("Spotter multi-family (e13 parity)", () => {
     await snapshot(page, "spotter-multifamily-saved.png");
   });
 
-  test.skip("QualityIssue family returns quality hits [DEBT: bug #1]", async ({ page }) => {
+  test("QualityIssue family returns quality hits", async ({ page }) => {
     const input = page.getByTestId("spotter-input");
     await input.fill("lint");
     const results = page.getByTestId("spotter-results");
@@ -96,13 +94,22 @@ test.describe("Spotter multi-family (e13 parity)", () => {
     await snapshot(page, "spotter-multifamily-quality.png");
   });
 
-  test.skip("Rule family returns rule hits [DEBT: bug #1]", async ({ page }) => {
+  test("Rule family returns rule hits", async ({ page }) => {
     const input = page.getByTestId("spotter-input");
     await input.fill("rule");
     const results = page.getByTestId("spotter-results");
     const ruleHits = results.locator('[data-family="rule"]');
     await expect(ruleHits.first()).toBeVisible({ timeout: 5_000 });
     await snapshot(page, "spotter-multifamily-rule.png");
+  });
+
+  test("ADR family returns adr hits", async ({ page }) => {
+    const input = page.getByTestId("spotter-input");
+    await input.fill("adr");
+    const results = page.getByTestId("spotter-results");
+    const adrHits = results.locator('[data-family="adr"]');
+    await expect(adrHits.first()).toBeVisible({ timeout: 5_000 });
+    await snapshot(page, "spotter-multifamily-adr.png");
   });
 
   test("Cross-family isolation: query matching multiple families shows all", async ({ page }) => {

@@ -239,7 +239,73 @@ export const handlers = [
         },
       }));
 
-    return HttpResponse.json([...symbolResults, ...routeResults]);
+    // e13-wave-1.1: knowledge-layer + quality families. Each family emits a
+    // SpotterSearchResult with the discriminated-union kind matching the
+    // backend. Queries are matched case-insensitively against fixed labels.
+    const ql = q.toLowerCase();
+    const knowledgeFamilies: Array<{
+      kind: "file" | "saved_exploration" | "quality_issue" | "rule" | "adr";
+      objectType: string;
+      label: string;
+      subtitle: string;
+      match: string[];
+    }> = [
+      {
+        kind: "file",
+        objectType: "file",
+        label: "crates/cognicode-core/src/domain/ports/adr_repository.rs",
+        subtitle: "ADR repository port",
+        match: ["adr_repository", "ports", ".rs"],
+      },
+      {
+        kind: "saved_exploration",
+        objectType: "saved_exploration",
+        label: "exp:architecture-audit",
+        subtitle: "12 event(s)",
+        match: ["exploration", "exp:", "audit"],
+      },
+      {
+        kind: "quality_issue",
+        objectType: "quality_issue",
+        label: "lint:missing-docs",
+        subtitle: "Rule issue at crates/cognicode-core/src/lib.rs:42",
+        match: ["lint", "missing-docs", "quality"],
+      },
+      {
+        kind: "rule",
+        objectType: "rule",
+        label: "Rule missing-docs",
+        subtitle: "Requires public items to carry doc comments",
+        match: ["rule", "missing-docs"],
+      },
+      {
+        kind: "adr",
+        objectType: "adr",
+        label: "ADR-031: Release 1.0.0 definition",
+        subtitle: "ADR 031 • 2026-08-05",
+        match: ["adr", "release", "architecture"],
+      },
+    ];
+
+    const knowledgeResults = knowledgeFamilies
+      .filter((f) => f.match.some((m) => m.includes(ql)))
+      .map((f) => ({
+        kind: f.kind,
+        result: {
+          object: {
+            id: `${f.kind}:${f.label}`,
+            object_type: f.objectType,
+            label: f.label,
+            subtitle: f.subtitle,
+            properties: [],
+            available_views: [],
+          },
+          score: 0.9,
+          match_type: `query:${q}`,
+        },
+      }));
+
+    return HttpResponse.json([...symbolResults, ...routeResults, ...knowledgeResults]);
   }),
 
   // -----------------------------------------------------------------------
