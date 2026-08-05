@@ -18,7 +18,8 @@ fn test_registry_lists_project_diary_and_example_object() {
     );
 
     // ProjectDiary should be accessible by id
-    let project_diary = registry.list_for(InspectableObjectType::Workspace)
+    let project_diary = registry
+        .list_for(InspectableObjectType::Workspace)
         .into_iter()
         .find(|v| v.id == "project-diary");
     assert!(
@@ -37,7 +38,8 @@ fn test_registry_lists_project_diary_and_example_object() {
     );
 
     // ExampleObject should be accessible by id
-    let example_object = registry.list_for(InspectableObjectType::Symbol)
+    let example_object = registry
+        .list_for(InspectableObjectType::Symbol)
         .into_iter()
         .find(|v| v.id == "example-object");
     assert!(

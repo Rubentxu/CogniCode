@@ -11,8 +11,8 @@
 //!
 //! Malformed markers produce error blocks with `id = "embed-error:N"`.
 
-use serde_json::json;
 use crate::dto::ViewBlock;
+use serde_json::json;
 
 /// Resolves `!view(...)` markers in narrative markdown to child ViewBlock entries.
 ///
@@ -108,11 +108,23 @@ impl EmbedResolver {
     fn parse_marker(marker: &str, index: usize) -> Result<ViewBlock, ()> {
         // Strip `!` prefix and case-insensitive `view(` prefix
         let rest = marker.strip_prefix('!').ok_or(())?;
-        let rest = rest.strip_prefix(|c: char| c.eq_ignore_ascii_case(&'v')).ok_or(())?;
-        let rest = rest.strip_prefix(|c: char| c.eq_ignore_ascii_case(&'i')).ok_or(())?;
-        let rest = rest.strip_prefix(|c: char| c.eq_ignore_ascii_case(&'e')).ok_or(())?;
-        let rest = rest.strip_prefix(|c: char| c.eq_ignore_ascii_case(&'w')).ok_or(())?;
-        let inner = rest.strip_prefix('(').ok_or(())?.strip_suffix(')').ok_or(())?;
+        let rest = rest
+            .strip_prefix(|c: char| c.eq_ignore_ascii_case(&'v'))
+            .ok_or(())?;
+        let rest = rest
+            .strip_prefix(|c: char| c.eq_ignore_ascii_case(&'i'))
+            .ok_or(())?;
+        let rest = rest
+            .strip_prefix(|c: char| c.eq_ignore_ascii_case(&'e'))
+            .ok_or(())?;
+        let rest = rest
+            .strip_prefix(|c: char| c.eq_ignore_ascii_case(&'w'))
+            .ok_or(())?;
+        let inner = rest
+            .strip_prefix('(')
+            .ok_or(())?
+            .strip_suffix(')')
+            .ok_or(())?;
 
         let mut parts = inner.split(',');
         let view_id = parts.next().ok_or(())?.trim();
@@ -174,9 +186,8 @@ mod tests {
 
     #[test]
     fn test_multiple_markers() {
-        let (cleaned, blocks) = EmbedResolver::resolve(
-            "!view(call-graph, symbol=foo)\n!view(moldql, query=MATCH)"
-        );
+        let (cleaned, blocks) =
+            EmbedResolver::resolve("!view(call-graph, symbol=foo)\n!view(moldql, query=MATCH)");
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].id, "embed:call-graph:0");
         assert_eq!(blocks[1].id, "embed:moldql:1");
@@ -204,9 +215,8 @@ mod tests {
 
     #[test]
     fn test_marker_with_text_before_and_after() {
-        let (cleaned, blocks) = EmbedResolver::resolve(
-            "Before\n!view(call-graph, symbol=main)\nAfter"
-        );
+        let (cleaned, blocks) =
+            EmbedResolver::resolve("Before\n!view(call-graph, symbol=main)\nAfter");
         assert_eq!(blocks.len(), 1);
         assert!(cleaned.contains("Before"));
         assert!(cleaned.contains("After"));
@@ -215,9 +225,8 @@ mod tests {
 
     #[test]
     fn test_multiple_same_view_id_different_index() {
-        let (cleaned, blocks) = EmbedResolver::resolve(
-            "!view(call-graph, symbol=foo)\n!view(call-graph, symbol=bar)"
-        );
+        let (cleaned, blocks) =
+            EmbedResolver::resolve("!view(call-graph, symbol=foo)\n!view(call-graph, symbol=bar)");
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].id, "embed:call-graph:0");
         assert_eq!(blocks[1].id, "embed:call-graph:1");

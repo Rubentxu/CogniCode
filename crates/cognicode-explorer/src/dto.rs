@@ -345,8 +345,8 @@ pub struct WorkspaceTarget {
 // Re-export ExampleBlock and ExampleKind from core's domain layer so the
 // explorer DTO layer stays consistent. The core definitions use the same
 // serde attributes (block_type for kind), preserving the JSON wire format.
-pub use cognicode_core::domain::ExampleKind;
 pub use cognicode_core::domain::ExampleBlock;
+pub use cognicode_core::domain::ExampleKind;
 
 /// Context passed to ViewExecutor::build(). The service populates all
 /// fields before calling build(); capabilities MUST NOT re-resolve identity.

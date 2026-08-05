@@ -262,7 +262,9 @@ pub struct RunLineageFilter {
 #[derive(Debug, Default)]
 pub struct InMemoryLineageStore {
     records: std::sync::RwLock<Vec<RunLineage>>,
-    limits: std::sync::RwLock<std::collections::HashMap<(AlgorithmId, String), crate::domain::plan::limits::PlanLimits>>,
+    limits: std::sync::RwLock<
+        std::collections::HashMap<(AlgorithmId, String), crate::domain::plan::limits::PlanLimits>,
+    >,
 }
 
 impl InMemoryLineageStore {
@@ -299,9 +301,18 @@ impl RunLineageStore for InMemoryLineageStore {
         let mut results: Vec<RunLineage> = records
             .iter()
             .filter(|r| {
-                filter.workspace_id.as_ref().map_or(true, |wid| &r.workspace_id == wid)
-                    && filter.revision_id.as_ref().map_or(true, |rid| &r.revision_id == rid)
-                    && filter.algorithm_id.as_ref().map_or(true, |aid| &r.algorithm_id == aid)
+                filter
+                    .workspace_id
+                    .as_ref()
+                    .map_or(true, |wid| &r.workspace_id == wid)
+                    && filter
+                        .revision_id
+                        .as_ref()
+                        .map_or(true, |rid| &r.revision_id == rid)
+                    && filter
+                        .algorithm_id
+                        .as_ref()
+                        .map_or(true, |aid| &r.algorithm_id == aid)
                     && filter.status.as_ref().map_or(true, |s| &r.status == s)
             })
             .cloned()

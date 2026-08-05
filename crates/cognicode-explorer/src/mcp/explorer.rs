@@ -341,43 +341,43 @@ pub struct EnvelopeError {
 // McpHandlerPorts
 // ============================================================================
 
- /// Ports DTO for constructing an [`ExplorerMcpHandler`][super::ExplorerMcpHandler].
- ///
- /// Mirrors the [`RuntimePorts`] pattern from the runtime layer — bundles all
- /// infrastructure ports into a single struct so [`with_graph`] has a stable
- /// typed contract instead of 12 individual parameters.
- ///
- /// Created in `Runtime::into_mcp_handler()` and passed directly to
- /// [`ExplorerMcpHandler::with_graph`].
- pub struct McpHandlerPorts {
-     /// Core symbol repository.
-     pub symbol_repo: Arc<dyn SymbolRepository>,
-     /// Source file reader.
-     pub source_reader: Arc<dyn SourceReader>,
-     /// View registry for narrative blocks.
-     pub view_registry: Arc<crate::registry::ViewRegistry>,
-     /// Lens registry for MoldQL.
-     pub lens_registry: crate::domain::lens::LensRegistry,
-     /// Working directory for workspace-relative resolution.
-     pub cwd: PathBuf,
-     /// Optional call graph (None when no graph is loaded).
-     pub graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>>,
-     /// Quality store for search and view services.
-     pub quality_store: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
-     /// Write-capable quality store (may be same as [`quality_store`]).
-     pub quality_write: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
-     /// Revision tracker incremented after each ingest.
-     pub revision_tracker: Arc<std::sync::atomic::AtomicU64>,
-     /// Route store (multimodal feature — postgres-backed adapter removed).
-     #[allow(dead_code)]
-     pub route_store: Option<Arc<dyn crate::ports::RouteStore>>,
-     /// Analytics registry (E28.4).
-     pub analytics_registry:
-         Option<Arc<cognicode_core::application::services::graph_analytics::AlgorithmRegistry>>,
-     /// Lineage store for analytics run records (E28.4).
-     pub analytics_lineage_store:
-         Option<Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>>,
- }
+/// Ports DTO for constructing an [`ExplorerMcpHandler`][super::ExplorerMcpHandler].
+///
+/// Mirrors the [`RuntimePorts`] pattern from the runtime layer — bundles all
+/// infrastructure ports into a single struct so [`with_graph`] has a stable
+/// typed contract instead of 12 individual parameters.
+///
+/// Created in `Runtime::into_mcp_handler()` and passed directly to
+/// [`ExplorerMcpHandler::with_graph`].
+pub struct McpHandlerPorts {
+    /// Core symbol repository.
+    pub symbol_repo: Arc<dyn SymbolRepository>,
+    /// Source file reader.
+    pub source_reader: Arc<dyn SourceReader>,
+    /// View registry for narrative blocks.
+    pub view_registry: Arc<crate::registry::ViewRegistry>,
+    /// Lens registry for MoldQL.
+    pub lens_registry: crate::domain::lens::LensRegistry,
+    /// Working directory for workspace-relative resolution.
+    pub cwd: PathBuf,
+    /// Optional call graph (None when no graph is loaded).
+    pub graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>>,
+    /// Quality store for search and view services.
+    pub quality_store: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
+    /// Write-capable quality store (may be same as [`quality_store`]).
+    pub quality_write: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
+    /// Revision tracker incremented after each ingest.
+    pub revision_tracker: Arc<std::sync::atomic::AtomicU64>,
+    /// Route store (multimodal feature — postgres-backed adapter removed).
+    #[allow(dead_code)]
+    pub route_store: Option<Arc<dyn crate::ports::RouteStore>>,
+    /// Analytics registry (E28.4).
+    pub analytics_registry:
+        Option<Arc<cognicode_core::application::services::graph_analytics::AlgorithmRegistry>>,
+    /// Lineage store for analytics run records (E28.4).
+    pub analytics_lineage_store:
+        Option<Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>>,
+}
 
 // ============================================================================
 // ExplorerMcpHandler
@@ -425,8 +425,11 @@ impl ExplorerMcpHandler {
         });
 
         // Workspace facade.
-        let workspace: Arc<dyn WorkspaceService> =
-            Arc::new(WorkspaceServiceImpl::new(ports.symbol_repo.clone(), ports.cwd, None));
+        let workspace: Arc<dyn WorkspaceService> = Arc::new(WorkspaceServiceImpl::new(
+            ports.symbol_repo.clone(),
+            ports.cwd,
+            None,
+        ));
 
         // Search facade.
         let search: Arc<dyn SearchService> = Arc::new(SearchServiceImpl::new(
@@ -473,8 +476,10 @@ impl ExplorerMcpHandler {
         ));
 
         // Graph facade.
-        let graph_facade: Arc<dyn GraphService> =
-            Arc::new(GraphServiceImpl::new(ports.symbol_repo.clone(), graph_query));
+        let graph_facade: Arc<dyn GraphService> = Arc::new(GraphServiceImpl::new(
+            ports.symbol_repo.clone(),
+            graph_query,
+        ));
 
         // Build McpContext with all facades wired.
         let mut ctx_builder = McpContext::builder()

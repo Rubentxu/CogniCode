@@ -5052,9 +5052,7 @@ mod lineage_store_open_tests {
         let store = LadybugStore::open(&path).expect("open should succeed");
 
         // Query should return empty vec, not an error about missing table.
-        let result = store
-            .query(RunLineageFilter::default(), None)
-            .await;
+        let result = store.query(RunLineageFilter::default(), None).await;
         assert!(
             result.is_ok(),
             "query on fresh open() store should succeed; got: {:?}",
