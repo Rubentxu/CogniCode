@@ -338,6 +338,11 @@ fn real_executors() -> &'static ViewExecutorMap {
                     as &dyn crate::domain::views::ViewExecutor,
             },
             ExecutorEntry {
+                id: "adr-source",
+                executor: &crate::domain::views::ADR_SOURCE_EXECUTOR
+                    as &dyn crate::domain::views::ViewExecutor,
+            },
+            ExecutorEntry {
                 id: "evidence-overview",
                 executor: &crate::domain::views::EVIDENCE_OVERVIEW_EXECUTOR
                     as &dyn crate::domain::views::ViewExecutor,
@@ -777,6 +782,22 @@ mod tests {
         assert!(
             ids.contains(&"doc-source"),
             "expected doc-source in views for Doc, got {ids:?}"
+        );
+    }
+
+    #[test]
+    fn adr_executor_is_registered() {
+        let registry = ViewRegistry::new(None);
+        let views = registry.list_for(InspectableObjectType::Adr);
+        assert!(
+            !views.is_empty(),
+            "expected at least 1 view for Adr, got {}",
+            views.len()
+        );
+        let ids: Vec<&str> = views.iter().map(|v| v.id.as_str()).collect();
+        assert!(
+            ids.contains(&"adr-source"),
+            "expected adr-source in views for Adr, got {ids:?}"
         );
     }
 

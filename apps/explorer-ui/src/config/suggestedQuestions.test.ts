@@ -43,6 +43,7 @@ const EXPECTED_KINDS: readonly InspectableObjectType[] = [
   "investigation",
   "doc",
   "adr",
+  "saved_exploration",
 ];
 
 const ALLOWED_TOOLS: readonly SuggestedTool[] = [

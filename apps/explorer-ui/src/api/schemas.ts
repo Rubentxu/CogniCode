@@ -38,6 +38,7 @@ export const inspectableObjectTypeSchema = z.enum([
   "investigation",
   "doc",
   "adr",
+  "saved_exploration",
 ]);
 export type InspectableObjectType = z.infer<typeof inspectableObjectTypeSchema>;
 

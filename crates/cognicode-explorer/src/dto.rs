@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 // Ports for InspectionTarget and ViewContext
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
+use cognicode_core::domain::ports::AdrRepository;
 use cognicode_core::domain::ports::{QualityIssue, QualityStore};
 use cognicode_core::domain::traits::GraphQueryPort;
 
@@ -327,6 +328,10 @@ pub enum InspectionTarget {
     },
     /// A workspace with pre-resolved exploration sessions, used by ProjectDiary view.
     Workspace(WorkspaceTarget),
+    /// An ADR (Architecture Decision Record), addressed by its id.
+    Adr {
+        id: String,
+    },
 }
 
 /// Target for ProjectDiary view — carries workspace identity and pre-resolved sessions.
@@ -366,6 +371,9 @@ pub struct ViewContext<'a> {
     /// gymnastics. `None` when no node property reader is wired.
     pub node_property_repository:
         Option<&'a dyn cognicode_core::domain::ports::NodePropertyRepository>,
+    /// Optional ADR repository for `adr:{id}` source views.
+    /// `None` when no ADR repository is wired.
+    pub adr_repo: Option<&'a dyn AdrRepository>,
 }
 
 // ============================================================================

@@ -22,6 +22,7 @@ use crate::facades::{LensService, ViewService};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
 use crate::registry::ViewRegistry;
+use cognicode_core::domain::ports::AdrRepository;
 use cognicode_core::domain::ports::QualityStore;
 
 /// Map an `ObjectIdentity` to its corresponding `InspectableObjectType`.
@@ -41,6 +42,7 @@ fn identity_to_inspectable_type(identity: &ObjectIdentity) -> InspectableObjectT
         ObjectIdentity::Decision { .. } => InspectableObjectType::DecisionArtifact,
         ObjectIdentity::Evidence { .. } => InspectableObjectType::Evidence,
         ObjectIdentity::Workspace { .. } => InspectableObjectType::Workspace,
+        ObjectIdentity::Adr { .. } => InspectableObjectType::Adr,
     }
 }
 
@@ -55,6 +57,9 @@ pub struct ViewServiceImpl {
     /// Graph repository for Doc/Decision/Evidence families.
     /// `None` when postgres feature is absent or graph is not wired.
     graph_repo: Option<Arc<dyn cognicode_core::domain::ports::GraphRepository>>,
+    /// ADR repository for the `adr-source` view family.
+    /// `None` when no ADR repository is wired.
+    adr_repo: Option<Arc<dyn AdrRepository>>,
 }
 
 impl ViewServiceImpl {
@@ -78,7 +83,14 @@ impl ViewServiceImpl {
             view_registry,
             persistence,
             graph_repo,
+            adr_repo: None,
         }
+    }
+
+    /// Set the ADR repository (e13-wave2 — knowledge layer ports).
+    pub fn with_adr_repo(mut self, adr_repo: Option<Arc<dyn AdrRepository>>) -> Self {
+        self.adr_repo = adr_repo;
+        self
     }
 
     fn available_views_sync(&self, object_id: &str) -> ExplorerResult<Vec<ViewDescriptorDto>> {
@@ -191,6 +203,11 @@ impl ViewServiceImpl {
                 })?;
                 Ok(InspectionTarget::Evidence { id: id.clone() })
             }
+            // ADR requires adr_repository wired to ViewService.
+            // Returns FeatureDisabled since the ADR repository is not yet wired.
+            ObjectIdentity::Adr { id } => Err(ExplorerError::FeatureDisabled(
+                "ADR resolution requires ADR repository (not wired in ViewService)".into(),
+            )),
             // Workspace requires async persistence to load sessions — handled in
             // contextual_view before this function is called. The sync path
             // returns a feature-disabled error since sessions cannot be loaded
@@ -449,6 +466,7 @@ impl ViewService for ViewServiceImpl {
             graph_query: self.graph_query.as_ref().map(|g| g.as_ref()),
             graph_repo: self.graph_repo.as_ref().map(|g| g.as_ref()),
             node_property_repository: None,
+            adr_repo: self.adr_repo.as_ref().map(|a| a.as_ref()),
         };
 
         // AD-2: stamp descriptor metadata onto DTO at single seam

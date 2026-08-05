@@ -1445,6 +1445,7 @@ impl ViewExecutor for OverviewExecutor {
             | InspectionTarget::Decision { .. }
             | InspectionTarget::Doc { .. }
             | InspectionTarget::Evidence { .. }
+            | InspectionTarget::Adr { .. }
             | InspectionTarget::Workspace(_) => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
@@ -2563,6 +2564,7 @@ impl ViewExecutor for QualityExecutor {
             | InspectionTarget::Decision { .. }
             | InspectionTarget::Doc { .. }
             | InspectionTarget::Evidence { .. }
+            | InspectionTarget::Adr { .. }
             | InspectionTarget::Workspace(_) => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
@@ -2802,6 +2804,99 @@ impl ViewExecutor for DocSourceExecutor {
         }
     }
 }
+
+/// ADR Source capability — applies to Adr.
+///
+/// Renders the raw markdown source of an ADR via the `AdrRepository` port.
+/// Resolution happens through `ViewContext::adr_repo` (injected by the
+/// view facade), mirroring the `graph_repo` pattern of DocSource.
+pub struct AdrInspectorExecutor;
+
+impl ViewDescriptor for AdrInspectorExecutor {
+    fn id(&self) -> &'static str {
+        "adr-source"
+    }
+    fn title(&self) -> &'static str {
+        "ADR Source"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Adr]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::SourceView
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Markdown
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for AdrInspectorExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match ctx.target {
+            InspectionTarget::Adr { id } => {
+                use cognicode_core::domain::ports::AdrError;
+
+                let Some(adr_repo) = ctx.adr_repo else {
+                    return Err(ExplorerError::FeatureDisabled(
+                        "adr repository not wired".into(),
+                    ));
+                };
+
+                let markdown = match adr_repo.get_adr(id) {
+                    Ok(md) => md,
+                    Err(AdrError::NotFound(id)) => {
+                        return Err(ExplorerError::ObjectNotFound(format!("adr:{id}")));
+                    }
+                    Err(AdrError::Store(msg)) => {
+                        return Err(ExplorerError::NotFound(format!(
+                            "adr store error for '{id}': {msg}"
+                        )));
+                    }
+                };
+
+                let mvp = format!("adr:{id}");
+                let evidence_id = "evidence:adr_source".to_string();
+                let blocks = vec![ViewBlock {
+                    id: "adr_markdown".into(),
+                    title: "ADR Source".into(),
+                    body: json!({
+                        "markdown": markdown,
+                    }),
+                }];
+                let evidence = vec![EvidenceBlock {
+                    id: evidence_id,
+                    kind: "adr_source".into(),
+                    title: format!("ADR Source: {id}"),
+                    file: None,
+                    line_range: None,
+                    source_tool_or_query: "AdrRepository::get_adr".into(),
+                    confidence: Some(1.0),
+                    freshness: Some("unknown".into()),
+                    provenance: None,
+                }];
+
+                Ok(ContextualView {
+                    object_id: mvp,
+                    view_id: "adr-source".into(),
+                    title: format!("ADR Source: {id}"),
+                    view_kind: ViewKind::SourceView,
+                    blocks,
+                    relations: Vec::new(),
+                    evidence,
+                    findings: Vec::new(),
+                    renderer_kind: RendererKind::Markdown,
+                })
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "adr-source".into(),
+            }),
+        }
+    }
+}
+
+pub static ADR_SOURCE_EXECUTOR: AdrInspectorExecutor = AdrInspectorExecutor;
 
 // ============================================================================
 // E23 Knowledge Views — DocCodeAlignment and ConceptMap
@@ -3580,6 +3675,7 @@ impl ViewExecutor for RiskMapExecutor {
             | InspectionTarget::Decision { .. }
             | InspectionTarget::Doc { .. }
             | InspectionTarget::Evidence { .. }
+            | InspectionTarget::Adr { .. }
             | InspectionTarget::Workspace(_) => {
                 return Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
@@ -4510,12 +4606,16 @@ const DECISION_TRACE_MAX_DEPTH: u32 = 3;
 const DECISION_TRACE_MAX_NODES: usize = 30;
 
 /// Edge label mapping for Mermaid rendering.
-fn edge_kind_label(kind: &cognicode_core::domain::value_objects::edge_kind::EdgeKind) -> &'static str {
+fn edge_kind_label(
+    kind: &cognicode_core::domain::value_objects::edge_kind::EdgeKind,
+) -> &'static str {
     match kind {
         cognicode_core::domain::value_objects::edge_kind::EdgeKind::Justifies => "justifies",
         cognicode_core::domain::value_objects::edge_kind::EdgeKind::Cites => "cites",
         cognicode_core::domain::value_objects::edge_kind::EdgeKind::Resolves => "resolves",
-        cognicode_core::domain::value_objects::edge_kind::EdgeKind::CorroboratedBy => "corroborates",
+        cognicode_core::domain::value_objects::edge_kind::EdgeKind::CorroboratedBy => {
+            "corroborates"
+        }
         _ => "relates",
     }
 }
@@ -4595,7 +4695,9 @@ fn build_adr_markdown(
             decision_id
         );
         if edge_count == 0 {
-            body.push_str("\n\n> **No traced artifacts** — this decision has no rationale edges recorded.");
+            body.push_str(
+                "\n\n> **No traced artifacts** — this decision has no rationale edges recorded.",
+            );
         }
         return body;
     };
@@ -4609,8 +4711,8 @@ fn build_adr_markdown(
             let title = extract_bold_field(&content, "title")
                 .or_else(|| extract_first_heading(&content))
                 .unwrap_or_else(|| "Untitled Decision".to_string());
-            let status = extract_bold_field(&content, "status")
-                .unwrap_or_else(|| "unknown".to_string());
+            let status =
+                extract_bold_field(&content, "status").unwrap_or_else(|| "unknown".to_string());
 
             // Extract Decision section (everything after "## Decision" heading)
             let decision_section = extract_decision_section(&content);
@@ -4654,13 +4756,17 @@ fn extract_bold_field(content: &str, field: &str) -> Option<String> {
     let rest = &content[pos + needle.len()..];
     let value = rest.lines().next()?.trim();
     // Remove surrounding bold markers if present (e.g. `**PROPOSED**` -> `PROPOSED`)
-    let value = value.trim_start_matches("**").trim_end_matches("**").to_lowercase();
+    let value = value
+        .trim_start_matches("**")
+        .trim_end_matches("**")
+        .to_lowercase();
     Some(value)
 }
 
 /// Extract the first `# Heading` as the document title.
 fn extract_first_heading(content: &str) -> Option<String> {
-    content.lines()
+    content
+        .lines()
         .find(|line| line.trim().starts_with("# "))
         .map(|line| line.trim().trim_start_matches("# ").trim().to_string())
 }
@@ -4685,7 +4791,10 @@ fn extract_decision_section(content: &str) -> String {
     }
     // Fallback: return first 500 chars of content as a preview
     let preview = &content[..content.len().min(500)];
-    format!("_Decision section not found. Preview:_\n\n{}...", preview.trim())
+    format!(
+        "_Decision section not found. Preview:_\n\n{}...",
+        preview.trim()
+    )
 }
 
 /// Decision Trace capability — applies to DecisionArtifact.
@@ -4748,7 +4857,11 @@ impl ViewExecutor for DecisionTraceExecutor {
 
                     // Fetch rationale subgraph
                     let (nodes, edges, truncated) = repo
-                        .rationale_subgraph(&node_id, DECISION_TRACE_MAX_DEPTH, DECISION_TRACE_MAX_NODES)
+                        .rationale_subgraph(
+                            &node_id,
+                            DECISION_TRACE_MAX_DEPTH,
+                            DECISION_TRACE_MAX_NODES,
+                        )
                         .await
                         .map_err(|e| {
                             crate::error::ExplorerError::NotFound(format!(
@@ -4781,31 +4894,33 @@ impl ViewExecutor for DecisionTraceExecutor {
                             .as_ref()
                             .map(|p| p.to_string_lossy().into_owned()),
                         line_range: None,
-                        source_tool_or_query: "GraphRepository::rationale_subgraph + SourceReader::read_source"
-                            .into(),
+                        source_tool_or_query:
+                            "GraphRepository::rationale_subgraph + SourceReader::read_source".into(),
                         confidence: Some(1.0),
                         freshness: Some("unknown".into()),
                         provenance: None,
                     }];
 
                     // Build typed relations from edges
-                    let relations = edges.iter().map(|e| {
-                        let (target_id, direction) =
-                            if e.source == decision_node.id {
+                    let relations = edges
+                        .iter()
+                        .map(|e| {
+                            let (target_id, direction) = if e.source == decision_node.id {
                                 (e.target.to_string(), RelationDirection::Outgoing)
                             } else {
                                 (e.source.to_string(), RelationDirection::Incoming)
                             };
-                        TypedRelation {
-                            relation_type: format!("{:?}", e.kind),
-                            direction,
-                            target_object_id: target_id,
-                            target_label: "related node".to_string(),
-                            evidence_ids: vec![evidence_id.clone()],
-                            provenance: None,
-                            confidence: Some(e.confidence),
-                        }
-                    }).collect();
+                            TypedRelation {
+                                relation_type: format!("{:?}", e.kind),
+                                direction,
+                                target_object_id: target_id,
+                                target_label: "related node".to_string(),
+                                evidence_ids: vec![evidence_id.clone()],
+                                provenance: None,
+                                confidence: Some(e.confidence),
+                            }
+                        })
+                        .collect();
 
                     let node_count = nodes.len();
                     let blocks = vec![
@@ -5885,6 +6000,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -5923,6 +6039,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -5952,6 +6069,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -5977,6 +6095,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6011,6 +6130,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6039,6 +6159,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6072,6 +6193,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6098,6 +6220,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6127,6 +6250,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6171,6 +6295,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -6208,6 +6333,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6237,6 +6363,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -6272,6 +6399,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let view = executor.build(&ctx).await.expect("build must succeed");
@@ -6306,6 +6434,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -6351,6 +6480,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let registry = crate::registry::ViewRegistry::new(None);
@@ -6392,6 +6522,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let result = executor.build(&ctx).await;
@@ -6690,6 +6821,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -6719,6 +6851,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -6748,6 +6881,7 @@ mod tests {
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -6835,6 +6969,7 @@ mod tests {
             graph_query: Some(&mock_gq as &dyn GraphQueryPort),
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -6902,6 +7037,7 @@ mod tests {
             graph_query: Some(&mock_gq as &dyn GraphQueryPort),
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = OwnershipMapExecutor;
@@ -6959,13 +7095,19 @@ mod tests {
     fn decision_trace_executor_does_not_apply_to_symbol() {
         let exec = &super::DECISION_TRACE_EXECUTOR;
         assert!(
-            !exec.applies_to().contains(&crate::dto::InspectableObjectType::Symbol)
+            !exec
+                .applies_to()
+                .contains(&crate::dto::InspectableObjectType::Symbol)
         );
         assert!(
-            !exec.applies_to().contains(&crate::dto::InspectableObjectType::File)
+            !exec
+                .applies_to()
+                .contains(&crate::dto::InspectableObjectType::File)
         );
         assert!(
-            !exec.applies_to().contains(&crate::dto::InspectableObjectType::Doc)
+            !exec
+                .applies_to()
+                .contains(&crate::dto::InspectableObjectType::Doc)
         );
     }
 
@@ -6978,8 +7120,7 @@ mod tests {
         let edges: Vec<cognicode_core::domain::aggregates::generic_graph::GraphEdge> = vec![];
         let focus_id = NodeId::new("test-focus");
 
-        let (mermaid, truncated) =
-            super::to_mermaid_subgraph(&nodes, &edges, &focus_id, 30);
+        let (mermaid, truncated) = super::to_mermaid_subgraph(&nodes, &edges, &focus_id, 30);
 
         // Empty graph should still produce a valid flowchart
         assert!(mermaid.starts_with("flowchart LR"));
@@ -7021,8 +7162,8 @@ mod tests {
     /// E24.3: build_adr_markdown returns graceful fallback when source_path is None.
     #[test]
     fn build_adr_markdown_no_source_path() {
-        use std::collections::HashMap;
         use crate::ports::source_reader::SourceReader;
+        use std::collections::HashMap;
 
         struct FakeReader;
         impl SourceReader for FakeReader {
@@ -7100,7 +7241,9 @@ Positive outcomes.
     #[tokio::test]
     #[cfg(not(feature = "multimodal"))]
     async fn decision_trace_requires_multimodal_feature() {
-        let target = super::InspectionTarget::Decision { id: "ADR-002".into() };
+        let target = super::InspectionTarget::Decision {
+            id: "ADR-002".into(),
+        };
         let ctx = super::ViewContext {
             target: &target,
             repo: &MockRepo::new(),
@@ -7109,6 +7252,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::DecisionTraceExecutor;
@@ -7137,6 +7281,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::DecisionTraceExecutor;
@@ -7181,6 +7326,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::DecisionTraceExecutor;
@@ -7262,6 +7408,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::DecisionGraphExecutor;
@@ -7293,6 +7440,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::DecisionGraphExecutor;
@@ -7335,6 +7483,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::ArchitectureRationaleExecutor;
@@ -7361,6 +7510,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::ArchitectureRationaleExecutor;
@@ -7387,6 +7537,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::ArchitectureRationaleExecutor;
@@ -7461,6 +7612,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::DecisionSupportPackExecutor;
@@ -7510,6 +7662,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::DecisionSupportPackExecutor;
@@ -7537,6 +7690,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::DecisionSupportPackExecutor;
@@ -7665,6 +7819,7 @@ Positive outcomes.
             #[cfg(feature = "multimodal")]
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::DecisionGraphExecutor;
@@ -7722,6 +7877,7 @@ Positive outcomes.
             #[cfg(feature = "multimodal")]
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::DecisionGraphExecutor;
@@ -7765,6 +7921,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::DecisionGraphExecutor;
@@ -7830,6 +7987,7 @@ Positive outcomes.
             #[cfg(feature = "multimodal")]
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::DecisionGraphExecutor;
@@ -7970,6 +8128,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::ProjectDiaryExecutor;
@@ -7988,6 +8147,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
         let result = executor.build(&ctx_symbol).await;
         assert!(result.is_err());
@@ -8071,6 +8231,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = super::ExampleObjectExecutor;
@@ -8094,6 +8255,7 @@ Positive outcomes.
             graph_query: None,
             graph_repo: None,
             node_property_repository: None,
+            adr_repo: None,
         };
         let result = executor.build(&ctx_workspace).await;
         assert!(result.is_err());
@@ -8471,6 +8633,7 @@ mod view_seam_tests {
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
@@ -8535,6 +8698,7 @@ mod view_seam_tests {
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
@@ -8599,6 +8763,7 @@ mod view_seam_tests {
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
@@ -8643,6 +8808,7 @@ mod view_seam_tests {
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
@@ -8674,6 +8840,7 @@ mod view_seam_tests {
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = &super::DOC_CODE_ALIGNMENT_EXECUTOR;
@@ -8793,6 +8960,7 @@ mod view_seam_tests {
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = &super::CONCEPT_MAP_EXECUTOR;
@@ -8873,6 +9041,7 @@ mod view_seam_tests {
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = &super::CONCEPT_MAP_EXECUTOR;
@@ -8944,6 +9113,7 @@ mod view_seam_tests {
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = &super::CONCEPT_MAP_EXECUTOR;
@@ -8992,6 +9162,7 @@ mod view_seam_tests {
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = &super::CONCEPT_MAP_EXECUTOR;
@@ -9057,6 +9228,7 @@ mod view_seam_tests {
             graph_query: None,
             graph_repo: Some(&mock as &dyn GraphRepository),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let executor = &super::CONCEPT_MAP_EXECUTOR;
@@ -9302,6 +9474,7 @@ mod view_seam_tests {
             graph_query: None,
             graph_repo: Some(&mock),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let result = super::build_node_source_view(
@@ -9349,6 +9522,7 @@ mod view_seam_tests {
             graph_query: None,
             graph_repo: Some(&mock),
             node_property_repository: None,
+            adr_repo: None,
         };
 
         let result = super::build_node_source_view(
@@ -9377,5 +9551,112 @@ mod view_seam_tests {
             "Found should produce one evidence block"
         );
         assert_eq!(result.title, "Architecture Decision Record");
+    }
+
+    #[tokio::test]
+    async fn adr_inspector_build_returns_markdown_view() {
+        use crate::ports::{AdrStatus, AdrSummary};
+
+        let adr_repo = crate::ports::InMemoryAdrRepository::new().with_adrs(vec![AdrSummary {
+            id: "ADR-001".into(),
+            title: "Knowledge layer ports".into(),
+            status: AdrStatus::Accepted,
+            date: "2026-07-22".into(),
+            topics: vec!["knowledge".into(), "ports".into()],
+        }]);
+        let target = InspectionTarget::Adr {
+            id: "ADR-001".to_string(),
+        };
+        let ctx = ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: None,
+            node_property_repository: None,
+            adr_repo: Some(&adr_repo),
+        };
+
+        let view = ADR_SOURCE_EXECUTOR
+            .build(&ctx)
+            .await
+            .expect("build must succeed");
+
+        assert_eq!(view.view_id, "adr-source");
+        assert_eq!(view.object_id, "adr:ADR-001");
+        assert_eq!(view.renderer_kind, RendererKind::Markdown);
+        assert_eq!(
+            view.blocks.len(),
+            1,
+            "adr-source should produce exactly one markdown block"
+        );
+        let markdown = view.blocks[0]
+            .body
+            .get("markdown")
+            .and_then(|v| v.as_str())
+            .expect("markdown block must carry markdown body");
+        assert!(
+            markdown.contains("ADR-001"),
+            "markdown body should reference the ADR id"
+        );
+        assert_eq!(
+            view.evidence.len(),
+            1,
+            "adr-source should produce one evidence block"
+        );
+    }
+
+    #[tokio::test]
+    async fn adr_inspector_build_returns_not_found_for_missing_adr() {
+        let adr_repo = crate::ports::InMemoryAdrRepository::new().with_adrs(vec![]);
+        let target = InspectionTarget::Adr {
+            id: "ADR-999".to_string(),
+        };
+        let ctx = ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: None,
+            node_property_repository: None,
+            adr_repo: Some(&adr_repo),
+        };
+
+        let err = ADR_SOURCE_EXECUTOR
+            .build(&ctx)
+            .await
+            .expect_err("missing ADR must produce an error");
+        assert!(
+            err.to_string().contains("ADR-999"),
+            "error should reference the missing ADR id, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn adr_inspector_build_returns_feature_disabled_when_repo_not_wired() {
+        let target = InspectionTarget::Adr {
+            id: "ADR-001".to_string(),
+        };
+        let ctx = ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+            graph_repo: None,
+            node_property_repository: None,
+            adr_repo: None,
+        };
+
+        let err = ADR_SOURCE_EXECUTOR
+            .build(&ctx)
+            .await
+            .expect_err("unwired repo must produce an error");
+        assert!(
+            matches!(err, crate::error::ExplorerError::FeatureDisabled(_)),
+            "expected FeatureDisabled, got: {err}"
+        );
     }
 }

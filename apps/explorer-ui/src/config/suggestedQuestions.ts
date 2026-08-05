@@ -453,6 +453,33 @@ export const SUGGESTED_QUESTIONS: {
       verb: "trace",
     },
   ],
+
+  saved_exploration: [
+    {
+      id: "understand-exploration",
+      label: "What did this exploration cover?",
+      tool: "cognicode_ask",
+      params: { question: "summarize the exploration `{label}`" },
+      requiresGraph: false,
+      verb: "understand",
+    },
+    {
+      id: "continue-exploration",
+      label: "Continue this exploration",
+      tool: "cognicode_ask",
+      params: { question: "continue the exploration `{label}`" },
+      requiresGraph: false,
+      verb: "trace",
+    },
+    {
+      id: "export-exploration",
+      label: "Export this exploration",
+      tool: "cognicode_ask",
+      params: { question: "export the exploration `{label}`" },
+      requiresGraph: false,
+      verb: "save",
+    },
+  ],
 } as const;
 
 // ---------------------------------------------------------------------------

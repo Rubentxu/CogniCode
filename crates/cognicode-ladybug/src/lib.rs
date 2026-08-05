@@ -64,6 +64,9 @@ use cognicode_core::domain::plan::{
 };
 use cognicode_core::domain::ports::{
     CallGraphError, CallGraphStore,
+    adr_repository::{AdrError, AdrRepository},
+    doc_repository::{DocError, DocRepository},
+    evidence_store::{EvidenceError, EvidenceStore},
     manifest_store::{ManifestError, ManifestStore, ScanManifest},
     narrative_store::NarrativeStore,
     quality_store::{
@@ -79,6 +82,10 @@ use cognicode_core::domain::value_objects::{DependencyType, RevisionId, Workspac
 
 pub mod init_schema;
 pub mod narrative_store;
+
+pub mod adr_store;
+pub mod doc_store;
+pub mod evidence_store;
 
 // `FederationStore`, `IngestCommitPort`, and the `Space`/`SpaceId` value
 // objects they operate on are gated behind the `multimodal` feature
@@ -145,6 +152,9 @@ impl_stub_for!(
     ViewSpecStoreError,
     CallGraphError,
     AnalyticsError,
+    AdrError,
+    DocError,
+    EvidenceError,
     cognicode_core::domain::ports::graph_error::GraphError,
 );
 

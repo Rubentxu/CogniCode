@@ -270,7 +270,9 @@ pub fn bootstrap_ladybug(
         manifest_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::ManifestStore>),
         session_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::SessionStore>),
         report_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::ReportStore>),
-        narrative_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::NarrativeStore>),
+        narrative_store: Some(
+            store.clone() as Arc<dyn cognicode_core::domain::ports::NarrativeStore>
+        ),
         #[cfg(feature = "multimodal")]
         federation_store: Some(
             store.clone() as Arc<dyn cognicode_core::domain::ports::FederationStore>
@@ -475,7 +477,7 @@ mod tests {
 
     use super::{bootstrap_ladybug, bootstrap_with_backend, RuntimePorts};
     use cognicode_core::domain::aggregates::CallGraph;
-    use cognicode_core::domain::ports::{CallGraphStore, NarrativeStore, QualityStore, ViewSpecStore};
+    use cognicode_core::domain::ports::{CallGraphStore, QualityStore, ViewSpecStore};
     use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
 
     /// Identity stub for [`QualityStore`] — never called in this test,
@@ -679,6 +681,7 @@ mod tests {
             manifest_store: None,
             session_store: None,
             report_store: None,
+            narrative_store: None,
         };
 
         let runtime = bootstrap_with_backend(std::env::temp_dir(), ports)
