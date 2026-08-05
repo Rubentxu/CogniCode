@@ -6,8 +6,8 @@
 use serde_json::json;
 
 use crate::dto::{
-    ContextualView, DesignFinding, EvidenceBlock, FindingSeverity, LineRange,
-    RelationDirection, TypedRelation, ViewBlock, ViewDiagnostic,
+    ContextualView, DesignFinding, EvidenceBlock, FindingSeverity, LineRange, RelationDirection,
+    TypedRelation, ViewBlock, ViewDiagnostic,
 };
 use crate::error::ExplorerError;
 use crate::ports::source_reader::SourceReader;
@@ -4644,34 +4644,34 @@ fn pack_to_contextual_view(
 // Re-exported here for backward compatibility with existing import paths
 // ============================================================================
 
+pub use crate::domain::narrative::COMPOSED_NARRATIVE_EXECUTOR;
+pub use crate::domain::narrative::COMPOSED_NARRATIVE_PROVIDER;
 pub use crate::domain::narrative::ComposedNarrativeExecutor;
 pub use crate::domain::narrative::ComposedNarrativeProvider;
 pub use crate::domain::narrative::build_composed_narrative;
 pub use crate::domain::narrative::build_investigation_narrative;
-pub use crate::domain::narrative::COMPOSED_NARRATIVE_PROVIDER;
-pub use crate::domain::narrative::COMPOSED_NARRATIVE_EXECUTOR;
 
+pub use crate::domain::narrative::EVIDENCE_PACK_EXECUTOR;
+pub use crate::domain::narrative::EVIDENCE_PACK_PROVIDER;
 pub use crate::domain::narrative::EvidencePackExecutor;
 pub use crate::domain::narrative::EvidencePackProvider;
 pub use crate::domain::narrative::build_evidence_pack;
-pub use crate::domain::narrative::EVIDENCE_PACK_PROVIDER;
-pub use crate::domain::narrative::EVIDENCE_PACK_EXECUTOR;
 
-pub use crate::domain::narrative::ProjectDiaryExecutor;
 pub use crate::domain::narrative::PROJECT_DIARY_EXECUTOR;
+pub use crate::domain::narrative::ProjectDiaryExecutor;
 pub use crate::domain::narrative::build_project_diary;
 
-pub use crate::domain::narrative::ExampleObjectExecutor;
 pub use crate::domain::narrative::EXAMPLE_OBJECT_EXECUTOR;
+pub use crate::domain::narrative::ExampleObjectExecutor;
 pub use crate::domain::narrative::build_example_object;
 
 #[cfg(test)]
 mod tests {
     // Re-use shared test support from narrative module
-    pub(crate) use crate::domain::narrative::test_support::make_resolved;
-    pub(crate) use crate::domain::narrative::test_support::MockRepo;
-    pub(crate) use crate::domain::narrative::test_support::MockReader;
     pub(crate) use crate::domain::narrative::test_support::MockGraphRepo;
+    pub(crate) use crate::domain::narrative::test_support::MockReader;
+    pub(crate) use crate::domain::narrative::test_support::MockRepo;
+    pub(crate) use crate::domain::narrative::test_support::make_resolved;
 
     use super::*;
     use async_trait::async_trait;
@@ -7275,9 +7275,18 @@ mod tests {
         assert_eq!(view.blocks[0].id, "session:0");
         assert_eq!(view.blocks[0].title, "session-1");
         let body = &view.blocks[0].body;
-        assert_eq!(body.get("block_type").and_then(|v| v.as_str()), Some("session"));
-        assert_eq!(body.get("session_id").and_then(|v| v.as_str()), Some("session-1"));
-        assert_eq!(body.get("investigation_id").and_then(|v| v.as_str()), Some("inv-1"));
+        assert_eq!(
+            body.get("block_type").and_then(|v| v.as_str()),
+            Some("session")
+        );
+        assert_eq!(
+            body.get("session_id").and_then(|v| v.as_str()),
+            Some("session-1")
+        );
+        assert_eq!(
+            body.get("investigation_id").and_then(|v| v.as_str()),
+            Some("inv-1")
+        );
 
         // Second block corresponds to session2
         assert_eq!(view.blocks[1].id, "session:1");
@@ -7300,7 +7309,10 @@ mod tests {
         assert_eq!(view.blocks[0].id, "empty");
         assert_eq!(view.blocks[0].title, "No sessions");
         let body = &view.blocks[0].body;
-        assert_eq!(body.get("block_type").and_then(|v| v.as_str()), Some("placeholder"));
+        assert_eq!(
+            body.get("block_type").and_then(|v| v.as_str()),
+            Some("placeholder")
+        );
     }
 
     #[tokio::test]
@@ -7375,12 +7387,21 @@ mod tests {
         // Each block should have the example data
         assert_eq!(view.blocks[0].title, "test.rs:42");
         let body0 = &view.blocks[0].body;
-        assert_eq!(body0.get("block_type").and_then(|v| v.as_str()), Some("usage"));
-        assert_eq!(body0.get("example_text").and_then(|v| v.as_str()), Some("foo();"));
+        assert_eq!(
+            body0.get("block_type").and_then(|v| v.as_str()),
+            Some("usage")
+        );
+        assert_eq!(
+            body0.get("example_text").and_then(|v| v.as_str()),
+            Some("foo();")
+        );
 
         assert_eq!(view.blocks[1].title, "other.rs:100");
         let body1 = &view.blocks[1].body;
-        assert_eq!(body1.get("example_text").and_then(|v| v.as_str()), Some("let x = foo();"));
+        assert_eq!(
+            body1.get("example_text").and_then(|v| v.as_str()),
+            Some("let x = foo();")
+        );
     }
 
     #[test]
@@ -7394,7 +7415,10 @@ mod tests {
         assert_eq!(view.blocks[0].id, "empty");
         assert_eq!(view.blocks[0].title, "No examples");
         let body = &view.blocks[0].body;
-        assert_eq!(body.get("block_type").and_then(|v| v.as_str()), Some("placeholder"));
+        assert_eq!(
+            body.get("block_type").and_then(|v| v.as_str()),
+            Some("placeholder")
+        );
     }
 
     #[tokio::test]

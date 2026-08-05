@@ -231,7 +231,7 @@ and decides whether the runtime is:
 
 - markdown + embedded views only,
 - or markdown + embedded views + executable snippets,
-- or object-backed narrative blocks persisted in Postgres.
+- or object-backed narrative blocks persisted in LadybugDB (persistence deferred to Cycle 2).
 
 Success criterion: architectural explanations and tutorials become first-class
 runtime artifacts, not just markdown files checked into git.

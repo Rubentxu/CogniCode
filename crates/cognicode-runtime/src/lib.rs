@@ -37,10 +37,12 @@ pub struct Runtime {
     pub call_graph_store: Option<Arc<dyn cognicode_core::domain::ports::CallGraphStore>>,
     /// Optional `AlgorithmRegistry` for analytics execution (E28.4).
     /// Wired via `bootstrap_with_backend` when `analytics_lineage_store` is `Some`.
-    pub analytics_registry: Option<Arc<cognicode_core::application::services::graph_analytics::AlgorithmRegistry>>,
+    pub analytics_registry:
+        Option<Arc<cognicode_core::application::services::graph_analytics::AlgorithmRegistry>>,
     /// Optional lineage store for analytics run records (E28.4).
     /// When `Some`, `bootstrap_with_backend` constructs the registry automatically.
-    pub analytics_lineage_store: Option<Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>>,
+    pub analytics_lineage_store:
+        Option<Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>>,
     // NEW 6 ports (e29-6) — all LadybugStore ports surfaced on Runtime
     /// Revision head tracker (workspace-scoped revision counter).
     pub revision_store: Option<Arc<dyn cognicode_core::domain::ports::RevisionStore>>,
@@ -85,7 +87,8 @@ pub struct RuntimePorts {
     /// Optional lineage store for analytics run records (E28.4).
     /// When `Some`, `bootstrap_with_backend` constructs an `AlgorithmRegistry`
     /// automatically via `default_analytics_registry`.
-    pub analytics_lineage_store: Option<Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>>,
+    pub analytics_lineage_store:
+        Option<Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>>,
     // NEW 6 ports (e29-6) — all LadybugStore ports wired at runtime
     /// Revision head tracker (workspace-scoped revision counter).
     pub revision_store: Option<Arc<dyn cognicode_core::domain::ports::RevisionStore>>,
@@ -138,9 +141,11 @@ pub async fn bootstrap_with_backend(
     // automatically so analytics tools can execute (E28.4).
     let analytics_lineage_store = ports.analytics_lineage_store;
     let analytics_registry = analytics_lineage_store.as_ref().map(|lineage| {
-        Arc::new(cognicode_core::application::services::graph_analytics::default_analytics_registry(
-            lineage.clone(),
-        ))
+        Arc::new(
+            cognicode_core::application::services::graph_analytics::default_analytics_registry(
+                lineage.clone(),
+            ),
+        )
     });
 
     // The 6 new ports (e29-6) also move verbatim from the DTO.
@@ -245,23 +250,19 @@ pub fn bootstrap_ladybug(
     // All 10 ports are the same Arc<LadybugStore> cast to the trait object.
     let ports = RuntimePorts {
         quality_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::QualityStore>),
-        view_spec_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::ViewSpecStore>),
-        call_graph_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::CallGraphStore>),
+        view_spec_store: Some(
+            store.clone() as Arc<dyn cognicode_core::domain::ports::ViewSpecStore>
+        ),
+        call_graph_store: Some(
+            store.clone() as Arc<dyn cognicode_core::domain::ports::CallGraphStore>
+        ),
         analytics_lineage_store: Some(
             store.clone() as Arc<dyn cognicode_core::domain::analytics::lineage::RunLineageStore>
         ),
-        revision_store: Some(
-            store.clone() as Arc<dyn cognicode_core::domain::ports::RevisionStore>
-        ),
-        manifest_store: Some(
-            store.clone() as Arc<dyn cognicode_core::domain::ports::ManifestStore>
-        ),
-        session_store: Some(
-            store.clone() as Arc<dyn cognicode_core::domain::ports::SessionStore>
-        ),
-        report_store: Some(
-            store.clone() as Arc<dyn cognicode_core::domain::ports::ReportStore>
-        ),
+        revision_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::RevisionStore>),
+        manifest_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::ManifestStore>),
+        session_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::SessionStore>),
+        report_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::ReportStore>),
         #[cfg(feature = "multimodal")]
         federation_store: Some(
             store.clone() as Arc<dyn cognicode_core::domain::ports::FederationStore>
@@ -427,9 +428,10 @@ impl Runtime {
         state = state.with_revision_tracker(self.revision_tracker.clone());
 
         // Wire analytics when both registry and lineage store are present (E28.4).
-        if let (Some(registry), Some(lineage_store)) =
-            (self.analytics_registry.clone(), self.analytics_lineage_store.clone())
-        {
+        if let (Some(registry), Some(lineage_store)) = (
+            self.analytics_registry.clone(),
+            self.analytics_lineage_store.clone(),
+        ) {
             state = state.with_analytics(registry, lineage_store);
         }
 
@@ -750,8 +752,8 @@ mod tests {
         let cwd = tmp.join("cwd");
         fs::create_dir_all(&cwd).expect("create temp cwd");
 
-        let runtime = bootstrap_ladybug(cwd, db_path.clone())
-            .expect("bootstrap_ladybug should succeed");
+        let runtime =
+            bootstrap_ladybug(cwd, db_path.clone()).expect("bootstrap_ladybug should succeed");
 
         // All 4 original ports must be Some.
         assert!(
@@ -800,8 +802,8 @@ mod tests {
         let cwd = tmp.join("cwd");
         fs::create_dir_all(&cwd).expect("create temp cwd");
 
-        let runtime = bootstrap_ladybug(cwd, db_path.clone())
-            .expect("bootstrap_ladybug should succeed");
+        let runtime =
+            bootstrap_ladybug(cwd, db_path.clone()).expect("bootstrap_ladybug should succeed");
 
         // We can't easily compare raw pointers across trait objects, but we can
         // verify each port is distinct from None (they're all Some).

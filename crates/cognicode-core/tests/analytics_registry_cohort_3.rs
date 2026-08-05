@@ -359,7 +359,11 @@ fn registry_admits_all_three_cohort3_algorithms() {
     let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
 
     let r1 = registry.admit(Box::new(PersonalizedPageRankDescriptor));
-    assert!(r1.is_ok(), "PersonalizedPageRank should be admitted: {:?}", r1);
+    assert!(
+        r1.is_ok(),
+        "PersonalizedPageRank should be admitted: {:?}",
+        r1
+    );
 
     let r2 = registry.admit(Box::new(ConductanceDescriptor));
     assert!(r2.is_ok(), "Conductance should be admitted: {:?}", r2);
@@ -371,7 +375,9 @@ fn registry_admits_all_three_cohort3_algorithms() {
 #[test]
 fn registry_detects_all_three_cohort3_algorithms() {
     let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
-    registry.admit(Box::new(PersonalizedPageRankDescriptor)).unwrap();
+    registry
+        .admit(Box::new(PersonalizedPageRankDescriptor))
+        .unwrap();
     registry.admit(Box::new(ConductanceDescriptor)).unwrap();
     registry.admit(Box::new(ModularityDescriptor)).unwrap();
 
@@ -387,7 +393,9 @@ fn registry_detects_all_three_cohort3_algorithms() {
 #[test]
 fn registry_get_returns_cohort3_descriptors() {
     let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
-    registry.admit(Box::new(PersonalizedPageRankDescriptor)).unwrap();
+    registry
+        .admit(Box::new(PersonalizedPageRankDescriptor))
+        .unwrap();
     registry.admit(Box::new(ConductanceDescriptor)).unwrap();
     registry.admit(Box::new(ModularityDescriptor)).unwrap();
 

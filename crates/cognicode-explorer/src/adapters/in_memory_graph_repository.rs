@@ -443,7 +443,10 @@ impl GraphRepository for InMemoryGraphRepository {
         .await
     }
 
-    async fn example_blocks_for_symbol(&self, _symbol_id: &cognicode_core::domain::aggregates::SymbolId) -> GraphResult<Vec<cognicode_core::domain::ExampleBlock>> {
+    async fn example_blocks_for_symbol(
+        &self,
+        _symbol_id: &cognicode_core::domain::aggregates::SymbolId,
+    ) -> GraphResult<Vec<cognicode_core::domain::ExampleBlock>> {
         // InMemoryGraphRepository has no example data — the default empty
         // implementation is sufficient. Production data is loaded via the
         // LadybugDB adapter in the runtime composition root.

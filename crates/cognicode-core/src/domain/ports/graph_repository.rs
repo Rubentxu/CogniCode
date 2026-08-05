@@ -26,8 +26,8 @@
 //! preserves `Send + Sync` and all method signatures verbatim; only the
 //! calling convention changed from sync `fn` to `async fn` with `#[async_trait]`.
 
-use crate::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
 use crate::domain::aggregates::SymbolId;
+use crate::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
 use crate::domain::example_block::ExampleBlock;
 use crate::domain::ports::graph_error::GraphResult;
 use crate::domain::value_objects::edge_kind::EdgeKind;
@@ -108,7 +108,10 @@ pub trait GraphRepository: Send + Sync {
     ///
     /// Default implementation returns an empty vector — the LadybugDB adapter
     /// provides the production implementation.
-    async fn example_blocks_for_symbol(&self, _symbol_id: &SymbolId) -> GraphResult<Vec<ExampleBlock>> {
+    async fn example_blocks_for_symbol(
+        &self,
+        _symbol_id: &SymbolId,
+    ) -> GraphResult<Vec<ExampleBlock>> {
         Ok(Vec::new())
     }
 

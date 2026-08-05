@@ -7,9 +7,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-pub use crate::dto::{
-    ContextualView, ExampleBlock, ExplorationSession, ViewBlock, ViewKind,
-};
+pub use crate::dto::{ContextualView, ExampleBlock, ExplorationSession, ViewBlock, ViewKind};
 pub use crate::dto::{InspectableObjectType, RendererKind, ViewContext};
 pub use crate::error::{ExplorerError, ExplorerResult};
 pub use crate::facades::investigation::Investigation;
@@ -23,6 +21,10 @@ pub use crate::dto::EvidenceBlock;
 pub use crate::ports::source_reader::SourceReader;
 pub use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
 pub use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
+
+// Embed resolver — parses !view(...) markers in narrative markdown
+pub mod embed;
+pub use embed::EmbedResolver;
 
 // ============================================================================
 // ComposedNarrative — replay ExplorationSession as a navigable narrative
@@ -44,15 +46,22 @@ pub fn build_composed_narrative(session: &ExplorationSession) -> ContextualView 
             .enumerate()
             .map(|(i, e)| {
                 let view_id_label = e.view_id.as_deref().unwrap_or("default view");
+                // Resolve any !view(...) embeds in the query/narrative field
+                let query_content = e.query.as_deref().unwrap_or("");
+                let (cleaned_query, child_blocks) = EmbedResolver::resolve(query_content);
+                let mut body = json!({
+                    "object_id": e.object_id,
+                    "view_id": view_id_label,
+                    "query": cleaned_query,
+                    "ts": e.ts,
+                });
+                if !child_blocks.is_empty() {
+                    body["children"] = json!(child_blocks);
+                }
                 ViewBlock {
                     id: format!("{}:{}", session.id, i),
                     title: e.object_id.clone(),
-                    body: json!({
-                        "object_id": e.object_id,
-                        "view_id": view_id_label,
-                        "query": e.query,
-                        "ts": e.ts,
-                    }),
+                    body,
                 }
             })
             .collect()
@@ -90,14 +99,20 @@ pub fn build_investigation_narrative(investigation: &Investigation) -> Contextua
 
     // Narrative block
     if !investigation.narrative.is_empty() {
-        blocks.push(ViewBlock {
+        let (cleaned_narrative, child_blocks) = EmbedResolver::resolve(&investigation.narrative);
+        let mut narrative_block = ViewBlock {
             id: "narrative".into(),
             title: "Narrative".into(),
             body: json!({
-                "content": investigation.narrative,
+                "content": cleaned_narrative,
                 "markdown": true,
             }),
-        });
+        };
+        // Attach resolved child blocks as nested embeds
+        if !child_blocks.is_empty() {
+            narrative_block.body["children"] = json!(child_blocks);
+        }
+        blocks.push(narrative_block);
     }
 
     // Evidence blocks
@@ -310,7 +325,9 @@ impl ViewDescriptor for EvidencePackExecutor {
 impl ViewExecutor for EvidencePackExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Investigation(investigation) => Ok(build_evidence_pack(investigation)),
+            InspectionTarget::Investigation(investigation) => {
+                Ok(build_evidence_pack(investigation))
+            }
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
                 view_id: "evidence-pack".into(),
@@ -342,16 +359,31 @@ pub fn build_project_diary(target: &crate::dto::WorkspaceTarget) -> ContextualVi
             .sessions
             .iter()
             .enumerate()
-            .map(|(i, session)| ViewBlock {
-                id: format!("session:{}", i),
-                title: session.id.clone(),
-                body: serde_json::json!({
+            .map(|(i, session)| {
+                // Collect all event query content and resolve any !view(...) embeds
+                let all_queries: String = session
+                    .events
+                    .iter()
+                    .filter_map(|e| e.query.as_ref().map(|s| s.as_str()))
+                    .collect::<Vec<&str>>()
+                    .join("\n");
+                let (_, child_blocks) = EmbedResolver::resolve(&all_queries);
+
+                let mut body = serde_json::json!({
                     "block_type": "session",
                     "session_id": session.id,
                     "event_count": session.events.len(),
                     "created_at": session.created_at,
                     "investigation_id": session.investigation_id,
-                }),
+                });
+                if !child_blocks.is_empty() {
+                    body["children"] = json!(child_blocks);
+                }
+                ViewBlock {
+                    id: format!("session:{}", i),
+                    title: session.id.clone(),
+                    body,
+                }
             })
             .collect()
     };
@@ -409,10 +441,7 @@ impl ViewExecutor for ProjectDiaryExecutor {
 
 /// Pure shaper for ExampleObject — no I/O, no async.
 /// Transforms resolved symbol and example blocks into a ContextualView.
-pub fn build_example_object(
-    symbol: &ResolvedSymbol,
-    examples: &[ExampleBlock],
-) -> ContextualView {
+pub fn build_example_object(symbol: &ResolvedSymbol, examples: &[ExampleBlock]) -> ContextualView {
     use crate::dto::ViewBlock;
 
     let blocks: Vec<ViewBlock> = if examples.is_empty() {
@@ -427,15 +456,23 @@ pub fn build_example_object(
     } else {
         examples
             .iter()
-            .map(|example| ViewBlock {
-                id: example.symbol_id.clone(),
-                title: example.source_location.clone(),
-                body: serde_json::json!({
+            .map(|example| {
+                // Resolve any !view(...) embeds in the example text
+                let (cleaned_text, child_blocks) = EmbedResolver::resolve(&example.example_text);
+                let mut body = serde_json::json!({
                     "block_type": example.kind,
                     "symbol_id": example.symbol_id,
-                    "example_text": example.example_text,
+                    "example_text": cleaned_text,
                     "source_location": example.source_location,
-                }),
+                });
+                if !child_blocks.is_empty() {
+                    body["children"] = json!(child_blocks);
+                }
+                ViewBlock {
+                    id: example.symbol_id.clone(),
+                    title: example.source_location.clone(),
+                    body,
+                }
             })
             .collect()
     };
@@ -484,11 +521,10 @@ impl ViewExecutor for ExampleObjectExecutor {
                 // in that case we fall back to an empty list (placeholder block
                 // signals "no examples" to the caller).
                 let examples: Vec<ExampleBlock> = match ctx.graph_repo {
-                    Some(repo) => {
-                        repo.example_blocks_for_symbol(&symbol.id)
-                            .await
-                            .map_err(ExplorerError::from)?
-                    }
+                    Some(repo) => repo
+                        .example_blocks_for_symbol(&symbol.id)
+                        .await
+                        .map_err(ExplorerError::from)?,
                     None => Vec::new(),
                 };
                 Ok(build_example_object(symbol, &examples))
@@ -674,13 +710,15 @@ pub(crate) mod test_support {
             _limit: usize,
             _cursor: Option<&str>,
         ) -> GraphResult<cognicode_core::domain::ports::graph_repository::SearchPage> {
-            Ok(cognicode_core::domain::ports::graph_repository::SearchPage {
-                items: Vec::new(),
-                raw_total: 0,
-                next_cursor: None,
-                raw_rank: 0.0,
-                item_ranks: Vec::new(),
-            })
+            Ok(
+                cognicode_core::domain::ports::graph_repository::SearchPage {
+                    items: Vec::new(),
+                    raw_total: 0,
+                    next_cursor: None,
+                    raw_rank: 0.0,
+                    item_ranks: Vec::new(),
+                },
+            )
         }
 
         async fn find_nodes_by_kind(&self, _kind: &NodeKind) -> GraphResult<Vec<GraphNode>> {
@@ -792,13 +830,15 @@ pub(crate) mod test_support {
             _limit: usize,
             _cursor: Option<&str>,
         ) -> GraphResult<cognicode_core::domain::ports::graph_repository::SearchPage> {
-            Ok(cognicode_core::domain::ports::graph_repository::SearchPage {
-                items: Vec::new(),
-                raw_total: 0,
-                next_cursor: None,
-                raw_rank: 0.0,
-                item_ranks: Vec::new(),
-            })
+            Ok(
+                cognicode_core::domain::ports::graph_repository::SearchPage {
+                    items: Vec::new(),
+                    raw_total: 0,
+                    next_cursor: None,
+                    raw_rank: 0.0,
+                    item_ranks: Vec::new(),
+                },
+            )
         }
 
         async fn search_paginated(
@@ -808,13 +848,15 @@ pub(crate) mod test_support {
             _limit: usize,
             _cursor: Option<&str>,
         ) -> GraphResult<cognicode_core::domain::ports::graph_repository::SearchPage> {
-            Ok(cognicode_core::domain::ports::graph_repository::SearchPage {
-                items: Vec::new(),
-                raw_total: 0,
-                next_cursor: None,
-                raw_rank: 0.0,
-                item_ranks: Vec::new(),
-            })
+            Ok(
+                cognicode_core::domain::ports::graph_repository::SearchPage {
+                    items: Vec::new(),
+                    raw_total: 0,
+                    next_cursor: None,
+                    raw_rank: 0.0,
+                    item_ranks: Vec::new(),
+                },
+            )
         }
     }
 
@@ -833,5 +875,164 @@ pub(crate) mod test_support {
             line,
             signature: Some(format!("fn {name}() -> ()")),
         }
+    }
+}
+
+#[cfg(test)]
+mod embed_integration_tests {
+    use super::test_support::make_resolved;
+    use super::*;
+    use crate::dto::ExampleBlock;
+    use crate::dto::ExplorationSession;
+    use crate::facades::investigation::Investigation;
+    use cognicode_core::domain::value_objects::SymbolKind;
+    use time::OffsetDateTime;
+
+    // -------------------------------------------------------------------------
+    // build_investigation_narrative — embed resolution
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_investigation_narrative_resolves_view_marker() {
+        let investigation = Investigation {
+            id: "inv-1".into(),
+            workspace_id: "ws-1".into(),
+            title: "Test Investigation".into(),
+            goal: "Test goal".into(),
+            status: crate::facades::investigation::InvestigationStatus::Active,
+            entry_point: Some("test.rs".into()),
+            panes: vec![],
+            narrative: "!view(call-graph, symbol=main)".into(),
+            evidence: vec![],
+            artifacts: vec![],
+            related_adrs: vec![],
+            created_at: OffsetDateTime::now_utc(),
+            updated_at: OffsetDateTime::now_utc(),
+        };
+
+        let view = build_investigation_narrative(&investigation);
+
+        // Find the narrative block
+        let narrative_block = view.blocks.iter().find(|b| b.id == "narrative").unwrap();
+
+        // Should have children with the resolved embed
+        let children = narrative_block
+            .body
+            .get("children")
+            .expect("narrative should have children");
+        let children_arr = children.as_array().expect("children should be array");
+        assert_eq!(children_arr.len(), 1);
+
+        let child = &children_arr[0];
+        assert_eq!(child["id"], "embed:call-graph:0");
+        assert_eq!(child["body"]["kind"], "call-graph");
+        assert_eq!(child["body"]["params"]["symbol"], "main");
+    }
+
+    // -------------------------------------------------------------------------
+    // build_project_diary — embed resolution
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_project_diary_resolves_view_in_session_events() {
+        let target = crate::dto::WorkspaceTarget {
+            id: "ws-1".into(),
+            root_path: "/test".into(),
+            graph_status: crate::dto::GraphStatus::Missing,
+            sessions: vec![ExplorationSession {
+                id: "session-1".into(),
+                workspace_id: "ws-1".into(),
+                events: vec![crate::dto::ExplorationEvent {
+                    object_id: "obj-1".into(),
+                    view_id: Some("call-graph".into()),
+                    query: Some("!view(moldql, query=MATCH)".into()),
+                    ts: "2024-01-01T00:00:00Z".into(),
+                }],
+                navigation_mode: "pane-stack".into(),
+                panes: vec![],
+                created_at: "2024-01-01T00:00:00Z".into(),
+                investigation_id: None,
+            }],
+        };
+
+        let view = build_project_diary(&target);
+
+        // Find the session block
+        let session_block = view.blocks.iter().find(|b| b.id == "session:0").unwrap();
+
+        // Should have children with the resolved embed
+        let children = session_block
+            .body
+            .get("children")
+            .expect("session should have children");
+        let children_arr = children.as_array().expect("children should be array");
+        assert_eq!(children_arr.len(), 1);
+
+        let child = &children_arr[0];
+        assert_eq!(child["id"], "embed:moldql:0");
+        assert_eq!(child["body"]["kind"], "moldql");
+        assert_eq!(child["body"]["params"]["query"], "MATCH");
+    }
+
+    // -------------------------------------------------------------------------
+    // build_example_object — embed resolution
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_example_object_resolves_view_in_example_text() {
+        let symbol = make_resolved("test.rs", "foo", 10, SymbolKind::Function);
+        let examples = vec![ExampleBlock {
+            symbol_id: "test.rs:foo:10".into(),
+            kind: crate::dto::ExampleKind::Usage,
+            example_text: "!view(source, file=main.rs)".into(),
+            source_location: "test.rs:10".into(),
+        }];
+
+        let view = build_example_object(&symbol, &examples);
+
+        // Find the example block
+        let example_block = view
+            .blocks
+            .iter()
+            .find(|b| b.id == "test.rs:foo:10")
+            .unwrap();
+
+        // Should have children with the resolved embed
+        let children = example_block
+            .body
+            .get("children")
+            .expect("example should have children");
+        let children_arr = children.as_array().expect("children should be array");
+        assert_eq!(children_arr.len(), 1);
+
+        let child = &children_arr[0];
+        assert_eq!(child["id"], "embed:source:0");
+        assert_eq!(child["body"]["kind"], "source");
+        assert_eq!(child["body"]["params"]["file"], "main.rs");
+    }
+
+    #[test]
+    fn test_example_object_no_markers_passes_through() {
+        let symbol = make_resolved("test.rs", "bar", 20, SymbolKind::Function);
+        let examples = vec![ExampleBlock {
+            symbol_id: "test.rs:bar:20".into(),
+            kind: crate::dto::ExampleKind::Usage,
+            example_text: "Plain text without markers".into(),
+            source_location: "test.rs:20".into(),
+        }];
+
+        let view = build_example_object(&symbol, &examples);
+        let example_block = view
+            .blocks
+            .iter()
+            .find(|b| b.id == "test.rs:bar:20")
+            .unwrap();
+
+        // Should NOT have children when no markers present
+        assert!(example_block.body.get("children").is_none());
+        assert_eq!(
+            example_block.body["example_text"],
+            "Plain text without markers"
+        );
     }
 }
