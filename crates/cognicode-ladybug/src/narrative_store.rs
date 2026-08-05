@@ -35,7 +35,10 @@ impl NarrativeStore for LadybugStore {
             .map_err(|e| NarrativeError::Database(format!("save_snapshot connection: {e}")))?;
 
         // Synthetic PK: {}::{}::{} of (workspace_id, view_id, object_id)
-        let id = format!("{}::{}::{}", snap.workspace_id, snap.view_id, snap.object_id);
+        let id = format!(
+            "{}::{}::{}",
+            snap.workspace_id, snap.view_id, snap.object_id
+        );
 
         let params = vec![
             ("id", lbug::Value::String(id.clone())),
@@ -61,10 +64,12 @@ impl NarrativeStore for LadybugStore {
                 let ins_cypher = "CREATE (n:NarrativeView {id: $id, workspace_id: $ws, \
                      view_id: $vid, object_id: $oid, view_kind: $kind, payload: $payload, \
                      source_rev: $rev, created_at: $ts});";
-                let mut stmt = conn.prepare(ins_cypher)
-                    .map_err(|e| NarrativeError::Database(format!("save_snapshot insert prepare: {e}")))?;
-                conn.execute(&mut stmt, params)
-                    .map_err(|e| NarrativeError::Database(format!("save_snapshot insert exec: {e}")))?;
+                let mut stmt = conn.prepare(ins_cypher).map_err(|e| {
+                    NarrativeError::Database(format!("save_snapshot insert prepare: {e}"))
+                })?;
+                conn.execute(&mut stmt, params).map_err(|e| {
+                    NarrativeError::Database(format!("save_snapshot insert exec: {e}"))
+                })?;
                 return Ok(());
             }
             Err(e) => {
@@ -93,8 +98,9 @@ impl NarrativeStore for LadybugStore {
                  view_id: $vid, object_id: $oid, view_kind: $kind, payload: $payload, \
                  source_rev: $rev, created_at: $ts});";
             drop(upd_stmt);
-            let mut stmt = conn.prepare(ins_cypher)
-                .map_err(|e| NarrativeError::Database(format!("save_snapshot insert prepare: {e}")))?;
+            let mut stmt = conn.prepare(ins_cypher).map_err(|e| {
+                NarrativeError::Database(format!("save_snapshot insert prepare: {e}"))
+            })?;
             conn.execute(&mut stmt, params)
                 .map_err(|e| NarrativeError::Database(format!("save_snapshot insert exec: {e}")))?;
         }
@@ -128,10 +134,7 @@ impl NarrativeStore for LadybugStore {
         };
 
         let mut result = conn
-            .execute(
-                &mut stmt,
-                vec![("id", lbug::Value::String(id))],
-            )
+            .execute(&mut stmt, vec![("id", lbug::Value::String(id))])
             .map_err(|e| NarrativeError::Database(format!("load_snapshot execute: {e}")))?;
 
         match result.next() {
@@ -202,9 +205,7 @@ impl NarrativeStore for LadybugStore {
             Ok(stmt) => stmt,
             Err(e) if is_missing_table(&e) => return Ok(0),
             Err(e) => {
-                return Err(NarrativeError::Database(format!(
-                    "invalidate prepare: {e}"
-                )));
+                return Err(NarrativeError::Database(format!("invalidate prepare: {e}")));
             }
         };
 
@@ -234,9 +235,7 @@ impl NarrativeStore for LadybugStore {
 /// Row order: `id, workspace_id, view_id, object_id, view_kind, payload, source_rev, created_at`.
 fn narrative_snapshot_from_row(row: &[lbug::Value]) -> Result<NarrativeSnapshot, NarrativeError> {
     fn str_at(row: &[lbug::Value], idx: usize) -> String {
-        row.get(idx)
-            .map(|v| v.to_string())
-            .unwrap_or_default()
+        row.get(idx).map(|v| v.to_string()).unwrap_or_default()
     }
 
     fn req_i64(row: &[lbug::Value], idx: usize) -> i64 {
@@ -274,7 +273,7 @@ mod tests {
         let tmp_dir = tempfile::tempdir().expect("tempdir");
         let path = tmp_dir.path().join("narrative.lbdb");
         let store = LadybugStore::open(&path).expect("open temp store");
-        (store, tmp_dir)  // TempDir kept alive to keep path valid
+        (store, tmp_dir) // TempDir kept alive to keep path valid
     }
 
     #[tokio::test]
@@ -326,10 +325,7 @@ mod tests {
             source_rev: 1,
             created_at: "2024-01-01T00:00:00Z".to_string(),
         };
-        store
-            .save_snapshot(&snap1)
-            .await
-            .expect("first save");
+        store.save_snapshot(&snap1).await.expect("first save");
 
         let snap2 = NarrativeSnapshot {
             id: "ws1::view1::obj1".to_string(),
@@ -341,10 +337,7 @@ mod tests {
             source_rev: 2,
             created_at: "2024-01-02T00:00:00Z".to_string(),
         };
-        store
-            .save_snapshot(&snap2)
-            .await
-            .expect("second save");
+        store.save_snapshot(&snap2).await.expect("second save");
 
         // Should have the updated payload.
         let loaded = store
@@ -381,10 +374,7 @@ mod tests {
                 source_rev: 1,
                 created_at: format!("2024-01-{:02}T00:00:00Z", i),
             };
-            store
-                .save_snapshot(&snap)
-                .await
-                .expect("save");
+            store.save_snapshot(&snap).await.expect("save");
         }
 
         // Add one for a different workspace.
@@ -549,6 +539,9 @@ mod tests {
             .load_snapshot("ws1", "view1", "obj1")
             .await
             .expect("load_snapshot should not error on missing table");
-        assert!(result.is_none(), "missing table should return None, not error");
+        assert!(
+            result.is_none(),
+            "missing table should return None, not error"
+        );
     }
 }
