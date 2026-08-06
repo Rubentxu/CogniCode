@@ -175,13 +175,13 @@ runtime-ladybug-wiring:
   evidence_path: crates/cognicode-runtime/tests/ladybug_smoke.rs
 mcp-multimodal-tools:
   status: verified
-  evidence_path: crates/cognicode-explorer/src/mcp/handler/multimodal.rs
+  evidence_path: crates/cognicode-explorer/tests/multimodal_feature_gate.rs
   evidence_note: "feature-gated behind #[cfg(feature = \"multimodal\")]; compile debt\
     \ \u2014 ladybug/lib.rs:1158; cargo test --features multimodal fails on default\
     \ toolchain"
 multimodal-frontend:
   status: verified
-  evidence_path: apps/explorer-ui/src/components/multimodal/
+  evidence_path: apps/explorer-ui/src/components/ObjectInspector/multimodal.ts
   evidence_note: feature-gated behind multimodal feature flag; frontend components
     exist but cargo test --features multimodal fails
 openspec-conformance:
