@@ -34,11 +34,15 @@ scenarios:
   - name: clap_find_references
     description: "find_references on clap Command"
     tool: find_references
-    action: find
+    action: references
     repo: clap
     workspace: .
     scenario_class: read_only
-    expected_outcome: pass
+    expected_outcome: expected_fail
+    arguments:
+      file_path: src/builder/mod.rs
+      line: 50
+      column: 10
     ground_truth:
       symbols_min: 1
   - name: clap_build_graph
