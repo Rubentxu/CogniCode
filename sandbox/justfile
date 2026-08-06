@@ -124,7 +124,57 @@ sandbox-ci-probe: build-orchestrator
 # ─── CI FULL LANE (Nightly) ──────────────────────────────────────────────────
 # Full matrix: all languages (Rust, Python, JS, TS) + all tiers + real repos
 # Produces JSONL diff vs baseline, artifact uploads
-sandbox-ci-full: build-orchestrator
+# --repeat N: run N times into full-run-{1..N}/ and produce stability.json at results/
+sandbox-ci-full repeat=1: build-orchestrator
+    @# ── Multi-repeat path (repeat > 1) ──
+    @if [ "{{repeat}}" != "1" ]; then \
+        echo "Running {{repeat}} full campaign iterations..."; \
+        for i in $(seq 1 {{repeat}}); do \
+            echo ""; \
+            echo "════════════════════════════════════════════════════"; \
+            echo "  Iteration $i of {{repeat}}"; \
+            echo "════════════════════════════════════════════════════"; \
+            mkdir -p {{results_dir}}/full-run-$i; \
+            {{orchestrator}} run \
+                {{manifests_dir}}/rust.yaml \
+                {{manifests_dir}}/python.yaml \
+                {{manifests_dir}}/js.yaml \
+                {{manifests_dir}}/ts.yaml \
+                {{manifests_dir}}/js_repos.yaml \
+                {{manifests_dir}}/ts_repos.yaml \
+                {{manifests_dir}}/rust_repos.yaml \
+                {{manifests_dir}}/python_repos.yaml \
+                {{manifests_dir}}/tokio_repos.yaml \
+                {{manifests_dir}}/clap_repos.yaml \
+                {{manifests_dir}}/tier3_rust_repos.yaml \
+                {{manifests_dir}}/tier3_typescript_repos.yaml \
+                {{manifests_dir}}/tier3_react_repos.yaml \
+                {{manifests_dir}}/coverage_fill.yaml \
+                --results-dir {{results_dir}}/full-run-$i \
+                --repos-dir {{repos_dir}} \
+                --fixtures-dir {{fixtures_dir}} \
+                --server-binary {{binary}} \
+                --jsonl; \
+            {{orchestrator}} report {{results_dir}}/full-run-$i \
+                --output {{results_dir}}/full-run-$i/summary.json \
+                --baseline {{results_dir}}/baseline/summary.json 2>/dev/null || true; \
+        done; \
+        echo ""; \
+        echo "─── Stability analysis (across {{repeat}} runs) ───"; \
+        python3 {{justfile_directory()}}/scripts/analyze_stability.py {{results_dir}} 2>/dev/null && \
+            echo "  stability.json written to {{results_dir}}/stability.json" || \
+            echo "  ⚠️ stability analysis failed (non-fatal)"; \
+        echo "─── Regressions summary ───"; \
+        for i in $(seq 1 {{repeat}}); do \
+            regressions=$$(jq -r '.regressions_vs_baseline[] // empty' {{results_dir}}/full-run-$i/summary.json 2>/dev/null); \
+            if [ -n "$$regressions" ]; then \
+                echo "Run $i regressions:"; echo "$$regressions"; \
+            fi; \
+        done; \
+        echo "Multi-run complete: {{results_dir}}/full-run-{{1..{{repeat}}}}/ + {{results_dir}}/stability.json"; \
+        exit 0; \
+    fi
+    @# ── Single-repeat path (repeat = 1) ──
     mkdir -p {{results_dir}}/full
     {{orchestrator}} run \
         {{manifests_dir}}/rust.yaml \
@@ -217,48 +267,32 @@ sandbox-clean:
     rm -rf {{repos_dir}} {{results_dir}} {{reports_dir}}
 
 # ─── RELEASE SCORECARD (G1-G12) ───────────────────────────────────────────────
-# Generates release readiness scorecard with G2 tool coverage
-# Requires: list_mcp_tools.sh + generate_tool_coverage.py
+# Generates release readiness scorecard by invoking release_scorecard.py
+# Requires: sandbox/scripts/release_scorecard.py + orchestrator report outputs
 release-scorecard:
-    # Ensure reports directory exists
     mkdir -p {{reports_dir}}
-    # G1: Knowledge layer completion — placeholder (git evidence)
-    # G2: MCP tool coverage — computed by generate_tool_coverage.py
-    @echo "=== Release Readiness Scorecard ==="
-    @echo ""
-    @echo "## G1 | — | — | knowledge layer complete | e30-sandbox-infra released (v0.87.0)"
-    # Run coverage generator (68-tool runtime denominator, manifests + scenarios cross-ref)
+    # Build --runs arg: prefer multi-run dirs, fall back to single full/
+    @if [ -d {{results_dir}}/full-run-1 ] && [ -d {{results_dir}}/full-run-2 ]; then \
+        RUNS="{{results_dir}}/full-run-1,{{results_dir}}/full-run-2,{{results_dir}}/full-run-3"; \
+    elif [ -d {{results_dir}}/full ]; then \
+        RUNS="{{results_dir}}/full"; \
+    else \
+        RUNS="{{results_dir}}"; \
+    fi; \
+    echo "=== Release Readiness Scorecard ==="; \
+    echo "Runs: $$RUNS"; \
+    # Run coverage generator (G2 denominator — kept here so G2 is always current) \
     COGNICODE_MCP_BINARY={{project_root}}/target/release/cognicode-mcp \
         python3 {{justfile_directory()}}/scripts/generate_tool_coverage.py \
         --tools <(COGNICODE_MCP_BINARY={{project_root}}/target/release/cognicode-mcp bash {{justfile_directory()}}/scripts/list_mcp_tools.sh) \
         --manifests-dir {{manifests_dir}} \
         --scenarios-dir {{scenarios_dir}} \
-        --output {{reports_dir}}/coverage_matrix.yaml || true \
-        2>&1 | tee {{reports_dir}}/coverage_output.txt
-    @coverage_exit=$$?
-    @echo ""
-    @echo "## G3 | — | — | sandbox infrastructure | —"
-    @echo "## G4 | — | — | corpus quality | —"
-    @echo "## G5 | — | — | ground truth accuracy | —"
-    @echo "## G6 | — | — | scenario coverage | —"
-    @echo "## G7 | — | — | runtime performance | —"
-    @echo "## G8 | — | — | memory limits | —"
-    @echo "## G9 | — | — | timeout handling | —"
-    @echo "## G10 | — | — | openspec conformance | —"
-    @echo "## G11 | — | — | documentation currency | —"
-    @echo "## G12 | — | — | release hygiene | —"
-    @echo ""
-    @if [ -f {{reports_dir}}/coverage_matrix.yaml ]; then \
-        total=$(grep 'total_tools:' {{reports_dir}}/coverage_matrix.yaml | awk '{print $2}'); \
-        covered=$(grep 'covered:' {{reports_dir}}/coverage_matrix.yaml | head -1 | awk '{print $2}'); \
-        gaps=$(grep 'uncovered_count:' {{reports_dir}}/coverage_matrix.yaml | awk '{print $2}'); \
-        if [ "$gaps" = "0" ]; then \
-            echo "## G2 | GREEN | $covered/$total ✓ | 0 gaps | coverage_matrix.yaml"; \
-        else \
-            echo "## G2 | RED | $covered/$total | $gaps gaps | coverage_matrix.yaml"; \
-        fi; \
-    else \
-        echo "## G2 | AMBER | — | coverage matrix unavailable | —"; \
-    fi
-    @echo ""
-    @echo "Scorecard generation complete."
+        --output {{reports_dir}}/coverage_matrix.yaml 2>/dev/null || true; \
+    # Invoke the 12-gate verdict engine \
+    python3 {{justfile_directory()}}/scripts/release_scorecard.py \
+        --runs "$$RUNS" \
+        --baseline {{results_dir}}/baseline \
+        --stability {{results_dir}}/stability.json \
+        --coverage-matrix {{reports_dir}}/coverage_matrix.yaml \
+        --g8-probe-result {{results_dir}}/g8-probe \
+        --output {{reports_dir}}/scorecard
