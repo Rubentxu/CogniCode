@@ -518,6 +518,56 @@ pub fn score_mermaid(tool_response: &Value, ground_truth: &GroundTruth) -> f64 {
     let mut score = 100.0_f64;
     let mut checks = 0u32;
 
+    // Check symbols_min (count-only smoke matcher)
+    if let Some(min_symbols) = ground_truth.symbols_min {
+        checks += 1;
+        let actual = count_symbols(&inner);
+        if actual < min_symbols as usize {
+            score *= actual as f64 / min_symbols as f64;
+        }
+    }
+
+    // Check has_result (generic non-empty matcher)
+    if let Some(require_result) = ground_truth.has_result {
+        if require_result {
+            checks += 1;
+            if !has_any_results(&inner) {
+                score *= 0.0;
+            }
+        }
+    }
+
+
+/// Count symbols in a tool response (handles {symbols:[...]}, {items:[...]}, arrays, node_count).
+fn count_symbols(inner: &Value) -> usize {
+    if let Some(arr) = inner.get("symbols").and_then(|v| v.as_array()) {
+        return arr.len();
+    }
+    if let Some(arr) = inner.get("items").and_then(|v| v.as_array()) {
+        return arr.len();
+    }
+    if let Some(arr) = inner.get("nodes").and_then(|v| v.as_array()) {
+        return arr.len();
+    }
+    if let Some(n) = inner.get("node_count").and_then(|v| v.as_u64()) {
+        return n as usize;
+    }
+    if let Some(n) = inner.get("total").and_then(|v| v.as_u64()) {
+        return n as usize;
+    }
+    if let Some(arr) = inner.as_array() {
+        return arr.len();
+    }
+    0
+}
+
+/// True if the response contains any result data (symbols/items/nodes/edges or non-empty arrays).
+fn has_any_results(inner: &Value) -> bool {
+    count_symbols(inner) > 0
+        || inner.get("edges").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false)
+        || inner.get("results").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false)
+}
+
     // Check min_node_count if specified
     if let Some(min_nodes) = ground_truth.min_node_count {
         checks += 1;

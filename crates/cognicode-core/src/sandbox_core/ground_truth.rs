@@ -206,6 +206,16 @@ pub struct GroundTruth {
     #[serde(default)]
     pub tolerance_pct: Option<f64>,
 
+    /// Minimum expected symbol count for symbol-emitting tools
+    /// (build_graph, get_file_symbols, get_entry_points, get_leaf_functions, get_hot_paths).
+    /// Count-only smoke matcher — 0 scores as failure, >= symbols_min scores 100.
+    #[serde(default)]
+    pub symbols_min: Option<u32>,
+
+    /// Generic non-empty matcher: requires the tool response to contain results.
+    #[serde(default)]
+    pub has_result: Option<bool>,
+
     /// Minimum expected node count for export_mermaid output.
     #[serde(default)]
     pub min_node_count: Option<u32>,
