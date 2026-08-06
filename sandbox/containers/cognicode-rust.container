@@ -5,20 +5,19 @@ Description=CogniCode Rust Sandbox (Hardened)
 RequiresMountsFor=%t/containers
 
 [Container]
+# Keep-alive — sandbox exec target (accepts podman exec while active)
+Exec=sleep infinity
 # Pinned image digest — MUST be updated when image changes
 Image=docker.io/library/rust:1.80-slim@sha256:907ff4b3ee7df57149ffee04f606e0a08b9b2ed3507f00a19cf3c9c0f74b7681
 ContainerName=cognicode-rust
-Volume=%t/containers/cognicode-rust-workspace:/workspace:z
+Volume=cognicode-rust-workspace.volume:/workspace:z
 Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
 Environment=COGNICODE_WORKSPACE=/repos/serde
 # Isolation: no host network
 Network=none
 # Resource limits
-MemoryMax=2g
-MemorySwap=2g
 PidsLimit=128
 # CPU weight (inverse of priority — lower = less priority)
-CPUWeight=50
 # Read-only root filesystem
 ReadOnly=yes
 # Tmpfs for /tmp (writable but ephemeral)
@@ -26,9 +25,12 @@ Tmpfs=/tmp:rw,noexec,nosuid,size=64m
 # Security: no new privileges
 NoNewPrivileges=yes
 # Supplementary groups for container isolation
-SupplementaryGroups=
 
 [Service]
+CPUWeight=50
+# Resource limits (systemd-native keys — [Container] MemoryMax unsupported by quadlet)
+MemoryMax=2G
+MemorySwapMax=2G
 Restart=on-failure
 # Auto-update disabled for pinned digest
 AutoUpdate=no

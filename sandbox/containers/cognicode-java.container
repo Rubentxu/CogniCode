@@ -6,30 +6,32 @@ Description=CogniCode Java Sandbox (Hardened)
 RequiresMountsFor=%t/containers
 
 [Container]
+# Keep-alive — sandbox exec target (accepts podman exec while active)
+Exec=sleep infinity
 # Pinned image digest — eclipse-temurin:17-jammy
 Image=docker.io/library/eclipse-temurin:17-jammy@sha256:29467857e8bde40ab1f7befecbda0ea764b95afec1cc7f89aa90f7a766577e19
 ContainerName=cognicode-java
-Volume=%t/containers/cognicode-java-workspace:/workspace:z
+Volume=cognicode-java-workspace.volume:/workspace:z
 Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
 # Maven local repository cache — enables offline builds after warmup
-Volume=%t/containers/cognicode-java-m2-cache:/root/.m2/repository:z
+Volume=cognicode-java-m2-cache.volume:/root/.m2/repository:z
 Environment=COGNICODE_WORKSPACE=/repos/java-sample
 # Isolation: no host network
 Network=none
 # Resource limits
-MemoryMax=2g
-MemorySwap=2g
 PidsLimit=128
-CPUWeight=50
 # Read-only root filesystem
 ReadOnly=yes
 # Tmpfs for /tmp (writable but ephemeral)
 Tmpfs=/tmp:rw,noexec,nosuid,size=64m
 # Security: no new privileges
 NoNewPrivileges=yes
-SupplementaryGroups=
 
 [Service]
+CPUWeight=50
+# Resource limits (systemd-native keys — [Container] MemoryMax unsupported by quadlet)
+MemoryMax=2G
+MemorySwapMax=2G
 Restart=on-failure
 AutoUpdate=no
 TimeoutStopSec=30

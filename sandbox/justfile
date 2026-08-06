@@ -55,12 +55,20 @@ sandbox-pull:
 sandbox-setup: sandbox-pull
     bash {{justfile_directory()}}/scripts/clone_repos.sh
     # Copy ALL 6 containers (unified from former sandbox-setup-js-ts)
-    cp {{justfile_directory()}}/containers/rust.container \
-       {{justfile_directory()}}/containers/python.container \
-       {{justfile_directory()}}/containers/java.container \
-       {{justfile_directory()}}/containers/go.container \
-       {{justfile_directory()}}/containers/js.container \
-       {{justfile_directory()}}/containers/ts.container \
+    cp {{justfile_directory()}}/containers/cognicode-rust.container \
+       {{justfile_directory()}}/containers/cognicode-python.container \
+       {{justfile_directory()}}/containers/cognicode-java.container \
+       {{justfile_directory()}}/containers/cognicode-go.container \
+       {{justfile_directory()}}/containers/cognicode-js.container \
+       {{justfile_directory()}}/containers/cognicode-ts.container \
+    # Named volumes (quadlet pattern — podman-managed, survive reboots)
+    cp {{justfile_directory()}}/containers/cognicode-rust-workspace.volume \
+       {{justfile_directory()}}/containers/cognicode-python-workspace.volume \
+       {{justfile_directory()}}/containers/cognicode-java-workspace.volume \
+       {{justfile_directory()}}/containers/cognicode-java-m2-cache.volume \
+       {{justfile_directory()}}/containers/cognicode-go-workspace.volume \
+       {{justfile_directory()}}/containers/cognicode-js-workspace.volume \
+       {{justfile_directory()}}/containers/cognicode-ts-workspace.volume \
        ~/.config/containers/systemd/ 2>/dev/null || true
     systemctl --user daemon-reload 2>/dev/null || true
     systemctl --user start \
@@ -74,8 +82,16 @@ sandbox-setup: sandbox-pull
 # Deprecated: merged into sandbox-setup (Phase 3 unification)
 # Use `just sandbox-setup` instead — it now deploys all 6 containers
 sandbox-setup-js-ts:
-    cp {{justfile_directory()}}/containers/js.container \
-       {{justfile_directory()}}/containers/ts.container \
+    cp {{justfile_directory()}}/containers/cognicode-js.container \
+       {{justfile_directory()}}/containers/cognicode-ts.container \
+    # Named volumes (quadlet pattern — podman-managed, survive reboots)
+    cp {{justfile_directory()}}/containers/cognicode-rust-workspace.volume \
+       {{justfile_directory()}}/containers/cognicode-python-workspace.volume \
+       {{justfile_directory()}}/containers/cognicode-java-workspace.volume \
+       {{justfile_directory()}}/containers/cognicode-java-m2-cache.volume \
+       {{justfile_directory()}}/containers/cognicode-go-workspace.volume \
+       {{justfile_directory()}}/containers/cognicode-js-workspace.volume \
+       {{justfile_directory()}}/containers/cognicode-ts-workspace.volume \
        ~/.config/containers/systemd/ 2>/dev/null || true
     systemctl --user daemon-reload 2>/dev/null || true
     systemctl --user start cognicode-js cognicode-ts 2>/dev/null || true
@@ -86,7 +102,7 @@ sandbox-setup-js-ts:
 sandbox-maven-warmup:
     podman run --rm \
         --network=host \
-        -v %t/containers/cognicode-java-m2-cache:/root/.m2/repository:z \
+        -v cognicode-java-m2-cache:/root/.m2/repository:z \
         docker.io/library/eclipse-temurin:17-jammy@sha256:29467857e8bde40ab1f7befecbda0ea764b95afec1cc7f89aa90f7a766577e19 \
         bash -c 'cd /tmp && git clone --depth1 https://github.com/spring-projects/spring-petclinic.git && cd spring-petclinic && ./mvnw compile -q -DskipTests'
     @echo "Maven cache warmed — subsequent runs work with Network=none"
