@@ -11,6 +11,9 @@
 //! - `SemanticsViolation` encodes ordering/path mismatches for error reporting.
 //! - `Path` encodes a sequence of `(NodeId, Option<EdgeKind>)` hops for graph traversal.
 
+use super::limits::PlanLimits;
+use super::value::TypedValue;
+use super::version::{PlanHash, PlanMetadata, PlanVersion};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -18,10 +21,11 @@ use std::fmt;
 use super::neutrality::Sealed;
 use std::hash::Hash;
 
+#[cfg(test)]
+use super::{TypedValue, PlanVersion};
+
+
 // Types from sibling modules.
-use super::limits::PlanLimits;
-use super::value::TypedValue;
-use super::version::{PlanHash, PlanMetadata, PlanVersion};
 use crate::domain::value_objects::EdgeKind;
 
 // ============================================================================
@@ -538,7 +542,6 @@ mod tests {
     /// `Path` preserves edge kinds per hop.
     #[test]
     fn path_preserves_edge_kinds() {
-        use crate::domain::value_objects::DependencyType;
         let path = Path::new(vec![
             PathHop {
                 node_id: "A".into(),
@@ -640,7 +643,6 @@ mod tests {
     /// `Path` serde round-trip.
     #[test]
     fn path_serde_roundtrip() {
-        use crate::domain::value_objects::DependencyType;
         let path = Path::new(vec![
             PathHop {
                 node_id: "A".into(),

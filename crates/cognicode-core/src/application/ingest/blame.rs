@@ -15,7 +15,7 @@ pub fn enrich_with_blame(
     root: &std::path::Path,
     codeowners: &CodeOwnersMap,
 ) {
-    use std::path::Path;
+    
 
     // Check if this is a git repo — git rev-parse will fail if not
     let is_git_repo = std::process::Command::new("git")

@@ -12,7 +12,6 @@
 //! - Clean shutdown via `stop()` method
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 use notify::{Event, EventKind, RecursiveMode, Watcher};

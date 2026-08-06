@@ -2,7 +2,6 @@
 //!
 //! Provides a use-case-level API for investigation operations.
 
-use std::sync::Arc;
 
 use time::OffsetDateTime;
 

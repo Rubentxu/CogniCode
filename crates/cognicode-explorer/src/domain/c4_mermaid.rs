@@ -98,7 +98,7 @@ pub fn c4_to_mermaid(nodes: &[GraphNode], edges: &[GraphEdge], level: C4Level) -
     }
 
     // Determine which node IDs are actually used in non-self-loop edges.
-    let used_targets: std::collections::HashSet<&str> = edges
+    let _used_targets: std::collections::HashSet<&str> = edges
         .iter()
         .filter(|e| e.source != e.target)
         .map(|e| e.target.as_str())

@@ -15,6 +15,11 @@ use super::{
     GraphPlan, NeighborKind, PathProjection, PathQuantifier, PlanError, PlanHash, PlanLimits,
     PlanMetadata, PlanVersion,
 };
+use super::{GraphPlan, PlanError, PlanLimits};
+
+// Test-only bindings — referenced via `super::` from `mod tests`.
+#[cfg(test)]
+use super::{NeighborKind, PathProjection, PathQuantifier, PlanHash, PlanMetadata, PlanVersion};
 
 /// Default maximum depth for Subgraph queries.
 pub const DEFAULT_MAX_DEPTH: u32 = 5;
@@ -166,7 +171,6 @@ mod tests {
     /// `Subgraph` with `depth: 0` gets `max_depth = Some(5)` from defaults.
     #[test]
     fn populate_defaults_subgraph_depth_zero() {
-        use super::{
             DEFAULT_MAX_DEPTH, GraphPlan, PlanHash, PlanLimits, PlanMetadata, PlanVersion,
             QueryShape,
         };
@@ -192,7 +196,6 @@ mod tests {
     /// `Path` with `max_hops: None` gets `max_hops = Some(6)` from defaults.
     #[test]
     fn populate_defaults_path_no_max_hops() {
-        use super::{
             DEFAULT_MAX_HOPS, GraphPlan, PathProjection, PathQuantifier, PlanHash, PlanLimits,
             PlanMetadata, PlanVersion, QueryShape,
         };
@@ -222,7 +225,6 @@ mod tests {
     /// `Path` with explicit `max_hops: Some(3)` keeps the explicit value.
     #[test]
     fn populate_defaults_path_explicit_max_hops_preserved() {
-        use super::{
             GraphPlan, PathProjection, PathQuantifier, PlanHash, PlanLimits, PlanMetadata,
             PlanVersion, QueryShape,
         };
@@ -252,7 +254,6 @@ mod tests {
     /// `QueryShape::Neighbors` has no graph-traversal defaults.
     #[test]
     fn populate_defaults_neighbors_no_defaults() {
-        use super::{
             GraphPlan, NeighborKind, PlanHash, PlanLimits, PlanMetadata, PlanVersion, QueryShape,
         };
 
@@ -327,7 +328,6 @@ mod tests {
     /// `lower_with_defaults` applies populate_defaults first, so validation passes.
     #[test]
     fn lower_with_defaults_validates_ok() {
-        use std::any::Any;
 
         struct DummySubgraphQuery;
 
@@ -384,7 +384,6 @@ mod tests {
 
     impl super::AstLowerer for DummyLowererWithDefaults {
         fn lower(&self, _ast: &dyn std::any::Any) -> Result<GraphPlan, PlanError> {
-            use super::{
                 GraphPlan, PlanHash, PlanLimits, PlanMetadata, PlanVersion, QueryShape,
                 populate_defaults,
             };

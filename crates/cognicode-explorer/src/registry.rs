@@ -25,11 +25,11 @@
 //! - Runtime view execution — Phase 4
 //! - `linkme` registration — v1.1
 
+use crate::dto::{InspectableObjectType, RendererKind, ViewDescriptorDto, ViewKind, ViewSpec};
 use std::sync::OnceLock;
 
-use async_trait::async_trait;
 
-use crate::dto::{InspectableObjectType, RendererKind, ViewDescriptorDto, ViewKind, ViewSpec};
+use crate::dto::{InspectableObjectType, RendererKind, ViewDescriptorDto, ViewKind};
 
 /// Re-export of the [`ViewSpecStore`] port relocated to
 /// `cognicode_core::domain::ports::view_spec_store` (ADR-028 PR2).
@@ -563,8 +563,8 @@ impl ViewRegistry {
             return Some(descriptor);
         }
         // Check runtime specs
-        if let Some(store) = &self.spec_store {
-            if let Ok(Some(spec)) = store.load(id, workspace_id, owner).await {
+        if let Some(store) = &self.spec_store
+            && let Ok(Some(spec)) = store.load(id, workspace_id, owner).await {
                 let view_kind_json = spec.view_kind.clone();
                 let view_kind: ViewKind = serde_json::from_value(view_kind_json)
                     .unwrap_or(ViewKind::Custom(spec.view_kind.to_string()));
@@ -576,7 +576,6 @@ impl ViewRegistry {
                     source: Some("runtime".to_string()),
                 });
             }
-        }
         None
     }
 

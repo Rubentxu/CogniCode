@@ -25,6 +25,11 @@
 //! - `CLUSTER`: HashMap group counts by the `by` key.
 //! - `BOOLEAN`: Evaluate each operand, then combine via multiset operations.
 
+use crate::domain::plan::result::{EdgeResult, NodeResult, Path, PathHop, ResultSet, Row};
+use crate::domain::plan::{
+    CancellationToken, ExecutorError, GraphExecutor, GraphPlan, PlanHash, PlanLimitKind,
+    PlanLimits, PlanMetadata, PlanVersion, TruncationMarker,
+};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -34,11 +39,10 @@ use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::plan::graph_plan::{BooleanOp, NeighborKind};
-use crate::domain::plan::result::{EdgeResult, NodeResult, Path, PathHop, ResultSet, Row};
+use crate::domain::plan::result::{EdgeResult, NodeResult, Path, PathHop, ResultSet};
 use crate::domain::plan::value::TypedValue;
-use crate::domain::plan::{
-    CancellationToken, ExecutorError, GraphExecutor, GraphPlan, PlanHash, PlanLimitKind,
-    PlanLimits, PlanMetadata, PlanVersion, TruncationMarker,
+    ExecutorError, GraphExecutor, GraphPlan, PlanLimitKind, PlanLimits,
+    TruncationMarker,
 };
 use crate::domain::value_objects::{DependencyType, EdgeKind, RevisionId, WorkspaceId};
 use crate::infrastructure::graph::SnapshotProvider;
@@ -233,8 +237,8 @@ impl<'a> GraphExecutor for SnapshotGraphExecutor<'a> {
         };
 
         // Apply soft limit truncation for max_result_rows post-walk
-        if let Ok(ref mut rs) = result {
-            if let Some(max_rows) = limits.max_result_rows {
+        if let Ok(ref mut rs) = result
+            && let Some(max_rows) = limits.max_result_rows {
                 let total_rows = rs.rows.len() + rs.nodes.len() + rs.edges.len();
                 if total_rows as u64 > max_rows {
                     // Truncate nodes to max_rows (prioritize by some ordering if needed)
@@ -254,7 +258,6 @@ impl<'a> GraphExecutor for SnapshotGraphExecutor<'a> {
                     rs.truncation = Some(TruncationMarker::ResultRowsLimit);
                 }
             }
-        }
 
         result
     }
@@ -306,24 +309,22 @@ impl<'a> SnapshotGraphExecutor<'a> {
         );
 
         // Check cancellation
-        if let Some(ref token) = limits.cancellation {
-            if token.is_cancelled() {
+        if let Some(ref token) = limits.cancellation
+            && token.is_cancelled() {
                 return Err(ExecutorError::LimitExceeded {
                     dimension: PlanLimitKind::Cancellation,
                     observed: 0,
                 });
             }
-        }
 
         // Check time limit
-        if let Some(time_ms) = limits.time_ms {
-            if start.elapsed().as_millis() as u64 > time_ms {
+        if let Some(time_ms) = limits.time_ms
+            && start.elapsed().as_millis() as u64 > time_ms {
                 return Err(ExecutorError::LimitExceeded {
                     dimension: PlanLimitKind::TimeMs,
                     observed: start.elapsed().as_millis() as u64,
                 });
             }
-        }
 
         // Enforce max_path_count post-walk
         let truncated = if let Some(max_paths) = limits.max_path_count {
@@ -355,7 +356,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
                                 .find_edge(prev_idx, node_idx)
                                 .and_then(|e| stable_graph.edge_weight(e))
                                 .copied();
-                            edge_kind.map(|ek| EdgeKind::Dependency(ek))
+                            edge_kind.map(EdgeKind::Dependency)
                         };
                         PathHop { node_id, edge_kind }
                     })
@@ -499,7 +500,6 @@ impl<'a> SnapshotGraphExecutor<'a> {
         edge_kind_filter: Option<&[DependencyType]>,
         limits: &PlanLimits,
     ) -> Result<ResultSet, ExecutorError> {
-        use std::time::Instant;
 
         let start = Instant::now();
 
@@ -564,24 +564,22 @@ impl<'a> SnapshotGraphExecutor<'a> {
         visited.remove(&src_node);
 
         // Check cancellation
-        if let Some(ref token) = limits.cancellation {
-            if token.is_cancelled() {
+        if let Some(ref token) = limits.cancellation
+            && token.is_cancelled() {
                 return Err(ExecutorError::LimitExceeded {
                     dimension: PlanLimitKind::Cancellation,
                     observed: 0,
                 });
             }
-        }
 
         // Check time limit
-        if let Some(time_ms) = limits.time_ms {
-            if start.elapsed().as_millis() as u64 > time_ms {
+        if let Some(time_ms) = limits.time_ms
+            && start.elapsed().as_millis() as u64 > time_ms {
                 return Err(ExecutorError::LimitExceeded {
                     dimension: PlanLimitKind::TimeMs,
                     observed: start.elapsed().as_millis() as u64,
                 });
             }
-        }
 
         // Build result nodes
         let nodes: Vec<NodeResult> = visited
@@ -657,7 +655,6 @@ impl<'a> SnapshotGraphExecutor<'a> {
         _edges_filter: Option<&Vec<EdgeResult>>,
         limits: &PlanLimits,
     ) -> Result<ResultSet, ExecutorError> {
-        use std::time::Instant;
 
         let start = Instant::now();
 
@@ -668,7 +665,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
             (crate::domain::value_objects::Provenance, f64),
         > = graph
             .all_dependencies_with_metadata()
-            .map(|(src, tgt, dep, prov, conf)| {
+            .map(|(src, tgt, _dep, prov, conf)| {
                 (
                     (src.as_str().to_string(), tgt.as_str().to_string()),
                     (prov, conf),
@@ -709,24 +706,22 @@ impl<'a> SnapshotGraphExecutor<'a> {
         }
 
         // Check cancellation
-        if let Some(ref token) = limits.cancellation {
-            if token.is_cancelled() {
+        if let Some(ref token) = limits.cancellation
+            && token.is_cancelled() {
                 return Err(ExecutorError::LimitExceeded {
                     dimension: PlanLimitKind::Cancellation,
                     observed: 0,
                 });
             }
-        }
 
         // Check time limit
-        if let Some(time_ms) = limits.time_ms {
-            if start.elapsed().as_millis() as u64 > time_ms {
+        if let Some(time_ms) = limits.time_ms
+            && start.elapsed().as_millis() as u64 > time_ms {
                 return Err(ExecutorError::LimitExceeded {
                     dimension: PlanLimitKind::TimeMs,
                     observed: start.elapsed().as_millis() as u64,
                 });
             }
-        }
 
         // Build result nodes
         let nodes: Vec<NodeResult> = visited
@@ -780,8 +775,8 @@ impl<'a> SnapshotGraphExecutor<'a> {
             let src_id = node_to_symbol.get(&edge_ref.source());
             let tgt_id = node_to_symbol.get(&edge_ref.target());
 
-            if let (Some(src), Some(tgt)) = (src_id, tgt_id) {
-                if visited_set.contains(src.as_str()) && visited_set.contains(tgt.as_str()) {
+            if let (Some(src), Some(tgt)) = (src_id, tgt_id)
+                && visited_set.contains(src.as_str()) && visited_set.contains(tgt.as_str()) {
                     let dep_type = edge_ref.weight();
                     // Use Display (lowercase, e.g. "calls") instead of Debug ("Calls") to
                     // match the PG executor's `format!("dependency.{}", dep_type)`
@@ -803,7 +798,6 @@ impl<'a> SnapshotGraphExecutor<'a> {
                         properties,
                     });
                 }
-            }
         }
 
         Ok(ResultSet {
@@ -833,7 +827,6 @@ impl<'a> SnapshotGraphExecutor<'a> {
         by: &[String],
         limits: &PlanLimits,
     ) -> Result<ResultSet, ExecutorError> {
-        use std::time::Instant;
 
         let start = Instant::now();
 
@@ -866,24 +859,22 @@ impl<'a> SnapshotGraphExecutor<'a> {
         }
 
         // Check cancellation
-        if let Some(ref token) = limits.cancellation {
-            if token.is_cancelled() {
+        if let Some(ref token) = limits.cancellation
+            && token.is_cancelled() {
                 return Err(ExecutorError::LimitExceeded {
                     dimension: PlanLimitKind::Cancellation,
                     observed: 0,
                 });
             }
-        }
 
         // Check time limit
-        if let Some(time_ms) = limits.time_ms {
-            if start.elapsed().as_millis() as u64 > time_ms {
+        if let Some(time_ms) = limits.time_ms
+            && start.elapsed().as_millis() as u64 > time_ms {
                 return Err(ExecutorError::LimitExceeded {
                     dimension: PlanLimitKind::TimeMs,
                     observed: start.elapsed().as_millis() as u64,
                 });
             }
-        }
 
         // Build scalars from counts
         let mut scalars: Vec<TypedValue> = counts
@@ -980,7 +971,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
         }
 
         // Collect all nodes in the graph for the universe of Not operation
-        let all_graph_nodes: HashSet<String> = graph
+        let _all_graph_nodes: HashSet<String> = graph
             .symbols()
             .map(|s| s.fully_qualified_name().to_string())
             .collect();
@@ -1098,7 +1089,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
                 kind,
                 depth,
                 edge_kind_filter,
-                predicates,
+                predicates: _,
                 limits,
                 ..
             } => {
@@ -1117,7 +1108,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
                 dst,
                 quantifier,
                 edge_kind_filter,
-                predicates,
+                predicates: _,
                 projection: _,
                 limits,
                 ..
@@ -1143,7 +1134,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
             GraphPlan::Subgraph {
                 nodes,
                 edges,
-                aggregations,
+                aggregations: _,
                 limits,
                 ..
             } => {
@@ -1168,10 +1159,6 @@ impl<'a> SnapshotGraphExecutor<'a> {
                 // For EXPLAIN, evaluate the inner plan
                 self.evaluate_operand(graph, inner.as_ref())
             }
-            _ => {
-                // For any other plan type we can't handle, return empty
-                Ok(HashSet::new())
-            }
         }
     }
 }
@@ -1190,7 +1177,6 @@ mod tests {
     use crate::domain::plan::version::{PlanHash, PlanMetadata, PlanVersion};
     use crate::domain::services::ExtractionContext;
     use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
-    use crate::infrastructure::graph::SnapshotProvider;
 
     /// Build a simple one-symbol CallGraph for testing.
     fn make_graph(symbol_name: &str) -> CallGraph {
@@ -2155,7 +2141,6 @@ mod tests {
 
     #[test]
     fn path_with_edge_kind_filter_excludes_references() {
-        use crate::domain::aggregates::symbol::Symbol;
         use crate::domain::value_objects::SymbolKind;
 
         let mut graph = CallGraph::new();

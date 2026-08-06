@@ -138,8 +138,8 @@ pub trait GraphRepository: Send + Sync {
     async fn find_nodes_by_kind_paginated(
         &self,
         kind: &NodeKind,
-        limit: usize,
-        cursor: Option<&str>,
+        _limit: usize,
+        _cursor: Option<&str>,
     ) -> GraphResult<SearchPage> {
         let items = self.find_nodes_by_kind(kind).await?;
         let raw_total = items.len() as u64;

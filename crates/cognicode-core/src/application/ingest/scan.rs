@@ -15,7 +15,6 @@ use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
 use crate::application::ingest::types::{ChangeKind, FileChange, FileType};
-use crate::infrastructure::parser::LanguageConfig;
 
 /// Walk a directory, returning all source files (code, documents, config).
 /// Uses `ignore` crate for `.gitignore` awareness, with a WalkFilter-like
@@ -200,7 +199,7 @@ pub fn scan_for_changes(
         };
 
         let (file_type, _) = classify_file(&root.join(rel));
-        let path = root.join(&rel);
+        let path = root.join(rel);
 
         changes.push(FileChange {
             path,

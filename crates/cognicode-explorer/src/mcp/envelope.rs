@@ -20,8 +20,8 @@
 //! | `suggested_follow_ups` | array | Always `[]` in v1 |
 
 use rmcp::model::{CallToolResult, Content, RawContent};
+use rmcp::model::{CallToolResult, Content};
 use serde::Serialize;
-use serde_json::Value;
 
 use super::explorer::ProvenanceMetadata;
 

@@ -13,6 +13,7 @@
 //! `GraphError::Storage`.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 
 use async_trait::async_trait;
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
@@ -75,11 +76,10 @@ impl GraphRepository for InMemoryGraphRepository {
             .nodes
             .iter()
             .filter_map(|n| {
-                if let Some(ref allowed) = allowed {
-                    if !allowed.contains(&n.kind.as_str()) {
+                if let Some(ref allowed) = allowed
+                    && !allowed.contains(&n.kind.as_str()) {
                         return None;
                     }
-                }
                 let label_hit = n.label.to_ascii_lowercase().contains(&q);
                 let prop_hit = n
                     .properties
@@ -280,11 +280,10 @@ impl GraphRepository for InMemoryGraphRepository {
             .nodes
             .iter()
             .filter_map(|n| {
-                if let Some(ref allowed) = allowed {
-                    if !allowed.contains(&n.kind.as_str()) {
+                if let Some(ref allowed) = allowed
+                    && !allowed.contains(&n.kind.as_str()) {
                         return None;
                     }
-                }
                 let label_hit = n.label.to_ascii_lowercase().contains(&q);
                 let prop_hit = n
                     .properties
@@ -397,7 +396,7 @@ impl GraphRepository for InMemoryGraphRepository {
                 }
 
                 for e in self.edges.iter() {
-                    if &e.source != &current {
+                    if e.source != current {
                         continue;
                     }
                     if !rationale_kinds.contains(&e.kind) {
@@ -466,7 +465,6 @@ fn _graph_error_compiles(err: GraphError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cognicode_core::domain::value_objects::node_kind::NodeKind;
     use std::collections::HashMap;
 
     fn make_node(id: &str, kind: NodeKind, label: &str) -> GraphNode {
@@ -739,7 +737,6 @@ mod tests {
     /// When max_nodes=1, BFS cannot expand beyond the focus node, so edges should be empty.
     #[tokio::test]
     async fn rationale_subgraph_focus_only_no_edges() {
-        use cognicode_core::domain::value_objects::Provenance;
 
         let nodes = vec![
             make_node("A", NodeKind::Decision, "Decision A"),
@@ -794,7 +791,6 @@ mod tests {
     /// depth >= max_depth immediately, so edges should be empty.
     #[tokio::test]
     async fn rationale_subgraph_max_depth_zero_returns_focus_only() {
-        use cognicode_core::domain::value_objects::Provenance;
 
         let nodes = vec![
             make_node("A", NodeKind::Decision, "Decision A"),

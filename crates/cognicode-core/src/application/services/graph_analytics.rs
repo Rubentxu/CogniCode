@@ -30,16 +30,19 @@
 //! degrade to `vec![]` / empty map / empty pair so callers can render
 //! "no data" messages uniformly.
 
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use petgraph::graph::NodeIndex;
-use petgraph::visit::{EdgeRef, IntoEdgeReferences, NodeIndexable};
-
-use crate::domain::aggregates::{CallGraph, SymbolId};
 use crate::domain::analytics::{
     AdmissionError, AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AnalyticsError,
     AnalyticsMode, DeterminismKind, RunLineage, RunLineageFilter, RunLineageStore, RunStatus,
+};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use petgraph::visit::{EdgeRef, IntoEdgeReferences, NodeIndexable};
+
+use crate::domain::aggregates::{CallGraph, SymbolId};
+    AdmissionError, AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AnalyticsError,
+    AnalyticsMode, RunLineage, RunLineageStore, RunStatus,
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
@@ -123,7 +126,7 @@ impl GraphAnalyticsService {
     ) -> Vec<Vec<SymbolId>> {
         let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let out_neighbors = projection.build_out_neighbors();
-        let n = projection.node_count();
+        let _n = projection.node_count();
 
         let (Some(&from_idx), Some(&to_idx)) = (
             projection.symbol_index().get(from),
@@ -331,14 +334,13 @@ impl AlgorithmRegistry {
         }
 
         // Check if already admitted with same version
-        if let Some(existing) = self.descriptors.get(&id.id) {
-            if existing.identity().version == id.version {
+        if let Some(existing) = self.descriptors.get(&id.id)
+            && existing.identity().version == id.version {
                 return Err(AdmissionError::AlreadyAdmitted(
                     id.id.as_str().into(),
                     id.version.clone(),
                 ));
             }
-        }
 
         // Persist descriptor limits to lineage store (idempotent upsert)
         // Use block_in_place to run async SQL from this sync context on a
@@ -488,8 +490,8 @@ fn apply_caller_limits(
 ) -> Result<PlanLimits, AnalyticsError> {
     let mut effective = base.clone();
 
-    if let Some(caller_max_nodes) = caller.max_visited_nodes {
-        if let Some(base_max) = base.max_visited_nodes {
+    if let Some(caller_max_nodes) = caller.max_visited_nodes
+        && let Some(base_max) = base.max_visited_nodes {
             if caller_max_nodes > base_max {
                 return Err(AnalyticsError::LimitPolicyViolation(format!(
                     "caller max_visited_nodes {} exceeds base maximum {}",
@@ -498,10 +500,9 @@ fn apply_caller_limits(
             }
             effective.max_visited_nodes = Some(caller_max_nodes);
         }
-    }
 
-    if let Some(caller_max_edges) = caller.max_visited_edges {
-        if let Some(base_max) = base.max_visited_edges {
+    if let Some(caller_max_edges) = caller.max_visited_edges
+        && let Some(base_max) = base.max_visited_edges {
             if caller_max_edges > base_max {
                 return Err(AnalyticsError::LimitPolicyViolation(format!(
                     "caller max_visited_edges {} exceeds base maximum {}",
@@ -510,10 +511,9 @@ fn apply_caller_limits(
             }
             effective.max_visited_edges = Some(caller_max_edges);
         }
-    }
 
-    if let Some(caller_max_rows) = caller.max_result_rows {
-        if let Some(base_max) = base.max_result_rows {
+    if let Some(caller_max_rows) = caller.max_result_rows
+        && let Some(base_max) = base.max_result_rows {
             if caller_max_rows > base_max {
                 return Err(AnalyticsError::LimitPolicyViolation(format!(
                     "caller max_result_rows {} exceeds base maximum {}",
@@ -522,10 +522,9 @@ fn apply_caller_limits(
             }
             effective.max_result_rows = Some(caller_max_rows);
         }
-    }
 
-    if let Some(caller_time) = caller.time_ms {
-        if let Some(base_time) = base.time_ms {
+    if let Some(caller_time) = caller.time_ms
+        && let Some(base_time) = base.time_ms {
             if caller_time > base_time {
                 return Err(AnalyticsError::LimitPolicyViolation(format!(
                     "caller time_ms {} exceeds base maximum {}",
@@ -534,7 +533,6 @@ fn apply_caller_limits(
             }
             effective.time_ms = Some(caller_time);
         }
-    }
 
     Ok(effective)
 }
@@ -650,20 +648,19 @@ impl AlgorithmRegistry {
         let effective_limits = apply_caller_limits(&base_limits, request.caller_limits)?;
 
         // Step 3: Check persist authorization
-        if request.mode == AnalyticsMode::Persist {
-            if self
+        if request.mode == AnalyticsMode::Persist
+            && self
                 .boundary_guard
                 .as_ref()
-                .map_or(true, |g| !g.can_persist(request.caller))
+                .is_none_or(|g| !g.can_persist(request.caller))
             {
                 return Err(AnalyticsError::PersistUnauthorized);
             }
-        }
 
         // Step 4: Insert pending lineage record
         let mut lineage = RunLineage::new(
             request.pin.0.clone(),
-            request.pin.1.clone(),
+            request.pin.1,
             request.algorithm_id.clone(),
             descriptor.identity().version.to_string(),
             vec![], // plan_hash - empty for now
@@ -699,7 +696,7 @@ impl AlgorithmRegistry {
                 lineage.fail(format!("LimitExceeded({:?})", kind), kind.to_string());
                 return Err(AnalyticsError::LimitExceeded(kind));
             }
-            Err(AnalyticsError::Truncated(msg)) => {
+            Err(AnalyticsError::Truncated(_msg)) => {
                 // Determine truncation marker from limits
                 let marker = if effective_limits.max_result_rows.is_some() {
                     Some(crate::domain::analytics::TruncationMarker::ResultRowsLimit)
@@ -1022,7 +1019,6 @@ mod tests {
     #[test]
     fn apply_caller_limits_tightens_base_limits() {
         use crate::domain::plan::limits::PlanLimitKind;
-        use crate::domain::plan::limits::PlanLimits;
 
         let base = PlanLimits {
             time_ms: Some(1000),
@@ -1057,7 +1053,6 @@ mod tests {
 
     #[test]
     fn apply_caller_limits_rejects_widening() {
-        use crate::domain::plan::limits::PlanLimits;
 
         let base = PlanLimits {
             time_ms: Some(1000),

@@ -13,7 +13,6 @@ use crate::domain::analytics::{
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
-use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
 // Personalized PageRank Params
@@ -84,9 +83,9 @@ static PERSONALIZED_PAGERANK_LIMITS: LazyLock<PlanLimits> = LazyLock::new(|| Pla
 
 static PERSONALIZED_PAGERANK_COMPLEXITY: LazyLock<ComplexityClass> =
     LazyLock::new(|| ComplexityClass {
-        time: "O(V + E)".into(),
-        space: "O(V)".into(),
-        notes: "per iteration; same as PageRank, personalization vector adds O(V)".into(),
+        time: "O(V + E)",
+        space: "O(V)",
+        notes: "per iteration; same as PageRank, personalization vector adds O(V)",
     });
 
 // =============================================================================

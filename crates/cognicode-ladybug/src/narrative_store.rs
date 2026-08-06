@@ -3,8 +3,6 @@
 //! Mirrors the [`QualityStore`] pattern: synthetic `id`, read-then-conditional-write
 //! for upserts, and graceful degradation on missing tables.
 
-#[cfg(test)]
-use std::sync::Arc;
 
 use async_trait::async_trait;
 
@@ -12,8 +10,6 @@ use cognicode_core::domain::ports::narrative_store::{
     NarrativeError, NarrativeSnapshot, NarrativeStore,
 };
 
-#[cfg(test)]
-use tempfile::TempDir;
 
 use crate::LadybugStore;
 
@@ -182,12 +178,12 @@ impl NarrativeStore for LadybugStore {
             }
         };
 
-        let mut result = conn
+        let result = conn
             .execute(&mut stmt, params)
             .map_err(|e| NarrativeError::Database(format!("list_for_workspace execute: {e}")))?;
 
         let mut snapshots = Vec::new();
-        while let Some(row) = result.next() {
+        for row in result {
             snapshots.push(narrative_snapshot_from_row(&row)?);
         }
         Ok(snapshots)

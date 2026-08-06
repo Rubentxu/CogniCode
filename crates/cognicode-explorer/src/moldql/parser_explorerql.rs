@@ -120,8 +120,8 @@ fn parse_atom(cursor: &mut Cursor<'_>) -> Result<MoldQLQuery, ParseError> {
     }
 
     // `NOT <atom>` — the only valid top-level use.
-    if let Some(kw) = cursor.peek_keyword() {
-        if kw.eq_ignore_ascii_case("NOT") {
+    if let Some(kw) = cursor.peek_keyword()
+        && kw.eq_ignore_ascii_case("NOT") {
             cursor.consume_keyword("NOT");
             cursor.skip_ws();
             let inner = parse_atom(cursor)?;
@@ -130,7 +130,6 @@ fn parse_atom(cursor: &mut Cursor<'_>) -> Result<MoldQLQuery, ParseError> {
                 operands: vec![inner],
             }));
         }
-    }
 
     // Otherwise it's a primitive.
     let kw = cursor.peek_keyword().ok_or_else(|| {

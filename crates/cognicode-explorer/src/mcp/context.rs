@@ -388,7 +388,7 @@ impl McpContextBuilder {
             graph: self.graph.unwrap_or(None),
             session_registry: self
                 .session_registry
-                .unwrap_or_else(|| crate::session::SessionRegistry::new()),
+                .unwrap_or_default(),
             #[cfg(feature = "multimodal")]
             graph_repo: self.graph_repo.unwrap_or(None),
             workspace: self.workspace,

@@ -9,14 +9,20 @@
 //! live in `GraphPlan`. `MoldPlan` is discriminator-only — the actual
 //! operation payload lives in the typed `GraphPlan` or other domain objects.
 
+use super::filter::{PlanFilter, PlanFilterOp};
+use super::limits::{PlanLimit, PlanLimits, PlanLimitsBuilder};
+use super::version::{PlanHash, PlanMetadata, PlanVersion};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 // Types from sibling modules.
-use super::filter::{PlanFilter, PlanFilterOp};
-use super::limits::{PlanLimit, PlanLimits, PlanLimitsBuilder};
+use super::filter::PlanFilter;
+use super::limits::PlanLimits;
 use super::value::TypedValue;
-use super::version::{PlanHash, PlanMetadata, PlanVersion};
+use super::version::{PlanHash, PlanMetadata};
+
+#[cfg(test)]
+use super::{PlanLimit, PlanLimitsBuilder, PlanVersion};
 
 // Sealed trait — implemented by all plan types to certify backend-neutrality.
 use super::neutrality::Sealed;
@@ -184,7 +190,7 @@ impl MoldPlan {
         rev: super::super::value_objects::RevisionId,
     ) -> Result<Self, super::PlanError> {
         match self {
-            MoldPlan::Graph { mut inner, pin } => {
+            MoldPlan::Graph { inner, pin } => {
                 if pin.is_some() {
                     return Err(super::PlanError::AlreadyPinned);
                 }
@@ -449,8 +455,6 @@ mod tests {
     /// Pinning twice returns `AlreadyPinned` error.
     #[test]
     fn with_pin_twice_returns_error() {
-        use super::super::{GraphPlan, NeighborKind};
-        use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
         let inner = GraphPlan::Neighbors {
             src: "A".into(),
@@ -482,7 +486,6 @@ mod tests {
     /// `with_pin` on a non-graph plan returns `NotAGraphPlan`.
     #[test]
     fn with_pin_on_non_graph_plan_error() {
-        use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
         let plan = MoldPlan::Select {
             from: "symbols".into(),
@@ -508,7 +511,6 @@ mod tests {
     /// `MoldPlan::Graph` with no pin returns `None` from `pin()`.
     #[test]
     fn pin_returns_none_when_unpinned() {
-        use super::super::{GraphPlan, NeighborKind};
 
         let inner = GraphPlan::Neighbors {
             src: "A".into(),

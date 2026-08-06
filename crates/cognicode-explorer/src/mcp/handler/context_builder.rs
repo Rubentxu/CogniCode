@@ -21,7 +21,6 @@
 //! quality issues at the object's file (if applicable), and graph
 //! neighbors up to `depth` hops (default 1, max 3).
 
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use cognicode_core::domain::aggregates::SymbolId;

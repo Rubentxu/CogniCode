@@ -61,8 +61,6 @@ use crate::domain::value_objects::edge_kind::EdgeKind;
 #[cfg(feature = "multimodal")]
 use crate::domain::value_objects::node_kind::NodeKind;
 #[cfg(feature = "multimodal")]
-use crate::domain::value_objects::provenance::Provenance;
-#[cfg(feature = "multimodal")]
 use crate::infrastructure::git::commit_issue_parser::{
     CommitIssueRef, CommitRefKind, issue_node_id_for_commit, parse_commit_issue_refs,
 };

@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use cognicode_core::application::dto::SccDto;
 use cognicode_core::application::services::impact_analysis::ImpactAnalysisService;
 use cognicode_core::domain::aggregates::SymbolId;
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::CallToolResult;
 use serde::Deserialize;
 use serde_json::Value;
 

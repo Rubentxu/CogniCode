@@ -1444,6 +1444,7 @@ impl ViewKind {
 
 /// One first-class RendererKind — the visual rendering strategy.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Default)]
 pub enum RendererKind {
     Graph,
     Table,
@@ -1451,6 +1452,7 @@ pub enum RendererKind {
     Code,
     Markdown,
     VegaLite,
+    #[default]
     Json,
     Composite,
     /// Forward-compatibility arm: catches any unknown renderer id,
@@ -1458,11 +1460,6 @@ pub enum RendererKind {
     Custom(String),
 }
 
-impl Default for RendererKind {
-    fn default() -> Self {
-        RendererKind::Json
-    }
-}
 
 impl Serialize for RendererKind {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -1634,11 +1631,10 @@ impl ViewSpec {
         if self.title.chars().count() > 200 {
             return Err(ViewSpecError::TitleTooLong);
         }
-        if let DataSource::Moldql { query } = &self.data_source {
-            if query.trim().is_empty() {
+        if let DataSource::Moldql { query } = &self.data_source
+            && query.trim().is_empty() {
                 return Err(ViewSpecError::EmptyQuery);
             }
-        }
         // Validate id is a valid UUID (basic format check without adding uuid dep)
         if !is_valid_uuid_format(&self.id) {
             return Err(ViewSpecError::InvalidUuid);

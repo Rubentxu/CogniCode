@@ -35,7 +35,7 @@ impl From<core_schema::ViewDescriptor> for ViewDescriptorDto {
         let wire_tag = s.view_kind;
         let view_kind: ViewKind =
             serde_json::from_value(serde_json::Value::String(wire_tag.clone()))
-                .unwrap_or_else(|_| ViewKind::Custom(wire_tag));
+                .unwrap_or(ViewKind::Custom(wire_tag));
         Self {
             id: s.id,
             title: s.title,

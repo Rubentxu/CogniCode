@@ -1,5 +1,9 @@
 //! [`SearchService`] implementation.
 
+use crate::dto::{
+    ExplorationSession, InspectableObjectSummary, InspectableObjectType, Property, SpotterResult,
+    SpotterSearchResult, ViewKind, ViewSpecSummary,
+};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -9,8 +13,7 @@ use tracing::warn;
 use crate::domain::knowledge::{project_decision, project_doc, project_evidence};
 use crate::domain::object_identity::ObjectIdentity;
 use crate::domain::views::scope_contains_file;
-use crate::dto::{
-    ExplorationSession, InspectableObjectSummary, InspectableObjectType, Property, SpotterResult,
+    InspectableObjectSummary, InspectableObjectType, Property, SpotterResult,
     SpotterSearchResult, ViewKind, ViewSpecSummary,
 };
 use crate::error::{ExplorerError, ExplorerResult};
@@ -661,8 +664,8 @@ impl SearchService for SearchServiceImpl {
                 };
                 let vr = self.view_registry.clone();
 
-                if let Ok(sessions) = persist.list_explorations("default").await {
-                    if let Some(session) = sessions.into_iter().find(|s| s.id == session_id) {
+                if let Ok(sessions) = persist.list_explorations("default").await
+                    && let Some(session) = sessions.into_iter().find(|s| s.id == session_id) {
                         let first_object = session
                             .events
                             .first()
@@ -701,7 +704,6 @@ impl SearchService for SearchServiceImpl {
                             available_views: vr.list_for(InspectableObjectType::SavedExploration),
                         });
                     }
-                }
             }
             return Err(ExplorerError::ObjectNotFound(object_id.to_string()));
         }
@@ -772,8 +774,8 @@ impl SearchService for SearchServiceImpl {
             ObjectIdentity::Doc { .. }
                 | ObjectIdentity::Decision { .. }
                 | ObjectIdentity::Evidence { .. }
-        ) {
-            if let Some(ref graph_repo) = self.graph_repo {
+        )
+            && let Some(ref graph_repo) = self.graph_repo {
                 let id = match &identity {
                     ObjectIdentity::Doc { id } => id.clone(),
                     ObjectIdentity::Decision { id } => id.clone(),
@@ -794,13 +796,12 @@ impl SearchService for SearchServiceImpl {
 
                 if let Some(mut s) = summary {
                     // Enrich with available views from registry
-                    s.available_views = self.view_registry.list_for(s.object_type.clone());
+                    s.available_views = self.view_registry.list_for(s.object_type);
                     return Ok(s);
                 }
             }
             // graph_repo not wired or projection returned None — fall through to
             // stub (sync path) for a graceful placeholder response
-        }
 
         // Run sync inspection in a blocking thread.
         let repo = self.repo.clone();
@@ -833,8 +834,8 @@ fn spotter_search_impl(
     repo: &Arc<dyn SymbolRepository>,
     search: Option<&Arc<dyn crate::ports::FuzzySymbolSearch>>,
     view_registry: &Arc<ViewRegistry>,
-    adr_repo: Option<&Arc<dyn crate::ports::AdrRepository>>,
-    doc_repo: Option<&Arc<dyn crate::ports::DocRepository>>,
+    _adr_repo: Option<&Arc<dyn crate::ports::AdrRepository>>,
+    _doc_repo: Option<&Arc<dyn crate::ports::DocRepository>>,
     query: &str,
     kind: Option<&str>,
 ) -> ExplorerResult<Vec<SpotterResult>> {
@@ -1464,10 +1465,8 @@ mod tests {
     use super::*;
     use crate::dto::SpotterResult;
     use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
-    use crate::registry::ViewRegistry;
     use cognicode_core::domain::aggregates::SymbolId;
     use cognicode_core::domain::value_objects::SymbolKind;
-    use std::sync::Arc;
 
     /// Mock symbol repository for testing derive_scope_results.
     struct MockRepo {

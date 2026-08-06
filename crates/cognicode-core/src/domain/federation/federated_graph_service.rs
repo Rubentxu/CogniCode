@@ -16,6 +16,7 @@
 //! Gated behind the `multimodal` Cargo feature. Default builds
 //! do not include this module.
 
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -26,7 +27,6 @@ use crate::domain::ports::graph_error::GraphResult;
 use crate::domain::ports::graph_repository::{GraphRepository, SearchPage};
 use crate::domain::value_objects::SpaceId;
 use crate::domain::value_objects::node_kind::NodeKind;
-use async_trait::async_trait;
 
 /// One page of a federated search. Same shape as
 /// [`SearchPage`] but each `GraphNode` is wrapped in a
@@ -152,11 +152,10 @@ impl FederatedGraphService {
             // space. (For the v1 implementation the cursor is a
             // whole-space selector; the per-space offset is the
             // second segment.)
-            if let Some(ref target) = target_space {
-                if target != space_id {
+            if let Some(ref target) = target_space
+                && target != space_id {
                     continue;
                 }
-            }
             let repo = match self.spaces.get(space_id) {
                 Some(r) => r.clone(),
                 None => continue,
@@ -298,9 +297,7 @@ mod tests {
     use super::*;
     use crate::domain::aggregates::generic_graph::GraphNode;
     use crate::domain::value_objects::SymbolKind;
-    use crate::domain::value_objects::node_kind::NodeKind;
 
-    use std::collections::HashMap;
 
     /// In-memory mock for tests — implements `GraphRepository` so
     /// the federated service can route through it. Mirrors the

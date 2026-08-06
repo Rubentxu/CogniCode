@@ -12,7 +12,6 @@ use crate::domain::analytics::{
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
-use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
 // Modularity Params
@@ -97,9 +96,9 @@ static MODULARITY_LIMITS: LazyLock<PlanLimits> = LazyLock::new(|| PlanLimits {
 // =============================================================================
 
 static MODULARITY_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
-    time: "O(V + E)".into(),
-    space: "O(V)".into(),
-    notes: "Linear scan of edges per community".into(),
+    time: "O(V + E)",
+    space: "O(V)",
+    notes: "Linear scan of edges per community",
 });
 
 // =============================================================================

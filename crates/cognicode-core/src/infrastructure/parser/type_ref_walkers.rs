@@ -17,8 +17,8 @@ pub fn walk_rust_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
             // 1. Parameters: walk the `parameters` child
             if let Some(params) = node.child_by_field_name("parameters") {
                 for i in 0..params.child_count() {
-                    if let Some(param) = params.child(i) {
-                        if param.kind() == "parameter" || param.kind() == "self_parameter" {
+                    if let Some(param) = params.child(i)
+                        && (param.kind() == "parameter" || param.kind() == "self_parameter") {
                             // Find the type annotation child
                             for j in 0..param.child_count() {
                                 let child = param.child(j).unwrap();
@@ -33,7 +33,6 @@ pub fn walk_rust_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
                                 // self parameter: `&self` → no type ref (it's the struct itself)
                             }
                         }
-                    }
                 }
             }
 
@@ -53,8 +52,8 @@ pub fn walk_rust_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
             if let Some(body) = node.child_by_field_name("body") {
                 for i in 0..body.child_count() {
                     let child = body.child(i).unwrap();
-                    if child.kind() == "field_declaration" {
-                        if let Some(type_ann) = child.child_by_field_name("type") {
+                    if child.kind() == "field_declaration"
+                        && let Some(type_ann) = child.child_by_field_name("type") {
                             collect_type_names(
                                 &type_ann,
                                 source,
@@ -62,7 +61,6 @@ pub fn walk_rust_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
                                 &mut refs,
                             );
                         }
-                    }
                 }
             }
         }
@@ -92,8 +90,8 @@ pub fn walk_python_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Typ
                 for i in 0..params.child_count() {
                     let child = params.child(i).unwrap();
                     let kind = child.kind();
-                    if kind == "typed_parameter" || kind == "typed_default_parameter" {
-                        if let Some(type_ann) = child.child_by_field_name("type") {
+                    if (kind == "typed_parameter" || kind == "typed_default_parameter")
+                        && let Some(type_ann) = child.child_by_field_name("type") {
                             collect_type_names(
                                 &type_ann,
                                 source,
@@ -101,7 +99,6 @@ pub fn walk_python_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Typ
                                 &mut refs,
                             );
                         }
-                    }
                 }
             }
 
@@ -148,8 +145,8 @@ pub fn walk_typescript_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec
                 for i in 0..params.child_count() {
                     let child = params.child(i).unwrap();
                     let kind = child.kind();
-                    if kind == "required_parameter" || kind == "optional_parameter" {
-                        if let Some(type_ann) = child.child_by_field_name("type") {
+                    if (kind == "required_parameter" || kind == "optional_parameter")
+                        && let Some(type_ann) = child.child_by_field_name("type") {
                             collect_type_names(
                                 &type_ann,
                                 source,
@@ -157,7 +154,6 @@ pub fn walk_typescript_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec
                                 &mut refs,
                             );
                         }
-                    }
                 }
             }
             // Return type
@@ -314,11 +310,10 @@ pub fn walk_java_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
             }
 
             // 2. Return type (not for constructors)
-            if let Some(ret) = node.child_by_field_name("type") {
-                if node_type == "method_declaration" {
+            if let Some(ret) = node.child_by_field_name("type")
+                && node_type == "method_declaration" {
                     collect_type_names(&ret, source, TypeRefContext::ReturnType, &mut refs);
                 }
-            }
 
             // 3. Throws clause: `throws IOException, RuntimeException`
             if let Some(throws) = node.child_by_field_name("throws") {
@@ -402,8 +397,8 @@ pub fn walk_c_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef>
                 if child.kind() == "field_declaration_list" {
                     for j in 0..child.child_count() {
                         let field = child.child(j).unwrap();
-                        if field.kind() == "field_declaration" || field.kind() == "declaration" {
-                            if let Some(ftype) = field.child_by_field_name("type") {
+                        if (field.kind() == "field_declaration" || field.kind() == "declaration")
+                            && let Some(ftype) = field.child_by_field_name("type") {
                                 collect_type_names(
                                     &ftype,
                                     source,
@@ -411,7 +406,6 @@ pub fn walk_c_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef>
                                     &mut refs,
                                 );
                             }
-                        }
                     }
                 }
             }
@@ -505,8 +499,8 @@ pub fn walk_csharp_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Typ
             if let Some(params) = node.child_by_field_name("parameters") {
                 for i in 0..params.child_count() {
                     let child = params.child(i).unwrap();
-                    if child.kind() == "parameter" {
-                        if let Some(type_node) = child.child_by_field_name("type") {
+                    if child.kind() == "parameter"
+                        && let Some(type_node) = child.child_by_field_name("type") {
                             collect_type_names(
                                 &type_node,
                                 source,
@@ -514,16 +508,14 @@ pub fn walk_csharp_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Typ
                                 &mut refs,
                             );
                         }
-                    }
                 }
             }
 
             // Return type (not for constructors)
-            if node_type == "method_declaration" {
-                if let Some(ret) = node.child_by_field_name("type") {
+            if node_type == "method_declaration"
+                && let Some(ret) = node.child_by_field_name("type") {
                     collect_type_names(&ret, source, TypeRefContext::ReturnType, &mut refs);
                 }
-            }
         }
 
         "class_declaration"
@@ -704,8 +696,8 @@ pub fn walk_swift_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Type
             if let Some(params) = node.child_by_field_name("parameters") {
                 for i in 0..params.child_count() {
                     let child = params.child(i).unwrap();
-                    if child.kind() == "parameter" {
-                        if let Some(type_node) = child.child_by_field_name("type") {
+                    if child.kind() == "parameter"
+                        && let Some(type_node) = child.child_by_field_name("type") {
                             collect_type_names(
                                 &type_node,
                                 source,
@@ -713,7 +705,6 @@ pub fn walk_swift_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Type
                                 &mut refs,
                             );
                         }
-                    }
                 }
             }
 

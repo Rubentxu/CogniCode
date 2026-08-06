@@ -12,7 +12,6 @@
 //! these contexts have different service types and error hierarchies.
 //! What IS shared is the `SnapshotViewKind` taxonomy and its parsing/dispatch.
 
-use std::sync::Arc;
 
 use crate::domain::c4_mermaid::{C4Level, c4_to_mermaid};
 use crate::domain::snapshot::SnapshotError;
@@ -95,7 +94,7 @@ pub const SNAPSHOT_VIEW_KINDS: &[&str] = &[
 /// Emit Mermaid text for a trace-based snapshot view kind.
 pub async fn emit_trace_mermaid(
     graph_service: &dyn crate::facades::GraphService,
-    workspace: &dyn crate::facades::WorkspaceService,
+    _workspace: &dyn crate::facades::WorkspaceService,
     view_kind: SnapshotViewKind,
     target: &str,
 ) -> Result<String, String> {

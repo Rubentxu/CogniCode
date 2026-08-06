@@ -12,7 +12,6 @@ use crate::domain::analytics::{
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
-use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
 // K-Core Params
@@ -73,9 +72,9 @@ static KCORE_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema {
 // =============================================================================
 
 static KCORE_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
-    time: "O(V + E)".into(),
-    space: "O(V)".into(),
-    notes: "Iterative peeling, degree-by-degree removal".into(),
+    time: "O(V + E)",
+    space: "O(V)",
+    notes: "Iterative peeling, degree-by-degree removal",
 });
 
 // =============================================================================

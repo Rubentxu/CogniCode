@@ -1059,7 +1059,7 @@ Closed before resuming new cycles:
 | Fase | Cambio | Goal | Depends on | Exit criteria | Status |
 |------|--------|------|------------|---------------|--------|
 | 0 | `e30-sandbox-infra` | Quadlets reales (digest pins), Maven, smoke lane verde, workflow nightly | None | `just sandbox-ci-smoke` exit 0; 6 servicios activos | PROPOSED |
-| 1 | `e13-wave2-knowledge-layer-ports` (PR 2+3) | AdrInspectorExecutor + EvidenceStore wiring + Ladybug stubs + UI tests | Phase 1 (aa23af61) | G1 green — tasks 2.1–2.5, 3.1–3.5, 4.1–4.3 | IN PROGRESS |
+| 1 | `e13-wave2-knowledge-layer-ports` (PR 2+3) | AdrInspectorExecutor + EvidenceStore wiring + Ladybug stubs + UI tests | Phase 1 (aa23af61) | G1 green — tasks 2.1–2.5, 3.1–3.5, 4.1–4.3 | ✅ COMPLETED — verify PW 16/16, debt PW, PR #226 |
 | 2 | `e30-corpus-expansion` | tokio/clap (Tier-1), rust-analyzer/typescript/react (Tier-3), ground truth, cobertura 43 tools | Fase 0 | G2 green — coverage matrix 100% | PROPOSED |
 | 3 | `e30-metric-baseline` | 3× campaña full, baseline congelado, benchmark, primer scorecard | Fase 2 | G5/G6/G8 medidos; baseline `sandbox/results/baseline/` | PROPOSED |
 | 4 | `e30-conformance-audit` | 401 requirements → tests; cerrar gaps; docs al día; higiene git | Fase 3 | G10/G11/G12 green | PROPOSED |

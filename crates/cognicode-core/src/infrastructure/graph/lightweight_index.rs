@@ -107,11 +107,10 @@ impl LightweightIndex {
                 return true;
             }
             // Skip hidden directories (except .git which is already handled)
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with('.') && name != ".git" {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                && name.starts_with('.') && name != ".git" {
                     return true;
                 }
-            }
             false
         };
 

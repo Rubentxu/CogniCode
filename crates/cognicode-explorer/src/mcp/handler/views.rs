@@ -10,17 +10,22 @@
 //! - `moldql_pattern_capabilities` — return v1 supported-feature matrix (T7)
 
 use std::sync::Arc;
+use rmcp::model::{CallToolResult, Content};
+use serde::{Deserialize, Serialize};
+use crate::mcp::{
+    McpContext, ProvenanceMetadata, TOOL_APPLY_LENS, TOOL_GET_LENSES, TOOL_GET_VIEW,
+    TOOL_GET_VIEWS, TOOL_PATTERN_CAPABILITIES, TOOL_PATTERN_QUERY, TOOL_QUERY_MOLDQL,
+};
 use std::sync::atomic::Ordering;
 
 use async_trait::async_trait;
-use rmcp::model::{CallToolResult, Content};
-use serde::{Deserialize, Serialize};
+use rmcp::model::CallToolResult;
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
-use crate::mcp::{
-    McpContext, ProvenanceMetadata, TOOL_APPLY_LENS, TOOL_GET_LENSES, TOOL_GET_VIEW,
+    McpContext, TOOL_APPLY_LENS, TOOL_GET_LENSES, TOOL_GET_VIEW,
     TOOL_GET_VIEWS, TOOL_PATTERN_CAPABILITIES, TOOL_PATTERN_QUERY, TOOL_QUERY_MOLDQL,
 };
 

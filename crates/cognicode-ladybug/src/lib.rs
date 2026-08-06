@@ -47,6 +47,28 @@
 //! | 8 | `CallGraphStore` | `save_call_graph_ws` + `load_call_graph_ws` | DONE (8 in-crate tests) |
 //! | 9 | `IngestCommitPort` | Composite atomic tx (per ADR-015) — requires all 8 prior ports | DONE (multimodal-gated; 6 in-crate tests) |
 
+use cognicode_core::domain::ports::{
+    CallGraphError, CallGraphStore,
+    adr_repository::{AdrError, AdrRepository},
+    doc_repository::{DocError, DocRepository},
+    evidence_store::{EvidenceError, EvidenceStore},
+    manifest_store::{ManifestError, ManifestStore, ScanManifest},
+    narrative_store::NarrativeStore,
+    quality_store::{
+        IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
+        RuleSummary, UpsertSummary,
+    },
+    report_store::{ReportError, ReportStore, ReportSummary},
+    revision_store::{RevisionError, RevisionStore},
+    session_store::{SessionError, SessionRow, SessionStore},
+    view_spec_store::{ViewSpecPayload, ViewSpecStore, ViewSpecStoreError},
+};
+#[cfg(feature = "multimodal")]
+    federation_store::{FederationError, FederationStore},
+    ingest_commit_port::{CommitError, GraphDelta, IngestCommitPort, ManifestDelta, ReportIntent},
+};
+        IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityStore, UpsertSummary,
+    };
 use std::path::Path;
 use std::sync::Arc;
 
@@ -62,13 +84,11 @@ use cognicode_core::domain::plan::{
     ExecutorError, GraphExecutor, GraphPlan, PlanLimits, ResultSet, TruncationMarker,
     UnsupportedConstruct,
 };
-use cognicode_core::domain::ports::{
     CallGraphError, CallGraphStore,
-    adr_repository::{AdrError, AdrRepository},
-    doc_repository::{DocError, DocRepository},
-    evidence_store::{EvidenceError, EvidenceStore},
+    adr_repository::AdrError,
+    doc_repository::DocError,
+    evidence_store::EvidenceError,
     manifest_store::{ManifestError, ManifestStore, ScanManifest},
-    narrative_store::NarrativeStore,
     quality_store::{
         IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
         RuleSummary, UpsertSummary,
@@ -92,9 +112,8 @@ pub mod evidence_store;
 // in `cognicode-core`. The default build (no multimodal) skips them;
 // the follow-up PR that flips multimodal to ON also wires these.
 #[cfg(feature = "multimodal")]
-use cognicode_core::domain::ports::{
     federation_store::{FederationError, FederationStore},
-    ingest_commit_port::{CommitError, GraphDelta, IngestCommitPort, ManifestDelta, ReportIntent},
+    ingest_commit_port::{GraphDelta, IngestCommitPort, ManifestDelta, ReportIntent},
 };
 #[cfg(feature = "multimodal")]
 use cognicode_core::domain::value_objects::{Space, SpaceId};
@@ -234,7 +253,7 @@ impl LadybugGraphExecutor {
     }
 
     /// Acquire a single-writer `Connection` from the shared database.
-    fn connection(&self) -> Result<lbug::Connection, ExecutorError> {
+    fn connection(&self) -> Result<lbug::Connection<'_>, ExecutorError> {
         lbug::Connection::new(&self.db).map_err(|e| ExecutorError::InternalError(e.to_string()))
     }
 
@@ -299,16 +318,14 @@ impl LadybugGraphExecutor {
             _ => String::new(),
         };
 
-        let cypher = format!(
-            "MATCH (s:GraphSymbol)-[e:GraphEdge]->(t:GraphSymbol) \
+        let _cypher = "MATCH (s:GraphSymbol)-[e:GraphEdge]->(t:GraphSymbol) \
              WHERE s.workspace_id = $ws AND s.revision_id = $rev \
                AND s.fqn = $src \
                AND e.workspace_id = $ws AND e.revision_id = $rev \
                AND e.target_id = t.fqn \
                AND t.workspace_id = $ws AND t.revision_id = $rev \
              RETURN DISTINCT t.fqn, t.kind, t.file_path, t.line \
-             ORDER BY t.fqn;"
-        );
+             ORDER BY t.fqn;".to_string();
         // Note: lbug 0.19 doesn't recognize the `-[]->` pattern in
         // the same way as Neo4j. We work around by using a plain
         // pattern (no edge label), then matching e and t in the
@@ -327,7 +344,7 @@ impl LadybugGraphExecutor {
         let mut stmt = conn
             .prepare(&cypher)
             .map_err(|e| ExecutorError::InternalError(format!("execute_neighbors prepare: {e}")))?;
-        let mut result = conn
+        let result = conn
             .execute(
                 &mut stmt,
                 vec![
@@ -339,7 +356,7 @@ impl LadybugGraphExecutor {
             .map_err(|e| ExecutorError::InternalError(format!("execute_neighbors execute: {e}")))?;
 
         let mut rows: Vec<Vec<String>> = Vec::new();
-        while let Some(row) = result.next() {
+        for row in result {
             rows.push(
                 (0..4)
                     .map(|i| row.get(i).map(|v| v.to_string()).unwrap_or_default())
@@ -358,7 +375,7 @@ impl LadybugGraphExecutor {
             false
         };
 
-        let mut result_set = ResultSet {
+        let result_set = ResultSet {
             rows: rows
                 .into_iter()
                 .map(|row| cognicode_core::domain::plan::Row {
@@ -512,7 +529,7 @@ impl LadybugStore {
     /// Acquire a single-writer `Connection` from the shared database.
     /// Internal helper — port impls borrow this for the duration of
     /// one query call.
-    fn connection(&self) -> Result<Connection, Error> {
+    fn connection(&self) -> Result<Connection<'_>, Error> {
         Ok(Connection::new(&self.db)?)
     }
 }
@@ -711,12 +728,12 @@ impl FederationStore for LadybugStore {
                 "MATCH (s:Space) RETURN s.id, s.name, s.kind, s.source_path, s.config, s.created_at ORDER BY s.created_at DESC;",
             )
             .map_err(|e| FederationError::Store(format!("list_spaces: prepare: {e}")))?;
-        let mut result = conn
+        let result = conn
             .execute(&mut stmt, vec![])
             .map_err(|e| FederationError::Store(format!("list_spaces: execute: {e}")))?;
 
         let mut rows = Vec::new();
-        while let Some(row) = result.next() {
+        for row in result {
             rows.push(parse_space_row(&row)?);
         }
         Ok(rows)
@@ -772,19 +789,19 @@ fn parse_space_row(row: &[lbug::Value]) -> Result<Space, FederationError> {
 
 #[async_trait]
 impl ManifestStore for LadybugStore {
-    async fn get_manifest(&self, workspace_id: &str) -> Result<Vec<ScanManifest>, ManifestError> {
+    async fn get_manifest(&self, _workspace_id: &str) -> Result<Vec<ScanManifest>, ManifestError> {
         // lbug Cypher: MATCH (s:ScanManifest) WHERE s.workspace_id = $ws
         // RETURN s.*, ordered by file_path for stable reads.
         let conn = self
             .connection()
             .map_err(|e| ManifestError::Store(format!("get_manifest: {e}")))?;
-        let mut result = conn
+        let result = conn
             .query(
                 "MATCH (s:ScanManifest)                  WHERE s.workspace_id = $ws                  RETURN s.workspace_id, s.file_path, s.file_type, s.language,                         s.content_hash, s.mtime, s.symbol_count, s.edge_count,                         s.status, s.error_msg                  ORDER BY s.file_path;",
             )
             .map_err(|e| ManifestError::Store(format!("get_manifest: query: {e}")))?;
         let mut rows = Vec::new();
-        while let Some(row) = result.next() {
+        for row in result {
             rows.push(ScanManifest {
                 workspace_id: row[0].to_string(),
                 file_path: row[1].to_string(),
@@ -1571,7 +1588,7 @@ impl RunLineageStore for LadybugStore {
         let finished_at = lineage.finished_at.map(|dt| dt.to_rfc3339());
 
         let seed = lineage.seed.map(|s| lbug::Value::Int64(s as i64));
-        let row_count = lineage.row_count.map(|rc| lbug::Value::Int64(rc));
+        let row_count = lineage.row_count.map(lbug::Value::Int64);
         let truncation_marker = lineage
             .truncation_marker
             .as_ref()
@@ -1589,7 +1606,7 @@ impl RunLineageStore for LadybugStore {
             .as_ref()
             .map(|e| lbug::Value::String(e.clone()));
 
-        let cypher_params = vec![
+        let _cypher_params = vec![
             ("run_id", lbug::Value::String(lineage.run_id.to_string())),
             ("ws", lbug::Value::String(lineage.workspace_id.to_string())),
             ("rev", lbug::Value::Int64(lineage.revision_id.get() as i64)),
@@ -1782,11 +1799,11 @@ impl RunLineageStore for LadybugStore {
                  ORDER BY r.started_at DESC;",
             )
             .map_err(|e| AnalyticsError::Internal(format!("lineage query prepare: {e}")))?;
-        let mut rows = conn
+        let rows = conn
             .execute(&mut stmt, vec![])
             .map_err(|e| AnalyticsError::Internal(format!("lineage query: {e}")))?;
 
-        while let Some(row) = rows.next() {
+        for row in rows {
             let run_id_str = row[0].to_string();
             let ws = row[1].to_string();
             let rev = req_i64_at(&row, 2) as u64;
@@ -1867,19 +1884,19 @@ impl RunLineageStore for LadybugStore {
             if filter
                 .workspace_id
                 .as_ref()
-                .map_or(false, |wid| &lineage.workspace_id != wid)
+                .is_some_and(|wid| &lineage.workspace_id != wid)
                 || filter
                     .revision_id
                     .as_ref()
-                    .map_or(false, |rid| &lineage.revision_id != rid)
+                    .is_some_and(|rid| &lineage.revision_id != rid)
                 || filter
                     .algorithm_id
                     .as_ref()
-                    .map_or(false, |aid| &lineage.algorithm_id != aid)
+                    .is_some_and(|aid| &lineage.algorithm_id != aid)
                 || filter
                     .status
                     .as_ref()
-                    .map_or(false, |s| &lineage.status != s)
+                    .is_some_and(|s| &lineage.status != s)
             {
                 continue;
             }
@@ -1928,7 +1945,7 @@ impl RunLineageStore for LadybugStore {
 
         if updated == 0 {
             // Insert new record
-            let params: Vec<(&str, lbug::Value)> = vec![
+            let _params: Vec<(&str, lbug::Value)> = vec![
                 ("alg", lbug::Value::String(algorithm_id.to_string())),
                 ("ver", lbug::Value::String(version.to_string())),
                 ("payload", lbug::Value::String(payload)),
@@ -2369,14 +2386,14 @@ impl LadybugStore {
             Err(e) if is_missing_table(&e) => return Ok(Vec::new()),
             Err(e) => return Err(QualityError::Store(format!("query_issues prepare: {e}"))),
         };
-        let mut result = match conn.execute(&mut stmt, params) {
+        let result = match conn.execute(&mut stmt, params) {
             Ok(result) => result,
             Err(e) if is_missing_table(&e) => return Ok(Vec::new()),
             Err(e) => return Err(QualityError::Store(format!("query_issues execute: {e}"))),
         };
 
         let mut issues: Vec<QualityIssue> = Vec::new();
-        while let Some(row) = result.next() {
+        for row in result {
             issues.push(issue_from_row(&row));
         }
         Ok(issues)
@@ -2506,9 +2523,7 @@ impl LadybugStore {
             )
             .map_err(|e| Error::Lbug(format!("migrate_call_graph: rev check execute: {e}")))?;
         if rev_result.next().is_none() {
-            conn.query(&format!(
-                "CREATE (r:GraphRevision {{workspace_id: $ws, revision_id: $rev, head_of: true}});",
-            ))
+            conn.query("CREATE (r:GraphRevision {workspace_id: $ws, revision_id: $rev, head_of: true});")
             .map_err(|e| Error::Lbug(format!("migrate_call_graph: rev insert: {e}")))?;
         }
 
@@ -2543,10 +2558,8 @@ impl LadybugStore {
                 let sym_file = sym.location().file().to_string();
                 let sym_line = sym.location().line() as i64;
                 let sym_sig = sym.signature().map(|s| s.to_string()).unwrap_or_default();
-                let fqn_for_insert = fqn.clone();
-                let stmt_str = format!(
-                    "CREATE (s:GraphSymbol {{workspace_id: $ws, revision_id: $rev, fqn: $fqn, kind: $kind, name: $name, file_path: $file, line: $line, signature: $sig}});"
-                );
+                let fqn_for_insert = fqn;
+                let stmt_str = "CREATE (s:GraphSymbol {workspace_id: $ws, revision_id: $rev, fqn: $fqn, kind: $kind, name: $name, file_path: $file, line: $line, signature: $sig});".to_string();
                 let mut stmt = conn.prepare(&stmt_str).map_err(|e| {
                     Error::Lbug(format!("migrate_call_graph: sym insert prepare {fqn}: {e}"))
                 })?;
@@ -2601,9 +2614,7 @@ impl LadybugStore {
                 let dep_type_str = "calls".to_string();
                 let provenance_str = "extracted".to_string();
                 let confidence = 1.0_f64;
-                let stmt_str = format!(
-                    "CREATE (e:GraphEdge {{workspace_id: $ws, revision_id: $rev, source_id: $src, target_id: $tgt, dep_type: $dep, provenance: $prov, confidence: $conf}}) RETURN e.id;"
-                );
+                let stmt_str = "CREATE (e:GraphEdge {workspace_id: $ws, revision_id: $rev, source_id: $src, target_id: $tgt, dep_type: $dep, provenance: $prov, confidence: $conf}) RETURN e.id;".to_string();
                 let mut stmt = conn.prepare(&stmt_str).map_err(|e| {
                     Error::Lbug(format!(
                         "migrate_call_graph: edge insert prepare {src_fqn}->{tgt_fqn}: {e}"
@@ -2626,8 +2637,7 @@ impl LadybugStore {
                         "migrate_call_graph: edge insert {src_fqn}->{tgt_fqn}: {e}"
                     ))
                 })?;
-            } else {
-            }
+            } 
         }
         Ok(())
     }
@@ -3509,7 +3519,6 @@ mod tests {
 
     /// Build a `GraphPlan::Neighbors` plan with sensible defaults.
     fn build_minimal_neighbors_plan(src: &str) -> GraphPlan {
-        use cognicode_core::domain::plan::{
             NeighborKind, PlanHash, PlanLimits, PlanMetadata, PlanVersion,
         };
         GraphPlan::Neighbors {
@@ -3620,7 +3629,6 @@ mod tests {
         )
         .expect("rev");
         let executor = make_graph_executor_for_test(&store);
-        use cognicode_core::domain::plan::{
             PathProjection, PathQuantifier, PlanHash, PlanLimits, PlanMetadata, PlanVersion,
         };
         let plan = GraphPlan::Path {
@@ -4567,7 +4575,7 @@ mod tests {
                 "MATCH (s:GraphSymbol) WHERE s.workspace_id = $ws AND s.revision_id = $rev                  RETURN s.fqn ORDER BY s.fqn;",
             )
             .expect("prepare");
-        let mut result = conn
+        let result = conn
             .execute(
                 &mut stmt,
                 vec![
@@ -4577,7 +4585,7 @@ mod tests {
             )
             .expect("execute");
         let mut fqns: Vec<String> = Vec::new();
-        while let Some(row) = result.next() {
+        for row in result {
             fqns.push(row[0].to_string().trim_matches('"').to_string());
         }
         fqns.sort();
@@ -4591,7 +4599,7 @@ mod tests {
                 "MATCH (e:GraphEdge) WHERE e.workspace_id = $ws AND e.revision_id = $rev                  RETURN e.source_id, e.target_id ORDER BY e.target_id;",
             )
             .expect("prepare");
-        let mut result = conn
+        let result = conn
             .execute(
                 &mut stmt,
                 vec![
@@ -4601,7 +4609,7 @@ mod tests {
             )
             .expect("execute");
         let mut edges: Vec<(String, String)> = Vec::new();
-        while let Some(row) = result.next() {
+        for row in result {
             edges.push((
                 row[0].to_string().trim_matches('"').to_string(),
                 row[1].to_string().trim_matches('"').to_string(),
@@ -4696,12 +4704,9 @@ mod tests {
 
 #[cfg(test)]
 mod quality_store_tests {
-    use super::*;
 
-    use serial_test::serial;
 
-    use cognicode_core::domain::ports::{
-        IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityStore, UpsertSummary,
+        IssueFilter, NewIssue, QualityGateSummary, QualityStore, UpsertSummary,
     };
 
     fn make_store() -> (LadybugStore, tempfile::TempDir) {
@@ -5036,13 +5041,10 @@ mod quality_store_tests {
 
 #[cfg(test)]
 mod lineage_store_open_tests {
-    use super::*;
 
-    use cognicode_core::domain::analytics::{
         AnalyticsMode, RunLineage, RunLineageFilter, RunStatus, Uuid,
     };
     use cognicode_core::domain::value_objects::WorkspaceId;
-    use serial_test::serial;
 
     fn sample_lineage(ws: &str) -> RunLineage {
         RunLineage {

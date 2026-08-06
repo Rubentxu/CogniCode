@@ -5,7 +5,7 @@
 use std::fmt;
 
 use super::ExecutorError;
-use super::{GraphPlan, PlanLimitKind, PlanLimits, ResultSet, TypedValue};
+use super::{GraphPlan, PlanLimits, ResultSet, TypedValue};
 use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
 /// A provenance envelope carrying source-side provenance information per result row.
@@ -79,11 +79,10 @@ pub trait GraphExecutor: Send + Sync + fmt::Debug {
         // Default implementation using execute — override for performance
         let mut result = self.execute(plan, pin)?;
         // Apply soft limit truncation if needed
-        if let Some(max_rows) = limits.max_result_rows {
-            if result.rows.len() as u64 > max_rows {
+        if let Some(max_rows) = limits.max_result_rows
+            && result.rows.len() as u64 > max_rows {
                 result = result.with_truncation(super::TruncationMarker::ResultRowsLimit);
             }
-        }
         Ok(result)
     }
 }

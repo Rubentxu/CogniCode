@@ -24,9 +24,9 @@
 
 use crate::moldql::ParseError;
 use crate::moldql::ast::{
-    Aggregation, Binding, EdgeDirection, EdgePattern, Field, MoldQLQuery, OrderClause,
+    Aggregation, Binding, EdgeDirection, EdgePattern, MoldQLQuery, OrderClause,
     OrderDirection, PathQuantifier, PatternOp, PatternPredicate, PatternProjection, PatternQuery,
-    PatternValue, PredicateTarget, Value as AstValue,
+    PatternValue, PredicateTarget,
 };
 use crate::moldql::cursor::Cursor;
 
@@ -66,7 +66,7 @@ pub(crate) fn parse_pattern_query(cursor: &mut Cursor<'_>) -> Result<PatternQuer
         let (line, col) = cursor.position();
         ParseError::at("expected MATCH", line, col)
     })?;
-    if kw.to_ascii_uppercase() != "MATCH" {
+    if !kw.eq_ignore_ascii_case("MATCH") {
         let (line, col) = cursor.position();
         return Err(ParseError::at(
             format!("expected MATCH, found `{kw}`"),
@@ -520,7 +520,7 @@ fn parse_row_projection(cursor: &mut Cursor<'_>) -> Result<PatternProjection, Pa
     loop {
         cursor.skip_ws();
         let ch = cursor.peek_char();
-        if ch == Some(',') || ch == Some('O') || ch == Some('L') || ch == None {
+        if ch == Some(',') || ch == Some('O') || ch == Some('L') || ch.is_none() {
             break;
         }
         if ch == Some('C') {
@@ -666,8 +666,8 @@ fn parse_predicate(cursor: &mut Cursor<'_>) -> Result<PatternPredicate, ParseErr
     cursor.skip_ws();
     let value = parse_pattern_value(cursor)?;
 
-    if field_name == "provenance" {
-        if let PatternValue::String(ref s) = value {
+    if field_name == "provenance"
+        && let PatternValue::String(ref s) = value {
             return Ok(PatternPredicate::Provenance {
                 target: if let PredicateTarget::Node(n) = target {
                     Some(n)
@@ -677,17 +677,15 @@ fn parse_predicate(cursor: &mut Cursor<'_>) -> Result<PatternPredicate, ParseErr
                 source: s.clone(),
             });
         }
-    }
 
-    if field_name == "confidence" {
-        if let PatternValue::Number(n) = value {
+    if field_name == "confidence"
+        && let PatternValue::Number(n) = value {
             return Ok(PatternPredicate::Confidence {
                 target,
                 op,
                 value: n,
             });
         }
-    }
 
     Ok(PatternPredicate::Property {
         target,

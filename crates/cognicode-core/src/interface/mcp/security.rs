@@ -356,11 +356,10 @@ impl InputValidator {
                     break;
                 }
             }
-            if !found {
-                if let Some(first_ws) = self.allowed_paths.first() {
+            if !found
+                && let Some(first_ws) = self.allowed_paths.first() {
                     resolved = first_ws.join(path);
                 }
-            }
             resolved
         } else {
             path.to_path_buf()
@@ -599,12 +598,11 @@ impl InputValidator {
         while let Some(c) = chars.next() {
             if c == '%' {
                 let hex = chars.by_ref().take(2).collect::<String>();
-                if hex.len() == 2 {
-                    if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                if hex.len() == 2
+                    && let Ok(byte) = u8::from_str_radix(&hex, 16) {
                         result.push(byte as char);
                         continue;
                     }
-                }
                 // Not a valid percent-encoded sequence, keep as-is
                 result.push('%');
                 result.push_str(&hex);

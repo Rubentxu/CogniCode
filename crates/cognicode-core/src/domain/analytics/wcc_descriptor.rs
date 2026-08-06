@@ -12,7 +12,6 @@ use crate::domain::analytics::{
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
-use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
 // WCC output schema
@@ -56,9 +55,9 @@ static WCC_LIMITS: LazyLock<PlanLimits> = LazyLock::new(|| PlanLimits {
 // =============================================================================
 
 static WCC_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
-    time: "O(V + E)".into(),
-    space: "O(V)".into(),
-    notes: "Union-find with path compression".into(),
+    time: "O(V + E)",
+    space: "O(V)",
+    notes: "Union-find with path compression",
 });
 
 // =============================================================================
@@ -141,7 +140,7 @@ impl AlgorithmParams for WccParams {
     }
 
     fn validate(&self, params: &serde_json::Value) -> Result<(), String> {
-        if params.is_null() || params.as_object().map_or(false, |o| o.is_empty()) {
+        if params.is_null() || params.as_object().is_some_and(|o| o.is_empty()) {
             Ok(())
         } else {
             Err("WCC algorithm accepts no parameters".into())

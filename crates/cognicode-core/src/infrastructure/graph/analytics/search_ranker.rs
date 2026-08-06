@@ -178,7 +178,7 @@ impl SearchRanker {
                 // Fallback: extract from SymbolId string
                 let parts: Vec<&str> = symbol_id.as_str().splitn(3, ':').collect();
                 let n = parts.get(1).unwrap_or(&"").to_string();
-                let f = parts.get(0).unwrap_or(&"").to_string();
+                let f = parts.first().unwrap_or(&"").to_string();
                 (n, f)
             };
 

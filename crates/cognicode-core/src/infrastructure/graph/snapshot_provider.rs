@@ -9,6 +9,9 @@
 //! so the composition root can wire a single instance and hand clones to
 //! every consumer.
 
+use crate::infrastructure::graph::checkpoint::CheckpointId;
+use crate::infrastructure::graph::graph_cache::GraphCache;
+use std::sync::atomic::{AtomicU64, Ordering};
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::value_objects::{RevisionId, WorkspaceId};
 use std::sync::Arc;
@@ -84,10 +87,12 @@ mod tests {
     use super::*;
     use crate::domain::aggregates::symbol::Symbol;
     use crate::domain::value_objects::{Location, SymbolKind};
-    use crate::infrastructure::graph::checkpoint::CheckpointId;
-    use crate::infrastructure::graph::graph_cache::GraphCache;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    
+    
+
+    
+    
+    
 
     // ---------------------------------------------------------------------------
     // ---------------------------------------------------------------------------
@@ -117,9 +122,6 @@ mod tests {
     // ---------------------------------------------------------------------------
     #[test]
     fn get_at_provider_routes_to_provider_when_set() {
-        use crate::domain::aggregates::call_graph::CallGraph;
-        use crate::domain::value_objects::{RevisionId, WorkspaceId};
-        use std::sync::Arc;
 
         // Build a TestSnapshotProvider that returns a known graph.
         let test_provider = TestSnapshotProvider::new();

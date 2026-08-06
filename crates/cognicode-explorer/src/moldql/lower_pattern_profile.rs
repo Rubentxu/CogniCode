@@ -2,17 +2,20 @@
 //!
 //! Part of e28-3-moldql-pattern-profile-v1: PR1 Foundation.
 
+use std::str::FromStr;
+use super::ast::{
+    Aggregation, Binding, EdgeDirection, EdgePattern, OrderClause, OrderDirection,
+    PatternPredicate, PatternProjection, PatternQuery, PatternValue, PredicateTarget,
+};
 use cognicode_core::domain::plan::{
-    GraphPlan, NeighborKind, OrderClause as DomainOrderClause,
+    GraphPlan, OrderClause as DomainOrderClause,
     OrderDirection as DomainOrderDirection, PathPredicate, PathProjection, PathQuantifier,
     PlanError, PlanHash, PlanLimits, PlanMetadata, PlanVersion,
 };
 use cognicode_core::domain::value_objects::DependencyType;
-use std::str::FromStr;
 
-use super::ast::{
-    Aggregation, Binding, EdgeDirection, EdgePattern, OrderClause, OrderDirection,
-    PatternPredicate, PatternProjection, PatternQuery, PatternValue, PredicateTarget,
+    Aggregation, OrderDirection, PatternPredicate, PatternProjection, PatternQuery,
+    PatternValue, PredicateTarget,
 };
 
 /// Default maximum hops for `+` quantifier in Pattern Profile.
@@ -172,7 +175,7 @@ impl super::MoldqlAstLowerer {
                 PatternPredicate::Property {
                     target,
                     field,
-                    op,
+                    op: _,
                     value,
                 } => {
                     let label = match target {
@@ -198,7 +201,7 @@ impl super::MoldqlAstLowerer {
                     let value = cognicode_core::domain::plan::TypedValue::String(source.clone());
                     Some(PathPredicate { label, value })
                 }
-                PatternPredicate::Confidence { target, op, value } => {
+                PatternPredicate::Confidence { target, op: _, value } => {
                     let label = match target {
                         PredicateTarget::Node(n) => format!("{}.confidence", n),
                         PredicateTarget::Edge(e) => format!("{}.confidence", e),
@@ -274,7 +277,7 @@ impl super::MoldqlAstLowerer {
                         OrderDirection::Desc => DomainOrderDirection::Desc,
                     },
                 });
-                (by, aggs, ordering, limit.clone())
+                (by, aggs, ordering, *limit)
             }
             _ => (vec![], vec![], None, None),
         }

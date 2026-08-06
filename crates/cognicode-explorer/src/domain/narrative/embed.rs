@@ -70,8 +70,8 @@ impl EmbedResolver {
 
         while i < bytes.len() {
             // Look for `!view(` case-insensitively
-            if bytes[i] == b'!' {
-                if i + 5 < bytes.len()
+            if bytes[i] == b'!'
+                && i + 5 < bytes.len()
                     && (bytes[i + 1] == b'v' || bytes[i + 1] == b'V')
                     && (bytes[i + 2] == b'i' || bytes[i + 2] == b'I')
                     && (bytes[i + 3] == b'e' || bytes[i + 3] == b'E')
@@ -96,7 +96,6 @@ impl EmbedResolver {
                         continue;
                     }
                 }
-            }
             i += 1;
         }
 

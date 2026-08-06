@@ -3,6 +3,11 @@
 //! Each function takes already-resolved data and shapes it into a
 //! `ContextualView`. No I/O, no trait calls beyond the ports.
 
+use crate::adapters::QualityGraphRepository;
+use crate::facades::investigation::Investigation;
+use cognicode_core::domain::investigation::Evidence;
+use crate::dto::ExplorationSession;
+use crate::dto::{ExampleBlock, WorkspaceTarget};
 use serde_json::json;
 
 use crate::dto::{
@@ -15,18 +20,15 @@ use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepo
 use cognicode_core::domain::aggregates::call_graph::CallEntry;
 use cognicode_core::domain::ports::{QualityIssue, QualityStore, RuleSummary};
 
-use crate::adapters::QualityGraphRepository;
 use crate::domain::evidence::build_evidence_blocks;
-use crate::facades::investigation::Investigation;
 use cognicode_core::domain::aggregates::SymbolId;
-use cognicode_core::domain::investigation::Evidence;
 use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 use cognicode_core::domain::value_objects::Provenance;
 
 /// Build the Overview view: identity + call graph metrics + signature for callables.
 pub fn build_overview<'a>(
     symbol: &ResolvedSymbol,
-    repo: &'a dyn SymbolRepository,
+    _repo: &'a dyn SymbolRepository,
     graph_query: Option<&'a dyn GraphQueryPort>,
 ) -> ContextualView {
     let mut blocks: Vec<ViewBlock> = Vec::new();
@@ -77,7 +79,7 @@ pub fn build_overview<'a>(
 /// Build the Call Graph view: incoming + outgoing relations and their counts.
 pub fn build_callgraph<'a>(
     symbol: &ResolvedSymbol,
-    repo: &'a dyn SymbolRepository,
+    _repo: &'a dyn SymbolRepository,
     graph_query: Option<&'a dyn GraphQueryPort>,
 ) -> ContextualView {
     let callers = graph_query
@@ -1242,8 +1244,6 @@ fn other_scope(current_scope: &str, other_file: &str) -> String {
 //   ViewDescriptor  — metadata-only, object-safe (no async, no build)
 //   ViewExecutor    — ViewDescriptor + async build()
 
-use crate::dto::ExplorationSession;
-use crate::dto::{ExampleBlock, WorkspaceTarget};
 use crate::error::ExplorerResult;
 use async_trait::async_trait;
 
@@ -2677,11 +2677,11 @@ async fn build_node_source_view(
     let cfg = KsvConfig {
         focus_id: id.to_string(),
         mvp_prefix: mvp_prefix.to_string(),
-        view_id: view_id,
-        evidence_kind: evidence_kind,
+        view_id,
+        evidence_kind,
         title_prefix: evidence_title_prefix,
-        identity_block_id: identity_block_id,
-        identity_block_title: identity_block_title,
+        identity_block_id,
+        identity_block_title,
         renderer_kind: renderer_kind.clone(),
     };
 
@@ -3032,8 +3032,6 @@ pub async fn build_doc_code_alignment_view(
     focus_id: &str,
     mvp_prefix: &str,
 ) -> ExplorerResult<ContextualView> {
-    use cognicode_core::domain::aggregates::generic_graph::NodeId;
-    use cognicode_core::domain::ports::GraphRepository;
     use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
 
     // Repo-guard inline (3 LOC) — no helper for this; callers need the error shape.
@@ -3065,7 +3063,7 @@ pub async fn build_doc_code_alignment_view(
                 title: "Unknown".into(),
                 body: json!({ "message": format!("'{}' not found in graph", focus_id) }),
             }];
-            return Ok(ContextualView {
+            Ok(ContextualView {
                 object_id: mvp,
                 view_id: "doc_code_alignment".into(),
                 title,
@@ -3075,10 +3073,10 @@ pub async fn build_doc_code_alignment_view(
                 evidence: Vec::new(),
                 findings: Vec::new(),
                 renderer_kind: RendererKind::Graph,
-            });
+            })
         }
         FocusResolution::Error(msg) => {
-            return Err(crate::error::ExplorerError::NotFound(msg));
+            Err(crate::error::ExplorerError::NotFound(msg))
         }
         FocusResolution::Found(focus_node) => {
             // Fetch Cites and Resolves edges
@@ -3250,8 +3248,6 @@ pub async fn build_concept_map_view(
     max_depth: Option<u32>,
     max_nodes: Option<usize>,
 ) -> ExplorerResult<ContextualView> {
-    use cognicode_core::domain::aggregates::generic_graph::NodeId;
-    use cognicode_core::domain::ports::GraphRepository;
 
     // Repo-guard inline (3 LOC)
     let Some(repo) = ctx.graph_repo else {
@@ -3283,7 +3279,7 @@ pub async fn build_concept_map_view(
                 title: "Unknown".into(),
                 body: json!({ "message": format!("'{}' not found in graph", focus_id) }),
             }];
-            return Ok(ContextualView {
+            Ok(ContextualView {
                 object_id: mvp,
                 view_id: "concept_map".into(),
                 title,
@@ -3293,10 +3289,10 @@ pub async fn build_concept_map_view(
                 evidence: Vec::new(),
                 findings: Vec::new(),
                 renderer_kind: RendererKind::Graph,
-            });
+            })
         }
         FocusResolution::Error(msg) => {
-            return Err(crate::error::ExplorerError::NotFound(msg));
+            Err(crate::error::ExplorerError::NotFound(msg))
         }
         FocusResolution::Found(focus_node) => {
             // Traverse rationale subgraph
@@ -3740,7 +3736,7 @@ impl ViewExecutor for RiskMapExecutor {
             let symbol_id = hotspot
                 .object_id
                 .strip_prefix("symbol:")
-                .map(|s| cognicode_core::domain::aggregates::SymbolId::new(s.to_string()));
+                .map(cognicode_core::domain::aggregates::SymbolId::new);
 
             if let Some(id) = symbol_id {
                 let edges = qgr
@@ -3920,24 +3916,21 @@ impl ViewExecutor for OwnershipMapExecutor {
                 if let Some(props) = ctx
                     .graph_query
                     .and_then(|gq| gq.node_properties(&symbol.id))
-                {
-                    if has_ownership_data(&props) {
+                    && has_ownership_data(&props) {
                         return Ok(build_ownership_map_with_properties(
                             &symbol.name,
                             symbol.file.as_str(),
                             &props,
                         ));
                     }
-                }
                 Ok(build_ownership_map_placeholder(Some(&symbol.name)))
             }
             InspectionTarget::Scope { path, symbols, .. } => {
                 // Try to aggregate ownership data across member symbols
-                if let Some(props) = aggregate_scope_ownership(ctx.graph_query, symbols) {
-                    if has_ownership_data(&props) {
+                if let Some(props) = aggregate_scope_ownership(ctx.graph_query, symbols)
+                    && has_ownership_data(&props) {
                         return Ok(build_ownership_map_with_properties(path, "", &props));
                     }
-                }
                 Ok(build_ownership_map_placeholder(Some(path)))
             }
             InspectionTarget::Issue(issue) => Ok(build_ownership_map(issue)),
@@ -4030,7 +4023,7 @@ fn build_ownership_map_with_properties(
     _file: &str,
     props: &std::collections::HashMap<String, String>,
 ) -> ContextualView {
-    let node_label = props
+    let _node_label = props
         .get("codeowners")
         .cloned()
         .unwrap_or_else(|| target_name.to_string());
@@ -4067,11 +4060,10 @@ fn aggregate_scope_ownership(
 ) -> Option<std::collections::HashMap<String, String>> {
     let gq = graph_query?;
     for sym in symbols {
-        if let Some(props) = gq.node_properties(&sym.id) {
-            if has_ownership_data(&props) {
+        if let Some(props) = gq.node_properties(&sym.id)
+            && has_ownership_data(&props) {
                 return Some(props);
             }
-        }
     }
     None
 }
@@ -4139,12 +4131,12 @@ impl ViewDescriptor for ArchitectureDriftExecutor {
 
 #[async_trait]
 impl ViewExecutor for ArchitectureDriftExecutor {
-    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+    async fn build(&self, _ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         // Architecture drift detection requires workspace-level context
         // (root path) which is not available through InspectionTarget.
         // The dedicated drift endpoint should be used instead.
         Err(crate::error::ExplorerError::NotImplemented(
-            "Architecture drift requires the /api/workspaces/{id}/drift endpoint".into(),
+            "Architecture drift requires the /api/workspaces/{id}/drift endpoint",
         ))
     }
 }
@@ -4177,8 +4169,6 @@ pub async fn fetch_decision_with_subgraph(
     Vec<cognicode_core::domain::aggregates::generic_graph::GraphEdge>,
     bool,
 )> {
-    use cognicode_core::domain::aggregates::generic_graph::NodeId;
-    use cognicode_core::domain::ports::GraphRepository;
 
     let node_id = NodeId::new(decision_id.to_string());
 
@@ -4339,8 +4329,8 @@ pub async fn build_rationale_view(
     decision_id: &str,
     graph_repo: Option<&dyn cognicode_core::domain::ports::GraphRepository>,
 ) -> ContextualView {
-    use cognicode_core::domain::aggregates::generic_graph::NodeId;
-    use cognicode_core::domain::ports::GraphRepository;
+    
+    
 
     let mvp = format!("decision:{decision_id}");
 
@@ -4495,14 +4485,12 @@ impl ViewDescriptor for DecisionGraphExecutor {
 impl ViewExecutor for DecisionGraphExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Decision { id } => {
+            InspectionTarget::Decision { id: _ } => {
                 #[cfg(feature = "multimodal")]
                 {
                     use crate::domain::decision_graph_topology::DecisionGraphTopology;
-                    use cognicode_core::domain::aggregates::generic_graph::NodeId;
-                    use cognicode_core::domain::ports::GraphRepository;
 
-                    let mvp = format!("decision:{id}");
+                    let _mvp = format!("decision:{id}");
 
                     let Some(repo) = ctx.graph_repo else {
                         return Err(crate::error::ExplorerError::FeatureDisabled(
@@ -4629,8 +4617,8 @@ fn to_mermaid_subgraph(
     focus_id: &cognicode_core::domain::aggregates::generic_graph::NodeId,
     max_display: usize,
 ) -> (String, bool) {
-    use cognicode_core::domain::aggregates::generic_graph::NodeId;
-    use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
+    
+    
 
     // Collect node ids in traversal order for consistent display
     let display_nodes: Vec<&cognicode_core::domain::aggregates::generic_graph::GraphNode> =
@@ -4826,11 +4814,9 @@ impl ViewDescriptor for DecisionTraceExecutor {
 impl ViewExecutor for DecisionTraceExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Decision { id } => {
+            InspectionTarget::Decision { id: _ } => {
                 #[cfg(feature = "multimodal")]
                 {
-                    use cognicode_core::domain::aggregates::generic_graph::NodeId;
-                    use cognicode_core::domain::ports::GraphRepository;
 
                     let mvp = format!("decision:{id}");
 
@@ -4856,7 +4842,7 @@ impl ViewExecutor for DecisionTraceExecutor {
                     };
 
                     // Fetch rationale subgraph
-                    let (nodes, edges, truncated) = repo
+                    let (nodes, edges, _truncated) = repo
                         .rationale_subgraph(
                             &node_id,
                             DECISION_TRACE_MAX_DEPTH,
@@ -5004,14 +4990,13 @@ impl ViewDescriptor for DecisionSupportPackExecutor {
 impl ViewExecutor for DecisionSupportPackExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Decision { id } => {
+            InspectionTarget::Decision { id: _ } => {
                 #[cfg(feature = "multimodal")]
                 {
                     use crate::domain::decision_support_pack::{
                         DecisionSupportPackBuilder, PACK_RATIONALE_MAX_DEPTH,
                         PACK_RATIONALE_MAX_NODES,
                     };
-                    use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
                     // Helper: build the pack via DecisionSupportPackBuilder and
                     // convert to a ContextualView. Consolidates the 3 duplicate
@@ -5148,9 +5133,9 @@ mod tests {
     pub(crate) use crate::domain::narrative::test_support::MockReader;
     pub(crate) use crate::domain::narrative::test_support::MockRepo;
     pub(crate) use crate::domain::narrative::test_support::make_resolved;
+    use crate::dto::{ExplorationSession, ExampleBlock, WorkspaceTarget};
 
     use super::*;
-    use async_trait::async_trait;
     use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode};
     use cognicode_core::domain::ports::graph_repository::GraphRepository;
     use cognicode_core::domain::traits::graph_query_port::{
@@ -7114,7 +7099,6 @@ mod tests {
     /// E24.3: to_mermaid helper produces valid output for empty subgraph.
     #[test]
     fn to_mermaid_subgraph_empty() {
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let nodes: Vec<cognicode_core::domain::aggregates::generic_graph::GraphNode> = vec![];
         let edges: Vec<cognicode_core::domain::aggregates::generic_graph::GraphEdge> = vec![];
@@ -7132,8 +7116,6 @@ mod tests {
     fn to_mermaid_subgraph_respects_node_cap() {
         use chrono::Utc;
         use cognicode_core::domain::aggregates::generic_graph::GraphNode;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
-        use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
         use cognicode_core::domain::value_objects::node_kind::NodeKind;
 
         // Create 5 nodes (exceeds cap of 3)
@@ -7162,8 +7144,6 @@ mod tests {
     /// E24.3: build_adr_markdown returns graceful fallback when source_path is None.
     #[test]
     fn build_adr_markdown_no_source_path() {
-        use crate::ports::source_reader::SourceReader;
-        use std::collections::HashMap;
 
         struct FakeReader;
         impl SourceReader for FakeReader {
@@ -7189,7 +7169,6 @@ mod tests {
     /// E24.3: build_adr_markdown extracts frontmatter correctly.
     #[test]
     fn build_adr_markdown_extracts_frontmatter() {
-        use crate::ports::source_reader::SourceReader;
 
         struct FakeReader {
             content: String,
@@ -7269,7 +7248,6 @@ Positive outcomes.
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn decision_trace_rejects_symbol_target() {
-        use cognicode_core::domain::value_objects::SymbolKind;
 
         let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
         let target = super::InspectionTarget::Symbol(sym);
@@ -7298,11 +7276,6 @@ Positive outcomes.
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn decision_trace_builds_two_blocks() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::GraphNode;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
-        use cognicode_core::domain::ports::GraphRepository;
-        use cognicode_core::domain::value_objects::node_kind::NodeKind;
 
         let mut mock = MockGraphRepo::new();
         mock.with_node(GraphNode {
@@ -7380,9 +7353,6 @@ Positive outcomes.
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn decision_graph_executor_handles_decision() {
-        use crate::domain::decision_graph_topology::DecisionGraphTopology;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
-        use cognicode_core::domain::ports::GraphRepository;
 
         let target = super::InspectionTarget::Decision {
             id: "ADR-001".to_string(),
@@ -7585,9 +7555,6 @@ Positive outcomes.
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn decision_support_pack_empty_decision_returns_empty_status() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
-        use cognicode_core::domain::ports::GraphRepository;
 
         // Decision A with no edges — empty neighborhood scenario
         let mut mock = MockGraphRepo::new();
@@ -7740,7 +7707,6 @@ Positive outcomes.
     #[cfg(feature = "multimodal")]
     #[test]
     fn pack_pane_degraded_uses_reason_field() {
-        use crate::domain::decision_support_pack::{PackPane, PaneStatus};
 
         let pane = PackPane {
             view_id: "test_pane",
@@ -7762,7 +7728,6 @@ Positive outcomes.
     #[cfg(feature = "multimodal")]
     #[test]
     fn pack_pane_ok_has_no_payload() {
-        use crate::domain::decision_support_pack::{PackPane, PaneStatus};
 
         let pane = PackPane {
             view_id: "test_pane",
@@ -7792,8 +7757,6 @@ Positive outcomes.
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn decision_graph_empty_graph_shows_focus_only() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let mut mock = MockGraphRepo::new();
         mock.with_node(GraphNode {
@@ -7850,8 +7813,6 @@ Positive outcomes.
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn decision_graph_focus_only_no_edges() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let mut mock = MockGraphRepo::new();
         mock.with_node(GraphNode {
@@ -7939,8 +7900,6 @@ Positive outcomes.
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn decision_graph_shape_equality_preserves_identity() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let decision_id = "ADR-042";
         let decision_node_id = NodeId::new(decision_id.to_string());
@@ -8277,16 +8236,10 @@ Positive outcomes.
 
 #[cfg(test)]
 mod view_seam_tests {
-    use super::*;
     use crate::domain::views::tests::MockGraphRepo;
     use crate::domain::views::tests::MockReader;
     use crate::domain::views::tests::MockRepo;
     use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
-    use cognicode_core::domain::ports::graph_repository::GraphRepository;
-    use cognicode_core::domain::value_objects::SymbolKind;
-    use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
-    use cognicode_core::domain::value_objects::node_kind::NodeKind;
-    use std::collections::HashMap;
 
     // -------------------------------------------------------------------------
     // Object safety — &dyn ViewDescriptor / &dyn ViewExecutor must compile
@@ -8489,7 +8442,6 @@ mod view_seam_tests {
     #[test]
     fn risk_map_compute_risk_fan_in_only() {
         // When quality is unavailable, fan-in only contributes to risk (non-zero when fan_in > 0).
-        use crate::domain::lenses::hotspots::compute_risk;
 
         // fan_in=10, weighted=0 → risk = 10 * 0.4 + 0 * 0.6 = 4.0
         let risk = compute_risk(10, 0.0);
@@ -8574,8 +8526,6 @@ mod view_seam_tests {
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn doc_code_alignment_two_valid_cites() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let mut mock = MockGraphRepo::new();
         mock.with_node(GraphNode {
@@ -8656,8 +8606,6 @@ mod view_seam_tests {
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn doc_code_alignment_decision_with_resolves() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let mut mock = MockGraphRepo::new();
         mock.with_node(GraphNode {
@@ -8712,8 +8660,6 @@ mod view_seam_tests {
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn doc_code_alignment_one_missing_drift() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let mut mock = MockGraphRepo::new();
         mock.with_node(GraphNode {
@@ -8782,8 +8728,6 @@ mod view_seam_tests {
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn doc_code_alignment_no_citations() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let mut mock = MockGraphRepo::new();
         mock.with_node(GraphNode {
@@ -8900,8 +8844,6 @@ mod view_seam_tests {
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn concept_map_default_depth_2() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         // D --(Cites)--> A1 --(Justifies)--> S1
         let mut mock = MockGraphRepo::new();
@@ -8982,8 +8924,6 @@ mod view_seam_tests {
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn concept_map_depth_1_stops_at_one_hop() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let mut mock = MockGraphRepo::new();
         mock.with_node(GraphNode {
@@ -9062,8 +9002,6 @@ mod view_seam_tests {
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn concept_map_cycle_not_retraversed() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         // A --(Cites)--> B --(Cites)--> A  (cycle)
         let mut mock = MockGraphRepo::new();
@@ -9131,8 +9069,6 @@ mod view_seam_tests {
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn concept_map_empty_rationale_returns_focus_only() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let mut mock = MockGraphRepo::new();
         mock.with_node(GraphNode {
@@ -9186,8 +9122,6 @@ mod view_seam_tests {
     #[tokio::test]
     #[cfg(feature = "multimodal")]
     async fn concept_map_doc_cites_symbol_related_symbols() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let mut mock = MockGraphRepo::new();
         mock.with_node(GraphNode {
@@ -9258,8 +9192,6 @@ mod view_seam_tests {
 
     #[tokio::test]
     async fn resolve_focus_node_returns_found_when_node_exists() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let mut mock = MockGraphRepo::new();
         mock.with_node(GraphNode {
@@ -9298,7 +9230,6 @@ mod view_seam_tests {
 
     #[tokio::test]
     async fn resolve_focus_node_returns_not_found_with_cfg_stamped_fields() {
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let mock = MockGraphRepo::new(); // empty — no nodes
 
@@ -9336,8 +9267,6 @@ mod view_seam_tests {
 
     #[tokio::test]
     async fn assemble_knowledge_view_stamps_evidence_from_cfg() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
 
         let node = GraphNode {
             id: NodeId::new("TEST-ID".to_string()),
@@ -9380,8 +9309,6 @@ mod view_seam_tests {
     /// byte-identical JSON output on round-trip (serialize → deserialize → serialize).
     #[test]
     fn ksv_helpers_produce_byte_identical_output() {
-        use chrono::Utc;
-        use cognicode_core::domain::aggregates::generic_graph::NodeId;
         use serde_json::Map;
 
         let mut props = Map::new();

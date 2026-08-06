@@ -10,10 +10,17 @@
 //! This module is gated on `#[cfg(feature = "multimodal")]` in
 //! `lib.rs`, so all items here can assume multimodal is active.
 
+use axum::body::{Body, to_bytes};
+use crate::facades::{
+    GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
+    graph::GraphServiceImpl,
+};
+use crate::ports::symbol_repository::{
+    GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
 use cognicode_core::domain::value_objects::dependency_type::DependencyType;
@@ -26,13 +33,11 @@ use tower::ServiceExt;
 use crate::adapters::InMemoryGraphRepository;
 use crate::api::{ApiState, router_with_state};
 use crate::dto::SubgraphResponse;
-use crate::facades::{
-    GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
+    MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
     graph::GraphServiceImpl,
 };
 use crate::ports::source_reader::SourceReader;
-use crate::ports::symbol_repository::{
-    GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
+    GraphStats, ResolvedSymbol, SymbolRepository,
 };
 use cognicode_core::domain::aggregates::SymbolId;
 use cognicode_core::domain::ports::graph_repository::GraphRepository;

@@ -1,12 +1,12 @@
 //! [`MoldQLService`] implementation.
 
+use crate::dto::MoldQLResultDto;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use cognicode_core::domain::plan::executor::GraphExecutor;
 use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
 
-use crate::dto::MoldQLResultDto;
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::LensService;
 use crate::facades::MoldQLService;
@@ -191,8 +191,6 @@ impl MoldQLServiceImpl {
 mod tests {
     use super::*;
     use crate::error::ExplorerResult;
-    use crate::facades::LensService;
-    use crate::ports::source_reader::SourceReader;
     use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
     use cognicode_core::domain::aggregates::SymbolId;
     use cognicode_core::domain::plan::executor::StubExecutor;

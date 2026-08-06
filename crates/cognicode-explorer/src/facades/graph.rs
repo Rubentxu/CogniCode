@@ -1,15 +1,18 @@
 //! Graph facade — symbol resolution and subgraph traversal.
 
-use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use crate::dto::{
+    DriftFinding, DriftKind, DriftReport, ExpectedArchitecture, ExpectedContainer, GodNodeEntry,
+    GraphEdge, GraphNode, SubgraphResponse,
+};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use cognicode_core::domain::aggregates::SymbolId;
 use cognicode_core::domain::traits::GraphQueryPort;
 
-use crate::dto::{
-    DriftFinding, DriftKind, DriftReport, ExpectedArchitecture, ExpectedContainer, GodNodeEntry,
+    DriftReport, GodNodeEntry,
     GraphEdge, GraphNode, SubgraphResponse,
 };
 use crate::error::{ExplorerError, ExplorerResult};
@@ -151,7 +154,7 @@ impl GraphService for GraphServiceImpl {
                 ),
             };
 
-            for neighbour in incoming.into_iter().chain(outgoing.into_iter()) {
+            for neighbour in incoming.into_iter().chain(outgoing) {
                 if nodes.len() >= max_nodes_usize {
                     truncated = true;
                     break;
@@ -202,7 +205,7 @@ impl GraphService for GraphServiceImpl {
         })
     }
 
-    async fn build_architecture(&self, root_path: &str) -> ExplorerResult<SubgraphResponse> {
+    async fn build_architecture(&self, _root_path: &str) -> ExplorerResult<SubgraphResponse> {
         #[cfg(feature = "multimodal")]
         {
             self.build_architecture_impl(root_path).await
@@ -215,7 +218,7 @@ impl GraphService for GraphServiceImpl {
         }
     }
 
-    async fn compare_architecture(&self, root_path: &str) -> ExplorerResult<DriftReport> {
+    async fn compare_architecture(&self, _root_path: &str) -> ExplorerResult<DriftReport> {
         #[cfg(feature = "multimodal")]
         {
             self.compare_architecture_impl(root_path).await
@@ -362,8 +365,8 @@ impl GraphServiceImpl {
         let mut package_name_to_container_id: HashMap<String, String> = HashMap::new();
 
         // Parse workspace Cargo.toml to find members
-        if let Ok(toml_content) = std::fs::read_to_string(&workspace_toml) {
-            if let Ok(toml_value) = toml_content.parse::<toml::Value>() {
+        if let Ok(toml_content) = std::fs::read_to_string(&workspace_toml)
+            && let Ok(toml_value) = toml_content.parse::<toml::Value>() {
                 // Get workspace members (array of paths)
                 if let Some(members) = toml_value
                     .get("workspace")
@@ -375,11 +378,10 @@ impl GraphServiceImpl {
                             let member_dir = root.join(member_path);
                             let member_toml_path = member_dir.join("Cargo.toml");
 
-                            if member_toml_path.exists() {
-                                if let Ok(member_toml_content) =
+                            if member_toml_path.exists()
+                                && let Ok(member_toml_content) =
                                     std::fs::read_to_string(&member_toml_path)
-                                {
-                                    if let Ok(member_toml) =
+                                    && let Ok(member_toml) =
                                         member_toml_content.parse::<toml::Value>()
                                     {
                                         // Determine sub_kind: library if [lib] present, binary if [[bin]] present
@@ -437,18 +439,15 @@ impl GraphServiceImpl {
                                             style_class: "edge-part-of".to_string(),
                                         });
                                     }
-                                }
-                            }
                         }
                     }
                 }
             }
-        }
 
         // Parse apps/* directories for node-app containers
         let apps_dir = root.join("apps");
-        if apps_dir.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&apps_dir) {
+        if apps_dir.is_dir()
+            && let Ok(entries) = std::fs::read_dir(&apps_dir) {
                 for entry in entries.flatten() {
                     let app_path = entry.path();
                     if app_path.is_dir() {
@@ -482,16 +481,15 @@ impl GraphServiceImpl {
                     }
                 }
             }
-        }
 
         // =========================================================================
         // Dependency Inference — emit depends_on edges from Cargo.toml [dependencies]
         // =========================================================================
         for (container_id, toml_path) in &container_toml_paths {
-            if let Ok(toml_content) = std::fs::read_to_string(toml_path) {
-                if let Ok(toml_value) = toml_content.parse::<toml::Value>() {
-                    if let Some(dependencies) = toml_value.get("dependencies") {
-                        if let Some(deps) = dependencies.as_table() {
+            if let Ok(toml_content) = std::fs::read_to_string(toml_path)
+                && let Ok(toml_value) = toml_content.parse::<toml::Value>()
+                    && let Some(dependencies) = toml_value.get("dependencies")
+                        && let Some(deps) = dependencies.as_table() {
                             for (dep_name, _dep_value) in deps {
                                 // Look up the package name to find the target container_id
                                 if let Some(target_container_id) =
@@ -507,9 +505,6 @@ impl GraphServiceImpl {
                                 }
                             }
                         }
-                    }
-                }
-            }
         }
 
         // =========================================================================
@@ -620,8 +615,6 @@ impl GraphServiceImpl {
     }
 
     async fn compare_architecture_impl(&self, root_path: &str) -> ExplorerResult<DriftReport> {
-        use std::collections::HashMap;
-        use std::path::Path;
 
         // Parse expected architecture file if it exists
         let expected_file = Path::new(root_path).join(".cognicode/expected-architecture.yaml");
@@ -707,8 +700,8 @@ impl GraphServiceImpl {
 
         // Wrong sub_kind: name matches but sub_kind differs
         for expected in &expected_arch.containers {
-            if let Some(actual_sub_kind) = inferred_containers.get(&expected.name) {
-                if actual_sub_kind != &expected.sub_kind {
+            if let Some(actual_sub_kind) = inferred_containers.get(&expected.name)
+                && actual_sub_kind != &expected.sub_kind {
                     findings.push(DriftFinding {
                         kind: DriftKind::WrongSubKind,
                         expected: format!("{} ({})", expected.name, expected.sub_kind),
@@ -721,7 +714,6 @@ impl GraphServiceImpl {
                         rule_id: None,
                     });
                 }
-            }
         }
 
         // =========================================================================
@@ -753,7 +745,7 @@ impl GraphServiceImpl {
 
             // Check each depends_on edge against the rule patterns
             for (from, to) in &depends_on_edges {
-                if from_pattern.matches(*from) && to_pattern.matches(*to) {
+                if from_pattern.matches(from) && to_pattern.matches(to) {
                     // Rule pattern matched this dependency - emit a violation
                     let severity_str = match rule.severity {
                         crate::dto::Severity::Error => "error".to_string(),
@@ -829,9 +821,7 @@ fn infer_sub_kind(file: Option<&str>) -> String {
 #[cfg(all(test, feature = "multimodal"))]
 mod tests {
     use super::*;
-    use cognicode_core::domain::aggregates::SymbolId;
     use cognicode_core::domain::value_objects::{Location, SymbolKind};
-    use std::sync::Arc;
     use tempfile::TempDir;
 
     /// Mock SymbolRepository for architecture tests.

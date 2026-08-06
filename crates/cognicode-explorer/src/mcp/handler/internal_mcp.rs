@@ -375,8 +375,8 @@ impl ToolHandler for HealthDashboardHandler {
         let mut indexed = 0;
         let mut stale = 0;
         for (sid, _) in g.symbol_ids() {
-            let deps = g.dependencies(&sid).count();
-            let dependents = g.dependents(&sid).count();
+            let deps = g.dependencies(sid).count();
+            let dependents = g.dependents(sid).count();
             if deps == 0 && dependents == 0 {
                 stale += 1;
             } else {

@@ -3,12 +3,15 @@
 //! The graph is held behind an `Arc` so the adapter is cheap to clone and
 //! safe to share with the application service.
 
+use cognicode_core::domain::traits::graph_query_port::{
+    CalleeWithMetadata, CallerWithMetadata, EdgeWithMetadata, GraphQueryPort, RelationTarget,
+    RelationTargetWithMetadata,
+};
 use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::{CallEntry, CallGraph, Symbol, SymbolId};
 use cognicode_core::domain::ports::NodePropertyRepository;
-use cognicode_core::domain::traits::graph_query_port::{
-    CalleeWithMetadata, CallerWithMetadata, EdgeWithMetadata, GraphQueryPort, RelationTarget,
+    CalleeWithMetadata, CallerWithMetadata, GraphQueryPort, RelationTarget,
     RelationTargetWithMetadata,
 };
 use cognicode_core::domain::value_objects::{DependencyType, Provenance, RevisionId, WorkspaceId};
@@ -236,7 +239,7 @@ impl GraphQueryPort for CallGraphRepository {
             .dependencies_with_metadata(id)
             .map(|(target_id, dependency_type, provenance, confidence)| {
                 let target =
-                    relation_target(&target_id, &self.graph).unwrap_or_else(|| RelationTarget {
+                    relation_target(target_id, &self.graph).unwrap_or_else(|| RelationTarget {
                         id: target_id.clone(),
                         name: String::new(),
                         kind: cognicode_core::domain::value_objects::SymbolKind::Function,

@@ -19,7 +19,6 @@
 //! are replaced with underscores. Duplicated IDs receive numeric suffixes (`_2`, `_3`).
 //! Reuses [`sanitize_id`] and [`deduplicate_ids`] from [`mermaid_util`](super::mermaid_util).
 
-use std::fmt;
 
 /// Error returned by trace-to-Mermaid emitters.
 #[derive(Debug, thiserror::Error)]
@@ -96,6 +95,7 @@ impl TraceMermaidViewKind {
     }
 }
 
+use std::fmt;
 use cognicode_core::domain::aggregates::{CallEntry, SymbolId};
 
 use crate::dto::InspectionTarget;
@@ -145,7 +145,7 @@ pub fn call_graph_to_mermaid(ctx: &TraceEmitContext, symbol: &str) -> String {
         return "// InspectionTarget::Symbol required".to_string();
     };
 
-    let symbol_id = SymbolId::new(symbol.to_string());
+    let symbol_id = SymbolId::new(symbol);
     let callers = graph_query.callers(&symbol_id);
     let callees = graph_query.callees(&symbol_id);
 
@@ -158,7 +158,7 @@ pub fn call_graph_to_mermaid(ctx: &TraceEmitContext, symbol: &str) -> String {
     }
 
     let mut lines = vec!["flowchart TD".to_string()];
-    lines.push(format!("    subgraph call_graph[\"call_graph\"]"));
+    lines.push("    subgraph call_graph[\"call_graph\"]".to_string());
     lines.push("        direction TD".to_string());
 
     // Center node
@@ -206,7 +206,7 @@ pub fn impact_radius_to_mermaid(ctx: &TraceEmitContext, symbol: &str) -> String 
         return "// InspectionTarget::Symbol required".to_string();
     };
 
-    let symbol_id = SymbolId::new(symbol.to_string());
+    let symbol_id = SymbolId::new(symbol);
     // BFS of callers up to depth 3
     let entries = graph_query.traverse_callers(&symbol_id, 3);
 
@@ -219,7 +219,7 @@ pub fn impact_radius_to_mermaid(ctx: &TraceEmitContext, symbol: &str) -> String 
     }
 
     let mut lines = vec!["flowchart TD".to_string()];
-    lines.push(format!("    subgraph impact_radius[\"impact_radius\"]"));
+    lines.push("    subgraph impact_radius[\"impact_radius\"]".to_string());
     lines.push("        direction TD".to_string());
 
     // Center node
@@ -257,13 +257,12 @@ pub fn impact_radius_to_mermaid(ctx: &TraceEmitContext, symbol: &str) -> String 
             // BFS tree edge: connect to nodes at previous depth (or center for depth 1)
             if *depth == 1 {
                 lines.push(format!("        {} --> {}", entry_id, center_id));
-            } else if let Some(prev_depth) = depth.checked_sub(1) {
-                if let Some(prev_nodes) = nodes_by_depth.get(&prev_depth) {
+            } else if let Some(prev_depth) = depth.checked_sub(1)
+                && let Some(prev_nodes) = nodes_by_depth.get(&prev_depth) {
                     for prev_id in prev_nodes {
                         lines.push(format!("        {} --> {}", prev_id, entry_id));
                     }
                 }
-            }
 
             node_ids_at_this_depth.push(entry_id);
         }
@@ -336,7 +335,7 @@ pub fn vertical_slice_to_mermaid(ctx: &TraceEmitContext, entry_point: &str) -> S
         );
     };
 
-    let symbol_id = SymbolId::new(entry_point.to_string());
+    let symbol_id = SymbolId::new(entry_point);
     // Forward trace: callees up to depth 4 (typical vertical slice depth)
     let entries = graph_query.traverse_callees(&symbol_id, 4);
 
@@ -386,12 +385,11 @@ pub fn vertical_slice_to_mermaid(ctx: &TraceEmitContext, entry_point: &str) -> S
                 } else {
                     // Connect to previous level
                     let prev_depth = depth - 1;
-                    if let Some(prev_nodes) = depth_nodes.get(&prev_depth) {
-                        if let Some(prev) = prev_nodes.first() {
+                    if let Some(prev_nodes) = depth_nodes.get(&prev_depth)
+                        && let Some(prev) = prev_nodes.first() {
                             let prev_id = sanitize_id(prev.symbol_id.as_str());
                             lines.push(format!("        {} --> {}", prev_id, entry_id));
                         }
-                    }
                 }
             }
         }
@@ -409,7 +407,6 @@ pub fn vertical_slice_to_mermaid(ctx: &TraceEmitContext, entry_point: &str) -> S
 mod tests {
     use super::*;
 
-    use crate::dto::InspectionTarget;
     use crate::ports::symbol_repository::ResolvedSymbol;
     use cognicode_core::domain::aggregates::CallEntry;
     use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;

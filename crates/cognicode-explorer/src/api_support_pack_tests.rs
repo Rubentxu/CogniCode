@@ -7,6 +7,10 @@
 //! This module is gated on `#[cfg(feature = "multimodal")]` in
 //! `lib.rs`, so all items here can assume multimodal is active.
 
+use crate::facades::{
+    GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
+    graph::GraphServiceImpl,
+};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -22,8 +26,7 @@ use tower::ServiceExt;
 
 use crate::adapters::InMemoryGraphRepository;
 use crate::api::{ApiState, router_with_state};
-use crate::facades::{
-    GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
+    MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
     graph::GraphServiceImpl,
 };
 use crate::ports::source_reader::SourceReader;

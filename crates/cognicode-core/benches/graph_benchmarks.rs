@@ -33,7 +33,7 @@ fn generate_python_source(line_count: usize) -> String {
 
     for class_idx in 0..class_count {
         source.push_str(&format!("class Class{}:\n", class_idx));
-        source.push_str(&format!("    def __init__(self):\n"));
+        source.push_str("    def __init__(self):\n");
         source.push_str(&format!("        self.value = {}\n", class_idx));
         source.push_str(&format!("        self.name = \"class_{}\"\n\n", class_idx));
 
@@ -58,7 +58,7 @@ fn generate_python_source(line_count: usize) -> String {
                 (method_idx + 1) % functions_per_class
             ));
         }
-        source.push_str("\n");
+        source.push('\n');
 
         // Add top-level functions
         source.push_str(&format!(
@@ -97,9 +97,9 @@ fn generate_rust_source(line_count: usize) -> String {
 
     for struct_idx in 0..struct_count {
         source.push_str(&format!("struct Handler{} {{\n", struct_idx));
-        source.push_str(&format!("    id: usize,\n"));
-        source.push_str(&format!("    name: String,\n"));
-        source.push_str(&format!("    cache: HashMap<String, i32>,\n"));
+        source.push_str("    id: usize,\n");
+        source.push_str("    name: String,\n");
+        source.push_str("    cache: HashMap<String, i32>,\n");
         source.push_str("}\n\n");
 
         source.push_str(&format!("impl Handler{} {{\n", struct_idx));
@@ -109,10 +109,8 @@ fn generate_rust_source(line_count: usize) -> String {
                 "    pub fn process_{}(&mut self, input: Vec<i32>) -> HashMap<String, i32> {{\n",
                 method_idx
             ));
-            source.push_str(&format!("        let mut result = HashMap::new();\n"));
-            source.push_str(&format!(
-                "        result.insert(\"id\".to_string(), self.id);\n"
-            ));
+            source.push_str("        let mut result = HashMap::new();\n");
+            source.push_str("        result.insert(\"id\".to_string(), self.id);\n");
             source.push_str("        for item in &input {\n");
             source.push_str("            if *item > 0 {\n");
             source.push_str(
@@ -342,7 +340,7 @@ fn benchmark_semantic_search_small_index(c: &mut Criterion) {
     c.bench_function("semantic_search_100_files", |b| {
         b.iter(|| {
             let results = index.find_symbol(black_box("function_50"));
-            assert!(results.len() > 0, "Should find symbol");
+            assert!(!results.is_empty(), "Should find symbol");
         });
     });
 }
@@ -353,7 +351,7 @@ fn benchmark_semantic_search_medium_index(c: &mut Criterion) {
     c.bench_function("semantic_search_500_files", |b| {
         b.iter(|| {
             let results = index.find_symbol(black_box("function_250"));
-            assert!(results.len() > 0, "Should find symbol");
+            assert!(!results.is_empty(), "Should find symbol");
         });
     });
 }
@@ -364,7 +362,7 @@ fn benchmark_semantic_search_large_index(c: &mut Criterion) {
     c.bench_function("semantic_search_1000_files", |b| {
         b.iter(|| {
             let results = index.find_symbol(black_box("function_500"));
-            assert!(results.len() > 0, "Should find symbol");
+            assert!(!results.is_empty(), "Should find symbol");
         });
     });
 }
@@ -497,7 +495,7 @@ fn benchmark_graph_cache_operations(c: &mut Criterion) {
             let mut graph = cognicode_core::domain::aggregates::call_graph::CallGraph::new();
             for i in 0..100 {
                 let sym = cognicode_core::domain::aggregates::symbol::Symbol::new(
-                    &format!("func_{}", i),
+                    format!("func_{}", i),
                     cognicode_core::domain::value_objects::SymbolKind::Function,
                     cognicode_core::domain::value_objects::Location::new("test.rs", i, 1),
                 );
@@ -556,7 +554,7 @@ pub fn another_function_{}() {{ }}
     c.bench_function("lightweight_index_find_500_files", |b| {
         b.iter(|| {
             let results = index.find_symbol(black_box("function_250"));
-            assert!(results.len() > 0, "Should find symbol");
+            assert!(!results.is_empty(), "Should find symbol");
         });
     });
 }

@@ -167,14 +167,13 @@ pub fn validate_issue_properties(props: &HashMap<String, String>) -> Result<(), 
     //    comma in an individual label — the spec rejects labels
     //    containing commas at parse time, so a label with a comma
     //    in the joined string is a structural error.
-    if let Some(labels) = props.get("labels") {
-        if labels.is_empty() {
+    if let Some(labels) = props.get("labels")
+        && labels.is_empty() {
             return Err(
                 "invalid issue candidate: 'labels' is empty (omit the key when the issue has no labels)"
                     .to_string(),
             );
         }
-    }
     Ok(())
 }
 
