@@ -43,7 +43,7 @@ impl From<ReadFileResult> for ReadFileOutput {
             content: result.content,
             total_lines: result.total_lines,
             truncated: result.truncated,
-            metadata: result.metadata,
+            metadata: result.metadata.into(),
             mode: result.mode,
             start_line: result.start_line,
             end_line: result.end_line,
@@ -72,7 +72,7 @@ impl From<WriteFileResult> for WriteFileOutput {
     fn from(result: WriteFileResult) -> Self {
         WriteFileOutput {
             bytes_written: result.bytes_written,
-            metadata: result.metadata,
+            metadata: result.metadata.into(),
         }
     }
 }
@@ -123,7 +123,7 @@ impl From<SearchContentInput> for SearchContentRequest {
 impl From<SearchContentResult> for SearchContentOutput {
     fn from(result: SearchContentResult) -> Self {
         SearchContentOutput {
-            matches: result.matches.into_iter().collect(),
+            matches: result.matches.into_iter().map(|m| m.into()).collect(),
             total: result.total,
             files_scanned: result.files_scanned,
         }
@@ -175,7 +175,7 @@ impl From<SymbolInfo> for SymbolSummary {
         SymbolSummary {
             name: info.name,
             kind: info.kind.into(),
-            location: info.location,
+            location: info.location.into(),
             signature: info.signature,
         }
     }
@@ -211,7 +211,7 @@ impl From<GetCallHierarchyOutput> for GetCallHierarchyResult {
         GetCallHierarchyResult {
             symbol: output.symbol,
             calls: output.calls.into_iter().map(|c| c.into()).collect(),
-            metadata: output.metadata,
+            metadata: output.metadata.into(),
         }
     }
 }

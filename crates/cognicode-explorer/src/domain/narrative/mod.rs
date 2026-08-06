@@ -367,7 +367,7 @@ pub fn build_project_diary(target: &crate::dto::WorkspaceTarget) -> ContextualVi
                 let all_queries: String = session
                     .events
                     .iter()
-                    .filter_map(|e| e.query.as_deref())
+                    .filter_map(|e| e.query.as_ref().map(|s| s.as_str()))
                     .collect::<Vec<&str>>()
                     .join("\n");
                 let (_, child_blocks) = EmbedResolver::resolve(&all_queries);

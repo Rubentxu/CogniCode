@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use crate::domain::aggregates::GraphNode;
+use crate::domain::aggregates::{GraphEdge, GraphNode};
 use crate::domain::value_objects::Provenance;
 
 // ============================================================================

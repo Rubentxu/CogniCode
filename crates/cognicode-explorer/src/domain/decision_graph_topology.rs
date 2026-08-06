@@ -10,15 +10,11 @@ use crate::dto::{
     ContextualView, EvidenceBlock, FindingSeverity, LineRange, RelationDirection, TypedRelation,
     ViewBlock,
 };
-use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
-use cognicode_core::domain::value_objects::node_kind::NodeKind;
-    ContextualView, EvidenceBlock, RelationDirection, TypedRelation,
-    ViewBlock,
-};
 use crate::error::ExplorerResult;
-use cognicode_core::domain::aggregates::generic_graph::{GraphNode, NodeId};
+use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
 use cognicode_core::domain::ports::graph_repository::GraphRepository;
 use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
+use cognicode_core::domain::value_objects::node_kind::NodeKind;
 use serde_json::json;
 
 /// Maximum traversal depth for decision graph BFS.

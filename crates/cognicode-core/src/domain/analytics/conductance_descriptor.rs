@@ -12,6 +12,7 @@ use crate::domain::analytics::{
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
+use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
 // Conductance Params
@@ -96,9 +97,9 @@ static CONDUCTANCE_LIMITS: LazyLock<PlanLimits> = LazyLock::new(|| PlanLimits {
 // =============================================================================
 
 static CONDUCTANCE_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
-    time: "O(V + E)",
-    space: "O(V)",
-    notes: "Linear scan of edges per community",
+    time: "O(V + E)".into(),
+    space: "O(V)".into(),
+    notes: "Linear scan of edges per community".into(),
 });
 
 // =============================================================================
@@ -247,7 +248,7 @@ impl AlgorithmExecute for ConductanceDescriptor {
 
         let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let out_neighbors = projection.build_directed_adjacency();
-        let _n = projection.node_count();
+        let n = projection.node_count();
 
         // Parse community_assignment from params
         // Format: [[node_id, community_id], ...]

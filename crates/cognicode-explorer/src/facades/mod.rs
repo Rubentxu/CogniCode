@@ -26,26 +26,20 @@ pub mod workspace;
 // Re-export investigation types used by api.rs
 pub use investigation::{InvestigationFacade, InvestigationServiceImpl};
 
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use cognicode_core::domain::traits::GraphQueryPort;
+
 use crate::dto::{
     ContextualGraphResponse, ContextualView, DecisionArtifactSummary, DriftReport,
     ExplorationSession, GenerateArtifactRequest, GodNodeEntry, GraphNode, InspectableObjectSummary,
     LensDescriptor, LensResult, SpotterResult, SpotterSearchResult, SubgraphResponse,
     ViewDescriptorDto, ViewSpec, WorkspaceSummary,
 };
-use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
-use std::sync::Arc;
-
-use async_trait::async_trait;
-use cognicode_core::domain::traits::GraphQueryPort;
-
-    ContextualGraphResponse, ContextualView, DecisionArtifactSummary, DriftReport,
-    ExplorationSession, GenerateArtifactRequest, GodNodeEntry, InspectableObjectSummary,
-    LensDescriptor, LensResult, SpotterResult, SpotterSearchResult, SubgraphResponse,
-    ViewDescriptorDto, ViewSpec, WorkspaceSummary,
-};
 use crate::error::ExplorerResult;
 use crate::moldql::MoldQLResult;
-use crate::ports::symbol_repository::ResolvedSymbol;
+use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
 
 // ============================================================================
 // GraphService

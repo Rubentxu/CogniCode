@@ -316,7 +316,7 @@ static REGISTRY: OnceLock<Result<ScaffoldRegistry, ScaffoldLoadError>> = OnceLoc
 /// Returns a reference to the registry, or a reference to the error that
 /// occurred during loading.
 pub fn registry() -> Result<&'static ScaffoldRegistry, &'static ScaffoldLoadError> {
-    REGISTRY.get_or_init(ScaffoldRegistry::load).as_ref()
+    REGISTRY.get_or_init(|| ScaffoldRegistry::load()).as_ref()
 }
 
 // ============================================================================

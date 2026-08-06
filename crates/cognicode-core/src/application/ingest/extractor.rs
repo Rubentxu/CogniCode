@@ -82,8 +82,8 @@ pub fn extract_file(
         let node_type = node.kind();
 
         // ── Function nodes ─────────────────────────────────────────────
-        if config.function_types.contains(&node_type)
-            && let Some(name) = extract_name(&node, source_bytes) {
+        if config.function_types.contains(&node_type) {
+            if let Some(name) = extract_name(&node, source_bytes) {
                 let (symbol_node, symbol_id) = make_symbol_node(
                     &name,
                     SymbolKind::Function,
@@ -101,7 +101,7 @@ pub fn extract_file(
                     &node,
                     source_bytes,
                     &symbol_id,
-                    config.call_types,
+                    &config.call_types,
                     config.call_has_function_field,
                     &source_path_str,
                     &mut edges,
@@ -117,6 +117,7 @@ pub fn extract_file(
                     &mut edges,
                 );
             }
+        }
 
         // ── Class/type nodes ───────────────────────────────────────────
         if config.class_types.contains(&node_type) {
@@ -146,8 +147,8 @@ pub fn extract_file(
         }
 
         // ── Import nodes ───────────────────────────────────────────────
-        if config.import_types.contains(&node_type)
-            && let Some(module_name) = extract_import_target(&node, source_bytes) {
+        if config.import_types.contains(&node_type) {
+            if let Some(module_name) = extract_import_target(&node, source_bytes) {
                 edges.push(ExtractionEdge {
                     source: file_node_id.as_str().to_string(),
                     target_ref: TargetRef::Unresolved(module_name),
@@ -157,6 +158,7 @@ pub fn extract_file(
                     line: Some(node.start_position().row as u32 + 1),
                 });
             }
+        }
 
         // Push children (dedup by byte range to avoid revisiting)
         let mut cursor = node.walk();
@@ -194,16 +196,17 @@ pub fn extract_file(
 
 /// Extract the `name` field text from a node, falling back to the first
 /// named child if no `name` field exists.
-fn extract_name(node: &Node, source: &[u8]) -> Option<String> {
+fn extract_name<'a>(node: &Node, source: &'a [u8]) -> Option<String> {
     if let Some(name_node) = node.child_by_field_name("name") {
         return Some(node_text(&name_node, source));
     }
     // Fallback: first named child that is an identifier
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i)
-            && child.is_named() && child.kind() == "identifier" {
+        if let Some(child) = node.child(i) {
+            if child.is_named() && child.kind() == "identifier" {
                 return Some(node_text(&child, source));
             }
+        }
     }
     None
 }
@@ -247,7 +250,7 @@ fn extract_calls_from_node(
     caller_id: &str,
     call_types: &[&str],
     call_has_function_field: bool,
-    _source_path: &str,
+    source_path: &str,
     edges: &mut Vec<ExtractionEdge>,
 ) {
     let mut stack = vec![*func_node];
@@ -326,7 +329,7 @@ fn make_symbol_node(
 }
 
 /// Create a `Contains` edge from parent to child.
-fn contains_edge(parent_id: &NodeId, child_id: &str, _source_path: &str) -> ExtractionEdge {
+fn contains_edge(parent_id: &NodeId, child_id: &str, source_path: &str) -> ExtractionEdge {
     ExtractionEdge {
         source: parent_id.as_str().to_string(),
         target_ref: TargetRef::Resolved(child_id.to_string()),
@@ -346,7 +349,7 @@ fn clean_callee_name(raw: &str) -> String {
         .last()
         .unwrap_or(raw)
         .split('.')
-        .next_back()
+        .last()
         .unwrap_or(raw);
     cleaned.trim().to_string()
 }
@@ -364,7 +367,7 @@ fn extract_type_refs(
     node: &Node,
     source: &[u8],
     symbol_id: &str,
-    _source_path: &str,
+    source_path: &str,
     edges: &mut Vec<ExtractionEdge>,
 ) {
     let walker = match config.type_ref_walker {

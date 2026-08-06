@@ -154,8 +154,8 @@ impl PartialOrd for TypedValue {
         use Ordering::*;
         match (self, other) {
             (TypedValue::Null, TypedValue::Null) => Some(Equal),
-            (TypedValue::Bool(a), TypedValue::Bool(b)) => Some(a.cmp(b)),
-            (TypedValue::Int(a), TypedValue::Int(b)) => Some(a.cmp(b)),
+            (TypedValue::Bool(a), TypedValue::Bool(b)) => Some(a.cmp(&b)),
+            (TypedValue::Int(a), TypedValue::Int(b)) => Some(a.cmp(&b)),
             (TypedValue::Float(a), TypedValue::Float(b)) => {
                 if a < b {
                     Some(Less)
@@ -165,7 +165,7 @@ impl PartialOrd for TypedValue {
                     Some(Equal)
                 }
             }
-            (TypedValue::String(a), TypedValue::String(b)) => Some(a.cmp(b)),
+            (TypedValue::String(a), TypedValue::String(b)) => Some(a.cmp(&b)),
             _ => None,
         }
     }

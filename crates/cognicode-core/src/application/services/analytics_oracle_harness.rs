@@ -22,6 +22,7 @@ use std::env;
 use crate::domain::analytics::oracle::{
     Divergence, OracleConfig, OracleError, OracleReport, OracleResult,
 };
+use crate::domain::plan::MoldPlan;
 
 /// Analytics Oracle Harness for CI parity checking.
 ///
@@ -169,20 +170,23 @@ fn extract_node_count(result: &serde_json::Value) -> usize {
     // Try common patterns for node count in analytics results
     if let Some(obj) = result.as_object() {
         // Pattern: { "nodes": [...], ... }
-        if let Some(nodes) = obj.get("nodes")
-            && let Some(arr) = nodes.as_array() {
+        if let Some(nodes) = obj.get("nodes") {
+            if let Some(arr) = nodes.as_array() {
                 return arr.len();
             }
+        }
         // Pattern: { "node_count": N }
-        if let Some(count) = obj.get("node_count").or(obj.get("nodes_count"))
-            && let Some(n) = count.as_u64() {
+        if let Some(count) = obj.get("node_count").or(obj.get("nodes_count")) {
+            if let Some(n) = count.as_u64() {
                 return n as usize;
             }
+        }
         // Pattern: { "community_ids": [...] } for conductance/modularity
-        if let Some(ids) = obj.get("community_ids")
-            && let Some(arr) = ids.as_array() {
+        if let Some(ids) = obj.get("community_ids") {
+            if let Some(arr) = ids.as_array() {
                 return arr.len();
             }
+        }
     }
     // Fallback: count top-level array length if result is an array
     if let Some(arr) = result.as_array() {
@@ -194,15 +198,17 @@ fn extract_node_count(result: &serde_json::Value) -> usize {
 fn extract_edge_count(result: &serde_json::Value) -> usize {
     if let Some(obj) = result.as_object() {
         // Pattern: { "edges": [...], ... }
-        if let Some(edges) = obj.get("edges")
-            && let Some(arr) = edges.as_array() {
+        if let Some(edges) = obj.get("edges") {
+            if let Some(arr) = edges.as_array() {
                 return arr.len();
             }
+        }
         // Pattern: { "edge_count": N }
-        if let Some(count) = obj.get("edge_count").or(obj.get("edges_count"))
-            && let Some(n) = count.as_u64() {
+        if let Some(count) = obj.get("edge_count").or(obj.get("edges_count")) {
+            if let Some(n) = count.as_u64() {
                 return n as usize;
             }
+        }
     }
     0
 }

@@ -42,7 +42,7 @@ impl From<&ResolvedSymbol> for RelationTarget {
         RelationTarget {
             id: sym.id.clone(),
             name: sym.name.clone(),
-            kind: sym.kind,
+            kind: sym.kind.clone(),
             file: sym.file.clone(),
             line: sym.line,
             signature: sym.signature.clone(),

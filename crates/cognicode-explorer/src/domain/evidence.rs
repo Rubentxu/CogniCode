@@ -19,7 +19,7 @@ use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 /// even when the underlying file is missing (confidence drops to 0.0).
 pub fn build_evidence_blocks(
     symbol: &ResolvedSymbol,
-    _repo: &dyn SymbolRepository,
+    repo: &dyn SymbolRepository,
     reader: &dyn SourceReader,
     graph_query: Option<&dyn GraphQueryPort>,
 ) -> Vec<EvidenceBlock> {

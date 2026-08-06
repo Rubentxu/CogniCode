@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex};
 use cognicode_core::domain::aggregates::CallGraph;
 
 use crate::facades::{SearchService, ViewService, WorkspaceService};
+use crate::mcp::McpContext;
 use crate::mcp::envelope::err_envelope;
 use crate::session::service::BrainSessionService;
 use rmcp::model::CallToolResult;

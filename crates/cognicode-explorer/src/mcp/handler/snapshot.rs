@@ -12,7 +12,7 @@ use rmcp::model::CallToolResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::domain::snapshot::{SnapshotError, SnapshotFormat};
+use crate::domain::snapshot::{SnapshotError, SnapshotFormat, SnapshotService};
 use crate::domain::snapshot_dispatch::SnapshotViewKind;
 use crate::mcp::McpContext;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
@@ -167,16 +167,16 @@ async fn emit_mermaid_for_snapshot(
     view_kind: SnapshotViewKind,
     target: Option<&str>,
 ) -> Result<String, String> {
-    
+    use crate::domain::snapshot::SnapshotError as SE;
 
     let graph_svc = ctx
         .graph_service
         .as_ref()
-        .ok_or("graph service not wired")?;
+        .ok_or_else(|| "graph service not wired")?;
     let workspace_svc = ctx
         .workspace
         .as_ref()
-        .ok_or("workspace service not wired")?;
+        .ok_or_else(|| "workspace service not wired")?;
 
     crate::domain::snapshot_dispatch::emit_mermaid_for_snapshot(
         &**graph_svc,

@@ -4,10 +4,7 @@
 //! scans can emit `DependencyAdded`/`DependencyRemoved` events (not just
 //! symbol-level events).
 
-use crate::domain::aggregates::call_graph::CallGraph;
-
-#[cfg(test)]
-use crate::domain::aggregates::call_graph::SymbolId;
+use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::events::graph_event::{DependencyEvent, GraphEvent};
 use crate::domain::value_objects::DependencyType;
 

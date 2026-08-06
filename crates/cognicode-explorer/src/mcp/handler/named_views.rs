@@ -6,9 +6,10 @@
 //! - `view_list`    — list all named views for a scope
 //! - `view_delete`  — delete a named view by id
 
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use rmcp::model::CallToolResult;
+use rmcp::model::{CallToolResult, Content};
 use serde::Deserialize;
 use serde_json::Value;
 

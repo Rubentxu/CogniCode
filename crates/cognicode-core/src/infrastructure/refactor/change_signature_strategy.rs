@@ -727,7 +727,31 @@ impl ChangeSignatureStrategy {
                     go_params.join(", ")
                 )
             }
-            Language::Java => {
+            Language::Java
+            | Language::C
+            | Language::Cpp
+            | Language::CSharp
+            | Language::Hcl
+            | Language::Yaml
+            | Language::Ruby
+            | Language::Php
+            | Language::Swift
+            | Language::Scala
+            | Language::Lua
+            | Language::Zig
+            | Language::Dart
+            | Language::Groovy
+            | Language::Elixir
+            | Language::Erlang
+            | Language::Haskell
+            | Language::Julia
+            | Language::Bash
+            | Language::R
+            | Language::PowerShell
+            | Language::Json
+            | Language::Fortran
+            | Language::Verilog
+            | Language::SystemVerilog => {
                 // Java uses "ReturnType name(Type1 param1, Type2 param2)"
                 // Return type not available in params, use placeholder
                 format!("/* ReturnType */ {}({})", function_name, params_str)

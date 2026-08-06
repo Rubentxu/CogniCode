@@ -19,6 +19,7 @@
 //! domain concept — a workspace's edges + nodes at a specific
 //! revision — and warrants its own port.
 
+use std::sync::Arc;
 
 use async_trait::async_trait;
 

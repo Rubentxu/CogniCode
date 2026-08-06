@@ -13,13 +13,11 @@
 //! - `brain_remove_space` — unregister a space from a session
 //! - `brain_spaces`       — list registered spaces in a session
 
-
 use std::sync::Arc;
+
+use async_trait::async_trait;
 use rmcp::model::{CallToolResult, Content};
 use serde::{Deserialize, Serialize};
-use async_trait::async_trait;
-use rmcp::model::CallToolResult;
-use serde::Deserialize;
 use serde_json::Value;
 
 use crate::mcp::envelope::{err_envelope, ok_envelope_with_provenance};
@@ -142,7 +140,7 @@ impl ToolHandler for BrainOpenHandler {
     }
 
     fn arg_schema(&self) -> Value {
-        let schema = serde_json::json!({
+        let mut schema = serde_json::json!({
             "type": "object",
             "properties": {
                 "workspace_id": {
@@ -225,13 +223,13 @@ impl ToolHandler for BrainOpenHandler {
         #[cfg(feature = "multimodal")]
         let mut space_errors: Vec<String> = Vec::new();
         #[cfg(feature = "multimodal")]
-        if let Some(ref space_specs) = args.spaces
-            && !space_specs.is_empty() {
+        if let Some(ref space_specs) = args.spaces {
+            if !space_specs.is_empty() {
                 use cognicode_core::domain::value_objects::{Space, SpaceId, SpaceKind};
                 if let Ok(session) = ctx.session_registry.get(&session_id) {
                     for spec in space_specs {
-                        if let (Some(name), Some(k)) = (&spec.space_name, &spec.space_kind)
-                            && !name.is_empty() && !k.is_empty() {
+                        if let (Some(name), Some(k)) = (&spec.space_name, &spec.space_kind) {
+                            if !name.is_empty() && !k.is_empty() {
                                 let kind = match k.to_lowercase().as_str() {
                                     "repo" => SpaceKind::Repo,
                                     "docs" => SpaceKind::Docs,
@@ -268,6 +266,7 @@ impl ToolHandler for BrainOpenHandler {
                                     space_errors.push(format!("add_space('{name}') failed: {e}"));
                                 }
                             }
+                        }
                     }
                 }
                 if !space_errors.is_empty() {
@@ -278,6 +277,7 @@ impl ToolHandler for BrainOpenHandler {
                     );
                 }
             }
+        }
 
         let snap = ctx
             .session_registry
@@ -704,6 +704,7 @@ impl ToolHandler for BrainAddSpaceHandler {
     }
 
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
+        use cognicode_core::domain::value_objects::{Space, SpaceId, SpaceKind};
 
         let args: BrainAddSpaceArgs = match serde_json::from_value(params) {
             Ok(a) => a,

@@ -33,25 +33,20 @@
 //! emitted SQL contains no single-quoted user data. The `compile` path
 //! never concatenates a user value into the SQL body.
 
-use cognicode_core::domain::plan::{
-    GraphPlan, MoldPlan, PlanError, PlanHash, PlanLimits, PlanMetadata, PlanVersion,
-};
-use crate::moldql::ast::{
-    BooleanOp, BooleanQuery, ClusterMethod, ClusterQuery, Condition, ExplainQuery, Field,
-    MoldQLQuery, NeighborsQuery, Op, PathQuery, SubgraphQuery, TraversalDirection,
-};
 use std::fmt;
 
 use cognicode_core::domain::plan::lower::AstLowerer;
-    GraphPlan, MoldPlan, PlanError, PlanLimits,
+use cognicode_core::domain::plan::{
+    GraphPlan, MoldPlan, PlanError, PlanHash, PlanLimits, PlanMetadata, PlanVersion,
 };
 use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
 
 use crate::error::ExplorerResult;
 use crate::moldql::MoldQLResult;
 use crate::moldql::MoldQLView;
-    BooleanOp, BooleanQuery, ClusterMethod, ClusterQuery, Condition, ExplainQuery,
-    MoldQLQuery, NeighborsQuery, PathQuery, SubgraphQuery, TraversalDirection,
+use crate::moldql::ast::{
+    BooleanOp, BooleanQuery, ClusterMethod, ClusterQuery, Condition, ExplainQuery, Field,
+    MoldQLQuery, NeighborsQuery, Op, PathQuery, SubgraphQuery, TraversalDirection,
 };
 use crate::moldql::lower_plan::MoldqlAstLowerer;
 
@@ -425,7 +420,8 @@ fn compile_explain(
 
 fn emit_explain_pg(eq: &ExplainQuery) -> String {
     let where_clause = render_where(&eq.conditions);
-    "WITH RECURSIVE explain_path(node, depth) AS (\n  \
+    format!(
+        "WITH RECURSIVE explain_path(node, depth) AS (\n  \
          SELECT $1::text, 0\n  \
          UNION ALL\n  \
          SELECT edges.to, explain_path.depth + 1\n  \
@@ -434,7 +430,8 @@ fn emit_explain_pg(eq: &ExplainQuery) -> String {
          )\n  \
          SELECT EXISTS (\n  \
          SELECT 1 FROM explain_path WHERE node = $2::text\n  \
-         ) AS found".to_string() + (if where_clause.is_empty() {
+         ) AS found",
+    ) + (if where_clause.is_empty() {
         String::new()
     } else {
         format!(" /* {where_clause} */")
@@ -1127,7 +1124,9 @@ mod tests {
 
 #[cfg(test)]
 mod compile_to_plan_tests {
+    use super::*;
     use cognicode_core::domain::plan::{GraphPlan, MoldPlan, PlanError, PlanLimits};
+    use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
     use std::collections::HashSet;
 
     fn p(s: &str) -> MoldQLQuery {
@@ -1418,6 +1417,7 @@ mod compile_to_plan_tests {
     #[test]
     fn plan_filter_confidence_nan_in_hashset() {
         use cognicode_core::domain::plan::{PlanFilter, PlanFilterOp};
+        use std::collections::HashSet;
 
         let filter1 = PlanFilter::Confidence {
             op: PlanFilterOp::Gt,

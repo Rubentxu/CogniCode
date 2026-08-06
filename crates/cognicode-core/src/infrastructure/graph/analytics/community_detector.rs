@@ -137,13 +137,14 @@ impl CommunityDetector {
         let mut community_nodes: HashMap<u32, Vec<SymbolId>> = HashMap::new();
         for (node_idx, &comm_idx) in &label_of_index {
             let new_label = old_to_new[&comm_idx];
-            if let Some(ni) = g.node_indices().find(|ni| ni.index() == *node_idx)
-                && let Some(symbol_id) = g.node_weight(ni) {
+            if let Some(ni) = g.node_indices().find(|ni| ni.index() == *node_idx) {
+                if let Some(symbol_id) = g.node_weight(ni) {
                     community_nodes
                         .entry(new_label)
                         .or_default()
                         .push(symbol_id.clone());
                 }
+            }
         }
 
         // Compute cohesion per community.

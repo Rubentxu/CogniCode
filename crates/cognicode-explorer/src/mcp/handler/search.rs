@@ -4,9 +4,10 @@
 //! - `explorer_spotter_search` — search symbols by name with optional kind filter
 //! - `explorer_inspect_object` — inspect an object by its MVP id
 
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use rmcp::model::CallToolResult;
+use rmcp::model::{CallToolResult, Content};
 use serde::Deserialize;
 use serde_json::Value;
 
