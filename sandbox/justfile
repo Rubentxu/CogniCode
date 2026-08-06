@@ -41,33 +41,55 @@ test-all: sandbox-run
 # NOTE: Digest pins must be updated manually when images change
 # Run: just sandbox-pull  to refresh images
 sandbox-pull:
-    # Rust — pinned digest (update sha256:... when image changes)
-    podman pull docker.io/library/rust@sha256:16b31a5e2b37d0e1c9c0e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-    # Python — pinned digest
-    podman pull docker.io/library/python@sha256:17a7e2e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-    # Java — pinned digest
-    podman pull docker.io/library/eclipse-temurin@sha256:8a3a3e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-    # JS/TS — PROVISIONAL (no digest pin yet — Phase 2 containers are hardened but image is floating tag)
-    podman pull docker.io/library/node:22-slim || true
-    # Go — provisional
-    podman pull docker.io/library/golang:1.23-alpine || true
+    # Rust — pinned digest (rust:1.80-slim@sha256:907ff4b3ee7df57149ffee04f606e0a08b9b2ed3507f00a19cf3c9c0f74b7681)
+    podman pull docker.io/library/rust:1.80-slim@sha256:907ff4b3ee7df57149ffee04f606e0a08b9b2ed3507f00a19cf3c9c0f74b7681
+    # Python — pinned digest (python:3.12-slim@sha256:646fb0bca3dd3ea1bcc6feb72c17ed16eed6e10cffc732fcc1478bd3e7f02d7b)
+    podman pull docker.io/library/python:3.12-slim@sha256:646fb0bca3dd3ea1bcc6feb72c17ed16eed6e10cffc732fcc1478bd3e7f02d7b
+    # Java — pinned digest (eclipse-temurin:17-jammy@sha256:723151f3fc88ca2060153ee08ab8dbbea7983d6ed6f2622fe440acf178737c94)
+    podman pull docker.io/library/eclipse-temurin:17-jammy@sha256:723151f3fc88ca2060153ee08ab8dbbea7983d6ed6f2622fe440acf178737c94
+    # JS/TS — pinned digest (node:22-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436)
+    podman pull docker.io/library/node:22-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 || true
+    # Go — pinned digest (golang:1.23-alpine@sha256:383395b794dffa5b53012a212365d40c8e37109a626ca30d6151c8348d380b5f)
+    podman pull docker.io/library/golang:1.23-alpine@sha256:383395b794dffa5b53012a212365d40c8e37109a626ca30d6151c8348d380b5f || true
 
 sandbox-setup: sandbox-pull
     bash {{justfile_directory()}}/scripts/clone_repos.sh
+    # Copy ALL 6 containers (unified from former sandbox-setup-js-ts)
     cp {{justfile_directory()}}/containers/rust.container \
        {{justfile_directory()}}/containers/python.container \
        {{justfile_directory()}}/containers/java.container \
+       {{justfile_directory()}}/containers/go.container \
+       {{justfile_directory()}}/containers/js.container \
+       {{justfile_directory()}}/containers/ts.container \
        ~/.config/containers/systemd/ 2>/dev/null || true
     systemctl --user daemon-reload 2>/dev/null || true
-    systemctl --user start cognicode-rust cognicode-python cognicode-java 2>/dev/null || true
+    systemctl --user start \
+        cognicode-rust \
+        cognicode-python \
+        cognicode-java \
+        cognicode-go \
+        cognicode-js \
+        cognicode-ts 2>/dev/null || true
 
-# Setup JS/TS containers (Phase 2)
+# Deprecated: merged into sandbox-setup (Phase 3 unification)
+# Use `just sandbox-setup` instead — it now deploys all 6 containers
 sandbox-setup-js-ts:
     cp {{justfile_directory()}}/containers/js.container \
        {{justfile_directory()}}/containers/ts.container \
        ~/.config/containers/systemd/ 2>/dev/null || true
     systemctl --user daemon-reload 2>/dev/null || true
     systemctl --user start cognicode-js cognicode-ts 2>/dev/null || true
+
+# ─── MAVEN WARMUP ────────────────────────────────────────────────────────────
+# Pre-populate Maven cache for spring-petclinic (offline-capable after first run)
+# Requires network — run once before using java container with Network=none
+sandbox-maven-warmup:
+    podman run --rm \
+        --network=host \
+        -v %t/containers/cognicode-java-m2-cache:/root/.m2/repository:z \
+        docker.io/library/eclipse-temurin:17-jammy@sha256:723151f3fc88ca2060153ee08ab8dbbea7983d6ed6f2622fe440acf178737c94 \
+        bash -c 'cd /tmp && git clone --depth1 https://github.com/spring-projects/spring-petclinic.git && cd spring-petclinic && ./mvnw compile -q -DskipTests'
+    @echo "Maven cache warmed — subsequent runs work with Network=none"
 
 # ─── CI SMOKE LANE ────────────────────────────────────────────────────────────
 # Fast fixture-based validation (target: <5 min)
