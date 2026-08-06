@@ -18,10 +18,10 @@ validation:
       commands: ["javac --version"]
       timeout_seconds: 30
     - name: build
-      commands: ["./gradlew compileJava -q"]
+      commands: ["./mvnw compile -q"]
       timeout_seconds: 300
     - name: test
-      commands: ["./gradlew test -q"]
+      commands: ["./mvnw test -q"]
       timeout_seconds: 300
 
 # Per-repo metadata for reproducibility
@@ -106,8 +106,8 @@ scenarios:
       failure_is_regression: true
       stages:
         - name: build
-          commands: ["./gradlew compileJava -q"]
+          commands: ["./mvnw compile -q"]
           timeout_seconds: 300
         - name: test
-          commands: ["./gradlew test -q"]
+          commands: ["./mvnw test -q"]
           timeout_seconds: 300
