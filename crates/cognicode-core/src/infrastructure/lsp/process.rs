@@ -210,17 +210,6 @@ impl LspProcess {
             | Language::Fortran
             | Language::Verilog
             | Language::SystemVerilog => "bash",
-            Language::Elixir => "elixir",
-            Language::Erlang => "erlang",
-            Language::Haskell => "haskell",
-            Language::Julia => "julia",
-            Language::Bash
-            | Language::R
-            | Language::PowerShell
-            | Language::Json
-            | Language::Fortran
-            | Language::Verilog
-            | Language::SystemVerilog => "bash",
             Language::Java => "java",
         };
         let params = serde_json::json!({

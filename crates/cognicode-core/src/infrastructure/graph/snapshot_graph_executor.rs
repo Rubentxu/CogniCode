@@ -24,6 +24,13 @@
 //! - `SUBGRAPH`: BFS from seed nodes up to `max_depth`; returns visited nodes + edges.
 //! - `CLUSTER`: HashMap group counts by the `by` key.
 //! - `BOOLEAN`: Evaluate each operand, then combine via multiset operations.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(
+    clippy::needless_borrows_for_generic_args,
+    clippy::too_many_arguments,
+    unused_imports,
+    unused_variables
+)]
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -233,26 +240,26 @@ impl<'a> GraphExecutor for SnapshotGraphExecutor<'a> {
         };
 
         // Apply soft limit truncation for max_result_rows post-walk
-        if let Ok(ref mut rs) = result {
-            if let Some(max_rows) = limits.max_result_rows {
-                let total_rows = rs.rows.len() + rs.nodes.len() + rs.edges.len();
-                if total_rows as u64 > max_rows {
-                    // Truncate nodes to max_rows (prioritize by some ordering if needed)
-                    if rs.nodes.len() as u64 > max_rows {
-                        rs.nodes.truncate(max_rows as usize);
-                    }
-                    // If rows + edges still exceed, truncate further
-                    let remaining = max_rows as usize - rs.nodes.len();
-                    if remaining < rs.rows.len() {
-                        rs.rows.truncate(remaining);
-                    }
-                    let remaining = max_rows as usize - rs.nodes.len() - rs.rows.len();
-                    if remaining < rs.edges.len() {
-                        rs.edges.truncate(remaining);
-                    }
-                    rs.truncated = true;
-                    rs.truncation = Some(TruncationMarker::ResultRowsLimit);
+        if let Ok(ref mut rs) = result
+            && let Some(max_rows) = limits.max_result_rows
+        {
+            let total_rows = rs.rows.len() + rs.nodes.len() + rs.edges.len();
+            if total_rows as u64 > max_rows {
+                // Truncate nodes to max_rows (prioritize by some ordering if needed)
+                if rs.nodes.len() as u64 > max_rows {
+                    rs.nodes.truncate(max_rows as usize);
                 }
+                // If rows + edges still exceed, truncate further
+                let remaining = max_rows as usize - rs.nodes.len();
+                if remaining < rs.rows.len() {
+                    rs.rows.truncate(remaining);
+                }
+                let remaining = max_rows as usize - rs.nodes.len() - rs.rows.len();
+                if remaining < rs.edges.len() {
+                    rs.edges.truncate(remaining);
+                }
+                rs.truncated = true;
+                rs.truncation = Some(TruncationMarker::ResultRowsLimit);
             }
         }
 
@@ -306,23 +313,23 @@ impl<'a> SnapshotGraphExecutor<'a> {
         );
 
         // Check cancellation
-        if let Some(ref token) = limits.cancellation {
-            if token.is_cancelled() {
-                return Err(ExecutorError::LimitExceeded {
-                    dimension: PlanLimitKind::Cancellation,
-                    observed: 0,
-                });
-            }
+        if let Some(ref token) = limits.cancellation
+            && token.is_cancelled()
+        {
+            return Err(ExecutorError::LimitExceeded {
+                dimension: PlanLimitKind::Cancellation,
+                observed: 0,
+            });
         }
 
         // Check time limit
-        if let Some(time_ms) = limits.time_ms {
-            if start.elapsed().as_millis() as u64 > time_ms {
-                return Err(ExecutorError::LimitExceeded {
-                    dimension: PlanLimitKind::TimeMs,
-                    observed: start.elapsed().as_millis() as u64,
-                });
-            }
+        if let Some(time_ms) = limits.time_ms
+            && start.elapsed().as_millis() as u64 > time_ms
+        {
+            return Err(ExecutorError::LimitExceeded {
+                dimension: PlanLimitKind::TimeMs,
+                observed: start.elapsed().as_millis() as u64,
+            });
         }
 
         // Enforce max_path_count post-walk
@@ -355,7 +362,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
                                 .find_edge(prev_idx, node_idx)
                                 .and_then(|e| stable_graph.edge_weight(e))
                                 .copied();
-                            edge_kind.map(|ek| EdgeKind::Dependency(ek))
+                            edge_kind.map(EdgeKind::Dependency)
                         };
                         PathHop { node_id, edge_kind }
                     })
@@ -564,23 +571,23 @@ impl<'a> SnapshotGraphExecutor<'a> {
         visited.remove(&src_node);
 
         // Check cancellation
-        if let Some(ref token) = limits.cancellation {
-            if token.is_cancelled() {
-                return Err(ExecutorError::LimitExceeded {
-                    dimension: PlanLimitKind::Cancellation,
-                    observed: 0,
-                });
-            }
+        if let Some(ref token) = limits.cancellation
+            && token.is_cancelled()
+        {
+            return Err(ExecutorError::LimitExceeded {
+                dimension: PlanLimitKind::Cancellation,
+                observed: 0,
+            });
         }
 
         // Check time limit
-        if let Some(time_ms) = limits.time_ms {
-            if start.elapsed().as_millis() as u64 > time_ms {
-                return Err(ExecutorError::LimitExceeded {
-                    dimension: PlanLimitKind::TimeMs,
-                    observed: start.elapsed().as_millis() as u64,
-                });
-            }
+        if let Some(time_ms) = limits.time_ms
+            && start.elapsed().as_millis() as u64 > time_ms
+        {
+            return Err(ExecutorError::LimitExceeded {
+                dimension: PlanLimitKind::TimeMs,
+                observed: start.elapsed().as_millis() as u64,
+            });
         }
 
         // Build result nodes
@@ -668,7 +675,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
             (crate::domain::value_objects::Provenance, f64),
         > = graph
             .all_dependencies_with_metadata()
-            .map(|(src, tgt, dep, prov, conf)| {
+            .map(|(src, tgt, _dep, prov, conf)| {
                 (
                     (src.as_str().to_string(), tgt.as_str().to_string()),
                     (prov, conf),
@@ -709,23 +716,23 @@ impl<'a> SnapshotGraphExecutor<'a> {
         }
 
         // Check cancellation
-        if let Some(ref token) = limits.cancellation {
-            if token.is_cancelled() {
-                return Err(ExecutorError::LimitExceeded {
-                    dimension: PlanLimitKind::Cancellation,
-                    observed: 0,
-                });
-            }
+        if let Some(ref token) = limits.cancellation
+            && token.is_cancelled()
+        {
+            return Err(ExecutorError::LimitExceeded {
+                dimension: PlanLimitKind::Cancellation,
+                observed: 0,
+            });
         }
 
         // Check time limit
-        if let Some(time_ms) = limits.time_ms {
-            if start.elapsed().as_millis() as u64 > time_ms {
-                return Err(ExecutorError::LimitExceeded {
-                    dimension: PlanLimitKind::TimeMs,
-                    observed: start.elapsed().as_millis() as u64,
-                });
-            }
+        if let Some(time_ms) = limits.time_ms
+            && start.elapsed().as_millis() as u64 > time_ms
+        {
+            return Err(ExecutorError::LimitExceeded {
+                dimension: PlanLimitKind::TimeMs,
+                observed: start.elapsed().as_millis() as u64,
+            });
         }
 
         // Build result nodes
@@ -780,29 +787,30 @@ impl<'a> SnapshotGraphExecutor<'a> {
             let src_id = node_to_symbol.get(&edge_ref.source());
             let tgt_id = node_to_symbol.get(&edge_ref.target());
 
-            if let (Some(src), Some(tgt)) = (src_id, tgt_id) {
-                if visited_set.contains(src.as_str()) && visited_set.contains(tgt.as_str()) {
-                    let dep_type = edge_ref.weight();
-                    // Use Display (lowercase, e.g. "calls") instead of Debug ("Calls") to
-                    // match the PG executor's `format!("dependency.{}", dep_type)`
-                    // which produces "dependency.calls". Conformance parity.
-                    let kind_str = format!("dependency.{}", dep_type);
-                    let (provenance, confidence) = edge_meta
-                        .get(&(src.clone(), tgt.clone()))
-                        .copied()
-                        .unwrap_or((crate::domain::value_objects::Provenance::Extracted, 1.0));
-                    let properties = vec![
-                        TypedValue::String(provenance.to_string()),
-                        TypedValue::Float(confidence),
-                    ];
-                    edges.push(EdgeResult {
-                        id: format!("{}->{}", src, tgt),
-                        src: src.clone(),
-                        dst: tgt.clone(),
-                        label: kind_str,
-                        properties,
-                    });
-                }
+            if let (Some(src), Some(tgt)) = (src_id, tgt_id)
+                && visited_set.contains(src.as_str())
+                && visited_set.contains(tgt.as_str())
+            {
+                let dep_type = edge_ref.weight();
+                // Use Display (lowercase, e.g. "calls") instead of Debug ("Calls") to
+                // match the PG executor's `format!("dependency.{}", dep_type)`
+                // which produces "dependency.calls". Conformance parity.
+                let kind_str = format!("dependency.{}", dep_type);
+                let (provenance, confidence) = edge_meta
+                    .get(&(src.clone(), tgt.clone()))
+                    .copied()
+                    .unwrap_or((crate::domain::value_objects::Provenance::Extracted, 1.0));
+                let properties = vec![
+                    TypedValue::String(provenance.to_string()),
+                    TypedValue::Float(confidence),
+                ];
+                edges.push(EdgeResult {
+                    id: format!("{}->{}", src, tgt),
+                    src: src.clone(),
+                    dst: tgt.clone(),
+                    label: kind_str,
+                    properties,
+                });
             }
         }
 
@@ -866,23 +874,23 @@ impl<'a> SnapshotGraphExecutor<'a> {
         }
 
         // Check cancellation
-        if let Some(ref token) = limits.cancellation {
-            if token.is_cancelled() {
-                return Err(ExecutorError::LimitExceeded {
-                    dimension: PlanLimitKind::Cancellation,
-                    observed: 0,
-                });
-            }
+        if let Some(ref token) = limits.cancellation
+            && token.is_cancelled()
+        {
+            return Err(ExecutorError::LimitExceeded {
+                dimension: PlanLimitKind::Cancellation,
+                observed: 0,
+            });
         }
 
         // Check time limit
-        if let Some(time_ms) = limits.time_ms {
-            if start.elapsed().as_millis() as u64 > time_ms {
-                return Err(ExecutorError::LimitExceeded {
-                    dimension: PlanLimitKind::TimeMs,
-                    observed: start.elapsed().as_millis() as u64,
-                });
-            }
+        if let Some(time_ms) = limits.time_ms
+            && start.elapsed().as_millis() as u64 > time_ms
+        {
+            return Err(ExecutorError::LimitExceeded {
+                dimension: PlanLimitKind::TimeMs,
+                observed: start.elapsed().as_millis() as u64,
+            });
         }
 
         // Build scalars from counts
@@ -980,7 +988,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
         }
 
         // Collect all nodes in the graph for the universe of Not operation
-        let all_graph_nodes: HashSet<String> = graph
+        let _all_graph_nodes: HashSet<String> = graph
             .symbols()
             .map(|s| s.fully_qualified_name().to_string())
             .collect();
@@ -1098,7 +1106,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
                 kind,
                 depth,
                 edge_kind_filter,
-                predicates,
+                predicates: _,
                 limits,
                 ..
             } => {
@@ -1117,7 +1125,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
                 dst,
                 quantifier,
                 edge_kind_filter,
-                predicates,
+                predicates: _,
                 projection: _,
                 limits,
                 ..
@@ -1143,7 +1151,7 @@ impl<'a> SnapshotGraphExecutor<'a> {
             GraphPlan::Subgraph {
                 nodes,
                 edges,
-                aggregations,
+                aggregations: _,
                 limits,
                 ..
             } => {
@@ -1167,10 +1175,6 @@ impl<'a> SnapshotGraphExecutor<'a> {
             GraphPlan::Explain { inner, .. } => {
                 // For EXPLAIN, evaluate the inner plan
                 self.evaluate_operand(graph, inner.as_ref())
-            }
-            _ => {
-                // For any other plan type we can't handle, return empty
-                Ok(HashSet::new())
             }
         }
     }
