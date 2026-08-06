@@ -508,7 +508,9 @@ def gate_g11(project_root: str) -> GateResult:
     roadmap_ok = (Path(project_root) / "docs" / "ROADMAP.md").exists()
     checks.append("ROADMAP.md found" if roadmap_ok else "ROADMAP.md NOT found")
 
-    if mcp_ok and adr031_ok and adr032_ok and adr031_note.endswith("(ACEPTADO)") and adr032_note.endswith("(ACEPTADO)") and roadmap_ok:
+    if not mcp_ok or not adr031_ok or not adr032_ok:
+        status = "RED"
+    elif adr031_note.endswith("(ACEPTADO)") and adr032_note.endswith("(ACEPTADO)") and roadmap_ok:
         status = "GREEN"
     else:
         status = "AMBER"

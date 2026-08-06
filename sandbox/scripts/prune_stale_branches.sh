@@ -63,6 +63,10 @@ echo "=== Local toxic pre-E29 branches (explicit list) ==="
 LOCAL_TOXIC="feat/e12g-risk-map feat/e12h-decision-trace feat/e14-narrative-runtime feat/e14-narrative-runtime-cycle-2 feat/e19-4-composed-narrative feat/e21-1-investigation-entity feat/e28-1-pr2-plan-algebra feat/e28-5-structural-analytics-cohort-2 feat/e29-6-ladybug-store-wiring feat/relation-candidates-v1 fix/composed-narrative-provider-applies-to impl/e13-investigation-scope-integration-test"
 for b in $LOCAL_TOXIC; do
     if git show-ref --verify --quiet "refs/heads/$b" 2>/dev/null; then
+        if echo "$PRS" | grep -qx "$b"; then
+            echo "  SKIP (open PR): $b"
+            continue
+        fi
         echo "  PRUNE (local): $b"
         if [ "$DRY_RUN" = "0" ]; then
             git branch -D "$b" >/dev/null 2>&1 && echo "    deleted" || echo "    FAILED"

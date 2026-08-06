@@ -1,6 +1,6 @@
 # Spec: postgres-symbol-repository (explorer-graph-postgres-repository)
 
-> **OBSOLETE** — PostgreSQL was fully removed from the runtime in E29 (v0.79.0,
+> **OBSOLETE (2026-08-04)** — PostgreSQL was fully removed from the runtime in E29 (v0.79.0,
 > `e29-7-remove-postgres-repository`). This spec describes a backend that no
 > longer exists in the canonical build. Retained for historical record; its
 > requirements count as *triaged* (legacy_obsolete) in the conformance matrix.
