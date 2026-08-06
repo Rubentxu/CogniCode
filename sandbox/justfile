@@ -42,11 +42,11 @@ test-all: sandbox-run
 # Run: just sandbox-pull  to refresh images
 sandbox-pull:
     # Rust — pinned digest (rust:1.80-slim@sha256:907ff4b3ee7df57149ffee04f606e0a08b9b2ed3507f00a19cf3c9c0f74b7681)
-    podman pull docker.io/library/rust:1.80-slim@sha256:907ff4b3ee7df57149ffee04f606e0a08b9b2ed3507f00a19cf3c9c0f74b7681
+    podman pull docker.io/library/rust:1.80-slim@sha256:907ff4b3ee7df57149ffee04f606e0a08b9b2ed3507f00a19cf3c9c0f74b7681 || true
     # Python — pinned digest (python:3.12-slim@sha256:646fb0bca3dd3ea1bcc6feb72c17ed16eed6e10cffc732fcc1478bd3e7f02d7b)
-    podman pull docker.io/library/python:3.12-slim@sha256:646fb0bca3dd3ea1bcc6feb72c17ed16eed6e10cffc732fcc1478bd3e7f02d7b
-    # Java — pinned digest (eclipse-temurin:17-jammy@sha256:723151f3fc88ca2060153ee08ab8dbbea7983d6ed6f2622fe440acf178737c94)
-    podman pull docker.io/library/eclipse-temurin:17-jammy@sha256:723151f3fc88ca2060153ee08ab8dbbea7983d6ed6f2622fe440acf178737c94
+    podman pull docker.io/library/python:3.12-slim@sha256:646fb0bca3dd3ea1bcc6feb72c17ed16eed6e10cffc732fcc1478bd3e7f02d7b || true
+    # Java — pinned digest (eclipse-temurin:17-jammy@sha256:29467857e8bde40ab1f7befecbda0ea764b95afec1cc7f89aa90f7a766577e19)
+    podman pull docker.io/library/eclipse-temurin:17-jammy@sha256:29467857e8bde40ab1f7befecbda0ea764b95afec1cc7f89aa90f7a766577e19 || true
     # JS/TS — pinned digest (node:22-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436)
     podman pull docker.io/library/node:22-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 || true
     # Go — pinned digest (golang:1.23-alpine@sha256:383395b794dffa5b53012a212365d40c8e37109a626ca30d6151c8348d380b5f)
@@ -87,7 +87,7 @@ sandbox-maven-warmup:
     podman run --rm \
         --network=host \
         -v %t/containers/cognicode-java-m2-cache:/root/.m2/repository:z \
-        docker.io/library/eclipse-temurin:17-jammy@sha256:723151f3fc88ca2060153ee08ab8dbbea7983d6ed6f2622fe440acf178737c94 \
+        docker.io/library/eclipse-temurin:17-jammy@sha256:29467857e8bde40ab1f7befecbda0ea764b95afec1cc7f89aa90f7a766577e19 \
         bash -c 'cd /tmp && git clone --depth1 https://github.com/spring-projects/spring-petclinic.git && cd spring-petclinic && ./mvnw compile -q -DskipTests'
     @echo "Maven cache warmed — subsequent runs work with Network=none"
 

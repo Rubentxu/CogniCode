@@ -7,7 +7,7 @@ RequiresMountsFor=%t/containers
 
 [Container]
 # Pinned image digest — eclipse-temurin:17-jammy
-Image=docker.io/library/eclipse-temurin:17-jammy@sha256:9824c27679d3b27c5e1cb00a73adb6f4f8d556994111c12db3c5d61a0c843df8
+Image=docker.io/library/eclipse-temurin:17-jammy@sha256:29467857e8bde40ab1f7befecbda0ea764b95afec1cc7f89aa90f7a766577e19
 ContainerName=cognicode-java
 Volume=%t/containers/cognicode-java-workspace:/workspace:z
 Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
