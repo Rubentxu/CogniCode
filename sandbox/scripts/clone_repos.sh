@@ -95,48 +95,48 @@ echo "Repo directory: $REPO_DIR"
 pin_repo \
     "serde" \
     "https://github.com/serde-rs/serde.git" \
-    "v1.0.195" \
-    ""  # No specific commit pin — branch is sufficient for Tier A fixture
+    "03eec42c3313b36da416be1486e9ecac345784d5" \
+    "commit"
 
 # ─── Rust: ripgrep ──────────────────────────────────────────────────────────
 # Pinned at 14.1.1 — a small, fast Rust CLI tool with real validation pipeline
 pin_repo \
     "ripgrep" \
     "https://github.com/BurntSushi/ripgrep.git" \
-    "14.1.1" \
-    "tag"
+    "4649aa9700619f94cf9c66876e9549d83420e16c" \
+    "commit"
 
 # ─── Rust: anyhow ───────────────────────────────────────────────────────────
 # Pinned at 1.0.86 — a tiny Rust error handling library with minimal dependencies
 pin_repo \
     "anyhow" \
     "https://github.com/dtolnay/anyhow.git" \
-    "1.0.86" \
-    "tag"
+    "8ea1819c4c7829d0eb09e54a52806f382b8d445b" \
+    "commit"
 
 # ─── Python: pallets/click ────────────────────────────────────────────────────
 # Pinned at 8.1.7 — stable, well-tested CLI framework
 pin_repo \
     "click" \
     "https://github.com/pallets/click.git" \
-    "8.1.7" \
-    ""
+    "874ca2bc1c30d93a4ac6e36a15ed685eafe89097" \
+    "commit"
 
 # ─── Python: urllib3 ────────────────────────────────────────────────────────
 # Pinned at 2.1.0 — a second Python real repo beyond click
 pin_repo \
     "urllib3" \
     "https://github.com/urllib3/urllib3.git" \
-    "2.1.0" \
-    ""
+    "69be2992f8a25a1f27e49f339e4d5b98dec07462" \
+    "commit"
 
 # ─── Python: requests ────────────────────────────────────────────────────────
 # Pinned at v2.32.3 — the popular HTTP library for Python
 pin_repo \
     "requests" \
     "https://github.com/psf/requests.git" \
-    "v2.32.3" \
-    "tag"
+    "0e322af87745eff34caffe4df68456ebc20d9068" \
+    "commit"
 
 # ─── JavaScript: chalk ───────────────────────────────────────────────────────
 # Pinned at v5.1.0 — a small, popular JS CLI tool
@@ -144,8 +144,8 @@ pin_repo \
 pin_repo \
     "chalk" \
     "https://github.com/chalk/chalk.git" \
-    "v5.1.0" \
-    ""
+    "92c55db46f2396c18764e55e6a52dcb49884a42b" \
+    "commit"
 
 # ─── TypeScript: commander.js ───────────────────────────────────────────────
 # Pinned at v11.0.0 — a popular TS CLI framework
@@ -153,8 +153,8 @@ pin_repo \
 pin_repo \
     "commander" \
     "https://github.com/tj/commander.js.git" \
-    "v11.0.0" \
-    ""
+    "4ef19faac1564743d8c7e3ce89ef8d190e1551b4" \
+    "commit"
 
 # ─── Go: spf13/cobra ─────────────────────────────────────────────────────────
 # Pinned at v1.8.1 — a popular Go CLI framework
@@ -162,8 +162,8 @@ pin_repo \
 pin_repo \
     "go/cobra" \
     "https://github.com/spf13/cobra.git" \
-    "v1.8.1" \
-    ""
+    "e94f6d0dd9a5e5738dca6bce03c4b1207ffbc0ec" \
+    "commit"
 
 # ─── Go: charmbracelet/bubbletea ──────────────────────────────────────────────
 # Pinned at v1.3.9 — a popular Go TUI framework
@@ -171,8 +171,8 @@ pin_repo \
 pin_repo \
     "go/bubbletea" \
     "https://github.com/charmbracelet/bubbletea.git" \
-    "v1.3.9" \
-    ""
+    "ffa05021909e14c478cbe138ca78effbea04e4e0" \
+    "commit"
 
 # ─── Go: samber/lo ────────────────────────────────────────────────────────────
 # Pinned at v1.43.0 — a popular Go utility library
@@ -180,8 +180,8 @@ pin_repo \
 pin_repo \
     "go/lo" \
     "https://github.com/samber/lo.git" \
-    "v1.43.0" \
-    ""
+    "35e49f2c9607a7f7f6cde872a42d8718d9c3d053" \
+    "commit"
 
 # ─── Java: spring-projects/spring-petclinic ────────────────────────────────────
 # Pinned to concrete SHA edf4db28affcc4741c79850a3d95bc3f177b5ff9 (reproducibility)
@@ -190,7 +190,7 @@ pin_repo \
     "java/spring-petclinic" \
     "https://github.com/spring-projects/spring-petclinic.git" \
     "edf4db28affcc4741c79850a3d95bc3f177b5ff9" \
-    ""
+    "commit"
 
 # ─── JavaScript: expressjs/express ─────────────────────────────────────────────
 # Pinned at 4.21.0 — the popular Node.js web framework
@@ -198,8 +198,8 @@ pin_repo \
 pin_repo \
     "javascript/express" \
     "https://github.com/expressjs/express.git" \
-    "4.21.0" \
-    ""
+    "7e562c6d8daddff4604f8efaaf9db2cf98c6dcff" \
+    "commit"
 
 # ─── TypeScript: colinhacks/zod ────────────────────────────────────────────────
 # Pinned at v3.24.1 — a popular TypeScript schema validation library
@@ -207,64 +207,64 @@ pin_repo \
 pin_repo \
     "typescript/zod" \
     "https://github.com/colinhacks/zod.git" \
-    "v3.24.1" \
-    ""
+    "65adeeacef0274abbda5438470a3d2bfd376256d" \
+    "commit"
 
 # ─── Ruby: sinatra/sinatra ─────────────────────────────────────────────────────
 # Pinned at v4.1.0 — lightweight Ruby web framework (~2K LOC)
 pin_repo \
     "ruby/sinatra" \
     "https://github.com/sinatra/sinatra.git" \
-    "v4.1.0" \
-    ""
+    "73f3291d114b5b211e067263eeb9c0e197fe8500" \
+    "commit"
 
 # ─── PHP: slimphp/Slim ─────────────────────────────────────────────────────────
 # Pinned at 4.14.0 — PHP micro-framework (~4K LOC)
 pin_repo \
     "php/slim" \
     "https://github.com/slimphp/Slim.git" \
-    "4.14.0" \
-    ""
+    "5943393b88716eb9e82c4161caa956af63423913" \
+    "commit"
 
 # ─── C: redis/hiredis ──────────────────────────────────────────────────────────
 # Pinned at v1.2.0 — minimal C Redis client (~3K LOC)
 pin_repo \
     "c/hiredis" \
     "https://github.com/redis/hiredis.git" \
-    "v1.2.0" \
-    ""
+    "60e5075d4ac77424809f855ba3e398df7aacefe8" \
+    "commit"
 
 # ─── C++: nlohmann/json ────────────────────────────────────────────────────────
 # Pinned at v3.11.3 — single-header JSON library (~25K LOC but one file)
 pin_repo \
     "cpp/json" \
     "https://github.com/nlohmann/json.git" \
-    "v3.11.3" \
-    ""
+    "9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03" \
+    "commit"
 
 # ─── Swift: apple/swift-argument-parser ────────────────────────────────────────
 # Pinned at 1.5.0 — Swift CLI argument parser (~3K LOC)
 pin_repo \
     "swift/argument-parser" \
     "https://github.com/apple/swift-argument-parser.git" \
-    "1.5.0" \
-    ""
+    "41982a3656a71c768319979febd796c6fd111d5c" \
+    "commit"
 
 # ─── Elixir: elixir-lang/elixir ────────────────────────────────────────────────
 # Pinned at v1.18.2 — Elixir standard library (small core)
 pin_repo \
     "elixir/elixir" \
     "https://github.com/elixir-lang/elixir.git" \
-    "v1.18.2" \
-    ""
+    "175c8243b23c4cfcaaa99e60b030085bfef8e9a0" \
+    "commit"
 
 # ─── C#: dotnet/roslyn ─────────────────────────────────────────────────────────
 # Pinned at a stable tag — C# compiler
 pin_repo \
     "csharp/roslyn" \
     "https://github.com/dotnet/roslyn.git" \
-    "Visual-Studio-2022-version-17.13" \
-    ""
+    "f33ae3e34c00d93ae70abf2e8f5d38ba45563405" \
+    "commit"
 
 # ─── Java: java-sample (Maven project from fixtures) ─────────────────────────
 # Already provisioned at sandbox/fixtures/java-sample
@@ -286,5 +286,5 @@ echo "JS/TS real repos (chalk, commander) need: npm ci --frozen-lockfile"
 pin_repo \
     "csharp/spectre-console" \
     "https://github.com/spectreconsole/spectre.console.git" \
-    "main" \
-    ""
+    "0acc92fada6c42f13984e79c2b5f3d993bdfb099" \
+    "commit"
