@@ -2,6 +2,8 @@
 //!
 //! Phase 5.2: Smart composites that replace groups of individual tools.
 //! Phase 5.3: New tools combining Graphify + CogniCode capabilities.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::unnecessary_sort_by, unused_imports)]
 
 use crate::domain::services::CycleDetector;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
@@ -77,24 +79,24 @@ pub async fn handle_smart_search(
                 });
         }
     }
-    if let Ok(idf) = idf {
-        if let Some(results_arr) = idf.get("results").and_then(|v| v.as_array()) {
-            for r in results_arr {
-                if let (Some(name), Some(score)) = (
-                    r.get("name").and_then(|v| v.as_str()),
-                    r.get("idf_score").and_then(|v| v.as_f64()),
-                ) {
-                    let file = r.get("file").and_then(|v| v.as_str());
-                    results
-                        .entry(name.to_string())
-                        .or_insert_with(|| SmartSearchResult {
-                            name: name.to_string(),
-                            kind: "symbol".into(),
-                            file: file.map(|f| f.to_string()),
-                            score,
-                            source: "idf".into(),
-                        });
-                }
+    if let Ok(idf) = idf
+        && let Some(results_arr) = idf.get("results").and_then(|v| v.as_array())
+    {
+        for r in results_arr {
+            if let (Some(name), Some(score)) = (
+                r.get("name").and_then(|v| v.as_str()),
+                r.get("idf_score").and_then(|v| v.as_f64()),
+            ) {
+                let file = r.get("file").and_then(|v| v.as_str());
+                results
+                    .entry(name.to_string())
+                    .or_insert_with(|| SmartSearchResult {
+                        name: name.to_string(),
+                        kind: "symbol".into(),
+                        file: file.map(|f| f.to_string()),
+                        score,
+                        source: "idf".into(),
+                    });
             }
         }
     }
@@ -234,7 +236,7 @@ pub async fn handle_project_overview(
             hot_paths.first().unwrap_or(&"unknown".to_string())
         ));
     }
-    if cycle_result.cycles.len() > 0 {
+    if !cycle_result.cycles.is_empty() {
         recommendations.push(format!(
             "Address {} cyclic dependency cycle(s) to improve architecture score",
             cycle_result.cycles.len()
@@ -462,7 +464,7 @@ pub async fn handle_review_pr(
             if sym.location().file().contains(file.as_str()) {
                 let name = sid.as_str();
                 for dep in graph.dependents(sid) {
-                    if let Some(dep_sym) = graph.get_symbol(&dep) {
+                    if let Some(dep_sym) = graph.get_symbol(dep) {
                         impacted.push(format!(
                             "{} → {} ({})",
                             name,

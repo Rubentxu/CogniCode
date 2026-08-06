@@ -16,6 +16,8 @@
 //! Adding a new variant is a **breaking change** for the bincode blob
 //! format and must be paired with bumping the blob version in
 //! `cognicode_db::graph::VersionedBlob`.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::needless_borrows_for_generic_args)]
 
 use serde::{Deserialize, Serialize};
 use std::fmt;

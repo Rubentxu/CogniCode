@@ -12,6 +12,8 @@
 //!
 //! All three tools require a loaded call graph and follow the envelope contract
 //! (`ok_envelope` / `err_envelope`).
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::manual_clamp, dead_code)]
 
 use std::sync::Arc;
 
@@ -375,8 +377,8 @@ impl ToolHandler for HealthDashboardHandler {
         let mut indexed = 0;
         let mut stale = 0;
         for (sid, _) in g.symbol_ids() {
-            let deps = g.dependencies(&sid).count();
-            let dependents = g.dependents(&sid).count();
+            let deps = g.dependencies(sid).count();
+            let dependents = g.dependents(sid).count();
             if deps == 0 && dependents == 0 {
                 stale += 1;
             } else {

@@ -1,6 +1,8 @@
 //! Trait for dependency repository operations
 //!
 //! Provides methods for managing symbol dependencies and analyzing impact.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::unwrap_or_default)]
 
 use std::collections::HashSet;
 

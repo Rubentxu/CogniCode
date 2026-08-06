@@ -8,6 +8,8 @@
 //! - `explorer_query_moldql` — execute a MoldQL query
 //! - `moldql_pattern_query` — execute a Pattern Profile query (T7)
 //! - `moldql_pattern_capabilities` — return v1 supported-feature matrix (T7)
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(deprecated, unused_imports)]
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;

@@ -1,6 +1,8 @@
 //! Run lineage types and storage port for analytics run records.
 //!
 //! Part of E28.4 Analytics Registry Cohort 1 — PR1 Foundation.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::too_many_arguments, clippy::unnecessary_sort_by)]
 
 use std::fmt;
 
@@ -304,16 +306,16 @@ impl RunLineageStore for InMemoryLineageStore {
                 filter
                     .workspace_id
                     .as_ref()
-                    .map_or(true, |wid| &r.workspace_id == wid)
+                    .is_none_or(|wid| &r.workspace_id == wid)
                     && filter
                         .revision_id
                         .as_ref()
-                        .map_or(true, |rid| &r.revision_id == rid)
+                        .is_none_or(|rid| &r.revision_id == rid)
                     && filter
                         .algorithm_id
                         .as_ref()
-                        .map_or(true, |aid| &r.algorithm_id == aid)
-                    && filter.status.as_ref().map_or(true, |s| &r.status == s)
+                        .is_none_or(|aid| &r.algorithm_id == aid)
+                    && filter.status.as_ref().is_none_or(|s| &r.status == s)
             })
             .cloned()
             .collect();

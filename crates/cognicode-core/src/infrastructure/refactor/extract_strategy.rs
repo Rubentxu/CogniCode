@@ -1,4 +1,6 @@
 //! Extract Strategy - Strategy pattern implementation for extract method refactoring
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::needless_range_loop)]
 
 use crate::domain::aggregates::refactor::{Refactor, RefactorKind, RefactorParameters};
 use crate::domain::traits::refactor_strategy::{
@@ -462,31 +464,7 @@ impl ExtractStrategy {
                     name, params_str, return_type
                 )
             }
-            Language::Java
-            | Language::C
-            | Language::Cpp
-            | Language::CSharp
-            | Language::Hcl
-            | Language::Yaml
-            | Language::Ruby
-            | Language::Php
-            | Language::Swift
-            | Language::Scala
-            | Language::Lua
-            | Language::Zig
-            | Language::Dart
-            | Language::Groovy
-            | Language::Elixir
-            | Language::Erlang
-            | Language::Haskell
-            | Language::Julia
-            | Language::Bash
-            | Language::R
-            | Language::PowerShell
-            | Language::Json
-            | Language::Fortran
-            | Language::Verilog
-            | Language::SystemVerilog => {
+            Language::Java => {
                 let return_type = if has_return {
                     if let Some(hint) = return_type_hint {
                         format!(" /* {} */", hint)
@@ -632,31 +610,7 @@ impl ExtractStrategy {
                     name, params_str, return_type, body_str
                 )
             }
-            Language::Java
-            | Language::C
-            | Language::Cpp
-            | Language::CSharp
-            | Language::Hcl
-            | Language::Yaml
-            | Language::Ruby
-            | Language::Php
-            | Language::Swift
-            | Language::Scala
-            | Language::Lua
-            | Language::Zig
-            | Language::Dart
-            | Language::Groovy
-            | Language::Elixir
-            | Language::Erlang
-            | Language::Haskell
-            | Language::Julia
-            | Language::Bash
-            | Language::R
-            | Language::PowerShell
-            | Language::Json
-            | Language::Fortran
-            | Language::Verilog
-            | Language::SystemVerilog => {
+            Language::Java => {
                 let return_type = if has_return {
                     " /* ReturnType */"
                 } else {

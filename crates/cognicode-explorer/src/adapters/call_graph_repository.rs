@@ -2,6 +2,8 @@
 //!
 //! The graph is held behind an `Arc` so the adapter is cheap to clone and
 //! safe to share with the application service.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::Arc;
 
@@ -236,7 +238,7 @@ impl GraphQueryPort for CallGraphRepository {
             .dependencies_with_metadata(id)
             .map(|(target_id, dependency_type, provenance, confidence)| {
                 let target =
-                    relation_target(&target_id, &self.graph).unwrap_or_else(|| RelationTarget {
+                    relation_target(target_id, &self.graph).unwrap_or_else(|| RelationTarget {
                         id: target_id.clone(),
                         name: String::new(),
                         kind: cognicode_core::domain::value_objects::SymbolKind::Function,

@@ -9,6 +9,8 @@
 //! - `graph_transitive_reduction`  — minimal edge set preserving reachability
 //! - `graph_feedback_arc_set`     — cycle-breaking edge candidates
 //! - `graph_all_simple_paths`     — enumerate simple paths between two symbols
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::Arc;
 

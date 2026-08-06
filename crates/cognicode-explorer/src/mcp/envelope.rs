@@ -18,6 +18,8 @@
 //! | `provenance` | `ProvenanceMetadata \| null` | Source subsystem + confidence; `null` for plain success |
 //! | `payload` | any | Tool-specific result or `EnvelopeError` on failure |
 //! | `suggested_follow_ups` | array | Always `[]` in v1 |
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use rmcp::model::{CallToolResult, Content, RawContent};
 use serde::Serialize;

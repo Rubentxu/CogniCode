@@ -2,6 +2,8 @@
 //!
 //! This module provides ground truth structures and matching functions
 //! for evaluating MCP tool correctness across Code Intelligence tools.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::should_implement_trait)]
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

@@ -415,8 +415,8 @@ impl ToolHandler for FindIntersectionHandler {
         }
 
         let findings: Vec<IntersectionFindingDto> = bucket
-            .into_iter()
-            .filter_map(|(_, mut dto)| {
+            .into_values()
+            .filter_map(|mut dto| {
                 if dto.contributing_lenses.len() >= min_consensus {
                     // De-duplicate contributing_lenses (in case a single
                     // lens emits duplicates — should be rare but defensive).

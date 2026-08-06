@@ -79,26 +79,6 @@ sandbox-setup: sandbox-pull
         cognicode-js \
         cognicode-ts 2>/dev/null || true
 
-# Deprecated: merged into sandbox-setup (Phase 3 unification)
-# Use `just sandbox-setup` instead — it now deploys all 6 containers
-sandbox-setup-js-ts:
-    cp {{justfile_directory()}}/containers/cognicode-js.container \
-       {{justfile_directory()}}/containers/cognicode-ts.container \
-    # Named volumes (quadlet pattern — podman-managed, survive reboots)
-    cp {{justfile_directory()}}/containers/cognicode-rust-workspace.volume \
-       {{justfile_directory()}}/containers/cognicode-python-workspace.volume \
-       {{justfile_directory()}}/containers/cognicode-java-workspace.volume \
-       {{justfile_directory()}}/containers/cognicode-java-m2-cache.volume \
-       {{justfile_directory()}}/containers/cognicode-go-workspace.volume \
-       {{justfile_directory()}}/containers/cognicode-js-workspace.volume \
-       {{justfile_directory()}}/containers/cognicode-ts-workspace.volume \
-       ~/.config/containers/systemd/ 2>/dev/null || true
-    systemctl --user daemon-reload 2>/dev/null || true
-    systemctl --user start cognicode-js cognicode-ts 2>/dev/null || true
-
-# ─── MAVEN WARMUP ────────────────────────────────────────────────────────────
-# Pre-populate Maven cache for spring-petclinic (offline-capable after first run)
-# Requires network — run once before using java container with Network=none
 sandbox-maven-warmup:
     podman run --rm \
         --network=host \

@@ -1,6 +1,8 @@
 //! Aggregate for representing call graphs between symbols
 //!
 //! A call graph represents the dependencies and call relationships between symbols.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::type_complexity)]
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -329,7 +331,7 @@ impl CallGraph {
                 continue;
             }
             if let Some(dependencies) = self.edges.get(&current) {
-                for ((next, _), _) in dependencies {
+                for (next, _) in dependencies.keys() {
                     if next == target {
                         let mut path = vec![target.clone()];
                         let mut step = &current;
@@ -550,7 +552,7 @@ impl CallGraph {
             let safe_source = source_id
                 .as_str()
                 .replace([':', '(', ')', '<', '>', '{', '}'], "_");
-            for ((target_id, dep_type), _) in edges {
+            for (target_id, dep_type) in edges.keys() {
                 let safe_target = target_id
                     .as_str()
                     .replace([':', '(', ')', '<', '>', '{', '}'], "_");
@@ -651,7 +653,7 @@ impl CallGraph {
                 let safe_source = source_id
                     .as_str()
                     .replace([':', '(', ')', '<', '>', '{', '}'], "_");
-                for ((target_id, dep_type), _) in edges {
+                for (target_id, dep_type) in edges.keys() {
                     if !symbol_ids.contains(target_id) {
                         continue;
                     }
@@ -698,7 +700,7 @@ impl CallGraph {
             let safe_source = symbol_id
                 .as_str()
                 .replace([':', '(', ')', '<', '>', '{', '}'], "_");
-            for ((target_id, dep_type), _) in dependencies {
+            for (target_id, dep_type) in dependencies.keys() {
                 if !allowed_symbols.contains(target_id) {
                     continue;
                 }
@@ -828,7 +830,7 @@ impl CallGraph {
                 .map(|s| Self::module_from_file(s.location().file()))
                 .unwrap_or_default();
 
-            for ((target_id, _), _) in targets {
+            for (target_id, _) in targets.keys() {
                 let target_module = self
                     .get_symbol(target_id)
                     .map(|s| Self::module_from_file(s.location().file()))

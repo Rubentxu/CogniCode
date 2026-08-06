@@ -11,6 +11,8 @@
 //! trait. Error returns are `GraphResult` (not the explorer's
 //! `ExplorerResult`) — the adapter wraps upstream failures in
 //! `GraphError::Storage`.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -75,10 +77,10 @@ impl GraphRepository for InMemoryGraphRepository {
             .nodes
             .iter()
             .filter_map(|n| {
-                if let Some(ref allowed) = allowed {
-                    if !allowed.contains(&n.kind.as_str()) {
-                        return None;
-                    }
+                if let Some(ref allowed) = allowed
+                    && !allowed.contains(&n.kind.as_str())
+                {
+                    return None;
                 }
                 let label_hit = n.label.to_ascii_lowercase().contains(&q);
                 let prop_hit = n
@@ -280,10 +282,10 @@ impl GraphRepository for InMemoryGraphRepository {
             .nodes
             .iter()
             .filter_map(|n| {
-                if let Some(ref allowed) = allowed {
-                    if !allowed.contains(&n.kind.as_str()) {
-                        return None;
-                    }
+                if let Some(ref allowed) = allowed
+                    && !allowed.contains(&n.kind.as_str())
+                {
+                    return None;
                 }
                 let label_hit = n.label.to_ascii_lowercase().contains(&q);
                 let prop_hit = n
@@ -397,7 +399,7 @@ impl GraphRepository for InMemoryGraphRepository {
                 }
 
                 for e in self.edges.iter() {
-                    if &e.source != &current {
+                    if e.source != current {
                         continue;
                     }
                     if !rationale_kinds.contains(&e.kind) {

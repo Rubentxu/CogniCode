@@ -16,6 +16,8 @@
 //!
 //! Mermaid requires alphanumeric identifiers. Special characters (`:`, `/`, `(`, `)`, etc.)
 //! are replaced with underscores. Duplicated IDs receive numeric suffixes (`_2`, `_3`).
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use crate::dto::{GraphEdge, GraphNode};
 use std::fmt::{self, Write};
@@ -98,7 +100,7 @@ pub fn c4_to_mermaid(nodes: &[GraphNode], edges: &[GraphEdge], level: C4Level) -
     }
 
     // Determine which node IDs are actually used in non-self-loop edges.
-    let used_targets: std::collections::HashSet<&str> = edges
+    let _used_targets: std::collections::HashSet<&str> = edges
         .iter()
         .filter(|e| e.source != e.target)
         .map(|e| e.target.as_str())

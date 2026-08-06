@@ -10,6 +10,8 @@
 //!
 //! This separation enforces the hexagonal architecture invariant:
 //! `cognicode-core` (domain) must NOT depend on `cognicode-explorer` (infrastructure).
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use super::{
     GraphPlan, NeighborKind, PathProjection, PathQuantifier, PlanError, PlanHash, PlanLimits,

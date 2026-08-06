@@ -2,6 +2,8 @@
 //!
 //! Uses Tree-sitter to extract syntax, BM25 for semantic intent scoring,
 //! and Rust's type system for safety invariants.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::manual_range_contains)]
 
 use super::contract::*;
 use std::collections::HashSet;

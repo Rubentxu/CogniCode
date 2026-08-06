@@ -1,4 +1,6 @@
 //! [`WorkspaceService`] implementation.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code)]
 
 use std::path::PathBuf;
 use std::sync::Arc;

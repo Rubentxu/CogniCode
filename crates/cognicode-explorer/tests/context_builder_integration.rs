@@ -17,6 +17,8 @@
 //!   - empty object_id → missing_required_arg
 //!   - service error from inspect_object → service_error
 //! - markdown rendering includes label + object_id
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::type_complexity)]
 
 use std::collections::HashMap;
 use std::sync::Arc;

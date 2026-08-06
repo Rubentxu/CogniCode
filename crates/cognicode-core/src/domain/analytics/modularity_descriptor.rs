@@ -1,6 +1,8 @@
 //! Modularity descriptor for the analytics registry.
 //!
 //! Part of E28.6 Advanced Analytics Evidence Gate — PR2.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::LazyLock;
 
@@ -97,9 +99,9 @@ static MODULARITY_LIMITS: LazyLock<PlanLimits> = LazyLock::new(|| PlanLimits {
 // =============================================================================
 
 static MODULARITY_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
-    time: "O(V + E)".into(),
-    space: "O(V)".into(),
-    notes: "Linear scan of edges per community".into(),
+    time: "O(V + E)",
+    space: "O(V)",
+    notes: "Linear scan of edges per community",
 });
 
 // =============================================================================

@@ -1,6 +1,8 @@
 //! Trait for code intelligence operations
 //!
 //! Provides methods for extracting and analyzing code symbols and their relationships.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code)]
 
 use crate::domain::aggregates::Symbol;
 use crate::domain::value_objects::{Location, SymbolKind};

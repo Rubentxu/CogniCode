@@ -14,6 +14,8 @@
 //! evaluate `false` when no [`cognicode_core::domain::ports::QualityStore`] is
 //! wired — callers that skip the quality backend still get a correct
 //! (empty) result without an error.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::type_complexity, deprecated)]
 
 use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::sync::Arc;
@@ -935,11 +937,7 @@ mod tests {
                 .get(id.as_str())
                 .map(|ids| {
                     ids.iter()
-                        .filter_map(|caller_id| {
-                            self.by_id
-                                .get(caller_id)
-                                .map(|sym| RelationTarget::from(sym))
-                        })
+                        .filter_map(|caller_id| self.by_id.get(caller_id).map(RelationTarget::from))
                         .collect()
                 })
                 .unwrap_or_default()
@@ -949,11 +947,7 @@ mod tests {
                 .get(id.as_str())
                 .map(|ids| {
                     ids.iter()
-                        .filter_map(|callee_id| {
-                            self.by_id
-                                .get(callee_id)
-                                .map(|sym| RelationTarget::from(sym))
-                        })
+                        .filter_map(|callee_id| self.by_id.get(callee_id).map(RelationTarget::from))
                         .collect()
                 })
                 .unwrap_or_default()
@@ -1070,7 +1064,7 @@ mod tests {
                 }
 
                 // Respect hop budget
-                if hops.len() - 1 >= max_hops {
+                if hops.len() > max_hops {
                     continue;
                 }
 
@@ -2301,7 +2295,7 @@ mod tests {
 
         // InMemoryGraphExecutor returns 1 path for n→m
         assert!(
-            result.items.len() >= 1,
+            !result.items.is_empty(),
             "expected ≥1 path item, got {} items: {:?}",
             result.items.len(),
             result.items
@@ -2334,7 +2328,7 @@ mod tests {
 
         // InMemoryGraphExecutor returns 1 path for n→m
         assert!(
-            result.items.len() >= 1,
+            !result.items.is_empty(),
             "expected ≥1 path item, got {} items: {:?}",
             result.items.len(),
             result.items

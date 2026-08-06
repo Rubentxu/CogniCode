@@ -1,6 +1,8 @@
 //! Weakly Connected Components (WCC) descriptor for the analytics registry.
 //!
 //! Part of E28.4 Analytics Registry Cohort 1 — PR2 Cohort-1 Core.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::LazyLock;
 
@@ -56,9 +58,9 @@ static WCC_LIMITS: LazyLock<PlanLimits> = LazyLock::new(|| PlanLimits {
 // =============================================================================
 
 static WCC_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
-    time: "O(V + E)".into(),
-    space: "O(V)".into(),
-    notes: "Union-find with path compression".into(),
+    time: "O(V + E)",
+    space: "O(V)",
+    notes: "Union-find with path compression",
 });
 
 // =============================================================================
@@ -141,7 +143,7 @@ impl AlgorithmParams for WccParams {
     }
 
     fn validate(&self, params: &serde_json::Value) -> Result<(), String> {
-        if params.is_null() || params.as_object().map_or(false, |o| o.is_empty()) {
+        if params.is_null() || params.as_object().is_some_and(|o| o.is_empty()) {
             Ok(())
         } else {
             Err("WCC algorithm accepts no parameters".into())

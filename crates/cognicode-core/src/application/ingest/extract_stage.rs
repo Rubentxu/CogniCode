@@ -6,6 +6,8 @@
 //!   Good for tests and small projects.
 //! - `extract_streaming()`: rayon workers send results through a bounded
 //!   tokio mpsc channel. Backpressure prevents OOM on large projects.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::len_zero, unused_imports)]
 
 use std::path::Path;
 
@@ -79,7 +81,7 @@ fn extract_one(change: FileChange) -> ExtractionResult {
 
     // Find language config
     let (_, lang_name) = classify_file(path);
-    let config = match lang_name.and_then(|name| config_by_name(name)) {
+    let config = match lang_name.and_then(config_by_name) {
         Some(c) => c,
         None => {
             // Not a supported code file — skip silently (no error, no extraction)
@@ -113,19 +115,6 @@ fn config_by_name(name: &str) -> Option<&'static LanguageConfig> {
         "zig" => Some(&crate::infrastructure::parser::language_config::ZIG_CONFIG),
         "dart" => Some(&crate::infrastructure::parser::language_config::DART_CONFIG),
         "groovy" => Some(&crate::infrastructure::parser::language_config::GROOVY_CONFIG),
-        "elixir" => Some(&crate::infrastructure::parser::language_config::ELIXIR_CONFIG),
-        "erlang" => Some(&crate::infrastructure::parser::language_config::ERLANG_CONFIG),
-        "haskell" => Some(&crate::infrastructure::parser::language_config::HASKELL_CONFIG),
-        "julia" => Some(&crate::infrastructure::parser::language_config::JULIA_CONFIG),
-        "bash" => Some(&crate::infrastructure::parser::language_config::BASH_CONFIG),
-        "r" => Some(&crate::infrastructure::parser::language_config::R_CONFIG),
-        "powershell" => Some(&crate::infrastructure::parser::language_config::POWERSHELL_CONFIG),
-        "json" => Some(&crate::infrastructure::parser::language_config::JSON_CONFIG),
-        "fortran" => Some(&crate::infrastructure::parser::language_config::FORTRAN_CONFIG),
-        "verilog" => Some(&crate::infrastructure::parser::language_config::VERILOG_CONFIG),
-        "systemverilog" => {
-            Some(&crate::infrastructure::parser::language_config::SYSTEMVERILOG_CONFIG)
-        }
         "elixir" => Some(&crate::infrastructure::parser::language_config::ELIXIR_CONFIG),
         "erlang" => Some(&crate::infrastructure::parser::language_config::ERLANG_CONFIG),
         "haskell" => Some(&crate::infrastructure::parser::language_config::HASKELL_CONFIG),

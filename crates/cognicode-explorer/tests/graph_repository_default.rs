@@ -3,6 +3,8 @@
 //! Tests that `find_nodes_by_kind_paginated` default implementation:
 //! - Returns `SearchPage` with `raw_total == items.len()`
 //! - Returns `next_cursor = None` (no real pagination in default impl)
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 #[cfg(feature = "multimodal")]
 use async_trait::async_trait;

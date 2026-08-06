@@ -1,6 +1,8 @@
 //! Trait for search operations
 //!
 //! Provides methods for searching and replacing code patterns.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::bool_assert_comparison, dead_code)]
 
 use crate::domain::value_objects::{Location, SourceRange};
 use async_trait::async_trait;

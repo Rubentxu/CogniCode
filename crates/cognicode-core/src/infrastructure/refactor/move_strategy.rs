@@ -2,6 +2,8 @@
 //!
 //! Moves a function, struct, or class to a different file, updating all imports
 //! and qualified references.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::len_zero)]
 
 use crate::domain::aggregates::refactor::{Refactor, RefactorKind, RefactorParameters};
 use crate::domain::traits::refactor_strategy::{
@@ -103,12 +105,11 @@ impl MoveStrategy {
     ) -> Option<String> {
         // Look for identifier or type_identifier child
         for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                if (child.kind() == "identifier" || child.kind() == "type_identifier")
-                    && let Ok(text) = child.utf8_text(source_bytes)
-                {
-                    return Some(text.to_string());
-                }
+            if let Some(child) = node.child(i)
+                && (child.kind() == "identifier" || child.kind() == "type_identifier")
+                && let Ok(text) = child.utf8_text(source_bytes)
+            {
+                return Some(text.to_string());
             }
         }
         None

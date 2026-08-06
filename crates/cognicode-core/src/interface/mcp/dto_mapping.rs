@@ -7,6 +7,8 @@
 //! FileEntry, ContentMatch, SyntaxIssue, EditValidation, ListFilesResult) are defined
 //! once in dto/common.rs and re-exported by schemas.rs. Their conversions are identity
 //! and do not require From impls here.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::map_identity)]
 
 use crate::application::dto::{
     CallHierarchyEntry, EditFileRequest, EditFileResult, GetCallHierarchyResult,
@@ -43,7 +45,7 @@ impl From<ReadFileResult> for ReadFileOutput {
             content: result.content,
             total_lines: result.total_lines,
             truncated: result.truncated,
-            metadata: result.metadata.into(),
+            metadata: result.metadata,
             mode: result.mode,
             start_line: result.start_line,
             end_line: result.end_line,
@@ -72,7 +74,7 @@ impl From<WriteFileResult> for WriteFileOutput {
     fn from(result: WriteFileResult) -> Self {
         WriteFileOutput {
             bytes_written: result.bytes_written,
-            metadata: result.metadata.into(),
+            metadata: result.metadata,
         }
     }
 }
@@ -123,7 +125,7 @@ impl From<SearchContentInput> for SearchContentRequest {
 impl From<SearchContentResult> for SearchContentOutput {
     fn from(result: SearchContentResult) -> Self {
         SearchContentOutput {
-            matches: result.matches.into_iter().map(|m| m.into()).collect(),
+            matches: result.matches.into_iter().map(|m| m).collect(),
             total: result.total,
             files_scanned: result.files_scanned,
         }
@@ -175,7 +177,7 @@ impl From<SymbolInfo> for SymbolSummary {
         SymbolSummary {
             name: info.name,
             kind: info.kind.into(),
-            location: info.location.into(),
+            location: info.location,
             signature: info.signature,
         }
     }
@@ -211,7 +213,7 @@ impl From<GetCallHierarchyOutput> for GetCallHierarchyResult {
         GetCallHierarchyResult {
             symbol: output.symbol,
             calls: output.calls.into_iter().map(|c| c.into()).collect(),
-            metadata: output.metadata.into(),
+            metadata: output.metadata,
         }
     }
 }

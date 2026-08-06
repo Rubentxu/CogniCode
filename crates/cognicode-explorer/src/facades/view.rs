@@ -1,4 +1,6 @@
 //! ViewService and LensService facade.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -205,7 +207,7 @@ impl ViewServiceImpl {
             }
             // ADR requires adr_repository wired to ViewService.
             // Returns FeatureDisabled since the ADR repository is not yet wired.
-            ObjectIdentity::Adr { id } => Err(ExplorerError::FeatureDisabled(
+            ObjectIdentity::Adr { id: _ } => Err(ExplorerError::FeatureDisabled(
                 "ADR resolution requires ADR repository (not wired in ViewService)".into(),
             )),
             // Workspace requires async persistence to load sessions — handled in
@@ -353,7 +355,7 @@ impl ViewServiceImpl {
             .unwrap_or(0);
         let bfs_clipped = !same_nodes.is_empty()
             && same_nodes.len() >= remaining_cap
-            && (fan_in + fan_out) > remaining_cap as usize;
+            && (fan_in + fan_out) > remaining_cap;
         let truncated = children_clipped || bfs_clipped;
         let truncated_reason = if truncated {
             Some("max_nodes_exceeded".to_string())

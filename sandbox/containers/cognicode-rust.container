@@ -12,6 +12,7 @@ Image=docker.io/library/rust:1.80-slim@sha256:907ff4b3ee7df57149ffee04f606e0a08b
 ContainerName=cognicode-rust
 Volume=cognicode-rust-workspace.volume:/workspace:z
 Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
+# Host path assumes local layout; CI bridges it via symlink (sandbox-nightly.yml "Prepare host layout")
 Environment=COGNICODE_WORKSPACE=/repos/serde
 # Isolation: no host network
 Network=none

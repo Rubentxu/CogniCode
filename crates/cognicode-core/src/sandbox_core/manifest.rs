@@ -4,6 +4,8 @@
 //! repo, language, tool, action, workspace, expected outcome, and validation pipeline.
 //!
 //! Version 2.0 adds ground_truth and metrics sections for quality scoring.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::should_implement_trait)]
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

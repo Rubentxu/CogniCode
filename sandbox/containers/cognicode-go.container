@@ -12,6 +12,7 @@ Image=docker.io/library/golang:1.23-alpine@sha256:383395b794dffa5b53012a212365d4
 ContainerName=cognicode-go
 Volume=cognicode-go-workspace.volume:/workspace:z
 Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
+# Host path assumes local layout; CI bridges it via symlink (sandbox-nightly.yml "Prepare host layout")
 Environment=COGNICODE_WORKSPACE=/workspace
 # Isolation: no host network
 Network=none

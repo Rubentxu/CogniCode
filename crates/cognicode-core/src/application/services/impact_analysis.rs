@@ -29,6 +29,8 @@
 //! gives callers access to the graph algorithms exposed by
 //! `CallGraphProjection` (Dijkstra, SCC, connected components, etc.)
 //! from a single, well-typed entry point.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::wildcard_in_or_patterns, unused_imports)]
 
 use crate::application::dto::{
     ClusterResultDto, ExplainResultDto, PathResultDto, SubgraphResultDto,

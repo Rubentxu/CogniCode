@@ -8,6 +8,8 @@
 //! The `PLAN_LIMIT_KINDS` const array maps each kind to its display name and
 //! field accessor. Adding a new limit requires editing only `PlanLimitKind` and
 //! `PLAN_LIMIT_KINDS` — the compiler enforces completeness.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::map_identity, unused_imports)]
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -62,7 +64,7 @@ impl PlanLimitKind {
     /// Returns the value of this limit from `PlanLimits`, or `None` if not set.
     pub fn get(&self, limits: &PlanLimits) -> Option<u64> {
         match self {
-            PlanLimitKind::TimeMs => limits.time_ms.map(|v| v as u64),
+            PlanLimitKind::TimeMs => limits.time_ms.map(|v| v),
             PlanLimitKind::Cancellation => None, // Cancellation is not a u64 limit
             PlanLimitKind::MaxDepth => limits.max_depth.map(|v| v as u64),
             PlanLimitKind::MaxHops => limits.max_hops.map(|v| v as u64),
@@ -94,7 +96,7 @@ pub type PlanLimit = PlanLimitKind;
 /// All fields are optional. A plan with all `None` fields is valid but
 /// represents an unbounded execution — the executor may reject it or apply
 /// internal defaults.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PlanLimits {
     /// Maximum wall-clock time in milliseconds.
     pub time_ms: Option<u64>,
@@ -158,22 +160,6 @@ impl PartialEq for PlanLimits {
 }
 
 impl Eq for PlanLimits {}
-
-impl Default for PlanLimits {
-    fn default() -> Self {
-        Self {
-            time_ms: None,
-            cancellation: None,
-            max_depth: None,
-            max_hops: None,
-            max_visited_nodes: None,
-            max_visited_edges: None,
-            max_result_rows: None,
-            max_path_count: None,
-            max_memory_bytes: None,
-        }
-    }
-}
 
 impl PlanLimits {
     /// Returns a builder for `PlanLimits`.

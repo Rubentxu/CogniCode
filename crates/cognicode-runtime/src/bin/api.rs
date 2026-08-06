@@ -30,12 +30,12 @@ async fn main() -> anyhow::Result<()> {
 
     let runtime = if let Some(db_path) = args.db {
         // Use explicit db path via bootstrap_ladybug.
-        let runtime = cognicode_runtime::bootstrap_ladybug(args.cwd.clone(), db_path)?;
-        runtime
+
+        cognicode_runtime::bootstrap_ladybug(args.cwd.clone(), db_path)?
     } else {
         // Use default `./cognicode.lbug` path.
-        let runtime = cognicode_runtime::bootstrap_ladybug_default(args.cwd.clone())?;
-        runtime
+
+        cognicode_runtime::bootstrap_ladybug_default(args.cwd.clone())?
     };
     let state = runtime.into_api_state();
     tracing::info!(listen = %args.listen, "starting cognicode explorer API");

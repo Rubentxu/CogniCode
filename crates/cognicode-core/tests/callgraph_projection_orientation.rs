@@ -10,6 +10,8 @@
 //!
 //! This test creates a `CallGraph` with a non-uniform structure and verifies
 //! that `build_adjacency` returns correct caller/callee separation.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::empty_line_after_doc_comments)]
 
 use cognicode_core::domain::aggregates::SymbolId;
 use cognicode_core::domain::aggregates::call_graph::CallGraph;

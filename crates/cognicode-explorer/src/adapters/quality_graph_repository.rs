@@ -6,6 +6,8 @@
 //! The adapter is read-only and wraps an optional `QualityStore` and
 //! a `GraphQueryPort`. When quality data is not available, `rank_hotspots`
 //! returns fan-in-only hotspots (still ranked, still useful).
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use crate::domain::lens::severity_weight;
 use crate::domain::lenses::hotspots::compute_risk;

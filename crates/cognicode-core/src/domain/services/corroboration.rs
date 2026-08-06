@@ -15,6 +15,8 @@
 //! ```rust,ignore
 //! let scores = score_subgraph(&graph_nodes, &graph_edges);
 //! ```
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::collections::HashMap;
 

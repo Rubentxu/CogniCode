@@ -1,6 +1,8 @@
 //! PageRank descriptor for the analytics registry.
 //!
 //! Part of E28.4 Analytics Registry Cohort 1 — PR2 Cohort-1 Core.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -81,9 +83,9 @@ static PAGERANK_LIMITS: LazyLock<PlanLimits> = LazyLock::new(|| PlanLimits {
 // =============================================================================
 
 static PAGERANK_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
-    time: "O(V + E)".into(),
-    space: "O(V)".into(),
-    notes: "per iteration; typically converges in < 100 iterations".into(),
+    time: "O(V + E)",
+    space: "O(V)",
+    notes: "per iteration; typically converges in < 100 iterations",
 });
 
 // =============================================================================

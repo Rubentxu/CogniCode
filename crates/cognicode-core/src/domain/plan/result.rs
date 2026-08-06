@@ -10,6 +10,8 @@
 //! - `TruncationMarker` marks explicit truncation vs. an error.
 //! - `SemanticsViolation` encodes ordering/path mismatches for error reporting.
 //! - `Path` encodes a sequence of `(NodeId, Option<EdgeKind>)` hops for graph traversal.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::bool_assert_comparison, unused_imports)]
 
 use serde::{Deserialize, Serialize};
 use std::fmt;

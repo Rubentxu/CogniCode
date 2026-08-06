@@ -1,22 +1,4 @@
 # CogniCode TypeScript Sandbox — Hardened Quadlet
-# Phase 2: TS container with Node.js 22 + TypeScript, hardened isolation + tool pre-install
-#
-# TOOL PRE-INSTALLATION:
-# Tools (typescript, eslint, jest, ts-jest) are installed at BUILD time via a derived
-# Dockerfile, NOT at runtime. This avoids flakiness in rootless Podman.
-#
-# To update the digest pin:
-#   podman pull docker.io/library/node:22-slim
-#   podman inspect docker.io/library/node:22-slim --format '{{.Digest}}'
-#   Then replace the Image line with the pinned digest.
-#
-# To build a derived image with tools pre-installed:
-#   podman build -t cognicode-ts-tools -f - . <<'EOF'
-#   FROM docker.io/library/node:22-slim
-#   RUN npm install -g typescript@5 eslint@9 jest@29 ts-jest@29 @types/node@20
-#   EOF
-#   podman inspect cognicode-ts-tools --format '{{.Digest}}'
-#
 [Unit]
 Description=CogniCode TypeScript Sandbox (Hardened)
 RequiresMountsFor=%t/containers
@@ -29,6 +11,7 @@ Image=docker.io/library/node:22-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08
 ContainerName=cognicode-ts
 Volume=cognicode-ts-workspace.volume:/workspace:z
 Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
+# Host path assumes local layout; CI bridges it via symlink (sandbox-nightly.yml "Prepare host layout")
 Environment=COGNICODE_WORKSPACE=/workspace
 # Isolation: no host network
 Network=none

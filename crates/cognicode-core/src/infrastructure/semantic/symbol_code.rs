@@ -2,6 +2,8 @@
 //!
 //! This module provides functionality to retrieve the complete source code
 //! of a symbol including its docstrings/comments.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::manual_strip)]
 
 use crate::domain::value_objects::Location;
 use crate::infrastructure::parser::{Language, TreeSitterParser};

@@ -13,6 +13,7 @@ Image=docker.io/library/eclipse-temurin:17-jammy@sha256:29467857e8bde40ab1f7befe
 ContainerName=cognicode-java
 Volume=cognicode-java-workspace.volume:/workspace:z
 Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
+# Host path assumes local layout; CI bridges it via symlink (sandbox-nightly.yml "Prepare host layout")
 # Maven local repository cache — enables offline builds after warmup
 Volume=cognicode-java-m2-cache.volume:/root/.m2/repository:z
 Environment=COGNICODE_WORKSPACE=/repos/java-sample

@@ -1031,8 +1031,8 @@ mod spec_compliance_tests {
         for i in 0..100 {
             content.push_str(&format!("// Comment line {} describing something\n", i));
             content.push_str(&format!("// Another comment for function {}\n", i));
-            content.push_str(&format!("// Yet another comment here\n"));
-            content.push_str("\n"); // blank line
+            content.push_str("// Yet another comment here\n");
+            content.push('\n'); // blank line
             content.push_str(&format!("function_{}_definition\n", i));
             content.push_str("\n\n"); // more blank lines
         }
@@ -1624,8 +1624,7 @@ mod spec_compliance_new_tests {
 
         let file_path = temp_dir.path().join("large.txt");
         // Create ~100KB file
-        let content: String = std::iter::repeat("abcdefghijklmnopqrstuvwxyz0123456789\n")
-            .take(4000) // ~100KB
+        let content: String = std::iter::repeat_n("abcdefghijklmnopqrstuvwxyz0123456789\n", 4000) // ~100KB
             .collect();
         std::fs::write(&file_path, &content).unwrap();
 
@@ -1689,8 +1688,7 @@ mod spec_compliance_new_tests {
 
         let file_path = temp_dir.path().join("large.txt");
         // Create >1MB file
-        let content: String = std::iter::repeat("x")
-            .take(1_100_000) // >1MB
+        let content: String = std::iter::repeat_n("x", 1_100_000) // >1MB
             .collect();
         std::fs::write(&file_path, &content).unwrap();
 

@@ -184,7 +184,7 @@ pin_repo \
     ""
 
 # ─── Java: spring-projects/spring-petclinic ────────────────────────────────────
-# Pinned at main — a popular Java/Spring Boot demo app
+# Pinned to concrete SHA edf4db28affcc4741c79850a3d95bc3f177b5ff9 (reproducibility)
 # Tier B real repo — used for Java smoke expansion
 pin_repo \
     "java/spring-petclinic" \

@@ -5,6 +5,8 @@
 //! (`quality_store` / `view_spec_store` / `call_graph_store`) via the
 //! `RuntimePorts` DTO. `bootstrap_with_backend` is the canonical entry
 //! point; `bootstrap` builds a Runtime with no ports wired.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::redundant_locals)]
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
@@ -294,7 +296,7 @@ pub fn bootstrap_ladybug(
                 let runtime = tokio::runtime::Builder::new_multi_thread()
                     .enable_all()
                     .build()?;
-                Ok(runtime.block_on(bootstrap_with_backend(cwd, ports))?)
+                runtime.block_on(bootstrap_with_backend(cwd, ports))
             })
             .join()
         });

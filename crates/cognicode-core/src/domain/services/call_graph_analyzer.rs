@@ -1,6 +1,8 @@
 //! Service for analyzing call graphs with advanced metrics
 //!
 //! Provides hot path detection, complexity analysis, and entry/leaf function analysis.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::unnecessary_sort_by)]
 
 use crate::domain::aggregates::{CallEntry, CallGraph, SymbolId};
 

@@ -11,6 +11,8 @@
 //! `ApiState` while `mcp/handler/snapshot.rs` works with an `McpContext` —
 //! these contexts have different service types and error hierarchies.
 //! What IS shared is the `SnapshotViewKind` taxonomy and its parsing/dispatch.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::should_implement_trait, unused_imports)]
 
 use std::sync::Arc;
 
@@ -95,7 +97,7 @@ pub const SNAPSHOT_VIEW_KINDS: &[&str] = &[
 /// Emit Mermaid text for a trace-based snapshot view kind.
 pub async fn emit_trace_mermaid(
     graph_service: &dyn crate::facades::GraphService,
-    workspace: &dyn crate::facades::WorkspaceService,
+    _workspace: &dyn crate::facades::WorkspaceService,
     view_kind: SnapshotViewKind,
     target: &str,
 ) -> Result<String, String> {

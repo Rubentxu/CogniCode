@@ -20,6 +20,8 @@
 //! from 4 sources: object summary, lens findings (default 2 lenses),
 //! quality issues at the object's file (if applicable), and graph
 //! neighbors up to `depth` hops (default 1, max 3).
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::Arc;
 

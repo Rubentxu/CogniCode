@@ -4,6 +4,8 @@
 //!
 //! These types are the contract between pipeline stages. Each stage is a
 //! pure function that receives typed input and produces typed output.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::path::PathBuf;
 

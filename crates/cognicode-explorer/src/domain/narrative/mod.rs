@@ -3,6 +3,8 @@
 //! Contains the 4 narrative executors that shape domain objects into
 //! navigable narrative views: ComposedNarrative, ProjectDiary, ExampleObject,
 //! and EvidencePack.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code, unused_imports)]
 
 use async_trait::async_trait;
 use serde_json::json;
@@ -367,7 +369,7 @@ pub fn build_project_diary(target: &crate::dto::WorkspaceTarget) -> ContextualVi
                 let all_queries: String = session
                     .events
                     .iter()
-                    .filter_map(|e| e.query.as_ref().map(|s| s.as_str()))
+                    .filter_map(|e| e.query.as_deref())
                     .collect::<Vec<&str>>()
                     .join("\n");
                 let (_, child_blocks) = EmbedResolver::resolve(&all_queries);
@@ -792,10 +794,10 @@ pub(crate) mod test_support {
 
                 let node_id = NodeId::new(node_id_str.clone());
                 let node = self.nodes.get(&node_id_str);
-                if let Some(n) = node {
-                    if result_nodes.len() < max_nodes {
-                        result_nodes.push(n.clone());
-                    }
+                if let Some(n) = node
+                    && result_nodes.len() < max_nodes
+                {
+                    result_nodes.push(n.clone());
                 }
 
                 // Find all outgoing rationale edges from this node

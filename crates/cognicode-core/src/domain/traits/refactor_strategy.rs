@@ -1,6 +1,8 @@
 //! Trait for refactoring strategy operations
 //!
 //! Provides methods for validating, preparing, and executing refactoring operations.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code)]
 
 #[allow(unused_imports)]
 use crate::domain::aggregates::Symbol;

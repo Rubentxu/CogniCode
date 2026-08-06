@@ -1,6 +1,8 @@
 //! WorkspaceId — identifier for a workspace in the canonical graph.
 //!
 //! Part of e28-0-canonical-graph-revisions: PR1 Foundation.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::should_implement_trait, unused_imports)]
 
 use std::fmt;
 use std::str::FromStr;

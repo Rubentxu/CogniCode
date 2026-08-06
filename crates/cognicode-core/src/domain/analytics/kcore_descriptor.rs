@@ -1,6 +1,8 @@
 //! K-Core descriptor for the analytics registry.
 //!
 //! Part of E28.5 Structural Analytics Cohort 2 — PR2 Descriptors.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::LazyLock;
 
@@ -73,9 +75,9 @@ static KCORE_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema {
 // =============================================================================
 
 static KCORE_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
-    time: "O(V + E)".into(),
-    space: "O(V)".into(),
-    notes: "Iterative peeling, degree-by-degree removal".into(),
+    time: "O(V + E)",
+    space: "O(V)",
+    notes: "Iterative peeling, degree-by-degree removal",
 });
 
 // =============================================================================

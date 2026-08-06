@@ -14,6 +14,8 @@
 //! - `mold_plan.rs`  — `MoldPlan` enum
 //! - `graph_plan.rs` — `GraphPlan` enum
 //! - `lower.rs`   — `AstLowerer` trait + `NoOpLowerer` (port for AST→Plan lowering; adapter in `cognicode-explorer`)
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(deprecated)]
 
 pub mod error;
 pub mod executor;

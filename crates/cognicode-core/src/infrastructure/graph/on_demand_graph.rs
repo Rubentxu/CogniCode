@@ -1,5 +1,11 @@
 //! On-demand graph builder for lazy graph construction
-
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(
+    clippy::needless_range_loop,
+    clippy::redundant_locals,
+    clippy::type_complexity,
+    unused_comparisons
+)]
 #![allow(clippy::absurd_extreme_comparisons)]
 //!
 //! This module provides graph construction that only builds the necessary

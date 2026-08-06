@@ -10,6 +10,8 @@
 //!   1. Pulls the in-memory `CallGraph` from the context's `GraphStore`
 //!   2. Runs the appropriate graph analytics algorithm
 //!   3. Returns the result as JSON
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::doc_overindented_list_items)]
 
 use super::*;
 

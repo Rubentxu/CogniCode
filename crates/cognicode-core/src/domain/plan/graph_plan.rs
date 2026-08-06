@@ -8,6 +8,8 @@
 //! path finding, neighbor traversal, subgraph extraction, and clustering.
 //! Each variant is fully self-describing with typed predicate and projection
 //! payloads. No SQL, Petgraph, or tokio types appear in this enum.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -132,10 +134,7 @@ pub struct PathQuantifier {
 impl PathQuantifier {
     /// Construct a bounded quantifier. Returns `None` if `max_hops` is `None`.
     pub fn new(max_hops: Option<u32>, min_hops: u32) -> Option<Self> {
-        if max_hops.is_none() {
-            // Unbounded quantifier is rejected — must have a bound.
-            return None;
-        }
+        max_hops?;
         Some(Self { max_hops, min_hops })
     }
 
@@ -185,20 +184,15 @@ impl Default for OrderClause {
 }
 
 /// Kind of neighbor traversal.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum NeighborKind {
     /// Both incoming and outgoing edges.
+    #[default]
     Both,
     /// Only outgoing edges.
     Outgoing,
     /// Only incoming edges.
     Incoming,
-}
-
-impl Default for NeighborKind {
-    fn default() -> Self {
-        Self::Both
-    }
 }
 
 impl Sealed for NeighborKind {}

@@ -4,6 +4,8 @@
 //! 1. Syntax: are required types used? Are forbidden patterns absent?
 //! 2. Semantic: does the BM25 score meet the threshold?
 //! 3. Safety: are invariants satisfied?
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::collapsible_if)]
 
 use super::contract::*;
 use super::generator::AvcGenerator;

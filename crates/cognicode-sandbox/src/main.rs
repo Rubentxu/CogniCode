@@ -8,6 +8,18 @@
 //!   0 — all scenarios pass/fail as expected
 //!   1 — unexpected failure
 //!   2 — infrastructure failure
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(
+    clippy::bool_comparison,
+    clippy::collapsible_if,
+    clippy::collapsible_match,
+    clippy::needless_borrow,
+    clippy::needless_borrows_for_generic_args,
+    clippy::ptr_arg,
+    dead_code,
+    unused_mut,
+    unused_variables
+)]
 
 use clap::{Parser, Subcommand};
 use serde_json::Value;

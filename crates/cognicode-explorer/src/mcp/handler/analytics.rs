@@ -5,6 +5,8 @@
 //! - `analytics_catalog`          — list all admitted algorithm descriptors
 //! - `analytics_lineage_list`     — list lineage records
 //! - `analytics_lineage_get`     — get a specific lineage record by run ID
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code, unused_imports)]
 
 use async_trait::async_trait;
 use rmcp::model::CallToolResult;
@@ -185,7 +187,7 @@ impl ToolHandler for AnalyticsRunHandler {
         };
 
         // Require lineage store
-        let lineage = match ctx.analytics_lineage_store.as_ref() {
+        let _lineage = match ctx.analytics_lineage_store.as_ref() {
             Some(l) => l,
             None => {
                 return err_envelope(

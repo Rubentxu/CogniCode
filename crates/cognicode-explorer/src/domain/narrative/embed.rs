@@ -70,31 +70,30 @@ impl EmbedResolver {
 
         while i < bytes.len() {
             // Look for `!view(` case-insensitively
-            if bytes[i] == b'!' {
-                if i + 5 < bytes.len()
-                    && (bytes[i + 1] == b'v' || bytes[i + 1] == b'V')
-                    && (bytes[i + 2] == b'i' || bytes[i + 2] == b'I')
-                    && (bytes[i + 3] == b'e' || bytes[i + 3] == b'E')
-                    && (bytes[i + 4] == b'w' || bytes[i + 4] == b'W')
-                    && bytes[i + 5] == b'('
-                {
-                    let start = i;
-                    // Find matching closing paren
-                    let mut depth = 1;
-                    let mut j = i + 6;
-                    while j < bytes.len() && depth > 0 {
-                        match bytes[j] {
-                            b'(' => depth += 1,
-                            b')' => depth -= 1,
-                            _ => {}
-                        }
-                        j += 1;
+            if bytes[i] == b'!'
+                && i + 5 < bytes.len()
+                && (bytes[i + 1] == b'v' || bytes[i + 1] == b'V')
+                && (bytes[i + 2] == b'i' || bytes[i + 2] == b'I')
+                && (bytes[i + 3] == b'e' || bytes[i + 3] == b'E')
+                && (bytes[i + 4] == b'w' || bytes[i + 4] == b'W')
+                && bytes[i + 5] == b'('
+            {
+                let start = i;
+                // Find matching closing paren
+                let mut depth = 1;
+                let mut j = i + 6;
+                while j < bytes.len() && depth > 0 {
+                    match bytes[j] {
+                        b'(' => depth += 1,
+                        b')' => depth -= 1,
+                        _ => {}
                     }
-                    if depth == 0 {
-                        spans.push(MarkerSpan { start, end: j });
-                        i = j;
-                        continue;
-                    }
+                    j += 1;
+                }
+                if depth == 0 {
+                    spans.push(MarkerSpan { start, end: j });
+                    i = j;
+                    continue;
                 }
             }
             i += 1;
@@ -199,7 +198,7 @@ mod tests {
     #[test]
     fn test_malformed_marker_produces_error_block() {
         // Has closing paren but no view_id — parse_marker fails on empty view_id
-        let (cleaned, blocks) = EmbedResolver::resolve("!view(,symbol=foo)");
+        let (_cleaned, blocks) = EmbedResolver::resolve("!view(,symbol=foo)");
         assert_eq!(blocks.len(), 1);
         let block = &blocks[0];
         assert_eq!(block.id, "embed-error:0");
@@ -225,7 +224,7 @@ mod tests {
 
     #[test]
     fn test_multiple_same_view_id_different_index() {
-        let (cleaned, blocks) =
+        let (_cleaned, blocks) =
             EmbedResolver::resolve("!view(call-graph, symbol=foo)\n!view(call-graph, symbol=bar)");
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].id, "embed:call-graph:0");
@@ -234,7 +233,7 @@ mod tests {
 
     #[test]
     fn test_case_insensitive_view_keyword() {
-        let (cleaned, blocks) = EmbedResolver::resolve("!VIEW(call-graph, symbol=foo)");
+        let (_cleaned, blocks) = EmbedResolver::resolve("!VIEW(call-graph, symbol=foo)");
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].id, "embed:call-graph:0");
     }

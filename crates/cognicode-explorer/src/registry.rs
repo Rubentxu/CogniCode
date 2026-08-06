@@ -24,6 +24,8 @@
 //!
 //! - Runtime view execution — Phase 4
 //! - `linkme` registration — v1.1
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code, unused_imports)]
 
 use std::sync::OnceLock;
 
@@ -563,19 +565,19 @@ impl ViewRegistry {
             return Some(descriptor);
         }
         // Check runtime specs
-        if let Some(store) = &self.spec_store {
-            if let Ok(Some(spec)) = store.load(id, workspace_id, owner).await {
-                let view_kind_json = spec.view_kind.clone();
-                let view_kind: ViewKind = serde_json::from_value(view_kind_json)
-                    .unwrap_or(ViewKind::Custom(spec.view_kind.to_string()));
-                return Some(ViewDescriptorDto {
-                    id: spec.id.clone(),
-                    title: spec.title.clone(),
-                    view_kind,
-                    is_builtin: false,
-                    source: Some("runtime".to_string()),
-                });
-            }
+        if let Some(store) = &self.spec_store
+            && let Ok(Some(spec)) = store.load(id, workspace_id, owner).await
+        {
+            let view_kind_json = spec.view_kind.clone();
+            let view_kind: ViewKind = serde_json::from_value(view_kind_json)
+                .unwrap_or(ViewKind::Custom(spec.view_kind.to_string()));
+            return Some(ViewDescriptorDto {
+                id: spec.id.clone(),
+                title: spec.title.clone(),
+                view_kind,
+                is_builtin: false,
+                source: Some("runtime".to_string()),
+            });
         }
         None
     }

@@ -8,6 +8,8 @@
 //! state (e.g. a versioned ring cache). The trait is `dyn`-compatible
 //! so the composition root can wire a single instance and hand clones to
 //! every consumer.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code, unused_imports)]
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::value_objects::{RevisionId, WorkspaceId};

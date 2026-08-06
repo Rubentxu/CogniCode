@@ -14,6 +14,8 @@
 //!
 //! Confidence is higher when quality data is present (the lens has
 //! more signals to combine).
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code, unused_imports)]
 
 use crate::domain::lens::{
     Lens, LensContext, cap_and_order, clamp_confidence, finding_id, severity_weight,

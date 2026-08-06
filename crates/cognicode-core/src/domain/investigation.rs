@@ -2,6 +2,8 @@
 //!
 //! An Investigation is a focused exploration session that tracks evidence,
 //! artifacts, and narrative as the user investigates a code intelligence question.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::should_implement_trait)]
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;

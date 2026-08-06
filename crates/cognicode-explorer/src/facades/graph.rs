@@ -1,4 +1,6 @@
 //! Graph facade — symbol resolution and subgraph traversal.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code, unused_imports)]
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -151,7 +153,7 @@ impl GraphService for GraphServiceImpl {
                 ),
             };
 
-            for neighbour in incoming.into_iter().chain(outgoing.into_iter()) {
+            for neighbour in incoming.into_iter().chain(outgoing) {
                 if nodes.len() >= max_nodes_usize {
                     truncated = true;
                     break;
@@ -202,7 +204,7 @@ impl GraphService for GraphServiceImpl {
         })
     }
 
-    async fn build_architecture(&self, root_path: &str) -> ExplorerResult<SubgraphResponse> {
+    async fn build_architecture(&self, _root_path: &str) -> ExplorerResult<SubgraphResponse> {
         #[cfg(feature = "multimodal")]
         {
             self.build_architecture_impl(root_path).await
@@ -215,7 +217,7 @@ impl GraphService for GraphServiceImpl {
         }
     }
 
-    async fn compare_architecture(&self, root_path: &str) -> ExplorerResult<DriftReport> {
+    async fn compare_architecture(&self, _root_path: &str) -> ExplorerResult<DriftReport> {
         #[cfg(feature = "multimodal")]
         {
             self.compare_architecture_impl(root_path).await

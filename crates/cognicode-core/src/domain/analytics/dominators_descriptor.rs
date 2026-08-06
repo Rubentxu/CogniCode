@@ -1,6 +1,8 @@
 //! Dominators descriptor for the analytics registry.
 //!
 //! Part of E28.5 Structural Analytics Cohort 2 — PR2 Descriptors.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::LazyLock;
 
@@ -76,9 +78,9 @@ static DOMINATORS_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema
 // =============================================================================
 
 static DOMINATORS_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
-    time: "O(V + E)".into(),
-    space: "O(V)".into(),
-    notes: "CHK algorithm with Union-Find, two-phase pass".into(),
+    time: "O(V + E)",
+    space: "O(V)",
+    notes: "CHK algorithm with Union-Find, two-phase pass",
 });
 
 // =============================================================================
@@ -186,7 +188,7 @@ impl AlgorithmExecute for DominatorsDescriptor {
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
 
-        let root_id = crate::domain::aggregates::SymbolId::new(root_symbol.to_string());
+        let root_id = crate::domain::aggregates::SymbolId::new(root_symbol);
         let root_idx = projection
             .symbol_index()
             .get(&root_id)

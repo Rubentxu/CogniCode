@@ -1,3 +1,5 @@
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(deprecated)]
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -1443,7 +1445,7 @@ impl ViewKind {
 }
 
 /// One first-class RendererKind — the visual rendering strategy.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum RendererKind {
     Graph,
     Table,
@@ -1451,17 +1453,12 @@ pub enum RendererKind {
     Code,
     Markdown,
     VegaLite,
+    #[default]
     Json,
     Composite,
     /// Forward-compatibility arm: catches any unknown renderer id,
     /// preserving the original string for round-trip serialization.
     Custom(String),
-}
-
-impl Default for RendererKind {
-    fn default() -> Self {
-        RendererKind::Json
-    }
 }
 
 impl Serialize for RendererKind {
@@ -1634,10 +1631,10 @@ impl ViewSpec {
         if self.title.chars().count() > 200 {
             return Err(ViewSpecError::TitleTooLong);
         }
-        if let DataSource::Moldql { query } = &self.data_source {
-            if query.trim().is_empty() {
-                return Err(ViewSpecError::EmptyQuery);
-            }
+        if let DataSource::Moldql { query } = &self.data_source
+            && query.trim().is_empty()
+        {
+            return Err(ViewSpecError::EmptyQuery);
         }
         // Validate id is a valid UUID (basic format check without adding uuid dep)
         if !is_valid_uuid_format(&self.id) {

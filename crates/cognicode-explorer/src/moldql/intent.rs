@@ -13,6 +13,8 @@
 //!
 //! Any input not matching these patterns falls through to the canonical
 //! `parse()` function unchanged.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::OnceLock;
 

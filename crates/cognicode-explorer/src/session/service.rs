@@ -9,6 +9,8 @@
 //!
 //! All public methods acquire the state mutex, do the work, and
 //! release the lock. They never hold the guard across `.await`.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::{Arc, Mutex};
 

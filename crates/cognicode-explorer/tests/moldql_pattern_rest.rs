@@ -6,6 +6,8 @@
 //!
 //! Task A (PR3 gap): REST integration tests were removed from PR3 due to
 //! mock complexity. This module restores them.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(deprecated, unused_imports)]
 
 use std::sync::Arc;
 

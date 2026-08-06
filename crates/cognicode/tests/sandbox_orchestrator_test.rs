@@ -5,6 +5,8 @@
 //! - Result serialization and deserialization
 //! - Failure classification
 //! - Orchestrator CLI planning behavior
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::unwrap_or_default)]
 
 use std::path::PathBuf;
 
@@ -273,7 +275,7 @@ fn aggregate_test_results(
         let lang_entry = summary
             .by_language
             .entry(r.language.clone())
-            .or_insert_with(|| LanguageBreakdown::new());
+            .or_insert_with(LanguageBreakdown::new);
         lang_entry.total += 1;
         if r.outcome == "pass" {
             lang_entry.passed += 1;
@@ -284,7 +286,7 @@ fn aggregate_test_results(
         let tool_entry = summary
             .by_tool
             .entry(r.tool.clone())
-            .or_insert_with(|| ToolBreakdown::new());
+            .or_insert_with(ToolBreakdown::new);
         tool_entry.total += 1;
         if r.outcome == "pass" {
             tool_entry.passed += 1;
@@ -564,7 +566,7 @@ scenarios:
     assert_eq!(expanded[0].expected_outcome, "expected_fail");
     assert_eq!(expanded[0].tool, "edit_file");
     assert_eq!(expanded[0].scenario_class, "mutation");
-    assert_eq!(expanded[0].preview_only, false);
+    assert!(!expanded[0].preview_only);
 }
 
 /// Test that applied:false MCP response is correctly parsed.

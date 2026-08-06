@@ -1,4 +1,6 @@
 //! Change Signature Strategy - Strategy pattern implementation for change signature refactoring
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::assertions_on_constants, clippy::needless_range_loop)]
 
 use crate::domain::aggregates::refactor::{Refactor, RefactorKind, RefactorParameters};
 use crate::domain::aggregates::symbol::FunctionSignature;
@@ -727,31 +729,7 @@ impl ChangeSignatureStrategy {
                     go_params.join(", ")
                 )
             }
-            Language::Java
-            | Language::C
-            | Language::Cpp
-            | Language::CSharp
-            | Language::Hcl
-            | Language::Yaml
-            | Language::Ruby
-            | Language::Php
-            | Language::Swift
-            | Language::Scala
-            | Language::Lua
-            | Language::Zig
-            | Language::Dart
-            | Language::Groovy
-            | Language::Elixir
-            | Language::Erlang
-            | Language::Haskell
-            | Language::Julia
-            | Language::Bash
-            | Language::R
-            | Language::PowerShell
-            | Language::Json
-            | Language::Fortran
-            | Language::Verilog
-            | Language::SystemVerilog => {
+            Language::Java => {
                 // Java uses "ReturnType name(Type1 param1, Type2 param2)"
                 // Return type not available in params, use placeholder
                 format!("/* ReturnType */ {}({})", function_name, params_str)

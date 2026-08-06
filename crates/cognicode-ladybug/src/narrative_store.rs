@@ -182,12 +182,12 @@ impl NarrativeStore for LadybugStore {
             }
         };
 
-        let mut result = conn
+        let result = conn
             .execute(&mut stmt, params)
             .map_err(|e| NarrativeError::Database(format!("list_for_workspace execute: {e}")))?;
 
         let mut snapshots = Vec::new();
-        while let Some(row) = result.next() {
+        for row in result {
             snapshots.push(narrative_snapshot_from_row(&row)?);
         }
         Ok(snapshots)

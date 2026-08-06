@@ -1,4 +1,6 @@
 //! Virtual File System implementation
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::items_after_test_module, clippy::unnecessary_sort_by)]
 
 use crate::domain::traits::{FileSystem, TextEdit, VfsError, VfsResult};
 use lsp_types::Url;

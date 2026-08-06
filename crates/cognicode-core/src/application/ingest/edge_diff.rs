@@ -3,6 +3,8 @@
 //! Extends `GraphDiffCalculator` with edge-level diffing so that incremental
 //! scans can emit `DependencyAdded`/`DependencyRemoved` events (not just
 //! symbol-level events).
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::events::graph_event::{DependencyEvent, GraphEvent};

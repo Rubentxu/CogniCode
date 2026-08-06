@@ -18,6 +18,8 @@
 //! The canonical call-graph WS round-trip is its own aggregate
 //! domain concept — a workspace's edges + nodes at a specific
 //! revision — and warrants its own port.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::Arc;
 

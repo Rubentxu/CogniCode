@@ -255,7 +255,7 @@ async fn main() -> anyhow::Result<()> {
     // for file changes and triggers graph rebuilds automatically.
     let (watcher_handle, watcher_rx) =
         cognicode_core::application::ingest::watcher::start_watcher(cwd.clone());
-    let watcher_handle = Arc::new(std::sync::Mutex::new(watcher_handle));
+    let _watcher_handle = Arc::new(std::sync::Mutex::new(watcher_handle));
 
     // Spawn a task that consumes watcher events and triggers graph rebuilds.
     // Uses debounce_changes to coalesce rapid file changes into a single rebuild.

@@ -41,10 +41,10 @@ pub fn classify_status(tool_name: &str, result: &InterfaceResult<String>) -> &'s
             }
 
             // gated: Internal error with configuration message for known gated tools
-            if let InterfaceError::Internal(msg) = e {
-                if is_gated_error(tool_name, msg) {
-                    return "gated";
-                }
+            if let InterfaceError::Internal(msg) = e
+                && is_gated_error(tool_name, msg)
+            {
+                return "gated";
             }
 
             // All other errors
