@@ -6,7 +6,7 @@ RequiresMountsFor=%t/containers
 
 [Container]
 # Pinned image digest — MUST be updated when image changes
-Image=docker.io/library/rust@sha256:16b31a5e2b37d0e1c9c0e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
+Image=docker.io/library/rust:1.80-slim@sha256:907ff4b3ee7df57149ffee04f606e0a08b9b2ed3507f00a19cf3c9c0f74b7681
 ContainerName=cognicode-rust
 Volume=%t/containers/cognicode-rust-workspace:/workspace:z
 Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z

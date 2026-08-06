@@ -22,10 +22,8 @@ Description=CogniCode JavaScript Sandbox (Hardened)
 RequiresMountsFor=%t/containers
 
 [Container]
-# PROVISIONAL — Update sha256: prefix with actual digest from `podman inspect`
-# Floating tag for development; MUST be pinned before production use.
-# Example: Image=docker.io/library/node:22-slim@sha256:a3f4...
-Image=docker.io/library/node:22-slim
+# Pinned image digest — obtained via podman pull + podman inspect
+Image=docker.io/library/node:22-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436
 ContainerName=cognicode-js
 Volume=%t/containers/cognicode-js-workspace:/workspace:z
 Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z

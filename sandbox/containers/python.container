@@ -5,8 +5,8 @@ Description=CogniCode Python Sandbox (Hardened)
 RequiresMountsFor=%t/containers
 
 [Container]
-# Pinned image digest — MUST be updated when image changes
-Image=docker.io/library/python@sha256:17a7e2e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
+# Pinned image digest — obtained via podman pull + podman inspect
+Image=docker.io/library/python:3.12-slim@sha256:646fb0bca3dd3ea1bcc6feb72c17ed16eed6e10cffc732fcc1478bd3e7f02d7b
 ContainerName=cognicode-python
 Volume=%t/containers/cognicode-python-workspace:/workspace:z
 Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
