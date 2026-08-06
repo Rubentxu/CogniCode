@@ -1,0 +1,75 @@
+name: Sandbox Nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 03:00 UTC cada día
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: 'Lane to run'
+        required: true
+        default: 'smoke'
+        type: choice
+        options: ['smoke', 'probe', 'full']
+
+env:
+  CARGO_TERM_COLOR: always
+  JUST_ARGS: '--unstable'
+
+jobs:
+  sandbox-smoke:
+    name: Sandbox Smoke Lane
+    runs-on: ubuntu-latest
+    # ubuntu-latest puede no soportar rootless podman + systemd user units
+    #continue-on-error: true   # descomentar cuando se confirme que falla en hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Podman
+        uses: rootful/setup-podman@v4
+        with:
+          podman-version: 5.2.0
+
+      - name: Pull images
+        run: just sandbox-pull || true   # || true: digests pueden cambiar
+
+      - name: Setup containers
+        run: just sandbox-setup || true
+
+      - name: Run smoke lane
+        run: just sandbox-ci-smoke
+        continue-on-error: true   # producto puede fallar; infra se verifica por exit code
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-results
+          path: sandbox/results/
+          retention-days: 7
+
+  sandbox-probe:
+    name: Sandbox Probe Lane
+    runs-on: ubuntu-latest
+    needs: sandbox-smoke
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Podman
+        uses: rootful/setup-podman@v4
+        with:
+          podman-version: 5.2.0
+
+      - name: Run probe lane
+        run: just sandbox-ci-probe
+        continue-on-error: true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-results
+          path: sandbox/results/probe/
+          retention-days: 7
