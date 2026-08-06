@@ -259,7 +259,7 @@ pin_repo \
     "commit"
 
 # ─── C#: dotnet/roslyn ─────────────────────────────────────────────────────────
-# Pinned at a stable tag — C# compiler
+# Pinned to exact SHA f33ae3e3 (main HEAD 2026-08-06) — the VS-2022 branch no longer exists
 pin_repo \
     "csharp/roslyn" \
     "https://github.com/dotnet/roslyn.git" \
