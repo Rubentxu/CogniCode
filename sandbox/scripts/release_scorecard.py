@@ -44,7 +44,7 @@ TOOL_TO_FAMILY: dict[str, str] = {
 
 CRASH_FAILURE_CLASSES = {
     "crash", "panic", "sigsegv", "oom", "oom_killed",
-    "sandbox_infra_failure",  # OOM marker in failure_distribution
+    # NOTE: sandbox_infra_failure is container/workspace availability, NOT a crash.
 }
 
 
@@ -297,21 +297,27 @@ def gate_g6(stability_path: str) -> GateResult:
             evidence_path=stability_path or "stability.json",
         )
 
-    cv = stab.get("timing_cv")
-    if cv is None:
+    fams = stab.get("families_runtorun") or stab.get("families") or {}
+    cvs = []
+    for f in fams.values():
+        v = f.get("mean_cv")
+        if v is not None:
+            cvs.append(v)
+    if not cvs:
         return GateResult(
             id="G6", name="Run-to-Run Stability",
-            status="AMBER", evidence_text="timing_cv not found in stability.json",
+            status="AMBER", evidence_text="family CVs not found in stability.json",
             evidence_path=stability_path,
         )
 
-    status = "GREEN" if cv < 0.10 else "RED"
+    max_cv = max(cvs)
+    status = "GREEN" if max_cv < 0.10 else "RED"
     return GateResult(
         id="G6", name="Run-to-Run Stability",
         status=status,
-        measured=f"{cv*100:.1f}%",
+        measured=f"{max_cv*100:.1f}%",
         budget="<10%",
-        evidence_text=f"timing_cv={cv:.4f}",
+        evidence_text=f"max family run-to-run CV={max_cv:.4f}",
         evidence_path=stability_path,
     )
 
@@ -368,7 +374,7 @@ def gate_g8(g8_probe_dir: str) -> GateResult:
         tool = res.get("tool", sid)
         if outcome in ("pass", "expected_fail"):
             pass_tools.append(tool)
-        if "oom" in failure_class.lower() or "timeout" in failure_class.lower():
+        if "oom" in str(failure_class).lower() or "timeout" in str(failure_class).lower():
             oom_timeout_tools.append(f"{tool}({failure_class})")
 
     if oom_timeout_tools:
