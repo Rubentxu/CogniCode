@@ -16,6 +16,8 @@
 //! `McpContext.graph: Option<Arc<CallGraph>>`. PG-backed integration
 //! tests already exist for `apply_lens` via `pg_bridge_contract.rs`;
 //! these tests cover the lens path specifically.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::type_complexity)]
 
 use std::sync::Arc;
 

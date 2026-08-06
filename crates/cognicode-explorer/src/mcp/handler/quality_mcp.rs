@@ -18,6 +18,8 @@
 //! No new algorithm logic is introduced — these tools are pure
 //! plumbing that makes existing `cognicode-core` + `cognicode-explorer`
 //! quality data accessible to MCP clients (and therefore to AI agents).
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::empty_line_after_doc_comments, dead_code, unused_imports)]
 
 use std::sync::Arc;
 

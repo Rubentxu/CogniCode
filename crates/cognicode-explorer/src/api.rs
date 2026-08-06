@@ -1,3 +1,5 @@
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code, unused_imports)]
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -864,7 +866,7 @@ pub struct AnalyticsLineageQuery {
 }
 
 async fn analytics_run_handler(
-    State(state): State<ApiState>,
+    State(_state): State<ApiState>,
     Json(req): Json<RunAnalyticsRequest>,
 ) -> Result<Response, ApiError> {
     // E28.4: Full integration requires CallGraph access from GraphService.
@@ -997,9 +999,8 @@ async fn analytics_lineage_list_handler(
         workspace_id: params
             .workspace_id
             .as_ref()
-            .map(|s| WorkspaceId::try_new(s.clone()).ok())
-            .flatten(),
-        revision_id: params.revision_id.map(|r| RevisionId::new(r)),
+            .and_then(|s| WorkspaceId::try_new(s.clone()).ok()),
+        revision_id: params.revision_id.map(RevisionId::new),
         algorithm_id: params.algorithm_id.as_ref().and_then(|s| {
             if s.is_empty() {
                 None
@@ -1137,7 +1138,7 @@ async fn open_workspace(
 /// when the graph is missing or still indexing (no 503).
 async fn landing_handler(
     State(state): State<ApiState>,
-    Path(workspace_id): Path<String>,
+    Path(_workspace_id): Path<String>,
 ) -> Result<Response, ApiError> {
     // Get workspace summary
     let workspace = state.workspace.current_workspace().map_err(ApiError)?;
@@ -1381,7 +1382,7 @@ pub struct TraceMermaidQuery {
 impl TraceMermaidQuery {
     /// Parse and validate the view_kind.
     pub fn validated(&self) -> Result<TraceMermaidViewKind, ExplorerError> {
-        TraceMermaidViewKind::from_str(&self.view_kind).map_err(|e| ExplorerError::InvalidQuery(e))
+        TraceMermaidViewKind::from_str(&self.view_kind).map_err(ExplorerError::InvalidQuery)
     }
 }
 
@@ -1904,7 +1905,7 @@ async fn update_investigation(
         workspace_id: request.workspace_id,
         title: request.title,
         goal: request.goal,
-        status: request.status.into(),
+        status: request.status,
         entry_point: request.entry_point,
         panes: request.panes,
         evidence: request.evidence,

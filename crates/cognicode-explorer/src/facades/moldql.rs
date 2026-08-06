@@ -1,4 +1,6 @@
 //! [`MoldQLService`] implementation.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::assertions_on_constants, clippy::type_complexity, dead_code)]
 
 use std::sync::Arc;
 

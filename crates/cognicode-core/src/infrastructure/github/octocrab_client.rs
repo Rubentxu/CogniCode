@@ -17,6 +17,8 @@
 //! The whole module is `#[cfg(feature = "multimodal")]`-gated
 //! because it pulls in `octocrab` (an optional dep, behind the
 //! `multimodal` feature).
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code)]
 
 #[cfg(feature = "multimodal")]
 use std::sync::Arc;

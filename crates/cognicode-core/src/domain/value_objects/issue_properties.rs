@@ -16,6 +16,8 @@
 //!
 //! The module is `#[cfg(feature = "multimodal")]`-gated. The
 //! default build is byte-for-byte unchanged.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::len_zero)]
 
 #[cfg(feature = "multimodal")]
 use std::collections::HashMap;
@@ -167,13 +169,13 @@ pub fn validate_issue_properties(props: &HashMap<String, String>) -> Result<(), 
     //    comma in an individual label — the spec rejects labels
     //    containing commas at parse time, so a label with a comma
     //    in the joined string is a structural error.
-    if let Some(labels) = props.get("labels") {
-        if labels.is_empty() {
-            return Err(
+    if let Some(labels) = props.get("labels")
+        && labels.is_empty()
+    {
+        return Err(
                 "invalid issue candidate: 'labels' is empty (omit the key when the issue has no labels)"
                     .to_string(),
             );
-        }
     }
     Ok(())
 }

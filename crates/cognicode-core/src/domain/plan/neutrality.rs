@@ -14,6 +14,8 @@
 //! by ALL plan types' parent modules. A type implements `Sealed` to certify
 //! it is part of the plan module. External code cannot implement `Sealed`
 //! because the trait is not accessible outside the `plan` module boundary.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 //
 //! ## Sealed trait re-export
 //!

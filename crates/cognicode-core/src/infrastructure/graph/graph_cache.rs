@@ -8,6 +8,8 @@
 //! For new code paths, set a [`SnapshotProvider`] via `set_provider()`.
 //! When a provider is set, `get()` routes through it to serve fresh data
 //! from PostgreSQL while legacy `ArcSwap` path remains for backward compatibility.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::events::GraphEvent;

@@ -3,6 +3,8 @@
 //! This crate provides mock implementations of all domain traits from
 //! `cognicode-core`, useful for testing application code that depends
 //! on these traits without requiring real implementations.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unexpected_cfgs, unused_imports)]
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -223,7 +225,7 @@ impl MockDependencyRepository {
     ) -> Self {
         self.dependencies
             .entry(source)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert((target, dep_type));
         self
     }
@@ -238,7 +240,7 @@ impl DependencyRepository for MockDependencyRepository {
     ) -> Result<(), DependencyError> {
         self.dependencies
             .entry(source_id.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert((target_id.clone(), dependency_type));
         Ok(())
     }
@@ -331,7 +333,7 @@ impl MockFileSystem {
 
 impl FileSystem for MockFileSystem {
     fn get_content(&self, url: &Url) -> Option<Arc<str>> {
-        self.files.get(url).map(|s| s.clone())
+        self.files.get(url).cloned()
     }
 
     fn set_content(&mut self, url: Url, content: String) {

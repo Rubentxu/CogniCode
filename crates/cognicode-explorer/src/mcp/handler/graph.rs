@@ -4,6 +4,8 @@
 //! - `graph_subgraph` — extract a bounded neighborhood subgraph
 //! - `graph_cluster`  — cluster the graph by SCC or connected components
 //! - `graph_explain`  — explain the lowest-cost path between two symbols
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::Arc;
 

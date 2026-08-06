@@ -5,6 +5,8 @@
 //!
 //! This is the differentiated topology builder for DecisionGraph (Decision A),
 //! distinct from the generic rationale subgraph used by ArchitectureRationale.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use crate::dto::{
     ContextualView, EvidenceBlock, FindingSeverity, LineRange, RelationDirection, TypedRelation,

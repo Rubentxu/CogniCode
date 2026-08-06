@@ -4,6 +4,8 @@
 //! for the real `MoldQLQuery` AST.
 //!
 //! Part of e28-1-moldplan-graphplan-contracts: PR2 Plan Algebra.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::unnecessary_filter_map, deprecated, unused_imports)]
 
 use cognicode_core::domain::plan::lower::AstLowerer;
 use cognicode_core::domain::plan::lower::{QueryShape, populate_defaults};
@@ -174,7 +176,7 @@ impl MoldqlAstLowerer {
         })
     }
 
-    fn lower_cluster(&self, cq: &ClusterQuery) -> Result<GraphPlan, PlanError> {
+    fn lower_cluster(&self, _cq: &ClusterQuery) -> Result<GraphPlan, PlanError> {
         // ARCHITECTURAL CONSTRAINT (planhash-placeholder fix): see lower_path.
         // The placeholder metadata is intentional; hash is computed correctly below.
         let plan = GraphPlan::Cluster {
@@ -458,7 +460,10 @@ mod tests {
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert!(matches!(plan, GraphPlan::BooleanComposition { .. }));
-        if let GraphPlan::BooleanComposition { op, operands, .. } = plan {
+        if let GraphPlan::BooleanComposition {
+            op: _, operands, ..
+        } = plan
+        {
             assert_eq!(operands.len(), 2);
         }
     }
@@ -481,7 +486,10 @@ mod tests {
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert!(matches!(plan, GraphPlan::BooleanComposition { .. }));
-        if let GraphPlan::BooleanComposition { op, operands, .. } = plan {
+        if let GraphPlan::BooleanComposition {
+            op: _, operands, ..
+        } = plan
+        {
             assert_eq!(operands.len(), 1);
         }
     }

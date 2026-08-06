@@ -14,6 +14,8 @@
 //! | [`MoldQLService`] | MoldQL query execution |
 //!
 //! PR 1 wires [`WorkspaceService`] and [`SearchService`].
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(deprecated, unused_imports)]
 
 pub mod graph;
 pub mod investigation;

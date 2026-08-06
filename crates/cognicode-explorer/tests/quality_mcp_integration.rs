@@ -15,6 +15,8 @@
 //!   invalid_args on malformed input)
 //! - edge cases (no known files in v1 port → empty aggregation,
 //!   quality_gate with all-zero summary)
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::collections::HashMap;
 use std::sync::Arc;

@@ -30,6 +30,13 @@
 //! [`NodeKind::Decision`] node (instead of [`NodeKind::Doc`]),
 //! and the `Status:` line in the body is captured as a
 //! `status` property on the node.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(
+    clippy::ptr_arg,
+    clippy::too_many_arguments,
+    clippy::unnecessary_map_or,
+    unused_imports
+)]
 
 #[cfg(feature = "multimodal")]
 use std::path::{Path, PathBuf};
@@ -141,10 +148,10 @@ pub fn parse_markdown(text: &str, source_path: &Path, file_stem: &str) -> Vec<Ex
             .collect();
         // Also check for doc links (cross-ADR/cross-doc citations)
         for line in body.lines() {
-            if let Some(target) = extract_link_target(line) {
-                if let Some(doc_cites) = classify_doc_link(&target) {
-                    edges.push(CitesCandidate::Doc(doc_cites).into_edge(&node.id));
-                }
+            if let Some(target) = extract_link_target(line)
+                && let Some(doc_cites) = classify_doc_link(&target)
+            {
+                edges.push(CitesCandidate::Doc(doc_cites).into_edge(&node.id));
             }
         }
         nodes.push(ExtractedNode::with_edges(node, edges));
@@ -176,11 +183,11 @@ pub fn parse_markdown(text: &str, source_path: &Path, file_stem: &str) -> Vec<Ex
                     .push(CitesCandidate::Body(cites).into_edge(&source_id));
             }
             // Try doc link (cross-ADR/cross-doc citation)
-            if let Some(target) = extract_link_target(line) {
-                if let Some(doc_cites) = classify_doc_link(&target) {
-                    last.potential_edges
-                        .push(CitesCandidate::Doc(doc_cites).into_edge(&source_id));
-                }
+            if let Some(target) = extract_link_target(line)
+                && let Some(doc_cites) = classify_doc_link(&target)
+            {
+                last.potential_edges
+                    .push(CitesCandidate::Doc(doc_cites).into_edge(&source_id));
             }
         }
         body.clear();
@@ -227,10 +234,10 @@ pub fn parse_markdown(text: &str, source_path: &Path, file_stem: &str) -> Vec<Ex
                 }
             }
             Event::Text(text) | Event::Code(text) => {
-                if let Some((ref mut label, _, _)) = current_heading {
-                    if code_text_buf.is_none() {
-                        label.push_str(&text);
-                    }
+                if let Some((ref mut label, _, _)) = current_heading
+                    && code_text_buf.is_none()
+                {
+                    label.push_str(&text);
                 }
                 if let Some(buf) = code_text_buf.as_mut() {
                     buf.push_str(&text);
@@ -1024,27 +1031,25 @@ fn extract_link_target(line: &str) -> Option<String> {
         let _before_md = &trimmed[..md_pos];
         let after_md = &trimmed[md_pos + 3..];
         // .md must be followed by nothing, '/', '#', or '?' (end or anchor/query)
-        if after_md.is_empty()
+        if (after_md.is_empty()
             || after_md.starts_with('/')
             || after_md.starts_with('#')
-            || after_md.starts_with('?')
+            || after_md.starts_with('?'))
+            && (trimmed.starts_with('.') || trimmed.starts_with('/'))
         {
-            if trimmed.starts_with('.') || trimmed.starts_with('/') {
-                return Some(trimmed.to_string());
-            }
+            return Some(trimmed.to_string());
         }
     }
     if let Some(md_pos) = trimmed_lower.find(".markdown") {
         let _before_md = &trimmed[..md_pos];
         let after_md = &trimmed[md_pos + 9..];
-        if after_md.is_empty()
+        if (after_md.is_empty()
             || after_md.starts_with('/')
             || after_md.starts_with('#')
-            || after_md.starts_with('?')
+            || after_md.starts_with('?'))
+            && (trimmed.starts_with('.') || trimmed.starts_with('/'))
         {
-            if trimmed.starts_with('.') || trimmed.starts_with('/') {
-                return Some(trimmed.to_string());
-            }
+            return Some(trimmed.to_string());
         }
     }
 

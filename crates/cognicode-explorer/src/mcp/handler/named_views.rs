@@ -5,6 +5,8 @@
 //! - `view_load`    — load and re-invoke a saved named view
 //! - `view_list`    — list all named views for a scope
 //! - `view_delete`  — delete a named view by id
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::Arc;
 

@@ -9,6 +9,8 @@
 //! TTL semantics: lazy eviction on `open` and `attach`. A session
 //! with `ttl == 0` is exempt from eviction. There is no background
 //! sweeper. `close` is idempotent.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::len_without_is_empty, unused_imports)]
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

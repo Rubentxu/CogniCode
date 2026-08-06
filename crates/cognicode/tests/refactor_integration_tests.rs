@@ -7,6 +7,8 @@
 //! - Change signature refactoring
 //! - Parameter substitution with word boundaries
 //! - Complex control flow detection
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_comparisons)]
 
 use cognicode::application::services::refactor_service::RefactorService;
 use cognicode::infrastructure::parser::{Language, TreeSitterParser};
@@ -54,7 +56,7 @@ fn process_order(order_id: i32, items: Vec<f64>) {
         let blocks = strategy.find_extractable_blocks(source, "test.rs").unwrap();
         // Should find extractable blocks
         assert!(
-            !blocks.is_empty() || blocks.len() >= 1,
+            !blocks.is_empty() || !blocks.is_empty(),
             "Should find extractable blocks in function body"
         );
     }
@@ -73,7 +75,7 @@ def process_order(order_id, items):
 
         let blocks = strategy.find_extractable_blocks(source, "test.py").unwrap();
         assert!(
-            !blocks.is_empty() || blocks.len() >= 1,
+            !blocks.is_empty() || !blocks.is_empty(),
             "Should find extractable blocks in Python function"
         );
     }

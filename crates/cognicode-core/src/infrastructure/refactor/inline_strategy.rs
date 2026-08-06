@@ -1,6 +1,8 @@
 //! Inline Strategy - Strategy pattern implementation for inline refactoring
 //!
 //! Replaces function/method calls with the function body and optionally removes the original.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::len_zero, clippy::needless_range_loop)]
 
 use crate::domain::aggregates::refactor::{Refactor, RefactorKind, RefactorParameters};
 use crate::domain::traits::refactor_strategy::{

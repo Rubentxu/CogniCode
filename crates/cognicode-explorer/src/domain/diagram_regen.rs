@@ -187,7 +187,7 @@ mod tests {
     /// Helper to create a minimal ResolvedSymbol for tests.
     fn make_resolved_symbol(name: &str, file: &str, line: u32) -> ResolvedSymbol {
         ResolvedSymbol {
-            id: cognicode_core::domain::aggregates::SymbolId::new(&format!(
+            id: cognicode_core::domain::aggregates::SymbolId::new(format!(
                 "symbol:{}:{}:{}",
                 file, name, line
             )),

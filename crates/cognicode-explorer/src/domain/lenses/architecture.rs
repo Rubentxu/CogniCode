@@ -6,6 +6,8 @@
 //! At the symbol and file level it provides complementary observations
 //! (boundary violations, scope interactions) but the strongest signal
 //! is the scope-level cycle detection.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code, unused_imports)]
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 

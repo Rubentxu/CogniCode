@@ -7,6 +7,8 @@
 //! - `impact_shortest_path`  — compute lowest-cost path between two symbols
 //! - `impact_detect_cycles`  — find all non-trivial strongly connected components
 //! - `impact_component`      — return the undirected connected component containing a symbol
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::Arc;
 

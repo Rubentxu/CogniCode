@@ -4,6 +4,8 @@
 //! - `export_c4_mermaid` — render a C4-level architecture as a Mermaid C4 diagram
 //! - `export_trace_mermaid` — render a trace (call-graph, impact-radius,
 //!   decision-trace, vertical-slice) as a Mermaid `flowchart` diagram
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code, unused_imports)]
 
 use async_trait::async_trait;
 use rmcp::model::CallToolResult;
@@ -402,7 +404,7 @@ mod tests {
 
     fn make_relation_target(id: &str, name: &str) -> RelationTarget {
         RelationTarget {
-            id: SymbolId::new(id.to_string()),
+            id: SymbolId::new(id),
             name: name.to_string(),
             kind: SymbolKind::Function,
             file: "test.rs".to_string(),
@@ -413,7 +415,7 @@ mod tests {
 
     fn make_call_entry(id: &str, name: &str, depth: u8) -> CallEntry {
         CallEntry {
-            symbol_id: SymbolId::new(id.to_string()),
+            symbol_id: SymbolId::new(id),
             symbol_name: name.to_string(),
             file: "test.rs".to_string(),
             line: 1,
@@ -424,7 +426,7 @@ mod tests {
 
     fn make_resolved_symbol(id: &str, name: &str) -> ResolvedSymbol {
         ResolvedSymbol {
-            id: SymbolId::new(id.to_string()),
+            id: SymbolId::new(id),
             name: name.to_string(),
             kind: SymbolKind::Function,
             file: "test.rs".to_string(),

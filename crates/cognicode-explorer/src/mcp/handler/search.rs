@@ -3,6 +3,8 @@
 //! Implements 2 MCP tools:
 //! - `explorer_spotter_search` — search symbols by name with optional kind filter
 //! - `explorer_inspect_object` — inspect an object by its MVP id
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::Arc;
 

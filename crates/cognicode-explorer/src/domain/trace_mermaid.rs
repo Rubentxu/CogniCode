@@ -18,6 +18,8 @@
 //! Mermaid requires alphanumeric identifiers. Special characters (`:`, `/`, `(`, `)`, etc.)
 //! are replaced with underscores. Duplicated IDs receive numeric suffixes (`_2`, `_3`).
 //! Reuses [`sanitize_id`] and [`deduplicate_ids`] from [`mermaid_util`](super::mermaid_util).
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::should_implement_trait, private_interfaces, unused_imports)]
 
 use std::fmt;
 
@@ -145,7 +147,7 @@ pub fn call_graph_to_mermaid(ctx: &TraceEmitContext, symbol: &str) -> String {
         return "// InspectionTarget::Symbol required".to_string();
     };
 
-    let symbol_id = SymbolId::new(symbol.to_string());
+    let symbol_id = SymbolId::new(symbol);
     let callers = graph_query.callers(&symbol_id);
     let callees = graph_query.callees(&symbol_id);
 
@@ -158,7 +160,7 @@ pub fn call_graph_to_mermaid(ctx: &TraceEmitContext, symbol: &str) -> String {
     }
 
     let mut lines = vec!["flowchart TD".to_string()];
-    lines.push(format!("    subgraph call_graph[\"call_graph\"]"));
+    lines.push("    subgraph call_graph[\"call_graph\"]".to_string());
     lines.push("        direction TD".to_string());
 
     // Center node
@@ -206,7 +208,7 @@ pub fn impact_radius_to_mermaid(ctx: &TraceEmitContext, symbol: &str) -> String 
         return "// InspectionTarget::Symbol required".to_string();
     };
 
-    let symbol_id = SymbolId::new(symbol.to_string());
+    let symbol_id = SymbolId::new(symbol);
     // BFS of callers up to depth 3
     let entries = graph_query.traverse_callers(&symbol_id, 3);
 
@@ -219,7 +221,7 @@ pub fn impact_radius_to_mermaid(ctx: &TraceEmitContext, symbol: &str) -> String 
     }
 
     let mut lines = vec!["flowchart TD".to_string()];
-    lines.push(format!("    subgraph impact_radius[\"impact_radius\"]"));
+    lines.push("    subgraph impact_radius[\"impact_radius\"]".to_string());
     lines.push("        direction TD".to_string());
 
     // Center node
@@ -257,11 +259,11 @@ pub fn impact_radius_to_mermaid(ctx: &TraceEmitContext, symbol: &str) -> String 
             // BFS tree edge: connect to nodes at previous depth (or center for depth 1)
             if *depth == 1 {
                 lines.push(format!("        {} --> {}", entry_id, center_id));
-            } else if let Some(prev_depth) = depth.checked_sub(1) {
-                if let Some(prev_nodes) = nodes_by_depth.get(&prev_depth) {
-                    for prev_id in prev_nodes {
-                        lines.push(format!("        {} --> {}", prev_id, entry_id));
-                    }
+            } else if let Some(prev_depth) = depth.checked_sub(1)
+                && let Some(prev_nodes) = nodes_by_depth.get(&prev_depth)
+            {
+                for prev_id in prev_nodes {
+                    lines.push(format!("        {} --> {}", prev_id, entry_id));
                 }
             }
 
@@ -336,7 +338,7 @@ pub fn vertical_slice_to_mermaid(ctx: &TraceEmitContext, entry_point: &str) -> S
         );
     };
 
-    let symbol_id = SymbolId::new(entry_point.to_string());
+    let symbol_id = SymbolId::new(entry_point);
     // Forward trace: callees up to depth 4 (typical vertical slice depth)
     let entries = graph_query.traverse_callees(&symbol_id, 4);
 
@@ -386,11 +388,11 @@ pub fn vertical_slice_to_mermaid(ctx: &TraceEmitContext, entry_point: &str) -> S
                 } else {
                     // Connect to previous level
                     let prev_depth = depth - 1;
-                    if let Some(prev_nodes) = depth_nodes.get(&prev_depth) {
-                        if let Some(prev) = prev_nodes.first() {
-                            let prev_id = sanitize_id(prev.symbol_id.as_str());
-                            lines.push(format!("        {} --> {}", prev_id, entry_id));
-                        }
+                    if let Some(prev_nodes) = depth_nodes.get(&prev_depth)
+                        && let Some(prev) = prev_nodes.first()
+                    {
+                        let prev_id = sanitize_id(prev.symbol_id.as_str());
+                        lines.push(format!("        {} --> {}", prev_id, entry_id));
                     }
                 }
             }
@@ -510,7 +512,7 @@ mod tests {
         name: &str,
     ) -> cognicode_core::domain::traits::graph_query_port::RelationTarget {
         cognicode_core::domain::traits::graph_query_port::RelationTarget {
-            id: SymbolId::new(id.to_string()),
+            id: SymbolId::new(id),
             name: name.to_string(),
             kind: SymbolKind::Function,
             file: "test.rs".to_string(),
@@ -521,7 +523,7 @@ mod tests {
 
     fn make_call_entry(id: &str, name: &str, depth: u8) -> CallEntry {
         CallEntry {
-            symbol_id: SymbolId::new(id.to_string()),
+            symbol_id: SymbolId::new(id),
             symbol_name: name.to_string(),
             file: "test.rs".to_string(),
             line: 1,

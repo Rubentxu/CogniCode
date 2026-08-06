@@ -11,6 +11,8 @@
 //!
 //! Available in the default build. The `multimodal` feature gates
 //! the WRITE/exTRACTION path only; the error type is always present.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::unnecessary_literal_unwrap)]
 
 use thiserror::Error;
 

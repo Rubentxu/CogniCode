@@ -4,6 +4,8 @@
 //! - `docs_ingest`   — ingest Markdown / ADR files into the Generic Graph Layer
 //! - `graph_search`  — FTS5-backed search across the graph_nodes table
 //! - `issues_ingest` — ingest GitHub issues from a repository
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::path::PathBuf;
 use std::sync::Arc;

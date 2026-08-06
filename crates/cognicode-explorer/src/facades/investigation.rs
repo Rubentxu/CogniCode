@@ -1,6 +1,8 @@
 //! Investigation facade — ADR-005 Phase INV-1 + ADR-010 E24.1.
 //!
 //! Provides a typed facade for investigation operations over the HTTP API.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::Arc;
 

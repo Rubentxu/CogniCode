@@ -10,6 +10,8 @@
 //! - Filters: only code/config/document files trigger scans
 //! - Background task: runs on tokio without blocking
 //! - Clean shutdown via `stop()` method
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::path::PathBuf;
 use std::sync::Arc;

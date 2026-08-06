@@ -9,6 +9,8 @@
 //! All tool names are declared here as `pub const TOOL_*`. The same names are
 //! re-exported through [`super`](crate::mcp) so handler submodules can import
 //! them without a cyclical path.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::doc_lazy_continuation, clippy::manual_async_fn, unused_imports)]
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -269,7 +271,7 @@ pub const TOOL_TRACE_ROUTE: &str = "trace_route";
 // ============================================================================
 
 /// Metadata about the source of a result (e.g. `"ask-router"`, `"brain-session"`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProvenanceMetadata {
     /// Classification / confidence score. `None` when unavailable.
     pub confidence: Option<f64>,
@@ -284,15 +286,6 @@ impl ProvenanceMetadata {
             confidence: Some(confidence),
             source,
         })
-    }
-}
-
-impl Default for ProvenanceMetadata {
-    fn default() -> Self {
-        Self {
-            confidence: None,
-            source: None,
-        }
     }
 }
 

@@ -2,6 +2,8 @@
 //!
 //! This module provides fuzzy search capabilities with kind filtering
 //! for finding symbols across the codebase.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::len_zero)]
 
 use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::traits::Parser;

@@ -2,6 +2,8 @@
 //!
 //! This module implements the MCP completion capability, which provides
 //! auto-completion suggestions based on context.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::manual_flatten)]
 
 use ignore::WalkBuilder;
 use serde_json::Value;

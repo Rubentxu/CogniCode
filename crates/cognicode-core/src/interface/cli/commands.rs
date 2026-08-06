@@ -1,4 +1,6 @@
 //! CLI Commands - Command-line interface implementations
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::map_flatten)]
 
 use crate::domain::services::CallGraphAnalyzer;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
@@ -1183,7 +1185,7 @@ impl CommandExecutor {
         let files_processed = result
             .iter()
             .map(|n| n.potential_node.source_path.clone())
-            .filter_map(|p| p)
+            .flatten()
             .map(|p| p.to_string_lossy().into_owned())
             .collect::<std::collections::BTreeSet<_>>()
             .len();

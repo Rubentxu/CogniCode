@@ -1,3 +1,9 @@
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(
+    clippy::empty_line_after_doc_comments,
+    clippy::unnecessary_unwrap,
+    clippy::unneeded_struct_pattern
+)]
 // \! security.rs - MCP Security Module
 //
 // This module has been fixed to address critical security vulnerabilities:
@@ -356,10 +362,8 @@ impl InputValidator {
                     break;
                 }
             }
-            if !found {
-                if let Some(first_ws) = self.allowed_paths.first() {
-                    resolved = first_ws.join(path);
-                }
+            if !found && let Some(first_ws) = self.allowed_paths.first() {
+                resolved = first_ws.join(path);
             }
             resolved
         } else {
@@ -599,11 +603,11 @@ impl InputValidator {
         while let Some(c) = chars.next() {
             if c == '%' {
                 let hex = chars.by_ref().take(2).collect::<String>();
-                if hex.len() == 2 {
-                    if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                        result.push(byte as char);
-                        continue;
-                    }
+                if hex.len() == 2
+                    && let Ok(byte) = u8::from_str_radix(&hex, 16)
+                {
+                    result.push(byte as char);
+                    continue;
                 }
                 // Not a valid percent-encoded sequence, keep as-is
                 result.push('%');

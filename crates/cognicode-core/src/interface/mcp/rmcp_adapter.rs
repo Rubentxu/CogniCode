@@ -2,6 +2,8 @@
 //!
 //! This module provides the CogniCodeHandler which implements the rmcp ServerHandler trait,
 //! allowing the CogniCode MCP server to use the official rmcp SDK for transport.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::collapsible_if, clippy::manual_async_fn)]
 
 use crate::application::services::file_operations::FileOperationsService;
 use crate::infrastructure::telemetry::get_global_metrics;
@@ -202,12 +204,11 @@ fn tool_category_map() -> &'static HashMap<String, String> {
         let mut m = HashMap::new();
         for tool in build_all_tools() {
             let name = tool.name.to_string();
-            if let Some(meta) = tool.meta.as_ref() {
-                if let Some(cognicode) = meta.get("cognicode") {
-                    if let Some(cat) = cognicode.get("category").and_then(|v| v.as_str()) {
-                        m.insert(name, cat.to_string());
-                    }
-                }
+            if let Some(meta) = tool.meta.as_ref()
+                && let Some(cognicode) = meta.get("cognicode")
+                && let Some(cat) = cognicode.get("category").and_then(|v| v.as_str())
+            {
+                m.insert(name, cat.to_string());
             }
         }
         m
@@ -237,12 +238,11 @@ pub(crate) fn tool_graph_deps_map() -> &'static HashMap<String, String> {
         let re = Regex::new(r"(?i)(?:requires?\s+(\w+(?:\s+\w+)*)\s+first\.)")
             .expect("regex compilation error");
         for tool in build_all_tools() {
-            if let Some(desc) = tool.description.as_deref() {
-                if let Some(caps) = re.captures(desc) {
-                    if let Some(dep) = caps.get(1) {
-                        m.insert(tool.name.to_string(), dep.as_str().to_string());
-                    }
-                }
+            if let Some(desc) = tool.description.as_deref()
+                && let Some(caps) = re.captures(desc)
+                && let Some(dep) = caps.get(1)
+            {
+                m.insert(tool.name.to_string(), dep.as_str().to_string());
             }
         }
         m
@@ -1947,7 +1947,7 @@ async fn call_tool_handler(
                 Ok(serde_json::to_string(&output)?)
             }
 
-            _ => return Err(InterfaceError::ToolNotFound(tool_name.to_string())),
+            _ => Err(InterfaceError::ToolNotFound(tool_name.to_string())),
         }
     };
     let result = match tokio::time::timeout(timeout, dispatch).await {
@@ -1991,29 +1991,27 @@ async fn call_tool_handler(
     }
 
     // M1.1: Record error metrics (error_type is separate from status)
-    if let Err(e) = &result {
-        if let Some(m) = &metrics {
-            // M3.2 / M3.3: Distinguish timeout and rate_limit_exceeded
-            // from generic errors. Both are conveyed as
-            // `InterfaceError::Internal(<sentinel>)` so we match on
-            // the inner string to keep the error_type taxonomy
-            // machine-readable.
-            let error_type = match e {
-                InterfaceError::ToolNotFound(_) => "missing",
-                InterfaceError::Internal(msg) if msg == "timeout" => "timeout",
-                InterfaceError::Internal(msg) if msg == "rate_limit_exceeded" => {
-                    "rate_limit_exceeded"
-                }
-                _ => "error",
-            };
-            m.errors.add(
-                1,
-                &[
-                    KeyValue::new("tool", tool_name.to_string()),
-                    KeyValue::new("error_type", error_type),
-                ],
-            );
-        }
+    if let Err(e) = &result
+        && let Some(m) = &metrics
+    {
+        // M3.2 / M3.3: Distinguish timeout and rate_limit_exceeded
+        // from generic errors. Both are conveyed as
+        // `InterfaceError::Internal(<sentinel>)` so we match on
+        // the inner string to keep the error_type taxonomy
+        // machine-readable.
+        let error_type = match e {
+            InterfaceError::ToolNotFound(_) => "missing",
+            InterfaceError::Internal(msg) if msg == "timeout" => "timeout",
+            InterfaceError::Internal(msg) if msg == "rate_limit_exceeded" => "rate_limit_exceeded",
+            _ => "error",
+        };
+        m.errors.add(
+            1,
+            &[
+                KeyValue::new("tool", tool_name.to_string()),
+                KeyValue::new("error_type", error_type),
+            ],
+        );
     }
 
     result

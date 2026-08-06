@@ -3,6 +3,8 @@
 //! Implements 1 MCP tool for natural-language query routing:
 //! - `cognicode_ask` — natural-language front-end that classifies a question
 //!   and dispatches to the appropriate primitive tool chain
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::Arc;
 

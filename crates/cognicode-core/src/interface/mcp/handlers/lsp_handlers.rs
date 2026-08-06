@@ -1,3 +1,5 @@
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::needless_borrows_for_generic_args, dead_code)]
 use super::*;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
 use crate::infrastructure::lsp::providers::CompositeProvider;

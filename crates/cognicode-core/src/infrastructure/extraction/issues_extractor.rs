@@ -39,6 +39,8 @@
 //! `issue:github/{owner}/{repo}#{number}`. Re-ingesting the
 //! same source produces the same ids, so the persistence
 //! layer's upsert collapses the duplicates.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 #[cfg(feature = "multimodal")]
 use std::path::PathBuf;

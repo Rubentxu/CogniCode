@@ -7,6 +7,8 @@
 //! The algorithm is deterministic when using sorted label normalization:
 //! after convergence, labels are sorted by the first node ID in each
 //! community, then renumbered sequentially.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::cloned_ref_to_slice_refs, clippy::len_zero)]
 
 use std::collections::HashMap;
 
@@ -137,13 +139,13 @@ impl CommunityDetector {
         let mut community_nodes: HashMap<u32, Vec<SymbolId>> = HashMap::new();
         for (node_idx, &comm_idx) in &label_of_index {
             let new_label = old_to_new[&comm_idx];
-            if let Some(ni) = g.node_indices().find(|ni| ni.index() == *node_idx) {
-                if let Some(symbol_id) = g.node_weight(ni) {
-                    community_nodes
-                        .entry(new_label)
-                        .or_default()
-                        .push(symbol_id.clone());
-                }
+            if let Some(ni) = g.node_indices().find(|ni| ni.index() == *node_idx)
+                && let Some(symbol_id) = g.node_weight(ni)
+            {
+                community_nodes
+                    .entry(new_label)
+                    .or_default()
+                    .push(symbol_id.clone());
             }
         }
 

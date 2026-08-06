@@ -2,6 +2,12 @@
 //!
 //! Provides 5-dimension scoring (Correctitud, Latencia, Escalabilidad,
 //! Consistencia, Robustez) with weighted health score calculation.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(
+    clippy::manual_clamp,
+    clippy::should_implement_trait,
+    clippy::too_many_arguments
+)]
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

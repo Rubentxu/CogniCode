@@ -8,6 +8,8 @@
 //! Design contract (D2): mirrors `build_rationale_view` in `domain/views.rs`.
 //! Both are pure shapers over graph_repo. Deterministic: same `GraphNode`
 //! → same `InspectableObjectSummary`.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use crate::dto::{InspectableObjectSummary, InspectableObjectType, Property};
 use cognicode_core::domain::aggregates::generic_graph::GraphNode;

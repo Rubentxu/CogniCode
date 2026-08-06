@@ -1,6 +1,8 @@
 //! Lowering from Pattern Profile AST (`PatternQuery`) to `GraphPlan`.
 //!
 //! Part of e28-3-moldql-pattern-profile-v1: PR1 Foundation.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::unnecessary_filter_map, dead_code, unused_imports)]
 
 use cognicode_core::domain::plan::{
     GraphPlan, NeighborKind, OrderClause as DomainOrderClause,
@@ -172,7 +174,7 @@ impl super::MoldqlAstLowerer {
                 PatternPredicate::Property {
                     target,
                     field,
-                    op,
+                    op: _,
                     value,
                 } => {
                     let label = match target {
@@ -198,7 +200,11 @@ impl super::MoldqlAstLowerer {
                     let value = cognicode_core::domain::plan::TypedValue::String(source.clone());
                     Some(PathPredicate { label, value })
                 }
-                PatternPredicate::Confidence { target, op, value } => {
+                PatternPredicate::Confidence {
+                    target,
+                    op: _,
+                    value,
+                } => {
                     let label = match target {
                         PredicateTarget::Node(n) => format!("{}.confidence", n),
                         PredicateTarget::Edge(e) => format!("{}.confidence", e),
@@ -274,7 +280,7 @@ impl super::MoldqlAstLowerer {
                         OrderDirection::Desc => DomainOrderDirection::Desc,
                     },
                 });
-                (by, aggs, ordering, limit.clone())
+                (by, aggs, ordering, *limit)
             }
             _ => (vec![], vec![], None, None),
         }

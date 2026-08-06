@@ -2,6 +2,8 @@
 //!
 //! Implements 1 MCP tool:
 //! - `detect_architecture_drift` — compare inferred C4 architecture against expected
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use async_trait::async_trait;
 use rmcp::model::{CallToolResult, Content};

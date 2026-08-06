@@ -2,6 +2,8 @@
 //!
 //! Implements 1 MCP tool:
 //! - `explorer_open_workspace` — open a workspace by path or return the current one
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::Arc;
 

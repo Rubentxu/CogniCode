@@ -13,6 +13,8 @@
 //!
 //! Mirrors the spec at
 //! `openspec/changes/visualization-stack/specs/graph-data-endpoint/`.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::unnecessary_unwrap, dead_code, deprecated, unused_imports)]
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -448,7 +450,7 @@ impl TestContextualViewService {
             .unwrap_or(0);
         let bfs_clipped = !same_nodes.is_empty()
             && same_nodes.len() >= remaining_cap
-            && (fan_in + fan_out) > remaining_cap as usize;
+            && (fan_in + fan_out) > remaining_cap;
         let truncated = children_clipped || bfs_clipped;
 
         Ok(ContextualGraphResponse {

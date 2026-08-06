@@ -32,6 +32,8 @@
 //! The compile tests include a static-analysis scan that asserts the
 //! emitted SQL contains no single-quoted user data. The `compile` path
 //! never concatenates a user value into the SQL body.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::large_enum_variant, dead_code, deprecated, unused_imports)]
 
 use std::fmt;
 
@@ -420,8 +422,7 @@ fn compile_explain(
 
 fn emit_explain_pg(eq: &ExplainQuery) -> String {
     let where_clause = render_where(&eq.conditions);
-    format!(
-        "WITH RECURSIVE explain_path(node, depth) AS (\n  \
+    "WITH RECURSIVE explain_path(node, depth) AS (\n  \
          SELECT $1::text, 0\n  \
          UNION ALL\n  \
          SELECT edges.to, explain_path.depth + 1\n  \
@@ -430,13 +431,14 @@ fn emit_explain_pg(eq: &ExplainQuery) -> String {
          )\n  \
          SELECT EXISTS (\n  \
          SELECT 1 FROM explain_path WHERE node = $2::text\n  \
-         ) AS found",
-    ) + (if where_clause.is_empty() {
-        String::new()
-    } else {
-        format!(" /* {where_clause} */")
-    }
-    .as_str())
+         ) AS found"
+        .to_string()
+        + (if where_clause.is_empty() {
+            String::new()
+        } else {
+            format!(" /* {where_clause} */")
+        }
+        .as_str())
 }
 
 fn compile_boolean(
@@ -1145,7 +1147,7 @@ mod compile_to_plan_tests {
         let limits = PlanLimits::default();
         let ws = WorkspaceId::try_new("ws1").expect("valid workspace id");
         let rev = RevisionId::new(5);
-        let plan = compile_to_plan(&q, limits, Some((ws.clone(), rev.clone())))
+        let plan = compile_to_plan(&q, limits, Some((ws.clone(), rev)))
             .expect("compile_to_plan should succeed");
 
         match plan {
@@ -1188,9 +1190,9 @@ mod compile_to_plan_tests {
         let ws = WorkspaceId::try_new("ws1").expect("valid workspace id");
         let rev = RevisionId::new(5);
 
-        let plan1 = compile_to_plan(&q, limits.clone(), Some((ws.clone(), rev.clone())))
+        let plan1 = compile_to_plan(&q, limits.clone(), Some((ws.clone(), rev)))
             .expect("first call should succeed");
-        let plan2 = compile_to_plan(&q, limits.clone(), Some((ws.clone(), rev.clone())))
+        let plan2 = compile_to_plan(&q, limits.clone(), Some((ws.clone(), rev)))
             .expect("second call should succeed");
 
         // Plans should be equal (deterministic)
@@ -1211,9 +1213,9 @@ mod compile_to_plan_tests {
         let ws = WorkspaceId::try_new("ws1").expect("valid workspace id");
         let rev = RevisionId::new(5);
 
-        let plan1 = compile_to_plan(&q1, limits.clone(), Some((ws.clone(), rev.clone())))
+        let plan1 = compile_to_plan(&q1, limits.clone(), Some((ws.clone(), rev)))
             .expect("first call should succeed");
-        let plan2 = compile_to_plan(&q2, limits.clone(), Some((ws.clone(), rev.clone())))
+        let plan2 = compile_to_plan(&q2, limits.clone(), Some((ws.clone(), rev)))
             .expect("second call should succeed");
 
         // NOTE: The adapter (MoldqlAstLowerer) computes a fixed hash (from &0u32) for all plans.
@@ -1243,11 +1245,11 @@ mod compile_to_plan_tests {
         let rev2 = RevisionId::new(6);
 
         // Compile with ws1, rev=5
-        let plan1 = compile_to_plan(&q, limits.clone(), Some((ws1.clone(), rev1.clone())))
+        let plan1 = compile_to_plan(&q, limits.clone(), Some((ws1.clone(), rev1)))
             .expect("first call should succeed");
 
         // Compile with ws2, rev=6
-        let plan2 = compile_to_plan(&q, limits.clone(), Some((ws2.clone(), rev2.clone())))
+        let plan2 = compile_to_plan(&q, limits.clone(), Some((ws2.clone(), rev2)))
             .expect("second call should succeed");
 
         // plan1 should still have ws1, rev=5
@@ -1318,7 +1320,7 @@ mod compile_to_plan_tests {
         // This tests the PG emit path through the legacy compile()
         // Construct a PathQuery with confidence condition manually
         use crate::moldql::ast::{Field, Op, PathQuery, TraversalDirection, Value};
-        let mut path = PathQuery {
+        let path = PathQuery {
             from: "a".into(),
             to: "b".into(),
             max_hops: None,

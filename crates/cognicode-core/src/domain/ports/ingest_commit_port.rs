@@ -20,6 +20,8 @@
 //! This module is gated behind `#[cfg(feature = "multimodal")]` because
 //! [`GraphDelta`] carries [`GraphNode`] and [`GraphEdge`] types which are
 //! only available when the Generic Graph Layer is enabled.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use async_trait::async_trait;
 

@@ -6,6 +6,8 @@
 //! 3. The pin resolution logic in `moldql_pattern_handler` works correctly
 //!
 //! See `openspec/changes/fix/e28-3-runtime-wiring-followup/` for full context.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(deprecated, unused_imports)]
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};

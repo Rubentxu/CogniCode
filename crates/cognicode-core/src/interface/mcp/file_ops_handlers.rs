@@ -8,6 +8,8 @@
 //! - list_files: Directory listing with .gitignore filtering
 //!
 //! Each handler is wrapped in instrument_tool for OTel metrics collection.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::single_char_add_str)]
 
 use std::sync::Arc;
 

@@ -16,6 +16,8 @@
 //!
 //! No PG dependency — the handlers operate on the in-memory
 //! `McpContext.graph: Option<Arc<CallGraph>>`.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::Arc;
 

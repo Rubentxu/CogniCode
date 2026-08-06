@@ -1,5 +1,12 @@
 //! Analysis Service - Handles code analysis operations
-
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(
+    clippy::doc_overindented_list_items,
+    clippy::len_zero,
+    clippy::type_complexity,
+    clippy::useless_vec,
+    unused_comparisons
+)]
 #![allow(clippy::absurd_extreme_comparisons)]
 
 use crate::application::dto::{

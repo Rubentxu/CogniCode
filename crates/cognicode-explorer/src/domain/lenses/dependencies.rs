@@ -10,6 +10,8 @@
 //! - High cross-scope coupling (> 20) on a scope → Warning.
 //! - All other cases → Info (the relationship exists; not necessarily
 //!   a problem).
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::if_same_then_else, unused_imports)]
 
 use std::collections::{HashSet, VecDeque};
 

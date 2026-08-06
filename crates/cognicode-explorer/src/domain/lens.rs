@@ -10,6 +10,8 @@
 //! [`cognicode_core::domain::ports::QualityStore`], and
 //! [`crate::ports::SourceReader`]. Adding a new lens is OCP-compliant:
 //! implement the trait, register an instance, no service-dispatch changes.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::if_same_then_else, clippy::manual_clamp)]
 
 use std::collections::HashMap;
 use std::sync::Arc;

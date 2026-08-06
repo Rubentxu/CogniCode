@@ -1,6 +1,8 @@
 //! Bounded Shortest Paths descriptor for the analytics registry.
 //!
 //! Part of E28.4 Analytics Registry Cohort 1 — PR3 Bounded Paths.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::LazyLock;
 
@@ -124,9 +126,9 @@ static BSP_LIMITS: LazyLock<PlanLimits> = LazyLock::new(|| PlanLimits {
 // =============================================================================
 
 static BSP_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
-    time: "O(V + E + k·d)".into(),
-    space: "O(V)".into(),
-    notes: "k = max_hops, d = graph diameter; bounded DFS".into(),
+    time: "O(V + E + k·d)",
+    space: "O(V)",
+    notes: "k = max_hops, d = graph diameter; bounded DFS",
 });
 
 // =============================================================================
@@ -286,10 +288,10 @@ impl AlgorithmExecute for BoundedShortestPathsDescriptor {
 
         let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let out_neighbors = projection.build_out_neighbors();
-        let n = projection.node_count();
+        let _n = projection.node_count();
 
-        let from_id = SymbolId::new(from_symbol.to_string());
-        let to_id = SymbolId::new(to_symbol.to_string());
+        let from_id = SymbolId::new(from_symbol);
+        let to_id = SymbolId::new(to_symbol);
 
         let (Some(&from_idx), Some(&to_idx)) = (
             projection.symbol_index().get(&from_id),

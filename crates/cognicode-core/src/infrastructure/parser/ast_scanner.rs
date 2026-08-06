@@ -1,4 +1,6 @@
 //! AST Scanner implementation using tree-sitter
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::len_zero)]
 
 use crate::domain::traits::{AstScanner, ParseResult, ScannedNode};
 use crate::domain::value_objects::{Location, SourceRange};

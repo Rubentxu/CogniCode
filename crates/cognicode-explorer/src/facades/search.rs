@@ -1,4 +1,6 @@
 //! [`SearchService`] implementation.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -661,46 +663,44 @@ impl SearchService for SearchServiceImpl {
                 };
                 let vr = self.view_registry.clone();
 
-                if let Ok(sessions) = persist.list_explorations("default").await {
-                    if let Some(session) = sessions.into_iter().find(|s| s.id == session_id) {
-                        let first_object = session
-                            .events
-                            .first()
-                            .map(|e| e.object_id.clone())
-                            .unwrap_or_else(|| "empty".to_string());
-                        let label = format!("{} → {}", session.id, first_object);
-                        let subtitle = format!("{} event(s)", session.events.len());
+                if let Ok(sessions) = persist.list_explorations("default").await
+                    && let Some(session) = sessions.into_iter().find(|s| s.id == session_id)
+                {
+                    let first_object = session
+                        .events
+                        .first()
+                        .map(|e| e.object_id.clone())
+                        .unwrap_or_else(|| "empty".to_string());
+                    let label = format!("{} → {}", session.id, first_object);
+                    let subtitle = format!("{} event(s)", session.events.len());
 
-                        return Ok(InspectableObjectSummary {
-                            id: format!("exploration:{}", session.id),
-                            object_type: InspectableObjectType::SavedExploration,
-                            label,
-                            subtitle,
-                            properties: vec![
-                                Property {
-                                    key: "workspace_id".into(),
-                                    value: serde_json::Value::String(session.workspace_id.clone()),
-                                    value_type: "string".into(),
-                                    source: "PersistenceService".into(),
-                                },
-                                Property {
-                                    key: "event_count".into(),
-                                    value: serde_json::Value::Number(session.events.len().into()),
-                                    value_type: "usize".into(),
-                                    source: "PersistenceService".into(),
-                                },
-                                Property {
-                                    key: "created_at".into(),
-                                    value: serde_json::Value::String(
-                                        session.created_at.to_string(),
-                                    ),
-                                    value_type: "string".into(),
-                                    source: "PersistenceService".into(),
-                                },
-                            ],
-                            available_views: vr.list_for(InspectableObjectType::SavedExploration),
-                        });
-                    }
+                    return Ok(InspectableObjectSummary {
+                        id: format!("exploration:{}", session.id),
+                        object_type: InspectableObjectType::SavedExploration,
+                        label,
+                        subtitle,
+                        properties: vec![
+                            Property {
+                                key: "workspace_id".into(),
+                                value: serde_json::Value::String(session.workspace_id.clone()),
+                                value_type: "string".into(),
+                                source: "PersistenceService".into(),
+                            },
+                            Property {
+                                key: "event_count".into(),
+                                value: serde_json::Value::Number(session.events.len().into()),
+                                value_type: "usize".into(),
+                                source: "PersistenceService".into(),
+                            },
+                            Property {
+                                key: "created_at".into(),
+                                value: serde_json::Value::String(session.created_at.to_string()),
+                                value_type: "string".into(),
+                                source: "PersistenceService".into(),
+                            },
+                        ],
+                        available_views: vr.list_for(InspectableObjectType::SavedExploration),
+                    });
                 }
             }
             return Err(ExplorerError::ObjectNotFound(object_id.to_string()));
@@ -772,35 +772,30 @@ impl SearchService for SearchServiceImpl {
             ObjectIdentity::Doc { .. }
                 | ObjectIdentity::Decision { .. }
                 | ObjectIdentity::Evidence { .. }
-        ) {
-            if let Some(ref graph_repo) = self.graph_repo {
-                let id = match &identity {
-                    ObjectIdentity::Doc { id } => id.clone(),
-                    ObjectIdentity::Decision { id } => id.clone(),
-                    ObjectIdentity::Evidence { id } => id.clone(),
-                    _ => return Err(ExplorerError::ObjectNotFound(object_id.to_string())),
-                };
+        ) && let Some(ref graph_repo) = self.graph_repo
+        {
+            let id = match &identity {
+                ObjectIdentity::Doc { id } => id.clone(),
+                ObjectIdentity::Decision { id } => id.clone(),
+                ObjectIdentity::Evidence { id } => id.clone(),
+                _ => return Err(ExplorerError::ObjectNotFound(object_id.to_string())),
+            };
 
-                let summary = match &identity {
-                    ObjectIdentity::Doc { .. } => project_doc(graph_repo.as_ref(), &id).await,
-                    ObjectIdentity::Decision { .. } => {
-                        project_decision(graph_repo.as_ref(), &id).await
-                    }
-                    ObjectIdentity::Evidence { .. } => {
-                        project_evidence(graph_repo.as_ref(), &id).await
-                    }
-                    _ => None,
-                };
+            let summary = match &identity {
+                ObjectIdentity::Doc { .. } => project_doc(graph_repo.as_ref(), &id).await,
+                ObjectIdentity::Decision { .. } => project_decision(graph_repo.as_ref(), &id).await,
+                ObjectIdentity::Evidence { .. } => project_evidence(graph_repo.as_ref(), &id).await,
+                _ => None,
+            };
 
-                if let Some(mut s) = summary {
-                    // Enrich with available views from registry
-                    s.available_views = self.view_registry.list_for(s.object_type.clone());
-                    return Ok(s);
-                }
+            if let Some(mut s) = summary {
+                // Enrich with available views from registry
+                s.available_views = self.view_registry.list_for(s.object_type);
+                return Ok(s);
             }
-            // graph_repo not wired or projection returned None — fall through to
-            // stub (sync path) for a graceful placeholder response
         }
+        // graph_repo not wired or projection returned None — fall through to
+        // stub (sync path) for a graceful placeholder response
 
         // Run sync inspection in a blocking thread.
         let repo = self.repo.clone();
@@ -833,8 +828,8 @@ fn spotter_search_impl(
     repo: &Arc<dyn SymbolRepository>,
     search: Option<&Arc<dyn crate::ports::FuzzySymbolSearch>>,
     view_registry: &Arc<ViewRegistry>,
-    adr_repo: Option<&Arc<dyn crate::ports::AdrRepository>>,
-    doc_repo: Option<&Arc<dyn crate::ports::DocRepository>>,
+    _adr_repo: Option<&Arc<dyn crate::ports::AdrRepository>>,
+    _doc_repo: Option<&Arc<dyn crate::ports::DocRepository>>,
     query: &str,
     kind: Option<&str>,
 ) -> ExplorerResult<Vec<SpotterResult>> {

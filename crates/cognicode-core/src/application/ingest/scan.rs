@@ -6,6 +6,8 @@
 //! 2. Hash: SHA256 per file (rayon parallel)
 //! 3. Diff: mtime-first (skip hash if mtime unchanged), then content
 //!    hash against the `scan_manifest`
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -200,7 +202,7 @@ pub fn scan_for_changes(
         };
 
         let (file_type, _) = classify_file(&root.join(rel));
-        let path = root.join(&rel);
+        let path = root.join(rel);
 
         changes.push(FileChange {
             path,

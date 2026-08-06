@@ -10,6 +10,13 @@
 //! Security: Path validation is delegated to InputValidator (single authority).
 //!
 //! Verification: Code verification is delegated to CodeVerifier trait.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(
+    clippy::len_zero,
+    clippy::needless_borrows_for_generic_args,
+    clippy::type_complexity,
+    dead_code
+)]
 
 use crate::application::dto::{
     ContentMatch, EditFileRequest, EditFileResult, EditValidation, FileEntry, FileMetadata,

@@ -82,41 +82,41 @@ pub fn extract_file(
         let node_type = node.kind();
 
         // ── Function nodes ─────────────────────────────────────────────
-        if config.function_types.contains(&node_type) {
-            if let Some(name) = extract_name(&node, source_bytes) {
-                let (symbol_node, symbol_id) = make_symbol_node(
-                    &name,
-                    SymbolKind::Function,
-                    &source_path_str,
-                    (node.start_position().row + 1) as u32,
-                    (node.start_position().column + 1) as u32,
-                );
-                // Contains edge: file → symbol
-                edges.push(contains_edge(&file_node_id, &symbol_id, &source_path_str));
-                nodes.push(symbol_node.clone());
-                symbol_ids.push((symbol_id.clone(), name.clone()));
+        if config.function_types.contains(&node_type)
+            && let Some(name) = extract_name(&node, source_bytes)
+        {
+            let (symbol_node, symbol_id) = make_symbol_node(
+                &name,
+                SymbolKind::Function,
+                &source_path_str,
+                (node.start_position().row + 1) as u32,
+                (node.start_position().column + 1) as u32,
+            );
+            // Contains edge: file → symbol
+            edges.push(contains_edge(&file_node_id, &symbol_id, &source_path_str));
+            nodes.push(symbol_node.clone());
+            symbol_ids.push((symbol_id.clone(), name.clone()));
 
-                // Find calls within this function body
-                extract_calls_from_node(
-                    &node,
-                    source_bytes,
-                    &symbol_id,
-                    &config.call_types,
-                    config.call_has_function_field,
-                    &source_path_str,
-                    &mut edges,
-                );
+            // Find calls within this function body
+            extract_calls_from_node(
+                &node,
+                source_bytes,
+                &symbol_id,
+                config.call_types,
+                config.call_has_function_field,
+                &source_path_str,
+                &mut edges,
+            );
 
-                // Extract type references if walker is configured
-                extract_type_refs(
-                    config,
-                    &node,
-                    source_bytes,
-                    &symbol_id,
-                    &source_path_str,
-                    &mut edges,
-                );
-            }
+            // Extract type references if walker is configured
+            extract_type_refs(
+                config,
+                &node,
+                source_bytes,
+                &symbol_id,
+                &source_path_str,
+                &mut edges,
+            );
         }
 
         // ── Class/type nodes ───────────────────────────────────────────
@@ -147,17 +147,17 @@ pub fn extract_file(
         }
 
         // ── Import nodes ───────────────────────────────────────────────
-        if config.import_types.contains(&node_type) {
-            if let Some(module_name) = extract_import_target(&node, source_bytes) {
-                edges.push(ExtractionEdge {
-                    source: file_node_id.as_str().to_string(),
-                    target_ref: TargetRef::Unresolved(module_name),
-                    kind: format!("dependency.{}", DependencyType::Imports),
-                    provenance: Provenance::Extracted,
-                    confidence: 1.0,
-                    line: Some(node.start_position().row as u32 + 1),
-                });
-            }
+        if config.import_types.contains(&node_type)
+            && let Some(module_name) = extract_import_target(&node, source_bytes)
+        {
+            edges.push(ExtractionEdge {
+                source: file_node_id.as_str().to_string(),
+                target_ref: TargetRef::Unresolved(module_name),
+                kind: format!("dependency.{}", DependencyType::Imports),
+                provenance: Provenance::Extracted,
+                confidence: 1.0,
+                line: Some(node.start_position().row as u32 + 1),
+            });
         }
 
         // Push children (dedup by byte range to avoid revisiting)
@@ -196,16 +196,17 @@ pub fn extract_file(
 
 /// Extract the `name` field text from a node, falling back to the first
 /// named child if no `name` field exists.
-fn extract_name<'a>(node: &Node, source: &'a [u8]) -> Option<String> {
+fn extract_name(node: &Node, source: &[u8]) -> Option<String> {
     if let Some(name_node) = node.child_by_field_name("name") {
         return Some(node_text(&name_node, source));
     }
     // Fallback: first named child that is an identifier
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            if child.is_named() && child.kind() == "identifier" {
-                return Some(node_text(&child, source));
-            }
+        if let Some(child) = node.child(i)
+            && child.is_named()
+            && child.kind() == "identifier"
+        {
+            return Some(node_text(&child, source));
         }
     }
     None
@@ -250,7 +251,7 @@ fn extract_calls_from_node(
     caller_id: &str,
     call_types: &[&str],
     call_has_function_field: bool,
-    source_path: &str,
+    _source_path: &str,
     edges: &mut Vec<ExtractionEdge>,
 ) {
     let mut stack = vec![*func_node];
@@ -329,7 +330,7 @@ fn make_symbol_node(
 }
 
 /// Create a `Contains` edge from parent to child.
-fn contains_edge(parent_id: &NodeId, child_id: &str, source_path: &str) -> ExtractionEdge {
+fn contains_edge(parent_id: &NodeId, child_id: &str, _source_path: &str) -> ExtractionEdge {
     ExtractionEdge {
         source: parent_id.as_str().to_string(),
         target_ref: TargetRef::Resolved(child_id.to_string()),
@@ -349,7 +350,7 @@ fn clean_callee_name(raw: &str) -> String {
         .last()
         .unwrap_or(raw)
         .split('.')
-        .last()
+        .next_back()
         .unwrap_or(raw);
     cleaned.trim().to_string()
 }
@@ -367,7 +368,7 @@ fn extract_type_refs(
     node: &Node,
     source: &[u8],
     symbol_id: &str,
-    source_path: &str,
+    _source_path: &str,
     edges: &mut Vec<ExtractionEdge>,
 ) {
     let walker = match config.type_ref_walker {

@@ -4,6 +4,8 @@
 //! Each language is described by a `const LanguageConfig` consumed by the
 //! generic extractor. Adding a language = adding a config, not writing
 //! extraction code.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::empty_line_after_doc_comments, clippy::items_after_test_module)]
 
 use super::tree_sitter_parser::Language;
 

@@ -1,5 +1,15 @@
 //! MCP Handlers - Implementation of MCP tool handlers
-
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(
+    clippy::doc_lazy_continuation,
+    clippy::empty_line_after_doc_comments,
+    clippy::if_same_then_else,
+    clippy::ptr_arg,
+    clippy::unnecessary_literal_unwrap,
+    clippy::unnecessary_sort_by,
+    clippy::useless_vec,
+    unused_comparisons
+)]
 #![allow(clippy::absurd_extreme_comparisons)]
 
 use crate::application::commands::{

@@ -1,6 +1,8 @@
 //! Articulation Points descriptor for the analytics registry.
 //!
 //! Part of E28.5 Structural Analytics Cohort 2 — PR2 Descriptors.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::sync::LazyLock;
 
@@ -36,9 +38,9 @@ static ARTICULATION_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSche
 // =============================================================================
 
 static ARTICULATION_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
-    time: "O(V + E)".into(),
-    space: "O(V)".into(),
-    notes: "Tarjan's algorithm, single DFS pass with component counting".into(),
+    time: "O(V + E)",
+    space: "O(V)",
+    notes: "Tarjan's algorithm, single DFS pass with component counting",
 });
 
 // =============================================================================
@@ -121,7 +123,7 @@ impl AlgorithmParams for ArticulationPointsParams {
     }
 
     fn validate(&self, params: &serde_json::Value) -> Result<(), String> {
-        if params.is_null() || params.as_object().map_or(false, |o| o.is_empty()) {
+        if params.is_null() || params.as_object().is_some_and(|o| o.is_empty()) {
             Ok(())
         } else {
             Err("ArticulationPoints algorithm accepts no parameters".into())

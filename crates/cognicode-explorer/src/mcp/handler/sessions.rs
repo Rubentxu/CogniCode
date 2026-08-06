@@ -12,6 +12,8 @@
 //! - `brain_add_space`    — register a space in a session
 //! - `brain_remove_space` — unregister a space from a session
 //! - `brain_spaces`       — list registered spaces in a session
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code, unused_imports, unused_macros)]
 
 use std::sync::Arc;
 
@@ -140,7 +142,7 @@ impl ToolHandler for BrainOpenHandler {
     }
 
     fn arg_schema(&self) -> Value {
-        let mut schema = serde_json::json!({
+        let schema = serde_json::json!({
             "type": "object",
             "properties": {
                 "workspace_id": {

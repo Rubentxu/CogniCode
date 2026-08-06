@@ -22,6 +22,8 @@
 //! ## Confidence
 //!
 //! Each edge carries a confidence in `{0.0, 0.3, 0.5, 0.7, 1.0}`.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(dead_code)]
 
 use crate::moldql::ast::{
     BooleanOp, BooleanQuery, ClusterMethod, ClusterQuery, Condition, ExplainQuery, Field,

@@ -2,6 +2,12 @@
 //!
 //! This module provides a unified API surface for MCP, CLI, and rig-core integrations.
 //! It owns all service instances and cached state for a single workspace session.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(
+    clippy::doc_overindented_list_items,
+    clippy::only_used_in_recursion,
+    unused_comparisons
+)]
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

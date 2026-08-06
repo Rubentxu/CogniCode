@@ -2,6 +2,16 @@
 //!
 //! Each function takes already-resolved data and shapes it into a
 //! `ContextualView`. No I/O, no trait calls beyond the ports.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(
+    clippy::doc_lazy_continuation,
+    clippy::if_same_then_else,
+    clippy::too_many_arguments,
+    clippy::unnecessary_sort_by,
+    dead_code,
+    irrefutable_let_patterns,
+    unused_imports
+)]
 
 use serde_json::json;
 
@@ -26,7 +36,7 @@ use cognicode_core::domain::value_objects::Provenance;
 /// Build the Overview view: identity + call graph metrics + signature for callables.
 pub fn build_overview<'a>(
     symbol: &ResolvedSymbol,
-    repo: &'a dyn SymbolRepository,
+    _repo: &'a dyn SymbolRepository,
     graph_query: Option<&'a dyn GraphQueryPort>,
 ) -> ContextualView {
     let mut blocks: Vec<ViewBlock> = Vec::new();
@@ -77,7 +87,7 @@ pub fn build_overview<'a>(
 /// Build the Call Graph view: incoming + outgoing relations and their counts.
 pub fn build_callgraph<'a>(
     symbol: &ResolvedSymbol,
-    repo: &'a dyn SymbolRepository,
+    _repo: &'a dyn SymbolRepository,
     graph_query: Option<&'a dyn GraphQueryPort>,
 ) -> ContextualView {
     let callers = graph_query
@@ -2677,11 +2687,11 @@ async fn build_node_source_view(
     let cfg = KsvConfig {
         focus_id: id.to_string(),
         mvp_prefix: mvp_prefix.to_string(),
-        view_id: view_id,
-        evidence_kind: evidence_kind,
+        view_id,
+        evidence_kind,
         title_prefix: evidence_title_prefix,
-        identity_block_id: identity_block_id,
-        identity_block_title: identity_block_title,
+        identity_block_id,
+        identity_block_title,
         renderer_kind: renderer_kind.clone(),
     };
 
@@ -3065,7 +3075,7 @@ pub async fn build_doc_code_alignment_view(
                 title: "Unknown".into(),
                 body: json!({ "message": format!("'{}' not found in graph", focus_id) }),
             }];
-            return Ok(ContextualView {
+            Ok(ContextualView {
                 object_id: mvp,
                 view_id: "doc_code_alignment".into(),
                 title,
@@ -3075,11 +3085,9 @@ pub async fn build_doc_code_alignment_view(
                 evidence: Vec::new(),
                 findings: Vec::new(),
                 renderer_kind: RendererKind::Graph,
-            });
+            })
         }
-        FocusResolution::Error(msg) => {
-            return Err(crate::error::ExplorerError::NotFound(msg));
-        }
+        FocusResolution::Error(msg) => Err(crate::error::ExplorerError::NotFound(msg)),
         FocusResolution::Found(focus_node) => {
             // Fetch Cites and Resolves edges
             let edge_kinds = [EdgeKind::Cites, EdgeKind::Resolves];
@@ -3283,7 +3291,7 @@ pub async fn build_concept_map_view(
                 title: "Unknown".into(),
                 body: json!({ "message": format!("'{}' not found in graph", focus_id) }),
             }];
-            return Ok(ContextualView {
+            Ok(ContextualView {
                 object_id: mvp,
                 view_id: "concept_map".into(),
                 title,
@@ -3293,11 +3301,9 @@ pub async fn build_concept_map_view(
                 evidence: Vec::new(),
                 findings: Vec::new(),
                 renderer_kind: RendererKind::Graph,
-            });
+            })
         }
-        FocusResolution::Error(msg) => {
-            return Err(crate::error::ExplorerError::NotFound(msg));
-        }
+        FocusResolution::Error(msg) => Err(crate::error::ExplorerError::NotFound(msg)),
         FocusResolution::Found(focus_node) => {
             // Traverse rationale subgraph
             let (nodes, edges, truncated) = repo
@@ -3740,7 +3746,7 @@ impl ViewExecutor for RiskMapExecutor {
             let symbol_id = hotspot
                 .object_id
                 .strip_prefix("symbol:")
-                .map(|s| cognicode_core::domain::aggregates::SymbolId::new(s.to_string()));
+                .map(cognicode_core::domain::aggregates::SymbolId::new);
 
             if let Some(id) = symbol_id {
                 let edges = qgr
@@ -3920,23 +3926,22 @@ impl ViewExecutor for OwnershipMapExecutor {
                 if let Some(props) = ctx
                     .graph_query
                     .and_then(|gq| gq.node_properties(&symbol.id))
+                    && has_ownership_data(&props)
                 {
-                    if has_ownership_data(&props) {
-                        return Ok(build_ownership_map_with_properties(
-                            &symbol.name,
-                            symbol.file.as_str(),
-                            &props,
-                        ));
-                    }
+                    return Ok(build_ownership_map_with_properties(
+                        &symbol.name,
+                        symbol.file.as_str(),
+                        &props,
+                    ));
                 }
                 Ok(build_ownership_map_placeholder(Some(&symbol.name)))
             }
             InspectionTarget::Scope { path, symbols, .. } => {
                 // Try to aggregate ownership data across member symbols
-                if let Some(props) = aggregate_scope_ownership(ctx.graph_query, symbols) {
-                    if has_ownership_data(&props) {
-                        return Ok(build_ownership_map_with_properties(path, "", &props));
-                    }
+                if let Some(props) = aggregate_scope_ownership(ctx.graph_query, symbols)
+                    && has_ownership_data(&props)
+                {
+                    return Ok(build_ownership_map_with_properties(path, "", &props));
                 }
                 Ok(build_ownership_map_placeholder(Some(path)))
             }
@@ -4030,7 +4035,7 @@ fn build_ownership_map_with_properties(
     _file: &str,
     props: &std::collections::HashMap<String, String>,
 ) -> ContextualView {
-    let node_label = props
+    let _node_label = props
         .get("codeowners")
         .cloned()
         .unwrap_or_else(|| target_name.to_string());
@@ -4067,10 +4072,10 @@ fn aggregate_scope_ownership(
 ) -> Option<std::collections::HashMap<String, String>> {
     let gq = graph_query?;
     for sym in symbols {
-        if let Some(props) = gq.node_properties(&sym.id) {
-            if has_ownership_data(&props) {
-                return Some(props);
-            }
+        if let Some(props) = gq.node_properties(&sym.id)
+            && has_ownership_data(&props)
+        {
+            return Some(props);
         }
     }
     None
@@ -4139,12 +4144,12 @@ impl ViewDescriptor for ArchitectureDriftExecutor {
 
 #[async_trait]
 impl ViewExecutor for ArchitectureDriftExecutor {
-    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+    async fn build(&self, _ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         // Architecture drift detection requires workspace-level context
         // (root path) which is not available through InspectionTarget.
         // The dedicated drift endpoint should be used instead.
         Err(crate::error::ExplorerError::NotImplemented(
-            "Architecture drift requires the /api/workspaces/{id}/drift endpoint".into(),
+            "Architecture drift requires the /api/workspaces/{id}/drift endpoint",
         ))
     }
 }
@@ -4495,7 +4500,7 @@ impl ViewDescriptor for DecisionGraphExecutor {
 impl ViewExecutor for DecisionGraphExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Decision { id } => {
+            InspectionTarget::Decision { id: _ } => {
                 #[cfg(feature = "multimodal")]
                 {
                     use crate::domain::decision_graph_topology::DecisionGraphTopology;
@@ -4826,7 +4831,7 @@ impl ViewDescriptor for DecisionTraceExecutor {
 impl ViewExecutor for DecisionTraceExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Decision { id } => {
+            InspectionTarget::Decision { id: _ } => {
                 #[cfg(feature = "multimodal")]
                 {
                     use cognicode_core::domain::aggregates::generic_graph::NodeId;
@@ -5004,7 +5009,7 @@ impl ViewDescriptor for DecisionSupportPackExecutor {
 impl ViewExecutor for DecisionSupportPackExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Decision { id } => {
+            InspectionTarget::Decision { id: _ } => {
                 #[cfg(feature = "multimodal")]
                 {
                     use crate::domain::decision_support_pack::{
@@ -6635,10 +6640,10 @@ mod tests {
 
     #[test]
     fn test_slice_returns_only_test_callers() {
-        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let _sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
         // Mock callers: one test file, one non-test file
-        let test_caller = make_resolved("tests/foo_test.rs", "test_foo", 10, SymbolKind::Function);
-        let prod_caller = make_resolved("src/lib.rs", "bar", 20, SymbolKind::Function);
+        let _test_caller = make_resolved("tests/foo_test.rs", "test_foo", 10, SymbolKind::Function);
+        let _prod_caller = make_resolved("src/lib.rs", "bar", 20, SymbolKind::Function);
         // This test just verifies the is_test_file heuristic
         assert!(is_test_file("tests/foo_test.rs"));
         assert!(is_test_file("src/utils/tests/helpers.rs"));

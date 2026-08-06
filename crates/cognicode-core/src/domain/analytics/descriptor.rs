@@ -1,6 +1,8 @@
 //! AlgorithmDescriptor trait and supporting types for analytics registry.
 //!
 //! Part of E28.4 Analytics Registry Cohort 1 — PR1 Foundation.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use serde::{Deserialize, Serialize};
 use std::fmt;

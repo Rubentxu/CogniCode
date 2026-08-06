@@ -1,6 +1,8 @@
 //! GraphExecutor — backend-neutral port trait for graph plan execution.
 //!
 //! Part of e28-2-differential-graph-executors: PR1 Port Phase 1.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::fmt;
 
@@ -79,10 +81,10 @@ pub trait GraphExecutor: Send + Sync + fmt::Debug {
         // Default implementation using execute — override for performance
         let mut result = self.execute(plan, pin)?;
         // Apply soft limit truncation if needed
-        if let Some(max_rows) = limits.max_result_rows {
-            if result.rows.len() as u64 > max_rows {
-                result = result.with_truncation(super::TruncationMarker::ResultRowsLimit);
-            }
+        if let Some(max_rows) = limits.max_result_rows
+            && result.rows.len() as u64 > max_rows
+        {
+            result = result.with_truncation(super::TruncationMarker::ResultRowsLimit);
         }
         Ok(result)
     }

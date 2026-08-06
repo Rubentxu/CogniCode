@@ -1,6 +1,8 @@
 //! Personalized PageRank descriptor for the analytics registry.
 //!
 //! Part of E28.6 Advanced Analytics Evidence Gate — PR1.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports)]
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -84,9 +86,9 @@ static PERSONALIZED_PAGERANK_LIMITS: LazyLock<PlanLimits> = LazyLock::new(|| Pla
 
 static PERSONALIZED_PAGERANK_COMPLEXITY: LazyLock<ComplexityClass> =
     LazyLock::new(|| ComplexityClass {
-        time: "O(V + E)".into(),
-        space: "O(V)".into(),
-        notes: "per iteration; same as PageRank, personalization vector adds O(V)".into(),
+        time: "O(V + E)",
+        space: "O(V)",
+        notes: "per iteration; same as PageRank, personalization vector adds O(V)",
     });
 
 // =============================================================================

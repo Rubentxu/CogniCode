@@ -8,6 +8,8 @@
 //! operations that are NOT graph-selecting. Graph-selecting operations
 //! live in `GraphPlan`. `MoldPlan` is discriminator-only — the actual
 //! operation payload lives in the typed `GraphPlan` or other domain objects.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::clone_on_copy, unused_imports)]
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -184,7 +186,7 @@ impl MoldPlan {
         rev: super::super::value_objects::RevisionId,
     ) -> Result<Self, super::PlanError> {
         match self {
-            MoldPlan::Graph { mut inner, pin } => {
+            MoldPlan::Graph { inner, pin } => {
                 if pin.is_some() {
                     return Err(super::PlanError::AlreadyPinned);
                 }

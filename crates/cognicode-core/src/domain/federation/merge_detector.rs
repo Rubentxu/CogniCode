@@ -23,6 +23,8 @@
 //!
 //! Gated behind the `multimodal` Cargo feature. Default builds
 //! do not include this module.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_variables)]
 
 use crate::domain::aggregates::generic_graph::GraphNode;
 use crate::domain::federation::federated_node::FederatedNode;
@@ -65,10 +67,10 @@ impl MergeDetector {
                 if left.space_id == right.space_id {
                     continue;
                 }
-                if let Some(cand) = score_pair(left, right) {
-                    if cand.confidence >= MERGE_THRESHOLD {
-                        out.push(cand);
-                    }
+                if let Some(cand) = score_pair(left, right)
+                    && cand.confidence >= MERGE_THRESHOLD
+                {
+                    out.push(cand);
                 }
             }
         }

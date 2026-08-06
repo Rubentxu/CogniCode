@@ -8,6 +8,8 @@
 //!
 //! Gated behind the `multimodal` Cargo feature. Default builds do
 //! not include this module.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::manual_clamp)]
 
 use serde::{Deserialize, Serialize};
 

@@ -5,6 +5,8 @@
 //! community assignments in `graph_nodes.properties.community`.
 //!
 //! Returns an `AnalysisSummary` containing all computed insights.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(clippy::manual_clamp, clippy::unnecessary_sort_by)]
 
 use serde::Serialize;
 

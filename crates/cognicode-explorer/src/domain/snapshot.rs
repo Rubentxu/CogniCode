@@ -112,7 +112,7 @@ pub struct SnapshotService {
 
 impl SnapshotService {
     /// Maximum Mermaid text size: 1 MB.
-    pub const MAX_MERMAID_SIZE: usize = 1 * 1024 * 1024;
+    pub const MAX_MERMAID_SIZE: usize = 1024 * 1024;
 
     /// Default number of concurrent renders.
     pub const DEFAULT_PERMITS: usize = 4;
@@ -194,7 +194,7 @@ impl SnapshotService {
         let input_path = input_file.path().to_owned();
 
         let output_file =
-            tempfile::NamedTempFile::with_suffix(&format!(".{output_ext}")).map_err(|e| {
+            tempfile::NamedTempFile::with_suffix(format!(".{output_ext}")).map_err(|e| {
                 SnapshotError::RenderFailed(format!("failed to create output temp file: {e}"))
             })?;
         let output_path = output_file.path().to_owned();
@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     fn snapshot_service_new() {
-        let svc = SnapshotService::new();
+        let _svc = SnapshotService::new();
         // Just verify it doesn't panic
     }
 

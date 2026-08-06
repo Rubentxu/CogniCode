@@ -15,6 +15,8 @@
 //!
 //! Gated behind the `multimodal` Cargo feature. Default builds
 //! do not include this module.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_imports, unused_mut)]
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -152,10 +154,10 @@ impl FederatedGraphService {
             // space. (For the v1 implementation the cursor is a
             // whole-space selector; the per-space offset is the
             // second segment.)
-            if let Some(ref target) = target_space {
-                if target != space_id {
-                    continue;
-                }
+            if let Some(ref target) = target_space
+                && target != space_id
+            {
+                continue;
             }
             let repo = match self.spaces.get(space_id) {
                 Some(r) => r.clone(),

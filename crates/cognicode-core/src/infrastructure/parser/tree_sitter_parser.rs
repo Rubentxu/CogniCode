@@ -1,4 +1,6 @@
 //! Tree-sitter based parser implementation
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(invalid_from_utf8)]
 
 use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::traits::{ParseError, ParseResult, ParsedTree, Parser};

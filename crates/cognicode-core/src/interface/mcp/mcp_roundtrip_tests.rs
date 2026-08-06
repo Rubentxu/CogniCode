@@ -1,5 +1,6 @@
 //! E2E MCP Protocol Roundtrip Tests
-
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(unused_comparisons, unused_imports)]
 #![allow(clippy::absurd_extreme_comparisons)]
 //!
 //! Tests that verify the full MCP protocol roundtrip:
