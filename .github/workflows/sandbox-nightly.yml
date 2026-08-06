@@ -26,6 +26,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Prepare host layout (quadlet bind path bridge)
+        # Containers bind-mount %h/Proyectos/rust/CogniCode/sandbox/repos (local layout).
+        # On hosted runners the workspace lives elsewhere — symlink the expected path.
+        run: |
+          mkdir -p "$HOME/Proyectos/rust/CogniCode"
+          ln -sfn "$GITHUB_WORKSPACE" "$HOME/Proyectos/rust/CogniCode"
+
       - name: Setup Podman
         uses: rootful/setup-podman@v4
         with:
@@ -56,6 +63,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Prepare host layout (quadlet bind path bridge)
+        # Containers bind-mount %h/Proyectos/rust/CogniCode/sandbox/repos (local layout).
+        # On hosted runners the workspace lives elsewhere — symlink the expected path.
+        run: |
+          mkdir -p "$HOME/Proyectos/rust/CogniCode"
+          ln -sfn "$GITHUB_WORKSPACE" "$HOME/Proyectos/rust/CogniCode"
 
       - name: Setup Podman
         uses: rootful/setup-podman@v4
