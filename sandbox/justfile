@@ -6,6 +6,7 @@ reports_dir  := justfile_directory() / "reports"
 repos_dir    := justfile_directory() / "repos"
 fixtures_dir := justfile_directory() / "fixtures"
 manifests_dir := justfile_directory() / "manifests"
+scenarios_dir := justfile_directory() / "scenarios"
 
 # Build the MCP binary and the test client
 build:
@@ -202,3 +203,50 @@ sandbox-clean:
     -systemctl --user stop cognicode-rust cognicode-python cognicode-java cognicode-go cognicode-js cognicode-ts 2>/dev/null || true
     -podman rm -f cognicode-rust cognicode-python cognicode-java cognicode-go cognicode-js cognicode-ts 2>/dev/null || true
     rm -rf {{repos_dir}} {{results_dir}} {{reports_dir}}
+
+# ─── RELEASE SCORECARD (G1-G12) ───────────────────────────────────────────────
+# Generates release readiness scorecard with G2 tool coverage
+# Requires: list_mcp_tools.sh + generate_tool_coverage.py
+release-scorecard:
+    # Ensure reports directory exists
+    mkdir -p {{reports_dir}}
+    # G1: Knowledge layer completion — placeholder (git evidence)
+    # G2: MCP tool coverage — computed by generate_tool_coverage.py
+    @echo "=== Release Readiness Scorecard ==="
+    @echo ""
+    @echo "## G1 | — | — | knowledge layer complete | e30-sandbox-infra released (v0.87.0)"
+    # Run coverage generator (68-tool runtime denominator, manifests + scenarios cross-ref)
+    COGNICODE_MCP_BINARY={{project_root}}/target/release/cognicode-mcp \
+        python3 {{justfile_directory()}}/scripts/generate_tool_coverage.py \
+        --tools <(COGNICODE_MCP_BINARY={{project_root}}/target/release/cognicode-mcp bash {{justfile_directory()}}/scripts/list_mcp_tools.sh) \
+        --manifests-dir {{manifests_dir}} \
+        --scenarios-dir {{scenarios_dir}} \
+        --output {{reports_dir}}/coverage_matrix.yaml || true \
+        2>&1 | tee {{reports_dir}}/coverage_output.txt
+    @coverage_exit=$$?
+    @echo ""
+    @echo "## G3 | — | — | sandbox infrastructure | —"
+    @echo "## G4 | — | — | corpus quality | —"
+    @echo "## G5 | — | — | ground truth accuracy | —"
+    @echo "## G6 | — | — | scenario coverage | —"
+    @echo "## G7 | — | — | runtime performance | —"
+    @echo "## G8 | — | — | memory limits | —"
+    @echo "## G9 | — | — | timeout handling | —"
+    @echo "## G10 | — | — | openspec conformance | —"
+    @echo "## G11 | — | — | documentation currency | —"
+    @echo "## G12 | — | — | release hygiene | —"
+    @echo ""
+    @if [ -f {{reports_dir}}/coverage_matrix.yaml ]; then \
+        total=$(grep 'total_tools:' {{reports_dir}}/coverage_matrix.yaml | awk '{print $2}'); \
+        covered=$(grep 'covered:' {{reports_dir}}/coverage_matrix.yaml | head -1 | awk '{print $2}'); \
+        gaps=$(grep 'uncovered_count:' {{reports_dir}}/coverage_matrix.yaml | awk '{print $2}'); \
+        if [ "$gaps" = "0" ]; then \
+            echo "## G2 | GREEN | $covered/$total ✓ | 0 gaps | coverage_matrix.yaml"; \
+        else \
+            echo "## G2 | RED | $covered/$total | $gaps gaps | coverage_matrix.yaml"; \
+        fi; \
+    else \
+        echo "## G2 | AMBER | — | coverage matrix unavailable | —"; \
+    fi
+    @echo ""
+    @echo "Scorecard generation complete."
