@@ -20,10 +20,10 @@ validation:
 repos:
   chalk:
     repo_url: "https://github.com/chalk/chalk.git"
-    pinned_sha: "v5.1.0"
+    pinned_sha: "92c55db46f2396c18764e55e6a52dcb49884a42b"
   javascript/express:
     repo_url: "https://github.com/expressjs/express.git"
-    pinned_sha: "4.21.0"
+    pinned_sha: "7e562c6d8daddff4604f8efaaf9db2cf98c6dcff"
 
 scenarios:
   - name: realrepo_read_source

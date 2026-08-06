@@ -20,10 +20,10 @@ validation:
 repos:
   commander:
     repo_url: "https://github.com/tj/commander.js.git"
-    pinned_sha: "v11.0.0"
+    pinned_sha: "4ef19faac1564743d8c7e3ce89ef8d190e1551b4"
   zod:
     repo_url: "https://github.com/colinhacks/zod.git"
-    pinned_sha: "v3.24.1"
+    pinned_sha: "65adeeacef0274abbda5438470a3d2bfd376256d"
 
 scenarios:
   - name: realrepo_read_source
