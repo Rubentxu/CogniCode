@@ -1,0 +1,53 @@
+# Rust Tier-B Real Repo Scenarios — tokio (e30-corpus-expansion)
+# tokio pinned at dd344a55 (master HEAD 2026-08-06, exact SHA)
+
+version: "1.0"
+language: rust
+tier: B
+description: "Rust Tier-B real repo scenarios — tokio (exact SHA pin)"
+
+timeout_seconds: 300
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: syntax
+      commands: ["cargo check -p tokio --lib --no-default-features"]
+      timeout_seconds: 240
+
+repos:
+  tokio:
+    repo_url: "https://github.com/tokio-rs/tokio.git"
+    pinned_sha: "dd344a550c2c6ddc500a2a8ad2eca8e097795252"
+
+scenarios:
+  - name: tokio_entry_points
+    description: "tokio crate entry points resolve"
+    tool: get_entry_points
+    action: find
+    repo: tokio
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 1
+  - name: tokio_hot_paths
+    description: "tokio hot paths computed"
+    tool: get_hot_paths
+    action: find
+    repo: tokio
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 1
+  - name: tokio_build_graph
+    description: "tokio call graph builds"
+    tool: build_graph
+    action: build
+    repo: tokio
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 10

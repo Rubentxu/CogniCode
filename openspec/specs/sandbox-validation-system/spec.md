@@ -153,6 +153,24 @@ The system MUST expose a `just release-scorecard` command that aggregates campai
 - THEN `scorecard.json` and `scorecard.md` are produced
 - AND both cover all 12 gates of the release-readiness-gate spec
 
+### Requirement: Tools-List Pagination Probe
+
+The sandbox MUST expose a paginated `tools/list` probe (`sandbox/scripts/list_mcp_tools.sh`) that collects the complete runtime tool surface from the MCP server (base64-encoded offset cursor, PAGE_SIZE=20) and emits canonical JSON with every tool name and description.
+
+- GIVEN the MCP server binary is built AND the probe script is invoked
+- WHEN the probe paginates `tools/list` until `nextCursor` is absent
+- THEN the output MUST contain every runtime tool exactly once AND the `total` field MUST equal the number of distinct tools
+- AND the probe MUST NOT truncate at the first page
+
+### Requirement: MCP-TOOLS Documentation Regeneration
+
+`docs/MCP-TOOLS.md` MUST be regenerated from the runtime `tools/list` surface (not hand-maintained), and MUST declare the probe as the source of truth.
+
+- GIVEN the canonical probe output (N tools)
+- WHEN `docs/MCP-TOOLS.md` is regenerated from that output
+- THEN the document MUST list exactly the N runtime tools AND state that the runtime `tools/list` is the source of truth
+- AND the document MUST NOT claim a fixed tool count that differs from the runtime surface
+
 ### Requirement: CI Automation
 
 A GitHub Actions workflow (`sandbox-nightly.yml`) MUST run the full matrix nightly, including stability repeats and benchmark, archive results, and publish the scorecard. A fast smoke lane (`sandbox-ci-smoke`, < 5 min) MUST run on every PR.

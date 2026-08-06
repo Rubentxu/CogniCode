@@ -21,7 +21,7 @@ repos:
   commander:
     repo_url: "https://github.com/tj/commander.js.git"
     pinned_sha: "v11.0.0"
-  typescript/zod:
+  zod:
     repo_url: "https://github.com/colinhacks/zod.git"
     pinned_sha: "v3.24.1"
 
@@ -110,7 +110,7 @@ scenarios:
     description: "Read zod source file as raw text"
     tool: read_file
     action: read
-    repo: typescript/zod
+    repo: zod
     workspace: .
     scenario_class: read_only
     expected_outcome: pass
@@ -122,7 +122,7 @@ scenarios:
     description: "Search for 'z' in zod source"
     tool: search_content
     action: search
-    repo: typescript/zod
+    repo: zod
     workspace: .
     scenario_class: read_only
     expected_outcome: pass
@@ -140,7 +140,7 @@ scenarios:
     description: "Extract symbols from zod types file (conditional types)"
     tool: get_file_symbols
     action: extract
-    repo: typescript/zod
+    repo: zod
     workspace: .
     scenario_class: analysis
     expected_outcome: pass
@@ -151,7 +151,7 @@ scenarios:
     description: "Attempt safe refactor rename on zod (not yet supported)"
     tool: safe_refactor
     action: rename
-    repo: typescript/zod
+    repo: zod
     workspace: .
     scenario_class: mutation
     preview_only: true
@@ -166,7 +166,7 @@ scenarios:
     description: "Apply edit in zod real repo with npm ci + validation"
     tool: edit_file
     action: apply
-    repo: typescript/zod
+    repo: zod
     workspace: .
     scenario_class: mutation
     preview_only: false

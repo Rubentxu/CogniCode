@@ -1,0 +1,41 @@
+# Tier-C Scale Lane — rust-analyzer (e30-corpus-expansion)
+# Large repo (32M shallow, 200k+ LOC): scale lane with elevated limits.
+# Pinned at 1cf317e1 (master HEAD 2026-08-06, exact SHA)
+
+version: "1.0"
+language: rust
+tier: C
+description: "Tier-C scale lane — rust-analyzer (exact SHA pin)"
+
+timeout_seconds: 600
+
+validation:
+  failure_is_regression: false
+  stages: []
+
+repos:
+  rust-analyzer:
+    repo_url: "https://github.com/rust-lang/rust-analyzer.git"
+    pinned_sha: "1cf317e1d602b67f5881016274c54df7938d834f"
+
+scenarios:
+  - name: tier3_rust_analyzer_ingest
+    description: "rust-analyzer ingests without timeout/OOM (count-only ground truth)"
+    tool: build_graph
+    action: build
+    repo: rust-analyzer
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 1
+  - name: tier3_rust_analyzer_entry_points
+    description: "rust-analyzer entry points (count-only)"
+    tool: get_entry_points
+    action: find
+    repo: rust-analyzer
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 1

@@ -1,0 +1,41 @@
+# Tier-C Scale Lane — TypeScript compiler (e30-corpus-expansion)
+# Large repo (652M shallow): scale lane with elevated limits.
+# Pinned at b465fdbf (main HEAD 2026-08-06, exact SHA)
+
+version: "1.0"
+language: typescript
+tier: C
+description: "Tier-C scale lane — microsoft/TypeScript compiler (exact SHA pin)"
+
+timeout_seconds: 600
+
+validation:
+  failure_is_regression: false
+  stages: []
+
+repos:
+  typescript:
+    repo_url: "https://github.com/microsoft/TypeScript.git"
+    pinned_sha: "b465fdbfe175304d9b977da137b2c178ae1091d3"
+
+scenarios:
+  - name: tier3_typescript_ingest
+    description: "TypeScript compiler ingests without timeout/OOM (count-only)"
+    tool: build_graph
+    action: build
+    repo: typescript
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 1
+  - name: tier3_typescript_file_symbols
+    description: "TypeScript file symbols (count-only)"
+    tool: get_file_symbols
+    action: find
+    repo: typescript
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 1

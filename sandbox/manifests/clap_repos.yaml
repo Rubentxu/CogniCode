@@ -1,0 +1,57 @@
+# Rust Tier-B Real Repo Scenarios — clap (e30-corpus-expansion)
+# clap pinned at 4684d7ab (master HEAD 2026-08-06, exact SHA)
+
+version: "1.0"
+language: rust
+tier: B
+description: "Rust Tier-B real repo scenarios — clap (exact SHA pin)"
+
+timeout_seconds: 300
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: syntax
+      commands: ["cargo check -p clap_builder --lib"]
+      timeout_seconds: 240
+
+repos:
+  clap:
+    repo_url: "https://github.com/clap-rs/clap.git"
+    pinned_sha: "4684d7abc545cef1d78708864cfe8c7668ed49c1"
+
+scenarios:
+  - name: clap_entry_points
+    description: "clap entry points resolve"
+    tool: get_entry_points
+    action: find
+    repo: clap
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 1
+  - name: clap_find_references
+    description: "find_references on clap Command"
+    tool: find_references
+    action: references
+    repo: clap
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    arguments:
+      file_path: src/builder/mod.rs
+      line: 50
+      column: 10
+    ground_truth:
+      symbols_min: 1
+  - name: clap_build_graph
+    description: "clap call graph builds"
+    tool: build_graph
+    action: build
+    repo: clap
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 10

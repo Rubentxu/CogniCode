@@ -17,7 +17,7 @@ Este ADR es la fuente de verdad de QUÉ significa 1.0.0. ADR-032 define el siste
 
 ## Contexto
 
-CogniCode ha acumulado 40+ ciclos SDDK, ~2.800 tests Rust, 401 requirements openspec, 956 escenarios y 43 MCP tools. El roadmap funcional (E28, E29, E12-E21) está mayormente completo. El riesgo restante no es de features: es de **verificación de producción** — ¿funciona de verdad contra repositorios reales, a escala, de forma estable?
+CogniCode ha acumulado 40+ ciclos SDDK, ~2.800 tests Rust, 401 requirements openspec, 956 escenarios y 68 MCP tools (runtime tools/list, 2026-08-06). El roadmap funcional (E28, E29, E12-E21) está mayormente completo. El riesgo restante no es de features: es de **verificación de producción** — ¿funciona de verdad contra repositorios reales, a escala, de forma estable?
 
 La decisión de no release sin pruebas reales responde al historial del proyecto: múltiples features se implementaron, mergearon y taggearon pero con wiring roto detectado después (v0.72.5 stub executor, v0.73.6 analytics registry sin wiring, v0.81.2 D4 audit). Un gate automatizado previene esa clase de falsa confianza.
 
@@ -32,7 +32,7 @@ La decisión de no release sin pruebas reales responde al historial del proyecto
 | # | Criterio | Target | Evidencia |
 |---|----------|--------|-----------|
 | G1 | e13-wave2 knowledge layer completo | 100% tasks | 3 PRs mergeados, spotter 11 familias |
-| G2 | Cobertura MCP tools en sandbox | 100% de 43 tools con ≥1 scenario | matriz de cobertura auto-generada |
+| G2 | Cobertura MCP tools en sandbox | 100% de N tools con ≥1 scenario (N = runtime tools/list, actualmente 68) | matriz de cobertura auto-generada |
 | G3 | MCP Health Score | ≥ 85/100 en 3 runs consecutivos | `sandbox/results-runs/<id>/health.json` |
 | G4 | Correctitud (ground truth) | ≥ 90% en repos Tier-1 | scoring engine `correctitud` |
 | G5 | Presupuesto de latencia | search < 500ms p95; call-graph < 2s p95 (10k LOC); analytics < 5s p95 | benchmark + latency scores |
@@ -41,7 +41,7 @@ La decisión de no release sin pruebas reales responde al historial del proyecto
 | G8 | Escalabilidad | ingest repo 100k+ LOC sin timeout/OOM | scenarios tier scale |
 | G9 | Sin regresiones vs baseline | 0 unexpected failures | `orchestrator report --baseline` |
 | G10 | Conformance openspec | 100% de 401 requirements verificados | auditoría de conformance |
-| G11 | Documentación al día | MCP-TOOLS 43 tools verificadas; ADRs revisados; ROADMAP reconciliado | auditoría docs |
+| G11 | Documentación al día | MCP-TOOLS regenerado de tools/list (68); ADRs revisados; ROADMAP reconciliado | auditoría docs |
 | G12 | Higiene de release | changelog v0.85.0→v1.0.0; semver limpio; sin ramas stale | auditoría git |
 
 ### 2. No-goals explícitos para 1.0.0

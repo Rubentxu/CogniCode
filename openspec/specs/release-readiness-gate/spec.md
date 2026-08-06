@@ -158,7 +158,7 @@ The release candidate MUST show all 12 gates GREEN in 3 consecutive nightly scor
 
 ### Requirement: Non-Sandbox Gates (G1, G2, G10, G11, G12)
 
-The scorecard MUST also evaluate gates sourced outside the sandbox: G1 knowledge layer completion (git evidence: 3 e13-wave2 PRs merged), G2 MCP tool coverage (coverage matrix: 43/43 tools with ≥1 scenario), G10 openspec conformance (401/401 requirements verified), G11 documentation currency (MCP-TOOLS verified, ADRs reviewed, ROADMAP reconciled), G12 release hygiene (changelog present, semver clean, no stale branches).
+The scorecard MUST also evaluate gates sourced outside the sandbox: G1 knowledge layer completion (git evidence: 3 e13-wave2 PRs merged), G2 MCP tool coverage (coverage matrix: N/N tools with ≥1 scenario, where N is the runtime tools/list denominator — currently 68; probe via sandbox/scripts/list_mcp_tools.sh), G10 openspec conformance (401/401 requirements verified), G11 documentation currency (MCP-TOOLS verified, ADRs reviewed, ROADMAP reconciled), G12 release hygiene (changelog present, semver clean, no stale branches).
 
 #### Scenario: Non-sandbox gates reported
 
@@ -169,7 +169,7 @@ The scorecard MUST also evaluate gates sourced outside the sandbox: G1 knowledge
 
 #### Scenario: Documentation gap fails G11
 
-- GIVEN MCP-TOOLS.md lists 43 tools but handler registry exposes 45
+- GIVEN MCP-TOOLS.md lists 43 tools but handler registry exposes 68 via tools/list
 - WHEN the scorecard evaluates G11
 - THEN G11 status is RED
 - AND evidence names the 2 undocumented tools
