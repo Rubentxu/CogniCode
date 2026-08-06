@@ -7,8 +7,11 @@ auto-detects legacy-obsolete specs (OBSOLETE banner), supports an optional
 (YAML + Markdown) with per-requirement status and triage summary.
 
 Status per requirement: verified | legacy_obsolete | no_evidence
-pct_verified = verified/total ; pct_triaged = (verified+legacy_obsolete)/total
-Exit code 0 always (reporting tool).
+pct_verified = verified/(total-legacy_obsolete) ; pct_triaged = (verified+legacy_obsolete)/total
+(denominator per ADR-031 §4 renegotiation: legacy-obsolete requirements are
+removed from the product and excluded from active verification)
+Exit code 0 always (reporting tool) unless --validate-paths is set and
+some evidence_path values do not resolve to any file (exit 1).
 """
 import argparse
 import json
@@ -40,6 +43,36 @@ def load_evidence_map(path):
     return data if isinstance(data, dict) else {}
 
 
+def validate_paths(evidence_map):
+    """--validate-paths: check each evidence_path resolves to ≥1 existing file.
+
+    Specs carrying an ``evidence_note`` are excluded from path validation:
+    the note documents known partial coverage (e.g. feature-gated compile
+    debt), which is honest mapping, not rubber-stamping.
+    """
+    missing = []
+    for spec_name, ev in evidence_map.items():
+        if not isinstance(ev, dict):
+            continue
+        if ev.get("status") != "verified":
+            continue
+        if ev.get("evidence_note"):
+            continue
+        path_str = ev.get("evidence_path", "")
+        if not path_str:
+            missing.append((spec_name, "empty evidence_path"))
+            continue
+        # Glob expansion: split on commas/spaces for multi-path strings
+        tokens = re.split(r"[,\s]+", path_str.strip())
+        globs_valid = any(
+            len(list(Path(".").glob(tok))) > 0
+            for tok in tokens if tok
+        )
+        if not globs_valid:
+            missing.append((spec_name, f"glob resolves empty: {path_str!r}"))
+    return missing
+
+
 def scan_specs(specs_dir, evidence_map):
     specs_dir = Path(specs_dir)
     rows = []
@@ -59,7 +92,12 @@ def scan_specs(specs_dir, evidence_map):
         if not matches:
             summary["phantom_dirs"] += 1
             continue
-        is_obsolete = bool(OBSOLETE_RE.search(text))
+        # OBSOLETE banner detection is header-scoped (first 8 lines): the real
+        # banner lives in the spec title or status block, never in requirement
+        # prose. Body mentions (e.g. specs that DOCUMENT the banner) must not
+        # mark the spec obsolete.
+        header = "\n".join(text.splitlines()[:8])
+        is_obsolete = bool(OBSOLETE_RE.search(header))
         spec_name = spec_dir.name
         ev = evidence_map.get(spec_name, {})
         ev_status = ev.get("status") if isinstance(ev, dict) else None
@@ -78,7 +116,8 @@ def scan_specs(specs_dir, evidence_map):
                          "evidence": ev_path if ev_status == "verified" else None})
             summary[status] += 1
             summary["total"] += 1
-    summary["pct_verified"] = round(summary["verified"] / summary["total"] * 100, 1) if summary["total"] else 0.0
+    active_total = summary["total"] - summary["legacy_obsolete"]
+    summary["pct_verified"] = round(summary["verified"] / active_total * 100, 1) if active_total else 0.0
     summary["pct_triaged"] = round((summary["verified"] + summary["legacy_obsolete"]) / summary["total"] * 100, 1) if summary["total"] else 0.0
     return rows, summary
 
@@ -113,8 +152,16 @@ def main():
     ap.add_argument("--evidence-map", default=None, help="YAML/JSON map spec->{status,evidence_path}")
     ap.add_argument("--output-prefix", default="sandbox/reports/conformance_matrix",
                     help="Output prefix for .yaml and .md")
+    ap.add_argument("--validate-paths", action="store_true",
+                    help="Validate that evidence_path files exist before scanning")
     args = ap.parse_args()
     ev = load_evidence_map(args.evidence_map)
+    if args.validate_paths:
+        missing = validate_paths(ev)
+        if missing:
+            for spec_name, reason in missing:
+                print(f"VALIDATION ERROR: {spec_name}: {reason}", file=sys.stderr)
+            sys.exit(1)
     rows, summary = scan_specs(args.specs_dir, ev)
     out_y = f"{args.output_prefix}.yaml"
     out_m = f"{args.output_prefix}.md"
