@@ -130,7 +130,7 @@ scenarios:
     scenario_class: read_only
     expected_outcome: pass
     arguments:
-      max_lines: 100
+      min_lines: 100
 
   - name: fill_detect_long_parameter_lists
     description: "detect_long_parameter_lists on serde"
@@ -169,7 +169,7 @@ scenarios:
     preview_only: true
     expected_outcome: expected_fail
     arguments:
-      file_path: serde/src/lib.rs
+      file_paths: ["serde/src/lib.rs"]
 
   - name: fill_find_pattern_by_intent
     description: "find_pattern_by_intent (moldql intent lowering)"
@@ -192,24 +192,26 @@ scenarios:
       query: "the serializer trait"
 
   - name: fill_generate_contract
-    description: "generate_contract for a serde function"
+    description: "generate_contract for a serde function (runs against real schema)"
     tool: generate_contract
     action: generate
     workspace: .
     scenario_class: analysis
     expected_outcome: expected_fail
     arguments:
-      symbol: Serialize
+      function_name: serialize
+      file_path: serde/src/lib.rs
 
   - name: fill_validate_contract
-    description: "validate_contract against a generated contract"
+    description: "validate_contract with a stub contract (real schema — honest expected_fail)"
     tool: validate_contract
     action: validate
     workspace: .
     scenario_class: analysis
     expected_outcome: expected_fail
     arguments:
-      symbol: Serialize
+      contract_id: "coverage-fill-probe"
+      generated_code: "fn serialize() {}"
 
   - name: fill_ask_about_code
     description: "ask_about_code (LLM — expected_fail without model backend)"

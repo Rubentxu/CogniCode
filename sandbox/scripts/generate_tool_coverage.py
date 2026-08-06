@@ -103,20 +103,6 @@ def generate_coverage_matrix(
     covered = runtime_tools & manifest_tools
     uncovered = runtime_tools - manifest_tools
     
-    # Tool families for organization
-    families = {
-        "workspace": ["explorer_open_workspace"],
-        "brain": ["brain_open", "brain_close", "brain_status", "brain_focus", "brain_attach", "brain_ask", "brain_add_space", "brain_remove_space", "brain_spaces"],
-        "search": ["explorer_spotter_search", "explorer_query_moldql"],
-        "inspection": ["explorer_inspect_object", "explorer_get_views", "explorer_get_view", "explorer_get_lenses", "explorer_apply_lens"],
-        "graph_traversal": ["graph_subgraph", "graph_cluster", "graph_explain"],
-        "impact": ["impact_radius", "impact_forward_radius", "impact_has_path", "impact_shortest_path", "impact_detect_cycles", "impact_component"],
-        "analytics": ["graph_pagerank", "graph_god_nodes", "graph_communities", "graph_community_god_nodes", "graph_surprising_connections", "graph_transitive_reduction", "graph_feedback_arc_set", "graph_all_simple_paths"],
-        "architecture": ["detect_architecture_drift"],
-        "multimodal": ["docs_ingest", "issues_ingest", "graph_search"],
-        "views": ["view_save", "view_load", "view_list", "view_delete"],
-    }
-    
     matrix = {
         "summary": {
             "total_tools": len(runtime_tools),

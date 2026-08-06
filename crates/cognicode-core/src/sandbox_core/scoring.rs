@@ -498,6 +498,44 @@ pub fn score_impacted_files(tool_response: &Value, ground_truth: &GroundTruth) -
     }
 }
 
+/// Count symbols in a tool response (handles {symbols:[...]}, {items:[...]}, arrays, node_count).
+fn count_symbols(inner: &Value) -> usize {
+    if let Some(arr) = inner.get("symbols").and_then(|v| v.as_array()) {
+        return arr.len();
+    }
+    if let Some(arr) = inner.get("items").and_then(|v| v.as_array()) {
+        return arr.len();
+    }
+    if let Some(arr) = inner.get("nodes").and_then(|v| v.as_array()) {
+        return arr.len();
+    }
+    if let Some(n) = inner.get("node_count").and_then(|v| v.as_u64()) {
+        return n as usize;
+    }
+    if let Some(n) = inner.get("total").and_then(|v| v.as_u64()) {
+        return n as usize;
+    }
+    if let Some(arr) = inner.as_array() {
+        return arr.len();
+    }
+    0
+}
+
+/// True if the response contains any result data (symbols/items/nodes/edges or non-empty arrays).
+fn has_any_results(inner: &Value) -> bool {
+    count_symbols(inner) > 0
+        || inner
+            .get("edges")
+            .and_then(|v| v.as_array())
+            .map(|a| !a.is_empty())
+            .unwrap_or(false)
+        || inner
+            .get("results")
+            .and_then(|v| v.as_array())
+            .map(|a| !a.is_empty())
+            .unwrap_or(false)
+}
+
 /// Score export_mermaid output against ground truth.
 /// Checks node_count, edge_count, and optionally that mermaid_code contains expected patterns.
 pub fn score_mermaid(tool_response: &Value, ground_truth: &GroundTruth) -> f64 {
@@ -528,45 +566,12 @@ pub fn score_mermaid(tool_response: &Value, ground_truth: &GroundTruth) -> f64 {
     }
 
     // Check has_result (generic non-empty matcher)
-    if let Some(require_result) = ground_truth.has_result {
-        if require_result {
-            checks += 1;
-            if !has_any_results(&inner) {
-                score *= 0.0;
-            }
+    if let Some(true) = ground_truth.has_result {
+        checks += 1;
+        if !has_any_results(&inner) {
+            score *= 0.0;
         }
     }
-
-
-/// Count symbols in a tool response (handles {symbols:[...]}, {items:[...]}, arrays, node_count).
-fn count_symbols(inner: &Value) -> usize {
-    if let Some(arr) = inner.get("symbols").and_then(|v| v.as_array()) {
-        return arr.len();
-    }
-    if let Some(arr) = inner.get("items").and_then(|v| v.as_array()) {
-        return arr.len();
-    }
-    if let Some(arr) = inner.get("nodes").and_then(|v| v.as_array()) {
-        return arr.len();
-    }
-    if let Some(n) = inner.get("node_count").and_then(|v| v.as_u64()) {
-        return n as usize;
-    }
-    if let Some(n) = inner.get("total").and_then(|v| v.as_u64()) {
-        return n as usize;
-    }
-    if let Some(arr) = inner.as_array() {
-        return arr.len();
-    }
-    0
-}
-
-/// True if the response contains any result data (symbols/items/nodes/edges or non-empty arrays).
-fn has_any_results(inner: &Value) -> bool {
-    count_symbols(inner) > 0
-        || inner.get("edges").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false)
-        || inner.get("results").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false)
-}
 
     // Check min_node_count if specified
     if let Some(min_nodes) = ground_truth.min_node_count {
@@ -2997,5 +3002,42 @@ mod tests {
         assert!(!result.completed);
         assert_eq!(result.latencies_ms.len(), 3);
         assert!(!result.timestamp.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod count_matcher_tests {
+    use crate::sandbox_core::scoring::{count_symbols, has_any_results};
+    use serde_json::json;
+
+    #[test]
+    fn count_symbols_counts_symbols_array() {
+        let v = json!({"symbols": [{"id": "a"}, {"id": "b"}]});
+        assert_eq!(count_symbols(&v), 2);
+    }
+
+    #[test]
+    fn count_symbols_counts_items_array() {
+        let v = json!({"items": [1, 2, 3]});
+        assert_eq!(count_symbols(&v), 3);
+    }
+
+    #[test]
+    fn count_symbols_falls_back_to_node_count() {
+        let v = json!({"node_count": 7});
+        assert_eq!(count_symbols(&v), 7);
+    }
+
+    #[test]
+    fn count_symbols_returns_zero_for_empty() {
+        let v = json!({"message": "no data"});
+        assert_eq!(count_symbols(&v), 0);
+    }
+
+    #[test]
+    fn has_any_results_detects_non_empty_edges() {
+        let v = json!({"edges": [{"from": "a", "to": "b"}]});
+        assert!(has_any_results(&v));
+        assert!(!has_any_results(&json!({"edges": []})));
     }
 }
