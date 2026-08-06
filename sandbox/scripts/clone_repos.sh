@@ -205,7 +205,7 @@ pin_repo \
 # Pinned at v3.24.1 — a popular TypeScript schema validation library
 # Tier B real repo — used for TS smoke expansion
 pin_repo \
-    "typescript/zod" \
+    "zod" \
     "https://github.com/colinhacks/zod.git" \
     "65adeeacef0274abbda5438470a3d2bfd376256d" \
     "commit"
@@ -287,4 +287,36 @@ pin_repo \
     "csharp/spectre-console" \
     "https://github.com/spectreconsole/spectre.console.git" \
     "0acc92fada6c42f13984e79c2b5f3d993bdfb099" \
+    "commit"
+
+# ─── Tier-1 corpus (e30-corpus-expansion) ────────────────────────────────────
+pin_repo \
+    "tokio" \
+    "https://github.com/tokio-rs/tokio.git" \
+    "dd344a550c2c6ddc500a2a8ad2eca8e097795252" \
+    "commit"
+
+pin_repo \
+    "clap" \
+    "https://github.com/clap-rs/clap.git" \
+    "4684d7abc545cef1d78708864cfe8c7668ed49c1" \
+    "commit"
+
+# ─── Tier-3 corpus (e30-corpus-expansion) — large repos, scale lane ─────────
+pin_repo \
+    "rust-analyzer" \
+    "https://github.com/rust-lang/rust-analyzer.git" \
+    "1cf317e1d602b67f5881016274c54df7938d834f" \
+    "commit"
+
+pin_repo \
+    "typescript" \
+    "https://github.com/microsoft/TypeScript.git" \
+    "b465fdbfe175304d9b977da137b2c178ae1091d3" \
+    "commit"
+
+pin_repo \
+    "react" \
+    "https://github.com/facebook/react.git" \
+    "1d4758e0f6aae560024b36ce07ed8a67b3f7d78f" \
     "commit"

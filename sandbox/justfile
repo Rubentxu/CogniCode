@@ -135,6 +135,12 @@ sandbox-ci-full: build-orchestrator
         {{manifests_dir}}/ts_repos.yaml \
         {{manifests_dir}}/rust_repos.yaml \
         {{manifests_dir}}/python_repos.yaml \
+        {{manifests_dir}}/tokio_repos.yaml \
+        {{manifests_dir}}/clap_repos.yaml \
+        {{manifests_dir}}/tier3_rust_repos.yaml \
+        {{manifests_dir}}/tier3_typescript_repos.yaml \
+        {{manifests_dir}}/tier3_react_repos.yaml \
+        {{manifests_dir}}/coverage_fill.yaml \
         --results-dir {{results_dir}}/full \
         --repos-dir {{repos_dir}} \
         --fixtures-dir {{fixtures_dir}} \
@@ -182,6 +188,12 @@ sandbox-ci-baseline-save: build-orchestrator
         {{manifests_dir}}/ts_repos.yaml \
         {{manifests_dir}}/rust_repos.yaml \
         {{manifests_dir}}/python_repos.yaml \
+        {{manifests_dir}}/tokio_repos.yaml \
+        {{manifests_dir}}/clap_repos.yaml \
+        {{manifests_dir}}/tier3_rust_repos.yaml \
+        {{manifests_dir}}/tier3_typescript_repos.yaml \
+        {{manifests_dir}}/tier3_react_repos.yaml \
+        {{manifests_dir}}/coverage_fill.yaml \
         --results-dir {{results_dir}}/baseline \
         --repos-dir {{repos_dir}} \
         --fixtures-dir {{fixtures_dir}} \

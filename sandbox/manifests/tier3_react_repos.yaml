@@ -1,0 +1,31 @@
+# Tier-C Scale Lane — react (e30-corpus-expansion)
+# Medium-large repo (72M shallow): scale lane with elevated limits.
+# Pinned at 1d4758e0 (main HEAD 2026-08-06, exact SHA)
+
+version: "1.0"
+language: javascript
+tier: C
+description: "Tier-C scale lane — facebook/react (exact SHA pin)"
+
+timeout_seconds: 600
+
+validation:
+  failure_is_regression: false
+  stages: []
+
+repos:
+  react:
+    repo_url: "https://github.com/facebook/react.git"
+    pinned_sha: "1d4758e0f6aae560024b36ce07ed8a67b3f7d78f"
+
+scenarios:
+  - name: tier3_react_ingest
+    description: "react ingests without timeout/OOM (count-only)"
+    tool: build_graph
+    action: build
+    repo: react
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 1
