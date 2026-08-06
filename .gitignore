@@ -78,7 +78,10 @@ nexus-wasm-complete-pack.xml
 sandbox/repos/
 sandbox/results/
 sandbox/results-*/
-sandbox/reports/
+sandbox/reports/*
+# evidence_map.yaml is a CURATED INPUT (not a regenerated report): the
+# spec→evidence mapping is the asset that makes G10 reproducible. Keep it tracked.
+!sandbox/reports/evidence_map.yaml
 
 # Temp / scratch files
 .tmp-*/
