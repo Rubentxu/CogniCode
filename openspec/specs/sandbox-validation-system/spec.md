@@ -8,7 +8,7 @@ The automated validation infrastructure that exercises CogniCode MCP tools again
 
 ### Requirement: Per-Language Hardened Quadlets
 
-The validation system MUST run every scenario in a per-language container defined by a systemd quadlet unit, hardened with: pinned image digest, `Network=none`, `MemoryMax=2g`, `PidsLimit=128`, `ReadOnly=yes` root, writable mounts for `/workspace` and `/repos`, `NoNewPrivileges=yes`, `Tmpfs=/tmp`, `AutoUpdate=no`.
+The validation system MUST run every scenario in a per-language container defined by a systemd quadlet unit, hardened with: pinned image digest, `Network=none`, `MemoryMax=4g` (tier-3 scale lane; raised from 2g in e30-metric-baseline), `PidsLimit=128`, `ReadOnly=yes` root, writable mounts for `/workspace` and `/repos`, `NoNewPrivileges=yes`, `Tmpfs=/tmp`, `AutoUpdate=no`.
 
 #### Scenario: Six language containers exist in source
 
