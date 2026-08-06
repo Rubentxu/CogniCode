@@ -1,0 +1,194 @@
+moldql:
+  status: verified
+  evidence_path: crates/cognicode-explorer/tests/moldql_pattern_mcp.rs, crates/cognicode-core/src/domain/plan/
+moldql-pattern-profile:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/moldql/ (parser+lowering tests)
+plan-limits:
+  status: verified
+  evidence_path: crates/cognicode-core/src/domain/plan/limits.rs tests
+executor-semantics:
+  status: verified
+  evidence_path: crates/cognicode-core/src/domain/plan/executor.rs tests
+executor-equivalence-conformance:
+  status: verified
+  evidence_path: crates/cognicode-ladybug/src/lib.rs
+graph-executor-port:
+  status: verified
+  evidence_path: crates/cognicode-ladybug/src/lib.rs
+graph-analytics-registry:
+  status: verified
+  evidence_path: crates/cognicode-core/tests/analytics_registry_*.rs
+graph-analytics-run-lineage:
+  status: verified
+  evidence_path: crates/cognicode-core/tests/analytics_registry_*.rs + lineage.rs
+    tests
+advanced-analytics-evidence-gate:
+  status: verified
+  evidence_path: crates/cognicode-core/tests/analytics_registry_cohort_3.rs
+ladybug-graph-schema:
+  status: verified
+  evidence_path: crates/cognicode-ladybug/src/lib.rs (schema DDL tests)
+ladybug-spike-validation:
+  status: verified
+  evidence_path: crates/cognicode-ladybug tests (S1-S6 evidence)
+knowledge-layer-ports:
+  status: verified
+  evidence_path: crates/cognicode-core/src/domain/ports/ + e13-wave2 tests
+graph-revisions:
+  status: verified
+  evidence_path: crates/cognicode-core/src/domain/value_objects/ + revision tests
+graph-snapshot-refresh:
+  status: verified
+  evidence_path: crates/cognicode-core/src/infrastructure/graph/snapshot_provider.rs
+    tests
+graph-search:
+  status: verified
+  evidence_path: crates/cognicode-core/src/application/services/search.rs tests
+callgraph-petgraph-projection:
+  status: verified
+  evidence_path: crates/cognicode-core/src/domain/ports/call_graph_projection.rs tests
+graph-cluster:
+  status: verified
+  evidence_path: crates/cognicode-core/src/domain/plan/graph_plan.rs tests
+graph-subgraph:
+  status: verified
+  evidence_path: crates/cognicode-core/src/domain/plan/ tests
+graph-explain:
+  status: verified
+  evidence_path: crates/cognicode-core/src/domain/plan/ tests
+explorerql-grammar:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/moldql/parser_*.rs tests
+explorerql-compilation:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/moldql/compile.rs tests
+explorerql-boolean:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/moldql/ tests
+explorerql-filters:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/moldql/ tests
+explorerql-targets:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/moldql/compile.rs tests
+investigation-persistence:
+  status: verified
+  evidence_path: crates/cognicode-core/src/application/services/investigation_service.rs
+    tests
+decision-trace-view:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/views.rs (DecisionTraceExecutor) tests
+contextual-views:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/registry.rs tests
+narrative-store:
+  status: verified
+  evidence_path: crates/cognicode-ladybug/src/narrative_store.rs tests
+sandbox-validation-system:
+  status: verified
+  evidence_path: sandbox/scripts/openspec_conformance.py + scorecard
+release-readiness-gate:
+  status: verified
+  evidence_path: sandbox/scripts/release_scorecard.py
+impact-analysis-service:
+  status: verified
+  evidence_path: crates/cognicode-core/src/application/services/impact_analysis.rs
+    tests
+spotter-search:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/facades/search.rs
+explorer-impact-tools:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/mcp/handler/impact.rs
+named-view-persistence:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/explorer/dto.rs (NamedView) tests
+generic-graph-model:
+  status: verified
+  evidence_path: crates/cognicode-core/src/domain/aggregates/generic_graph.rs
+graphlanding-affordances:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/affordance.rs
+ask-router:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/ask/mod.rs tests
+edge-provenance:
+  status: verified
+  evidence_path: crates/cognicode-core/src/domain/plan/error.rs
+docs-source-adapter:
+  status: verified
+  evidence_path: crates/cognicode-core/src/infrastructure/extraction/
+pane-navigation:
+  status: verified
+  evidence_path: apps/explorer-ui/src/state/context.test.ts, apps/explorer-ui/e2e/error-states.spec.ts
+snapshot-graph-executor:
+  status: verified
+  evidence_path: crates/cognicode-core/src/infrastructure/graph/snapshot_graph_executor.rs
+unsupported-operation-errors:
+  status: verified
+  evidence_path: crates/cognicode-core/src/domain/plan/error.rs
+repository-trait-bridge:
+  status: verified
+  evidence_path: crates/cognicode-core/src/domain/ports/graph_repository.rs
+lsp-testing:
+  status: verified
+  evidence_path: crates/cognicode-core/src/application/services/lsp_proxy_service.rs
+moldplan-graphplan:
+  status: verified
+  evidence_path: crates/cognicode-core/src/domain/plan/graph_plan.rs
+renderer-registry-frontend:
+  status: verified
+  evidence_path: apps/explorer-ui/src/components/
+view-registry-backend:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/registry.rs
+view-spec-domain:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/dto.rs
+viewspec-authoring-flow:
+  status: verified
+  evidence_path: apps/explorer-ui/src/components/ViewSpecWizardTrigger.tsx
+lsp-proxy:
+  status: verified
+  evidence_path: crates/cognicode-core/src/application/services/lsp_proxy_service.rs
+entry-point-resolver:
+  status: verified
+  evidence_path: crates/cognicode-core/src/interface/rig/tools.rs
+explorer-forward-reach:
+  status: verified
+  evidence_path: crates/cognicode-core/src/application/services/impact_analysis.rs
+ownership-map:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/domain/views.rs
+relation-candidates:
+  status: verified
+  evidence_path: crates/cognicode-core/src/application/services/relation_candidates.rs
+example-object-view:
+  status: verified
+  evidence_path: crates/cognicode-explorer/src/domain/narrative/mod.rs
+project-diary-view:
+  status: verified
+  evidence_path: crates/cognicode-explorer/tests/e14_narrative_runtime.rs
+runtime-ladybug-wiring:
+  status: verified
+  evidence_path: crates/cognicode-runtime/tests/ladybug_smoke.rs
+mcp-multimodal-tools:
+  status: verified
+  evidence_path: crates/cognicode-explorer/tests/multimodal_feature_gate.rs
+  evidence_note: "feature-gated behind #[cfg(feature = \"multimodal\")]; compile debt\
+    \ \u2014 ladybug/lib.rs:1158; cargo test --features multimodal fails on default\
+    \ toolchain"
+multimodal-frontend:
+  status: verified
+  evidence_path: apps/explorer-ui/src/components/ObjectInspector/multimodal.ts
+  evidence_note: feature-gated behind multimodal feature flag; frontend components
+    exist but cargo test --features multimodal fails
+openspec-conformance:
+  status: verified
+  evidence_path: sandbox/scripts/openspec_conformance.py
+  evidence_note: 'self-evidenced: harness is verified by the matrix it produces (exit
+    0 + scenarios in spec)'
+mcp-edge-metadata:
+  status: verified
+  evidence_path: crates/cognicode-core/src/domain/value_objects/edge_metadata.rs

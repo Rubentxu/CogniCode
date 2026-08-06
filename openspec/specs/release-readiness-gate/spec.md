@@ -166,9 +166,46 @@ The release scorecard MUST be computed by an automated engine (`sandbox/scripts/
 - AND missing inputs MUST produce AMBER with "no data" evidence
 - AND gate REDs MUST NOT block the engine (exit 0) — they are tracked defects
 
+### Requirement: G10 Conformance Gate Formula (REQ-REL-01)
+
+G10 SHALL compute `pct_verified = verified / (total − legacy_obsolete) * 100`, rounded to 1 decimal. `pct_triaged` SHALL remain `(verified + legacy_obsolete) / total * 100`. G10 status is GREEN iff `pct_verified ≥ 90.0 AND pct_triaged = 100.0`. AMBER if only one condition holds. RED otherwise. The formula SHALL be documented in ADR-031 §4.
+
+#### Scenario: All requirements triaged → GREEN
+
+- GIVEN conformance matrix with 381 verified, 50 legacy_obsolete, 0 no_evidence (total=431)
+- WHEN the scorecard evaluates G10
+- THEN G10 status is GREEN
+- AND `pct_verified` is 100.0
+- AND `pct_triaged` is 100.0
+
+#### Scenario: Legacy_obsolete excluded, verified below threshold → RED
+
+- GIVEN 340 verified, 50 legacy_obsolete, 41 no_evidence (total=431)
+- WHEN the scorecard evaluates G10
+- THEN G10 status is RED
+- AND `pct_verified` is 89.2 (< 90.0)
+
+#### Scenario: Verified high but triaged incomplete → AMBER
+
+- GIVEN 381 verified, 50 legacy_obsolete, 1 no_evidence (total=432, new spec added)
+- WHEN the scorecard evaluates G10
+- THEN G10 status is AMBER
+- AND `pct_verified` is 99.7 but `pct_triaged` is 99.8 (< 100.0)
+
+### Requirement: G10 Audit Trail (REQ-REL-02)
+
+The scorecard output for G10 MUST include raw counts (`verified`, `legacy_obsolete`, `no_evidence`, `total`) alongside computed percentages so a human auditor can reproduce the math from `scorecard.md` alone. The evidence text SHALL cite the conformance matrix path.
+
+#### Scenario: Scorecard shows auditable raw counts
+
+- GIVEN a scorecard run with verified=381, legacy_obsolete=50, no_evidence=0, total=431
+- WHEN `scorecard.md` is inspected for G10
+- THEN the G10 section displays `total=431 verified=381 legacy_obsolete=50 no_evidence=0`
+- AND `pct_verified=100.0%` and `pct_triaged=100.0%` are shown alongside the raw counts
+
 ### Requirement: Non-Sandbox Gates (G1, G2, G10, G11, G12)
 
-The scorecard MUST also evaluate gates sourced outside the sandbox: G1 knowledge layer completion (git evidence: 3 e13-wave2 PRs merged), G2 MCP tool coverage (coverage matrix: N/N tools with ≥1 scenario, where N is the runtime tools/list denominator — currently 68; probe via sandbox/scripts/list_mcp_tools.sh), G10 openspec conformance (401/401 requirements verified), G11 documentation currency (MCP-TOOLS verified, ADRs reviewed, ROADMAP reconciled), G12 release hygiene (changelog present, semver clean, no stale branches).
+The scorecard MUST also evaluate gates sourced outside the sandbox: G1 knowledge layer completion (git evidence: 3 e13-wave2 PRs merged), G2 MCP tool coverage (coverage matrix: N/N tools with ≥1 scenario, where N is the runtime tools/list denominator — currently 68; probe via sandbox/scripts/list_mcp_tools.sh), G10 openspec conformance (≥90% verified of triaged active requirements + 100% triaged across all requirements, computed as `verified / (total − legacy_obsolete) * 100` per ADR-031 §4 amendment), G11 documentation currency (MCP-TOOLS verified, ADRs reviewed, ROADMAP reconciled), G12 release hygiene (changelog present, semver clean, no stale branches).
 
 #### Scenario: Non-sandbox gates reported
 

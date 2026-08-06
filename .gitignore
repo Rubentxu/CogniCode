@@ -78,7 +78,10 @@ nexus-wasm-complete-pack.xml
 sandbox/repos/
 sandbox/results/
 sandbox/results-*/
-sandbox/reports/
+sandbox/reports/*
+# evidence_map.yaml is a CURATED INPUT (not a regenerated report): the
+# spec→evidence mapping is the asset that makes G10 reproducible. Keep it tracked.
+!sandbox/reports/evidence_map.yaml
 
 # Temp / scratch files
 .tmp-*/
@@ -89,11 +92,12 @@ adder.go
 # `.env.example` is the committed template; `.env` is per-developer.
 .env
 
-# SDD / OpenSpec artifacts (agent planning data)
-.tmp-cognicode-verify-extra/
-openspec/
-plans/
-sdd/
+ # SDD / OpenSpec artifacts (agent planning data)
+ .tmp-cognicode-verify-extra/
+ openspec/*
+ !openspec/specs/
+ plans/
+ sdd/
 
 # SDDK cycle artifacts (workflow state, agent-generated planning data).
 # Per user decision (2026-06-24): these are LOCAL ONLY and must never
@@ -115,7 +119,7 @@ cognicode-*.tar.gz
 results/
 rust-clippy/
 .atl/
-specs/
+/specs/
 autoresearch/
 
 # Whole `docs/` directory is LOCAL ONLY per user decision (2026-06-24).

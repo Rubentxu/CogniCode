@@ -450,8 +450,10 @@ def gate_g10(matrix_path: str = "sandbox/reports/conformance_matrix.yaml") -> Ga
             evidence_path=str(mp),
         )
     summary = data.get("summary", {})
-    pct_v = summary.get("pct_verified", 0.0)
-    pct_t = summary.get("pct_triaged", 0.0)
+    legacy_obsolete = summary.get("legacy_obsolete", 0)
+    active_total = summary.get("total", 0) - legacy_obsolete
+    pct_v = (summary.get("verified", 0) / active_total * 100) if active_total else 0.0
+    pct_t = (summary.get("verified", 0) + legacy_obsolete) / summary.get("total", 0) * 100 if summary.get("total", 0) else 0.0
     if pct_v >= 90.0 and pct_t >= 100.0:
         status = "GREEN"
     elif pct_v >= 90.0 or pct_t >= 100.0:
@@ -463,7 +465,11 @@ def gate_g10(matrix_path: str = "sandbox/reports/conformance_matrix.yaml") -> Ga
         status=status,
         measured=f"verified {pct_v}% / triaged {pct_t}%",
         budget=">=90% verified, 100% triaged",
-        evidence_text=f"total={summary.get('total')} verified={summary.get('verified')} legacy={summary.get('legacy_obsolete')} no_evidence={summary.get('no_evidence')}",
+        evidence_text=(
+            f"total={summary.get('total')} verified={summary.get('verified')} "
+            f"legacy_obsolete={legacy_obsolete} "
+            f"pct_verified={pct_v:.1f}% (denom=total−legacy_obsolete={active_total}, per ADR-031 §4)"
+        ),
         evidence_path=str(mp),
     )
 
