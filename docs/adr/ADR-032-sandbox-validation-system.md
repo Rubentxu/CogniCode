@@ -1,6 +1,6 @@
 # ADR-032 — Sandbox Validation System: Podman Quadlets + Real Repos + Scoring
 
-**Estado**: PROPUESTO
+**Estado**: ACEPTADO
 **Fecha**: 2026-08-05
 **Decisores**: CogniCode Architecture Team
 **Contexto**: ADR-031 (Release 1.0.0 gate); infraestructura sandbox existente en `sandbox/` (orquestador compila, scoring 5D implementado, 22 repos clonados, 40+ manifests) pero **contenedores rotos** (digest pins falsos en `sandbox/containers/*.container`) y sin workflow CI

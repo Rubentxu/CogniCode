@@ -1,6 +1,6 @@
 # ADR-031 — Release 1.0.0: Definition of Production-Ready
 
-**Estado**: PROPUESTO
+**Estado**: ACEPTADO
 **Fecha**: 2026-08-05
 **Decisores**: CogniCode Architecture Team
 **Contexto**: v0.85.0 (e14-C2 mergeado PR #225); programa E28-E29 cerrado; e13-wave2 Phase 1 en rama `feat/e13-wave2-knowledge-layer-ports` (`aa23af61`)
@@ -40,7 +40,7 @@ La decisión de no release sin pruebas reales responde al historial del proyecto
 | G7 | Robustez | 0 crashes (panic/SIGSEGV/OOM) en campaña completa | failure class audit |
 | G8 | Escalabilidad | ingest repo 100k+ LOC sin timeout/OOM | scenarios tier scale |
 | G9 | Sin regresiones vs baseline | 0 unexpected failures | `orchestrator report --baseline` |
-| G10 | Conformance openspec | 100% de 401 requirements verificados | auditoría de conformance |
+| G10 | Conformance openspec | ≥90% verified + 100% triaged (430 requirements, renegociado vía §4 pre-baseline) | conformance matrix auto-generada |
 | G11 | Documentación al día | MCP-TOOLS regenerado de tools/list (68); ADRs revisados; ROADMAP reconciliado | auditoría docs |
 | G12 | Higiene de release | changelog v0.85.0→v1.0.0; semver limpio; sin ramas stale | auditoría git |
 

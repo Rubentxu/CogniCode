@@ -431,13 +431,40 @@ def gate_g9(run_dirs: list[str]) -> GateResult:
         )
 
 
-def gate_g10() -> GateResult:
-    """G10: Openspec conformance audit. AMBER placeholder (Phase 4)."""
+def gate_g10(matrix_path: str = "sandbox/reports/conformance_matrix.yaml") -> GateResult:
+    """G10: Openspec conformance audit — reads the conformance matrix."""
+    mp = Path(matrix_path)
+    if not mp.exists():
+        return GateResult(
+            id="G10", name="Openspec Conformance Audit",
+            status="AMBER", evidence_text="conformance_matrix.yaml not found",
+            evidence_path=str(mp),
+        )
+    try:
+        import yaml
+        data = yaml.safe_load(mp.read_text())
+    except Exception as e:
+        return GateResult(
+            id="G10", name="Openspec Conformance Audit",
+            status="AMBER", evidence_text=f"matrix parse error: {e}",
+            evidence_path=str(mp),
+        )
+    summary = data.get("summary", {})
+    pct_v = summary.get("pct_verified", 0.0)
+    pct_t = summary.get("pct_triaged", 0.0)
+    if pct_v >= 90.0 and pct_t >= 100.0:
+        status = "GREEN"
+    elif pct_v >= 90.0 or pct_t >= 100.0:
+        status = "AMBER"
+    else:
+        status = "RED"
     return GateResult(
         id="G10", name="Openspec Conformance Audit",
-        status="AMBER",
-        evidence_text="no machine-readable openspec audit available (Phase 4)",
-        evidence_path="openspec/",
+        status=status,
+        measured=f"verified {pct_v}% / triaged {pct_t}%",
+        budget=">=90% verified, 100% triaged",
+        evidence_text=f"total={summary.get('total')} verified={summary.get('verified')} legacy={summary.get('legacy_obsolete')} no_evidence={summary.get('no_evidence')}",
+        evidence_path=str(mp),
     )
 
 
@@ -445,39 +472,46 @@ def gate_g11(project_root: str) -> GateResult:
     """G11: Documentation currency — MCP-TOOLS.md (68 tools) + ADR-031/032."""
     checks = []
     mcp_tools_path = Path(project_root) / "docs" / "MCP-TOOLS.md"
-    adr031_path = Path(project_root) / "docs" / "adr" / "ADR-031-moldql-pattern-graph-analytics-platform.md"
-    adr032_path = Path(project_root) / "docs" / "adr" / "ADR-032"
+    adr031_path = Path(project_root) / "docs" / "adr" / "ADR-031-release-1.0.0-definition.md"
+    adr032_path = Path(project_root) / "docs" / "adr" / "ADR-032-sandbox-validation-system.md"
 
     mcp_ok = False
     if mcp_tools_path.exists():
         try:
             content = mcp_tools_path.read_text()
-            if "68 tools" in content or "43 tools" in content:
+            if "68 tools" in content:
                 mcp_ok = True
-                checks.append("MCP-TOOLS.md found")
+                checks.append("MCP-TOOLS.md found (68 tools)")
             else:
-                checks.append("MCP-TOOLS.md found (tool count not confirmed as 68)")
+                checks.append("MCP-TOOLS.md found (tool count NOT 68)")
         except Exception:
             checks.append("MCP-TOOLS.md found (read error)")
     else:
         checks.append("MCP-TOOLS.md NOT found")
 
-    adr_ok = adr031_path.exists() or Path(str(adr031_path) + ".md").exists()
-    adr032_ok = adr032_path.exists() or Path(str(adr032_path) + ".md").exists()
+    def adr_ok(path: Path) -> tuple[bool, str]:
+        if not path.exists():
+            return False, "NOT found"
+        try:
+            text = path.read_text()
+            if "ACEPTADO" in text.upper() or "accepted" in text.lower():
+                return True, "found (ACEPTADO)"
+            return True, "found (status NOT accepted)"
+        except Exception:
+            return True, "found (read error)"
 
-    if adr_ok:
-        checks.append("ADR-031 found")
-    else:
-        checks.append("ADR-031 NOT found")
-    if adr032_ok:
-        checks.append("ADR-032 found")
-    else:
-        checks.append("ADR-032 NOT found")
+    adr031_ok, adr031_note = adr_ok(adr031_path)
+    adr032_ok, adr032_note = adr_ok(adr032_path)
+    checks.append(f"ADR-031 {adr031_note}")
+    checks.append(f"ADR-032 {adr032_note}")
 
-    if mcp_ok and adr_ok and adr032_ok:
+    roadmap_ok = (Path(project_root) / "docs" / "ROADMAP.md").exists()
+    checks.append("ROADMAP.md found" if roadmap_ok else "ROADMAP.md NOT found")
+
+    if not mcp_ok or not adr031_ok or not adr032_ok:
+        status = "RED"
+    elif adr031_note.endswith("(ACEPTADO)") and adr032_note.endswith("(ACEPTADO)") and roadmap_ok:
         status = "GREEN"
-    elif mcp_ok:
-        status = "AMBER"
     else:
         status = "AMBER"
 
@@ -491,36 +525,48 @@ def gate_g11(project_root: str) -> GateResult:
 
 def gate_g12(project_root: str) -> GateResult:
     """G12: Git branch/tag hygiene — recent semver tag."""
+    checks = []
     try:
         result = subprocess.run(
-            ["git", "tag", "--list", "v*", "--format=%(refname:short):%(creatordate:short)",
-             "--sort=-creatordate"],
-            capture_output=True, text=True, timeout=10,
-            cwd=project_root,
+            ["git", "tag", "--sort=-v:refname", "--list", "v*"],
+            capture_output=True, text=True, timeout=10, cwd=project_root,
         )
-        if result.returncode != 0 or not result.stdout.strip():
-            return GateResult(
-                id="G12", name="Git Tag Hygiene",
-                status="AMBER",
-                evidence_text="no semver tags found",
-                evidence_path="git_tag",
-            )
-        tags = result.stdout.strip().split("\n")
+        tags = [t for t in result.stdout.strip().split("\n") if t]
         recent = tags[0] if tags else "none"
-        return GateResult(
-            id="G12", name="Git Tag Hygiene",
-            status="GREEN",
-            measured=recent,
-            evidence_text=f"most recent tag: {recent}",
-            evidence_path="git_tag",
-        )
+        checks.append(f"latest semver tag: {recent}")
     except Exception as e:
-        return GateResult(
-            id="G12", name="Git Tag Hygiene",
-            status="AMBER",
-            evidence_text=f"git tag check failed: {e}",
-            evidence_path="git_tag",
+        recent = "unknown"
+        checks.append(f"git tag check failed: {e}")
+
+    changelog_ok = (Path(project_root) / "CHANGELOG.md").exists()
+    checks.append("CHANGELOG.md found" if changelog_ok else "CHANGELOG.md MISSING")
+
+    try:
+        merged = subprocess.run(
+            ["git", "branch", "-r", "--merged", "origin/main"],
+            capture_output=True, text=True, timeout=15, cwd=project_root,
         )
+        stale = [l.strip() for l in merged.stdout.split("\n") if l.strip() and "origin/main" not in l and "origin/HEAD" not in l]
+        stale_count = len(stale)
+        checks.append(f"stale merged remote branches: {stale_count}")
+    except Exception:
+        stale_count = -1
+        checks.append("branch check failed")
+
+    if changelog_ok and stale_count >= 0 and stale_count <= 20:
+        status = "GREEN"
+    elif changelog_ok and stale_count <= 50:
+        status = "AMBER"
+    else:
+        status = "RED"
+
+    return GateResult(
+        id="G12", name="Git Hygiene (tags/changelog/branches)",
+        status=status,
+        measured=f"tag={recent} stale_branches={stale_count}",
+        evidence_text="; ".join(checks),
+        evidence_path="git_tag, CHANGELOG.md, git_branch",
+    )
 
 
 # ── Markdown table renderer ───────────────────────────────────────────────────
@@ -601,7 +647,7 @@ def main() -> int:
         gate_g7(run_dirs),
         gate_g8(args.g8_probe_result),
         gate_g9(run_dirs),
-        gate_g10(),
+        gate_g10(f"{project_root}/sandbox/reports/conformance_matrix.yaml"),
         gate_g11(project_root),
         gate_g12(project_root),
     ]

@@ -125,7 +125,7 @@ sandbox-ci-probe: build-orchestrator
 # Full matrix: all languages (Rust, Python, JS, TS) + all tiers + real repos
 # Produces JSONL diff vs baseline, artifact uploads
 # --repeat N: run N times into full-run-{1..N}/ and produce stability.json at results/
-sandbox-ci-full repeat=1: build-orchestrator
+sandbox-ci-full repeat="1": build-orchestrator
     @# ── Multi-repeat path (repeat > 1) ──
     @if [ "{{repeat}}" != "1" ]; then \
         echo "Running {{repeat}} full campaign iterations..."; \
@@ -171,7 +171,7 @@ sandbox-ci-full repeat=1: build-orchestrator
                 echo "Run $i regressions:"; echo "$$regressions"; \
             fi; \
         done; \
-        echo "Multi-run complete: {{results_dir}}/full-run-{{1..{{repeat}}}}/ + {{results_dir}}/stability.json"; \
+        echo "Multi-run complete: $(ls -d {{results_dir}}/full-run-* 2>/dev/null | tr '\n' ' ') + stability.json"; \
         exit 0; \
     fi
     @# ── Single-repeat path (repeat = 1) ──
@@ -296,3 +296,10 @@ release-scorecard:
         --coverage-matrix {{reports_dir}}/coverage_matrix.yaml \
         --g8-probe-result {{results_dir}}/g8-probe \
         --output {{reports_dir}}/scorecard
+
+# ─── CONFORMANCE (G10) ────────────────────────────────────────────────────────
+openspec-conformance: build-orchestrator
+    # Generate the openspec conformance matrix (requirements → status)
+    python3 {{justfile_directory()}}/scripts/openspec_conformance.py \
+        --specs-dir {{project_root}}/openspec/specs \
+        --output-prefix {{reports_dir}}/conformance_matrix
