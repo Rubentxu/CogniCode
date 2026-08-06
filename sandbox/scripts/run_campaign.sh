@@ -245,7 +245,7 @@ _run_campaign() {
             DATABASE_URL="${DATABASE_URL:-postgres://cognicode:cognicode@localhost:5432/cognicode}" \
             RUST_LOG="${RUST_LOG:-error}" \
             nice -n 19 \
-            "$ROOT/target/debug/sandbox-orchestrator" run \
+            "$ROOT/target/release/sandbox-orchestrator" run \
                 --results-dir "$WORKER_RUN_DIR" \
                 "${WORKER_MANIFESTS[@]}" \
                 2>&1 | sed "s/^/[worker $w] /"

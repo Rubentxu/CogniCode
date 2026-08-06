@@ -29,8 +29,8 @@ NoNewPrivileges=yes
 [Service]
 CPUWeight=50
 # Resource limits (systemd-native keys — [Container] MemoryMax unsupported by quadlet)
-MemoryMax=1G
-MemorySwapMax=1G
+MemoryMax=4G
+MemorySwapMax=4G
 Restart=on-failure
 # AutoUpdate disabled — must pin digest before enabling
 AutoUpdate=no

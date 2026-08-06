@@ -156,6 +156,16 @@ The release candidate MUST show all 12 gates GREEN in 3 consecutive nightly scor
 - THEN the streak is 1 (only N+2 counts)
 - AND the maintainer MUST NOT tag v1.0.0
 
+### Requirement: Automated Scorecard Engine
+
+The release scorecard MUST be computed by an automated engine (`sandbox/scripts/release_scorecard.py`) consuming campaign summaries, baseline, stability.json, and the G2 coverage matrix, emitting scorecard.json + scorecard.md with all 12 gates (G1-G12), each with status GREEN/AMBER/RED, measured value, budget, and evidence path. Gates with missing data MUST degrade to AMBER, never crash.
+
+- GIVEN campaign summaries, baseline, stability, and coverage data exist
+- WHEN the scorecard engine runs
+- THEN it MUST emit 12 gate verdicts with measured/budget/evidence
+- AND missing inputs MUST produce AMBER with "no data" evidence
+- AND gate REDs MUST NOT block the engine (exit 0) — they are tracked defects
+
 ### Requirement: Non-Sandbox Gates (G1, G2, G10, G11, G12)
 
 The scorecard MUST also evaluate gates sourced outside the sandbox: G1 knowledge layer completion (git evidence: 3 e13-wave2 PRs merged), G2 MCP tool coverage (coverage matrix: N/N tools with ≥1 scenario, where N is the runtime tools/list denominator — currently 68; probe via sandbox/scripts/list_mcp_tools.sh), G10 openspec conformance (401/401 requirements verified), G11 documentation currency (MCP-TOOLS verified, ADRs reviewed, ROADMAP reconciled), G12 release hygiene (changelog present, semver clean, no stale branches).
