@@ -219,6 +219,6 @@ sandbox-ci: sandbox-ci-smoke sandbox-report
 
 # Destroy containers and ephemeral data
 sandbox-clean:
-    -systemctl --user stop cognicode-rust cognicode-python cognicode-java cognicode-js cognicode-ts 2>/dev/null || true
-    -podman rm -f cognicode-rust cognicode-python cognicode-java cognicode-js cognicode-ts 2>/dev/null || true
+    -systemctl --user stop cognicode-rust cognicode-python cognicode-java cognicode-go cognicode-js cognicode-ts 2>/dev/null || true
+    -podman rm -f cognicode-rust cognicode-python cognicode-java cognicode-go cognicode-js cognicode-ts 2>/dev/null || true
     rm -rf {{repos_dir}} {{results_dir}} {{reports_dir}}
