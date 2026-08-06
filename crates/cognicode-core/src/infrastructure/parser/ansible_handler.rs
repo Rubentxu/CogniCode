@@ -97,7 +97,7 @@ pub fn interpret_ansible(
         if label.contains("import_playbook:") || label.contains("include_tasks:") {
             let import_target = label
                 .split(':')
-                .next_back()
+                .last()
                 .unwrap_or("")
                 .trim()
                 .trim_matches('"');

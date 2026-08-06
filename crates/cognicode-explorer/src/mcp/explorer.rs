@@ -10,17 +10,13 @@
 //! re-exported through [`super`](crate::mcp) so handler submodules can import
 //! them without a cyclical path.
 
-use async_trait::async_trait;
-use rmcp::model::{
-    CallToolRequestParams, CallToolResult, Content, ErrorData, Implementation, ListToolsResult,
-    PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerInfo, Tool,
-};
-use crate::domain::snapshot::SnapshotService;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use rmcp::handler::server::ServerHandler;
-    CallToolRequestParams, CallToolResult, ErrorData, Implementation, ListToolsResult,
+use rmcp::model::{
+    CallToolRequestParams, CallToolResult, Content, ErrorData, Implementation, ListToolsResult,
     PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerInfo, Tool,
 };
 use rmcp::service::{RequestContext, RoleServer};
@@ -33,6 +29,7 @@ use cognicode_core::domain::traits::GraphQueryPort;
 pub use super::context::McpContext;
 pub use super::error::ToolError;
 pub use super::handler::{ToolHandler, ToolHandlerRegistry};
+use crate::domain::snapshot::SnapshotService;
 use crate::facades::LensService;
 use crate::facades::graph::GraphServiceImpl;
 use crate::facades::moldql::MoldQLServiceImpl;
@@ -273,7 +270,6 @@ pub const TOOL_TRACE_ROUTE: &str = "trace_route";
 
 /// Metadata about the source of a result (e.g. `"ask-router"`, `"brain-session"`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
 pub struct ProvenanceMetadata {
     /// Classification / confidence score. `None` when unavailable.
     pub confidence: Option<f64>,
@@ -291,6 +287,14 @@ impl ProvenanceMetadata {
     }
 }
 
+impl Default for ProvenanceMetadata {
+    fn default() -> Self {
+        Self {
+            confidence: None,
+            source: None,
+        }
+    }
+}
 
 /// A suggested follow-up question or action surfaced by a tool result.
 #[derive(Debug, Clone, Serialize, Deserialize)]

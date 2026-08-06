@@ -39,7 +39,7 @@ This document lists the runtime requirements for validating repos in the CogniCo
 
 - Go 1.22.2 ✅ (≥1.21 required) - AVAILABLE
 - Java 17 ✅ (≥17 required) - AVAILABLE
-- Maven ❌ (≥3.8 required) - **MISSING** - needs installation
+- Maven ✅ (≥3.8 required) - **DISPONIBLE** (mvnw wrapper — `./mvnw` in each repo)
 - Node.js v25.2.1 ✅ (≥18 required) - AVAILABLE
 - npm 11.6.2 ✅ (≥9 required) - AVAILABLE
 

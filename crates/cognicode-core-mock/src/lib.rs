@@ -4,14 +4,6 @@
 //! `cognicode-core`, useful for testing application code that depends
 //! on these traits without requiring real implementations.
 
-use cognicode_core::domain::traits::code_intelligence::{
-    DocumentSymbol, DocumentSymbolKind, HoverInfo, Reference, ReferenceKind, TypeHierarchy,
-    TypeHierarchyNode,
-};
-use cognicode_core::domain::traits::search_provider::{
-    QueryValidation, Replacement, SearchError, SearchMatch, SearchProvider, SearchQuery,
-    SearchScope, SimilarMatch,
-};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -31,7 +23,9 @@ use cognicode_core::domain::value_objects::{
 };
 
 // Import from code_intelligence sub-module directly
+use cognicode_core::domain::traits::code_intelligence::{
     DocumentSymbol, DocumentSymbolKind, HoverInfo, Reference, ReferenceKind, TypeHierarchy,
+    TypeHierarchyNode,
 };
 
 // Import from traits modules directly
@@ -49,7 +43,9 @@ use cognicode_core::domain::traits::refactor_strategy::{
     PreparedEdits, RefactorError, RefactorResult, RefactorStrategy, RefactorValidation,
 };
 use cognicode_core::domain::traits::repository::{CallGraphStore, CallGraphStoreError};
-    QueryValidation, Replacement, SearchError, SearchMatch, SearchProvider, SearchQuery, SimilarMatch,
+use cognicode_core::domain::traits::search_provider::{
+    QueryValidation, Replacement, SearchError, SearchMatch, SearchProvider, SearchQuery,
+    SearchScope, SimilarMatch,
 };
 use cognicode_core::domain::value_objects::EdgeMetadata;
 
@@ -227,7 +223,7 @@ impl MockDependencyRepository {
     ) -> Self {
         self.dependencies
             .entry(source)
-            .or_default()
+            .or_insert_with(HashSet::new)
             .insert((target, dep_type));
         self
     }
@@ -242,7 +238,7 @@ impl DependencyRepository for MockDependencyRepository {
     ) -> Result<(), DependencyError> {
         self.dependencies
             .entry(source_id.clone())
-            .or_default()
+            .or_insert_with(HashSet::new)
             .insert((target_id.clone(), dependency_type));
         Ok(())
     }
@@ -335,7 +331,7 @@ impl MockFileSystem {
 
 impl FileSystem for MockFileSystem {
     fn get_content(&self, url: &Url) -> Option<Arc<str>> {
-        self.files.get(url).cloned()
+        self.files.get(url).map(|s| s.clone())
     }
 
     fn set_content(&mut self, url: Url, content: String) {

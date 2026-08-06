@@ -12,6 +12,7 @@ use crate::domain::analytics::{
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
+use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
 // Bridges output schema
@@ -29,9 +30,9 @@ static BRIDGES_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema {
 // =============================================================================
 
 static BRIDGES_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
-    time: "O(V + E)",
-    space: "O(V)",
-    notes: "Tarjan's algorithm, single DFS pass",
+    time: "O(V + E)".into(),
+    space: "O(V)".into(),
+    notes: "Tarjan's algorithm, single DFS pass".into(),
 });
 
 // =============================================================================
@@ -114,7 +115,7 @@ impl AlgorithmParams for BridgesParams {
     }
 
     fn validate(&self, params: &serde_json::Value) -> Result<(), String> {
-        if params.is_null() || params.as_object().is_some_and(|o| o.is_empty()) {
+        if params.is_null() || params.as_object().map_or(false, |o| o.is_empty()) {
             Ok(())
         } else {
             Err("Bridges algorithm accepts no parameters".into())

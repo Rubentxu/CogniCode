@@ -11,7 +11,6 @@
 //! - All other cases → Info (the relationship exists; not necessarily
 //!   a problem).
 
-use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol};
 use std::collections::{HashSet, VecDeque};
 
 use crate::domain::lens::{Lens, LensContext, cap_and_order, clamp_confidence, finding_id};
@@ -19,7 +18,8 @@ use crate::dto::{
     DesignFinding, FindingSeverity, InspectableObjectType, LensDescriptor, LensResult,
 };
 use crate::error::ExplorerResult;
-use crate::ports::symbol_repository::ResolvedSymbol;
+use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol};
+use cognicode_core::domain::aggregates::SymbolId;
 use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 
 pub const LENS_ID: &str = "dependencies";
@@ -436,7 +436,7 @@ mod tests {
     use crate::ports::symbol_repository::{
         GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
     };
-use cognicode_core::domain::aggregates::SymbolId;
+    use cognicode_core::domain::aggregates::SymbolId;
     use cognicode_core::domain::value_objects::SymbolKind;
     use std::collections::HashMap as StdHashMap;
     use std::sync::Arc;

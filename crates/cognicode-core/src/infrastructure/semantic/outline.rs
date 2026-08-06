@@ -351,7 +351,31 @@ impl OutlineBuilder {
                     }
                 }
             }
-            Language::Java => {
+            Language::Java
+            | Language::C
+            | Language::Cpp
+            | Language::CSharp
+            | Language::Hcl
+            | Language::Yaml
+            | Language::Ruby
+            | Language::Php
+            | Language::Swift
+            | Language::Scala
+            | Language::Lua
+            | Language::Zig
+            | Language::Dart
+            | Language::Groovy
+            | Language::Elixir
+            | Language::Erlang
+            | Language::Haskell
+            | Language::Julia
+            | Language::Bash
+            | Language::R
+            | Language::PowerShell
+            | Language::Json
+            | Language::Fortran
+            | Language::Verilog
+            | Language::SystemVerilog => {
                 // Find parameters in Java method
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i)

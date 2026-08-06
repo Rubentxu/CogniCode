@@ -4,7 +4,7 @@
 //! - `detect_architecture_drift` — compare inferred C4 architecture against expected
 
 use async_trait::async_trait;
-use rmcp::model::CallToolResult;
+use rmcp::model::{CallToolResult, Content};
 use serde_json::Value;
 
 use crate::dto::DriftReport;

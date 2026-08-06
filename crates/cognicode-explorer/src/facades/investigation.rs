@@ -2,6 +2,7 @@
 //!
 //! Provides a typed facade for investigation operations over the HTTP API.
 
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

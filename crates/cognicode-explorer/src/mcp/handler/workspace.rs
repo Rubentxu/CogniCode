@@ -3,9 +3,10 @@
 //! Implements 1 MCP tool:
 //! - `explorer_open_workspace` — open a workspace by path or return the current one
 
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use rmcp::model::CallToolResult;
+use rmcp::model::{CallToolResult, Content};
 use serde::Deserialize;
 use serde_json::Value;
 

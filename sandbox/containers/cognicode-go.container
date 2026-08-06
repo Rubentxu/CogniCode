@@ -1,0 +1,35 @@
+# CogniCode Go Sandbox — Hardened Quadlet
+# Phase 3: Go expected-fail probes (capability_missing classification)
+# Hardened: Network=none, MemoryMax=2g, PidsLimit=128, AutoUpdate=no, pinned digest
+[Unit]
+Description=CogniCode Go Sandbox (Hardened)
+RequiresMountsFor=%t/containers
+
+[Container]
+# Keep-alive — sandbox exec target (accepts podman exec while active)
+Exec=sleep infinity
+Image=docker.io/library/golang:1.23-alpine@sha256:383395b794dffa5b53012a212365d40c8e37109a626ca30d6151c8348d380b5f
+ContainerName=cognicode-go
+Volume=cognicode-go-workspace.volume:/workspace:z
+Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
+Environment=COGNICODE_WORKSPACE=/workspace
+# Isolation: no host network
+Network=none
+# Resource limits
+PidsLimit=128
+# Alpine uses read-only root by default
+ReadOnly=yes
+Tmpfs=/tmp:rw,noexec,nosuid,size=64m
+NoNewPrivileges=yes
+
+[Service]
+CPUWeight=50
+# Resource limits (systemd-native keys — [Container] MemoryMax unsupported by quadlet)
+MemoryMax=2G
+MemorySwapMax=2G
+Restart=on-failure
+AutoUpdate=no
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

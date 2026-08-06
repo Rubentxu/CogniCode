@@ -62,7 +62,7 @@ impl PlanLimitKind {
     /// Returns the value of this limit from `PlanLimits`, or `None` if not set.
     pub fn get(&self, limits: &PlanLimits) -> Option<u64> {
         match self {
-            PlanLimitKind::TimeMs => limits.time_ms.map(|v| v),
+            PlanLimitKind::TimeMs => limits.time_ms.map(|v| v as u64),
             PlanLimitKind::Cancellation => None, // Cancellation is not a u64 limit
             PlanLimitKind::MaxDepth => limits.max_depth.map(|v| v as u64),
             PlanLimitKind::MaxHops => limits.max_hops.map(|v| v as u64),
@@ -95,7 +95,6 @@ pub type PlanLimit = PlanLimitKind;
 /// represents an unbounded execution — the executor may reject it or apply
 /// internal defaults.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
 pub struct PlanLimits {
     /// Maximum wall-clock time in milliseconds.
     pub time_ms: Option<u64>,
@@ -160,6 +159,21 @@ impl PartialEq for PlanLimits {
 
 impl Eq for PlanLimits {}
 
+impl Default for PlanLimits {
+    fn default() -> Self {
+        Self {
+            time_ms: None,
+            cancellation: None,
+            max_depth: None,
+            max_hops: None,
+            max_visited_nodes: None,
+            max_visited_edges: None,
+            max_result_rows: None,
+            max_path_count: None,
+            max_memory_bytes: None,
+        }
+    }
+}
 
 impl PlanLimits {
     /// Returns a builder for `PlanLimits`.

@@ -128,7 +128,7 @@ pub async fn handle_graph_query(
             for (callee_id, _dep_type) in graph_ref.dependencies(&current_id) {
                 let callee_str = callee_id.as_str().to_string();
                 if visited_nodes.insert(callee_str.clone()) {
-                    if let Some(sym) = graph_ref.get_symbol(callee_id) {
+                    if let Some(sym) = graph_ref.get_symbol(&callee_id) {
                         query_nodes.push(GraphQueryNode {
                             id: callee_str.clone(),
                             label: sym.name().to_string(),
@@ -389,13 +389,14 @@ pub async fn handle_get_type_references(
         if matches!(
             dep_type,
             crate::domain::value_objects::DependencyType::References
-        )
-            && let Some(target_sym) = graph.get_symbol(target_id) {
+        ) {
+            if let Some(target_sym) = graph.get_symbol(target_id) {
                 references.push(TypeRefRecord {
                     target: target_sym.name().to_string(),
                     context: format!("{:?}", target_sym.kind()),
                 });
             }
+        }
     }
 
     Ok(GetTypeRefsOutput {
@@ -551,8 +552,8 @@ pub async fn handle_get_members(
         if matches!(
             dep_type,
             crate::domain::value_objects::DependencyType::Contains
-        )
-            && let Some(member_sym) = graph.get_symbol(target_id) {
+        ) {
+            if let Some(member_sym) = graph.get_symbol(target_id) {
                 match member_sym.kind() {
                     crate::domain::value_objects::SymbolKind::Function
                     | crate::domain::value_objects::SymbolKind::Method => {
@@ -569,6 +570,7 @@ pub async fn handle_get_members(
                     }
                 }
             }
+        }
     }
 
     Ok(GetMembersOutput {
@@ -635,7 +637,7 @@ pub async fn handle_graph_query_filtered(
         explanation: format!(
             "Filtered query with {} keywords. Filters: {}",
             keywords.len(),
-            applied.to_vec().join("; ")
+            applied.iter().cloned().collect::<Vec<String>>().join("; ")
         ),
         applied_filters: applied,
     })
@@ -670,7 +672,9 @@ pub async fn handle_export_callflow(
     } else {
         mermaid.push_str("    A[Empty workspace]\n");
     }
-    mermaid.push_str("    classDef community fill:#e1f5fe,stroke:#01579b\n");
+    mermaid.push_str(&format!(
+        "    classDef community fill:#e1f5fe,stroke:#01579b\n"
+    ));
     Ok(ExportCallflowOutput {
         mermaid,
         community_count: if symbols > 0 { 1 } else { 0 },

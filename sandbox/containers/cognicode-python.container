@@ -5,28 +5,30 @@ Description=CogniCode Python Sandbox (Hardened)
 RequiresMountsFor=%t/containers
 
 [Container]
-# Pinned image digest — MUST be updated when image changes
-Image=docker.io/library/python@sha256:17a7e2e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
+# Keep-alive — sandbox exec target (accepts podman exec while active)
+Exec=sleep infinity
+# Pinned image digest — obtained via podman pull + podman inspect
+Image=docker.io/library/python:3.12-slim@sha256:646fb0bca3dd3ea1bcc6feb72c17ed16eed6e10cffc732fcc1478bd3e7f02d7b
 ContainerName=cognicode-python
-Volume=%t/containers/cognicode-python-workspace:/workspace:z
+Volume=cognicode-python-workspace.volume:/workspace:z
 Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
 Environment=COGNICODE_WORKSPACE=/repos/click
 # Isolation: no host network
 Network=none
 # Resource limits
-MemoryMax=1g
-MemorySwap=1g
 PidsLimit=128
-CPUWeight=50
 # Read-only root filesystem
 ReadOnly=yes
 # Tmpfs for /tmp (writable but ephemeral)
 Tmpfs=/tmp:rw,noexec,nosuid,size=64m
 # Security: no new privileges
 NoNewPrivileges=yes
-SupplementaryGroups=
 
 [Service]
+CPUWeight=50
+# Resource limits (systemd-native keys — [Container] MemoryMax unsupported by quadlet)
+MemoryMax=1G
+MemorySwapMax=1G
 Restart=on-failure
 AutoUpdate=no
 TimeoutStopSec=30

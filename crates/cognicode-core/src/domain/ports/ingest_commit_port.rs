@@ -25,7 +25,7 @@ use async_trait::async_trait;
 
 use crate::domain::ports::manifest_store::ScanManifest;
 use crate::domain::ports::report_store::ReportSummary;
-use crate::domain::value_objects::WorkspaceId;
+use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
 // GraphDelta types — gated multimodal
 #[cfg(feature = "multimodal")]

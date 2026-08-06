@@ -327,7 +327,7 @@ pub async fn handle_auto_diagnose(
             _ => 4,
         }
     };
-    issues.sort_by_key(|a| severity_order(&a.severity));
+    issues.sort_by(|a, b| severity_order(&a.severity).cmp(&severity_order(&b.severity)));
 
     // Count by severity
     let critical_count = issues.iter().filter(|i| i.severity == "critical").count();
@@ -645,7 +645,7 @@ pub async fn handle_ask_about_code(
     input_schema = FindPatternByIntentInput
 )]
 pub async fn handle_find_pattern_by_intent(
-    _ctx: &HandlerContext,
+    ctx: &HandlerContext,
     input: FindPatternByIntentInput,
 ) -> HandlerResult<FindPatternResult> {
     // Pattern catalog

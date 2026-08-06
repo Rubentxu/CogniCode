@@ -189,7 +189,7 @@ pin_repo \
 pin_repo \
     "java/spring-petclinic" \
     "https://github.com/spring-projects/spring-petclinic.git" \
-    "main" \
+    "edf4db28affcc4741c79850a3d95bc3f177b5ff9" \
     ""
 
 # ─── JavaScript: expressjs/express ─────────────────────────────────────────────

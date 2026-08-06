@@ -6,17 +6,15 @@
 //! - `analytics_lineage_list`     — list lineage records
 //! - `analytics_lineage_get`     — get a specific lineage record by run ID
 
-use std::sync::Arc;
-use cognicode_core::application::services::graph_analytics::{
-    AlgorithmRegistry, CallerCapabilities, DefaultAnalyticsBoundaryGuard, RunRequest,
-};
 use async_trait::async_trait;
 use rmcp::model::CallToolResult;
 use serde::Deserialize;
 use serde_json::Value;
+use std::sync::Arc;
 
 use cognicode_core::application::services::analytics_oracle_harness::AnalyticsOracleHarness;
-    CallerCapabilities, RunRequest,
+use cognicode_core::application::services::graph_analytics::{
+    AlgorithmRegistry, CallerCapabilities, DefaultAnalyticsBoundaryGuard, RunRequest,
 };
 use cognicode_core::domain::analytics::lineage::{RunLineageFilter, RunLineageStore, Uuid};
 use cognicode_core::domain::analytics::{
@@ -187,7 +185,7 @@ impl ToolHandler for AnalyticsRunHandler {
         };
 
         // Require lineage store
-        let _lineage = match ctx.analytics_lineage_store.as_ref() {
+        let lineage = match ctx.analytics_lineage_store.as_ref() {
             Some(l) => l,
             None => {
                 return err_envelope(

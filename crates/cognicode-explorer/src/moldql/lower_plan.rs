@@ -5,11 +5,6 @@
 //!
 //! Part of e28-1-moldplan-graphplan-contracts: PR2 Plan Algebra.
 
-use super::ast::{
-    BooleanOp as AstBooleanOp, BooleanQuery, ClusterMethod, ClusterQuery, Condition, ExplainQuery,
-    FindQuery, MoldQLQuery, NeighborsQuery, PathQuery, PatternQuery, SubgraphQuery, TargetType,
-    TraversalDirection, Value,
-};
 use cognicode_core::domain::plan::lower::AstLowerer;
 use cognicode_core::domain::plan::lower::{QueryShape, populate_defaults};
 use cognicode_core::domain::plan::{
@@ -18,8 +13,10 @@ use cognicode_core::domain::plan::{
 };
 use std::any::Any;
 
-    BooleanOp as AstBooleanOp, BooleanQuery, ClusterQuery, Condition,
-    ExplainQuery, MoldQLQuery, NeighborsQuery, PathQuery, SubgraphQuery, TraversalDirection, Value,
+use super::ast::{
+    BooleanOp as AstBooleanOp, BooleanQuery, ClusterMethod, ClusterQuery, Condition, ExplainQuery,
+    FindQuery, MoldQLQuery, NeighborsQuery, PathQuery, PatternQuery, SubgraphQuery, TargetType,
+    TraversalDirection, Value,
 };
 
 /// Default limits applied when the query doesn't specify explicit bounds.
@@ -177,7 +174,7 @@ impl MoldqlAstLowerer {
         })
     }
 
-    fn lower_cluster(&self, _cq: &ClusterQuery) -> Result<GraphPlan, PlanError> {
+    fn lower_cluster(&self, cq: &ClusterQuery) -> Result<GraphPlan, PlanError> {
         // ARCHITECTURAL CONSTRAINT (planhash-placeholder fix): see lower_path.
         // The placeholder metadata is intentional; hash is computed correctly below.
         let plan = GraphPlan::Cluster {
@@ -338,6 +335,7 @@ impl AstLowerer for MoldqlAstLowerer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cognicode_core::domain::plan::lower::AstLowerer;
     use cognicode_core::domain::plan::{PlanLimit, PlanLimits};
 
     /// `MoldqlAstLowerer` lowers `PathQuery` → `GraphPlan::Path`.

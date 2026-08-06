@@ -86,8 +86,6 @@ pub fn path_param_names(pattern: &str) -> Vec<String> {
         .collect()
 }
 
-use std::sync::Arc;
-use rmcp::model::{CallToolResult, Content};
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,10 +222,10 @@ mod tests {
 #[cfg(feature = "multimodal")]
 pub(crate) mod handlers {
     use std::path::PathBuf;
-    
+    use std::sync::Arc;
 
     use async_trait::async_trait;
-    use rmcp::model::CallToolResult;
+    use rmcp::model::{CallToolResult, Content};
     use serde::Deserialize;
     use serde_json::Value;
     use sha2::{Digest, Sha256};

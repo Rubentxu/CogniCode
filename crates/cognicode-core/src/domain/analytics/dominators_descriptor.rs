@@ -12,6 +12,7 @@ use crate::domain::analytics::{
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
+use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
 // Dominators Params
@@ -75,9 +76,9 @@ static DOMINATORS_SCHEMA: LazyLock<OutputSchema> = LazyLock::new(|| OutputSchema
 // =============================================================================
 
 static DOMINATORS_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
-    time: "O(V + E)",
-    space: "O(V)",
-    notes: "CHK algorithm with Union-Find, two-phase pass",
+    time: "O(V + E)".into(),
+    space: "O(V)".into(),
+    notes: "CHK algorithm with Union-Find, two-phase pass".into(),
 });
 
 // =============================================================================
@@ -185,7 +186,7 @@ impl AlgorithmExecute for DominatorsDescriptor {
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
 
-        let root_id = crate::domain::aggregates::SymbolId::new(root_symbol);
+        let root_id = crate::domain::aggregates::SymbolId::new(root_symbol.to_string());
         let root_idx = projection
             .symbol_index()
             .get(&root_id)

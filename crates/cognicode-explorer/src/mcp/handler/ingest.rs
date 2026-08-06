@@ -5,19 +5,12 @@
 //! - `graph_search`  — FTS5-backed search across the graph_nodes table
 //! - `issues_ingest` — ingest GitHub issues from a repository
 
-
-
-#[cfg(feature = "multimodal")]
 use std::path::PathBuf;
-#[cfg(feature = "multimodal")]
 use std::sync::Arc;
-#[cfg(feature = "multimodal")]
+
 use async_trait::async_trait;
-#[cfg(feature = "multimodal")]
 use rmcp::model::{CallToolResult, Content};
-#[cfg(feature = "multimodal")]
 use serde::Deserialize;
-#[cfg(feature = "multimodal")]
 use serde_json::Value;
 
 #[cfg(feature = "multimodal")]
@@ -96,7 +89,7 @@ impl ToolHandler for DocsIngestHandler {
     }
 
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
-        
+        use cognicode_core::domain::traits::source_extractor::{SourceExtractor, SourcePath};
         use cognicode_core::infrastructure::extraction::docs_extractor::DocsExtractor;
 
         let args: DocsIngestArgs = match serde_json::from_value(params) {
@@ -158,7 +151,8 @@ impl ToolHandler for DocsIngestHandler {
 
         let files_processed = result
             .iter()
-            .filter_map(|n| n.potential_node.source_path.clone())
+            .map(|n| n.potential_node.source_path.clone())
+            .filter_map(|p| p)
             .map(|p| p.to_string_lossy().into_owned())
             .collect::<std::collections::BTreeSet<_>>()
             .len();

@@ -9,18 +9,13 @@
 //! Each variant is fully self-describing with typed predicate and projection
 //! payloads. No SQL, Petgraph, or tokio types appear in this enum.
 
-use super::limits::{PlanLimit, PlanLimits};
-use super::value::TypedValue;
-use super::version::{PlanHash, PlanMetadata, PlanVersion};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 // Types from sibling modules.
-use super::limits::PlanLimits;
-use super::version::{PlanHash, PlanMetadata};
-
-#[cfg(test)]
-use super::{PlanLimit, TypedValue, PlanVersion};
+use super::limits::{PlanLimit, PlanLimits};
+use super::value::TypedValue;
+use super::version::{PlanHash, PlanMetadata, PlanVersion};
 use crate::domain::value_objects::DependencyType;
 
 // Sealed trait — implemented by all plan types to certify backend-neutrality.
@@ -137,7 +132,10 @@ pub struct PathQuantifier {
 impl PathQuantifier {
     /// Construct a bounded quantifier. Returns `None` if `max_hops` is `None`.
     pub fn new(max_hops: Option<u32>, min_hops: u32) -> Option<Self> {
-        max_hops?;
+        if max_hops.is_none() {
+            // Unbounded quantifier is rejected — must have a bound.
+            return None;
+        }
         Some(Self { max_hops, min_hops })
     }
 
@@ -188,10 +186,8 @@ impl Default for OrderClause {
 
 /// Kind of neighbor traversal.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[derive(Default)]
 pub enum NeighborKind {
     /// Both incoming and outgoing edges.
-    #[default]
     Both,
     /// Only outgoing edges.
     Outgoing,
@@ -199,6 +195,11 @@ pub enum NeighborKind {
     Incoming,
 }
 
+impl Default for NeighborKind {
+    fn default() -> Self {
+        Self::Both
+    }
+}
 
 impl Sealed for NeighborKind {}
 

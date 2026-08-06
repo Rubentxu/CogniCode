@@ -304,16 +304,16 @@ impl RunLineageStore for InMemoryLineageStore {
                 filter
                     .workspace_id
                     .as_ref()
-                    .is_none_or(|wid| &r.workspace_id == wid)
+                    .map_or(true, |wid| &r.workspace_id == wid)
                     && filter
                         .revision_id
                         .as_ref()
-                        .is_none_or(|rid| &r.revision_id == rid)
+                        .map_or(true, |rid| &r.revision_id == rid)
                     && filter
                         .algorithm_id
                         .as_ref()
-                        .is_none_or(|aid| &r.algorithm_id == aid)
-                    && filter.status.as_ref().is_none_or(|s| &r.status == s)
+                        .map_or(true, |aid| &r.algorithm_id == aid)
+                    && filter.status.as_ref().map_or(true, |s| &r.status == s)
             })
             .cloned()
             .collect();

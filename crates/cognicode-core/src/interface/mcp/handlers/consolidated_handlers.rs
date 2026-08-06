@@ -3,16 +3,10 @@
 //! Phase 5.2: Smart composites that replace groups of individual tools.
 //! Phase 5.3: New tools combining Graphify + CogniCode capabilities.
 
-use crate::interface::mcp::schemas::{
-    CompareGraphInput, CompareGraphOutput, MetricDeltas, SmartSearchInput, SmartSearchOutput,
-    SmartSearchResult,
-};
-    ListViewSpecsInput, ListViewSpecsOutput, ReadViewSpecInput, ReadViewSpecOutput, ViewDescriptor,
-    ViewSpec,
-};
 use crate::domain::services::CycleDetector;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
-    SmartSearchInput, SmartSearchOutput,
+use crate::interface::mcp::schemas::{
+    CompareGraphInput, CompareGraphOutput, MetricDeltas, SmartSearchInput, SmartSearchOutput,
     SmartSearchResult,
 };
 
@@ -83,8 +77,8 @@ pub async fn handle_smart_search(
                 });
         }
     }
-    if let Ok(idf) = idf
-        && let Some(results_arr) = idf.get("results").and_then(|v| v.as_array()) {
+    if let Ok(idf) = idf {
+        if let Some(results_arr) = idf.get("results").and_then(|v| v.as_array()) {
             for r in results_arr {
                 if let (Some(name), Some(score)) = (
                     r.get("name").and_then(|v| v.as_str()),
@@ -103,6 +97,7 @@ pub async fn handle_smart_search(
                 }
             }
         }
+    }
 
     // Sort by score descending, truncate to limit
     let mut sorted: Vec<_> = results.into_values().collect();
@@ -239,7 +234,7 @@ pub async fn handle_project_overview(
             hot_paths.first().unwrap_or(&"unknown".to_string())
         ));
     }
-    if !cycle_result.cycles.is_empty() {
+    if cycle_result.cycles.len() > 0 {
         recommendations.push(format!(
             "Address {} cyclic dependency cycle(s) to improve architecture score",
             cycle_result.cycles.len()
@@ -467,7 +462,7 @@ pub async fn handle_review_pr(
             if sym.location().file().contains(file.as_str()) {
                 let name = sid.as_str();
                 for dep in graph.dependents(sid) {
-                    if let Some(dep_sym) = graph.get_symbol(dep) {
+                    if let Some(dep_sym) = graph.get_symbol(&dep) {
                         impacted.push(format!(
                             "{} → {} ({})",
                             name,
@@ -805,7 +800,8 @@ pub async fn handle_graph_checkpoint(
 // ViewSpec Tools (ADR-008) — list_view_specs, read_view_spec
 // ============================================================================
 
-    ListViewSpecsInput, ListViewSpecsOutput, ReadViewSpecInput, ReadViewSpecOutput,
+use crate::interface::mcp::schemas::{
+    ListViewSpecsInput, ListViewSpecsOutput, ReadViewSpecInput, ReadViewSpecOutput, ViewDescriptor,
     ViewSpec,
 };
 use crate::schemas::builtin_descriptors;

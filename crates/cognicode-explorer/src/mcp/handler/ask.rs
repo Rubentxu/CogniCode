@@ -4,9 +4,10 @@
 //! - `cognicode_ask` — natural-language front-end that classifies a question
 //!   and dispatches to the appropriate primitive tool chain
 
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use rmcp::model::CallToolResult;
+use rmcp::model::{CallToolResult, Content};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -14,7 +15,7 @@ use crate::ask::AskRouter;
 use crate::mcp::context::McpContext;
 use crate::mcp::envelope::{err_envelope, ok_envelope_with_provenance};
 use crate::mcp::handler::ToolHandler;
-use crate::mcp::{ProvenanceMetadata, TOOL_ASK};
+use crate::mcp::{McpResultEnvelope, ProvenanceMetadata, TOOL_ASK};
 
 // ============================================================================
 // Arg struct

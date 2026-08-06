@@ -65,10 +65,11 @@ impl MergeDetector {
                 if left.space_id == right.space_id {
                     continue;
                 }
-                if let Some(cand) = score_pair(left, right)
-                    && cand.confidence >= MERGE_THRESHOLD {
+                if let Some(cand) = score_pair(left, right) {
+                    if cand.confidence >= MERGE_THRESHOLD {
                         out.push(cand);
                     }
+                }
             }
         }
         out

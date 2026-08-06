@@ -349,7 +349,9 @@ pub struct PathQuantifier {
 impl PathQuantifier {
     /// Construct a bounded quantifier. Returns `None` if `max_hops` is `None`.
     pub fn new(max_hops: Option<u32>, min_hops: u32) -> Option<Self> {
-        max_hops?;
+        if max_hops.is_none() {
+            return None;
+        }
         Some(Self { max_hops, min_hops })
     }
 

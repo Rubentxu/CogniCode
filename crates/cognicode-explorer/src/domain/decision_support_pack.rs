@@ -17,6 +17,7 @@ use cognicode_core::domain::value_objects::node_kind::NodeKind;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::domain::decision_graph_topology::DecisionGraphTopology;
 use crate::dto::{ContextualView, EvidenceBlock, ViewBlock};
 use crate::error::ExplorerResult;
 use crate::ports::symbol_repository::ResolvedSymbol;

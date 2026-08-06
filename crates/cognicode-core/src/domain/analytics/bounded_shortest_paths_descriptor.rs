@@ -12,6 +12,7 @@ use crate::domain::analytics::{
 };
 use crate::domain::plan::limits::PlanLimits;
 use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
+use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
 // Bounded Shortest Paths params
@@ -123,9 +124,9 @@ static BSP_LIMITS: LazyLock<PlanLimits> = LazyLock::new(|| PlanLimits {
 // =============================================================================
 
 static BSP_COMPLEXITY: LazyLock<ComplexityClass> = LazyLock::new(|| ComplexityClass {
-    time: "O(V + E + k·d)",
-    space: "O(V)",
-    notes: "k = max_hops, d = graph diameter; bounded DFS",
+    time: "O(V + E + k·d)".into(),
+    space: "O(V)".into(),
+    notes: "k = max_hops, d = graph diameter; bounded DFS".into(),
 });
 
 // =============================================================================
@@ -285,10 +286,10 @@ impl AlgorithmExecute for BoundedShortestPathsDescriptor {
 
         let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let out_neighbors = projection.build_out_neighbors();
-        let _n = projection.node_count();
+        let n = projection.node_count();
 
-        let from_id = SymbolId::new(from_symbol);
-        let to_id = SymbolId::new(to_symbol);
+        let from_id = SymbolId::new(from_symbol.to_string());
+        let to_id = SymbolId::new(to_symbol.to_string());
 
         let (Some(&from_idx), Some(&to_idx)) = (
             projection.symbol_index().get(&from_id),
