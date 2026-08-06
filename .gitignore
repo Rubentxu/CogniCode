@@ -158,3 +158,8 @@ apps/explorer-ui/playwright-report/
 # Golden images SHOULD be committed (in __snapshots__/), but temp screenshots not
 **/test-results/*.png
 **/playwright-report/**/*.png
+
+# Ephemeral working docs — never pushed (AGENTS.md)
+docs/ROADMAP.md
+docs/adr/
+CONTEXT.md
