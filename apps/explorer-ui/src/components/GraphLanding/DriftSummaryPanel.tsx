@@ -38,15 +38,26 @@ export function DriftSummaryPanel({ driftReport, c4NodeLabels }: DriftSummaryPan
   return (
     <div
       data-testid="c4-drift-summary"
-      className="border border-red-200 bg-red-50 rounded p-3 mt-2"
+      className="rounded p-3 mt-2"
+      style={{
+        border: "1px solid color-mix(in srgb, var(--color-error) 30%, transparent)",
+        backgroundColor: "color-mix(in srgb, var(--color-error) 10%, transparent)",
+      }}
     >
-      <h4 className="text-sm font-semibold text-red-700 mb-2">
+      <h4
+        className="text-sm font-semibold mb-2"
+        style={{ color: "var(--color-error)" }}
+      >
         Drift Findings ({unmatched.length})
       </h4>
       <div className="space-y-1">
         {unmatched.map((finding, i) => (
-          <div key={i} className="flex items-center gap-2 text-xs">
-            <span className="font-mono text-gray-700">
+          <div
+            key={i}
+            className="flex items-center gap-2 text-xs"
+            style={{ color: "var(--color-text-primary)" }}
+          >
+            <span className="font-mono">
               {finding.actual !== "—" ? finding.actual : finding.expected}
             </span>
             <span

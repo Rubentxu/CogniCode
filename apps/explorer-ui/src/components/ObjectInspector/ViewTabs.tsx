@@ -185,7 +185,11 @@ export function ViewTabs({
               {view.is_builtin === false && (
                 <span
                   aria-label="Custom view"
-                  className="ml-1 rounded bg-blue-100 px-1 py-0.5 text-[10px] font-normal text-blue-700"
+                  className="ml-1 rounded px-1 py-0.5 text-[10px] font-normal"
+                  style={{
+                    backgroundColor: "color-mix(in srgb, var(--color-primary) 18%, transparent)",
+                    color: "var(--color-primary)",
+                  }}
                 >
                   custom
                 </span>

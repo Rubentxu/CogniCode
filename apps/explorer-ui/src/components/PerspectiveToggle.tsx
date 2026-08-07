@@ -74,12 +74,18 @@ export function PerspectiveToggle() {
             data-testid="c4-overlay-drift"
             aria-pressed={c4Overlay.driftEnabled}
             onClick={() => dispatch({ type: "c4-overlay/toggleDrift" })}
-            className={
-              "text-xs px-2 py-1 rounded border transition-colors " +
-              (c4Overlay.driftEnabled
-                ? "bg-red-50 border-red-300 text-red-700"
-                : "bg-gray-50 border-gray-200 text-gray-500")
-            }
+            className="text-xs px-2 py-1 rounded border transition-colors"
+            style={{
+              backgroundColor: c4Overlay.driftEnabled
+                ? "color-mix(in srgb, var(--color-error) 18%, transparent)"
+                : "var(--color-surface-overlay)",
+              borderColor: c4Overlay.driftEnabled
+                ? "color-mix(in srgb, var(--color-error) 50%, transparent)"
+                : "var(--color-border)",
+              color: c4Overlay.driftEnabled
+                ? "var(--color-error)"
+                : "var(--color-text-secondary)",
+            }}
           >
             Drift
           </button>
@@ -87,12 +93,18 @@ export function PerspectiveToggle() {
             data-testid="c4-overlay-hotspots"
             aria-pressed={c4Overlay.hotspotsEnabled}
             onClick={() => dispatch({ type: "c4-overlay/toggleHotspots" })}
-            className={
-              "text-xs px-2 py-1 rounded border transition-colors " +
-              (c4Overlay.hotspotsEnabled
-                ? "bg-orange-50 border-orange-300 text-orange-700"
-                : "bg-gray-50 border-gray-200 text-gray-500")
-            }
+            className="text-xs px-2 py-1 rounded border transition-colors"
+            style={{
+              backgroundColor: c4Overlay.hotspotsEnabled
+                ? "color-mix(in srgb, var(--color-warning) 18%, transparent)"
+                : "var(--color-surface-overlay)",
+              borderColor: c4Overlay.hotspotsEnabled
+                ? "color-mix(in srgb, var(--color-warning) 50%, transparent)"
+                : "var(--color-border)",
+              color: c4Overlay.hotspotsEnabled
+                ? "var(--color-warning)"
+                : "var(--color-text-secondary)",
+            }}
           >
             Hotspots
           </button>
@@ -100,12 +112,18 @@ export function PerspectiveToggle() {
             data-testid="c4-overlay-boundary-violations"
             aria-pressed={c4Overlay.boundaryViolationsEnabled}
             onClick={() => dispatch({ type: "c4-overlay/toggleBoundaryViolations" })}
-            className={
-              "text-xs px-2 py-1 rounded border transition-colors " +
-              (c4Overlay.boundaryViolationsEnabled
-                ? "bg-blue-50 border-blue-300 text-blue-700"
-                : "bg-gray-50 border-gray-200 text-gray-500")
-            }
+            className="text-xs px-2 py-1 rounded border transition-colors"
+            style={{
+              backgroundColor: c4Overlay.boundaryViolationsEnabled
+                ? "color-mix(in srgb, var(--color-info) 18%, transparent)"
+                : "var(--color-surface-overlay)",
+              borderColor: c4Overlay.boundaryViolationsEnabled
+                ? "color-mix(in srgb, var(--color-info) 50%, transparent)"
+                : "var(--color-border)",
+              color: c4Overlay.boundaryViolationsEnabled
+                ? "var(--color-info)"
+                : "var(--color-text-secondary)",
+            }}
           >
             Boundary Violations
           </button>

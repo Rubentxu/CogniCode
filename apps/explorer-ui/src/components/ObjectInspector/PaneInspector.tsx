@@ -279,7 +279,7 @@ export function PaneInspector({
                   aria-label="Close pane"
                   data-testid="pane-close"
                   onClick={onClose}
-                  className="rounded-md px-1.5 py-0.5 text-xs hover:bg-red-100"
+                  className="rounded-md px-1.5 py-0.5 text-xs"
                   style={{
                     color: "var(--color-text-muted)",
                   }}
