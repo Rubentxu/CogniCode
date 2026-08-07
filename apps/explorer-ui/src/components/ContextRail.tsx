@@ -37,14 +37,14 @@ export function ContextRail() {
     >
       <div className="border-b px-4 py-4" style={{ borderColor: "var(--color-border)" }}>
         <p
-          className="text-[11px] font-semibold uppercase tracking-[0.08em]"
-          style={{ color: "var(--color-text-muted)" }}
+          className="text-xs font-medium"
+          style={{ color: "var(--color-primary)" }}
         >
           Active context
         </p>
         {activeObjectId ? (
           <>
-            <h2 className="mt-2 text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
+            <h2 className="mt-1.5 text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
               {object?.label ?? activeObjectId}
             </h2>
             <p className="mt-1 text-xs leading-5" style={{ color: "var(--color-text-secondary)" }}>

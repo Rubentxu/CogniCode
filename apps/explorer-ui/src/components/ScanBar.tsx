@@ -57,6 +57,8 @@ export function ScanBar(): ReactNode {
           type="button"
           onClick={handleScan}
           disabled={scanning}
+          aria-busy={scanning}
+          aria-label={scanning ? "Scanning in progress" : "Scan workspace"}
           className="rounded-md px-2 py-0.5 text-xs font-medium transition-colors"
           style={{
             backgroundColor: scanning
@@ -76,14 +78,24 @@ export function ScanBar(): ReactNode {
       {scanning && job?.progress && (
         <div className="flex items-center gap-2" style={{ minWidth: 120 }}>
           <div
-            className="h-1.5 rounded-full"
+            className="h-1.5 rounded-full overflow-hidden"
             style={{
-              width: `${Math.max(5, progressPct)}%`,
-              backgroundColor: "var(--color-primary)",
-              transition: "width 0.3s ease",
-              maxWidth: 150,
+              width: 150,
+              backgroundColor: "var(--color-surface-overlay)",
             }}
-          />
+          >
+            <div
+              data-testid="scan-progress-bar"
+              style={{
+                width: "100%",
+                height: "100%",
+                backgroundColor: "var(--color-primary)",
+                transform: `scaleX(${Math.max(0.05, progressPct / 100)})`,
+                transformOrigin: "left center",
+                transition: "transform 0.3s ease-out",
+              }}
+            />
+          </div>
           <span className="text-xs" style={{ color: "var(--color-text-secondary)" }}>
             {job.progress.stage} {job.progress.processed}/{job.progress.total}
           </span>

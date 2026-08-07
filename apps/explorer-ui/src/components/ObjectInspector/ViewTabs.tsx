@@ -18,6 +18,7 @@ import {
   useRef,
   type KeyboardEvent,
 } from "react";
+import { ViewIcon } from "./ViewIcon";
 
 export interface ViewTabsProps {
   /** The list of available views (id + title + optional runtime metadata). */
@@ -170,7 +171,7 @@ export function ViewTabs({
               data-renderer-kind={view.renderer_kind ?? undefined}
               data-source={view.is_builtin === false ? "runtime" : undefined}
               onClick={() => onChange(view.id)}
-              className="rounded-md px-2 py-1 text-xs font-medium transition-colors"
+              className="rounded-md px-2 py-1 text-xs font-medium transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
               style={{
                 backgroundColor: isActive
                   ? "var(--color-primary)"
@@ -180,7 +181,8 @@ export function ViewTabs({
                   : "var(--color-text-secondary)",
               }}
             >
-              {view.title}
+              <ViewIcon id={view.id} />
+              <span>{view.title}</span>
               {/* "custom" badge for runtime (user-defined) views */}
               {view.is_builtin === false && (
                 <span

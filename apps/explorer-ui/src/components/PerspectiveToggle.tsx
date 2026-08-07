@@ -73,6 +73,8 @@ export function PerspectiveToggle() {
           <button
             data-testid="c4-overlay-drift"
             aria-pressed={c4Overlay.driftEnabled}
+            aria-label="Toggle drift overlay"
+            title="Drift: highlights cases where the C4 model diverges from the actual graph (missing containers, wrong sub-kinds)"
             onClick={() => dispatch({ type: "c4-overlay/toggleDrift" })}
             className="text-xs px-2 py-1 rounded border transition-colors"
             style={{
@@ -92,6 +94,8 @@ export function PerspectiveToggle() {
           <button
             data-testid="c4-overlay-hotspots"
             aria-pressed={c4Overlay.hotspotsEnabled}
+            aria-label="Toggle hotspots overlay"
+            title="Hotspots: highlights the most-imported / most-depended-on symbols in the workspace"
             onClick={() => dispatch({ type: "c4-overlay/toggleHotspots" })}
             className="text-xs px-2 py-1 rounded border transition-colors"
             style={{
@@ -111,6 +115,8 @@ export function PerspectiveToggle() {
           <button
             data-testid="c4-overlay-boundary-violations"
             aria-pressed={c4Overlay.boundaryViolationsEnabled}
+            aria-label="Toggle boundary violations overlay"
+            title="Boundary violations: highlights edges that cross architecture boundaries they shouldn't"
             onClick={() => dispatch({ type: "c4-overlay/toggleBoundaryViolations" })}
             className="text-xs px-2 py-1 rounded border transition-colors"
             style={{

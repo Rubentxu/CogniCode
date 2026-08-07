@@ -33,7 +33,20 @@ export function LensSidebarToggle(): JSX.Element {
           : "var(--color-text-secondary)",
       }}
     >
-      <span aria-hidden="true">🔍</span>
+      <svg
+        width={14}
+        height={14}
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="7" cy="7" r="4.5" />
+        <path d="M10.5 10.5 L13.5 13.5" />
+      </svg>
       <span>Lenses</span>
       {count > 0 && (
         <span

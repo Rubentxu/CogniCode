@@ -92,7 +92,30 @@ export function TopBar({ onSpotterOpen, onMcpToolsOpen }: TopBarProps) {
               border: "1px solid var(--color-border)",
             }}
           >
-            <span aria-hidden="true">⚙</span>
+            <svg
+              width={14}
+              height={14}
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="8" cy="3" r="1" />
+              <circle cx="8" cy="13" r="1" />
+              <circle cx="3" cy="8" r="1" />
+              <circle cx="13" cy="8" r="1" />
+              <path d="M7.5 4 8.5 4" />
+              <path d="M7.5 12 8.5 12" />
+              <path d="M4 7.5 4 8.5" />
+              <path d="M12 7.5 12 8.5" />
+              <path d="M4.5 4.5 7 7" />
+              <path d="M11.5 4.5 9 7" />
+              <path d="M4.5 11.5 7 9" />
+              <path d="M11.5 11.5 9 9" />
+            </svg>
             <span>Tools</span>
           </button>
         )}

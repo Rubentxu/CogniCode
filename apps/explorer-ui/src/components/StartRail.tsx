@@ -86,12 +86,6 @@ export function StartRail() {
       aria-label="Explorer entry rail"
     >
       <div className="space-y-1">
-        <p
-          className="text-[11px] font-semibold uppercase tracking-[0.08em]"
-          style={{ color: "var(--color-text-muted)" }}
-        >
-          Workbench
-        </p>
         <h2 className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
           Start or continue
         </h2>

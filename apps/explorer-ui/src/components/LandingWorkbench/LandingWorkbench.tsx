@@ -90,13 +90,13 @@ export function LandingWorkbench({ workspaceId }: LandingWorkbenchProps) {
             style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface)" }}
           >
             <p
-              className="text-[11px] font-semibold uppercase tracking-[0.08em]"
-              style={{ color: "var(--color-text-muted)" }}
+              className="text-xs font-medium"
+              style={{ color: "var(--color-primary)" }}
             >
               {copy.eyebrow}
             </p>
             <h2
-              className="mt-2 text-lg font-semibold"
+              className="mt-1.5 text-lg font-semibold"
               style={{ color: "var(--color-text-primary)" }}
             >
               {copy.title}

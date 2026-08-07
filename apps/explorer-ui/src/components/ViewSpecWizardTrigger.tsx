@@ -58,7 +58,19 @@ export function ViewSpecWizardTrigger(): JSX.Element {
             : "Create custom view"
       }
     >
-      <span aria-hidden="true">✦</span>
+      <svg
+        width={14}
+        height={14}
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M8 2 L9 7 L14 8 L9 9 L8 14 L7 9 L2 8 L7 7 Z" />
+      </svg>
       <span>{disabled ? "Custom View · select an object" : "Custom View"}</span>
     </button>
   );
