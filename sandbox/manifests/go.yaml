@@ -163,10 +163,15 @@ scenarios:
       path: .
     ground_truth:
       matches:
-        - path: cobra.go
-        - path: completions_test.go
+        - path: fish_completions.go
         - path: fish_completions_test.go
+        - path: flag_groups.go
         - path: flag_groups_test.go
+        - path: powershell_completions.go
+        - path: powershell_completions_test.go
+        - path: shell_completions.go
+        - path: zsh_completions.go
+        - path: zsh_completions_test.go
     metrics:
       correctness:
         recall_only: true
