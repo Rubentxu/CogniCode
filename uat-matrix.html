@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>UAT Dashboard — Trazabilidad</title>
+<style>:root {
+  --bg: #0f1115;
+  --card: #181b21;
+  --text: #e6e6e6;
+  --muted: #9aa0a6;
+  --accent: #4da3ff;
+  --ok: #4caf50;
+  --warn: #ffb74d;
+  --danger: #ef5350;
+  --border: #23272e;
+  --radius: 8px;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+</style>
+<style>* { box-sizing: border-box; }
+body { margin: 0; font-family: var(--font); background: var(--bg); color: var(--text); padding: 2rem; }
+h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+h2 { font-size: 1rem; margin: 1.5rem 0 .5rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.sub { color: var(--muted); font-size: .8rem; margin-bottom: 1rem; }
+
+/* Status pills */
+.status-pill { display: inline-block; padding: .15rem .5rem; border-radius: 999px; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.status-pill.pass { background: rgba(76,175,80,.15); color: var(--ok); }
+.status-pill.fail { background: rgba(239,83,80,.15); color: var(--danger); }
+.status-pill.blocked { background: rgba(255,183,77,.15); color: var(--warn); }
+.status-pill.partial { background: rgba(77,163,255,.15); color: var(--accent); }
+.status-pill.pending { background: rgba(154,160,166,.15); color: var(--muted); }
+
+/* Scenario card (guided wizard) */
+.scenario-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; max-width: 720px; margin: 0 auto; }
+.step-title { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .5rem; }
+.step-action { font-size: 1.1rem; margin: .5rem 0; display: flex; align-items: center; gap: .5rem; }
+.step-expected { color: var(--muted); font-size: .85rem; margin-bottom: 1rem; }
+.step-expected strong { color: var(--text); }
+.rationale { background: rgba(77,163,255,.08); border-left: 3px solid var(--accent); padding: .6rem .9rem; border-radius: 4px; font-size: .85rem; margin: 1rem 0; }
+.evidence-drop { border: 2px dashed var(--border); border-radius: var(--radius); padding: 1rem; text-align: center; color: var(--muted); font-size: .85rem; margin: 1rem 0; }
+.evidence-drop.dragging { border-color: var(--accent); color: var(--accent); }
+
+/* Verdict buttons */
+.verdict-row { display: flex; gap: .6rem; margin: 1rem 0; }
+.btn { border: 1px solid var(--border); background: var(--card); color: var(--text); padding: .6rem 1.1rem; border-radius: var(--radius); font-size: .9rem; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn.pass-btn:hover { border-color: var(--ok); color: var(--ok); }
+.btn.fail-btn:hover { border-color: var(--danger); color: var(--danger); }
+.btn.blocked-btn:hover { border-color: var(--warn); color: var(--warn); }
+.btn.active-pass { background: rgba(76,175,80,.2); border-color: var(--ok); color: var(--ok); }
+.btn.active-fail { background: rgba(239,83,80,.2); border-color: var(--danger); color: var(--danger); }
+.btn.active-blocked { background: rgba(255,183,77,.2); border-color: var(--warn); color: var(--warn); }
+
+/* Wizard navigation */
+.wizard-nav { display: flex; justify-content: space-between; margin-top: 1.25rem; }
+.progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin: 1rem 0; }
+.progress-bar > div { height: 100%; background: var(--accent); transition: width .2s; }
+.progress-label { font-size: .72rem; color: var(--muted); text-align: right; margin-top: .25rem; }
+
+/* Tables (matrix + traceability) */
+table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: var(--radius); overflow: hidden; font-size: .82rem; }
+th, td { padding: .5rem .65rem; text-align: left; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 500; text-transform: uppercase; font-size: .7rem; letter-spacing: .05em; }
+tr:last-child td { border-bottom: none; }
+
+/* KPI row */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+.kpi { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: .9rem; }
+.kpi .v { font-size: 1.3rem; font-weight: 600; }
+.kpi .l { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; }
+
+.copy-btn { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 4px; padding: .1rem .45rem; font-size: .72rem; cursor: pointer; }
+.copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+footer { margin-top: 2rem; color: var(--muted); font-size: .7rem; }
+textarea { width: 100%; background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: .5rem; font-family: inherit; font-size: .85rem; resize: vertical; }
+
+/* Dark is the default theme (defined in tokens.css via :root). */</style>
+</head>
+<body>
+<div class="page">
+  <header class="page-head">
+    <span class="crumb">UAT — Trazabilidad (matriz)</span>
+    <span class="crumb" style="color:var(--accent-strong);font-family:var(--font-mono)">v1.0.0-current</span>
+  </header>
+  <p class="page-sub">generated 2026-08-07T18:24:30Z &middot; local-first &middot; plan: v1.0.0-current</p>
+
+  <div class="kpis" id="kpis"></div>
+  <div id="matrix"></div>
+
+  <div class="footer-actions">
+    <span class="progress-summary">TestRail-style matrix: feature → scenario → estado</span>
+    <div style="display:flex;gap:var(--space-2);flex-wrap:wrap">
+      <button class="btn" onclick="UAT.exportSession('v1.0.0-current')">Exportar sesión JSON</button>
+      <button class="btn" onclick="UAT.importSession('v1.0.0-current').then(() => render())">Importar sesión</button>
+    </div>
+  </div>
+
+  <footer>sddk uat dashboard &middot; matrix view &middot; datos embebidos inline</footer>
+</div>
+
+<script>/* Storage helpers: localStorage persistence + export/import JSON (zero backend).
+ *
+ * The exported JSON is the canonical `UatSession` shape consumed by
+ * `sddk uat ingest` (crates/sddk-cli/src/uat.rs):
+ *   schema_version, session_id, plan_ref, release, executor, executed_by,
+ *   started_at, finished_at, results: [{ scenario_id, status, comment,
+ *   evidence: [{ kind, ref, note }], duration_minutes }].
+ *
+ * Keeping the localStorage shape and the export shape in sync is the whole
+ * point of this module: a tester hits "Finalizar y exportar" and gets a file
+ * that drops straight into the CLI.
+ */
+
+const UAT = (() => {
+  const KEY = (release) => `sddk-${release}`;
+
+  function nowRfc3339() {
+    return new Date().toISOString();
+  }
+
+  function uuid() {
+    // Cheap UUID v4-ish (crypto.randomUUID when available, fallback otherwise).
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+    return "uat-" + Math.random().toString(36).slice(2) + "-" + Date.now().toString(36);
+  }
+
+  function loadSession(release) {
+    try {
+      const raw = localStorage.getItem(KEY(release));
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+
+  function saveSession(release, session) {
+    try {
+      localStorage.setItem(KEY(release), JSON.stringify(session));
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // Legacy formats the wizard may have written before canonicalization.
+  function fromLegacy(legacy, plan) {
+    if (!legacy) return null;
+    if (Array.isArray(legacy.results)) return legacy; // already canonical
+    if (legacy.scenario_results && plan) {
+      const order = [];
+      for (const f of plan.features || []) {
+        for (const s of f.scenarios || []) order.push(s.id);
+      }
+      const results = [];
+      for (const id of order) {
+        const r = legacy.scenario_results[id];
+        if (!r || !r.status) continue;
+        results.push({
+          scenario_id: id,
+          status: r.status,
+          comment: r.comment || "",
+          evidence: r.evidence || [],
+          duration_minutes: r.duration_minutes || 0,
+        });
+      }
+      return {
+        schema_version: 1,
+        session_id: legacy.session_id || uuid(),
+        plan_ref: legacy.plan_ref || plan.release?.candidate || "",
+        release: legacy.release || "",
+        executor: legacy.executor || "human",
+        executed_by: legacy.executed_by || "",
+        started_at: legacy.started_at || nowRfc3339(),
+        finished_at: legacy.finished_at || null,
+        results,
+      };
+    }
+    return null;
+  }
+
+  // Build the canonical `UatSession` from the wizard's internal verdicts.
+  function buildUatSession({ release, planRef, executedBy, startedAt, verdicts, scenarioOrder, finishedAt }) {
+    const results = [];
+    for (const id of scenarioOrder) {
+      const v = verdicts[id];
+      if (!v || !v.status) continue;
+      results.push({
+        scenario_id: id,
+        status: v.status,
+        comment: v.comment || "",
+        evidence: v.evidence || [],
+        duration_minutes: v.duration_minutes || 0,
+      });
+    }
+    return {
+      schema_version: 1,
+      session_id: uuid(),
+      plan_ref: planRef || release,
+      release,
+      executor: "human",
+      executed_by: executedBy || "tester",
+      started_at: startedAt || nowRfc3339(),
+      finished_at: finishedAt || nowRfc3339(),
+      results,
+    };
+  }
+
+  function downloadBlob(filename, json) {
+    const blob = new Blob([JSON.stringify(json, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Finalize the wizard: compose canonical UatSession, persist, download.
+  function finalizeAndExport({ release, planRef, executedBy, startedAt, verdicts, scenarioOrder }) {
+    const session = buildUatSession({
+      release, planRef, executedBy, startedAt, verdicts, scenarioOrder,
+      finishedAt: nowRfc3339(),
+    });
+    saveSession(release, session);
+    downloadBlob(`uat-session-${release}.json`, session);
+    return session;
+  }
+
+  function exportSession(release) {
+    const session = loadSession(release);
+    if (!session) return null;
+    downloadBlob(`uat-session-${release}.json`, session);
+    return session;
+  }
+
+  function importSession(release) {
+    return new Promise((resolve, reject) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json,.yaml,.yml";
+      input.onchange = () => {
+        const file = input.files && input.files[0];
+        if (!file) { resolve(null); return; }
+        file.text().then((text) => {
+          try {
+            const parsed = JSON.parse(text);
+            saveSession(release, parsed);
+            resolve(parsed);
+          } catch (e) { reject(new Error("archivo no es JSON válido")); }
+        });
+      };
+      input.click();
+    });
+  }
+
+  function addEvidence(release, scenarioId, evidence) {
+    const session = loadSession(release) || { release, results: [] };
+    let entry = (session.results || []).find(r => r.scenario_id === scenarioId);
+    if (!entry) {
+      entry = { scenario_id: scenarioId, status: "PASS", evidence: [] };
+      (session.results || (session.results = [])).push(entry);
+    }
+    if (!entry.evidence) entry.evidence = [];
+    entry.evidence.push(evidence);
+    saveSession(release, session);
+  }
+
+  function pasteScreenshot(release, scenarioId, callback) {
+    document.addEventListener("paste", function handler(ev) {
+      document.removeEventListener("paste", handler);
+      const items = ev.clipboardData && ev.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type && item.type.startsWith("image/")) {
+          const blob = item.getAsFile();
+          const reader = new FileReader();
+          reader.onload = () => {
+            addEvidence(release, scenarioId, {
+              kind: "screenshot",
+              ref: "sha256:clipboard-" + Date.now(),
+              note: "pegado desde portapapeles",
+            });
+            callback(reader.result);
+          };
+          reader.readAsDataURL(blob);
+          return;
+        }
+      }
+    });
+  }
+
+  return {
+    loadSession, saveSession, exportSession, importSession, addEvidence,
+    pasteScreenshot, buildUatSession, fromLegacy, finalizeAndExport,
+    nowRfc3339, uuid,
+  };
+})();</script>
+<script>/* Renderers (vanilla): matrix table, traceability rollup, status pills. */
+
+const UatRender = (() => {
+  function pill(status) {
+    const cls = String(status || "PENDING").toLowerCase();
+    return `<span class="status-pill ${cls}">${status || "PENDING"}</span>`;
+  }
+
+  function matrix(plan, session) {
+    const rows = [];
+    for (const feature of plan.features || []) {
+      for (const sc of feature.scenarios || []) {
+        const st = session && session.scenario_results
+          ? (session.scenario_results[sc.id] || {}).status || "PENDING"
+          : "PENDING";
+        rows.push([sc.id, feature.name, sc.title, sc.priority, sc.assignee || "developer", pill(st)]);
+      }
+    }
+    const table = document.createElement("table");
+    table.innerHTML =
+      "<thead><tr><th>ID</th><th>Feature</th><th>Escenario</th><th>Prioridad</th><th>Assignee</th><th>Estado</th></tr></thead>" +
+      "<tbody>" + rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("") + "</tbody>";
+    return table;
+  }
+
+  function traceability(plan, session) {
+    const blocks = [];
+    for (const feature of plan.features || []) {
+      let covered = 0;
+      const scRows = (feature.scenarios || []).map(sc => {
+        const st = session && session.scenario_results
+          ? (session.scenario_results[sc.id] || {}).status || "PENDING"
+          : "PENDING";
+        if (st !== "PENDING") covered++;
+        return `<tr><td>${sc.id}</td><td>${sc.title}</td><td>${pill(st)}</td></tr>`;
+      }).join("");
+      const total = (feature.scenarios || []).length;
+      const pct = total ? Math.round(100 * covered / total) : 0;
+      blocks.push(
+        `<h3>${feature.id} — ${feature.name} ${feature.requirement_ref ? `<span class="sub">(${feature.requirement_ref})</span>` : ""}</h3>` +
+        `<p class="sub">coverage: ${pct}% (${covered}/${total})</p>` +
+        `<table><thead><tr><th>ID</th><th>Escenario</th><th>Estado</th></tr></thead><tbody>${scRows}</tbody></table>`
+      );
+    }
+    return blocks.join("");
+  }
+
+  function kpis(plan) {
+    let scenarios = 0, p0 = 0;
+    for (const feature of plan.features || []) {
+      for (const sc of feature.scenarios || []) {
+        scenarios++;
+        if (sc.priority === "P0") p0++;
+      }
+    }
+    return `
+      <div class="kpi"><div class="v">${scenarios}</div><div class="l">escenarios</div></div>
+      <div class="kpi"><div class="v">${p0}</div><div class="l">P0</div></div>
+      <div class="kpi"><div class="v">${(plan.features || []).length}</div><div class="l">features</div></div>
+    `;
+  }
+
+  return { pill, matrix, traceability, kpis };
+})();
+</script>
+<script>
+const PLAN = {
+  "schema_version": 1,
+  "release": {
+    "candidate": "v1.0.0-current",
+    "project": "CogniCode",
+    "last_uat_release": "v0.91.0"
+  },
+  "generated_by": "agent",
+  "generated_at": "2026-08-07T18:30:00Z",
+  "features": [
+    {
+      "id": "smoke",
+      "name": "Smoke tests (P0 systemic)",
+      "requirement_ref": null,
+      "priority": "P0",
+      "scenarios": [
+        {
+          "id": "TC-0.1",
+          "title": "Sandbox containers arrancan",
+          "priority": "P0",
+          "assignee": "developer",
+          "preconditions": [
+            "just sandbox-clean y just sandbox-setup ejecutados"
+          ],
+          "plain_steps": [
+            {
+              "action": "Ejecuta: podman ps --format '{{.Names}}'",
+              "copy_hint": true,
+              "expected": "6 contenedores 'running' (cognicode-rust, cognicode-python, cognicode-java, cognicode-go, cognicode-js, cognicode-ts)"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Si los 6 contenedores de lenguaje no arrancan, ningún test case\nposterior puede ejecutarse. Smell test del setup.\n",
+          "evidence_prompt": "Pega la salida de podman ps (texto plano)",
+          "flags": [
+            "smoke"
+          ],
+          "est_minutes": 2
+        },
+        {
+          "id": "TC-0.2",
+          "title": "Build release compila sin errores",
+          "priority": "P0",
+          "assignee": "developer",
+          "preconditions": [
+            "git status (HEAD limpio)"
+          ],
+          "plain_steps": [
+            {
+              "action": "Ejecuta: just build-release",
+              "copy_hint": true,
+              "expected": "exit code 0, sin errores en stdout/stderr"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "El binario release es lo que va a producción. Si la compilación\nrompe, ninguna feature es testeable.\n",
+          "evidence_prompt": "Copia las últimas 10 líneas de output del build",
+          "flags": [
+            "smoke"
+          ],
+          "est_minutes": 5
+        },
+        {
+          "id": "TC-0.3",
+          "title": "API responde en /health",
+          "priority": "P0",
+          "assignee": "developer",
+          "preconditions": [
+            "just dev corriendo en otra terminal"
+          ],
+          "plain_steps": [
+            {
+              "action": "Ejecuta: curl http://localhost:8080/health",
+              "copy_hint": true,
+              "expected": "JSON válido, status 200, body con status ok"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "El frontend depende del API. Si /health no responde, el shell\ncompleto no carga.\n",
+          "evidence_prompt": "Pega el output de curl",
+          "flags": [
+            "smoke"
+          ],
+          "est_minutes": 1
+        },
+        {
+          "id": "TC-0.4",
+          "title": "Frontend carga sin errores de consola",
+          "priority": "P0",
+          "assignee": "developer",
+          "preconditions": [
+            "just dev corriendo"
+          ],
+          "plain_steps": [
+            {
+              "action": "Abre http://localhost:5173 en el browser",
+              "copy_hint": false,
+              "expected": "página carga"
+            },
+            {
+              "action": "Abre DevTools (F12) → Console",
+              "copy_hint": false,
+              "expected": "0 errors, 0 warnings críticos"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "El shell visual es la primera impresión. Errores en consola =\nfuncionalidad rota silenciosamente.\n",
+          "evidence_prompt": "Screenshot de la página cargada (o captura de los errors)",
+          "flags": [
+            "smoke"
+          ],
+          "est_minutes": 2
+        }
+      ]
+    },
+    {
+      "id": "extraction",
+      "name": "Symbol extraction (multi-language)",
+      "requirement_ref": null,
+      "priority": "P1",
+      "scenarios": [
+        {
+          "id": "TC-1.1",
+          "title": "get_file_symbols Rust (clap)",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "Container cognicode-rust running",
+            "Repo clap disponible en /workspace"
+          ],
+          "plain_steps": [
+            {
+              "action": "Llama get_file_symbols sobre src/main.rs de clap",
+              "copy_hint": true,
+              "expected": "JSON response con symbols array"
+            },
+            {
+              "action": "Verifica: symbols[] > 0, cada uno tiene name+kind+location",
+              "copy_hint": false,
+              "expected": "array con > 10 symbols, kinds incluyen Function/Struct"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Rust es el caso de uso primario. Si este falla, el resto de la\npipeline no tiene valor.\n",
+          "evidence_prompt": "Pega el JSON response",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 3
+        },
+        {
+          "id": "TC-1.2",
+          "title": "get_file_symbols Go (cobra)",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "Container cognicode-go running",
+            "Repo cobra disponible"
+          ],
+          "plain_steps": [
+            {
+              "action": "Llama get_file_symbols sobre cmd/main.go de cobra",
+              "copy_hint": true,
+              "expected": "JSON response con symbols array"
+            },
+            {
+              "action": "Verifica kinds: func, type, var",
+              "copy_hint": false,
+              "expected": "symbols > 0 con funcs + types"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Go tiene su propia sintaxis de packages + métodos. Distinto de Rust.\n",
+          "evidence_prompt": "Pega el JSON response",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 3
+        },
+        {
+          "id": "TC-1.3",
+          "title": "get_file_symbols Python (requests)",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "Container cognicode-python running",
+            "Repo requests disponible"
+          ],
+          "plain_steps": [
+            {
+              "action": "Llama get_file_symbols sobre src/models.py",
+              "copy_hint": true,
+              "expected": "JSON response"
+            },
+            {
+              "action": "Verifica kinds: function, class, module",
+              "copy_hint": false,
+              "expected": "symbols > 0 con classes + functions"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Python es el segundo lenguaje más usado. Classes + decorators\ntienen parsing tricky.\n",
+          "evidence_prompt": "Pega el JSON response",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 3
+        },
+        {
+          "id": "TC-1.4",
+          "title": "extract_symbols con jerarquía",
+          "priority": "P2",
+          "assignee": "developer",
+          "preconditions": [
+            "Container cognicode-rust running"
+          ],
+          "plain_steps": [
+            {
+              "action": "Llama extract_symbols con hierarchy=true sobre src/lib.rs de clap",
+              "copy_hint": true,
+              "expected": "JSON con parent references"
+            },
+            {
+              "action": "Verifica que cada method tiene parent reference",
+              "copy_hint": false,
+              "expected": "método 'run' pertenece a struct 'Cli'"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "La jerarquía (parent/owner) es lo que permite 'ver métodos en su struct'.\n",
+          "evidence_prompt": "Pega el JSON response",
+          "flags": [
+            "optional"
+          ],
+          "est_minutes": 3
+        }
+      ]
+    },
+    {
+      "id": "graph",
+      "name": "Call graph building",
+      "requirement_ref": null,
+      "priority": "P0",
+      "scenarios": [
+        {
+          "id": "TC-2.1",
+          "title": "build_graph Rust clap (critical path)",
+          "priority": "P0",
+          "assignee": "developer",
+          "preconditions": [
+            "Container rust running",
+            "Repo clap (500-2000 LOC)"
+          ],
+          "plain_steps": [
+            {
+              "action": "Ejecuta build_graph sobre clap",
+              "copy_hint": true,
+              "expected": "JSON con nodes + edges"
+            },
+            {
+              "action": "Verifica: nodes > 10, edges > 5, kinds区分 Function/Struct/Impl/Enum",
+              "copy_hint": false,
+              "expected": "nodes > 10, edges > 5, DAG"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Este es el test MÁS importante del ciclo. Sin build_graph,\nno hay grafo, no hay visualización, no hay nada.\n",
+          "evidence_prompt": "Pega el JSON (o primeras 50 líneas)",
+          "flags": [
+            "critical-path"
+          ],
+          "est_minutes": 5
+        },
+        {
+          "id": "TC-2.2",
+          "title": "build_graph Rust tokio (size stress)",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "Container rust running, tokio repo"
+          ],
+          "plain_steps": [
+            {
+              "action": "Cronometra + ejecuta build_graph sobre tokio",
+              "copy_hint": true,
+              "expected": "JSON en < 60s"
+            },
+            {
+              "action": "Verifica: nodes > 1000, edges > 2000",
+              "copy_hint": false,
+              "expected": "termina < 60s, > 1000 nodes"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "tokio (~500k LOC) es el test de stress. Si no termina en < 60s,\nno escala a proyectos reales.\n",
+          "evidence_prompt": "JSON + tiempo de ejecución",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 10
+        },
+        {
+          "id": "TC-2.3",
+          "title": "build_graph Go (cobra)",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "Container go running, cobra repo"
+          ],
+          "plain_steps": [
+            {
+              "action": "Ejecuta build_graph sobre cobra",
+              "copy_hint": true,
+              "expected": "JSON con nodes + edges"
+            },
+            {
+              "action": "Verifica nodes > 0, edges > 0, kinds区分 func/type",
+              "copy_hint": false,
+              "expected": "nodes > 0, cobra commands visibles"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Cobra es el CLI framework más usado en Go. Tests integration reales.\n",
+          "evidence_prompt": "JSON + observación",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 5
+        },
+        {
+          "id": "TC-2.4",
+          "title": "build_graph Java (spring-petclinic)",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "Container java running, spring-petclinic repo"
+          ],
+          "plain_steps": [
+            {
+              "action": "Ejecuta build_graph sobre spring-petclinic",
+              "copy_hint": true,
+              "expected": "JSON con nodes + edges"
+            },
+            {
+              "action": "Verifica: Controllers → Services → Entities visibles",
+              "copy_hint": false,
+              "expected": "Class/Method/Interface separados, pattern MVC visible"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Spring MVC es OOP-heavy. Classes + methods + interfaces tienen\njerarquía real que el grafo debe capturar.\n",
+          "evidence_prompt": "JSON + observación",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 5
+        }
+      ]
+    },
+    {
+      "id": "probes",
+      "name": "Graph probes (entry points, complexity)",
+      "requirement_ref": null,
+      "priority": "P2",
+      "scenarios": [
+        {
+          "id": "TC-2.5",
+          "title": "get_entry_points Rust",
+          "priority": "P2",
+          "assignee": "developer",
+          "preconditions": [
+            "Container rust, clap repo"
+          ],
+          "plain_steps": [
+            {
+              "action": "Ejecuta get_entry_points sobre clap",
+              "copy_hint": true,
+              "expected": "JSON con entry points"
+            },
+            {
+              "action": "Verifica: ≥ 1 entry point, fn main detectados, args parseados",
+              "copy_hint": false,
+              "expected": "1+ entry points, fn main con location"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Entry points son el punto de partida para 'trace from main'.\n",
+          "evidence_prompt": "JSON response",
+          "flags": [
+            "optional"
+          ],
+          "est_minutes": 2
+        },
+        {
+          "id": "TC-2.6",
+          "title": "get_entry_points Go cobra",
+          "priority": "P2",
+          "assignee": "developer",
+          "preconditions": [
+            "Container go, cobra repo"
+          ],
+          "plain_steps": [
+            {
+              "action": "Ejecuta get_entry_points sobre cobra",
+              "copy_hint": true,
+              "expected": "JSON con subcommands"
+            },
+            {
+              "action": "Verifica: commands + subcommands detectados",
+              "copy_hint": false,
+              "expected": "subcommands detectados con parent"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Cobra subcommands son entry points jerárquicos.\n",
+          "evidence_prompt": "JSON response",
+          "flags": [
+            "optional"
+          ],
+          "est_minutes": 2
+        },
+        {
+          "id": "TC-2.7",
+          "title": "get_complexity Rust",
+          "priority": "P2",
+          "assignee": "developer",
+          "preconditions": [
+            "Container rust, clap"
+          ],
+          "plain_steps": [
+            {
+              "action": "Ejecuta get_complexity sobre función con if/for",
+              "copy_hint": true,
+              "expected": "JSON con complexity score"
+            },
+            {
+              "action": "Verifica: complexity > 1, branches contados",
+              "copy_hint": false,
+              "expected": "complexity > 1, counts de if/for"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Cyclomatic complexity es la métrica base para hot paths.\n",
+          "evidence_prompt": "JSON response",
+          "flags": [
+            "optional"
+          ],
+          "est_minutes": 2
+        }
+      ]
+    },
+    {
+      "id": "ui",
+      "name": "Explorer UI rendering",
+      "requirement_ref": null,
+      "priority": "P0",
+      "scenarios": [
+        {
+          "id": "TC-3.1",
+          "title": "Explorer renderiza call graph (critical path)",
+          "priority": "P0",
+          "assignee": "developer",
+          "preconditions": [
+            "just dev",
+            "TC-2.1 passed"
+          ],
+          "plain_steps": [
+            {
+              "action": "Abre http://localhost:5173",
+              "copy_hint": false,
+              "expected": "shell visible"
+            },
+            {
+              "action": "Selecciona workspace clap",
+              "copy_hint": false,
+              "expected": "workspace cargado"
+            },
+            {
+              "action": "Click 'Build Graph' o equivalente",
+              "copy_hint": false,
+              "expected": "graph renderiza"
+            },
+            {
+              "action": "Espera render",
+              "copy_hint": false,
+              "expected": "nodOS visibles, leyenda, sin errores en consola"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "El visual es el punto de contacto principal. Si no renderiza,\ntodo el producto es invisible.\n",
+          "evidence_prompt": "Screenshot del canvas renderizado",
+          "flags": [
+            "critical-path"
+          ],
+          "est_minutes": 5
+        },
+        {
+          "id": "TC-3.2",
+          "title": "Pan/zoom funcional",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "TC-3.1 passed"
+          ],
+          "plain_steps": [
+            {
+              "action": "Drag con mouse sobre canvas",
+              "copy_hint": false,
+              "expected": "grafo se mueve"
+            },
+            {
+              "action": "Scroll wheel",
+              "copy_hint": false,
+              "expected": "zoom in/out"
+            },
+            {
+              "action": "Click sobre nodo",
+              "copy_hint": false,
+              "expected": "highlight + panel lateral"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Sin pan/zoom, explorar grafos grandes es imposible.\n",
+          "evidence_prompt": "Screenshot + descripción",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 3
+        },
+        {
+          "id": "TC-3.3",
+          "title": "Filtro por kind",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "TC-3.1 passed"
+          ],
+          "plain_steps": [
+            {
+              "action": "Activa filtro 'solo Struct'",
+              "copy_hint": false,
+              "expected": "solo Structures visibles"
+            },
+            {
+              "action": "Verifica: nodes no-Struct ocultos, edges asociados ocultos",
+              "copy_hint": false,
+              "expected": "node count reduce"
+            },
+            {
+              "action": "Cambia a 'solo Function'",
+              "copy_hint": false,
+              "expected": "solo Functions visibles"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Filtrar por kind enfoca la atención. Sin esto, 1000 nodos\nabruman.\n",
+          "evidence_prompt": "Screenshot antes/después",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 2
+        },
+        {
+          "id": "TC-3.4",
+          "title": "Búsqueda por nombre de símbolo",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "TC-3.1 passed"
+          ],
+          "plain_steps": [
+            {
+              "action": "Escribe 'Cli' en search box",
+              "copy_hint": false,
+              "expected": "resultados aparecen"
+            },
+            {
+              "action": "Click en el resultado",
+              "copy_hint": false,
+              "expected": "grafo navega al nodo"
+            },
+            {
+              "action": "Verifica: panel muestra info",
+              "copy_hint": false,
+              "expected": "info visible"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Búsqueda es la UX principal cuando el usuario sabe qué busca.\n",
+          "evidence_prompt": "Screenshot post-click",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 2
+        },
+        {
+          "id": "TC-3.5",
+          "title": "Búsqueda sin resultados",
+          "priority": "P2",
+          "assignee": "developer",
+          "preconditions": [
+            "TC-3.1 passed"
+          ],
+          "plain_steps": [
+            {
+              "action": "Busca 'ZxyNotExist9999'",
+              "copy_hint": false,
+              "expected": "empty state visible"
+            },
+            {
+              "action": "Verifica: 'No results found' visible, sin errores",
+              "copy_hint": false,
+              "expected": "no console errors"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Empty state es la UX que valida que el filtro corrió.\n",
+          "evidence_prompt": "Screenshot",
+          "flags": [
+            "optional"
+          ],
+          "est_minutes": 1
+        },
+        {
+          "id": "TC-3.6",
+          "title": "Path tracing",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "TC-3.1 passed"
+          ],
+          "plain_steps": [
+            {
+              "action": "Selecciona 2 nodos (entry + leaf)",
+              "copy_hint": false,
+              "expected": "2 nodos selected"
+            },
+            {
+              "action": "Activa 'Trace Path'",
+              "copy_hint": false,
+              "expected": "path renders"
+            },
+            {
+              "action": "Verifica: camino resaltado, panel con intermedios",
+              "copy_hint": false,
+              "expected": "camino visible"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Trace path entre entry y leaf es la visión de flujo.\n",
+          "evidence_prompt": "Screenshot",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 2
+        },
+        {
+          "id": "TC-3.7",
+          "title": "Export Mermaid",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "TC-3.1 passed"
+          ],
+          "plain_steps": [
+            {
+              "action": "Click 'Export Mermaid'",
+              "copy_hint": false,
+              "expected": "code generated"
+            },
+            {
+              "action": "Verifica: código comienza con graph TD/LR",
+              "copy_hint": false,
+              "expected": "valid syntax"
+            },
+            {
+              "action": "Renderiza en mermaid.live",
+              "copy_hint": false,
+              "expected": "renderiza sin errores"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Mermaid export es la salida portable. Permite sharing fuera del tool.\n",
+          "evidence_prompt": "Pegar código Mermaid + screenshot del render",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 2
+        }
+      ]
+    },
+    {
+      "id": "moldql",
+      "name": "MoldQL query language",
+      "requirement_ref": null,
+      "priority": "P1",
+      "scenarios": [
+        {
+          "id": "TC-4.1",
+          "title": "MoldQL filter por kind",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "Grafo clap en memoria",
+            "MoldQL console visible"
+          ],
+          "plain_steps": [
+            {
+              "action": "Ejecuta: kind = 'Function'",
+              "copy_hint": true,
+              "expected": "result array"
+            },
+            {
+              "action": "Verifica: solo Functions, count > 0",
+              "copy_hint": false,
+              "expected": "todos kind == Function"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "MoldQL es el lenguaje de consulta. Filter by kind es el caso\nmás simple.\n",
+          "evidence_prompt": "Output de la query",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 2
+        },
+        {
+          "id": "TC-4.2",
+          "title": "MoldQL filter por archivo",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "Grafo clap"
+          ],
+          "plain_steps": [
+            {
+              "action": "Ejecuta: file CONTAINS 'cli.rs'",
+              "copy_hint": true,
+              "expected": "filtro aplicado"
+            },
+            {
+              "action": "Verifica: solo símbolos de ese archivo",
+              "copy_hint": false,
+              "expected": "todos en cli.rs"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Filtros por path son la base de 'busca símbolos en X archivo'.\n",
+          "evidence_prompt": "Output",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 2
+        },
+        {
+          "id": "TC-4.3",
+          "title": "MoldQL count aggregation",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "Grafo clap"
+          ],
+          "plain_steps": [
+            {
+              "action": "Ejecuta: count(symbols where kind = 'Struct')",
+              "copy_hint": true,
+              "expected": "integer"
+            },
+            {
+              "action": "Verifica: integer, coincide con grafo",
+              "copy_hint": false,
+              "expected": "integer devuelto"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Aggregations son lo que distingue MoldQL de un grep.\n",
+          "evidence_prompt": "Output",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 2
+        },
+        {
+          "id": "TC-4.4",
+          "title": "MoldQL path query",
+          "priority": "P2",
+          "assignee": "developer",
+          "preconditions": [
+            "Grafo clap"
+          ],
+          "plain_steps": [
+            {
+              "action": "Ejecuta: path(from='main', to='run')",
+              "copy_hint": true,
+              "expected": "path o no-path"
+            },
+            {
+              "action": "Verifica: array de nodos o 'no path found'",
+              "copy_hint": false,
+              "expected": "path array o mensaje honesto"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Path queries son para investigar 'cómo se conecta X con Y'.\n",
+          "evidence_prompt": "Output",
+          "flags": [
+            "optional"
+          ],
+          "est_minutes": 2
+        }
+      ]
+    },
+    {
+      "id": "pipeline",
+      "name": "Full E2E pipeline",
+      "requirement_ref": null,
+      "priority": "P0",
+      "scenarios": [
+        {
+          "id": "TC-5.1",
+          "title": "Pipeline Rust clap-rs (critical path)",
+          "priority": "P0",
+          "assignee": "developer",
+          "preconditions": [
+            "just dev + sandbox completo"
+          ],
+          "plain_steps": [
+            {
+              "action": "Paso 1: build_graph clap",
+              "copy_hint": true,
+              "expected": "nodes > 0, edges > 0"
+            },
+            {
+              "action": "Paso 2: Visualizar en Explorer",
+              "copy_hint": false,
+              "expected": "nodos visibles, pan/zoom funciona"
+            },
+            {
+              "action": "Paso 3: Query 'kind = Struct'",
+              "copy_hint": true,
+              "expected": "count > 0"
+            },
+            {
+              "action": "Paso 4: Export Mermaid",
+              "copy_hint": false,
+              "expected": "código válido"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "El escenario completo: scan → visualize → query → export.\nSi esto no funciona de un tirón, no hay release.\n",
+          "evidence_prompt": "4 screenshots, uno por paso",
+          "flags": [
+            "critical-path"
+          ],
+          "est_minutes": 15
+        },
+        {
+          "id": "TC-5.2",
+          "title": "Pipeline Go cobra",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "just dev + sandbox"
+          ],
+          "plain_steps": [
+            {
+              "action": "Paso 1: build_graph cobra",
+              "copy_hint": true,
+              "expected": "nodes > 0, edges > 0"
+            },
+            {
+              "action": "Paso 2: Entry points detectados (commands)",
+              "copy_hint": false,
+              "expected": "commands visibles"
+            },
+            {
+              "action": "Paso 3: Query 'kind = func'",
+              "copy_hint": true,
+              "expected": "count > 0"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Validar que Go también funciona end-to-end.\n",
+          "evidence_prompt": "3 screenshots",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 10
+        },
+        {
+          "id": "TC-5.3",
+          "title": "Pipeline Java spring-petclinic",
+          "priority": "P1",
+          "assignee": "developer",
+          "preconditions": [
+            "just dev + sandbox"
+          ],
+          "plain_steps": [
+            {
+              "action": "Paso 1: build_graph petclinic",
+              "copy_hint": true,
+              "expected": "nodes > 0, kinds区分 Class/Method"
+            },
+            {
+              "action": "Paso 2: Spring MVC pattern visible",
+              "copy_hint": false,
+              "expected": "Controllers/Services/Entities diferenciados"
+            }
+          ],
+          "technical_steps": [],
+          "rationale": "Java Spring es OOP-heavy. Pattern MVC debe ser visible.\n",
+          "evidence_prompt": "2 screenshots",
+          "flags": [
+            "data-verify"
+          ],
+          "est_minutes": 10
+        }
+      ]
+    }
+  ]
+};
+function render() {
+  const session = UAT.loadSession('v1.0.0-current');
+  const matrixEl = document.getElementById('matrix');
+  matrixEl.innerHTML = '';
+  matrixEl.appendChild(UatRender.matrix(PLAN, session));
+  document.getElementById('kpis').innerHTML = UatRender.kpis(PLAN);
+}
+render();
+</script>
+</body>
+</html>

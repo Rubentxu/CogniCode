@@ -1,0 +1,603 @@
+---
+schema_version: 1
+release:
+  candidate: v1.0.0-current
+  project: CogniCode
+  last_uat_release: v0.91.0
+generated_by: agent
+generated_at: "2026-08-07T18:30:00Z"
+
+# ============================================================================
+# CogniCode v1.0.0 — UAT Plan with human-in-the-loop
+# 35 test cases across 5 phases, structured for guided-mode wizard.
+# Each scenario has: title, priority, rationale, plain_steps, evidence_prompt,
+# feature, scenario_gherkin (Given/When/Then).
+# ============================================================================
+
+# ============================================================================
+# Features with scenarios nested
+# ============================================================================
+features:
+
+  # ==========================================================================
+  # FASE 0 — Smoke tests
+  # ==========================================================================
+  - id: smoke
+    name: Smoke tests (P0 systemic)
+    priority: P0
+    assignee: developer
+    scenarios:
+      - id: TC-0.1
+        title: Sandbox containers arrancan
+        priority: P0
+        flags: [smoke]
+        est_minutes: 2
+        assignee: developer
+        rationale: |
+          Si los 6 contenedores de lenguaje no arrancan, ningún test case
+          posterior puede ejecutarse. Smell test del setup.
+        preconditions:
+          - "just sandbox-clean y just sandbox-setup ejecutados"
+        plain_steps:
+          - action: "Ejecuta: podman ps --format '{{.Names}}'"
+            copy_hint: true
+            expected: "6 contenedores 'running' (cognicode-rust, cognicode-python, cognicode-java, cognicode-go, cognicode-js, cognicode-ts)"
+        evidence_prompt: "Pega la salida de podman ps (texto plano)"
+      - id: TC-0.2
+        title: Build release compila sin errores
+        priority: P0
+        flags: [smoke]
+        est_minutes: 5
+        assignee: developer
+        rationale: |
+          El binario release es lo que va a producción. Si la compilación
+          rompe, ninguna feature es testeable.
+        preconditions:
+          - "git status (HEAD limpio)"
+        plain_steps:
+          - action: "Ejecuta: just build-release"
+            copy_hint: true
+            expected: "exit code 0, sin errores en stdout/stderr"
+        evidence_prompt: "Copia las últimas 10 líneas de output del build"
+      - id: TC-0.3
+        title: API responde en /health
+        priority: P0
+        flags: [smoke]
+        est_minutes: 1
+        assignee: developer
+        rationale: |
+          El frontend depende del API. Si /health no responde, el shell
+          completo no carga.
+        preconditions:
+          - "just dev corriendo en otra terminal"
+        plain_steps:
+          - action: "Ejecuta: curl http://localhost:8080/health"
+            copy_hint: true
+            expected: "JSON válido, status 200, body con status ok"
+        evidence_prompt: "Pega el output de curl"
+      - id: TC-0.4
+        title: Frontend carga sin errores de consola
+        priority: P0
+        flags: [smoke]
+        est_minutes: 2
+        assignee: developer
+        rationale: |
+          El shell visual es la primera impresión. Errores en consola =
+          funcionalidad rota silenciosamente.
+        preconditions:
+          - "just dev corriendo"
+        plain_steps:
+          - action: "Abre http://localhost:5173 en el browser"
+            expected: "página carga"
+          - action: "Abre DevTools (F12) → Console"
+            expected: "0 errors, 0 warnings críticos"
+        evidence_prompt: "Screenshot de la página cargada (o captura de los errors)"
+
+  # ==========================================================================
+  # FASE 1 — Symbol Extraction
+  # ==========================================================================
+  - id: extraction
+    name: Symbol extraction (multi-language)
+    priority: P1
+    assignee: developer
+    scenarios:
+      - id: TC-1.1
+        title: get_file_symbols Rust (clap)
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 3
+        assignee: developer
+        rationale: |
+          Rust es el caso de uso primario. Si este falla, el resto de la
+          pipeline no tiene valor.
+        preconditions:
+          - "Container cognicode-rust running"
+          - "Repo clap disponible en /workspace"
+        plain_steps:
+          - action: "Llama get_file_symbols sobre src/main.rs de clap"
+            copy_hint: true
+            expected: "JSON response con symbols array"
+          - action: "Verifica: symbols[] > 0, cada uno tiene name+kind+location"
+            expected: "array con > 10 symbols, kinds incluyen Function/Struct"
+        evidence_prompt: "Pega el JSON response"
+      - id: TC-1.2
+        title: get_file_symbols Go (cobra)
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 3
+        assignee: developer
+        rationale: |
+          Go tiene su propia sintaxis de packages + métodos. Distinto de Rust.
+        preconditions:
+          - "Container cognicode-go running"
+          - "Repo cobra disponible"
+        plain_steps:
+          - action: "Llama get_file_symbols sobre cmd/main.go de cobra"
+            copy_hint: true
+            expected: "JSON response con symbols array"
+          - action: "Verifica kinds: func, type, var"
+            expected: "symbols > 0 con funcs + types"
+        evidence_prompt: "Pega el JSON response"
+      - id: TC-1.3
+        title: get_file_symbols Python (requests)
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 3
+        assignee: developer
+        rationale: |
+          Python es el segundo lenguaje más usado. Classes + decorators
+          tienen parsing tricky.
+        preconditions:
+          - "Container cognicode-python running"
+          - "Repo requests disponible"
+        plain_steps:
+          - action: "Llama get_file_symbols sobre src/models.py"
+            copy_hint: true
+            expected: "JSON response"
+          - action: "Verifica kinds: function, class, module"
+            expected: "symbols > 0 con classes + functions"
+        evidence_prompt: "Pega el JSON response"
+      - id: TC-1.4
+        title: extract_symbols con jerarquía
+        priority: P2
+        flags: [optional]
+        est_minutes: 3
+        assignee: developer
+        rationale: |
+          La jerarquía (parent/owner) es lo que permite 'ver métodos en su struct'.
+        preconditions:
+          - "Container cognicode-rust running"
+        plain_steps:
+          - action: "Llama extract_symbols con hierarchy=true sobre src/lib.rs de clap"
+            copy_hint: true
+            expected: "JSON con parent references"
+          - action: "Verifica que cada method tiene parent reference"
+            expected: "método 'run' pertenece a struct 'Cli'"
+        evidence_prompt: "Pega el JSON response"
+
+  # ==========================================================================
+  # FASE 2 — Call Graph
+  # ==========================================================================
+  - id: graph
+    name: Call graph building
+    priority: P0
+    assignee: developer
+    scenarios:
+      - id: TC-2.1
+        title: "build_graph Rust clap (critical path)"
+        priority: P0
+        flags: [critical-path]
+        est_minutes: 5
+        assignee: developer
+        rationale: |
+          Este es el test MÁS importante del ciclo. Sin build_graph,
+          no hay grafo, no hay visualización, no hay nada.
+        preconditions:
+          - "Container rust running"
+          - "Repo clap (500-2000 LOC)"
+        plain_steps:
+          - action: "Ejecuta build_graph sobre clap"
+            copy_hint: true
+            expected: "JSON con nodes + edges"
+          - action: "Verifica: nodes > 10, edges > 5, kinds区分 Function/Struct/Impl/Enum"
+            expected: "nodes > 10, edges > 5, DAG"
+        evidence_prompt: "Pega el JSON (o primeras 50 líneas)"
+      - id: TC-2.2
+        title: "build_graph Rust tokio (size stress)"
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 10
+        assignee: developer
+        rationale: |
+          tokio (~500k LOC) es el test de stress. Si no termina en < 60s,
+          no escala a proyectos reales.
+        preconditions:
+          - "Container rust running, tokio repo"
+        plain_steps:
+          - action: "Cronometra + ejecuta build_graph sobre tokio"
+            copy_hint: true
+            expected: "JSON en < 60s"
+          - action: "Verifica: nodes > 1000, edges > 2000"
+            expected: "termina < 60s, > 1000 nodes"
+        evidence_prompt: "JSON + tiempo de ejecución"
+      - id: TC-2.3
+        title: build_graph Go (cobra)
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 5
+        assignee: developer
+        rationale: |
+          Cobra es el CLI framework más usado en Go. Tests integration reales.
+        preconditions:
+          - "Container go running, cobra repo"
+        plain_steps:
+          - action: "Ejecuta build_graph sobre cobra"
+            copy_hint: true
+            expected: "JSON con nodes + edges"
+          - action: "Verifica nodes > 0, edges > 0, kinds区分 func/type"
+            expected: "nodes > 0, cobra commands visibles"
+        evidence_prompt: "JSON + observación"
+      - id: TC-2.4
+        title: build_graph Java (spring-petclinic)
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 5
+        assignee: developer
+        rationale: |
+          Spring MVC es OOP-heavy. Classes + methods + interfaces tienen
+          jerarquía real que el grafo debe capturar.
+        preconditions:
+          - "Container java running, spring-petclinic repo"
+        plain_steps:
+          - action: "Ejecuta build_graph sobre spring-petclinic"
+            copy_hint: true
+            expected: "JSON con nodes + edges"
+          - action: "Verifica: Controllers → Services → Entities visibles"
+            expected: "Class/Method/Interface separados, pattern MVC visible"
+        evidence_prompt: "JSON + observación"
+
+  # ==========================================================================
+  # FASE 2b — Graph probes
+  # ==========================================================================
+  - id: probes
+    name: Graph probes (entry points, complexity)
+    priority: P2
+    assignee: developer
+    scenarios:
+      - id: TC-2.5
+        title: get_entry_points Rust
+        priority: P2
+        flags: [optional]
+        est_minutes: 2
+        assignee: developer
+        rationale: |
+          Entry points son el punto de partida para 'trace from main'.
+        preconditions:
+          - "Container rust, clap repo"
+        plain_steps:
+          - action: "Ejecuta get_entry_points sobre clap"
+            copy_hint: true
+            expected: "JSON con entry points"
+          - action: "Verifica: ≥ 1 entry point, fn main detectados, args parseados"
+            expected: "1+ entry points, fn main con location"
+        evidence_prompt: "JSON response"
+      - id: TC-2.6
+        title: get_entry_points Go cobra
+        priority: P2
+        flags: [optional]
+        est_minutes: 2
+        assignee: developer
+        rationale: |
+          Cobra subcommands son entry points jerárquicos.
+        preconditions:
+          - "Container go, cobra repo"
+        plain_steps:
+          - action: "Ejecuta get_entry_points sobre cobra"
+            copy_hint: true
+            expected: "JSON con subcommands"
+          - action: "Verifica: commands + subcommands detectados"
+            expected: "subcommands detectados con parent"
+        evidence_prompt: "JSON response"
+      - id: TC-2.7
+        title: get_complexity Rust
+        priority: P2
+        flags: [optional]
+        est_minutes: 2
+        assignee: developer
+        rationale: |
+          Cyclomatic complexity es la métrica base para hot paths.
+        preconditions:
+          - "Container rust, clap"
+        plain_steps:
+          - action: "Ejecuta get_complexity sobre función con if/for"
+            copy_hint: true
+            expected: "JSON con complexity score"
+          - action: "Verifica: complexity > 1, branches contados"
+            expected: "complexity > 1, counts de if/for"
+        evidence_prompt: "JSON response"
+
+  # ==========================================================================
+  # FASE 3 — Visualización (Explorer UI)
+  # ==========================================================================
+  - id: ui
+    name: Explorer UI rendering
+    priority: P0
+    assignee: developer
+    scenarios:
+      - id: TC-3.1
+        title: "Explorer renderiza call graph (critical path)"
+        priority: P0
+        flags: [critical-path]
+        est_minutes: 5
+        assignee: developer
+        rationale: |
+          El visual es el punto de contacto principal. Si no renderiza,
+          todo el producto es invisible.
+        preconditions:
+          - "just dev"
+          - "TC-2.1 passed"
+        plain_steps:
+          - action: "Abre http://localhost:5173"
+            expected: "shell visible"
+          - action: "Selecciona workspace clap"
+            expected: "workspace cargado"
+          - action: "Click 'Build Graph' o equivalente"
+            expected: "graph renderiza"
+          - action: "Espera render"
+            expected: "nodOS visibles, leyenda, sin errores en consola"
+        evidence_prompt: "Screenshot del canvas renderizado"
+      - id: TC-3.2
+        title: Pan/zoom funcional
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 3
+        assignee: developer
+        rationale: |
+          Sin pan/zoom, explorar grafos grandes es imposible.
+        preconditions:
+          - "TC-3.1 passed"
+        plain_steps:
+          - action: "Drag con mouse sobre canvas"
+            expected: "grafo se mueve"
+          - action: "Scroll wheel"
+            expected: "zoom in/out"
+          - action: "Click sobre nodo"
+            expected: "highlight + panel lateral"
+        evidence_prompt: "Screenshot + descripción"
+      - id: TC-3.3
+        title: Filtro por kind
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 2
+        assignee: developer
+        rationale: |
+          Filtrar por kind enfoca la atención. Sin esto, 1000 nodos
+          abruman.
+        preconditions:
+          - "TC-3.1 passed"
+        plain_steps:
+          - action: "Activa filtro 'solo Struct'"
+            expected: "solo Structures visibles"
+          - action: "Verifica: nodes no-Struct ocultos, edges asociados ocultos"
+            expected: "node count reduce"
+          - action: "Cambia a 'solo Function'"
+            expected: "solo Functions visibles"
+        evidence_prompt: "Screenshot antes/después"
+      - id: TC-3.4
+        title: "Búsqueda por nombre de símbolo"
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 2
+        assignee: developer
+        rationale: |
+          Búsqueda es la UX principal cuando el usuario sabe qué busca.
+        preconditions:
+          - "TC-3.1 passed"
+        plain_steps:
+          - action: "Escribe 'Cli' en search box"
+            expected: "resultados aparecen"
+          - action: "Click en el resultado"
+            expected: "grafo navega al nodo"
+          - action: "Verifica: panel muestra info"
+            expected: "info visible"
+        evidence_prompt: "Screenshot post-click"
+      - id: TC-3.5
+        title: Búsqueda sin resultados
+        priority: P2
+        flags: [optional]
+        est_minutes: 1
+        assignee: developer
+        rationale: |
+          Empty state es la UX que valida que el filtro corrió.
+        preconditions:
+          - "TC-3.1 passed"
+        plain_steps:
+          - action: "Busca 'ZxyNotExist9999'"
+            expected: "empty state visible"
+          - action: "Verifica: 'No results found' visible, sin errores"
+            expected: "no console errors"
+        evidence_prompt: "Screenshot"
+      - id: TC-3.6
+        title: Path tracing
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 2
+        assignee: developer
+        rationale: |
+          Trace path entre entry y leaf es la visión de flujo.
+        preconditions:
+          - "TC-3.1 passed"
+        plain_steps:
+          - action: "Selecciona 2 nodos (entry + leaf)"
+            expected: "2 nodos selected"
+          - action: "Activa 'Trace Path'"
+            expected: "path renders"
+          - action: "Verifica: camino resaltado, panel con intermedios"
+            expected: "camino visible"
+        evidence_prompt: "Screenshot"
+      - id: TC-3.7
+        title: Export Mermaid
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 2
+        assignee: developer
+        rationale: |
+          Mermaid export es la salida portable. Permite sharing fuera del tool.
+        preconditions:
+          - "TC-3.1 passed"
+        plain_steps:
+          - action: "Click 'Export Mermaid'"
+            expected: "code generated"
+          - action: "Verifica: código comienza con graph TD/LR"
+            expected: "valid syntax"
+          - action: "Renderiza en mermaid.live"
+            expected: "renderiza sin errores"
+        evidence_prompt: "Pegar código Mermaid + screenshot del render"
+
+  # ==========================================================================
+  # FASE 4 — MoldQL Queries
+  # ==========================================================================
+  - id: moldql
+    name: MoldQL query language
+    priority: P1
+    assignee: developer
+    scenarios:
+      - id: TC-4.1
+        title: MoldQL filter por kind
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 2
+        assignee: developer
+        rationale: |
+          MoldQL es el lenguaje de consulta. Filter by kind es el caso
+          más simple.
+        preconditions:
+          - "Grafo clap en memoria"
+          - "MoldQL console visible"
+        plain_steps:
+          - action: "Ejecuta: kind = 'Function'"
+            copy_hint: true
+            expected: "result array"
+          - action: "Verifica: solo Functions, count > 0"
+            expected: "todos kind == Function"
+        evidence_prompt: "Output de la query"
+      - id: TC-4.2
+        title: MoldQL filter por archivo
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 2
+        assignee: developer
+        rationale: |
+          Filtros por path son la base de 'busca símbolos en X archivo'.
+        preconditions:
+          - "Grafo clap"
+        plain_steps:
+          - action: "Ejecuta: file CONTAINS 'cli.rs'"
+            copy_hint: true
+            expected: "filtro aplicado"
+          - action: "Verifica: solo símbolos de ese archivo"
+            expected: "todos en cli.rs"
+        evidence_prompt: "Output"
+      - id: TC-4.3
+        title: MoldQL count aggregation
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 2
+        assignee: developer
+        rationale: |
+          Aggregations son lo que distingue MoldQL de un grep.
+        preconditions:
+          - "Grafo clap"
+        plain_steps:
+          - action: "Ejecuta: count(symbols where kind = 'Struct')"
+            copy_hint: true
+            expected: "integer"
+          - action: "Verifica: integer, coincide con grafo"
+            expected: "integer devuelto"
+        evidence_prompt: "Output"
+      - id: TC-4.4
+        title: MoldQL path query
+        priority: P2
+        flags: [optional]
+        est_minutes: 2
+        assignee: developer
+        rationale: |
+          Path queries son para investigar 'cómo se conecta X con Y'.
+        preconditions:
+          - "Grafo clap"
+        plain_steps:
+          - action: "Ejecuta: path(from='main', to='run')"
+            copy_hint: true
+            expected: "path o no-path"
+          - action: "Verifica: array de nodos o 'no path found'"
+            expected: "path array o mensaje honesto"
+        evidence_prompt: "Output"
+
+  # ==========================================================================
+  # FASE 5 — Full E2E Pipeline
+  # ==========================================================================
+  - id: pipeline
+    name: Full E2E pipeline
+    priority: P0
+    assignee: developer
+    scenarios:
+      - id: TC-5.1
+        title: "Pipeline Rust clap-rs (critical path)"
+        priority: P0
+        flags: [critical-path]
+        est_minutes: 15
+        assignee: developer
+        rationale: |
+          El escenario completo: scan → visualize → query → export.
+          Si esto no funciona de un tirón, no hay release.
+        preconditions:
+          - "just dev + sandbox completo"
+        plain_steps:
+          - action: "Paso 1: build_graph clap"
+            copy_hint: true
+            expected: "nodes > 0, edges > 0"
+          - action: "Paso 2: Visualizar en Explorer"
+            expected: "nodos visibles, pan/zoom funciona"
+          - action: "Paso 3: Query 'kind = Struct'"
+            copy_hint: true
+            expected: "count > 0"
+          - action: "Paso 4: Export Mermaid"
+            expected: "código válido"
+        evidence_prompt: "4 screenshots, uno por paso"
+      - id: TC-5.2
+        title: Pipeline Go cobra
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 10
+        assignee: developer
+        rationale: |
+          Validar que Go también funciona end-to-end.
+        preconditions:
+          - "just dev + sandbox"
+        plain_steps:
+          - action: "Paso 1: build_graph cobra"
+            copy_hint: true
+            expected: "nodes > 0, edges > 0"
+          - action: "Paso 2: Entry points detectados (commands)"
+            expected: "commands visibles"
+          - action: "Paso 3: Query 'kind = func'"
+            copy_hint: true
+            expected: "count > 0"
+        evidence_prompt: "3 screenshots"
+      - id: TC-5.3
+        title: "Pipeline Java spring-petclinic"
+        priority: P1
+        flags: [data-verify]
+        est_minutes: 10
+        assignee: developer
+        rationale: |
+          Java Spring es OOP-heavy. Pattern MVC debe ser visible.
+        preconditions:
+          - "just dev + sandbox"
+        plain_steps:
+          - action: "Paso 1: build_graph petclinic"
+            copy_hint: true
+            expected: "nodes > 0, kinds区分 Class/Method"
+          - action: "Paso 2: Spring MVC pattern visible"
+            expected: "Controllers/Services/Entities diferenciados"
+        evidence_prompt: "2 screenshots"
