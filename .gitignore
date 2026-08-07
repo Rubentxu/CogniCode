@@ -167,3 +167,9 @@ apps/explorer-ui/playwright-report/
 docs/ROADMAP.md
 docs/adr/
 CONTEXT.md
+
+# LadybugDB runtime artifacts
+cognicode.lbug
+cognicode.lbug.wal
+
+uat-guided-v1.0.0-current.html
