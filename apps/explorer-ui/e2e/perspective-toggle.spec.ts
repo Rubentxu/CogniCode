@@ -26,7 +26,7 @@ test.describe("Phase 2: Perspective toggle (6 tests)", () => {
     await expect(toggle).toBeVisible({ timeout: 10_000 });
 
     const graphBtn = toggle.getByTestId("perspective-graph");
-    const c4Btn = toggle.getByTestId("perspective-c4");
+    const c4Btn = toggle.getByTestId("perspective-c4-context");
 
     // Initially Graph is pressed
     await expect(graphBtn).toHaveAttribute("aria-pressed", "true");
@@ -47,7 +47,7 @@ test.describe("Phase 2: Perspective toggle (6 tests)", () => {
     await expect(page.getByTestId("graph-landing")).toBeVisible({ timeout: 10_000 });
 
     // Switch to C4 perspective
-    const c4Btn = page.getByTestId("perspective-toggle").getByTestId("perspective-c4");
+    const c4Btn = page.getByTestId("perspective-toggle").getByTestId("perspective-c4-context");
     await c4Btn.click();
 
     // C4 data arrives via /api/workspaces/:id/architecture
@@ -65,7 +65,7 @@ test.describe("Phase 2: Perspective toggle (6 tests)", () => {
     await page.goto("/");
 
     // Switch to C4 perspective
-    await page.getByTestId("perspective-toggle").getByTestId("perspective-c4").click();
+    await page.getByTestId("perspective-toggle").getByTestId("perspective-c4-context").click();
 
     // Wait for the C4 canvas
     const canvas = page.getByTestId("graph-landing-canvas");
@@ -95,7 +95,7 @@ test.describe("Phase 2: Perspective toggle (6 tests)", () => {
 
     // Toggle to C4
     const toggle = page.getByTestId("perspective-toggle");
-    const c4Btn = toggle.getByTestId("perspective-c4");
+    const c4Btn = toggle.getByTestId("perspective-c4-context");
     const graphBtn = toggle.getByTestId("perspective-graph");
     await c4Btn.click();
     await expect(c4Btn).toHaveAttribute("aria-pressed", "true");
@@ -123,7 +123,7 @@ test.describe("Phase 2: Perspective toggle (6 tests)", () => {
     await expect(page.getByTestId("graph-landing")).toBeVisible({ timeout: 10_000 });
 
     const toggle = page.getByTestId("perspective-toggle");
-    const c4Btn = toggle.getByTestId("perspective-c4");
+    const c4Btn = toggle.getByTestId("perspective-c4-context");
     const graphBtn = toggle.getByTestId("perspective-graph");
 
     // Capture initial graph node count
@@ -152,7 +152,7 @@ test.describe("Phase 2: Perspective toggle (6 tests)", () => {
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
     // The toggle buttons are real <button> elements → focusable via Tab
-    const c4Btn = page.getByTestId("perspective-c4");
+    const c4Btn = page.getByTestId("perspective-c4-context");
     const graphBtn = page.getByTestId("perspective-graph");
 
     // Focus the C4 button directly

@@ -87,7 +87,7 @@ test.describe("G7: LandingWorkbench (e18-1)", () => {
     await expect(page.getByTestId("landing-workbench")).toHaveAttribute("data-active-tab", "start");
 
     // Toggle C4 perspective
-    await page.getByTestId("perspective-c4").click();
+    await page.getByTestId("perspective-c4-context").click();
 
     // Should be forced to Graph tab
     await expect(page.getByTestId("landing-workbench")).toHaveAttribute("data-active-tab", "graph");

@@ -123,10 +123,8 @@ test.describe("Phase 3: Pane-Stack (8 tests)", () => {
     await openSpotterResult(page);
     await expect(paneTabs(page)).toHaveCount(1);
 
-    // Close the pane via the inspector's close button
-    const closeBtn = page
-      .getByTestId("object-inspector")
-      .getByRole("button", { name: /close/i });
+    // Close the pane via the pane's close button (not the graph-view close button)
+    const closeBtn = page.getByTestId("pane-close");
     if (await closeBtn.isVisible()) {
       await closeBtn.click();
     } else {
@@ -146,9 +144,7 @@ test.describe("Phase 3: Pane-Stack (8 tests)", () => {
     await openSpotterResult(page);
     await expect(page.getByTestId("pane-stack-view")).toBeVisible();
 
-    const closeBtn = page
-      .getByTestId("object-inspector")
-      .getByRole("button", { name: /close/i });
+    const closeBtn = page.getByTestId("pane-close");
     if (await closeBtn.isVisible()) {
       await closeBtn.click();
     } else {

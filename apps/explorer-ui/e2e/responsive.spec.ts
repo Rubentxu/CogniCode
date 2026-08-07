@@ -107,7 +107,7 @@ test.describe("Phase 6: Responsive & Accessibility (5 tests)", () => {
     await expect(spotterTrigger).toBeFocused();
 
     // 3. Perspective toggle is reachable
-    const c4Btn = page.getByTestId("perspective-c4");
+    const c4Btn = page.getByTestId("perspective-c4-context");
     await c4Btn.focus();
     await expect(c4Btn).toBeFocused();
     // Can be activated with keyboard

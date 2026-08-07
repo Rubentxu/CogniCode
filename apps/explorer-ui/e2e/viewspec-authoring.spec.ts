@@ -49,30 +49,33 @@ test.describe("ViewSpec Wizard (G7)", () => {
     ).toBeVisible({ timeout: 5_000 });
   }
 
-  /** Navigate steps 1-2 by clicking ViewKind + Renderer. */
-  async function advanceToStep3(page: any) {
-    // Step 1: select a ViewKind
+  /** Skip Scaffold step, then advance to the Data Source step (step 4 of 6). */
+  async function advanceToDataSourceStep(page: any) {
+    // Step 1 (Scaffold): skip via "Custom Query"
+    await page.getByRole("button", { name: /custom query/i }).click();
+    await expect(page.getByText("Step 2 of 6")).toBeVisible();
+
+    // Step 2 (View Kind): select Vertical Slice → Next
     await page.getByRole("button", { name: /vertical slice/i }).click();
     await page.getByRole("button", { name: /next/i }).click();
-    await expect(page.getByText("Step 2 of 5")).toBeVisible();
+    await expect(page.getByText("Step 3 of 6")).toBeVisible();
 
-    // Step 2: select a RendererKind (use full label to avoid ambiguity with perspective-graph)
-    await page.getByRole("button", { name: /graph — interactive/i }).click();
+    // Step 3 (Renderer): default auto-selected on ViewKind pick → Next
     await page.getByRole("button", { name: /next/i }).click();
-    await expect(page.getByText("Step 3 of 5")).toBeVisible();
+    await expect(page.getByText("Step 4 of 6")).toBeVisible();
   }
 
   // ---------------------------------------------------------------------------
   // G7.1: Open + close
   // ---------------------------------------------------------------------------
 
-  test("wizard opens and shows step 1 (View Kind)", async ({ page }) => {
+  test("wizard opens and shows step 1 (Scaffold)", async ({ page }) => {
     await openInspectorWithObject(page);
     await openWizard(page);
 
-    await expect(page.getByText("Step 1 of 5")).toBeVisible();
-    // View kind options render as buttons
-    await expect(page.getByRole("button", { name: /vertical slice/i })).toBeVisible();
+    await expect(page.getByText("Step 1 of 6")).toBeVisible();
+    // Scaffold options + "Custom Query" link visible
+    await expect(page.getByRole("button", { name: /custom query/i })).toBeVisible();
   });
 
   test("wizard closes via ✕ button", async ({ page }) => {
@@ -88,90 +91,102 @@ test.describe("ViewSpec Wizard (G7)", () => {
   // G7.2: Step navigation
   // ---------------------------------------------------------------------------
 
-  test("Next button advances through all 5 steps", async ({ page }) => {
+  test("Next button advances through all 6 steps", async ({ page }) => {
     await openInspectorWithObject(page);
     await openWizard(page);
 
-    // Step 1: select ViewKind → Next
+    // Step 1 (Scaffold): Custom Query → skips to View Kind
+    await page.getByRole("button", { name: /custom query/i }).click();
+    await expect(page.getByText("Step 2 of 6")).toBeVisible();
+
+    // Step 2 (View Kind): select Vertical Slice → Next
     await page.getByRole("button", { name: /vertical slice/i }).click();
     await page.getByRole("button", { name: /next/i }).click();
-    await expect(page.getByText("Step 2 of 5")).toBeVisible();
+    await expect(page.getByText("Step 3 of 6")).toBeVisible();
 
-    // Step 2: select RendererKind → Next
-    await page.getByRole("button", { name: /graph — interactive/i }).click();
+    // Step 3 (Renderer): Next (auto-defaulted)
     await page.getByRole("button", { name: /next/i }).click();
-    await expect(page.getByText("Step 3 of 5")).toBeVisible();
+    await expect(page.getByText("Step 4 of 6")).toBeVisible();
 
-    // Step 3: fill query → Next
+    // Step 4 (Data Source): fill query → Next
     await page.locator("textarea").first().fill("symbols");
     await page.getByRole("button", { name: /next/i }).click();
-    await expect(page.getByText("Step 4 of 5")).toBeVisible();
+    await expect(page.getByText("Step 5 of 6")).toBeVisible();
 
-    // Step 4: Next → Step 5
+    // Step 5 (Transform): Next → Step 6 (Save)
     await page.getByRole("button", { name: /next/i }).click();
-    await expect(page.getByText("Step 5 of 5")).toBeVisible();
+    await expect(page.getByText("Step 6 of 6")).toBeVisible();
   });
 
   test("Back button returns to previous step", async ({ page }) => {
     await openInspectorWithObject(page);
     await openWizard(page);
 
-    // Navigate to step 2
+    // Step 1 (Scaffold): skip to View Kind
+    await page.getByRole("button", { name: /custom query/i }).click();
+    await expect(page.getByText("Step 2 of 6")).toBeVisible();
+
+    // Navigate to step 3
     await page.getByRole("button", { name: /vertical slice/i }).click();
     await page.getByRole("button", { name: /next/i }).click();
-    await expect(page.getByText("Step 2 of 5")).toBeVisible();
+    await expect(page.getByText("Step 3 of 6")).toBeVisible();
 
-    // Back to step 1
+    // Back to step 2 (Renderer)
     await page.getByRole("button", { name: /back/i }).click();
-    await expect(page.getByText("Step 1 of 5")).toBeVisible();
+    await expect(page.getByText("Step 2 of 6")).toBeVisible();
   });
 
   // ---------------------------------------------------------------------------
   // G7.3: Step content rendering
   // ---------------------------------------------------------------------------
 
-  test("step 1 (View Kind) renders view kind options", async ({ page }) => {
+  test("step 2 (View Kind) renders view kind options", async ({ page }) => {
     await openInspectorWithObject(page);
     await openWizard(page);
+
+    // Skip Scaffold step to reach View Kind
+    await page.getByRole("button", { name: /custom query/i }).click();
+    await expect(page.getByText("Step 2 of 6")).toBeVisible();
 
     // Multiple ViewKind buttons should be visible
     await expect(page.getByRole("button", { name: /vertical slice/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /call graph/i })).toBeVisible();
   });
 
-  test("step 2 (Renderer) renders renderer options", async ({ page }) => {
+  test("step 3 (Renderer) renders renderer options", async ({ page }) => {
     await openInspectorWithObject(page);
     await openWizard(page);
 
-    // Step 1 → 2
+    // Skip Scaffold → View Kind → Next reaches Renderer (step 3)
+    await page.getByRole("button", { name: /custom query/i }).click();
     await page.getByRole("button", { name: /vertical slice/i }).click();
     await page.getByRole("button", { name: /next/i }).click();
-    await expect(page.getByText("Step 2 of 5")).toBeVisible();
+    await expect(page.getByText("Step 3 of 6")).toBeVisible();
 
     // Renderer options as buttons (full label avoids ambiguity with perspective-graph)
     await expect(page.getByRole("button", { name: /graph — interactive/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /table/i })).toBeVisible();
   });
 
-  test("step 3 (Data Source) renders query input", async ({ page }) => {
+  test("step 4 (Data Source) renders query input", async ({ page }) => {
     await openInspectorWithObject(page);
     await openWizard(page);
 
-    await advanceToStep3(page);
+    await advanceToDataSourceStep(page);
 
     // MoldQL query textarea visible
     await expect(page.locator("textarea").first()).toBeVisible();
   });
 
-  test("step 4 (Transform) renders JSONata expression input", async ({ page }) => {
+  test("step 5 (Transform) renders JSONata expression input", async ({ page }) => {
     await openInspectorWithObject(page);
     await openWizard(page);
 
-    await advanceToStep3(page);
+    await advanceToDataSourceStep(page);
     // Fill query to enable Next
     await page.locator("textarea").first().fill("symbols");
     await page.getByRole("button", { name: /next/i }).click();
-    await expect(page.getByText("Step 4 of 5")).toBeVisible();
+    await expect(page.getByText("Step 5 of 6")).toBeVisible();
 
     // Transform step: click "JSONata" to reveal the expression textarea
     await page.getByRole("button", { name: /jsonata/i }).click();
@@ -179,19 +194,19 @@ test.describe("ViewSpec Wizard (G7)", () => {
     await expect(page.locator("textarea").first()).toBeVisible();
   });
 
-  test("step 5 (Save) renders title input and Save button", async ({ page }) => {
+  test("step 6 (Save) renders title input and Save button", async ({ page }) => {
     await openInspectorWithObject(page);
     await openWizard(page);
 
-    // Navigate to step 5
+    // Navigate to step 6 (Save): Scaffold skip → ViewKind → Renderer → DataSource → Transform → Save
+    await page.getByRole("button", { name: /custom query/i }).click();
     await page.getByRole("button", { name: /vertical slice/i }).click();
     await page.getByRole("button", { name: /next/i }).click();
-    await page.getByRole("button", { name: /graph — interactive/i }).click();
-    await page.getByRole("button", { name: /next/i }).click();
+    await page.getByRole("button", { name: /next/i }).click(); // Renderer (auto-defaulted)
     await page.locator("textarea").first().fill("symbols");
     await page.getByRole("button", { name: /next/i }).click();
     await page.getByRole("button", { name: /next/i }).click();
-    await expect(page.getByText("Step 5 of 5")).toBeVisible();
+    await expect(page.getByText("Step 6 of 6")).toBeVisible();
 
     // Title input and Save button visible
     const dialog = page.getByRole("dialog", { name: /create custom view/i });
@@ -203,31 +218,42 @@ test.describe("ViewSpec Wizard (G7)", () => {
   // G7.4: Validation
   // ---------------------------------------------------------------------------
 
-  test("Next is disabled on step 1 when no view kind is selected", async ({ page }) => {
+  test("Next is disabled on step 1 when no scaffold or custom query selected", async ({ page }) => {
     await openInspectorWithObject(page);
     await openWizard(page);
 
-    // No ViewKind selected — Next should be disabled
+    // Step 1 (Scaffold): no selection made yet — Next should be disabled
     await expect(page.getByRole("button", { name: /next/i })).toBeDisabled();
   });
 
-  test("Next is enabled on step 2 after ViewKind selection (renderer auto-defaulted)", async ({ page }) => {
+  test("Next is enabled after skipping scaffold via Custom Query", async ({ page }) => {
     await openInspectorWithObject(page);
     await openWizard(page);
 
-    // Select ViewKind → Next → step 2
-    // Renderer is auto-defaulted on ViewKind selection, so Next is enabled
+    // Clicking Custom Query immediately advances to step 2 (View Kind)
+    await page.getByRole("button", { name: /custom query/i }).click();
+    await expect(page.getByText("Step 2 of 6")).toBeVisible();
+    await expect(page.getByRole("button", { name: /next/i })).toBeDisabled(); // no ViewKind yet
+  });
+
+  test("Next is enabled on step 3 after ViewKind selection (renderer auto-defaulted)", async ({ page }) => {
+    await openInspectorWithObject(page);
+    await openWizard(page);
+
+    // Skip Scaffold → select ViewKind → Next reaches Renderer (auto-defaulted)
+    await page.getByRole("button", { name: /custom query/i }).click();
     await page.getByRole("button", { name: /vertical slice/i }).click();
     await page.getByRole("button", { name: /next/i }).click();
-    await expect(page.getByText("Step 2 of 5")).toBeVisible();
+    await expect(page.getByText("Step 3 of 6")).toBeVisible();
+    // Renderer is auto-defaulted on ViewKind selection, so Next is enabled
     await expect(page.getByRole("button", { name: /next/i })).toBeEnabled();
   });
 
-  test("Next is disabled on step 3 when MoldQL query is empty", async ({ page }) => {
+  test("Next is disabled on step 4 when MoldQL query is empty", async ({ page }) => {
     await openInspectorWithObject(page);
     await openWizard(page);
 
-    await advanceToStep3(page);
+    await advanceToDataSourceStep(page);
 
     // Query empty — Next disabled
     await expect(page.getByRole("button", { name: /next/i })).toBeDisabled();
@@ -245,15 +271,15 @@ test.describe("ViewSpec Wizard (G7)", () => {
     await openInspectorWithObject(page);
     await openWizard(page);
 
-    // Navigate to step 5 (Save)
+    // Navigate to step 6 (Save): Scaffold skip → ViewKind → Renderer → DataSource → Transform → Save
+    await page.getByRole("button", { name: /custom query/i }).click();
     await page.getByRole("button", { name: /vertical slice/i }).click();
     await page.getByRole("button", { name: /next/i }).click();
-    await page.getByRole("button", { name: /graph — interactive/i }).click();
-    await page.getByRole("button", { name: /next/i }).click();
+    await page.getByRole("button", { name: /next/i }).click(); // Renderer (auto-defaulted)
     await page.locator("textarea").first().fill("symbols");
     await page.getByRole("button", { name: /next/i }).click();
     await page.getByRole("button", { name: /next/i }).click();
-    await expect(page.getByText("Step 5 of 5")).toBeVisible();
+    await expect(page.getByText("Step 6 of 6")).toBeVisible();
 
     // Fill title
     const dialog = page.getByRole("dialog", { name: /create custom view/i });

@@ -17,7 +17,7 @@ test.describe("Perspective toggle (GT tool perspective parity)", () => {
 
     // Either graph or c4 should be pressed depending on default state.
     const graph = page.getByTestId("perspective-graph");
-    const c4 = page.getByTestId("perspective-c4");
+    const c4 = page.getByTestId("perspective-c4-context");
     await expect(graph).toBeVisible();
     await expect(c4).toBeVisible();
 
@@ -31,7 +31,7 @@ test.describe("Perspective toggle (GT tool perspective parity)", () => {
     // subtle. Skip until a clear visual signal is added to distinguish
     // perspectives (e.g. data-perspective attribute on shell root).
     await page.goto("/");
-    const c4 = page.getByTestId("perspective-c4");
+    const c4 = page.getByTestId("perspective-c4-context");
     await c4.click();
     await expect(c4).toHaveAttribute("aria-pressed", "true");
     await snapshot(page, "perspective-toggle-c4.png");

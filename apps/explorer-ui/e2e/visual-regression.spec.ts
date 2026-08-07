@@ -85,7 +85,7 @@ test.describe("Explorer smoke flow — Visual Regression", () => {
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
     // Switch to C4 perspective
-    await page.getByTestId("perspective-toggle").getByTestId("perspective-c4").click();
+    await page.getByTestId("perspective-toggle").getByTestId("perspective-c4-context").click();
 
     // Golden image en perspectiva C4
     await expect(page).toHaveScreenshot("smoke-c4-perspective.png", {
