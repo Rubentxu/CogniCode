@@ -35,6 +35,12 @@
   --color-error: #f85149;
   --color-info: #58a6ff;
 
+  /* ── Accent aliases (referenced by inline styles for dynamic bg swaps) ─ */
+  --color-accent: #58a6ff;              /* = --color-primary */
+  --color-accent-foreground: #0d1117;  /* = --color-primary-foreground */
+  --color-text-error: #f85149;          /* = --color-error */
+  --color-accent-success: #3fb950;      /* = --color-success */
+
   /* ── Severity (lens findings) ────────────────────────────────────────── */
   --color-severity-critical: #f85149;
   --color-severity-high: #ff7b72;

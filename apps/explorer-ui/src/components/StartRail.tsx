@@ -109,8 +109,9 @@ export function StartRail() {
         onKeyDown={onKeyDown}
         className="grid gap-2"
       >
-        {RAIL_ITEMS.map((item) => {
+        {RAIL_ITEMS.map((item, index) => {
           const isActive = item.id === activeTab;
+          const isPrimary = index === 0;
           return (
             <button
               key={item.id}
@@ -123,18 +124,37 @@ export function StartRail() {
               onClick={() => dispatch({ type: "SET_LANDING_TAB", payload: { tab: item.id } })}
               className="rounded-lg border px-3 py-3 text-left transition-colors"
               style={{
-                borderColor: isActive ? "var(--color-primary)" : "var(--color-border)",
+                borderColor: isActive
+                  ? "var(--color-primary)"
+                  : isPrimary
+                    ? "var(--color-border)"
+                    : "transparent",
                 backgroundColor: isActive
                   ? "color-mix(in srgb, var(--color-primary) 12%, var(--color-surface-raised))"
-                  : "var(--color-surface)",
+                  : isPrimary
+                    ? "var(--color-surface)"
+                    : "transparent",
+                paddingTop: isPrimary ? "0.875rem" : "0.5rem",
+                paddingBottom: isPrimary ? "0.875rem" : "0.5rem",
               }}
             >
-              <div className="text-sm font-medium" style={{ color: "var(--color-text-primary)" }}>
+              <div
+                className="text-sm font-medium"
+                style={{
+                  color: "var(--color-text-primary)",
+                  fontWeight: isPrimary ? 600 : 500,
+                }}
+              >
                 {item.label}
               </div>
-              <p className="mt-1 text-xs leading-5" style={{ color: "var(--color-text-secondary)" }}>
-                {item.description}
-              </p>
+              {isPrimary && (
+                <p
+                  className="mt-1 text-xs leading-5"
+                  style={{ color: "var(--color-text-secondary)" }}
+                >
+                  {item.description}
+                </p>
+              )}
             </button>
           );
         })}

@@ -25,7 +25,13 @@ export function ViewSpecWizardTrigger(): JSX.Element {
     <button
       type="button"
       data-testid="viewspec-wizard-trigger"
-      aria-label={isOpen ? "Close custom view wizard" : "Create custom view"}
+      aria-label={
+        disabled
+          ? "Custom view — select an object first"
+          : isOpen
+            ? "Close custom view wizard"
+            : "Create custom view"
+      }
       aria-pressed={isOpen}
       aria-disabled={disabled}
       disabled={disabled}
@@ -53,7 +59,7 @@ export function ViewSpecWizardTrigger(): JSX.Element {
       }
     >
       <span aria-hidden="true">✦</span>
-      <span>Custom View</span>
+      <span>{disabled ? "Custom View · select an object" : "Custom View"}</span>
     </button>
   );
 }
