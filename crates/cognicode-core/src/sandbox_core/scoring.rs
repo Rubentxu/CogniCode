@@ -1651,8 +1651,11 @@ pub fn score_scenario(
             let inner = unwrap_mcp_content(tool_response);
             let mut score = if !call_graph_score.is_nan() {
                 call_graph_score
-            } else {
+            } else if !correctitud.is_nan() {
                 correctitud
+            } else {
+                // No structured ground truth available; start at 100 and penalize downward
+                100.0_f64
             };
             let mut checks = 0u32;
 
@@ -3066,5 +3069,133 @@ mod count_matcher_tests {
         let v = json!({"edges": [{"from": "a", "to": "b"}]});
         assert!(has_any_results(&v));
         assert!(!has_any_results(&json!({"edges": []})));
+    }
+}
+
+#[cfg(test)]
+mod smoke_matcher_tests {
+    use super::{score_scenario, ExecutionMetadata, GroundTruth};
+
+    /// Regression test: when ground truth has ONLY symbols_min (no structured
+    /// symbols/outline/code), the default scoring arm must start at 100.0 (not NaN)
+    /// so that the ratio penalty is applied correctly.
+    #[test]
+    fn symbols_min_only_ground_truth_scores_correctly() {
+        // Ground truth with only symbols_min threshold — no structured symbols/outline/code
+        let gt = GroundTruth {
+            symbols_min: Some(5),
+            ..Default::default()
+        };
+
+        // Tool response has 8 symbols (> min 5 threshold)
+        let response = serde_json::json!({
+            "symbols": [
+                {"name": "a", "kind": "function"},
+                {"name": "b", "kind": "function"},
+                {"name": "c", "kind": "function"},
+                {"name": "d", "kind": "function"},
+                {"name": "e", "kind": "function"},
+                {"name": "f", "kind": "function"},
+                {"name": "g", "kind": "function"},
+                {"name": "h", "kind": "function"},
+            ]
+        });
+
+        // Use a tool that goes through the default '_' arm (not get_file_symbols,
+        // export_mermaid, search_content, etc.)
+        let score = score_scenario(
+            "build_graph",
+            "csharp",
+            "csharp_build_graph_spectre",
+            &response,
+            &Some(gt),
+            &None,
+            500,
+            ExecutionMetadata::default(),
+        );
+
+        // correctitud must be Some(100.0): 8 symbols meet the min threshold of 5
+        assert!(
+            score.correctitud.is_some(),
+            "correctitud should be Some, got None (NaN stored as None)"
+        );
+        assert_eq!(
+            score.correctitud.unwrap(),
+            100.0,
+            "correctitud should be 100.0 when symbols_min threshold is met"
+        );
+    }
+
+    /// Regression test: when ground truth has only has_result=true and the
+    /// response is non-empty, correctitud must be 100.0.
+    #[test]
+    fn has_result_only_ground_truth_scores_correctly() {
+        let gt = GroundTruth {
+            has_result: Some(true),
+            ..Default::default()
+        };
+
+        // Non-empty response
+        let response = serde_json::json!({
+            "edges": [{"from": "a", "to": "b"}]
+        });
+
+        let score = score_scenario(
+            "get_call_hierarchy",
+            "go",
+            "go_call_hierarchy_nested",
+            &response,
+            &Some(gt),
+            &None,
+            200,
+            ExecutionMetadata::default(),
+        );
+
+        assert!(
+            score.correctitud.is_some(),
+            "correctitud should be Some for has_result match"
+        );
+        assert_eq!(
+            score.correctitud.unwrap(),
+            100.0,
+            "correctitud should be 100.0 when has_result=true and response is non-empty"
+        );
+    }
+
+    /// Regression test: symbols_min penalty is applied when threshold is NOT met.
+    #[test]
+    fn symbols_min_below_threshold_penalizes() {
+        let gt = GroundTruth {
+            symbols_min: Some(10),
+            ..Default::default()
+        };
+
+        // Only 3 symbols returned — below the 10-symbol threshold
+        let response = serde_json::json!({
+            "symbols": [
+                {"name": "a", "kind": "function"},
+                {"name": "b", "kind": "function"},
+                {"name": "c", "kind": "function"},
+            ]
+        });
+
+        let score = score_scenario(
+            "build_graph",
+            "python",
+            "python_build_graph_small",
+            &response,
+            &Some(gt),
+            &None,
+            500,
+            ExecutionMetadata::default(),
+        );
+
+        // 3/10 = 30%, so correctitud should be 30.0
+        assert!(score.correctitud.is_some());
+        assert_eq!(
+            score.correctitud.unwrap(),
+            30.0,
+            "correctitud should be 30.0 (3/10 threshold ratio)"
+        );
     }
 }
