@@ -16,6 +16,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useState,
   type KeyboardEvent,
 } from "react";
 import { ViewIcon } from "./ViewIcon";
@@ -133,6 +134,19 @@ export function ViewTabs({
     void btn;
   }, [activeViewId, views]);
 
+  // Detect horizontal overflow so we can render a gradient fade on the
+  // right edge — users see there's more content to scroll to.
+  const [hasOverflow, setHasOverflow] = useState(false);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const check = () => setHasOverflow(el.scrollWidth > el.clientWidth);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [views.length]);
+
   if (views.length === 0) {
     return null;
   }
@@ -154,6 +168,14 @@ export function ViewTabs({
         data-testid="view-tabs"
         onKeyDown={onKeyDown}
         className="flex items-center gap-1 overflow-x-auto"
+        style={{
+          maskImage: hasOverflow
+            ? "linear-gradient(to right, black calc(100% - 24px), transparent 100%)"
+            : undefined,
+          WebkitMaskImage: hasOverflow
+            ? "linear-gradient(to right, black calc(100% - 24px), transparent 100%)"
+            : undefined,
+        }}
       >
         {views.map((view) => {
           const isActive = view.id === activeViewId;

@@ -528,7 +528,7 @@ function FindingsGroup({
       className="mb-2"
     >
       <header
-        className="mb-1 flex items-center gap-2 px-1 text-xs font-semibold uppercase tracking-wide"
+        className="mb-1 flex items-center gap-2 px-1 text-xs font-medium"
         style={{ color: "var(--color-text-secondary)" }}
       >
         <SeverityBadge severity={severity} />

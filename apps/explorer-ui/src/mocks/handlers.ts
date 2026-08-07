@@ -191,21 +191,38 @@ export const handlers = [
     if (q.length === 0) {
       return HttpResponse.json([]);
     }
-    // Return discriminated-union format (SpotterSearchResult) to match the
-    // real backend. useSpotter validates the full union and unwraps result.
-    // Each family carries the same SpotterResult payload (object + score +
-    // match_type); only the `kind` discriminant differs.
-    const symbolResults = spotterResultsFixture.map((hit, i) => ({
-      kind: "symbol",
-      result: {
-        ...hit,
-        match_type: i === 0 ? `query:${q}` : hit.match_type,
-      },
-    }));
+    const qLower = q.toLowerCase();
+    // Filter symbols by query against label + subtitle + file path so the
+    // mock behaves like a real backend (no matches → empty state instead of
+    // returning the top fixtures for any query).
+    const symbolResults = spotterResultsFixture
+      .filter((hit) => {
+        const label = hit.object.label.toLowerCase();
+        const subtitle = (hit.object.subtitle ?? "").toLowerCase();
+        const props = hit.object.properties ?? [];
+        const pathMatch = props.some(
+          (p) => p.key.toLowerCase().includes("path") || p.key.toLowerCase().includes("file"),
+        );
+        const pathValue = props
+          .filter((p) => (p.key.toLowerCase().includes("path") || p.key.toLowerCase().includes("file")) && p.value_type === "string")
+          .map((p) => String(p.value).toLowerCase())
+          .join(" ");
+        return (
+          label.includes(qLower) ||
+          subtitle.includes(qLower) ||
+          (pathMatch && pathValue.includes(qLower))
+        );
+      })
+      .map((hit, i) => ({
+        kind: "symbol" as const,
+        result: {
+          ...hit,
+          match_type: i === 0 ? `query:${q}` : hit.match_type,
+        },
+      }));
 
     // e15.5: include ingested Route nodes when query matches their path or method
     // Route nodes are added to the store by the ingest_openapi handler.
-    const qLower = q.toLowerCase();
     const routeResults = Array.from(routeStore.values())
       .filter((r) => {
         const pathMatch = r.path.toLowerCase().includes(qLower);

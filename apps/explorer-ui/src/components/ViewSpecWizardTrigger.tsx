@@ -39,7 +39,7 @@ export function ViewSpecWizardTrigger(): JSX.Element {
         if (disabled) return;
         dispatch({ type: "TOGGLE_VIEWSPEC_WIZARD" });
       }}
-      className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs"
+      className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs whitespace-nowrap"
       style={{
         backgroundColor: isOpen
           ? "var(--color-accent)"
@@ -71,7 +71,14 @@ export function ViewSpecWizardTrigger(): JSX.Element {
       >
         <path d="M8 2 L9 7 L14 8 L9 9 L8 14 L7 9 L2 8 L7 7 Z" />
       </svg>
-      <span>{disabled ? "Custom View · select an object" : "Custom View"}</span>
+      <span>Custom View</span>
+      {disabled && (
+        <span
+          aria-hidden="true"
+          className="ml-0.5 inline-block h-1.5 w-1.5 rounded-full"
+          style={{ backgroundColor: "var(--color-warning)" }}
+        />
+      )}
     </button>
   );
 }

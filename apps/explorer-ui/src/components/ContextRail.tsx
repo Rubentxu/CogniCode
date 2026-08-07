@@ -62,7 +62,7 @@ export function ContextRail() {
 
       <div className="flex flex-col gap-6 overflow-auto px-4 py-4 text-sm">
         <section>
-          <h3 className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--color-text-muted)" }}>
+          <h3 className="text-xs font-medium" style={{ color: "var(--color-primary)" }}>
             Continue
           </h3>
           <div className="mt-3 flex flex-col gap-2">
@@ -89,7 +89,7 @@ export function ContextRail() {
               logic is deferred; this stub exposes the count + structure
               so users see the rail populated as soon as the backend
               ships linking logic. */}
-          <h3 className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--color-text-muted)" }}>
+          <h3 className="text-xs font-medium" style={{ color: "var(--color-primary)" }}>
             Knowledge
           </h3>
           <div className="mt-3 space-y-2 rounded-xl border px-3 py-3" style={{
@@ -132,7 +132,7 @@ export function ContextRail() {
         </section>
 
         <section>
-          <h3 className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--color-text-muted)" }}>
+          <h3 className="text-xs font-medium" style={{ color: "var(--color-primary)" }}>
             Pane actions
           </h3>
           <ul className="mt-3 space-y-2 text-xs leading-5" style={{ color: "var(--color-text-secondary)" }}>

@@ -425,8 +425,7 @@ export function QualityIssueDetailView({
             }}
           >
             <p
-              className="text-[10px] font-semibold uppercase tracking-wide"
-              style={{ color: "var(--color-text-muted)" }}
+              className="text-xs font-medium" style={{ color: "var(--color-primary)" }}
             >
               Rule
             </p>
@@ -443,8 +442,7 @@ export function QualityIssueDetailView({
             }}
           >
             <p
-              className="text-[10px] font-semibold uppercase tracking-wide"
-              style={{ color: "var(--color-text-muted)" }}
+              className="text-xs font-medium" style={{ color: "var(--color-primary)" }}
             >
               Remediation
             </p>

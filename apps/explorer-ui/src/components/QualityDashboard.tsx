@@ -115,7 +115,7 @@ function QualitySummaryHeader({ summary, title }: QualitySummaryHeaderProps) {
     <header className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
         <h3
-          className="truncate text-xs font-semibold uppercase tracking-wide"
+          className="truncate text-xs font-medium"
           style={{ color: "var(--color-text-secondary)" }}
           title={title ?? summary.scope}
         >

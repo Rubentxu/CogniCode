@@ -69,7 +69,13 @@ export function PerspectiveToggle() {
       })}
       {/* C4 Overlay toggles */}
       {isC4Perspective && (
-        <div className="flex items-center gap-1 ml-2" data-testid="c4-overlay-toggles">
+        <>
+        <div
+          aria-hidden="true"
+          className="mx-1.5 h-5"
+          style={{ width: 1, backgroundColor: "var(--color-border)" }}
+        />
+        <div className="flex items-center gap-1" data-testid="c4-overlay-toggles">
           <button
             data-testid="c4-overlay-drift"
             aria-pressed={c4Overlay.driftEnabled}
@@ -134,6 +140,7 @@ export function PerspectiveToggle() {
             Boundary Violations
           </button>
         </div>
+        </>
       )}
     </div>
   );

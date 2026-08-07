@@ -4,6 +4,8 @@
  * Displays `suggested_questions` from the backend and allows the user
  * to click on a question to trigger an ask action.
  */
+import { SectionLabel } from "../SectionLabel";
+
 export interface LandingSuggestionStripProps {
   suggestedQuestions: string[];
   onAsk: (question: string) => void;
@@ -26,18 +28,7 @@ export function LandingSuggestionStrip({
         borderTop: "1px solid var(--color-border)",
       }}
     >
-      <div
-        style={{
-          fontSize: 11,
-          color: "var(--color-text-muted)",
-          marginBottom: 8,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-        }}
-      >
-        Try asking
-      </div>
+      <SectionLabel className="mb-2">Try asking</SectionLabel>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {suggestedQuestions.map((question, i) => (
           <button

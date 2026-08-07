@@ -18,7 +18,7 @@ export function UnknownBlockView({ block }: { block: UnknownViewBlock }) {
         className="flex items-center justify-between gap-2"
         style={{ color: "var(--color-warning)" }}
       >
-        <h3 className="text-xs font-semibold uppercase tracking-wide">
+        <h3 className="text-xs font-medium">
           {block.title}
         </h3>
         <span

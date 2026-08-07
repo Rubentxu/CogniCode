@@ -374,9 +374,8 @@ function RenderSvgGraphInner({
         </tbody>
       </table>
 
-      {/* Zoom controls — visible-only (aria-hidden). */}
+      {/* Zoom controls — visually prominent but keyboard-accessible. */}
       <div
-        aria-hidden="true"
         data-testid="svg-graph-controls"
         className="absolute right-2 top-2 flex flex-col gap-1 rounded-md p-1"
         style={{

@@ -26,7 +26,7 @@ test.describe("Explorer exploration flows — Visual Regression", () => {
 
     // Initially shows Graph as active
     const graphBtn = toggle.getByTestId("perspective-graph");
-    const c4Btn = toggle.getByTestId("perspective-c4");
+    const c4Btn = toggle.getByTestId("perspective-c4-context");
     await expect(graphBtn).toBeVisible();
     await expect(c4Btn).toBeVisible();
 
@@ -121,7 +121,7 @@ test.describe("Explorer exploration flows — Visual Regression", () => {
     // Switch to C4 perspective
     const toggle = page.getByTestId("perspective-toggle");
     await expect(toggle).toBeVisible();
-    await toggle.getByTestId("perspective-c4").click();
+    await toggle.getByTestId("perspective-c4-context").click();
 
     // Golden image en C4 antes de Spotter
     await expect(page).toHaveScreenshot("exploration-c4-before-spotter.png", {
@@ -162,7 +162,7 @@ test.describe("Explorer exploration flows — Visual Regression", () => {
     await expect(page.getByTestId("perspective-toggle")).toBeVisible();
 
     // Switch to C4
-    await page.getByTestId("perspective-toggle").getByTestId("perspective-c4").click();
+    await page.getByTestId("perspective-toggle").getByTestId("perspective-c4-context").click();
 
     // Golden image después de switch a C4
     await expect(page).toHaveScreenshot("exploration-full-c4.png", {

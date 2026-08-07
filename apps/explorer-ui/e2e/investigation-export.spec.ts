@@ -20,7 +20,7 @@ test.describe("E21-6: Export Menu — Artifact Auto-Save", () => {
     // Navigate to a symbol to have a view to export
     await page.getByTestId("spotter-trigger").click();
     const spotterInput = page.getByTestId("spotter-input");
-    await spotterInput.fill("UserService");
+    await spotterInput.fill("build");
     await page.getByRole("option").first().click();
 
     // Wait for the pane to render
@@ -41,7 +41,7 @@ test.describe("E21-6: Export Menu — Artifact Auto-Save", () => {
   test("ExportMenu draw.io action handles missing Mermaid gracefully", async ({ page }) => {
     await page.getByTestId("spotter-trigger").click();
     const spotterInput = page.getByTestId("spotter-input");
-    await spotterInput.fill("UserService");
+    await spotterInput.fill("build");
     await page.getByRole("option").first().click();
 
     await expect(page.getByTestId("object-inspector")).toBeVisible({ timeout: 10000 });
@@ -57,7 +57,7 @@ test.describe("E21-6: Export Menu — Artifact Auto-Save", () => {
   test("ExportMenu PNG download does not crash", async ({ page }) => {
     await page.getByTestId("spotter-trigger").click();
     const spotterInput = page.getByTestId("spotter-input");
-    await spotterInput.fill("UserService");
+    await spotterInput.fill("build");
     await page.getByRole("option").first().click();
 
     await expect(page.getByTestId("object-inspector")).toBeVisible({ timeout: 10000 });
@@ -82,7 +82,7 @@ test.describe("E21-6: Export Menu — Artifact Auto-Save", () => {
   test("ExportMenu SVG download does not crash", async ({ page }) => {
     await page.getByTestId("spotter-trigger").click();
     const spotterInput = page.getByTestId("spotter-input");
-    await spotterInput.fill("UserService");
+    await spotterInput.fill("build");
     await page.getByRole("option").first().click();
 
     await expect(page.getByTestId("object-inspector")).toBeVisible({ timeout: 10000 });

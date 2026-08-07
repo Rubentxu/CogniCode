@@ -627,7 +627,7 @@ export function ViewSpecWizard({
             style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface-raised)" }}
           >
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--color-text-secondary)" }}>
+              <h3 className="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>
                 Live Preview
               </h3>
               <button
@@ -706,6 +706,7 @@ export function ViewSpecWizard({
                   }
                 }}
                 disabled={
+                  (state.step === "scaffold" && !state.scaffoldId) ||
                   (state.step === "view-kind" && !canAdvanceFromStep1) ||
                   (state.step === "renderer" && !canAdvanceFromStep2) ||
                   (state.step === "data-source" && !canAdvanceFromStep3)
@@ -804,8 +805,7 @@ function ViewKindStep({ selected, onSelect }: ViewKindStepProps) {
         {(filtered ?? groupedEntries).map((entry) => (
             <div key={entry.group}>
               <h4
-                className="mb-2 text-[10px] font-semibold uppercase tracking-widest"
-                style={{ color: "var(--color-text-muted)" }}
+                className="mb-2 text-xs font-medium" style={{ color: "var(--color-primary)" }}
               >
                 {entry.group}
               </h4>

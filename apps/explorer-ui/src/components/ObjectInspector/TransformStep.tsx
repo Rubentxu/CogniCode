@@ -126,7 +126,7 @@ export function TransformStep({
             {/* Input / Output side-by-side */}
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-text-muted)" }}>
+                <p className="mb-1 text-xs font-medium" style={{ color: "var(--color-primary)" }}>
                   Input
                 </p>
                 <pre
@@ -142,7 +142,7 @@ export function TransformStep({
                 </pre>
               </div>
               <div>
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-text-muted)" }}>
+                <p className="mb-1 text-xs font-medium" style={{ color: "var(--color-primary)" }}>
                   Output
                 </p>
                 <pre

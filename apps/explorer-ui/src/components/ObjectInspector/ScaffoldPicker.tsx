@@ -132,8 +132,7 @@ export function ScaffoldPicker({
         {Array.from(groupedScaffolds.entries()).map(([objectType, scaffolds]) => (
           <div key={objectType}>
             <h4
-              className="mb-2 text-[10px] font-semibold uppercase tracking-widest"
-              style={{ color: "var(--color-text-muted)" }}
+              className="mb-2 text-xs font-medium" style={{ color: "var(--color-primary)" }}
             >
               {objectType}
             </h4>

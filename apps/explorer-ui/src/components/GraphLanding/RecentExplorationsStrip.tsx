@@ -6,6 +6,7 @@
  */
 import { useExplorations } from "../../hooks/useExplorations";
 import type { ExplorationSessionDto } from "../../api/types";
+import { SectionLabel } from "../SectionLabel";
 
 export interface RecentExplorationsStripProps {
   workspaceId: string;
@@ -106,18 +107,7 @@ export function RecentExplorationsStrip({
         borderTop: "1px solid var(--color-border)",
       }}
     >
-      <div
-        style={{
-          fontSize: 11,
-          color: "var(--color-text-muted)",
-          marginBottom: 8,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-        }}
-      >
-        Recent Explorations
-      </div>
+      <SectionLabel className="mb-2">Recent Explorations</SectionLabel>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {recentExplorations.map((exploration) => (
           <ExplorationCard

@@ -19,7 +19,7 @@ export function BlockShell({ id, title, children, testId }: BlockShellProps) {
       }}
     >
       <h3
-        className="text-xs font-semibold uppercase tracking-wide"
+        className="text-xs font-medium"
         style={{ color: "var(--color-text-secondary)" }}
       >
         {title}
