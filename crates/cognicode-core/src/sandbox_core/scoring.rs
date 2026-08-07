@@ -3074,7 +3074,7 @@ mod count_matcher_tests {
 
 #[cfg(test)]
 mod smoke_matcher_tests {
-    use super::{score_scenario, ExecutionMetadata, GroundTruth};
+    use super::{ExecutionMetadata, GroundTruth, score_scenario};
 
     /// Regression test: when ground truth has ONLY symbols_min (no structured
     /// symbols/outline/code), the default scoring arm must start at 100.0 (not NaN)
