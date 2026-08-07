@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auto-Grill: explorer-graph-postgres-graphstore — Fase Explore</title>
+<style>
+:root {
+  --bg: #0d1117; --fg: #c9d1d9; --accent: #58a6ff; --green: #3fb950;
+  --amber: #d29922; --red: #f85149; --border: #30363d; --card: #161b22;
+  --muted: #8b949e;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg); color: var(--fg); line-height: 1.6; padding: 2rem; }
+h1 { font-size: 1.8rem; margin-bottom: 0.25rem; color: var(--accent); }
+h2 { font-size: 1.3rem; margin: 2rem 0 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+h3 { font-size: 1.1rem; margin: 1.5rem 0 0.75rem; }
+.meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 1.5rem; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 1.25rem; margin-bottom: 1rem; }
+table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; }
+th, td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+th { background: #21262d; font-weight: 600; }
+.badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.8rem; font-weight: 600; }
+.badge-ok { background: #1a3a2a; color: var(--green); }
+.badge-warn { background: #3a2e1a; color: var(--amber); }
+.badge-crit { background: #3a1a1a; color: var(--red); }
+.badge-auto { background: #1a2e3a; color: var(--accent); }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin: 1rem 0; }
+.summary-item { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; text-align: center; }
+.summary-value { font-size: 2rem; font-weight: 700; color: var(--accent); }
+.summary-label { font-size: 0.85rem; color: var(--muted); }
+.code { background: #21262d; padding: 0.15rem 0.4rem; border-radius: 3px; font-family: monospace; font-size: 0.9rem; }
+.footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.8rem; }
+ul { padding-left: 1.25rem; margin: 0.5rem 0; }
+.checkbox { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; }
+.checkbox input { width: 1rem; height: 1rem; }
+</style>
+</head>
+<body>
+<h1>🔍 Auto-Grill: explorer-graph-postgres-graphstore</h1>
+<div class="meta">Fase: SDD Explore | Fecha: 2026-06-08 | Método: Heurístico</div>
+
+<!-- ========== SECCIÓN 1: RESUMEN EJECUTIVO ========== -->
+<h2>1. Resumen Ejecutivo</h2>
+<div class="summary-grid">
+  <div class="summary-item">
+    <div class="summary-value">9</div>
+    <div class="summary-label">Preguntas Totales</div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-value">7</div>
+    <div class="summary-label">Auto-Resueltas</div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-value">2</div>
+    <div class="summary-label">Escaladas</div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-value">78%</div>
+    <div class="summary-label">Tasa de Auto-Resolución</div>
+  </div>
+</div>
+<div class="card">
+  <strong>Entrada analizada:</strong> Hallazgos de exploración para el slice <code>explorer-graph-postgres-graphstore</code> — Puente de persistencia canónica PostgreSQL (escritura completa de <code>CallGraph</code> a tablas <code>symbols</code> + <code>call_edges</code>). Contexto: PostgreSQL tiene path de lectura vía <code>Repository</code> trait (5 métodos) pero carece de path de escritura canónico. SQLite tiene ambos. Gap crítico: no hay forma de poblar PostgreSQL con un <code>CallGraph</code> completo.
+</div>
+
+<!-- ========== SECCIÓN 2: DECISIONES AUTOMÁTICAS ========== -->
+<h2>2. Decisiones Automáticas</h2>
+<table>
+  <thead>
+    <tr><th>#</th><th>Pregunta</th><th>Resolución</th><th>Evidencia</th><th>Confianza</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>¿Es PostgreSQL la tienda canónica de verdad?</td>
+      <td><span class="badge badge-ok">✅ Sí</span></td>
+      <td><code>stack-recommendation.md</code>: "Canonical store: PostgreSQL". <code>roadmap.md</code>: "The canonical graph state lives in PostgreSQL". Cross-phase concern: PostgreSQL es el source of truth; SQLite es compatibilidad.</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>¿Debe el slice implementar el trait <code>GraphStore</code> sincrónico?</td>
+      <td><span class="badge badge-warn">❌ No</span></td>
+      <td><code>GraphStore</code> es sync (rusqlite). PostgreSQL es async (sqlx). Implementar sync sobre async requeriría blocking (<code>tokio::task::block_in_place</code> o <code>futures::executor::block_on</code>). Esto fue explícitamente rechazado en el explore de <code>postgres-repository</code>: "PostgreSQL GraphStore impl — Sync trait on async pool — rejected in explore phase".</td>
+      <td>0.95</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>¿Debe el slice implementar un nuevo trait async de persistencia?</td>
+      <td><span class="badge badge-warn">❌ No — innecesario para este slice</span></td>
+      <td>Un trait async (<code>GraphPersistence</code>) es una abstracción más limpia, pero introduce una superficie de API nueva que requiere diseño de trait bounds, dyn-compatibilidad, y decisión sobre <code>#[async_trait]</code>. Para un slice de ~300 líneas, añadir un trait es premature abstraction. Métodos inherentes en <code>PostgresRepository</code> son suficientes.</td>
+      <td>0.85</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>¿Debe el explorer usar PostgreSQL directamente en este slice?</td>
+      <td><span class="badge badge-warn">❌ No</span></td>
+      <td>El explorer usa <code>SymbolRepository</code> (sync). PostgreSQL es async. El bridge sync↔async requiere bloqueo o rediseño del puerto del explorer. Esto es un slice separado con decisión de diseño significativa. Documentado como "out of scope" en <code>postgres-call-edges</code> archive.</td>
+      <td>0.90</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>¿Necesita el slice nuevas tablas PostgreSQL?</td>
+      <td><span class="badge badge-ok">✅ No</span></td>
+      <td><code>schema_postgres.sql</code> ya tiene <code>symbols</code> (15 líneas) y <code>call_edges</code> (37 líneas) con índices. La escritura usa estas tablas existentes. El blob bincode no se almacena en PostgreSQL (a diferencia de SQLite con <code>call_graphs</code>). La diferencia es intencional: PostgreSQL es la tienda canónica de query; el blob es un artefacto de exportación.</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td>¿La escritura debe ser transaccional?</td>
+      <td><span class="badge badge-ok">✅ Sí</span></td>
+      <td>La consistencia entre <code>symbols</code> y <code>call_edges</code> es crítica. Si <code>symbols</code> se inserta pero <code>call_edges</code> falla, la query de edges devuelve callers/callees con IDs que no tienen símbolo. <code>sqlx</code> soporta transacciones vía <code>pool.begin().await</code>. El impl debe usar <code>DELETE</code> + <code>INSERT</code> dentro de una transacción.</td>
+      <td>0.95</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td>¿Este slice desbloquea slices posteriores?</td>
+      <td><span class="badge badge-ok">✅ Sí</span></td>
+      <td>Desbloquea: (a) <code>explorer-postgres-adapter</code> — necesita símbolos+edges poblados para resolver queries, (b) <code>mcp-postgres-envelope</code> — necesita el path de escritura para probar queries MCP contra datos reales, (c) <code>petgraph-projection-from-postgres</code> — necesita datos en PG para construir el grafo en memoria.</td>
+      <td>0.90</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ========== SECCIÓN 3: DECISIONES ESCALADAS ========== -->
+<h2>3. Decisiones Escaladas</h2>
+
+<h3>E1: ¿Estrategia de escritura — inherent methods vs. trait?</h3>
+<div class="card">
+  <p><strong>Pregunta:</strong> ¿Agregar <code>save_call_graph(&CallGraph)</code> y <code>load_call_graph()</code> como métodos inherentes en <code>PostgresRepository</code>, o crear un nuevo trait async (<code>GraphPersistence</code>)?</p>
+  <table>
+    <thead><tr><th>Opción</th><th>OS</th><th>Rating</th><th>Clasificación</th></tr></thead>
+    <tbody>
+      <tr style="background:#1a3a2a22">
+        <td><strong>A: Métodos inherentes en PostgresRepository</strong> — <code>save_call_graph(&CallGraph)</code> y <code>load_call_graph()</code> como <code>pub async fn</code>. Sin trait nuevo. Sin cambios en la API pública excepto los métodos.</td>
+        <td><strong>0.832</strong></td>
+        <td><span class="badge badge-ok">🟢 EXCELENTE</span></td>
+        <td>🔧 Técnico</td>
+      </tr>
+      <tr>
+        <td><strong>B: Nuevo trait async <code>GraphPersistence</code></strong> — Trait con <code>#[async_trait]</code>, 2-3 métodos. <code>PostgresRepository</code> lo implementa. Futuros backends pueden implementarlo.</td>
+        <td>0.798</td>
+        <td><span class="badge badge-ok">🟢 EXCELENTE</span></td>
+        <td>🔧 Técnico</td>
+      </tr>
+      <tr>
+        <td><strong>C: Extender <code>Repository</code> trait</strong> — Agregar <code>save_graph</code>/<code>load_graph</code> al trait existente. Mezcla responsabilidades de lectura y escritura.</td>
+        <td>0.535</td>
+        <td><span class="badge badge-warn">🟡 BUENO</span></td>
+        <td>🔧 Técnico</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><strong>Recomendación del agente:</strong> <span class="badge badge-ok">Opción A</span> — Métodos inherentes. El patrón es consistente con el approach existente: <code>insert_edge()</code> ya es <code>pub(crate)</code> inherente, no en trait. Un trait async añade superficie de API innecesaria para un solo implementador. Si en el futuro un segundo backend necesita el mismo contrato, extraer el trait es barato (refactoring mecánico). La simplicidad del approach inherente permite que este slice sea estrecho (~300 líneas), revisable, y libere el desbloqueo estratégico rápidamente.</p>
+</div>
+
+<h3>E2: ¿Almacenar el blob bincode en PostgreSQL o solo tablas normalizadas?</h3>
+<div class="card">
+  <p><strong>Pregunta:</strong> SQLite almacena <code>CallGraph</code> como blob bincode (tabla <code>call_graphs</code>) Y pobla tablas <code>symbols</code>/<code>call_edges</code>. ¿Debe PostgreSQL hacer lo mismo (dual storage) o solo tablas normalizadas?</p>
+  <table>
+    <thead><tr><th>Opción</th><th>OS</th><th>Rating</th><th>Clasificación</th></tr></thead>
+    <tbody>
+      <tr style="background:#1a3a2a22">
+        <td><strong>A: Solo tablas normalizadas</strong> — <code>save_call_graph</code> escribe a <code>symbols</code> + <code>call_edges</code>. <code>load_call_graph</code> reconstruye desde las tablas. Sin blob. Sin tabla <code>call_graphs</code> en PG.</td>
+        <td><strong>0.820</strong></td>
+        <td><span class="badge badge-ok">🟢 EXCELENTE</span></td>
+        <td>🔧 Técnico</td>
+      </tr>
+      <tr>
+        <td><strong>B: Dual storage (blob + tablas)</strong> — Agregar tabla <code>call_graphs</code> en PG, almacenar bincode, y también poblar <code>symbols</code>/<code>call_edges</code>. Consistente con SQLite.</td>
+        <td>0.650</td>
+        <td><span class="badge badge-warn">🟡 BUENO</span></td>
+        <td>🔧 Técnico</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><strong>Recomendación del agente:</strong> <span class="badge badge-ok">Opción A</span> — Solo tablas normalizadas. PostgreSQL es la tienda canónica de query, no de blob. El roadmap explícitamente dice: "JSON graph snapshots are export and import only; the canonical state of truth is in PostgreSQL." El blob bincode es un artefacto de serialización que pertenece al path SQLite (donde no hay tipos nativos para queries complejas). En PostgreSQL, las tablas normalizadas SON la verdad canónica. <code>load_call_graph</code> se implementa como <code>SELECT * FROM symbols</code> + <code>SELECT * FROM call_edges</code> → reconstrucción en memoria. Esto es más lento que cargar un blob, pero aceptable para el MVP (sub-10k símbolos) y se optimiza después si es necesario.</p>
+</div>
+
+<!-- ========== SECCIÓN 4: VALIDACIÓN PENDIENTE ========== -->
+<h2>4. Validación Pendiente</h2>
+<div class="card">
+  <p><strong>Instrucciones:</strong> Revisá cada decisión escalada y marcá tu aprobación. Las decisiones auto-resueltas (sección 2) están pre-aprobadas con evidencia del codebase y documentación.</p>
+
+  <h3>Decisiones Escaladas</h3>
+  <div class="checkbox"><input type="checkbox" id="e1a"><label for="e1a"><strong>E1-A:</strong> Métodos inherentes en <code>PostgresRepository</code> (no trait). Estrategia de escritura sin abstracción prematura.</label></div>
+  <div class="checkbox"><input type="checkbox" id="e1b"><label for="e1b"><strong>E1-B:</strong> Nuevo trait async <code>GraphPersistence</code>. Abstracción temprana, más líneas, pero más extensible.</label></div>
+  <div class="checkbox"><input type="checkbox" id="e2a"><label for="e2a"><strong>E2-A:</strong> Solo tablas normalizadas (sin blob bincode en PostgreSQL). Reconstrucción desde queries.</label></div>
+  <div class="checkbox"><input type="checkbox" id="e2b"><label for="e2b"><strong>E2-B:</strong> Dual storage (blob + tablas) como SQLite. Consistente pero redundante.</label></div>
+
+  <h3 style="margin-top:1.5rem;">Decisiones Auto-Resueltas (pre-aprobadas)</h3>
+  <div class="checkbox"><input type="checkbox" checked disabled><label>1. PostgreSQL es la tienda canónica ✅</label></div>
+  <div class="checkbox"><input type="checkbox" checked disabled><label>2. No implementar GraphStore sync sobre async ✅</label></div>
+  <div class="checkbox"><input type="checkbox" checked disabled><label>3. No crear trait async todavía (inherente primero) ✅</label></div>
+  <div class="checkbox"><input type="checkbox" checked disabled><label>4. No bridge explorer→PostgreSQL en este slice ✅</label></div>
+  <div class="checkbox"><input type="checkbox" checked disabled><label>5. Sin nuevas tablas PostgreSQL ✅</label></div>
+  <div class="checkbox"><input type="checkbox" checked disabled><label>6. Escritura transaccional ✅</label></div>
+  <div class="checkbox"><input type="checkbox" checked disabled><label>7. Este slice desbloquea explorer-adapter, MCP-envelope, petgraph-projection ✅</label></div>
+</div>
+
+<!-- ========== FOOTER ========== -->
+<div class="footer">
+  <p>Auto-Grill v2.0 | Agente: sdd-explore | Cambio: explorer-graph-postgres-graphstore | Modo: hybrid (Engram + OpenSpec) | Método: Heurístico (CogniCode no disponible)</p>
+  <p>Oportunidades clasificadas como 🔧 Técnico — impacto interno en arquitectura, sin cambio en funcionalidad visible al usuario.</p>
+</div>
+</body>
+</html>

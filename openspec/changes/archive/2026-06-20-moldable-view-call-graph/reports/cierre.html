@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>SDDK — moldable-view-call-graph — Cierre</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+    </script>
+    <style>
+      * { font-family: 'Inter', system-ui, sans-serif; }
+      .font-mono { font-family: 'JetBrains Mono', monospace; }
+      .card { background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+      .section-dark { background: linear-gradient(135deg, #1e293b, #0f172a); color: #f1f5f9; }
+      .badge-feat { background: linear-gradient(135deg, #059669, #047857); }
+      .badge-fix { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+      .badge-refactor { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+      .badge-chore { background: linear-gradient(135deg, #6b7280, #4b5563); }
+      .badge-pass { background: linear-gradient(135deg, #059669, #047857); }
+      .badge-warn { background: linear-gradient(135deg, #d97706, #b45309); }
+      .badge-fail { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+      .phase-complete { background: #059669; }
+      .phase-active { background: #2563eb; }
+      .phase-pending { background: #94a3b8; }
+      .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+    </style>
+  </head>
+  <body class="bg-gradient-to-br from-slate-100 to-stone-100 min-h-screen">
+    <main class="max-w-5xl mx-auto px-6 py-12 space-y-10">
+
+      <!-- SECTION 1: Executive Summary -->
+      <section id="summary">
+        <div class="section-dark rounded-2xl p-10 text-center space-y-6">
+          <div class="flex justify-center gap-3">
+            <span class="tag badge-feat text-white">feature + bugfix</span>
+            <span class="tag badge-pass text-white">PASS</span>
+          </div>
+          <h1 class="text-4xl font-bold">moldable-view-call-graph</h1>
+          <p class="text-lg text-slate-300">CogniCode — 2026-06-20</p>
+
+          <div class="flex justify-center gap-10 pt-4">
+            <div class="text-center">
+              <div class="text-3xl font-bold">13</div>
+              <div class="text-sm text-slate-400">Tareas</div>
+            </div>
+            <div class="text-center">
+              <div class="text-3xl font-bold">15</div>
+              <div class="text-sm text-slate-400">Commits</div>
+            </div>
+            <div class="text-center">
+              <div class="text-3xl font-bold">20</div>
+              <div class="text-sm text-slate-400">Archivos</div>
+            </div>
+            <div class="text-center">
+              <div class="text-3xl font-bold">~4000</div>
+              <div class="text-sm text-slate-400">Líneas</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 2: Pipeline Timeline -->
+      <section id="pipeline">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Pipeline SDDK</h2>
+          <div class="mermaid">
+            graph LR
+              A[explore ✓] --> B[propose ✓]
+              B --> C[spec ✓]
+              B --> D[design ✓]
+              C --> E[tasks ✓]
+              D --> E
+              E --> F[apply ✓]
+              F --> G[verify ✓]
+              G --> H[archive ✓]
+              style A fill:#059669,color:#fff
+              style B fill:#059669,color:#fff
+              style C fill:#059669,color:#fff
+              style D fill:#059669,color:#fff
+              style E fill:#059669,color:#fff
+              style F fill:#059669,color:#fff
+              style G fill:#059669,color:#fff
+              style H fill:#2563eb,color:#fff
+          </div>
+          <div class="mt-6 text-sm text-slate-500">
+            <p>Pipeline ejecutado en modo automático el 2026-06-20. Cada fase delegated a sdd-kernel-* agent con verificación contra código real.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 3: Proposal & Scope -->
+      <section id="proposal">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Propuesta y Alcance</h2>
+          <div class="prose max-w-none">
+            <h3 class="text-lg font-semibold text-slate-700 mb-3">Bug Original</h3>
+            <p class="text-slate-600 mb-4">
+              La vista <code class="font-mono text-sm bg-slate-100 px-1 rounded">call_graph</code> en el Explorer UI mostraba el SVG en blanco
+              a pesar de que los metadatos (fan in/out, signature) sí renderizaban. La investigación reveló que:
+            </p>
+            <ul class="list-disc list-inside text-slate-600 mb-6 space-y-1">
+              <li><code>call_graph</code> es un <strong>ViewKind</strong> (intención semántica), NO un block id</li>
+              <li><code>PaneInspector</code> siempre renderiza <code>&lt;Blocks&gt;</code>, nunca rutas a graph views</li>
+              <li><code>ViewBlock.tsx</code> no tiene <code>case "call_graph":</code></li>
+              <li>Schema <code>ContextualView</code> no validaba <code>view_kind</code> (backend lo enviaba, frontend lo ignoraba)</li>
+            </ul>
+
+            <h3 class="text-lg font-semibold text-slate-700 mb-3">Visión Arquitectónica</h3>
+            <p class="text-slate-600 mb-4">
+              Llevar el CogniCode Explorer a una experiencia de exploración estilo
+              <strong>Moldable Development</strong> (filosofía de GToolkit/GtPager), donde los developers pueden:
+            </p>
+            <ul class="list-disc list-inside text-slate-600 mb-4 space-y-1">
+              <li>Navegar visualmente por el knowledge graph</li>
+              <li>Click en nodo abre nuevo pane (Pane Stack) — preserva exploración</li>
+              <li>Guardar y restaurar exploraciones completas (Exploration Snapshot)</li>
+              <li>Cache instantáneo (localStorage) + persistencia duradera (servidor)</li>
+            </ul>
+
+            <h3 class="text-lg font-semibold text-slate-700 mb-3">Alcance</h3>
+            <div class="grid md:grid-cols-2 gap-4">
+              <div class="border-l-4 border-green-500 pl-4">
+                <h4 class="font-semibold text-slate-700 mb-2">✅ Dentro del alcance</h4>
+                <ul class="text-sm text-slate-600 space-y-1">
+                  <li>GraphViewRenderer para call_graph</li>
+                  <li>Empty state para graphs</li>
+                  <li>Pane Stack navigation con dedup</li>
+                  <li>Pane State Snapshot (scroll + zoom + pan)</li>
+                  <li>localStorage cache + server save</li>
+                  <li>Tests Vitest + Playwright</li>
+                </ul>
+              </div>
+              <div class="border-l-4 border-slate-400 pl-4">
+                <h4 class="font-semibold text-slate-700 mb-2">⏭️ Fuera del alcance (futuro)</h4>
+                <ul class="text-sm text-slate-600 space-y-1">
+                  <li>Backend layout endpoint real (sigue mock)</li>
+                  <li>dependency_graph, seam_map (soportados pero no wireados)</li>
+                  <li>Sharing multi-usuario</li>
+                  <li>Conflict resolution para concurrent edits</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 4: Design Decisions -->
+      <section id="design">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Decisiones de Diseño</h2>
+          <div class="mermaid">
+            graph TD
+              A[PaneInspector] -->|early-return| B{isGraphViewKind}
+              B -->|true| C[GraphViewRenderer]
+              B -->|false| D[Blocks]
+              C -->|useMemo| E[layoutFromContextualView]
+              C -->|empty state| F[GraphEmptyState]
+              C -->|node click| G[dispatch SELECT_OBJECT]
+              G -->|Pane Stack| H[PanesPaneStackView]
+              H -->|viewport change| I[UPDATE_PANE_VIEWPORT]
+              I -->|localStorage| J[Snapshot Cache]
+              I -->|manual save| K[POST /api/explorations/session]
+          </div>
+          <div class="mt-6 grid md:grid-cols-2 gap-4 text-sm">
+            <div class="bg-slate-50 p-4 rounded-lg">
+              <h4 class="font-semibold text-slate-700 mb-2">GraphViewRenderer Routing</h4>
+              <p class="text-slate-600">Early-return en PaneInspector cuando <code>view_kind</code> ∈ {call_graph, dependency_graph, data_flow, impact_radius, seam_map}</p>
+            </div>
+            <div class="bg-slate-50 p-4 rounded-lg">
+              <h4 class="font-semibold text-slate-700 mb-2">Memoización</h4>
+              <p class="text-slate-600"><code>useMemo([view.object_id, view.blocks])</code> evita recálculo en validating</p>
+            </div>
+            <div class="bg-slate-50 p-4 rounded-lg">
+              <h4 class="font-semibold text-slate-700 mb-2">Pane Stack (Opción A)</h4>
+              <p class="text-slate-600">Click en nodo → SELECT_OBJECT → abre nuevo pane preservando exploración</p>
+            </div>
+            <div class="bg-slate-50 p-4 rounded-lg">
+              <h4 class="font-semibold text-slate-700 mb-2">NO Backward Compatibility</h4>
+              <p class="text-slate-600"><code>ExplorationSession.panes</code> REQUERIDO sin <code>#[serde(default)]</code> — sesiones legacy inválidas</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 5: Tasks Completed -->
+      <section id="tasks">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Tareas Completadas (13 en 3 Olas)</h2>
+          
+          <div class="space-y-6">
+            <div>
+              <h3 class="text-lg font-semibold text-slate-700 mb-3">🌊 Wave 1: Schema Stamp (4 commits)</h3>
+              <div class="bg-slate-50 p-4 rounded-lg font-mono text-xs space-y-1">
+                <div><span class="text-slate-500">483a9f0</span> chore(moldable-view): initial planning docs + visual regression baseline</div>
+                <div><span class="text-slate-500">923974d</span> feat(explorer-ui): add view_kind to ContextualView Zod schema</div>
+                <div><span class="text-slate-500">204df8a</span> feat(explorer-api): stamp view_kind and renderer_kind from ViewDescriptor</div>
+                <div><span class="text-slate-500">f30bc2e</span> feat(explorer-ui): add view_kind to MSW fixtures</div>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="text-lg font-semibold text-slate-700 mb-3">🌊 Wave 2: GraphViewRenderer + Bug Fix (4 commits)</h3>
+              <div class="bg-slate-50 p-4 rounded-lg font-mono text-xs space-y-1">
+                <div><span class="text-slate-500">2e2ab1e</span> feat(explorer-ui): add GraphViewRenderer component with TDD</div>
+                <div><span class="text-slate-500">6449eaa</span> feat(explorer-ui): route graph views to GraphViewRenderer in PaneInspector</div>
+                <div><span class="text-slate-500">4ff6504</span> test(explorer-ui): add Playwright e2e tests for call graph rendering</div>
+                <div><span class="text-slate-500">fe34e95</span> fix(explorer-ui): show edge labels only when highlighted (Moldable View)</div>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="text-lg font-semibold text-slate-700 mb-3">🌊 Wave 3: Exploration Snapshot (7 commits)</h3>
+              <div class="bg-slate-50 p-4 rounded-lg font-mono text-xs space-y-1">
+                <div><span class="text-slate-500">01a6d78</span> feat(explorer-ui): add ViewportState to Pane type</div>
+                <div><span class="text-slate-500">d55126a</span> feat(explorer-ui): capture viewport state on pan/zoom</div>
+                <div><span class="text-slate-500">8e7ca46</span> feat(explorer-api): add panes field to ExplorationSession (no backward compat)</div>
+                <div><span class="text-slate-500">d0fa4fe</span> feat(explorer-ui): cache exploration snapshot to localStorage</div>
+                <div><span class="text-slate-500">124817b</span> feat(explorer-ui): save exploration snapshot with panes to server</div>
+                <div><span class="text-slate-500">2b93a13</span> test(explorer-ui): e2e tests for exploration snapshot</div>
+                <div><span class="text-slate-500">63913e5</span> docs(moldable-view): mark ADR-040 as implemented</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 6: Verification -->
+      <section id="verification">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Verificación</h2>
+          
+          <div class="grid md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-green-50 border border-green-200 p-4 rounded-lg text-center">
+              <div class="text-2xl font-bold text-green-700">16/16</div>
+              <div class="text-sm text-green-600">Spec scenarios</div>
+            </div>
+            <div class="bg-green-50 border border-green-200 p-4 rounded-lg text-center">
+              <div class="text-2xl font-bold text-green-700">442</div>
+              <div class="text-sm text-green-600">Vitest passing</div>
+            </div>
+            <div class="bg-green-50 border border-green-200 p-4 rounded-lg text-center">
+              <div class="text-2xl font-bold text-green-700">524</div>
+              <div class="text-sm text-green-600">Rust tests passing</div>
+            </div>
+          </div>
+
+          <h3 class="text-lg font-semibold text-slate-700 mb-3">Spec Compliance</h3>
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-100">
+                <tr>
+                  <th class="text-left py-2 px-3">Spec</th>
+                  <th class="text-left py-2 px-3">Scenarios</th>
+                  <th class="text-left py-2 px-3">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="border-t">
+                  <td class="py-2 px-3 font-mono text-xs">graph-view-renderer</td>
+                  <td class="py-2 px-3">8 scenarios (routing, empty state, click-to-pane, schema, backend stamping, memoization)</td>
+                  <td class="py-2 px-3"><span class="tag badge-pass text-white">PASS</span></td>
+                </tr>
+                <tr class="border-t bg-slate-50">
+                  <td class="py-2 px-3 font-mono text-xs">exploration-snapshot</td>
+                  <td class="py-2 px-3">8 scenarios (viewport capture, restore, localStorage, server save, breaking change)</td>
+                  <td class="py-2 px-3"><span class="tag badge-pass text-white">PASS</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="text-lg font-semibold text-slate-700 mt-6 mb-3">Pre-existing Issues (no relacionados)</h3>
+          <ul class="text-sm text-slate-600 space-y-1 list-disc list-inside">
+            <li>5 SWR teardown errors en RationaleView / App.test.tsx</li>
+            <li>1 Rust test <code>build_architecture_caps_code_nodes_at_200</code> en graph facade</li>
+            <li>1 Playwright <code>screenshot: "on"</code> config issue en responsive.spec.ts</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- SECTION 7: Git & Release -->
+      <section id="release">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Git & Release</h2>
+          
+          <div class="bg-slate-50 p-6 rounded-lg font-mono text-sm space-y-2 mb-6">
+            <div><span class="text-slate-500">Branch:</span> feat/moldable-view-call-graph (preservada post-merge)</div>
+            <div><span class="text-slate-500">Merge commit:</span> ec8c9f3</div>
+            <div><span class="text-slate-500">Tag:</span> <span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded">v0.8.0</span> (annotated, pusheado)</div>
+            <div><span class="text-slate-500">Archive:</span> openspec/changes/archive/2026-06-20-moldable-view-call-graph/</div>
+          </div>
+
+          <h3 class="text-lg font-semibold text-slate-700 mb-3">Versiones Redistribuidas (todas &lt; 1.0.0)</h3>
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-100">
+                <tr>
+                  <th class="text-left py-2 px-3">Tag</th>
+                  <th class="text-left py-2 px-3">Era</th>
+                  <th class="text-left py-2 px-3">Release</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="border-t"><td class="py-2 px-3 font-mono">v0.4.0</td><td class="py-2 px-3">v1.0.0</td><td class="py-2 px-3">Production-Ready Quality Engine</td></tr>
+                <tr class="border-t bg-slate-50"><td class="py-2 px-3 font-mono">v0.5.0</td><td class="py-2 px-3">v1.1.0</td><td class="py-2 px-3">Modularize rules engine</td></tr>
+                <tr class="border-t"><td class="py-2 px-3 font-mono">v0.6.0</td><td class="py-2 px-3">v1.2.0</td><td class="py-2 px-3">Comprehensive test suite</td></tr>
+                <tr class="border-t bg-slate-50"><td class="py-2 px-3 font-mono">v0.7.0</td><td class="py-2 px-3">v0.6.0</td><td class="py-2 px-3">Agent-dashboard-improvements</td></tr>
+                <tr class="border-t"><td class="py-2 px-3 font-mono">v0.8.0</td><td class="py-2 px-3">nuevo</td><td class="py-2 px-3"><strong>GraphViewRenderer + Exploration Snapshot</strong> ← moldable-view</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 8: Knowledge Impact -->
+      <section id="knowledge">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Impacto en Conocimiento</h2>
+          
+          <h3 class="text-lg font-semibold text-slate-700 mb-3">Términos añadidos a CONTEXT.md</h3>
+          <div class="grid md:grid-cols-3 gap-4 mb-6">
+            <div class="border border-slate-200 p-4 rounded-lg">
+              <h4 class="font-semibold text-slate-700">GraphViewRenderer</h4>
+              <p class="text-sm text-slate-600 mt-1">Componente genérico que renderiza ContextualView con ViewKind estructural como SvgGraph interactivo.</p>
+            </div>
+            <div class="border border-slate-200 p-4 rounded-lg">
+              <h4 class="font-semibold text-slate-700">Moldable Navigation</h4>
+              <p class="text-sm text-slate-600 mt-1">Patrón donde click en objeto relacionado abre nuevo pane (Pane Stack), preservando exploración.</p>
+            </div>
+            <div class="border border-slate-200 p-4 rounded-lg">
+              <h4 class="font-semibold text-slate-700">Exploration Snapshot</h4>
+              <p class="text-sm text-slate-600 mt-1">Feature que persiste el estado visual completo de cada pane (scroll, zoom, pan).</p>
+            </div>
+          </div>
+
+          <h3 class="text-lg font-semibold text-slate-700 mb-3">Documentación Generada</h3>
+          <ul class="text-sm text-slate-600 space-y-2 list-disc list-inside">
+            <li><code>docs/adr/ADR-040-graph-view-renderer.md</code> — Decisión arquitectónica (8 decisiones, 5 alternativas rechazadas)</li>
+            <li><code>docs/roadmap/MOLDABLE-VIEW-PANE-STATE-2026.md</code> — Roadmap completo</li>
+            <li><code>docs/wireframes/MOLDABLE-VIEW-UX-WORKFLOW.md</code> — UX workflow (3 personas, 3 workflows)</li>
+            <li><code>openspec/changes/archive/2026-06-20-moldable-view-call-graph/</code> — Artefactos SDDK</li>
+          </ul>
+
+          <h3 class="text-lg font-semibold text-slate-700 mt-6 mb-3">⚠️ Breaking Change</h3>
+          <div class="bg-amber-50 border border-amber-200 p-4 rounded-lg">
+            <p class="text-sm text-slate-700">
+              <code>ExplorationSession.panes</code> es ahora REQUERIDO (sin <code>#[serde(default)]</code>).
+              Las sesiones guardadas antes de este cambio fallan al deserializar.
+              Los usuarios deben re-guardar sus exploraciones con la nueva arquitectura.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 9: Next Steps -->
+      <section id="next">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Próximos Pasos</h2>
+          
+          <div class="space-y-4">
+            <div class="flex items-start gap-3">
+              <span class="tag badge-chore text-white">Inmediato</span>
+              <div>
+                <h4 class="font-semibold text-slate-700">Comunicar breaking change</h4>
+                <p class="text-sm text-slate-600">Notificar a usuarios con ExplorationSession guardadas que deben re-guardar.</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3">
+              <span class="tag badge-feat text-white">Corto plazo</span>
+              <div>
+                <h4 class="font-semibold text-slate-700">Wirear otros ViewKinds</h4>
+                <p class="text-sm text-slate-600">GraphViewRenderer ya soporta dependency_graph, seam_map, data_flow — solo falta routing.</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3">
+              <span class="tag badge-refactor text-white">Largo plazo</span>
+              <div>
+                <h4 class="font-semibold text-slate-700">Backend layout real</h4>
+                <p class="text-sm text-slate-600">Reemplazar <code>layoutFromContextualView</code> mock con <code>POST /api/diagrams/layout</code>.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- FOOTER -->
+      <footer class="text-center text-sm text-slate-500 py-6">
+        <p>SDDK Report — moldable-view-call-graph — v0.8.0 — 2026-06-20</p>
+        <p class="mt-1">CogniCode — Moldable Development Exploration</p>
+      </footer>
+
+    </main>
+  </body>
+</html>

@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>SDDK — e30-conformance-audit — Cierre</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose", flowchart: { curve: "basis", padding: 20 }, sequence: { actorMargin: 60 } });
+    </script>
+    <style>
+      * { font-family: 'Inter', system-ui, sans-serif; }
+      .font-mono { font-family: 'JetBrains Mono', monospace; }
+      .card { background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+      .section-dark { background: linear-gradient(135deg, #1e293b, #0f172a); color: #f1f5f9; }
+      .badge-feat { background: linear-gradient(135deg, #059669, #047857); }
+      .badge-fix { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+      .badge-refactor { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+      .badge-chore { background: linear-gradient(135deg, #6b7280, #4b5563); }
+      .badge-pass { background: linear-gradient(135deg, #059669, #047857); }
+      .badge-warn { background: linear-gradient(135deg, #d97706, #b45309); }
+      .badge-fail { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+      .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+      .nav-pill { padding: 4px 12px; border-radius: 9999px; font-size: 0.75rem; background: rgba(255,255,255,0.1); color: #cbd5e1; }
+      .kbd { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; padding: 1px 6px; border-radius: 4px; background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; }
+      .toc-link { display: block; padding: 6px 12px; border-radius: 8px; color: #475569; font-size: 0.85rem; }
+      .toc-link:hover { background: #f1f5f9; color: #0f172a; }
+      .toc-link.active { background: #1e293b; color: white; }
+      .sticky-toc { position: sticky; top: 20px; max-height: calc(100vh - 40px); overflow-y: auto; }
+      .metric-card { background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px; }
+      .metric-value { font-size: 1.875rem; font-weight: 700; line-height: 1.1; }
+      .metric-label { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+      .pattern-card { background: linear-gradient(135deg, #ecfdf5, #d1fae5); border-left: 4px solid #059669; border-radius: 8px; padding: 16px; }
+      .risk-row { display: grid; grid-template-columns: 80px 1fr 100px; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; align-items: center; }
+      .risk-HIGH { background: #fef2f2; color: #b91c1c; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.7rem; text-align: center; }
+      .risk-MEDIUM { background: #fefbeb; color: #b45309; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.7rem; text-align: center; }
+      .risk-LOW { background: #f0df4; color: #047857; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.7rem; text-align: center; }
+      details summary { cursor: pointer; user-select: none; }
+      details summary::-webkit-details-marker { display: none; }
+      .collapsible-arrow { display: inline-block; transition: transform 0.2s; }
+      details[open] .collapsible-arrow { transform: rotate(90deg); }
+    </style>
+  </head>
+  <body class="bg-gradient-to-br from-slate-100 to-stone-100 min-h-screen">
+    <main class="max-w-7xl mx-auto px-6 py-12 grid grid-cols-12 gap-8">
+
+      <aside class="col-span-3">
+        <nav class="sticky-toc card p-4">
+          <h3 class="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wider">Contenido</h3>
+          <div class="space-y-1">
+            <a href="#summary" class="toc-link">1 · Hero</a>
+            <a href="#pipeline" class="toc-link">2 · Pipeline Timeline</a>
+            <a href="#proposal" class="toc-link">3 · Proposal & Scope</a>
+            <a href="#tech-stack" class="toc-link">4 · Stack tecnológico</a>
+            <a href="#verification" class="toc-link">5 · Verificación</a>
+            <a href="#git" class="toc-link">6 · Git & Release</a>
+            <a href="#knowledge" class="toc-link">7 · Impacto en conocimiento</a>
+            <a href="#tech-debt" class="toc-link">8 · Deuda técnica</a>
+            <a href="#ops" class="toc-link">9 · Características operacionales</a>
+            <a href="#next-steps" class="toc-link">10 · Próximos pasos</a>
+          </div>
+        </nav>
+      </aside>
+
+      <div class="col-span-9 space-y-10">
+
+        <!-- BLOCK A — PROCESO SDDK -->
+        <section id="summary">
+          <div class="section-dark rounded-2xl p-10 space-y-8">
+            <div class="text-center space-y-4">
+              <div class="flex justify-center gap-3">
+                <span class="tag badge-feat text-white">feat</span>
+                <span class="tag badge-warn text-white">PASS_WITH_WARNINGS</span>
+                <span class="tag bg-white/10 text-white">v0.90.0</span>
+              </div>
+              <h1 class="text-5xl font-bold">e30-conformance-audit</h1>
+              <p class="text-lg text-slate-300">CogniCode — 2026-08-06</p>
+              <p class="text-sm text-slate-400 max-w-2xl mx-auto">
+                Harness de conformance OpenSpec (431 reqs/67 specs) + corrección de
+                gates G10/G11/G12 del scorecard de release. CHANGELOG canónico,
+                ADR-031/032 aceptados, 57 ramas stale purgadas, 6/6 specs Tier-C
+                marcadas OBSOLETE.
+              </p>
+            </div>
+
+            <div class="grid grid-cols-4 gap-4 max-w-3xl mx-auto">
+              <div class="text-center p-4 bg-white/5 rounded-xl">
+                <div class="text-3xl font-bold">7</div>
+                <div class="text-xs text-slate-400 mt-1 uppercase tracking-wider">Tareas</div>
+              </div>
+              <div class="text-center p-4 bg-white/5 rounded-xl">
+                <div class="text-3xl font-bold">7</div>
+                <div class="text-xs text-slate-400 mt-1 uppercase tracking-wider">Commits</div>
+              </div>
+              <div class="text-center p-4 bg-white/5 rounded-xl">
+                <div class="text-3xl font-bold">8</div>
+                <div class="text-xs text-slate-400 mt-1 uppercase tracking-wider">Archivos</div>
+              </div>
+              <div class="text-center p-4 bg-white/5 rounded-xl">
+                <div class="text-3xl font-bold text-emerald-400">+439/-53</div>
+                <div class="text-xs text-slate-400 mt-1 uppercase tracking-wider">Líneas</div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-4 gap-4 max-w-3xl mx-auto">
+              <div class="text-center p-4 bg-white/5 rounded-xl">
+                <div class="text-3xl font-bold text-emerald-400">13/13</div>
+                <div class="text-xs text-slate-400 mt-1 uppercase tracking-wider">Spec scenarios</div>
+              </div>
+              <div class="text-center p-4 bg-white/5 rounded-xl">
+                <div class="text-3xl font-bold text-amber-400">6.2</div>
+                <div class="text-xs text-slate-400 mt-1 uppercase tracking-wider">DQS</div>
+              </div>
+              <div class="text-center p-4 bg-white/5 rounded-xl">
+                <div class="text-3xl font-bold">0</div>
+                <div class="text-xs text-slate-400 mt-1 uppercase tracking-wider">CRITICAL</div>
+              </div>
+              <div class="text-center p-4 bg-white/5 rounded-xl">
+                <div class="text-3xl font-bold text-amber-400">8W / 6S</div>
+                <div class="text-xs text-slate-400 mt-1 uppercase tracking-wider">Deuda técnica</div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-4 gap-4 max-w-3xl mx-auto">
+              <div class="text-center p-4 bg-white/5 rounded-xl">
+                <div class="text-3xl font-bold">~1d</div>
+                <div class="text-xs text-slate-400 mt-1 uppercase tracking-wider">Duración total</div>
+              </div>
+              <div class="text-center p-4 bg-white/5 rounded-xl">
+                <div class="text-3xl font-bold">scripts+docs</div>
+                <div class="text-xs text-slate-400 mt-1 uppercase tracking-wider">Tipo de cambio</div>
+              </div>
+              <div class="text-center p-4 bg-white/5 rounded-xl">
+                <div class="text-3xl font-bold text-emerald-400">MINOR</div>
+                <div class="text-xs text-slate-400 mt-1 uppercase tracking-wider">Semver bump</div>
+              </div>
+              <div class="text-center p-4 bg-white/5 rounded-xl">
+                <div class="text-3xl font-bold">auto</div>
+                <div class="text-xs text-slate-400 mt-1 uppercase tracking-wider">Merge policy</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="pipeline">
+          <div class="card p-8">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">2 · Pipeline SDDK — Línea de tiempo</h2>
+            <div class="mermaid">
+              gantt
+                title SDDK Cycle — e30-conformance-audit
+                dateFormat  YYYY-MM-DD HH:mm
+                axisFormat  %H:%M
+                section Plan
+                explore        :done, e1, 2026-08-06 09:00, 30m
+                propose        :done, p1, after e1, 15m
+                spec           :done, s1, after p1, 25m
+                design         :done, d1, after p1, 20m
+                tasks          :done, t1, after s1, 10m
+                section Build
+                apply          :done, a1, after t1, 90m
+                verify         :done, v1, after a1, 25m
+                debt-verify    :done, dv1, after v1, 20m
+                archive        :done, ar1, after dv1, 10m
+                release        :active, rl1, after ar1, 5m
+            </div>
+            <div class="mt-6 text-sm text-slate-600">
+              <strong>Duración total</strong>: ~1 día. <strong>Fase más larga</strong>:
+              apply (~90m, 7 tareas). <strong>Correction Cycle 1</strong>: aplicado tras
+              verify inicial (C-1 banner fecha, W-1 G11 failure-path, W-2 local PR check).
+            </div>
+          </div>
+        </section>
+
+        <section id="proposal">
+          <div class="card p-8">
+            <h2 class="text-2xl font-bold text-slate-800 mb-4">3 · Propuesta y Alcance</h2>
+            <div class="space-y-4">
+              <div>
+                <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">Problema</h3>
+                <p class="text-slate-700 mt-1">
+                  Los gates G10/G11/G12 del Release Readiness Scorecard (ADR-031)
+                  estaban incompletos o mentían: G10 no tenía harness, G11 daba
+                  falso negativo en detección de ADRs, G12 reportaba GREEN
+                  ignorando que CHANGELOG.md no existía y había ~85 ramas stale.
+                  La auditoría de exploración confirmó 430 requirements, 0%
+                  trazabilidad máquina, ~44 reqs legacy PG/SQLite post-E29, y 3
+                  bugs en el scorecard.
+                </p>
+              </div>
+              <div>
+                <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">Solución propuesta</h3>
+                <p class="text-slate-700 mt-1">
+                  Script ligero Python (<code class="kbd">openspec_conformance.py</code>,
+                  ~133 LOC) que parsea <code class="kbd">spec.md</code> con regex
+                  normalizado <code class="kbd">^#{2,3}\s+Requirement</code>,
+                  extrae 430 reqs, mapea a tests vía evidence_map.yaml, y emite
+                  <code class="kbd">conformance_matrix.{yaml,md}</code>. Wireado al
+                  scorecard existente (<code class="kbd">gate_g10()</code>) con
+                  umbral renegociado (≥90% verified + 100% triaged). Fixes
+                  puntuales en G11 (paths ADR + ACEPTADO) y G12 (tag + CHANGELOG +
+                  branch count). Script bash auxiliar
+                  <code class="kbd">prune_stale_branches.sh</code> con dry-run
+                  obligatorio.
+                </p>
+              </div>
+              <div class="grid grid-cols-2 gap-4 pt-2">
+                <div>
+                  <h3 class="text-sm font-semibold text-emerald-600 uppercase tracking-wider">Dentro de alcance</h3>
+                  <ul class="list-disc list-inside text-slate-700 mt-1 space-y-1 text-sm">
+                    <li>Harness <code class="kbd">openspec_conformance.py</code></li>
+                    <li>Wire G10 al scorecard (umbral renegociado)</li>
+                    <li>Fix G11 (paths ADR-031/032 + check ACEPTADO)</li>
+                    <li>Fix G12 (tag real + CHANGELOG + branch count)</li>
+                    <li>CHANGELOG.md canónico (Keep a Changelog, v0.87.0+)</li>
+                    <li>Branch pruning (dry-run + PR guard)</li>
+                    <li>ADR-031/032 → ACEPTADO</li>
+                    <li>6/6 specs Tier-C marcadas OBSOLETE</li>
+                  </ul>
+                </div>
+                <div>
+                  <h3 class="text-sm font-semibold text-red-600 uppercase tracking-wider">Fuera de alcance</h3>
+                  <ul class="list-disc list-inside text-slate-700 mt-1 space-y-1 text-sm">
+                    <li>Tests automatizados para harness/scorecard (W-3 follow-up)</li>
+                    <li>Escribir evidencia para 193 reqs <code class="kbd">no_evidence</code> (CONF-001)</li>
+                    <li><code class="kbd">cargo test</code> o campaña sandbox</li>
+                    <li>Mover/archivar specs OBSOLETE de <code class="kbd">openspec/specs/</code></li>
+                    <li>G3/G4/G5/G8 (fuera de alcance Fase 4)</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tech-stack">
+          <div class="card p-8">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">4 · Stack tecnológico</h2>
+            <p class="text-sm text-slate-500 mb-6">
+              Cambio de scripts + docs (sin código Rust de dominio).
+            </p>
+            <div class="grid grid-cols-2 gap-6">
+              <div>
+                <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Lenguaje</h3>
+                <table class="w-full text-sm">
+                  <tbody>
+                    <tr class="border-b border-slate-100">
+                      <td class="py-2 font-mono text-xs">Python 3</td>
+                      <td class="py-2 text-xs text-slate-500">3.10+</td>
+                      <td class="py-2 text-xs text-slate-700">Harness de conformance</td>
+                    </tr>
+                    <tr class="border-b border-slate-100">
+                      <td class="py-2 font-mono text-xs">Bash</td>
+                      <td class="py-2 text-xs text-slate-500">5.x</td>
+                      <td class="py-2 text-xs text-slate-700">Pruning script + justfile</td>
+                    </tr>
+                    <tr class="border-b border-slate-100">
+                      <td class="py-2 font-mono text-xs">YAML</td>
+                      <td class="py-2 text-xs text-slate-500">—</td>
+                      <td class="py-2 text-xs text-slate-700">Conformance matrix output</td>
+                    </tr>
+                    <tr class="border-b border-slate-100">
+                      <td class="py-2 font-mono text-xs">Markdown</td>
+                      <td class="py-2 text-xs text-slate-500">CommonMark</td>
+                      <td class="py-2 text-xs text-slate-700">Spec corpus + reportes</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Dependencias</h3>
+                <table class="w-full text-sm">
+                  <tbody>
+                    <tr class="border-b border-slate-100">
+                      <td class="py-2 font-mono text-xs">PyYAML</td>
+                      <td class="py-2 text-xs text-slate-500">—</td>
+                      <td class="py-2 text-xs text-slate-700">Parseo matriz (en requirements.txt)</td>
+                    </tr>
+                    <tr class="border-b border-slate-100">
+                      <td class="py-2 font-mono text-xs">gh CLI</td>
+                      <td class="py-2 text-xs text-slate-500">—</td>
+                      <td class="py-2 text-xs text-slate-700">PR guard en pruning</td>
+                    </tr>
+                    <tr class="border-b border-slate-100">
+                      <td class="py-2 font-mono text-xs">git</td>
+                      <td class="py-2 text-xs text-slate-500">—</td>
+                      <td class="py-2 text-xs text-slate-700">Branch enumeration, tag sort</td>
+                    </tr>
+                    <tr class="border-b border-slate-100">
+                      <td class="py-2 font-mono text-xs">just</td>
+                      <td class="py-2 text-xs text-slate-500">—</td>
+                      <td class="py-2 text-xs text-slate-700">Recipe runner (justfile)</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+              <strong class="text-amber-700">⚠ Deuda detectada:</strong>
+              <p class="text-sm text-amber-700 mt-2">
+                <strong>S-SM-1 (WARN)</strong>: <code class="kbd">PyYAML</code> se importa dentro de funciones con
+                try/except — si falta, el harness emite una matriz JSON-shaped en lugar de fallar
+                explícitamente. <code class="kbd">requirements.txt</code> nunca declara la dependencia.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="verification">
+          <div class="card p-8">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">5 · Verificación</h2>
+
+            <div class="grid grid-cols-4 gap-4 mb-8">
+              <div class="text-center p-4 bg-slate-50 rounded-xl">
+                <div class="text-2xl font-bold text-emerald-600">13</div>
+                <div class="text-sm text-slate-500">Spec scenarios</div>
+                <div class="text-xs text-slate-400">13/13 compliant</div>
+              </div>
+              <div class="text-center p-4 bg-slate-50 rounded-xl">
+                <div class="text-2xl font-bold text-emerald-600">7</div>
+                <div class="text-sm text-slate-500">Tareas</div>
+                <div class="text-xs text-slate-400">7/7 completas</div>
+              </div>
+              <div class="text-center p-4 bg-slate-50 rounded-xl">
+                <div class="text-2xl font-bold text-emerald-600">0</div>
+                <div class="text-sm text-slate-500">CRITICAL</div>
+                <div class="text-xs text-slate-400">post-corrección</div>
+              </div>
+              <div class="text-center p-4 bg-slate-50 rounded-xl">
+                <div class="text-2xl font-bold text-amber-600">8</div>
+                <div class="text-sm text-slate-500">WARN</div>
+                <div class="text-xs text-slate-400">+ 6 SUGG</div>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-slate-700 mb-4">Métricas de diseño (entropy-sdd)</h3>
+            <div class="grid grid-cols-4 gap-4 mb-6">
+              <div class="metric-card">
+                <div class="metric-value">6.2</div>
+                <div class="metric-label">Design Quality Score</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-value text-amber-500">3.0</div>
+                <div class="metric-label">Testability axis</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-value">7.0</div>
+                <div class="metric-label">Architecture / SOLID</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-value">6.5</div>
+                <div class="metric-label">Coupling</div>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-slate-700 mb-4">Lentes aplicadas</h3>
+            <div class="space-y-4">
+              <div class="border border-slate-200 rounded-xl p-4">
+                <div class="flex items-center justify-between">
+                  <h4 class="font-semibold text-slate-800">Spec compliance</h4>
+                  <span class="tag badge-pass text-white text-xs">PASS</span>
+                </div>
+                <p class="text-sm text-slate-600 mt-2">
+                  13/13 scenarios compliant post-Correction Cycle 1. C-1 (banner fecha),
+                  W-1 (G11 RED en missing docs), W-2 (PR check local) cerrados en commit
+                  3b27cf27.
+                </p>
+              </div>
+              <div class="border border-slate-200 rounded-xl p-4">
+                <div class="flex items-center justify-between">
+                  <h4 class="font-semibold text-slate-800">Test quality</h4>
+                  <span class="tag badge-warn text-white text-xs">PW</span>
+                </div>
+                <p class="text-sm text-slate-600 mt-2">
+                  Sin suite automatizada. Cobertura via grep + ejecución ad-hoc de gates.
+                  W-3 (Testing Strategy §152-161) undelivered — follow-up cycle.
+                </p>
+              </div>
+              <div class="border border-slate-200 rounded-xl p-4">
+                <div class="flex items-center justify-between">
+                  <h4 class="font-semibold text-slate-800">Design coherence</h4>
+                  <span class="tag badge-warn text-white text-xs">PW</span>
+                </div>
+                <p class="text-sm text-slate-600 mt-2">
+                  4 desviaciones: banner date (3-way inconsistency C-1), G12 threshold
+                  (design ≤50 GREEN vs spec ≤20 GREEN), local PR check missing (W-2),
+                  unit tests undelivered (W-3). 3/4 cerradas en correction cycle.
+                </p>
+              </div>
+              <div class="border border-slate-200 rounded-xl p-4">
+                <div class="flex items-center justify-between">
+                  <h4 class="font-semibold text-slate-800">Debt audit (5 clusters)</h4>
+                  <span class="tag badge-warn text-white text-xs">PW</span>
+                </div>
+                <p class="text-sm text-slate-600 mt-2">
+                  smells + duplication + coupling + overeng. 0 CRITICAL, 8 WARN (data-drift
+                  risk + silent-failure paths), 6 SUGG. DQS 6.2/10.
+                </p>
+              </div>
+            </div>
+
+            <div class="mt-8 p-6 rounded-xl bg-amber-50 border border-amber-200">
+              <h3 class="text-xl font-bold text-amber-700">Veredicto: PASS_WITH_WARNINGS</h3>
+              <p class="text-sm text-slate-700 mt-2">
+                G10 reporta RED honesto (43.6% verified / 55.2% triaged). Esto es el
+                estado real del repo, no un defecto del cambio. El closer (CONF-001,
+                escribir evidencia para 193 reqs <code class="kbd">no_evidence</code>)
+                está fuera de alcance de e30-conformance-audit — trackeado como
+                follow-up de e30.4+. G11/G12 ahora reportan estado real (GREEN) tras
+                los fixes del cambio.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="git">
+          <div class="card p-8">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">6 · Git & Release</h2>
+
+            <div class="grid grid-cols-2 gap-6 mb-6">
+              <div class="space-y-4">
+                <div class="flex items-center gap-4">
+                  <span class="text-sm font-semibold text-slate-400 w-24">Rama</span>
+                  <code class="font-mono text-sm bg-slate-100 px-3 py-1 rounded">feat/e30-conformance-audit</code>
+                </div>
+                <div class="flex items-center gap-4">
+                  <span class="text-sm font-semibold text-slate-400 w-24">PR</span>
+                  <a href="https://github.com/Rubentxu/CogniCode/pull/231" class="text-blue-600 hover:underline font-mono text-sm">#231</a>
+                </div>
+                <div class="flex items-center gap-4">
+                  <span class="text-sm font-semibold text-slate-400 w-24">Tag</span>
+                  <code class="font-mono text-sm bg-emerald-50 text-emerald-700 px-3 py-1 rounded">v0.90.0</code>
+                </div>
+              </div>
+              <div class="space-y-4">
+                <div class="flex items-center gap-4">
+                  <span class="text-sm font-semibold text-slate-400 w-24">Commits</span>
+                  <span class="text-slate-700">7</span>
+                </div>
+                <div class="flex items-center gap-4">
+                  <span class="text-sm font-semibold text-slate-400 w-24">Archivos</span>
+                  <span class="text-slate-700">8 (+439 / -53)</span>
+                </div>
+                <div class="flex items-center gap-4">
+                  <span class="text-sm font-semibold text-slate-400 w-24">Merge</span>
+                  <code class="font-mono text-xs bg-slate-100 px-3 py-1 rounded">git merge --no-ff feat/e30-conformance-audit</code>
+                </div>
+                <div class="flex items-center gap-4">
+                  <span class="text-sm font-semibold text-slate-400 w-24">Merge SHA</span>
+                  <code class="font-mono text-xs bg-slate-100 px-3 py-1 rounded">a093e9bc</code>
+                </div>
+              </div>
+            </div>
+
+            <details>
+              <summary class="text-sm font-semibold text-slate-700 cursor-pointer"><span class="collapsible-arrow">▶</span> Commits (7)</summary>
+              <table class="w-full text-sm mt-3">
+                <tbody>
+                  <tr class="border-b border-slate-100">
+                    <td class="py-1 font-mono text-xs text-slate-400">a093e9bc</td>
+                    <td class="py-1"><span class="tag badge-feat text-white text-xs">merge</span></td>
+                    <td class="py-1 text-slate-700">Merge pull request #231</td>
+                    <td class="py-1 text-xs text-slate-500 text-right">8 files</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="py-1 font-mono text-xs text-slate-400">3b27cf27</td>
+                    <td class="py-1"><span class="tag badge-fix text-white text-xs">fix</span></td>
+                    <td class="py-1 text-slate-700">fix: conformance banner date (C-1), G11 RED on missing docs (W-1), local PR check (W-2)</td>
+                    <td class="py-1 text-xs text-slate-500 text-right">3 files</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="py-1 font-mono text-xs text-slate-400">983c21b7</td>
+                    <td class="py-1"><span class="tag badge-chore text-white text-xs">docs</span></td>
+                    <td class="py-1 text-slate-700">docs(spec): mark postgres-symbol-repository OBSOLETE (post-E29)</td>
+                    <td class="py-1 text-xs text-slate-500 text-right">1 file</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="py-1 font-mono text-xs text-slate-400">4bf6327e</td>
+                    <td class="py-1"><span class="tag badge-chore text-white text-xs">docs</span></td>
+                    <td class="py-1 text-slate-700">docs(adr): accept ADR-031/032 (ACEPTADO); renegotiate G10 to 90% verified + 100% triaged</td>
+                    <td class="py-1 text-xs text-slate-500 text-right">2 files</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="py-1 font-mono text-xs text-slate-400">fc4f2fa1</td>
+                    <td class="py-1"><span class="tag badge-feat text-white text-xs">feat</span></td>
+                    <td class="py-1 text-slate-700">feat(sandbox): openspec-conformance recipe + fix sandbox-ci-full repeat syntax</td>
+                    <td class="py-1 text-xs text-slate-500 text-right">1 file</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="py-1 font-mono text-xs text-slate-400">051dfc32</td>
+                    <td class="py-1"><span class="tag badge-chore text-white text-xs">docs</span></td>
+                    <td class="py-1 text-slate-700">docs: add CHANGELOG.md (Keep a Changelog, v0.87.0-v0.89.0)</td>
+                    <td class="py-1 text-xs text-slate-500 text-right">1 file</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="py-1 font-mono text-xs text-slate-400">60e3453e</td>
+                    <td class="py-1"><span class="tag badge-fix text-white text-xs">fix</span></td>
+                    <td class="py-1 text-slate-700">fix(sandbox): scorecard G10/G11/G12 — wire conformance matrix, fix ADR paths, real tag + changelog + branch hygiene</td>
+                    <td class="py-1 text-xs text-slate-500 text-right">2 files</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="py-1 font-mono text-xs text-slate-400">a80d33e3</td>
+                    <td class="py-1"><span class="tag badge-feat text-white text-xs">feat</span></td>
+                    <td class="py-1 text-slate-700">feat(sandbox): openspec conformance harness + stale branch pruning script</td>
+                    <td class="py-1 text-xs text-slate-500 text-right">2 files</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+
+            <div class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+              <strong class="text-blue-700">📋 Semver bump rationale</strong>
+              <p class="text-sm text-blue-700 mt-2">
+                MINOR (v0.89.0 → v0.90.0). El cambio introduce una nueva capability
+                (<code class="kbd">openspec-conformance</code>: harness de trazabilidad
+                automática) y modifica <code class="kbd">release-readiness-gate</code>
+                (renegociación de umbrales G10 + fixes G11/G12). No hay
+                <code class="kbd">BREAKING CHANGE</code> footer en ningún commit, así
+                que el bump no es major. No es patch porque añade funcionalidad
+                observable (matriz de conformance, CHANGELOG canónico).
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="knowledge">
+          <div class="card p-8">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">7 · Impacto en conocimiento</h2>
+
+            <div class="grid grid-cols-2 gap-6">
+              <div>
+                <h3 class="text-sm font-semibold text-emerald-600 uppercase tracking-wider mb-3">✓ Confirmado / Aceptado</h3>
+                <ul class="space-y-2">
+                  <li class="text-sm text-slate-700 flex items-start gap-2">
+                    <span class="text-emerald-500 mt-0.5">✓</span>
+                    <span><strong>ADR-031</strong> (Release 1.0.0 Definition) — estado PROPUESTO → <strong>ACEPTADO</strong></span>
+                  </li>
+                  <li class="text-sm text-slate-700 flex items-start gap-2">
+                    <span class="text-emerald-500 mt-0.5">✓</span>
+                    <span><strong>ADR-032</strong> (Sandbox Validation System) — estado PROPUESTO → <strong>ACEPTADO</strong></span>
+                  </li>
+                  <li class="text-sm text-slate-700 flex items-start gap-2">
+                    <span class="text-emerald-500 mt-0.5">✓</span>
+                    <span>Spec corpus: 67 specs / 431 reqs / 4 phantom dirs detectados (estado real)</span>
+                  </li>
+                  <li class="text-sm text-slate-700 flex items-start gap-2">
+                    <span class="text-emerald-500 mt-0.5">✓</span>
+                    <span>6/6 specs Tier-C marcadas OBSOLETE con banner fechado 2026-08-04</span>
+                  </li>
+                </ul>
+              </div>
+              <div>
+                <h3 class="text-sm font-semibold text-red-600 uppercase tracking-wider mb-3">⚠ Riesgos identificados</h3>
+                <ul class="space-y-2">
+                  <li class="text-sm text-slate-700 flex items-start gap-2">
+                    <span class="text-red-500 mt-0.5">⚠</span>
+                    <span><strong>CONF-001</strong>: 193 requirements en estado <code class="kbd">no_evidence</code>. G10 reporta RED honesto (43.6% / 55.2%). Closer fuera de alcance de e30.</span>
+                  </li>
+                  <li class="text-sm text-slate-700 flex items-start gap-2">
+                    <span class="text-red-500 mt-0.5">�</span>
+                    <span><strong>W-3</strong>: Sin suite de tests automatizada para harness o scorecard. Testability axis DQS = 3.0/10.</span>
+                  </li>
+                  <li class="text-sm text-slate-700 flex items-start gap-2">
+                    <span class="text-red-500 mt-0.5">⚠</span>
+                    <span><strong>S-SM-5</strong>: <code class="kbd">prune_stale_branches.sh --apply</code> sin auth de gh puede borrar ramas protegidas. Único data-loss path del cambio.</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="mt-6 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+              <h3 class="text-sm font-semibold text-slate-700 mb-2">Nodos del knowledge graph actualizados</h3>
+              <ul class="text-sm text-slate-700 list-disc list-inside space-y-1">
+                <li><code class="kbd">milestones/M-E30-Fase-4.md</code> → status <strong>completed</strong>, tag <strong>v0.90.0</strong>, PR <strong>#231</strong></li>
+                <li><code class="kbd">adrs/ADR-031-release-1.0.0-definition.md</code> → status <strong>accepted</strong>, Implementation Log entry</li>
+                <li><code class="kbd">adrs/ADR-032-sandbox-validation-system.md</code> → status <strong>accepted</strong>, Implementation Log entry</li>
+                <li><code class="kbd">cycles/CYC-2026-08-06-e30-conformance-audit.md</code> → status <strong>completed</strong>, pr=#231, tag=v0.90.0</li>
+                <li><code class="kbd">incidences/INC-005-CONF-001.md</code> → tracked, AMBER severity</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section id="tech-debt">
+          <div class="card p-8">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">8 · Deuda técnica</h2>
+            <p class="text-sm text-slate-500 mb-6">
+              Auditoría post-verify sobre la feature branch (pre-PR). Veredicto:
+              <strong class="text-amber-600">PASS_WITH_WARNINGS</strong>. Clusters
+              corridos: smells, duplication, coupling, overengineering (4/5).
+            </p>
+
+            <div class="mb-6 overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead><tr class="border-b-2 border-slate-200">
+                  <th class="text-left py-2">Cluster</th>
+                  <th class="text-left py-2">Veredicto</th>
+                  <th class="text-right py-2">CRIT</th>
+                  <th class="text-right py-2">WARN</th>
+                  <th class="text-right py-2">SUGG</th>
+                  <th class="text-left py-2">Notas</th>
+                </tr></thead>
+                <tbody>
+                  <tr class="border-b border-slate-100">
+                    <td class="py-2 font-semibold">Smells</td>
+                    <td class="py-2"><span class="risk-MEDIUM">PW</span></td>
+                    <td class="py-2 text-right">0</td>
+                    <td class="py-2 text-right">5</td>
+                    <td class="py-2 text-right">1</td>
+                    <td class="py-2 text-xs text-slate-600">YAML imports ocultos, magic strings, CHANGELOG dates uniformes, stale verify-report, gh auth bypass</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="py-2 font-semibold">Duplication</td>
+                    <td class="py-2"><span class="risk-LOW">PASS</span></td>
+                    <td class="py-2 text-right">0</td>
+                    <td class="py-2 text-right">1</td>
+                    <td class="py-2 text-right">2</td>
+                    <td class="py-2 text-xs text-slate-600">evidence_map vs matrix (double SoT), YAML-load duplication</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="py-2 font-semibold">Coupling</td>
+                    <td class="py-2"><span class="risk-LOW">PASS</span></td>
+                    <td class="py-2 text-right">0</td>
+                    <td class="py-2 text-right">2</td>
+                    <td class="py-2 text-right">2</td>
+                    <td class="py-2 text-xs text-slate-600">External deps gh auth, MCP-TOOLS literal; loose coupling overall</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="py-2 font-semibold">Over-engineering</td>
+                    <td class="py-2"><span class="risk-LOW">PASS</span></td>
+                    <td class="py-2 text-right">0</td>
+                    <td class="py-2 text-right">0</td>
+                    <td class="py-2 text-right">1</td>
+                    <td class="py-2 text-xs text-slate-600">evidence_map manual 33 entries front-runs audit signal value</td>
+                  </tr>
+                  <tr class="bg-slate-50 font-bold">
+                    <td class="py-2">TOTAL</td>
+                    <td class="py-2"><span class="risk-MEDIUM">PW</span></td>
+                    <td class="py-2 text-right">0</td>
+                    <td class="py-2 text-right">8</td>
+                    <td class="py-2 text-right">6</td>
+                    <td class="py-2 text-xs">DQS: 6.2 · scripts-only change</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3 class="text-lg font-semibold text-slate-700 mb-4">Findings prioritarios</h3>
+            <div class="space-y-3">
+              <div class="risk-row">
+                <span class="risk-MEDIUM">WARN</span>
+                <div>
+                  <strong class="text-slate-800">S-SM-5 — gh-CLI silent bypass</strong>
+                  <p class="text-xs text-slate-600 mt-1">
+                    <code class="kbd">prune_stale_branches.sh</code> L22-24:
+                    <code class="kbd">gh pr list ... 2>/dev/null || true</code>.
+                    Si gh no está autenticado, retorna empty y el script procede.
+                    Único data-loss path del cambio.
+                  </p>
+                  <p class="text-xs text-slate-500 mt-1 font-mono">sandbox/scripts/prune_stale_branches.sh</p>
+                </div>
+                <div class="text-xs text-right">
+                  <div class="text-slate-500">Remediación</div>
+                  <div>Pre-apply guard</div>
+                </div>
+              </div>
+              <div class="risk-row">
+                <span class="risk-MEDIUM">WARN</span>
+                <div>
+                  <strong class="text-slate-800">S-DU-1 — Double source of truth</strong>
+                  <p class="text-xs text-slate-600 mt-1">
+                    evidence_map.yaml (manual, 33 entries) + conformance_matrix.yaml
+                    (generado). Drift silencioso posible si un spec cambia OBSOLETE
+                    status o un test se mueve.
+                  </p>
+                  <p class="text-xs text-slate-500 mt-1 font-mono">sandbox/reports/evidence_map.yaml</p>
+                </div>
+                <div class="text-xs text-right">
+                  <div class="text-slate-500">Remediación</div>
+                  <div>Single SoT + CI check</div>
+                </div>
+              </div>
+              <div class="risk-row">
+                <span class="risk-MEDIUM">WARN</span>
+                <div>
+                  <strong class="text-slate-800">S-SM-1 — Hidden YAML dependency</strong>
+                  <p class="text-xs text-slate-600 mt-1">
+                    <code class="kbd">import yaml</code> dentro de try/except en 5 sitios.
+                    Si falta PyYAML, harness emite JSON-shaped matrix o falla con
+                    "matrix parse error". <code class="kbd">requirements.txt</code>
+                    no declara la dep.
+                  </p>
+                  <p class="text-xs text-slate-500 mt-1 font-mono">sandbox/scripts/openspec_conformance.py · release_scorecard.py</p>
+                </div>
+                <div class="text-xs text-right">
+                  <div class="text-slate-500">Remediación</div>
+                  <div>_yaml_util.py + dep declaration</div>
+                </div>
+              </div>
+              <div class="risk-row">
+                <span class="risk-MEDIUM">WARN</span>
+                <div>
+                  <strong class="text-slate-800">S-SM-2 — Magic "68 tools"</strong>
+                  <p class="text-xs text-slate-600 mt-1">
+                    <code class="kbd">release_scorecard.py:482</code> checkea
+                    <code class="kbd">"68 tools" in content</code>. Cuando el tool
+                    surface evolucione, el gate falla sin señal al autor.
+                  </p>
+                  <p class="text-xs text-slate-500 mt-1 font-mono">sandbox/scripts/release_scorecard.py L482</p>
+                </div>
+                <div class="text-xs text-right">
+                  <div class="text-slate-500">Remediación</div>
+                  <div>Derivar de tools/list</div>
+                </div>
+              </div>
+            </div>
+
+            <details class="mt-6">
+              <summary class="text-sm font-semibold text-slate-700 cursor-pointer"><span class="collapsible-arrow">▶</span> Áreas de mejora detectadas (no bloqueantes)</summary>
+              <ul class="list-disc list-inside text-sm text-slate-700 mt-3 space-y-1">
+                <li>Refactorizar YAML loading en <code class="kbd">_yaml_util.py</code> centralizado (cierra S-SM-1 + S-DU-2)</li>
+                <li>Derivar <code class="kbd">68 tools</code> de <code class="kbd">tools/list</code> en lugar de literal (cierra S-SM-2)</li>
+                <li>Glob <code class="kbd">ADR-03[12]-*.md</code> en G11 en lugar de paths literales (cierra S-CP-4)</li>
+                <li>Verificar CHANGELOG dates contra <code class="kbd">git tag --format='%(creatordate:short)'</code> (cierra S-SM-3)</li>
+                <li>Refresh <code class="kbd">verify-report.md</code> o eliminar antes de archive (cierra S-SM-4)</li>
+                <li>Suite de tests: <code class="kbd">test_openspec_conformance.py</code> + <code class="kbd">test_release_scorecard.py</code> (cierra W-3, sube testability axis 3.0 → ~7.0)</li>
+              </ul>
+            </details>
+          </div>
+        </section>
+
+        <section id="ops">
+          <div class="card p-8">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">9 · Características operacionales</h2>
+            <p class="text-sm text-slate-500 mb-6">
+              Cómo se ejecutan, observan y recuperan los scripts entregados.
+            </p>
+
+            <div class="grid grid-cols-2 gap-6">
+              <div>
+                <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Ejecución</h3>
+                <table class="w-full text-sm">
+                  <tbody>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">Recipe principal</td><td class="py-2 font-mono text-xs">just openspec-conformance</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">Scorecard</td><td class="py-2 font-mono text-xs">just release-scorecard</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">Pruning</td><td class="py-2 font-mono text-xs">./sandbox/scripts/prune_stale_branches.sh [--apply]</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">Default mode</td><td class="py-2 font-mono text-xs">dry-run (no side effects)</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">Exit codes</td><td class="py-2 font-mono text-xs">0 = OK / success · 1 = error</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div>
+                <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Artefactos generados</h3>
+                <table class="w-full text-sm">
+                  <tbody>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">conformance_matrix.yaml</td><td class="py-2 font-mono text-xs">431 reqs × status (machine-readable)</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">conformance_matrix.md</td><td class="py-2 font-mono text-xs">431 reqs × status (human)</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">release_scorecard.json</td><td class="py-2 font-mono text-xs">Gates G1-G12 con verdicts + evidence</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">prune report</td><td class="py-2 font-mono text-xs">stdout (45 remote + 12 local purged)</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">CHANGELOG.md</td><td class="py-2 font-mono text-xs">v0.87.0→v0.89.0 + Unreleased</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div>
+                <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Resiliencia</h3>
+                <table class="w-full text-sm">
+                  <tbody>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">Failure modes</td><td class="py-2">PyYAML missing, gh unauth, dirty tree, malformed spec</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">Silent paths</td><td class="py-2">YAML-in-try/except (S-SM-1) · gh 2>/dev/null || true (S-SM-5)</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">Recovery</td><td class="py-2">Re-run desde branch limpia · revert commits via git</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">Rollback</td><td class="py-2">git revert a093e9bc (merge commit)</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">Pruning safety</td><td class="py-2">--apply gated, gh PR check, whitelist explícita</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div>
+                <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Seguridad</h3>
+                <table class="w-full text-sm">
+                  <tbody>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">Auth</td><td class="py-2">gh CLI para PR guard</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">PII handling</td><td class="py-2">n/a (no procesa datos de usuario)</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">Secrets</td><td class="py-2">none</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">Threat model</td><td class="py-2">--apply sin auth → branch deletion (mitigado por gh PR check)</td></tr>
+                    <tr class="border-b border-slate-100"><td class="py-2 text-slate-600">Audit trail</td><td class="py-2">prune script imprime lista antes de borrar</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="next-steps">
+          <div class="section-dark rounded-2xl p-10 text-center space-y-4">
+            <h2 class="text-2xl font-bold">10 · Próximos pasos</h2>
+            <p class="text-slate-300 max-w-2xl mx-auto">
+              <strong>E30 Fase 5 — Release Gate</strong> (3 sesiones nocturnas, 12/12
+              scorecard GREEN → <strong>v1.0.0</strong>). El closer principal es
+              <strong> CONF-001</strong> (escribir evidencia para 193 requirements
+              <code class="kbd">no_evidence</code>), que cierra G10 de RED a GREEN.
+              Follow-ups no bloqueantes: W-3 (suite de tests para
+              harness/scorecard — sube DQS testability 3.0 → ~7.0), S-SM-5
+              (gh-auth guard antes de <code class="kbd">--apply</code>), y la
+              refactorización de YAML loading a <code class="kbd">_yaml_util.py</code>
+              centralizado.
+            </p>
+            <div class="flex justify-center gap-4 pt-2 flex-wrap">
+              <a href="https://github.com/Rubentxu/CogniCode/blob/main/CHANGELOG.md" class="inline-block bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-xl text-sm font-medium transition">📋 CHANGELOG</a>
+              <a href="https://github.com/Rubentxu/CogniCode/blob/main/docs/adr/ADR-031-release-1.0.0-definition.md" class="inline-block bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-xl text-sm font-medium transition">📐 ADR-031</a>
+              <a href="https://github.com/Rubentxu/CogniCode/blob/main/openspec/specs/openspec-conformance/spec.md" class="inline-block bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-xl text-sm font-medium transition">🔗 openspec-conformance</a>
+              <a href="https://github.com/Rubentxu/CogniCode/blob/main/openspec/specs/release-readiness-gate/spec.md" class="inline-block bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-xl text-sm font-medium transition">🔗 release-readiness-gate</a>
+            </div>
+            <div class="pt-4 text-xs text-slate-500">
+              PR #231 · merge a093e9bc · tag v0.90.0 · cycle CYC-2026-08-06-e30-conformance-audit · milestone M-E30-Fase-4 · incidence INC-005-CONF-001
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+    <script>
+      const sections = document.querySelectorAll('section[id]');
+      const tocLinks = document.querySelectorAll('.toc-link');
+      window.addEventListener('scroll', () => {
+        let current = '';
+        sections.forEach(s => {
+          if (window.scrollY + 100 >= s.offsetTop) current = s.id;
+        });
+        tocLinks.forEach(link => {
+          link.classList.remove('active');
+          if (link.getAttribute('href') === '#' + current) link.classList.add('active');
+        });
+      });
+    </script>
+  </body>
+</html>

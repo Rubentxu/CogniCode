@@ -103,10 +103,9 @@ pub struct ToolScore {
     pub language: String,
     /// Scenario ID
     pub scenario_id: String,
-    /// Correctitud score (0-100).
-    /// Returns 0.0 (not NaN) when ground truth is unavailable — NaN values
-    /// are converted to 0.0 by the scoring engine for API compatibility.
-    pub correctitud: f64,
+    /// Correctitud score (0-100). None when ground truth is unavailable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correctitud: Option<f64>,
     /// Latencia score (0-100)
     pub latencia: f64,
     /// Escalabilidad score (0-100)
@@ -1647,13 +1646,37 @@ pub fn score_scenario(
             }
         }
         _ => {
-            // Use call graph score if available, otherwise use symbol/outline/code/complexity score
-            let base_score = if !call_graph_score.is_nan() {
+            // Check ground-truth smoke-test matchers (symbols_min, has_result) first,
+            // before falling back to call-graph or correctitud scores.
+            let inner = unwrap_mcp_content(tool_response);
+            let mut score = if !call_graph_score.is_nan() {
                 call_graph_score
             } else {
                 correctitud
             };
-            (base_score, None, None, None, None, None, None, None)
+            let mut checks = 0u32;
+
+            if let Some(gt) = ground_truth {
+                if let Some(min_symbols) = gt.symbols_min {
+                    checks += 1;
+                    let actual = count_symbols(&inner);
+                    if actual < min_symbols as usize {
+                        score *= actual as f64 / min_symbols as f64;
+                    }
+                }
+                if let Some(true) = gt.has_result {
+                    checks += 1;
+                    if !has_any_results(&inner) {
+                        score *= 0.0;
+                    }
+                }
+            };
+
+            if checks > 0 || !call_graph_score.is_nan() || !correctitud.is_nan() {
+                (score, None, None, None, None, None, None, None)
+            } else {
+                (f64::NAN, None, None, None, None, None, None, None)
+            }
         }
     };
 
@@ -1685,11 +1708,7 @@ pub fn score_scenario(
         tool: tool_name.to_string(),
         language: language.to_string(),
         scenario_id: scenario_id.to_string(),
-        correctitud: if final_correctitud.is_nan() {
-            0.0
-        } else {
-            final_correctitud
-        },
+        correctitud: Some(final_correctitud).filter(|&v| !v.is_nan()),
         latencia,
         escalabilidad,
         consistencia,
@@ -2358,7 +2377,7 @@ mod tests {
 
         assert_eq!(score.tool, "get_file_symbols");
         assert_eq!(score.language, "rust");
-        assert!(score.correctitud > 90.0);
+        assert!(score.correctitud.unwrap() > 90.0);
         assert_eq!(score.latencia, 100.0); // 50ms < 100ms target
         assert!(score.health_score > 0.0);
     }
@@ -2379,9 +2398,9 @@ mod tests {
             ExecutionMetadata::default(),
         );
 
-        // When ground_truth is None, the scoring function converts NaN → 0.0
-        // for the returned struct (see lines 1633-1637 in score_scenario)
-        assert_eq!(score.correctitud, 0.0);
+        // When ground_truth is None, the scoring function stores NaN → None
+        // for the returned struct (None = not measured)
+        assert_eq!(score.correctitud, None);
         assert!(score.symbol_match.is_none());
         assert!(score.outline_match.is_none());
         // Latencia should still be scored (it's independent of ground truth)
@@ -2410,7 +2429,7 @@ mod tests {
         );
 
         // Should still compute correctness from ground truth even without metrics
-        assert!(!score.correctitud.is_nan());
+        assert!(score.correctitud.is_some());
         assert_eq!(score.latencia, 100.0); // latency score still computed
     }
 
@@ -2467,8 +2486,16 @@ mod tests {
         );
 
         // All 5 dimensions and health_score should be in [0, 100]
+        // correctitud is Option<f64> (None = not measured, Some = measured)
+        if let Some(corr) = score.correctitud {
+            assert!(
+                (0.0..=100.0).contains(&corr) || corr.is_nan(),
+                "correctitud score {} out of range [0,100] or NaN",
+                corr
+            );
+        }
+        // Other dimensions are f64
         for (name, value) in [
-            ("correctitud", score.correctitud),
             ("latencia", score.latencia),
             ("escalabilidad", score.escalabilidad),
             ("consistencia", score.consistencia),

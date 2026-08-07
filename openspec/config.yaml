@@ -1,0 +1,30 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Rust 2021, tree-sitter 0.20, tokio async runtime, petgraph
+  Architecture: DDD + Clean Architecture (4 layers: application, domain, infrastructure, interface)
+  Testing: tokio-test, mockall, tempfile
+  Binaries: cognicode (main), cognicode-mcp (MCP server), cognicode-lsp (LSP server)
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Identify affected modules/packages
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+  tasks:
+    - Group tasks by phase (infrastructure, implementation, testing)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Keep tasks small enough to complete in one session
+  apply:
+    - Follow existing code patterns and conventions
+    - Load relevant coding skills for the project stack
+  verify:
+    - Run tests if test infrastructure exists
+    - Compare implementation against every spec scenario
+  archive:
+    - Warn before merging destructive deltas (large removals)

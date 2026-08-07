@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Revisión de Arquitectura — CogniCode — 2026-06-14</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose", fontFamily: "Inter, system-ui, sans-serif" });
+    </script>
+    <style>
+      :root {
+        --ink: #0f172a;
+        --slate: #475569;
+        --stone: #fafaf9;
+        --emerald: #047857;
+        --amber: #b45309;
+        --slate-soft: #64748b;
+        --red: #b91c1c;
+      }
+      html, body { font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; }
+      h1, h2, h3 { letter-spacing: -0.02em; }
+      .font-mono { font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace; }
+      .seam { stroke-dasharray: 4 4; }
+      .leak { stroke: var(--red); stroke-width: 2; }
+      .deep-fill { fill: #0f172a; }
+      .deep-stroke { stroke: #0f172a; }
+      .card { background: #ffffff; border: 1px solid #e7e5e4; border-radius: 12px; }
+      .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+      .badge-strong { background: #d1fae5; color: #065f46; }
+      .badge-worth { background: #fef3c7; color: #92400e; }
+      .badge-spec { background: #e2e8f0; color: #334155; }
+      .badge-cat { background: #f1f5f9; color: #475569; font-weight: 500; text-transform: none; letter-spacing: 0; }
+      .legend-dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; vertical-align: middle; }
+      .diagram { background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 8px; padding: 12px; }
+      .module-box { fill: #ffffff; stroke: #334155; stroke-width: 1.5; }
+      .module-deep { fill: #0f172a; stroke: #0f172a; stroke-width: 1.5; }
+      .module-label { font-size: 10px; font-family: "JetBrains Mono", "SF Mono", monospace; fill: #1e293b; }
+      .module-label-dark { font-size: 10px; font-family: "JetBrains Mono", "SF Mono", monospace; fill: #f1f5f9; }
+      .module-label-dim { font-size: 9px; font-family: "JetBrains Mono", "SF Mono", monospace; fill: #94a3b8; }
+      .seam-line { stroke: #94a3b8; stroke-width: 1.5; fill: none; }
+      .leak-line { stroke: #b91c1c; stroke-width: 2; fill: none; }
+      .arrow-head { fill: #94a3b8; }
+      .arrow-head-red { fill: #b91c1c; }
+      .callout-warn { background: #fffbeb; border-left: 3px solid #b45309; padding: 8px 12px; border-radius: 0 6px 6px 0; font-size: 13px; }
+      .callout-info { background: #f0f9ff; border-left: 3px solid #0369a1; padding: 8px 12px; border-radius: 0 6px 6px 0; font-size: 13px; }
+      .label-tag { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; font-weight: 600; }
+      .pill { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 1px 6px; font-size: 11px; font-family: "JetBrains Mono", "SF Mono", monospace; color: #475569; }
+      .benefit { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; color: #334155; }
+      .benefit::before { content: "→"; color: #047857; font-weight: 700; }
+      .top-rec { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #f1f5f9; }
+      .top-rec h2, .top-rec h3 { color: #f1f5f9; }
+      .top-rec .badge-strong { background: #064e3b; color: #6ee7b7; }
+      .top-rec a { color: #6ee7b7; }
+      hr.sep { border: 0; border-top: 1px solid #e7e5e4; margin: 1rem 0; }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900">
+    <main class="max-w-5xl mx-auto px-6 py-12 space-y-12">
+      <header>
+        <div class="flex items-baseline justify-between flex-wrap gap-3">
+          <div>
+            <p class="label-tag">Revisión de arquitectura</p>
+            <h1 class="text-3xl font-semibold mt-1">CogniCode</h1>
+          </div>
+          <div class="text-right">
+            <p class="text-sm text-slate-500">14 de junio de 2026</p>
+            <p class="text-xs text-slate-400 font-mono">post-ADR-010 Phase 3d · view-seam-consolidation en curso</p>
+          </div>
+        </div>
+        <p class="text-slate-600 mt-4 max-w-3xl">
+          Cinco candidatos de profundización. Tres son consecuencia directa de consolidar la
+          costura de vistas (ADR-010 Fase 1) que quedó a medio camino. Dos son agrupamientos
+          superficiales que piden una costura de pruebas.
+        </p>
+        <div class="mt-6 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+          <span><span class="legend-dot" style="background:#0f172a"></span>&nbsp;módulo profundo</span>
+          <span><span class="legend-dot" style="background:#ffffff; border:1.5px solid #334155"></span>&nbsp;módulo</span>
+          <span><svg width="24" height="6" style="display:inline-block; vertical-align:middle"><line x1="0" y1="3" x2="24" y2="3" class="seam-line" /></svg>&nbsp;costura (seam)</span>
+          <span><svg width="24" height="6" style="display:inline-block; vertical-align:middle"><line x1="0" y1="3" x2="24" y2="3" class="leak-line" /></svg>&nbsp;fuga (leakage)</span>
+        </div>
+      </header>
+
+      <section id="candidates" class="space-y-10">
+
+        <!-- CANDIDATE 1 -->
+        <article class="card p-6 space-y-4">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h2 class="text-xl font-semibold">1. El registro de vistas es una hidra de cuatro cabezas</h2>
+              <p class="text-sm text-slate-500 mt-1">Finalizar la consolidación de la costura de vistas — ADR-010 Fase 1</p>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <span class="badge badge-strong">Fuerte</span>
+              <span class="badge badge-cat">in-process</span>
+            </div>
+          </div>
+
+          <div>
+            <p class="label-tag">Archivos</p>
+            <ul class="text-sm font-mono text-slate-700 space-y-0.5 mt-1">
+              <li>crates/cognicode-explorer/src/registry.rs:248-379</li>
+              <li>crates/cognicode-explorer/src/registry.rs:191-221 — ProviderExecutorAdapter</li>
+              <li>crates/cognicode-explorer/src/domain/views.rs:1258-1318 — 4 *Provider redundantes</li>
+              <li>crates/cognicode-explorer/src/domain/views.rs:1597-1604 — 8 *EXECUTOR statics</li>
+              <li>crates/cognicode-explorer/src/facades/view.rs:45-72 — 3ª lista hardcodeada</li>
+            </ul>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <p class="label-tag">Antes — 4 fuentes de verdad para "qué vistas existen"</p>
+              <div class="mermaid">
+flowchart LR
+  A["ViewRegistry::list_for"]
+  B["builtin_providers()&nbsp;(inventory)"]
+  C["REAL_EXECUTOR_DESCRIPTORS"]
+  D["facades/view.rs match"]
+  E["REAL_EXECUTORS map"]
+  F["8 statics *EXECUTOR"]
+  G["ProviderExecutorAdapter"]
+  A --> B
+  A --> C
+  A --> D
+  A -. dedup .-> B
+  E --> F
+  E -. fallback .-> G
+  G --> B
+  classDef dedup stroke:#b45309,stroke-width:2px,stroke-dasharray:3 3
+  class A dedup
+              </div>
+            </div>
+            <div>
+              <p class="label-tag">Después — 1 mapa, 1 fuente</p>
+              <div class="mermaid">
+flowchart LR
+  A["ViewRegistry::list_for"]
+  B["list_for_async"]
+  M["HashMap&lt;id, &dyn ViewExecutor&gt;"]
+  F["8 statics *EXECUTOR"]
+  V["ViewSpecStore"]
+  A --> M
+  B --> M
+  B --> V
+  M --> F
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p class="label-tag">Problema</p>
+            <p class="text-sm text-slate-700 mt-1">
+              El nuevo trait <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">ViewExecutor</code> ya existe y los 8
+              ejecutores están implementados, pero el registro consulta dos colecciones (inventory
+              legacy + un <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">REAL_EXECUTORS</code> hand-rolled) y el facade de
+              vista tiene su propio <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">match identity</code> con 14 literales. Cinco ediciones para
+              añadir una vista. <span class="pill">test de borrado</span>: borrar
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">ProviderExecutorAdapter</code> y los 4
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">*Provider</code> deja el registro funcionando igual.
+            </p>
+          </div>
+
+          <div>
+            <p class="label-tag">Solución</p>
+            <p class="text-sm text-slate-700 mt-1">
+              Un único <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">OnceLock&lt;HashMap&lt;&amp;'static str, &amp;'static dyn ViewExecutor&gt;&gt;</code> poblado
+              por los 8 statics. Borrar inventory, <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">ProviderExecutorAdapter</code>,
+              las 4 entradas <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">*Provider</code> y el match de facade.
+            </p>
+          </div>
+
+          <div>
+            <p class="label-tag">Beneficios</p>
+            <ul class="space-y-1 mt-1">
+              <li class="benefit">Añadir vista: 1 edición, no 5</li>
+              <li class="benefit">Cierra ADR-010 Fase 1</li>
+              <li class="benefit">Locality para view authors</li>
+              <li class="benefit">Facade ejecutor real, no FeatureDisabled</li>
+              <li class="benefit">Borra ~200 LOC de plomería</li>
+            </ul>
+          </div>
+
+          <div class="callout-info">
+            <strong>Continuación de ADR-010 Fase 1</strong> — no contradice ninguna decisión existente.
+            La consolidación está declarada y empezada, sólo le falta el final.
+          </div>
+        </article>
+
+        <!-- CANDIDATE 2 -->
+        <article class="card p-6 space-y-4">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h2 class="text-xl font-semibold">2. Sobre de MCP copiado 7 veces</h2>
+              <p class="text-sm text-slate-500 mt-1">La forma del sobre JSON se reconstruye en cada handler</p>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <span class="badge badge-strong">Fuerte</span>
+              <span class="badge badge-cat">in-process</span>
+            </div>
+          </div>
+
+          <div>
+            <p class="label-tag">Archivos</p>
+            <ul class="text-sm font-mono text-slate-700 space-y-0.5 mt-1">
+              <li>crates/cognicode-explorer/src/mcp/handler/{ask,graph,impact,ingest,named_views,search,views}.rs</li>
+              <li>crates/cognicode-explorer/src/mcp/handler/sessions.rs:974-1007</li>
+              <li>crates/cognicode-explorer/src/mcp/explorer.rs:205-220 — McpResultEnvelope ya existe, no se usa</li>
+            </ul>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <p class="label-tag">Antes — mismo JSON, 9 sitios</p>
+              <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg" class="w-full">
+                <defs>
+                  <marker id="ah" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                    <path d="M0,0 L6,3 L0,6 z" class="arrow-head" />
+                  </marker>
+                </defs>
+                <rect x="10" y="10" width="60" height="22" rx="3" class="module-box" />
+                <text x="40" y="25" text-anchor="middle" class="module-label">ask.rs</text>
+                <rect x="10" y="42" width="60" height="22" rx="3" class="module-box" />
+                <text x="40" y="57" text-anchor="middle" class="module-label">graph.rs</text>
+                <rect x="10" y="74" width="60" height="22" rx="3" class="module-box" />
+                <text x="40" y="89" text-anchor="middle" class="module-label">impact.rs</text>
+                <rect x="10" y="106" width="60" height="22" rx="3" class="module-box" />
+                <text x="40" y="121" text-anchor="middle" class="module-label">ingest.rs</text>
+                <rect x="10" y="138" width="60" height="22" rx="3" class="module-box" />
+                <text x="40" y="153" text-anchor="middle" class="module-label">views.rs</text>
+                <rect x="10" y="170" width="60" height="22" rx="3" class="module-box" />
+                <text x="40" y="185" text-anchor="middle" class="module-label">sessions</text>
+
+                <rect x="200" y="60" width="100" height="80" rx="3" class="module-box" stroke-dasharray="4 4" />
+                <text x="250" y="78" text-anchor="middle" class="module-label">json!({tool_name,</text>
+                <text x="250" y="92" text-anchor="middle" class="module-label">version, ts,</text>
+                <text x="250" y="106" text-anchor="middle" class="module-label">provenance,</text>
+                <text x="250" y="120" text-anchor="middle" class="module-label">payload, ...})</text>
+
+                <line x1="70" y1="21" x2="200" y2="80" class="seam-line" marker-end="url(#ah)" />
+                <line x1="70" y1="53" x2="200" y2="90" class="seam-line" marker-end="url(#ah)" />
+                <line x1="70" y1="85" x2="200" y2="100" class="seam-line" marker-end="url(#ah)" />
+                <line x1="70" y1="117" x2="200" y2="110" class="seam-line" marker-end="url(#ah)" />
+                <line x1="70" y1="149" x2="200" y2="120" class="seam-line" marker-end="url(#ah)" />
+                <line x1="70" y1="181" x2="200" y2="130" class="seam-line" marker-end="url(#ah)" />
+                <text x="120" y="180" class="module-label-dim">mismo JSON, N copias</text>
+              </svg>
+            </div>
+            <div>
+              <p class="label-tag">Después — McpResultEnvelope + 1 módulo</p>
+              <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg" class="w-full">
+                <defs>
+                  <marker id="ah2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                    <path d="M0,0 L6,3 L0,6 z" class="arrow-head" />
+                  </marker>
+                </defs>
+                <rect x="10" y="20" width="50" height="20" rx="3" class="module-box" />
+                <text x="35" y="34" text-anchor="middle" class="module-label">ask</text>
+                <rect x="10" y="50" width="50" height="20" rx="3" class="module-box" />
+                <text x="35" y="64" text-anchor="middle" class="module-label">graph</text>
+                <rect x="10" y="80" width="50" height="20" rx="3" class="module-box" />
+                <text x="35" y="94" text-anchor="middle" class="module-label">impact</text>
+                <rect x="10" y="110" width="50" height="20" rx="3" class="module-box" />
+                <text x="35" y="124" text-anchor="middle" class="module-label">ingest</text>
+                <rect x="10" y="140" width="50" height="20" rx="3" class="module-box" />
+                <text x="35" y="154" text-anchor="middle" class="module-label">views</text>
+                <rect x="10" y="170" width="50" height="20" rx="3" class="module-box" />
+                <text x="35" y="184" text-anchor="middle" class="module-label">sessions</text>
+
+                <rect x="180" y="60" width="120" height="80" rx="6" class="module-deep" />
+                <text x="240" y="80" text-anchor="middle" class="module-label-dark">mcp/handler/envelope.rs</text>
+                <text x="240" y="100" text-anchor="middle" class="module-label-dark">ok_envelope&lt;T&gt;()</text>
+                <text x="240" y="116" text-anchor="middle" class="module-label-dark">ok_envelope_prov()</text>
+                <text x="240" y="132" text-anchor="middle" class="module-label-dark">err_envelope()</text>
+
+                <line x1="60" y1="30" x2="180" y2="80" class="seam-line" marker-end="url(#ah2)" />
+                <line x1="60" y1="60" x2="180" y2="90" class="seam-line" marker-end="url(#ah2)" />
+                <line x1="60" y1="90" x2="180" y2="100" class="seam-line" marker-end="url(#ah2)" />
+                <line x1="60" y1="120" x2="180" y2="110" class="seam-line" marker-end="url(#ah2)" />
+                <line x1="60" y1="150" x2="180" y2="120" class="seam-line" marker-end="url(#ah2)" />
+                <line x1="60" y1="180" x2="180" y2="130" class="seam-line" marker-end="url(#ah2)" />
+
+                <rect x="100" y="10" width="60" height="6" rx="2" fill="#fbbf24" />
+                <text x="130" y="8" text-anchor="middle" class="module-label">Mc pResultEnvelope</text>
+              </svg>
+            </div>
+          </div>
+
+          <div>
+            <p class="label-tag">Problema</p>
+            <p class="text-sm text-slate-700 mt-1">
+              Cada handler reconstruye el sobre JSON de 6 campos
+              (<code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">tool_name</code>, <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">version</code>, <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">timestamp</code>, <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">provenance</code>,
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">payload</code>, <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">suggested_follow_ups</code>) con
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">serde_json::json!({...})</code>. El struct
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">McpResultEnvelope&lt;T&gt;</code> ya existe y serializa
+              exactamente a esa forma. Fuga: cambiar el formato del sobre requiere editar 9 archivos a la vez.
+              <span class="pill">test de borrado</span>: borrar
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">sessions::err_with_code</code> y reemplazar por
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">envelope::err</code> no cambia el wire format.
+            </p>
+          </div>
+
+          <div>
+            <p class="label-tag">Solución</p>
+            <p class="text-sm text-slate-700 mt-1">
+              Nuevo módulo <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">mcp/handler/envelope.rs</code> (~80 LOC) con las 6
+              funciones, usando <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">McpResultEnvelope</code> como costura.
+              Borrar las 9 copias.
+            </p>
+          </div>
+
+          <div>
+            <p class="label-tag">Beneficios</p>
+            <ul class="space-y-1 mt-1">
+              <li class="benefit">-150 LOC de boilerplate</li>
+              <li class="benefit">1 lugar para evolucionar el wire format</li>
+              <li class="benefit">Provenance consistente entre handlers</li>
+              <li class="benefit">El struct McpResultEnvelope se usa por fin</li>
+            </ul>
+          </div>
+        </article>
+
+        <!-- CANDIDATE 3 -->
+        <article class="card p-6 space-y-4">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h2 class="text-xl font-semibold">3. <code class="font-mono text-sm">sessions.rs</code>: 9 handlers × 80 LOC + macro sin usar</h2>
+              <p class="text-sm text-slate-500 mt-1">Boilerplate repetido por handler; un macro cerraría la costura</p>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <span class="badge badge-strong">Fuerte</span>
+              <span class="badge badge-cat">in-process</span>
+            </div>
+          </div>
+
+          <div>
+            <p class="label-tag">Archivos</p>
+            <ul class="text-sm font-mono text-slate-700 space-y-0.5 mt-1">
+              <li>crates/cognicode-explorer/src/mcp/handler/sessions.rs:113-125 — make_handler! declarado, 0 usos</li>
+              <li>crates/cognicode-explorer/src/mcp/handler/sessions.rs:130-877 — 9 *Handler structs</li>
+              <li>crates/cognicode-explorer/src/mcp/handler/sessions.rs:879-964 — 6 SchemaFields duplicados</li>
+            </ul>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <p class="label-tag">Antes — 9 handlers, 9×4 boilerplate</p>
+              <svg viewBox="0 0 320 220" xmlns="http://www.jsdelivr.org/2000/svg" class="w-full">
+                <rect x="10" y="10" width="300" height="195" rx="3" class="module-box" />
+                <text x="20" y="28" class="module-label">mcp/handler/sessions.rs (1028 LOC)</text>
+
+                <rect x="20" y="36" width="135" height="14" rx="2" fill="#fef3c7" stroke="#b45309" stroke-width="1" />
+                <text x="28" y="46" class="module-label">9 arg structs (33-107)</text>
+
+                <rect x="165" y="36" width="135" height="14" rx="2" fill="#e2e8f0" />
+                <text x="173" y="46" class="module-label">make_handler! macro (113-125)</text>
+                <text x="175" y="55" class="module-label-dim" fill="#b91c1c">usado 0 veces</text>
+
+                <rect x="20" y="58" width="280" height="80" rx="2" fill="#f8fafc" stroke="#cbd5e1" />
+                <text x="28" y="72" class="module-label">9 *Handler structs × {name, arg_schema, handle, err, ok}</text>
+                <text x="28" y="86" class="module-label-dim">≈ 720 LOC de boilerplate</text>
+                <text x="28" y="100" class="module-label-dim">arg_schema() duplica SchemaFields 6 veces</text>
+                <text x="28" y="114" class="module-label-dim">err()/ok() son idénticos handler a handler</text>
+                <text x="28" y="128" class="module-label-dim">handle() arranca con 4 pasos comunes</text>
+
+                <rect x="20" y="146" width="135" height="50" rx="2" fill="#f1f5f9" />
+                <text x="28" y="160" class="module-label">6 SchemaFields impls</text>
+                <text x="28" y="174" class="module-label-dim">(879-964)</text>
+                <text x="28" y="188" class="module-label-dim">describen los mismos</text>
+                <text x="28" y="202" class="module-label-dim">campos que arg_schema</text>
+                <rect x="165" y="146" width="135" height="50" rx="2" fill="#f1f5f9" />
+                <text x="173" y="160" class="module-label">2 envelope helpers</text>
+                <text x="173" y="174" class="module-label-dim">(974-1007)</text>
+                <text x="173" y="188" class="module-label-dim">duplican candidate 2</text>
+                <text x="173" y="202" class="module-label-dim">hardcodean "brain-session"</text>
+              </svg>
+            </div>
+            <div>
+              <p class="label-tag">Después — 1 macro, 9 invocaciones</p>
+              <svg viewBox="0 0 320 220" xmlns="http://www.jsdelivr.org/2000/svg" class="w-full">
+                <rect x="10" y="10" width="300" height="195" rx="3" class="module-deep" />
+                <text x="20" y="28" class="module-label-dark">mcp/handler/sessions.rs (~520 LOC)</text>
+
+                <rect x="20" y="36" width="135" height="14" rx="2" fill="#334155" />
+                <text x="28" y="46" class="module-label-dark">9 arg structs (33-107)</text>
+
+                <rect x="165" y="36" width="135" height="14" rx="2" fill="#0ea5e9" />
+                <text x="173" y="46" class="module-label-dark" fill="#0c4a6e">make_handler! macro (113-125)</text>
+                <text x="175" y="55" class="module-label-dim" fill="#6ee7b7">usado 9 veces</text>
+
+                <rect x="20" y="58" width="280" height="80" rx="2" fill="#1e293b" />
+                <text x="28" y="72" class="module-label-dark">9 invocaciones de macro × {name, arg_schema, handle, err, ok}</text>
+                <text x="28" y="86" class="module-label-dim" fill="#6ee7b7">≈ 200 LOC de unicidad (validators + bodies)</text>
+                <text x="28" y="100" class="module-label-dim" fill="#6ee7b7">arg_schema viene de SchemaFields::schema_fields()</text>
+                <text x="28" y="114" class="module-label-dim" fill="#6ee7b7">err()/ok() generados por el macro</text>
+                <text x="28" y="128" class="module-label-dim" fill="#6ee7b7">4 pasos comunes absorbidos en macro</text>
+
+                <rect x="20" y="146" width="135" height="50" rx="2" fill="#1e293b" />
+                <text x="28" y="160" class="module-label-dark">6 SchemaFields</text>
+                <text x="28" y="174" class="module-label-dim" fill="#6ee7b7">una sola fuente</text>
+                <rect x="165" y="146" width="135" height="50" rx="2" fill="#1e293b" />
+                <text x="173" y="160" class="module-label-dark">envelope helpers</text>
+                <text x="173" y="174" class="module-label-dim" fill="#6ee7b7">importados de candidate 2</text>
+              </svg>
+            </div>
+          </div>
+
+          <div>
+            <p class="label-tag">Problema</p>
+            <p class="text-sm text-slate-700 mt-1">
+              <span class="pill">浅浅</span> (poco profundo): cada handler
+              (<code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">BrainOpen</code>, <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">BrainAttach</code>, …) repite la misma
+              estructura de 4 impls. La macro <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">make_handler!</code> declarada en
+              líneas 113-125 se usa 0 veces — alguien la empezó y paró. Locality rota:
+              la descripción del schema vive en <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">SchemaFields</code> Y en
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">arg_schema()</code>. Añadir un campo = editar dos veces.
+            </p>
+          </div>
+
+          <div>
+            <p class="label-tag">Solución</p>
+            <p class="text-sm text-slate-700 mt-1">
+              Macro <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">[[macro_export]]</code> en
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">mcp/handler/macros.rs</code> con firma
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">(name, tool_const, args_ty, validate_id, body_expr)</code> que genera
+              los 4 impls + <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">SchemaFields</code>. Cada handler se reduce a ~10
+              líneas (lo único único).
+            </p>
+          </div>
+
+          <div>
+            <p class="label-tag">Beneficios</p>
+            <ul class="space-y-1 mt-1">
+              <li class="benefit">sessions.rs baja de 1028 a ~520 LOC</li>
+              <li class="benefit">Nuevo tool de sesión: 10 líneas, no 80</li>
+              <li class="benefit">1 fuente para descripción de schema</li>
+              <li class="benefit">Macro declarada al fin se usa</li>
+            </ul>
+          </div>
+        </article>
+
+        <!-- CANDIDATE 4 -->
+        <article class="card p-6 space-y-4">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h2 class="text-xl font-semibold">4. <code class="font-mono text-sm">file_operations.rs</code> esconde un verificador de Rust</h2>
+              <p class="text-sm text-slate-500 mt-1">Dos responsabilidades no relacionadas comparten struct y archivo</p>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <span class="badge badge-strong">Fuerte</span>
+              <span class="badge badge-cat">remote pero propio</span>
+            </div>
+          </div>
+
+          <div>
+            <p class="label-tag">Archivos</p>
+            <ul class="text-sm font-mono text-slate-700 space-y-0.5 mt-1">
+              <li>crates/cognicode-core/src/application/services/file_operations.rs:65-1455 — Cluster 1 (read/write/edit/list)</li>
+              <li>crates/cognicode-core/src/application/services/file_operations.rs:1456-1822 — Cluster 2 (rustc subprocess)</li>
+              <li>crates/cognicode-core/src/application/dto/file_ops.rs — DTOs compartidos</li>
+              <li>crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs:1-1106 — handlers mezclados</li>
+            </ul>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <p class="label-tag">Antes — 1 struct, 2 clusters</p>
+              <svg viewBox="0 0 320 220" xmlns="http://www.w3.org/2000/svg" class="w-full">
+                <rect x="10" y="10" width="300" height="195" rx="6" class="module-box" />
+                <text x="20" y="28" class="module-label">FileOperationsService (3242 LOC)</text>
+
+                <rect x="20" y="40" width="280" height="78" rx="3" fill="#f1f5f9" />
+                <text x="28" y="55" class="module-label">Cluster 1 — File I/O (1390 LOC, 65-1455)</text>
+                <text x="28" y="70" class="module-label-dim">read_file · read_file_outline · read_file_symbols</text>
+                <text x="28" y="83" class="module-label-dim">read_file_compressed · read_file_raw_at_line</text>
+                <text x="28" y="96" class="module-label-dim">read_file_chunk · read_file_range</text>
+                <text x="28" y="109" class="module-label-dim">write_file · edit_file · search_content · list_files</text>
+
+                <rect x="20" y="128" width="280" height="68" rx="3" fill="#fef3c7" stroke="#b45309" stroke-width="1" />
+                <text x="28" y="143" class="module-label">Cluster 2 — Rust verifier (365 LOC, 1456-1822)</text>
+                <text x="28" y="158" class="module-label-dim">setup_temp_file · run_rustc_async</text>
+                <text x="28" y="171" class="module-label-dim">verify_rust_file · verify_rust_file_with_timeout</text>
+                <text x="28" y="184" class="module-label-dim">retrieve_and_verify</text>
+
+                <line x1="160" y1="118" x2="160" y2="128" class="leak-line" stroke-dasharray="3 3" />
+                <text x="170" y="125" class="module-label-dim" fill="#b91c1c">1 puente frágil</text>
+              </svg>
+            </div>
+            <div>
+              <p class="label-tag">Después — 2 módulos profundos, 1 costura</p>
+              <svg viewBox="0 0 320 220" xmlns="http://www.jsdelivr.org/2000/svg" class="w-full">
+                <rect x="10" y="10" width="140" height="195" rx="6" class="module-deep" />
+                <text x="20" y="28" class="module-label-dark">file_operations (1700)</text>
+                <text x="20" y="50" class="module-label-dim" fill="#6ee7b7">read / write / edit / list</text>
+                <text x="20" y="65" class="module-label-dim" fill="#6ee7b7">puro workspace boundary</text>
+                <text x="20" y="85" class="module-label-dim" fill="#6ee7b7">tests: 1050 LOC</text>
+                <text x="20" y="110" class="module-label-dim" fill="#6ee7b7">no subprocess</text>
+                <text x="20" y="125" class="module-label-dim" fill="#6ee7b7">no tempfile</text>
+
+                <rect x="170" y="10" width="140" height="195" rx="6" class="module-deep" />
+                <text x="180" y="28" class="module-label-dark">rust_verifier (365)</text>
+                <text x="180" y="50" class="module-label-dim" fill="#6ee7b7">subprocess a rustc</text>
+                <text x="180" y="65" class="module-label-dim" fill="#6ee7b7">timeout + kill_on_drop</text>
+                <text x="180" y="85" class="module-label-dim" fill="#6ee7b7">tests: 360 LOC</text>
+                <text x="180" y="110" class="module-label-dim" fill="#6ee7b7">CommandRunner port</text>
+                <text x="180" y="125" class="module-label-dim" fill="#6ee7b7">in-memory en tests</text>
+
+                <text x="160" y="160" text-anchor="middle" class="module-label-dim">trait RustVerifier</text>
+                <text x="160" y="175" text-anchor="middle" class="module-label-dim">verify(file, timeout)</text>
+                <text x="160" y="190" text-anchor="middle" class="module-label-dim">→ VerificationOutcome</text>
+              </svg>
+            </div>
+          </div>
+
+          <div>
+            <p class="label-tag">Problema</p>
+            <p class="text-sm text-slate-700 mt-1">
+              Cluster 1 (I/O de archivos) y Cluster 2 (subprocess a <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">rustc</code>) comparten
+              sólo <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">workspace_root</code> y un <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">read_to_string</code>.
+              <span class="pill">test de borrado</span>: borrar Cluster 1 deja Cluster 2 funcionando;
+              borrar Cluster 2 deja Cluster 1 funcionando. Errores distintos, lifecycle
+              distinto (sync vs. async+timeout+kill_on_drop), DTOs distintos, tests distintos.
+              Sólo se cruzan en un punto: <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">retrieve_and_verify</code> en
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">file_operations.rs:1644</code>.
+            </p>
+          </div>
+
+          <div>
+            <p class="label-tag">Solución</p>
+            <p class="text-sm text-slate-700 mt-1">
+              Extraer Cluster 2 a <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">crates/cognicode-core/src/application/services/rust_verifier.rs</code>
+              con un trait <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">RustVerifier</code> como costura. Adapter de
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">CommandRunner</code> para mockear rustc en tests.
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">FileOperationsService</code> baja a ~1700 LOC y pierde la dependencia
+              de <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">tempfile</code>/<code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">tokio::process</code>.
+            </p>
+          </div>
+
+          <div>
+            <p class="label-tag">Beneficios</p>
+            <ul class="space-y-1 mt-1">
+              <li class="benefit">-1500 LOC en file_operations.rs</li>
+              <li class="benefit">Tests del verificador sin rustc instalado</li>
+              <li class="benefit">Cluster I/O sin dependencia subprocess</li>
+              <li class="benefit">"rustc not found" vive en su módulo</li>
+            </ul>
+          </div>
+        </article>
+
+        <!-- CANDIDATE 5 -->
+        <article class="card p-6 space-y-4">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h2 class="text-xl font-semibold">5. <code class="font-mono text-sm">dto.rs</code>: serde a mano + NamedView zombie</h2>
+              <p class="text-sm text-slate-500 mt-1">250 LOC de serde generado a mano y un tipo deprecated que sigue vivo</p>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <span class="badge badge-worth">Vale la pena explorar</span>
+              <span class="badge badge-cat">in-process</span>
+            </div>
+          </div>
+
+          <div>
+            <p class="label-tag">Archivos</p>
+            <ul class="text-sm font-mono text-slate-700 space-y-0.5 mt-1">
+              <li>crates/cognicode-explorer/src/dto.rs:1012-1219 — ViewKind, RendererKind, HierarchyKind + serde a mano</li>
+              <li>crates/cognicode-explorer/src/dto.rs:461-582 — NamedView #[deprecated] con to_view_spec shim</li>
+              <li>crates/cognicode-explorer/src/dto.rs:1385-? — 360 LOC de round-trip tests duplicados</li>
+            </ul>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <p class="label-tag">Antes — 3 enums × 100 LOC cada uno</p>
+              <svg viewBox="0 0 320 220" xmlns="http://www.jsdelivr.org/2000/svg" class="w-full">
+                <rect x="10" y="10" width="300" height="195" rx="3" class="module-box" />
+                <text x="20" y="28" class="module-label">dto.rs: 3 enums + 1 zombie</text>
+
+                <rect x="20" y="40" width="135" height="48" rx="3" fill="#f1f5f9" />
+                <text x="28" y="55" class="module-label">ViewKind (107 LOC)</text>
+                <text x="28" y="70" class="module-label-dim">Serialize: 45 líneas</text>
+                <text x="28" y="83" class="module-label-dim">Deserialize: 42 líneas</text>
+
+                <rect x="165" y="40" width="135" height="48" rx="3" fill="#f1f5f9" />
+                <text x="173" y="55" class="module-label">RendererKind (60 LOC)</text>
+                <text x="173" y="70" class="module-label-dim">Serialize: 27 líneas</text>
+                <text x="173" y="83" class="module-label-dim">Deserialize: 32 líneas</text>
+
+                <rect x="20" y="100" width="135" height="48" rx="3" fill="#f1f5f9" />
+                <text x="28" y="115" class="module-label">HierarchyKind (48 LOC)</text>
+                <text x="28" y="130" class="module-label-dim">Serialize: 24 líneas</text>
+                <text x="28" y="143" class="module-label-dim">Deserialize: 24 líneas</text>
+
+                <rect x="165" y="100" width="135" height="48" rx="3" fill="#fef3c7" stroke="#b45309" stroke-width="1" />
+                <text x="173" y="115" class="module-label" fill="#92400e">NamedView zombie</text>
+                <text x="173" y="130" class="module-label-dim" fill="#b45309">#[deprecated] 0.6.0</text>
+                <text x="173" y="143" class="module-label-dim" fill="#b45309">to_view_spec shim vivo</text>
+
+                <rect x="20" y="160" width="280" height="35" rx="3" fill="#f1f5f9" />
+                <text x="28" y="175" class="module-label">Round-trip tests: 360 LOC</text>
+                <text x="28" y="188" class="module-label-dim">3 tests mecánicamente idénticos (uno por enum)</text>
+              </svg>
+            </div>
+            <div>
+              <p class="label-tag">Después — serde + #[serde(other)]</p>
+              <svg viewBox="0 0 320 220" xmlns="http://www.jsdelivr.org/2000/svg" class="w-full">
+                <rect x="10" y="10" width="300" height="195" rx="3" class="module-deep" />
+                <text x="20" y="28" class="module-label-dark">dto.rs: enums delgados + sin zombie</text>
+
+                <rect x="20" y="40" width="135" height="48" rx="3" fill="#1e293b" />
+                <text x="28" y="55" class="module-label-dark">ViewKind (15 LOC)</text>
+                <text x="28" y="70" class="module-label-dim" fill="#6ee7b7">#[serde(rename_all =</text>
+                <text x="28" y="83" class="module-label-dim" fill="#6ee7b7">"snake_case", other)]</text>
+
+                <rect x="165" y="40" width="135" height="48" rx="3" fill="#1e293b" />
+                <text x="173" y="55" class="module-label-dark">RendererKind (15 LOC)</text>
+                <text x="173" y="70" class="module-label-dim" fill="#6ee7b7">idem</text>
+                <text x="173" y="83" class="module-label-dim" fill="#6ee7b7">Custom(String) preserva</text>
+
+                <rect x="20" y="100" width="135" height="48" rx="3" fill="#1e293b" />
+                <text x="28" y="115" class="module-label-dark">HierarchyKind (15 LOC)</text>
+                <text x="28" y="130" class="module-label-dim" fill="#6ee7b7">idem</text>
+                <text x="28" y="143" class="module-label-dim" fill="#6ee7b7">idem</text>
+
+                <rect x="165" y="100" width="135" height="48" rx="3" fill="#1e293b" />
+                <text x="173" y="115" class="module-label-dark">NamedView borrado</text>
+                <text x="173" y="130" class="module-label-dim" fill="#6ee7b7">si ningún consumidor</text>
+                <text x="173" y="143" class="module-label-dim" fill="#6ee7b7">lo usa, ~150 LOC</text>
+
+                <rect x="20" y="160" width="280" height="35" rx="3" fill="#1e293b" />
+                <text x="28" y="175" class="module-label-dark">Round-trip tests: 30 LOC</text>
+                <text x="28" y="188" class="module-label-dim" fill="#6ee7b7">1 test property-based cubre los 3</text>
+              </svg>
+            </div>
+          </div>
+
+          <div>
+            <p class="label-tag">Problema</p>
+            <p class="text-sm text-slate-700 mt-1">
+              Tres enums de primera clase (<code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">ViewKind</code>,
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">RendererKind</code>, <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">HierarchyKind</code>) llevan 250 LOC de
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">Serialize</code>/<code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">Deserialize</code> a mano para snake_case + <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">Custom(String)</code>
+              fallback. Cada variante nueva = 4 ediciones. Los 360 LOC de round-trip tests existen
+              sólo porque el impl es a mano — <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">#[serde(other)]</code> los colapsa a uno.
+              Encima: <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">NamedView</code> y <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">NamedViewDescriptor</code> son
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">#[deprecated]</code> desde 0.6.0 con un shim
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">to_view_spec</code> que sigue vivo.
+            </p>
+          </div>
+
+          <div>
+            <p class="label-tag">Solución</p>
+            <p class="text-sm text-slate-700 mt-1">
+              Dos movimientos independientes. (1) Reemplazar el serde a mano por
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">#[serde(rename_all = "snake_case")]</code> + <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">#[serde(other)]</code>. (2) Hacer
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">rg "NamedView"</code> en el repo: si sólo lo usan los shims deprecated, borrar toda la
+              familia; si <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">view_spec_store.rs</code> o
+              <code class="font-mono text-xs px-1 py-0.5 bg-slate-100 rounded">postgres_bridge.rs</code> lo consumen, moverlo allí.
+            </p>
+          </div>
+
+          <div>
+            <p class="label-tag">Beneficios</p>
+            <ul class="space-y-1 mt-1">
+              <li class="benefit">-250 LOC serde a mano</li>
+              <li class="benefit">-330 LOC round-trip tests</li>
+              <li class="benefit">Añadir variante: 1 línea, no 4 ediciones</li>
+              <li class="benefit">Borra zombie si rg lo confirma</li>
+            </ul>
+          </div>
+        </article>
+
+      </section>
+
+      <section id="top-recommendation" class="top-rec rounded-xl p-8 space-y-4">
+        <p class="label-tag" style="color:#6ee7b7">Recomendación principal</p>
+        <h2 class="text-2xl font-semibold">Candidato 1 — cerrar la consolidación de la costura de vistas</h2>
+        <p class="text-slate-200 text-sm max-w-3xl">
+          La hidra de cuatro cabezas es el riesgo en vuelo más concreto.
+          <a href="#candidates" class="underline">ADR-010 Fase 1</a> ya declaró la decisión;
+          los traits y los 8 ejecutores ya existen; sólo falta borrar la plomería legacy y
+          conectar el facade. Cada vista nueva cuesta 5 ediciones hoy; costará 1 después.
+        </p>
+        <div class="flex flex-wrap gap-3 pt-2">
+          <span class="badge badge-strong">Fuerte</span>
+          <span class="badge badge-cat" style="background:#1e293b; color:#cbd5e1; border-color:#334155">in-process</span>
+          <span class="text-xs text-slate-400">~200 LOC borradas · 4 archivos · 0 contratos rotos</span>
+        </div>
+        <div>
+          <p class="label-tag" style="color:#6ee7b7">Sub-recomendación</p>
+          <p class="text-slate-200 text-sm">
+            Candidato 2 (envelope MCP) en una segunda PR separada. Cambia archivos distintos;
+            combinar PRs acumula ruido de diff y desdibuja la causa raíz.
+          </p>
+        </div>
+        <div>
+          <p class="label-tag" style="color:#6ee7b7">Próximo paso</p>
+          <p class="text-slate-200 text-sm">
+            ¿Cuál quieres explorar primero? Abro un grilling loop sobre ese candidato —
+            bajamos juntos a la forma del módulo profundizado, las costuras y los adaptadores
+            justificados.
+          </p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
