@@ -1328,7 +1328,7 @@ fn execute_scenario(
                 eprintln!(
                     "  [SCORING] {} corr={:.1} lat={:.1} esc={:.1} con={:.1} rob={:.1}",
                     scenario.tool,
-                    tool_score.correctitud,
+                    tool_score.correctitud.unwrap_or(0.0),
                     tool_score.latencia,
                     tool_score.escalabilidad,
                     tool_score.consistencia,
@@ -1336,7 +1336,7 @@ fn execute_scenario(
                 );
             }
 
-            Some(tool_score.correctitud)
+            tool_score.correctitud
         } else {
             None
         }

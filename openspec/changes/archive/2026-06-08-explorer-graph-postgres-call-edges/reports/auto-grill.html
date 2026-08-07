@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auto-Grill: explorer-graph-postgres-call-edges</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --card: #16213e;
+    --text: #e0e0e0;
+    --accent: #0f3460;
+    --green: #27ae60;
+    --yellow: #f39c12;
+    --red: #e74c3c;
+    --blue: #3498db;
+    --purple: #8e44ad;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 2rem; }
+  h1 { font-size: 1.6rem; color: var(--blue); margin-bottom: 0.3rem; }
+  h2 { font-size: 1.2rem; color: var(--purple); margin: 1.5rem 0 0.8rem; border-bottom: 1px solid var(--accent); padding-bottom: 0.3rem; }
+  .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; }
+  .card { background: var(--card); border-radius: 8px; padding: 1.2rem; margin-bottom: 1rem; border-left: 3px solid var(--accent); }
+  .stats { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .stat-box { background: var(--card); border-radius: 8px; padding: 1rem; text-align: center; min-width: 100px; flex: 1; }
+  .stat-box .num { font-size: 2rem; font-weight: bold; }
+  .stat-box .label { font-size: 0.8rem; color: #888; }
+  .stat-box.green .num { color: var(--green); }
+  .stat-box.yellow .num { color: var(--yellow); }
+  .stat-box.blue .num { color: var(--blue); }
+  table { width: 100%; border-collapse: collapse; margin: 0.8rem 0; font-size: 0.9rem; }
+  th { text-align: left; background: var(--accent); padding: 0.5rem 0.7rem; font-weight: 600; }
+  td { padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--accent); }
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+  .badge-green { background: #27ae6044; color: var(--green); }
+  .badge-yellow { background: #f39c1244; color: var(--yellow); }
+  .badge-red { background: #e74c3c44; color: var(--red); }
+  .badge-blue { background: #3498db44; color: var(--blue); }
+  .badge-purple { background: #8e44ad44; color: var(--purple); }
+  .confidence-bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--accent); min-width: 60px; }
+  .confidence-bar .fill { height: 100%; border-radius: 4px; }
+  .fill-high { background: var(--green); }
+  .fill-mid { background: var(--yellow); }
+  .fill-low { background: var(--red); }
+  .checkbox-group { margin: 0.8rem 0; }
+  .checkbox-group label { display: block; padding: 0.4rem 0; cursor: pointer; }
+  .checkbox-group input { margin-right: 0.5rem; }
+  .os-table td:first-child { font-weight: 600; }
+  .section-note { font-size: 0.8rem; color: #888; margin-bottom: 0.5rem; font-style: italic; }
+  hr { border: none; border-top: 1px solid var(--accent); margin: 1rem 0; }
+</style>
+</head>
+<body>
+
+<h1>🧠 Auto-Grill: explorer-graph-postgres-call-edges</h1>
+<p class="subtitle">Exploración SDD — PostgreSQL call_edges table + Repository trait extension | 2026-06-08</p>
+
+<!-- Resumen Ejecutivo -->
+<h2>📊 Resumen Ejecutivo</h2>
+<div class="stats">
+  <div class="stat-box blue">
+    <div class="num">9</div>
+    <div class="label">Preguntas totales</div>
+  </div>
+  <div class="stat-box green">
+    <div class="num">7</div>
+    <div class="label">Auto-resueltas</div>
+  </div>
+  <div class="stat-box yellow">
+    <div class="num">2</div>
+    <div class="label">Escaladas</div>
+  </div>
+  <div class="stat-box blue">
+    <div class="num">78%</div>
+    <div class="label">Tasa de resolución</div>
+  </div>
+</div>
+
+<!-- Decisiones Automáticas -->
+<h2>✅ Decisiones Automáticas</h2>
+<p class="section-note">Resueltas con evidencia del código base. Confianza ≥ 0.85.</p>
+
+<table>
+<tr>
+  <th>#</th>
+  <th>Pregunta</th>
+  <th>Resolución</th>
+  <th>Confianza</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td>¿Tabla separada o JSONB en symbols?</td>
+  <td><span class="badge badge-green">Auto-resuelta</span> Tabla separada — column-for-column con SQLite.</td>
+  <td><span class="badge badge-green">0.95</span></td>
+</tr>
+<tr>
+  <td>2</td>
+  <td>¿Métodos en Repository o sub-trait?</td>
+  <td><span class="badge badge-green">Auto-resuelta</span> En Repository directamente — el docstring anticipa typed query methods.</td>
+  <td><span class="badge badge-green">0.95</span></td>
+</tr>
+<tr>
+  <td>3</td>
+  <td>¿spawn_blocking para queries?</td>
+  <td><span class="badge badge-green">Auto-resuelta</span> No — sqlx es nativamente async.</td>
+  <td><span class="badge badge-green">0.90</span></td>
+</tr>
+<tr>
+  <td>4</td>
+  <td>¿EdgeMetadata struct o reutilizar CallEntry?</td>
+  <td><span class="badge badge-green">Auto-resuelta</span> Struct separado — CallEntry tiene depth que no aplica.</td>
+  <td><span class="badge badge-green">0.95</span></td>
+</tr>
+<tr>
+  <td>5</td>
+  <td>¿Índices en call_edges?</td>
+  <td><span class="badge badge-green">Auto-resuelta</span> Sí — caller_id y callee_id mínimo.</td>
+  <td><span class="badge badge-green">0.90</span></td>
+</tr>
+<tr>
+  <td>6</td>
+  <td>¿COUNT(*) sin materialized view?</td>
+  <td><span class="badge badge-blue">Auto-resuelta</span> Sí — suficiente para la escala actual.</td>
+  <td><span class="badge badge-blue">0.85</span></td>
+</tr>
+<tr>
+  <td>7</td>
+  <td>¿Incluir write-path masivo?</td>
+  <td><span class="badge badge-green">Auto-resuelta</span> No — slice separado.</td>
+  <td><span class="badge badge-green">0.90</span></td>
+</tr>
+</table>
+
+<!-- Decisiones Escaladas -->
+<h2>⚠️ Decisiones Escaladas (Requieren validación humana)</h2>
+<p class="section-note">No pudieron resolverse automáticamente. Cada opción tiene su Opportunity Score.</p>
+
+<h3>Pregunta 8: ¿Nombre de la tabla: call_edges o graph_edges?</h3>
+<div class="card">
+  <p><strong>Contexto:</strong> SQLite usa <code>call_edges</code>. Un nombre más genérico (<code>graph_edges</code>) anticiparía edges no-call futuros (references, cites, justifies). El trade-off es consistencia vs. generalidad.</p>
+  <table class="os-table">
+  <tr><th>Opción</th><th>Acoplamiento</th><th>Free Energy</th><th>Apertura</th><th>Flexibilidad</th><th>Profundidad</th><th>Irreversibilidad</th><th>OS</th><th>Clase</th></tr>
+  <tr>
+    <td>A: call_edges</td><td>0.15</td><td>0.10</td><td>0.85</td><td>0.88</td><td>0.90</td><td>0.25</td><td><strong>0.78</strong></td><td><span class="badge badge-purple">🔧 Técnico</span></td>
+  </tr>
+  <tr>
+    <td>B: graph_edges</td><td>0.45</td><td>0.40</td><td>0.60</td><td>0.35</td><td>0.50</td><td>0.60</td><td>0.42</td><td><span class="badge badge-purple">🔧 Técnico</span></td>
+  </tr>
+  </table>
+  <p><strong>Recomendación del agente:</strong> Opción A — <code>call_edges</code>. Consistencia con SQLite, sin breaking changes, alineado con la estrategia column-for-column. Si en el futuro se necesitan edges no-call, se puede renombrar con migración.</p>
+</div>
+
+<h3>Pregunta 9: ¿Tipo de retorno: Vec&lt;EdgeMetadata&gt; o impl Iterator?</h3>
+<div class="card">
+  <p><strong>Contexto:</strong> <code>async_trait</code> no soporta <code>impl Iterator</code> directamente — requiere boxing. <code>Vec</code> es simple pero asigna en heap. Para consultas de edges pequeños (&lt;10K), la diferencia es negligible.</p>
+  <table class="os-table">
+  <tr><th>Opción</th><th>Acoplamiento</th><th>Free Energy</th><th>Apertura</th><th>Flexibilidad</th><th>Profundidad</th><th>Irreversibilidad</th><th>OS</th><th>Clase</th></tr>
+  <tr>
+    <td>A: Vec&lt;EdgeMetadata&gt;</td><td>0.10</td><td>0.05</td><td>0.90</td><td>0.80</td><td>0.85</td><td>0.15</td><td><strong>0.65</strong></td><td><span class="badge badge-purple">🔧 Técnico</span></td>
+  </tr>
+  <tr>
+    <td>B: Box&lt;dyn Iterator&gt;</td><td>0.40</td><td>0.30</td><td>0.50</td><td>0.45</td><td>0.40</td><td>0.50</td><td>0.30</td><td><span class="badge badge-purple">🔧 Técnico</span></td>
+  </tr>
+  </table>
+  <p><strong>Recomendación del agente:</strong> Opción A — <code>Vec&lt;EdgeMetadata&gt;</code>. Simple, compatible con async_trait, sin boxing. Migrar a paginación o Stream si la escala lo requiere (YAGNI por ahora).</p>
+</div>
+
+<!-- Validación Pendiente -->
+<h2>📋 Validación Pendiente</h2>
+<div class="card">
+  <p><strong>Las siguientes decisiones requieren tu aprobación explícita:</strong></p>
+  <div class="checkbox-group">
+    <label><input type="checkbox" id="q8-a"> ✅ <strong>P8:</strong> Usar <code>call_edges</code> como nombre de tabla (consistente con SQLite)</label>
+    <label><input type="checkbox" id="q8-b"> ❌ <strong>P8:</strong> Usar <code>graph_edges</code> (más genérico, rompe compatibilidad)</label>
+  </div>
+  <hr>
+  <div class="checkbox-group">
+    <label><input type="checkbox" id="q9-a"> ✅ <strong>P9:</strong> Retornar <code>Vec&lt;EdgeMetadata&gt;</code> (simple, async_trait-compatible)</label>
+    <label><input type="checkbox" id="q9-b"> ❌ <strong>P9:</strong> Retornar <code>Box&lt;dyn Iterator&gt;</code> (más flexible, más complejo)</label>
+  </div>
+</div>
+
+<h2>📝 Actualizaciones de Documentación</h2>
+<div class="card">
+  <p><strong>CONTEXT.md:</strong> Sin cambios necesarios.</p>
+  <p><strong>ADR:</strong> Sin nuevo ADR — este slice sigue decisiones ya documentadas.</p>
+  <p><strong>Glosario:</strong> <code>EdgeMetadata</code> se definirá durante la fase de proposal/design.</p>
+</div>
+
+<p style="text-align:center; margin-top:2rem; color:#888; font-size:0.8rem;">
+  Auto-Grill v2.0 · CogniCode SDD · 2026-06-08
+</p>
+
+</body>
+</html>

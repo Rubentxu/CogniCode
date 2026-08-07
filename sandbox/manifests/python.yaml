@@ -79,10 +79,8 @@ scenarios:
         - path: src/click/core.py
         - path: src/click/decorators.py
         - path: src/click/exceptions.py
-        - path: src/click/__init__.py
         - path: src/click/shell_completion.py
         - path: src/click/testing.py
-        - path: src/click/_winconsole.py
 
   # ─── Analysis Scenarios ─────────────────────────────────────────────────────
 

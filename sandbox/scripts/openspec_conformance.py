@@ -46,9 +46,8 @@ def load_evidence_map(path):
 def validate_paths(evidence_map):
     """--validate-paths: check each evidence_path resolves to ≥1 existing file.
 
-    Specs carrying an ``evidence_note`` are excluded from path validation:
-    the note documents known partial coverage (e.g. feature-gated compile
-    debt), which is honest mapping, not rubber-stamping.
+    Specs carrying only ``evidence_note`` (no valid evidence_path) are
+    reported as needing evidence — evidence_note is a placeholder, not proof.
     """
     missing = []
     for spec_name, ev in evidence_map.items():
@@ -56,11 +55,12 @@ def validate_paths(evidence_map):
             continue
         if ev.get("status") != "verified":
             continue
-        if ev.get("evidence_note"):
-            continue
+        # evidence_note without evidence_path is a placeholder, not verified proof
+        has_note = bool(ev.get("evidence_note"))
         path_str = ev.get("evidence_path", "")
         if not path_str:
-            missing.append((spec_name, "empty evidence_path"))
+            reason = f"empty evidence_path (evidence_note: {ev['evidence_note']!r})" if has_note else "empty evidence_path"
+            missing.append((spec_name, reason))
             continue
         # Glob expansion: split on commas/spaces for multi-path strings
         tokens = re.split(r"[,\s]+", path_str.strip())
@@ -102,18 +102,27 @@ def scan_specs(specs_dir, evidence_map):
         ev = evidence_map.get(spec_name, {})
         ev_status = ev.get("status") if isinstance(ev, dict) else None
         ev_path = ev.get("evidence_path") if isinstance(ev, dict) else None
+        ev_note = ev.get("evidence_note") if isinstance(ev, dict) else None
         summary["specs"] += 1
         for i, m in enumerate(matches, 1):
             rid = f"{spec_name}/{i}"
-            if ev_status in ("verified", "legacy_obsolete"):
-                status = ev_status
+            # evidence_note without evidence_path is not verified proof
+            if ev_status == "legacy_obsolete":
+                status = "legacy_obsolete"
+            elif ev_status == "verified":
+                # verified requires actual evidence_path; evidence_note alone is insufficient
+                if ev_note and not ev_path:
+                    status = "no_evidence"
+                else:
+                    status = "verified"
             elif is_obsolete:
                 status = "legacy_obsolete"
             else:
                 status = "no_evidence"
             rows.append({"id": rid, "spec": spec_name, "index": i,
                          "status": status,
-                         "evidence": ev_path if ev_status == "verified" else None})
+                         "evidence": ev_path if status == "verified" else None,
+                         "evidence_note": ev_note if (status == "no_evidence" and ev_note) else None})
             summary[status] += 1
             summary["total"] += 1
     active_total = summary["total"] - summary["legacy_obsolete"]

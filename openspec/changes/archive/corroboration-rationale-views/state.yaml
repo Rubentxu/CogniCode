@@ -1,0 +1,56 @@
+# SDD state — corroboration-rationale-views
+# Updated by sdd-spec on 2026-06-10
+
+change: corroboration-rationale-views
+project: cognicode
+mode: hybrid (Engram + OpenSpec)
+status: spec-complete
+
+phases:
+  explore: complete
+  propose: complete
+  design: complete
+  spec: complete
+  tasks: complete
+  apply: pending
+  verify: pending
+  archive: pending
+
+artifacts:
+  spec: sdd/corroboration-rationale-views/spec
+  design: sdd/corroboration-rationale-views/design
+  tasks: sdd/corroboration-rationale-views/tasks
+  exploration: sdd/corroboration-rationale-views/explore (#1539)
+  proposal: sdd/corroboration-rationale-views/proposal (#1542)
+
+spec_files:
+  rationale-traversal: NEW
+  corroboration-scoring: NEW
+  rationale-view-component: NEW
+  corroboration-styling: NEW
+  named-views-rationale: MODIFIED (delta on named-view-persistence)
+
+metrics:
+  spec_capabilities: 5
+  spec_requirements_total: ~25
+  spec_scenarios_total: ~110
+  design_languages: rust + typescript
+  design_files_total: ~32
+  design_loc_estimate: ~2300
+  task_batches: 3
+  task_subtasks: ~80
+  chain_strategy: stacked-to-main
+  pr_count: 3
+  400_line_budget_risk: high
+
+risks:
+  - name: Generic graph repository gap
+    mitigation: Add edges_by_kind + rationale_subgraph port methods in PR 1
+  - name: NamedView load_view dispatch hot path
+    mitigation: match arm in PR 3, additive
+  - name: Corroboration score stability
+    mitigation: bucket-max accumulation per provenance
+  - name: Dagre layout dependency
+    mitigation: separate npm package, lazy-loaded with RationaleView
+  - name: 400-line PR budget exceeded
+    mitigation: 3 stacked PRs (backend, frontend, named view)

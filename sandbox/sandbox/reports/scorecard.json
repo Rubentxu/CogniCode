@@ -1,0 +1,113 @@
+{
+  "generated_at": "2026-08-07T05:14:26Z",
+  "gates": [
+    {
+      "id": "G1",
+      "name": "Git Hygiene / e13-wave2 PR Evidence",
+      "status": "GREEN",
+      "measured": null,
+      "budget": null,
+      "evidence_path": "git_log",
+      "evidence_text": "Found 3 e13-wave2 commits in last 30: ce94a598 Merge pull request #226 from Rubentxu/feat/e13-wave2-knowledge-layer-ports"
+    },
+    {
+      "id": "G2",
+      "name": "MCP Tool Coverage",
+      "status": "AMBER",
+      "measured": null,
+      "budget": null,
+      "evidence_path": "sandbox/reports/coverage_matrix.yaml",
+      "evidence_text": "coverage_matrix.yaml not found"
+    },
+    {
+      "id": "G3",
+      "name": "Sandbox Health Score",
+      "status": "AMBER",
+      "measured": null,
+      "budget": null,
+      "evidence_path": "sandbox/results",
+      "evidence_text": "no health_score data in any run"
+    },
+    {
+      "id": "G4",
+      "name": "Corpus Quality / Correctitud",
+      "status": "AMBER",
+      "measured": null,
+      "budget": null,
+      "evidence_path": "sandbox/results",
+      "evidence_text": "dimension_scores.correctitud not found"
+    },
+    {
+      "id": "G5",
+      "name": "Latency Budget by Tool Family",
+      "status": "AMBER",
+      "measured": "no data for families: search, call-graph, analytics",
+      "budget": null,
+      "evidence_path": "sandbox/results",
+      "evidence_text": null
+    },
+    {
+      "id": "G6",
+      "name": "Run-to-Run Stability",
+      "status": "AMBER",
+      "measured": null,
+      "budget": null,
+      "evidence_path": "sandbox/results/stability.json",
+      "evidence_text": "stability.json not found"
+    },
+    {
+      "id": "G7",
+      "name": "Robustness \u2014 Zero Crashes",
+      "status": "GREEN",
+      "measured": 0,
+      "budget": 0,
+      "evidence_path": "sandbox/results",
+      "evidence_text": "no crash-class failures detected"
+    },
+    {
+      "id": "G8",
+      "name": "Scalability Proof (Tier-3)",
+      "status": "AMBER",
+      "measured": null,
+      "budget": null,
+      "evidence_path": "g8-probe/",
+      "evidence_text": "no g8-probe results found"
+    },
+    {
+      "id": "G9",
+      "name": "No Regressions vs Baseline",
+      "status": "GREEN",
+      "measured": "0 regressions",
+      "budget": 0,
+      "evidence_path": "sandbox/results",
+      "evidence_text": "regressions_vs_baseline is empty in all runs"
+    },
+    {
+      "id": "G10",
+      "name": "Openspec Conformance Audit",
+      "status": "GREEN",
+      "measured": "verified 100.0% / triaged 100.0%",
+      "budget": ">=90% verified, 100% triaged",
+      "evidence_path": "/var/home/rubentxu/Proyectos/rust/CogniCode/sandbox/reports/conformance_matrix.yaml",
+      "evidence_text": "total=433 verified=383 legacy_obsolete=50 pct_verified=100.0% (denom=total\u2212legacy_obsolete=383, per ADR-031 \u00a74)"
+    },
+    {
+      "id": "G11",
+      "name": "Documentation Currency",
+      "status": "GREEN",
+      "measured": null,
+      "budget": null,
+      "evidence_path": "docs/MCP-TOOLS.md, docs/adr/ADR-031*, docs/adr/ADR-032*",
+      "evidence_text": "MCP-TOOLS.md found (68 tools); ADR-031 found (ACEPTADO); ADR-032 found (ACEPTADO); ROADMAP.md found"
+    },
+    {
+      "id": "G12",
+      "name": "Git Hygiene (tags/changelog/branches)",
+      "status": "GREEN",
+      "measured": "tag=v0.91.0 stale_branches=3",
+      "budget": null,
+      "evidence_path": "git_tag, CHANGELOG.md, git_branch",
+      "evidence_text": "latest semver tag: v0.91.0; CHANGELOG.md found; stale merged remote branches: 3"
+    }
+  ]
+}

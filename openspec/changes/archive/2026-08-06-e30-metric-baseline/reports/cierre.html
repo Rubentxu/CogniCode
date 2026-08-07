@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>SDDK — e30-metric-baseline — Cierre</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+    </script>
+    <style>
+      * { font-family: 'Inter', system-ui, sans-serif; }
+      .font-mono { font-family: 'JetBrains Mono', monospace; }
+      .card { background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+      .section-dark { background: linear-gradient(135deg, #1e293b, #0f172a); color: #f1f5f9; }
+      .badge-feat { background: linear-gradient(135deg, #059669, #047857); }
+      .badge-fix { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+      .badge-warn { background: linear-gradient(135deg, #d97706, #b45309); }
+      .badge-minor { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
+      .badge-green { background: linear-gradient(135deg, #059669, #047857); }
+      .badge-amber { background: linear-gradient(135deg, #d97706, #b45309); }
+      .badge-red { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+      .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+      .status-G { background: #d1fae5; color: #065f46; padding: 2px 10px; border-radius: 6px; font-weight: 600; }
+      .status-A { background: #fef3c7; color: #92400e; padding: 2px 10px; border-radius: 6px; font-weight: 600; }
+      .status-R { background: #fee2e2; color: #991b1b; padding: 2px 10px; border-radius: 6px; font-weight: 600; }
+      .warn-row { display: grid; grid-template-columns: 60px 1fr 90px; gap: 12px; padding: 6px 0; border-bottom: 1px solid #f1f5f9; align-items: center; font-size: 0.85rem; }
+      .priority-critical { background: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.7rem; text-align: center; }
+      .priority-high { background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.7rem; text-align: center; }
+      .priority-medium { background: #fed7aa; color: #9a3412; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.7rem; text-align: center; }
+      .priority-low { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.7rem; text-align: center; }
+    </style>
+  </head>
+  <body class="bg-gradient-to-br from-slate-100 to-stone-100 min-h-screen">
+    <main class="max-w-5xl mx-auto px-6 py-12 space-y-10">
+
+      <!-- SECTION 1: Executive Summary -->
+      <section id="summary">
+        <div class="section-dark rounded-2xl p-10 text-center space-y-6">
+          <div class="flex justify-center gap-3">
+            <span class="tag badge-feat text-white">feat + fix</span>
+            <span class="tag badge-warn text-white">PASS_WITH_WARNINGS</span>
+            <span class="tag badge-minor text-white">MINOR → v0.89.0</span>
+          </div>
+          <h1 class="text-4xl font-bold">e30-metric-baseline</h1>
+          <p class="text-lg text-slate-300">CogniCode — 2026-08-06 — M-E30-Fase-3</p>
+
+          <div class="flex justify-center gap-10 pt-4 flex-wrap">
+            <div class="text-center">
+              <div class="text-3xl font-bold">17/19</div>
+              <div class="text-sm text-slate-400">Escenarios scorecard</div>
+            </div>
+            <div class="text-center">
+              <div class="text-3xl font-bold">6G / 3A / 3R</div>
+              <div class="text-sm text-slate-400">Distribución 12 gates</div>
+            </div>
+            <div class="text-center">
+              <div class="text-3xl font-bold">5</div>
+              <div class="text-sm text-slate-400">Commits</div>
+            </div>
+            <div class="text-center">
+              <div class="text-3xl font-bold">8</div>
+              <div class="text-sm text-slate-400">Archivos</div>
+            </div>
+            <div class="text-center">
+              <div class="text-3xl font-bold">+747/-47</div>
+              <div class="text-sm text-slate-400">Líneas</div>
+            </div>
+            <div class="text-center">
+              <div class="text-3xl font-bold">0.74</div>
+              <div class="text-sm text-slate-400">DQS (GOOD)</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 2: Pipeline Timeline -->
+      <section id="pipeline">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Pipeline SDDK</h2>
+          <div class="mermaid">
+            graph LR
+              A[explore ✓] --> B[propose ✓]
+              B --> C[spec ✓]
+              B --> D[design ✓]
+              C --> E[tasks ✓]
+              D --> E
+              E --> F[apply ✓]
+              F --> G[verify ✓]
+              G --> H[debt ✓]
+              H --> I[archive ✓]
+              I --> J[release ✓]
+              J --> K[v0.89.0]
+              style A fill:#059669,color:#fff
+              style B fill:#059669,color:#fff
+              style C fill:#059669,color:#fff
+              style D fill:#059669,color:#fff
+              style E fill:#059669,color:#fff
+              style F fill:#059669,color:#fff
+              style G fill:#059669,color:#fff
+              style H fill:#059669,color:#fff
+              style I fill:#059669,color:#fff
+              style J fill:#059669,color:#fff
+              style K fill:#7c3aed,color:#fff
+          </div>
+          <p class="text-sm text-slate-600 mt-4">Cycle ID: <code class="font-mono bg-slate-100 px-2 py-0.5 rounded">CYC-2026-08-06-e30-metric-baseline</code> · Path: <strong>A-lite</strong></p>
+        </div>
+      </section>
+
+      <!-- SECTION 3: Scorecard 12 Gates -->
+      <section id="scorecard">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-2">Scorecard 12 Gates</h2>
+          <p class="text-sm text-slate-500 mb-6">Primera medición real del sandbox de CogniCode. 17/19 escenarios cumplen — 6G / 3A / 3R.</p>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50">
+                <tr><th class="text-left p-3">Gate</th><th class="text-left p-3">Estado</th><th class="text-left p-3">Métrica</th><th class="text-left p-3">Detalle</th></tr>
+              </thead>
+              <tbody>
+                <tr class="border-b border-slate-100">
+                  <td class="p-3 font-mono text-xs">G1</td>
+                  <td class="p-3"><span class="status-G">✅ G</span></td>
+                  <td class="p-3">Build reproducible</td>
+                  <td class="p-3 text-slate-600">PASS</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="p-3 font-mono text-xs">G2</td>
+                  <td class="p-3"><span class="status-G">✅ G</span></td>
+                  <td class="p-3">Binary integrity</td>
+                  <td class="p-3 text-slate-600">PASS</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="p-3 font-mono text-xs">G3</td>
+                  <td class="p-3"><span class="status-A">⚠️ A</span></td>
+                  <td class="p-3">Health Score</td>
+                  <td class="p-3 text-slate-600">66.04 / 66.1 / 66.1 (baseline medido)</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="p-3 font-mono text-xs">G4</td>
+                  <td class="p-3"><span class="status-A">⚠️ A</span></td>
+                  <td class="p-3">Correctness</td>
+                  <td class="p-3 text-slate-600">18.9 (baseline)</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="p-3 font-mono text-xs">G5</td>
+                  <td class="p-3"><span class="status-R">🔴 R</span></td>
+                  <td class="p-3">Latency (search p95)</td>
+                  <td class="p-3 text-slate-600">31049 ms — LAT-001, LAT-002</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="p-3 font-mono text-xs">G6</td>
+                  <td class="p-3"><span class="status-G">✅ G</span></td>
+                  <td class="p-3">Stability (max CV)</td>
+                  <td class="p-3 text-slate-600">4.7%</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="p-3 font-mono text-xs">G7</td>
+                  <td class="p-3"><span class="status-G">✅ G</span></td>
+                  <td class="p-3">Crash classes</td>
+                  <td class="p-3 text-slate-600">PASS</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="p-3 font-mono text-xs">G8</td>
+                  <td class="p-3"><span class="status-A">⚠️ A</span></td>
+                  <td class="p-3">Scalability (typescript tier-3)</td>
+                  <td class="p-3 text-slate-600">timeout — SCAL-001</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="p-3 font-mono text-xs">G9</td>
+                  <td class="p-3"><span class="status-G">✅ G</span></td>
+                  <td class="p-3">Tier coverage</td>
+                  <td class="p-3 text-slate-600">PASS</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="p-3 font-mono text-xs">G10</td>
+                  <td class="p-3"><span class="status-G">✅ G</span></td>
+                  <td class="p-3">Artifact consistency</td>
+                  <td class="p-3 text-slate-600">PASS</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="p-3 font-mono text-xs">G11</td>
+                  <td class="p-3"><span class="status-G">✅ G</span></td>
+                  <td class="p-3">Spec alignment</td>
+                  <td class="p-3 text-slate-600">PASS</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="p-3 font-mono text-xs">G12</td>
+                  <td class="p-3"><span class="status-G">✅ G</span></td>
+                  <td class="p-3">Manifest discipline</td>
+                  <td class="p-3 text-slate-600">PASS</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 4: Deliverables -->
+      <section id="deliverables">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Entregables</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+              <h3 class="font-semibold text-emerald-800">Scorecard engine</h3>
+              <p class="text-sm text-emerald-700 mt-1"><code class="font-mono text-xs">sandbox/scripts/release_scorecard.py</code> — 656 líneas, 12 gates (G1-G12)</p>
+            </div>
+            <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+              <h3 class="font-semibold text-emerald-800">Baseline congelado</h3>
+              <p class="text-sm text-emerald-700 mt-1"><code class="font-mono text-xs">sandbox/results/baseline/</code> — primera medición estable</p>
+            </div>
+            <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+              <h3 class="font-semibold text-emerald-800">3 campañas de medición</h3>
+              <p class="text-sm text-emerald-700 mt-1"><code class="font-mono text-xs">sandbox/results/campaign-{1,2,3}/</code> — health 66.04 / 66.1 / 66.1</p>
+            </div>
+            <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+              <h3 class="font-semibold text-emerald-800">Estabilidad (G6)</h3>
+              <p class="text-sm text-emerald-700 mt-1"><code class="font-mono text-xs">sandbox/results/stability.json</code> — max CV 4.7%</p>
+            </div>
+            <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+              <h3 class="font-semibold text-emerald-800">Containers 4G</h3>
+              <p class="text-sm text-emerald-700 mt-1"><code class="font-mono text-xs">cognicode-{js,ts}.container</code> 1G→4G · <code class="font-mono text-xs">cognicode-rust.container</code> 2G→4G</p>
+            </div>
+            <div class="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+              <h3 class="font-semibold text-amber-800">G8 Scalability probe</h3>
+              <p class="text-sm text-amber-700 mt-1">typescript tier-3 — AMBER · SCAL-001 tracked</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 5: Verification -->
+      <section id="verification">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Verificación</h2>
+
+          <div class="grid grid-cols-4 gap-4 mb-6">
+            <div class="text-center p-4 bg-slate-50 rounded-xl">
+              <div class="text-2xl font-bold text-emerald-600">17</div>
+              <div class="text-sm text-slate-500">Escenarios PASS</div>
+            </div>
+            <div class="text-center p-4 bg-slate-50 rounded-xl">
+              <div class="text-2xl font-bold text-amber-600">2</div>
+              <div class="text-sm text-slate-500">Escenarios PW</div>
+            </div>
+            <div class="text-center p-4 bg-slate-50 rounded-xl">
+              <div class="text-2xl font-bold text-red-600">0</div>
+              <div class="text-sm text-slate-500">FAIL</div>
+            </div>
+            <div class="text-center p-4 bg-slate-50 rounded-xl">
+              <div class="text-2xl font-bold">0.74</div>
+              <div class="text-sm text-slate-500">DQS (GOOD)</div>
+            </div>
+          </div>
+
+          <h3 class="text-lg font-semibold text-slate-700 mb-4">Lentes arquitectónicas</h3>
+          <div class="space-y-3">
+            <div class="border border-slate-200 rounded-xl p-4 flex items-center justify-between">
+              <div>
+                <h4 class="font-semibold text-slate-800">Verify lens</h4>
+                <p class="text-sm text-slate-600">17/19 escenarios PASS_WITH_WARNINGS — 0 CRITICALs</p>
+              </div>
+              <span class="tag badge-warn text-white">PASS_WITH_WARNINGS</span>
+            </div>
+            <div class="border border-slate-200 rounded-xl p-4 flex items-center justify-between">
+              <div>
+                <h4 class="font-semibold text-slate-800">Debt lens (R1)</h4>
+                <p class="text-sm text-slate-600">C-01 closed (spec scope pollution), DQS 0.74 — archive unblocked</p>
+              </div>
+              <span class="tag badge-warn text-white">PASS_WITH_WARNINGS</span>
+            </div>
+          </div>
+
+          <div class="mt-8 p-6 rounded-xl bg-amber-50 border border-amber-200">
+            <h3 class="text-xl font-bold text-amber-800">Veredicto: PASS_WITH_WARNINGS</h3>
+            <p class="text-sm text-amber-700 mt-2">Scorecard engine + baseline funcional. 3 defectos (LAT-001/002, INF-001, SCAL-001) trackeados como carry-forward para e30.2.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 6: Git & Release -->
+      <section id="git">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Git & Release</h2>
+
+          <div class="grid grid-cols-2 gap-6 mb-6">
+            <div class="space-y-3">
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-semibold text-slate-400 w-20">Rama</span>
+                <code class="font-mono text-sm bg-slate-100 px-3 py-1 rounded">feat/e30-metric-baseline</code>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-semibold text-slate-400 w-20">PR</span>
+                <a href="https://github.com/Rubentxu/CogniCode/pull/230" class="text-blue-600 hover:underline font-mono text-sm">#230</a>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-semibold text-slate-400 w-20">Tag</span>
+                <code class="font-mono text-sm bg-emerald-50 text-emerald-700 px-3 py-1 rounded">v0.89.0</code>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-semibold text-slate-400 w-20">Mode</span>
+                <code class="font-mono text-sm bg-slate-100 px-3 py-1 rounded">auto (--auto --merge)</code>
+              </div>
+            </div>
+            <div class="space-y-3">
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-semibold text-slate-400 w-20">Branch SHA</span>
+                <code class="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded">5de8c429</code>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-semibold text-slate-400 w-20">Merge SHA</span>
+                <code class="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded">09b701c5</code>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-semibold text-slate-400 w-20">Merged at</span>
+                <span class="text-sm text-slate-700">2026-08-06T15:15:31Z</span>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-semibold text-slate-400 w-20">Semver</span>
+                <span class="tag badge-minor text-white">MINOR</span>
+              </div>
+            </div>
+          </div>
+
+          <details class="mt-4">
+            <summary class="text-sm font-semibold text-slate-700 cursor-pointer">▶ Commits (5)</summary>
+            <table class="w-full text-sm mt-3">
+              <tbody>
+                <tr class="border-b border-slate-100">
+                  <td class="py-1 font-mono text-xs text-slate-400">5de8c42</td>
+                  <td class="py-1"><span class="tag badge-feat text-white text-xs">docs</span></td>
+                  <td class="py-1 text-slate-700">docs(specs): sync sandbox-validation-system (4G limits) + release-readiness-gate (scorecard engine)</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="py-1 font-mono text-xs text-slate-400">2b7ae8a</td>
+                  <td class="py-1"><span class="tag badge-fix text-white text-xs">fix</span></td>
+                  <td class="py-1 text-slate-700">fix(sandbox): scorecard gate correctness — G7 crash classes, G6 stability shape, G5 family data</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="py-1 font-mono text-xs text-slate-400">dedeadc</td>
+                  <td class="py-1"><span class="tag badge-feat text-white text-xs">feat</span></td>
+                  <td class="py-1 text-slate-700">feat(sandbox): wire release-scorecard to python engine; fix release binary mismatch; --repeat support</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="py-1 font-mono text-xs text-slate-400">763eb2d</td>
+                  <td class="py-1"><span class="tag badge-feat text-white text-xs">feat</span></td>
+                  <td class="py-1 text-slate-700">feat(sandbox): release_scorecard.py — 12-gate verdict engine (G1-G12)</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="py-1 font-mono text-xs text-slate-400">9b5225e</td>
+                  <td class="py-1"><span class="tag badge-fix text-white text-xs">fix</span></td>
+                  <td class="py-1 text-slate-700">fix(sandbox): raise tier-3 container memory limits to 4G (S1.5 debt)</td>
+                </tr>
+              </tbody>
+            </table>
+          </details>
+        </div>
+      </section>
+
+      <!-- SECTION 7: Technical Debt -->
+      <section id="debt">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-2">Deuda técnica carry-forward (W-01..W-08)</h2>
+          <p class="text-sm text-slate-500 mb-6">Orden de prioridad e30.2: W-08 → W-02 → W-04 → W-01/W-05/W-07 → W-03/W-06</p>
+
+          <div class="space-y-1">
+            <div class="warn-row">
+              <span class="priority-critical">critical</span>
+              <div>
+                <strong class="font-mono text-xs">W-08</strong>
+                <span class="ml-2 text-slate-700">Zero committed test files</span>
+              </div>
+              <span class="text-xs text-slate-500">tests first</span>
+            </div>
+            <div class="warn-row">
+              <span class="priority-high">high</span>
+              <div>
+                <strong class="font-mono text-xs">W-02</strong>
+                <span class="ml-2 text-slate-700"><code class="font-mono text-xs">analyze_stability.py</code> no emite <code class="font-mono text-xs">families_runtorun</code> — G6 ad-hoc</span>
+              </div>
+              <span class="text-xs text-slate-500">fix reproducibility</span>
+            </div>
+            <div class="warn-row">
+              <span class="priority-high">high</span>
+              <div>
+                <strong class="font-mono text-xs">W-04</strong>
+                <span class="ml-2 text-slate-700">SCAL-001/INF-001/LAT-001/LAT-002 defect IDs no committed — scorecard emite generic "defect tracked"</span>
+              </div>
+              <span class="text-xs text-slate-500">commit artifacts</span>
+            </div>
+            <div class="warn-row">
+              <span class="priority-medium">medium</span>
+              <div>
+                <strong class="font-mono text-xs">W-01</strong>
+                <span class="ml-2 text-slate-700">656-line scorecard sin tests</span>
+              </div>
+              <span class="text-xs text-slate-500">gate unit tests</span>
+            </div>
+            <div class="warn-row">
+              <span class="priority-medium">medium</span>
+              <div>
+                <strong class="font-mono text-xs">W-05</strong>
+                <span class="ml-2 text-slate-700">Optional evidence degrada a AMBER silencioso</span>
+              </div>
+              <span class="text-xs text-slate-500">explicit logging</span>
+            </div>
+            <div class="warn-row">
+              <span class="priority-medium">medium</span>
+              <div>
+                <strong class="font-mono text-xs">W-07</strong>
+                <span class="ml-2 text-slate-700">Orquestación duplicada</span>
+              </div>
+              <span class="text-xs text-slate-500">deduplicate</span>
+            </div>
+            <div class="warn-row">
+              <span class="priority-low">low</span>
+              <div>
+                <strong class="font-mono text-xs">W-03</strong>
+                <span class="ml-2 text-slate-700">Naming drift (full-run-N/run-N/campaign-N)</span>
+              </div>
+              <span class="text-xs text-slate-500">unify discovery</span>
+            </div>
+            <div class="warn-row">
+              <span class="priority-low">low</span>
+              <div>
+                <strong class="font-mono text-xs">W-06</strong>
+                <span class="ml-2 text-slate-700">G11 literal checks brittle</span>
+              </div>
+              <span class="text-xs text-slate-500">parameterize</span>
+            </div>
+          </div>
+
+          <div class="mt-6 p-4 bg-red-50 border border-red-200 rounded-xl">
+            <strong class="text-red-700">Defectos trackeados (4):</strong>
+            <ul class="text-sm text-red-700 mt-2 space-y-1 list-disc list-inside">
+              <li><strong>LAT-001</strong> — Launch latency (INC-001)</li>
+              <li><strong>LAT-002</strong> — Search latency p95 31s (INC-002)</li>
+              <li><strong>INF-001</strong> — Infra instability (transient G8 probe results) (INC-003)</li>
+              <li><strong>SCAL-001</strong> — Scalability boundary typescript tier-3 timeout (INC-004)</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 8: ADR Renegotiation -->
+      <section id="adr">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-2">ADR-031 §4 — Renegotiation note</h2>
+          <p class="text-sm text-slate-500 mb-6">El scorecard sustituye la heurística manual anterior. Esta es la primera versión operativa del motor que cumple el contrato del gate framework (ADR-031).</p>
+
+          <div class="p-4 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800">
+            <strong>Cambio de política:</strong> la heurística manual previa (inspección ad-hoc de artefactos por el operador) es reemplazada por el motor determinista <code class="font-mono text-xs">release_scorecard.py</code>. La renegociación documenta el cambio de gate framework en ADR-031 §4.
+          </div>
+
+          <p class="text-sm text-slate-600 mt-4"><strong>ADRs touched:</strong> ADR-031 (release-readiness-gate framework), ADR-032 (corpus expansion)</p>
+        </div>
+      </section>
+
+      <!-- SECTION 9: Next Steps -->
+      <section id="next-steps">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Próximos pasos</h2>
+
+          <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+            <strong class="text-emerald-800">Fase 4 — e30-conformance-audit (siguiente ciclo)</strong>
+            <ul class="text-sm text-emerald-700 mt-2 space-y-1 list-disc list-inside">
+              <li>Resolver W-08 (tests primero) → W-02 (stability script) → W-04 (defect IDs)</li>
+              <li>Auditar conformidad de los 3 defectos trackeados (LAT, INF, SCAL)</li>
+              <li>Cerrar carry-forward W-01..W-08 antes de e30.2</li>
+            </ul>
+          </div>
+
+          <div class="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700">
+            <strong>M-E30-Fase-3 → ✅ DONE.</strong> Próximo milestone: <strong>M-E30-Fase-4</strong> (e30-conformance-audit).
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer class="text-center text-xs text-slate-400 py-6">
+        Generated by sdd-kernel-release · 2026-08-06 · Cycle CYC-2026-08-06-e30-metric-baseline
+      </footer>
+    </main>
+  </body>
+</html>

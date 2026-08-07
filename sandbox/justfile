@@ -271,16 +271,8 @@ sandbox-clean:
 # Requires: sandbox/scripts/release_scorecard.py + orchestrator report outputs
 release-scorecard:
     mkdir -p {{reports_dir}}
-    # Build --runs arg: prefer multi-run dirs, fall back to single full/
-    @if [ -d {{results_dir}}/full-run-1 ] && [ -d {{results_dir}}/full-run-2 ]; then \
-        RUNS="{{results_dir}}/full-run-1,{{results_dir}}/full-run-2,{{results_dir}}/full-run-3"; \
-    elif [ -d {{results_dir}}/full ]; then \
-        RUNS="{{results_dir}}/full"; \
-    else \
-        RUNS="{{results_dir}}"; \
-    fi; \
     echo "=== Release Readiness Scorecard ==="; \
-    echo "Runs: $$RUNS"; \
+    echo "Results dir: {{results_dir}}"; \
     # Run coverage generator (G2 denominator — kept here so G2 is always current) \
     COGNICODE_MCP_BINARY={{project_root}}/target/release/cognicode-mcp \
         python3 {{justfile_directory()}}/scripts/generate_tool_coverage.py \
@@ -290,7 +282,7 @@ release-scorecard:
         --output {{reports_dir}}/coverage_matrix.yaml 2>/dev/null || true; \
     # Invoke the 12-gate verdict engine \
     python3 {{justfile_directory()}}/scripts/release_scorecard.py \
-        --runs "$$RUNS" \
+        --results-dir {{results_dir}} \
         --baseline {{results_dir}}/baseline \
         --stability {{results_dir}}/stability.json \
         --coverage-matrix {{reports_dir}}/coverage_matrix.yaml \

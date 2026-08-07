@@ -76,8 +76,14 @@ scenarios:
       path: serde/src
     ground_truth:
       matches:
-        - path: fmt.rs
+        - path: de.rs
+        - path: integer128.rs
+        - path: lib.rs
+        - path: macros.rs
         - path: mod.rs
+        - path: ser.rs
+        - path: std_error.rs
+        - path: value.rs
 
   # ─── Analysis Scenarios ─────────────────────────────────────────────────────
 

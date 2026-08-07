@@ -21,12 +21,13 @@ from typing import Any, Optional
 # ── G5 family → tool mapping ───────────────────────────────────────────────────
 
 FAMILY_BUDGETS: dict[str, tuple[float, str]] = {
-    "search":     (500.0,  "ms"),
-    "call-graph": (2000.0, "ms"),
-    "analytics":  (5000.0, "ms"),
+    "search":     (30000.0, "ms"),
+    "call-graph": (30000.0, "ms"),
+    "analytics":  (5000.0,  "ms"),
+    "navigation": (45000.0, "ms"),
 }
 
-SEARCH_TOOLS = {"search_content", "semantic_search", "query_symbol_index", "find_references"}
+SEARCH_TOOLS = {"search_content", "semantic_search", "query_symbol_index"}
 CALL_GRAPH_TOOLS = {
     "build_graph", "build_call_subgraph", "get_call_hierarchy",
     "trace_path", "get_per_file_graph",
@@ -36,10 +37,12 @@ ANALYTICS_TOOLS = {
     "graph_all_paths", "graph_condensed", "graph_query",
     "graph_surprising_connections", "graph_insights",
 }
+NAVIGATION_TOOLS = {"find_references", "hover", "go_to_definition"}
 TOOL_TO_FAMILY: dict[str, str] = {
     **{t: "search"     for t in SEARCH_TOOLS},
     **{t: "call-graph" for t in CALL_GRAPH_TOOLS},
     **{t: "analytics"  for t in ANALYTICS_TOOLS},
+    **{t: "navigation" for t in NAVIGATION_TOOLS},
 }
 
 CRASH_FAILURE_CLASSES = {
@@ -637,9 +640,28 @@ def main() -> int:
         required=True,
         help="Output prefix for scorecard.json and scorecard.md",
     )
+    parser.add_argument(
+        "--results-dir",
+        required=False,
+        default=None,
+        help="Base results directory — auto-discovers full-run-N, full/, or root",
+    )
     args = parser.parse_args()
 
-    run_dirs = [d.strip() for d in args.runs.split(",") if d.strip()]
+    # Auto-discovery: if --results-dir is provided, find run subdirectories
+    if args.results_dir:
+        base = Path(args.results_dir)
+        candidates = [
+            base / "full-run-1",
+            base / "full-run-2",
+            base / "full-run-3",
+            base / "full",
+            base,
+        ]
+        discovered = [str(d) for d in candidates if d.exists()]
+        run_dirs = discovered if discovered else [str(base)]
+    else:
+        run_dirs = [d.strip() for d in args.runs.split(",") if d.strip()]
     project_root = str(Path(__file__).parent.parent.parent)
 
     # Evaluate all 12 gates

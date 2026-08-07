@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>SDDK — e30-corpus-expansion — Cierre</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+    </script>
+    <style>
+      * { font-family: 'Inter', system-ui, sans-serif; }
+      .font-mono { font-family: 'JetBrains Mono', monospace; }
+      .card { background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+      .section-dark { background: linear-gradient(135deg, #1e293b, #0f172a); color: #f1f5f9; }
+      .badge-feat { background: linear-gradient(135deg, #059669, #047857); }
+      .badge-fix { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+      .badge-refactor { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+      .badge-chore { background: linear-gradient(135deg, #6b7280, #4b5563); }
+      .badge-pass { background: linear-gradient(135deg, #059669, #047857); }
+      .badge-warn { background: linear-gradient(135deg, #d97706, #b45309); }
+      .badge-fail { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+      .badge-minor { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
+      .phase-complete { background: #059669; }
+      .phase-active { background: #2563eb; }
+      .phase-pending { background: #94a3b8; }
+      .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+    </style>
+  </head>
+  <body class="bg-gradient-to-br from-slate-100 to-stone-100 min-h-screen">
+    <main class="max-w-5xl mx-auto px-6 py-12 space-y-10">
+
+      <!-- SECTION 1: Executive Summary -->
+      <section id="summary">
+        <div class="section-dark rounded-2xl p-10 text-center space-y-6">
+          <div class="flex justify-center gap-3">
+            <span class="tag badge-feat text-white">feat + fix + chore</span>
+            <span class="tag badge-warn text-white">PASS_WITH_WARNINGS</span>
+            <span class="tag badge-minor text-white">MINOR → v0.88.0</span>
+          </div>
+          <h1 class="text-4xl font-bold">e30-corpus-expansion</h1>
+          <p class="text-lg text-slate-300">CogniCode — 2026-08-06 — M-E30-Fase-2</p>
+
+          <div class="flex justify-center gap-10 pt-4">
+            <div class="text-center">
+              <div class="text-3xl font-bold">68/68</div>
+              <div class="text-sm text-slate-400">G2 coverage</div>
+            </div>
+            <div class="text-center">
+              <div class="text-3xl font-bold">13</div>
+              <div class="text-sm text-slate-400">Commits (branch)</div>
+            </div>
+            <div class="text-center">
+              <div class="text-3xl font-bold">19</div>
+              <div class="text-sm text-slate-400">Archivos</div>
+            </div>
+            <div class="text-center">
+              <div class="text-3xl font-bold">+1262/-58</div>
+              <div class="text-sm text-slate-400">Líneas</div>
+            </div>
+            <div class="text-center">
+              <div class="text-3xl font-bold">63</div>
+              <div class="text-sm text-slate-400">DQS</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 2: Pipeline Timeline -->
+      <section id="pipeline">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Pipeline SDDK</h2>
+          <div class="mermaid">
+            graph LR
+              A[explore ✓] --> B[propose ✓]
+              B --> C[spec ✓]
+              B --> D[design ✓]
+              C --> E[tasks ✓]
+              D --> E
+              E --> F[apply ✓]
+              F --> G[verify ✓]
+              G --> H[debt ✓]
+              H --> I[archive ✓]
+              I --> J[release ✓]
+              J --> K[v0.88.0]
+              style A fill:#059669,color:#fff
+              style B fill:#059669,color:#fff
+              style C fill:#059669,color:#fff
+              style D fill:#059669,color:#fff
+              style E fill:#059669,color:#fff
+              style F fill:#059669,color:#fff
+              style G fill:#059669,color:#fff
+              style H fill:#059669,color:#fff
+              style I fill:#059669,color:#fff
+              style J fill:#059669,color:#fff
+              style K fill:#7c3aed,color:#fff
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 3: Verdict Cards -->
+      <section id="verdicts">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="card p-6">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-lg font-semibold text-slate-800">Verify</h3>
+              <span class="tag badge-warn text-white">PASS_WITH_WARNINGS</span>
+            </div>
+            <p class="text-sm text-slate-600">
+              G2 68/68 con evidencia de runtime (29 escenarios, 0 errores).
+              Tier-3 rust-analyzer 2/2 pass. Smoke 0 regresiones.
+            </p>
+            <p class="text-xs text-slate-500 mt-2 font-mono">verify-report.md</p>
+          </div>
+          <div class="card p-6">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-lg font-semibold text-slate-800">Debt</h3>
+              <span class="tag badge-warn text-white">PASS_WITH_WARNINGS</span>
+            </div>
+            <p class="text-sm text-slate-600">
+              DQS 63. C3.1 (schema↔manifest arg drift) cerrado. 5 WARN + 3 SUGG
+              carry-forward (incl. ADR-031/032 stale "43").
+            </p>
+            <p class="text-xs text-slate-500 mt-2 font-mono">debt-report.md</p>
+          </div>
+          <div class="card p-6">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-lg font-semibold text-slate-800">Archive</h3>
+              <span class="tag badge-warn text-white">PASS_WITH_WARNINGS</span>
+            </div>
+            <p class="text-sm text-slate-600">
+              Specs sincronizados: release-readiness-gate (G2 68 dynamic),
+              sandbox-validation-system (paginated probe + Tier-1/3 expansion).
+            </p>
+            <p class="text-xs text-slate-500 mt-2 font-mono">archive-report.md</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 4: G2 Denominator Journey -->
+      <section id="denominator">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Trayectoria del denominador G2</h2>
+          <div class="mermaid">
+            graph LR
+              D1["43/43 (docs hardcode)<br/>ADR-031 L20, ADR-032 L18<br/>MCP-TOOLS.md mano"]
+              D2["43/68 (probe first page)<br/>PAGE_SIZE=20 truncation"]
+              D3["68/68 (paginated probe)<br/>list_mcp_tools.sh PAGE_SIZE=20<br/>base64 offset cursor"]
+              D4["MCP-TOOLS.md regenerado<br/>runtime = source of truth<br/>generate_tool_coverage.py dynamic"]
+              D1 -. audit .-> D2
+              D2 -. pagination fix .-> D3
+              D3 -. spec sync .-> D4
+              style D1 fill:#dc2626,color:#fff
+              style D2 fill:#d97706,color:#fff
+              style D3 fill:#059669,color:#fff
+              style D4 fill:#7c3aed,color:#fff
+          </div>
+          <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div class="bg-slate-50 p-4 rounded-lg">
+              <h4 class="font-semibold text-slate-700 mb-2">Antes (stale)</h4>
+              <ul class="space-y-1 text-slate-600 font-mono text-xs">
+                <li>· docs/MCP-TOOLS.md: 43 (hand-maintained)</li>
+                <li>· tools/list (first page): 20 tools</li>
+                <li>· Coverage matrix: hardcoded 43</li>
+                <li>· ADR-031/032: "43 tools"</li>
+              </ul>
+            </div>
+            <div class="bg-emerald-50 p-4 rounded-lg">
+              <h4 class="font-semibold text-emerald-800 mb-2">Después (runtime-evidenced)</h4>
+              <ul class="space-y-1 text-emerald-700 font-mono text-xs">
+                <li>· list_mcp_tools.sh: 68 (paginated)</li>
+                <li>· generate_tool_coverage.py: dynamic</li>
+                <li>· coverage_matrix.yaml: 68 rows</li>
+                <li>· release-readiness-gate spec: 68 dynamic</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 5: Corpus Expansion -->
+      <section id="corpus">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Expansión del corpus</h2>
+          <div class="mermaid">
+            graph TB
+              subgraph T1["Tier-1 (core crates)"]
+                T1A[ripgrep]
+                T1B[serde]
+                T1C[anyhow]
+                T1D["+ tokio (new)"]
+                T1E["+ clap (new)"]
+              end
+              subgraph T3["Tier-3 (scale lane 100k+ LOC)"]
+                T3A[rust-analyzer]
+                T3B[typescript]
+                T3C[react]
+              end
+              T1 --> SANDBOX[sandbox validation]
+              T3 --> SANDBOX
+              style T1A fill:#94a3b8,color:#fff
+              style T1B fill:#94a3b8,color:#fff
+              style T1C fill:#94a3b8,color:#fff
+              style T1D fill:#059669,color:#fff
+              style T1E fill:#059669,color:#fff
+              style T3A fill:#2563eb,color:#fff
+              style T3B fill:#2563eb,color:#fff
+              style T3C fill:#2563eb,color:#fff
+              style SANDBOX fill:#1e293b,color:#fff
+          </div>
+          <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <h4 class="font-semibold text-slate-700 mb-2">Nuevos manifiestos (7)</h4>
+              <ul class="space-y-1 text-slate-600 font-mono text-xs">
+                <li>· tokio_repos.yaml (5 repos)</li>
+                <li>· clap_repos.yaml (5 repos)</li>
+                <li>· tier3_rust_repos.yaml (rust-analyzer)</li>
+                <li>· tier3_typescript_repos.yaml</li>
+                <li>· tier3_react_repos.yaml</li>
+                <li>· coverage_fill.yaml (22 gaps)</li>
+                <li>· zod_repos.yaml (collision resuelto)</li>
+              </ul>
+            </div>
+            <div>
+              <h4 class="font-semibold text-slate-700 mb-2">27 SHAs pinned</h4>
+              <ul class="space-y-1 text-slate-600 font-mono text-xs">
+                <li>· pin_all_shas.sh: todos los repos a 40-hex SHAs exactos</li>
+                <li>· clone_repos.sh: usa SHAs reales (no tags)</li>
+                <li>· Excepción: js_repos.yaml / ts_repos.yaml pinned_sha=TAG</li>
+                <li>   (C3.3 carry-forward, pre-existente main B-direct)</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 6: Release Artifacts -->
+      <section id="release">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Release</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="space-y-3">
+              <div>
+                <p class="text-xs text-slate-500 uppercase tracking-wide">PR</p>
+                <p class="font-mono text-sm">#229 — feat(sandbox): e30-corpus-expansion</p>
+                <a href="https://github.com/Rubentxu/CogniCode/pull/229" class="text-blue-600 hover:underline text-xs font-mono break-all">https://github.com/Rubentxu/CogniCode/pull/229</a>
+              </div>
+              <div>
+                <p class="text-xs text-slate-500 uppercase tracking-wide">Squash commit</p>
+                <p class="font-mono text-sm">e51811af8c260117bfd16c8e3dae95896b05b53e</p>
+              </div>
+              <div>
+                <p class="text-xs text-slate-500 uppercase tracking-wide">Merge mode</p>
+                <p class="text-sm">Squash (repo convention; deleteBranchOnMerge=false)</p>
+              </div>
+            </div>
+            <div class="space-y-3">
+              <div>
+                <p class="text-xs text-slate-500 uppercase tracking-wide">Tag</p>
+                <p class="font-mono text-lg font-bold text-purple-700">v0.88.0</p>
+                <p class="font-mono text-xs text-slate-500">bd12b0e26671b157bd25e016f79521d30b9ec67c</p>
+              </div>
+              <div>
+                <p class="text-xs text-slate-500 uppercase tracking-wide">Semver bump</p>
+                <p class="text-sm">MINOR (feat + new corpus + coverage instruments)</p>
+              </div>
+              <div>
+                <p class="text-xs text-slate-500 uppercase tracking-wide">Branch policy</p>
+                <p class="text-sm">feat/e30-corpus-expansion (preserved, no delete)</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 7: CI Results -->
+      <section id="ci">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">CI Results</h2>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-left text-slate-500 border-b border-slate-200">
+                  <th class="py-2 pr-4">Check</th>
+                  <th class="py-2 pr-4">Estado</th>
+                  <th class="py-2 pr-4">Detalle</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="border-b border-slate-100">
+                  <td class="py-3 font-mono text-xs">Test Suite</td>
+                  <td class="py-3"><span class="tag badge-pass text-white">PASS</span></td>
+                  <td class="py-3 text-slate-600">58 suites OK</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="py-3 font-mono text-xs">Format &amp; Lint</td>
+                  <td class="py-3"><span class="tag badge-pass text-white">PASS</span></td>
+                  <td class="py-3 text-slate-600">clippy workspace 0 errores</td>
+                </tr>
+                <tr>
+                  <td class="py-3 font-mono text-xs">Ownership Feature Test</td>
+                  <td class="py-3"><span class="tag badge-fail text-white">FAIL (no bloqueante)</span></td>
+                  <td class="py-3 text-slate-600">Pre-existing, documentado en PR #226/#228</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 8: Carry-Forward -->
+      <section id="carry-forward">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Carry-Forward</h2>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-left text-slate-500 border-b border-slate-200">
+                  <th class="py-2 pr-4">Sev</th>
+                  <th class="py-2 pr-4">ID</th>
+                  <th class="py-2 pr-4">Item</th>
+                  <th class="py-2 pr-4">Pre-existente?</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="border-b border-slate-100"><td class="py-2"><span class="tag badge-warn text-white">WARN</span></td><td class="py-2 font-mono text-xs">S1.5</td><td class="py-2 text-slate-600">Tier-3 container resource limits</td><td class="py-2 text-slate-500">No</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2"><span class="tag badge-warn text-white">WARN</span></td><td class="py-2 font-mono text-xs">C3.3</td><td class="py-2 text-slate-600">js_repos.yaml / ts_repos.yaml pinned_sha=TAG</td><td class="py-2 text-slate-500">Sí (main B-direct)</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2"><span class="tag badge-warn text-white">WARN</span></td><td class="py-2 font-mono text-xs">C3.8</td><td class="py-2 text-slate-600">clone_repos.sh sleep no tuneado</td><td class="py-2 text-slate-500">No</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2"><span class="tag badge-warn text-white">WARN</span></td><td class="py-2 font-mono text-xs">D2.2</td><td class="py-2 text-slate-600">generate_tool_coverage.py 32 dead tool names</td><td class="py-2 text-slate-500">No</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2"><span class="tag badge-warn text-white">WARN</span></td><td class="py-2 font-mono text-xs">D2.3</td><td class="py-2 text-slate-600">pin_all_shas.sh orphan</td><td class="py-2 text-slate-500">No</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2"><span class="tag badge-warn text-white">WARN</span></td><td class="py-2 font-mono text-xs">ADR</td><td class="py-2 text-slate-600">ADR-031 L20/L35/L44 stale "43"</td><td class="py-2 text-slate-500">No</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2"><span class="tag badge-warn text-white">WARN</span></td><td class="py-2 font-mono text-xs">ADR</td><td class="py-2 text-slate-600">ADR-032 L18/L104 stale "43"</td><td class="py-2 text-slate-500">No</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2"><span class="tag badge-warn text-white">SUGG</span></td><td class="py-2 font-mono text-xs">S1.6</td><td class="py-2 text-slate-600">has_any_results module-scope vs count_symbols nested</td><td class="py-2 text-slate-500">No</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2"><span class="tag badge-warn text-white">SUGG</span></td><td class="py-2 font-mono text-xs">S1.7</td><td class="py-2 text-slate-600">count-only matchers sin unit tests</td><td class="py-2 text-slate-500">No</td></tr>
+                <tr><td class="py-2"><span class="tag badge-warn text-white">SUGG</span></td><td class="py-2 font-mono text-xs">C3.4</td><td class="py-2 text-slate-600">scorecard recipe || true + dead coverage_exit</td><td class="py-2 text-slate-500">No</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="text-xs text-slate-500 mt-4">C3.1 (schema↔manifest arg drift) — <strong>cerrado</strong> en este ciclo.</p>
+        </div>
+      </section>
+
+      <!-- SECTION 9: Knowledge Graph Updates -->
+      <section id="kg">
+        <div class="card p-8">
+          <h2 class="text-2xl font-bold text-slate-800 mb-6">Knowledge Graph</h2>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div>
+              <h4 class="font-semibold text-slate-700 mb-2">Milestone</h4>
+              <p class="font-mono text-xs">M-E30-Fase-2 → completed</p>
+              <p class="text-xs text-slate-500">closed 2026-08-06</p>
+            </div>
+            <div>
+              <h4 class="font-semibold text-slate-700 mb-2">Cycle</h4>
+              <p class="font-mono text-xs">CYC-2026-08-06-e30-corpus-expansion</p>
+              <p class="text-xs text-slate-500">status → completed</p>
+            </div>
+            <div>
+              <h4 class="font-semibold text-slate-700 mb-2">ADRs touched</h4>
+              <p class="font-mono text-xs">ADR-031, ADR-032</p>
+              <p class="text-xs text-slate-500">stale references flagged</p>
+            </div>
+          </div>
+          <p class="text-xs text-slate-500 mt-4">Vault: <span class="font-mono">~/.sddk-knowledge/cognicode/</span></p>
+        </div>
+      </section>
+
+      <!-- SECTION 10: Next Steps -->
+      <section id="next">
+        <div class="card p-8 bg-gradient-to-br from-slate-50 to-purple-50">
+          <h2 class="text-2xl font-bold text-slate-800 mb-4">Próximo ciclo</h2>
+          <p class="text-slate-700 mb-4">
+            <strong>Fase 3 — e30-metric-baseline</strong>: métricas de comportamiento del sandbox
+            (latencias, success rate por tier, drift detection entre corpus runs).
+          </p>
+          <p class="text-sm text-slate-600">
+            Pre-work antes de Fase 3: parchear ADR-031/032 para reflejar 68 tools (carry-forward
+            warning); cerrar C3.3 (js/ts pinned_sha drift) si se quiere main limpia.
+          </p>
+        </div>
+      </section>
+
+      <!-- FOOTER -->
+      <footer class="text-center text-xs text-slate-500 py-6">
+        <p>SDDK release — Phase 3 — 2026-08-06 — sdd-kernel-release</p>
+        <p class="font-mono mt-1">engram | hybrid | closure report</p>
+      </footer>
+    </main>
+  </body>
+</html>

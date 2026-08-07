@@ -103,10 +103,9 @@ pub struct ToolScore {
     pub language: String,
     /// Scenario ID
     pub scenario_id: String,
-    /// Correctitud score (0-100).
-    /// Returns 0.0 (not NaN) when ground truth is unavailable — NaN values
-    /// are converted to 0.0 by the scoring engine for API compatibility.
-    pub correctitud: f64,
+    /// Correctitud score (0-100). None when ground truth is unavailable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correctitud: Option<f64>,
     /// Latencia score (0-100)
     pub latencia: f64,
     /// Escalabilidad score (0-100)
@@ -1647,13 +1646,40 @@ pub fn score_scenario(
             }
         }
         _ => {
-            // Use call graph score if available, otherwise use symbol/outline/code/complexity score
-            let base_score = if !call_graph_score.is_nan() {
+            // Check ground-truth smoke-test matchers (symbols_min, has_result) first,
+            // before falling back to call-graph or correctitud scores.
+            let inner = unwrap_mcp_content(tool_response);
+            let mut score = if !call_graph_score.is_nan() {
                 call_graph_score
-            } else {
+            } else if !correctitud.is_nan() {
                 correctitud
+            } else {
+                // No structured ground truth available; start at 100 and penalize downward
+                100.0_f64
             };
-            (base_score, None, None, None, None, None, None, None)
+            let mut checks = 0u32;
+
+            if let Some(gt) = ground_truth {
+                if let Some(min_symbols) = gt.symbols_min {
+                    checks += 1;
+                    let actual = count_symbols(&inner);
+                    if actual < min_symbols as usize {
+                        score *= actual as f64 / min_symbols as f64;
+                    }
+                }
+                if let Some(true) = gt.has_result {
+                    checks += 1;
+                    if !has_any_results(&inner) {
+                        score *= 0.0;
+                    }
+                }
+            };
+
+            if checks > 0 || !call_graph_score.is_nan() || !correctitud.is_nan() {
+                (score, None, None, None, None, None, None, None)
+            } else {
+                (f64::NAN, None, None, None, None, None, None, None)
+            }
         }
     };
 
@@ -1685,11 +1711,7 @@ pub fn score_scenario(
         tool: tool_name.to_string(),
         language: language.to_string(),
         scenario_id: scenario_id.to_string(),
-        correctitud: if final_correctitud.is_nan() {
-            0.0
-        } else {
-            final_correctitud
-        },
+        correctitud: Some(final_correctitud).filter(|&v| !v.is_nan()),
         latencia,
         escalabilidad,
         consistencia,
@@ -2358,7 +2380,7 @@ mod tests {
 
         assert_eq!(score.tool, "get_file_symbols");
         assert_eq!(score.language, "rust");
-        assert!(score.correctitud > 90.0);
+        assert!(score.correctitud.unwrap() > 90.0);
         assert_eq!(score.latencia, 100.0); // 50ms < 100ms target
         assert!(score.health_score > 0.0);
     }
@@ -2379,9 +2401,9 @@ mod tests {
             ExecutionMetadata::default(),
         );
 
-        // When ground_truth is None, the scoring function converts NaN → 0.0
-        // for the returned struct (see lines 1633-1637 in score_scenario)
-        assert_eq!(score.correctitud, 0.0);
+        // When ground_truth is None, the scoring function stores NaN → None
+        // for the returned struct (None = not measured)
+        assert_eq!(score.correctitud, None);
         assert!(score.symbol_match.is_none());
         assert!(score.outline_match.is_none());
         // Latencia should still be scored (it's independent of ground truth)
@@ -2410,7 +2432,7 @@ mod tests {
         );
 
         // Should still compute correctness from ground truth even without metrics
-        assert!(!score.correctitud.is_nan());
+        assert!(score.correctitud.is_some());
         assert_eq!(score.latencia, 100.0); // latency score still computed
     }
 
@@ -2467,8 +2489,16 @@ mod tests {
         );
 
         // All 5 dimensions and health_score should be in [0, 100]
+        // correctitud is Option<f64> (None = not measured, Some = measured)
+        if let Some(corr) = score.correctitud {
+            assert!(
+                (0.0..=100.0).contains(&corr) || corr.is_nan(),
+                "correctitud score {} out of range [0,100] or NaN",
+                corr
+            );
+        }
+        // Other dimensions are f64
         for (name, value) in [
-            ("correctitud", score.correctitud),
             ("latencia", score.latencia),
             ("escalabilidad", score.escalabilidad),
             ("consistencia", score.consistencia),
@@ -3039,5 +3069,133 @@ mod count_matcher_tests {
         let v = json!({"edges": [{"from": "a", "to": "b"}]});
         assert!(has_any_results(&v));
         assert!(!has_any_results(&json!({"edges": []})));
+    }
+}
+
+#[cfg(test)]
+mod smoke_matcher_tests {
+    use super::{ExecutionMetadata, GroundTruth, score_scenario};
+
+    /// Regression test: when ground truth has ONLY symbols_min (no structured
+    /// symbols/outline/code), the default scoring arm must start at 100.0 (not NaN)
+    /// so that the ratio penalty is applied correctly.
+    #[test]
+    fn symbols_min_only_ground_truth_scores_correctly() {
+        // Ground truth with only symbols_min threshold — no structured symbols/outline/code
+        let gt = GroundTruth {
+            symbols_min: Some(5),
+            ..Default::default()
+        };
+
+        // Tool response has 8 symbols (> min 5 threshold)
+        let response = serde_json::json!({
+            "symbols": [
+                {"name": "a", "kind": "function"},
+                {"name": "b", "kind": "function"},
+                {"name": "c", "kind": "function"},
+                {"name": "d", "kind": "function"},
+                {"name": "e", "kind": "function"},
+                {"name": "f", "kind": "function"},
+                {"name": "g", "kind": "function"},
+                {"name": "h", "kind": "function"},
+            ]
+        });
+
+        // Use a tool that goes through the default '_' arm (not get_file_symbols,
+        // export_mermaid, search_content, etc.)
+        let score = score_scenario(
+            "build_graph",
+            "csharp",
+            "csharp_build_graph_spectre",
+            &response,
+            &Some(gt),
+            &None,
+            500,
+            ExecutionMetadata::default(),
+        );
+
+        // correctitud must be Some(100.0): 8 symbols meet the min threshold of 5
+        assert!(
+            score.correctitud.is_some(),
+            "correctitud should be Some, got None (NaN stored as None)"
+        );
+        assert_eq!(
+            score.correctitud.unwrap(),
+            100.0,
+            "correctitud should be 100.0 when symbols_min threshold is met"
+        );
+    }
+
+    /// Regression test: when ground truth has only has_result=true and the
+    /// response is non-empty, correctitud must be 100.0.
+    #[test]
+    fn has_result_only_ground_truth_scores_correctly() {
+        let gt = GroundTruth {
+            has_result: Some(true),
+            ..Default::default()
+        };
+
+        // Non-empty response
+        let response = serde_json::json!({
+            "edges": [{"from": "a", "to": "b"}]
+        });
+
+        let score = score_scenario(
+            "get_call_hierarchy",
+            "go",
+            "go_call_hierarchy_nested",
+            &response,
+            &Some(gt),
+            &None,
+            200,
+            ExecutionMetadata::default(),
+        );
+
+        assert!(
+            score.correctitud.is_some(),
+            "correctitud should be Some for has_result match"
+        );
+        assert_eq!(
+            score.correctitud.unwrap(),
+            100.0,
+            "correctitud should be 100.0 when has_result=true and response is non-empty"
+        );
+    }
+
+    /// Regression test: symbols_min penalty is applied when threshold is NOT met.
+    #[test]
+    fn symbols_min_below_threshold_penalizes() {
+        let gt = GroundTruth {
+            symbols_min: Some(10),
+            ..Default::default()
+        };
+
+        // Only 3 symbols returned — below the 10-symbol threshold
+        let response = serde_json::json!({
+            "symbols": [
+                {"name": "a", "kind": "function"},
+                {"name": "b", "kind": "function"},
+                {"name": "c", "kind": "function"},
+            ]
+        });
+
+        let score = score_scenario(
+            "build_graph",
+            "python",
+            "python_build_graph_small",
+            &response,
+            &Some(gt),
+            &None,
+            500,
+            ExecutionMetadata::default(),
+        );
+
+        // 3/10 = 30%, so correctitud should be 30.0
+        assert!(score.correctitud.is_some());
+        assert_eq!(
+            score.correctitud.unwrap(),
+            30.0,
+            "correctitud should be 30.0 (3/10 threshold ratio)"
+        );
     }
 }
