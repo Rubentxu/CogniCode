@@ -183,6 +183,107 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
+
+// ===== ZCode adapter (E32-E) =====
+
+pub fn detect_zcode() -> bool {
+    zcode_config_path().exists()
+}
+
+pub fn zcode_config_path() -> PathBuf {
+    if let Ok(env) = std::env::var("ZCODE_CONFIG") {
+        return PathBuf::from(env);
+    }
+    let home = match std::env::var("HOME") {
+        Ok(h) => PathBuf::from(h),
+        Err(_) => return PathBuf::from("~/.zcode/v2/config.json"),
+    };
+    home.join(".zcode/v2/config.json")
+}
+
+pub fn zcode_skills_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".zcode/skills")
+}
+
+pub fn read_zcode_config() -> Result<Value> {
+    let path = zcode_config_path();
+    if !path.exists() {
+        return Ok(json!({}));
+    }
+    let text = std::fs::read_to_string(&path)
+        .with_context(|| format!("read {}", path.display()))?;
+    let v: Value = serde_json::from_str(&text)
+        .with_context(|| format!("parse {}", path.display()))?;
+    Ok(v)
+}
+
+pub fn integrate_zcode(home: &Path, plugin: &str, version: &str, mcp_command: &[String]) -> Result<()> {
+    // 1. Skill copy
+    let skills_src = home
+        .join("versions")
+        .join(version)
+        .join(plugin)
+        .join("skills");
+    let skills_dst = zcode_skills_dir().join(format!("cognicode-{version}"));
+    if skills_src.exists() {
+        copy_dir_recursive(&skills_src, &skills_dst)
+            .with_context(|| format!("copy {} → {}", skills_src.display(), skills_dst.display()))?;
+        eprintln!("✓ copied skills: {}", skills_dst.display());
+    } else {
+        eprintln!("(no skills to copy from {})", skills_src.display());
+    }
+
+    // 2. MCP config merge
+    let config_path = zcode_config_path();
+    let mut config = read_zcode_config()?;
+    let mcp_entry = json!({
+        "command": mcp_command,
+        "enabled": true,
+        "type": "stdio",
+    });
+
+    let cfg = config.as_object_mut()
+        .ok_or_else(|| anyhow!("zcode config.json is not an object"))?;
+    let mcp = cfg.entry("mcp").or_insert_with(|| json!({}));
+    if !mcp.is_object() {
+        return Err(anyhow!("zcode config.json: 'mcp' is not an object (got {})", mcp));
+    }
+    mcp.as_object_mut().unwrap()
+        .insert("cognicode-mcp".to_string(), mcp_entry);
+    write_json_atomic(&config_path, &config)?;
+    eprintln!("✓ patched: {}", config_path.display());
+
+    Ok(())
+}
+
+pub fn uninstall_zcode(version: &str) -> Result<()> {
+    // 1. Remove skills dir
+    let skills_dst = zcode_skills_dir().join(format!("cognicode-{version}"));
+    if skills_dst.exists() {
+        std::fs::remove_dir_all(&skills_dst)
+            .with_context(|| format!("rm -rf {}", skills_dst.display()))?;
+        eprintln!("✓ removed: {}", skills_dst.display());
+    }
+
+    // 2. Remove MCP entry
+    let config_path = zcode_config_path();
+    if config_path.exists() {
+        let mut config = read_zcode_config()?;
+        let cfg = config.as_object_mut()
+            .ok_or_else(|| anyhow!("zcode config.json is not an object"))?;
+        if let Some(mcp) = cfg.get_mut("mcp") {
+            if let Some(mcp_obj) = mcp.as_object_mut() {
+                mcp_obj.remove("cognicode-mcp");
+            }
+        }
+        write_json_atomic(&config_path, &config)?;
+        eprintln!("✓ unpached: {}", config_path.display());
+    }
+
+    Ok(())
+}
+
 // ===== CLI handlers =====
 
 pub fn cmd_ide_detect() -> Result<()> {
@@ -220,8 +321,9 @@ pub fn cmd_ide_install(home: &CognicodeHomeSup, ide: &str, plugin: &str, version
     ];
     match ide {
         "opencode" => integrate_opencode(home.root.as_path(), plugin, version, &mcp_command),
+        "zcode" => integrate_zcode(home.root.as_path(), plugin, version, &mcp_command),
         other => Err(anyhow!(
-            "IDE '{}' is not supported by cogh yet (only 'opencode' in E32-D)",
+            "IDE '{}' is not supported by cogh yet (opencode/zcode in E32-D/E)",
             other
         )),
     }
@@ -230,8 +332,9 @@ pub fn cmd_ide_install(home: &CognicodeHomeSup, ide: &str, plugin: &str, version
 pub fn cmd_ide_uninstall(home: &CognicodeHomeSup, ide: &str, version: &str) -> Result<()> {
     match ide {
         "opencode" => uninstall_opencode(version),
+        "zcode" => uninstall_zcode(version),
         other => Err(anyhow!(
-            "IDE '{}' is not supported by cogh yet (only 'opencode' in E32-D)",
+            "IDE '{}' is not supported by cogh yet (opencode/zcode in E32-D/E)",
             other
         )),
     }
@@ -393,4 +496,60 @@ mod tests {
         // The user's existing opencode config makes this true
         assert!(std::path::Path::new(&opencode_config_path()).exists());
     }
+    #[test]
+    fn integrate_zcode_creates_mcp_section() {
+        let tmp = std::env::temp_dir().join(format!("cogh-zcode-{}", std::process::id()));
+        std::fs::create_dir_all(tmp.join(".zcode/v2")).unwrap();
+        let config = tmp.join(".zcode/v2/config.json");
+        let original = json!({"provider": {"minimax": {}}});
+        std::fs::write(&config, serde_json::to_string_pretty(&original).unwrap()).unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        unsafe { std::env::set_var("HOME", &tmp); }
+        let home = std::path::PathBuf::from(&tmp).join(".cognicode");
+        let mcp_cmd = vec!["/bin/cognicode-mcp".to_string()];
+        let result = integrate_zcode(&home, "mcp-server", "0.92.0", &mcp_cmd);
+        unsafe { std::env::set_var("HOME", &prev_home); }
+        result.unwrap();
+
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(v["provider"]["minimax"].is_object(), true);
+        assert_eq!(v["mcp"]["cognicode-mcp"]["type"], "stdio");
+        assert_eq!(v["mcp"]["cognicode-mcp"]["enabled"], true);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn uninstall_zcode_removes_entry() {
+        let tmp = std::env::temp_dir().join(format!("cogh-zcode-un-{}", std::process::id()));
+        std::fs::create_dir_all(tmp.join(".zcode/v2")).unwrap();
+        let config = tmp.join(".zcode/v2/config.json");
+        let original = json!({
+            "mcp": {
+                "cognicode-mcp": {"type": "stdio"},
+                "other": {"type": "local"}
+            }
+        });
+        std::fs::write(&config, serde_json::to_string_pretty(&original).unwrap()).unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        unsafe { std::env::set_var("HOME", &tmp); }
+        let result = uninstall_zcode("0.92.0");
+        unsafe { std::env::set_var("HOME", &prev_home); }
+        result.unwrap();
+
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert!(v["mcp"].get("cognicode-mcp").is_none());
+        assert_eq!(v["mcp"]["other"]["type"], "local");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn zcode_config_path_default() {
+        let p = zcode_config_path();
+        assert!(p.ends_with("config.json"));
+    }
 }
+
