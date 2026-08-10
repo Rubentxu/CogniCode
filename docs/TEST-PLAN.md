@@ -82,21 +82,21 @@ The G13 sub-criteria T3–T5 require machine-readable matrices. This section inl
 
 The runtime tool catalog has **73 MCP tools** (regenerated from `bash sandbox/scripts/list_mcp_tools.sh`). Tier-1 languages are `rust`, `ts`, `python`, `go`, `java`.
 
-**Headline numbers** (computed post E31-B2 via `python3` scan of `sandbox/manifests/*.yaml`):
+**Headline numbers** (computed post E31-B3 via `python3` scan of `sandbox/manifests/*.yaml`):
 
-- **6 tools full Tier-1 coverage** (`edit_file`, `read_file`, `search_content`, `safe_refactor`, `get_file_symbols`, `build_graph`) — every cell ✓ across all 5 languages.
-- **67 tools partial** — have ≥1 Tier-1 scenario but missing some language cells (most are rust-only; ~10 are rust+go+java).
+- **10 tools full Tier-1 coverage** (`edit_file`, `read_file`, `search_content`, `safe_refactor`, `get_file_symbols`, `build_graph`, `get_complexity`, `get_entry_points`, `get_leaf_functions`, `query_symbol_index`) — every cell ✓ across all 5 languages.
+- **63 tools partial** — have ≥1 Tier-1 scenario but missing some language cells (most are rust-only; ~10 are rust+go+java).
 - **0 tools absent** — every tool in the MCP catalog has ≥1 sandbox scenario somewhere.
 
 **Aggregate Tier-1 column coverage** (cell count: tools × languages with a scenario):
 
-| Language | Manifests | Tools in language |
-|----------|-----------|-------------------|
-| `rust` | 12 | 68 of 73 |
-| `python` | 3 (+1 in E31-B2) | 11 of 73 |
-| `typescript` | 3 | 7 of 73 |
-| `go` | 2 | 16 of 73 |
-| `java` | 2 | 16 of 73 |
+| Language | Manifests | Tools in language | Δ from E31-B1 baseline |
+|----------|-----------|-------------------|------------------------|
+| `rust` | 12 | 68 of 73 | — |
+| `python` | 3 + 1 (`e31b2`) | 11 of 73 | +6 (E31-B2) |
+| `typescript` | 3 + 1 (`e31b3`) | **15** of 73 | **+8 (E31-B3)** |
+| `go` | 2 | 16 of 73 | — |
+| `java` | 2 | 16 of 73 | — |
 
 **T3 gap analysis**:
 
