@@ -195,6 +195,14 @@ check "cogh ide install opencode wires MCP entry" \
 check "cogh ide uninstall wires removal" \
     "grep -q 'uninstall_opencode' crates/cognicode-cli/src/bin/ide.rs"
 
+# 20. E32-E zcode IDE adapter
+echo ""
+echo "E32-E zcode IDE adapter:"
+check "cogh ide --install zcode wires MCP entry" \
+    "grep -q 'integrate_zcode' crates/cognicode-cli/src/bin/ide.rs"
+check "cogh ide --uninstall zcode wires removal" \
+    "grep -q 'uninstall_zcode' crates/cognicode-cli/src/bin/ide.rs"
+
 echo ""
 echo "==> E31 audit: ${PASS} PASS, ${FAIL} FAIL"
 if [ "$FAIL" -eq 0 ]; then
@@ -227,3 +235,4 @@ check "cogh ide install opencode wires MCP entry" \
     "test -f crates/cognicode-cli/src/bin/ide.rs"
 check "cogh ide uninstall wires removal" \
     "grep -q 'uninstall_opencode' crates/cognicode-cli/src/bin/ide.rs"
+
