@@ -324,6 +324,26 @@ scorecard-nightly:
     @echo "==> Inspect: sandbox/results/flaky_scenarios.md"
     @grep -E "Total scenarios|Passing|Failing|Quarantined" sandbox/results/flaky_scenarios.md | head -5
 
+# E31-G — 3-consecutive-scorecard-runs counter (per ADR-031 §3)
+scorecard-streak runs="sandbox/results/ci_smoke,sandbox/results/quality,sandbox/results/full_run":
+    @echo "📈 E31-G scorecard streak — fresh run + counter update..."
+    @python3 sandbox/scripts/release_scorecard.py \
+        --runs "{{runs}}" \
+        --stability sandbox/results/stability.json \
+        --coverage-matrix sandbox/reports/conformance_matrix.yaml \
+        --output sandbox/results/scorecard_run
+    @python3 sandbox/scripts/scorecard_streak.py \
+        --record sandbox/results/scorecard_run.json \
+        --purpose nightly || true
+    @echo "==> Current streak:"
+    @python3 -c "import json; d=json.load(open('sandbox/results/scorecard_streak.json')); print(f'  {d[\"current_streak\"]}/{d[\"goal\"]} ({d[\"verdict\"]})')"
+
+# E31-G status — show current streak state
+scorecard-streak-status:
+    @test -f sandbox/results/scorecard_streak.json || { echo "No streak recorded yet. Run: just scorecard-streak"; exit 0; }
+    @echo "==> Current streak:"
+    @python3 -c "import json; d=json.load(open('sandbox/results/scorecard_streak.json')); print(f'  {d[\"current_streak\"]}/{d[\"goal\"]} ({d[\"verdict\"]})'); h=d.get('history',[]); print(f'  Last {min(5,len(h))} of {len(h)} runs:'); [print(f'    {x[\"at\"][:19]}  {x[\"purpose\"]:15s}  {x[\"verdict\"]:6s}  @{x[\"streak_after\"]}') for x in h[-5:]]"
+
 # ─── Utils ─────────────────────────────────────────────────────────────────────
 
 # Show project status
