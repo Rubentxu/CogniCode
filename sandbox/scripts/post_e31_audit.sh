@@ -150,8 +150,8 @@ echo ""
 echo "Vault hygiene:"
 check "INC-005 (CONF-001) status is closed" \
     "grep -q 'status: closed' ~/.sddk-knowledge/CogniCode/incidences/INC-005-CONF-001.md"
-check "active_lock last released cycle is E31 follow-up" \
-    "grep -q 'M-E31-followup-audit' ~/.sddk-knowledge/CogniCode/milestones/_active.md"
+check "active_lock last released cycle is post-E31" \
+    "grep -qE 'M-E31-(followup-audit|Z-bookkeeping|E2|B2-rollup|B4-rollup|B5-rollup|B6-rollup)' ~/.sddk-knowledge/CogniCode/milestones/_active.md"
 
 # 16. E31-E2 decision recorded
 echo ""
