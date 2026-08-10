@@ -174,16 +174,13 @@ runtime-ladybug-wiring:
   status: verified
   evidence_path: crates/cognicode-runtime/tests/ladybug_smoke.rs
 mcp-multimodal-tools:
-  status: verified
-  evidence_path: crates/cognicode-explorer/tests/multimodal_feature_gate.rs
-  evidence_note: "feature-gated behind #[cfg(feature = \"multimodal\")]; compile debt\
-    \ \u2014 ladybug/lib.rs:1158; cargo test --features multimodal fails on default\
-    \ toolchain"
+  status: legacy_obsolete
+  legacy_obsolete_since: 2026-08-10
+  obsolete_reason: "cargo test --features multimodal does not compile on default toolchain (ladybug/lib.rs:1158); evidence unmaskable until feature is restored"
 multimodal-frontend:
-  status: verified
-  evidence_path: apps/explorer-ui/src/components/ObjectInspector/multimodal.ts
-  evidence_note: feature-gated behind multimodal feature flag; frontend components
-    exist but cargo test --features multimodal fails
+  status: legacy_obsolete
+  legacy_obsolete_since: 2026-08-10
+  obsolete_reason: "frontend artefact (ObjectInspector/multimodal.ts) gated behind the same broken #[cfg(feature = \"multimodal\")] Rust feature; evidence unmaskable"
 openspec-conformance:
   status: verified
   evidence_path: sandbox/scripts/openspec_conformance.py

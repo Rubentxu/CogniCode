@@ -1,6 +1,14 @@
-# multimodal-frontend Specification (NEW)
+# multimodal-frontend Specification (OBSOLETE — 2026-08-10)
 
 ## Purpose
+
+> **Status: OBSOLETE** — frontend artefact file referenced as evidence
+> (`apps/explorer-ui/src/components/ObjectInspector/multimodal.ts`) cannot
+> be exercised through standard CI because the corresponding Rust feature
+> (`#[cfg(feature = "multimodal")]`) does not compile on the default toolchain.
+> The visual styles and ObjectInspector support described here remain intact
+> in the codebase but are gated behind the same broken feature. Marked
+> OBSOLETE pending restoration of the `multimodal` feature.
 
 The frontend gains 4 new Cytoscape node shapes and 4 new edge visual styles so multimodal nodes (Decision, Doc, Issue, Evidence) are visually distinguishable from code symbols in the InteractiveGraph component. The ObjectInspector learns to render multimodal fields. Style classes are kept as a strict Zod enum, and unknown classes fall back to the existing `console.warn` behavior.
 
