@@ -1,9 +1,21 @@
 name: Sandbox Nightly
 
+# Per CogniCode E31-B5 user directive (2026-08-10): "usaremos los github
+# actions en local, nos olvidamos del uso real que no sea local". This
+# workflow is RETAINED as documentation/spec only — `act + podman`
+# executes it locally via `just scorecard-nightly`. The remote schedule
+# trigger is disabled so the workflow does NOT run on GitHub-hosted
+# runners.
+#
+# The nightly cadence is now executed locally via:
+#   just scorecard-nightly                    # log + archive + G6 check
+#   just scorecard-streak                     # 3-run counter
+#
+# Reference: docs/V1.0.0-PRE-CUT-CHECKLIST.md
 on:
-  schedule:
-    - cron: '0 3 * * *'   # 03:00 UTC cada día
-  workflow_dispatch:
+  # schedule:                                  # DISABLED — local-only per E31-B5
+  #   - cron: '0 3 * * *'                      # 03:00 UTC daily
+  workflow_dispatch:                           # manual only — for ARM runs
     inputs:
       lane:
         description: 'Lane to run'

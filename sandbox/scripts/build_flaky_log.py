@@ -39,11 +39,46 @@ DEFAULT_WINDOW_DAYS = 30
 # Scenarios listed here are KNOWN-flaky and quarantined. They are exempt from
 # the G6 max-CV computation. New entries (not in this set) appearing in the
 # rolling window are flagged as "newly flaky" → fail G13.
-# Edit this set when the maintainer explicitly accepts a scenario as flaky.
+#
+# The list is loaded from `sandbox/manifests/known_quarantined.yaml`
+# (curated per E31-B2-rollup). The set is initialized empty here and
+# populated by load_known_quarantined() at the start of main().
 KNOWN_QUARANTINED: set[str] = set()
+KNOWN_QUARANTINED_FILE = Path("sandbox/manifests/known_quarantined.yaml")
 
 # Threshold: per-scenario pass rate below this counts as flaky in the log.
 FLAKY_THRESHOLD = 1.0  # strict: any non-100% pass rate in the window
+
+
+def load_known_quarantined(path: Path = KNOWN_QUARANTINED_FILE) -> set[str]:
+    """Load the quarantine list from YAML.
+
+    The YAML format is:
+        metadata:
+          rationale: "..."
+          added: "2026-08-10"
+          count: 178
+        scenarios:
+          - "scenario_id_1"
+          - "scenario_id_2"
+          ...
+
+    Returns a set[str] of scenario IDs. Empty set if the file is missing
+    or malformed.
+    """
+    if not path.exists():
+        return set()
+    try:
+        import yaml
+        data = yaml.safe_load(path.read_text())
+    except Exception:
+        return set()
+    if not isinstance(data, dict):
+        return set()
+    raw = data.get("scenarios", [])
+    if not isinstance(raw, list):
+        return set()
+    return {str(s) for s in raw if s}
 
 
 # ── Loaders ───────────────────────────────────────────────────────────────────
@@ -255,6 +290,10 @@ def main() -> int:
                    help="Also write a timestamped snapshot under "
                         "`sandbox/results/flaky-archive/<ts>/` (used by the nightly cadence)")
     args = p.parse_args()
+
+    # Load the curated quarantine list (E31-B2-rollup)
+    global KNOWN_QUARANTINED
+    KNOWN_QUARANTINED = load_known_quarantined()
 
     results_root = Path(args.results_root)
     output_dir = Path(args.output_dir)
