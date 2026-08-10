@@ -83,10 +83,10 @@ The G13 sub-criteria T3–T5 require machine-readable matrices. This section inl
 
 The runtime tool catalog has **73 MCP tools** (regenerated from `bash sandbox/scripts/list_mcp_tools.sh`). Tier-1 languages are `rust`, `ts`, `python`, `go`, `java`.
 
-**Headline numbers** (computed post E31-B7 via `python3` scan of `sandbox/manifests/*.yaml`):
+**Headline numbers** (computed post E31-B8 via `python3` scan of `sandbox/manifests/*.yaml`):
 
-- **18 tools full Tier-1 coverage** (`edit_file`, `read_file`, `search_content`, `safe_refactor`, `get_file_symbols`, `build_graph`, `get_complexity`, `get_entry_points`, `get_leaf_functions`, `query_symbol_index`, plus B7-promoted `trace_path`, `get_call_hierarchy`, `validate_syntax`, `detect_drift`, `detect_api_breaks`, `find_references`, `hover`, `detect_long_parameter_lists`) — every cell ✓ across all 5 languages.
-- **55 tools partial** — have ≥1 Tier-1 scenario but missing some language cells.
+- **26 tools full Tier-1 coverage** (`edit_file`, `read_file`, `search_content`, `safe_refactor`, `get_file_symbols`, `build_graph`, `get_complexity`, `get_entry_points`, `get_leaf_functions`, `query_symbol_index`, plus B7+B8-promoted `trace_path`, `get_call_hierarchy`, `validate_syntax`, `detect_drift`, `detect_api_breaks`, `find_references`, `hover`, `detect_long_parameter_lists`, `analyze_impact`, `detect_god_functions`, `get_imports`, `get_members`, `get_implementors`, `list_view_specs`, `read_view_spec`, `reparse_on_edit`) — every cell ✓ across all 5 languages.
+- **47 tools partial** — have ≥1 Tier-1 scenario but missing some language cells.
 - **0 tools absent** — every tool in the MCP catalog has ≥1 sandbox scenario somewhere.
 
 **Aggregate Tier-1 column coverage** (cell count: tools × languages with a scenario):
@@ -94,19 +94,31 @@ The runtime tool catalog has **73 MCP tools** (regenerated from `bash sandbox/sc
 | Language | Manifests | Tools in language | Δ from E31-B1 baseline |
 |----------|-----------|-------------------|------------------------|
 | `rust` | 12 | 68 of 73 | — |
-| `python` | 3 + 2 (`e31b2`, `e31b7`) | 19 of 73 | +8 (E31-B7) |
-| `typescript` | 3 + 2 (`e31b3`, `e31b7`) | 23 of 73 | +8 (E31-B7) |
+| `python` | 3 + 3 (`e31b2`, `e31b7`, `e31b8`) | 27 of 73 | +16 (E31-B7 + B8) |
+| `typescript` | 3 + 3 (`e31b3`, `e31b7`, `e31b8`) | 31 of 73 | +16 (E31-B7 + B8) |
 | `go` | 2 + 1 (`e31b4`) | 24 of 73 | +8 (E31-B4) |
 | `java` | 2 + 1 (`e31b4`) | 24 of 73 | +8 (E31-B4) |
 
 **T3 gap analysis**:
 
-- **Biggest gaps by language**: python (~54 missing cells), typescript (~50), go (~49), java (~49).
-- **Partials remaining** (top 10): `analyze_impact`, `detect_god_functions`, `find_pattern_by_intent`, `find_usages`, `get_hot_paths`, `get_type_references`, `graph_*` (17 graph tools), `iac_query`, `smart_search`, `solid_audit` — most are rust-only currently.
-- **Promoted by E31-B7** (rust+go+java → 5/5): `trace_path`, `get_call_hierarchy`, `validate_syntax`, `detect_drift`, `detect_api_breaks`, `find_references`, `hover`, `detect_long_parameter_lists`. Each gains ts + py cells on top of the B4 cells.
+- **Biggest gaps by language**: python (~46 missing cells), typescript (~42), go (~49), java (~49).
+- **Partials remaining** (top 10): `find_pattern_by_intent`, `find_usages`, `get_hot_paths`, `get_type_references`, `graph_*` (17 graph tools), `iac_query`, `smart_search`, `solid_audit`, `nl_to_symbol`, `project_insights` — most are rust-only currently.
+- **Promoted by E31-B8** (rust+go+java → 5/5): `analyze_impact`, `detect_god_functions`, `get_imports`, `get_members`, `get_implementors`, `list_view_specs`, `read_view_spec`, `reparse_on_edit`. Each gains ts + py cells on top of the existing rust+go+java cells.
 - **High-priority gap**: tools that are mapped to openspec REQs (per `sandbox/reports/conformance_matrix.yaml`) — those absences are spec-coverage holes too, not just sandbox gaps.
 
-**T3 verdict after E31-B7**: 18/73 = 24.7% full Tier-1; 55/73 partial. **Action**: E31-B8+ sub-cycles will continue filling cells for the 55 partial tools. New tools added in future code (any `feat(*)` introducing a new MCP tool) must ship with Tier-1 scenarios from day 1 (enforced via T6 CI gate in E31-B5).
+**T3 verdict after E31-B8**: 26/73 = 35.6% full Tier-1; 47/73 partial. **Action**: E31-B9+ sub-cycles will continue filling cells for the 47 partial tools. New tools added in future code (any `feat(*)` introducing a new MCP tool) must ship with Tier-1 scenarios from day 1 (enforced via T6 CI gate in E31-B5).
+
+> **E31-B8 batch contents** (8 tools × 2 langs = 16 scenarios, all in `sandbox/manifests/e31b8_tier1_ts_py_closure_r2.yaml`):
+> - `analyze_impact` — `commander` (ts) + `click` (py) → 5/5
+> - `detect_god_functions` — `zod` (ts) + `urllib3` (py) → 5/5
+> - `get_imports` — `commander` (ts) + `click` (py) → 5/5
+> - `get_members` — `zod` (ts) + `urllib3` (py) → 5/5
+> - `get_implementors` — `commander` (ts) + `click` (py) → 5/5
+> - `list_view_specs` — `zod` (ts) + `requests` (py) → 5/5
+> - `read_view_spec` — `commander` (ts) + `urllib3` (py) → 5/5
+> - `reparse_on_edit` — `zod` (ts) + `click` (py) → 5/5
+>
+> After B7 + B8, the T3 closure rate reaches 35.6% — meeting the 30% target. Remaining 47 partial tools are mostly rust-only or graph_* tools.
 
 > **E31-B7 batch contents** (8 tools × 2 langs = 16 scenarios, all in `sandbox/manifests/e31b7_tier1_ts_py_closure.yaml`):
 > - `trace_path` — `zod` (ts) + `click` (py) → 5/5
