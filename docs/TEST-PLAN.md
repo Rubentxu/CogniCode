@@ -82,10 +82,10 @@ The G13 sub-criteria T3–T5 require machine-readable matrices. This section inl
 
 The runtime tool catalog has **73 MCP tools** (regenerated from `bash sandbox/scripts/list_mcp_tools.sh`). Tier-1 languages are `rust`, `ts`, `python`, `go`, `java`.
 
-**Headline numbers** (computed post E31-B3 via `python3` scan of `sandbox/manifests/*.yaml`):
+**Headline numbers** (computed post E31-B4 via `python3` scan of `sandbox/manifests/*.yaml`):
 
 - **10 tools full Tier-1 coverage** (`edit_file`, `read_file`, `search_content`, `safe_refactor`, `get_file_symbols`, `build_graph`, `get_complexity`, `get_entry_points`, `get_leaf_functions`, `query_symbol_index`) — every cell ✓ across all 5 languages.
-- **63 tools partial** — have ≥1 Tier-1 scenario but missing some language cells (most are rust-only; ~10 are rust+go+java).
+- **71 tools partial** — have ≥1 Tier-1 scenario but missing some language cells. Most are rust-only; ~18 are rust+go+java (8 promoted by E31-B4).
 - **0 tools absent** — every tool in the MCP catalog has ≥1 sandbox scenario somewhere.
 
 **Aggregate Tier-1 column coverage** (cell count: tools × languages with a scenario):
@@ -94,18 +94,31 @@ The runtime tool catalog has **73 MCP tools** (regenerated from `bash sandbox/sc
 |----------|-----------|-------------------|------------------------|
 | `rust` | 12 | 68 of 73 | — |
 | `python` | 3 + 1 (`e31b2`) | 11 of 73 | +6 (E31-B2) |
-| `typescript` | 3 + 1 (`e31b3`) | **15** of 73 | **+8 (E31-B3)** |
-| `go` | 2 | 16 of 73 | — |
-| `java` | 2 | 16 of 73 | — |
+| `typescript` | 3 + 1 (`e31b3`) | 15 of 73 | +8 (E31-B3) |
+| `go` | 2 + 1 (`e31b4`) | **24** of 73 | **+8 (E31-B4)** |
+| `java` | 2 + 1 (`e31b4`) | **24** of 73 | **+8 (E31-B4)** |
 
 **T3 gap analysis**:
 
-- **Biggest gaps by language**: python (~62 missing cells), typescript (~66), go (~57), java (~57).
+- **Biggest gaps by language**: python (~62 missing cells), typescript (~66), go (~49), java (~49).
 - **Biggest gaps by tool** (top partials needing cells):
-  - `analyze_impact`, `detect_drift`, `detect_god_functions`, `find_pattern_by_intent`, `find_references`, `find_usages`, `get_call_hierarchy`, `get_hot_paths`, `get_type_references`, `graph_*` (17 graph tools), `hover`, `iac_query`, `smart_search`, `solid_audit`, `trace_path` — all are rust-only currently.
+  - `analyze_impact`, `detect_drift`, `detect_god_functions`, `find_pattern_by_intent`, `find_references`, `find_usages`, `get_call_hierarchy`, `get_hot_paths`, `get_type_references`, `graph_*` (17 graph tools), `iac_query`, `smart_search`, `solid_audit`, `trace_path` — all are rust-only currently.
+- **Promoted by E31-B4** (rust-only → rust+go+java, 3/5): `trace_path`, `get_call_hierarchy`, `validate_syntax`, `detect_drift`, `detect_api_breaks`, `find_references`, `hover`, `detect_long_parameter_lists`. Each still needs ts + python cells to reach 5/5 (deferred to a future batch).
 - **High-priority gap**: tools that are mapped to openspec REQs (per `sandbox/reports/conformance_matrix.yaml`) — those absences are spec-coverage holes too, not just sandbox gaps.
 
-**T3 verdict after E31-B2**: 6/73 = 8% full Tier-1; remaining 92% need at least one cell to reach full. **Action**: E31-B3+ sub-cycles will add cells to the 67 partial tools. New tools added in future code (any `feat(*)` introducing a new MCP tool) must ship with Tier-1 scenarios from day 1 (enforced via T6 CI gate in E31-B5).
+**T3 verdict after E31-B4**: 10/73 = 13.7% full Tier-1; 71/73 partial. **Action**: E31-B5+ sub-cycles will add cells to the 71 partial tools. New tools added in future code (any `feat(*)` introducing a new MCP tool) must ship with Tier-1 scenarios from day 1 (enforced via T6 CI gate in E31-B5).
+
+> **E31-B4 batch contents** (8 tools × 2 langs = 16 scenarios, all in `sandbox/manifests/e31b4_tier1_go_java_fill.yaml`):
+> - `trace_path` — `cobra` (go) + `spring-petclinic` (java)
+> - `get_call_hierarchy` — `bubbletea` (go) + `spring-petclinic` (java)
+> - `validate_syntax` — `lo` (go) + `spring-petclinic` (java)
+> - `detect_drift` — `cobra` (go) + `spring-petclinic` (java)
+> - `detect_api_breaks` — `lo` (go) + `spring-petclinic` (java)
+> - `find_references` — `cobra` (go) + `spring-petclinic` (java)
+> - `hover` — `cobra` (go) + `spring-petclinic` (java)
+> - `detect_long_parameter_lists` — `bubbletea` (go) + `spring-petclinic` (java)
+>
+> Repos pinned: `spf13/cobra @ e94f6d0dd9a5e5738dca6bce03c4b1207ffbc0ec`, `charmbracelet/bubbletea @ ffa05021909e14c478cbe138ca78effbea04e4e0`, `samber/lo @ 35e49f2c9607a7f7f6cde872a42d8718d9c3d053`, `spring-projects/spring-petclinic @ edf4db28affcc4741c79850a3d95bc3f177b5ff9`.
 
 ### T4 — UI panes × browser-E2E specs
 

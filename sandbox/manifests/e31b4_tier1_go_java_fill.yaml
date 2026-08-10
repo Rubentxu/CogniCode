@@ -1,0 +1,251 @@
+# E31-B4 Tier-1 Go + Java coverage fill
+# Goal: add Tier-1 cells for 8 commonly-used MCP tools that were rust-only or
+# rust+ insufficiently covered for the 4 pinned Go/Java repos (cobra,
+# bubbletea, lo, spring-petclinic). Each tool gets 1 go scenario + 1 java
+# scenario = 16 scenarios for 8 tools.
+#
+# This batch is the go + java companion of E31-B2 (python) and E31-B3
+# (typescript). After B4, the matrix has:
+#   - 6 tools fully new to T3 (no rust cell addition here — just go+java):
+#     trace_path, get_call_hierarchy, validate_syntax, detect_drift,
+#     detect_api_breaks, find_references
+#   - 2 tools extend from rust+ to rust+go+java:
+#     hover, detect_long_parameter_lists
+#
+# Reference: docs/TEST-PLAN.md §3.1/T3. The T3 closure rate target is
+# ≥30% by end of E31-B4 (up from 13.7% after E31-B3). Multiple promotions
+# to 5/5 await the ts+py cells from B2/B3 patterns in future cycles.
+#
+# Conventions mirror sandbox/manifests/coverage_fill.yaml and the
+# clap_repos.yaml / go_repos.yaml / java_repos.yaml Tier B pattern.
+# Pinned repos: go/cobra @ e94f6d0dd9a5e5738dca6bce03c4b1207ffbc0ec,
+# go/bubbletea @ ffa05021909e14c478cbe138ca78effbea04e4e0,
+# go/lo @ 35e49f2c9607a7f7f6cde872a42d8718d9c3d053,
+# java/spring-petclinic @ edf4db28affcc4741c79850a3d95bc3f177b5ff9.
+
+version: "1.0"
+language: multi
+tier: B
+description: "E31-B4 batch — Tier-1 go + java coverage fill for 8 commonly-used MCP tools across cobra + bubbletea + lo + spring-petclinic pinned repos"
+
+timeout_seconds: 600
+
+# Per-repo metadata for reproducibility
+repos:
+  go/cobra:
+    repo_url: "https://github.com/spf13/cobra.git"
+    pinned_sha: "e94f6d0dd9a5e5738dca6bce03c4b1207ffbc0ec"
+  go/bubbletea:
+    repo_url: "https://github.com/charmbracelet/bubbletea.git"
+    pinned_sha: "ffa05021909e14c478cbe138ca78effbea04e4e0"
+  go/lo:
+    repo_url: "https://github.com/samber/lo.git"
+    pinned_sha: "35e49f2c9607a7f7f6cde872a42d8718d9c3d053"
+  java/spring-petclinic:
+    repo_url: "https://github.com/spring-projects/spring-petclinic.git"
+    pinned_sha: "edf4db28affcc4741c79850a3d95bc3f177b5ff9"
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: go_compile
+      commands: ["go build -count=1 ./... 2>&1 || true"]
+      timeout_seconds: 120
+    - name: java_compile
+      commands: ["mvn -q -o compile 2>&1 || true"]
+      timeout_seconds: 180
+
+scenarios:
+  # ─── Tool 1: trace_path (new to T3 — go + java cells) ────────────────────────
+  - name: realrepo_trace_path_cobra
+    description: "trace_path through cobra.Command.Execute → Run → Flags.Parse — verifies graph traversal on a real Go CLI framework"
+    tool: trace_path
+    action: trace
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 4  # Execute, Run, ValidateArgs, ParseFlags
+
+  - name: realrepo_trace_path_petclinic
+    description: "trace_path from spring-petclinic OwnerController.index → OwnerRepository.findByLastName → Path"
+    tool: trace_path
+    action: trace
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 3
+
+  # ─── Tool 2: get_call_hierarchy (new to T3 — go + java cells) ────────────────
+  - name: realrepo_get_call_hierarchy_bubbletea
+    description: "get_call_hierarchy on bubbletea tea.NewProgram → Init/Update/View — verifies call graph walker on a real Go TUI framework"
+    tool: get_call_hierarchy
+    action: hierarchy
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 3  # Init, Update, View
+
+  - name: realrepo_get_call_hierarchy_petclinic
+    description: "get_call_hierarchy on spring-petclinic VetController → VetRepository → EntityManager"
+    tool: get_call_hierarchy
+    action: hierarchy
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 3
+
+  # ─── Tool 3: validate_syntax (new to T3 — go + java cells) ───────────────────
+  - name: realrepo_validate_syntax_lo
+    description: "validate_syntax on samber/lo — verifies Go AST parses cleanly under Go 1.21+ syntax rules"
+    tool: validate_syntax
+    action: check
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: lo.go
+
+  - name: realrepo_validate_syntax_petclinic
+    description: "validate_syntax on spring-petclinic — verifies Java source parses cleanly under OpenJDK 17+"
+    tool: validate_syntax
+    action: check
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java
+
+  # ─── Tool 4: detect_drift (new to T3 — go + java cells) ──────────────────────
+  - name: realrepo_detect_drift_cobra
+    description: "detect_drift between cobra v1.8.0 and v1.8.1 — verifies API surface drift detection on a real Go release"
+    tool: detect_drift
+    action: detect
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      from_ref: "v1.8.0"
+      to_ref: "v1.8.1"
+
+  - name: realrepo_detect_drift_petclinic
+    description: "detect_drift between spring-petclinic main and feature/vets — verifies API surface drift on a Java/Spring release"
+    tool: detect_drift
+    action: detect
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      from_ref: "main"
+      to_ref: "HEAD"
+
+  # ─── Tool 5: detect_api_breaks (new to T3 — go + java cells) ─────────────────
+  - name: realrepo_detect_api_breaks_lo
+    description: "detect_api_breaks on samber/lo v1.42.0 → v1.43.0 — verifies semver-major break detection on a Go utility library"
+    tool: detect_api_breaks
+    action: detect
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      from_ref: "v1.42.0"
+      to_ref: "v1.43.0"
+
+  - name: realrepo_detect_api_breaks_petclinic
+    description: "detect_api_breaks on spring-petclinic init → current — verifies Java API break detection"
+    tool: detect_api_breaks
+    action: detect
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      from_ref: "HEAD~1"
+      to_ref: "HEAD"
+
+  # ─── Tool 6: find_references (new to T3 — go + java cells) ───────────────────
+  - name: realrepo_find_references_cobra
+    description: "find_references for cobra.Command struct — verifies cross-package reference search on a real Go CLI framework"
+    tool: find_references
+    action: find
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol: "Command"
+      language: "go"
+
+  - name: realrepo_find_references_petclinic
+    description: "find_references for spring-petclinic @Controller annotation — verifies Java/Spring reference search"
+    tool: find_references
+    action: find
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol: "Controller"
+      language: "java"
+
+  # ─── Tool 7: hover (extends rust+ to rust+go+java) ────────────────────────────
+  - name: realrepo_hover_cobra
+    description: "hover on cobra.Command.Use field — verifies semantic hover on Go struct field"
+    tool: hover
+    action: hover
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: command.go
+      line: 110
+      column: 5
+
+  - name: realrepo_hover_petclinic
+    description: "hover on spring-petclinic Owner.getId() — verifies Java method semantic hover"
+    tool: hover
+    action: hover
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: src/main/java/org/springframework/samples/petclinic/owner/Owner.java
+      line: 95
+      column: 20
+
+  # ─── Tool 8: detect_long_parameter_lists (extends rust+ to rust+go+java) ─────
+  - name: realrepo_detect_long_parameter_lists_bubbletea
+    description: "detect_long_parameter_lists on bubbletea tea.Cmd — verifies Go function signature smell detector"
+    tool: detect_long_parameter_lists
+    action: analyze
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      max_params: 5
+
+  - name: realrepo_detect_long_parameter_lists_petclinic
+    description: "detect_long_parameter_lists on spring-petclinic controllers — verifies Java method smell detector"
+    tool: detect_long_parameter_lists
+    action: analyze
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      max_params: 5
