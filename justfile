@@ -344,6 +344,10 @@ scorecard-streak-status:
     @echo "==> Current streak:"
     @python3 -c "import json; d=json.load(open('sandbox/results/scorecard_streak.json')); print(f'  {d[\"current_streak\"]}/{d[\"goal\"]} ({d[\"verdict\"]})'); h=d.get('history',[]); print(f'  Last {min(5,len(h))} of {len(h)} runs:'); [print(f'    {x[\"at\"][:19]}  {x[\"purpose\"]:15s}  {x[\"verdict\"]:6s}  @{x[\"streak_after\"]}') for x in h[-5:]]"
 
+# E31 audit — verify E31 program deliverables + tag chain integrity
+post-e31-audit:
+    @bash sandbox/scripts/post_e31_audit.sh
+
 # ─── Utils ─────────────────────────────────────────────────────────────────────
 
 # Show project status
