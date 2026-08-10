@@ -80,35 +80,32 @@ The G13 sub-criteria T3–T5 require machine-readable matrices. This section inl
 
 ### T3 — MCP tools × Tier-1 languages
 
-The runtime tool catalog has **68 MCP tools** (regenerated from `bash sandbox/scripts/list_mcp_tools.sh`). Tier-1 languages are `rust`, `ts`, `python`, `go`, `java`.
+The runtime tool catalog has **73 MCP tools** (regenerated from `bash sandbox/scripts/list_mcp_tools.sh`). Tier-1 languages are `rust`, `ts`, `python`, `go`, `java`.
 
-**Tools exercised in sandbox scenarios today** (from `grep "^\s\+tool:" sandbox/manifests/*.yaml`, sorted by frequency):
+**Headline numbers** (computed post E31-B2 via `python3` scan of `sandbox/manifests/*.yaml`):
 
-| Tool | Sandbox scenarios | Tier-1 coverage today |
-|------|-------------------|------------------------|
-| `edit_file` | 53 | rust✓ ts✗ py✓ go✓ java✓ (rust via `rust_repos.yaml`+`baseline_test.yaml`; py via `python_repos.yaml`; go via `go_repos.yaml`; java via `java_repos.yaml`+`spring-petclinic`; **ts gap**) |
-| `read_file` | 49 | rust✓ ts✗ py✓ go✓ java✗ (**ts gap, java gap**) |
-| `build_graph` | 68 (45 + 23) | rust✓ ts✗ py✓ go✓ java✓ (**ts gap**) |
-| `get_file_symbols` | 72 (37 + 35) | rust✓ ts✗ py✓ go✓ java✓ (**ts gap**) |
-| `search_content` | 32 | rust✓ ts✗ py✓ go✓ java✓ (**ts gap**) |
-| `get_complexity` | 26 | rust✓ ts✗ py✓ go✓ java✓ (**ts gap**) |
-| `safe_refactor` | 18 | rust✓ via `petclinic` java✓ (**ts gap, python gap**) |
-| `iac_query` | 18 | terraform× ansible× (not Tier-1; ok) |
-| `semantic_search` | 16 | rust✓ ts✗ py✗ go✗ java✗ (**4 gaps**) |
-| `query_symbol_index` | 13 | rust✓ (**4 gaps**) |
-| `find_usages` | 10 | python✓ rust✓ (**3 gaps**) |
-| `get_entry_points` | 12 | rust✓ ts✓ (real repos.ts) python✓ java✓ go✓ |
-| `build_lightweight_index` | 11 | rust✓ python✓ (**3 gaps**) |
-| `get_call_hierarchy` | 11 | rust✓ (**4 gaps**) |
-| `get_leaf_functions` | 11 | rust✓ (**4 gaps**) |
-| `analyze_impact` | 9 | rust✓ ts✗ py✓ go✗ java✗ (**3 gaps**) |
-| `debug_analyze` | 9 | rust✓ python✓ (**3 gaps**) |
-| `get_outline` | 8 | python✓ rust✓ (**3 gaps**) |
-| `list_files` | 8 | rust✓ ts✓ python✓ go✓ java✓ |
-| `http_get` | 13 | not an MCP tool (helper); ignored |
-| (38 remaining tools) | 0 each | **none in sandbox** |
+- **6 tools full Tier-1 coverage** (`edit_file`, `read_file`, `search_content`, `safe_refactor`, `get_file_symbols`, `build_graph`) — every cell ✓ across all 5 languages.
+- **67 tools partial** — have ≥1 Tier-1 scenario but missing some language cells (most are rust-only; ~10 are rust+go+java).
+- **0 tools absent** — every tool in the MCP catalog has ≥1 sandbox scenario somewhere.
 
-**T3 current verdict**: 5 tools (8%) full Tier-1 coverage; ~25 tools (37%) partial; ~38 tools (56%) absent from sandbox. **Action**: B2/B3 sub-cycles add scenarios for the partial and absent tools.
+**Aggregate Tier-1 column coverage** (cell count: tools × languages with a scenario):
+
+| Language | Manifests | Tools in language |
+|----------|-----------|-------------------|
+| `rust` | 12 | 68 of 73 |
+| `python` | 3 (+1 in E31-B2) | 11 of 73 |
+| `typescript` | 3 | 7 of 73 |
+| `go` | 2 | 16 of 73 |
+| `java` | 2 | 16 of 73 |
+
+**T3 gap analysis**:
+
+- **Biggest gaps by language**: python (~62 missing cells), typescript (~66), go (~57), java (~57).
+- **Biggest gaps by tool** (top partials needing cells):
+  - `analyze_impact`, `detect_drift`, `detect_god_functions`, `find_pattern_by_intent`, `find_references`, `find_usages`, `get_call_hierarchy`, `get_hot_paths`, `get_type_references`, `graph_*` (17 graph tools), `hover`, `iac_query`, `smart_search`, `solid_audit`, `trace_path` — all are rust-only currently.
+- **High-priority gap**: tools that are mapped to openspec REQs (per `sandbox/reports/conformance_matrix.yaml`) — those absences are spec-coverage holes too, not just sandbox gaps.
+
+**T3 verdict after E31-B2**: 6/73 = 8% full Tier-1; remaining 92% need at least one cell to reach full. **Action**: E31-B3+ sub-cycles will add cells to the 67 partial tools. New tools added in future code (any `feat(*)` introducing a new MCP tool) must ship with Tier-1 scenarios from day 1 (enforced via T6 CI gate in E31-B5).
 
 ### T4 — UI panes × browser-E2E specs
 

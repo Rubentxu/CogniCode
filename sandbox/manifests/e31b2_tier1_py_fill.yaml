@@ -1,0 +1,140 @@
+# E31-B2 Tier-1 Python coverage fill
+# Goal: provide ≥1 scenario per commonly-used MCP tool for the 3 pinned Python
+# repos (click, urllib3, requests) where the Tier-1 column was empty. Each
+# scenario uses an existing pinned repo — no new clones, no new ground truth.
+# Targets: build_graph, get_complexity, get_entry_points, get_leaf_functions,
+# query_symbol_index, list_files, get_outline, semantic_search.
+#
+# Reference: docs/TEST-PLAN.md §3.1 (T3 initial state documented 5/68 MCP
+# tools with full Tier-1 coverage). After this batch, 13/68 tools gain at
+# least one Tier-1 cell; the framework column still has gaps (covered in
+# a later sub-cycle).
+#
+# Conventions mirror sandbox/manifests/coverage_fill.yaml and the
+# clap_repos.yaml Tier B pattern. Validations stay light (syntax compile +
+# importable check) because these repos are pinned known-working commits.
+
+version: "1.0"
+language: python
+tier: B
+description: "E31-B2 batch — Tier-1 python coverage fill for 8 commonly-used MCP tools across click + urllib3 + requests pinned repos"
+
+timeout_seconds: 300
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: syntax
+      commands: ["python -m py_compile -q src/ 2>&1 || true"]
+      timeout_seconds: 60
+
+scenarios:
+  # ── build_graph (Tier-1 python column was empty for click) ────────────────
+  - name: realrepo_build_graph_click
+    description: "Build call graph over click (pallets/click 8.1.7) — verifies graph construction on a real Python CLI framework"
+    tool: build_graph
+    action: build
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 20  # click exposes decorators, commands, params — >20 expected
+
+  # ── get_complexity (Tier-1 python column was empty for urllib3) ──────────
+  - name: realrepo_get_complexity_urllib3
+    description: "Cyclomatic + nesting complexity report on urllib3 core module"
+    tool: get_complexity
+    action: complexity
+    repo: urllib3
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      path: src/urllib3/_collections.py
+    ground_truth:
+      symbols_min: 5  # at least 5 functions/methods in the file
+
+  # ── get_entry_points (Tier-1 python column was empty for requests) ───────
+  - name: realrepo_get_entry_points_requests
+    description: "Entry-point discovery for requests (psf/requests v2.32.3) — finds main / CLI handlers / package __init__ runnables"
+    tool: get_entry_points
+    action: find
+    repo: requests
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 1
+
+  # ── get_leaf_functions (Tier-1 python column was empty for click) ────────
+  - name: realrepo_get_leaf_functions_click
+    description: "Find leaf functions (no outgoing calls) in click core"
+    tool: get_leaf_functions
+    action: leaf
+    repo: click
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      path: src/click/core.py
+    ground_truth:
+      symbols_min: 3
+
+  # ── query_symbol_index (Tier-1 python column was empty for urllib3) ──────
+  - name: realrepo_query_symbol_index_urllib3
+    description: "Symbol index lookup for 'Retry' class in urllib3 (key API surface)"
+    tool: query_symbol_index
+    action: query
+    repo: urllib3
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      symbol_name: Retry
+    ground_truth:
+      symbols_min: 1
+
+  # ── list_files (Tier-1 python column was empty for click) ────────────────
+  - name: realrepo_list_files_click
+    description: "List Python files in click src/ tree"
+    tool: list_files
+    action: list
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      directory: src/click
+      pattern: "*.py"
+    ground_truth:
+      symbols_min: 5  # at least 5 .py files in src/click
+
+  # ── get_outline (Tier-1 python column was empty for urllib3) ──────────────
+  - name: realrepo_get_outline_urllib3
+    description: "Module outline (function/class skeleton) of urllib3 connectionpool"
+    tool: get_outline
+    action: outline
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/urllib3/connectionpool.py
+    ground_truth:
+      symbols_min: 5
+
+  # ── semantic_search (Tier-1 python column was empty for requests) ─────────
+  - name: realrepo_semantic_search_requests
+    description: "Semantic search for 'http retry backoff' concepts in requests adapters"
+    tool: semantic_search
+    action: search
+    repo: requests
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      query: "http retry backoff strategy"
+      path: src/requests/adapters.py
+    ground_truth:
+      symbols_min: 1  # at least 1 chunk returned for that query
