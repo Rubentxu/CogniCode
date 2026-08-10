@@ -1,15 +1,16 @@
 # CogniCode Release 1.0.0 Plan — Production Ready with Strict Verification
 
-**Status**: PROPOSED
-**Date**: 2026-08-05
+**Status**: ACEPTADO (promoted 2026-08-10 in E31-A; pillar 7 "Test Plan comprehensivo" added per user directive at E31 pre-flight)
+**Date**: 2026-08-05 (original PROPOSED) / 2026-08-10 (ACEPTADO + pillar 7)
 **Owner**: Rubentxu (maintainer)
-**Baseline**: v0.85.0 (e14-C2 merged, PR #225)
+**Baseline (original)**: v0.85.0 (e14-C2 merged, PR #225)
+**Baseline (current execution)**: v0.92.0 (PR #236, E30.5.1 release-gate carry-forwards closed)
 
 ---
 
 ## 1. Definition of 1.0.0
 
-**1.0.0 means production ready, verified against real software projects, with automated, repeatable, evidence-based checks.** No release without proof.
+**1.0.0 means production ready, verified against real software projects, with automated, repeatable, evidence-based checks. Test Plan comprehensivo + E2E coverage must be in place before any cut.** No release without proof.
 
 The release gate is a **Release Readiness Scorecard** — a machine-generated report (not a checklist of opinions) with 12 hard criteria, each with a measurable target, a current value, and an evidence artifact. Every criterion must be **GREEN** for 3 consecutive runs before tagging `v1.0.0`.
 
@@ -27,8 +28,31 @@ The release gate is a **Release Readiness Scorecard** — a machine-generated re
 | G10 | Openspec conformance | 100% of 401 requirements verified | conformance audit report |
 | G11 | Documentation current | MCP-TOOLS 43 tools verified; ADRs reviewed; ROADMAP reconciled | doc audit |
 | G12 | Release hygiene | changelog v0.85.0 → v1.0.0; semver clean; no stale branches | git audit |
+| **G13** | **Test Plan comprehensivo (Pillar 7)** | **`docs/TEST-PLAN.md` ACEPTADO + T1–T6 GREEN en scorecard run** | **`docs/TEST-PLAN.md` + flaky scenario log + coverage matrices** |
 
 **Explicit non-goals for 1.0.0**: full ISO GQL/Cypher compatibility, WebGL renderer, production Neo4j backend, multi-user collaboration. These remain post-1.0 candidates.
+
+---
+
+## 1.1 Test Plan Comprehensivo (Pillar 7 — added 2026-08-10)
+
+**v1.0.0 no se ejecuta sin un Test Plan firmado que cubra estrategia, niveles y ownership.**
+
+Concretamente:
+
+| # | Sub-criterion | Threshold |
+|---|---------------|-----------|
+| T1 | `docs/TEST-PLAN.md` existe y está firmado por el maintainer | required |
+| T2 | Niveles definidos: unit / integration / sandbox-E2E / browser-E2E / perf-regression | 5 niveles obligatorios |
+| T3 | Cada MCP tool tiene ≥1 scenario por Tier-1 language (rust, ts, py, go, java) | 100% Tier-1 coverage |
+| T4 | Cada UI pane tiene ≥1 browser-E2E spec | 100% pane coverage |
+| T5 | Sandbox-E2E corre en nightly CI y reporta flaky scenarios | 0 unknown-flaky, known-flaky documentados |
+| T6 | Regression test nuevo por cada `fix(*)` desde v0.92.0 | 100% (el test del fix forma parte del PR) |
+| T7 | Scorecard estable ≥N campañas consecutivas con T1–T6 GREEN | N=5 (~1 semana de cadencia diaria) |
+
+La implementación del Test Plan es un sub-ciclo de E31 (E31-B) que produce el documento + matrices de cobertura. Sin E31-B cerrado, ningún otro criterio se valida como habilitado para el cut.
+
+**Rationale (decisión del usuario, 2026-08-10)**: "no llegamos al v1.0.0 hasta que se pruebe todo bien con test plan y otras pruebas e2e". Convierte testing disciplinado de nice-to-have a gating pillar.
 
 ---
 
