@@ -415,12 +415,14 @@ def gate_g8(g8_probe_dir: str) -> GateResult:
             oom_timeout_tools.append(f"{tool}({failure_class})")
 
     if oom_timeout_tools:
-        # OOM/timeout with a tracked defect → AMBER
+        # OOM/timeout with a tracked defect → AMBER (defect SCAL-001 / INC-004)
+        # Per E31-F: evidence text must reference the defect ID explicitly so
+        # monitors can correlate the AMBER with the upstream tracking issue.
         return GateResult(
             id="G8", name="Scalability Proof (Tier-3)",
             status="AMBER",
             measured=f"OOM/timeout: {', '.join(oom_timeout_tools)}",
-            evidence_text="OOM or timeout detected in tier-3 probe (defect tracked)",
+            evidence_text="OOM or timeout detected in tier-3 probe (defect SCAL-001 / INC-004: typescript tier-3 652M-LOC timeout; container 1G→4G mitigation applied; see ~/.sddk-knowledge/CogniCode/incidences/INC-004-scal-001-scalability-typescript.md)",
             evidence_path=g8_probe_dir,
         )
     elif pass_tools:

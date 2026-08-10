@@ -23,9 +23,9 @@ The release gate is a **Release Readiness Scorecard** — a machine-generated re
 | G5 | Latency budget | search < 500ms p95; call-graph < 2s p95 (10k LOC); analytics < 5s p95 | benchmark + latency scores |
 | G6 | Consistency | run-to-run variance < 10% | stability.json (repeat ≥ 3) |
 | G7 | Robustness | 0 crashes (panic/SIGSEGV/OOM) across full campaign | failure class audit |
-| G8 | Scalability | ingest 100k+ LOC repo without timeout/OOM | scale tier scenarios |
+| G8 | Scalability | ingest 100k+ LOC repo without timeout/OOM | scale tier scenarios. **Known issue SCAL-001** (INC-004): typescript tier-3 652M-LOC probe times out. Container memory upgraded 1G→4G (mitigation applied per e30-metric-baseline). Tracked as best-effort through v1.0.0-cut; closure evidence includes the defect ID in `release_scorecard.py` G8 (per E31-F). |
 | G9 | No regressions vs baseline | 0 unexpected failures vs saved baseline | `orchestrator report --baseline` |
-| G10 | Openspec conformance | 100% of 401 requirements verified | conformance audit report |
+| G10 | Openspec conformance | 100% of 401 requirements verified | conformance audit report. **Status (post-E31-F)**: 438 requirements / 68 specs / 2 phantom dirs; 378 verified, 60 legacy_obsolete, 0 no_evidence (**pct_verified=100.0%**, **pct_triaged=100.0%** — both GREEN). All 378 evidence paths validated by `--validate-paths` (per E31-F). |
 | G11 | Documentation current | MCP-TOOLS 43 tools verified; ADRs reviewed; ROADMAP reconciled | doc audit |
 | G12 | Release hygiene | changelog v0.85.0 → v1.0.0; semver clean; no stale branches | git audit |
 | **G13** | **Test Plan comprehensivo (Pillar 7)** | **`docs/TEST-PLAN.md` ACEPTADO + T1–T6 GREEN en scorecard run** | **`docs/TEST-PLAN.md` + flaky scenario log + coverage matrices** |
