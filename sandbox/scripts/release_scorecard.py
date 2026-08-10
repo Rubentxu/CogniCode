@@ -51,7 +51,41 @@ CRASH_FAILURE_CLASSES = {
 }
 
 
+# ── Startup invariant: FAMILY_BUDGETS ⇄ TOOL_TO_FAMILY ────────────────────────
+
+def assert_family_consistency() -> None:
+    """Catch drift between TOOL_TO_FAMILY and FAMILY_BUDGETS at module load.
+
+    Without this check, adding a new tool to a *_TOOLS set is silently safe
+    (TOOL_TO_FAMILY is auto-derived), but assigning it to a NEW family in
+    TOOL_TO_FAMILY directly would leave that family with no budget — and G5
+    would degrade to AMBER with "no data for families" forever, instead of
+    failing fast at startup.
+
+    Invoked at module import so any consumer (CLI, tests, repl) fails fast.
+    """
+    families_in_use = set(TOOL_TO_FAMILY.values())
+    families_with_budget = set(FAMILY_BUDGETS.keys())
+    missing = families_in_use - families_with_budget
+    if missing:
+        raise RuntimeError(
+            f"FAMILY_BUDGETS is missing entries for families referenced by "
+            f"TOOL_TO_FAMILY: {sorted(missing)}. "
+            f"Add a (budget_ms, unit) tuple for each to sandbox/scripts/"
+            f"release_scorecard.py."
+        )
+
+
+# Run the invariant check at import time so any consumer (CLI, tests, repl)
+# fails fast on drift instead of silently degrading G5 to AMBER with
+# "no data for families".
+assert_family_consistency()
+
+
 # ── Gate result dataclass ─────────────────────────────────────────────────────
+
+from dataclasses import dataclass
+
 
 @dataclass
 class GateResult:
@@ -62,8 +96,6 @@ class GateResult:
     budget: Optional[Any] = None
     evidence_path: Optional[str] = None
     evidence_text: Optional[str] = None
-
-from dataclasses import dataclass
 
 
 # ── Utility loaders ───────────────────────────────────────────────────────────
