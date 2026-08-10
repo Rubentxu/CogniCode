@@ -153,6 +153,14 @@ check "INC-005 (CONF-001) status is closed" \
 check "active_lock last released cycle is E31 follow-up" \
     "grep -q 'M-E31-followup-audit' ~/.sddk-knowledge/CogniCode/milestones/_active.md"
 
+# 16. E31-E2 decision recorded
+echo ""
+echo "E31-E2 (retrieve_and_verify decision):"
+check "B1 ACCEPT decision documented in pre-cut checklist" \
+    "grep -q 'B1. .retrieve_and_verify' docs/V1.0.0-PRE-CUT-CHECKLIST.md"
+check "B1 marked as ACCEPT (closed in E31-E2)" \
+    "grep -q 'closed in E31-E2' docs/V1.0.0-PRE-CUT-CHECKLIST.md"
+
 echo ""
 echo "==> E31 audit: ${PASS} PASS, ${FAIL} FAIL"
 if [ "$FAIL" -eq 0 ]; then
