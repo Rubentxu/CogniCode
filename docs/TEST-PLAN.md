@@ -5,6 +5,7 @@
 > **Owner**: Rubentxu (maintainer)
 > **Scorecard gate**: enables G13 (Test Plan comprehensivo) per `docs/RELEASE-1.0.0-PLAN.md` §1.1
 > **Predecessor docs**: `docs/RELEASE-1.0.0-PLAN.md`, `sandbox/results/baseline/`, `.claude/skills/test-pyramid/`
+> **Last refreshed**: E31-B5 (T6 CI gate — local-only enforcement via `act` + `podman`)
 
 ## 1. Purpose
 
@@ -161,7 +162,7 @@ The runtime tool catalog has **73 MCP tools** (regenerated from `bash sandbox/sc
 | **T3** | Every MCP tool with ≥1 scenario per Tier-1 language | Feature author (per tool) + maintainer (matrix) | `sandbox/reports/mcp_tool_tier1_coverage.yaml` |
 | **T4** | Every UI pane with ≥1 browser-E2E spec | Frontend author + UX reviewer | `apps/explorer-ui/e2e/COVERAGE.md` |
 | **T5** | Sandbox-E2E nightly + flaky log maintained | Maintainer | `sandbox/reports/flaky_scenarios.md`; nightly artifact archive |
-| **T6** | Regression test in every `fix(*)` PR since v0.92.0 | PR author (policy enforced at PR review) | All fix commits from v0.92.0 onward have a test added/changed in their diff |
+| **T6** | Regression test in every `fix(*)` PR since v0.92.0 | PR author (policy enforced at PR review) | All fix commits from v0.92.0 onward have a test added/changed in their diff (enforced via `.github/workflows/regression-check.yml` running locally through `act` + `podman`) |
 | **T7** | Scorecard stable ≥N=5 consecutive nights | Maintainer (cadence) | `sandbox/results/stability.json` CV <0.10 sustained; scorecard.json archived per run |
 
 ## 5. Regression Policy (T6)
@@ -170,17 +171,34 @@ The runtime tool catalog has **73 MCP tools** (regenerated from `bash sandbox/sc
 
 **Enforcement** (3 layers):
 
-1. **CI lint gate** — pre-commit hook + GH Action that scans PR diff for `fix(*)` commits and confirms at least one file matching `**/*test*.{rs,ts,tsx}` or `**/scenarios/*.yaml` changed in the same PR. No test = CI failure with explicit message.
+1. **Local CI lint gate (canonical)** — `.github/workflows/regression-check.yml` runs the bash check `scripts/ci/check_regression_test.sh` against the diff vs `origin/main`. The workflow has ONLY `workflow_dispatch:` and `workflow_call:` triggers — there are no `pull_request` / `push` / `schedule` triggers by project policy (v1.0.0 readiness program decision: CI runs locally, not on GitHub-hosted runners). Invocation:
+   ```bash
+   just ci-t6                   # real run via act + podman
+   just ci-t6-dry               # syntax validation only
+   ```
+   The `act` runtime uses `podman` backing via `DOCKER_HOST=unix:///run/user/1000/podman/podman.sock` (the project's existing podman user socket). The workflow pin is `catthehacker/ubuntu:rust-latest` (already configured in `~/.config/act/actrc`).
 2. **PR template** — checkbox at PR creation: *"This PR contains at least one test for the change"*, default unchecked, must be ticked before review.
 3. **Reviewer expectation** — code review blocks merge if the fix lacks a test, regardless of CI result.
+
+**What counts as a test** (the script's `TEST_PATTERNS`):
+
+- L1 Rust unit: `crates/<name>/tests/...` and `crates/<name>/src/.../tests/...`
+- L1/L2 vitest: `apps/explorer-ui/...*.{test,spec}.{ts,tsx}` and `apps/explorer-ui/e2e/*.spec.ts`
+- L3 sandbox: `sandbox/manifests/*.{yaml,yml}`
+- Specs / harness: `openspec/**.md`, `crates/cognicode-rule-test-harness/...`, `crates/cognicode-core/tests/...`
+
+What does NOT count: `docs/`, `ADR*.md`, `ROADMAP.md`, `CONTEXT.md`, `CHANGELOG.md`. These are documentation and review-time artifacts, not regression artifacts.
 
 **Edge cases**:
 
 - `chore(*)` or `docs(*)` commits are exempt (no behavior change to test).
 - `refactor(*)` commits SHOULD keep tests green but don't require new tests (refactor preserves behavior).
 - Dependency-only fixes (`fix(deps)`) are exempt unless behavior changed.
+- Empty `fix(*)` commits (no diff files) FAIL because no test can be supplied.
 
 **Initial application**: this policy enters force from this document's ACEPTADO moment. Existing fix commits since v0.92.0 are not retroactively required to add tests.
+
+**Why local-only**: E31-B5 (T6 CI gate) decision — GitHub Actions YAML remains the canonical spec for the check, but the workflow's only triggers (`workflow_dispatch:`, `workflow_call:`) ensure it never executes on GitHub-hosted runners. The actual command-line that developers invoke is `just ci-t6` (or `just ci-local` for the full local pipeline). This keeps the policy expressive, reviewable, and version-controlled without depending on GitHub Actions infrastructure.
 
 ## 6. Stability Threshold (T7)
 
