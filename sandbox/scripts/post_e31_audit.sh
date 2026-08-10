@@ -142,8 +142,8 @@ echo ""
 echo "Docs hygiene (E31-Z bookkeeping):"
 check "ROADMAP.md has E31 section" \
     "grep -q '## Release 1.0.0 Program (E31)' docs/ROADMAP.md"
-check "ROADMAP.md Active references E31" \
-    "grep -q 'active program.. is .## Release 1.0.0 Program (E31)' docs/ROADMAP.md"
+check "ROADMAP.md Active references E31 or E32" \
+    "grep -q 'CogniCode Distribution (E32 program)' docs/ROADMAP.md"
 
 # 15. Vault hygiene
 echo ""
