@@ -1,0 +1,18 @@
+apiVersion: cognicode/v1
+kind: Plugin
+name: mcp-server
+description: "CogniCode MCP server — 68 tools, rust binary, stdio transport"
+homepage: "https://github.com/Rubentxu/CogniCode-plugins/mcp-server"
+repository: "https://github.com/Rubentxu/CogniCode-plugins/mcp-server.git"
+
+versions:
+  - ref: v0.92.0
+    artifact: "cognicode-mcp-0.92.0-x86_64-unknown-linux-gnu.tar.gz"
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    url: "https://github.com/Rubentxu/CogniCode-plugins/mcp-server/releases/download/v0.92.0/cognicode-mcp-0.92.0-x86_64-unknown-linux-gnu.tar.gz"
+    min_cogh: ">=0.1.0"
+
+binaries:
+  - name: "cognicode-mcp"
+    path: "bin/cognicode-mcp"
+    description: "MCP server (stdio transport)"

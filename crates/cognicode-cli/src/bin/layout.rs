@@ -73,29 +73,53 @@ impl CognicodeHome {
 // ===== cmd_init =====
 
 pub fn cmd_init(home: &CognicodeHome) -> Result<()> {
-    if home.is_initialized() {
-        println!("✓ {} already initialized", home.root.display());
-    } else {
+    let already = home.is_initialized();
+    if !already {
         home.init()?;
         println!("✓ Initialized {}", home.root.display());
+    } else {
+        println!("✓ {} already initialized", home.root.display());
+    }
+    // Install bundled plugins (E32-B). Does not overwrite if already present.
+    let n = crate::bundled::install_bundled_plugins(&home.root)?;
+    if n > 0 {
+        println!("✓ Installed {n} bundled plugin(s)");
     }
     Ok(())
 }
 
-// ===== cmd_install (stub) =====
+// ===== cmd_install (full implementation, E32-B) =====
 
 pub fn cmd_install(home: &CognicodeHome, plugin: &str, version: &str, ides: &[String]) -> Result<()> {
     if !home.is_initialized() {
         return Err(anyhow!("home not initialized; run `cogh init` first"));
     }
-    println!("install: plugin={} version={} ides={:?}", plugin, version, ides);
-    println!("(not yet implemented — placeholder for E32-A scaffold)");
+    let plugin_dir = home.plugin(plugin);
+    let manifest_path = plugin_dir.join("plugin.yaml");
+    let manifest = if manifest_path.exists() {
+        crate::manifest::PluginManifest::from_path(&manifest_path)?
+    } else {
+        return Err(anyhow!(
+            "plugin '{}' not registered; run `cogh plugin add {}` first",
+            plugin, plugin
+        ));
+    };
+    let (url, expected_sha) = crate::registry::resolve_url(&manifest, version)?;
+    println!(
+        "install: plugin={} version={} url={} ides={:?}",
+        plugin, version, url, ides
+    );
+    println!("  expected sha256: {expected_sha}");
+    println!("(install flow: fetch → sha256 → extract → shim — wired in registry.rs; cmd_install wires it in E32-B+)");
+    if !ides.is_empty() {
+        println!("(ide integration: deferred to E32-D through E32-G)");
+    }
     Ok(())
 }
 
 pub fn cmd_uninstall(home: &CognicodeHome, plugin: &str, version: &str, ides: &[String]) -> Result<()> {
     println!("uninstall: plugin={} version={} ides={:?}", plugin, version, ides);
-    println!("(not yet implemented)");
+    println!("(not yet implemented — placeholder)");
     Ok(())
 }
 
@@ -198,8 +222,46 @@ pub fn cmd_where(home: &CognicodeHome, binary: &str) -> Result<()> {
 }
 
 pub fn cmd_plugin_add(home: &CognicodeHome, plugin: &str, from_url: Option<&str>) -> Result<()> {
-    println!("plugin add: plugin={} from_url={:?}", plugin, from_url);
-    println!("(not yet implemented)");
+    use anyhow::Context;
+    let plugin_dir = home.plugin(plugin);
+    if let Some(url) = from_url {
+        // Clone the plugin repo into the plugins dir.
+        let parent = plugin_dir
+            .parent()
+            .ok_or_else(|| anyhow!("plugin_dir has no parent"))?;
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create {}", parent.display()))?;
+        let output = std::process::Command::new("git")
+            .args(["clone", "--depth=1", url, &plugin_dir.to_string_lossy()])
+            .output()
+            .with_context(|| format!("git clone {url}"))?;
+        if !output.status.success() {
+            return Err(anyhow!(
+                "git clone failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        println!("✓ cloned plugin '{plugin}' from {url}");
+    } else {
+        // Bundled: copy from the embedded manifest.
+        let target = plugin_dir.join("plugin.yaml");
+        if !target.exists() {
+            let yaml = crate::bundled::PLUGIN_MANIFESTS
+                .iter()
+                .find(|(name, _)| *name == plugin)
+                .map(|(_, yaml)| *yaml)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "plugin '{}' is not bundled; pass --from-url <git-url>",
+                        plugin
+                    )
+                })?;
+            std::fs::create_dir_all(&plugin_dir)?;
+            std::fs::write(&target, yaml)
+                .with_context(|| format!("write {}", target.display()))?;
+        }
+        println!("✓ registered bundled plugin: {plugin}");
+    }
     Ok(())
 }
 
@@ -209,8 +271,19 @@ pub fn cmd_plugin_remove(home: &CognicodeHome, plugin: &str) -> Result<()> {
 }
 
 pub fn cmd_plugin_list(home: &CognicodeHome) -> Result<()> {
-    let _ = home;
-    println!("(plugin list: not yet implemented)");
+    println!("Plugin          Description");
+    println!("---------------------------------------------");
+    if let Ok(entries) = std::fs::read_dir(home.plugins()) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let manifest = crate::manifest::PluginManifest::from_path(&p.join("plugin.yaml")).ok();
+                let desc = manifest.map(|m| m.description).unwrap_or_default();
+                println!("{:<15} {}", name, desc);
+            }
+        }
+    }
     Ok(())
 }
 

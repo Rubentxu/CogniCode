@@ -33,6 +33,11 @@ cognicode-graph-algos = { path = "crates/cognicode-graph-algos" }
 # cognicode-axiom = { path = "crates/cognicode-axiom" }  # PARKED
 cognicode-macros = { path = "crates/cognicode-macros" }
 
+# Distribution (E32-B)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
+tar = "0.4"
+flate2 = "1"
+
 # Parsing
 tree-sitter = "0.24"
 tree-sitter-python = "0.23"

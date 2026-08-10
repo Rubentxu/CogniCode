@@ -7,8 +7,11 @@
 
 use clap::{Parser, Subcommand};
 
+mod bundled;
 mod layout;
 mod lockfile;
+mod manifest;
+mod registry;
 mod version;
 
 use layout::CognicodeHome;
