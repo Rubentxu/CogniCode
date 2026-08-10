@@ -1,9 +1,19 @@
 name: CI
 
+# Per CogniCode E31-B5 user directive (2026-08-10): "usaremos los github
+# actions en local, nos olvidamos del uso real que no sea local". This
+# workflow is RETAINED as documentation/spec only — `act + podman`
+# executes it locally via `just ci-t6` / `just ci-local`. The remote
+# triggers are disabled so the workflow does NOT run on GitHub-hosted
+# runners.
+#
+# To re-enable remote CI in the future, uncomment the `on:` block below.
+# Reference: docs/TEST-PLAN.md §5 (T6 regression policy).
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # push:                                       # DISABLED — local-only per E31-B5
+  #   branches: [main]
+  # pull_request:                               # DISABLED — local-only per E31-B5
+  workflow_dispatch:                           # manual only — for ARM runs
 
 env:
   CARGO_TERM_COLOR: always
