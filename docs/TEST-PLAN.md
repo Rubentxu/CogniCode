@@ -258,6 +258,17 @@ What does NOT count: `docs/`, `ADR*.md`, `ROADMAP.md`, `CONTEXT.md`, `CHANGELOG.
 
 **T7 → G13 relationship**: G13 is GREEN only when T1–T7 are GREEN. T7 (this section) requires 5 consecutive nights with all upstream sub-criteria passing. The pre-1.0 program tracks this as a 5-night counter; reset on any RED. Each successful nightly run increments the counter; the v1.0.0 tag cut requires the counter to reach 5.
 
+**E31-G — 3-consecutive-scorecard-runs counter (per ADR-031 §3)**:
+
+A complementary counter tracks the scorecard-streak: 3 consecutive ALL-GREEN scorecard runs are required before the v1.0.0 tag cut. The counter is held in `sandbox/results/scorecard_streak.json` and updated by `sandbox/scripts/scorecard_streak.py`. Invocation:
+
+```bash
+just scorecard-streak            # run a scorecard + update the counter
+just scorecard-streak-status     # show current streak + last 5 history entries
+```
+
+The counter is **incremented** on ALL-GREEN, **held** on AMBER-allowed, **reset** on any RED. Goal is 3; the v1.0.0 tag cut is blocked until the counter reaches the goal. Notably, the counter is separate from the T7 5-night counter; both must be satisfied for the tag cut.
+
 ## 7. Maintenance & Update
 
 - **Cadence**: this document updates when:
