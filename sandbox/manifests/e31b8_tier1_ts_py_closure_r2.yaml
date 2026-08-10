@@ -1,0 +1,242 @@
+# E31-B8 Tier-1 TypeScript + Python closure (round 2)
+# Goal: add ts + py cells to 8 more tools that already have rust+go+java
+# (3/5). After this batch, those 8 tools reach full Tier-1 (5/5) coverage.
+# Pairs with E31-B7 (which closed the 8 B4 tools). Together they push the
+# matrix from 13.7% (post-B4) to 24.7% (post-B7) to ~35.6% (post-B8).
+#
+# Tools promoted (8): analyze_impact, detect_god_functions, get_imports,
+# get_members, get_implementors, list_view_specs, read_view_spec,
+# reparse_on_edit.
+#
+# Mirrors E31-B4 (go + java) + E31-B7 (ts + py) for a different set of 8
+# tools. After this single batch, the 8 B8 tools reach 5/5 Tier-1.
+#
+# Pinned repos (no new clones):
+#   ts/commander @ 4ef19faac1564743d8c7e3ce89ef8d190e1551b4
+#   ts/zod @ 65adeeacef0274abbda5438470a3d2bfd376256d
+#   click @ 874ca2bc1c30d93a4ac6e36a15ed685eafe89097
+#   urllib3 @ 69be2992f8a25a1f27e49f339e4d5b98dec07462
+#   requests @ 0e322af87745eff34caffe4df68456ebc20d9068
+#
+# Reference: docs/TEST-PLAN.md §3.1 / T3. After B8, 26 tools reach 5/5
+# (35.6% closure rate), meeting the 30% target.
+
+version: "1.0"
+language: multi
+tier: B
+description: "E31-B8 batch — Tier-1 ts + py closure for 8 more tools (analyze_impact, detect_god_functions, get_imports, get_members, get_implementors, list_view_specs, read_view_spec, reparse_on_edit), reaching 5/5"
+
+timeout_seconds: 600
+
+# Per-repo metadata for reproducibility
+repos:
+  ts/commander:
+    repo_url: "https://github.com/tj/commander.js.git"
+    pinned_sha: "4ef19faac1564743d8c7e3ce89ef8d190e1551b4"
+  ts/zod:
+    repo_url: "https://github.com/colinhacks/zod.git"
+    pinned_sha: "65adeeacef0274abbda5438470a3d2bfd376256d"
+  click:
+    repo_url: "https://github.com/pallets/click.git"
+    pinned_sha: "874ca2bc1c30d93a4ac6e36a15ed685eafe89097"
+  urllib3:
+    repo_url: "https://github.com/urllib3/urllib3.git"
+    pinned_sha: "69be2992f8a25a1f27e49f339e4d5b98dec07462"
+  requests:
+    repo_url: "https://github.com/psf/requests.git"
+    pinned_sha: "0e322af87745eff34caffe4df68456ebc20d9068"
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: ts_compile
+      commands: ["npx tsc --noEmit 2>&1 || true"]
+      timeout_seconds: 120
+    - name: py_compile
+      commands: ["python -m py_compile -q src/ 2>&1 || true"]
+      timeout_seconds: 60
+
+scenarios:
+  # ─── Tool 1: analyze_impact (ts + py cells) ────────────────────────────────
+  - name: realrepo_analyze_impact_commander
+    description: "analyze_impact on commander Command.parse signature change — verifies impact analysis on a real TS CLI framework"
+    tool: analyze_impact
+    action: analyze
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol: "Command.parse"
+      change_kind: "signature"
+
+  - name: realrepo_analyze_impact_click
+    description: "analyze_impact on click BaseCommand.main signature change — verifies Python impact analysis"
+    tool: analyze_impact
+    action: analyze
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol: "BaseCommand.main"
+      change_kind: "signature"
+
+  # ─── Tool 2: detect_god_functions (ts + py cells) ──────────────────────────
+  - name: realrepo_detect_god_functions_zod
+    description: "detect_god_functions on zod — verifies function length smell detector on a real TS schema library"
+    tool: detect_god_functions
+    action: analyze
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      min_lines: 80
+
+  - name: realrepo_detect_god_functions_urllib3
+    description: "detect_god_functions on urllib3 — verifies Python function length smell detector"
+    tool: detect_god_functions
+    action: analyze
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      min_lines: 80
+
+  # ─── Tool 3: get_imports (ts + py cells) ───────────────────────────────────
+  - name: realrepo_get_imports_commander
+    description: "get_imports for commander index.ts — verifies ESM/TS import traversal on a real TS CLI framework"
+    tool: get_imports
+    action: find
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: src/index.ts
+
+  - name: realrepo_get_imports_click
+    description: "get_imports for click __init__.py — verifies Python import traversal on a real CLI framework"
+    tool: get_imports
+    action: find
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: src/click/__init__.py
+
+  # ─── Tool 4: get_members (ts + py cells) ───────────────────────────────────
+  - name: realrepo_get_members_zod
+    description: "get_members for zod ZodObject class — verifies TS class member enumeration on a real schema library"
+    tool: get_members
+    action: find
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      class_name: "ZodObject"
+
+  - name: realrepo_get_members_urllib3
+    description: "get_members for urllib3 PoolManager class — verifies Python class member enumeration"
+    tool: get_members
+    action: find
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      class_name: "PoolManager"
+
+  # ─── Tool 5: get_implementors (ts + py cells) ──────────────────────────────
+  - name: realrepo_get_implementors_commander
+    description: "get_implementors for commander Command class — verifies TS class implementor search on a real CLI framework"
+    tool: get_implementors
+    action: find
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      class_name: "Command"
+
+  - name: realrepo_get_implementors_click
+    description: "get_implementors for click BaseCommand — verifies Python class implementor search"
+    tool: get_implementors
+    action: find
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      class_name: "BaseCommand"
+
+  # ─── Tool 6: list_view_specs (ts + py cells) ───────────────────────────────
+  - name: realrepo_list_view_specs_zod
+    description: "list_view_specs on zod — verifies view spec enumeration on a real TS schema library"
+    tool: list_view_specs
+    action: list
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_list_view_specs_requests
+    description: "list_view_specs on requests — verifies view spec enumeration on a real Python HTTP library"
+    tool: list_view_specs
+    action: list
+    repo: requests
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  # ─── Tool 7: read_view_spec (ts + py cells) ────────────────────────────────
+  - name: realrepo_read_view_spec_commander
+    description: "read_view_spec for a known view spec on commander — verifies view spec retrieval on a real TS CLI framework"
+    tool: read_view_spec
+    action: read
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      view_spec_id: "coverage-fill-probe"
+
+  - name: realrepo_read_view_spec_urllib3
+    description: "read_view_spec on urllib3 — verifies view spec retrieval on a real Python HTTP library"
+    tool: read_view_spec
+    action: read
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    arguments:
+      view_spec_id: "coverage-fill-probe"
+
+  # ─── Tool 8: reparse_on_edit (ts + py cells) ───────────────────────────────
+  - name: realrepo_reparse_on_edit_zod
+    description: "reparse_on_edit after a no-op edit on zod — verifies TS incremental reparse on a real schema library"
+    tool: reparse_on_edit
+    action: reparse
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    preview_only: true
+    expected_outcome: pass
+    arguments:
+      file_path: src/index.ts
+
+  - name: realrepo_reparse_on_edit_click
+    description: "reparse_on_edit after a no-op edit on click — verifies Python incremental reparse on a real CLI framework"
+    tool: reparse_on_edit
+    action: reparse
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    preview_only: true
+    expected_outcome: pass
+    arguments:
+      file_path: src/click/core.py
