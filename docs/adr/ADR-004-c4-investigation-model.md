@@ -1,6 +1,6 @@
 # ADR-004: C4 Investigation Model — From Directory Projection to Semantic Levels
 
-**Status**: PROPOSED  
+**Status**: ACCEPTED (promoted 2026-08-10)
 **Date**: 2026-06-28  
 **Deciders**: User, orchestrator session 2026-06-28
 
@@ -150,3 +150,7 @@ This makes C4 a **governance instrument**, not just a visualization.
 - `crates/cognicode-explorer/src/facades/graph.rs:987` — `build_architecture_creates_part_of_edges`
 - `apps/explorer-ui/src/components/PerspectiveToggle.tsx` — current toggle
 - `apps/explorer-ui/src/hooks/useArchitecture.ts` — current C4 fetch
+
+## Implementation Log
+
+- **2026-08-10 (E31-C)**: C4 investigation model implemented. C4Context, C4Container, C4Component views supported by the C4 architecture-discovery skill.

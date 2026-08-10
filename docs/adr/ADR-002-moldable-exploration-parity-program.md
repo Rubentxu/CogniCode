@@ -1,6 +1,6 @@
 # ADR-002: Moldable exploration parity program
 
-**Status**: PROPOSED  
+**Status**: ACCEPTED (promoted 2026-08-10)
 **Date**: 2026-06-25  
 **Deciders**: User, OpenCode orchestrator session 2026-06-25
 
@@ -377,3 +377,7 @@ Files changed:
   for future contextual tools.
 - Investigation memory: `Verified GToolkit parity gaps with code evidence`
   (`architecture/gtoolkit-parity-gap`).
+
+## Implementation Log
+
+- **2026-08-10 (E31-C)**: Vision codified by subsequent ADRs (ViewSpecs, Investigation Mode, PaneStack, Spotter). The parity program is realized piecemeal across ADR-003/004/005/009/013.

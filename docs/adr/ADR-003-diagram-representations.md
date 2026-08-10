@@ -1,6 +1,6 @@
 # ADR-003: Diagram Representations — draw.io as Derived View
 
-**Status**: PROPOSED  
+**Status**: ACCEPTED (promoted 2026-08-10)
 **Date**: 2026-06-28  
 **Deciders**: User, orchestrator session 2026-06-28
 
@@ -128,3 +128,7 @@ Mermaid serialization (canonical)
 - `crates/cognicode-core/src/interface/cli/commands.rs` — `graph.to_mermaid()`
 - Engram obs-049303966b1f1326 — Explorer UX audit
 - Engram obs-4b9e75080598f24f — draw.io as derived representation decision
+
+## Implementation Log
+
+- **2026-08-10 (E31-C)**: Diagram representations implemented in crates/cognicode-diagram-* (C4, UML, generic graphs). PaneInspector renders diagrams via the DiagramViewExecutor.

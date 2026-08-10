@@ -1,6 +1,6 @@
 # ADR-014: MoldQL Pattern Profile and graph analytics platform
 
-**Status**: PROPOSED  
+**Status**: SUPERSEDED (promoted 2026-08-10)
 **Date**: 2026-07-27  
 **Deciders**: User, OpenCode orchestrator  
 
@@ -249,3 +249,7 @@ saved queries or product semantics.
 - [ADR-013](./ADR-013-progressive-moldable-workbench-shell.md)
 - [Neo4j GDS algorithms](https://neo4j.com/docs/graph-data-science/current/algorithms/)
 - [openCypher TCK](https://github.com/opencypher/openCypher/tree/main/tck)
+
+## Implementation Log
+
+- **2026-08-10 (E31-C)**: MoldQL pattern chose PostgreSQL as canonical. ADR-026 (LadybugDB canonical migration) supersedes the PostgreSQL choice.
