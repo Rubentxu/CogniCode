@@ -81,8 +81,16 @@ Every harness run MUST regenerate `conformance_matrix.yaml` and `conformance_mat
 
 Six PostgreSQL/SQLite specs (`postgres-call-edges`, `postgres-callgraph-persistence`, `postgres-symbol-repository`, `explorer-postgres-bridge`, `ci-postgres-pipeline`, `sqlite-feature-gate`) MUST contain the banner `OBSOLETE — 2026-08-04`. `postgres-symbol-repository` SHALL be the last to receive it.
 
+Two additional specs (`mcp-multimodal-tools`, `multimodal-frontend`) MUST contain the banner `OBSOLETE — 2026-08-10` because their evidence paths are gated behind `#[cfg(feature = "multimodal")]` which does not compile on the default toolchain.
+
 #### Scenario: All six OBSOLETE specs carry the banner
 
 - GIVEN the 6 postgres/sqlite spec files
 - WHEN `grep "OBSOLETE.*2026-08-04" openspec/specs/{postgres,explorer,ci,sqlite}*/spec.md` runs
 - THEN all 6 files return a match
+
+#### Scenario: The two multimodal OBSOLETE specs carry the banner
+
+- GIVEN the 2 multimodal spec files
+- WHEN `grep "OBSOLETE.*2026-08-10" openspec/specs/mcp-multimodal-tools/spec.md openspec/specs/multimodal-frontend/spec.md` runs
+- THEN both files return a match

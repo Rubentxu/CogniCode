@@ -1,6 +1,13 @@
-# mcp-multimodal-tools Specification (NEW)
+# mcp-multimodal-tools Specification (OBSOLETE — 2026-08-10)
 
 ## Purpose
+
+> **Status: OBSOLETE** — `cargo test --features multimodal` does not compile on
+> the default toolchain (compile debt in `crates/cognicode-runtime/src/ladybug/lib.rs:1158`).
+> The 2 MCP tools (`docs_ingest`, `graph_search`) described here exist behind
+> `#[cfg(feature = "multimodal")]` and cannot be exercised by standard CI,
+> so the spec evidence cannot be re-validated. Marked OBSOLETE pending
+> restoration of the `multimodal` feature.
 
 Adds 2 new MCP tools to the explorer group: `docs_ingest` (triggers documentation ingestion) and `graph_search` (multimodal-aware search). Both tools sit alongside the 28 existing MCP tools and are feature-gated behind the `multimodal` Cargo feature. Tool input/output schemas follow the existing JSON-Schema style. The `multimodal` feature disabled ⇒ the tools are not registered (regression gate: clients that probe for them get a clear "tool not found" error rather than a panic).
 
