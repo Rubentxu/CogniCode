@@ -535,6 +535,49 @@ fn has_any_results(inner: &Value) -> bool {
             .unwrap_or(false)
 }
 
+/// Apply ground-truth smoke matchers (`symbols_min`, `has_result`) to a score.
+///
+/// Both `score_mermaid` and the default arm of `score_scenario` historically
+/// implemented the same logic: start from a score, multiply downward on
+/// violation, and track the number of checks actually applied. This helper
+/// is the single source of truth for that pattern.
+///
+/// # Arguments
+/// - `score`: starting score (e.g. 100.0 for "no penalty yet", or a
+///   previously computed `correctitud` / `call_graph_score`).
+/// - `ground_truth`: optional ground truth with `symbols_min` / `has_result`.
+/// - `inner`: unwrapped JSON value to introspect (caller is responsible for
+///   unwrapping MCP `content` wrappers, since some callers need the raw
+///   text for additional pattern checks).
+///
+/// # Returns
+/// `(score, checks)` — the updated score and the count of matchers applied
+/// (0 if no smoke matchers were configured, useful for downstream NaN
+/// decisions).
+pub(crate) fn score_smoke_matchers(
+    mut score: f64,
+    ground_truth: Option<&GroundTruth>,
+    inner: &Value,
+) -> (f64, u32) {
+    let mut checks = 0u32;
+    if let Some(gt) = ground_truth {
+        if let Some(min_symbols) = gt.symbols_min {
+            checks += 1;
+            let actual = count_symbols(inner);
+            if actual < min_symbols as usize {
+                score *= actual as f64 / min_symbols as f64;
+            }
+        }
+        if let Some(true) = gt.has_result {
+            checks += 1;
+            if !has_any_results(inner) {
+                score *= 0.0;
+            }
+        }
+    }
+    (score, checks)
+}
+
 /// Score export_mermaid output against ground truth.
 /// Checks node_count, edge_count, and optionally that mermaid_code contains expected patterns.
 pub fn score_mermaid(tool_response: &Value, ground_truth: &GroundTruth) -> f64 {
@@ -555,22 +598,11 @@ pub fn score_mermaid(tool_response: &Value, ground_truth: &GroundTruth) -> f64 {
     let mut score = 100.0_f64;
     let mut checks = 0u32;
 
-    // Check symbols_min (count-only smoke matcher)
-    if let Some(min_symbols) = ground_truth.symbols_min {
-        checks += 1;
-        let actual = count_symbols(&inner);
-        if actual < min_symbols as usize {
-            score *= actual as f64 / min_symbols as f64;
-        }
-    }
-
-    // Check has_result (generic non-empty matcher)
-    if let Some(true) = ground_truth.has_result {
-        checks += 1;
-        if !has_any_results(&inner) {
-            score *= 0.0;
-        }
-    }
+    // Apply generic smoke matchers (symbols_min + has_result) — shared with
+    // the default arm of `score_scenario` via `score_smoke_matchers`.
+    let (new_score, smoke_checks) = score_smoke_matchers(score, Some(ground_truth), &inner);
+    score = new_score;
+    checks += smoke_checks;
 
     // Check min_node_count if specified
     if let Some(min_nodes) = ground_truth.min_node_count {
@@ -1649,7 +1681,7 @@ pub fn score_scenario(
             // Check ground-truth smoke-test matchers (symbols_min, has_result) first,
             // before falling back to call-graph or correctitud scores.
             let inner = unwrap_mcp_content(tool_response);
-            let mut score = if !call_graph_score.is_nan() {
+            let base_score = if !call_graph_score.is_nan() {
                 call_graph_score
             } else if !correctitud.is_nan() {
                 correctitud
@@ -1657,23 +1689,7 @@ pub fn score_scenario(
                 // No structured ground truth available; start at 100 and penalize downward
                 100.0_f64
             };
-            let mut checks = 0u32;
-
-            if let Some(gt) = ground_truth {
-                if let Some(min_symbols) = gt.symbols_min {
-                    checks += 1;
-                    let actual = count_symbols(&inner);
-                    if actual < min_symbols as usize {
-                        score *= actual as f64 / min_symbols as f64;
-                    }
-                }
-                if let Some(true) = gt.has_result {
-                    checks += 1;
-                    if !has_any_results(&inner) {
-                        score *= 0.0;
-                    }
-                }
-            };
+            let (score, checks) = score_smoke_matchers(base_score, ground_truth.as_ref(), &inner);
 
             if checks > 0 || !call_graph_score.is_nan() || !correctitud.is_nan() {
                 (score, None, None, None, None, None, None, None)
@@ -3074,7 +3090,7 @@ mod count_matcher_tests {
 
 #[cfg(test)]
 mod smoke_matcher_tests {
-    use super::{ExecutionMetadata, GroundTruth, score_scenario};
+    use super::{ExecutionMetadata, GroundTruth, score_scenario, score_smoke_matchers};
 
     /// Regression test: when ground truth has ONLY symbols_min (no structured
     /// symbols/outline/code), the default scoring arm must start at 100.0 (not NaN)
@@ -3196,6 +3212,115 @@ mod smoke_matcher_tests {
             score.correctitud.unwrap(),
             30.0,
             "correctitud should be 30.0 (3/10 threshold ratio)"
+        );
+    }
+
+    // =========================================================================
+    // Direct tests for the extracted `score_smoke_matchers` helper.
+    //
+    // The previous integration tests exercised the helper indirectly via
+    // `score_scenario`. These tests pin the helper's contract on its own,
+    // so any future regression in either call site (`score_mermaid` or the
+    // default arm of `score_scenario`) can be diagnosed at the helper level.
+    // =========================================================================
+
+    #[test]
+    fn helper_no_ground_truth_returns_input_score_zero_checks() {
+        let inner = serde_json::json!({"symbols": [{"name": "a"}]});
+        let (score, checks) = score_smoke_matchers(85.5, None, &inner);
+        assert_eq!(score, 85.5, "score must be unchanged when GT is absent");
+        assert_eq!(checks, 0, "no matchers configured → checks must be 0");
+    }
+
+    #[test]
+    fn helper_symbols_min_met_keeps_full_score() {
+        let gt = GroundTruth {
+            symbols_min: Some(3),
+            ..Default::default()
+        };
+        let inner = serde_json::json!({
+            "symbols": [
+                {"name": "a"},
+                {"name": "b"},
+                {"name": "c"},
+                {"name": "d"}, // 4 ≥ 3 — no penalty
+            ]
+        });
+        let (score, checks) = score_smoke_matchers(100.0, Some(&gt), &inner);
+        assert_eq!(score, 100.0);
+        assert_eq!(checks, 1);
+    }
+
+    #[test]
+    fn helper_symbols_min_under_penalizes_proportionally() {
+        let gt = GroundTruth {
+            symbols_min: Some(10),
+            ..Default::default()
+        };
+        // Only 4 symbols → 4/10 = 0.4 multiplier
+        let inner = serde_json::json!({
+            "symbols": [
+                {"name": "a"}, {"name": "b"},
+                {"name": "c"}, {"name": "d"},
+            ]
+        });
+        let (score, checks) = score_smoke_matchers(100.0, Some(&gt), &inner);
+        assert!((score - 40.0).abs() < 1e-9, "expected 40.0, got {score}");
+        assert_eq!(checks, 1);
+    }
+
+    #[test]
+    fn helper_has_result_zero_when_response_empty() {
+        let gt = GroundTruth {
+            has_result: Some(true),
+            ..Default::default()
+        };
+        let inner = serde_json::json!({"symbols": [], "edges": []});
+        let (score, checks) = score_smoke_matchers(60.0, Some(&gt), &inner);
+        assert_eq!(score, 0.0, "has_result miss must zero the score");
+        assert_eq!(checks, 1);
+    }
+
+    #[test]
+    fn helper_has_result_false_short_circuits() {
+        // has_result=false is explicitly excluded: matcher must NOT fire.
+        let gt = GroundTruth {
+            has_result: Some(false),
+            ..Default::default()
+        };
+        let inner = serde_json::json!({});
+        let (score, checks) = score_smoke_matchers(77.0, Some(&gt), &inner);
+        assert_eq!(score, 77.0, "has_result=false must not penalize");
+        assert_eq!(checks, 0);
+    }
+
+    #[test]
+    fn helper_combines_both_matchers_independently() {
+        // Both matchers fail in independent dimensions: symbols_min ratio (3/10 = 0.3)
+        // and has_result miss (→ 0.0). Combined: 100.0 × 0.3 × 0.0 = 0.0.
+        let gt = GroundTruth {
+            symbols_min: Some(10),
+            has_result: Some(true),
+            ..Default::default()
+        };
+        let inner = serde_json::json!({
+            "symbols": [
+                {"name": "a"}, {"name": "b"}, {"name": "c"},
+            ]
+            // count_symbols returns 3 → has_result sees ≥ 1 → has_result passes.
+        });
+        // Make has_result fail by emptying out the response — but then count_symbols
+        // also returns 0 and symbols_min would fail differently. So we drop the
+        // "both fail" scenario and instead test that both fire independently.
+        let (score, checks) = score_smoke_matchers(100.0, Some(&gt), &inner);
+        // symbols_min 3/10 = 0.3 multiplier; has_result met (non-empty) → no second penalty.
+        assert!(
+            (score - 30.0).abs() < 1e-9,
+            "only symbols_min fires here, expected 30.0, got {score}"
+        );
+        assert_eq!(
+            checks, 2,
+            "both matchers must be counted even if only one penalizes"
         );
     }
 }
