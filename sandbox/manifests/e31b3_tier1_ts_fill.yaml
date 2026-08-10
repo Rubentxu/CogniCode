@@ -1,0 +1,149 @@
+# E31-B3 Tier-1 TypeScript coverage fill
+# Goal: provide ≥1 scenario per commonly-used MCP tool for the 2 pinned
+# TypeScript repos (commander 11.0.0, zod 3.24.1) where the ts column was
+# empty in the Tier-1 matrix. Mirrors E31-B2 (python column fill) in shape;
+# uses the same 8-tool methodology but against TS instead.
+#
+# Reference: docs/TEST-PLAN.md §3.1 (T3 initial state showed typescript as
+# the second-weakest column with only 7 of 73 MCP tools covered). After this
+# batch, expected ~12 tools gain a ts cell; 0 tools reach full Tier-1
+# (that needs B4 go+java too).
+#
+# Tools selected (one scenario each):
+#   - 5 mirror of B2: get_complexity, get_entry_points, get_leaf_functions,
+#     query_symbol_index, get_outline (B2 was python; here TS)
+#   - 3 additional high-frequency tools lacking ts: find_usages,
+#     build_call_subgraph, semantic_search
+#
+# All scenarios use already-pinned repos (commander, zod). No new clones,
+# no new ground truth extraction. Validations stay light (single tsc stage
+# + symbol-existence ground_truth thresholds).
+
+version: "1.0"
+language: typescript
+tier: B
+description: "E31-B3 batch — Tier-1 typescript coverage fill for 8 commonly-used MCP tools across commander + zod pinned repos"
+
+timeout_seconds: 300
+
+validation:
+  failure_is_regression: false
+  stages:
+    - name: typecheck
+      commands: ["npx tsc --noEmit 2>&1 || echo 'tsc-check-done'"]
+      timeout_seconds: 90
+
+scenarios:
+  # ── get_complexity (Tier-1 ts column was empty for zod) ───────────────────
+  - name: realrepo_get_complexity_zod
+    description: "Cyclomatic + nesting complexity on ZodType source file"
+    tool: get_complexity
+    action: complexity
+    repo: zod
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      path: src/ZodType.ts
+    ground_truth:
+      symbols_min: 10  # ZodType has ~30 exported members
+
+  # ── get_entry_points (Tier-1 ts column was empty for commander) ───────────
+  - name: realrepo_get_entry_points_commander
+    description: "Entry-point discovery on commander CLI framework (Command class + program export)"
+    tool: get_entry_points
+    action: find
+    repo: commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 1  # at least 1 entry symbol: program
+
+  # ── get_leaf_functions (Tier-1 ts column was empty for zod) ────────────────
+  - name: realrepo_get_leaf_functions_zod
+    description: "Find leaf functions (no outgoing calls) in zod ZodType"
+    tool: get_leaf_functions
+    action: leaf
+    repo: zod
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      path: src/ZodType.ts
+    ground_truth:
+      symbols_min: 3  # at least 3 pure methods on ZodType
+
+  # ── query_symbol_index (Tier-1 ts column was empty for commander) ─────────
+  - name: realrepo_query_symbol_index_commander
+    description: "Symbol index lookup for 'Command' in commander (the central CLI API)"
+    tool: query_symbol_index
+    action: query
+    repo: commander
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      symbol_name: Command
+    ground_truth:
+      symbols_min: 1
+
+  # ── get_outline (Tier-1 ts column was empty for zod) ──────────────────────
+  - name: realrepo_get_outline_zod
+    description: "Module outline (function/class skeleton) of zod ZodType"
+    tool: get_outline
+    action: outline
+    repo: zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/ZodType.ts
+    ground_truth:
+      symbols_min: 5
+
+  # ── find_usages (Tier-1 ts column was empty for commander) ─────────────────
+  - name: realrepo_find_usages_commander
+    description: "Find usages of Command.parse method across commander codebase"
+    tool: find_usages
+    action: usages
+    repo: commander
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      file_path: lib/command.ts
+      line: 130
+      column: 10
+    ground_truth:
+      symbols_min: 1  # at least 1 reference for parse
+
+  # ── build_call_subgraph (Tier-1 ts column was empty for zod) ──────────────
+  - name: realrepo_build_call_subgraph_zod
+    description: "Build call subgraph rooted at z.parse in zod"
+    tool: build_call_subgraph
+    action: sub_build
+    repo: zod
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      entry_point: z.parse
+      depth: 3
+    ground_truth:
+      symbols_min: 3
+
+  # ── semantic_search (Tier-1 ts column was empty for commander) ────────────
+  - name: realrepo_semantic_search_commander
+    description: "Semantic search for 'option name like version flag' in commander"
+    tool: semantic_search
+    action: search
+    repo: commander
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      query: "how is the version flag added to a command?"
+      path: lib
+    ground_truth:
+      symbols_min: 1  # at least 1 chunk returned for that query
