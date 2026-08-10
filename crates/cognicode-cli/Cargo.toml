@@ -9,6 +9,10 @@ authors.workspace = true
 name = "cognicode"
 path = "src/main.rs"
 
+[[bin]]
+name = "cogh"
+path = "src/bin/cogh.rs"
+
 [dependencies]
 cognicode-core.workspace = true
 tokio.workspace = true
