@@ -171,6 +171,20 @@ check "cogh binary runs (cogh --version)" \
 check "cogh binary shows help" \
     "target/debug/cogh --help >/dev/null"
 
+# 18. E32-C portable skill bundles
+echo ""
+echo "E32-C portable skill bundles (E32-C):"
+check "skills/cognicode-mcp-driven bundle exists" \
+    "test -f skills/cognicode-mcp-driven/SKILL.md"
+check "skills/cognicode-mcp-driven/manifest.yaml exists" \
+    "test -f skills/cognicode-mcp-driven/manifest.yaml"
+check "skills/cognicode-core bundle exists" \
+    "test -f skills/cognicode-core/SKILL.md"
+check "skills/cognicode-core/manifest.yaml exists" \
+    "test -f skills/cognicode-core/manifest.yaml"
+check "cogh skill validate works on cognicode-mcp-driven" \
+    "target/debug/cogh skill validate skills/cognicode-mcp-driven >/dev/null"
+
 echo ""
 echo "==> E31 audit: ${PASS} PASS, ${FAIL} FAIL"
 if [ "$FAIL" -eq 0 ]; then
@@ -179,3 +193,17 @@ if [ "$FAIL" -eq 0 ]; then
 fi
 echo "    E31 program status: GAPS DETECTED (see ✗ above)"
 exit 1
+
+# 18. E32-C portable skill bundles
+echo ""
+echo "E32-C portable skill bundles (E32-C):"
+check "skills/cognicode-mcp-driven bundle exists" \
+    "test -f skills/cognicode-mcp-driven/SKILL.md"
+check "skills/cognicode-mcp-driven/manifest.yaml exists" \
+    "test -f skills/cognicode-mcp-driven/manifest.yaml"
+check "skills/cognicode-core bundle exists" \
+    "test -f skills/cognicode-core/SKILL.md"
+check "skills/cognicode-core/manifest.yaml exists" \
+    "test -f skills/cognicode-core/manifest.yaml"
+check "cogh skill validate works on cognicode-mcp-driven" \
+    "target/debug/cogh skill validate skills/cognicode-mcp-driven >/dev/null"

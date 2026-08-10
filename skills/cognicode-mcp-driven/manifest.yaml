@@ -1,0 +1,29 @@
+apiVersion: cognicode/v1
+kind: SkillBundle
+name: cognicode-mcp-driven
+description: "Drive development via the CogniCode MCP server (68 tools)."
+version: "0.92.0"
+maturity: stable
+homepage: https://github.com/Rubentxu/CogniCode
+authors:
+  - CogniCode Team
+
+# Plugins required for this skill to be useful (E32-B bundled plugins)
+requires:
+  - mcp-server
+
+# IDEs this skill is compatible with (E32-D through E32-G IDE adapters)
+ide_compatibility:
+  - opencode
+  - zcode
+  - claude
+  - codex
+
+# Scripts that ship with this bundle (referenced from SKILL.md)
+scripts:
+  - references/bootstrap.sh
+  - references/invoke.sh
+
+# Assets (data files, schemas)
+assets:
+  - assets/metadata.json

@@ -1,0 +1,6 @@
+{
+  "name": "cognicode-mcp-driven",
+  "version": "0.92.0",
+  "description": "Drive development via the CogniCode MCP server (68 tools).",
+  "scripts": ["bootstrap.sh", "invoke.sh"]
+}
