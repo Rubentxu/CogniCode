@@ -307,6 +307,23 @@ ci-local:
     DOCKER_HOST=unix:///run/user/1000/podman/podman.sock \
         act -W .github/workflows/regression-check.yml workflow_dispatch
 
+# T7 — regenerate the per-scenario flaky log (sandbox/results/flaky_scenarios.{md,json})
+scorecard-stability window_days="30":
+    @echo "📊 T7 flaky-scenarios log (rolling window: {{window_days}} days)..."
+    python3 sandbox/scripts/build_flaky_log.py --window-days {{window_days}}
+    @echo "==> Inspect: sandbox/results/flaky_scenarios.md"
+    @grep -E "Total scenarios|Passing|Failing|Quarantined" sandbox/results/flaky_scenarios.md | head -5
+
+# T7 nightly cadence — regenerate the log, archive snapshot, score the gates
+scorecard-nightly:
+    @echo "📊 T7 nightly (log + archive + G6/G7 alert)..."
+    python3 sandbox/scripts/build_flaky_log.py --window-days 30 --archive
+    @echo "==> Running G6 (per-tool CV < 10%)..."
+    @test -f sandbox/results/stability.json || { echo "ERROR: sandbox/results/stability.json missing"; exit 1; }
+    python3 -c "import json; d=json.load(open('sandbox/results/stability.json')); cvs=[f.get('mean_cv') for f in d.get('families_runtorun',d.get('families',{})).values() if f.get('mean_cv') is not None]; max_cv=max(cvs) if cvs else 0; print(f'G6 max family CV = {max_cv*100:.2f}% (budget <10%)'); import sys; sys.exit(1 if max_cv>=0.10 else 0)"
+    @echo "==> Inspect: sandbox/results/flaky_scenarios.md"
+    @grep -E "Total scenarios|Passing|Failing|Quarantined" sandbox/results/flaky_scenarios.md | head -5
+
 # ─── Utils ─────────────────────────────────────────────────────────────────────
 
 # Show project status

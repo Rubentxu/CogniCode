@@ -46,7 +46,7 @@ Concretamente:
 | T2 | Niveles definidos: unit / integration / sandbox-E2E / browser-E2E / perf-regression | 5 niveles obligatorios |
 | T3 | Cada MCP tool tiene ≥1 scenario por Tier-1 language (rust, ts, py, go, java) | 100% Tier-1 coverage |
 | T4 | Cada UI pane tiene ≥1 browser-E2E spec | 100% pane coverage |
-| T5 | Sandbox-E2E corre en nightly CI y reporta flaky scenarios | 0 unknown-flaky, known-flaky documentados |
+| T5 | Sandbox-E2E corre en nightly CI y reporta flaky scenarios | 0 unknown-flaky, known-flaky documentados. Log per-scenario en `sandbox/results/flaky_scenarios.md` (E31-B6). No surprise flaky: cualquier escenario con pass_rate<100% no presente en `KNOWN_QUARANTINED` falla G13. |
 | T6 | Regression test nuevo por cada `fix(*)` desde v0.92.0 | 100% (el test del fix forma parte del PR) |
 | T7 | Scorecard estable ≥N campañas consecutivas con T1–T6 GREEN | N=5 (~1 semana de cadencia diaria) |
 
