@@ -273,6 +273,40 @@ commit msg:
 push:
     git push
 
+# ─── CI (local-only) ───────────────────────────────────────────────────────────
+#
+# CI runs locally via `act` (https://github.com/nektos/act) backed by
+# `podman`. There are NO GitHub-hosted runners in this project by policy
+# (v1.0.0 readiness program decision). The workflow YAMLs live in
+# `.github/workflows/` but only carry `workflow_dispatch:` / `workflow_call:`
+# triggers, so they never execute on GitHub without an explicit trigger.
+#
+# Requirements:
+#   - act (/usr/local/bin/act, 0.2.89+)
+#   - podman with a running user socket (/run/user/1000/podman/podman.sock)
+#   - ~/.config/act/actrc listing the catthehacker/ubuntu images
+#
+# Default workflow: regression-check.yml (T6 enforcement).
+
+# T6 — fix(*) commits must include a regression test (local-only enforcement)
+ci-t6:
+    @echo "🛡️  T6 regression test check (local-only via act+podman)..."
+    @test -x scripts/ci/check_regression_test.sh || chmod +x scripts/ci/check_regression_test.sh
+    DOCKER_HOST=unix:///run/user/1000/podman/podman.sock \
+        act -W .github/workflows/regression-check.yml workflow_dispatch
+
+# Dry-run T6 check (no container, validates the workflow syntactically)
+ci-t6-dry:
+    @echo "🛡️  T6 dry-run (validates workflow + script)..."
+    DOCKER_HOST=unix:///run/user/1000/podman/podman.sock \
+        act -n -W .github/workflows/regression-check.yml workflow_dispatch
+
+# Run all enabled CI workflows locally (currently just T6)
+ci-local:
+    @echo "🛡️  Running all CI workflows locally via act+podman..."
+    DOCKER_HOST=unix:///run/user/1000/podman/podman.sock \
+        act -W .github/workflows/regression-check.yml workflow_dispatch
+
 # ─── Utils ─────────────────────────────────────────────────────────────────────
 
 # Show project status
