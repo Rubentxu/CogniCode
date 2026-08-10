@@ -185,6 +185,16 @@ check "skills/cognicode-core/manifest.yaml exists" \
 check "cogh skill validate works on cognicode-mcp-driven" \
     "target/debug/cogh skill validate skills/cognicode-mcp-driven >/dev/null"
 
+
+echo ""
+echo "E32-D opencode IDE adapter:"
+check "cogh ide detect runs" \
+    "target/debug/cogh ide detect >/dev/null"
+check "cogh ide install opencode wires MCP entry" \
+    "test -f crates/cognicode-cli/src/bin/ide.rs"
+check "cogh ide uninstall wires removal" \
+    "grep -q 'uninstall_opencode' crates/cognicode-cli/src/bin/ide.rs"
+
 echo ""
 echo "==> E31 audit: ${PASS} PASS, ${FAIL} FAIL"
 if [ "$FAIL" -eq 0 ]; then
@@ -207,3 +217,13 @@ check "skills/cognicode-core/manifest.yaml exists" \
     "test -f skills/cognicode-core/manifest.yaml"
 check "cogh skill validate works on cognicode-mcp-driven" \
     "target/debug/cogh skill validate skills/cognicode-mcp-driven >/dev/null"
+
+
+echo ""
+echo "E32-D opencode IDE adapter:"
+check "cogh ide detect runs" \
+    "target/debug/cogh ide detect >/dev/null"
+check "cogh ide install opencode wires MCP entry" \
+    "test -f crates/cognicode-cli/src/bin/ide.rs"
+check "cogh ide uninstall wires removal" \
+    "grep -q 'uninstall_opencode' crates/cognicode-cli/src/bin/ide.rs"

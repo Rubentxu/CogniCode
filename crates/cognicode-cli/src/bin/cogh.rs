@@ -8,6 +8,7 @@
 use clap::{Parser, Subcommand};
 
 mod bundled;
+mod ide;
 mod layout;
 mod lockfile;
 mod manifest;
@@ -95,6 +96,11 @@ pub enum Command {
         #[command(subcommand)]
         action: SkillAction,
     },
+    /// IDE-specific operations (detect, install)
+    Ide {
+        #[command(subcommand)]
+        action: IdeAction,
+    },
     /// Print cogh + CogniCode version
     Version,
 }
@@ -122,6 +128,31 @@ pub enum SkillAction {
     Validate {
         /// Path to the skill bundle directory
         path: std::path::PathBuf,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum IdeAction {
+    /// Detect installed IDEs
+    Detect,
+    /// Install (integrate) the MCP server + skills into an IDE
+    Install {
+        /// IDE name (e.g. opencode, zcode, claude, codex)
+        ide: String,
+        /// Plugin name (e.g. mcp-server)
+        #[arg(long)]
+        plugin: String,
+        /// Version ref
+        #[arg(long, default_value = "latest")]
+        version: String,
+    },
+    /// Uninstall (remove) the MCP server + skills from an IDE
+    Uninstall {
+        /// IDE name
+        ide: String,
+        /// Plugin version
+        #[arg(long)]
+        version: String,
     },
 }
 
@@ -164,6 +195,15 @@ fn main() -> anyhow::Result<()> {
         },
         Command::Skill { action } => match action {
             SkillAction::Validate { path } => skill::cmd_skill_validate(&path),
+        },
+        Command::Ide { action } => match action {
+            IdeAction::Detect => ide::cmd_ide_detect(),
+            IdeAction::Install { ide, plugin, version } => {
+                ide::cmd_ide_install(&home, &ide, &plugin, &version)
+            }
+            IdeAction::Uninstall { ide, version } => {
+                ide::cmd_ide_uninstall(&home, &ide, &version)
+            }
         },
     }
 }
