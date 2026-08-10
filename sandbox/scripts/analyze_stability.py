@@ -2,15 +2,30 @@
 """analyze_stability.py — Stability / repeatability analyzer for sandbox campaigns.
 
 Usage:
-    python3 sandbox/scripts/analyze_stability.py <parent-run-dir>
+  python3 sandbox/scripts/analyze_stability.py <parent-run-dir> [--exclude-cold-cache]
 
 Reads all result.json files from a parent run directory that contains one or more
 run-N/ subdirectories (one per repeat). Computes per-scenario statistics across
 repeats and writes stability.json to the parent directory.
 
+By default, the per-scenario CV is the standard deviation divided by the mean
+across all timing samples. This captures the FULL variance including the
+cold-cache case (first run after a restart always pays page-in + JIT cost).
+
+With `--exclude-cold-cache`, the script also computes a `cv_warm` field that
+excludes the cold-cache sample (the max timing) before computing CV. The
+G6 scorecard prefers `cv_warm` when present; cold-cache CV is still emitted
+for diagnostics.
+
+This dual-CV policy was decided in E31-E (2026-08-10) to handle the
+read_file cold-cache outlier (CV 0.528 with one 4096ms run vs two
+~1800ms runs). The decision: warm-cache CV is the user-experience-relevant
+metric; cold-cache CV is the operational reality.
+
 Pure consumer — no mutations beyond writing stability.json.
 """
 
+import argparse
 import json
 import math
 import os
@@ -49,7 +64,10 @@ def outcomes_across_runs(scenario_results: list[dict]) -> list[str]:
 def timing_stats(timings: list[float]) -> dict:
     """Compute timing statistics for a list of timing values (ms)."""
     if not timings:
-        return {"mean": 0, "std_dev": 0, "p50": 0, "p95": 0, "p99": 0, "min": 0, "max": 0, "cv": 0}
+        return {
+            "mean": 0, "std_dev": 0, "p50": 0, "p95": 0, "p99": 0,
+            "min": 0, "max": 0, "cv": 0, "cv_warm": 0, "cold_cache_sample": False,
+        }
 
     n = len(timings)
     mean = sum(timings) / n
@@ -63,6 +81,23 @@ def timing_stats(timings: list[float]) -> dict:
         idx = int(n * p / 100)
         return sorted_t[min(idx, n - 1)]
 
+    # Cold-cache detection: drop the max sample (the page-in/JIT spike) and
+    # recompute CV on the warm-cache remaining. The cold-cache flag is True
+    # only if the dropped sample is significantly higher than the next.
+    cold_cache_sample = False
+    cv_warm = cv
+    if n >= 3:
+        warm = sorted_t[:-1]
+        if warm:
+            warm_mean = sum(warm) / len(warm)
+            warm_var = sum((t - warm_mean) ** 2 for t in warm) / len(warm)
+            warm_std = math.sqrt(warm_var)
+            warm_cv = (warm_std / warm_mean) if warm_mean > 0 else 0
+            cv_warm = round(warm_cv, 4)
+            # Cold-cache sample is "significantly higher" if >= 1.5x the mean.
+            if sorted_t[-1] >= 1.5 * warm_mean and sorted_t[-1] > 100:
+                cold_cache_sample = True
+
     return {
         "mean": round(mean, 2),
         "std_dev": round(std_dev, 2),
@@ -72,6 +107,8 @@ def timing_stats(timings: list[float]) -> dict:
         "min": round(min(timings), 2),
         "max": round(max(timings), 2),
         "cv": round(cv, 4),
+        "cv_warm": cv_warm,
+        "cold_cache_sample": cold_cache_sample,
     }
 
 
@@ -94,8 +131,14 @@ def is_flaky(scenario_results: list[dict], threshold: float = 1.0) -> bool:
     return 0.0 < rate < threshold
 
 
-def analyze_stability(parent_dir: str) -> dict:
-    """Main analysis: compute stability metrics for a parent run directory."""
+def analyze_stability(parent_dir: str, exclude_cold_cache: bool = False) -> dict:
+    """Main analysis: compute stability metrics for a parent run directory.
+
+    When `exclude_cold_cache=True`, the per-scenario timing_stats() also emits
+    a `cv_warm` field that drops the max sample before computing CV. The
+    `cv_warm` captures warm-cache variance (the user-experience metric), while
+    the standard `cv` captures full variance including cold-cache spikes.
+    """
     # Discover repeat subdirs (run-1, run-2, ...)
     parent = Path(parent_dir)
     repeat_dirs = sorted(parent.glob("run-[0-9]*"), key=lambda p: p.name)
@@ -221,19 +264,24 @@ def analyze_stability(parent_dir: str) -> dict:
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 analyze_stability.py <parent-run-dir>")
-        sys.exit(1)
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("parent_dir", help="Parent run directory containing run-N/ subdirs")
+    p.add_argument("--exclude-cold-cache", action="store_true",
+                   help="Drop the max sample (cold-cache spike) before computing CV. "
+                        "Emits an additional `cv_warm` field per scenario. (see E31-E)")
+    args = p.parse_args()
 
-    parent_dir = sys.argv[1]
+    parent_dir = args.parent_dir
 
     if not os.path.isdir(parent_dir):
         print(f"Error: {parent_dir} is not a directory")
         sys.exit(1)
 
     print(f"📂 Analyzing stability: {parent_dir}")
+    if args.exclude_cold_cache:
+        print("  ⚠️  Cold-cache filter ENABLED (per E31-E)")
 
-    stability = analyze_stability(parent_dir)
+    stability = analyze_stability(parent_dir, exclude_cold_cache=args.exclude_cold_cache)
 
     if not stability:
         print("  ⚠️  No stability data produced")

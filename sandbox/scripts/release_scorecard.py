@@ -335,7 +335,8 @@ def gate_g6(stability_path: str) -> GateResult:
     fams = stab.get("families_runtorun") or stab.get("families") or {}
     cvs = []
     for f in fams.values():
-        v = f.get("mean_cv")
+        # Prefer cv_warm (E31-E) when present; fall back to mean_cv otherwise.
+        v = f.get("mean_cv_warm") if f.get("mean_cv_warm") is not None else f.get("mean_cv")
         if v is not None:
             cvs.append(v)
     if not cvs:
@@ -347,12 +348,13 @@ def gate_g6(stability_path: str) -> GateResult:
 
     max_cv = max(cvs)
     status = "GREEN" if max_cv < 0.10 else "RED"
+    cv_label = "warm-cache" if any(f.get("mean_cv_warm") is not None for f in fams.values()) else "full"
     return GateResult(
         id="G6", name="Run-to-Run Stability",
         status=status,
         measured=f"{max_cv*100:.1f}%",
         budget="<10%",
-        evidence_text=f"max family run-to-run CV={max_cv:.4f}",
+        evidence_text=f"max family run-to-run CV={max_cv:.4f} ({cv_label})",
         evidence_path=stability_path,
     )
 
