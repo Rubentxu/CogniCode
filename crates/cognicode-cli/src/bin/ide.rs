@@ -284,6 +284,96 @@ pub fn uninstall_zcode(version: &str) -> Result<()> {
     Ok(())
 }
 
+
+// ===== Claude Code adapter (E32-F) =====
+
+pub fn detect_claude() -> bool {
+    let mcp_dir = claude_mcp_dir();
+    mcp_dir.exists()
+}
+
+pub fn claude_config_path() -> PathBuf {
+    if let Ok(env) = std::env::var("CLAUDE_CONFIG") {
+        return PathBuf::from(env);
+    }
+    let home = match std::env::var("HOME") {
+        Ok(h) => PathBuf::from(h),
+        Err(_) => return PathBuf::from("~/.claude"),
+    };
+    home.join(".claude")
+}
+
+pub fn claude_mcp_dir() -> PathBuf {
+    claude_config_path().join("mcp")
+}
+
+pub fn claude_skills_dir() -> PathBuf {
+    claude_config_path().join("skills")
+}
+
+pub fn read_claude_mcp_entry(name: &str) -> Result<Option<Value>> {
+    let path = claude_mcp_dir().join(format!("{name}.json"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)
+        .with_context(|| format!("read {}", path.display()))?;
+    let v: Value = serde_json::from_str(&text)
+        .with_context(|| format!("parse {}", path.display()))?;
+    Ok(Some(v))
+}
+
+pub fn integrate_claude(home: &Path, plugin: &str, version: &str, mcp_command: &[String]) -> Result<()> {
+    // 1. Skill copy
+    let skills_src = home
+        .join("versions")
+        .join(version)
+        .join(plugin)
+        .join("skills");
+    let skills_dst = claude_skills_dir().join(format!("cognicode-{version}"));
+    if skills_src.exists() {
+        copy_dir_recursive(&skills_src, &skills_dst)
+            .with_context(|| format!("copy {} → {}", skills_src.display(), skills_dst.display()))?;
+        eprintln!("✓ copied skills: {}", skills_dst.display());
+    } else {
+        eprintln!("(no skills to copy from {})", skills_src.display());
+    }
+
+    // 2. MCP config: write `~/.claude/mcp/cognicode-mcp.json`
+    let mcp_dir = claude_mcp_dir();
+    std::fs::create_dir_all(&mcp_dir)
+        .with_context(|| format!("create {}", mcp_dir.display()))?;
+    let target = mcp_dir.join("cognicode-mcp.json");
+    let entry = json!({
+        "command": mcp_command[0],
+        "args": mcp_command.get(1..).unwrap_or(&[]).to_vec(),
+    });
+    write_json_atomic(&target, &entry)?;
+    eprintln!("✓ patched: {}", target.display());
+
+    Ok(())
+}
+
+pub fn uninstall_claude(version: &str) -> Result<()> {
+    // 1. Remove skills dir
+    let skills_dst = claude_skills_dir().join(format!("cognicode-{version}"));
+    if skills_dst.exists() {
+        std::fs::remove_dir_all(&skills_dst)
+            .with_context(|| format!("rm -rf {}", skills_dst.display()))?;
+        eprintln!("✓ removed: {}", skills_dst.display());
+    }
+
+    // 2. Remove MCP file
+    let target = claude_mcp_dir().join("cognicode-mcp.json");
+    if target.exists() {
+        std::fs::remove_file(&target)
+            .with_context(|| format!("rm {}", target.display()))?;
+        eprintln!("✓ removed: {}", target.display());
+    }
+
+    Ok(())
+}
+
 // ===== CLI handlers =====
 
 pub fn cmd_ide_detect() -> Result<()> {
@@ -322,8 +412,9 @@ pub fn cmd_ide_install(home: &CognicodeHomeSup, ide: &str, plugin: &str, version
     match ide {
         "opencode" => integrate_opencode(home.root.as_path(), plugin, version, &mcp_command),
         "zcode" => integrate_zcode(home.root.as_path(), plugin, version, &mcp_command),
+        "claude" => integrate_claude(home.root.as_path(), plugin, version, &mcp_command),
         other => Err(anyhow!(
-            "IDE '{}' is not supported by cogh yet (opencode/zcode in E32-D/E)",
+            "IDE '{}' is not supported by cogh yet (opencode/zcode/claude in E32-D/E/F)",
             other
         )),
     }
@@ -333,8 +424,9 @@ pub fn cmd_ide_uninstall(home: &CognicodeHomeSup, ide: &str, version: &str) -> R
     match ide {
         "opencode" => uninstall_opencode(version),
         "zcode" => uninstall_zcode(version),
+        "claude" => uninstall_claude(version),
         other => Err(anyhow!(
-            "IDE '{}' is not supported by cogh yet (opencode/zcode in E32-D/E)",
+            "IDE '{}' is not supported by cogh yet (opencode/zcode/claude in E32-D/E/F)",
             other
         )),
     }
@@ -550,6 +642,45 @@ mod tests {
     fn zcode_config_path_default() {
         let p = zcode_config_path();
         assert!(p.ends_with("config.json"));
+    }
+    #[test]
+    fn integrate_claude_writes_mcp_file() {
+        let tmp = std::env::temp_dir().join(format!("cogh-claude-{}", std::process::id()));
+        std::fs::create_dir_all(tmp.join(".claude")).unwrap();
+        let prev_home = std::env::var("HOME").unwrap();
+        unsafe { std::env::set_var("HOME", &tmp); }
+        let home = std::path::PathBuf::from(&tmp).join(".cognicode");
+        let mcp_cmd = vec!["/bin/cognicode-mcp".to_string()];
+        let result = integrate_claude(&home, "mcp-server", "0.92.0", &mcp_cmd);
+        unsafe { std::env::set_var("HOME", &prev_home); }
+        result.unwrap();
+        let path = tmp.join(".claude/mcp/cognicode-mcp.json");
+        assert!(path.exists());
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(v["command"], "/bin/cognicode-mcp");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn uninstall_claude_removes_mcp_file() {
+        let tmp = std::env::temp_dir().join(format!("cogh-claude-un-{}", std::process::id()));
+        std::fs::create_dir_all(tmp.join(".claude")).unwrap();
+        std::fs::create_dir_all(tmp.join(".claude/mcp")).unwrap();
+        let path = tmp.join(".claude/mcp/cognicode-mcp.json");
+        std::fs::write(&path, r#"{"command":"x"}"#).unwrap();
+        let prev_home = std::env::var("HOME").unwrap();
+        unsafe { std::env::set_var("HOME", &tmp); }
+        let result = uninstall_claude("0.92.0");
+        unsafe { std::env::set_var("HOME", &prev_home); }
+        result.unwrap();
+        assert!(!path.exists());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn claude_config_path_default() {
+        let p = claude_config_path();
+        assert!(p.ends_with(".claude"));
     }
 }
 
