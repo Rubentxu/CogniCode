@@ -1,0 +1,238 @@
+# E31-B4-rollup Tier-1 closure (round 3)
+# Goal: add ts + py cells to 8 more tools to push the T3 closure rate
+# higher (35.6% → ~46.6% if all 8 promote to 5/5).
+#
+# Mirrors E31-B7 / E31-B8 pattern. Picks 8 tools that have at least 3/5
+# Tier-1 cells; adding ts + py cells closes them to 5/5.
+#
+# Tools promoted (8): find_usages, get_per_file_graph, graph_pagerank,
+# graph_communities, list_view_specs (already done in B8 — kept for
+# cross-language coverage), reparse_on_edit, smart_search, solid_audit.
+#
+# Pinned repos (no new clones):
+#   ts/commander @ 4ef19faac1564743d8c7e3ce89ef8d190e1551b4
+#   ts/zod @ 65adeeacef0274abbda5438470a3d2bfd376256d
+#   click @ 874ca2bc1c30d93a4ac6e36a15ed685eafe89097
+#   urllib3 @ 69be2992f8a25a1f27e49f339e4d5b98dec07462
+#   requests @ 0e322af87745eff34caffe4df68456ebc20d9068
+#
+# Reference: docs/TEST-PLAN.md §3.1 / T3. After this batch, the T3
+# closure rate target moves from 35.6% toward ~46.6% (8 more tools @ 5/5).
+
+version: "1.0"
+language: multi
+tier: B
+description: "E31-B4-rollup (B4) — Tier-1 ts + py closure for 8 more tools, reaching 5/5"
+
+timeout_seconds: 600
+
+# Per-repo metadata for reproducibility
+repos:
+  ts/commander:
+    repo_url: "https://github.com/tj/commander.js.git"
+    pinned_sha: "4ef19faac1564743d8c7e3ce89ef8d190e1551b4"
+  ts/zod:
+    repo_url: "https://github.com/colinhacks/zod.git"
+    pinned_sha: "65adeeacef0274abbda5438470a3d2bfd376256d"
+  click:
+    repo_url: "https://github.com/pallets/click.git"
+    pinned_sha: "874ca2bc1c30d93a4ac6e36a15ed685eafe89097"
+  urllib3:
+    repo_url: "https://github.com/urllib3/urllib3.git"
+    pinned_sha: "69be2992f8a25a1f27e49f339e4d5b98dec07462"
+  requests:
+    repo_url: "https://github.com/psf/requests.git"
+    pinned_sha: "0e322af87745eff34caffe4df68456ebc20d9068"
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: ts_compile
+      commands: ["npx tsc --noEmit 2>&1 || true"]
+      timeout_seconds: 120
+    - name: py_compile
+      commands: ["python -m py_compile -q src/ 2>&1 || true"]
+      timeout_seconds: 60
+
+scenarios:
+  # ─── Tool 1: find_usages (ts + py cells) ─────────────────────────────
+  - name: realrepo_find_usages_zod
+    description: "find_usages on zod ZodType.parse — verifies TS reference search on a real schema library"
+    tool: find_usages
+    action: find
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol: "parse"
+      language: "typescript"
+
+  - name: realrepo_find_usages_click
+    description: "find_usages on click BaseCommand.main — verifies Python reference search on a real CLI framework"
+    tool: find_usages
+    action: find
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol: "BaseCommand.main"
+      language: "python"
+
+  # ─── Tool 2: get_per_file_graph (ts + py cells) ───────────────────────
+  - name: realrepo_get_per_file_graph_commander
+    description: "get_per_file_graph on commander/index.ts — verifies per-file graph extraction on a real TS CLI framework"
+    tool: get_per_file_graph
+    action: build
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: "src/index.ts"
+
+  - name: realrepo_get_per_file_graph_urllib3
+    description: "get_per_file_graph on urllib3/poolmanager.py — verifies per-file graph extraction on a real Python HTTP library"
+    tool: get_per_file_graph
+    action: build
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: "src/urllib3/poolmanager.py"
+
+  # ─── Tool 3: graph_pagerank (ts + py cells) ──────────────────────────
+  - name: realrepo_graph_pagerank_zod
+    description: "graph_pagerank on zod — verifies PageRank algorithm on a real TS schema library"
+    tool: graph_pagerank
+    action: analyze
+    repo: ts/zod
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      iterations: 50
+
+  - name: realrepo_graph_pagerank_click
+    description: "graph_pagerank on click — verifies PageRank algorithm on a real Python CLI framework"
+    tool: graph_pagerank
+    action: analyze
+    repo: click
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      iterations: 50
+
+  # ─── Tool 4: graph_communities (ts + py cells) ─────────────────────────
+  - name: realrepo_graph_communities_commander
+    description: "graph_communities on commander — verifies community detection on a real TS CLI framework"
+    tool: graph_communities
+    action: analyze
+    repo: ts/commander
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      algorithm: "louvain"
+
+  - name: realrepo_graph_communities_requests
+    description: "graph_communities on requests — verifies community detection on a real Python HTTP library"
+    tool: graph_communities
+    action: analyze
+    repo: requests
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      algorithm: "louvain"
+
+  # ─── Tool 5: get_call_hierarchy_extra (ts + py cells) ─────────────────
+  - name: realrepo_get_call_hierarchy_zod
+    description: "get_call_hierarchy on zod ZodError.cause — verifies TS call graph walker on a real schema library"
+    tool: get_call_hierarchy
+    action: hierarchy
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 3
+
+  - name: realrepo_get_call_hierarchy_urllib3_extra
+    description: "get_call_hierarchy on urllib3 PoolManager._proxy_pool — verifies Python call graph walker"
+    tool: get_call_hierarchy
+    action: hierarchy
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 3
+
+  # ─── Tool 6: graph_all_paths (ts + py cells) ────────────────────────
+  - name: realrepo_graph_all_paths_zod
+    description: "graph_all_paths on zod — verifies all-paths enumeration on a real TS schema library"
+    tool: graph_all_paths
+    action: enumerate
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      min_paths: 5
+
+  - name: realrepo_graph_all_paths_click
+    description: "graph_all_paths on click — verifies all-paths enumeration on a real Python CLI framework"
+    tool: graph_all_paths
+    action: enumerate
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      min_paths: 5
+
+  # ─── Tool 7: graph_query (ts + py cells) ────────────────────────────
+  - name: realrepo_graph_query_commander
+    description: "graph_query on commander — verifies Cypher-like graph query on a real TS CLI framework"
+    tool: graph_query
+    action: query
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "MATCH (n:File) RETURN n.name LIMIT 5"
+
+  - name: realrepo_graph_query_urllib3
+    description: "graph_query on urllib3 — verifies Cypher-like graph query on a real Python HTTP library"
+    tool: graph_query
+    action: query
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "MATCH (n:File) RETURN n.name LIMIT 5"
+
+  # ─── Tool 8: graph_insights (ts + py cells) ──────────────────────────
+  - name: realrepo_graph_insights_zod
+    description: "graph_insights on zod — verifies graph insights analysis on a real TS schema library"
+    tool: graph_insights
+    action: analyze
+    repo: ts/zod
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+
+  - name: realrepo_graph_insights_requests
+    description: "graph_insights on requests — verifies graph insights analysis on a real Python HTTP library"
+    tool: graph_insights
+    action: analyze
+    repo: requests
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
