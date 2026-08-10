@@ -1,0 +1,253 @@
+# E31-B7 Tier-1 TypeScript + Python closure
+# Goal: add ts + py cells to the 8 tools promoted by E31-B4 to rust+go+java
+# (3/5). After this batch, each of those 8 tools reaches full Tier-1 (5/5)
+# coverage and the matrix's closure rate jumps from 13.7% to ~24.7%.
+#
+# Tools promoted (8): trace_path, get_call_hierarchy, validate_syntax,
+# detect_drift, detect_api_breaks, find_references, hover,
+# detect_long_parameter_lists.
+#
+# Mirrors E31-B2 (python), E31-B3 (typescript), E31-B4 (go + java).
+# After this single batch, the 8 B4 tools all reach 5/5 Tier-1.
+#
+# Pinned repos:
+#   ts/commander @ 4ef19faac1564743d8c7e3ce89ef8d190e1551b4
+#   ts/zod @ 65adeeacef0274abbda5438470a3d2bfd376256d
+#   click @ 874ca2bc1c30d93a4ac6e36a15ed685eafe89097
+#   urllib3 @ 69be2992f8a25a1f27e49f339e4d5b98dec07462
+#   requests @ 0e322af87745eff34caffe4df68456ebc20d9068
+#
+# Reference: docs/TEST-PLAN.md §3.1 / T3. The T3 closure rate target is
+# ≥30% by the end of E31-B7 (up from 13.7% after E31-B4). With 8 tools
+# promoted to 5/5, the matrix reaches 18/73 = 24.7% — close to the goal.
+# Additional cross-language fills to reach 30% are deferred to E31-B8+.
+
+version: "1.0"
+language: multi
+tier: B
+description: "E31-B7 batch — Tier-1 ts + py closure for 8 B4-promoted tools, reaching 5/5 full Tier-1"
+
+timeout_seconds: 600
+
+# Per-repo metadata for reproducibility
+repos:
+  ts/commander:
+    repo_url: "https://github.com/tj/commander.js.git"
+    pinned_sha: "4ef19faac1564743d8c7e3ce89ef8d190e1551b4"
+  ts/zod:
+    repo_url: "https://github.com/colinhacks/zod.git"
+    pinned_sha: "65adeeacef0274abbda5438470a3d2bfd376256d"
+  click:
+    repo_url: "https://github.com/pallets/click.git"
+    pinned_sha: "874ca2bc1c30d93a4ac6e36a15ed685eafe89097"
+  urllib3:
+    repo_url: "https://github.com/urllib3/urllib3.git"
+    pinned_sha: "69be2992f8a25a1f27e49f339e4d5b98dec07462"
+  requests:
+    repo_url: "https://github.com/psf/requests.git"
+    pinned_sha: "0e322af87745eff34caffe4df68456ebc20d9068"
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: ts_compile
+      commands: ["npx tsc --noEmit 2>&1 || true"]
+      timeout_seconds: 120
+    - name: py_compile
+      commands: ["python -m py_compile -q src/ 2>&1 || true"]
+      timeout_seconds: 60
+
+scenarios:
+  # ─── Tool 1: trace_path (ts + py cells) ────────────────────────────────────
+  - name: realrepo_trace_path_zod
+    description: "trace_path through zod ZodType → parse → safeParse — verifies graph traversal on a real TS schema library"
+    tool: trace_path
+    action: trace
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 4  # parse, safeParse, _parse, _def
+
+  - name: realrepo_trace_path_click
+    description: "trace_path through click decorators → BaseCommand.main — verifies graph traversal on a real Python CLI framework"
+    tool: trace_path
+    action: trace
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 3
+
+  # ─── Tool 2: get_call_hierarchy (ts + py cells) ────────────────────────────
+  - name: realrepo_get_call_hierarchy_commander
+    description: "get_call_hierarchy on commander Command → parse → opts — verifies call graph walker on a real TS CLI framework"
+    tool: get_call_hierarchy
+    action: hierarchy
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 3
+
+  - name: realrepo_get_call_hierarchy_urllib3
+    description: "get_call_hierarchy on urllib3 PoolManager.urlopen → _proxy_pool → connection — verifies Python call graph walker"
+    tool: get_call_hierarchy
+    action: hierarchy
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    ground_truth:
+      symbols_min: 3
+
+  # ─── Tool 3: validate_syntax (ts + py cells) ───────────────────────────────
+  - name: realrepo_validate_syntax_zod
+    description: "validate_syntax on zod sources — verifies TypeScript AST parses under TS 5+ syntax"
+    tool: validate_syntax
+    action: check
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: src/index.ts
+
+  - name: realrepo_validate_syntax_click
+    description: "validate_syntax on click — verifies Python parses cleanly under Python 3.11+"
+    tool: validate_syntax
+    action: check
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: src/click/core.py
+
+  # ─── Tool 4: detect_drift (ts + py cells) ──────────────────────────────────
+  - name: realrepo_detect_drift_commander
+    description: "detect_drift between commander v11.0.0 and v11.0.1 — verifies API surface drift on a real TS release"
+    tool: detect_drift
+    action: detect
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      from_ref: "v11.0.0"
+      to_ref: "v11.0.1"
+
+  - name: realrepo_detect_drift_urllib3
+    description: "detect_drift between urllib3 2.1.0 and 2.1.1 — verifies API surface drift on a real Python release"
+    tool: detect_drift
+    action: detect
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      from_ref: "2.1.0"
+      to_ref: "2.1.1"
+
+  # ─── Tool 5: detect_api_breaks (ts + py cells) ─────────────────────────────
+  - name: realrepo_detect_api_breaks_zod
+    description: "detect_api_breaks on zod v3.22.0 → v3.23.0 — verifies semver-major break detection on a TS schema library"
+    tool: detect_api_breaks
+    action: detect
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      from_ref: "v3.22.0"
+      to_ref: "v3.23.0"
+
+  - name: realrepo_detect_api_breaks_requests
+    description: "detect_api_breaks on requests v2.32.0 → v2.32.1 — verifies semver break detection on a Python HTTP library"
+    tool: detect_api_breaks
+    action: detect
+    repo: requests
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      from_ref: "v2.32.0"
+      to_ref: "v2.32.1"
+
+  # ─── Tool 6: find_references (ts + py cells) ───────────────────────────────
+  - name: realrepo_find_references_commander
+    description: "find_references for commander.Command class — verifies cross-package reference search on a real TS CLI framework"
+    tool: find_references
+    action: find
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol: "Command"
+      language: "typescript"
+
+  - name: realrepo_find_references_click
+    description: "find_references for click.BaseCommand class — verifies cross-package reference search on a real Python CLI framework"
+    tool: find_references
+    action: find
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol: "BaseCommand"
+      language: "python"
+
+  # ─── Tool 7: hover (ts + py cells) ──────────────────────────────────────────
+  - name: realrepo_hover_commander
+    description: "hover on commander Command.version field — verifies semantic hover on TS class field"
+    tool: hover
+    action: hover
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: src/command.ts
+      line: 45
+      column: 5
+
+  - name: realrepo_hover_urllib3
+    description: "hover on urllib3 PoolManager.urlopen() — verifies Python method semantic hover"
+    tool: hover
+    action: hover
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: src/urllib3/poolmanager.py
+      line: 230
+      column: 18
+
+  # ─── Tool 8: detect_long_parameter_lists (ts + py cells) ───────────────────
+  - name: realrepo_detect_long_parameter_lists_zod
+    description: "detect_long_parameter_lists on zod type guards — verifies TS function signature smell detector"
+    tool: detect_long_parameter_lists
+    action: analyze
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      max_params: 5
+
+  - name: realrepo_detect_long_parameter_lists_requests
+    description: "detect_long_parameter_lists on requests Session.request() — verifies Python method smell detector"
+    tool: detect_long_parameter_lists
+    action: analyze
+    repo: requests
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      max_params: 5
