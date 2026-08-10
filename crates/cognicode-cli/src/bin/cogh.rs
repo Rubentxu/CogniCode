@@ -12,6 +12,7 @@ mod layout;
 mod lockfile;
 mod manifest;
 mod registry;
+mod skill;
 mod version;
 
 use layout::CognicodeHome;
@@ -89,6 +90,11 @@ pub enum Command {
         #[command(subcommand)]
         action: PluginAction,
     },
+    /// Validate a portable skill bundle
+    Skill {
+        #[command(subcommand)]
+        action: SkillAction,
+    },
     /// Print cogh + CogniCode version
     Version,
 }
@@ -108,6 +114,15 @@ pub enum PluginAction {
     List,
     /// Update a plugin's source repository
     Update { plugin: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SkillAction {
+    /// Validate a portable skill bundle (directory or .yaml)
+    Validate {
+        /// Path to the skill bundle directory
+        path: std::path::PathBuf,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -146,6 +161,9 @@ fn main() -> anyhow::Result<()> {
             PluginAction::Remove { plugin } => layout::cmd_plugin_remove(&home, &plugin),
             PluginAction::List => layout::cmd_plugin_list(&home),
             PluginAction::Update { plugin } => layout::cmd_plugin_update(&home, &plugin),
+        },
+        Command::Skill { action } => match action {
+            SkillAction::Validate { path } => skill::cmd_skill_validate(&path),
         },
     }
 }
