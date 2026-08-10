@@ -1,0 +1,13 @@
+apiVersion: cognicode/v1
+kind: Plugin
+name: skills-cognicode-core
+description: "CogniCode portable skill bundles — IDE-agnostic"
+homepage: "https://github.com/Rubentxu/CogniCode-plugins/skills-cognicode-core"
+
+versions:
+  - ref: v0.92.0
+    artifact: "skills-cognicode-core-0.92.0.tar.gz"
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    url: "https://github.com/Rubentxu/CogniCode-plugins/skills-cognicode-core/releases/download/v0.92.0/skills-cognicode-core-0.92.0.tar.gz"
+
+binaries: []   # skill bundles are not binaries; they are ported via IDE adapters
