@@ -18,11 +18,11 @@ E31-B6-rollup). ROADMAP ahora refleja el E31 program 100% completo. evidence map
 ## Active
 
 > **Note 2026-08-10**: All programs in this section are historical records of
-completed work. The **active program** is `## Release 1.0.0 Program (E31)`
-— E31 program closed (14 cycles + 1 follow-up, 15 PRs merged on
-2026-08-10). v1.0.0 tag cut blocked on pre-cut gates (3-run scorecard
-streak + 5-night T7 cadence + G8 closure). Resumable via
-`docs/V1.0.0-PRE-CUT-CHECKLIST.md`.
+completed work. The **active program** is
+`## CogniCode Distribution (E32 program) — Status` (design complete).
+Implementation starts with E32-A (`cogh` CLI binary). v1.0.0 tag cut
+blocked on pre-cut gates (3-run scorecard streak + 5-night T7 cadence).
+Resumable via `docs/V1.0.0-PRE-CUT-CHECKLIST.md`.
 
 ---
 
@@ -613,3 +613,99 @@ y (b) no hay criterios formales de release definidos en un ADR.
 ## E29 — PostgreSQL → LadybugDB Migration ✅ COMPLETED (historical)
 
 See git log for v0.76.x through v0.80.x.
+
+## CogniCode Distribution (E32 program) — Status
+
+**Goal**: build a single-binary CLI (`cogh`) that manages the full
+lifecycle of CogniCode's runtime artifacts (MCP server, sandbox
+containers, skills, IDE integration). Modeled on `asdf-vm`.
+
+**Status**: planning complete. 3 ADRs + 5 OpenSpec specs written.
+Implementation starts with E32-A.
+
+### E32-A — `cogh` CLI binary core (rust, asdf-style) ✅ COMPLETED-NO, ⏳ PLANNED
+
+- Install / list / current / latest / update / uninstall /
+  plugin/reshim/doctor/where/version
+- `~/.cognicode/` layout (mirror `~/.asdf/`)
+- Shims directory regenerates on every install
+- Per-project `.cognicode.lock` (JSON)
+- Curl-installable (`curl ... | sh`)
+- Est. 2K LOC of Rust
+
+### E32-B — Plugin manifest + registry client ⏳ PLANNED
+
+- `plugin.yaml` schema (apiVersion: cognicode/v1)
+- `sha256` integrity check (mandatory)
+- GitHub Releases registry client
+- Bundled plugins (mcp-server, skills-cognicode-core, sandbox-templates)
+- `cogh plugin add <name> --from-url <git-url>` for community plugins
+- Est. 1K LOC
+
+### E32-C — portable skill bundles (re-publication) ⏳ PLANNED
+
+- Drop `compatibility: opencode` field from existing skills
+- Add `manifest.yaml` to each of 4 skills
+- Verify references/ and assets/ structure
+- Doc: `docs/specs/portable-skill-bundle/spec.md`
+- Est. 0.2K LOC
+
+### E32-D — opencode IDE adapter ⏳ PLANNED
+
+- Adapter manifest (`integrate` + `uninstall` steps)
+- Patch `~/.config/opencode/opencode.json` (merge, not overwrite)
+- Copy skills to `~/.config/opencode/skills/cognicode-$VERSION/`
+- Est. 0.5K LOC
+
+### E32-E — zcode IDE adapter ⏳ PLANNED
+
+- Adapter for `~/.zcode/v2/config.json`
+- Patch `mcp` section
+- Copy skills to `~/.zcode/...`
+- Est. 0.5K LOC
+
+### E32-F — claude IDE adapter ⏳ PLANNED
+
+- Adapter for `~/.claude/claude_desktop_config.json`
+- Patch `mcpServers` section (different field name)
+- Copy skills to `~/.claude/`
+- Est. 0.5K LOC
+
+### E32-G — codex IDE adapter ⏳ PLANNED
+
+- Adapter for `~/.codex/config.json`
+- Patch `mcp_servers` array
+- Copy skills to `~/.codex/`
+- Est. 0.5K LOC
+
+### E32-H — install / uninstall / update lifecycle tests ⏳ PLANNED
+
+- E2E: `cogh install --ide all` configures 4 IDEs
+- E2E: `cogh update` respects `.cognicode.lock`
+- E2E: `cogh uninstall` cleanly removes
+- E2E: `cogh doctor` reports failures correctly
+- Est. 0.5K LOC tests
+
+### E32-I — OpenCode install (self-application) ⏳ PLANNED
+
+- Apply `cogh install --ide opencode` to the local machine
+- Validate that the MCP server + skills + config are wired correctly
+- Document the install process in `CONTEXT.md`
+
+### Next steps
+
+After E32:
+- **E33**: integrated CI/CD for cogh binary releases (GitHub Actions)
+- **E34**: community plugin registry (GitHub org `Rubentxu/CogniCode-plugins`)
+- **E35**: ZCode + Claude + Codex targeting (post-MVP)
+
+### Cross-references
+
+- **ADR-034**: `cognicode-distribution-package` — architecture overview
+- **ADR-035**: `asdf-vm-version-management-pattern` — design rationale
+- **ADR-036**: `IDE-abstraction-portable-skills-per-ide-adapters` — IDE plugin design
+- `docs/specs/cognicode-cli/spec.md` — cogh CLI surface
+- `docs/specs/cognicode-plugin/spec.md` — plugin manifest
+- `docs/specs/cognicode-ide-adapter/spec.md` — IDE adapter
+- `docs/specs/portable-skill-bundle/spec.md` — portable skill format
+- `docs/specs/cognicode-lifecycle/spec.md` — install/update/uninstall
