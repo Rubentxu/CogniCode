@@ -3,9 +3,62 @@
 Todos los cambios notables de CogniCode se documentan en este archivo.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-> **Nota de reconstrucción**: las versiones anteriores a v0.87.0 no tienen
-> entradas aquí; el historial completo puede reconstruirse desde `docs/ROADMAP.md`
-> (working doc local, no versionado).
+> **Nota de reconstrucción**: v0.50.0–v0.86.0 no tenían entradas individuales
+> en este archivo. Se reconstruyeron en E31-B5-rollup (B5) con un resumen
+> de alto nivel; el historial commit-por-commit está disponible vía
+> `git log v0.50.0..v0.86.0`. Las versiones anteriores a v0.50.0 no
+> tienen entradas aquí; el historial completo puede reconstruirse
+> desde `docs/ROADMAP.md` (working doc local, no versionado).
+
+## [v0.50.0 — v0.86.0] — 2026-07-22 → 2026-08-05 (reconstructed summary)
+
+Period summary: 307 commits across 36 version tags (v0.50.0 → v0.86.0)
+over ~2 weeks. Major program cycles: E12 (ViewKind Realization),
+E13-wave2 (knowledge-layer ports), E14 (narrative runtime),
+E22 (knowledge-layer), E28.x (conformance audit), E29 (PostgreSQL →
+LadybugDB migration), and E30 (sandbox infra + release-gate framework).
+
+Cycle-by-cycle highlights:
+
+- **E12 ViewKind Realization** (v0.76.0): vertical_slice, seam_map,
+  summary, source_view executors (#170)
+- **E13-wave2 Knowledge-Layer Ports** (v0.86.0): AdrInspector + Ladybug
+  stubs + e2e green (#226); Phase 1 of the knowledge-layer
+- **E14 Narrative Runtime** (v0.83.0): EmbedResolver + wiring in 4
+  narrative shapers (#217)
+- **E14-C2** (v0.85.0): NarrativeStore port + LadybugDB adapter +
+  runtime wiring (#225)
+- **E22 Knowledge Layer** (v0.74.x): `feat(e22-knowledge-layer)` Phase 1
+- **E28.x Conformance Audit** (v0.75.0): E28 program complete
+- **E29 PostgreSQL → LadybugDB Migration** (v0.76.5 — v0.80.1):
+  - 6/6 spike stages (S1 build, S2 schema-load, S3 concurrency,
+    S4 crash-recovery, S5 latency, S6 cypher-compat)
+  - Phase 0 (clean-ports + define-new-ports + refactor-call-sites)
+  - Phase 1 (9/9 lbug ports in `cognicode-ladybug` crate)
+  - Phase 1.5 (e29-7 full PostgreSQL removal: RuntimePorts DTO +
+    bootstrap_with_backend canonical entry; zero `pg_repo` +
+    zero `PostgresBackend`)
+  - Phase 3 (e29-3 port abstraction audit + debt-e29-3-1)
+  - ADR-029 (CallGraphProjectionPort seam) + ADR-030 (QualityStore
+    lbug schema)
+- **E30 Sandbox Infra** (v0.87.0 era, started v0.86): 6/6 containers
+  with real digest pins + hardened quadlets + Maven wrapper
+
+**Commit distribution** (v0.50.0..v0.86.0):
+- 101 feat
+- 52 docs
+- 44 fix
+- 41 refactor
+- 27 Merge
+- 14 test
+- 9 chore
+- 7 style
+
+**ADRs authored** (17): 001, 002, 003, 004, 005, 006, 007, 008, 009, 010,
+011, 012, 013, 014, 015 (×2 — see E31-C renumber), 016, 017, 018, 026,
+027, 028, 029, 030, 031, 032, 033.
+
+For granular commit history, see `git log v0.50.0..v0.86.0`.
 
 ## [Unreleased]
 
