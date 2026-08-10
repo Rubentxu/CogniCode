@@ -1,0 +1,107 @@
+# T6 regression test enforcement
+#
+# LOCAL-ONLY workflow. Triggered manually via `act` running:
+#   act -W .github/workflows/regression-check.yml workflow_dispatch
+# or via the `just ci-local` recipe.
+#
+# This workflow has NO `on: pull_request`, `push`, or `schedule` triggers
+# by CogniCode policy (v1.0.0 readiness program): GitHub-hosted CI runs are
+# not used. The workflow exists in `.github/workflows/` only so its
+# definition is reviewable and runs through the same GitHub Actions
+# runtime semantics via `act` locally — backed by `podman` with:
+#   DOCKER_HOST=unix:///run/user/1000/podman/podman.sock
+#
+# Rule (per docs/TEST-PLAN.md §5):
+#   Every pull request that contains `fix(*)` commits MUST also add,
+#   modify, or re-enable at least one test in the same PR.
+#
+# Tooling: bash 5+, git, standard `just`/`cargo`/`npm` are NOT required
+# because the check itself is pure git diff introspection.
+
+name: T6 regression test enforcement (local-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_branch:
+        description: "Base branch to diff against (default: origin/main)"
+        required: false
+        default: "origin/main"
+        type: string
+  workflow_call:
+    inputs:
+      base_branch:
+        description: "Base branch to diff against (default: origin/main)"
+        required: false
+        default: "origin/main"
+        type: string
+
+# NB: deliberately no `pull_request`, `push`, or `schedule` triggers.
+# CogniCode v1.0.0 readiness program decision: CI runs locally via `act`,
+# not on GitHub-hosted runners. See docs/TEST-PLAN.md §5.
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check-t6:
+    name: "T6 — fix(*) commits must include a regression test"
+    runs-on: ubuntu-latest
+    container:
+      # Aligned with the project's existing `act` config: catthehacker/
+      # ubuntu:rust-latest already includes git + bash + coreutils.
+      image: catthehacker/ubuntu:rust-latest
+    # Default-GitHub-Actions shell is bash; we re-state explicitly because
+    # `act` may invoke step scripts via /bin/sh on Alpine-based images.
+    defaults:
+      run:
+        shell: bash --noprofile --norc -eo pipefail {0}
+    timeout-minutes: 5
+    steps:
+      - name: "Checkout feature branch"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # When invoked via `act`, GITHUB_REF / GITHUB_SHA reflect the
+          # local HEAD. We don't push the branch — `act` operates on
+          # local repo state.
+
+      - name: "Resolve base branch"
+        id: base
+        run: |
+          set -euo pipefail
+          BASE="${{ inputs.base_branch }}"
+          if [ -z "$BASE" ]; then BASE="origin/main"; fi
+          if ! git rev-parse "$BASE" >/dev/null 2>&1; then
+            if git rev-parse main >/dev/null 2>&1; then
+              BASE="main"
+            else
+              BASE="HEAD~1"
+            fi
+          fi
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "Using base ref: $BASE"
+
+      - name: "Run T6 regression test check"
+        run: |
+          set -euo pipefail
+          bash scripts/ci/check_regression_test.sh
+        env:
+          # Honour the workflow_call / workflow_dispatch input when set.
+          CI_T6_BASE: ${{ inputs.base_branch }}
+
+      - name: "T6 PASS summary"
+        if: success()
+        run: |
+          echo "==> T6 acceptance: every fix(*) commit in this branch has at"
+          echo "    least one regression test alongside it (L1/L2/L3/L4)."
+
+      - name: "T6 FAIL summary"
+        if: failure()
+        run: |
+          echo "==> T6 failure: at least one fix(*) commit does not have a"
+          echo "    regression test in the same diff. Per docs/TEST-PLAN.md §5,"
+          echo "    this is a release-gate blocker (Pillar 7 / G13 gating)."
+          echo "    Add a test, modify an existing test, or re-enable a"
+          echo "    previously-ignored test before merging."

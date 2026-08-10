@@ -5,6 +5,7 @@
 > **Owner**: Rubentxu (maintainer)
 > **Scorecard gate**: enables G13 (Test Plan comprehensivo) per `docs/RELEASE-1.0.0-PLAN.md` §1.1
 > **Predecessor docs**: `docs/RELEASE-1.0.0-PLAN.md`, `sandbox/results/baseline/`, `.claude/skills/test-pyramid/`
+> **Last refreshed**: E31-B5 (T6 CI gate — local-only enforcement via `act` + `podman`)
 
 ## 1. Purpose
 
@@ -82,10 +83,10 @@ The G13 sub-criteria T3–T5 require machine-readable matrices. This section inl
 
 The runtime tool catalog has **73 MCP tools** (regenerated from `bash sandbox/scripts/list_mcp_tools.sh`). Tier-1 languages are `rust`, `ts`, `python`, `go`, `java`.
 
-**Headline numbers** (computed post E31-B3 via `python3` scan of `sandbox/manifests/*.yaml`):
+**Headline numbers** (computed post E31-B4 via `python3` scan of `sandbox/manifests/*.yaml`):
 
 - **10 tools full Tier-1 coverage** (`edit_file`, `read_file`, `search_content`, `safe_refactor`, `get_file_symbols`, `build_graph`, `get_complexity`, `get_entry_points`, `get_leaf_functions`, `query_symbol_index`) — every cell ✓ across all 5 languages.
-- **63 tools partial** — have ≥1 Tier-1 scenario but missing some language cells (most are rust-only; ~10 are rust+go+java).
+- **71 tools partial** — have ≥1 Tier-1 scenario but missing some language cells. Most are rust-only; ~18 are rust+go+java (8 promoted by E31-B4).
 - **0 tools absent** — every tool in the MCP catalog has ≥1 sandbox scenario somewhere.
 
 **Aggregate Tier-1 column coverage** (cell count: tools × languages with a scenario):
@@ -94,18 +95,31 @@ The runtime tool catalog has **73 MCP tools** (regenerated from `bash sandbox/sc
 |----------|-----------|-------------------|------------------------|
 | `rust` | 12 | 68 of 73 | — |
 | `python` | 3 + 1 (`e31b2`) | 11 of 73 | +6 (E31-B2) |
-| `typescript` | 3 + 1 (`e31b3`) | **15** of 73 | **+8 (E31-B3)** |
-| `go` | 2 | 16 of 73 | — |
-| `java` | 2 | 16 of 73 | — |
+| `typescript` | 3 + 1 (`e31b3`) | 15 of 73 | +8 (E31-B3) |
+| `go` | 2 + 1 (`e31b4`) | **24** of 73 | **+8 (E31-B4)** |
+| `java` | 2 + 1 (`e31b4`) | **24** of 73 | **+8 (E31-B4)** |
 
 **T3 gap analysis**:
 
-- **Biggest gaps by language**: python (~62 missing cells), typescript (~66), go (~57), java (~57).
+- **Biggest gaps by language**: python (~62 missing cells), typescript (~66), go (~49), java (~49).
 - **Biggest gaps by tool** (top partials needing cells):
-  - `analyze_impact`, `detect_drift`, `detect_god_functions`, `find_pattern_by_intent`, `find_references`, `find_usages`, `get_call_hierarchy`, `get_hot_paths`, `get_type_references`, `graph_*` (17 graph tools), `hover`, `iac_query`, `smart_search`, `solid_audit`, `trace_path` — all are rust-only currently.
+  - `analyze_impact`, `detect_drift`, `detect_god_functions`, `find_pattern_by_intent`, `find_references`, `find_usages`, `get_call_hierarchy`, `get_hot_paths`, `get_type_references`, `graph_*` (17 graph tools), `iac_query`, `smart_search`, `solid_audit`, `trace_path` — all are rust-only currently.
+- **Promoted by E31-B4** (rust-only → rust+go+java, 3/5): `trace_path`, `get_call_hierarchy`, `validate_syntax`, `detect_drift`, `detect_api_breaks`, `find_references`, `hover`, `detect_long_parameter_lists`. Each still needs ts + python cells to reach 5/5 (deferred to a future batch).
 - **High-priority gap**: tools that are mapped to openspec REQs (per `sandbox/reports/conformance_matrix.yaml`) — those absences are spec-coverage holes too, not just sandbox gaps.
 
-**T3 verdict after E31-B2**: 6/73 = 8% full Tier-1; remaining 92% need at least one cell to reach full. **Action**: E31-B3+ sub-cycles will add cells to the 67 partial tools. New tools added in future code (any `feat(*)` introducing a new MCP tool) must ship with Tier-1 scenarios from day 1 (enforced via T6 CI gate in E31-B5).
+**T3 verdict after E31-B4**: 10/73 = 13.7% full Tier-1; 71/73 partial. **Action**: E31-B5+ sub-cycles will add cells to the 71 partial tools. New tools added in future code (any `feat(*)` introducing a new MCP tool) must ship with Tier-1 scenarios from day 1 (enforced via T6 CI gate in E31-B5).
+
+> **E31-B4 batch contents** (8 tools × 2 langs = 16 scenarios, all in `sandbox/manifests/e31b4_tier1_go_java_fill.yaml`):
+> - `trace_path` — `cobra` (go) + `spring-petclinic` (java)
+> - `get_call_hierarchy` — `bubbletea` (go) + `spring-petclinic` (java)
+> - `validate_syntax` — `lo` (go) + `spring-petclinic` (java)
+> - `detect_drift` — `cobra` (go) + `spring-petclinic` (java)
+> - `detect_api_breaks` — `lo` (go) + `spring-petclinic` (java)
+> - `find_references` — `cobra` (go) + `spring-petclinic` (java)
+> - `hover` — `cobra` (go) + `spring-petclinic` (java)
+> - `detect_long_parameter_lists` — `bubbletea` (go) + `spring-petclinic` (java)
+>
+> Repos pinned: `spf13/cobra @ e94f6d0dd9a5e5738dca6bce03c4b1207ffbc0ec`, `charmbracelet/bubbletea @ ffa05021909e14c478cbe138ca78effbea04e4e0`, `samber/lo @ 35e49f2c9607a7f7f6cde872a42d8718d9c3d053`, `spring-projects/spring-petclinic @ edf4db28affcc4741c79850a3d95bc3f177b5ff9`.
 
 ### T4 — UI panes × browser-E2E specs
 
@@ -148,7 +162,7 @@ The runtime tool catalog has **73 MCP tools** (regenerated from `bash sandbox/sc
 | **T3** | Every MCP tool with ≥1 scenario per Tier-1 language | Feature author (per tool) + maintainer (matrix) | `sandbox/reports/mcp_tool_tier1_coverage.yaml` |
 | **T4** | Every UI pane with ≥1 browser-E2E spec | Frontend author + UX reviewer | `apps/explorer-ui/e2e/COVERAGE.md` |
 | **T5** | Sandbox-E2E nightly + flaky log maintained | Maintainer | `sandbox/reports/flaky_scenarios.md`; nightly artifact archive |
-| **T6** | Regression test in every `fix(*)` PR since v0.92.0 | PR author (policy enforced at PR review) | All fix commits from v0.92.0 onward have a test added/changed in their diff |
+| **T6** | Regression test in every `fix(*)` PR since v0.92.0 | PR author (policy enforced at PR review) | All fix commits from v0.92.0 onward have a test added/changed in their diff (enforced via `.github/workflows/regression-check.yml` running locally through `act` + `podman`) |
 | **T7** | Scorecard stable ≥N=5 consecutive nights | Maintainer (cadence) | `sandbox/results/stability.json` CV <0.10 sustained; scorecard.json archived per run |
 
 ## 5. Regression Policy (T6)
@@ -157,17 +171,34 @@ The runtime tool catalog has **73 MCP tools** (regenerated from `bash sandbox/sc
 
 **Enforcement** (3 layers):
 
-1. **CI lint gate** — pre-commit hook + GH Action that scans PR diff for `fix(*)` commits and confirms at least one file matching `**/*test*.{rs,ts,tsx}` or `**/scenarios/*.yaml` changed in the same PR. No test = CI failure with explicit message.
+1. **Local CI lint gate (canonical)** — `.github/workflows/regression-check.yml` runs the bash check `scripts/ci/check_regression_test.sh` against the diff vs `origin/main`. The workflow has ONLY `workflow_dispatch:` and `workflow_call:` triggers — there are no `pull_request` / `push` / `schedule` triggers by project policy (v1.0.0 readiness program decision: CI runs locally, not on GitHub-hosted runners). Invocation:
+   ```bash
+   just ci-t6                   # real run via act + podman
+   just ci-t6-dry               # syntax validation only
+   ```
+   The `act` runtime uses `podman` backing via `DOCKER_HOST=unix:///run/user/1000/podman/podman.sock` (the project's existing podman user socket). The workflow pin is `catthehacker/ubuntu:rust-latest` (already configured in `~/.config/act/actrc`).
 2. **PR template** — checkbox at PR creation: *"This PR contains at least one test for the change"*, default unchecked, must be ticked before review.
 3. **Reviewer expectation** — code review blocks merge if the fix lacks a test, regardless of CI result.
+
+**What counts as a test** (the script's `TEST_PATTERNS`):
+
+- L1 Rust unit: `crates/<name>/tests/...` and `crates/<name>/src/.../tests/...`
+- L1/L2 vitest: `apps/explorer-ui/...*.{test,spec}.{ts,tsx}` and `apps/explorer-ui/e2e/*.spec.ts`
+- L3 sandbox: `sandbox/manifests/*.{yaml,yml}`
+- Specs / harness: `openspec/**.md`, `crates/cognicode-rule-test-harness/...`, `crates/cognicode-core/tests/...`
+
+What does NOT count: `docs/`, `ADR*.md`, `ROADMAP.md`, `CONTEXT.md`, `CHANGELOG.md`. These are documentation and review-time artifacts, not regression artifacts.
 
 **Edge cases**:
 
 - `chore(*)` or `docs(*)` commits are exempt (no behavior change to test).
 - `refactor(*)` commits SHOULD keep tests green but don't require new tests (refactor preserves behavior).
 - Dependency-only fixes (`fix(deps)`) are exempt unless behavior changed.
+- Empty `fix(*)` commits (no diff files) FAIL because no test can be supplied.
 
 **Initial application**: this policy enters force from this document's ACEPTADO moment. Existing fix commits since v0.92.0 are not retroactively required to add tests.
+
+**Why local-only**: E31-B5 (T6 CI gate) decision — GitHub Actions YAML remains the canonical spec for the check, but the workflow's only triggers (`workflow_dispatch:`, `workflow_call:`) ensure it never executes on GitHub-hosted runners. The actual command-line that developers invoke is `just ci-t6` (or `just ci-local` for the full local pipeline). This keeps the policy expressive, reviewable, and version-controlled without depending on GitHub Actions infrastructure.
 
 ## 6. Stability Threshold (T7)
 
