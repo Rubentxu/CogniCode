@@ -161,6 +161,16 @@ check "B1 ACCEPT decision documented in pre-cut checklist" \
 check "B1 marked as ACCEPT (closed in E31-E2)" \
     "grep -q 'closed in E31-E2' docs/V1.0.0-PRE-CUT-CHECKLIST.md"
 
+# 17. cogh binary (E32-A) build verification
+echo ""
+echo "E32-A cogh binary verification:"
+check "cogh binary builds (cargo build -p cognicode-cli --bin cogh)" \
+    "test -f target/debug/cogh"
+check "cogh binary runs (cogh --version)" \
+    "target/debug/cogh --version >/dev/null"
+check "cogh binary shows help" \
+    "target/debug/cogh --help >/dev/null"
+
 echo ""
 echo "==> E31 audit: ${PASS} PASS, ${FAIL} FAIL"
 if [ "$FAIL" -eq 0 ]; then
