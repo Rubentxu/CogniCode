@@ -137,6 +137,22 @@ check "scorecard.json produced" \
 check "scorecard.md produced" \
     "test -f sandbox/reports/scorecard.md"
 
+# 14. ROADMAP.md + active_lock hygiene (E31-Z bookkeeping)
+echo ""
+echo "Docs hygiene (E31-Z bookkeeping):"
+check "ROADMAP.md has E31 section" \
+    "grep -q '## Release 1.0.0 Program (E31)' docs/ROADMAP.md"
+check "ROADMAP.md Active references E31" \
+    "grep -q 'active program.. is .## Release 1.0.0 Program (E31)' docs/ROADMAP.md"
+
+# 15. Vault hygiene
+echo ""
+echo "Vault hygiene:"
+check "INC-005 (CONF-001) status is closed" \
+    "grep -q 'status: closed' ~/.sddk-knowledge/CogniCode/incidences/INC-005-CONF-001.md"
+check "active_lock last released cycle is E31 follow-up" \
+    "grep -q 'M-E31-followup-audit' ~/.sddk-knowledge/CogniCode/milestones/_active.md"
+
 echo ""
 echo "==> E31 audit: ${PASS} PASS, ${FAIL} FAIL"
 if [ "$FAIL" -eq 0 ]; then
