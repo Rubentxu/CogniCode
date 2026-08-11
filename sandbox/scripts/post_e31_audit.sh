@@ -219,6 +219,13 @@ check "cogh ide --install codex wires MCP entry" \
 check "cogh ide --uninstall codex wires removal" \
     "grep -q 'uninstall_codex' crates/cognicode-cli/src/bin/ide.rs"
 
+
+# 23. E32-H lifecycle tests
+echo ""
+echo "E32-H lifecycle integration tests:"
+check "cogh lifecycle::tests pass with --test-threads=1" \
+    "(cd /var/home/rubentxu/Proyectos/rust/CogniCode && cargo test -p cognicode-cli --bin cogh lifecycle -- --test-threads=1 >/dev/null 2>&1)"
+
 echo ""
 echo "==> E31 audit: ${PASS} PASS, ${FAIL} FAIL"
 if [ "$FAIL" -eq 0 ]; then
@@ -227,28 +234,3 @@ if [ "$FAIL" -eq 0 ]; then
 fi
 echo "    E31 program status: GAPS DETECTED (see ✗ above)"
 exit 1
-
-# 18. E32-C portable skill bundles
-echo ""
-echo "E32-C portable skill bundles (E32-C):"
-check "skills/cognicode-mcp-driven bundle exists" \
-    "test -f skills/cognicode-mcp-driven/SKILL.md"
-check "skills/cognicode-mcp-driven/manifest.yaml exists" \
-    "test -f skills/cognicode-mcp-driven/manifest.yaml"
-check "skills/cognicode-core bundle exists" \
-    "test -f skills/cognicode-core/SKILL.md"
-check "skills/cognicode-core/manifest.yaml exists" \
-    "test -f skills/cognicode-core/manifest.yaml"
-check "cogh skill validate works on cognicode-mcp-driven" \
-    "target/debug/cogh skill validate skills/cognicode-mcp-driven >/dev/null"
-
-
-echo ""
-echo "E32-D opencode IDE adapter:"
-check "cogh ide detect runs" \
-    "target/debug/cogh ide detect >/dev/null"
-check "cogh ide install opencode wires MCP entry" \
-    "test -f crates/cognicode-cli/src/bin/ide.rs"
-check "cogh ide uninstall wires removal" \
-    "grep -q 'uninstall_opencode' crates/cognicode-cli/src/bin/ide.rs"
-

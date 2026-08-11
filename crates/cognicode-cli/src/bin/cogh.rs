@@ -10,6 +10,7 @@ use clap::{Parser, Subcommand};
 mod bundled;
 mod ide;
 mod layout;
+mod lifecycle;
 mod lockfile;
 mod manifest;
 mod registry;
