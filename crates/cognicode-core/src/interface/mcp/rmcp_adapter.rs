@@ -1216,7 +1216,27 @@ async fn call_tool_handler(
     request: CallToolRequestParams,
 ) -> InterfaceResult<String> {
     let tool_name = request.name.as_ref();
-    let arguments = request.arguments.unwrap_or_default();
+    let mut arguments = request.arguments.unwrap_or_default();
+
+    // UAT 2026-08-10 DEFECT-1: BC layer for parameter naming.
+    // Renames legacy parameter names to their canonical equivalents so
+    // callers that pre-date the v1.0.0 convention continue to work.
+    // Each substitution emits a structured `warn` so dashboards can
+    // drive migration without this layer silently propping them up.
+    let substitutions =
+        crate::interface::mcp::parameter_aliases::apply_aliases(tool_name, &mut arguments);
+    if !substitutions.is_empty() {
+        let renames = substitutions
+            .iter()
+            .map(|(old, new)| format!("{old}\u{2192}{new}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        tracing::warn!(
+            tool = %tool_name,
+            renames = %renames,
+            "deprecated MCP parameter name(s) used; this BC shim ships with v1.0.0 and is scheduled for removal in v1.1"
+        );
+    }
 
     // M1.1: Centralized instrumentation boundary
     let start = Instant::now();
