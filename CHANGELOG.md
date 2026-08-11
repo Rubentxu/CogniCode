@@ -62,10 +62,9 @@ For granular commit history, see `git log v0.50.0..v0.86.0`.
 
 ## [Unreleased]
 
-### E31 — v1.0.0 readiness program (rounds 1-14)
+### v1.0.0 — operational cut (pending pre-cut gates)
 
-This Unreleased section accumulates the E31 sub-cycles into the upcoming
-v1.0.0 release. The actual tag cut is gated by:
+The actual v1.0.0 tag cut is gated by:
 
 - **T7 stability cadence**: 5 consecutive nights CV < 10% (counter: 0/5)
 - **E31-G scorecard streak**: 3 consecutive ALL-GREEN scorecards (counter: 0/3)
@@ -76,33 +75,57 @@ v1.0.0 release. The actual tag cut is gated by:
 - **G11 (docs)**: 14 ADRs reviewed (per E31-C)
 - **G13 (test plan)**: T1-T6 GREEN (per E31-B + E31-E + E31-F)
 
-Program context:
+## [v0.93.0] — 2026-08-11
 
-- **E31-A** (PR #237): Release plan ACEPTADO + Pillar 7 (Test Plan comprehensivo, G13 scorecard gate)
-- **E31-B** (PR #239): `docs/TEST-PLAN.md` (T1+T2 closed)
-- **E31-D** (PR #238): W-2b multimodal skip-loopholes → OBSOLETE banners
-- **E31-B2** (PR #240): 8 Tier-1 python scenarios (build_graph → 5/5)
-- **E31-B3** (PR #241): 8 Tier-1 typescript scenarios (4 tools → 5/5)
-- **E31-B4** (PR #242): 16 Tier-1 go+java scenarios (8 tools → 3/5)
-- **E31-B5** (PR #243): T6 CI gate (LOCAL-ONLY via `act` + `podman` per user directive)
-- **E31-B6** (PR #244): T7 stability cadence (per-scenario flaky log + nightly)
-- **E31-B7** (PR #245): 8 Tier-1 ts+py closure (8 B4 tools → 5/5; closure 24.7%)
-- **E31-B8** (PR #246): 8 Tier-1 ts+py closure round 2 (8 more → 5/5; closure 35.6%, ≥30% target met)
-- **E31-C** (PR #247): 14 ADRs PROPOSED → ACCEPTED/SUPERSEDED + ADR-015 renumber
-- **E31-E** (PR #248): read_file CV 0.528 outlier → cold-cache filter + `cv_warm` field
-- **E31-F** (PR #249): conformance matrix reconcile + SCAL-001 evidence ref in G8
-- **E31-G** (PR #250): 3-consecutive-scorecard-runs counter (per ADR-031 §3)
+Checkpoint release between E31 close (v0.92.0) and the operational v1.0.0
+cut. MINOR bump justified by DEFECT-1's parameter-alias BC layer (public
+surface change with backward-compat aliases) across 18 MCP tools.
 
-### Tier-1 closure progression
+### E31 program rollup closure
 
-| Cycle | Tools @ 5/5 | python col | ts col | go col | java col | Closure % |
-|-------|-------------|------------|--------|--------|----------|-----------|
-| E30.5 (PR #236, v0.92.0) | 5 | 5 | 7 | 16 | 16 | 6.8% |
-| E31-B2 (PR #240) | 6 | 11 | 7 | 16 | 16 | 8.2% |
-| E31-B3 (PR #241) | 10 | 11 | 15 | 16 | 16 | 13.7% |
-| E31-B4 (PR #242) | 10 | 11 | 15 | 24 | 24 | 13.7% |
-| E31-B7 (PR #245) | 18 | 19 | 23 | 24 | 24 | 24.7% |
-| E31-B8 (PR #246) | 26 | 27 | 31 | 24 | 24 | 35.6% |
+- **E31-E2** (`#254`): `retrieve_and_verify` CV 0.105 — ACCEPT (closes B1 deferred).
+- **E31-B2-rollup** (`#255`): 178 Tier-3 scenarios quarantined via
+  `known_quarantined.yaml` (closes B2); remote CI triggers
+  (`push`/`pull_request`/`schedule`) disabled per E31-B5 user directive —
+  `workflow_dispatch:` retained (closes B3).
+- **E31-B4-rollup** (`#256`): Tier-1 closure round 3 — 8 more tools
+  promoted to 5/5; T3 closure ~46.6%.
+- **E31-B5-rollup** (commit `4d5f8bb6`): CHANGELOG.md v0.50–v0.86
+  reconstruction (closes B5).
+- **E31-B6-rollup** (`#258`): INC-001..004 closure as ACCEPT (closes B6).
+
+### E32 distribution program (asdf-vm-inspired)
+
+- **E32-A** (`#262`): `cogh` CLI binary core (install / list / current /
+  latest / update / uninstall / plugin / reshim / doctor / where).
+- **E32-B** (`#261`): plugin manifest + registry client + bundled plugins
+  (mcp-server, skills-cognicode-core, sandbox-templates).
+- **E32-C** (`#260`): portable skill bundles + `cogh skill validate`.
+- **E32-D** (`#259`): opencode IDE adapter.
+- **E32-E**: zcode IDE adapter.
+- **E32-F**: claude IDE adapter.
+- **E32-G** (`#264`): codex IDE adapter (TOML config).
+- **E32-H** (`#265`): lifecycle integration tests.
+
+### UAT defect closure (5 blockers flagged for v1.0.0)
+
+- **DEFECT-1** (`#271`): `feat(mcp)` — parameter-alias BC layer
+  (canonical → legacy naming) across 18 MCP tools. MINOR surface.
+- **DEFECT-2** (`#268`): `test(mcp)` — build_graph `directory=.` and
+  absolute path coverage.
+- **DEFECT-3** (`#269`): `fix(mcp)` — `handle_smart_search` sub-handlers
+  capped at 60s with graceful degradation.
+- **DEFECT-4** (`#267`): `fix(uat)` — TC-1.3 path for requests fixture
+  aligned to actual src-layout.
+- **DEFECT-5** (`#270`): `fix(core)` — tree-sitter extractor honors
+  `variable_types`; broader Rust variable shapes.
+
+### Distribution deployment
+
+- `chore(cogh)` (`#272`): bundled mcp-server bumped to v0.93.0 with real
+  SHA256.
+- `chore(cogh)` (`#273`): mcp-server manifest pointed at
+  `Rubentxu/CogniCode/releases` (single-repo distribution).
 
 ## [v0.92.0] — 2026-08-10
 
