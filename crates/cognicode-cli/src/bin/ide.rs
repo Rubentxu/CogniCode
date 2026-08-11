@@ -101,9 +101,9 @@ pub fn integrate_opencode(
     if skills_src.exists() {
         copy_dir_recursive(&skills_src, &skills_dst)
             .with_context(|| format!("copy {} → {}", skills_src.display(), skills_dst.display()))?;
-        eprintln!("✓ copied skills: {}", skills_dst.display());
+        println!("✓ copied skills: {}", skills_dst.display());
     } else {
-        eprintln!("(no skills to copy from {})", skills_src.display());
+        println!("(no skills to copy from {})", skills_src.display());
     }
 
     // 2. MCP config merge
@@ -125,7 +125,7 @@ pub fn integrate_opencode(
     mcp.as_object_mut().unwrap()
         .insert("cognicode-mcp".to_string(), mcp_entry);
     write_json_atomic(&config_path, &config)?;
-    eprintln!("✓ patched: {}", config_path.display());
+    println!("✓ patched: {}", config_path.display());
 
     Ok(())
 }
@@ -137,7 +137,7 @@ pub fn uninstall_opencode(version: &str) -> Result<()> {
     if skills_dst.exists() {
         std::fs::remove_dir_all(&skills_dst)
             .with_context(|| format!("rm -rf {}", skills_dst.display()))?;
-        eprintln!("✓ removed: {}", skills_dst.display());
+        println!("✓ removed: {}", skills_dst.display());
     }
 
     // 2. Remove MCP entry
@@ -152,7 +152,7 @@ pub fn uninstall_opencode(version: &str) -> Result<()> {
             }
         }
         write_json_atomic(&config_path, &config)?;
-        eprintln!("✓ unpached: {}", config_path.display());
+        println!("✓ unpached: {}", config_path.display());
     }
 
     Ok(())
@@ -229,9 +229,9 @@ pub fn integrate_zcode(home: &Path, plugin: &str, version: &str, mcp_command: &[
     if skills_src.exists() {
         copy_dir_recursive(&skills_src, &skills_dst)
             .with_context(|| format!("copy {} → {}", skills_src.display(), skills_dst.display()))?;
-        eprintln!("✓ copied skills: {}", skills_dst.display());
+        println!("✓ copied skills: {}", skills_dst.display());
     } else {
-        eprintln!("(no skills to copy from {})", skills_src.display());
+        println!("(no skills to copy from {})", skills_src.display());
     }
 
     // 2. MCP config merge
@@ -252,7 +252,7 @@ pub fn integrate_zcode(home: &Path, plugin: &str, version: &str, mcp_command: &[
     mcp.as_object_mut().unwrap()
         .insert("cognicode-mcp".to_string(), mcp_entry);
     write_json_atomic(&config_path, &config)?;
-    eprintln!("✓ patched: {}", config_path.display());
+    println!("✓ patched: {}", config_path.display());
 
     Ok(())
 }
@@ -263,7 +263,7 @@ pub fn uninstall_zcode(version: &str) -> Result<()> {
     if skills_dst.exists() {
         std::fs::remove_dir_all(&skills_dst)
             .with_context(|| format!("rm -rf {}", skills_dst.display()))?;
-        eprintln!("✓ removed: {}", skills_dst.display());
+        println!("✓ removed: {}", skills_dst.display());
     }
 
     // 2. Remove MCP entry
@@ -278,7 +278,7 @@ pub fn uninstall_zcode(version: &str) -> Result<()> {
             }
         }
         write_json_atomic(&config_path, &config)?;
-        eprintln!("✓ unpached: {}", config_path.display());
+        println!("✓ unpached: {}", config_path.display());
     }
 
     Ok(())
@@ -334,9 +334,9 @@ pub fn integrate_claude(home: &Path, plugin: &str, version: &str, mcp_command: &
     if skills_src.exists() {
         copy_dir_recursive(&skills_src, &skills_dst)
             .with_context(|| format!("copy {} → {}", skills_src.display(), skills_dst.display()))?;
-        eprintln!("✓ copied skills: {}", skills_dst.display());
+        println!("✓ copied skills: {}", skills_dst.display());
     } else {
-        eprintln!("(no skills to copy from {})", skills_src.display());
+        println!("(no skills to copy from {})", skills_src.display());
     }
 
     // 2. MCP config: write `~/.claude/mcp/cognicode-mcp.json`
@@ -349,7 +349,7 @@ pub fn integrate_claude(home: &Path, plugin: &str, version: &str, mcp_command: &
         "args": mcp_command.get(1..).unwrap_or(&[]).to_vec(),
     });
     write_json_atomic(&target, &entry)?;
-    eprintln!("✓ patched: {}", target.display());
+    println!("✓ patched: {}", target.display());
 
     Ok(())
 }
@@ -360,7 +360,7 @@ pub fn uninstall_claude(version: &str) -> Result<()> {
     if skills_dst.exists() {
         std::fs::remove_dir_all(&skills_dst)
             .with_context(|| format!("rm -rf {}", skills_dst.display()))?;
-        eprintln!("✓ removed: {}", skills_dst.display());
+        println!("✓ removed: {}", skills_dst.display());
     }
 
     // 2. Remove MCP file
@@ -368,7 +368,7 @@ pub fn uninstall_claude(version: &str) -> Result<()> {
     if target.exists() {
         std::fs::remove_file(&target)
             .with_context(|| format!("rm {}", target.display()))?;
-        eprintln!("✓ removed: {}", target.display());
+        println!("✓ removed: {}", target.display());
     }
 
     Ok(())
@@ -420,9 +420,9 @@ pub fn integrate_codex(home: &Path, plugin: &str, version: &str, mcp_command: &[
     if skills_src.exists() {
         copy_dir_recursive(&skills_src, &skills_dst)
             .with_context(|| format!("copy {} → {}", skills_src.display(), skills_dst.display()))?;
-        eprintln!("✓ copied skills: {}", skills_dst.display());
+        println!("✓ copied skills: {}", skills_dst.display());
     } else {
-        eprintln!("(no skills to copy from {})", skills_src.display());
+        println!("(no skills to copy from {})", skills_src.display());
     }
 
     // 2. Codex config: TOML, [mcp_servers.cognicode-mcp] section
@@ -456,7 +456,7 @@ pub fn integrate_codex(home: &Path, plugin: &str, version: &str, mcp_command: &[
         .with_context(|| format!("write {}", tmp.display()))?;
     std::fs::rename(&tmp, &config_path)
         .with_context(|| format!("rename {}", config_path.display()))?;
-    eprintln!("✓ patched: {}", config_path.display());
+    println!("✓ patched: {}", config_path.display());
 
     Ok(())
 }
@@ -467,7 +467,7 @@ pub fn uninstall_codex(version: &str) -> Result<()> {
     if skills_dst.exists() {
         std::fs::remove_dir_all(&skills_dst)
             .with_context(|| format!("rm -rf {}", skills_dst.display()))?;
-        eprintln!("✓ removed: {}", skills_dst.display());
+        println!("✓ removed: {}", skills_dst.display());
     }
 
     // 2. Remove MCP entry from TOML config
@@ -488,7 +488,7 @@ pub fn uninstall_codex(version: &str) -> Result<()> {
             .with_context(|| format!("write {}", tmp.display()))?;
         std::fs::rename(&tmp, &config_path)
             .with_context(|| format!("rename {}", config_path.display()))?;
-        eprintln!("✓ unpached: {}", config_path.display());
+        println!("✓ unpached: {}", config_path.display());
     }
 
     Ok(())
