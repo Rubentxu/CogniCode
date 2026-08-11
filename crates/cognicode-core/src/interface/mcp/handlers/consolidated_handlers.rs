@@ -11,10 +11,19 @@ use crate::interface::mcp::schemas::{
     CompareGraphInput, CompareGraphOutput, MetricDeltas, SmartSearchInput, SmartSearchOutput,
     SmartSearchResult,
 };
+use std::time::Duration;
 
 // ============================================================================
 // Phase 5.2 — Composite Tools
 // ============================================================================
+
+/// Per-sub-handler timeout for the three parallel searches inside
+/// `handle_smart_search`. UAT 2026-08-10 flagged DEFECT-3 (HIGH): on
+/// large repos (e.g. rust-analyzer), one of the three backends can
+/// hang for the full client deadline (30s) or beyond. Wrapping each
+/// future in `tokio::time::timeout` lets the others finish and
+/// return partial results instead of the join collapsing.
+const SUB_HANDLER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
 // ── smart_search ─────────────────────────────────────────────────────────────
 
@@ -42,12 +51,77 @@ pub async fn handle_smart_search(
     let sem_svc = ctx.semantic_search.clone();
     let wd = ctx.working_dir.clone();
 
-    // Run all three searches in parallel
+    // Run all three searches in parallel, each guarded by
+    // SUB_HANDLER_TIMEOUT so that a single slow backend cannot stall
+    // the whole composite. UAT 2026-08-10 DEFECT-3.
     let (sem, rank, idf) = tokio::join!(
-        crate::interface::mcp::handlers::handle_semantic_search(sem_svc, wd, semantic_input),
-        crate::interface::mcp::handlers::aix_handlers::handle_ranked_symbols(ctx, ranked_input),
-        crate::interface::mcp::handlers::graph_handlers::handle_graph_search_idf(ctx, idf_input),
+        tokio::time::timeout(
+            SUB_HANDLER_TIMEOUT,
+            crate::interface::mcp::handlers::handle_semantic_search(sem_svc, wd, semantic_input),
+        ),
+        tokio::time::timeout(
+            SUB_HANDLER_TIMEOUT,
+            crate::interface::mcp::handlers::aix_handlers::handle_ranked_symbols(ctx, ranked_input),
+        ),
+        tokio::time::timeout(
+            SUB_HANDLER_TIMEOUT,
+            crate::interface::mcp::handlers::graph_handlers::handle_graph_search_idf(ctx, idf_input),
+        ),
     );
+
+    // UAT 2026-08-10 DEFECT-3: surface timeouts as log warnings instead
+    // of collapsing the whole composite. The flattened `sem`, `rank`
+    // and `idf` below are still `Result<_, HandlerError>` like the
+    // original code, so downstream `if let Ok(...) { ... }` blocks
+    // can keep using partial-result merging.
+    let sem: Result<_, HandlerError> = match sem {
+        Ok(Ok(v)) => Ok(v),
+        Ok(Err(e)) => {
+            tracing::warn!("smart_search sub-handler `semantic_search` returned error: {e}");
+            Err(e)
+        }
+        Err(_) => {
+            tracing::warn!(
+                "smart_search sub-handler `semantic_search` timed out after {:?} — degrading graceful",
+                SUB_HANDLER_TIMEOUT,
+            );
+            Err(HandlerError::Internal(format!(
+                "sub-handler `semantic_search` timed out after {SUB_HANDLER_TIMEOUT:?}"
+            )))
+        }
+    };
+    let rank: Result<_, HandlerError> = match rank {
+        Ok(Ok(v)) => Ok(v),
+        Ok(Err(e)) => {
+            tracing::warn!("smart_search sub-handler `ranked_symbols` returned error: {e}");
+            Err(e)
+        }
+        Err(_) => {
+            tracing::warn!(
+                "smart_search sub-handler `ranked_symbols` timed out after {:?} — degrading graceful",
+                SUB_HANDLER_TIMEOUT,
+            );
+            Err(HandlerError::Internal(format!(
+                "sub-handler `ranked_symbols` timed out after {SUB_HANDLER_TIMEOUT:?}"
+            )))
+        }
+    };
+    let idf: Result<_, HandlerError> = match idf {
+        Ok(Ok(v)) => Ok(v),
+        Ok(Err(e)) => {
+            tracing::warn!("smart_search sub-handler `graph_search_idf` returned error: {e}");
+            Err(e)
+        }
+        Err(_) => {
+            tracing::warn!(
+                "smart_search sub-handler `graph_search_idf` timed out after {:?} — degrading graceful",
+                SUB_HANDLER_TIMEOUT,
+            );
+            Err(HandlerError::Internal(format!(
+                "sub-handler `graph_search_idf` timed out after {SUB_HANDLER_TIMEOUT:?}"
+            )))
+        }
+    };
 
     // Collect all results with source tags, deduplicating by name
     let mut results: std::collections::HashMap<String, SmartSearchResult> =
@@ -1002,5 +1076,34 @@ mod tests {
                 assert!(output.views[i - 1].id <= view.id, "Should be sorted by id");
             }
         }
+    }
+
+    // Regression test for UAT 2026-08-10 DEFECT-3.
+    // Smart_search fans out to three sub-handlers via tokio::join!
+    // with each guarded by a 60s timeout. With an empty workspace the
+    // composite must still come back with Ok(...) and within a few
+    // seconds — a regression that drops the timeouts would surface
+    // as a hang past the 10s budget.
+    #[tokio::test]
+    async fn test_handle_smart_search_terminates_within_sub_handler_timeout() {
+        let ctx = test_ctx();
+        let input = SmartSearchInput {
+            query: "nonexistent-symbol-xyz".into(),
+            limit: Some(5),
+        };
+
+        let start = std::time::Instant::now();
+        let result = handle_smart_search(&ctx, input).await;
+        let elapsed = start.elapsed();
+
+        assert!(
+            result.is_ok(),
+            "smart_search should not error on an empty tempdir, got: {:?}",
+            result.err()
+        );
+        assert!(
+            elapsed < std::time::Duration::from_secs(10),
+            "smart_search took {elapsed:?} — per-sub-handler timeout may have dropped"
+        );
     }
 }
