@@ -374,6 +374,126 @@ pub fn uninstall_claude(version: &str) -> Result<()> {
     Ok(())
 }
 
+
+// ===== Codex adapter (E32-G) =====
+
+pub fn detect_codex() -> bool {
+    codex_config_path().exists()
+}
+
+pub fn codex_config_path() -> PathBuf {
+    if let Ok(env) = std::env::var("CODEX_CONFIG") {
+        return PathBuf::from(env);
+    }
+    let home = match std::env::var("HOME") {
+        Ok(h) => PathBuf::from(h),
+        Err(_) => return PathBuf::from("~/.codex/config.toml"),
+    };
+    home.join(".codex/config.toml")
+}
+
+pub fn codex_skills_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".codex/skills")
+}
+
+pub fn read_codex_config() -> Result<toml::Value> {
+    let path = codex_config_path();
+    if !path.exists() {
+        return Ok(toml::Value::Table(toml::map::Map::new()));
+    }
+    let text = std::fs::read_to_string(&path)
+        .with_context(|| format!("read {}", path.display()))?;
+    let v: toml::Value = text.parse()
+        .with_context(|| format!("parse {}", path.display()))?;
+    Ok(v)
+}
+
+pub fn integrate_codex(home: &Path, plugin: &str, version: &str, mcp_command: &[String]) -> Result<()> {
+    // 1. Skill copy
+    let skills_src = home
+        .join("versions")
+        .join(version)
+        .join(plugin)
+        .join("skills");
+    let skills_dst = codex_skills_dir().join(format!("cognicode-{version}"));
+    if skills_src.exists() {
+        copy_dir_recursive(&skills_src, &skills_dst)
+            .with_context(|| format!("copy {} → {}", skills_src.display(), skills_dst.display()))?;
+        eprintln!("✓ copied skills: {}", skills_dst.display());
+    } else {
+        eprintln!("(no skills to copy from {})", skills_src.display());
+    }
+
+    // 2. Codex config: TOML, [mcp_servers.cognicode-mcp] section
+    let config_path = codex_config_path();
+    let mut config = read_codex_config()?;
+    let mcp_table = config
+        .as_table_mut()
+        .ok_or_else(|| anyhow!("codex config.toml is not a table"))?
+        .entry("mcp_servers".to_string())
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+    let mcp_table = mcp_table
+        .as_table_mut()
+        .ok_or_else(|| anyhow!("mcp_servers is not a table"))?;
+    // Codex convention: each MCP server is a subtable with command + args
+    let cmd = mcp_command.first().map(String::as_str).unwrap_or("");
+    let args_value = mcp_command.get(1..).map(|rest| {
+        let arr: Vec<toml::Value> = rest.iter().cloned().map(toml::Value::String).collect();
+        toml::Value::Array(arr)
+    }).unwrap_or_else(|| toml::Value::Array(Vec::new()));
+    let server = toml::Value::Table(toml::map::Map::from_iter([
+        ("command".to_string(), toml::Value::String(cmd.to_string())),
+        ("args".to_string(), args_value),
+    ]));
+    mcp_table.insert("cognicode-mcp".to_string(), server);
+
+    // Atomic write
+    let tmp = config_path.with_extension("toml.tmp");
+    let s = toml::to_string_pretty(&config)
+        .with_context(|| format!("serialize {}", config_path.display()))?;
+    std::fs::write(&tmp, s)
+        .with_context(|| format!("write {}", tmp.display()))?;
+    std::fs::rename(&tmp, &config_path)
+        .with_context(|| format!("rename {}", config_path.display()))?;
+    eprintln!("✓ patched: {}", config_path.display());
+
+    Ok(())
+}
+
+pub fn uninstall_codex(version: &str) -> Result<()> {
+    // 1. Remove skills dir
+    let skills_dst = codex_skills_dir().join(format!("cognicode-{version}"));
+    if skills_dst.exists() {
+        std::fs::remove_dir_all(&skills_dst)
+            .with_context(|| format!("rm -rf {}", skills_dst.display()))?;
+        eprintln!("✓ removed: {}", skills_dst.display());
+    }
+
+    // 2. Remove MCP entry from TOML config
+    let config_path = codex_config_path();
+    if config_path.exists() {
+        let mut config = read_codex_config()?;
+        if let Some(t) = config.as_table_mut() {
+            if let Some(mcp_servers) = t.get_mut("mcp_servers") {
+                if let Some(mcp_table) = mcp_servers.as_table_mut() {
+                    mcp_table.remove("cognicode-mcp");
+                }
+            }
+        }
+        let tmp = config_path.with_extension("toml.tmp");
+        let s = toml::to_string_pretty(&config)
+            .with_context(|| format!("serialize {}", config_path.display()))?;
+        std::fs::write(&tmp, s)
+            .with_context(|| format!("write {}", tmp.display()))?;
+        std::fs::rename(&tmp, &config_path)
+            .with_context(|| format!("rename {}", config_path.display()))?;
+        eprintln!("✓ unpached: {}", config_path.display());
+    }
+
+    Ok(())
+}
+
 // ===== CLI handlers =====
 
 pub fn cmd_ide_detect() -> Result<()> {
@@ -413,8 +533,9 @@ pub fn cmd_ide_install(home: &CognicodeHomeSup, ide: &str, plugin: &str, version
         "opencode" => integrate_opencode(home.root.as_path(), plugin, version, &mcp_command),
         "zcode" => integrate_zcode(home.root.as_path(), plugin, version, &mcp_command),
         "claude" => integrate_claude(home.root.as_path(), plugin, version, &mcp_command),
+        "codex" => integrate_codex(home.root.as_path(), plugin, version, &mcp_command),
         other => Err(anyhow!(
-            "IDE '{}' is not supported by cogh yet (opencode/zcode/claude in E32-D/E/F)",
+            "IDE '{}' is not supported by cogh yet (opencode/zcode/claude/codex in E32-D/E/F/G)",
             other
         )),
     }
@@ -425,8 +546,9 @@ pub fn cmd_ide_uninstall(home: &CognicodeHomeSup, ide: &str, version: &str) -> R
         "opencode" => uninstall_opencode(version),
         "zcode" => uninstall_zcode(version),
         "claude" => uninstall_claude(version),
+        "codex" => uninstall_codex(version),
         other => Err(anyhow!(
-            "IDE '{}' is not supported by cogh yet (opencode/zcode/claude in E32-D/E/F)",
+            "IDE '{}' is not supported by cogh yet (opencode/zcode/claude/codex in E32-D/E/F/G)",
             other
         )),
     }
@@ -519,7 +641,7 @@ mod tests {
             "agent": {"foo": {"description": "test"}},
             "mcp": {"chronos": {"type": "local"}}
         });
-        std::fs::write(&config, serde_json::to_string_pretty(&original).unwrap()).unwrap();
+        std::fs::write(&config, "{\"agent\":{\"foo\":{\"description\":\"test\"}},\"mcp\":{\"chronos\":{\"type\":\"local\"}}}").unwrap();
 
         // Override HOME for the duration of this test
         let prev_home = std::env::var("HOME").unwrap();
@@ -681,6 +803,74 @@ mod tests {
     fn claude_config_path_default() {
         let p = claude_config_path();
         assert!(p.ends_with(".claude"));
+    }
+    #[test]
+    fn integrate_codex_inserts_mcp_server() {
+        let tmp = std::env::temp_dir().join(format!("cogh-codex-{}", std::process::id()));
+        std::fs::create_dir_all(tmp.join(".codex")).unwrap();
+        let config = tmp.join(".codex/config.toml");
+        std::fs::write(&config, "model = 'test'\n").unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        unsafe { std::env::set_var("HOME", &tmp); }
+        let home = std::path::PathBuf::from(&tmp).join(".cognicode");
+        let mcp_cmd = vec!["/bin/cognicode-mcp".to_string(), "stdio".to_string()];
+        let result = integrate_codex(&home, "mcp-server", "0.92.0", &mcp_cmd);
+        unsafe { std::env::set_var("HOME", &prev_home); }
+        result.unwrap();
+
+        let text = std::fs::read_to_string(&config).unwrap();
+        // Parse the TOML to verify semantically — quoting style may
+        // change ("test" vs 'test').
+        let parsed: toml::Value = text.parse().unwrap();
+        let model = parsed.get("model").and_then(|m| m.as_str()).unwrap_or("");
+        let has_cognicode_mcp = parsed.get("mcp_servers")
+            .and_then(|s| s.get("cognicode-mcp"))
+            .is_some();
+        assert!(has_cognicode_mcp, "cognicode-mcp not in mcp_servers");
+        assert_eq!(model, "test", "model field not preserved");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn uninstall_codex_removes_entry() {
+        let tmp = std::env::temp_dir().join(format!("cogh-codex-un-{}", std::process::id()));
+        std::fs::create_dir_all(tmp.join(".codex")).unwrap();
+        let config = tmp.join(".codex/config.toml");
+        let original = r#"model = 'test'
+mcp_servers.existing.command = 'x'
+mcp_servers.existing.args = ['y']
+"#;
+        std::fs::write(&config, original).unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        unsafe { std::env::set_var("HOME", &tmp); }
+        let result = uninstall_codex("0.92.0");
+        unsafe { std::env::set_var("HOME", &prev_home); }
+        result.unwrap();
+
+        let text = std::fs::read_to_string(&config).unwrap();
+        // TOML output may use [mcp_servers.existing] section format
+        // instead of inline. Parse it back to verify semantically.
+        let parsed: toml::Value = text.parse().unwrap();
+        let existing_cmd = parsed.get("mcp_servers")
+            .and_then(|s| s.get("existing"))
+            .and_then(|e| e.get("command"))
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+        assert!(!text.contains("cognicode-mcp"));
+        assert_eq!(existing_cmd, "x");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+
+
+    #[test]
+    fn codex_config_path_default() {
+        let p = codex_config_path();
+        assert!(p.ends_with("config.toml"));
     }
 }
 
