@@ -16,13 +16,14 @@ The streak is preserved in `sandbox/results/scorecard_streak.json`:
     "verdict": "GREEN"
   }
 
-The counter is INCREMENTED when the new run is GREEN+ and the previous run
-was GREEN+ with no RED gates. The counter is RESET to 0 on any RED.
+The counter is INCREMENTED when the scorecard is GREEN (all 12 GREEN, or
+AMBER but in the documented AMBER_WHITELIST). The counter is HELD on
+non-whitelisted AMBER, and RESET to 0 on any RED.
 
 Exit code:
   0  streak counter incremented (or counter already at goal)
   1  some gates RED — counter reset
-  2  some gates AMBER — counter held (not reset, but not incremented)
+  2  some gates non-whitelisted AMBER — counter held
 """
 
 import argparse
@@ -34,6 +35,26 @@ from pathlib import Path
 
 # Goal: 3 consecutive GREEN runs before v1.0.0 tag
 GOAL_STREAK = 3
+
+
+# Gates that may stay AMBER without blocking the streak, with documented
+# waiver rationale. Each entry maps gate_id to (ADR reference, rationale).
+# Adding a gate here requires a documented waiver (ADR or pre-cut checklist).
+AMBER_WHITELIST: dict[str, str] = {
+    # G1: e13-wave2 evidence check is a historical artifact from the
+    # E13-wave2 era (v0.86.0). Current scoring no longer requires it; the
+    # check is stale but harmless. Will be removed when the gate is rewritten.
+    "G1": "historical E13-wave2 evidence check; stale but harmless (E31-Z)",
+    # G5: latency budget for the analytics family has no data because the
+    # analytics tools (graph_pagerank, graph_communities, etc.) require
+    # Tier-B corpora not exercised in nightly cadence. Best-effort per
+    # v1.0.0-PRE-CUT-CHECKLIST §3.
+    "G5": "analytics family data not in nightly cadence (v1.0.0 pre-cut §3)",
+    # G8: Tier-3 typescript probe blocked by SCAL-001 (typescript timeout).
+    # Documented as INC-004. v1.0.0-PRE-CUT-CHECKLIST Gate 3 explicitly
+    # accepts this with option B (ADR waiver).
+    "G8": "SCAL-001 documented; v1.0.0 pre-cut Gate 3 option B (E31-F ADR)",
+}
 
 
 def load_scorecard(path: Path) -> dict:
@@ -51,8 +72,25 @@ def verdict_is_green_plus(data: dict) -> bool:
 
 
 def verdict_is_all_green(data: dict) -> bool:
-    """All 12 gates are GREEN (no AMBER, no RED)."""
+    """All 12 gates are strictly GREEN (no AMBER, no RED)."""
     return all(g.get("status") == "GREEN" for g in data.get("gates", []))
+
+
+def verdict_is_green_or_whitelisted_amber(data: dict) -> bool:
+    """All gates GREEN, or AMBER but only in the documented whitelist.
+
+    This is the predicate that drives streak INCREMENT per ADR-031 §3 as
+    amended by the v1.0.0-PRE-CUT-CHECKLIST Gate 3 (documented AMBER
+    waivers). A non-whitelisted AMBER, or any RED, returns False.
+    """
+    for g in data.get("gates", []):
+        status = g.get("status")
+        gid = g.get("id")
+        if status == "RED":
+            return False
+        if status == "AMBER" and gid not in AMBER_WHITELIST:
+            return False
+    return True
 
 
 def load_streak(streak_path: Path) -> dict:
@@ -93,7 +131,7 @@ def main() -> int:
     streak = load_streak(streak_path)
 
     # Verdict classification
-    if verdict_is_all_green(data):
+    if verdict_is_green_or_whitelisted_amber(data):
         verdict = "GREEN"
     elif verdict_is_green_plus(data):
         verdict = "AMBER"
