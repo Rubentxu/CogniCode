@@ -151,9 +151,9 @@ features:
           - "Container cognicode-python running"
           - "Repo requests disponible"
         plain_steps:
-          - action: "Llama get_file_symbols sobre src/models.py"
+          - action: "Llama get_file_symbols sobre src/requests/api.py"
             copy_hint: true
-            expected: "JSON response"
+            expected: "JSON response con lista de funciones (request, get, post, put, delete, head, options, patch, request_session)"
           - action: "Verifica kinds: function, class, module"
             expected: "symbols > 0 con classes + functions"
         evidence_prompt: "Pega el JSON response"
