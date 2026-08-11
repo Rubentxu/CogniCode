@@ -330,7 +330,7 @@ scorecard-streak runs="sandbox/results/ci_smoke,sandbox/results/quality,sandbox/
     @python3 sandbox/scripts/release_scorecard.py \
         --runs "{{runs}}" \
         --stability sandbox/results/stability.json \
-        --coverage-matrix sandbox/reports/conformance_matrix.yaml \
+        --coverage-matrix sandbox/reports/coverage_matrix.yaml \
         --output sandbox/results/scorecard_run
     @python3 sandbox/scripts/scorecard_streak.py \
         --record sandbox/results/scorecard_run.json \
