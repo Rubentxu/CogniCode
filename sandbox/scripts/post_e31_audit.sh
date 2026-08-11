@@ -211,6 +211,14 @@ check "cogh ide --install claude wires MCP entry" \
 check "cogh ide --uninstall claude wires removal" \
     "grep -q 'uninstall_claude' crates/cognicode-cli/src/bin/ide.rs"
 
+# 22. E32-G codex IDE adapter
+echo ""
+echo "E32-G codex IDE adapter:"
+check "cogh ide --install codex wires MCP entry" \
+    "grep -q 'integrate_codex' crates/cognicode-cli/src/bin/ide.rs"
+check "cogh ide --uninstall codex wires removal" \
+    "grep -q 'uninstall_codex' crates/cognicode-cli/src/bin/ide.rs"
+
 echo ""
 echo "==> E31 audit: ${PASS} PASS, ${FAIL} FAIL"
 if [ "$FAIL" -eq 0 ]; then
