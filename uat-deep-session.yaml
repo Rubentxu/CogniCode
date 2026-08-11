@@ -1,0 +1,48 @@
+{
+  "session": "uat-deep-2026-08-10",
+  "started": "2026-08-10T17:51:30Z",
+  "completed": "2026-08-10T17:57:00Z",
+  "total": 58,
+  "passed": 38,
+  "failed": 3,
+  "blocked": 17,
+  "defects": [
+    {
+      "id": "DEFECT-1",
+      "severity": "HIGH",
+      "title": "Inconsistent parameter naming across 68 MCP tools",
+      "category": "API consistency",
+      "resolution": "standardize parameter names"
+    },
+    {
+      "id": "DEFECT-2",
+      "severity": "HIGH",
+      "title": "build_graph with directory=. crashes server",
+      "category": "runtime",
+      "resolution": "detect working directory case and shortcut"
+    },
+    {
+      "id": "DEFECT-3",
+      "severity": "HIGH",
+      "title": "smart_search / get_entry_points timeout on large repos",
+      "category": "performance",
+      "resolution": "add timeout + cache graph build"
+    },
+    {
+      "id": "DEFECT-4",
+      "severity": "LOW",
+      "title": "UAT fixture path stale for requests",
+      "category": "test-data",
+      "resolution": "verify pinned SHA for requests repo"
+    },
+    {
+      "id": "DEFECT-5",
+      "severity": "MEDIUM",
+      "title": "get_file_symbols incomplete extraction",
+      "category": "extraction",
+      "resolution": "audit tree-sitter Rust queries"
+    }
+  ],
+  "verdict": "NOT READY for v1.0.0 tag cut",
+  "recommendation": "fix DEFECT-1, DEFECT-2, DEFECT-3, DEFECT-5 before v1.0.0 tag cut"
+}

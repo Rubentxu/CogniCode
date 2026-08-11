@@ -1,0 +1,241 @@
+uit_session:
+  started_at: '2026-08-10T17:54:55.199561+00:00'
+  binary: ${WORKSPACE}/target/debug/cognicode-mcp
+  summary:
+    total: 26
+    passed: 21
+    failed: 3
+    blocked: 2
+    issues: 1
+results:
+- tc_id: TC-0.1
+  title: Sandbox containers running
+  status: "\u2705 PASS"
+  elapsed_sec: 0.07
+  details:
+    status: "\u2705 PASS"
+    containers:
+    - cognicode-python
+    - cognicode-rust
+    - cognicode-js
+    - cognicode-java
+    - cognicode-go
+    - cognicode-ts
+- tc_id: TC-0.2
+  title: Build release compiles
+  status: "\u2705 PASS"
+  elapsed_sec: 0.38
+  details:
+    status: "\u2705 PASS"
+- tc_id: TC-0.3
+  title: Cargo test (workspace)
+  status: "\u2705 PASS"
+  elapsed_sec: 60.65
+  details:
+    status: "\u2705 PASS"
+    passed: 0
+    failed: 0
+- tc_id: TC-0.4
+  title: Cargo doc tests
+  status: "\u2705 PASS"
+  elapsed_sec: 10.81
+  details:
+    status: "\u2705 PASS"
+- tc_id: TC-1.1
+  title: get_file_symbols on Rust (clap/src/lib.rs)
+  status: "\u2705 PASS"
+  elapsed_sec: 1.02
+  details:
+    status: "\u2705 PASS"
+    symbol_count: 1
+    tool: get_file_symbols
+- tc_id: TC-1.2
+  title: get_file_symbols on TypeScript (commander/index.js)
+  status: "\u2705 PASS"
+  elapsed_sec: 0.7
+  details:
+    status: "\u2705 PASS"
+    symbol_count: 0
+- tc_id: TC-1.3
+  title: get_file_symbols on Python (click/__init__.py)
+  status: "\u2705 PASS"
+  elapsed_sec: 0.25
+  details:
+    status: "\u2705 PASS"
+    symbol_count: 0
+- tc_id: TC-1.4
+  title: get_file_symbols on Go (cobra/command.go)
+  status: "\u274C FAIL"
+  elapsed_sec: 0.01
+  details:
+    status: "\u274C FAIL"
+    response:
+      error: no id:2 response
+      stdout: ''
+      stderr: 'Error: Directory ''${WORKSPACE}/sandbox/repos/cobra''
+        does not exist
+
+        '
+- tc_id: TC-2.1
+  title: build_graph on clap
+  status: "\u274C FAIL"
+  elapsed_sec: 13.98
+  details:
+    status: "\u274C FAIL"
+    response:
+      error: no id:2 response
+      stdout: '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"resources":{},"tools":{}},"serverInfo":{"name":"cognicode","version":"0.5.0"}}}
+
+        '
+      stderr: " \e[1mserve_inner\e[0m: handle_build_graph: 8690 symbols, 5788 edges\
+        \ in 930ms (source: built)\n\e[2m2026-08-10T17:54:35.675412Z\e[0m \e[33m WARN\e\
+        [0m \e[1mserve_inner\e[0m: timed out draining in-flight responses\n\e[2m2026-08-10T17:54:35.675561Z\e\
+        [0m \e[32m INFO\e[0m \e[1mserve_inner\e[0m: serve finished \e[3mquit_reason\e\
+        [0m\e[2m=\e[0mClosed\n\e[2m2026-08-10T17:54:44.594219Z\e[0m \e[32m INFO\e\
+        [0m \e[1mserve_inner\e[0m: tool_call \e[3mtool\e[0m\e[2m=\e[0mbuild_graph\
+        \ \e[3mduration_ms\e[0m\e[2m=\e[0m13919 \e[3mstatus\e[0m\e[2m=\e[0mok\n"
+- tc_id: TC-2.2
+  title: get_call_hierarchy on Command
+  status: "\u2705 PASS"
+  elapsed_sec: 0.02
+  details:
+    status: "\u2705 PASS"
+    response:
+      content:
+      - type: text
+        text: 'invalid input: JSON error: unknown variant `callees`, expected `incoming`
+          or `outgoing`'
+      isError: true
+- tc_id: TC-2.3
+  title: trace_path call graph traversal
+  status: "\u2705 PASS"
+  elapsed_sec: 0.02
+  details:
+    status: "\u2705 PASS"
+    response:
+      content:
+      - type: text
+        text: 'invalid input: JSON error: missing field `source`'
+      isError: true
+- tc_id: TC-2.4
+  title: build_call_subgraph on Command
+  status: "\u2705 PASS"
+  elapsed_sec: 0.02
+  details:
+    status: "\u2705 PASS"
+- tc_id: TC-2.5
+  title: get_entry_points
+  status: "\u2705 PASS"
+  elapsed_sec: 1.37
+  details:
+    status: "\u2705 PASS"
+- tc_id: TC-2.6
+  title: get_leaf_functions
+  status: "\u2705 PASS"
+  elapsed_sec: 1.28
+  details:
+    status: "\u2705 PASS"
+- tc_id: TC-2.7
+  title: get_complexity on Command
+  status: "\u2705 PASS"
+  elapsed_sec: 0.03
+  details:
+    status: "\u2705 PASS"
+- tc_id: TC-3.1
+  title: Explorer UI critical components exist
+  status: "\u26A0\uFE0F BLOCKED"
+  elapsed_sec: 0.0
+  details:
+    status: "\u26A0\uFE0F BLOCKED"
+    missing:
+    - src/components/landing-workbench
+    - src/components/pane-stack
+    - src/components/lens-panel
+    - src/components/spotter
+    - src/components/onboarding-wizard
+    - src/components/view-spec-wizard
+    issues:
+    - severity: medium
+      title: 'UI components missing: [''src/components/landing-workbench'', ''src/components/pane-stack'',
+        ''src/components/lens-panel'', ''src/components/spotter'', ''src/components/onboarding-wizard'',
+        ''src/components/view-spec-wizard'']'
+- tc_id: TC-3.2
+  title: Explorer UI package.json deps
+  status: "\u2705 PASS"
+  elapsed_sec: 0.0
+  details:
+    status: "\u2705 PASS"
+    deps: 19
+- tc_id: TC-3.3
+  title: Explorer API process running
+  status: "\u26A0\uFE0F BLOCKED"
+  elapsed_sec: 0.06
+  details:
+    status: "\u26A0\uFE0F BLOCKED"
+    note: cognicode-explorer-api not detected in process list
+- tc_id: TC-3.4
+  title: Explorer API binary compiles
+  status: "\u274C FAIL"
+  elapsed_sec: 0.34
+  details:
+    status: "\u274C FAIL"
+    stderr: 'warning: profiles for the non root package will be ignored, specify profiles
+      at the workspace root:
+
+      package:   ${WORKSPACE}/crates/cognicode-graph-wasm/Cargo.toml
+
+      workspace: ${WORKSPACE}/Cargo.toml
+
+      error: no bin target named `cognicode-explorer-api` in `cognicode-explorer`
+      package
+
+      '
+- tc_id: TC-4.1
+  title: smart_search query
+  status: "\u2705 PASS"
+  elapsed_sec: 3.48
+  details:
+    status: "\u2705 PASS"
+- tc_id: TC-4.2
+  title: graph_query natural language
+  status: "\u2705 PASS"
+  elapsed_sec: 0.02
+  details:
+    status: "\u2705 PASS"
+- tc_id: TC-4.3
+  title: search_content grep
+  status: "\u2705 PASS"
+  elapsed_sec: 0.22
+  details:
+    status: "\u2705 PASS"
+- tc_id: TC-5.1
+  title: project_overview
+  status: "\u2705 PASS"
+  elapsed_sec: 3.62
+  details:
+    status: "\u2705 PASS"
+- tc_id: TC-5.2
+  title: codebase_map
+  status: "\u2705 PASS"
+  elapsed_sec: 0.02
+  details:
+    status: "\u2705 PASS"
+- tc_id: TC-5.3
+  title: project_insights
+  status: "\u2705 PASS"
+  elapsed_sec: 0.02
+  details:
+    status: "\u2705 PASS"
+- tc_id: TC-5.4
+  title: MCP tools/list
+  status: "\u2705 PASS"
+  elapsed_sec: 0.02
+  details:
+    status: "\u2705 PASS"
+    tool_count: 20
+issues:
+- tc_id: TC-3.1
+  severity: medium
+  title: 'UI components missing: [''src/components/landing-workbench'', ''src/components/pane-stack'',
+    ''src/components/lens-panel'', ''src/components/spotter'', ''src/components/onboarding-wizard'',
+    ''src/components/view-spec-wizard'']'
