@@ -7,6 +7,7 @@ pub mod file_ops_handlers;
 pub mod handlers;
 pub mod prompts;
 pub mod resources;
+pub mod parameter_aliases;
 pub mod rmcp_adapter;
 pub mod schemas;
 pub mod security;
