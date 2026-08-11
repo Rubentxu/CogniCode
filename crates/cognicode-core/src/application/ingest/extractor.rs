@@ -160,6 +160,30 @@ pub fn extract_file(
             });
         }
 
+        // ── Variable nodes (const / static / let) ──────────────────
+        // UAT 2026-08-10 DEFECT-5: variable_types was declared on the
+        // LanguageConfig but never visited in the DFS, so `const_item`,
+        // `static_item`, and `let_declaration` silently dropped out of
+        // the graph. They now flow through the same path as
+        // function_types and class_types.
+        if config.variable_types.contains(&node_type)
+            && let Some(name) = extract_name(&node, source_bytes)
+        {
+            let kind = match node_type {
+                "const_item" | "static_item" => SymbolKind::Constant,
+                _ => SymbolKind::Variable,
+            };
+            let (symbol_node, symbol_id) = make_symbol_node(
+                &name,
+                kind,
+                &source_path_str,
+                (node.start_position().row + 1) as u32,
+                (node.start_position().column + 1) as u32,
+            );
+            edges.push(contains_edge(&file_node_id, &symbol_id, &source_path_str));
+            nodes.push(symbol_node);
+        }
+
         // Push children (dedup by byte range to avoid revisiting)
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
@@ -386,5 +410,88 @@ fn extract_type_refs(
             confidence: 1.0,
             line: Some(tr.line),
         });
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test for UAT 2026-08-10 DEFECT-5.
+    /// A real production Rust file mixes top-level items with methods inside
+    /// `impl` blocks, items inside `mod` modules, and module-level
+    /// `const`/`static` declarations. We feed a small but structurally
+    /// representative source to the extractor and assert that every kind
+    /// declared in `LanguageConfig` is picked up — if `variable_types`
+    /// ever regresses the count drops below 11 and the test fails.
+    /// same gap the UAT flagged.
+    #[test]
+    fn test_extractor_covers_all_declared_kinds_rust() {
+        let source = r#"
+//! Doc comment
+pub use std::collections::HashMap;
+
+pub struct Foo {
+    pub bar: u32,
+}
+
+pub enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+pub trait Greet {
+    fn hello(&self) -> String;
+    fn goodbye(&self) -> String;
+}
+
+pub fn standalone() {}
+
+impl Foo {
+    pub fn new() -> Self { Foo { bar: 0 } }
+    pub fn get_bar(&self) -> u32 { self.bar }
+    fn private_helper(&self) -> u32 { self.bar + 1 }
+}
+
+impl Greet for Foo {
+    fn hello(&self) -> String { format!("hi {}", self.bar) }
+    fn goodbye(&self) -> String { format!("bye {}", self.bar) }
+}
+
+const MY_CONST: u32 = 42;
+static MY_STATIC: u32 = 0;
+"#;
+        let cfg = crate::infrastructure::parser::language_config::RUST_CONFIG;
+        let result = extract_file(
+            &cfg,
+            std::path::Path::new("/tmp/synthetic.rs"),
+            source,
+            "test_content_hash",
+        );
+        assert!(result.is_ok(), "extract_file failed: {:?}", result.error);
+        let names: Vec<&str> = result
+            .nodes
+            .iter()
+            .map(|n| n.label.as_str())
+            .filter(|n| !n.is_empty() && *n != "synthetic.rs")
+            .collect();
+        eprintln!("EXTRACTED {} symbol-like nodes: {:?}", names.len(), names);
+        // Expected at minimum:
+        //   - struct Foo
+        //   - enum Color
+        //   - trait Greet
+        //   - standalone (fn)
+        //   - new, get_bar, private_helper (fn inside impl Foo)
+        //   - hello, goodbye (fn inside impl Greet for Foo)
+        //   - MY_CONST, MY_STATIC (Constant, was missing before DEFECT-5 fix)
+        // If variable_types extraction regresses the count drops below 11.
+        assert!(
+            names.len() >= 11,
+            "expected at least 11 symbols from this synthetic Rust file, got {}: {:?}",
+            names.len(),
+            names
+        );
     }
 }
