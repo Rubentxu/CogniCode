@@ -545,7 +545,6 @@ impl TreeSitterParser {
 
         let function_type = self.language.function_node_type();
         let class_type = self.language.class_node_type();
-        let variable_type = self.language.variable_node_type();
 
         let mut stack = Vec::new();
         stack.push(tree.root_node());
@@ -553,7 +552,19 @@ impl TreeSitterParser {
         while let Some(current) = stack.pop() {
             let kind = current.kind();
 
-            if (kind == function_type || kind == class_type || kind == variable_type)
+            // UAT 2026-08-10 DEFECT-5: Rust now treats `let`/`const`/`static`
+            // as variable-shaped symbols. The single-value API on Language
+            // returns only `let_declaration`, so we broaden the check
+            // only for Rust and keep other languages on their declared kind.
+            let is_variable = match self.language {
+                Language::Rust => matches!(
+                    kind,
+                    "let_declaration" | "const_item" | "static_item"
+                ),
+                _ => kind == self.language.variable_node_type(),
+            };
+
+            if (kind == function_type || kind == class_type || is_variable)
                 && let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path)
             {
                 symbols.push(symbol);
@@ -613,7 +624,12 @@ impl TreeSitterParser {
     ) -> Option<Symbol> {
         let name = self.find_identifier_name(node, source)?;
 
+        // UAT 2026-08-10 DEFECT-5: Rust distinguishes module-level
+        // constants (const_item, static_item) from let-bindings (let_declaration).
+        // Both shapes are variable-shaped in `find_all_symbols_with_path`; here
+        // we pick the appropriate `SymbolKind` for each.
         let kind = match node.kind() {
+            "const_item" | "static_item" => SymbolKind::Constant,
             f if f == self.language.function_node_type() => SymbolKind::Function,
             c if c == self.language.class_node_type() => SymbolKind::Class,
             v if v == self.language.variable_node_type() => SymbolKind::Variable,

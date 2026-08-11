@@ -3515,13 +3515,15 @@ pub const MY_CONST: i32 = 42;
             .await
             .unwrap();
 
-        // Should find at least the function and struct (constants may not be detected)
+        // Should find at least the function, struct, AND the constant
+        // (the constant assertion guards the UAT 2026-08-10 DEFECT-5
+        // fix in extract_file which taught the extractor to honor
+        // `variable_types` for const_item/static_item/let_declaration).
         assert!(
             !symbols.is_empty(),
             "Should find at least some symbols, got empty vec"
         );
 
-        // Verify we found the function
         let function_symbols: Vec<_> = symbols
             .iter()
             .filter(|s| s.symbol.name() == "my_function")
@@ -3531,12 +3533,20 @@ pub const MY_CONST: i32 = 42;
             "Should find my_function symbol"
         );
 
-        // Verify we found the struct
         let struct_symbols: Vec<_> = symbols
             .iter()
             .filter(|s| s.symbol.name() == "MyStruct")
             .collect();
         assert!(!struct_symbols.is_empty(), "Should find MyStruct symbol");
+
+        let const_symbols: Vec<_> = symbols
+            .iter()
+            .filter(|s| s.symbol.name() == "MY_CONST")
+            .collect();
+        assert!(
+            !const_symbols.is_empty(),
+            "Should find MY_CONST symbol — DEFECT-5 regression: variable_types must be honored"
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
