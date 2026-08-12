@@ -490,6 +490,7 @@ name = "cognicode-cli"
 version = "0.94.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "cognicode-core",
  "dirs",
