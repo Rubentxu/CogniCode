@@ -107,6 +107,7 @@ fn create_opencode_config(tmp: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::install;
 
     #[test]
     fn init_creates_layout_and_bundled_plugins() {
@@ -281,6 +282,33 @@ mod tests {
                 "skills plugin not listed");
         assert!(stdout.contains("sandbox-templates"), "sandbox not listed");
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_clean_home_install() {
+        let temp_home = tempfile::tempdir().unwrap();
+        let original_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("HOME", temp_home.path());
+            std::env::set_var("XDG_CONFIG_HOME", temp_home.path().join(".config"));
+            std::env::set_var("XDG_DATA_HOME", temp_home.path().join(".local/share"));
+            // Override COGNICODE_HOME to use temp directory
+            std::env::set_var("COGNICODE_HOME", temp_home.path().join(".cognicode"));
+        }
+        // Run install
+        let result = install::run_install("core");
+        assert!(result.is_ok(), "install failed: {:?}", result);
+        // Verify tracker
+        let tracker_path = temp_home.path().join(".cognicode/tracker/version");
+        assert!(tracker_path.exists(), "tracker missing at {}", tracker_path.display());
+        // Verify shims dir exists
+        let shims_path = temp_home.path().join(".cognicode/shims");
+        assert!(shims_path.exists(), "shims missing at {}", shims_path.display());
+        // Restore HOME
+        if let Some(home) = original_home {
+            unsafe { std::env::set_var("HOME", home); }
+        }
+        drop(temp_home);
     }
 
     #[test]
