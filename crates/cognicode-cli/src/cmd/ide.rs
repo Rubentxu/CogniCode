@@ -35,6 +35,92 @@ pub enum Step {
         target: PathBuf,
         path: Vec<String>,
     },
+    /// Create a symbolic link from source to target.
+    Symlink { source: PathBuf, target: PathBuf },
+}
+
+impl Step {
+    /// Execute a single integration step.
+    pub fn execute(&self) -> Result<()> {
+        match self {
+            Step::Copy { source, target } => {
+                if source.is_dir() {
+                    copy_dir_recursive(source, target)?;
+                } else {
+                    if let Some(parent) = target.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::copy(source, target)?;
+                }
+                Ok(())
+            }
+            Step::RmRf { target } => {
+                if target.exists() {
+                    std::fs::remove_dir_all(target)?;
+                }
+                Ok(())
+            }
+            Step::MergeJson {
+                target,
+                path,
+                value,
+            } => {
+                let mut config = if target.exists() {
+                    let text = std::fs::read_to_string(target)?;
+                    serde_json::from_str(&text).unwrap_or(json!({}))
+                } else {
+                    json!({})
+                };
+                // Navigate to the nested path
+                let obj = config.as_object_mut().unwrap();
+                let mut current = obj;
+                for key in path.iter().take(path.len() - 1) {
+                    current = current.entry(key).or_insert_with(|| json!({})).as_object_mut().unwrap();
+                }
+                if let Some(last_key) = path.last() {
+                    current.insert(last_key.clone(), value.clone());
+                }
+                write_json_atomic(target, &config)?;
+                Ok(())
+            }
+            Step::RemoveFromJson { target, path } => {
+                if !target.exists() {
+                    return Ok(());
+                }
+                let text = std::fs::read_to_string(target)?;
+                let mut config: Value = serde_json::from_str(&text).unwrap_or(json!({}));
+                let obj = config.as_object_mut().unwrap();
+                let mut current = obj;
+                for key in path.iter().take(path.len() - 1) {
+                    current = current.entry(key).or_insert_with(|| json!({})).as_object_mut().unwrap();
+                }
+                if let Some(last_key) = path.last() {
+                    current.remove(last_key);
+                }
+                write_json_atomic(target, &config)?;
+                Ok(())
+            }
+            Step::Symlink { source, target } => {
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                #[cfg(unix)]
+                {
+                    std::os::unix::fs::symlink(source, target)
+                        .map_err(|e| anyhow!("symlink failed: {}", e))?;
+                }
+                #[cfg(not(unix))]
+                {
+                    if source.is_dir() {
+                        copy_dir_recursive(source, target)?;
+                    } else {
+                        std::fs::copy(source, target)?;
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 /// Detect whether the IDE is installed.
