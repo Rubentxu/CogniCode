@@ -191,6 +191,24 @@ test-ignored:
     cargo test --workspace -- --include-ignored --test-threads=1 || \
     cargo test --workspace -- --ignored --test-threads=1
 
+# Run all lifecycle tests (single-threaded to avoid lock contention)
+test-lifecycle:
+    @echo "🧪 Running lifecycle tests..."
+    cargo test -p cognicode-cli --lib lifecycle -- --test-threads=1
+
+# Run E2E lifecycle tests (requires real install in temp HOME)
+test-lifecycle-e2e:
+    #!/usr/bin/env bash
+    set -e
+    export HOME=/tmp/cognicode-lifecycle-$$
+    mkdir -p "$HOME"
+    cargo run --release --bin cogh -- init
+    cargo run --release --bin cogh -- list
+    cargo run --release --bin cogh -- current
+    cargo run --release --bin cogh -- doctor
+    rm -rf "$HOME"
+    echo "✅ Lifecycle E2E passed"
+
 # Run unit tests for a specific crate
 test-crate crate:
     cargo test -p {{ crate }} --no-fail-fast
