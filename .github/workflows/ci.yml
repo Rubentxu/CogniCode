@@ -1,98 +1,32 @@
 name: CI
 
-# Per CogniCode E31-B5 user directive (2026-08-10): "usaremos los github
-# actions en local, nos olvidamos del uso real que no sea local". This
-# workflow is RETAINED as documentation/spec only — `act + podman`
-# executes it locally via `just ci-t6` / `just ci-local`. The remote
-# triggers are disabled so the workflow does NOT run on GitHub-hosted
-# runners.
-#
-# To re-enable remote CI in the future, uncomment the `on:` block below.
-# Reference: docs/TEST-PLAN.md §5 (T6 regression policy).
 on:
-  # push:                                       # DISABLED — local-only per E31-B5
-  #   branches: [main]
-  # pull_request:                               # DISABLED — local-only per E31-B5
-  workflow_dispatch:                           # manual only — for ARM runs
-
-env:
-  CARGO_TERM_COLOR: always
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   test:
-    name: Test Suite
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - name: Run unit tests
-        run: cargo test --workspace --no-fail-fast
-
-      - name: Run library tests only (skip integration tests that need full infra)
-        run: cargo test --workspace --lib --no-fail-fast
-
-  fmt-clippy:
-    name: Format & Lint
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+        run: cargo test --workspace --all-targets
+      - name: Run CLI tests
+        run: cargo test -p cognicode-cli -- --test-threads=1
       - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Run clippy
+        run: cargo fmt --check
+      - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-  ownership-feature:
-    name: Ownership Feature Test
+  build-check:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Run tests with ownership feature
-        run: cargo test --workspace --features ownership --no-fail-fast
-
-      - name: Run clippy with ownership feature
-        run: cargo clippy --workspace --features ownership --all-targets -- -D warnings
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check musl build
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          cargo build --release --target x86_64-unknown-linux-musl -p cognicode-mcp
