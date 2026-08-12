@@ -1,0 +1,154 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /var/home/rubentxu/Proyectos/rust/CogniCode/crates/cognicode-graph-wasm/Cargo.toml
+workspace: /var/home/rubentxu/Proyectos/rust/CogniCode/Cargo.toml
+warning: unused import: `std::io::Write`
+   --> crates/cognicode-cli/src/bin/../cmd/ide.rs:563:9
+    |
+563 |     use std::io::Write;
+    |         ^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `crate::Cli`
+  --> crates/cognicode-cli/src/bin/../cmd/layout.rs:14:5
+   |
+14 | use crate::Cli;
+   |     ^^^^^^^^^^
+
+warning: unused variable: `manifest`
+  --> crates/cognicode-cli/src/bin/../cmd/bundled.rs:33:13
+   |
+33 |         let manifest = crate::manifest::PluginManifest::from_str(yaml)
+   |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_manifest`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `home`
+   --> crates/cognicode-cli/src/bin/../cmd/ide.rs:544:26
+    |
+544 | pub fn cmd_ide_uninstall(home: &CognicodeHomeSup, ide: &str, version: &str) -> Result<()> {
+    |                          ^^^^ help: if this is intentional, prefix it with an underscore: `_home`
+
+warning: unused variable: `path`
+   --> crates/cognicode-cli/src/bin/../cmd/ide.rs:568:13
+    |
+568 |         let path = vec!["mcp".to_string(), "cognicode-mcp".to_string()];
+    |             ^^^^ help: if this is intentional, prefix it with an underscore: `_path`
+
+warning: unused variable: `original`
+   --> crates/cognicode-cli/src/bin/../cmd/ide.rs:640:13
+    |
+640 |         let original = json!({
+    |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_original`
+
+warning: unused variable: `home`
+   --> crates/cognicode-cli/src/bin/../cmd/layout.rs:297:26
+    |
+297 | pub fn cmd_plugin_remove(home: &CognicodeHome, plugin: &str) -> Result<()> {
+    |                          ^^^^ help: if this is intentional, prefix it with an underscore: `_home`
+
+warning: unused variable: `home`
+   --> crates/cognicode-cli/src/bin/../cmd/layout.rs:319:26
+    |
+319 | pub fn cmd_plugin_update(home: &CognicodeHome, plugin: &str) -> Result<()> {
+    |                          ^^^^ help: if this is intentional, prefix it with an underscore: `_home`
+
+warning: associated function `from_path` is never used
+   --> crates/cognicode-cli/src/bin/../cmd/bundle_manifest.rs:101:12
+    |
+ 99 | impl BundleManifest {
+    | ------------------- associated function in this implementation
+100 |     /// Parse from a path.
+101 |     pub fn from_path(path: &Path) -> Result<Self> {
+    |            ^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: enum `Step` is never used
+  --> crates/cognicode-cli/src/bin/../cmd/ide.rs:22:10
+   |
+22 | pub enum Step {
+   |          ^^^^
+
+warning: function `detect_zcode` is never used
+   --> crates/cognicode-cli/src/bin/../cmd/ide.rs:189:8
+    |
+189 | pub fn detect_zcode() -> bool {
+    |        ^^^^^^^^^^^^
+
+warning: function `detect_claude` is never used
+   --> crates/cognicode-cli/src/bin/../cmd/ide.rs:290:8
+    |
+290 | pub fn detect_claude() -> bool {
+    |        ^^^^^^^^^^^^^
+
+warning: function `read_claude_mcp_entry` is never used
+   --> crates/cognicode-cli/src/bin/../cmd/ide.rs:314:8
+    |
+314 | pub fn read_claude_mcp_entry(name: &str) -> Result<Option<Value>> {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `detect_codex` is never used
+   --> crates/cognicode-cli/src/bin/../cmd/ide.rs:380:8
+    |
+380 | pub fn detect_codex() -> bool {
+    |        ^^^^^^^^^^^^
+
+warning: method `config` is never used
+  --> crates/cognicode-cli/src/bin/../cmd/layout.rs:48:12
+   |
+22 | impl CognicodeHome {
+   | ------------------ method in this implementation
+...
+48 |     pub fn config(&self) -> PathBuf { self.root.join("config.yaml") }
+   |            ^^^^^^
+
+warning: constant `DEFAULT_REGISTRY` is never used
+  --> crates/cognicode-cli/src/bin/../cmd/registry.rs:20:11
+   |
+20 | pub const DEFAULT_REGISTRY: &str = "https://api.github.com";
+   |           ^^^^^^^^^^^^^^^^
+
+warning: struct `RegistryConfig` is never constructed
+  --> crates/cognicode-cli/src/bin/../cmd/registry.rs:23:12
+   |
+23 | pub struct RegistryConfig {
+   |            ^^^^^^^^^^^^^^
+
+warning: function `download_to` is never used
+  --> crates/cognicode-cli/src/bin/../cmd/registry.rs:61:8
+   |
+61 | pub fn download_to(url: &str, dest: &Path, cfg: &RegistryConfig) -> Result<()> {
+   |        ^^^^^^^^^^^
+
+warning: function `extract_targz` is never used
+   --> crates/cognicode-cli/src/bin/../cmd/registry.rs:105:8
+    |
+105 | pub fn extract_targz(archive: &Path, dest: &Path) -> Result<()> {
+    |        ^^^^^^^^^^^^^
+
+warning: function `write_manifest` is never used
+   --> crates/cognicode-cli/src/bin/../cmd/registry.rs:121:8
+    |
+121 | pub fn write_manifest(manifest: &PluginManifest, home: &Path) -> Result<PathBuf> {
+    |        ^^^^^^^^^^^^^^
+
+warning: `cognicode-cli` (bin "cogh" test) generated 20 warnings (run `cargo fix --bin "cogh" -p cognicode-cli --tests` to apply 8 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.33s
+     Running unittests src/bin/cogh.rs (target/debug/deps/cogh-b98d52c4ccd7da91)
+
+running 11 tests
+test bundle_manifest::tests::assert_pkg_version_match ... ok
+test bundle_manifest::tests::assert_pkg_version_mismatch ... ok
+test bundle_manifest::tests::reject_bad_apiversion ... ok
+test bundle_manifest::tests::parse_minimal_bundle ... ok
+test bundle_manifest::tests::components_by_kind_filter ... ok
+test bundle_manifest::tests::component_by_name_lookup ... ok
+test bundle_manifest::tests::parse_full_bundle ... ok
+test bundle_manifest::tests::components_for_profile_filter ... ok
+test bundle_manifest::tests::reject_bad_sha256 ... ok
+test bundle_manifest::tests::reject_duplicate_component_name ... ok
+test bundle_manifest::tests::reject_unknown_profile_ref ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+
