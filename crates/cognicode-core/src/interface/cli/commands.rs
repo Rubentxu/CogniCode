@@ -17,7 +17,7 @@ use tracing::info;
 
 /// CLI arguments for CogniCode
 #[derive(Debug, Parser)]
-#[command(name = "cognicode")]
+#[command(name = "cognicode", version)]
 #[command(about = "Premium LSP server for AI agents with code analysis and refactoring", long_about = None)]
 pub struct Cli {
     /// Enable verbose logging
