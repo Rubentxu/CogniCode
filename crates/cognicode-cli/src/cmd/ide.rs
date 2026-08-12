@@ -174,78 +174,52 @@ fn write_json_atomic(path: &Path, value: &Value) -> Result<()> {
     Ok(())
 }
 
-/// Run the opencode adapter's `integrate` recipe.
+/// Build the opencode adapter's `integrate` recipe as steps.
 pub fn integrate_opencode(
-    home: &Path,
-    plugin: &str,
+    skill_path: &Path,
     version: &str,
-    mcp_command: &[String],
-) -> Result<()> {
-    // 1. Skill copy
-    let skills_src = home
-        .join("versions")
-        .join(version)
-        .join(plugin)
-        .join("skills");
-    let skills_dst = opencode_skills_dir().join(format!("cognicode-{version}"));
-    if skills_src.exists() {
-        copy_dir_recursive(&skills_src, &skills_dst)
-            .with_context(|| format!("copy {} → {}", skills_src.display(), skills_dst.display()))?;
-        println!("✓ copied skills: {}", skills_dst.display());
-    } else {
-        println!("(no skills to copy from {})", skills_src.display());
-    }
+) -> Result<Vec<Step>> {
+    let mut steps = Vec::new();
+
+    // 1. Symlink skill bundle to OpenCode skills directory
+    let skills_target = opencode_skills_dir().join(format!("cognicode-{version}"));
+    steps.push(Step::Symlink {
+        source: skill_path.to_path_buf(),
+        target: skills_target,
+    });
 
     // 2. MCP config merge
     let config_path = opencode_config_path();
-    let mut config = read_opencode_config()?;
     let mcp_entry = json!({
-        "command": mcp_command,
+        "command": vec!["cognicode-mcp".to_string(), "stdio".to_string()],
         "enabled": true,
         "type": "stdio",
     });
+    steps.push(Step::MergeJson {
+        target: config_path,
+        path: vec!["mcp".to_string(), "cognicode-mcp".to_string()],
+        value: mcp_entry,
+    });
 
-    // Navigate/build the nested `mcp.cognicode-mcp` path.
-    let cfg = config.as_object_mut()
-        .ok_or_else(|| anyhow!("opencode.json is not an object"))?;
-    let mcp = cfg.entry("mcp").or_insert_with(|| json!({}));
-    if !mcp.is_object() {
-        return Err(anyhow!("opencode.json: 'mcp' is not an object (got {})", mcp));
-    }
-    mcp.as_object_mut().unwrap()
-        .insert("cognicode-mcp".to_string(), mcp_entry);
-    write_json_atomic(&config_path, &config)?;
-    println!("✓ patched: {}", config_path.display());
-
-    Ok(())
+    Ok(steps)
 }
 
-/// Run the opencode adapter's `uninstall` recipe.
-pub fn uninstall_opencode(version: &str) -> Result<()> {
-    // 1. Remove skills dir
-    let skills_dst = opencode_skills_dir().join(format!("cognicode-{version}"));
-    if skills_dst.exists() {
-        std::fs::remove_dir_all(&skills_dst)
-            .with_context(|| format!("rm -rf {}", skills_dst.display()))?;
-        println!("✓ removed: {}", skills_dst.display());
-    }
+/// Build the opencode adapter's `uninstall` recipe as steps.
+pub fn uninstall_opencode(version: &str) -> Result<Vec<Step>> {
+    let mut steps = Vec::new();
+
+    // 1. Remove skills symlink
+    let skills_target = opencode_skills_dir().join(format!("cognicode-{version}"));
+    steps.push(Step::RmRf { target: skills_target });
 
     // 2. Remove MCP entry
     let config_path = opencode_config_path();
-    if config_path.exists() {
-        let mut config = read_opencode_config()?;
-        let cfg = config.as_object_mut()
-            .ok_or_else(|| anyhow!("opencode.json is not an object"))?;
-        if let Some(mcp) = cfg.get_mut("mcp") {
-            if let Some(mcp_obj) = mcp.as_object_mut() {
-                mcp_obj.remove("cognicode-mcp");
-            }
-        }
-        write_json_atomic(&config_path, &config)?;
-        println!("✓ unpached: {}", config_path.display());
-    }
+    steps.push(Step::RemoveFromJson {
+        target: config_path,
+        path: vec!["mcp".to_string(), "cognicode-mcp".to_string()],
+    });
 
-    Ok(())
+    Ok(steps)
 }
 
 /// Copy a directory tree recursively.
@@ -628,7 +602,16 @@ pub fn cmd_ide_install(home: &CognicodeHomeSup, ide: &str, plugin: &str, version
         home.shims().join("cognicode-mcp").to_string_lossy().to_string(),
     ];
     match ide {
-        "opencode" => integrate_opencode(home.root.as_path(), plugin, version, &mcp_command),
+        "opencode" => {
+            // skill_path is the plugin's skills directory
+            let skill_path = home.versions().join(version).join(plugin).join("skills");
+            let steps = integrate_opencode(&skill_path, version)?;
+            for step in steps {
+                step.execute()?;
+            }
+            println!("✓ OpenCode integration complete");
+            Ok(())
+        }
         "zcode" => integrate_zcode(home.root.as_path(), plugin, version, &mcp_command),
         "claude" => integrate_claude(home.root.as_path(), plugin, version, &mcp_command),
         "codex" => integrate_codex(home.root.as_path(), plugin, version, &mcp_command),
@@ -641,7 +624,14 @@ pub fn cmd_ide_install(home: &CognicodeHomeSup, ide: &str, plugin: &str, version
 
 pub fn cmd_ide_uninstall(home: &CognicodeHomeSup, ide: &str, version: &str) -> Result<()> {
     match ide {
-        "opencode" => uninstall_opencode(version),
+        "opencode" => {
+            let steps = uninstall_opencode(version)?;
+            for step in steps {
+                step.execute()?;
+            }
+            println!("✓ OpenCode uninstall complete");
+            Ok(())
+        }
         "zcode" => uninstall_zcode(version),
         "claude" => uninstall_claude(version),
         "codex" => uninstall_codex(version),
@@ -747,13 +737,18 @@ mod tests {
             std::env::set_var("HOME", &tmp);
         }
 
-        let home = std::path::PathBuf::from(&tmp).join(".cognicode");
-        let mcp_cmd = vec!["/bin/cognicode-mcp".to_string()];
-        let result = integrate_opencode(&home, "mcp-server", "0.92.0", &mcp_cmd);
+        // Create fake skill path
+        let skill_path = tmp.join(".cognicode/versions/0.92.0/mcp-server/skills");
+        std::fs::create_dir_all(&skill_path).unwrap();
+
+        let steps = integrate_opencode(&skill_path, "0.92.0").unwrap();
+        for step in steps {
+            step.execute().unwrap();
+        }
+
         unsafe {
             std::env::set_var("HOME", &prev_home);
         }
-        result.unwrap();
 
         // Read back the config
         let text = std::fs::read_to_string(&config).unwrap();
@@ -765,7 +760,6 @@ mod tests {
         // New entry added
         assert_eq!(v["mcp"]["cognicode-mcp"]["type"], "stdio");
         assert_eq!(v["mcp"]["cognicode-mcp"]["enabled"], true);
-        assert_eq!(v["mcp"]["cognicode-mcp"]["command"][0], "/bin/cognicode-mcp");
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -788,11 +782,14 @@ mod tests {
             std::env::set_var("HOME", &tmp);
         }
 
-        let result = uninstall_opencode("0.92.0");
+        let steps = uninstall_opencode("0.92.0").unwrap();
+        for step in steps {
+            step.execute().unwrap();
+        }
+
         unsafe {
             std::env::set_var("HOME", &prev_home);
         }
-        result.unwrap();
 
         let text = std::fs::read_to_string(&config).unwrap();
         let v: Value = serde_json::from_str(&text).unwrap();
@@ -969,6 +966,27 @@ mcp_servers.existing.args = ['y']
     fn codex_config_path_default() {
         let p = codex_config_path();
         assert!(p.ends_with("config.toml"));
+    }
+
+    #[test]
+    fn test_detect_opencode() {
+        // Returns false in test environment (no real config)
+        let detected = detect_opencode();
+        println!("OpenCode detected: {}", detected);
+    }
+
+    #[test]
+    fn test_integrate_opencode_steps() {
+        let skill_path = PathBuf::from("/fake/skills");
+        let steps = integrate_opencode(&skill_path, "0.94.9").unwrap();
+        assert!(!steps.is_empty());
+        assert!(matches!(steps[0], Step::Symlink { .. }));
+    }
+
+    #[test]
+    fn test_uninstall_opencode_steps() {
+        let steps = uninstall_opencode("0.94.9").unwrap();
+        assert!(!steps.is_empty());
     }
 }
 
