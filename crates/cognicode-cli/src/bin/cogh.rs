@@ -44,6 +44,11 @@ mod profile;
 #[path = "../cmd/tracker.rs"]
 mod tracker;
 
+#[path = "../plugin.rs"]
+mod plugin;
+#[path = "../plugin_registry.rs"]
+mod plugin_registry;
+
 use layout::CognicodeHome;
 
 #[derive(Parser, Debug)]
@@ -140,17 +145,18 @@ pub enum Command {
 pub enum PluginAction {
     /// Register a plugin (from git-url or registered marketplace)
     Add {
-        plugin: String,
-        /// Git URL for community plugins
+        /// Plugin name
+        name: String,
+        /// GitHub URL or shorthand (owner/repo)
         #[arg(long)]
-        from_url: Option<String>,
+        url: Option<String>,
     },
     /// Unregister a plugin
-    Remove { plugin: String },
+    Remove { name: String },
     /// List registered plugins
     List,
     /// Update a plugin's source repository
-    Update { plugin: String },
+    Update { name: String },
 }
 
 #[derive(Subcommand, Debug)]
@@ -221,12 +227,28 @@ fn main() -> anyhow::Result<()> {
         Command::Where { binary } => layout::cmd_where(&home, &binary),
         Command::Version => version::cmd_version(&home),
         Command::Plugin { action } => match action {
-            PluginAction::Add { plugin, from_url } => {
-                layout::cmd_plugin_add(&home, &plugin, from_url.as_deref())
+            PluginAction::Add { name, url } => {
+                let name_clone = name.clone();
+                plugin_registry::add_plugin(name, url)?;
+                println!("Plugin {} added", name_clone);
+                Ok(())
             }
-            PluginAction::Remove { plugin } => layout::cmd_plugin_remove(&home, &plugin),
-            PluginAction::List => layout::cmd_plugin_list(&home),
-            PluginAction::Update { plugin } => layout::cmd_plugin_update(&home, &plugin),
+            PluginAction::Remove { name } => {
+                plugin_registry::remove_plugin(&name)?;
+                println!("Plugin {} removed", name);
+                Ok(())
+            }
+            PluginAction::List => {
+                let registry = plugin_registry::PluginRegistry::load()?;
+                for p in registry.list() {
+                    println!("{} {} ({:?})", p.name, p.version, p.kind);
+                }
+                Ok(())
+            }
+            PluginAction::Update { name } => {
+                println!("Plugin {} update not yet implemented", name);
+                Ok(())
+            }
         },
         Command::Skill { action } => match action {
             SkillAction::Validate { path } => skill::cmd_skill_validate(&path),
