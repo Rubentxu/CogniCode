@@ -7,6 +7,8 @@
 
 use clap::{Parser, Subcommand};
 
+#[path = "../cmd/error.rs"]
+mod error;
 #[path = "../cmd/bundled.rs"]
 mod bundled;
 #[path = "../cmd/bundle_manifest.rs"]

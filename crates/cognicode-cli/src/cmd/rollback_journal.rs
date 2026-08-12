@@ -5,13 +5,7 @@
 //! The journal is committed by going out of scope with no-op `commit()`.
 
 use std::path::PathBuf;
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum InstallerError {
-    #[error("rollback failed: {0}")]
-    Rollback(String),
-}
+use crate::error::InstallerError;
 
 /// Side-effect recorded in the journal during an install transaction.
 #[derive(Debug, Clone)]
@@ -38,7 +32,7 @@ pub enum SideEffect {
 ///
 /// Records side-effects during a transaction and reverses them in LIFO order
 /// on rollback. Commit is a no-op (journal simply goes out of scope with effects applied).
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RollbackJournal {
     effects: Vec<SideEffect>,
     committed: bool,
