@@ -42,7 +42,7 @@ mod tests {
         // Use a temp directory to avoid polluting the real tracker
         let tmp = env::temp_dir().join(format!("cogh-tracker-test-{}", process_id()));
         let tracker_dir = tmp.join("tracker");
-        env::set_var("COGNICODE_HOME", &tmp);
+        unsafe { env::set_var("COGNICODE_HOME", &tmp); }
 
         // Manually create the tracker path for testing
         let path = tracker_dir.join("version");
@@ -54,7 +54,7 @@ mod tests {
         assert_eq!(v.trim(), "0.94.0");
 
         std::fs::remove_dir_all(&tmp).ok();
-        env::remove_var("COGNICODE_HOME");
+        unsafe { env::remove_var("COGNICODE_HOME"); }
     }
 
     fn process_id() -> u32 {

@@ -171,31 +171,7 @@ pub fn cmd_install(home: &CognicodeHome, plugin: &str, version: &str, ides: &[St
     println!("(install flow: fetch → sha256 → extract → shim — wired in registry.rs; full download is E32-B+)");
     // Wire --ide <name> to the IDE adapter.
     for ide in ides {
-        let mcp_command = vec![
-            home.shims().join("cognicode-mcp").to_string_lossy().to_string(),
-        ];
         crate::ide::cmd_ide_install(home, ide, plugin, version)?;
-        // Re-resolve since cmd_ide_install takes Vec<String>.
-        let _ = mcp_command;
-        // Actually call the per-IDE integrate function.
-        match ide.as_str() {
-            "opencode" => crate::ide::integrate_opencode(
-                home.root.as_path(), plugin, version, &mcp_command,
-            )?,
-            "zcode" => crate::ide::integrate_zcode(
-                home.root.as_path(), plugin, version, &mcp_command,
-            )?,
-            "claude" => crate::ide::integrate_claude(
-                home.root.as_path(), plugin, version, &mcp_command,
-            )?,
-            "codex" => crate::ide::integrate_codex(
-                home.root.as_path(), plugin, version, &mcp_command,
-            )?,
-            other => return Err(anyhow!(
-                "IDE '{}' is not supported by cogh yet (opencode/zcode/claude/codex in E32-D-G)",
-                other
-            )),
-        }
         println!("  ✓ configured IDE: {ide}");
     }
     Ok(())

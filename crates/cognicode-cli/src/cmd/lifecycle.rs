@@ -16,7 +16,10 @@ use std::process::Command;
 use anyhow::{Context, Result};
 
 use super::ide::cmd_ide_install;
+use super::install_lock;
 use super::layout::{cmd_init, cmd_install, CognicodeHome};
+use super::profile;
+use super::tracker;
 
 /// Locate the cogh binary.
 ///
@@ -278,5 +281,118 @@ mod tests {
                 "skills plugin not listed");
         assert!(stdout.contains("sandbox-templates"), "sandbox not listed");
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn tracker_write_and_read_version_roundtrip() {
+        let tmp = std::env::temp_dir().join(format!("cogh-lc-tracker-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // Override COGNICODE_HOME to use temp directory
+        let prev_home = std::env::var("COGNICODE_HOME").ok();
+        unsafe { std::env::set_var("COGNICODE_HOME", tmp.join(".cognicode")); }
+
+        // Write a version
+        tracker::write_version("0.94.1").unwrap();
+
+        // Read it back
+        let version = tracker::read_version().unwrap();
+        assert_eq!(version, "0.94.1");
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&tmp);
+        if let Some(prev) = prev_home {
+            unsafe { std::env::set_var("COGNICODE_HOME", prev); }
+        } else {
+            unsafe { std::env::remove_var("COGNICODE_HOME"); }
+        }
+    }
+
+    #[test]
+    fn install_lock_acquire_creates_lock_file() {
+        let tmp = std::env::temp_dir().join(format!("cogh-lc-lock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // Override COGNICODE_HOME to use temp directory
+        let prev_home = std::env::var("COGNICODE_HOME").ok();
+        unsafe { std::env::set_var("COGNICODE_HOME", tmp.join(".cognicode")); }
+
+        // Acquire lock
+        let lock = install_lock::acquire_lock().unwrap();
+
+        // Lock file should exist
+        let lock_path = tmp.join(".cognicode/locks/install.lock");
+        assert!(lock_path.exists(), "lock file should exist after acquire_lock");
+
+        // Release lock
+        install_lock::release_lock(lock);
+
+        // Lock file should be removed
+        assert!(!lock_path.exists(), "lock file should be removed after release_lock");
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&tmp);
+        if let Some(prev) = prev_home {
+            unsafe { std::env::set_var("COGNICODE_HOME", prev); }
+        } else {
+            unsafe { std::env::remove_var("COGNICODE_HOME"); }
+        }
+    }
+
+    #[test]
+    fn profile_filter_by_profile_returns_correct_components() {
+        let yaml = r#"
+apiVersion: cognicode.bundle/v1
+version: "0.94.1"
+platform: linux-x86-64
+profiles:
+  - name: core
+    description: core profile
+  - name: reviewer
+    description: reviewer profile
+components:
+  - name: cli
+    kind: Cognicode
+    version: "0.94.1"
+    artifact: cli.tar.gz
+    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
+    url: "https://example.com/cli.tar.gz"
+    profiles: [core]
+  - name: daemon
+    kind: Daemon
+    version: "0.94.1"
+    artifact: daemon.tar.gz
+    sha256: "0000000000000000000000000000000000000000000000000000000000000002"
+    url: "https://example.com/daemon.tar.gz"
+    profiles: [reviewer]
+  - name: sandbox
+    kind: Sandbox
+    version: "0.94.1"
+    artifact: sandbox.tar.gz
+    sha256: "0000000000000000000000000000000000000000000000000000000000000003"
+    url: "https://example.com/sandbox.tar.gz"
+    profiles: [core, reviewer]
+"#;
+        let manifest = crate::bundle_manifest::BundleManifest::from_str(yaml).unwrap();
+
+        // Filter by core profile
+        let core_components = profile::filter_by_profile(&manifest, "core");
+        assert_eq!(core_components.len(), 2);
+        assert!(core_components.iter().any(|c| c.name == "cli"));
+        assert!(core_components.iter().any(|c| c.name == "sandbox"));
+        assert!(!core_components.iter().any(|c| c.name == "daemon"));
+
+        // Filter by reviewer profile
+        let reviewer_components = profile::filter_by_profile(&manifest, "reviewer");
+        assert_eq!(reviewer_components.len(), 2);
+        assert!(reviewer_components.iter().any(|c| c.name == "daemon"));
+        assert!(reviewer_components.iter().any(|c| c.name == "sandbox"));
+        assert!(!reviewer_components.iter().any(|c| c.name == "cli"));
+
+        // Filter by nonexistent profile
+        let nonexistent = profile::filter_by_profile(&manifest, "nonexistent");
+        assert!(nonexistent.is_empty());
     }
 }

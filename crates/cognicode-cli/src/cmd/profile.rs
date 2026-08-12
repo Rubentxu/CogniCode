@@ -8,7 +8,7 @@ use crate::bundle_manifest::{BundleComponent, BundleManifest};
 ///
 /// Returns only the components that include the given profile in their
 /// `profiles` list.
-pub fn filter_by_profile(manifest: &BundleManifest, profile: &str) -> Vec<&BundleComponent> {
+pub fn filter_by_profile<'a>(manifest: &'a BundleManifest, profile: &str) -> Vec<&'a BundleComponent> {
     manifest.components_for_profile(profile)
 }
 
