@@ -21,7 +21,7 @@ pub enum SideEffect {
     /// A symbolic link was created.
     CreatedSymlink { link: PathBuf, target: PathBuf },
     /// A JSON manifest file was patched (stores old value for restore).
-    PatchedJson { path: PathBuf, key: String, old_value: String },
+    PatchedJson { path: PathBuf, key: String, old_value: Option<serde_json::Value> },
     /// A directory was removed (cannot be easily restored).
     RemovedDir(PathBuf),
     /// A manifest file was written.
@@ -113,12 +113,22 @@ impl RollbackJournal {
             }
             SideEffect::PatchedJson { path, key, old_value } => {
                 // Restore the old value by re-patching in reverse
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    // Simple JSON patch reversal: replace current value with old_value for the key
-                    // This is a best-effort restoration; complex nested structures may not round-trip correctly.
-                    let _ = (content, key, old_value);
-                    // For now, just log a warning — full JSON reversal would require a proper
-                    // JSON diff/patch library. The error is not returned to allow other rollbacks to proceed.
+                if let Some(old) = old_value {
+                    if let Ok(content) = std::fs::read_to_string(path) {
+                        let mut json: serde_json::Value = serde_json::from_str(&content)
+                            .unwrap_or(serde_json::Value::Object(Default::default()));
+                        // Navigate using key path (dot notation)
+                        let parts: Vec<&str> = key.split('.').collect();
+                        if parts.len() == 1 {
+                            if let Some(obj) = json.as_object_mut() {
+                                obj.insert(parts[0].to_string(), old.clone());
+                            }
+                        }
+                        let new_content = serde_json::to_string_pretty(&json).ok();
+                        if let Some(c) = new_content {
+                            std::fs::write(path, c).ok();
+                        }
+                    }
                 }
             }
             SideEffect::RemovedDir(_) => {

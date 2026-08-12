@@ -15,8 +15,8 @@ use crate::Cli;
 
 // ===== Install root resolution =====
 
-/// Resolve the install root path (COGNICODE_HOME or ~/.cognicode).
-fn install_root() -> PathBuf {
+/// Resolve the COGNICODE_HOME path (COGNICODE_HOME env var or ~/.cognicode).
+pub fn cognicode_home() -> PathBuf {
     if let Ok(env) = std::env::var("COGNICODE_HOME") {
         PathBuf::from(env)
     } else if let Ok(home) = std::env::var("HOME") {
@@ -26,14 +26,39 @@ fn install_root() -> PathBuf {
     }
 }
 
+/// Path to the install root (under COGNICODE_HOME).
+pub fn install_root() -> PathBuf {
+    cognicode_home().join("install")
+}
+
+/// Path to a specific version's install directory.
+pub fn install_dir(version: &str) -> PathBuf {
+    install_root().join(version)
+}
+
+/// Path to the shims directory.
+pub fn shims_dir() -> PathBuf {
+    cognicode_home().join("shims")
+}
+
+/// Path to the tracker directory.
+pub fn tracker_dir() -> PathBuf {
+    cognicode_home().join("tracker")
+}
+
+/// Path to the cache directory.
+pub fn cache_dir() -> PathBuf {
+    cognicode_home().join("cache")
+}
+
 /// Path to the bundle.yaml manifest distributed with the installer.
 pub fn bundle_yaml_path() -> PathBuf {
-    install_root().join("bundle.yaml")
+    cognicode_home().join("bundle.yaml")
 }
 
 /// Path to the install manifest for a given version.
 pub fn install_manifest_path(version: &str) -> PathBuf {
-    install_root().join(version).join("manifest.yaml")
+    install_dir(version).join("manifest.yaml")
 }
 
 /// Resolved `~/.cognicode/` (or `COGNICODE_HOME`) layout.

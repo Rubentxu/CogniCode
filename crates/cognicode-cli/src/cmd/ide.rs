@@ -75,6 +75,10 @@ pub fn read_opencode_config() -> Result<Value> {
 /// Atomic JSON write (tmp + rename).
 fn write_json_atomic(path: &Path, value: &Value) -> Result<()> {
     let tmp = path.with_extension("json.tmp");
+    if let Some(parent) = tmp.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create dir {}", parent.display()))?;
+    }
     let json_str = serde_json::to_string_pretty(value)
         .with_context(|| format!("serialize {}", path.display()))?;
     std::fs::write(&tmp, json_str)
@@ -450,6 +454,10 @@ pub fn integrate_codex(home: &Path, plugin: &str, version: &str, mcp_command: &[
 
     // Atomic write
     let tmp = config_path.with_extension("toml.tmp");
+    if let Some(parent) = tmp.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create dir {}", parent.display()))?;
+    }
     let s = toml::to_string_pretty(&config)
         .with_context(|| format!("serialize {}", config_path.display()))?;
     std::fs::write(&tmp, s)
@@ -482,6 +490,10 @@ pub fn uninstall_codex(version: &str) -> Result<()> {
             }
         }
         let tmp = config_path.with_extension("toml.tmp");
+        if let Some(parent) = tmp.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("create dir {}", parent.display()))?;
+        }
         let s = toml::to_string_pretty(&config)
             .with_context(|| format!("serialize {}", config_path.display()))?;
         std::fs::write(&tmp, s)
