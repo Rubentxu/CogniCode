@@ -16,6 +16,33 @@ use crate::rollback_journal::{RollbackJournal, SideEffect};
 use crate::registry;
 use sha2::Digest;
 
+/// Verifies a file against an expected sha256 hash.
+pub fn verify_sha256(path: &std::path::Path, expected: &str) -> Result<(), InstallerError> {
+    let actual = compute_sha256(path)?;
+    if actual != expected {
+        return Err(InstallerError::Sha256Mismatch);
+    }
+    Ok(())
+}
+
+fn compute_sha256(path: &std::path::Path) -> Result<String, InstallerError> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| InstallerError::Io(path.to_path_buf(), e))?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buffer = [0u8; 8192];
+    loop {
+        let n = file
+            .read(&mut buffer)
+            .map_err(|e| InstallerError::Io(path.to_path_buf(), e))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 /// Install pipeline stages in execution order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallStage {
@@ -92,19 +119,7 @@ fn advance_stage(stage: InstallStage, journal: &mut RollbackJournal, manifest: &
             let cache_dir = layout::cache_dir();
             for comp in &manifest.components {
                 let path = cache_dir.join(format!("{}.tar.gz", comp.name));
-                let mut hasher = sha2::Sha256::new();
-                let mut file = std::fs::File::open(&path)
-                    .map_err(|e| InstallerError::Io(path.clone(), e))?;
-                let mut buf = [0u8; 8192];
-                loop {
-                    let n = std::io::Read::read(&mut file, &mut buf).map_err(|e| InstallerError::Io(path.clone(), e))?;
-                    if n == 0 { break; }
-                    hasher.update(&buf[..n]);
-                }
-                let computed = format!("{:x}", hasher.finalize());
-                if computed != comp.sha256 {
-                    return Err(InstallerError::Sha256Mismatch);
-                }
+                verify_sha256(&path, &comp.sha256)?;
                 journal.record(SideEffect::VerifiedSha256(path));
             }
             Ok(())
