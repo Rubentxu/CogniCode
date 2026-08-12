@@ -13,6 +13,29 @@ use anyhow::{anyhow, Context, Result};
 
 use crate::Cli;
 
+// ===== Install root resolution =====
+
+/// Resolve the install root path (COGNICODE_HOME or ~/.cognicode).
+fn install_root() -> PathBuf {
+    if let Ok(env) = std::env::var("COGNICODE_HOME") {
+        PathBuf::from(env)
+    } else if let Ok(home) = std::env::var("HOME") {
+        PathBuf::from(home).join(".cognicode")
+    } else {
+        PathBuf::from(".cognicode")
+    }
+}
+
+/// Path to the bundle.yaml manifest distributed with the installer.
+pub fn bundle_yaml_path() -> PathBuf {
+    install_root().join("bundle.yaml")
+}
+
+/// Path to the install manifest for a given version.
+pub fn install_manifest_path(version: &str) -> PathBuf {
+    install_root().join(version).join("manifest.yaml")
+}
+
 /// Resolved `~/.cognicode/` (or `COGNICODE_HOME`) layout.
 #[derive(Debug, Clone)]
 pub struct CognicodeHome {
@@ -46,6 +69,16 @@ impl CognicodeHome {
     pub fn cache(&self) -> PathBuf { self.root.join("cache") }
     pub fn cache_downloads(&self) -> PathBuf { self.cache().join("downloads") }
     pub fn config(&self) -> PathBuf { self.root.join("config.yaml") }
+
+    /// Path to the bundle.yaml manifest (distributed with the installer).
+    pub fn bundle_yaml_path(&self) -> PathBuf {
+        self.root.join("bundle.yaml")
+    }
+
+    /// Path to the install manifest for a given version.
+    pub fn install_manifest_path(&self, version: &str) -> PathBuf {
+        self.root.join(version).join("manifest.yaml")
+    }
 
     /// Initialize the home directory (idempotent).
     pub fn init(&self) -> Result<()> {
