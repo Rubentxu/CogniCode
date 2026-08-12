@@ -59,6 +59,26 @@ build-musl:
         -C target/x86_64-unknown-linux-musl/release/ explorer-api cognicode-mcp cognicode-runtime
     echo "✅ Built dist/cognicode-${VERSION}-x86_64-unknown-linux-musl.tar.gz"
 
+# Build skill bundle tar.gz artifacts
+bundle-skills:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERSION={{ version }}
+    mkdir -p dist
+    for skill in skills/*/; do
+        name=$(basename "$skill")
+        if [ ! -f "$skill/manifest.yaml" ]; then
+            echo "⚠️  Skipping $name (no manifest.yaml)"
+            continue
+        fi
+        echo "Bundling $name..."
+        tar -czf "dist/${name}-${VERSION}.tar.gz" -C "$skill" .
+        sha256=$(sha256sum "dist/${name}-${VERSION}.tar.gz" | cut -d' ' -f1)
+        echo "  ✅ dist/${name}-${VERSION}.tar.gz"
+        echo "  sha256: $sha256"
+    done
+    echo "Skill bundles built in dist/"
+
 # Build in release mode
 build-release: build-server
 
@@ -680,13 +700,6 @@ spike-ladybug-s6:
 # E29 S6 spike — clean S6 artifacts
 spike-ladybug-s6-clean:
     rm -f /tmp/s6_*.lbdb
-
-# ─── Musl static build ─────────────────────────────────────────────────────────
-
-# Build fully-static musl binary
-build-musl:
-    rustup target add x86_64-unknown-linux-musl --toolchain stable
-    cargo build --release --target x86_64-unknown-linux-musl -p cognicode-mcp -p cognicode-runtime --bin explorer-api
 
 # Build musl bundle artifacts (tar.gz)
 bundle-musl: build-musl
