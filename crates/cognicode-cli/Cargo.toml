@@ -33,3 +33,6 @@ tar.workspace = true
 flate2.workspace = true
 dirs = "5"
 rayon.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

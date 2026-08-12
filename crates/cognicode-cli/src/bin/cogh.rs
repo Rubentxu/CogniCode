@@ -7,6 +7,8 @@
 
 use clap::{Parser, Subcommand};
 
+#[path = "../cmd/error.rs"]
+mod error;
 #[path = "../cmd/bundled.rs"]
 mod bundled;
 #[path = "../cmd/bundle_manifest.rs"]
@@ -27,6 +29,14 @@ mod registry;
 mod skill;
 #[path = "../cmd/version.rs"]
 mod version;
+#[path = "../cmd/install.rs"]
+mod install;
+#[path = "../cmd/installer_transaction.rs"]
+mod installer_transaction;
+#[path = "../cmd/rollback_journal.rs"]
+mod rollback_journal;
+#[path = "../cmd/cache.rs"]
+mod cache;
 
 use layout::CognicodeHome;
 
