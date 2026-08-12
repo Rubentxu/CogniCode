@@ -1,0 +1,65 @@
+# E33-3 PR3 Evidence: Lifecycle Test Rewrites
+
+## Test Run: cargo test -p cognicode-cli lifecycle (--test-threads=1)
+
+Running 7 tests:
+- lifecycle::tests::doctor_reports_clean_install ... ok
+- lifecycle::tests::init_creates_layout_and_bundled_plugins ... ok
+- lifecycle::tests::install_codex_ide_patches_toml_config ... ok
+- lifecycle::tests::install_creates_mcp_server_version_dir ... ok
+- lifecycle::tests::install_opencode_ide_patches_config_and_skills ... ok
+- lifecycle::tests::plugin_list_shows_bundled_plugins ... ok
+- lifecycle::tests::uninstall_opencode_ide_removes_entry_and_skills ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured
+
+## Detailed Output (--nocapture)
+
+### install_codex_ide_patches_toml_config
+✓ Initialized /tmp/cogh-lc-codex-1952477/.cognicode
+  ✓ installed bundled plugin: mcp-server
+  ✓ installed bundled plugin: skills-cognicode-core
+  ✓ installed bundled plugin: sandbox-templates
+✓ Installed 3 bundled plugin(s)
+✓ copied skills: /tmp/cogh-lc-codex-1952477/.codex/skills/cognicode-v0.93.0
+✓ patched: /tmp/cogh-lc-codex-1952477/.codex/config.toml
+
+### install_creates_mcp_server_version_dir
+✓ Initialized /tmp/cogh-lc-inst-1952477/.cognicode
+  ✓ installed bundled plugin: mcp-server
+  ✓ installed bundled plugin: skills-cognicode-core
+  ✓ installed bundled plugin: sandbox-templates
+✓ Installed 3 bundled plugin(s)
+install: plugin=mcp-server version=v0.93.0 url=https://github.com/Rubentxu/CogniCode/releases/download/v0.93.0/cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz ides=[]
+  expected sha256: b084c424c40e4e163f150b13aee2d6d2a44e8580295bdbacb50353f685c0b1ac
+(install flow: fetch → sha256 → extract → shim — wired in registry.rs; full download is E32-B+)
+
+### install_opencode_ide_patches_config_and_skills
+✓ Initialized /tmp/cogh-lc-oc-1952477/.cognicode
+  ✓ installed bundled plugin: mcp-server
+  ✓ installed bundled plugin: skills-cognicode-core
+  ✓ installed bundled plugin: sandbox-templates
+✓ Installed 3 bundled plugin(s)
+✓ copied skills: /tmp/cogh-lc-oc-1952477/.config/opencode/skills/cognicode-v0.93.0
+✓ patched: /tmp/cogh-lc-oc-1952477/.config/opencode/opencode.json
+
+## Notes
+
+1. All 3 refactored tests now call cmd_ide_install() directly instead of spawning cogh subprocess.
+2. Tests use explicit temp directory setup with CognicodeHome construction.
+3. Tests pass with --test-threads=1 due to environment variable isolation.
+4. Pre-existing failures in other tests (registry::tests::sha256_of_empty_file, 
+   infrastructure::extraction::docs_extractor::tests::docs_extractor_corpus_regression) are 
+   unrelated to these changes.
+
+## Refactoring Summary
+
+Original approach: run_cogh() spawned cogh subprocess with unsafe HOME/COGNICODE_HOME env vars.
+New approach: Direct function calls to cmd_init(), cmd_install(), cmd_ide_install() with proper
+CognicodeHome construction and explicit HOME management.
+
+Key changes:
+- lifecycle.rs imports: super::ide::cmd_ide_install; super::layout::{cmd_init, cmd_install, CognicodeHome}
+- Test 1: setup_temp_home + run_cogh -> CognicodeHome + cmd_init + cmd_install
+- Test 2: setup_temp_home + run_cogh --ide opencode -> CognicodeHome + cmd_init + cmd_ide_install  
+- Test 3: setup_temp_home + run_cogh --ide codex -> CognicodeHome + cmd_init + cmd_ide_install
