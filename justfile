@@ -47,6 +47,18 @@ build-wasm:
     @echo "🔨 Building Explorer frontend..."
     cd {{ EXPLORER_UI_DIR }} && npm ci && npm run build
 
+# Build musl binary with version
+build-musl:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "//' | sed 's/"//')
+    rustup target add x86_64-unknown-linux-musl --toolchain stable
+    cargo build --release --target x86_64-unknown-linux-musl -p cognicode-mcp -p cognicode-runtime --bin explorer-api
+    mkdir -p dist
+    tar -czf dist/cognicode-${VERSION}-x86_64-unknown-linux-musl.tar.gz \
+        -C target/x86_64-unknown-linux-musl/release/ explorer-api cognicode-mcp cognicode-runtime
+    echo "✅ Built dist/cognicode-${VERSION}-x86_64-unknown-linux-musl.tar.gz"
+
 # Build in release mode
 build-release: build-server
 
