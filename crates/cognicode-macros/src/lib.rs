@@ -298,7 +298,7 @@ pub fn cogni_rule(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     // Generate the required_keywords method body
-    let required_keywords_code = if let Some(ref kws) = attrs.required_keywords {
+    let required_keywords_code = if let Some(kws) = attrs.required_keywords {
         let kw_lits: Vec<LitStr> = kws
             .iter()
             .map(|kw| LitStr::new(kw, item_struct.ident.span()))
