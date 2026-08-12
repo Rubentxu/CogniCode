@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use anyhow::{anyhow, Result};
 
+use super::ide;
 use super::install_lock;
 use super::installer_transaction::InstallerTransaction;
 use super::tracker;
@@ -36,7 +37,24 @@ pub fn run_install(profile: &str) -> Result<PathBuf> {
                 .unwrap_or("unknown");
             tracker::write_version(version)
                 .map_err(|e| anyhow!("failed to write tracker: {}", e))?;
-            // 4. Release lock
+
+            // 4. Integrate with IDE adapters if OpenCode is detected
+            if ide::detect_opencode() {
+                println!("OpenCode detected, integrating...");
+                // skill_path is the mcp-server plugin's skills directory
+                let skill_path = manifest_path
+                    .parent()
+                    .map(|p| p.join("mcp-server/skills"))
+                    .unwrap_or_else(|| PathBuf::from("~/.cognicode/skills"));
+                let steps = ide::integrate_opencode(&skill_path, version)?;
+                for step in steps {
+                    step.execute()
+                        .map_err(|e| anyhow!("IDE integration failed: {}", e))?;
+                }
+                println!("✓ OpenCode integration complete");
+            }
+
+            // 5. Release lock
             install_lock::release_lock(lock);
             println!(
                 "Installed version {} to {}",
