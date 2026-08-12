@@ -1,0 +1,104 @@
+
+running 87 tests
+test bundle_manifest::tests::assert_pkg_version_match ... ok
+test bundle_manifest::tests::assert_pkg_version_mismatch ... ok
+test bundle_manifest::tests::component_by_name_lookup ... ok
+test bundle_manifest::tests::components_by_kind_filter ... ok
+test bundle_manifest::tests::components_for_profile_filter ... ok
+test bundle_manifest::tests::for_target_platform_is_noop ... ok
+test bundle_manifest::tests::into_install_plan_preserves_components ... ok
+test bundle_manifest::tests::into_install_plan_uses_default_when_no_profiles ... ok
+test bundle_manifest::tests::into_install_plan_uses_first_profile_as_default ... ok
+test bundle_manifest::tests::parse_full_bundle ... ok
+test bundle_manifest::tests::parse_minimal_bundle ... ok
+test bundle_manifest::tests::reject_bad_apiversion ... ok
+test bundle_manifest::tests::reject_bad_sha256 ... ok
+test bundle_manifest::tests::reject_duplicate_component_name ... ok
+test bundle_manifest::tests::reject_unknown_profile_ref ... ok
+test bundled::tests::bundled_manifests_parse ... ok
+test cache::tests::partial_download_cleanup_is_idempotent ... ok
+test cache::tests::partial_download_cleanup_removes_part_files ... ok
+test ide::tests::claude_config_path_default ... ok
+test ide::tests::codex_config_path_default ... ok
+test ide::tests::detect_opencode_finds_config ... ok
+test ide::tests::integrate_claude_writes_mcp_file ... ok
+test ide::tests::integrate_codex_inserts_mcp_server ... ok
+test ide::tests::integrate_opencode_writes_mcp_entry ... ok
+test ide::tests::integrate_zcode_creates_mcp_section ... ok
+test ide::tests::mcp_entry_has_required_fields ... ok
+test ide::tests::merge_path_adds_nested_value ... ok
+test ide::tests::merge_preserves_existing_mcp_servers ... ok
+test ide::tests::opencode_config_path_default ... ok
+test ide::tests::remove_path_clears_nested_value ... ok
+test ide::tests::uninstall_claude_removes_mcp_file ... ok
+test ide::tests::uninstall_codex_removes_entry ... ok
+test ide::tests::uninstall_opencode_removes_entry ... ok
+test ide::tests::uninstall_zcode_removes_entry ... ok
+test ide::tests::zcode_config_path_default ... ok
+test install_lock::tests::lock_acquire_and_release ... ok
+test install_lock::tests::lock_guard_releases_on_drop ... ok
+test installer_transaction::tests::advance_is_noop_for_terminal_states ... ok
+test installer_transaction::tests::advance_skips_through_all_stages ... FAILED
+test installer_transaction::tests::commit_writes_manifest_file ... ok
+test installer_transaction::tests::install_stage_ordering ... ok
+test layout::tests::init_creates_subdirs ... ok
+test layout::tests::init_is_idempotent ... ok
+test layout::tests::is_initialized_detects_partial ... ok
+test layout::tests::layout_paths ... ok
+test layout::tests::resolve_from_env_var ... ok
+test layout::tests::resolve_from_explicit_path ... ok
+test lifecycle::tests::doctor_reports_clean_install ... ok
+test lifecycle::tests::init_creates_layout_and_bundled_plugins ... ok
+test lifecycle::tests::install_codex_ide_patches_toml_config ... ok
+test lifecycle::tests::install_creates_mcp_server_version_dir ... ok
+test lifecycle::tests::install_lock_acquire_creates_lock_file ... ok
+test lifecycle::tests::install_opencode_ide_patches_config_and_skills ... ok
+test lifecycle::tests::plugin_list_shows_bundled_plugins ... ok
+test lifecycle::tests::profile_filter_by_profile_returns_correct_components ... ok
+test lifecycle::tests::tracker_write_and_read_version_roundtrip ... ok
+test lifecycle::tests::uninstall_opencode_ide_removes_entry_and_skills ... ok
+test lockfile::tests::missing_returns_default ... ok
+test lockfile::tests::pin_then_get ... ok
+test lockfile::tests::round_trip ... ok
+test manifest::tests::find_version_by_ref ... ok
+test manifest::tests::parse_full_manifest ... ok
+test manifest::tests::parse_minimal_manifest ... ok
+test manifest::tests::reject_empty_name ... ok
+test manifest::tests::reject_invalid_apiversion ... ok
+test manifest::tests::reject_invalid_sha256 ... ok
+test manifest::tests::reject_short_sha256 ... ok
+test profile::tests::filter_by_profile_returns_matching_components ... ok
+test registry::tests::resolve_url_latest ... ok
+test registry::tests::resolve_url_specific ... ok
+test registry::tests::sha256_detects_mismatch ... ok
+test registry::tests::sha256_of_empty_file ... ok
+test rollback_journal::tests::test_commit_is_noop ... ok
+test rollback_journal::tests::test_journal_records_effects_in_order ... ok
+test rollback_journal::tests::test_rollback_extracted_directory ... ok
+test rollback_journal::tests::test_rollback_reverses_created_dir ... ok
+test rollback_journal::tests::test_rollback_reverses_created_symlink ... ok
+test rollback_journal::tests::test_rollback_reverses_downloaded_file ... ok
+test rollback_journal::tests::test_rollback_reverses_in_lifo_order ... ok
+test rollback_journal::tests::test_rollback_wrote_manifest ... ok
+test rollback_journal::tests::test_verified_sha256_is_noop_on_rollback ... ok
+test skill::tests::parse_minimal_manifest ... ok
+test skill::tests::reject_bad_maturity ... ok
+test skill::tests::reject_empty_name ... ok
+test skill::tests::reject_ide_specific_field ... ok
+test skill::tests::validate_cognicode_mcp_driven_bundle ... ok
+test tracker::tests::write_and_read_version ... ok
+
+failures:
+
+---- installer_transaction::tests::advance_skips_through_all_stages stdout ----
+
+thread 'installer_transaction::tests::advance_skips_through_all_stages' (2660107) panicked at crates/cognicode-cli/src/bin/../cmd/installer_transaction.rs:375:22:
+expected WritingManifest, got Failed { stage: Downloading, error: Network("https://example.com/cognicode-0.94.0.tar.gz", "HTTP 404 Not Found") }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    installer_transaction::tests::advance_skips_through_all_stages
+
+test result: FAILED. 86 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+

@@ -37,6 +37,12 @@ mod installer_transaction;
 mod rollback_journal;
 #[path = "../cmd/cache.rs"]
 mod cache;
+#[path = "../cmd/install_lock.rs"]
+mod install_lock;
+#[path = "../cmd/profile.rs"]
+mod profile;
+#[path = "../cmd/tracker.rs"]
+mod tracker;
 
 use layout::CognicodeHome;
 
@@ -67,6 +73,9 @@ pub enum Command {
         /// Configure one or more IDEs (opencode, zcode, claude, codex, all)
         #[arg(long, value_delimiter = ',')]
         ide: Vec<String>,
+        /// Installation profile (core, reviewer, full)
+        #[arg(long, default_value = "core")]
+        profile: String,
     },
     /// Uninstall a plugin version
     Uninstall {
@@ -193,8 +202,12 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Init => layout::cmd_init(&home),
-        Command::Install { plugin, version, ide } => {
-            layout::cmd_install(&home, &plugin, &version, &ide)
+        Command::Install { plugin, version, ide, profile } => {
+            // Use atomic bundle installer via install::run_install
+            // The plugin/version/ide args are for legacy plugin-based install;
+            // when --profile is provided, we use the atomic installer instead
+            install::run_install(&profile)?;
+            Ok(())
         }
         Command::Uninstall { plugin, version, ide } => {
             layout::cmd_uninstall(&home, &plugin, &version, &ide)
