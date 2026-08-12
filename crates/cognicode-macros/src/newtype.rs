@@ -55,8 +55,8 @@ fn parse_extra_derives(attrs: &[syn::Attribute]) -> Vec<Ident> {
 /// Extract the inner type from a newtype struct (the wrapped type).
 fn extract_inner_type(data: &Data) -> Type {
     match data {
-        Data::Struct(ref struct_data) => {
-            if let Fields::Unnamed(ref fields) = struct_data.fields {
+        Data::Struct(struct_data) => {
+            if let Fields::Unnamed(fields) = &struct_data.fields {
                 if let Some(field) = fields.unnamed.first() {
                     return field.ty.clone();
                 }
