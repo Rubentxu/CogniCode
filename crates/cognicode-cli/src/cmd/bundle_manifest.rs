@@ -211,6 +211,48 @@ impl BundleManifest {
     pub fn components_by_kind(&self, kind: ComponentKind) -> Vec<&BundleComponent> {
         self.components.iter().filter(|c| c.kind == kind).collect()
     }
+
+    /// Owned-string adapter: converts this manifest into an install plan.
+    ///
+    /// Consumes the manifest and returns an [`InstallPlan`] with the same
+    /// version, profile, and components. The profile defaults to `"default"`
+    /// if the manifest has no profiles.
+    pub fn into_install_plan(self) -> InstallPlan {
+        let profile = self
+            .profiles
+            .first()
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| "default".to_string());
+        InstallPlan {
+            version: self.version,
+            profile,
+            components: self.components,
+        }
+    }
+
+    /// Filter this manifest's components for a specific target platform.
+    ///
+    /// Since bundle manifests are already platform-specific by design,
+    /// this method returns `Self` unchanged (the platform field is
+    /// authoritative). The method exists to satisfy the adapter interface.
+    pub fn for_target_platform(self, _platform: Platform) -> Self {
+        // BundleManifest is already per-platform; the platform field
+        // is validated at parse time and cannot be mismatched.
+        self
+    }
+}
+
+/// Install plan derived from a [`BundleManifest`].
+///
+/// Represents the resolved, platform-specific set of components to install.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstallPlan {
+    /// Bundle version (semver).
+    pub version: String,
+    /// Selected install profile name.
+    pub profile: String,
+    /// Components to install.
+    pub components: Vec<BundleComponent>,
 }
 
 fn is_semver_like(s: &str) -> bool {
@@ -478,5 +520,55 @@ components:
         let m = BundleManifest::from_str(yaml).unwrap();
         // This should succeed because the workspace version is 0.94.0
         m.assert_pkg_version().expect("pkg version should match 0.94.0");
+    }
+
+    #[test]
+    fn into_install_plan_uses_first_profile_as_default() {
+        let m = BundleManifest::from_str(SAMPLE_YAML).unwrap();
+        let plan = m.into_install_plan();
+        assert_eq!(plan.version, "0.94.1");
+        assert_eq!(plan.profile, "core"); // first profile
+        assert_eq!(plan.components.len(), 3);
+    }
+
+    #[test]
+    fn into_install_plan_uses_default_when_no_profiles() {
+        let yaml = r#"
+apiVersion: cognicode.bundle/v1
+version: "0.94.1"
+platform: linux-x86-64
+profiles:
+  - name: default
+    description: default install profile
+components:
+  - name: cognicode-cli
+    kind: Cognicode
+    version: "0.94.1"
+    artifact: cognicode-0.94.1.tar.gz
+    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
+    url: "https://example.com/cognicode-0.94.1.tar.gz"
+    profiles: [default]
+"#;
+        let m = BundleManifest::from_str(yaml).unwrap();
+        let plan = m.into_install_plan();
+        assert_eq!(plan.profile, "default");
+    }
+
+    #[test]
+    fn into_install_plan_preserves_components() {
+        let m = BundleManifest::from_str(SAMPLE_YAML).unwrap();
+        let plan = m.into_install_plan();
+        let names: Vec<_> = plan.components.iter().map(|c| c.name.clone()).collect();
+        assert_eq!(names, vec!["cognicode-mcp", "skills-cognicode-core", "sandbox-templates"]);
+    }
+
+    #[test]
+    fn for_target_platform_is_noop() {
+        // BundleManifest is already platform-specific at parse time,
+        // so for_target_platform returns self unchanged.
+        let m = BundleManifest::from_str(SAMPLE_YAML).unwrap();
+        let filtered = m.for_target_platform(Platform::LinuxX86_64);
+        // All components should be preserved since the manifest is already Linux
+        assert_eq!(filtered.components.len(), 3);
     }
 }
