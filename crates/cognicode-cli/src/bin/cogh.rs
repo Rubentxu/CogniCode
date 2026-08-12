@@ -9,6 +9,8 @@ use clap::{Parser, Subcommand};
 
 #[path = "../cmd/bundled.rs"]
 mod bundled;
+#[path = "../cmd/bundle_manifest.rs"]
+mod bundle_manifest;
 #[path = "../cmd/ide.rs"]
 mod ide;
 #[path = "../cmd/layout.rs"]

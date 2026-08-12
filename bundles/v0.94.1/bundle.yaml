@@ -1,0 +1,37 @@
+apiVersion: cognicode.bundle/v1
+kind: Bundle
+version: "0.94.1"
+platform: linux-x86-64
+released_at: "2026-08-12T14:00:00Z"
+profiles:
+  - name: core
+    description: "Installer + daily CLI"
+    include_kinds: [Cogh, Cognicode]
+  - name: reviewer
+    description: "Adds daemon (MCP bridge) for IDE integration"
+    include_kinds: [Cogh, Cognicode, Daemon]
+  - name: full
+    description: "Adds sandbox templates + skill bundles"
+    include_kinds: [Cogh, Cognicode, Daemon, Skill, Sandbox]
+components:
+  - name: cognicode-mcp
+    kind: Daemon
+    version: "0.94.1"
+    artifact: cognicode-mcp-0.94.1-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.94.1/cognicode-mcp-0.94.1-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [reviewer, full]
+  - name: skills-cognicode-core
+    kind: Skill
+    version: "0.94.1"
+    artifact: skills-cognicode-core-0.94.1.tar.gz
+    sha256: "0000000000000000000000000000000000000000000000000000000000000002"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.94.1/skills-cognicode-core-0.94.1.tar.gz"
+    profiles: [full]
+  - name: sandbox-templates
+    kind: Sandbox
+    version: "0.94.1"
+    artifact: sandbox-templates-0.94.1.tar.gz
+    sha256: "0000000000000000000000000000000000000000000000000000000000000003"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.94.1/sandbox-templates-0.94.1.tar.gz"
+    profiles: [full]
