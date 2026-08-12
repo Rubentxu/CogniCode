@@ -41,20 +41,21 @@ jobs:
             -C target/release/ \
             cogh
 
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          NOTES=$(bash scripts/generate-release-notes.sh "$PREV_TAG" "${{ github.ref_name }}")
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.tar.gz
           draft: false
-          generate_release_notes: |
-            ### Installation
-            Download the tar.gz for your platform and extract.
-
-            ### Components
-            - `explorer-api`: WebSocket API server
-            - `cognicode-mcp`: MCP server for AI agents
-            - `cognicode-runtime`: Composition root
-            - `cogh`: CLI installer
+          body: ${{ steps.release-notes.outputs.notes }}
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

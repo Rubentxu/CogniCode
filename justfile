@@ -725,3 +725,7 @@ test-clean-home:
     test -f "$HOME/.local/bin/cognicode" -o -f "$HOME/.cognicode/shims/cognicode"
     echo "clean-HOME install: PASS"
     rm -rf "$HOME"
+
+# Lint conventional commits since last tag
+commit-lint:
+    @git log --format="%s" $(git describe --tags --abbrev=0 HEAD^)..HEAD | while read line; do echo "$$line" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|perf|ci|revert)(\(.+\))?: .+" || { echo "INVALID: $$line"; exit 1; }; done && echo "All commits conventional"
