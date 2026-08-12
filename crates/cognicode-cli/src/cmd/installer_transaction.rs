@@ -13,6 +13,8 @@ use crate::error::{BundleManifestError, InstallerError};
 use crate::bundle_manifest::BundleManifest;
 use crate::layout;
 use crate::rollback_journal::{RollbackJournal, SideEffect};
+use crate::registry;
+use sha2::Digest;
 
 /// Install pipeline stages in execution order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +49,115 @@ pub enum InstallerTransaction {
     },
 }
 
+/// Execute the actions for a given stage.
+fn advance_stage(stage: InstallStage, journal: &mut RollbackJournal, manifest: &BundleManifest) -> Result<(), InstallerError> {
+    match stage {
+        InstallStage::ResolvingUrl => {
+            // Validate all component URLs are reachable (basic check)
+            for comp in &manifest.components {
+                if comp.url.is_empty() {
+                    return Err(InstallerError::Network("empty URL".into(), "no URL provided".into()));
+                }
+            }
+            Ok(())
+        }
+        InstallStage::Downloading => {
+            let cache_dir = layout::cache_dir();
+            std::fs::create_dir_all(&cache_dir)
+                .map_err(|e| InstallerError::Io(cache_dir.clone(), e))?;
+            journal.record(SideEffect::CreatedDir(cache_dir.clone()));
+            // Download each component
+            for comp in &manifest.components {
+                let dest = cache_dir.join(format!("{}.tar.gz", comp.name));
+                let client = reqwest::blocking::Client::builder()
+                    .timeout(std::time::Duration::from_secs(60))
+                    .build()
+                    .map_err(|e| InstallerError::Network("reqwest".into(), e.to_string()))?;
+                let mut response = client.get(&comp.url)
+                    .send()
+                    .map_err(|e| InstallerError::Network(comp.url.clone(), e.to_string()))?;
+                if !response.status().is_success() {
+                    return Err(InstallerError::Network(comp.url.clone(), format!("HTTP {}", response.status())));
+                }
+                let mut file = std::fs::File::create(&dest)
+                    .map_err(|e| InstallerError::Io(dest.clone(), e))?;
+                std::io::copy(&mut response.bytes().unwrap().as_ref(), &mut file)
+                    .map_err(|e| InstallerError::Io(dest.clone(), e))?;
+                journal.record(SideEffect::Downloaded(dest));
+            }
+            Ok(())
+        }
+        InstallStage::VerifyingSha256 => {
+            // Verify SHA256 for each downloaded file
+            let cache_dir = layout::cache_dir();
+            for comp in &manifest.components {
+                let path = cache_dir.join(format!("{}.tar.gz", comp.name));
+                let mut hasher = sha2::Sha256::new();
+                let mut file = std::fs::File::open(&path)
+                    .map_err(|e| InstallerError::Io(path.clone(), e))?;
+                let mut buf = [0u8; 8192];
+                loop {
+                    let n = std::io::Read::read(&mut file, &mut buf).map_err(|e| InstallerError::Io(path.clone(), e))?;
+                    if n == 0 { break; }
+                    hasher.update(&buf[..n]);
+                }
+                let computed = format!("{:x}", hasher.finalize());
+                if computed != comp.sha256 {
+                    return Err(InstallerError::Sha256Mismatch);
+                }
+                journal.record(SideEffect::VerifiedSha256(path));
+            }
+            Ok(())
+        }
+        InstallStage::Extracting => {
+            // Extract each component
+            let install_dir = layout::install_dir(&manifest.version);
+            std::fs::create_dir_all(&install_dir)
+                .map_err(|e| InstallerError::Io(install_dir.clone(), e))?;
+            journal.record(SideEffect::CreatedDir(install_dir.clone()));
+            let cache_dir = layout::cache_dir();
+            for comp in &manifest.components {
+                let src = cache_dir.join(format!("{}.tar.gz", comp.name));
+                let dest = install_dir.join(&comp.name);
+                registry::extract_targz(&src, &dest)
+                    .map_err(|e| InstallerError::Unknown(e.to_string()))?;
+                journal.record(SideEffect::Extracted(dest));
+            }
+            Ok(())
+        }
+        InstallStage::InstallingShims => {
+            // Create shims for each binary
+            let install_dir = layout::install_dir(&manifest.version);
+            for comp in &manifest.components {
+                let bin_path = install_dir.join(&comp.name).join("bin").join(&comp.name);
+                if bin_path.exists() {
+                    let shim_path = layout::shims_dir().join(&comp.name);
+                    if let Some(parent) = shim_path.parent() {
+                        std::fs::create_dir_all(parent)
+                            .map_err(|e| InstallerError::Io(shim_path.clone(), e))?;
+                    }
+                    #[cfg(unix)]
+                    std::os::unix::fs::symlink(&bin_path, &shim_path)
+                        .map_err(|e| InstallerError::Io(shim_path.clone(), e))?;
+                    #[cfg(not(unix))]
+                    std::fs::copy(&bin_path, &shim_path)
+                        .map_err(|e| InstallerError::Io(shim_path.clone(), e))?;
+                    journal.record(SideEffect::CreatedSymlink {
+                        link: shim_path,
+                        target: bin_path,
+                    });
+                }
+            }
+            Ok(())
+        }
+        InstallStage::WritingManifest => {
+            // Manifest writing is handled by commit()
+            Ok(())
+        }
+        InstallStage::Committed | InstallStage::Failed => Ok(()),
+    }
+}
+
 impl InstallerTransaction {
     /// Run the full install transaction for a given profile.
     ///
@@ -54,15 +165,18 @@ impl InstallerTransaction {
     /// version, then advances through each pipeline stage.
     /// Returns the path to the written install manifest on success.
     pub fn run(profile: &str) -> Result<PathBuf, InstallerError> {
-        let _ = profile; // Reserved for per-profile filtering (E33-C).
         let yaml = Self::load_bundle_manifest()?;
 
         // Parse and assert version
-        let manifest = BundleManifest::from_str(&yaml)
+        let mut manifest = BundleManifest::from_str(&yaml)
             .map_err(|e| InstallerError::ManifestParse(BundleManifestError(e)))?;
         manifest
             .assert_pkg_version()
             .map_err(|e| InstallerError::VersionMismatch(BundleManifestError(e)))?;
+
+        // Filter components by profile
+        let filtered_components: Vec<_> = manifest.components_for_profile(profile);
+        manifest.components = filtered_components.into_iter().cloned().collect();
 
         // Create journal and run through stages
         let journal = RollbackJournal::new();
@@ -119,9 +233,17 @@ impl InstallerTransaction {
         match self {
             Self::Running {
                 stage,
-                journal,
+                mut journal,
                 manifest,
             } => {
+                // Execute stage actions before transitioning
+                if let Err(e) = advance_stage(stage, &mut journal, &manifest) {
+                    return Ok(Self::Failed {
+                        stage,
+                        error: e,
+                    });
+                }
+
                 let next_stage = match stage {
                     InstallStage::ResolvingUrl => InstallStage::Downloading,
                     InstallStage::Downloading => InstallStage::VerifyingSha256,

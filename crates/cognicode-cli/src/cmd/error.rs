@@ -32,6 +32,9 @@ pub enum InstallerError {
     #[error("rollback error: {0}")]
     Rollback(String),
 
+    #[error("SHA256 mismatch: downloaded file does not match expected hash")]
+    Sha256Mismatch,
+
     #[error("unknown error: {0}")]
     Unknown(String),
 }
