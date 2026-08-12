@@ -166,57 +166,82 @@ The release scorecard MUST be computed by an automated engine (`sandbox/scripts/
 - AND missing inputs MUST produce AMBER with "no data" evidence
 - AND gate REDs MUST NOT block the engine (exit 0) — they are tracked defects
 
-### Requirement: G10 Conformance Gate Formula (REQ-REL-01)
-
-G10 SHALL compute `pct_verified = verified / (total − legacy_obsolete) * 100`, rounded to 1 decimal. `pct_triaged` SHALL remain `(verified + legacy_obsolete) / total * 100`. G10 status is GREEN iff `pct_verified ≥ 90.0 AND pct_triaged = 100.0`. AMBER if only one condition holds. RED otherwise. The formula SHALL be documented in ADR-031 §4.
-
-#### Scenario: All requirements triaged → GREEN
-
-- GIVEN conformance matrix with 381 verified, 50 legacy_obsolete, 0 no_evidence (total=431)
-- WHEN the scorecard evaluates G10
-- THEN G10 status is GREEN
-- AND `pct_verified` is 100.0
-- AND `pct_triaged` is 100.0
-
-#### Scenario: Legacy_obsolete excluded, verified below threshold → RED
-
-- GIVEN 340 verified, 50 legacy_obsolete, 41 no_evidence (total=431)
-- WHEN the scorecard evaluates G10
-- THEN G10 status is RED
-- AND `pct_verified` is 89.2 (< 90.0)
-
-#### Scenario: Verified high but triaged incomplete → AMBER
-
-- GIVEN 381 verified, 50 legacy_obsolete, 1 no_evidence (total=432, new spec added)
-- WHEN the scorecard evaluates G10
-- THEN G10 status is AMBER
-- AND `pct_verified` is 99.7 but `pct_triaged` is 99.8 (< 100.0)
-
-### Requirement: G10 Audit Trail (REQ-REL-02)
-
-The scorecard output for G10 MUST include raw counts (`verified`, `legacy_obsolete`, `no_evidence`, `total`) alongside computed percentages so a human auditor can reproduce the math from `scorecard.md` alone. The evidence text SHALL cite the conformance matrix path.
-
-#### Scenario: Scorecard shows auditable raw counts
-
-- GIVEN a scorecard run with verified=381, legacy_obsolete=50, no_evidence=0, total=431
-- WHEN `scorecard.md` is inspected for G10
-- THEN the G10 section displays `total=431 verified=381 legacy_obsolete=50 no_evidence=0`
-- AND `pct_verified=100.0%` and `pct_triaged=100.0%` are shown alongside the raw counts
-
 ### Requirement: Non-Sandbox Gates (G1, G2, G10, G11, G12)
 
-The scorecard MUST also evaluate gates sourced outside the sandbox: G1 knowledge layer completion (git evidence: 3 e13-wave2 PRs merged), G2 MCP tool coverage (coverage matrix: N/N tools with ≥1 scenario, where N is the runtime tools/list denominator — currently 68; probe via sandbox/scripts/list_mcp_tools.sh), G10 openspec conformance (≥90% verified of triaged active requirements + 100% triaged across all requirements, computed as `verified / (total − legacy_obsolete) * 100` per ADR-031 §4 amendment), G11 documentation currency (MCP-TOOLS verified, ADRs reviewed, ROADMAP reconciled), G12 release hygiene (changelog present, semver clean, no stale branches).
+The scorecard MUST evaluate: G1 (3 e13-wave2 PRs merged), G2 (N/N tools with ≥1 scenario, N = 68 via tools/list), G10 openspec conformance (≥90% verified AND 100% triaged of 430 requirements from conformance_matrix.yaml), G11 documentation currency (MCP-TOOLS.md at 68 tools, ADR-031 and ADR-032 found at correct paths with `**Estado**: ACEPTADO`, ROADMAP reconciled), G12 release hygiene (CHANGELOG.md present, latest semver tag via `git tag --sort=-v:refname | head -1`, stale branches via `git branch -r --merged main | wc -l`: < 20 GREEN, < 50 AMBER, else RED).
 
 #### Scenario: Non-sandbox gates reported
 
 - GIVEN a scorecard run after e13-wave2 merged
 - WHEN the scorecard is inspected
-- THEN G1 is GREEN with the merged PR refs as evidence
+- THEN G1 is GREEN with PR refs as evidence
 - AND G2 is GREEN with coverage matrix path as evidence
+
+#### Scenario: G10 GREEN with high coverage
+
+- GIVEN conformance_matrix.yaml shows pct_verified ≥ 90 and pct_triaged == 100
+- WHEN the scorecard evaluates G10
+- THEN G10 status is GREEN
+
+#### Scenario: G10 RED below threshold
+
+- GIVEN conformance_matrix.yaml shows pct_verified < 90
+- WHEN the scorecard evaluates G10
+- THEN G10 status is RED with the gap in evidence
+
+#### Scenario: G11 detects correct ADR paths and ACEPTADO status
+
+- GIVEN ADR-031 at `docs/adr/ADR-031-release-1.0.0-definition.md` with status ACEPTADO
+- AND ADR-032 at `docs/adr/ADR-032-sandbox-validation-system.md` with status ACEPTADO
+- WHEN the scorecard evaluates G11
+- THEN G11 status is GREEN
+
+#### Scenario: G12 checks CHANGELOG, tag, and branches
+
+- GIVEN CHANGELOG.md exists, latest tag is v0.89.0, stale branch count is 15
+- WHEN the scorecard evaluates G12
+- THEN G12 status is GREEN with measured values for all three checks
 
 #### Scenario: Documentation gap fails G11
 
-- GIVEN MCP-TOOLS.md lists 43 tools but handler registry exposes 68 via tools/list
+- GIVEN MCP-TOOLS.md tool count does not match tools/list
 - WHEN the scorecard evaluates G11
-- THEN G11 status is RED
-- AND evidence names the 2 undocumented tools
+- THEN G11 status is RED with the mismatch in evidence
+
+### Requirement: CHANGELOG
+
+`CHANGELOG.md` MUST exist at repository root with a version table from v0.87.0 to current, plus an empty `Unreleased` section. Pre-v0.87.0 history SHALL note it is reconstructible from ROADMAP.
+
+#### Scenario: CHANGELOG present with versions
+
+- GIVEN the repository root
+- WHEN G12 evaluates changelog
+- THEN `grep "v0.87.0\|v0.88.0\|v0.89.0" CHANGELOG.md` returns matches
+- AND an `Unreleased` section exists
+
+### Requirement: Branch Pruning
+
+`sandbox/scripts/prune_stale_branches.sh` MUST support `--dry-run` (default) and `--apply`. It MUST delete remote branches merged into main, excluding `feat/e30-*`, `fix/e30*`, `master`, `main`, and branches with open PRs (`gh pr list --json headRefName`). Toxic local branches (e12g, e12h, e14, e28-5, e29-6, relation-candidates, e19-4, e21-1, e28-1-pr2, composed-narrative-fix, impl/e13) SHALL be deleted only if no open PR exists.
+
+#### Scenario: Dry-run lists candidates without side effects
+
+- GIVEN stale remote and toxic local branches
+- WHEN `prune_stale_branches.sh --dry-run` runs
+- THEN candidate branch names are printed and no branches are actually deleted
+
+#### Scenario: Apply preserves branches with open PRs
+
+- GIVEN `feat/e28-1` merged into main with no open PR
+- AND `feat/e30-conformance-audit` with an open PR
+- WHEN `prune_stale_branches.sh --apply` runs
+- THEN `feat/e28-1` is deleted and `feat/e30-conformance-audit` is NOT
+
+### Requirement: ADR Acceptance
+
+ADR-031 and ADR-032 MUST have `**Estado**: ACEPTADO`. ADR-031 G10 row MUST reflect 430 requirements (not 401).
+
+#### Scenario: Both ADRs accepted
+
+- GIVEN `docs/adr/ADR-031-release-1.0.0-definition.md` and `ADR-032-sandbox-validation-system.md`
+- WHEN `grep "Estado.*ACEPTADO"` runs on both
+- THEN both return a match
