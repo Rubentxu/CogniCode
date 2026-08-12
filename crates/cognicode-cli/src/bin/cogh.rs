@@ -7,14 +7,23 @@
 
 use clap::{Parser, Subcommand};
 
+#[path = "../cmd/bundled.rs"]
 mod bundled;
+#[path = "../cmd/ide.rs"]
 mod ide;
+#[path = "../cmd/layout.rs"]
 mod layout;
+#[path = "../cmd/lifecycle.rs"]
 mod lifecycle;
+#[path = "../cmd/lockfile.rs"]
 mod lockfile;
+#[path = "../cmd/manifest.rs"]
 mod manifest;
+#[path = "../cmd/registry.rs"]
 mod registry;
+#[path = "../cmd/skill.rs"]
 mod skill;
+#[path = "../cmd/version.rs"]
 mod version;
 
 use layout::CognicodeHome;

@@ -4,6 +4,7 @@ description = "CogniCode CLI"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+autobins = false
 
 [[bin]]
 name = "cognicode"
