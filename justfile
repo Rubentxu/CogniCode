@@ -25,6 +25,7 @@ EXPLORER_API_RELEASE := "target/release/explorer-api"
 EXPLORER_REAL_API_PORT := env_var_or_default("EXPLORER_REAL_API_PORT", "8010")
 PORT := EXPLORER_API_PORT
 PROJECT_PATH := env_var_or_default("COGNICODE_PROJECT_PATH", "")
+version := env_var_or_default("COGNICODE_VERSION", "0.94.4")
 
 # ─── Default ──────────────────────────────────────────────────────────────────
 
@@ -667,3 +668,48 @@ spike-ladybug-s6:
 # E29 S6 spike — clean S6 artifacts
 spike-ladybug-s6-clean:
     rm -f /tmp/s6_*.lbdb
+
+# ─── Musl static build ─────────────────────────────────────────────────────────
+
+# Build fully-static musl binary
+build-musl:
+    rustup target add x86_64-unknown-linux-musl --toolchain stable
+    cargo build --release --target x86_64-unknown-linux-musl -p cognicode-mcp -p cognicode-runtime --bin explorer-api
+
+# Build musl bundle artifacts (tar.gz)
+bundle-musl: build-musl
+    mkdir -p dist
+    tar -czf dist/cognicode-{{version}}-x86_64-unknown-linux-musl.tar.gz \
+        -C target/x86_64-unknown-linux-musl/release/cognicode-mcp \
+        --strip-components=3 .
+
+# ─── Release ──────────────────────────────────────────────────────────────────
+
+# Create a draft GitHub release
+release-draft tag="{{version}}":
+    gh release create "{{ tag }}" --draft || true
+    test -f dist/cognicode-{{version}}-x86_64-unknown-linux-musl.tar.gz && \
+        gh release upload "{{ tag }}" dist/cognicode-{{version}}-x86_64-unknown-linux-musl.tar.gz || true
+
+# Publish an existing draft release
+release-publish tag="{{version}}":
+    gh release edit "{{ tag }}" --draft=false
+
+# ─── E2E tests ────────────────────────────────────────────────────────────────
+
+# E2E: install in clean HOME (no pre-existing ~/.cognicode)
+test-clean-home:
+    #!/usr/bin/env bash
+    set -e
+    export HOME=/tmp/cognicode-test-home-$(date +%s)
+    export XDG_CONFIG_HOME="$HOME/.config"
+    export XDG_DATA_HOME="$HOME/.local/share"
+    mkdir -p "$HOME"
+    # Run install
+    cargo run --release --bin cogh -- install --profile core
+    # Verify tracker was created
+    test -f "$HOME/.cognicode/tracker/version"
+    # Verify shims were created
+    test -f "$HOME/.local/bin/cognicode" -o -f "$HOME/.cognicode/shims/cognicode"
+    echo "clean-HOME install: PASS"
+    rm -rf "$HOME"
