@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-core-mock"
-version = "0.5.0"
+version = "0.94.0"
 dependencies = [
  "async-trait",
  "bincode",
@@ -664,7 +664,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-ladybug"
-version = "0.1.0"
+version = "0.94.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -681,7 +681,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-macros"
-version = "0.1.0"
+version = "0.94.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -722,7 +722,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-runtime"
-version = "0.1.0"
+version = "0.94.0"
 dependencies = [
  "anyhow",
  "async-trait",
