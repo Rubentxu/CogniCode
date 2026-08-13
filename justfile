@@ -760,3 +760,23 @@ test-clean-home:
 # Lint conventional commits since last tag
 commit-lint:
     @git log --format="%s" $(git describe --tags --abbrev=0 HEAD^)..HEAD | while read line; do echo "$$line" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|perf|ci|revert)(\(.+\))?: .+" || { echo "INVALID: $$line"; exit 1; }; done && echo "All commits conventional"
+
+# Verify workspace version in Cargo.toml matches the latest semver tag
+# Warning-only guardrail — never fails the build
+verify-version-sync:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Extract workspace version: robust awk parsing of [workspace.package] block
+    WORKSPACE_VERSION=`awk '/^\[workspace.package\]/{f=1} f && /^version *=/{print; exit}' Cargo.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'`
+
+    # Get latest semver tag, strip leading 'v' prefix
+    LATEST_TAG=`git tag --sort=-version:refname | head -1 | sed 's/^v//'`
+
+    if [ "$WORKSPACE_VERSION" = "$LATEST_TAG" ]; then
+        echo "✅ Version sync OK: workspace version $WORKSPACE_VERSION matches latest tag v$LATEST_TAG"
+        exit 0
+    else
+        echo "::warning::version-sync: workspace version ($WORKSPACE_VERSION) differs from latest tag (v$LATEST_TAG)"
+        exit 0
+    fi

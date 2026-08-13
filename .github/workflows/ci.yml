@@ -66,3 +66,14 @@ jobs:
           git log --format="%H %s" origin/main..HEAD | while read hash subject; do
             echo "$subject" | commitlint || exit 1
           done
+
+  version-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: extractions/setup-just@v2
+      - name: Verify version sync
+        run: just verify-version-sync
+        continue-on-error: true
