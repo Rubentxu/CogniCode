@@ -695,9 +695,9 @@ Implementation starts with E32-A.
 ### Next steps
 
 After E32:
-- **E33**: integrated CI/CD for cogh binary releases (GitHub Actions)
-- **E34**: community plugin registry (plugins stay in main repo, no separate org)
-- **E35**: ZCode + Claude + Codex targeting (post-MVP)
+- **E33**: integrated CI/CD for cogh binary releases (GitHub Actions) ✅ COMPLETED (e33-1..e33-14)
+- **E34**: community plugin registry (plugins stay in main repo, no separate org) ✅ COMPLETED (v0.94.12)
+- **E35**: ZCode + Claude + Codex targeting ✅ COMPLETED
 
 ### Cross-references
 

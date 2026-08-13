@@ -18,7 +18,7 @@ use anyhow::{Context, Result};
 use super::ide::cmd_ide_install;
 use super::ide::detect_opencode;
 use super::install_lock;
-use super::layout::{cmd_init, cmd_install, CognicodeHome};
+use super::layout::{CognicodeHome, cmd_init, cmd_install};
 use super::profile;
 use super::tracker;
 
@@ -49,11 +49,17 @@ fn run_cogh(home: &Path, args: &[&str]) -> Result<std::process::Output> {
         .output()
         .with_context(|| format!("run cogh {:?}", bin));
     if let Some(prev) = prev_home {
-        unsafe { std::env::set_var("HOME", prev); }
+        unsafe {
+            std::env::set_var("HOME", prev);
+        }
     } else {
-        unsafe { std::env::remove_var("HOME"); }
+        unsafe {
+            std::env::remove_var("HOME");
+        }
     }
-    unsafe { std::env::remove_var("COGNICODE_HOME"); }
+    unsafe {
+        std::env::remove_var("COGNICODE_HOME");
+    }
     result
 }
 
@@ -64,19 +70,26 @@ fn setup_temp_home(tmp: &Path) -> Result<()> {
 
     // Run `cogh init` to populate the layout + bundled plugins
     let prev_home = std::env::var("HOME").ok();
-    unsafe { std::env::set_var("HOME", tmp); }
-    unsafe { std::env::set_var("COGNICODE_HOME", tmp.join(".cognicode")); }
-    let bin = cogh_bin();
-    let _ = Command::new(&bin)
-        .args(["init"])
-        .current_dir(tmp)
-        .output();
-    if let Some(prev) = prev_home {
-        unsafe { std::env::set_var("HOME", prev); }
-    } else {
-        unsafe { std::env::remove_var("HOME"); }
+    unsafe {
+        std::env::set_var("HOME", tmp);
     }
-    unsafe { std::env::remove_var("COGNICODE_HOME"); }
+    unsafe {
+        std::env::set_var("COGNICODE_HOME", tmp.join(".cognicode"));
+    }
+    let bin = cogh_bin();
+    let _ = Command::new(&bin).args(["init"]).current_dir(tmp).output();
+    if let Some(prev) = prev_home {
+        unsafe {
+            std::env::set_var("HOME", prev);
+        }
+    } else {
+        unsafe {
+            std::env::remove_var("HOME");
+        }
+    }
+    unsafe {
+        std::env::remove_var("COGNICODE_HOME");
+    }
     Ok(())
 }
 
@@ -105,6 +118,26 @@ fn create_opencode_config(tmp: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Create an empty `~/.zcode/v2/config.json` (for zcode tests).
+fn create_zcode_config(tmp: &Path) -> Result<()> {
+    let zcode_dir = tmp.join(".zcode/v2");
+    std::fs::create_dir_all(&zcode_dir)?;
+    std::fs::write(
+        zcode_dir.join("config.json"),
+        r#"{"provider": {"minimax": {}}}
+"#,
+    )?;
+    Ok(())
+}
+
+/// Create `~/.claude/mcp/` directory structure (for claude tests).
+fn create_claude_config(tmp: &Path) -> Result<()> {
+    let claude_dir = tmp.join(".claude");
+    std::fs::create_dir_all(&claude_dir)?;
+    std::fs::create_dir_all(&claude_dir.join("mcp"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,8 +149,15 @@ mod tests {
         setup_temp_home(&tmp).unwrap();
         assert!(tmp.join(".cognicode/bin").exists(), "bin/ missing");
         assert!(tmp.join(".cognicode/shims").exists(), "shims/ missing");
-        assert!(tmp.join(".cognicode/plugins/mcp-server").exists(), "mcp-server plugin missing");
-        assert!(tmp.join(".cognicode/plugins/skills-cognicode-core").exists(), "skills plugin missing");
+        assert!(
+            tmp.join(".cognicode/plugins/mcp-server").exists(),
+            "mcp-server plugin missing"
+        );
+        assert!(
+            tmp.join(".cognicode/plugins/skills-cognicode-core")
+                .exists(),
+            "skills plugin missing"
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -127,7 +167,10 @@ mod tests {
         setup_temp_home(&tmp).unwrap();
         let out = run_cogh(&tmp, &["doctor"]).unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.contains("home exists"), "doctor missing 'home exists'");
+        assert!(
+            stdout.contains("home exists"),
+            "doctor missing 'home exists'"
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -137,7 +180,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
 
-        let home = CognicodeHome { root: tmp.join(".cognicode") };
+        let home = CognicodeHome {
+            root: tmp.join(".cognicode"),
+        };
         // Initialize home directory (replaces setup_temp_home + cogh init subprocess)
         cmd_init(&home).unwrap();
 
@@ -155,18 +200,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
 
-        let home = CognicodeHome { root: tmp.join(".cognicode") };
+        let home = CognicodeHome {
+            root: tmp.join(".cognicode"),
+        };
         cmd_init(&home).unwrap();
 
         // Pre-create a plugin + version dir so skills copy finds something
-        let skill_src = tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
+        let skill_src =
+            tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
         std::fs::create_dir_all(&skill_src).unwrap();
         std::fs::write(skill_src.join("SKILL.md"), "---\nname: x\n---\n").unwrap();
         create_opencode_config(&tmp).unwrap();
 
         // Set HOME so opencode paths resolve to temp dir
         let prev_home = std::env::var("HOME").ok();
-        unsafe { std::env::set_var("HOME", &tmp); }
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
 
         // Call cmd_ide_install directly instead of cogh subprocess
         cmd_ide_install(&home, "opencode", "mcp-server", "v0.93.0").unwrap();
@@ -177,21 +227,29 @@ mod tests {
         // Verify the config was patched
         let cfg_path = tmp.join(".config/opencode/opencode.json");
         let cfg_text = std::fs::read_to_string(&cfg_path).unwrap();
-        assert!(cfg_text.contains("cognicode-mcp"), "cognicode-mcp missing from config");
+        assert!(
+            cfg_text.contains("cognicode-mcp"),
+            "cognicode-mcp missing from config"
+        );
         // Verify the original entry was preserved
         assert!(cfg_text.contains("agent"), "original entry lost");
 
         // Verify skills dir was created
         assert!(
-            tmp.join(".config/opencode/skills/cognicode-v0.93.0").exists(),
+            tmp.join(".config/opencode/skills/cognicode-v0.93.0")
+                .exists(),
             "skills dir missing"
         );
 
         // Restore HOME
         if let Some(prev) = prev_home {
-            unsafe { std::env::set_var("HOME", prev); }
+            unsafe {
+                std::env::set_var("HOME", prev);
+            }
         } else {
-            unsafe { std::env::remove_var("HOME"); }
+            unsafe {
+                std::env::remove_var("HOME");
+            }
         }
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -213,7 +271,18 @@ mod tests {
         std::fs::create_dir_all(&skill_dir).unwrap();
         std::fs::write(skill_dir.join("SKILL.md"), "x").unwrap();
 
-        let out = run_cogh(&tmp, &["uninstall", "mcp-server", "--ide", "opencode", "--version", "0.92.0"]).unwrap();
+        let out = run_cogh(
+            &tmp,
+            &[
+                "uninstall",
+                "mcp-server",
+                "--ide",
+                "opencode",
+                "--version",
+                "0.92.0",
+            ],
+        )
+        .unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
         // cmd_uninstall prints "uninstall: ..." and the IDE adapter prints
         // "✓ OpenCode uninstall complete".
@@ -224,7 +293,10 @@ mod tests {
 
         // cognicode-mcp should be gone, other preserved
         let cfg_text = std::fs::read_to_string(&cfg_path).unwrap();
-        assert!(!cfg_text.contains("cognicode-mcp"), "cognicode-mcp still in config");
+        assert!(
+            !cfg_text.contains("cognicode-mcp"),
+            "cognicode-mcp still in config"
+        );
         assert!(cfg_text.contains("other"), "other entry lost");
         // Skills dir removed
         assert!(!skill_dir.exists(), "skills dir not removed");
@@ -238,35 +310,160 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
 
-        let home = CognicodeHome { root: tmp.join(".cognicode") };
+        let home = CognicodeHome {
+            root: tmp.join(".cognicode"),
+        };
         cmd_init(&home).unwrap();
 
-        let skill_src = tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
+        let skill_src =
+            tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
         std::fs::create_dir_all(&skill_src).unwrap();
         std::fs::write(skill_src.join("SKILL.md"), "---\nname: x\n---\n").unwrap();
         create_codex_config(&tmp).unwrap();
 
         // Set HOME so codex paths resolve to temp dir
         let prev_home = std::env::var("HOME").ok();
-        unsafe { std::env::set_var("HOME", &tmp); }
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
 
         // Call cmd_ide_install directly instead of cogh subprocess
         cmd_ide_install(&home, "codex", "mcp-server", "v0.93.0").unwrap();
 
         let cfg_text = std::fs::read_to_string(tmp.join(".codex/config.toml")).unwrap();
-        assert!(cfg_text.contains("[mcp_servers.cognicode-mcp]"),
-                "cognicode-mcp section missing");
+        assert!(
+            cfg_text.contains("[mcp_servers.cognicode-mcp]"),
+            "cognicode-mcp section missing"
+        );
         assert!(cfg_text.contains("command ="), "command missing");
-        assert!(cfg_text.contains("model = \"test\""),
-                "model setting lost");
-        assert!(cfg_text.contains("other_setting = 42"),
-                "other_setting lost");
+        assert!(cfg_text.contains("model = \"test\""), "model setting lost");
+        assert!(
+            cfg_text.contains("other_setting = 42"),
+            "other_setting lost"
+        );
 
         // Restore HOME
         if let Some(prev) = prev_home {
-            unsafe { std::env::set_var("HOME", prev); }
+            unsafe {
+                std::env::set_var("HOME", prev);
+            }
         } else {
-            unsafe { std::env::remove_var("HOME"); }
+            unsafe {
+                std::env::remove_var("HOME");
+            }
+        }
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn install_zcode_ide_patches_config_and_skills() {
+        let tmp = std::env::temp_dir().join(format!("cogh-lc-zcode-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let home = CognicodeHome {
+            root: tmp.join(".cognicode"),
+        };
+        cmd_init(&home).unwrap();
+
+        // Pre-create a plugin + version dir so skills copy finds something
+        let skill_src =
+            tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
+        std::fs::create_dir_all(&skill_src).unwrap();
+        std::fs::write(skill_src.join("SKILL.md"), "---\nname: x\n---\n").unwrap();
+        create_zcode_config(&tmp).unwrap();
+
+        // Set HOME so zcode paths resolve to temp dir
+        let prev_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
+
+        // Call cmd_ide_install directly
+        cmd_ide_install(&home, "zcode", "mcp-server", "v0.93.0").unwrap();
+
+        // Verify the config was patched
+        let cfg_path = tmp.join(".zcode/v2/config.json");
+        let cfg_text = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(
+            cfg_text.contains("cognicode-mcp"),
+            "cognicode-mcp missing from config"
+        );
+        // Verify the original entry was preserved
+        assert!(cfg_text.contains("provider"), "original entry lost");
+
+        // Verify skills dir was created
+        assert!(
+            tmp.join(".zcode/skills/cognicode-v0.93.0").exists(),
+            "skills dir missing"
+        );
+
+        // Restore HOME
+        if let Some(prev) = prev_home {
+            unsafe {
+                std::env::set_var("HOME", prev);
+            }
+        } else {
+            unsafe {
+                std::env::remove_var("HOME");
+            }
+        }
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn install_claude_ide_patches_config_and_skills() {
+        let tmp = std::env::temp_dir().join(format!("cogh-lc-claude-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let home = CognicodeHome {
+            root: tmp.join(".cognicode"),
+        };
+        cmd_init(&home).unwrap();
+
+        // Pre-create a plugin + version dir so skills copy finds something
+        let skill_src =
+            tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
+        std::fs::create_dir_all(&skill_src).unwrap();
+        std::fs::write(skill_src.join("SKILL.md"), "---\nname: x\n---\n").unwrap();
+        create_claude_config(&tmp).unwrap();
+
+        // Set HOME so claude paths resolve to temp dir
+        let prev_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
+
+        // Call cmd_ide_install directly
+        cmd_ide_install(&home, "claude", "mcp-server", "v0.93.0").unwrap();
+
+        // Verify the MCP file was created
+        let mcp_path = tmp.join(".claude/mcp/cognicode-mcp.json");
+        assert!(mcp_path.exists(), "cognicode-mcp.json missing");
+        let mcp_text = std::fs::read_to_string(&mcp_path).unwrap();
+        assert!(
+            mcp_text.contains("cognicode-mcp"),
+            "cognicode-mcp missing from mcp file"
+        );
+
+        // Verify skills dir was created
+        assert!(
+            tmp.join(".claude/skills/cognicode-v0.93.0").exists(),
+            "skills dir missing"
+        );
+
+        // Restore HOME
+        if let Some(prev) = prev_home {
+            unsafe {
+                std::env::set_var("HOME", prev);
+            }
+        } else {
+            unsafe {
+                std::env::remove_var("HOME");
+            }
         }
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -279,8 +476,10 @@ mod tests {
         let out = run_cogh(&tmp, &["plugin", "list"]).unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("mcp-server"), "mcp-server not listed");
-        assert!(stdout.contains("skills-cognicode-core"),
-                "skills plugin not listed");
+        assert!(
+            stdout.contains("skills-cognicode-core"),
+            "skills plugin not listed"
+        );
         assert!(stdout.contains("sandbox-templates"), "sandbox not listed");
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -301,13 +500,23 @@ mod tests {
         assert!(result.is_ok(), "install failed: {:?}", result);
         // Verify tracker
         let tracker_path = temp_home.path().join(".cognicode/tracker/version");
-        assert!(tracker_path.exists(), "tracker missing at {}", tracker_path.display());
+        assert!(
+            tracker_path.exists(),
+            "tracker missing at {}",
+            tracker_path.display()
+        );
         // Verify shims dir exists
         let shims_path = temp_home.path().join(".cognicode/shims");
-        assert!(shims_path.exists(), "shims missing at {}", shims_path.display());
+        assert!(
+            shims_path.exists(),
+            "shims missing at {}",
+            shims_path.display()
+        );
         // Restore HOME
         if let Some(home) = original_home {
-            unsafe { std::env::set_var("HOME", home); }
+            unsafe {
+                std::env::set_var("HOME", home);
+            }
         }
         drop(temp_home);
     }
@@ -320,7 +529,9 @@ mod tests {
 
         // Override COGNICODE_HOME to use temp directory
         let prev_home = std::env::var("COGNICODE_HOME").ok();
-        unsafe { std::env::set_var("COGNICODE_HOME", tmp.join(".cognicode")); }
+        unsafe {
+            std::env::set_var("COGNICODE_HOME", tmp.join(".cognicode"));
+        }
 
         // Write a version
         tracker::write_version("0.94.1").unwrap();
@@ -332,9 +543,13 @@ mod tests {
         // Clean up
         let _ = std::fs::remove_dir_all(&tmp);
         if let Some(prev) = prev_home {
-            unsafe { std::env::set_var("COGNICODE_HOME", prev); }
+            unsafe {
+                std::env::set_var("COGNICODE_HOME", prev);
+            }
         } else {
-            unsafe { std::env::remove_var("COGNICODE_HOME"); }
+            unsafe {
+                std::env::remove_var("COGNICODE_HOME");
+            }
         }
     }
 
@@ -346,27 +561,39 @@ mod tests {
 
         // Override COGNICODE_HOME to use temp directory
         let prev_home = std::env::var("COGNICODE_HOME").ok();
-        unsafe { std::env::set_var("COGNICODE_HOME", tmp.join(".cognicode")); }
+        unsafe {
+            std::env::set_var("COGNICODE_HOME", tmp.join(".cognicode"));
+        }
 
         // Acquire lock
         let lock = install_lock::acquire_lock().unwrap();
 
         // Lock file should exist
         let lock_path = tmp.join(".cognicode/locks/install.lock");
-        assert!(lock_path.exists(), "lock file should exist after acquire_lock");
+        assert!(
+            lock_path.exists(),
+            "lock file should exist after acquire_lock"
+        );
 
         // Release lock
         install_lock::release_lock(lock);
 
         // Lock file should be removed
-        assert!(!lock_path.exists(), "lock file should be removed after release_lock");
+        assert!(
+            !lock_path.exists(),
+            "lock file should be removed after release_lock"
+        );
 
         // Clean up
         let _ = std::fs::remove_dir_all(&tmp);
         if let Some(prev) = prev_home {
-            unsafe { std::env::set_var("COGNICODE_HOME", prev); }
+            unsafe {
+                std::env::set_var("COGNICODE_HOME", prev);
+            }
         } else {
-            unsafe { std::env::remove_var("COGNICODE_HOME"); }
+            unsafe {
+                std::env::remove_var("COGNICODE_HOME");
+            }
         }
     }
 
@@ -388,13 +615,23 @@ mod tests {
         assert!(result.is_ok(), "install failed: {:?}", result);
         // Verify tracker version file is created
         let tracker_path = temp_home.path().join(".cognicode/tracker/version");
-        assert!(tracker_path.exists(), "tracker missing at {}", tracker_path.display());
+        assert!(
+            tracker_path.exists(),
+            "tracker missing at {}",
+            tracker_path.display()
+        );
         // Verify shims are created
         let shims_path = temp_home.path().join(".cognicode/shims");
-        assert!(shims_path.exists(), "shims missing at {}", shims_path.display());
+        assert!(
+            shims_path.exists(),
+            "shims missing at {}",
+            shims_path.display()
+        );
         // Restore HOME
         if let Some(home) = original_home {
-            unsafe { std::env::set_var("HOME", home); }
+            unsafe {
+                std::env::set_var("HOME", home);
+            }
         }
         drop(temp_home);
     }
@@ -406,7 +643,11 @@ mod tests {
         let out = run_cogh(&tmp, &["list"]).unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
         // Verify output contains installed plugins
-        assert!(stdout.contains("Plugin") || stdout.contains("plugin"), "list output unexpected: {}", stdout);
+        assert!(
+            stdout.contains("Plugin") || stdout.contains("plugin"),
+            "list output unexpected: {}",
+            stdout
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -449,26 +690,39 @@ mod tests {
         }
 
         // Initialize home
-        let home = CognicodeHome { root: tmp.join(".cognicode") };
+        let home = CognicodeHome {
+            root: tmp.join(".cognicode"),
+        };
         cmd_init(&home).unwrap();
 
         // Run update
         let out = run_cogh(&tmp, &["update"]).unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
         // Update is not yet fully implemented, but the command should run
-        assert!(out.status.success() || stdout.contains("not yet implemented"),
-            "update failed unexpectedly: {}", stdout);
+        assert!(
+            out.status.success() || stdout.contains("not yet implemented"),
+            "update failed unexpectedly: {}",
+            stdout
+        );
 
         // Restore env
         if let Some(home) = prev_home {
-            unsafe { std::env::set_var("HOME", home); }
+            unsafe {
+                std::env::set_var("HOME", home);
+            }
         } else {
-            unsafe { std::env::remove_var("HOME"); }
+            unsafe {
+                std::env::remove_var("HOME");
+            }
         }
         if let Some(home) = prev_cognicode_home {
-            unsafe { std::env::set_var("COGNICODE_HOME", home); }
+            unsafe {
+                std::env::set_var("COGNICODE_HOME", home);
+            }
         } else {
-            unsafe { std::env::remove_var("COGNICODE_HOME"); }
+            unsafe {
+                std::env::remove_var("COGNICODE_HOME");
+            }
         }
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -483,8 +737,11 @@ mod tests {
         // Verify it returns 0 for healthy state (doctor always returns Ok)
         assert!(out.status.success(), "doctor failed with: {}", stdout);
         // Verify it contains health info
-        assert!(stdout.contains("home") || stdout.contains("exists") || stdout.contains("doctor"),
-            "doctor output unexpected: {}", stdout);
+        assert!(
+            stdout.contains("home") || stdout.contains("exists") || stdout.contains("doctor"),
+            "doctor output unexpected: {}",
+            stdout
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -496,29 +753,44 @@ mod tests {
 
         // Override COGNICODE_HOME to use temp directory
         let prev_home = std::env::var("COGNICODE_HOME").ok();
-        unsafe { std::env::set_var("COGNICODE_HOME", tmp.join(".cognicode")); }
+        unsafe {
+            std::env::set_var("COGNICODE_HOME", tmp.join(".cognicode"));
+        }
 
         // Acquire lock
         let lock = install_lock::acquire_lock().unwrap();
         let lock_path = tmp.join(".cognicode/locks/install.lock");
-        assert!(lock_path.exists(), "lock file should exist after acquire_lock");
+        assert!(
+            lock_path.exists(),
+            "lock file should exist after acquire_lock"
+        );
 
         // Verify lock content has PID
         let content = std::fs::read_to_string(&lock_path).unwrap();
-        assert!(content.contains(&format!("{}", std::process::id())), "lock should contain PID");
+        assert!(
+            content.contains(&format!("{}", std::process::id())),
+            "lock should contain PID"
+        );
 
         // Release lock
         install_lock::release_lock(lock);
 
         // Lock file should be removed
-        assert!(!lock_path.exists(), "lock file should be removed after release");
+        assert!(
+            !lock_path.exists(),
+            "lock file should be removed after release"
+        );
 
         // Clean up
         let _ = std::fs::remove_dir_all(&tmp);
         if let Some(prev) = prev_home {
-            unsafe { std::env::set_var("COGNICODE_HOME", prev); }
+            unsafe {
+                std::env::set_var("COGNICODE_HOME", prev);
+            }
         } else {
-            unsafe { std::env::remove_var("COGNICODE_HOME"); }
+            unsafe {
+                std::env::remove_var("COGNICODE_HOME");
+            }
         }
     }
 
@@ -535,18 +807,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
 
-        let home = CognicodeHome { root: tmp.join(".cognicode") };
+        let home = CognicodeHome {
+            root: tmp.join(".cognicode"),
+        };
         cmd_init(&home).unwrap();
 
         // Pre-create a plugin + version dir so skills copy finds something
-        let skill_src = tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
+        let skill_src =
+            tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
         std::fs::create_dir_all(&skill_src).unwrap();
         std::fs::write(skill_src.join("SKILL.md"), "---\nname: x\n---\n").unwrap();
         create_opencode_config(&tmp).unwrap();
 
         // Set HOME so opencode paths resolve to temp dir
         let prev_home = std::env::var("HOME").ok();
-        unsafe { std::env::set_var("HOME", &tmp); }
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
 
         // Run install with --ide opencode
         let result = cmd_ide_install(&home, "opencode", "mcp-server", "v0.93.0");
@@ -555,13 +832,21 @@ mod tests {
         // Verify OpenCode config was updated
         let config_path = tmp.join(".config/opencode/opencode.json");
         let content = std::fs::read_to_string(&config_path).unwrap();
-        assert!(content.contains("cognicode"), "cognicode not found in opencode config: {}", content);
+        assert!(
+            content.contains("cognicode"),
+            "cognicode not found in opencode config: {}",
+            content
+        );
 
         // Restore HOME
         if let Some(prev) = prev_home {
-            unsafe { std::env::set_var("HOME", prev); }
+            unsafe {
+                std::env::set_var("HOME", prev);
+            }
         } else {
-            unsafe { std::env::remove_var("HOME"); }
+            unsafe {
+                std::env::remove_var("HOME");
+            }
         }
 
         let _ = std::fs::remove_dir_all(&tmp);

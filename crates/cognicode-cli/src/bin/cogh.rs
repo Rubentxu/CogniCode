@@ -7,14 +7,22 @@
 
 use clap::{Parser, Subcommand};
 
-#[path = "../cmd/error.rs"]
-mod error;
-#[path = "../cmd/bundled.rs"]
-mod bundled;
 #[path = "../cmd/bundle_manifest.rs"]
 mod bundle_manifest;
+#[path = "../cmd/bundled.rs"]
+mod bundled;
+#[path = "../cmd/cache.rs"]
+mod cache;
+#[path = "../cmd/error.rs"]
+mod error;
 #[path = "../cmd/ide.rs"]
 mod ide;
+#[path = "../cmd/install.rs"]
+mod install;
+#[path = "../cmd/install_lock.rs"]
+mod install_lock;
+#[path = "../cmd/installer_transaction.rs"]
+mod installer_transaction;
 #[path = "../cmd/layout.rs"]
 mod layout;
 #[path = "../cmd/lifecycle.rs"]
@@ -23,26 +31,18 @@ mod lifecycle;
 mod lockfile;
 #[path = "../cmd/manifest.rs"]
 mod manifest;
-#[path = "../cmd/registry.rs"]
-mod registry;
-#[path = "../cmd/skill.rs"]
-mod skill;
-#[path = "../cmd/version.rs"]
-mod version;
-#[path = "../cmd/install.rs"]
-mod install;
-#[path = "../cmd/installer_transaction.rs"]
-mod installer_transaction;
-#[path = "../cmd/rollback_journal.rs"]
-mod rollback_journal;
-#[path = "../cmd/cache.rs"]
-mod cache;
-#[path = "../cmd/install_lock.rs"]
-mod install_lock;
 #[path = "../cmd/profile.rs"]
 mod profile;
+#[path = "../cmd/registry.rs"]
+mod registry;
+#[path = "../cmd/rollback_journal.rs"]
+mod rollback_journal;
+#[path = "../cmd/skill.rs"]
+mod skill;
 #[path = "../cmd/tracker.rs"]
 mod tracker;
+#[path = "../cmd/version.rs"]
+mod version;
 
 use layout::CognicodeHome;
 
@@ -112,9 +112,7 @@ pub enum Command {
     /// Validate the install + diagnose issues
     Doctor,
     /// Print the resolved path to a binary
-    Where {
-        binary: String,
-    },
+    Where { binary: String },
     /// Initialize ~/.cognicode/ with bundled plugins
     Init,
     /// Plugin management (add/remove/list)
@@ -203,19 +201,43 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Init => layout::cmd_init(&home),
-        Command::Install { plugin, version, ide, profile } => {
-            if ide.contains(&"opencode".to_string()) {
-                // Dispatch to ide::cmd_ide_install for opencode self-apply
-                ide::cmd_ide_install(&home, "opencode", &plugin, &version)?;
+        Command::Install {
+            plugin,
+            version,
+            ide,
+            profile,
+        } => {
+            // Valid IDEs that dispatch to ide::cmd_ide_install
+            let valid_ides = ["opencode", "zcode", "claude", "codex"];
+
+            // Handle --ide all: install to all 4 IDEs
+            if ide.contains(&"all".to_string()) {
+                for ide_name in valid_ides {
+                    ide::cmd_ide_install(&home, ide_name, &plugin, &version)?;
+                }
             } else {
-                // Use atomic bundle installer via install::run_install
+                // Check each IDE argument
+                for ide_name in &ide {
+                    if !valid_ides.contains(&ide_name.as_str()) {
+                        return Err(anyhow::anyhow!(
+                            "Unknown IDE '{}'. Valid options: opencode, zcode, claude, codex, all",
+                            ide_name
+                        ));
+                    }
+                    ide::cmd_ide_install(&home, ide_name, &plugin, &version)?;
+                }
+            }
+            // If no --ide flag provided, fall back to atomic bundle installer
+            if ide.is_empty() {
                 install::run_install(&profile)?;
             }
             Ok(())
         }
-        Command::Uninstall { plugin, version, ide } => {
-            layout::cmd_uninstall(&home, &plugin, &version, &ide)
-        }
+        Command::Uninstall {
+            plugin,
+            version,
+            ide,
+        } => layout::cmd_uninstall(&home, &plugin, &version, &ide),
         Command::List { installed } => layout::cmd_list(&home, installed),
         Command::Current => layout::cmd_current(&home),
         Command::Latest { plugin, all } => layout::cmd_latest(&home, plugin, all),
@@ -249,12 +271,12 @@ fn main() -> anyhow::Result<()> {
         },
         Command::Ide { action } => match action {
             IdeAction::Detect => ide::cmd_ide_detect(),
-            IdeAction::Install { ide, plugin, version } => {
-                ide::cmd_ide_install(&home, &ide, &plugin, &version)
-            }
-            IdeAction::Uninstall { ide, version } => {
-                ide::cmd_ide_uninstall(&home, &ide, &version)
-            }
+            IdeAction::Install {
+                ide,
+                plugin,
+                version,
+            } => ide::cmd_ide_install(&home, &ide, &plugin, &version),
+            IdeAction::Uninstall { ide, version } => ide::cmd_ide_uninstall(&home, &ide, &version),
         },
     }
 }

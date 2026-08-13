@@ -186,9 +186,9 @@ Each IDE has its own JSON config shape. The adapter specifies the
 | IDE | Config file | Merge path |
 |---|---|---|
 | OpenCode | `~/.config/opencode/opencode.json` | `mcp.cognicode-mcp` |
-| ZCode | `~/.zcode/v2/config.json` | `mcp.cognicode-mcp` (assumed) |
-| Claude Code | `~/.claude/claude_desktop_config.json` | `mcpServers.cognicode-mcp` |
-| Codex | `~/.codex/config.json` | `mcp_servers[?name=cognicode-mcp]` (array) |
+| ZCode | `~/.zcode/v2/config.json` | `mcp.cognicode-mcp` |
+| Claude Code | `~/.claude/mcp/cognicode-mcp.json` | (one JSON file per server) |
+| Codex | `~/.codex/config.toml` | `[mcp_servers.cognicode-mcp]` (TOML table) |
 
 #### Scenario: ZCode adapter patches `mcp` section
 
@@ -197,19 +197,19 @@ Each IDE has its own JSON config shape. The adapter specifies the
 - THEN `mcp.cognicode-mcp` is added with the stdio command
 - AND other MCP entries are preserved
 
-#### Scenario: Claude Code adapter patches `mcpServers` section
+#### Scenario: Claude Code adapter writes per-server JSON file
 
-- GIVEN `~/.claude/claude_desktop_config.json` has `mcpServers.<other-name>` entries
+- GIVEN `~/.claude/mcp/` directory exists
 - AND `cogh install --ide claude` runs
-- THEN `mcpServers.cognicode-mcp` is added
-- AND other MCP servers are preserved
+- THEN `~/.claude/mcp/cognicode-mcp.json` is created with the MCP entry
+- AND other MCP server files in `~/.claude/mcp/` are preserved
 
-#### Scenario: Codex adapter patches `mcp_servers` array
+#### Scenario: Codex adapter patches TOML `mcp_servers` table
 
-- GIVEN `~/.codex/config.json` has `mcp_servers` as an array
+- GIVEN `~/.codex/config.toml` has `[[mcp_servers]]` entries
 - AND `cogh install --ide codex` runs
-- THEN a new entry is added to the array
-- AND other entries are preserved
+- THEN `[mcp_servers.cognicode-mcp]` table is added with command and args
+- AND other `[[mcp_servers]]` entries are preserved
 
 ## Cross-references
 
