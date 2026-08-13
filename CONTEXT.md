@@ -383,3 +383,44 @@ by LadybugDB). No intermediate files.
 - [ ] C4 level extraction (component/container/system from code)
 - [ ] Multimodal extraction (docs, PDFs, images via LLM) — Phase 2
 - [ ] File watcher integration (notify crate) — Phase 1.5
+
+---
+
+## E32-I — Self-Apply del IDE Adapter OpenCode (2026-08-13)
+
+### Propósito
+
+Permitir que `cogh` se auto-aplique el IDE adapter de OpenCode en la máquina local. Esto cierra el ciclo: el CLI es capaz de instalarse a sí mismo con integración IDE completa.
+
+### Flujo de instalación
+
+```bash
+cogh ide install opencode --plugin mcp-server --version v0.93.0
+```
+
+### Cambios realizados
+
+1. **cogh.rs:211-217**: `Command::Install` ahora detecta si `ide` contiene `"opencode"` y despacha a `ide::cmd_ide_install` en lugar de `install::run_install`.
+
+2. **ide.rs:178-205**: `integrate_opencode()` ahora acepta `mcp_command: &[String]` como parámetro (igual que `integrate_zcode/claude/codex`). El valor hardcodeado `vec!["cognicode-mcp", "stdio"]` se sustituyó por el parámetro.
+
+3. **install.rs:49**: Se pasa `mcp_command` usando la ruta del shim (`~/.cognicode/shims/cognicode-mcp`) cuando se detecta OpenCode.
+
+4. **Tests actualizados**: `integrate_opencode_writes_mcp_entry` y `test_integrate_opencode_steps` ahora pasan el parámetro `mcp_command`.
+
+### Verificación
+
+```bash
+# SHA-256 del backup
+sha256sum ~/.config/opencode/opencode.json
+
+# Verificar que el shim path está correcto
+jq '.mcp["cognicode-mcp"].command' ~/.config/opencode/opencode.json
+# Esperado: ["/home/user/.cognicode/shims/cognicode-mcp"]
+```
+
+### Notas
+
+- Esta sección es **efímera** (ephemeral) — **NO hacer push** a remote.
+- El install path usa el shim (`~/.cognicode/shims/cognicode-mcp`) en lugar del binary directo, siguiendo el patrón E32-A.
+- La integración con OpenCode detecta automáticamente la instalación y añade la entrada MCP al config de OpenCode.

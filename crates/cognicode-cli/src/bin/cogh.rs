@@ -209,10 +209,13 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Command::Init => layout::cmd_init(&home),
         Command::Install { plugin, version, ide, profile } => {
-            // Use atomic bundle installer via install::run_install
-            // The plugin/version/ide args are for legacy plugin-based install;
-            // when --profile is provided, we use the atomic installer instead
-            install::run_install(&profile)?;
+            if ide.contains(&"opencode".to_string()) {
+                // Dispatch to ide::cmd_ide_install for opencode self-apply
+                ide::cmd_ide_install(&home, "opencode", &plugin, &version)?;
+            } else {
+                // Use atomic bundle installer via install::run_install
+                install::run_install(&profile)?;
+            }
             Ok(())
         }
         Command::Uninstall { plugin, version, ide } => {

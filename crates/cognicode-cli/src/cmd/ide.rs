@@ -178,6 +178,7 @@ fn write_json_atomic(path: &Path, value: &Value) -> Result<()> {
 pub fn integrate_opencode(
     skill_path: &Path,
     version: &str,
+    mcp_command: &[String],
 ) -> Result<Vec<Step>> {
     let mut steps = Vec::new();
 
@@ -191,7 +192,7 @@ pub fn integrate_opencode(
     // 2. MCP config merge
     let config_path = opencode_config_path();
     let mcp_entry = json!({
-        "command": vec!["cognicode-mcp".to_string(), "stdio".to_string()],
+        "command": mcp_command,
         "enabled": true,
         "type": "stdio",
     });
@@ -605,7 +606,7 @@ pub fn cmd_ide_install(home: &CognicodeHomeSup, ide: &str, plugin: &str, version
         "opencode" => {
             // skill_path is the plugin's skills directory
             let skill_path = home.versions().join(version).join(plugin).join("skills");
-            let steps = integrate_opencode(&skill_path, version)?;
+            let steps = integrate_opencode(&skill_path, version, &mcp_command)?;
             for step in steps {
                 step.execute()?;
             }
@@ -741,7 +742,8 @@ mod tests {
         let skill_path = tmp.join(".cognicode/versions/0.92.0/mcp-server/skills");
         std::fs::create_dir_all(&skill_path).unwrap();
 
-        let steps = integrate_opencode(&skill_path, "0.92.0").unwrap();
+        let mcp_cmd = vec!["cognicode-mcp".to_string(), "stdio".to_string()];
+        let steps = integrate_opencode(&skill_path, "0.92.0", &mcp_cmd).unwrap();
         for step in steps {
             step.execute().unwrap();
         }
@@ -978,7 +980,8 @@ mcp_servers.existing.args = ['y']
     #[test]
     fn test_integrate_opencode_steps() {
         let skill_path = PathBuf::from("/fake/skills");
-        let steps = integrate_opencode(&skill_path, "0.94.9").unwrap();
+        let mcp_cmd = vec!["cognicode-mcp".to_string(), "stdio".to_string()];
+        let steps = integrate_opencode(&skill_path, "0.94.9", &mcp_cmd).unwrap();
         assert!(!steps.is_empty());
         assert!(matches!(steps[0], Step::Symlink { .. }));
     }

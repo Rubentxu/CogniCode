@@ -46,7 +46,15 @@ pub fn run_install(profile: &str) -> Result<PathBuf> {
                     .parent()
                     .map(|p| p.join("mcp-server/skills"))
                     .unwrap_or_else(|| PathBuf::from("~/.cognicode/skills"));
-                let steps = ide::integrate_opencode(&skill_path, version)?;
+                // Construct mcp_command using shim path (same pattern as cmd_ide_install)
+                let mcp_command = vec![
+                    dirs::home_dir()
+                        .unwrap_or_else(|| PathBuf::from("~"))
+                        .join(".cognicode/shims/cognicode-mcp")
+                        .to_string_lossy()
+                        .to_string(),
+                ];
+                let steps = ide::integrate_opencode(&skill_path, version, &mcp_command)?;
                 for step in steps {
                     step.execute()
                         .map_err(|e| anyhow!("IDE integration failed: {}", e))?;
