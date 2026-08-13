@@ -25,7 +25,7 @@ EXPLORER_API_RELEASE := "target/release/explorer-api"
 EXPLORER_REAL_API_PORT := env_var_or_default("EXPLORER_REAL_API_PORT", "8010")
 PORT := EXPLORER_API_PORT
 PROJECT_PATH := env_var_or_default("COGNICODE_PROJECT_PATH", "")
-version := env_var_or_default("COGNICODE_VERSION", "0.94.4")
+version := env_var_or_default("COGNICODE_VERSION", "0.94.11")
 
 # ─── Default ──────────────────────────────────────────────────────────────────
 

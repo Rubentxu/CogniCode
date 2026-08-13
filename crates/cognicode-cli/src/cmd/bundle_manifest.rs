@@ -500,10 +500,10 @@ components:
 
     #[test]
     fn assert_pkg_version_match() {
-        // CARGO_PKG_VERSION is "0.94.0" per workspace
-        let yaml = r#"
+        // Uses env!("CARGO_PKG_VERSION") to reflect current workspace version
+        let yaml = format!(r#"
 apiVersion: cognicode.bundle/v1
-version: "0.94.0"
+version: "{}"
 platform: linux-x86-64
 profiles:
   - name: core
@@ -511,15 +511,14 @@ profiles:
 components:
   - name: test
     kind: Cognicode
-    version: "0.94.0"
+    version: "{}"
     artifact: test.tar.gz
     sha256: "0000000000000000000000000000000000000000000000000000000000000001"
     url: "https://example.com/test.tar.gz"
     profiles: [core]
-"#;
-        let m = BundleManifest::from_str(yaml).unwrap();
-        // This should succeed because the workspace version is 0.94.0
-        m.assert_pkg_version().expect("pkg version should match 0.94.0");
+"#, env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_VERSION"));
+        let m = BundleManifest::from_str(&yaml).unwrap();
+        m.assert_pkg_version().expect("pkg version should match workspace version");
     }
 
     #[test]
