@@ -696,7 +696,7 @@ Implementation starts with E32-A.
 
 After E32:
 - **E33**: integrated CI/CD for cogh binary releases (GitHub Actions)
-- **E34**: community plugin registry (GitHub org `Rubentxu/CogniCode-plugins`)
+- **E34**: community plugin registry (plugins stay in main repo, no separate org)
 - **E35**: ZCode + Claude + Codex targeting (post-MVP)
 
 ### Cross-references

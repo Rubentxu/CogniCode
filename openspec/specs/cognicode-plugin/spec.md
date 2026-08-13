@@ -94,9 +94,6 @@ error message.
 - THEN the install aborts with "sha256 mismatch: expected abc123..., got <actual>"
 - AND no partial install state is left behind
 
-### Requirement: Plugin discovery via GitHub registry
-
-Default plugin discovery is via GitHub Releases. The plugin's
 ### Requirement: Bundled plugins ship with cogh
 
 The first release of `cogh` ships with 4 bundled plugins:
@@ -115,28 +112,6 @@ These plugins are embedded in the `cogh` binary at build time
 - WHEN `cogh init` runs
 - THEN the bundled plugins are registered in `~/.cognicode/plugins/`
 - AND the user can immediately run `cogh install mcp-server`
-
-### Requirement: Plugin discovery respects the user's pinned registry
-
-The user MAY override the default GitHub registry with
-`~/.cognicode/config.yaml`:
-
-```yaml
-registry:
-  type: github
-  url: https://github.com/my-org
-  token: ${GITHUB_TOKEN}
-```
-
-If a `token` is provided, `cogh` MUST use it for authenticated
-requests (useful for private registries).
-
-#### Scenario: `cogh install` uses a custom registry
-
-- GIVEN `~/.cognicode/config.yaml` has `registry.url: https://github.com/my-org`
-- WHEN `cogh install mcp-server` runs
-- THEN `cogh` queries `https://api.github.com/repos/my-org/cognicode-plugins/mcp-server/releases/...`
-- AND uses the configured token (if any) for authentication
 
 ## Cross-references
 
