@@ -44,11 +44,6 @@ mod profile;
 #[path = "../cmd/tracker.rs"]
 mod tracker;
 
-#[path = "../plugin.rs"]
-mod plugin;
-#[path = "../plugin_registry.rs"]
-mod plugin_registry;
-
 use layout::CognicodeHome;
 
 #[derive(Parser, Debug)]
@@ -231,25 +226,21 @@ fn main() -> anyhow::Result<()> {
         Command::Version => version::cmd_version(&home),
         Command::Plugin { action } => match action {
             PluginAction::Add { name, url } => {
-                let name_clone = name.clone();
-                plugin_registry::add_plugin(name, url)?;
-                println!("Plugin {} added", name_clone);
+                layout::cmd_plugin_add(&home, &name, url.as_deref())?;
+                println!("Plugin {} added", name);
                 Ok(())
             }
             PluginAction::Remove { name } => {
-                plugin_registry::remove_plugin(&name)?;
+                layout::cmd_plugin_remove(&home, &name)?;
                 println!("Plugin {} removed", name);
                 Ok(())
             }
             PluginAction::List => {
-                let registry = plugin_registry::PluginRegistry::load()?;
-                for p in registry.list() {
-                    println!("{} {} ({:?})", p.name, p.version, p.kind);
-                }
+                layout::cmd_plugin_list(&home)?;
                 Ok(())
             }
             PluginAction::Update { name } => {
-                println!("Plugin {} update not yet implemented", name);
+                layout::cmd_plugin_update(&home, &name)?;
                 Ok(())
             }
         },

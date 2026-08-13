@@ -216,9 +216,9 @@ mod tests {
         let out = run_cogh(&tmp, &["uninstall", "mcp-server", "--ide", "opencode", "--version", "0.92.0"]).unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
         // cmd_uninstall prints "uninstall: ..." and the IDE adapter prints
-        // "✓ unpached: ..." (opencode.json) + "✓ removed: ..." (skills).
+        // "✓ OpenCode uninstall complete".
         assert!(
-            stdout.contains("uninstall:") && stdout.contains("unpached"),
+            stdout.contains("uninstall:") && stdout.contains("✓ OpenCode uninstall complete"),
             "uninstall output missing: {stdout}"
         );
 

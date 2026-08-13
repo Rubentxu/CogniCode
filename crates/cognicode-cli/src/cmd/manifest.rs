@@ -132,7 +132,7 @@ versions:
   - ref: v0.92.0
     artifact: cognicode-mcp-0.92.0-x86_64-unknown-linux-gnu.tar.gz
     sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-    url: https://github.com/Rubentxu/CogniCode-plugins/mcp-server/releases/download/v0.92.0/cognicode-mcp-0.92.0-x86_64-unknown-linux-gnu.tar.gz
+    url: https://github.com/Rubentxu/CogniCode/releases/download/v0.92.0/cognicode-mcp-0.92.0-x86_64-unknown-linux-gnu.tar.gz
     min_cogh: ">=0.1.0"
   - ref: v0.91.1
     artifact: cognicode-mcp-0.91.1-x86_64-unknown-linux-gnu.tar.gz

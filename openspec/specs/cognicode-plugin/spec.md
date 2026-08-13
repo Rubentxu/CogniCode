@@ -97,25 +97,6 @@ error message.
 ### Requirement: Plugin discovery via GitHub registry
 
 Default plugin discovery is via GitHub Releases. The plugin's
-`homepage` field is the GitHub repo URL. `cogh install <plugin>`
-queries `https://api.github.com/repos/<owner>/<repo>/releases/latest`
-for the latest version, then `releases/tags/<ref>` for a specific
-version.
-
-#### Scenario: `cogh install <plugin>` queries GitHub Releases
-
-- GIVEN the `mcp-server` plugin has `homepage: github.com/Rubentxu/CogniCode-plugins/mcp-server`
-- WHEN `cogh install mcp-server --version 0.92.0` runs
-- THEN `cogh` queries `https://api.github.com/repos/Rubentxu/CogniCode-plugins/mcp-server/releases/tags/0.92.0`
-- AND the `cognicode-mcp-0.92.0-x86_64-unknown-linux-gnu.tar.gz` asset is downloaded
-
-#### Scenario: `cogh install <plugin> --from-url <git-url>` for community plugins
-
-- GIVEN a community plugin at `github.com/somebody/cognicode-plugin-x`
-- WHEN `cogh plugin add x --from-url https://github.com/somebody/cognicode-plugin-x` runs
-- THEN the plugin is cloned from the URL
-- AND `cogh install x` runs the plugin's install steps
-
 ### Requirement: Bundled plugins ship with cogh
 
 The first release of `cogh` ships with 4 bundled plugins:

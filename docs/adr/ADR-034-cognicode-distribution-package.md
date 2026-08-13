@@ -206,11 +206,6 @@ independently. The `cogh install --ide opencode` command:
 
 ## Plugin discovery
 
-Plugins are hosted on GitHub at `github.com/Rubentxu/CogniCode-plugins`
-(or similar). `cogh plugin add <name>` either:
-1. Pulls from the GitHub registry (default)
-2. Takes a `--from-url <git-url>` for community plugins
-
 For the first release, we ship **bundled plugins** with cogh:
 - `mcp-server` (the binary)
 - `skills-cognicode-core` (the 4 portable skills)

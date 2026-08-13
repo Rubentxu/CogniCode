@@ -239,7 +239,7 @@ impl InstallerTransaction {
                 .map_err(|e| InstallerError::Io(bundle_path, e))
         } else {
             // Embedded fallback for distribution installers
-            Ok(include_str!("../../../../bundles/v0.94.1/bundle.yaml").to_string())
+            Ok(include_str!("../../../../bundles/v0.94.11/bundle.yaml").to_string())
         }
     }
 
@@ -352,6 +352,8 @@ mod tests {
 
     #[test]
     fn advance_skips_through_all_stages() {
+        // Use 0 components so Downloading stage is a no-op (no network call).
+        // This tests that the stage state machine advances correctly.
         let yaml = r#"
 apiVersion: cognicode.bundle/v1
 version: "0.94.0"
@@ -359,14 +361,7 @@ platform: linux-x86-64
 profiles:
   - name: core
     description: core profile
-components:
-  - name: cognicode-cli
-    kind: Cognicode
-    version: "0.94.0"
-    artifact: cognicode-0.94.0.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
-    url: "https://example.com/cognicode-0.94.0.tar.gz"
-    profiles: [core]
+components: []
 "#;
         let manifest = BundleManifest::from_str(yaml).unwrap();
         let journal = RollbackJournal::new();
