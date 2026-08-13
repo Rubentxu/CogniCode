@@ -1,0 +1,34 @@
+apiVersion: cognicode/v1
+kind: IdeAdapter
+name: claude
+description: "Claude Code IDE integration — writes ~/.claude/mcp/cognicode-mcp.json"
+homepage: "https://github.com/Rubentxu/CogniCode/releases"
+
+versions:
+  - ref: v0.1.0
+    artifact: "claude-adapter-0.1.0.tar.gz"
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.1.0/claude-adapter-0.1.0.tar.gz"
+    min_cogh: ">=0.1.0"
+
+integrate:
+  - id: skills
+    kind: copy
+    source: skills/
+    target: ~/.claude/skills/cognicode-$VERSION/
+  - id: mcp
+    kind: write_json
+    target: ~/.claude/mcp/cognicode-mcp.json
+    template: |
+      {
+        "command": "$COGNICODE_HOME/shims/cognicode-mcp",
+        "args": []
+      }
+
+uninstall:
+  - id: skills
+    kind: rm_rf
+    target: ~/.claude/skills/cognicode-$VERSION/
+  - id: mcp
+    kind: remove_file
+    target: ~/.claude/mcp/cognicode-mcp.json

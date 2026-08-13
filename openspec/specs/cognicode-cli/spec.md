@@ -100,6 +100,20 @@ When `cogh install --ide opencode` (or any registered IDE) is run,
 - WHEN `cogh install --ide zcode` runs
 - THEN the MCP section is patched (per ZCode's specific config shape)
 
+#### Scenario: `cogh install --ide claude` creates per-server JSON file
+
+- GIVEN `~/.claude/mcp/` directory is accessible
+- WHEN `cogh install --ide claude` runs
+- THEN `~/.claude/mcp/cognicode-mcp.json` is created with the MCP entry
+- AND skills are copied to `~/.claude/skills/cognicode-$VERSION/`
+
+#### Scenario: `cogh install --ide codex` patches TOML config
+
+- GIVEN `~/.codex/config.toml` exists
+- WHEN `cogh install --ide codex` runs
+- THEN the `[mcp_servers.cognicode-mcp]` table is added with command and args
+- AND skills are copied to `~/.codex/skills/cognicode-$VERSION/`
+
 #### Scenario: `cogh install --ide all` configures every registered IDE
 
 - GIVEN OpenCode + ZCode + Claude Code are installed

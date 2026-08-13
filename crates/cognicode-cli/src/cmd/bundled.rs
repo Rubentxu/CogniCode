@@ -11,10 +11,7 @@
 
 /// Bundled plugin manifests (raw YAML).
 pub const PLUGIN_MANIFESTS: &[(&str, &str)] = &[
-    (
-        "mcp-server",
-        include_str!("bundled/mcp-server.yaml"),
-    ),
+    ("mcp-server", include_str!("bundled/mcp-server.yaml")),
     (
         "skills-cognicode-core",
         include_str!("bundled/skills-cognicode-core.yaml"),
@@ -23,6 +20,9 @@ pub const PLUGIN_MANIFESTS: &[(&str, &str)] = &[
         "sandbox-templates",
         include_str!("bundled/sandbox-templates.yaml"),
     ),
+    ("zcode", include_str!("bundled/zcode.yaml")),
+    ("claude", include_str!("bundled/claude.yaml")),
+    ("codex", include_str!("bundled/codex.yaml")),
 ];
 
 /// Install all bundled plugins into `~/.cognicode/plugins/<name>/`.
@@ -36,8 +36,7 @@ pub fn install_bundled_plugins(home: &std::path::Path) -> anyhow::Result<usize> 
         std::fs::create_dir_all(&plugin_dir)
             .with_context(|| format!("create {}", plugin_dir.display()))?;
         let target = plugin_dir.join("plugin.yaml");
-        std::fs::write(&target, yaml)
-            .with_context(|| format!("write {}", target.display()))?;
+        std::fs::write(&target, yaml).with_context(|| format!("write {}", target.display()))?;
         eprintln!("  ✓ installed bundled plugin: {name}");
         count += 1;
     }

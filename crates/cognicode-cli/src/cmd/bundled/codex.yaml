@@ -1,0 +1,34 @@
+apiVersion: cognicode/v1
+kind: IdeAdapter
+name: codex
+description: "Codex IDE integration — patches ~/.codex/config.toml with [mcp_servers] table"
+homepage: "https://github.com/Rubentxu/CogniCode/releases"
+
+versions:
+  - ref: v0.1.0
+    artifact: "codex-adapter-0.1.0.tar.gz"
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.1.0/codex-adapter-0.1.0.tar.gz"
+    min_cogh: ">=0.1.0"
+
+integrate:
+  - id: skills
+    kind: copy
+    source: skills/
+    target: ~/.codex/skills/cognicode-$VERSION/
+  - id: mcp
+    kind: merge_toml
+    target: ~/.codex/config.toml
+    merge_path: mcp_servers.cognicode-mcp
+    template: |
+      command = "$COGNICODE_HOME/shims/cognicode-mcp"
+      args = []
+
+uninstall:
+  - id: skills
+    kind: rm_rf
+    target: ~/.codex/skills/cognicode-$VERSION/
+  - id: mcp
+    kind: remove_from_toml
+    target: ~/.codex/config.toml
+    merge_path: mcp_servers.cognicode-mcp
