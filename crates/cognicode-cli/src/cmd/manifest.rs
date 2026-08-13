@@ -126,7 +126,7 @@ apiVersion: cognicode/v1
 kind: Plugin
 name: mcp-server
 description: CogniCode MCP server
-homepage: https://github.com/Rubentxu/CogniCode-plugins/mcp-server
+homepage: https://github.com/Rubentxu/CogniCode/releases
 
 versions:
   - ref: v0.92.0

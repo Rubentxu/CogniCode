@@ -2,7 +2,7 @@ apiVersion: cognicode/v1
 kind: Plugin
 name: sandbox-templates
 description: "CogniCode podman container specs (rust, py, go, java, js, ts)"
-homepage: "https://github.com/Rubentxu/CogniCode-plugins/sandbox-templates"
+homepage: "https://github.com/Rubentxu/CogniCode/releases"
 
 versions:
   - ref: v0.92.0

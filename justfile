@@ -194,7 +194,7 @@ test-ignored:
 # Run all lifecycle tests (single-threaded to avoid lock contention)
 test-lifecycle:
     @echo "🧪 Running lifecycle tests..."
-    cargo test -p cognicode-cli --lib lifecycle -- --test-threads=1
+    cargo test -p cognicode-cli --bin cogh lifecycle -- --test-threads=1
 
 # Run E2E lifecycle tests (requires real install in temp HOME)
 test-lifecycle-e2e:

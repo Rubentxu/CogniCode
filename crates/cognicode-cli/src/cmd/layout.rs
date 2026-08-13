@@ -329,7 +329,7 @@ pub fn cmd_plugin_add(home: &CognicodeHome, plugin: &str, from_url: Option<&str>
 }
 
 pub fn cmd_plugin_remove(home: &CognicodeHome, plugin: &str) -> Result<()> {
-    println!("plugin remove: plugin={}", plugin);
+    println!("Plugin removal not yet implemented: {} (plugins are read-only in this version)", plugin);
     Ok(())
 }
 
@@ -351,7 +351,7 @@ pub fn cmd_plugin_list(home: &CognicodeHome) -> Result<()> {
 }
 
 pub fn cmd_plugin_update(home: &CognicodeHome, plugin: &str) -> Result<()> {
-    println!("plugin update: plugin={}", plugin);
+    println!("Plugin update not yet implemented: {} (git pull for --from-url plugins not yet supported)", plugin);
     Ok(())
 }
 

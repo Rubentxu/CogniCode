@@ -2,7 +2,7 @@ apiVersion: cognicode/v1
 kind: Plugin
 name: skills-cognicode-core
 description: "CogniCode portable skill bundles — IDE-agnostic"
-homepage: "https://github.com/Rubentxu/CogniCode-plugins/skills-cognicode-core"
+homepage: "https://github.com/Rubentxu/CogniCode/releases"
 
 versions:
   - ref: v0.92.0
