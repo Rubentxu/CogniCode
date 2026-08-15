@@ -1,10 +1,20 @@
+# LOCAL-ONLY workflow. Triggered manually via `act` running:
+#   act -W .github/workflows/ci.yml workflow_dispatch
+# or via `just ci-local`.
+#
+# This workflow has NO `on: push` or `on: pull_request` triggers by CogniCode
+# policy (per docs/AGENTS.md "Local CI Is the Source of Truth" + ADR-031):
+# GitHub Actions runs are reserved for the RELEASE GATE only (tag cuts,
+# see release.yml). Day-to-day CI runs locally via `just check` /
+# `just ci-local`. The workflow exists in `.github/workflows/` only so
+# its definition is reviewable and runs through the same GitHub Actions
+# runtime semantics via `act` locally — backed by `podman`.
+#
+# Per B3 (V1.0.0 pre-cut deferred items): remote CI triggers disabled 2026-08-16.
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   test:

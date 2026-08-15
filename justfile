@@ -352,11 +352,13 @@ ci-t6-dry:
     DOCKER_HOST=unix:///run/user/1000/podman/podman.sock \
         act -n -W .github/workflows/regression-check.yml workflow_dispatch
 
-# Run all enabled CI workflows locally (currently just T6)
+# Run all enabled CI workflows locally via act+podman (regression-check + ci)
 ci-local:
     @echo "🛡️  Running all CI workflows locally via act+podman..."
     DOCKER_HOST=unix:///run/user/1000/podman/podman.sock \
         act -W .github/workflows/regression-check.yml workflow_dispatch
+    DOCKER_HOST=unix:///run/user/1000/podman/podman.sock \
+        act -W .github/workflows/ci.yml workflow_dispatch
 
 # T7 — regenerate the per-scenario flaky log (sandbox/results/flaky_scenarios.{md,json})
 scorecard-stability window_days="30":
