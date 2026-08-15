@@ -14,6 +14,7 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result};
+use serde_json::Value;
 
 use super::ide::cmd_ide_install;
 use super::ide::detect_opencode;
@@ -488,6 +489,7 @@ mod tests {
     fn test_clean_home_install() {
         let temp_home = tempfile::tempdir().unwrap();
         let original_home = std::env::var("HOME").ok();
+        let original_cognicode_home = std::env::var("COGNICODE_HOME").ok();
         unsafe {
             std::env::set_var("HOME", temp_home.path());
             std::env::set_var("XDG_CONFIG_HOME", temp_home.path().join(".config"));
@@ -495,8 +497,9 @@ mod tests {
             // Override COGNICODE_HOME to use temp directory
             std::env::set_var("COGNICODE_HOME", temp_home.path().join(".cognicode"));
         }
+        let home = CognicodeHome::resolve(None).unwrap();
         // Run install
-        let result = install::run_install("core");
+        let result = install::run_install(&home, "core");
         assert!(result.is_ok(), "install failed: {:?}", result);
         // Verify tracker
         let tracker_path = temp_home.path().join(".cognicode/tracker/version");
@@ -512,10 +515,19 @@ mod tests {
             "shims missing at {}",
             shims_path.display()
         );
-        // Restore HOME
+        // Restore env
         if let Some(home) = original_home {
             unsafe {
                 std::env::set_var("HOME", home);
+            }
+        }
+        if let Some(cog_home) = original_cognicode_home {
+            unsafe {
+                std::env::set_var("COGNICODE_HOME", cog_home);
+            }
+        } else {
+            unsafe {
+                std::env::remove_var("COGNICODE_HOME");
             }
         }
         drop(temp_home);
@@ -604,14 +616,16 @@ mod tests {
     fn test_cogh_install_runs_successfully() {
         let temp_home = tempfile::tempdir().unwrap();
         let original_home = std::env::var("HOME").ok();
+        let original_cognicode_home = std::env::var("COGNICODE_HOME").ok();
         unsafe {
             std::env::set_var("HOME", temp_home.path());
             std::env::set_var("XDG_CONFIG_HOME", temp_home.path().join(".config"));
             std::env::set_var("XDG_DATA_HOME", temp_home.path().join(".local/share"));
             std::env::set_var("COGNICODE_HOME", temp_home.path().join(".cognicode"));
         }
+        let home = CognicodeHome::resolve(None).unwrap();
         // Run install
-        let result = install::run_install("core");
+        let result = install::run_install(&home, "core");
         assert!(result.is_ok(), "install failed: {:?}", result);
         // Verify tracker version file is created
         let tracker_path = temp_home.path().join(".cognicode/tracker/version");
@@ -627,10 +641,19 @@ mod tests {
             "shims missing at {}",
             shims_path.display()
         );
-        // Restore HOME
+        // Restore env
         if let Some(home) = original_home {
             unsafe {
                 std::env::set_var("HOME", home);
+            }
+        }
+        if let Some(cog_home) = original_cognicode_home {
+            unsafe {
+                std::env::set_var("COGNICODE_HOME", cog_home);
+            }
+        } else {
+            unsafe {
+                std::env::remove_var("COGNICODE_HOME");
             }
         }
         drop(temp_home);
@@ -829,13 +852,25 @@ mod tests {
         let result = cmd_ide_install(&home, "opencode", "mcp-server", "v0.93.0");
         assert!(result.is_ok(), "ide install failed: {:?}", result);
 
-        // Verify OpenCode config was updated
+        // Verify OpenCode config was updated with absolute shim path
         let config_path = tmp.join(".config/opencode/opencode.json");
         let content = std::fs::read_to_string(&config_path).unwrap();
+        let v: Value = serde_json::from_str(&content).unwrap();
+        let expected_shim = home.shim_path("cognicode-mcp");
+        let expected_shim_str = expected_shim.to_string_lossy();
+        let actual_cmd = v["mcp"]["cognicode-mcp"]["command"]
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|v| v.as_str())
+            .map(String::from);
         assert!(
-            content.contains("cognicode"),
-            "cognicode not found in opencode config: {}",
-            content
+            actual_cmd
+                .as_ref()
+                .map(|s| s.as_str() == expected_shim_str.as_ref())
+                .unwrap_or(false),
+            "mcp.cognicode-mcp.command[0] should be absolute shim path '{}', got: {:?}",
+            expected_shim.display(),
+            actual_cmd
         );
 
         // Restore HOME
@@ -848,6 +883,67 @@ mod tests {
                 std::env::remove_var("HOME");
             }
         }
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // E32-I: Test that `cogh install --ide opencode --profile core` dispatches
+    // both the atomic bundle install (tracker update) and the IDE integration.
+
+    #[test]
+    fn test_install_with_ide_and_profile_dispatches_both() {
+        let tmp = std::env::temp_dir().join(format!("cogh-lc-ide-prof-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // Pre-create a plugin + version dir so skills copy finds something
+        let skill_src =
+            tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
+        std::fs::create_dir_all(&skill_src).unwrap();
+        std::fs::write(skill_src.join("SKILL.md"), "---\nname: x\n---\n").unwrap();
+        create_opencode_config(&tmp).unwrap();
+
+        // Run `cogh install --ide opencode --profile core` via subprocess
+        let result = run_cogh(
+            &tmp,
+            &[
+                "install",
+                "mcp-server",
+                "--ide",
+                "opencode",
+                "--profile",
+                "core",
+            ],
+        );
+        assert!(result.is_ok(), "cogh install failed: {:?}", result);
+
+        // Verify bundle install ran: tracker should be updated
+        let tracker_path = tmp.join(".cognicode/tracker/version");
+        assert!(
+            tracker_path.exists(),
+            "tracker missing at {} — bundle install may not have run",
+            tracker_path.display()
+        );
+
+        // Verify IDE integration ran: opencode.json should have cognicode-mcp entry
+        let config_path = tmp.join(".config/opencode/opencode.json");
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        let v: Value = serde_json::from_str(&content).unwrap();
+        let actual_cmd = v["mcp"]["cognicode-mcp"]["command"]
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let expected_shim = tmp.join(".cognicode/shims/cognicode-mcp");
+        assert!(
+            actual_cmd
+                .as_ref()
+                .map(|s| s.as_str() == expected_shim.to_string_lossy().as_ref())
+                .unwrap_or(false),
+            "mcp.cognicode-mcp.command[0] should be absolute shim path '{}', got: {:?}",
+            expected_shim.display(),
+            actual_cmd
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

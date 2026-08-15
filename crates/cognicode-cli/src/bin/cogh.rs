@@ -207,29 +207,32 @@ fn main() -> anyhow::Result<()> {
             ide,
             profile,
         } => {
-            // Valid IDEs that dispatch to ide::cmd_ide_install
-            let valid_ides = ["opencode", "zcode", "claude", "codex"];
+            // Always run the atomic bundle install first (per spec: "When
+            // `--profile` is also set, the atomic bundle install MUST run first")
+            install::run_install(&home, &profile)?;
 
-            // Handle --ide all: install to all 4 IDEs
-            if ide.contains(&"all".to_string()) {
-                for ide_name in valid_ides {
-                    ide::cmd_ide_install(&home, ide_name, &plugin, &version)?;
-                }
-            } else {
-                // Check each IDE argument
-                for ide_name in &ide {
-                    if !valid_ides.contains(&ide_name.as_str()) {
-                        return Err(anyhow::anyhow!(
-                            "Unknown IDE '{}'. Valid options: opencode, zcode, claude, codex, all",
-                            ide_name
-                        ));
+            // Then dispatch to IDE adapters if --ide was provided
+            if !ide.is_empty() {
+                // Valid IDEs that dispatch to ide::cmd_ide_install
+                let valid_ides = ["opencode", "zcode", "claude", "codex"];
+
+                // Handle --ide all: install to all 4 IDEs
+                if ide.contains(&"all".to_string()) {
+                    for ide_name in valid_ides {
+                        ide::cmd_ide_install(&home, ide_name, &plugin, &version)?;
                     }
-                    ide::cmd_ide_install(&home, ide_name, &plugin, &version)?;
+                } else {
+                    // Check each IDE argument
+                    for ide_name in &ide {
+                        if !valid_ides.contains(&ide_name.as_str()) {
+                            return Err(anyhow::anyhow!(
+                                "Unknown IDE '{}'. Valid options: opencode, zcode, claude, codex, all",
+                                ide_name
+                            ));
+                        }
+                        ide::cmd_ide_install(&home, ide_name, &plugin, &version)?;
+                    }
                 }
-            }
-            // If no --ide flag provided, fall back to atomic bundle installer
-            if ide.is_empty() {
-                install::run_install(&profile)?;
             }
             Ok(())
         }
