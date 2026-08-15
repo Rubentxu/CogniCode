@@ -10,6 +10,7 @@ use anyhow::{Result, anyhow};
 use super::ide;
 use super::install_lock;
 use super::installer_transaction::InstallerTransaction;
+use super::layout::CognicodeHome;
 use super::tracker;
 
 /// Run the atomic install transaction with lock and tracker.
@@ -19,7 +20,7 @@ use super::tracker;
 /// Writes the installed version to the tracker on success.
 ///
 /// Returns the path to the written install manifest on success.
-pub fn run_install(profile: &str) -> Result<PathBuf> {
+pub fn run_install(home: &CognicodeHome, profile: &str) -> Result<PathBuf> {
     // 1. Acquire install lock
     let lock = install_lock::acquire_lock()
         .map_err(|e| anyhow!("failed to acquire install lock: {}", e))?;
@@ -48,9 +49,7 @@ pub fn run_install(profile: &str) -> Result<PathBuf> {
                     .unwrap_or_else(|| PathBuf::from("~/.cognicode/skills"));
                 // Construct mcp_command using shim path (same pattern as cmd_ide_install)
                 let mcp_command = vec![
-                    dirs::home_dir()
-                        .unwrap_or_else(|| PathBuf::from("~"))
-                        .join(".cognicode/shims/cognicode-mcp")
+                    home.shim_path("cognicode-mcp")
                         .to_string_lossy()
                         .to_string(),
                 ];

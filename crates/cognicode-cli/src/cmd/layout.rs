@@ -88,6 +88,11 @@ impl CognicodeHome {
     pub fn shims(&self) -> PathBuf {
         self.root.join("shims")
     }
+
+    /// Path to a specific shim binary.
+    pub fn shim_path(&self, binary: &str) -> PathBuf {
+        self.shims().join(binary)
+    }
     pub fn versions(&self) -> PathBuf {
         self.root.join("versions")
     }
