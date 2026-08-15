@@ -150,6 +150,16 @@ fn advance_stage(
             Ok(())
         }
         InstallStage::InstallingShims => {
+            // Ensure the shims directory exists even when no components match
+            // the active profile (e.g. `core` includes reserved kinds `[Cogh,
+            // Cognicode]` with no registered components). The layout must
+            // materialize so subsequent `cogh doctor` / `cogh where` calls
+            // find a well-formed `~/.cognicode/shims/` path.
+            let shims_dir = layout::shims_dir();
+            std::fs::create_dir_all(&shims_dir)
+                .map_err(|e| InstallerError::Io(shims_dir.clone(), e))?;
+            journal.record(SideEffect::CreatedDir(shims_dir.clone()));
+
             // Create shims for each binary
             let install_dir = layout::install_dir(&manifest.version);
             for comp in &manifest.components {
@@ -247,7 +257,7 @@ impl InstallerTransaction {
             std::fs::read_to_string(&bundle_path).map_err(|e| InstallerError::Io(bundle_path, e))
         } else {
             // Embedded fallback for distribution installers
-            Ok(include_str!("../../../../bundles/v0.94.11/bundle.yaml").to_string())
+            Ok(include_str!("../../../../bundles/v0.94.14/bundle.yaml").to_string())
         }
     }
 
