@@ -12,7 +12,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use sha2::{Digest, Sha256};
 
 use crate::manifest::PluginManifest;
@@ -37,8 +37,8 @@ impl Default for RegistryConfig {
 /// Verify the sha256 of a file against the expected hex string.
 pub fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
     let mut hasher = Sha256::new();
-    let mut f = std::fs::File::open(path)
-        .with_context(|| format!("open {} for sha256", path.display()))?;
+    let mut f =
+        std::fs::File::open(path).with_context(|| format!("open {} for sha256", path.display()))?;
     let mut buf = [0u8; 8192];
     loop {
         let n = std::io::Read::read(&mut f, &mut buf)?;
@@ -51,7 +51,9 @@ pub fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
     if actual != expected.to_lowercase() {
         return Err(anyhow!(
             "sha256 mismatch: expected {}, got {} (file: {})",
-            expected, actual, path.display()
+            expected,
+            actual,
+            path.display()
         ));
     }
     Ok(())
@@ -69,15 +71,20 @@ pub fn download_to(url: &str, dest: &Path, cfg: &RegistryConfig) -> Result<()> {
     }
     let mut resp = req.send().with_context(|| format!("GET {url}"))?;
     if !resp.status().is_success() {
-        return Err(anyhow!("download failed: HTTP {} for {}", resp.status(), url));
+        return Err(anyhow!(
+            "download failed: HTTP {} for {}",
+            resp.status(),
+            url
+        ));
     }
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create_dir {}", parent.display()))?;
     }
-    let mut out = std::fs::File::create(dest)
-        .with_context(|| format!("create {}", dest.display()))?;
-    resp.copy_to(&mut out).with_context(|| format!("write {}", dest.display()))?;
+    let mut out =
+        std::fs::File::create(dest).with_context(|| format!("create {}", dest.display()))?;
+    resp.copy_to(&mut out)
+        .with_context(|| format!("write {}", dest.display()))?;
     Ok(())
 }
 
@@ -90,7 +97,11 @@ pub fn resolve_url(manifest: &PluginManifest, version: &str) -> Result<(String, 
         manifest.find_version(version)
     };
     let v = v.ok_or_else(|| {
-        anyhow!("version '{}' not found in plugin '{}'", version, manifest.name)
+        anyhow!(
+            "version '{}' not found in plugin '{}'",
+            version,
+            manifest.name
+        )
     })?;
     let url = v.url.clone().ok_or_else(|| {
         anyhow!(
@@ -107,13 +118,8 @@ pub fn extract_targz(archive: &Path, dest: &Path) -> Result<()> {
         .with_context(|| format!("open archive {}", archive.display()))?;
     let gz = flate2::read::GzDecoder::new(f);
     let mut tar = tar::Archive::new(gz);
-    tar.unpack(dest).with_context(|| {
-        format!(
-            "unpack {} into {}",
-            archive.display(),
-            dest.display()
-        )
-    })?;
+    tar.unpack(dest)
+        .with_context(|| format!("unpack {} into {}", archive.display(), dest.display()))?;
     Ok(())
 }
 
@@ -151,11 +157,13 @@ mod tests {
     fn sha256_detects_mismatch() {
         let tmp = std::env::temp_dir().join(format!("cogh-sha-{}.bin", std::process::id()));
         std::fs::write(&tmp, b"hello").unwrap();
-        assert!(verify_sha256(
-            &tmp,
-            "0000000000000000000000000000000000000000000000000000000000000000"
-        )
-        .is_err());
+        assert!(
+            verify_sha256(
+                &tmp,
+                "0000000000000000000000000000000000000000000000000000000000000000"
+            )
+            .is_err()
+        );
         let _ = std::fs::remove_file(&tmp);
     }
 

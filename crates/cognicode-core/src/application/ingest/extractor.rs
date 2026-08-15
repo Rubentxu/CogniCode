@@ -413,7 +413,6 @@ fn extract_type_refs(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

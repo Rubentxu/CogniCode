@@ -4101,12 +4101,9 @@ mod tests {
             .build();
 
         // Baseline: directory=None.
-        let baseline = handle_build_graph(
-            &ctx,
-            BuildGraphInput { directory: None },
-        )
-        .await
-        .expect("directory=None should succeed");
+        let baseline = handle_build_graph(&ctx, BuildGraphInput { directory: None })
+            .await
+            .expect("directory=None should succeed");
         assert!(baseline.success);
         assert_eq!(baseline.symbols_found, 2);
 
@@ -4121,10 +4118,7 @@ mod tests {
         .expect("directory=\".\" should succeed");
         assert!(with_dot.success);
         assert_eq!(with_dot.symbols_found, baseline.symbols_found);
-        assert_eq!(
-            with_dot.relationships_found,
-            baseline.relationships_found
-        );
+        assert_eq!(with_dot.relationships_found, baseline.relationships_found);
     }
 
     // Regression test for the absolute-path branch of resolve_directory.
@@ -4162,12 +4156,9 @@ mod tests {
             "Expected at least 1 symbol in B"
         );
 
-        let baseline_a = handle_build_graph(
-            &ctx,
-            BuildGraphInput { directory: None },
-        )
-        .await
-        .expect("None should resolve to working_dir");
+        let baseline_a = handle_build_graph(&ctx, BuildGraphInput { directory: None })
+            .await
+            .expect("None should resolve to working_dir");
         // Both run against the same tempdir shape (one file with one fn),
         // so symbol counts must match — proving the absolute branch did
         // not fall back to working_dir.
@@ -4176,7 +4167,6 @@ mod tests {
             "absolute directory resolved to working_dir instead of the supplied path"
         );
     }
-
 
     // =============================================================================
     // Export Mermaid module_filter tests

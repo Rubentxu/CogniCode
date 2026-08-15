@@ -9,8 +9,8 @@
 #![allow(clippy::redundant_locals)]
 
 use std::path::PathBuf;
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 use anyhow::Result;
 use tracing_subscriber::EnvFilter;
@@ -477,7 +477,7 @@ impl Runtime {
 mod tests {
     use std::sync::Arc;
 
-    use super::{bootstrap_ladybug, bootstrap_with_backend, RuntimePorts};
+    use super::{RuntimePorts, bootstrap_ladybug, bootstrap_with_backend};
     use cognicode_core::domain::aggregates::CallGraph;
     use cognicode_core::domain::ports::{CallGraphStore, QualityStore, ViewSpecStore};
     use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};

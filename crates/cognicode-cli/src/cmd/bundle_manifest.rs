@@ -36,7 +36,9 @@ pub struct BundleManifest {
     pub components: Vec<BundleComponent>,
 }
 
-fn default_bundle_kind() -> String { "Bundle".to_string() }
+fn default_bundle_kind() -> String {
+    "Bundle".to_string()
+}
 
 /// Target platform triple.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -106,8 +108,7 @@ impl BundleManifest {
 
     /// Parse from a YAML string.
     pub fn from_str(s: &str) -> Result<Self> {
-        let m: BundleManifest = serde_yaml::from_str(s)
-            .with_context(|| "parse bundle.yaml")?;
+        let m: BundleManifest = serde_yaml::from_str(s).with_context(|| "parse bundle.yaml")?;
         m.validate()?;
         Ok(m)
     }
@@ -123,10 +124,7 @@ impl BundleManifest {
         }
         let api_num = &self.api_version["cognicode.bundle/v".len()..];
         if api_num.parse::<u32>().is_err() {
-            anyhow::bail!(
-                "apiVersion numeric part is not a valid u32: {}",
-                api_num
-            );
+            anyhow::bail!("apiVersion numeric part is not a valid u32: {}", api_num);
         }
 
         // 2. version matches semver-ish (digits.digits.digits[-...])
@@ -167,11 +165,7 @@ impl BundleManifest {
         for c in &self.components {
             for p in &c.profiles {
                 if !profile_names.contains(p.as_str()) {
-                    anyhow::bail!(
-                        "component[{}] references unknown profile `{}`",
-                        c.name,
-                        p
-                    );
+                    anyhow::bail!("component[{}] references unknown profile `{}`", c.name, p);
                 }
             }
         }
@@ -470,7 +464,10 @@ components:
     fn component_by_name_lookup() {
         let m = BundleManifest::from_str(SAMPLE_YAML).unwrap();
         assert!(m.component_by_name("cognicode-mcp").is_some());
-        assert_eq!(m.component_by_name("cognicode-mcp").unwrap().kind, ComponentKind::Daemon);
+        assert_eq!(
+            m.component_by_name("cognicode-mcp").unwrap().kind,
+            ComponentKind::Daemon
+        );
         assert!(m.component_by_name("nonexistent").is_none());
     }
 
@@ -501,7 +498,8 @@ components:
     #[test]
     fn assert_pkg_version_match() {
         // Uses env!("CARGO_PKG_VERSION") to reflect current workspace version
-        let yaml = format!(r#"
+        let yaml = format!(
+            r#"
 apiVersion: cognicode.bundle/v1
 version: "{}"
 platform: linux-x86-64
@@ -516,9 +514,13 @@ components:
     sha256: "0000000000000000000000000000000000000000000000000000000000000001"
     url: "https://example.com/test.tar.gz"
     profiles: [core]
-"#, env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_VERSION"));
+"#,
+            env!("CARGO_PKG_VERSION"),
+            env!("CARGO_PKG_VERSION")
+        );
         let m = BundleManifest::from_str(&yaml).unwrap();
-        m.assert_pkg_version().expect("pkg version should match workspace version");
+        m.assert_pkg_version()
+            .expect("pkg version should match workspace version");
     }
 
     #[test]
@@ -558,7 +560,14 @@ components:
         let m = BundleManifest::from_str(SAMPLE_YAML).unwrap();
         let plan = m.into_install_plan();
         let names: Vec<_> = plan.components.iter().map(|c| c.name.clone()).collect();
-        assert_eq!(names, vec!["cognicode-mcp", "skills-cognicode-core", "sandbox-templates"]);
+        assert_eq!(
+            names,
+            vec![
+                "cognicode-mcp",
+                "skills-cognicode-core",
+                "sandbox-templates"
+            ]
+        );
     }
 
     #[test]

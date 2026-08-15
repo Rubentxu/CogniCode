@@ -33,8 +33,7 @@ impl Lockfile {
     /// Write the lockfile as JSON (atomic: tmp + rename).
     pub fn write(&self, path: &Path) -> Result<()> {
         let tmp = path.with_extension("lock.tmp");
-        let json = serde_json::to_string_pretty(self)
-            .context("serialize lockfile")?;
+        let json = serde_json::to_string_pretty(self).context("serialize lockfile")?;
         std::fs::write(&tmp, json)
             .with_context(|| format!("write temp lockfile {}", tmp.display()))?;
         std::fs::rename(&tmp, path)
@@ -69,7 +68,8 @@ mod tests {
 
     #[test]
     fn missing_returns_default() {
-        let tmp = std::env::temp_dir().join(format!("cogh-lock-missing-{}.json", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("cogh-lock-missing-{}.json", std::process::id()));
         let lf = Lockfile::read_or_default(&tmp).unwrap();
         assert!(lf.plugins.is_empty());
     }

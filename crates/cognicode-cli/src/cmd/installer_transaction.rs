@@ -9,11 +9,11 @@
 
 use std::path::PathBuf;
 
-use crate::error::{BundleManifestError, InstallerError};
 use crate::bundle_manifest::BundleManifest;
+use crate::error::{BundleManifestError, InstallerError};
 use crate::layout;
-use crate::rollback_journal::{RollbackJournal, SideEffect};
 use crate::registry;
+use crate::rollback_journal::{RollbackJournal, SideEffect};
 use sha2::Digest;
 
 /// Verifies a file against an expected sha256 hash.
@@ -27,8 +27,8 @@ pub fn verify_sha256(path: &std::path::Path, expected: &str) -> Result<(), Insta
 
 fn compute_sha256(path: &std::path::Path) -> Result<String, InstallerError> {
     use std::io::Read;
-    let mut file = std::fs::File::open(path)
-        .map_err(|e| InstallerError::Io(path.to_path_buf(), e))?;
+    let mut file =
+        std::fs::File::open(path).map_err(|e| InstallerError::Io(path.to_path_buf(), e))?;
     let mut hasher = sha2::Sha256::new();
     let mut buffer = [0u8; 8192];
     loop {
@@ -66,9 +66,7 @@ pub enum InstallerTransaction {
         manifest: BundleManifest,
     },
     /// Transaction committed successfully; holds the manifest path.
-    Committed {
-        manifest_path: PathBuf,
-    },
+    Committed { manifest_path: PathBuf },
     /// Transaction failed at a given stage with an error.
     Failed {
         stage: InstallStage,
@@ -77,13 +75,20 @@ pub enum InstallerTransaction {
 }
 
 /// Execute the actions for a given stage.
-fn advance_stage(stage: InstallStage, journal: &mut RollbackJournal, manifest: &BundleManifest) -> Result<(), InstallerError> {
+fn advance_stage(
+    stage: InstallStage,
+    journal: &mut RollbackJournal,
+    manifest: &BundleManifest,
+) -> Result<(), InstallerError> {
     match stage {
         InstallStage::ResolvingUrl => {
             // Validate all component URLs are reachable (basic check)
             for comp in &manifest.components {
                 if comp.url.is_empty() {
-                    return Err(InstallerError::Network("empty URL".into(), "no URL provided".into()));
+                    return Err(InstallerError::Network(
+                        "empty URL".into(),
+                        "no URL provided".into(),
+                    ));
                 }
             }
             Ok(())
@@ -100,11 +105,15 @@ fn advance_stage(stage: InstallStage, journal: &mut RollbackJournal, manifest: &
                     .timeout(std::time::Duration::from_secs(60))
                     .build()
                     .map_err(|e| InstallerError::Network("reqwest".into(), e.to_string()))?;
-                let mut response = client.get(&comp.url)
+                let mut response = client
+                    .get(&comp.url)
                     .send()
                     .map_err(|e| InstallerError::Network(comp.url.clone(), e.to_string()))?;
                 if !response.status().is_success() {
-                    return Err(InstallerError::Network(comp.url.clone(), format!("HTTP {}", response.status())));
+                    return Err(InstallerError::Network(
+                        comp.url.clone(),
+                        format!("HTTP {}", response.status()),
+                    ));
                 }
                 let mut file = std::fs::File::create(&dest)
                     .map_err(|e| InstallerError::Io(dest.clone(), e))?;
@@ -235,8 +244,7 @@ impl InstallerTransaction {
     fn load_bundle_manifest() -> Result<String, InstallerError> {
         let bundle_path = layout::bundle_yaml_path();
         if bundle_path.exists() {
-            std::fs::read_to_string(&bundle_path)
-                .map_err(|e| InstallerError::Io(bundle_path, e))
+            std::fs::read_to_string(&bundle_path).map_err(|e| InstallerError::Io(bundle_path, e))
         } else {
             // Embedded fallback for distribution installers
             Ok(include_str!("../../../../bundles/v0.94.11/bundle.yaml").to_string())
@@ -253,10 +261,7 @@ impl InstallerTransaction {
             } => {
                 // Execute stage actions before transitioning
                 if let Err(e) = advance_stage(stage, &mut journal, &manifest) {
-                    return Ok(Self::Failed {
-                        stage,
-                        error: e,
-                    });
+                    return Ok(Self::Failed { stage, error: e });
                 }
 
                 let next_stage = match stage {
@@ -302,8 +307,8 @@ impl InstallerTransaction {
                 let manifest_path = layout::install_manifest_path(&manifest.version);
 
                 // Serialize manifest to YAML
-                let yaml =
-                    serde_yaml::to_string(&manifest).map_err(|e| InstallerError::Serialize(e.to_string()))?;
+                let yaml = serde_yaml::to_string(&manifest)
+                    .map_err(|e| InstallerError::Serialize(e.to_string()))?;
 
                 // Ensure parent directory exists (record for rollback)
                 if let Some(parent) = manifest_path.parent() {

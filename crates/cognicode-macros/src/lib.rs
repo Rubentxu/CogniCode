@@ -3,7 +3,7 @@ mod newtype;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Expr, Ident, ItemStruct, LitStr, Token, Type};
+use syn::{Expr, Ident, ItemStruct, LitStr, Token, Type, parse_macro_input};
 
 /// Newtype macro for creating wrapper types with consistent derives.
 ///
@@ -446,7 +446,7 @@ impl syn::parse::Parse for CogniRuleAttrs {
                     return Err(syn::Error::new(
                         key.span(),
                         format!("Unknown key: {}", key_str),
-                    ))
+                    ));
                 }
             }
 
@@ -580,7 +580,7 @@ impl syn::parse::Parse for RuleInput {
                     return Err(syn::Error::new(
                         key.span(),
                         format!("Unknown key: {}", key_str),
-                    ))
+                    ));
                 }
             }
 

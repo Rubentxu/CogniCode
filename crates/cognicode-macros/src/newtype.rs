@@ -13,7 +13,7 @@
 
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::quote;
-use syn::{parse_quote, Data, DeriveInput, Fields, Type};
+use syn::{Data, DeriveInput, Fields, Type, parse_quote};
 
 /// Parse extra derives from `#[newtype(derive(Clone, Eq))]`
 fn parse_extra_derives(attrs: &[syn::Attribute]) -> Vec<Ident> {

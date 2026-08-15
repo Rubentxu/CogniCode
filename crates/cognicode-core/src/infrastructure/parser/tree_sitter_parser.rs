@@ -557,10 +557,7 @@ impl TreeSitterParser {
             // returns only `let_declaration`, so we broaden the check
             // only for Rust and keep other languages on their declared kind.
             let is_variable = match self.language {
-                Language::Rust => matches!(
-                    kind,
-                    "let_declaration" | "const_item" | "static_item"
-                ),
+                Language::Rust => matches!(kind, "let_declaration" | "const_item" | "static_item"),
                 _ => kind == self.language.variable_node_type(),
             };
 

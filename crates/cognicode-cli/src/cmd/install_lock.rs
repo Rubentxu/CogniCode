@@ -12,7 +12,9 @@ use anyhow::Result;
 
 /// Path to the advisory install lock file.
 fn lock_path() -> PathBuf {
-    super::layout::cognicode_home().join("locks").join("install.lock")
+    super::layout::cognicode_home()
+        .join("locks")
+        .join("install.lock")
 }
 
 /// Lock guard that releases the lock on drop.

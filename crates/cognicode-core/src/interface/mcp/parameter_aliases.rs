@@ -33,17 +33,53 @@ pub struct ParamAlias {
 /// will require.
 pub const ALIASES: &[ParamAlias] = &[
     // ── file path: canonical file_path, struct uses path ────────────
-    ParamAlias { tool: "read_file",       canonical: "file_path", legacy: "path" },
-    ParamAlias { tool: "write_file",      canonical: "file_path", legacy: "path" },
-    ParamAlias { tool: "edit_file",       canonical: "file_path", legacy: "path" },
-    ParamAlias { tool: "search_content",  canonical: "file_path", legacy: "path" },
-    ParamAlias { tool: "list_files",      canonical: "file_path", legacy: "path" },
-    ParamAlias { tool: "get_symbol_code", canonical: "file_path", legacy: "file" },
+    ParamAlias {
+        tool: "read_file",
+        canonical: "file_path",
+        legacy: "path",
+    },
+    ParamAlias {
+        tool: "write_file",
+        canonical: "file_path",
+        legacy: "path",
+    },
+    ParamAlias {
+        tool: "edit_file",
+        canonical: "file_path",
+        legacy: "path",
+    },
+    ParamAlias {
+        tool: "search_content",
+        canonical: "file_path",
+        legacy: "path",
+    },
+    ParamAlias {
+        tool: "list_files",
+        canonical: "file_path",
+        legacy: "path",
+    },
+    ParamAlias {
+        tool: "get_symbol_code",
+        canonical: "file_path",
+        legacy: "file",
+    },
     // ── call-graph endpoints: source/target → from_symbol/to_symbol ──
-    ParamAlias { tool: "trace_path", canonical: "from_symbol", legacy: "source" },
-    ParamAlias { tool: "trace_path", canonical: "to_symbol",   legacy: "target" },
+    ParamAlias {
+        tool: "trace_path",
+        canonical: "from_symbol",
+        legacy: "source",
+    },
+    ParamAlias {
+        tool: "trace_path",
+        canonical: "to_symbol",
+        legacy: "target",
+    },
     // ── AI query endpoints: query, struct uses question ─────────────
-    ParamAlias { tool: "ask_about_code", canonical: "query", legacy: "question" },
+    ParamAlias {
+        tool: "ask_about_code",
+        canonical: "query",
+        legacy: "question",
+    },
 ];
 
 /// Apply the alias table to a JSON `arguments` object for the given tool.
@@ -58,10 +94,7 @@ pub const ALIASES: &[ParamAlias] = &[
 /// - If only the canonical key is present, it is renamed to the
 ///   legacy key and the value is preserved.
 /// - If neither is present, nothing changes.
-pub fn apply_aliases(
-    tool_name: &str,
-    arguments: &mut Map<String, Value>,
-) -> Vec<(String, String)> {
+pub fn apply_aliases(tool_name: &str, arguments: &mut Map<String, Value>) -> Vec<(String, String)> {
     let mut substitutions = Vec::new();
     for alias in ALIASES {
         if alias.tool != tool_name {
@@ -101,7 +134,10 @@ mod tests {
         let subs = apply_aliases("read_file", &mut args);
         assert_eq!(subs, vec![("file_path".to_string(), "path".to_string())]);
         assert_eq!(args.get("path"), Some(&json!("src/main.rs")));
-        assert!(args.get("file_path").is_none(), "canonical key removed after rename");
+        assert!(
+            args.get("file_path").is_none(),
+            "canonical key removed after rename"
+        );
     }
 
     #[test]
@@ -109,7 +145,10 @@ mod tests {
         // Client still uses the legacy name — we do not touch it.
         let mut args = map_from(&[("path", json!("src/main.rs"))]);
         let subs = apply_aliases("read_file", &mut args);
-        assert!(subs.is_empty(), "no substitution when legacy was used as-is");
+        assert!(
+            subs.is_empty(),
+            "no substitution when legacy was used as-is"
+        );
         assert_eq!(args.get("path"), Some(&json!("src/main.rs")));
     }
 
@@ -123,7 +162,10 @@ mod tests {
         let subs = apply_aliases("read_file", &mut args);
         assert!(subs.is_empty(), "no substitution when legacy was provided");
         assert_eq!(args.get("path"), Some(&json!("legacy.rs")));
-        assert!(args.get("file_path").is_none(), "canonical key dropped to keep request unambiguous");
+        assert!(
+            args.get("file_path").is_none(),
+            "canonical key dropped to keep request unambiguous"
+        );
     }
 
     #[test]
@@ -136,10 +178,7 @@ mod tests {
 
     #[test]
     fn trace_path_handles_both_source_and_target() {
-        let mut args = map_from(&[
-            ("from_symbol", json!("main")),
-            ("to_symbol", json!("leaf")),
-        ]);
+        let mut args = map_from(&[("from_symbol", json!("main")), ("to_symbol", json!("leaf"))]);
         let subs = apply_aliases("trace_path", &mut args);
         assert_eq!(
             subs,
@@ -157,10 +196,7 @@ mod tests {
         let mut args = map_from(&[("query", json!("how does X work?"))]);
         let subs = apply_aliases("ask_about_code", &mut args);
         assert_eq!(subs, vec![("query".to_string(), "question".to_string())]);
-        assert_eq!(
-            args.get("question"),
-            Some(&json!("how does X work?"))
-        );
+        assert_eq!(args.get("question"), Some(&json!("how does X work?")));
     }
 
     #[test]

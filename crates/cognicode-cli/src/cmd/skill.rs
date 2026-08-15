@@ -12,7 +12,7 @@
 
 use std::path::Path;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -39,7 +39,9 @@ pub struct SkillManifest {
     pub assets: Vec<String>,
 }
 
-fn default_kind() -> String { "SkillBundle".to_string() }
+fn default_kind() -> String {
+    "SkillBundle".to_string()
+}
 
 impl SkillManifest {
     /// Parse a `manifest.yaml` from a path.
@@ -51,8 +53,8 @@ impl SkillManifest {
 
     /// Parse a YAML string.
     pub fn from_str(s: &str) -> Result<Self> {
-        let m: SkillManifest = serde_yaml::from_str(s)
-            .with_context(|| "parse skill manifest.yaml")?;
+        let m: SkillManifest =
+            serde_yaml::from_str(s).with_context(|| "parse skill manifest.yaml")?;
         m.validate()?;
         Ok(m)
     }
@@ -68,9 +70,7 @@ impl SkillManifest {
         if self.name.is_empty() {
             return Err(anyhow!("skill name is empty"));
         }
-        if !["experimental", "beta", "stable", "deprecated"]
-            .contains(&self.maturity.as_str())
-        {
+        if !["experimental", "beta", "stable", "deprecated"].contains(&self.maturity.as_str()) {
             return Err(anyhow!(
                 "skill {}: maturity must be one of experimental|beta|stable|deprecated (got {})",
                 self.name,
@@ -98,10 +98,7 @@ pub fn validate_bundle(path: &Path) -> Result<SkillManifest> {
     }
     let skill_md = path.join("SKILL.md");
     if !skill_md.exists() {
-        return Err(anyhow!(
-            "skill bundle missing SKILL.md: {}",
-            path.display()
-        ));
+        return Err(anyhow!("skill bundle missing SKILL.md: {}", path.display()));
     }
     let manifest = SkillManifest::from_path(&manifest_path)?;
 
@@ -109,10 +106,7 @@ pub fn validate_bundle(path: &Path) -> Result<SkillManifest> {
     // (only the YAML frontmatter between the `---` markers).
     let skill_text = std::fs::read_to_string(&skill_md)
         .with_context(|| format!("read {}", skill_md.display()))?;
-    let frontmatter = skill_text
-        .split("---")
-        .nth(1)
-        .unwrap_or("");
+    let frontmatter = skill_text.split("---").nth(1).unwrap_or("");
     if frontmatter.contains("compatibility: opencode") {
         return Err(anyhow!(
             "skill {} SKILL.md has IDE-specific 'compatibility: opencode' field; \
@@ -226,11 +220,13 @@ maturity: stable
         std::fs::write(
             tmp.join("manifest.yaml"),
             "apiVersion: cognicode/v1\nname: x\ndescription: y\nversion: 0.1.0\nmaturity: stable\n",
-        ).unwrap();
+        )
+        .unwrap();
         std::fs::write(
             tmp.join("SKILL.md"),
             "---\nname: x\ncompatibility: opencode\ndescription: y\n---\n",
-        ).unwrap();
+        )
+        .unwrap();
         let err = validate_bundle(&tmp).unwrap_err();
         assert!(err.to_string().contains("compatibility"));
         let _ = std::fs::remove_dir_all(&tmp);

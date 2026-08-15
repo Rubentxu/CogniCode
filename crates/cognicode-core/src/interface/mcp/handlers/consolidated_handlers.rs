@@ -65,7 +65,9 @@ pub async fn handle_smart_search(
         ),
         tokio::time::timeout(
             SUB_HANDLER_TIMEOUT,
-            crate::interface::mcp::handlers::graph_handlers::handle_graph_search_idf(ctx, idf_input),
+            crate::interface::mcp::handlers::graph_handlers::handle_graph_search_idf(
+                ctx, idf_input
+            ),
         ),
     );
 

@@ -14,8 +14,8 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Context, Result};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, anyhow};
+use serde_json::{Value, json};
 
 /// A step in an integrate / uninstall recipe.
 #[derive(Debug, Clone)]
@@ -31,10 +31,7 @@ pub enum Step {
         value: Value,
     },
     /// Remove a JSON key at a dot-path.
-    RemoveFromJson {
-        target: PathBuf,
-        path: Vec<String>,
-    },
+    RemoveFromJson { target: PathBuf, path: Vec<String> },
     /// Create a symbolic link from source to target.
     Symlink { source: PathBuf, target: PathBuf },
 }
@@ -75,7 +72,11 @@ impl Step {
                 let obj = config.as_object_mut().unwrap();
                 let mut current = obj;
                 for key in path.iter().take(path.len() - 1) {
-                    current = current.entry(key).or_insert_with(|| json!({})).as_object_mut().unwrap();
+                    current = current
+                        .entry(key)
+                        .or_insert_with(|| json!({}))
+                        .as_object_mut()
+                        .unwrap();
                 }
                 if let Some(last_key) = path.last() {
                     current.insert(last_key.clone(), value.clone());
@@ -92,7 +93,11 @@ impl Step {
                 let obj = config.as_object_mut().unwrap();
                 let mut current = obj;
                 for key in path.iter().take(path.len() - 1) {
-                    current = current.entry(key).or_insert_with(|| json!({})).as_object_mut().unwrap();
+                    current = current
+                        .entry(key)
+                        .or_insert_with(|| json!({}))
+                        .as_object_mut()
+                        .unwrap();
                 }
                 if let Some(last_key) = path.last() {
                     current.remove(last_key);
@@ -151,10 +156,10 @@ pub fn read_opencode_config() -> Result<Value> {
     if !path.exists() {
         return Ok(json!({}));
     }
-    let text = std::fs::read_to_string(&path)
-        .with_context(|| format!("read {}", path.display()))?;
-    let v: Value = serde_json::from_str(&text)
-        .with_context(|| format!("parse {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let v: Value =
+        serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
     Ok(v)
 }
 
@@ -167,10 +172,8 @@ fn write_json_atomic(path: &Path, value: &Value) -> Result<()> {
     }
     let json_str = serde_json::to_string_pretty(value)
         .with_context(|| format!("serialize {}", path.display()))?;
-    std::fs::write(&tmp, json_str)
-        .with_context(|| format!("write tmp {}", tmp.display()))?;
-    std::fs::rename(&tmp, path)
-        .with_context(|| format!("rename {}", path.display()))?;
+    std::fs::write(&tmp, json_str).with_context(|| format!("write tmp {}", tmp.display()))?;
+    std::fs::rename(&tmp, path).with_context(|| format!("rename {}", path.display()))?;
     Ok(())
 }
 
@@ -211,7 +214,9 @@ pub fn uninstall_opencode(version: &str) -> Result<Vec<Step>> {
 
     // 1. Remove skills symlink
     let skills_target = opencode_skills_dir().join(format!("cognicode-{version}"));
-    steps.push(Step::RmRf { target: skills_target });
+    steps.push(Step::RmRf {
+        target: skills_target,
+    });
 
     // 2. Remove MCP entry
     let config_path = opencode_config_path();
@@ -229,11 +234,8 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         std::fs::remove_dir_all(dst)
             .with_context(|| format!("rm -rf existing {}", dst.display()))?;
     }
-    std::fs::create_dir_all(dst)
-        .with_context(|| format!("create {}", dst.display()))?;
-    for entry in std::fs::read_dir(src)
-        .with_context(|| format!("read_dir {}", src.display()))?
-    {
+    std::fs::create_dir_all(dst).with_context(|| format!("create {}", dst.display()))?;
+    for entry in std::fs::read_dir(src).with_context(|| format!("read_dir {}", src.display()))? {
         let entry = entry?;
         let file_type = entry.file_type()?;
         let src_path = entry.path();
@@ -247,7 +249,6 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     }
     Ok(())
 }
-
 
 // ===== ZCode adapter (E32-E) =====
 
@@ -276,14 +277,19 @@ pub fn read_zcode_config() -> Result<Value> {
     if !path.exists() {
         return Ok(json!({}));
     }
-    let text = std::fs::read_to_string(&path)
-        .with_context(|| format!("read {}", path.display()))?;
-    let v: Value = serde_json::from_str(&text)
-        .with_context(|| format!("parse {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let v: Value =
+        serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
     Ok(v)
 }
 
-pub fn integrate_zcode(home: &Path, plugin: &str, version: &str, mcp_command: &[String]) -> Result<()> {
+pub fn integrate_zcode(
+    home: &Path,
+    plugin: &str,
+    version: &str,
+    mcp_command: &[String],
+) -> Result<()> {
     // 1. Skill copy
     let skills_src = home
         .join("versions")
@@ -308,13 +314,18 @@ pub fn integrate_zcode(home: &Path, plugin: &str, version: &str, mcp_command: &[
         "type": "stdio",
     });
 
-    let cfg = config.as_object_mut()
+    let cfg = config
+        .as_object_mut()
         .ok_or_else(|| anyhow!("zcode config.json is not an object"))?;
     let mcp = cfg.entry("mcp").or_insert_with(|| json!({}));
     if !mcp.is_object() {
-        return Err(anyhow!("zcode config.json: 'mcp' is not an object (got {})", mcp));
+        return Err(anyhow!(
+            "zcode config.json: 'mcp' is not an object (got {})",
+            mcp
+        ));
     }
-    mcp.as_object_mut().unwrap()
+    mcp.as_object_mut()
+        .unwrap()
         .insert("cognicode-mcp".to_string(), mcp_entry);
     write_json_atomic(&config_path, &config)?;
     println!("✓ patched: {}", config_path.display());
@@ -335,7 +346,8 @@ pub fn uninstall_zcode(version: &str) -> Result<()> {
     let config_path = zcode_config_path();
     if config_path.exists() {
         let mut config = read_zcode_config()?;
-        let cfg = config.as_object_mut()
+        let cfg = config
+            .as_object_mut()
             .ok_or_else(|| anyhow!("zcode config.json is not an object"))?;
         if let Some(mcp) = cfg.get_mut("mcp") {
             if let Some(mcp_obj) = mcp.as_object_mut() {
@@ -348,7 +360,6 @@ pub fn uninstall_zcode(version: &str) -> Result<()> {
 
     Ok(())
 }
-
 
 // ===== Claude Code adapter (E32-F) =====
 
@@ -381,14 +392,19 @@ pub fn read_claude_mcp_entry(name: &str) -> Result<Option<Value>> {
     if !path.exists() {
         return Ok(None);
     }
-    let text = std::fs::read_to_string(&path)
-        .with_context(|| format!("read {}", path.display()))?;
-    let v: Value = serde_json::from_str(&text)
-        .with_context(|| format!("parse {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let v: Value =
+        serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
     Ok(Some(v))
 }
 
-pub fn integrate_claude(home: &Path, plugin: &str, version: &str, mcp_command: &[String]) -> Result<()> {
+pub fn integrate_claude(
+    home: &Path,
+    plugin: &str,
+    version: &str,
+    mcp_command: &[String],
+) -> Result<()> {
     // 1. Skill copy
     let skills_src = home
         .join("versions")
@@ -406,8 +422,7 @@ pub fn integrate_claude(home: &Path, plugin: &str, version: &str, mcp_command: &
 
     // 2. MCP config: write `~/.claude/mcp/cognicode-mcp.json`
     let mcp_dir = claude_mcp_dir();
-    std::fs::create_dir_all(&mcp_dir)
-        .with_context(|| format!("create {}", mcp_dir.display()))?;
+    std::fs::create_dir_all(&mcp_dir).with_context(|| format!("create {}", mcp_dir.display()))?;
     let target = mcp_dir.join("cognicode-mcp.json");
     let entry = json!({
         "command": mcp_command[0],
@@ -431,14 +446,12 @@ pub fn uninstall_claude(version: &str) -> Result<()> {
     // 2. Remove MCP file
     let target = claude_mcp_dir().join("cognicode-mcp.json");
     if target.exists() {
-        std::fs::remove_file(&target)
-            .with_context(|| format!("rm {}", target.display()))?;
+        std::fs::remove_file(&target).with_context(|| format!("rm {}", target.display()))?;
         println!("✓ removed: {}", target.display());
     }
 
     Ok(())
 }
-
 
 // ===== Codex adapter (E32-G) =====
 
@@ -467,14 +480,20 @@ pub fn read_codex_config() -> Result<toml::Value> {
     if !path.exists() {
         return Ok(toml::Value::Table(toml::map::Map::new()));
     }
-    let text = std::fs::read_to_string(&path)
-        .with_context(|| format!("read {}", path.display()))?;
-    let v: toml::Value = text.parse()
+    let text =
+        std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let v: toml::Value = text
+        .parse()
         .with_context(|| format!("parse {}", path.display()))?;
     Ok(v)
 }
 
-pub fn integrate_codex(home: &Path, plugin: &str, version: &str, mcp_command: &[String]) -> Result<()> {
+pub fn integrate_codex(
+    home: &Path,
+    plugin: &str,
+    version: &str,
+    mcp_command: &[String],
+) -> Result<()> {
     // 1. Skill copy
     let skills_src = home
         .join("versions")
@@ -503,10 +522,13 @@ pub fn integrate_codex(home: &Path, plugin: &str, version: &str, mcp_command: &[
         .ok_or_else(|| anyhow!("mcp_servers is not a table"))?;
     // Codex convention: each MCP server is a subtable with command + args
     let cmd = mcp_command.first().map(String::as_str).unwrap_or("");
-    let args_value = mcp_command.get(1..).map(|rest| {
-        let arr: Vec<toml::Value> = rest.iter().cloned().map(toml::Value::String).collect();
-        toml::Value::Array(arr)
-    }).unwrap_or_else(|| toml::Value::Array(Vec::new()));
+    let args_value = mcp_command
+        .get(1..)
+        .map(|rest| {
+            let arr: Vec<toml::Value> = rest.iter().cloned().map(toml::Value::String).collect();
+            toml::Value::Array(arr)
+        })
+        .unwrap_or_else(|| toml::Value::Array(Vec::new()));
     let server = toml::Value::Table(toml::map::Map::from_iter([
         ("command".to_string(), toml::Value::String(cmd.to_string())),
         ("args".to_string(), args_value),
@@ -521,8 +543,7 @@ pub fn integrate_codex(home: &Path, plugin: &str, version: &str, mcp_command: &[
     }
     let s = toml::to_string_pretty(&config)
         .with_context(|| format!("serialize {}", config_path.display()))?;
-    std::fs::write(&tmp, s)
-        .with_context(|| format!("write {}", tmp.display()))?;
+    std::fs::write(&tmp, s).with_context(|| format!("write {}", tmp.display()))?;
     std::fs::rename(&tmp, &config_path)
         .with_context(|| format!("rename {}", config_path.display()))?;
     println!("✓ patched: {}", config_path.display());
@@ -557,8 +578,7 @@ pub fn uninstall_codex(version: &str) -> Result<()> {
         }
         let s = toml::to_string_pretty(&config)
             .with_context(|| format!("serialize {}", config_path.display()))?;
-        std::fs::write(&tmp, s)
-            .with_context(|| format!("write {}", tmp.display()))?;
+        std::fs::write(&tmp, s).with_context(|| format!("write {}", tmp.display()))?;
         std::fs::rename(&tmp, &config_path)
             .with_context(|| format!("rename {}", config_path.display()))?;
         println!("✓ unpached: {}", config_path.display());
@@ -586,21 +606,35 @@ pub fn cmd_ide_detect() -> Result<()> {
         }
         let claude = home.join(".claude/claude_desktop_config.json");
         if claude.exists() {
-            println!("    (claude config present at {}, but adapter is E32-F)", claude.display());
+            println!(
+                "    (claude config present at {}, but adapter is E32-F)",
+                claude.display()
+            );
         }
         let codex = home.join(".codex/config.json");
         if codex.exists() {
-            println!("    (codex config present at {}, but adapter is E32-G)", codex.display());
+            println!(
+                "    (codex config present at {}, but adapter is E32-G)",
+                codex.display()
+            );
         }
     }
     Ok(())
 }
 
-pub fn cmd_ide_install(home: &CognicodeHomeSup, ide: &str, plugin: &str, version: &str) -> Result<()> {
+pub fn cmd_ide_install(
+    home: &CognicodeHomeSup,
+    ide: &str,
+    plugin: &str,
+    version: &str,
+) -> Result<()> {
     // Resolve the MCP command line. The actual binary is at
     // `~/.cognicode/shims/cognicode-mcp` (after E32-A's shim layout).
     let mcp_command = vec![
-        home.shims().join("cognicode-mcp").to_string_lossy().to_string(),
+        home.shims()
+            .join("cognicode-mcp")
+            .to_string_lossy()
+            .to_string(),
     ];
     match ide {
         "opencode" => {
@@ -660,7 +694,9 @@ mod tests {
         // Mirror the merge logic
         let obj = v.as_object_mut().unwrap();
         let mcp = obj.entry("mcp").or_insert_with(|| json!({}));
-        mcp.as_object_mut().unwrap().insert("cognicode-mcp".to_string(), entry.clone());
+        mcp.as_object_mut()
+            .unwrap()
+            .insert("cognicode-mcp".to_string(), entry.clone());
 
         assert_eq!(v["mcp"]["cognicode-mcp"]["type"], "stdio");
         assert_eq!(v["mcp"]["cognicode-mcp"]["enabled"], true);
@@ -677,7 +713,9 @@ mod tests {
         let entry = json!({"command": ["x"], "enabled": true, "type": "stdio"});
         let obj = v.as_object_mut().unwrap();
         let mcp = obj.entry("mcp").or_insert_with(|| json!({}));
-        mcp.as_object_mut().unwrap().insert("cognicode-mcp".to_string(), entry);
+        mcp.as_object_mut()
+            .unwrap()
+            .insert("cognicode-mcp".to_string(), entry);
 
         // Original entries preserved
         assert_eq!(v["mcp"]["chronos"]["type"], "local");
@@ -816,11 +854,15 @@ mod tests {
         std::fs::write(&config, serde_json::to_string_pretty(&original).unwrap()).unwrap();
 
         let prev_home = std::env::var("HOME").unwrap();
-        unsafe { std::env::set_var("HOME", &tmp); }
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
         let home = std::path::PathBuf::from(&tmp).join(".cognicode");
         let mcp_cmd = vec!["/bin/cognicode-mcp".to_string()];
         let result = integrate_zcode(&home, "mcp-server", "0.92.0", &mcp_cmd);
-        unsafe { std::env::set_var("HOME", &prev_home); }
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+        }
         result.unwrap();
 
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
@@ -845,9 +887,13 @@ mod tests {
         std::fs::write(&config, serde_json::to_string_pretty(&original).unwrap()).unwrap();
 
         let prev_home = std::env::var("HOME").unwrap();
-        unsafe { std::env::set_var("HOME", &tmp); }
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
         let result = uninstall_zcode("0.92.0");
-        unsafe { std::env::set_var("HOME", &prev_home); }
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+        }
         result.unwrap();
 
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
@@ -867,11 +913,15 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("cogh-claude-{}", std::process::id()));
         std::fs::create_dir_all(tmp.join(".claude")).unwrap();
         let prev_home = std::env::var("HOME").unwrap();
-        unsafe { std::env::set_var("HOME", &tmp); }
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
         let home = std::path::PathBuf::from(&tmp).join(".cognicode");
         let mcp_cmd = vec!["/bin/cognicode-mcp".to_string()];
         let result = integrate_claude(&home, "mcp-server", "0.92.0", &mcp_cmd);
-        unsafe { std::env::set_var("HOME", &prev_home); }
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+        }
         result.unwrap();
         let path = tmp.join(".claude/mcp/cognicode-mcp.json");
         assert!(path.exists());
@@ -888,9 +938,13 @@ mod tests {
         let path = tmp.join(".claude/mcp/cognicode-mcp.json");
         std::fs::write(&path, r#"{"command":"x"}"#).unwrap();
         let prev_home = std::env::var("HOME").unwrap();
-        unsafe { std::env::set_var("HOME", &tmp); }
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
         let result = uninstall_claude("0.92.0");
-        unsafe { std::env::set_var("HOME", &prev_home); }
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+        }
         result.unwrap();
         assert!(!path.exists());
         let _ = std::fs::remove_dir_all(&tmp);
@@ -909,11 +963,15 @@ mod tests {
         std::fs::write(&config, "model = 'test'\n").unwrap();
 
         let prev_home = std::env::var("HOME").unwrap();
-        unsafe { std::env::set_var("HOME", &tmp); }
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
         let home = std::path::PathBuf::from(&tmp).join(".cognicode");
         let mcp_cmd = vec!["/bin/cognicode-mcp".to_string(), "stdio".to_string()];
         let result = integrate_codex(&home, "mcp-server", "0.92.0", &mcp_cmd);
-        unsafe { std::env::set_var("HOME", &prev_home); }
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+        }
         result.unwrap();
 
         let text = std::fs::read_to_string(&config).unwrap();
@@ -921,7 +979,8 @@ mod tests {
         // change ("test" vs 'test').
         let parsed: toml::Value = text.parse().unwrap();
         let model = parsed.get("model").and_then(|m| m.as_str()).unwrap_or("");
-        let has_cognicode_mcp = parsed.get("mcp_servers")
+        let has_cognicode_mcp = parsed
+            .get("mcp_servers")
             .and_then(|s| s.get("cognicode-mcp"))
             .is_some();
         assert!(has_cognicode_mcp, "cognicode-mcp not in mcp_servers");
@@ -942,16 +1001,21 @@ mcp_servers.existing.args = ['y']
         std::fs::write(&config, original).unwrap();
 
         let prev_home = std::env::var("HOME").unwrap();
-        unsafe { std::env::set_var("HOME", &tmp); }
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
         let result = uninstall_codex("0.92.0");
-        unsafe { std::env::set_var("HOME", &prev_home); }
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+        }
         result.unwrap();
 
         let text = std::fs::read_to_string(&config).unwrap();
         // TOML output may use [mcp_servers.existing] section format
         // instead of inline. Parse it back to verify semantically.
         let parsed: toml::Value = text.parse().unwrap();
-        let existing_cmd = parsed.get("mcp_servers")
+        let existing_cmd = parsed
+            .get("mcp_servers")
             .and_then(|s| s.get("existing"))
             .and_then(|e| e.get("command"))
             .and_then(|c| c.as_str())
@@ -961,8 +1025,6 @@ mcp_servers.existing.args = ['y']
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
-
-
 
     #[test]
     fn codex_config_path_default() {
@@ -992,4 +1054,3 @@ mcp_servers.existing.args = ['y']
         assert!(!steps.is_empty());
     }
 }
-

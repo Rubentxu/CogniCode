@@ -27,10 +27,11 @@ pub fn download_with_rollback(
     let mut response = reqwest::blocking::get(url)
         .map_err(|e| InstallerError::Network(url.into(), e.to_string()))?;
 
-    let mut file = std::fs::File::create(&part_path)
-        .map_err(|e| InstallerError::Io(part_path.clone(), e))?;
+    let mut file =
+        std::fs::File::create(&part_path).map_err(|e| InstallerError::Io(part_path.clone(), e))?;
 
-    let _bytes_copied = response.copy_to(&mut file)
+    let _bytes_copied = response
+        .copy_to(&mut file)
         .map_err(|e| InstallerError::Network("copying response".into(), e.to_string()))?;
 
     // Record for rollback cleanup
@@ -38,8 +39,7 @@ pub fn download_with_rollback(
 
     // Atomic rename: .part → dest
     // On Unix this is atomic if dest's directory is on the same filesystem.
-    std::fs::rename(&part_path, dest)
-        .map_err(|e| InstallerError::Io(dest.into(), e))?;
+    std::fs::rename(&part_path, dest).map_err(|e| InstallerError::Io(dest.into(), e))?;
 
     Ok(())
 }

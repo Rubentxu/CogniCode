@@ -4,8 +4,8 @@
 //! in reverse order (LIFO) when the journal is dropped or explicitly rolled back.
 //! The journal is committed by going out of scope with no-op `commit()`.
 
-use std::path::PathBuf;
 use crate::error::InstallerError;
+use std::path::PathBuf;
 
 /// Side-effect recorded in the journal during an install transaction.
 #[derive(Debug, Clone)]
@@ -21,7 +21,11 @@ pub enum SideEffect {
     /// A symbolic link was created.
     CreatedSymlink { link: PathBuf, target: PathBuf },
     /// A JSON manifest file was patched (stores old value for restore).
-    PatchedJson { path: PathBuf, key: String, old_value: Option<serde_json::Value> },
+    PatchedJson {
+        path: PathBuf,
+        key: String,
+        old_value: Option<serde_json::Value>,
+    },
     /// A directory was removed (cannot be easily restored).
     RemovedDir(PathBuf),
     /// A manifest file was written.
@@ -102,16 +106,28 @@ impl RollbackJournal {
             SideEffect::Extracted(path) => {
                 if path.is_dir() {
                     std::fs::remove_dir_all(path).map_err(|e| {
-                        InstallerError::Rollback(format!("remove Extracted {}: {}", path.display(), e))
+                        InstallerError::Rollback(format!(
+                            "remove Extracted {}: {}",
+                            path.display(),
+                            e
+                        ))
                     })?;
                 }
             }
             SideEffect::CreatedSymlink { link, .. } => {
                 std::fs::remove_file(link).map_err(|e| {
-                    InstallerError::Rollback(format!("remove CreatedSymlink {}: {}", link.display(), e))
+                    InstallerError::Rollback(format!(
+                        "remove CreatedSymlink {}: {}",
+                        link.display(),
+                        e
+                    ))
                 })?;
             }
-            SideEffect::PatchedJson { path, key, old_value } => {
+            SideEffect::PatchedJson {
+                path,
+                key,
+                old_value,
+            } => {
                 // Restore the old value by re-patching in reverse
                 if let Some(old) = old_value {
                     if let Ok(content) = std::fs::read_to_string(path) {
@@ -137,7 +153,11 @@ impl RollbackJournal {
             }
             SideEffect::WroteManifest(path) => {
                 std::fs::remove_file(path).map_err(|e| {
-                    InstallerError::Rollback(format!("remove WroteManifest {}: {}", path.display(), e))
+                    InstallerError::Rollback(format!(
+                        "remove WroteManifest {}: {}",
+                        path.display(),
+                        e
+                    ))
                 })?;
             }
         }
@@ -206,7 +226,10 @@ mod tests {
         journal.record(SideEffect::Downloaded(downloaded.clone()));
 
         journal.rollback().unwrap();
-        assert!(!downloaded.exists(), "Downloaded file should be removed by rollback");
+        assert!(
+            !downloaded.exists(),
+            "Downloaded file should be removed by rollback"
+        );
     }
 
     #[test]
@@ -226,7 +249,10 @@ mod tests {
         });
 
         journal.rollback().unwrap();
-        assert!(!link.exists(), "CreatedSymlink should be removed by rollback");
+        assert!(
+            !link.exists(),
+            "CreatedSymlink should be removed by rollback"
+        );
     }
 
     #[test]
@@ -288,7 +314,10 @@ mod tests {
         journal.record(SideEffect::Extracted(extracted.clone()));
 
         journal.rollback().unwrap();
-        assert!(!extracted.exists(), "Extracted directory should be removed by rollback");
+        assert!(
+            !extracted.exists(),
+            "Extracted directory should be removed by rollback"
+        );
     }
 
     #[test]

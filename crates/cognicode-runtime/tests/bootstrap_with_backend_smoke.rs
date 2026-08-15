@@ -14,7 +14,7 @@ use std::sync::Arc;
 use cognicode_core::domain::aggregates::CallGraph;
 use cognicode_core::domain::ports::{CallGraphStore, QualityStore, ViewSpecStore};
 use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
-use cognicode_runtime::{bootstrap_with_backend, RuntimePorts};
+use cognicode_runtime::{RuntimePorts, bootstrap_with_backend};
 
 // ---------------------------------------------------------------------------
 // Identity stubs for the relocated ports — never called, only held and

@@ -80,7 +80,7 @@ impl syn::parse::Parse for AixToolAttrs {
                     return Err(syn::Error::new(
                         key.span(),
                         format!("Unknown key: {}", key_str),
-                    ))
+                    ));
                 }
             }
 

@@ -35,7 +35,9 @@ pub struct PluginManifest {
     pub binaries: Vec<PluginBinary>,
 }
 
-fn default_kind() -> String { "Plugin".to_string() }
+fn default_kind() -> String {
+    "Plugin".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PluginVersion {
@@ -71,8 +73,7 @@ impl PluginManifest {
 
     /// Parse a YAML manifest from a string.
     pub fn from_str(s: &str) -> Result<Self> {
-        let m: PluginManifest = serde_yaml::from_str(s)
-            .with_context(|| "parse plugin.yaml")?;
+        let m: PluginManifest = serde_yaml::from_str(s).with_context(|| "parse plugin.yaml")?;
         m.validate()?;
         Ok(m)
     }
@@ -89,22 +90,22 @@ impl PluginManifest {
             return Err(anyhow::anyhow!("plugin name is empty"));
         }
         if self.versions.is_empty() {
-            return Err(anyhow::anyhow!(
-                "plugin {} has no versions",
-                self.name
-            ));
+            return Err(anyhow::anyhow!("plugin {} has no versions", self.name));
         }
         for v in &self.versions {
             if v.sha256.len() != 64 {
                 return Err(anyhow::anyhow!(
                     "plugin {} version {}: sha256 must be 64 hex chars (got {})",
-                    self.name, v.r#ref, v.sha256.len()
+                    self.name,
+                    v.r#ref,
+                    v.sha256.len()
                 ));
             }
             if !v.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
                 return Err(anyhow::anyhow!(
                     "plugin {} version {}: sha256 contains non-hex chars",
-                    self.name, v.r#ref
+                    self.name,
+                    v.r#ref
                 ));
             }
         }

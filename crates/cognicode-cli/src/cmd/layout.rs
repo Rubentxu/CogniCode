@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 
 use crate::Cli;
 
@@ -75,25 +75,49 @@ impl CognicodeHome {
         } else if let Ok(env) = std::env::var("COGNICODE_HOME") {
             PathBuf::from(env)
         } else {
-            let home = std::env::var("HOME")
-                .context("HOME not set; pass --home or set COGNICODE_HOME")?;
+            let home =
+                std::env::var("HOME").context("HOME not set; pass --home or set COGNICODE_HOME")?;
             PathBuf::from(home).join(".cognicode")
         };
         Ok(Self { root })
     }
 
-    pub fn bin(&self) -> PathBuf { self.root.join("bin") }
-    pub fn shims(&self) -> PathBuf { self.root.join("shims") }
-    pub fn versions(&self) -> PathBuf { self.root.join("versions") }
-    pub fn version(&self, v: &str) -> PathBuf { self.versions().join(v) }
-    pub fn plugins(&self) -> PathBuf { self.root.join("plugins") }
-    pub fn plugin(&self, name: &str) -> PathBuf { self.plugins().join(name) }
-    pub fn tracker(&self) -> PathBuf { self.root.join("tracker") }
-    pub fn tracker_version(&self) -> PathBuf { self.tracker().join("version") }
-    pub fn locks(&self) -> PathBuf { self.root.join("locks") }
-    pub fn cache(&self) -> PathBuf { self.root.join("cache") }
-    pub fn cache_downloads(&self) -> PathBuf { self.cache().join("downloads") }
-    pub fn config(&self) -> PathBuf { self.root.join("config.yaml") }
+    pub fn bin(&self) -> PathBuf {
+        self.root.join("bin")
+    }
+    pub fn shims(&self) -> PathBuf {
+        self.root.join("shims")
+    }
+    pub fn versions(&self) -> PathBuf {
+        self.root.join("versions")
+    }
+    pub fn version(&self, v: &str) -> PathBuf {
+        self.versions().join(v)
+    }
+    pub fn plugins(&self) -> PathBuf {
+        self.root.join("plugins")
+    }
+    pub fn plugin(&self, name: &str) -> PathBuf {
+        self.plugins().join(name)
+    }
+    pub fn tracker(&self) -> PathBuf {
+        self.root.join("tracker")
+    }
+    pub fn tracker_version(&self) -> PathBuf {
+        self.tracker().join("version")
+    }
+    pub fn locks(&self) -> PathBuf {
+        self.root.join("locks")
+    }
+    pub fn cache(&self) -> PathBuf {
+        self.root.join("cache")
+    }
+    pub fn cache_downloads(&self) -> PathBuf {
+        self.cache().join("downloads")
+    }
+    pub fn config(&self) -> PathBuf {
+        self.root.join("config.yaml")
+    }
 
     /// Path to the bundle.yaml manifest (distributed with the installer).
     pub fn bundle_yaml_path(&self) -> PathBuf {
@@ -148,7 +172,12 @@ pub fn cmd_init(home: &CognicodeHome) -> Result<()> {
 
 // ===== cmd_install (full implementation, E32-B) =====
 
-pub fn cmd_install(home: &CognicodeHome, plugin: &str, version: &str, ides: &[String]) -> Result<()> {
+pub fn cmd_install(
+    home: &CognicodeHome,
+    plugin: &str,
+    version: &str,
+    ides: &[String],
+) -> Result<()> {
     if !home.is_initialized() {
         return Err(anyhow!("home not initialized; run `cogh init` first"));
     }
@@ -159,7 +188,8 @@ pub fn cmd_install(home: &CognicodeHome, plugin: &str, version: &str, ides: &[St
     } else {
         return Err(anyhow!(
             "plugin '{}' not registered; run `cogh plugin add {}` first",
-            plugin, plugin
+            plugin,
+            plugin
         ));
     };
     let (url, expected_sha) = crate::registry::resolve_url(&manifest, version)?;
@@ -168,7 +198,9 @@ pub fn cmd_install(home: &CognicodeHome, plugin: &str, version: &str, ides: &[St
         plugin, version, url, ides
     );
     println!("  expected sha256: {expected_sha}");
-    println!("(install flow: fetch → sha256 → extract → shim — wired in registry.rs; full download is E32-B+)");
+    println!(
+        "(install flow: fetch → sha256 → extract → shim — wired in registry.rs; full download is E32-B+)"
+    );
     // Wire --ide <name> to the IDE adapter.
     for ide in ides {
         crate::ide::cmd_ide_install(home, ide, plugin, version)?;
@@ -177,8 +209,16 @@ pub fn cmd_install(home: &CognicodeHome, plugin: &str, version: &str, ides: &[St
     Ok(())
 }
 
-pub fn cmd_uninstall(home: &CognicodeHome, plugin: &str, version: &str, ides: &[String]) -> Result<()> {
-    println!("uninstall: plugin={} version={} ides={:?}", plugin, version, ides);
+pub fn cmd_uninstall(
+    home: &CognicodeHome,
+    plugin: &str,
+    version: &str,
+    ides: &[String],
+) -> Result<()> {
+    println!(
+        "uninstall: plugin={} version={} ides={:?}",
+        plugin, version, ides
+    );
     // Wire --ide <name> to the IDE adapter uninstall.
     for ide in ides {
         crate::ide::cmd_ide_uninstall(home, ide, version)?;
@@ -197,7 +237,11 @@ pub fn cmd_list(home: &CognicodeHome, installed_only: bool) -> Result<()> {
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_dir() {
-                let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let name = p
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 println!("{:<15} {}", name, "(installed)".to_string());
             }
         }
@@ -241,7 +285,10 @@ pub fn cmd_update(home: &CognicodeHome, plugin: Option<String>) -> Result<()> {
 }
 
 pub fn cmd_reshim(home: &CognicodeHome) -> Result<()> {
-    println!("reshim: would regenerate {} (not yet implemented)", home.shims().display());
+    println!(
+        "reshim: would regenerate {} (not yet implemented)",
+        home.shims().display()
+    );
     Ok(())
 }
 
@@ -292,8 +339,7 @@ pub fn cmd_plugin_add(home: &CognicodeHome, plugin: &str, from_url: Option<&str>
         let parent = plugin_dir
             .parent()
             .ok_or_else(|| anyhow!("plugin_dir has no parent"))?;
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("create {}", parent.display()))?;
+        std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
         let output = std::process::Command::new("git")
             .args(["clone", "--depth=1", url, &plugin_dir.to_string_lossy()])
             .output()
@@ -320,8 +366,7 @@ pub fn cmd_plugin_add(home: &CognicodeHome, plugin: &str, from_url: Option<&str>
                     )
                 })?;
             std::fs::create_dir_all(&plugin_dir)?;
-            std::fs::write(&target, yaml)
-                .with_context(|| format!("write {}", target.display()))?;
+            std::fs::write(&target, yaml).with_context(|| format!("write {}", target.display()))?;
         }
         println!("✓ registered bundled plugin: {plugin}");
     }
@@ -329,7 +374,10 @@ pub fn cmd_plugin_add(home: &CognicodeHome, plugin: &str, from_url: Option<&str>
 }
 
 pub fn cmd_plugin_remove(home: &CognicodeHome, plugin: &str) -> Result<()> {
-    println!("Plugin removal not yet implemented: {} (plugins are read-only in this version)", plugin);
+    println!(
+        "Plugin removal not yet implemented: {} (plugins are read-only in this version)",
+        plugin
+    );
     Ok(())
 }
 
@@ -340,8 +388,13 @@ pub fn cmd_plugin_list(home: &CognicodeHome) -> Result<()> {
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_dir() {
-                let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
-                let manifest = crate::manifest::PluginManifest::from_path(&p.join("plugin.yaml")).ok();
+                let name = p
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                let manifest =
+                    crate::manifest::PluginManifest::from_path(&p.join("plugin.yaml")).ok();
                 let desc = manifest.map(|m| m.description).unwrap_or_default();
                 println!("{:<15} {}", name, desc);
             }
@@ -351,7 +404,10 @@ pub fn cmd_plugin_list(home: &CognicodeHome) -> Result<()> {
 }
 
 pub fn cmd_plugin_update(home: &CognicodeHome, plugin: &str) -> Result<()> {
-    println!("Plugin update not yet implemented: {} (git pull for --from-url plugins not yet supported)", plugin);
+    println!(
+        "Plugin update not yet implemented: {} (git pull for --from-url plugins not yet supported)",
+        plugin
+    );
     Ok(())
 }
 
@@ -383,16 +439,30 @@ mod tests {
 
     #[test]
     fn layout_paths() {
-        let home = CognicodeHome { root: PathBuf::from("/tmp/cogh") };
+        let home = CognicodeHome {
+            root: PathBuf::from("/tmp/cogh"),
+        };
         assert_eq!(home.bin(), PathBuf::from("/tmp/cogh/bin"));
         assert_eq!(home.shims(), PathBuf::from("/tmp/cogh/shims"));
         assert_eq!(home.versions(), PathBuf::from("/tmp/cogh/versions"));
-        assert_eq!(home.version("0.92.0"), PathBuf::from("/tmp/cogh/versions/0.92.0"));
+        assert_eq!(
+            home.version("0.92.0"),
+            PathBuf::from("/tmp/cogh/versions/0.92.0")
+        );
         assert_eq!(home.plugins(), PathBuf::from("/tmp/cogh/plugins"));
-        assert_eq!(home.plugin("mcp-server"), PathBuf::from("/tmp/cogh/plugins/mcp-server"));
-        assert_eq!(home.tracker_version(), PathBuf::from("/tmp/cogh/tracker/version"));
+        assert_eq!(
+            home.plugin("mcp-server"),
+            PathBuf::from("/tmp/cogh/plugins/mcp-server")
+        );
+        assert_eq!(
+            home.tracker_version(),
+            PathBuf::from("/tmp/cogh/tracker/version")
+        );
         assert_eq!(home.locks(), PathBuf::from("/tmp/cogh/locks"));
-        assert_eq!(home.cache_downloads(), PathBuf::from("/tmp/cogh/cache/downloads"));
+        assert_eq!(
+            home.cache_downloads(),
+            PathBuf::from("/tmp/cogh/cache/downloads")
+        );
     }
 
     #[test]
