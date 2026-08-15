@@ -79,20 +79,23 @@ the version-specific binary.
 
 ### Requirement: `cogh install` registers MCP server with IDEs
 
-When `cogh install --ide opencode` (or any registered IDE) is run,
-`cogh` MUST:
-1. Locate the IDE's config file (`~/.config/opencode/opencode.json`)
+When `cogh install --ide <name>` is run for a registered IDE, `cogh` MUST dispatch to the IDE adapter for the `--ide` value. The dispatched adapter MUST:
+1. Locate the IDE's config file (e.g. `~/.config/opencode/opencode.json`)
 2. Patch the `mcp` section to add the CogniCode server entry
-3. Copy skill bundles to the IDE's skill directory
+3. Symlink or copy skill bundles to the IDE's skill directory
 4. Preserve any other MCP servers the user has configured
+5. Write `mcp.cognicode-mcp.command[0]` as the absolute resolved shim path (`~/.cognicode/shims/cognicode-mcp`), not the bare binary name
 
-#### Scenario: `cogh install --ide opencode` patches opencode.json
+When `--profile` is also set, the atomic bundle install MUST run first, then the IDE adapter MUST dispatch for any `--ide` value.
+
+#### Scenario: `cogh install --ide opencode` dispatches and patches opencode.json
 
 - GIVEN `~/.config/opencode/opencode.json` exists with an existing `mcp` section
 - WHEN `cogh install --ide opencode` runs
-- THEN the existing `mcp` section is preserved
-- AND a new entry `cognicode-mcp` is added pointing to `~/.cognicode/shims/cognicode-mcp`
-- AND the JSON file is still valid (parses with `json.tool`)
+- THEN `cogh` dispatches to the opencode adapter
+- AND the existing `mcp` section is preserved
+- AND `mcp.cognicode-mcp.command[0]` equals the absolute shim path (`~/.cognicode/shims/cognicode-mcp`)
+- AND the JSON file is still valid
 
 #### Scenario: `cogh install --ide zcode` patches zcode config
 
@@ -120,6 +123,14 @@ When `cogh install --ide opencode` (or any registered IDE) is run,
 - WHEN `cogh install --ide all` runs
 - THEN all three IDEs are configured with the same MCP server + skills
 - AND the user can invoke CogniCode from any IDE
+
+#### Scenario: `cogh install --ide opencode --profile core` dispatches to both bundle install and IDE adapter
+
+- GIVEN `cogh install --ide opencode --profile core` runs
+- WHEN the command completes
+- THEN the atomic bundle install runs first (tracker/version is written)
+- AND the opencode adapter dispatches and patches `opencode.json`
+- AND `mcp.cognicode-mcp.command[0]` equals the absolute shim path
 
 ### Requirement: `cogh list` shows installed plugins and versions
 

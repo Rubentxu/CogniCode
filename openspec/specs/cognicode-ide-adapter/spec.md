@@ -59,7 +59,7 @@ integrate:                       # how to install (apply on `cogh install --ide 
     merge_path: mcp.cognicode-mcp
     template: |
       {
-        "command": ["$COGNICODE_HOME/shims/cognicode-mcp"],
+        "command": ["~/.cognicode/shims/cognicode-mcp"],
         "enabled": true,
         "type": "stdio"
       }
@@ -88,7 +88,25 @@ uninstall:                       # how to clean up (apply on `cogh uninstall --i
 - WHEN `cogh install --ide opencode` runs
 - THEN the `skills` step copies the skill bundles
 - AND the `mcp` step merges the MCP entry into `opencode.json`
+- AND `mcp.cognicode-mcp.command[0]` equals the absolute shim path
 - AND the `commands` step copies the IDE commands
+
+#### Scenario: opencode integrate writes absolute shim path on a fresh entry
+
+- GIVEN `~/.cognicode/shims/cognicode-mcp` exists
+- AND `~/.cognicode/shims/` is NOT on `PATH`
+- AND `~/.config/opencode/opencode.json` has no `mcp.cognicode-mcp`
+- WHEN the opencode integrate step runs
+- THEN `mcp.cognicode-mcp.command[0]` equals the absolute shim path
+- AND `mcp.cognicode-mcp.type` equals `"stdio"`
+- AND no other `mcp.*` entries are touched
+
+#### Scenario: opencode integrate overwrites stale entry with resolved shim
+
+- GIVEN `opencode.json` has `mcp.cognicode-mcp.command = ["/bin/cognicode-mcp"]`
+- WHEN the opencode integrate step runs
+- THEN `mcp.cognicode-mcp.command` is replaced with the resolved shim entry
+- AND no other `mcp.*` entries are touched
 
 ### Requirement: MCP config patching is JSON-merge, not overwrite
 
