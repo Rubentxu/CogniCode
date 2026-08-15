@@ -22,7 +22,7 @@ members = [
 exclude = ["crates/spike-ladybug"]
 
 [workspace.package]
-version = "0.94.14"
+version = "0.94.15"
 edition = "2024"
 authors = ["CogniCode Team"]
 
