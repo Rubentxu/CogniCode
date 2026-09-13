@@ -334,6 +334,13 @@ impl AnalysisService {
         let mut cache = self.file_cache.lock().unwrap();
         let mut all_relationships = Vec::new();
 
+        // ENGINE-DET (e38.2): rayon's parallel collection order is
+        // nondeterministic, so the results are folded in deterministic
+        // `file_path` order — the name index below must never depend on
+        // directory-walk order.
+        let mut results = results;
+        results.sort_by(|a, b| a.0.cmp(&b.0));
+
         for (file_path, mtime, symbols, relationships, was_parsed) in results {
             if was_parsed {
                 parsed_files += 1;
@@ -346,7 +353,21 @@ impl AnalysisService {
             for symbol in symbols {
                 let symbol_id = SymbolId::new(symbol.fully_qualified_name());
                 store.add_symbol_with_location(&symbol_id, symbol.clone());
-                name_to_symbol_id.insert(symbol.name().to_lowercase(), symbol_id);
+                // Deterministic duplicate rule (e38.2 ENGINE-DET, aligned
+                // with the shared `resolve_callee_identity` tie-break —
+                // call_graph_projection.rs): when several symbols share a
+                // lowercase name, the lexicographically smallest FQN wins —
+                // never walk order (no first-file-wins collapse). The
+                // exact-identity stage of the shared rule is inapplicable
+                // here: legacy call relationships carry bare callee names,
+                // never identity strings.
+                let name_key = symbol.name().to_lowercase();
+                let wins = name_to_symbol_id
+                    .get(&name_key)
+                    .is_none_or(|existing| symbol_id.as_str() < existing.as_str());
+                if wins {
+                    name_to_symbol_id.insert(name_key, symbol_id);
+                }
             }
 
             for (caller, callee_name) in relationships {

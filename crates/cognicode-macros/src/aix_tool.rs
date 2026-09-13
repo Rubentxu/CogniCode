@@ -151,13 +151,13 @@ fn to_camel_case(snake: &str) -> String {
         }
     }
     // Capitalize first character
-    if let Some(first) = result.chars().next() {
-        if first.is_ascii_lowercase() {
-            let mut s = result.clone();
-            s.remove(0);
-            s.insert(0, first.to_ascii_uppercase());
-            result = s;
-        }
+    if let Some(first) = result.chars().next()
+        && first.is_ascii_lowercase()
+    {
+        let mut s = result.clone();
+        s.remove(0);
+        s.insert(0, first.to_ascii_uppercase());
+        result = s;
     }
     result
 }

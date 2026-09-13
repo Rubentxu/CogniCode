@@ -56,10 +56,10 @@ fn parse_extra_derives(attrs: &[syn::Attribute]) -> Vec<Ident> {
 fn extract_inner_type(data: &Data) -> Type {
     match data {
         Data::Struct(struct_data) => {
-            if let Fields::Unnamed(fields) = &struct_data.fields {
-                if let Some(field) = fields.unnamed.first() {
-                    return field.ty.clone();
-                }
+            if let Fields::Unnamed(fields) = &struct_data.fields
+                && let Some(field) = fields.unnamed.first()
+            {
+                return field.ty.clone();
             }
             parse_quote! { () }
         }
@@ -92,7 +92,7 @@ pub fn derive_newtype(input: TokenStream2) -> TokenStream2 {
         quote::format_ident!("Deserialize"),
     ];
 
-    let expanded = if extra_derives.is_empty() {
+    if extra_derives.is_empty() {
         quote! {
             #[derive(#(#auto_derives),*)]
             #input
@@ -114,9 +114,7 @@ pub fn derive_newtype(input: TokenStream2) -> TokenStream2 {
                 }
             }
         }
-    };
-
-    expanded
+    }
 }
 
 #[cfg(test)]

@@ -50,6 +50,16 @@ pub enum KernelError {
     #[error("fact {0} is pinned to snapshot {1}, but the commit targets snapshot {2}")]
     SnapshotMismatch(FactId, SnapshotId, SnapshotId),
 
+    /// A commit batch re-uses fact-id space already assigned in the target
+    /// snapshot (e38.2 CP-4): fact-id spaces start at 1 per batch, so an
+    /// already-assigned fact id ≤ the batch's maximum id means the same id
+    /// would be assigned twice inside one snapshot. Caller violation
+    /// (`SnapshotMismatch` precedent): the caller computed the id space
+    /// wrongly; the store rejects the batch atomically, carrying the
+    /// smallest already-assigned id the batch would collide with.
+    #[error("fact id {0} collides with ids already assigned in snapshot {1}")]
+    FactIdSpaceCollision(FactId, SnapshotId),
+
     /// The revision cannot be mapped onto a snapshot (`RevisionId::NONE`).
     #[error("revision {0} is invalid (0 is the NONE sentinel)")]
     InvalidRevision(RevisionId),
@@ -72,8 +82,11 @@ pub enum KernelError {
 #[async_trait]
 pub trait FactStore: Send + Sync {
     /// Commits a batch of facts into `snap` of `ws`, returning their ids in
-    /// batch order. Rejects LLM provenance, unregistered predicates, and
-    /// facts whose `snapshot` field disagrees with `snap` — a failed batch
+    /// batch order. Rejects LLM provenance, unregistered predicates, facts
+    /// whose `snapshot` field disagrees with `snap`, and batches whose
+    /// fact-id space overlaps ids already assigned in the target snapshot
+    /// (fact-id spaces start at 1 per batch, so any existing fact id ≤ the
+    /// batch's maximum id is a collision — e38.2 CP-4) — a failed batch
     /// leaves no partial state.
     async fn commit(
         &self,

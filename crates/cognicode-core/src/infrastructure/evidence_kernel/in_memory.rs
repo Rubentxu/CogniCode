@@ -3,9 +3,9 @@
 //! Facts are stored keyed by `(WorkspaceId, SnapshotId)`, so a pinned read
 //! is snapshot-isolated BY CONSTRUCTION — it cannot observe rows belonging
 //! to another snapshot (design D5, umbrella scenario "Historical read
-//! remains stable"). Commit validation (design D6): LLM provenance,
-//! snapshot mismatch, and unregistered predicates are rejected before any
-//! state changes (atomic batches).
+//! remains stable"). Commit validation (design D6 + e38.2 CP-4): LLM
+//! provenance, snapshot mismatch, unregistered predicates, and fact-id
+//! space collisions are rejected before any state changes (atomic batches).
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
@@ -121,6 +121,22 @@ impl FactStore for InMemoryFactStore {
             self.validate(snap, fact)?;
         }
         let mut facts = self.facts.lock().expect("fact store lock");
+        // CP-4 id-space collision guard (e38.2): fact-id spaces start at 1
+        // per batch, so an already-assigned fact id ≤ the batch's maximum id
+        // means the same id would be assigned twice inside one snapshot.
+        // Caller violation (`SnapshotMismatch` precedent): rejected
+        // atomically under the same lock, BEFORE any state change, carrying
+        // the smallest already-assigned id the batch would collide with.
+        if let Some(max_batch_id) = batch.iter().map(|f| f.id.get()).max()
+            && let Some(rows) = facts.get(&(ws.clone(), *snap))
+            && let Some(colliding) = rows
+                .iter()
+                .map(|f| f.id)
+                .filter(|id| id.get() <= max_batch_id)
+                .min()
+        {
+            return Err(KernelError::FactIdSpaceCollision(colliding, *snap));
+        }
         let rows = facts.entry((ws.clone(), *snap)).or_default();
         let ids = batch.iter().map(|f| f.id).collect();
         rows.extend(batch);
@@ -547,6 +563,86 @@ mod tests {
             .await
             .expect("graceful read");
         assert!(empty.is_empty());
+    }
+
+    // -------------------------------------------------------------------------
+    // E38.2 Task 1.1 RED — CP-4 id-space collision guard
+    // -------------------------------------------------------------------------
+
+    /// A second batch that re-uses the fact-id space already assigned in the
+    /// same `(workspace, snapshot)` must be rejected: producers restart their
+    /// SemanticId space at 1 per batch, so re-committing into a snapshot that
+    /// already holds facts would silently double-assign ids (CP-4). The
+    /// rejection is atomic — the colliding batch leaves no partial state.
+    #[tokio::test]
+    async fn commit_rejects_second_batch_reusing_id_space_in_same_snapshot() {
+        let store = InMemoryFactStore::new(registry_with_calls());
+        let workspace = ws("ws-a");
+        let snap = SnapshotId::new(1);
+
+        store
+            .commit(
+                &workspace,
+                &snap,
+                vec![
+                    fact(1, 100, FactValue::Int(1), 1),
+                    fact(2, 100, FactValue::Int(2), 1),
+                ],
+            )
+            .await
+            .expect("first batch assigns ids 1..=2");
+
+        // A second producer batch restarts its id space at 1: id 1 is already
+        // assigned in this snapshot.
+        let err = store
+            .commit(&workspace, &snap, vec![fact(1, 100, FactValue::Int(3), 1)])
+            .await
+            .expect_err("second batch reusing the snapshot's id space must be rejected");
+        assert!(
+            matches!(
+                err,
+                KernelError::FactIdSpaceCollision(colliding, s)
+                    if colliding == FactId::new(1) && s == snap
+            ),
+            "must be a FactIdSpaceCollision carrying the smallest colliding id, got {err:?}"
+        );
+
+        // Atomic rejection: the snapshot still holds exactly the first batch.
+        let rows = store
+            .facts_in_snapshot(&workspace, &snap)
+            .await
+            .expect("read after rejected batch");
+        assert_eq!(
+            rows.iter().map(|f| f.id.get()).collect::<Vec<_>>(),
+            vec![1, 2],
+            "rejected batch must not mutate the snapshot"
+        );
+    }
+
+    /// Fact-id spaces are per snapshot: a different snapshot of the same
+    /// workspace may re-use the same ids (the guard only fires for the
+    /// snapshot that already holds the colliding ids).
+    #[tokio::test]
+    async fn commit_allows_reusing_id_space_in_a_different_snapshot() {
+        let store = InMemoryFactStore::new(registry_with_calls());
+        let workspace = ws("ws-a");
+
+        store
+            .commit(
+                &workspace,
+                &SnapshotId::new(1),
+                vec![fact(1, 100, FactValue::Int(1), 1)],
+            )
+            .await
+            .expect("snapshot 1 commit");
+        store
+            .commit(
+                &workspace,
+                &SnapshotId::new(2),
+                vec![fact(1, 100, FactValue::Int(2), 2)],
+            )
+            .await
+            .expect("snapshot 2 may re-use fact id 1");
     }
 
     /// Reads degrade gracefully: an unknown subject yields an empty vector.

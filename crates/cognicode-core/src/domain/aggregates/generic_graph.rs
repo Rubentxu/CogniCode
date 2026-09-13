@@ -464,6 +464,8 @@ mod tests {
     use super::*;
     use crate::domain::value_objects::dependency_type::DependencyType;
     use crate::domain::value_objects::symbol_kind::SymbolKind;
+    // Used only by the multimodal-gated tests below (`Utc.with_ymd_and_hms`).
+    #[cfg(feature = "multimodal")]
     use chrono::TimeZone;
 
     // ---- helpers ----
@@ -476,6 +478,8 @@ mod tests {
         NodeId::new("src/lib.rs:helper:42")
     }
 
+    // Used only by the multimodal-gated tests below.
+    #[cfg(feature = "multimodal")]
     fn doc_id() -> NodeId {
         NodeId::new("doc:docs/adr/0001.md#context")
     }
