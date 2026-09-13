@@ -1,0 +1,22 @@
+# SDDK DAG state — cognicode-living-software-intelligence (umbrella)
+# Orchestrator-maintained. Survives compaction.
+change: cognicode-living-software-intelligence
+program: lsi (Living Software Intelligence) — umbrella over milestones M0-M14
+created: 2026-09-12
+mode: openspec
+note: >
+  Umbrella contract change. All artifacts (proposal/design/tasks/specs) were
+  authored in the CogniCode_Living_Software_Intelligence package and integrated
+  on 2026-09-12 (INTEGRATION.md Merge A). Implementation proceeds via
+  per-milestone evolutivos (currently e36-lsi-evidence-kernel-foundation for
+  Merge B = M0+M1). Requirement IDs stay in THIS change; do not duplicate
+  spec deltas in implementation evolutivos.
+phases:
+  explore: {status: done, artifact: package docs/CogniCode_Living_Software_Intelligence/docs/, date: pre-2026-09-12}
+  propose: {status: done, artifact: proposal.md, date: pre-2026-09-12}
+  spec: {status: done, artifact: specs/ (18 capability deltas), date: pre-2026-09-12}
+  design: {status: done, artifact: design.md, date: pre-2026-09-12}
+  tasks: {status: done, artifact: tasks.md (groups 1-13), date: pre-2026-09-12}
+  apply: {status: pending, note: executed per-milestone via e36, e37, ...}
+  verify: {status: pending}
+  archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}

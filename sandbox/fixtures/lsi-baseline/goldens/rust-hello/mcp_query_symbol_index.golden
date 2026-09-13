@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "text": "{\"locations\": [{\"column\": 0, \"file\": \"<PROJECT_ROOT>/sandbox/fixtures/rust-hello/src/lib.rs\", \"line\": 1, \"symbol_kind\": \"Function\"}], \"symbol_name\": \"greet\", \"total\": 1}",
+      "type": "text"
+    }
+  ],
+  "isError": false
+}

@@ -1,0 +1,12 @@
+Getting outline for: sandbox/fixtures/multi-lang-types/typescript/interfaces.ts
+Found 3 top-level symbols:
+constructor (class)
+├── constructor (method): ()
+├── toString (method): ()
+└── equals (method): ()
+constructor (class)
+├── constructor (method): ()
+└── toString (method): ()
+createPage (function): ()
+├── hasNext (variable)
+└── hasPrev (variable)

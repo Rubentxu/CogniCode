@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "text": "{\"edges\": [{\"from\": \"test_add\", \"to\": \"add\"}, {\"from\": \"test_greet\", \"to\": \"greet\"}, {\"from\": \"test_subtract\", \"to\": \"subtract\"}], \"message\": \"Graph loaded from built: 7 symbols, 3 relationships in <duration>\", \"relationships_found\": 3, \"success\": true, \"symbols_found\": 7}",
+      "type": "text"
+    }
+  ],
+  "isError": false
+}

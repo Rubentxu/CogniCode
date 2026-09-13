@@ -1,0 +1,4 @@
+Building on-demand subgraph for 'find_by_id' (depth=3, direction=both)
+Subgraph built in <duration>
+Root: find_by_id (sandbox/fixtures/multi-lang-types/python/types.py:104:4)
+Entries: 0

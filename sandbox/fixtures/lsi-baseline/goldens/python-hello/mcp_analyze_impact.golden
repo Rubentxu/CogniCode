@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "text": "{\"impacted_files\": [], \"impacted_symbols\": [], \"risk_level\": \"low\", \"summary\": \"Graph auto-built (7 symbols, <duration>). Impact analysis completed in <duration>. 0 symbols across 0 files would be affected.\", \"symbol\": \"hello\"}",
+      "type": "text"
+    }
+  ],
+  "isError": false
+}

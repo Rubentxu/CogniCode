@@ -1,0 +1,4 @@
+Building on-demand subgraph for 'greet' (depth=3, direction=both)
+Subgraph built in <duration>
+Root: greet (sandbox/fixtures/rust-hello/src/lib.rs:1:0)
+Entries: 0

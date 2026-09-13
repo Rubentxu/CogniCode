@@ -1,0 +1,11 @@
+Analyzing impact of changing 'greet' in: sandbox/fixtures/rust-hello
+
+Found 2 symbol(s) matching 'greet'
+
+Impact Analysis for 'greet':
+  Risk Level: NONE
+  Direct dependents: 2
+  Total impacted symbols: 0
+  Impacted files: 0
+
+Analysis completed in <duration>

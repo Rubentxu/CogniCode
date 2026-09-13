@@ -1,0 +1,5 @@
+Tracing path from 'test_greet' to 'greet' in: sandbox/fixtures/rust-hello
+
+No path found between 'test_greet' and 'greet'
+
+Trace completed in <duration>

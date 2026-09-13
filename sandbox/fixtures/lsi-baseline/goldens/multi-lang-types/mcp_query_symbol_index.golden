@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "text": "{\"locations\": [{\"column\": 4, \"file\": \"<PROJECT_ROOT>/sandbox/fixtures/multi-lang-types/python/types.py\", \"line\": 104, \"symbol_kind\": \"Function\"}, {\"column\": 4, \"file\": \"<PROJECT_ROOT>/sandbox/fixtures/multi-lang-types/python/types.py\", \"line\": 122, \"symbol_kind\": \"Function\"}, {\"column\": 4, \"file\": \"<PROJECT_ROOT>/sandbox/fixtures/multi-lang-types/src/lib.rs\", \"line\": 82, \"symbol_kind\": \"Function\"}], \"symbol_name\": \"find_by_id\", \"total\": 3}",
+      "type": "text"
+    }
+  ],
+  "isError": false
+}

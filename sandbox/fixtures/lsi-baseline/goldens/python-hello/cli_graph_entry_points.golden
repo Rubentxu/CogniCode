@@ -1,0 +1,9 @@
+Finding entry points in: sandbox/fixtures/python-hello
+
+Entry points (no incoming edges):
+  multiply at sandbox/fixtures/python-hello/hello.py:18:0
+  test_add at sandbox/fixtures/python-hello/test_hello.py:10:0
+  test_greet at sandbox/fixtures/python-hello/test_hello.py:6:0
+  test_subtract at sandbox/fixtures/python-hello/test_hello.py:14:0
+
+Found 4 entry points in <duration>

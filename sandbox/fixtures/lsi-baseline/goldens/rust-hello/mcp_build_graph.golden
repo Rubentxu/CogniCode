@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "text": "{\"edges\": [], \"message\": \"Graph loaded from built: 5 symbols, 0 relationships in <duration>\", \"relationships_found\": 0, \"success\": true, \"symbols_found\": 5}",
+      "type": "text"
+    }
+  ],
+  "isError": false
+}

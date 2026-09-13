@@ -1,0 +1,10 @@
+Finding leaf functions in: sandbox/fixtures/rust-hello
+
+Leaf functions (no outgoing edges):
+  add at sandbox/fixtures/rust-hello/src/lib.rs:6:0
+  greet at sandbox/fixtures/rust-hello/src/lib.rs:1:0
+  multiply at sandbox/fixtures/rust-hello/src/lib.rs:11:0
+  test_add at sandbox/fixtures/rust-hello/src/lib.rs:25:4
+  test_greet at sandbox/fixtures/rust-hello/src/lib.rs:20:4
+
+Found 5 leaf functions in <duration>

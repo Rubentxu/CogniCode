@@ -1,0 +1,37 @@
+# SDDK DAG state — e36-lsi-evidence-kernel-foundation
+# Orchestrator-maintained. Survives compaction.
+change: e36-lsi-evidence-kernel-foundation
+program: lsi (Living Software Intelligence, umbrella: cognicode-living-software-intelligence)
+created: 2026-09-12
+mode: openspec
+delivery_strategy: auto-chain
+delivery_note: >
+  Auto mode per user directive ("sddk en modo auto"). Work is executed as
+  autonomous chained work-unit slices; commits remain pending explicit user
+  approval per repo rules (commit only when asked). Slices are kept
+  commit-ready with clear start/finish/verification/rollback.
+phases:
+  explore: {status: done, artifact: proposal.md (exploration folded into kickoff), date: 2026-09-12}
+  propose: {status: done, artifact: proposal.md, date: 2026-09-12}
+  spec: {status: done, artifact: "specs/lsi-m0-baseline/spec.md (new capability delta, 3 reqs / 6 scenarios); evidence-kernel contract stays in umbrella", date: 2026-09-12}
+  design: {status: done, artifact: design.md (8 decisions D1-D8, 4 work units WU1-WU4, threat matrix limited-applicable), date: 2026-09-12}
+  tasks: {status: done, artifact: "tasks.md (25 tasks / 5 phases; forecast: High, auto-chain, stacked-to-main; WU1-WU4 + records tail)", date: 2026-09-12}
+  apply: {status: done, artifact: "25/25 tasks [x]; WU1-WU4 + records; PR slices 1-4 staged in working tree (no commits)", date: 2026-09-12}
+  verify: {status: done, artifact: "verify-report.md — PASS WITH WARNINGS, 5 reqs / 9 scenarios, 9/9 COMPLIANT, validator-admitted (sha256:3db040b6…)", date: 2026-09-12}
+  archive: {status: pending, note: "ready; blocked on user approval of commit gate (stacked-to-main PR slices 1-4)"}
+assumptions_to_resolve:
+  - id: A1
+    question: Bundle M0+M1 in one slice or split M0 out?
+    resolution: bundle (INTEGRATION.md Merge B)
+  - id: A2
+    question: Reuse sandbox release_scorecard.py as M0 harness?
+    resolution: yes, extend rather than reinvent
+  - id: A3
+    question: SnapshotDescriptor maps onto existing revision model?
+    resolution: yes (ADR-039 facade over RevisionId)
+  - id: A4
+    question: Kernel-namespaced naming for new EvidenceStore port?
+    resolution: yes (collision with domain/ports/evidence_store.rs)
+  - id: A5
+    question: UAT gap — author U05/U06 or re-baseline gate?
+    resolution: author U05/U06 in UAT catalogue (gate stays intact)

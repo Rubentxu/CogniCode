@@ -614,6 +614,97 @@ def gate_g12(project_root: str) -> GateResult:
     )
 
 
+def gate_g13_lsi(
+    baseline_path: str, delta_path: str, fail_above_pct: float = 25.0
+) -> GateResult:
+    """G13 (optional, non-blocking): LSI M0 benchmark baseline + compare deltas.
+
+    Reads the E36 LSI baseline artifact (lsi_bench_baseline.py capture) and its
+    delta report (lsi_bench_baseline.py compare --output). AMBER when artifacts
+    are missing (baseline not captured yet — expected before M1 kernel work);
+    RED only when a committed delta report flags regressions beyond the
+    threshold. Absent artifacts never fail the scorecard run.
+    """
+    bp = Path(baseline_path)
+    if not bp.exists():
+        return GateResult(
+            id="G13",
+            name="LSI M0 Benchmark Baseline",
+            status="AMBER",
+            evidence_text=(
+                f"baseline not found at {baseline_path} — run "
+                "`just lsi-baseline` (capture) before M1 kernel changes; "
+                "optional gate, non-blocking"
+            ),
+            evidence_path=baseline_path,
+        )
+    try:
+        with open(bp) as f:
+            baseline = json.load(f)
+    except Exception as e:
+        return GateResult(
+            id="G13",
+            name="LSI M0 Benchmark Baseline",
+            status="AMBER",
+            evidence_text=f"baseline parse error: {e}",
+            evidence_path=baseline_path,
+        )
+    bench_count = len(baseline.get("benchmarks", []))
+    commit = baseline.get("commit", "unknown")
+
+    dp = Path(delta_path)
+    if not dp.exists():
+        return GateResult(
+            id="G13",
+            name="LSI M0 Benchmark Baseline",
+            status="AMBER",
+            measured=f"{bench_count} benchmarks baselined @ {commit[:12]}",
+            evidence_text=(
+                f"baseline present ({bench_count} benchmarks) but no compare "
+                f"delta report at {delta_path} — run `just lsi-baseline compare`"
+            ),
+            evidence_path=baseline_path,
+        )
+    try:
+        with open(dp) as f:
+            delta = json.load(f)
+    except Exception as e:
+        return GateResult(
+            id="G13",
+            name="LSI M0 Benchmark Baseline",
+            status="AMBER",
+            evidence_text=f"delta report parse error: {e}",
+            evidence_path=delta_path,
+        )
+
+    regressions = delta.get("regressions", [])
+    if regressions:
+        return GateResult(
+            id="G13",
+            name="LSI M0 Benchmark Baseline",
+            status="RED",
+            measured=f"{len(regressions)} regressions",
+            budget=f"no benchmark >{fail_above_pct}% vs baseline",
+            evidence_text=(
+                f"regressed beyond {fail_above_pct}% vs baseline @ {commit[:12]}: "
+                + ", ".join(str(r) for r in regressions[:8])
+            ),
+            evidence_path=delta_path,
+        )
+    return GateResult(
+        id="G13",
+        name="LSI M0 Benchmark Baseline",
+        status="GREEN",
+        measured=f"{len(delta.get('deltas', []))} benchmarks compared",
+        budget=f"no benchmark >{fail_above_pct}% vs baseline",
+        evidence_text=(
+            f"delta report clean vs baseline @ {commit[:12]} "
+            f"(threshold {fail_above_pct}%)"
+        ),
+        evidence_path=delta_path,
+    )
+
+
 # ── Markdown table renderer ───────────────────────────────────────────────────
 
 def render_markdown(gates: list[GateResult], generated_at: str) -> str:
@@ -682,6 +773,27 @@ def main() -> int:
         default=None,
         help="Base results directory — auto-discovers full-run-N, full/, or root",
     )
+    parser.add_argument(
+        "--lsi-baseline",
+        required=False,
+        default=None,
+        help="Path to the LSI M0 baseline artifact (G13, optional gate; "
+        "default: sandbox/results/lsi-baseline/baseline.json)",
+    )
+    parser.add_argument(
+        "--lsi-delta",
+        required=False,
+        default=None,
+        help="Path to the LSI compare delta report (G13, optional gate; "
+        "default: sandbox/results/lsi-baseline/delta.json)",
+    )
+    parser.add_argument(
+        "--lsi-fail-above",
+        required=False,
+        type=float,
+        default=25.0,
+        help="G13 regression threshold in percent (default: 25)",
+    )
     args = parser.parse_args()
 
     # Auto-discovery: if --results-dir is provided, find run subdirectories
@@ -700,6 +812,10 @@ def main() -> int:
         run_dirs = [d.strip() for d in args.runs.split(",") if d.strip()]
     project_root = str(Path(__file__).parent.parent.parent)
 
+    # G13 is optional and non-blocking: absent LSI artifacts degrade to AMBER.
+    lsi_baseline = args.lsi_baseline or f"{project_root}/sandbox/results/lsi-baseline/baseline.json"
+    lsi_delta = args.lsi_delta or f"{project_root}/sandbox/results/lsi-baseline/delta.json"
+
     # Evaluate all 12 gates
     gates = [
         gate_g1(),
@@ -714,6 +830,7 @@ def main() -> int:
         gate_g10(f"{project_root}/sandbox/reports/conformance_matrix.yaml"),
         gate_g11(project_root),
         gate_g12(project_root),
+        gate_g13_lsi(lsi_baseline, lsi_delta, args.lsi_fail_above),
     ]
 
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

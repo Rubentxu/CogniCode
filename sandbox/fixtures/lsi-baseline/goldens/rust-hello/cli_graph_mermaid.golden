@@ -1,0 +1,14 @@
+Exporting to Mermaid format from: sandbox/fixtures/rust-hello
+
+Mermaid diagram (397 chars):
+
+flowchart TD
+    %% Call Graph
+    sandbox/fixtures/rust-hello/src/lib.rs_add_6[add (Function)]
+    sandbox/fixtures/rust-hello/src/lib.rs_greet_1[greet (Function)]
+    sandbox/fixtures/rust-hello/src/lib.rs_multiply_11[multiply (Function)]
+    sandbox/fixtures/rust-hello/src/lib.rs_test_add_25[test_add (Function)]
+    sandbox/fixtures/rust-hello/src/lib.rs_test_greet_20[test_greet (Function)]
+
+
+Export completed in <duration>

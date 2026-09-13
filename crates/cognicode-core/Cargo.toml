@@ -25,6 +25,14 @@ multimodal = []
 # `ownership` enables CODEOWNERS parsing and git-blame authorship enrichment.
 # Uses `git` CLI via std::process::Command — no external git library needed.
 ownership = []
+# `evidence-kernel` is an opt-in feature enabling the LSI evidence kernel
+# (E36 M1): canonical `Fact`/`Evidence`/`ProvenanceRecord`/`SnapshotDescriptor`
+# types in `domain::evidence_kernel` plus the kernel ports and in-memory
+# store adapters in `infrastructure::evidence_kernel`. Gating follows the
+# `multimodal` precedent (`#[cfg(feature = "evidence-kernel")]`), so the
+# default build's public surface is unchanged with the feature off.
+# Off by default.
+evidence-kernel = []
 
 [dependencies]
 # Proc macros for tool definitions

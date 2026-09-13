@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "text": "{\"locations\": [], \"symbol_name\": \"hello\", \"total\": 0}",
+      "type": "text"
+    }
+  ],
+  "isError": false
+}

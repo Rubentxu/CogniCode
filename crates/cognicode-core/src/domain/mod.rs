@@ -9,6 +9,13 @@ pub mod analytics;
 pub mod error;
 pub mod events;
 pub mod example_block;
+// LSI evidence kernel (E36 M1) — canonical `Fact`/`Evidence`/`Provenance`
+// /`Snapshot` types plus the kernel store ports. Hidden on default builds
+// so the byte-level surface is unchanged (`multimodal` precedent). The
+// legacy `ports::EvidenceStore` is untouched and no cross re-exports
+// exist between the two (design D2).
+#[cfg(feature = "evidence-kernel")]
+pub mod evidence_kernel;
 // Multimodal (brain-federation) primitives — `FederatedNodeId`,
 // `FederatedNode`, `SpaceRegistry`, `MergeDetector`,
 // `MergeCandidate`, `FederatedGraphService`. Hidden on default

@@ -1,0 +1,4 @@
+Getting per-file graph for: sandbox/fixtures/python-hello/hello.py
+Per-file graph for sandbox/fixtures/python-hello/hello.py:
+  Symbols: 4
+  Dependencies: 0

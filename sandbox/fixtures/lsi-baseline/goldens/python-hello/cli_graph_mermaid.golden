@@ -1,0 +1,19 @@
+Exporting to Mermaid format from: sandbox/fixtures/python-hello
+
+Mermaid diagram (935 chars):
+
+flowchart TD
+    %% Call Graph
+    sandbox/fixtures/python-hello/hello.py_add_8[add (Function)]
+    sandbox/fixtures/python-hello/hello.py_greet_3[greet (Function)]
+    sandbox/fixtures/python-hello/hello.py_multiply_18[multiply (Function)]
+    sandbox/fixtures/python-hello/hello.py_subtract_13[subtract (Function)]
+    sandbox/fixtures/python-hello/test_hello.py_test_add_10 -->|calls| sandbox/fixtures/python-hello/hello.py_add_8
+    sandbox/fixtures/python-hello/test_hello.py_test_add_10[test_add (Function)]
+    sandbox/fixtures/python-hello/test_hello.py_test_greet_6 -->|calls| sandbox/fixtures/python-hello/hello.py_greet_3
+    sandbox/fixtures/python-hello/test_hello.py_test_greet_6[test_greet (Function)]
+    sandbox/fixtures/python-hello/test_hello.py_test_subtract_14 -->|calls| sandbox/fixtures/python-hello/hello.py_subtract_13
+    sandbox/fixtures/python-hello/test_hello.py_test_subtract_14[test_subtract (Function)]
+
+
+Export completed in <duration>

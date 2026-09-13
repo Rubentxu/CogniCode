@@ -29,6 +29,25 @@ This directory holds the architecture decision records (ADRs) for the CogniCode 
 | [ADR-030](./ADR-030-quality-store-ladybug-schema.md) | QualityStore Schema: LadybugDB Backend | ACCEPTED | 2026-08-03 |
 | [ADR-031](./ADR-031-release-1.0.0-definition.md) | Release 1.0.0: Definition of Production-Ready | PROPOSED | 2026-08-05 |
 | [ADR-032](./ADR-032-sandbox-validation-system.md) | Sandbox Validation System: Podman Quadlets + Real Repos + Scoring | PROPOSED | 2026-08-05 |
+| [ADR-033](./ADR-033-diagram-workbench-wasm-visual-computation.md) | DiagramWorkbench: WASM para Computation Visual | ACCEPTED | 2026-08-09 |
+| [ADR-034](./ADR-034-cognicode-distribution-package.md) | Distribution package: cognicode-cli + skill-bundles + IDE adapters | ACCEPTED | 2026-08-10 |
+| [ADR-035](./ADR-035-asdf-vm-version-management-pattern.md) | asdf-vm version-management pattern | ACCEPTED | 2026-08-10 |
+| [ADR-036](./ADR-036-ide-abstraction-portable-skills-per-ide-adapters.md) | IDE abstraction: portable skills + per-IDE adapter plugins | ACCEPTED | 2026-08-10 |
+| [ADR-037](./ADR-037-facts-over-graphs.md) | Facts over Graphs as canonical knowledge | PROPOSED | 2026-09-12 |
+| [ADR-038](./ADR-038-stable-entity-identity.md) | Stable Entity Identity separated from Occurrence | PROPOSED | 2026-09-12 |
+| [ADR-039](./ADR-039-snapshot-experiment-model.md) | Snapshots as reproducible analysis experiments | PROPOSED | 2026-09-12 |
+| [ADR-040](./ADR-040-provenance-evidence-hypothesis.md) | Separate Fact, Evidence and Hypothesis | PROPOSED | 2026-09-12 |
+| [ADR-041](./ADR-041-storage-vs-compute-separation.md) | Storage backend separated from incremental compute | PROPOSED | 2026-09-12 |
+| [ADR-042](./ADR-042-detector-ir-escalation.md) | Detector IR with cost-aware escalation | PROPOSED | 2026-09-12 |
+| [ADR-043](./ADR-043-intelligence-event-log.md) | Intelligence Event Log for causal operational history | PROPOSED | 2026-09-12 |
+| [ADR-044](./ADR-044-reactive-behavior-classes.md) | Three behavior classes with different authority | PROPOSED | 2026-09-12 |
+| [ADR-045](./ADR-045-read-set-tracing.md) | Execution read sets as first-class lineage | PROPOSED | 2026-09-12 |
+| [ADR-046](./ADR-046-software-world-fork-promote.md) | Software World Fork, Trial, Diff and Promote | PROPOSED | 2026-09-12 |
+| [ADR-047](./ADR-047-evidence-based-delivery.md) | Evidence Bundle as CI promotion unit | PROPOSED | 2026-09-12 |
+| [ADR-048](./ADR-048-pack-manifest-ontology.md) | Packs as extension and governance unit | PROPOSED | 2026-09-12 |
+| [ADR-049](./ADR-049-executable-architecture-knowledge.md) | Architecture knowledge as versioned executable constraints | PROPOSED | 2026-09-12 |
+| [ADR-050](./ADR-050-code-authorship-without-authority.md) | Code authorship without authority for AI and packs | PROPOSED | 2026-09-12 |
+| [ADR-051](./ADR-051-historical-heldout-promotion.md) | Historical replay and held-out promotion | PROPOSED | 2026-09-12 |
 
 ## Format
 

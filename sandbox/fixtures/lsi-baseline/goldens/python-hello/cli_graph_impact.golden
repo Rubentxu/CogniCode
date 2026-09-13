@@ -1,0 +1,19 @@
+Analyzing impact of changing 'hello' in: sandbox/fixtures/python-hello
+
+Found 7 symbol(s) matching 'hello'
+
+Impact Analysis for 'hello':
+  Risk Level: MEDIUM
+  Direct dependents: 7
+  Total impacted symbols: 3
+  Impacted files: 1
+
+Impacted symbols (first 20):
+  1. test_add
+  2. test_greet
+  3. test_subtract
+
+Impacted files (first 10):
+  1. sandbox/fixtures/python-hello/test_hello.py
+
+Analysis completed in <duration>

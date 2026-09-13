@@ -1,0 +1,9 @@
+Finding leaf functions in: sandbox/fixtures/python-hello
+
+Leaf functions (no outgoing edges):
+  add at sandbox/fixtures/python-hello/hello.py:8:0
+  greet at sandbox/fixtures/python-hello/hello.py:3:0
+  multiply at sandbox/fixtures/python-hello/hello.py:18:0
+  subtract at sandbox/fixtures/python-hello/hello.py:13:0
+
+Found 4 leaf functions in <duration>

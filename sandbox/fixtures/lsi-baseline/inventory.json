@@ -1,0 +1,483 @@
+{
+  "schema_version": 1,
+  "purpose": "M0 consumer inventory: every current consumer surface of CallGraph / GenericGraph across MCP, CLI, Explorer and WASM, with criticality. The capture harness (sandbox/scripts/capture_lsi_fixtures.py) reports per-surface coverage against this inventory; surfaces marked capture=direct are exercised by the committed goldens, deferred ones are not yet drivable from a static capture pass.",
+  "criticality_weights": {
+    "high": 3,
+    "medium": 2,
+    "low": 1
+  },
+  "sources": {
+    "cli": "crates/cognicode-core/src/interface/cli/commands.rs",
+    "mcp": "docs/MCP-TOOLS.md + crates/cognicode-mcp",
+    "explorer": "crates/cognicode-explorer/src/api.rs",
+    "wasm": "crates/cognicode-graph-wasm/src/lib.rs"
+  },
+  "consumers": [
+    {
+      "id": "cli.graph.full",
+      "consumer": "cognicode-cli",
+      "kind": "graph",
+      "surface": "cognicode graph full <path>",
+      "criticality": "high",
+      "capture": "direct",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.graph.mermaid",
+      "consumer": "cognicode-cli",
+      "kind": "graph",
+      "surface": "cognicode graph mermaid <path>",
+      "criticality": "high",
+      "capture": "direct",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.graph.impact",
+      "consumer": "cognicode-cli",
+      "kind": "impact",
+      "surface": "cognicode graph impact <symbol> <path>",
+      "criticality": "high",
+      "capture": "direct",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.graph.hierarchy",
+      "consumer": "cognicode-cli",
+      "kind": "graph",
+      "surface": "cognicode graph hierarchy <symbol> [--depth N] [--direction in|out] <path>",
+      "criticality": "high",
+      "capture": "direct",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.graph.trace-path",
+      "consumer": "cognicode-cli",
+      "kind": "graph",
+      "surface": "cognicode graph trace-path <from> <to> <path>",
+      "criticality": "medium",
+      "capture": "direct",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.graph.entry-points",
+      "consumer": "cognicode-cli",
+      "kind": "graph",
+      "surface": "cognicode graph entry-points <path>",
+      "criticality": "medium",
+      "capture": "direct",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.graph.leaf-functions",
+      "consumer": "cognicode-cli",
+      "kind": "graph",
+      "surface": "cognicode graph leaf-functions <path>",
+      "criticality": "medium",
+      "capture": "direct",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.graph.on-demand",
+      "consumer": "cognicode-cli",
+      "kind": "graph",
+      "surface": "cognicode graph on-demand <symbol> [--depth N] [--direction in|out|both] <path>",
+      "criticality": "medium",
+      "capture": "direct",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.graph.per-file",
+      "consumer": "cognicode-cli",
+      "kind": "graph",
+      "surface": "cognicode graph per-file <file>",
+      "criticality": "medium",
+      "capture": "direct",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.graph.hot-paths",
+      "consumer": "cognicode-cli",
+      "kind": "graph",
+      "surface": "cognicode graph hot-paths [--limit N] [--min-fan-in N] <path>",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "fan-in ranking order is engine-dependent; add once a canonical ordering is pinned",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.graph.complexity",
+      "consumer": "cognicode-cli",
+      "kind": "graph",
+      "surface": "cognicode graph complexity <path>",
+      "criticality": "low",
+      "capture": "deferred",
+      "capture_note": "metrics summary; low criticality, add in a follow-up golden pass",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.index.outline",
+      "consumer": "cognicode-cli",
+      "kind": "symbol",
+      "surface": "cognicode index outline <file>",
+      "criticality": "high",
+      "capture": "direct",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.index.build",
+      "consumer": "cognicode-cli",
+      "kind": "symbol",
+      "surface": "cognicode index build <path> [--strategy lightweight|on_demand|per_file|full]",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "mutating build command; pin the resulting index query surface instead",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.index.query",
+      "consumer": "cognicode-cli",
+      "kind": "symbol",
+      "surface": "cognicode index query <symbol> <path>",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "query against persisted index state; not stable from a fresh static pass",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.index.symbol-code",
+      "consumer": "cognicode-cli",
+      "kind": "symbol",
+      "surface": "cognicode index symbol-code <file> <line> <column>",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "verbatim source excerpt; add in a follow-up golden pass",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "cli.navigate.definition",
+      "consumer": "cognicode-cli",
+      "kind": "symbol",
+      "surface": "cognicode navigate definition <file:line:col> <path>",
+      "criticality": "low",
+      "capture": "deferred",
+      "capture_note": "LSP-backed; requires language-server availability in the capture environment",
+      "source_ref": "crates/cognicode-core/src/interface/cli/commands.rs"
+    },
+    {
+      "id": "mcp.build_graph",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call build_graph {directory}",
+      "criticality": "high",
+      "capture": "direct",
+      "source_ref": "crates/cognicode-mcp + docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.analyze_impact",
+      "consumer": "cognicode-mcp",
+      "kind": "impact",
+      "surface": "MCP tools/call analyze_impact {symbol_name}",
+      "criticality": "high",
+      "capture": "direct",
+      "source_ref": "crates/cognicode-mcp + docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.get_file_symbols",
+      "consumer": "cognicode-mcp",
+      "kind": "symbol",
+      "surface": "MCP tools/call get_file_symbols {file_path}",
+      "criticality": "high",
+      "capture": "direct",
+      "source_ref": "crates/cognicode-mcp + docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.query_symbol_index",
+      "consumer": "cognicode-mcp",
+      "kind": "symbol",
+      "surface": "MCP tools/call query_symbol_index {symbol_name}",
+      "criticality": "high",
+      "capture": "direct",
+      "source_ref": "crates/cognicode-mcp + docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.build_call_subgraph",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call build_call_subgraph",
+      "criticality": "high",
+      "capture": "deferred",
+      "capture_note": "requires build_graph session state in the same MCP session; static one-call client cannot pin it yet",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.get_call_hierarchy",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call get_call_hierarchy",
+      "criticality": "high",
+      "capture": "deferred",
+      "capture_note": "requires build_graph session state in the same MCP session",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.trace_path",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call trace_path",
+      "criticality": "high",
+      "capture": "deferred",
+      "capture_note": "requires build_graph session state in the same MCP session",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.get_per_file_graph",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call get_per_file_graph",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "add in a follow-up golden pass",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.get_entry_points",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call get_entry_points",
+      "criticality": "low",
+      "capture": "deferred",
+      "capture_note": "add in a follow-up golden pass",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.get_leaf_functions",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call get_leaf_functions",
+      "criticality": "low",
+      "capture": "deferred",
+      "capture_note": "add in a follow-up golden pass",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.get_symbol_code",
+      "consumer": "cognicode-mcp",
+      "kind": "symbol",
+      "surface": "MCP tools/call get_symbol_code",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "verbatim source excerpt; add in a follow-up golden pass",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.find_usages",
+      "consumer": "cognicode-mcp",
+      "kind": "symbol",
+      "surface": "MCP tools/call find_usages",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "add in a follow-up golden pass",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.export_mermaid",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call export_mermaid",
+      "criticality": "high",
+      "capture": "deferred",
+      "capture_note": "mirrors cli.graph.mermaid output; add in a follow-up golden pass",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.graph_pagerank",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call graph_pagerank",
+      "criticality": "high",
+      "capture": "deferred",
+      "capture_note": "score ordering may be engine-dependent; pin once ordering is canonical",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.graph_communities",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call graph_communities",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "label-propagation ordering may be engine-dependent",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.graph_god_nodes",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call graph_god_nodes",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "percentile ranking order may be engine-dependent",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.graph_all_paths",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call graph_all_paths",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "add in a follow-up golden pass",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.graph_condensed",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call graph_condensed",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "add in a follow-up golden pass",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.graph_query",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call graph_query",
+      "criticality": "high",
+      "capture": "deferred",
+      "capture_note": "natural-language query path; pin after deterministic query canon",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.graph_insights",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call graph_insights",
+      "criticality": "high",
+      "capture": "deferred",
+      "capture_note": "composite health report; pin after component surfaces are stable",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.graph_search_idf",
+      "consumer": "cognicode-mcp",
+      "kind": "symbol",
+      "surface": "MCP tools/call graph_search_idf",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "ranking order may be engine-dependent",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.project_insights",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call project_insights",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "dashboard composite; pin after component surfaces are stable",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.merge_graphs",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call merge_graphs",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "requires per-file graph session state",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "mcp.reparse_on_edit",
+      "consumer": "cognicode-mcp",
+      "kind": "graph",
+      "surface": "MCP tools/call reparse_on_edit",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "mutating incremental path; excluded from static goldens",
+      "source_ref": "docs/MCP-TOOLS.md"
+    },
+    {
+      "id": "explorer./api/graph/:id/subgraph",
+      "consumer": "cognicode-explorer",
+      "kind": "graph",
+      "surface": "GET /api/graph/:id/subgraph",
+      "criticality": "high",
+      "capture": "deferred",
+      "capture_note": "requires a running Explorer API server with an open workspace; not drivable from a static capture pass",
+      "source_ref": "crates/cognicode-explorer/src/api.rs"
+    },
+    {
+      "id": "explorer./api/graph/:id/contextual",
+      "consumer": "cognicode-explorer",
+      "kind": "graph",
+      "surface": "GET /api/graph/:id/contextual",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "requires a running Explorer API server with an open workspace",
+      "source_ref": "crates/cognicode-explorer/src/api.rs"
+    },
+    {
+      "id": "explorer./api/workspaces/:id/architecture",
+      "consumer": "cognicode-explorer",
+      "kind": "graph",
+      "surface": "GET /api/workspaces/:id/architecture",
+      "criticality": "high",
+      "capture": "deferred",
+      "capture_note": "requires a running Explorer API server with an open workspace",
+      "source_ref": "crates/cognicode-explorer/src/api.rs"
+    },
+    {
+      "id": "explorer./api/workspaces/:id/architecture/mermaid",
+      "consumer": "cognicode-explorer",
+      "kind": "graph",
+      "surface": "GET /api/workspaces/:id/architecture/mermaid",
+      "criticality": "high",
+      "capture": "deferred",
+      "capture_note": "requires a running Explorer API server with an open workspace",
+      "source_ref": "crates/cognicode-explorer/src/api.rs"
+    },
+    {
+      "id": "explorer./api/workspaces/:id/mermaid/trace",
+      "consumer": "cognicode-explorer",
+      "kind": "graph",
+      "surface": "GET /api/workspaces/:id/mermaid/trace",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "requires a running Explorer API server with an open workspace",
+      "source_ref": "crates/cognicode-explorer/src/api.rs"
+    },
+    {
+      "id": "explorer./api/workspaces/:id/landing",
+      "consumer": "cognicode-explorer",
+      "kind": "graph",
+      "surface": "GET /api/workspaces/:id/landing",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "requires a running Explorer API server with an open workspace",
+      "source_ref": "crates/cognicode-explorer/src/api.rs"
+    },
+    {
+      "id": "explorer./api/objects/:object_id/views",
+      "consumer": "cognicode-explorer",
+      "kind": "graph",
+      "surface": "GET /api/objects/:object_id/views/:view_id",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "view payloads depend on an open workspace session",
+      "source_ref": "crates/cognicode-explorer/src/api.rs"
+    },
+    {
+      "id": "wasm.explorer-ui.pagerank",
+      "consumer": "cognicode-graph-wasm",
+      "kind": "graph",
+      "surface": "WASM export pagerank() consumed by apps/explorer-ui rendering",
+      "criticality": "medium",
+      "capture": "deferred",
+      "capture_note": "WASM module is exercised through the Explorer UI; pin via Playwright in a runtime pass",
+      "source_ref": "crates/cognicode-graph-wasm/src/lib.rs"
+    }
+  ]
+}

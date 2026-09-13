@@ -1,0 +1,8 @@
+Getting call hierarchy for 'hello' (depth=3, direction=out) in: sandbox/fixtures/python-hello
+
+Call hierarchy for 'hello':
+Root: hello at unknown:0:0
+
+Entries by depth:
+
+Total entries: 0 in <duration>

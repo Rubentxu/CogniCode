@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "text": "{\"edges\": [{\"from\": \"NewEmail\", \"to\": \"contains\"}, {\"from\": \"contains\", \"to\": \"containsImpl\"}, {\"from\": \"create_user\", \"to\": \"UserId\"}, {\"from\": \"create_user\", \"to\": \"err\"}, {\"from\": \"create_user\", \"to\": \"user\"}, {\"from\": \"find_by_id\", \"to\": \"RepositoryError\"}, {\"from\": \"find_by_id\", \"to\": \"query\"}], \"message\": \"Graph loaded from built: 94 symbols, 7 relationships in <duration>\", \"relationships_found\": 7, \"success\": true, \"symbols_found\": 94}",
+      "type": "text"
+    }
+  ],
+  "isError": false
+}

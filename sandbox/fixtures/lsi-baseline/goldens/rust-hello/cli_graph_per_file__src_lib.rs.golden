@@ -1,0 +1,4 @@
+Getting per-file graph for: sandbox/fixtures/rust-hello/src/lib.rs
+Per-file graph for sandbox/fixtures/rust-hello/src/lib.rs:
+  Symbols: 5
+  Dependencies: 0

@@ -1,0 +1,11 @@
+Analyzing impact of changing 'find_by_id' in: sandbox/fixtures/multi-lang-types
+
+Found 3 symbol(s) matching 'find_by_id'
+
+Impact Analysis for 'find_by_id':
+  Risk Level: NONE
+  Direct dependents: 3
+  Total impacted symbols: 0
+  Impacted files: 0
+
+Analysis completed in <duration>

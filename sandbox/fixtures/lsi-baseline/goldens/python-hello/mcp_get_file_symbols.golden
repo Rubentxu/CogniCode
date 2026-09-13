@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "text": "{\"file_path\": \"hello.py\", \"symbols\": [{\"kind\": \"function\", \"location\": {\"column\": 1, \"file\": \"<PROJECT_ROOT>/sandbox/fixtures/python-hello/hello.py\", \"line\": 14}, \"name\": \"subtract\", \"signature\": null}, {\"kind\": \"function\", \"location\": {\"column\": 1, \"file\": \"<PROJECT_ROOT>/sandbox/fixtures/python-hello/hello.py\", \"line\": 19}, \"name\": \"multiply\", \"signature\": null}, {\"kind\": \"function\", \"location\": {\"column\": 1, \"file\": \"<PROJECT_ROOT>/sandbox/fixtures/python-hello/hello.py\", \"line\": 4}, \"name\": \"greet\", \"signature\": null}, {\"kind\": \"function\", \"location\": {\"column\": 1, \"file\": \"<PROJECT_ROOT>/sandbox/fixtures/python-hello/hello.py\", \"line\": 9}, \"name\": \"add\", \"signature\": null}]}",
+      "type": "text"
+    }
+  ],
+  "isError": false
+}

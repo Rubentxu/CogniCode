@@ -1,0 +1,18 @@
+Getting outline for: sandbox/fixtures/multi-lang-types/go/types.go
+Found 14 top-level symbols:
+NewUserId (function)
+NewEmail (function)
+NewUserService (function)
+user (variable)
+err (variable)
+all (variable)
+T (class)
+NewPostgresRepository (function)
+ctx (class)
+T (class)
+NewPage (function)
+└── totalPages (variable)
+contains (function)
+containsImpl (function)
+└── i (variable)
+generateUUID (function)

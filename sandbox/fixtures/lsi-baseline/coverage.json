@@ -1,0 +1,447 @@
+{
+  "covered_surfaces": 14,
+  "covered_weight": 37,
+  "schema_version": 1,
+  "surfaces": [
+    {
+      "covered": true,
+      "criticality": "high",
+      "fixture_paths": [
+        "sandbox/fixtures/multi-lang-types",
+        "sandbox/fixtures/python-hello",
+        "sandbox/fixtures/rust-hello"
+      ],
+      "id": "cli.graph.full",
+      "note": null,
+      "weight": 3
+    },
+    {
+      "covered": true,
+      "criticality": "high",
+      "fixture_paths": [
+        "sandbox/fixtures/python-hello",
+        "sandbox/fixtures/rust-hello"
+      ],
+      "id": "cli.graph.mermaid",
+      "note": null,
+      "weight": 3
+    },
+    {
+      "covered": true,
+      "criticality": "high",
+      "fixture_paths": [
+        "sandbox/fixtures/multi-lang-types",
+        "sandbox/fixtures/python-hello",
+        "sandbox/fixtures/rust-hello"
+      ],
+      "id": "cli.graph.impact",
+      "note": null,
+      "weight": 3
+    },
+    {
+      "covered": true,
+      "criticality": "high",
+      "fixture_paths": [
+        "sandbox/fixtures/multi-lang-types",
+        "sandbox/fixtures/python-hello",
+        "sandbox/fixtures/rust-hello"
+      ],
+      "id": "cli.graph.hierarchy",
+      "note": null,
+      "weight": 3
+    },
+    {
+      "covered": true,
+      "criticality": "medium",
+      "fixture_paths": [
+        "sandbox/fixtures/multi-lang-types",
+        "sandbox/fixtures/python-hello",
+        "sandbox/fixtures/rust-hello"
+      ],
+      "id": "cli.graph.trace-path",
+      "note": null,
+      "weight": 2
+    },
+    {
+      "covered": true,
+      "criticality": "medium",
+      "fixture_paths": [
+        "sandbox/fixtures/python-hello",
+        "sandbox/fixtures/rust-hello"
+      ],
+      "id": "cli.graph.entry-points",
+      "note": null,
+      "weight": 2
+    },
+    {
+      "covered": true,
+      "criticality": "medium",
+      "fixture_paths": [
+        "sandbox/fixtures/python-hello",
+        "sandbox/fixtures/rust-hello"
+      ],
+      "id": "cli.graph.leaf-functions",
+      "note": null,
+      "weight": 2
+    },
+    {
+      "covered": true,
+      "criticality": "medium",
+      "fixture_paths": [
+        "sandbox/fixtures/multi-lang-types",
+        "sandbox/fixtures/python-hello",
+        "sandbox/fixtures/rust-hello"
+      ],
+      "id": "cli.graph.on-demand",
+      "note": null,
+      "weight": 2
+    },
+    {
+      "covered": true,
+      "criticality": "medium",
+      "fixture_paths": [
+        "sandbox/fixtures/multi-lang-types",
+        "sandbox/fixtures/python-hello",
+        "sandbox/fixtures/rust-hello"
+      ],
+      "id": "cli.graph.per-file",
+      "note": null,
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "cli.graph.hot-paths",
+      "note": "fan-in ranking order is engine-dependent; add once a canonical ordering is pinned",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "low",
+      "fixture_paths": [],
+      "id": "cli.graph.complexity",
+      "note": "metrics summary; low criticality, add in a follow-up golden pass",
+      "weight": 1
+    },
+    {
+      "covered": true,
+      "criticality": "high",
+      "fixture_paths": [
+        "sandbox/fixtures/multi-lang-types",
+        "sandbox/fixtures/python-hello",
+        "sandbox/fixtures/rust-hello"
+      ],
+      "id": "cli.index.outline",
+      "note": null,
+      "weight": 3
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "cli.index.build",
+      "note": "mutating build command; pin the resulting index query surface instead",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "cli.index.query",
+      "note": "query against persisted index state; not stable from a fresh static pass",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "cli.index.symbol-code",
+      "note": "verbatim source excerpt; add in a follow-up golden pass",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "low",
+      "fixture_paths": [],
+      "id": "cli.navigate.definition",
+      "note": "LSP-backed; requires language-server availability in the capture environment",
+      "weight": 1
+    },
+    {
+      "covered": true,
+      "criticality": "high",
+      "fixture_paths": [
+        "sandbox/fixtures/multi-lang-types",
+        "sandbox/fixtures/python-hello",
+        "sandbox/fixtures/rust-hello"
+      ],
+      "id": "mcp.build_graph",
+      "note": null,
+      "weight": 3
+    },
+    {
+      "covered": true,
+      "criticality": "high",
+      "fixture_paths": [
+        "sandbox/fixtures/multi-lang-types",
+        "sandbox/fixtures/python-hello",
+        "sandbox/fixtures/rust-hello"
+      ],
+      "id": "mcp.analyze_impact",
+      "note": null,
+      "weight": 3
+    },
+    {
+      "covered": true,
+      "criticality": "high",
+      "fixture_paths": [
+        "sandbox/fixtures/multi-lang-types",
+        "sandbox/fixtures/python-hello",
+        "sandbox/fixtures/rust-hello"
+      ],
+      "id": "mcp.get_file_symbols",
+      "note": null,
+      "weight": 3
+    },
+    {
+      "covered": true,
+      "criticality": "high",
+      "fixture_paths": [
+        "sandbox/fixtures/multi-lang-types",
+        "sandbox/fixtures/python-hello",
+        "sandbox/fixtures/rust-hello"
+      ],
+      "id": "mcp.query_symbol_index",
+      "note": null,
+      "weight": 3
+    },
+    {
+      "covered": false,
+      "criticality": "high",
+      "fixture_paths": [],
+      "id": "mcp.build_call_subgraph",
+      "note": "requires build_graph session state in the same MCP session; static one-call client cannot pin it yet",
+      "weight": 3
+    },
+    {
+      "covered": false,
+      "criticality": "high",
+      "fixture_paths": [],
+      "id": "mcp.get_call_hierarchy",
+      "note": "requires build_graph session state in the same MCP session",
+      "weight": 3
+    },
+    {
+      "covered": false,
+      "criticality": "high",
+      "fixture_paths": [],
+      "id": "mcp.trace_path",
+      "note": "requires build_graph session state in the same MCP session",
+      "weight": 3
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "mcp.get_per_file_graph",
+      "note": "add in a follow-up golden pass",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "low",
+      "fixture_paths": [],
+      "id": "mcp.get_entry_points",
+      "note": "add in a follow-up golden pass",
+      "weight": 1
+    },
+    {
+      "covered": false,
+      "criticality": "low",
+      "fixture_paths": [],
+      "id": "mcp.get_leaf_functions",
+      "note": "add in a follow-up golden pass",
+      "weight": 1
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "mcp.get_symbol_code",
+      "note": "verbatim source excerpt; add in a follow-up golden pass",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "mcp.find_usages",
+      "note": "add in a follow-up golden pass",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "high",
+      "fixture_paths": [],
+      "id": "mcp.export_mermaid",
+      "note": "mirrors cli.graph.mermaid output; add in a follow-up golden pass",
+      "weight": 3
+    },
+    {
+      "covered": false,
+      "criticality": "high",
+      "fixture_paths": [],
+      "id": "mcp.graph_pagerank",
+      "note": "score ordering may be engine-dependent; pin once ordering is canonical",
+      "weight": 3
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "mcp.graph_communities",
+      "note": "label-propagation ordering may be engine-dependent",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "mcp.graph_god_nodes",
+      "note": "percentile ranking order may be engine-dependent",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "mcp.graph_all_paths",
+      "note": "add in a follow-up golden pass",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "mcp.graph_condensed",
+      "note": "add in a follow-up golden pass",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "high",
+      "fixture_paths": [],
+      "id": "mcp.graph_query",
+      "note": "natural-language query path; pin after deterministic query canon",
+      "weight": 3
+    },
+    {
+      "covered": false,
+      "criticality": "high",
+      "fixture_paths": [],
+      "id": "mcp.graph_insights",
+      "note": "composite health report; pin after component surfaces are stable",
+      "weight": 3
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "mcp.graph_search_idf",
+      "note": "ranking order may be engine-dependent",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "mcp.project_insights",
+      "note": "dashboard composite; pin after component surfaces are stable",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "mcp.merge_graphs",
+      "note": "requires per-file graph session state",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "mcp.reparse_on_edit",
+      "note": "mutating incremental path; excluded from static goldens",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "high",
+      "fixture_paths": [],
+      "id": "explorer./api/graph/:id/subgraph",
+      "note": "requires a running Explorer API server with an open workspace; not drivable from a static capture pass",
+      "weight": 3
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "explorer./api/graph/:id/contextual",
+      "note": "requires a running Explorer API server with an open workspace",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "high",
+      "fixture_paths": [],
+      "id": "explorer./api/workspaces/:id/architecture",
+      "note": "requires a running Explorer API server with an open workspace",
+      "weight": 3
+    },
+    {
+      "covered": false,
+      "criticality": "high",
+      "fixture_paths": [],
+      "id": "explorer./api/workspaces/:id/architecture/mermaid",
+      "note": "requires a running Explorer API server with an open workspace",
+      "weight": 3
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "explorer./api/workspaces/:id/mermaid/trace",
+      "note": "requires a running Explorer API server with an open workspace",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "explorer./api/workspaces/:id/landing",
+      "note": "requires a running Explorer API server with an open workspace",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "explorer./api/objects/:object_id/views",
+      "note": "view payloads depend on an open workspace session",
+      "weight": 2
+    },
+    {
+      "covered": false,
+      "criticality": "medium",
+      "fixture_paths": [],
+      "id": "wasm.explorer-ui.pagerank",
+      "note": "WASM module is exercised through the Explorer UI; pin via Playwright in a runtime pass",
+      "weight": 2
+    }
+  ],
+  "total_surfaces": 48,
+  "total_weight": 111,
+  "weighted_coverage_pct": 33.3
+}

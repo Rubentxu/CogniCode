@@ -1,0 +1,7 @@
+Getting outline for: sandbox/fixtures/rust-hello/src/lib.rs
+Found 5 top-level symbols:
+greet (function): (name)
+add (function): (a, b)
+multiply (function): (a, b)
+test_greet (function): ()
+test_add (function): ()

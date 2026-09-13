@@ -1,0 +1,8 @@
+Getting call hierarchy for 'greet' (depth=3, direction=out) in: sandbox/fixtures/rust-hello
+
+Call hierarchy for 'greet':
+Root: greet at sandbox/fixtures/rust-hello/src/lib.rs:1:0
+
+Entries by depth:
+
+Total entries: 0 in <duration>

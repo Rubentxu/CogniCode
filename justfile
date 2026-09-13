@@ -566,6 +566,61 @@ perf:
 perf-bench:
     cargo bench -p cognicode-core --bench graph_benchmarks -- --output-format bencher
 
+# ─── LSI M0 evidence (E36) ───────────────────────────────────────────────────
+
+# LSI M0 golden fixtures: verify consumer outputs against committed goldens.
+# Writes nothing. Pass mode="accept" to re-baseline intentionally changed output.
+lsi-fixtures mode="check":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "{{ mode }}" = "check" ]; then
+        python3 sandbox/scripts/capture_lsi_fixtures.py --check
+    elif [ "{{ mode }}" = "accept" ]; then
+        python3 sandbox/scripts/capture_lsi_fixtures.py --accept
+    else
+        echo "unknown mode '{{ mode }}' (expected check|accept)" >&2; exit 2
+    fi
+
+# LSI M0 benchmark baseline: capture the baseline artifact or compare against it.
+# Pass mode="compare" (add threshold="25" to make regressions fail the recipe).
+lsi-baseline mode="capture" threshold="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "{{ mode }}" = "capture" ]; then
+        python3 sandbox/scripts/lsi_bench_baseline.py capture
+    elif [ "{{ mode }}" = "compare" ]; then
+        if [ -n "{{ threshold }}" ]; then
+            python3 sandbox/scripts/lsi_bench_baseline.py compare \
+                --output sandbox/results/lsi-baseline/delta.json \
+                --fail-above {{ threshold }}
+        else
+            python3 sandbox/scripts/lsi_bench_baseline.py compare \
+                --output sandbox/results/lsi-baseline/delta.json
+        fi
+    else
+        echo "unknown mode '{{ mode }}' (expected capture|compare)" >&2; exit 2
+    fi
+
+# LSI M2 equivalence harness (E37): legacy vs fact-derived CallGraph
+# projections over the golden fixtures. Fixed argv; fails (non-zero exit)
+# when any non-quarantined fixture scores below the declared threshold
+# (0.99) or the entity-identity convention pin changes.
+lsi-equivalence:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo test -p cognicode-core --test equivalence_harness --features evidence-kernel -- --nocapture
+
+# LSI M3 identity benchmark (E38): tiered continuity matcher over the
+# lsi-identity ground-truth fixtures plus the workspace isolation suite.
+# Fixed argv; fails (non-zero exit) when any scoring gate is missed
+# (precision >= 0.95, recall >= 0.90, line-shift retention == 1.00,
+# move retention >= 0.99), the matcher-convention pin changes, a case
+# verification fails, or a workspace collision is detected.
+lsi-identity:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo test -p cognicode-core --test workspace_isolation --test identity_benchmark --features evidence-kernel -- --nocapture
+
 # ─── Sandbox ─────────────────────────────────────────────────────────────────
 
 sandbox-iac:

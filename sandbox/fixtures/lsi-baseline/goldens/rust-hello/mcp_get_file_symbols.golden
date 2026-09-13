@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "text": "{\"file_path\": \"src/lib.rs\", \"symbols\": [{\"kind\": \"function\", \"location\": {\"column\": 1, \"file\": \"<PROJECT_ROOT>/sandbox/fixtures/rust-hello/src/lib.rs\", \"line\": 12}, \"name\": \"multiply\", \"signature\": null}, {\"kind\": \"function\", \"location\": {\"column\": 1, \"file\": \"<PROJECT_ROOT>/sandbox/fixtures/rust-hello/src/lib.rs\", \"line\": 2}, \"name\": \"greet\", \"signature\": null}, {\"kind\": \"function\", \"location\": {\"column\": 1, \"file\": \"<PROJECT_ROOT>/sandbox/fixtures/rust-hello/src/lib.rs\", \"line\": 7}, \"name\": \"add\", \"signature\": null}, {\"kind\": \"function\", \"location\": {\"column\": 5, \"file\": \"<PROJECT_ROOT>/sandbox/fixtures/rust-hello/src/lib.rs\", \"line\": 21}, \"name\": \"test_greet\", \"signature\": null}, {\"kind\": \"function\", \"location\": {\"column\": 5, \"file\": \"<PROJECT_ROOT>/sandbox/fixtures/rust-hello/src/lib.rs\", \"line\": 26}, \"name\": \"test_add\", \"signature\": null}]}",
+      "type": "text"
+    }
+  ],
+  "isError": false
+}

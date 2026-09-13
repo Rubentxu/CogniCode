@@ -4,6 +4,11 @@
 //! such as tree-sitter for parsing and petgraph for dependency graphs.
 
 pub mod avc;
+// LSI evidence kernel in-memory adapters (E36 M1, design D7). Hidden on
+// default builds so the byte-level surface is unchanged (`multimodal`
+// precedent). The LadybugDB adapter is deferred (D7).
+#[cfg(feature = "evidence-kernel")]
+pub mod evidence_kernel;
 #[cfg(feature = "multimodal")]
 pub mod extraction;
 pub mod git;

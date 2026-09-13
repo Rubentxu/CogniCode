@@ -1,0 +1,6 @@
+Getting outline for: sandbox/fixtures/python-hello/hello.py
+Found 4 top-level symbols:
+greet (function): ()
+add (function): ()
+subtract (function): ()
+multiply (function): ()
