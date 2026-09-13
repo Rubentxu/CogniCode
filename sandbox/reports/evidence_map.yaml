@@ -209,3 +209,18 @@ identity-benchmark:
   status: verified
   evidence_path: openspec/changes/archive/2026-09-13-e38-lsi-stable-identity/verify-report.md
   evidence_note: 'e38 identity benchmark: pinned precision/recall/retention gates, ambiguous reported separately, separate convention digest; verify report PASS WITH WARNINGS (validator-admitted)'
+provider-tier-provenance:
+  status: verified
+  evidence_path: openspec/changes/archive/2026-09-13-e39-lsi-semantic-providers/verify-report.md
+  evidence_note: 'e39 M4 semantic provider pipeline: ordered policy-gated tiers, structured
+    fallback diagnostics + per-tier counters, pinned tier-to-provenance classes (heuristics
+    never Extracted, unresolved never fabricated); verify report PASS WITH WARNINGS
+    (validator-admitted), warnings W2 (deepest-attempted error propagation) and W3
+    (bounded hierarchy readiness) fixed in e39.1 (d2358bcf)'
+provider-pipeline-conformance:
+  status: verified
+  evidence_path: openspec/changes/archive/2026-09-13-e39-lsi-semantic-providers/verify-report.md
+  evidence_note: 'e39 M4 provider conformance runner: declared per-tier precision targets
+    (contradiction fails the run), availability-gated language coverage (Rust/TS serverless
+    declared tiers, Java declared-unavailable); verify report PASS WITH WARNINGS (validator-admitted),
+    Java readiness bounds pinned in e39.1 (d2358bcf)'

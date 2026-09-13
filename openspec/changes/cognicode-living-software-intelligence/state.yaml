@@ -23,6 +23,10 @@ phases:
       stable identity), 74690935 (e36 in-memory store adapters); five promoted
       capability specs now in openspec/specs/ (lsi-m0-baseline,
       projection-equivalence-harness, generic-graph-projection,
-      entity-continuity, identity-benchmark)}
+      entity-continuity, identity-benchmark); implementation slices e39 (M4) and
+      e39.1 archived 2026-09-13 — commits 87993f90 (e39 semantic provider
+      pipeline), d2358bcf (e39.1 provider UX hardening); two promoted capability
+      specs now in openspec/specs/ (provider-tier-provenance,
+      provider-pipeline-conformance)}
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}

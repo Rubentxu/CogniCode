@@ -67,11 +67,11 @@ e38.1/e38.2 evidence landed (SubjectIndex/CP-4); jdtls optional; no new crates.
 
 ## Success Criteria
 
-- [ ] Fallback observable: diagnostics+counters+tracing (gate 1).
-- [ ] No fabricated resolutions; uncertainty recorded (gate 2).
-- [ ] Rust/TS fixtures hit precision targets; Java gated (gate 3).
-- [ ] Unresolved propagates via lsp_facts (gate 4).
-- [ ] CP-5 green; lint+test-unit per slice; A5 UAT deferred post-M4.
+- [x] Fallback observable: diagnostics+counters+tracing (gate 1). (fresh composite tests: S2 `Unavailable` diagnostic naming provider+tier+outcome, per-tier counters 1/0/1; rust/ts/java runtime conformance runs confirm diagnostics on the default path. W3 hierarchy readiness latency noted and fixed in e39.1 `d2358bcf` with the bounded fallback readiness)
+- [x] No fabricated resolutions; uncertainty recorded (gate 2). (gated lsp_facts tests: S0 stays Ambiguous `assert_ne!(Extracted)`; exhausted queries record site + exhausted tiers and emit zero facts. W1 contradiction-check mechanism differs from D4's wording — check runs at observation admission (`add_tiered_observation`), not in `finish()`; design D4 corrected at archive time, spec sentence "fail batch construction" held)
+- [x] Rust/TS fixtures hit precision targets; Java gated (gate 3). (declaration-only targets: rust/ts matching declarations pass serverless as S0×4+S1 with no numeric threshold; Java jdtls PATH-probe — absent → declared-unavailable branch passes with `Unavailable` diagnostics and no S2-tier result; available branch environment-skipped, recorded as an honest gap)
+- [x] Unresolved propagates via lsp_facts (gate 4). (three exhaustion sites record `UnresolvedRecord{site,query,exhausted_tiers}`; no subject/target fabrication. W2 legacy error UX on definition/hover noted and fixed in e39.1 `d2358bcf`: deepest-attempted error variants restored, clean misses stay `Ok(None)`)
+- [ ] CP-5 green; lint+test-unit per slice; A5 UAT deferred post-M4. (deferred, A5 — CP-5 3/3 gated, `just lsi-fixtures check` 42/42, `just lint`/fmt/clippy green and per-slice test-unit verified; formal UAT runs intentionally deferred to a post-M4 cycle, so this criterion stays unchecked)
 
 ## Proposal question round
 
