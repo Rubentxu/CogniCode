@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "case": "colliding-names",
+  "entities": [
+    { "before": "src/lib.rs:run_gate:1", "after": "src/lib.rs:run_gate:1", "status": "Matched", "tier": "ExactIdentity" },
+    { "before": null, "after": "src/c.rs:handle:1", "status": "Ambiguous", "candidates": ["src/a.rs:handle:1", "src/b.rs:handle:1"] },
+    { "before": "src/a.rs:handle:1", "after": null, "status": "Terminated" },
+    { "before": "src/b.rs:handle:1", "after": null, "status": "Terminated" }
+  ]
+}

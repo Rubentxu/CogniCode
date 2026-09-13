@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "case": "rename-edit",
+  "entities": [
+    { "before": "src/analyze.rs:analyze_rows:1", "after": "src/analyze.rs:process_rows:1", "status": "Matched", "tier": "Fingerprint" },
+    { "before": "src/analyze.rs:legacy_rows:17", "after": null, "status": "Terminated" },
+    { "before": null, "after": "src/analyze.rs:audit_rows:17", "status": "New" }
+  ]
+}

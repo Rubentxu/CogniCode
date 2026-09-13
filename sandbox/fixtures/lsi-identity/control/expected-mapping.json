@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "case": "control",
+  "entities": [
+    { "before": "src/lib.rs:run_pipeline:1", "after": "src/lib.rs:run_pipeline:1", "status": "Matched", "tier": "ExactIdentity" },
+    { "before": "src/lib.rs:audit_pipeline:9", "after": "src/lib.rs:audit_pipeline:9", "status": "Matched", "tier": "ExactIdentity" }
+  ]
+}

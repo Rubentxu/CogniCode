@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "case": "pure-rename",
+  "entities": [
+    { "before": "src/lib.rs:fetch_total:1", "after": "src/lib.rs:settle_total:1", "status": "Matched", "tier": "Fingerprint" },
+    { "before": "src/lib.rs:total:2", "after": "src/lib.rs:total:2", "status": "Matched", "tier": "ExactIdentity" }
+  ]
+}

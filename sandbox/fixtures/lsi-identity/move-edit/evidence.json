@@ -1,0 +1,7 @@
+[
+  {
+    "old_path": "src/config.rs",
+    "new_path": "src/parsing/config.rs",
+    "similarity": 0.85
+  }
+]

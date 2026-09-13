@@ -1,0 +1,12 @@
+[
+  {
+    "old_path": "src/a.rs",
+    "new_path": "src/c.rs",
+    "similarity": 0.9
+  },
+  {
+    "old_path": "src/b.rs",
+    "new_path": "src/c.rs",
+    "similarity": 0.87
+  }
+]

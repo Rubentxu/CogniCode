@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "case": "line-shift",
+  "entities": [
+    { "before": "src/engine.rs:tick:1", "after": "src/engine.rs:tick:6", "status": "Matched", "tier": "PathNameKind" },
+    { "before": "src/engine.rs:retired_hook:9", "after": null, "status": "Terminated" },
+    { "before": null, "after": "src/engine.rs:startup_hook:14", "status": "New" }
+  ]
+}

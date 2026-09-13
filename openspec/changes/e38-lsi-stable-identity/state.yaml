@@ -1,0 +1,35 @@
+# SDDK DAG state — e38-lsi-stable-identity
+# Orchestrator-maintained. Survives compaction.
+change: e38-lsi-stable-identity
+program: lsi (Living Software Intelligence, umbrella: cognicode-living-software-intelligence)
+milestone: M3 — Stable Identity & Temporal Snapshots (umbrella tasks group 4)
+created: 2026-09-12
+mode: openspec
+delivery_strategy: auto-chain
+delivery_note: >
+  Auto mode (established user directive). Chained work-unit slices, stacked-to-main.
+  No git commits until explicit user approval. Working tree carries uncommitted
+  e36 (M0+M1) + e37 (M2) — file ownership discipline continues: e38 owns NEW
+  identity/continuity files + strictly additive edits to kernel/bridge files.
+prior_evidence:
+  e36: "kernel: EntityId/OccurrenceId/SnapshotId ids, FactStore snapshot-pinned, EntityIdTable sequential 1..N per snapshot (e37 D3)"
+  e37: "fact bridge deterministic; equivalence harness 1.0/1.0 scored fixtures; perf gate sub-us noise WARNING unresolved"
+  known_defects:
+    - "graph-engine nondeterminism (KNOWN_UNSTABLE_SURFACES)"
+    - "pre-existing clippy red: cognicode-macros + generic_graph.rs tests"
+    - "M2 perf gate not certified clean (sub-us search bench) — re-adjudicate on quiet machine"
+m3_exit_gates:
+  - "line-shift retains identity 100% on fixture (UAT-U20)"
+  - "file move retains identity >=99% (UAT-U21)"
+  - "controlled rename benchmark >=95% precision / >=90% recall (UAT-U22 related)"
+  - "collisions = 0 on workspace isolation suite"
+  - "continuity matcher: ambiguous state, never force ambiguous match (ADR-038)"
+phases:
+  explore: {status: done, artifact: "exploration.md — Option B: separate continuity layer (StableEntityId + tiered matcher, fail-closed Ambiguous), snapshot-scoped EntityId untouched, no fact validity intervals needed, git shell-out adapter pattern", date: 2026-09-12}
+  propose: {status: done, artifact: "proposal.md — Option B continuity layer, 7 deliverables, 4 flagged assumptions", date: 2026-09-12}
+  spec: {status: done, artifact: "specs/entity-continuity/spec.md (4 reqs / 6 scen) + specs/identity-benchmark/spec.md (2 reqs / 3 scen); umbrella stable-entity-identity stays authoritative, terminology pinned in scope notes", date: 2026-09-12}
+  design: {status: done, artifact: "design.md — D1-D8 (continuity module domain/evidence_kernel/continuity/, RenameEvidencePort + git shell-out adapter fail-closed, tiered matcher T0-T3 with pinned thresholds + no-resurrection, workspace isolation suite, 7-case identity benchmark with own PINNED_MATCHER_DIGEST, bench N/A honest); WU1-WU5", date: 2026-09-12}
+  tasks: {status: done, artifact: "tasks.md — 16 tasks / 5 phases; forecast High (~1100-1400 ln), auto-chain, stacked-to-main; PR1-PR5 chain", date: 2026-09-12}
+  apply: {status: done, artifact: "16/16 tasks [x]; WU1-WU5; PR slices 1-5 staged in working tree (no commits)", date: 2026-09-12}
+  verify: {status: done, artifact: "verify-report.md — PASS WITH WARNINGS, 6 reqs / 9 scenarios, 9/9 COMPLIANT, M3 gates all 1.0000, collisions=0, 141 tests fresh, validator-admitted (sha256:dd94dc9b…); warnings: formal UAT deferred (A5), no production consumer in M3, benchmark T2 evidence fixture-declared, pre-existing clippy red", date: 2026-09-12}
+  archive: {status: pending, note: "ready; blocked on user approval of commit gate (stacked-to-main PR slices 1-5, alongside e36 PR1-4 + e37 PR1-5); archive TODOs from verify suggestions: add missing ### UAT-U21 heading in UAT-MILESTONES.md, reconcile proposal success-criteria checkboxes"}

@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "case": "move-edit",
+  "entities": [
+    { "before": "src/config.rs:parse_config:1", "after": "src/parsing/config.rs:parse_config:1", "status": "Matched", "tier": "RenameEvidence" },
+    { "before": "src/main.rs:run_app:1", "after": "src/main.rs:run_app:1", "status": "Matched", "tier": "ExactIdentity" }
+  ]
+}
