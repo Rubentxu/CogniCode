@@ -17,6 +17,7 @@
 mod harness;
 
 use std::path::Path;
+use std::time::Duration;
 
 use cognicode_core::domain::traits::code_intelligence::{PrecisionTier, ProviderDiagnostic};
 use cognicode_core::infrastructure::lsp::providers::composite::{CompositeProvider, TierPolicy};
@@ -33,8 +34,7 @@ fn serverless_provider(root: &Path) -> CompositeProvider {
         root,
         TierPolicy {
             lsp: false,
-            local_resolver: true,
-            tree_sitter: true,
+            ..TierPolicy::all()
         },
     )
 }
@@ -233,8 +233,15 @@ async fn java_without_its_server_degrades_by_declaration() {
 
     let manifest = harness::load_manifest(JAVA_LANGUAGE);
     let root = harness::fixture_root(JAVA_LANGUAGE);
-    // The fixture-declared 5s readiness bound for the unavailable branch.
-    let provider = CompositeProvider::with_wait_timeout(&root, 5);
+    // The fixture-declared 5s bounded readiness (W3) for the unavailable
+    // branch: the S2 attempt falls through at 5s.
+    let provider = CompositeProvider::with_policy(
+        &root,
+        TierPolicy {
+            fallback_readiness: Duration::from_secs(5),
+            ..TierPolicy::all()
+        },
+    );
 
     let observations = harness::observe_all(&provider, &root, &manifest).await;
     println!("== java provider conformance (declared-unavailable) ==");
@@ -276,7 +283,16 @@ async fn java_lsp_targets_verify_when_the_server_is_available() {
 
     let manifest = harness::load_manifest(JAVA_LANGUAGE);
     let root = harness::fixture_root(JAVA_LANGUAGE);
-    let provider = CompositeProvider::new(&root);
+    // Full readiness (W3): the bounded fallback equals the full 30s wait, so
+    // a real jdtls cold start is never cut short and the declared-S2 run
+    // holds.
+    let provider = CompositeProvider::with_policy(
+        &root,
+        TierPolicy {
+            fallback_readiness: Duration::from_secs(30),
+            ..TierPolicy::all()
+        },
+    );
 
     let observations = harness::observe_all(&provider, &root, &manifest).await;
     println!("== java provider conformance (live {JAVA_SERVER_BINARY}) ==");

@@ -13,9 +13,13 @@ use crate::infrastructure::parser::Language;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tracing::{debug, warn};
 
-/// Fixed highest-first tier order attempted by the pipeline (LSI M4).
+/// Fixed highest-first pipeline order (LSI M4): the precedence every op's
+/// walk follows when selecting its support-matrix tiers — each op attempts
+/// only its eligible tiers and silently skips the rest — and the ordering
+/// of the `status()` counter rows.
 pub const TIER_ORDER: [PrecisionTier; 3] =
     [PrecisionTier::S2, PrecisionTier::S1, PrecisionTier::S0];
 
@@ -31,15 +35,25 @@ pub struct TierPolicy {
     pub local_resolver: bool,
     /// Allow the S0 tree-sitter tier to be attempted.
     pub tree_sitter: bool,
+    /// Bounded readiness for an S2 attempt that has an enabled lower tier:
+    /// the readiness gate waits at most this long before falling through
+    /// (W3, default 2s). Irrelevant when the lower eligible tier is
+    /// policy-disabled — then the full `wait_timeout_secs` applies.
+    pub fallback_readiness: Duration,
 }
 
 impl TierPolicy {
+    /// The default bound on an S2 readiness attempt that has a lower tier
+    /// fallback.
+    pub const DEFAULT_FALLBACK_READINESS: Duration = Duration::from_secs(2);
+
     /// Every pipeline tier enabled (the default for the existing ctors).
     pub const fn all() -> Self {
         Self {
             lsp: true,
             local_resolver: true,
             tree_sitter: true,
+            fallback_readiness: Self::DEFAULT_FALLBACK_READINESS,
         }
     }
 
@@ -51,6 +65,24 @@ impl TierPolicy {
             PrecisionTier::S1 => self.local_resolver,
             PrecisionTier::S0 => self.tree_sitter,
             PrecisionTier::S3 | PrecisionTier::S4 => false,
+        }
+    }
+
+    /// The S2 readiness budget for an op whose eligible lower tier is
+    /// `fallback_tier`: the smaller of the configured full wait and
+    /// [`Self::fallback_readiness`] when that tier is enabled, the full wait
+    /// when it is policy-disabled (nothing below can serve, so S2 gets the
+    /// whole budget).
+    pub fn readiness_budget(
+        self,
+        wait_timeout_secs: u64,
+        fallback_tier: PrecisionTier,
+    ) -> Duration {
+        let full_wait = Duration::from_secs(wait_timeout_secs);
+        if self.enabled(fallback_tier) {
+            full_wait.min(self.fallback_readiness)
+        } else {
+            full_wait
         }
     }
 }
@@ -148,8 +180,27 @@ enum Attempt<T> {
     Served(T),
     /// The tier answered with a degraded (empty) result; fall through.
     Degraded(ProviderDiagnostic),
-    /// The tier could not be attempted (`Unavailable`) or failed (`Error`).
-    Failed(ProviderDiagnostic),
+    /// The tier did not serve: a readiness-gate failure (no provider answer)
+    /// or a provider `Err`, whose originating error variant is preserved for
+    /// the old-trait deepest-answer mapping (W2).
+    Failed(ProviderDiagnostic, Option<CodeIntelligenceError>),
+}
+
+/// The deepest attempted tier's answer, used by the old-trait mapping of
+/// `get_definition`/`hover` (W2).
+enum DeepestAnswer {
+    /// No provider `Err` reached the deepest attempt: a clean miss, a
+    /// readiness-gate failure, or no attempt at all.
+    Miss,
+    /// The deepest attempted provider returned this error.
+    Errored(CodeIntelligenceError),
+}
+
+/// One `get_definition`/`hover` chain run: the public tiered outcome plus
+/// the deepest attempted provider answer.
+struct ChainOutcome<T> {
+    outcome: TieredOutcome<T>,
+    deepest: DeepestAnswer,
 }
 
 pub struct CompositeProvider {
@@ -214,12 +265,17 @@ impl CompositeProvider {
         Arc::new(index)
     }
 
-    /// Builds a provider with every tier enabled and a 30s LSP readiness bound.
+    /// Builds a provider with every tier enabled, a 30s full readiness wait
+    /// and the default bounded fallback (W3: an S2 attempt with an enabled
+    /// lower tier waits at most `fallback_readiness`, 2s).
     pub fn new(workspace_root: &Path) -> Self {
         Self::with_policy_and_timeout(workspace_root, TierPolicy::all(), 30)
     }
 
-    /// Builds a provider with every tier enabled, bounding the LSP readiness wait.
+    /// Builds a provider with every tier enabled, bounding the full LSP
+    /// readiness wait. The bounded fallback of the policy still applies: an
+    /// S2 attempt with an enabled lower tier waits at most
+    /// `min(timeout_secs, policy.fallback_readiness)`.
     pub fn with_wait_timeout(workspace_root: &Path, timeout_secs: u64) -> Self {
         Self::with_policy_and_timeout(workspace_root, TierPolicy::all(), timeout_secs)
     }
@@ -339,14 +395,18 @@ impl CompositeProvider {
     }
 
     /// Readiness gate for an S2 attempt driven by a file path.
+    ///
+    /// `fallback_tier` is the op's lower eligible tier (fixed support
+    /// matrix): the readiness wait is bounded when that tier is enabled.
     async fn gate_lsp_for_path(
         &self,
         path: &Path,
         op: &'static str,
+        fallback_tier: PrecisionTier,
     ) -> Result<(), ProviderDiagnostic> {
         match Language::from_extension(path.extension()) {
             Some(language) => {
-                self.gate_lsp_language(language, op, path.display().to_string())
+                self.gate_lsp_language(language, op, path.display().to_string(), fallback_tier)
                     .await
             }
             None => Err(Self::diagnostic(
@@ -363,10 +423,11 @@ impl CompositeProvider {
         &self,
         location: &Location,
         op: &'static str,
+        fallback_tier: PrecisionTier,
     ) -> Result<(), ProviderDiagnostic> {
         match Self::language_from_location(location) {
             Some(language) => {
-                self.gate_lsp_language(language, op, location.file().to_string())
+                self.gate_lsp_language(language, op, location.file().to_string(), fallback_tier)
                     .await
             }
             None => Err(Self::diagnostic(
@@ -383,23 +444,58 @@ impl CompositeProvider {
         language: Language,
         op: &'static str,
         file: String,
+        fallback_tier: PrecisionTier,
     ) -> Result<(), ProviderDiagnostic> {
-        match self.wait_for_lsp_ready(language, None).await {
-            Ok(()) => Ok(()),
-            Err(error) => Err(Self::diagnostic(
+        let budget = self
+            .policy
+            .readiness_budget(self.wait_timeout_secs, fallback_tier);
+        match Self::readiness_within(budget, self.wait_for_lsp_ready(language, None)).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(Self::diagnostic(
                 PrecisionTier::S2,
                 LspIntelligenceProvider::PROVIDER_ID,
                 ProviderOutcome::Unavailable,
                 format!("{op}: {file}: {error}"),
             )),
+            // The bound expired mid-readiness — typically inside
+            // `LspProcess::initialize`, whose own request timeout (30s) the
+            // `wait_timeout_secs` poll loop cannot bound. The dropped future
+            // was never registered with the process manager (registration
+            // happens only after `initialize` succeeds), so a later query
+            // re-spawns from scratch; no lock is held across the drop.
+            Err(_expired) => Err(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Unavailable,
+                format!(
+                    "{op}: {file}: LSP readiness exceeded the {:.3}s bounded fallback to \
+                     {fallback_tier}",
+                    budget.as_secs_f64()
+                ),
+            )),
         }
+    }
+
+    /// Awaits `readiness` under `budget` — the W3 fall-through bound on an
+    /// S2 readiness attempt that has a lower eligible tier.
+    async fn readiness_within<F>(
+        budget: Duration,
+        readiness: F,
+    ) -> Result<Result<(), LspProcessError>, tokio::time::error::Elapsed>
+    where
+        F: std::future::Future<Output = Result<(), LspProcessError>>,
+    {
+        tokio::time::timeout(budget, readiness).await
     }
 
     // ── S2 (LSP) attempts ───────────────────────────────────────────────
 
     async fn attempt_lsp_get_symbols(&self, path: &Path) -> Attempt<Vec<Symbol>> {
-        if let Err(diagnostic) = self.gate_lsp_for_path(path, "get_symbols").await {
-            return Attempt::Failed(diagnostic);
+        if let Err(diagnostic) = self
+            .gate_lsp_for_path(path, "get_symbols", PrecisionTier::S0)
+            .await
+        {
+            return Attempt::Failed(diagnostic, None);
         }
         match self.lsp.get_symbols(path).await {
             Ok(symbols) if !symbols.is_empty() => Attempt::Served(symbols),
@@ -409,12 +505,15 @@ impl CompositeProvider {
                 ProviderOutcome::Degraded,
                 "get_symbols: LSP returned no symbols",
             )),
-            Err(error) => Attempt::Failed(Self::diagnostic(
-                PrecisionTier::S2,
-                LspIntelligenceProvider::PROVIDER_ID,
-                ProviderOutcome::Error,
-                format!("get_symbols: {error}"),
-            )),
+            Err(error) => Attempt::Failed(
+                Self::diagnostic(
+                    PrecisionTier::S2,
+                    LspIntelligenceProvider::PROVIDER_ID,
+                    ProviderOutcome::Error,
+                    format!("get_symbols: {error}"),
+                ),
+                Some(error),
+            ),
         }
     }
 
@@ -424,10 +523,10 @@ impl CompositeProvider {
         include_declaration: bool,
     ) -> Attempt<Vec<Reference>> {
         if let Err(diagnostic) = self
-            .gate_lsp_for_location(location, "find_references")
+            .gate_lsp_for_location(location, "find_references", PrecisionTier::S0)
             .await
         {
-            return Attempt::Failed(diagnostic);
+            return Attempt::Failed(diagnostic, None);
         }
         match self
             .lsp
@@ -441,50 +540,69 @@ impl CompositeProvider {
                 ProviderOutcome::Degraded,
                 "find_references: LSP returned no references",
             )),
-            Err(error) => Attempt::Failed(Self::diagnostic(
-                PrecisionTier::S2,
-                LspIntelligenceProvider::PROVIDER_ID,
-                ProviderOutcome::Error,
-                format!("find_references: {error}"),
-            )),
+            Err(error) => Attempt::Failed(
+                Self::diagnostic(
+                    PrecisionTier::S2,
+                    LspIntelligenceProvider::PROVIDER_ID,
+                    ProviderOutcome::Error,
+                    format!("find_references: {error}"),
+                ),
+                Some(error),
+            ),
         }
     }
 
     async fn attempt_lsp_hierarchy(&self, location: &Location) -> Attempt<TypeHierarchy> {
-        if let Err(diagnostic) = self.gate_lsp_for_location(location, "get_hierarchy").await {
-            return Attempt::Failed(diagnostic);
+        if let Err(diagnostic) = self
+            .gate_lsp_for_location(location, "get_hierarchy", PrecisionTier::S0)
+            .await
+        {
+            return Attempt::Failed(diagnostic, None);
         }
         match self.lsp.get_hierarchy(location).await {
             Ok(hierarchy) => Attempt::Served(hierarchy),
-            Err(error) => Attempt::Failed(Self::diagnostic(
-                PrecisionTier::S2,
-                LspIntelligenceProvider::PROVIDER_ID,
-                ProviderOutcome::Error,
-                format!("get_hierarchy: {error}"),
-            )),
+            Err(error) => Attempt::Failed(
+                Self::diagnostic(
+                    PrecisionTier::S2,
+                    LspIntelligenceProvider::PROVIDER_ID,
+                    ProviderOutcome::Error,
+                    format!("get_hierarchy: {error}"),
+                ),
+                Some(error),
+            ),
         }
     }
 
     async fn attempt_lsp_definition(&self, location: &Location) -> Attempt<Option<Location>> {
-        if let Err(diagnostic) = self.gate_lsp_for_location(location, "get_definition").await {
-            return Attempt::Failed(diagnostic);
+        // S1 is the definition op's lower eligible tier (fixed matrix).
+        if let Err(diagnostic) = self
+            .gate_lsp_for_location(location, "get_definition", PrecisionTier::S1)
+            .await
+        {
+            return Attempt::Failed(diagnostic, None);
         }
         match self.lsp.get_definition(location).await {
             // LSP `Ok(None)` is an authoritative unresolved answer: no
             // lower tier may second-guess it (composite.rs historical rule).
             Ok(definition) => Attempt::Served(definition),
-            Err(error) => Attempt::Failed(Self::diagnostic(
-                PrecisionTier::S2,
-                LspIntelligenceProvider::PROVIDER_ID,
-                ProviderOutcome::Error,
-                format!("get_definition: {error}"),
-            )),
+            Err(error) => Attempt::Failed(
+                Self::diagnostic(
+                    PrecisionTier::S2,
+                    LspIntelligenceProvider::PROVIDER_ID,
+                    ProviderOutcome::Error,
+                    format!("get_definition: {error}"),
+                ),
+                Some(error),
+            ),
         }
     }
 
     async fn attempt_lsp_document_symbols(&self, path: &Path) -> Attempt<Vec<DocumentSymbol>> {
-        if let Err(diagnostic) = self.gate_lsp_for_path(path, "get_document_symbols").await {
-            return Attempt::Failed(diagnostic);
+        if let Err(diagnostic) = self
+            .gate_lsp_for_path(path, "get_document_symbols", PrecisionTier::S0)
+            .await
+        {
+            return Attempt::Failed(diagnostic, None);
         }
         match self.lsp.get_document_symbols(path).await {
             Ok(symbols) if !symbols.is_empty() => Attempt::Served(symbols),
@@ -494,18 +612,24 @@ impl CompositeProvider {
                 ProviderOutcome::Degraded,
                 "get_document_symbols: LSP returned no symbols",
             )),
-            Err(error) => Attempt::Failed(Self::diagnostic(
-                PrecisionTier::S2,
-                LspIntelligenceProvider::PROVIDER_ID,
-                ProviderOutcome::Error,
-                format!("get_document_symbols: {error}"),
-            )),
+            Err(error) => Attempt::Failed(
+                Self::diagnostic(
+                    PrecisionTier::S2,
+                    LspIntelligenceProvider::PROVIDER_ID,
+                    ProviderOutcome::Error,
+                    format!("get_document_symbols: {error}"),
+                ),
+                Some(error),
+            ),
         }
     }
 
     async fn attempt_lsp_hover(&self, location: &Location) -> Attempt<Option<HoverInfo>> {
-        if let Err(diagnostic) = self.gate_lsp_for_location(location, "hover").await {
-            return Attempt::Failed(diagnostic);
+        if let Err(diagnostic) = self
+            .gate_lsp_for_location(location, "hover", PrecisionTier::S0)
+            .await
+        {
+            return Attempt::Failed(diagnostic, None);
         }
         match self.lsp.hover(location).await {
             Ok(Some(info)) if !info.content.is_empty() => {
@@ -524,12 +648,15 @@ impl CompositeProvider {
                 ProviderOutcome::Degraded,
                 "hover: LSP returned no hover",
             )),
-            Err(error) => Attempt::Failed(Self::diagnostic(
-                PrecisionTier::S2,
-                LspIntelligenceProvider::PROVIDER_ID,
-                ProviderOutcome::Error,
-                format!("hover: {error}"),
-            )),
+            Err(error) => Attempt::Failed(
+                Self::diagnostic(
+                    PrecisionTier::S2,
+                    LspIntelligenceProvider::PROVIDER_ID,
+                    ProviderOutcome::Error,
+                    format!("hover: {error}"),
+                ),
+                Some(error),
+            ),
         }
     }
 
@@ -547,12 +674,15 @@ impl CompositeProvider {
                 ProviderOutcome::Degraded,
                 "get_definition: local resolver found no definition",
             )),
-            Err(error) => Attempt::Failed(Self::diagnostic(
-                PrecisionTier::S1,
-                TreesitterFallbackProvider::LOCAL_RESOLVER_PROVIDER_ID,
-                ProviderOutcome::Error,
-                format!("get_definition: {error}"),
-            )),
+            Err(error) => Attempt::Failed(
+                Self::diagnostic(
+                    PrecisionTier::S1,
+                    TreesitterFallbackProvider::LOCAL_RESOLVER_PROVIDER_ID,
+                    ProviderOutcome::Error,
+                    format!("get_definition: {error}"),
+                ),
+                Some(error),
+            ),
         }
     }
 
@@ -561,12 +691,15 @@ impl CompositeProvider {
     async fn attempt_tree_sitter_get_symbols(&self, path: &Path) -> Attempt<Vec<Symbol>> {
         match self.fallback.get_symbols(path).await {
             Ok(symbols) => Attempt::Served(symbols),
-            Err(error) => Attempt::Failed(Self::diagnostic(
-                PrecisionTier::S0,
-                TreesitterFallbackProvider::PROVIDER_ID,
-                ProviderOutcome::Error,
-                format!("get_symbols: {error}"),
-            )),
+            Err(error) => Attempt::Failed(
+                Self::diagnostic(
+                    PrecisionTier::S0,
+                    TreesitterFallbackProvider::PROVIDER_ID,
+                    ProviderOutcome::Error,
+                    format!("get_symbols: {error}"),
+                ),
+                Some(error),
+            ),
         }
     }
 
@@ -581,24 +714,30 @@ impl CompositeProvider {
             .await
         {
             Ok(references) => Attempt::Served(references),
-            Err(error) => Attempt::Failed(Self::diagnostic(
-                PrecisionTier::S0,
-                TreesitterFallbackProvider::PROVIDER_ID,
-                ProviderOutcome::Error,
-                format!("find_references: {error}"),
-            )),
+            Err(error) => Attempt::Failed(
+                Self::diagnostic(
+                    PrecisionTier::S0,
+                    TreesitterFallbackProvider::PROVIDER_ID,
+                    ProviderOutcome::Error,
+                    format!("find_references: {error}"),
+                ),
+                Some(error),
+            ),
         }
     }
 
     async fn attempt_tree_sitter_hierarchy(&self, location: &Location) -> Attempt<TypeHierarchy> {
         match self.fallback.get_hierarchy(location).await {
             Ok(hierarchy) => Attempt::Served(hierarchy),
-            Err(error) => Attempt::Failed(Self::diagnostic(
-                PrecisionTier::S0,
-                TreesitterFallbackProvider::PROVIDER_ID,
-                ProviderOutcome::Error,
-                format!("get_hierarchy: {error}"),
-            )),
+            Err(error) => Attempt::Failed(
+                Self::diagnostic(
+                    PrecisionTier::S0,
+                    TreesitterFallbackProvider::PROVIDER_ID,
+                    ProviderOutcome::Error,
+                    format!("get_hierarchy: {error}"),
+                ),
+                Some(error),
+            ),
         }
     }
 
@@ -608,24 +747,152 @@ impl CompositeProvider {
     ) -> Attempt<Vec<DocumentSymbol>> {
         match self.fallback.get_document_symbols(path).await {
             Ok(symbols) => Attempt::Served(symbols),
-            Err(error) => Attempt::Failed(Self::diagnostic(
-                PrecisionTier::S0,
-                TreesitterFallbackProvider::PROVIDER_ID,
-                ProviderOutcome::Error,
-                format!("get_document_symbols: {error}"),
-            )),
+            Err(error) => Attempt::Failed(
+                Self::diagnostic(
+                    PrecisionTier::S0,
+                    TreesitterFallbackProvider::PROVIDER_ID,
+                    ProviderOutcome::Error,
+                    format!("get_document_symbols: {error}"),
+                ),
+                Some(error),
+            ),
         }
     }
 
     async fn attempt_tree_sitter_hover(&self, location: &Location) -> Attempt<Option<HoverInfo>> {
         match self.fallback.hover(location).await {
             Ok(hover) => Attempt::Served(hover),
-            Err(error) => Attempt::Failed(Self::diagnostic(
-                PrecisionTier::S0,
-                TreesitterFallbackProvider::PROVIDER_ID,
-                ProviderOutcome::Error,
-                format!("hover: {error}"),
-            )),
+            Err(error) => Attempt::Failed(
+                Self::diagnostic(
+                    PrecisionTier::S0,
+                    TreesitterFallbackProvider::PROVIDER_ID,
+                    ProviderOutcome::Error,
+                    format!("hover: {error}"),
+                ),
+                Some(error),
+            ),
+        }
+    }
+
+    // ── Definition/hover chains: deepest-answer tracking (W2) ───────────
+
+    /// Runs the definition chain (S2 → S1) and reports the public tiered
+    /// outcome together with the deepest attempted provider answer.
+    async fn definition_chain(&self, location: &Location) -> ChainOutcome<Option<Location>> {
+        let mut diagnostics = Vec::new();
+        let mut deepest = DeepestAnswer::Miss;
+
+        if self.policy.enabled(PrecisionTier::S2) {
+            match self.attempt_lsp_definition(location).await {
+                // `Ok(None)` is served at S2 and never falls through.
+                Attempt::Served(value) => {
+                    return ChainOutcome {
+                        outcome: self.serve(value, PrecisionTier::S2, diagnostics),
+                        deepest,
+                    };
+                }
+                Attempt::Degraded(d) => {
+                    self.record_failure("get_definition", &d);
+                    deepest = DeepestAnswer::Miss;
+                    diagnostics.push(d);
+                }
+                Attempt::Failed(d, error) => {
+                    self.record_failure("get_definition", &d);
+                    if let Some(error) = error {
+                        deepest = DeepestAnswer::Errored(error);
+                    }
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        if self.policy.enabled(PrecisionTier::S1) {
+            match self.attempt_local_resolver_definition(location).await {
+                Attempt::Served(value) => {
+                    return ChainOutcome {
+                        outcome: self.serve(value, PrecisionTier::S1, diagnostics),
+                        deepest,
+                    };
+                }
+                // S1 is the lowest definition-capable tier: a resolver
+                // `Ok(None)` exhausts the definition chain.
+                Attempt::Degraded(d) => {
+                    self.record_failure("get_definition", &d);
+                    deepest = DeepestAnswer::Miss;
+                    diagnostics.push(d);
+                }
+                Attempt::Failed(d, error) => {
+                    self.record_failure("get_definition", &d);
+                    if let Some(error) = error {
+                        deepest = DeepestAnswer::Errored(error);
+                    }
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        ChainOutcome {
+            outcome: TieredOutcome::Unresolved(diagnostics),
+            deepest,
+        }
+    }
+
+    /// Runs the hover chain (S2 → S0, the latter terminal) and reports the
+    /// public tiered outcome together with the deepest provider answer.
+    async fn hover_chain(&self, location: &Location) -> ChainOutcome<Option<HoverInfo>> {
+        let mut diagnostics = Vec::new();
+        let mut deepest = DeepestAnswer::Miss;
+
+        if self.policy.enabled(PrecisionTier::S2) {
+            match self.attempt_lsp_hover(location).await {
+                Attempt::Served(value) => {
+                    return ChainOutcome {
+                        outcome: self.serve(value, PrecisionTier::S2, diagnostics),
+                        deepest,
+                    };
+                }
+                Attempt::Degraded(d) => {
+                    self.record_failure("hover", &d);
+                    deepest = DeepestAnswer::Miss;
+                    diagnostics.push(d);
+                }
+                Attempt::Failed(d, error) => {
+                    self.record_failure("hover", &d);
+                    if let Some(error) = error {
+                        deepest = DeepestAnswer::Errored(error);
+                    }
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        if self.policy.enabled(PrecisionTier::S0) {
+            match self.attempt_tree_sitter_hover(location).await {
+                // Terminal tier: even a clean miss is the chain's answer.
+                Attempt::Served(value) => {
+                    return ChainOutcome {
+                        outcome: self.serve(value, PrecisionTier::S0, diagnostics),
+                        deepest,
+                    };
+                }
+                Attempt::Degraded(d) => {
+                    self.record_failure("hover", &d);
+                    deepest = DeepestAnswer::Miss;
+                    diagnostics.push(d);
+                }
+                Attempt::Failed(d, error) => {
+                    self.record_failure("hover", &d);
+                    if let Some(error) = error {
+                        deepest = DeepestAnswer::Errored(error);
+                    }
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        ChainOutcome {
+            outcome: TieredOutcome::Unresolved(diagnostics),
+            deepest,
         }
     }
 }
@@ -634,9 +901,11 @@ impl CompositeProvider {
 /// unchanged for `Arc<dyn CodeIntelligenceProvider>` consumers
 /// (`workspace_session`, `lsp_handlers`, CLI, proxy service).
 ///
-/// `Served` maps to the value; `Unresolved` maps to each op's historical
-/// "nothing found" shape — `Ok(None)` for definition/hover, a diagnostic
-/// `Err(Internal)` for the collection ops.
+/// `Served` maps to the value. `Unresolved` for the collection ops maps to
+/// a diagnostic `Err(Internal)`; `get_definition`/`hover` take the deepest
+/// attempted tier's answer — a provider `Err` keeps its original variant
+/// (W2: the pre-e39 passthrough), a clean miss or a gate-only failure stays
+/// `Ok(None)`.
 #[async_trait::async_trait]
 impl CodeIntelligenceProvider for CompositeProvider {
     async fn get_symbols(&self, path: &Path) -> Result<Vec<Symbol>, CodeIntelligenceError> {
@@ -680,10 +949,15 @@ impl CodeIntelligenceProvider for CompositeProvider {
         &self,
         location: &Location,
     ) -> Result<Option<Location>, CodeIntelligenceError> {
-        match self.get_definition_tiered(location).await {
+        let chain = self.definition_chain(location).await;
+        match chain.outcome {
             TieredOutcome::Served(tiered) => Ok(tiered.value),
-            // Historical shape: unresolved definition is not an error.
-            TieredOutcome::Unresolved(_) => Ok(None),
+            // W2: propagate the deepest attempted provider's original error
+            // variant; a clean miss or a gate-only failure stays `Ok(None)`.
+            TieredOutcome::Unresolved(_) => match chain.deepest {
+                DeepestAnswer::Errored(error) => Err(error),
+                DeepestAnswer::Miss => Ok(None),
+            },
         }
     }
 
@@ -700,10 +974,14 @@ impl CodeIntelligenceProvider for CompositeProvider {
     }
 
     async fn hover(&self, location: &Location) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
-        match self.hover_tiered(location).await {
+        let chain = self.hover_chain(location).await;
+        match chain.outcome {
             TieredOutcome::Served(tiered) => Ok(tiered.value),
-            // Historical shape: unresolved hover is not an error.
-            TieredOutcome::Unresolved(_) => Ok(None),
+            // W2: same deepest-answer rule as `get_definition`.
+            TieredOutcome::Unresolved(_) => match chain.deepest {
+                DeepestAnswer::Errored(error) => Err(error),
+                DeepestAnswer::Miss => Ok(None),
+            },
         }
     }
 }
@@ -724,7 +1002,7 @@ impl TieredCodeIntelligenceProvider for CompositeProvider {
                 Attempt::Served(value) => {
                     return self.serve(value, PrecisionTier::S2, diagnostics);
                 }
-                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                Attempt::Degraded(d) | Attempt::Failed(d, _) => {
                     self.record_failure("get_symbols", &d);
                     diagnostics.push(d);
                 }
@@ -737,7 +1015,7 @@ impl TieredCodeIntelligenceProvider for CompositeProvider {
                 Attempt::Served(value) => {
                     return self.serve(value, PrecisionTier::S0, diagnostics);
                 }
-                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                Attempt::Degraded(d) | Attempt::Failed(d, _) => {
                     self.record_failure("get_symbols", &d);
                     diagnostics.push(d);
                 }
@@ -762,7 +1040,7 @@ impl TieredCodeIntelligenceProvider for CompositeProvider {
                 Attempt::Served(value) => {
                     return self.serve(value, PrecisionTier::S2, diagnostics);
                 }
-                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                Attempt::Degraded(d) | Attempt::Failed(d, _) => {
                     self.record_failure("find_references", &d);
                     diagnostics.push(d);
                 }
@@ -777,7 +1055,7 @@ impl TieredCodeIntelligenceProvider for CompositeProvider {
                 Attempt::Served(value) => {
                     return self.serve(value, PrecisionTier::S0, diagnostics);
                 }
-                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                Attempt::Degraded(d) | Attempt::Failed(d, _) => {
                     self.record_failure("find_references", &d);
                     diagnostics.push(d);
                 }
@@ -797,7 +1075,7 @@ impl TieredCodeIntelligenceProvider for CompositeProvider {
                 Attempt::Served(value) => {
                     return self.serve(value, PrecisionTier::S2, diagnostics);
                 }
-                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                Attempt::Degraded(d) | Attempt::Failed(d, _) => {
                     self.record_failure("get_hierarchy", &d);
                     diagnostics.push(d);
                 }
@@ -809,7 +1087,7 @@ impl TieredCodeIntelligenceProvider for CompositeProvider {
                 Attempt::Served(value) => {
                     return self.serve(value, PrecisionTier::S0, diagnostics);
                 }
-                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                Attempt::Degraded(d) | Attempt::Failed(d, _) => {
                     self.record_failure("get_hierarchy", &d);
                     diagnostics.push(d);
                 }
@@ -820,36 +1098,7 @@ impl TieredCodeIntelligenceProvider for CompositeProvider {
     }
 
     async fn get_definition_tiered(&self, location: &Location) -> TieredOutcome<Option<Location>> {
-        let mut diagnostics = Vec::new();
-
-        if self.policy.enabled(PrecisionTier::S2) {
-            match self.attempt_lsp_definition(location).await {
-                // `Ok(None)` is served at S2 and never falls through.
-                Attempt::Served(value) => {
-                    return self.serve(value, PrecisionTier::S2, diagnostics);
-                }
-                Attempt::Degraded(d) | Attempt::Failed(d) => {
-                    self.record_failure("get_definition", &d);
-                    diagnostics.push(d);
-                }
-            }
-        }
-
-        if self.policy.enabled(PrecisionTier::S1) {
-            match self.attempt_local_resolver_definition(location).await {
-                Attempt::Served(value) => {
-                    return self.serve(value, PrecisionTier::S1, diagnostics);
-                }
-                // S1 is the lowest definition-capable tier: a resolver
-                // `Ok(None)` exhausts the definition chain.
-                Attempt::Degraded(d) | Attempt::Failed(d) => {
-                    self.record_failure("get_definition", &d);
-                    diagnostics.push(d);
-                }
-            }
-        }
-
-        TieredOutcome::Unresolved(diagnostics)
+        self.definition_chain(location).await.outcome
     }
 
     async fn get_document_symbols_tiered(&self, path: &Path) -> TieredOutcome<Vec<DocumentSymbol>> {
@@ -860,7 +1109,7 @@ impl TieredCodeIntelligenceProvider for CompositeProvider {
                 Attempt::Served(value) => {
                     return self.serve(value, PrecisionTier::S2, diagnostics);
                 }
-                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                Attempt::Degraded(d) | Attempt::Failed(d, _) => {
                     self.record_failure("get_document_symbols", &d);
                     diagnostics.push(d);
                 }
@@ -872,7 +1121,7 @@ impl TieredCodeIntelligenceProvider for CompositeProvider {
                 Attempt::Served(value) => {
                     return self.serve(value, PrecisionTier::S0, diagnostics);
                 }
-                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                Attempt::Degraded(d) | Attempt::Failed(d, _) => {
                     self.record_failure("get_document_symbols", &d);
                     diagnostics.push(d);
                 }
@@ -883,33 +1132,7 @@ impl TieredCodeIntelligenceProvider for CompositeProvider {
     }
 
     async fn hover_tiered(&self, location: &Location) -> TieredOutcome<Option<HoverInfo>> {
-        let mut diagnostics = Vec::new();
-
-        if self.policy.enabled(PrecisionTier::S2) {
-            match self.attempt_lsp_hover(location).await {
-                Attempt::Served(value) => {
-                    return self.serve(value, PrecisionTier::S2, diagnostics);
-                }
-                Attempt::Degraded(d) | Attempt::Failed(d) => {
-                    self.record_failure("hover", &d);
-                    diagnostics.push(d);
-                }
-            }
-        }
-
-        if self.policy.enabled(PrecisionTier::S0) {
-            match self.attempt_tree_sitter_hover(location).await {
-                Attempt::Served(value) => {
-                    return self.serve(value, PrecisionTier::S0, diagnostics);
-                }
-                Attempt::Degraded(d) | Attempt::Failed(d) => {
-                    self.record_failure("hover", &d);
-                    diagnostics.push(d);
-                }
-            }
-        }
-
-        TieredOutcome::Unresolved(diagnostics)
+        self.hover_chain(location).await.outcome
     }
 }
 
@@ -917,20 +1140,33 @@ impl TieredCodeIntelligenceProvider for CompositeProvider {
 mod tests {
     use super::*;
 
+    /// The old-trait passthrough (W2, task 1.1): a definition query for a
+    /// missing/unreadable file is the deepest provider's error, never a
+    /// synthetic `Ok(None)`. The root does not exist, so the S2 readiness
+    /// gate fails without spawning and the S1 resolver answers with
+    /// `FileNotFound`.
     #[tokio::test]
     async fn test_composite_falls_back_on_error() {
         let provider = CompositeProvider::new(std::path::Path::new("/nonexistent"));
         let loc = Location::new("/nonexistent/test.rs".to_string(), 1, 1);
         let result = provider.get_definition(&loc).await;
-        assert!(result.is_ok() || result.is_err());
+        assert!(
+            matches!(result, Err(CodeIntelligenceError::FileNotFound(_))),
+            "a missing file must surface the original variant: {result:?}"
+        );
     }
 
+    /// The old-trait passthrough (W2, task 1.2): hover for a missing file
+    /// propagates `FileNotFound` instead of swallowing it as `Ok(None)`.
     #[tokio::test]
     async fn test_composite_hover_fallback_on_missing_file() {
         let provider = CompositeProvider::new(std::path::Path::new("/nonexistent"));
         let loc = Location::new("/nonexistent/test.rs".to_string(), 1, 1);
         let result = provider.hover(&loc).await;
-        assert!(result.is_ok() || result.is_err());
+        assert!(
+            matches!(result, Err(CodeIntelligenceError::FileNotFound(_))),
+            "a missing file must surface the original variant: {result:?}"
+        );
     }
 
     /// Design D2 behavior delta: hierarchy attempts the S2 tier before the
@@ -1124,12 +1360,15 @@ mod tests {
         assert!(provider.get_definition(&location).await.unwrap().is_none());
     }
 
-    /// Historical old-trait shape (D2): an unresolved hover is `Ok(None)`,
-    /// not an error, even though the S0 attempt failed.
+    // ── W2: honest old-trait error semantics (RED: tasks 1.1–1.3) ────────
+
+    /// W2 (task 1.1): a definition query for an unreadable file is an error,
+    /// not a clean miss — the deepest provider's original variant survives.
+    /// LSP off keeps the S1 resolver as the deepest attempted tier.
     #[tokio::test]
-    async fn test_hover_unresolved_maps_to_ok_none() {
+    async fn test_definition_missing_file_maps_to_file_not_found() {
         let provider = CompositeProvider::with_policy(
-            std::path::Path::new("/tmp"),
+            std::path::Path::new("/nonexistent"),
             TierPolicy {
                 lsp: false,
                 ..TierPolicy::all()
@@ -1137,11 +1376,229 @@ mod tests {
         );
         let location = Location::new("/nonexistent/missing.rs".to_string(), 1, 1);
 
-        let outcome = provider.hover_tiered(&location).await;
-        assert!(!outcome.is_served());
-        assert_eq!(outcome.diagnostics()[0].attempted_tier, PrecisionTier::S0);
-        assert_eq!(outcome.diagnostics()[0].outcome, ProviderOutcome::Error);
+        let error = provider
+            .get_definition(&location)
+            .await
+            .expect_err("a missing file is an error, not a clean miss");
+        assert!(
+            matches!(error, CodeIntelligenceError::FileNotFound(_)),
+            "the deepest provider's original variant must survive: {error}"
+        );
+    }
+
+    /// W2 (task 1.2): an out-of-range location is the deepest provider's
+    /// `InvalidLocation`, not a clean miss.
+    #[tokio::test]
+    async fn test_definition_out_of_range_location_maps_to_invalid_location() {
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("main.rs");
+        std::fs::write(&file, "fn main() {}\n").unwrap();
+        let location = Location::new(file.to_string_lossy().to_string(), 99, 1);
+
+        let provider = CompositeProvider::with_policy(
+            tmp.path(),
+            TierPolicy {
+                lsp: false,
+                ..TierPolicy::all()
+            },
+        );
+        let error = provider
+            .get_definition(&location)
+            .await
+            .expect_err("an out-of-range position is an error, not a clean miss");
+        assert!(
+            matches!(error, CodeIntelligenceError::InvalidLocation(_)),
+            "the deepest provider's original variant must survive: {error}"
+        );
+    }
+
+    /// W2 (task 1.3): real clean misses keep the historical `Ok(None)` —
+    /// an S1 resolver miss, a terminal S0 hover miss, and a gate-only
+    /// failure with no lower tier attempted.
+    #[tokio::test]
+    async fn test_clean_miss_and_gate_only_failure_stay_ok_none() {
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("main.rs");
+        std::fs::write(
+            &file,
+            "fn main() { missing_symbol(); }\n// no symbol here\n",
+        )
+        .unwrap();
+        let provider = CompositeProvider::with_policy(
+            tmp.path(),
+            TierPolicy {
+                lsp: false,
+                ..TierPolicy::all()
+            },
+        );
+
+        // S1 local resolver: the identifier exists but has no definition.
+        let location = Location::new(file.to_string_lossy().to_string(), 1, 13);
+        assert!(provider.get_definition(&location).await.unwrap().is_none());
+
+        // S0 terminal hover: no identifier at the queried position.
+        let location = Location::new(file.to_string_lossy().to_string(), 2, 1);
         assert!(provider.hover(&location).await.unwrap().is_none());
+
+        // Gate-only failure: an unsupported language cannot even reach the
+        // LSP tier, and no lower tier is enabled — still no error.
+        let unknown = tmp.path().join("notes.unknownlang");
+        std::fs::write(&unknown, "nothing\n").unwrap();
+        let gate_only = CompositeProvider::with_policy(
+            tmp.path(),
+            TierPolicy {
+                local_resolver: false,
+                tree_sitter: false,
+                ..TierPolicy::all()
+            },
+        );
+        let location = Location::new(unknown.to_string_lossy().to_string(), 1, 1);
+        assert!(gate_only.get_definition(&location).await.unwrap().is_none());
+    }
+
+    // ── W3: bounded fallback readiness (RED: tasks 3.1–3.2) ──────────────
+
+    /// W3 (task 3.1): the S2 readiness fallback bound defaults to 2s.
+    #[test]
+    fn test_fallback_readiness_defaults_to_two_seconds() {
+        assert_eq!(
+            TierPolicy::all().fallback_readiness,
+            Duration::from_secs(2),
+            "the default S2 fallback readiness is 2s"
+        );
+    }
+
+    /// W3 (task 3.1): an enabled lower tier bounds readiness at
+    /// `min(wait, fallback_readiness)`; a policy-disabled lower tier keeps
+    /// the full wait (nothing below can serve, so S2 gets the whole budget).
+    #[test]
+    fn test_readiness_budget_uses_the_fallback_bound_only_with_a_lower_tier() {
+        let bounded = TierPolicy {
+            fallback_readiness: Duration::from_millis(150),
+            ..TierPolicy::all()
+        };
+        assert_eq!(
+            bounded.readiness_budget(30, PrecisionTier::S0),
+            Duration::from_millis(150)
+        );
+        assert_eq!(
+            bounded.readiness_budget(30, PrecisionTier::S1),
+            Duration::from_millis(150)
+        );
+        // The shorter full wait wins: the bound never extends it.
+        assert_eq!(
+            TierPolicy::all().readiness_budget(1, PrecisionTier::S0),
+            Duration::from_secs(1)
+        );
+
+        let no_lower_tier = TierPolicy {
+            lsp: true,
+            local_resolver: false,
+            tree_sitter: false,
+            ..TierPolicy::all()
+        };
+        assert_eq!(
+            no_lower_tier.readiness_budget(30, PrecisionTier::S0),
+            Duration::from_secs(30)
+        );
+        assert_eq!(
+            no_lower_tier.readiness_budget(30, PrecisionTier::S1),
+            Duration::from_secs(30)
+        );
+    }
+
+    /// W3 (task 3.2): the readiness wrapper cuts a hanging readiness at the
+    /// bound — it never waits for the provider's own request timeout.
+    #[tokio::test]
+    async fn test_bounded_readiness_cuts_a_hanging_readiness() {
+        let budget = Duration::from_millis(100);
+        let started = std::time::Instant::now();
+        let result = CompositeProvider::readiness_within(
+            budget,
+            std::future::pending::<Result<(), LspProcessError>>(),
+        )
+        .await;
+        let elapsed = started.elapsed();
+
+        assert!(result.is_err(), "the hanging readiness must expire");
+        assert!(
+            elapsed >= budget,
+            "the bound must not cut early: {elapsed:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "the wait must stay far below the 30s initialize timeout: {elapsed:?}"
+        );
+    }
+
+    /// W3 (task 3.2): with a lower tier enabled, `get_hierarchy` falls
+    /// through on the bound instead of paying the full S2 readiness wait
+    /// (`LspProcess::initialize` has its own 30s request timeout). PATH-gated
+    /// on the Rust server binary, like the e39 Java conformance branch:
+    /// without a spawnable server the gate fails immediately and cannot time
+    /// out.
+    #[tokio::test]
+    async fn test_hierarchy_falls_through_within_the_bounded_readiness() {
+        if !binary_on_path("rust-analyzer") {
+            println!(
+                "skipped: rust-analyzer is not on PATH; the bounded fall-through \
+                 needs a spawnable server"
+            );
+            return;
+        }
+
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("sample.rs");
+        std::fs::write(&file, "fn helper() {}\n").unwrap();
+        let location = Location::new(file.to_string_lossy().to_string(), 1, 4);
+
+        let provider = CompositeProvider::with_policy(
+            tmp.path(),
+            TierPolicy {
+                fallback_readiness: Duration::from_millis(50),
+                ..TierPolicy::all()
+            },
+        );
+        let started = std::time::Instant::now();
+        let outcome = provider.get_hierarchy_tiered(&location).await;
+        let elapsed = started.elapsed();
+
+        assert!(
+            !outcome.is_served(),
+            "tree-sitter cannot serve hierarchy: {outcome:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "the bound must cut the wait far below the 30s request timeout: {elapsed:?}"
+        );
+        let diagnostics = outcome.diagnostics();
+        assert!(
+            diagnostics.iter().any(|d| {
+                d.attempted_tier == PrecisionTier::S2
+                    && d.outcome == ProviderOutcome::Unavailable
+                    && d.message.contains("bounded fallback")
+            }),
+            "S2 must record an Unavailable diagnostic naming the bounded fallback: {diagnostics:?}"
+        );
+        let status = provider.status();
+        let s2 = status.tier(PrecisionTier::S2).expect("S2 counters present");
+        assert_eq!((s2.attempts, s2.unavailable), (1, 1));
+        let s0 = status.tier(PrecisionTier::S0).expect("S0 counters present");
+        assert_eq!((s0.attempts, s0.errors), (1, 1));
+    }
+
+    /// PATH scan (no spawn) for the bounded-readiness test: mirrors the
+    /// conformance harness probe.
+    fn binary_on_path(binary: &str) -> bool {
+        std::env::var_os("PATH")
+            .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(binary).is_file()))
+            .unwrap_or(false)
     }
 
     /// Historical old-trait shape (D2): an unresolved collection op is
