@@ -33,10 +33,10 @@ This directory holds the architecture decision records (ADRs) for the CogniCode 
 | [ADR-034](./ADR-034-cognicode-distribution-package.md) | Distribution package: cognicode-cli + skill-bundles + IDE adapters | ACCEPTED | 2026-08-10 |
 | [ADR-035](./ADR-035-asdf-vm-version-management-pattern.md) | asdf-vm version-management pattern | ACCEPTED | 2026-08-10 |
 | [ADR-036](./ADR-036-ide-abstraction-portable-skills-per-ide-adapters.md) | IDE abstraction: portable skills + per-IDE adapter plugins | ACCEPTED | 2026-08-10 |
-| [ADR-037](./ADR-037-facts-over-graphs.md) | Facts over Graphs as canonical knowledge | PROPOSED | 2026-09-12 |
-| [ADR-038](./ADR-038-stable-entity-identity.md) | Stable Entity Identity separated from Occurrence | PROPOSED | 2026-09-12 |
+| [ADR-037](./ADR-037-facts-over-graphs.md) | Facts over Graphs as canonical knowledge | ACCEPTED | 2026-09-12 |
+| [ADR-038](./ADR-038-stable-entity-identity.md) | Stable Entity Identity separated from Occurrence | ACCEPTED | 2026-09-12 |
 | [ADR-039](./ADR-039-snapshot-experiment-model.md) | Snapshots as reproducible analysis experiments | PROPOSED | 2026-09-12 |
-| [ADR-040](./ADR-040-provenance-evidence-hypothesis.md) | Separate Fact, Evidence and Hypothesis | PROPOSED | 2026-09-12 |
+| [ADR-040](./ADR-040-provenance-evidence-hypothesis.md) | Separate Fact, Evidence and Hypothesis | ACCEPTED | 2026-09-12 |
 | [ADR-041](./ADR-041-storage-vs-compute-separation.md) | Storage backend separated from incremental compute | PROPOSED | 2026-09-12 |
 | [ADR-042](./ADR-042-detector-ir-escalation.md) | Detector IR with cost-aware escalation | PROPOSED | 2026-09-12 |
 | [ADR-043](./ADR-043-intelligence-event-log.md) | Intelligence Event Log for causal operational history | PROPOSED | 2026-09-12 |

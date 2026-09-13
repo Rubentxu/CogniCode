@@ -59,10 +59,10 @@ Fully additive: feature-flag off, delete new modules; revert restores behavior. 
 
 ## Success Criteria
 
-- [ ] M0: ≥95% critical surfaces under contract/golden fixtures; benchmark in CI; fixtures byte-stable.
-- [ ] M1: lossless round-trip; snapshot-pinned reads never mix snapshots; type contract blocks LLM deterministic provenance.
-- [ ] UAT-U01..U06 pass (see question round).
-- [ ] ADR-037..051 review recorded.
+- [ ] M0: ≥95% critical surfaces under contract/golden fixtures; benchmark in CI; fixtures byte-stable. (NOT met: weighted coverage 33.3% vs ≥95% target — verify-report WARNING 1; fixtures byte-stable and benchmark baseline evidenced)
+- [x] M1: lossless round-trip; snapshot-pinned reads never mix snapshots; type contract blocks LLM deterministic provenance. (verify-report: 9/9 scenarios compliant — round-trip, pinned-read, LlmAgent-rejection tests)
+- [ ] UAT-U01..U06 pass (see question round). (deferred, A5)
+- [x] ADR-037..051 review recorded. (adr-review.md carries ADR-037..051 verdicts)
 
 ## Proposal question round
 

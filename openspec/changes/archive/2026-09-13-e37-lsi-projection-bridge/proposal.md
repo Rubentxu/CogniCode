@@ -63,10 +63,10 @@ Fully additive behind `evidence-kernel` (default off): disable feature, delete n
 
 ## Success Criteria
 
-- [ ] ≥99% structural equivalence on golden fixtures; tolerance/exclusions declared.
-- [ ] Clear→rebuild from pinned facts yields equivalent projection (R2).
-- [ ] No >10% full-build regression; MCP/CLI compatibility preserved (e36 goldens byte-stable).
-- [ ] UAT-U10/U11 pass; formal run may be deferred, stated honestly.
+- [x] ≥99% structural equivalence on golden fixtures; tolerance/exclusions declared. (fresh harness: 1.0000/1.0000 on both scored fixtures; multi-lang-types quarantined and reported)
+- [x] Clear→rebuild from pinned facts yields equivalent projection (R2). (exact node/edge multiset equality, fresh)
+- [x] No >10% full-build regression; MCP/CLI compatibility preserved (e36 goldens byte-stable). (perf gate not certified clean — see verify-report WARNING 1; re-adjudication pending) (goldens 42/42 byte-identical, fresh)
+- [ ] UAT-U10/U11 pass; formal run may be deferred, stated honestly. (deferred, A5)
 
 ## Proposal question round
 

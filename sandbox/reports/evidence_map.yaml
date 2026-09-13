@@ -189,3 +189,23 @@ openspec-conformance:
 mcp-edge-metadata:
   status: verified
   evidence_path: crates/cognicode-core/src/domain/value_objects/edge_metadata.rs
+lsi-m0-baseline:
+  status: verified
+  evidence_path: openspec/changes/archive/2026-09-13-e36-lsi-evidence-kernel-foundation/verify-report.md
+  evidence_note: 'e36 M0 baseline tooling: golden-fixture byte stability, per-surface coverage, benchmark baseline; verify report PASS WITH WARNINGS (validator-admitted)'
+projection-equivalence-harness:
+  status: verified
+  evidence_path: openspec/changes/archive/2026-09-13-e37-lsi-projection-bridge/verify-report.md
+  evidence_note: 'e37 equivalence + cutover gating: threshold 1.0 on golden fixtures, quarantine, pinned fact-identity digest, no silent cutover; verify report PASS WITH WARNINGS (validator-admitted)'
+generic-graph-projection:
+  status: verified
+  evidence_path: openspec/changes/archive/2026-09-13-e37-lsi-projection-bridge/verify-report.md
+  evidence_note: 'e37 GenericGraph seam (UAT-U11): fact-derived emission of GraphNode/GraphEdge, rebuild equivalence, FactStore-ignorant consumers; verify report PASS WITH WARNINGS (validator-admitted)'
+entity-continuity:
+  status: verified
+  evidence_path: openspec/changes/archive/2026-09-13-e38-lsi-stable-identity/verify-report.md
+  evidence_note: 'e38 stable entity identity: tiered deterministic continuity, fail-closed ambiguity, rename-evidence port, workspace isolation; verify report PASS WITH WARNINGS (validator-admitted)'
+identity-benchmark:
+  status: verified
+  evidence_path: openspec/changes/archive/2026-09-13-e38-lsi-stable-identity/verify-report.md
+  evidence_note: 'e38 identity benchmark: pinned precision/recall/retention gates, ambiguous reported separately, separate convention digest; verify report PASS WITH WARNINGS (validator-admitted)'

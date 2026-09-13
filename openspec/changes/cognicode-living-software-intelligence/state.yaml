@@ -17,6 +17,12 @@ phases:
   spec: {status: done, artifact: specs/ (18 capability deltas), date: pre-2026-09-12}
   design: {status: done, artifact: design.md, date: pre-2026-09-12}
   tasks: {status: done, artifact: tasks.md (groups 1-13), date: pre-2026-09-12}
-  apply: {status: pending, note: executed per-milestone via e36, e37, ...}
+  apply: {status: pending, note: executed per-milestone via e36, e37, ...;
+      implementation slices e36/e37/e38 (M0-M3) archived 2026-09-13 — commits
+      1c1aafff (e36 kernel), 50ffb001 (e37 projection bridge), 5d62e86c (e38
+      stable identity), 74690935 (e36 in-memory store adapters); five promoted
+      capability specs now in openspec/specs/ (lsi-m0-baseline,
+      projection-equivalence-harness, generic-graph-projection,
+      entity-continuity, identity-benchmark)}
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}

@@ -62,12 +62,12 @@ Remove new continuity/port/adapter files + additive edits; drop `just lsi-identi
 
 ## Success Criteria
 
-- [ ] Line-shift identity retention 100% (UAT-U20)
-- [ ] File-move retention ≥99% (UAT-U21)
-- [ ] Controlled rename benchmark ≥95% precision / ≥90% recall (UAT-U22)
-- [ ] Workspace isolation: collisions = 0
-- [ ] Ambiguous never force-matched, fail-closed (ADR-038)
-- [ ] e37 `PINNED_IDENTITY_DIGEST` unchanged (no re-baseline)
+- [x] Line-shift identity retention 100% (UAT-U20) (benchmark gate line_shift_retention=1.0000; formal UAT run deferred, A5)
+- [x] File-move retention ≥99% (UAT-U21) (benchmark gate move_retention=1.0000; formal UAT run deferred, A5)
+- [x] Controlled rename benchmark ≥95% precision / ≥90% recall (UAT-U22) (benchmark gates precision=1.0000, recall=1.0000; formal UAT run deferred, A5)
+- [x] Workspace isolation: collisions = 0 (fresh workspace_isolation.rs: occurrences disjoint, collisions=0)
+- [x] Ambiguous never force-matched, fail-closed (ADR-038) (colliding-names case quarantined with candidates listed, no stable id; Ambiguous terminal per snapshot)
+- [x] e37 `PINNED_IDENTITY_DIGEST` unchanged (no re-baseline) (fresh `just lsi-equivalence` green; digest fnv1a64:efccc22e912913fe byte-untouched)
 
 ## Proposal question round
 
