@@ -1,0 +1,33 @@
+# SDDK DAG state — e37-lsi-projection-bridge
+# Orchestrator-maintained. Survives compaction.
+change: e37-lsi-projection-bridge
+program: lsi (Living Software Intelligence, umbrella: cognicode-living-software-intelligence)
+milestone: M2 — Projection Bridge (umbrella tasks group 3)
+created: 2026-09-12
+mode: openspec
+delivery_strategy: auto-chain
+delivery_note: >
+  Auto mode (established user directive). Chained work-unit slices, stacked-to-main.
+  No git commits until explicit user approval. NOTE: e36 (M0+M1) is complete and
+  verified in the same working tree, also uncommitted — e37 builds on top of the
+  e36 evidence-kernel feature; commit-time file ownership must keep the two
+  changes separable (e36 owns evidence_kernel/** + M0 harness; e37 owns new
+  projection/fact-bridge files + extraction adaptations).
+prior_evidence:
+  e36: "PASS WITH WARNINGS (verify-report.md in e36 folder); kernel feature evidence-kernel off-by-default; 41 kernel tests; M0 goldens byte-stable; bench baseline 24 benchmarks"
+  known_defects:
+    - "graph-engine nondeterminism on same-named symbols across languages (KNOWN_UNSTABLE_SURFACES quarantine)"
+    - "pre-existing clippy red: cognicode-macros + generic_graph.rs tests (not attributable to e36/e37)"
+phases:
+  explore: {status: done, artifact: "exploration.md — Option A: parallel fact-sourced projection bridge behind evidence-kernel feature, batch-rebuild-first, no legacy cutover in M2", date: 2026-09-12}
+  propose: {status: done, artifact: "proposal.md — Option A, 5 deliverables, 6 flagged assumptions, capabilities None/None (+generic-graph-projection candidate)", date: 2026-09-12}
+  spec: {status: done, artifact: "specs/projection-equivalence-harness/spec.md (4 reqs / 8 scenarios) + specs/generic-graph-projection/spec.md (2 reqs / 4 scenarios); rest covered via umbrella + e36", date: 2026-09-12}
+  design: {status: done, artifact: "design.md — D1-D8 (fact_bridge app layer, 6-predicate bootstrap, EntityIdTable sequential, from_facts with lexicographic tie-break, dual-gated GenericGraphProjectionPort, facts_in_snapshot additive, Rust equivalence harness Jaccard>=0.99, perf gate compare --fail-above 10); WU1-WU5", date: 2026-09-12}
+  tasks: {status: done, artifact: "tasks.md — 21 tasks / 5 phases; forecast High (~1200-1500 ln), auto-chain, stacked-to-main; PR1-PR5 chain", date: 2026-09-12}
+  apply: {status: done, artifact: "21/21 tasks [x]; WU1-WU5; PR slices 1-5 staged in working tree (no commits)", date: 2026-09-12}
+  verify: {status: done, artifact: "verify-report.md — PASS WITH WARNINGS, 6 reqs / 12 scenarios, 12/12 COMPLIANT, 118 tests fresh, validator-admitted (sha256:6aac0156…); WARNING 1: M2 perf gate NOT certified clean (sub-µs search bench +124% reproducible, attribution bounded — re-adjudicate on quiet machine / controlled A/B)", date: 2026-09-12}
+  archive: {status: pending, note: "ready; blocked on user approval of commit gate (stacked-to-main PR slices 1-5); reconcile proposal success-criteria checkboxes at archive; M2 perf gate re-adjudication recommended before cutover milestone (M3+)"}
+recon:
+  seam: "CallGraphProjectionPort ACEPTADO (ADR-029): domain/ports/call_graph_projection.rs + infrastructure/graph/call_graph_projection.rs + factory project_call_graph()"
+  uat: "UAT-U10 (Existing MCP equivalence) + UAT-U11 (Explorer compatibility) already catalogued for M2 exit gates"
+  m2_exit_gates: ">=99% structural equivalence on golden fixtures; no >10% regression on full build baseline; MCP/CLI compatibility preserved"

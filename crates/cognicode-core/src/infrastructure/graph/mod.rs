@@ -17,6 +17,10 @@
 pub mod analytics;
 mod call_graph_projection;
 pub mod checkpoint;
+// E37 design D5 — fact-derived generic graph projection, dual-gated (the
+// port consumes evidence-kernel facts and emits multimodal graph types).
+#[cfg(all(feature = "evidence-kernel", feature = "multimodal"))]
+pub mod generic_graph_projection;
 pub mod graph_cache;
 mod lightweight_index;
 mod on_demand_graph;
@@ -41,6 +45,8 @@ pub use crate::domain::ports::call_graph_projection::{
 };
 pub use call_graph_projection::CallGraphProjection;
 pub use checkpoint::{CheckpointId, VersionedGraphCache};
+#[cfg(all(feature = "evidence-kernel", feature = "multimodal"))]
+pub use generic_graph_projection::FactGenericGraphProjection;
 pub use graph_cache::{DEFAULT_RETENTION, GraphCache};
 pub use lightweight_index::{LightweightIndex, SymbolLocation};
 pub use on_demand_graph::{

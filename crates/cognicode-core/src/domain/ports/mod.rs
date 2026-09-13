@@ -47,6 +47,12 @@ pub mod revision_store;
 pub mod session_store;
 pub mod view_spec_store;
 
+// E37 design D5 — generic graph projection port, dual-gated: facts come
+// from the evidence kernel and the output types from the multimodal
+// Generic Graph Layer.
+#[cfg(all(feature = "evidence-kernel", feature = "multimodal"))]
+pub mod generic_graph_projection;
+
 pub use adr_repository::{AdrError, AdrRepository, AdrStatus, AdrSummary};
 pub use call_graph_projection::{
     CallGraphProjectionPort, ExplanationHop, ExplanationView, ProjectionError, SubgraphDirection,
@@ -57,6 +63,8 @@ pub use doc_repository::{DocError, DocRepository, DocSummary};
 pub use evidence_store::{EvidenceError, EvidenceKind, EvidenceStore, EvidenceSummary};
 #[cfg(feature = "multimodal")]
 pub use federation_store::{FederationError, FederationStore};
+#[cfg(all(feature = "evidence-kernel", feature = "multimodal"))]
+pub use generic_graph_projection::{GenericGraphProjectionPort, GenericProjection};
 pub use graph_error::{GraphError, GraphResult};
 pub use graph_repository::{GraphRepository, SearchPage};
 #[cfg(feature = "multimodal")]

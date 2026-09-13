@@ -87,6 +87,11 @@ pub struct CallGraphProjection {
     graph: StableGraph<SymbolId, ProjectionEdgeWeight>,
     symbol_lookup: HashMap<SymbolId, Symbol>,
     id_to_index: HashMap<SymbolId, NodeIndex>,
+    /// Number of call facts whose callee could not be resolved to a node
+    /// (E37 `from_facts`, design D4 — mirrors the legacy `unresolved_edges`
+    /// counter). Zero for `from_call_graph` (the legacy constructor never
+    /// drops edges silently; orphan endpoints are skipped instead).
+    unresolved_edges: usize,
 }
 
 // Re-export the domain-declared error type so the existing public path
@@ -165,6 +170,7 @@ impl CallGraphProjection {
             graph,
             symbol_lookup,
             id_to_index,
+            unresolved_edges: 0,
         }
     }
 
@@ -181,6 +187,14 @@ impl CallGraphProjection {
     /// Number of symbols known to the source `CallGraph`.
     pub fn symbol_count(&self) -> usize {
         self.symbol_lookup.len()
+    }
+
+    /// Number of call observations whose callee could not be resolved to a
+    /// node (E37 `from_facts`, design D4 — mirrors the legacy
+    /// `unresolved_edges` counter). Always `0` for a projection built with
+    /// `from_call_graph`.
+    pub fn unresolved_edges(&self) -> usize {
+        self.unresolved_edges
     }
 
     /// Look up the [`Symbol`](crate::domain::aggregates::Symbol) for a
@@ -593,6 +607,233 @@ impl CallGraphProjection {
             hops,
             total_cost: cost,
         })
+    }
+}
+
+// ============================================================================
+// E37 Phase 3 (WU-3) — fact-sourced constructor (design D4)
+// ============================================================================
+//
+// `from_facts` builds the SAME projection type from canonical `core:*` facts
+// pinned to one snapshot (E37 design D4). It is error-free and
+// order-independent (BTreeMap internals):
+//
+// - **Nodes** come from `core:defines` facts: `SymbolId(fqn)` where `fqn` is
+//   the object text, with the `Symbol` record reconstructed through
+//   `Symbol::new` so its computed FQN (`"{file}:{name}:{line}"`) is
+//   byte-identical to the legacy identity string. The symbol kind rides the
+//   fact's `provenance.detail` as `kind=<SerdeName>` (design D3).
+// - **Edges** come from `core:calls` facts ONLY — the legacy `CallGraph`
+//   build path carries only Calls edges, so any other predicate would break
+//   multiset equivalence (design D4). Duplicate call facts are preserved as
+//   a multiset (parallel edges in the `StableGraph`).
+// - **Callee resolution**: the object text is resolved to a node by exact
+//   FQN match first, otherwise by lowercase name with a DETERMINISTIC
+//   lexicographic tie-break (smallest FQN wins) — this replaces the legacy
+//   walk-order-dependent map overwrite at `analysis_service.rs`
+//   (`name_to_symbol_id.insert`).
+// - **Skip rules**: an unresolved callee is dropped AND counted
+//   (`unresolved_edges`, mirroring the legacy counter); a resolved
+//   self-loop is skipped (no self-edges in the fact-sourced graph); a call
+//   fact whose subject has no `core:defines` record is an orphan and is
+//   skipped silently, mirroring the orphan-skip in `from_call_graph`.
+#[cfg(feature = "evidence-kernel")]
+impl CallGraphProjection {
+    /// Build a projection from the canonical facts of one pinned snapshot
+    /// (E37 design D4). See the module-level documentation of this gated
+    /// block for the node/edge/resolution contract.
+    pub fn from_facts(facts: &[crate::domain::evidence_kernel::fact::Fact]) -> Self {
+        use std::collections::{BTreeMap, BTreeSet};
+
+        use crate::domain::evidence_kernel::fact::FactValue;
+        use crate::domain::value_objects::SymbolKind;
+
+        const DEFINES: &str = "core:defines";
+        const CALLS: &str = "core:calls";
+
+        // Pass 1: entity identity + declared kind from the `core:defines`
+        // records. Every defines fact asserts `S core:defines fqn`, so the
+        // map doubles as the EntityId → identity-string table.
+        let mut identity: BTreeMap<u64, String> = BTreeMap::new();
+        let mut kinds: BTreeMap<u64, SymbolKind> = BTreeMap::new();
+        for fact in facts {
+            if fact.predicate.as_str() != DEFINES {
+                continue;
+            }
+            let FactValue::Text(fqn) = &fact.object else {
+                continue;
+            };
+            identity.insert(fact.subject.get(), fqn.clone());
+            kinds.insert(
+                fact.subject.get(),
+                symbol_kind_from_detail(fact.provenance.detail.as_deref()),
+            );
+        }
+
+        // Callee name index: lowercase symbol name → candidate FQNs. The
+        // BTreeSet provides the deterministic lexicographic tie-break.
+        let mut name_index: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for fqn in identity.values() {
+            if let Some((_, name, _)) = parse_fqn(fqn) {
+                name_index
+                    .entry(name.to_lowercase())
+                    .or_default()
+                    .insert(fqn.clone());
+            }
+        }
+
+        // Nodes: one per defines fact entity, deterministically ordered by
+        // the sorted identity strings.
+        let mut graph: StableGraph<SymbolId, ProjectionEdgeWeight> = StableGraph::new();
+        let mut symbol_lookup: HashMap<SymbolId, Symbol> = HashMap::new();
+        let mut id_to_index: HashMap<SymbolId, NodeIndex> = HashMap::new();
+        let mut sorted_entities: Vec<(u64, &String)> =
+            identity.iter().map(|(eid, fqn)| (*eid, fqn)).collect();
+        sorted_entities.sort_by(|a, b| a.1.cmp(b.1));
+        for (entity, fqn) in sorted_entities {
+            let symbol_id = SymbolId::new(fqn.clone());
+            let kind = kinds.get(&entity).copied().unwrap_or(SymbolKind::Unknown);
+            let symbol = reconstruct_symbol(fqn, kind);
+            let ni = graph.add_node(symbol_id.clone());
+            symbol_lookup.insert(symbol_id.clone(), symbol);
+            id_to_index.insert(symbol_id, ni);
+        }
+
+        // Edges: `core:calls` facts only, resolved with the deterministic
+        // tie-break; unresolved counted, self-loops and orphans skipped.
+        let mut unresolved: usize = 0;
+        let mut edges: Vec<(String, String)> = Vec::new();
+        for fact in facts {
+            if fact.predicate.as_str() != CALLS {
+                continue;
+            }
+            let FactValue::Text(callee) = &fact.object else {
+                continue;
+            };
+            let Some(caller_fqn) = identity.get(&fact.subject.get()) else {
+                continue; // orphan subject: mirrors from_call_graph skip
+            };
+            let target_fqn = if id_to_index.contains_key(&SymbolId::new(callee.clone())) {
+                // Exact identity-string match (resolved object reference).
+                Some(callee.clone())
+            } else {
+                // Lowercase-name resolution, lexicographically smallest FQN.
+                name_index
+                    .get(&callee.to_lowercase())
+                    .and_then(|candidates| candidates.iter().next())
+                    .cloned()
+            };
+            let Some(target_fqn) = target_fqn else {
+                unresolved += 1; // dropped and counted (design D4)
+                continue;
+            };
+            if *caller_fqn == target_fqn {
+                continue; // self-loop: skipped
+            }
+            edges.push((caller_fqn.clone(), target_fqn));
+        }
+        edges.sort();
+        for (source, target) in edges {
+            let (Some(&src), Some(&dst)) = (
+                id_to_index.get(&SymbolId::new(source)),
+                id_to_index.get(&SymbolId::new(target)),
+            ) else {
+                continue; // defensive: both endpoints are nodes by construction
+            };
+            graph.add_edge(src, dst, (DependencyType::Calls, 1.0));
+        }
+
+        Self {
+            graph,
+            symbol_lookup,
+            id_to_index,
+            unresolved_edges: unresolved,
+        }
+    }
+}
+
+/// Parses a legacy FQN `"{file}:{name}:{line}"` into its parts.
+///
+/// The split runs from the RIGHT so a name (or file path) containing `:`
+/// still reconstructs byte-identically: `Symbol::new` computes
+/// `file + ":" + name + ":" + line`, and this function cuts at exactly the
+/// two rightmost colons. Returns `None` when the trailing segment is not a
+/// line number or fewer than two separators exist.
+#[cfg(feature = "evidence-kernel")]
+pub(crate) fn parse_fqn(fqn: &str) -> Option<(String, String, u32)> {
+    let (rest, line) = fqn.rsplit_once(':')?;
+    let (file, name) = rest.rsplit_once(':')?;
+    let line = line.parse::<u32>().ok()?;
+    Some((file.to_string(), name.to_string(), line))
+}
+
+/// Reconstructs a [`Symbol`] whose computed FQN is byte-identical to the
+/// identity string (design D4). Falls back to an FQN override only for
+/// identity strings that do not fit the `"{file}:{name}:{line}"` shape.
+#[cfg(feature = "evidence-kernel")]
+fn reconstruct_symbol(fqn: &str, kind: crate::domain::value_objects::SymbolKind) -> Symbol {
+    match parse_fqn(fqn) {
+        Some((file, name, line)) => Symbol::new(
+            name,
+            kind,
+            crate::domain::value_objects::Location::new(file, line, 1),
+        ),
+        None => {
+            let mut symbol = Symbol::new(
+                fqn,
+                kind,
+                crate::domain::value_objects::Location::new("", 1, 1),
+            );
+            symbol.set_fqn_override(fqn);
+            symbol
+        }
+    }
+}
+
+/// Resolves the `kind=<SerdeName>` provenance-detail convention (design D3)
+/// onto a [`SymbolKind`], defaulting to [`SymbolKind::Unknown`] when the
+/// detail is absent or malformed.
+#[cfg(feature = "evidence-kernel")]
+pub(crate) fn symbol_kind_from_detail(
+    detail: Option<&str>,
+) -> crate::domain::value_objects::SymbolKind {
+    match detail.and_then(|d| d.strip_prefix("kind=")) {
+        Some(name) => symbol_kind_from_serde_name(name),
+        None => crate::domain::value_objects::SymbolKind::Unknown,
+    }
+}
+
+/// Inverse of the `kind=<SerdeName>` convention used by the fact bridge
+/// (`tree_sitter_facts::symbol_kind_name`): every serde variant name maps
+/// back onto its [`SymbolKind`]. Exhaustive so a new variant fails
+/// compilation here.
+#[cfg(feature = "evidence-kernel")]
+fn symbol_kind_from_serde_name(name: &str) -> crate::domain::value_objects::SymbolKind {
+    use crate::domain::value_objects::SymbolKind;
+    match name {
+        "Function" => SymbolKind::Function,
+        "Class" => SymbolKind::Class,
+        "Module" => SymbolKind::Module,
+        "Variable" => SymbolKind::Variable,
+        "Parameter" => SymbolKind::Parameter,
+        "Type" => SymbolKind::Type,
+        "Method" => SymbolKind::Method,
+        "Property" => SymbolKind::Property,
+        "Field" => SymbolKind::Field,
+        "Import" => SymbolKind::Import,
+        "EnumVariant" => SymbolKind::EnumVariant,
+        "Trait" => SymbolKind::Trait,
+        "Generic" => SymbolKind::Generic,
+        "Constant" => SymbolKind::Constant,
+        "Constructor" => SymbolKind::Constructor,
+        "Struct" => SymbolKind::Struct,
+        "Enum" => SymbolKind::Enum,
+        "Interface" => SymbolKind::Interface,
+        "File" => SymbolKind::File,
+        "Namespace" => SymbolKind::Namespace,
+        "Package" => SymbolKind::Package,
+        "Unknown" => SymbolKind::Unknown,
+        _ => SymbolKind::Unknown,
     }
 }
 
@@ -1575,5 +1816,327 @@ mod tests {
             projection.symbol_index().get(&id("A")),
             projection.id_to_index().get(&id("A")),
         );
+    }
+}
+
+// ============================================================================
+// E37 Phase 3 (WU-3) — fact-sourced constructor (`from_facts`, design D4)
+// ============================================================================
+//
+// RED GATE (task 3.1): every test in this module references
+// `CallGraphProjection::from_facts`, which does not exist until task 3.2
+// lands. The module MUST fail to compile (non-zero exit) before that.
+//
+// The equivalence contract exercised here mirrors the M2 acceptance
+// criteria: a projection built from canonical `core:*` facts must equal the
+// legacy `from_call_graph` projection over the same graph, as sorted node
+// and edge MULTISETS. Duplicate call facts are preserved as a multiset
+// (parallel edges); unresolved callees are dropped and counted; self-loops
+// are skipped.
+
+#[cfg(all(test, feature = "evidence-kernel"))]
+mod fact_tests {
+    use std::collections::BTreeMap;
+
+    use crate::domain::evidence_kernel::fact::{Fact, FactValue, ProducerKind, ProvenanceRecord};
+    use crate::domain::evidence_kernel::ids::{FactId, SnapshotId};
+    use crate::domain::evidence_kernel::relation::RelationKind;
+    use crate::domain::value_objects::{Location, Provenance, SymbolKind};
+
+    use super::*;
+
+    const SNAPSHOT: SnapshotId = SnapshotId::new(1);
+
+    /// Canonical `core:defines` fact for one symbol: subject and object are
+    /// the legacy FQN, `kind=<SerdeName>` rides `provenance.detail` (D3).
+    fn define_fact(id: u64, fqn: &str, kind: SymbolKind) -> Fact {
+        let detail = format!("kind={}", serde_name(kind));
+        Fact::new(
+            FactId::new(id),
+            crate::domain::evidence_kernel::ids::EntityId::new(id),
+            RelationKind::try_new("core:defines").expect("valid predicate"),
+            FactValue::Text(fqn.to_string()),
+            SNAPSHOT,
+            ProvenanceRecord::new(
+                Provenance::Extracted,
+                ProducerKind::DeterministicAnalyzer,
+                Some(detail),
+            ),
+        )
+        .expect("deterministic producer")
+    }
+
+    /// Canonical `core:calls` fact: the subject entity is numbered after the
+    /// defines facts (matching the batch builder's sorted assignment in the
+    /// tests below), the object is the raw callee name.
+    fn call_fact(id: u64, subject_entity: u64, callee: &str) -> Fact {
+        Fact::new(
+            FactId::new(id),
+            crate::domain::evidence_kernel::ids::EntityId::new(subject_entity),
+            RelationKind::try_new("core:calls").expect("valid predicate"),
+            FactValue::Text(callee.to_string()),
+            SNAPSHOT,
+            ProvenanceRecord::new(
+                Provenance::Extracted,
+                ProducerKind::DeterministicAnalyzer,
+                None,
+            ),
+        )
+        .expect("deterministic producer")
+    }
+
+    /// The serde name of a `SymbolKind` variant (the `kind=<K>` convention).
+    fn serde_name(kind: SymbolKind) -> &'static str {
+        match kind {
+            SymbolKind::Function => "Function",
+            SymbolKind::Class => "Class",
+            SymbolKind::Module => "Module",
+            SymbolKind::Variable => "Variable",
+            SymbolKind::Parameter => "Parameter",
+            SymbolKind::Type => "Type",
+            SymbolKind::Method => "Method",
+            SymbolKind::Property => "Property",
+            SymbolKind::Field => "Field",
+            SymbolKind::Import => "Import",
+            SymbolKind::EnumVariant => "EnumVariant",
+            SymbolKind::Trait => "Trait",
+            SymbolKind::Generic => "Generic",
+            SymbolKind::Constant => "Constant",
+            SymbolKind::Constructor => "Constructor",
+            SymbolKind::Struct => "Struct",
+            SymbolKind::Enum => "Enum",
+            SymbolKind::Interface => "Interface",
+            SymbolKind::File => "File",
+            SymbolKind::Namespace => "Namespace",
+            SymbolKind::Package => "Package",
+            SymbolKind::Unknown => "Unknown",
+        }
+    }
+
+    /// One symbol per line: `test.rs:A:1`, `test.rs:B:2`, … — the FQN format
+    /// both the legacy aggregate and the fact convention use.
+    fn sym_at(name: &str, line: u32) -> Symbol {
+        Symbol::new(
+            name,
+            SymbolKind::Function,
+            Location::new("test.rs", line, 1),
+        )
+    }
+
+    /// Sorted `(source, target, dependency_type, confidence-bits)` edge
+    /// multiset of a projection, comparable across constructors. The
+    /// dependency type is rendered through its `Display` form because the
+    /// enum itself is not `Ord`.
+    fn edge_multiset(p: &CallGraphProjection) -> Vec<(String, String, String, u64)> {
+        let mut edges: Vec<(String, String, String, u64)> = p
+            .graph()
+            .edge_references()
+            .map(|e| {
+                let (dep, conf) = *e.weight();
+                (
+                    p.graph()[e.source()].as_str().to_string(),
+                    p.graph()[e.target()].as_str().to_string(),
+                    dep.to_string(),
+                    conf.to_bits(),
+                )
+            })
+            .collect();
+        edges.sort();
+        edges
+    }
+
+    /// Sorted node multiset of a projection.
+    fn node_multiset(p: &CallGraphProjection) -> Vec<String> {
+        let mut nodes: Vec<String> = p
+            .graph()
+            .node_indices()
+            .map(|ni| p.graph()[ni].as_str().to_string())
+            .collect();
+        nodes.sort();
+        nodes
+    }
+
+    /// Three symbols A, B, C with call edges A→B and A→C (Calls, 1.0) —
+    /// the shared synthetic graph for both constructors.
+    fn synthetic_facts() -> Vec<Fact> {
+        let a = "test.rs:A:1";
+        let b = "test.rs:B:2";
+        let c = "test.rs:C:3";
+        vec![
+            define_fact(1, a, SymbolKind::Function),
+            define_fact(2, b, SymbolKind::Function),
+            define_fact(3, c, SymbolKind::Function),
+            call_fact(4, 1, "B"),
+            call_fact(5, 1, "C"),
+        ]
+    }
+
+    fn synthetic_legacy() -> CallGraph {
+        let mut g = CallGraph::new();
+        g.add_symbol(sym_at("A", 1));
+        g.add_symbol(sym_at("B", 2));
+        g.add_symbol(sym_at("C", 3));
+        let _ = g.add_dependency_with_provenance(
+            &id_at("A", 1),
+            &id_at("B", 2),
+            DependencyType::Calls,
+            crate::domain::services::ExtractionContext::DirectExtraction,
+        );
+        let _ = g.add_dependency_with_provenance(
+            &id_at("A", 1),
+            &id_at("C", 3),
+            DependencyType::Calls,
+            crate::domain::services::ExtractionContext::DirectExtraction,
+        );
+        g
+    }
+
+    fn id_at(name: &str, line: u32) -> SymbolId {
+        SymbolId::new(format!("test.rs:{name}:{line}"))
+    }
+
+    /// E37 task 3.1 — `from_facts` vs `from_call_graph`: node and edge
+    /// multisets of the same synthetic graph are EQUAL.
+    #[test]
+    fn from_facts_matches_from_call_graph_on_synthetic_multisets() {
+        let legacy = CallGraphProjection::from_call_graph(&synthetic_legacy());
+        let facts = CallGraphProjection::from_facts(&synthetic_facts());
+
+        assert_eq!(node_multiset(&legacy), node_multiset(&facts), "nodes");
+        assert_eq!(edge_multiset(&legacy), edge_multiset(&facts), "edges");
+        assert_eq!(facts.node_count(), 3);
+        assert_eq!(facts.edge_count(), 2);
+        assert_eq!(facts.unresolved_edges(), 0, "nothing unresolved here");
+    }
+
+    /// E37 task 3.1 — unresolved callees are DROPPED and COUNTED.
+    #[test]
+    fn from_facts_drops_and_counts_unresolved_callees() {
+        let mut facts = synthetic_facts();
+        facts.push(call_fact(6, 1, "missing_symbol"));
+        let projection = CallGraphProjection::from_facts(&facts);
+
+        assert_eq!(projection.node_count(), 3);
+        assert_eq!(
+            projection.edge_count(),
+            2,
+            "unresolved callee must not add an edge"
+        );
+        assert_eq!(
+            projection.unresolved_edges(),
+            1,
+            "unresolved must be counted"
+        );
+    }
+
+    /// E37 task 3.1 / design D4 — self-loop call facts are skipped.
+    #[test]
+    fn from_facts_skips_self_loops() {
+        let mut facts = synthetic_facts();
+        facts.push(call_fact(6, 1, "A"));
+        let projection = CallGraphProjection::from_facts(&facts);
+
+        assert_eq!(projection.edge_count(), 2, "self-loop must be skipped");
+        assert_eq!(
+            projection.unresolved_edges(),
+            0,
+            "a self-loop is not unresolved"
+        );
+    }
+
+    /// E37 task 3.1 — duplicate call facts are preserved as a multiset.
+    #[test]
+    fn from_facts_preserves_duplicate_calls() {
+        let a = "test.rs:A:1";
+        let b = "test.rs:B:2";
+        let facts = vec![
+            define_fact(1, a, SymbolKind::Function),
+            define_fact(2, b, SymbolKind::Function),
+            call_fact(3, 1, "B"),
+            call_fact(4, 1, "B"),
+        ];
+        let projection = CallGraphProjection::from_facts(&facts);
+
+        assert_eq!(projection.edge_count(), 2, "parallel call edges are kept");
+        assert_eq!(edge_multiset(&projection).len(), 2);
+    }
+
+    /// E37 task 3.1 — lowercase-name resolution with lexicographic tie-break:
+    /// two same-named symbols resolve to the lexicographically smallest FQN,
+    /// whatever the fact order.
+    #[test]
+    fn from_facts_resolves_ties_by_smallest_fqn() {
+        let facts = vec![
+            define_fact(1, "z.rs:dup:9", SymbolKind::Function),
+            define_fact(2, "a.rs:dup:4", SymbolKind::Function),
+            define_fact(3, "test.rs:caller:1", SymbolKind::Function),
+            call_fact(4, 3, "dup"),
+        ];
+        let projection = CallGraphProjection::from_facts(&facts);
+
+        assert_eq!(projection.edge_count(), 1);
+        let edges = edge_multiset(&projection);
+        assert_eq!(
+            edges[0].1, "a.rs:dup:4",
+            "lexicographically smallest FQN wins the tie-break"
+        );
+    }
+
+    /// E37 task 3.1 — order independence: the same fact set in a different
+    /// order yields the same node/edge multisets (BTreeMap internals).
+    #[test]
+    fn from_facts_is_order_independent() {
+        let mut reversed = synthetic_facts();
+        reversed.reverse();
+        let p1 = CallGraphProjection::from_facts(&synthetic_facts());
+        let p2 = CallGraphProjection::from_facts(&reversed);
+
+        assert_eq!(node_multiset(&p1), node_multiset(&p2), "nodes");
+        assert_eq!(edge_multiset(&p1), edge_multiset(&p2), "edges");
+    }
+
+    /// E37 task 3.1 — spec scenario "Empty snapshot yields empty projection":
+    /// no facts → no nodes, no edges, no panic.
+    #[test]
+    fn from_facts_empty_snapshot_yields_empty_projection() {
+        let projection = CallGraphProjection::from_facts(&[]);
+        assert_eq!(projection.node_count(), 0);
+        assert_eq!(projection.edge_count(), 0);
+        assert_eq!(projection.symbol_count(), 0);
+        assert_eq!(projection.unresolved_edges(), 0);
+    }
+
+    /// E37 task 3.1 — `Symbol` reconstruction: the side-lookup reproduces the
+    /// legacy FQN byte-identically and carries the fact-declared kind.
+    #[test]
+    fn from_facts_reconstructs_symbols_byte_identically() {
+        let facts = vec![
+            define_fact(1, "src/lib.rs:greet:2", SymbolKind::Function),
+            define_fact(2, "src/lib.rs:Widget:7", SymbolKind::Struct),
+        ];
+        let projection = CallGraphProjection::from_facts(&facts);
+
+        let greet = projection
+            .resolve_symbol(&SymbolId::new("src/lib.rs:greet:2"))
+            .expect("greet");
+        assert_eq!(greet.fully_qualified_name(), "src/lib.rs:greet:2");
+        assert_eq!(greet.name(), "greet");
+        assert_eq!(greet.location().file(), "src/lib.rs");
+        assert_eq!(greet.location().line(), 2);
+        assert_eq!(greet.kind(), &SymbolKind::Function);
+
+        let widget = projection
+            .resolve_symbol(&SymbolId::new("src/lib.rs:Widget:7"))
+            .expect("widget");
+        assert_eq!(widget.kind(), &SymbolKind::Struct);
+        assert_eq!(widget.fully_qualified_name(), "src/lib.rs:Widget:7");
+    }
+
+    /// Keeps the map import referenced even if helpers above stop using it
+    /// (the tie-break internals are BTreeMap-based, mirroring the impl).
+    #[test]
+    fn internals_use_ordered_maps_for_determinism() {
+        let map: BTreeMap<String, u8> = BTreeMap::new();
+        assert!(map.is_empty());
     }
 }

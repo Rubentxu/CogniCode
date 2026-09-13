@@ -6,6 +6,8 @@
 pub mod commands;
 pub mod dto;
 pub mod error;
+#[cfg(feature = "evidence-kernel")]
+pub mod fact_bridge;
 pub mod ingest;
 pub mod investigation_service;
 pub mod services;
