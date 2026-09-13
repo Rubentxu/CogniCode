@@ -50,7 +50,9 @@ use crate::domain::value_objects::{
     DependencyType, EdgeKind, NodeKind, Provenance, SymbolKind, WorkspaceId,
 };
 
-use super::call_graph_projection::{parse_fqn, symbol_kind_from_detail};
+use super::call_graph_projection::resolve_callee_identity;
+use crate::domain::evidence_kernel::symbol_fqn::SymbolFqn;
+use crate::domain::evidence_kernel::symbol_kind_detail::SymbolKindDetail;
 
 /// One deduplicated relational edge before GraphNode construction:
 /// `(source, target, predicate)` → provenance class of the observed fact.
@@ -112,9 +114,21 @@ pub(crate) fn build_generic_projection(facts: &[Fact]) -> GenericProjection {
             };
             defines_subjects.insert(fact.subject.get());
             identity.insert(fact.subject.get(), fqn.clone());
+            // Loud kind recovery (E38.1 CP-2): a `core:defines` fact MUST
+            // carry the `kind=<SerdeName>` detail (design D3), so an
+            // undecodable detail is a convention violation and panics — it
+            // is never silently degraded to `SymbolKind::Unknown`.
+            let detail = fact.provenance.detail.as_deref();
             kinds.insert(
                 fact.subject.get(),
-                symbol_kind_from_detail(fact.provenance.detail.as_deref()),
+                SymbolKindDetail::decode(detail.unwrap_or_default()).unwrap_or_else(|| {
+                    panic!(
+                        "core:defines fact (entity {}) carries an undecodable kind \
+                         detail {detail:?}: expected '{}<SerdeName>' (design D3)",
+                        fact.subject.get(),
+                        SymbolKindDetail::PREFIX
+                    )
+                }),
             );
         }
     }
@@ -125,10 +139,12 @@ pub(crate) fn build_generic_projection(facts: &[Fact]) -> GenericProjection {
         let FactValue::Text(fqn) = &fact.object else {
             continue;
         };
-        let Some((file, _, _)) = parse_fqn(fqn) else {
+        let Some(parsed) = SymbolFqn::parse(fqn) else {
             continue;
         };
-        identity.entry(fact.subject.get()).or_insert(file);
+        identity
+            .entry(fact.subject.get())
+            .or_insert_with(|| parsed.file().to_string());
     }
 
     // ── Nodes ──────────────────────────────────────────────────────────
@@ -138,8 +154,15 @@ pub(crate) fn build_generic_projection(facts: &[Fact]) -> GenericProjection {
     for (entity, id_string) in &identity {
         if defines_subjects.contains(entity) {
             let kind = kinds.get(entity).copied().unwrap_or(SymbolKind::Unknown);
-            let (file, name, _) =
-                parse_fqn(id_string).unwrap_or((String::new(), id_string.clone(), 1));
+            let (file, name, _) = SymbolFqn::parse(id_string)
+                .map(|parsed| {
+                    (
+                        parsed.file().to_string(),
+                        parsed.name().to_string(),
+                        parsed.line(),
+                    )
+                })
+                .unwrap_or((String::new(), id_string.clone(), 1));
             symbol_names
                 .entry(name.to_lowercase())
                 .or_default()
@@ -179,14 +202,12 @@ pub(crate) fn build_generic_projection(facts: &[Fact]) -> GenericProjection {
         let Some(source_string) = identity.get(&fact.subject.get()) else {
             continue; // endpoint not an emitted node → skip (dangling-free)
         };
-        let target_string = if nodes.contains_key(target_text) {
-            Some(target_text.clone())
-        } else {
-            symbol_names
-                .get(&target_text.to_lowercase())
-                .and_then(|candidates| candidates.iter().next())
-                .cloned()
-        };
+        // Shared deterministic resolution (E38.1 DUP-7): exact identity
+        // string first, then lowercase name with the lexicographically
+        // smallest FQN tie-break (same rule as `CallGraphProjection`).
+        let target_string = resolve_callee_identity(target_text, &symbol_names, |candidate| {
+            nodes.contains_key(candidate)
+        });
         let Some(target_string) = target_string else {
             continue; // unresolved callee/parent/reference: skipped (design D5)
         };
@@ -266,7 +287,8 @@ mod tests {
             ProvenanceRecord::new(
                 Provenance::Extracted,
                 ProducerKind::DeterministicAnalyzer,
-                Some(format!("kind={}", serde_kind_name(kind))),
+                // E38.1 CP-2: the single codec replaces the local table.
+                Some(SymbolKindDetail::encode(kind)),
             ),
         )
         .expect("deterministic producer")
@@ -316,15 +338,6 @@ mod tests {
             define_fact(5, "src/lib.rs:main:2", SymbolKind::Function),
             call_fact(6, 5, "greet"),
         ]
-    }
-
-    /// The serde name of a `SymbolKind` (mirrors the bridge convention).
-    fn serde_kind_name(kind: SymbolKind) -> &'static str {
-        match kind {
-            SymbolKind::Function => "Function",
-            SymbolKind::File => "File",
-            other => unreachable!("test helper covers {other:?} via full match in impl"),
-        }
     }
 
     /// Spec scenario "Facts map to nodes and edges": emitted nodes

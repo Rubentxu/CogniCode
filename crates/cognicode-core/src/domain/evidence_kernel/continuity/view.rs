@@ -21,6 +21,8 @@ use std::collections::BTreeMap;
 
 use crate::domain::evidence_kernel::fact::{Fact, FactValue};
 use crate::domain::evidence_kernel::ids::{EntityId, SnapshotId};
+use crate::domain::evidence_kernel::symbol_fqn::SymbolFqn;
+use crate::domain::evidence_kernel::symbol_kind_detail::SymbolKindDetail;
 
 /// The definition predicate of the canonical `core:*` vocabulary
 /// (`bootstrap::CORE_RELATIONS`): object = the subject's own FQN.
@@ -104,20 +106,27 @@ fn object_text(object: &FactValue) -> Option<&str> {
 }
 
 /// The symbol kind riding a `core:defines` fact's provenance detail as
-/// `kind=<K>` (design D3). Anything unparsable degrades to the empty kind.
+/// `kind=<K>` (design D3), recovered through the SINGLE codec
+/// ([`SymbolKindDetail`], E38.1 CP-2). A decodable detail yields the
+/// canonical serde name; anything unparsable degrades to the empty kind.
 fn kind_from_detail(detail: Option<&str>) -> String {
     detail
-        .and_then(|d| d.strip_prefix("kind="))
+        .and_then(SymbolKindDetail::decode)
+        .map(|kind| SymbolKindDetail::serde_name(kind).to_string())
         .unwrap_or_default()
-        .to_string()
 }
 
 /// Derives the symbol name from a recovered FQN (v1 heuristic, design D3):
-/// the extractor grammar is `"{file}:{name}:{line}"` (e37 D3 /
-/// `extractor.rs:346`), so the name is the second-to-last `:`-separated
-/// segment. Identity strings with fewer than three segments (foreign fact
-/// producers) fall back to the whole string.
+/// the identity grammar is `"{file}:{name}:{line}"` (e37 D3, centralized in
+/// [`SymbolFqn`] as of E38.1), so the name comes from the typed parser.
+/// Identity strings that do not fit the grammar (foreign fact producers —
+/// fewer than three segments or a non-numeric tail) keep the previous
+/// fallback: the second-to-last `:`-separated segment, or the whole string
+/// when fewer than three segments exist.
 fn symbol_name_from_fqn(fqn: &str) -> String {
+    if let Some(parsed) = SymbolFqn::parse(fqn) {
+        return parsed.name().to_string();
+    }
     let segments: Vec<&str> = fqn.split(':').collect();
     if segments.len() >= 3 {
         segments[segments.len() - 2].to_string()

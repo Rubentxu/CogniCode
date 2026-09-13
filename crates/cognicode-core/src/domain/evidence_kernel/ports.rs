@@ -55,6 +55,11 @@ pub enum KernelError {
     InvalidRevision(RevisionId),
 
     /// Backend failure (storage, serialization).
+    ///
+    /// RESERVED (e36 D4/D6 surface, first consumer pending): no production
+    /// adapter constructs this variant yet (the in-memory adapter is
+    /// infallible) — it is kept as the declared error surface so a future
+    /// I/O-backed store does not reshape the port.
     #[error("kernel store error: {0}")]
     Store(String),
 }
@@ -79,6 +84,11 @@ pub trait FactStore: Send + Sync {
 
     /// All facts of `subject` recorded in `snap` of `ws`. Unknown subjects
     /// yield an empty vector (graceful read degradation).
+    ///
+    /// RESERVED (e36 D4/D6 surface, first consumer pending): no production
+    /// consumer exercises this read yet — it is kept as the declared port
+    /// surface (proven by the in-memory adapter tests) and MUST NOT be
+    /// removed or repurposed until its first consumer lands.
     async fn facts_of(
         &self,
         ws: &WorkspaceId,

@@ -7,7 +7,10 @@
 use std::path::Path;
 
 use crate::application::ingest::types::{ExtractionEdge, ExtractionResult, TargetRef};
+// Un-gated: the identity grammar is shared by the legacy path and the fact
+// path (E38.1 CP-1), so `SymbolFqn` compiles unconditionally.
 use crate::domain::aggregates::{GraphNode, NodeId};
+use crate::domain::evidence_kernel::SymbolFqn;
 use crate::domain::value_objects::{DependencyType, NodeKind, Provenance, SymbolKind};
 use crate::infrastructure::parser::LanguageConfig;
 
@@ -89,6 +92,8 @@ pub fn extract_file(
                 &name,
                 SymbolKind::Function,
                 &source_path_str,
+                // 1-based fact-side line (E38.1 CP-1): `start.row + 1` feeds
+                // `SymbolFqn::from_fact_side` inside `make_symbol_node`.
                 (node.start_position().row + 1) as u32,
                 (node.start_position().column + 1) as u32,
             );
@@ -336,6 +341,12 @@ fn classify_class_type(node_type: &str) -> SymbolKind {
 }
 
 /// Build a `GraphNode` for a symbol + its ID string.
+///
+/// The ID follows the canonical identity grammar `"{file}:{name}:{line}"`
+/// (E38.1 CP-1, centralized in [`SymbolFqn`]); `line` arrives 1-BASED
+/// (`start.row + 1`, the fact-side convention), so this site constructs via
+/// [`SymbolFqn::from_fact_side`] and renders it verbatim — byte-identical to
+/// the historical `format!`.
 fn make_symbol_node(
     name: &str,
     kind: SymbolKind,
@@ -343,7 +354,7 @@ fn make_symbol_node(
     line: u32,
     column: u32,
 ) -> (GraphNode, String) {
-    let id = format!("{}:{}:{}", file_path, name, line);
+    let id = SymbolFqn::from_fact_side(file_path, name, line).assemble();
     let node = GraphNode::builder(NodeId::new(&id), NodeKind::Symbol(kind))
         .label(name.to_string())
         .source_path(std::path::PathBuf::from(file_path))

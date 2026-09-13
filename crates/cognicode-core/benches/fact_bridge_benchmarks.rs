@@ -30,12 +30,17 @@ mod bridge_benches {
     use cognicode_core::domain::evidence_kernel::fact::Fact;
     use cognicode_core::domain::evidence_kernel::ids::SnapshotId;
     use cognicode_core::domain::evidence_kernel::ports::{FactStore, SchemaRegistry};
+    // The generic-projection surface is dual-gated (`evidence-kernel` AND
+    // `multimodal`, DEAD-1): gate these references so the bench compiles
+    // with `evidence-kernel` alone (the two fact-path benches stay valid).
+    #[cfg(feature = "multimodal")]
     use cognicode_core::domain::ports::generic_graph_projection::GenericGraphProjectionPort;
     use cognicode_core::domain::value_objects::WorkspaceId;
     use cognicode_core::infrastructure::evidence_kernel::in_memory::{
         InMemoryFactStore, InMemorySchemaRegistry,
     };
     use cognicode_core::infrastructure::graph::CallGraphProjection;
+    #[cfg(feature = "multimodal")]
     use cognicode_core::infrastructure::graph::generic_graph_projection::FactGenericGraphProjection;
     use cognicode_core::infrastructure::parser::language_config::PYTHON_CONFIG;
 

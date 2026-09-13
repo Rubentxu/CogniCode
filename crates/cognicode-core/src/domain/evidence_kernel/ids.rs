@@ -4,10 +4,12 @@
 //! (`domain::value_objects::revision_id`). `SnapshotId` is bijective with
 //! `RevisionId` per workspace (design D4 / ADR-039): the same numeric value,
 //! rendered as `snap:N` instead of `rev:N`. `SnapshotId(0)` is the invalid
-//! sentinel, mirroring `RevisionId::NONE`.
+//! sentinel, mirroring `RevisionId::NONE`. E38.1 U5 trim: the unused
+//! `FromStr`/`ParseSnapshotIdError`/`to_revision`/`is_valid` surface was
+//! removed — the bijective mapping enters through `SnapshotId::from_revision`
+//! and the `snap:N` form stays `Display`-only.
 
 use std::fmt;
-use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
@@ -46,15 +48,14 @@ impl fmt::Display for EntityId {
 
 /// Identifies one concrete occurrence of an entity (e.g. a specific call
 /// site or definition) within a snapshot.
+///
+/// E38.1 U5 trim: the unused `new` constructor was removed — the only
+/// production entry point is [`OccurrenceId::from_entity`] (the E38 design
+/// D1 wiring), and the raw `u64` stays reachable via the public field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct OccurrenceId(pub u64);
 
 impl OccurrenceId {
-    /// Constructs an `OccurrenceId` from a raw u64.
-    pub const fn new(n: u64) -> Self {
-        Self(n)
-    }
-
     /// Returns the raw u64 value.
     pub const fn get(self) -> u64 {
         self.0
@@ -93,55 +94,15 @@ impl SnapshotId {
         self.0
     }
 
-    /// A snapshot id is valid iff it is not the zero sentinel.
-    pub const fn is_valid(self) -> bool {
-        self.0 > 0
-    }
-
     /// Maps a `RevisionId` onto its bijective `SnapshotId` (design D4).
     pub const fn from_revision(rev: RevisionId) -> Self {
         Self(rev.get())
-    }
-
-    /// Maps this `SnapshotId` back onto its bijective `RevisionId`.
-    pub const fn to_revision(self) -> RevisionId {
-        RevisionId::new(self.0)
     }
 }
 
 impl fmt::Display for SnapshotId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "snap:{}", self.0)
-    }
-}
-
-/// Error type for [`SnapshotId::from_str`] failures.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum ParseSnapshotIdError {
-    #[error("invalid snapshot id format: expected 'snap:N' where N is a non-negative integer")]
-    MalformedFormat,
-    #[error("snapshot id must not be zero (0 is the invalid sentinel)")]
-    ZeroSentinel,
-}
-
-impl FromStr for SnapshotId {
-    type Err = ParseSnapshotIdError;
-
-    /// Parse a `SnapshotId` from its `Display` form: `"snap:N"`.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let num = s
-            .strip_prefix("snap:")
-            .ok_or(ParseSnapshotIdError::MalformedFormat)?;
-        if num.is_empty() {
-            return Err(ParseSnapshotIdError::MalformedFormat);
-        }
-        let n: u64 = num
-            .parse()
-            .map_err(|_| ParseSnapshotIdError::MalformedFormat)?;
-        if n == 0 {
-            return Err(ParseSnapshotIdError::ZeroSentinel);
-        }
-        Ok(SnapshotId(n))
     }
 }
 
@@ -235,18 +196,14 @@ impl fmt::Display for StableEntityId {
 // ============================================================================
 
 /// E38 design D1: an occurrence IS the snapshot-scoped [`EntityId`] value
-/// within its snapshot, so the two convert losslessly and as `const fn`s.
+/// within its snapshot, so the two convert losslessly as a `const fn`.
+/// E38.1 U5 trim: the unused `to_entity` inverse was removed — no consumer
+/// ever round-tripped an occurrence back onto its entity.
 impl OccurrenceId {
     /// Wires this occurrence onto the snapshot-scoped [`EntityId`] value
     /// it denotes.
     pub const fn from_entity(entity: EntityId) -> Self {
         Self(entity.0)
-    }
-
-    /// Recovers the snapshot-scoped [`EntityId`] value this occurrence
-    /// denotes.
-    pub const fn to_entity(self) -> EntityId {
-        EntityId(self.0)
     }
 }
 
@@ -254,15 +211,15 @@ impl OccurrenceId {
 mod tests {
     use std::collections::HashSet;
     use std::fmt::Debug;
-    use std::str::FromStr;
 
     use super::*;
 
     // -------------------------------------------------------------------------
-    // Task 3.1 RED — `snap:N` ↔ `rev:N` bijective mapping (design D4)
+    // Task 3.1 RED — `snap:N` Display form + `rev:N` bijective mapping (D4)
     // -------------------------------------------------------------------------
 
-    /// `SnapshotId::new(7).to_string()` must produce `"snap:7"` which parses back.
+    /// `SnapshotId::new(7).to_string()` must produce `"snap:7"` (the
+    /// `snap:N` form is Display-only since the E38.1 U5 trim).
     #[test]
     fn snapshot_id_display_uses_snap_prefix() {
         let id = SnapshotId::new(7);
@@ -271,58 +228,29 @@ mod tests {
             "snap:7",
             "Display must produce 'snap:N' format"
         );
-
-        let parsed = SnapshotId::from_str("snap:7").expect("'snap:7' must parse");
-        assert_eq!(parsed, id, "Parsed value must equal original");
     }
 
-    /// `SnapshotId` must round-trip through `FromStr` for arbitrary values.
+    /// `SnapshotId::from_revision(rev)` must map onto the revision's value
+    /// (design D4 / ADR-039). E38.1 U5 trim: the unused `to_revision`
+    /// inverse was removed, so the mapping is asserted value-wise.
     #[test]
-    fn snapshot_id_from_str_round_trip() {
-        for n in [1, 42, u64::MAX] {
-            let id = SnapshotId::new(n);
-            let parsed = SnapshotId::from_str(&id.to_string()).expect("Display form must parse");
-            assert_eq!(parsed, id);
-        }
-    }
-
-    /// `FromStr` must reject malformed and zero-sentinel inputs.
-    #[test]
-    fn snapshot_id_from_str_rejects_malformed() {
-        assert!(SnapshotId::from_str("snap:").is_err());
-        assert!(SnapshotId::from_str("snap:abc").is_err());
-        assert!(SnapshotId::from_str("snap:-1").is_err());
-        assert!(
-            SnapshotId::from_str("snap:0").is_err(),
-            "0 is the invalid sentinel"
-        );
-        assert!(
-            SnapshotId::from_str("rev:7").is_err(),
-            "wrong prefix must be rejected"
-        );
-        assert!(SnapshotId::from_str("7").is_err());
-        assert!(SnapshotId::from_str("").is_err());
-    }
-
-    /// `SnapshotId::from_revision(rev)` must map onto `rev` and back —
-    /// bijective per workspace (design D4 / ADR-039).
-    #[test]
-    fn snapshot_id_revision_mapping_is_bijective() {
+    fn snapshot_id_from_revision_maps_revision_value() {
         let rev = RevisionId::new(9);
         let snap = SnapshotId::from_revision(rev);
         assert_eq!(snap, SnapshotId::new(9));
-        assert_eq!(snap.to_revision(), rev);
+        assert_eq!(snap.get(), rev.get());
         assert_eq!(snap.to_string(), "snap:9");
         assert_eq!(rev.to_string(), "rev:9");
     }
 
-    /// `SnapshotId::NONE` (0) must be invalid, mirroring `RevisionId::NONE`.
+    /// `SnapshotId::NONE` is the zero sentinel, mirroring
+    /// `RevisionId::NONE` (E38.1 U5 trim: `is_valid` was removed — the
+    /// sentinel contract is asserted by value).
     #[test]
-    fn snapshot_id_zero_is_invalid_sentinel() {
-        assert!(!SnapshotId::NONE.is_valid());
-        assert!(!SnapshotId::new(0).is_valid());
-        assert!(SnapshotId::new(1).is_valid());
-        assert!(!RevisionId::NONE.is_valid());
+    fn snapshot_id_none_is_the_zero_sentinel() {
+        assert_eq!(SnapshotId::NONE, SnapshotId::new(0));
+        assert_eq!(SnapshotId::NONE.to_string(), "snap:0");
+        assert_eq!(RevisionId::NONE, RevisionId::new(0));
     }
 
     // -------------------------------------------------------------------------
@@ -363,7 +291,7 @@ mod tests {
         }
 
         assert_json_round_trip(&EntityId::new(1));
-        assert_json_round_trip(&OccurrenceId::new(2));
+        assert_json_round_trip(&OccurrenceId(2));
         assert_json_round_trip(&SnapshotId::new(3));
         assert_json_round_trip(&FactId::new(4));
         assert_json_round_trip(&EvidenceId::new(5));
@@ -373,7 +301,7 @@ mod tests {
     #[test]
     fn kernel_ids_display_prefixes() {
         assert_eq!(EntityId::new(1).to_string(), "entity:1");
-        assert_eq!(OccurrenceId::new(2).to_string(), "occ:2");
+        assert_eq!(OccurrenceId(2).to_string(), "occ:2");
         assert_eq!(FactId::new(3).to_string(), "fact:3");
         assert_eq!(EvidenceId::new(4).to_string(), "evidence:4");
     }
@@ -423,15 +351,17 @@ mod tests {
     }
 
     /// An occurrence IS the snapshot-scoped `EntityId` value (design D1):
-    /// `from_entity`/`to_entity` must convert losslessly, as `const fn`s
-    /// (const use proves compile-time evaluability).
+    /// `from_entity` must convert losslessly as a `const fn` (const use
+    /// proves compile-time evaluability). E38.1 U5 trim: the unused
+    /// `to_entity` inverse was removed; the raw value stays reachable via
+    /// the public field.
     #[test]
     fn occurrence_id_entity_wiring_is_const_and_lossless() {
         const WIRED: OccurrenceId = OccurrenceId::from_entity(EntityId::new(9));
-        assert_eq!(WIRED, OccurrenceId::new(9));
-        assert_eq!(WIRED.to_entity(), EntityId::new(9));
+        assert_eq!(WIRED, OccurrenceId(9));
+        assert_eq!(WIRED.get(), 9);
 
-        let round_trip = OccurrenceId::from_entity(EntityId::new(1234)).to_entity();
-        assert_eq!(round_trip, EntityId::new(1234));
+        let wired = OccurrenceId::from_entity(EntityId::new(1234));
+        assert_eq!(wired.get(), 1234);
     }
 }

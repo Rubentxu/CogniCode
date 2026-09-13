@@ -42,11 +42,6 @@ impl RelationKind {
         self.0.split_once(':').map_or("", |(ns, _)| ns)
     }
 
-    /// The predicate name (the part after `:`).
-    pub fn name(&self) -> &str {
-        self.0.split_once(':').map_or("", |(_, name)| name)
-    }
-
     /// The canonical string form (`"ns:name"`).
     pub fn as_str(&self) -> &str {
         &self.0
@@ -104,13 +99,14 @@ mod tests {
     // Task 3.1 RED — namespaced RelationKind (`"ns:name"`)
     // -------------------------------------------------------------------------
 
-    /// A valid `"ns:name"` must expose ns/name parts and Display form.
+    /// A valid `"ns:name"` must expose ns part, canonical form and Display
+    /// form (E38.1 U5 trim: the unused per-predicate `name()` accessor was
+    /// removed — the canonical string carries it).
     #[test]
     fn relation_kind_valid_ns_name() {
         let k = RelationKind::try_new("core:calls").expect("valid namespaced kind");
         assert_eq!(k.as_str(), "core:calls");
         assert_eq!(k.ns(), "core");
-        assert_eq!(k.name(), "calls");
         assert_eq!(k.to_string(), "core:calls");
     }
 

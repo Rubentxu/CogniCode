@@ -28,9 +28,10 @@
 //!   matcher/fingerprint convention is pinned through
 //!   [`PINNED_MATCHER_DIGEST`], hashed FNV-1a 64 over
 //!   [`MATCHER_CONVENTION`] — a digest SEPARATE from e37's
-//!   `PINNED_IDENTITY_DIGEST` (`fnv1a64:efccc22e912913fe`). Changing any
-//!   tier rule, fingerprint element, pool order, or pinned constant
-//!   changes the digest and fails the run until explicitly re-pinned.
+//!   `PINNED_IDENTITY_DIGEST` (re-pinned to `fnv1a64:ec9546e35a003ed6` by
+//!   E38.1 CP-6). Changing any tier rule, fingerprint element, pool order,
+//!   or pinned constant changes the digest and fails the run until
+//!   explicitly re-pinned.
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -127,8 +128,9 @@ pub const PINNED_MATCHER_DIGEST: &str = "fnv1a64:e79f623705344f98";
 
 /// e37's pinned fact-identity digest — recorded here ONLY so the harness
 /// can assert the two conventions stay separate digests (spec "Separate
-/// pinned convention digest").
-pub const E37_FACT_IDENTITY_DIGEST: &str = "fnv1a64:efccc22e912913fe";
+/// pinned convention digest"). Mirrors the E38.1 CP-6 re-pin of
+/// `PINNED_IDENTITY_DIGEST` (was `fnv1a64:efccc22e912913fe` pre-E38.1).
+pub const E37_FACT_IDENTITY_DIGEST: &str = "fnv1a64:ec9546e35a003ed6";
 
 /// FNV-1a 64-bit digest (deterministic, dependency-free; e37 D7 pattern).
 fn fnv1a64(data: &str) -> String {

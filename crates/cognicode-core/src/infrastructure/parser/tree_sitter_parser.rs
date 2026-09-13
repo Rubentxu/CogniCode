@@ -634,6 +634,10 @@ impl TreeSitterParser {
         };
 
         let start = node.start_position();
+        // E38.1 CP-1: the stored line is the tree-sitter 0-based `start.row`;
+        // `Symbol::new` renders it verbatim through
+        // `SymbolFqn::from_legacy_side`, so the LEGACY FQN keeps its 0-based
+        // trailing segment (the fact side re-bases to `start.row + 1`).
         let location = Location::new(file_path, start.row as u32, start.column as u32);
         Some(Symbol::new(name, kind, location))
     }

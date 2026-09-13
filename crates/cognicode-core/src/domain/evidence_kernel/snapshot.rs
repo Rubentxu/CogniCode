@@ -67,7 +67,6 @@ mod tests {
         let descriptor = SnapshotDescriptor::from_revision(ws.clone(), rev, "", "");
 
         assert_eq!(descriptor.id, SnapshotId::new(3));
-        assert_eq!(descriptor.id.to_revision(), rev);
         assert_eq!(descriptor.workspace, ws);
         assert_eq!(descriptor.revision, rev);
     }

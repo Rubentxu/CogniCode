@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use super::super::value_objects::{Location, SymbolKind};
+// Un-gated: the identity grammar is shared by the legacy path and the fact
+// path (E38.1 CP-1), so `SymbolFqn` compiles unconditionally.
+use crate::domain::evidence_kernel::SymbolFqn;
 
 /// Aggregate Root representing a code symbol
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -19,9 +22,16 @@ pub struct Symbol {
 
 impl Symbol {
     /// Creates a new Symbol with the given name, kind, and location
+    ///
+    /// The FQN follows the canonical identity grammar `"{file}:{name}:{line}"`
+    /// (E38.1 CP-1, centralized in [`SymbolFqn`]); `Location` stores the
+    /// ZERO-BASED line, so this legacy side constructs via
+    /// [`SymbolFqn::from_legacy_side`] and renders it verbatim — byte-identical
+    /// to the historical `format!`.
     pub fn new(name: impl Into<String>, kind: SymbolKind, location: Location) -> Self {
         let name = name.into();
-        let fqn = format!("{}:{}:{}", location.file(), name, location.line());
+        let fqn =
+            SymbolFqn::from_legacy_side(location.file(), name.as_str(), location.line()).assemble();
         Self {
             name,
             kind,

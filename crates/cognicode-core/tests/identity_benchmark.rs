@@ -246,6 +246,26 @@ fn convention_change_requires_explicit_re_pin() {
     );
 }
 
+/// E38.1 CP-6 self-check: the pinned matcher convention text states its
+/// load-bearing strings (1-based identity grammar + pinned threshold
+/// constants) — a cheap guard against a truncated or stale convention
+/// edit. The matcher convention does NOT reference E38.1-changed internals
+/// (no `SymbolFqn`/codec wording), so it was deliberately NOT re-pinned.
+#[test]
+fn matcher_convention_states_the_declared_rules() {
+    assert!(
+        harness::MATCHER_CONVENTION
+            .contains("identity grammar '{file}:{name}:{line}' with 1-based line"),
+        "the matcher convention must state the 1-based identity grammar"
+    );
+    assert!(
+        harness::MATCHER_CONVENTION.contains("jaccard_threshold=0.6 epsilon=0.05 rename_floor=0.5"),
+        "the matcher convention must state the pinned threshold constants"
+    );
+    harness::verify_matcher_pin(&harness::matcher_convention_digest())
+        .expect("the pinned digest must match the current convention text");
+}
+
 /// Spec requirement "Pinned scoring gates and fixture coverage": the seven
 /// declared ground-truth cases all pass and every gate is met.
 #[test]

@@ -15,6 +15,7 @@
 use crate::application::fact_bridge::batch_builder::FactBatchBuilder;
 use crate::application::ingest::types::{ExtractionResult, TargetRef};
 use crate::domain::evidence_kernel::fact::ProducerKind;
+use crate::domain::evidence_kernel::symbol_kind_detail::SymbolKindDetail;
 use crate::domain::value_objects::{NodeKind, SymbolKind};
 
 /// Producer stamped on every tree-sitter-derived observation (design D1).
@@ -45,7 +46,8 @@ pub fn collect(builder: &mut FactBatchBuilder, result: &ExtractionResult) {
                 super::relation("core:defines"),
                 fqn,
                 PRODUCER,
-                Some(format!("kind={}", symbol_kind_name(kind))),
+                // `kind=<SerdeName>` via the single codec (E38.1 CP-2).
+                Some(SymbolKindDetail::encode(kind)),
             )
             .expect("DeterministicAnalyzer is never rejected");
     }
@@ -75,34 +77,9 @@ pub fn collect(builder: &mut FactBatchBuilder, result: &ExtractionResult) {
     }
 }
 
-/// The serde name of a [`SymbolKind`] variant (design D3: `kind=<K>` uses
-/// the serde name). Exhaustive so a new variant fails compilation here.
-fn symbol_kind_name(kind: SymbolKind) -> &'static str {
-    match kind {
-        SymbolKind::Function => "Function",
-        SymbolKind::Class => "Class",
-        SymbolKind::Module => "Module",
-        SymbolKind::Variable => "Variable",
-        SymbolKind::Parameter => "Parameter",
-        SymbolKind::Type => "Type",
-        SymbolKind::Method => "Method",
-        SymbolKind::Property => "Property",
-        SymbolKind::Field => "Field",
-        SymbolKind::Import => "Import",
-        SymbolKind::EnumVariant => "EnumVariant",
-        SymbolKind::Trait => "Trait",
-        SymbolKind::Generic => "Generic",
-        SymbolKind::Constant => "Constant",
-        SymbolKind::Constructor => "Constructor",
-        SymbolKind::Struct => "Struct",
-        SymbolKind::Enum => "Enum",
-        SymbolKind::Interface => "Interface",
-        SymbolKind::File => "File",
-        SymbolKind::Namespace => "Namespace",
-        SymbolKind::Package => "Package",
-        SymbolKind::Unknown => "Unknown",
-    }
-}
+// E38.1 CP-2: the former local `symbol_kind_name` serde-name table moved
+// into the single codec (`SymbolKindDetail`); this site routes through
+// `SymbolKindDetail::encode`, which stays exhaustive over `SymbolKind`.
 
 #[cfg(test)]
 mod tests {

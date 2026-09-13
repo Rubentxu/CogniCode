@@ -165,11 +165,20 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
+    use async_trait::async_trait;
+
     use crate::application::fact_bridge::relation;
     use crate::application::ingest::extractor::extract_file;
-    use crate::domain::evidence_kernel::fact::Fact;
+    use crate::domain::aggregates::Symbol;
+    use crate::domain::evidence_kernel::continuity::SnapshotEntityView;
+    use crate::domain::evidence_kernel::fact::{Fact, FactValue};
     use crate::domain::evidence_kernel::ids::{EntityId, SnapshotId};
     use crate::domain::evidence_kernel::relation::RelationKind;
+    use crate::domain::traits::code_intelligence::{
+        CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, HoverInfo, Reference,
+        ReferenceKind, TypeHierarchy,
+    };
+    use crate::domain::value_objects::{Location, SymbolKind};
     use crate::infrastructure::parser::language_config::RUST_CONFIG;
 
     use super::*;
@@ -375,6 +384,145 @@ mod tests {
         assert_eq!(
             bytes_first, bytes_second,
             "fact sets must be byte-identical across runs"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // E38.1 task 3.1 (CP-3) — dual-producer subject join (RED-first)
+    // -------------------------------------------------------------------------
+
+    /// RuntimeObserver stub over `src/join.rs`: reports the same symbols the
+    /// tree-sitter extractor derives (0-based `start.row` locations, the
+    /// `Symbol` convention) and one Call reference to `unused_fn` sited
+    /// inside `main` (container "main"). The source itself never calls
+    /// `unused_fn`, so ONLY the RuntimeObserver fact can carry that edge.
+    struct JoinObserver;
+
+    #[async_trait]
+    impl CodeIntelligenceProvider for JoinObserver {
+        async fn get_symbols(&self, _path: &Path) -> Result<Vec<Symbol>, CodeIntelligenceError> {
+            let at = |line: u32| Location::new("src/join.rs", line, 0);
+            Ok(vec![
+                Symbol::new("helper", SymbolKind::Function, at(0)),
+                Symbol::new("unused_fn", SymbolKind::Function, at(4)),
+                Symbol::new("main", SymbolKind::Function, at(6)),
+            ])
+        }
+
+        async fn find_references(
+            &self,
+            location: &Location,
+            _include_declaration: bool,
+        ) -> Result<Vec<Reference>, CodeIntelligenceError> {
+            if location.line() == 4 {
+                return Ok(vec![Reference {
+                    location: Location::new("src/join.rs", 7, 8),
+                    reference_kind: ReferenceKind::Call,
+                    container: Some("main".to_string()),
+                }]);
+            }
+            Ok(vec![])
+        }
+
+        async fn get_hierarchy(
+            &self,
+            location: &Location,
+        ) -> Result<TypeHierarchy, CodeIntelligenceError> {
+            Ok(TypeHierarchy {
+                symbol: Symbol::new("queried", SymbolKind::Function, location.clone()),
+                parents: vec![],
+                children: vec![],
+            })
+        }
+
+        async fn get_definition(
+            &self,
+            _location: &Location,
+        ) -> Result<Option<Location>, CodeIntelligenceError> {
+            Ok(None)
+        }
+
+        async fn get_document_symbols(
+            &self,
+            _path: &Path,
+        ) -> Result<Vec<DocumentSymbol>, CodeIntelligenceError> {
+            Ok(vec![])
+        }
+
+        async fn hover(
+            &self,
+            _location: &Location,
+        ) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
+            Ok(None)
+        }
+    }
+
+    /// GIVEN one small source file, WHEN the tree-sitter producer (defines
+    /// facts) AND the RuntimeObserver producer (reference facts over the
+    /// SAME file) feed ONE `FactBatchBuilder` snapshot, THEN every
+    /// RuntimeObserver reference fact JOINs the tree-sitter entity of its
+    /// enclosing symbol in the [`SnapshotEntityView`] (E38.1 CP-3): the
+    /// LSP-only call edge `main → unused_fn` is visible on the `main`
+    /// entity. RED-first: with raw container-name subjects the LSP fact
+    /// cannot join, so the edge is invisible in the view.
+    #[tokio::test]
+    async fn lsp_reference_facts_join_tree_sitter_defines_entities() {
+        // 0-based tree-sitter rows: helper=0, unused_fn=4, main=6.
+        let source = r#"fn helper(x: u32) -> u32 {
+    x + 1
+}
+
+fn unused_fn() {}
+
+fn main() {
+    let v = helper(2);
+}
+"#;
+        let path = Path::new("src/join.rs");
+
+        // Producer 1 (DeterministicAnalyzer): tree-sitter extraction.
+        let extraction = extract_file(&RUST_CONFIG, path, source, "hash");
+        assert!(
+            extraction.error.is_none(),
+            "extraction failed: {:?}",
+            extraction.error
+        );
+
+        // Producer 2 (RuntimeObserver): references over the same file.
+        let mut builder = FactBatchBuilder::new(SNAPSHOT);
+        builder.add_extraction(&extraction);
+        builder
+            .add_provider(&JoinObserver, &[path.to_path_buf()])
+            .await;
+        let facts = builder.finish();
+
+        // The tree-sitter side defines `main` as the 1-based fact-side FQN.
+        let defines: Vec<&str> = facts
+            .iter()
+            .filter(|f| f.predicate.as_str() == "core:defines")
+            .filter_map(|f| match &f.object {
+                FactValue::Text(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            defines.contains(&"src/join.rs:main:7"),
+            "tree-sitter defines facts must use the fact-side grammar: {defines:?}"
+        );
+
+        // The view must recover the LSP-ONLY call edge on the `main`
+        // entity — proving the RuntimeObserver fact subject joined it.
+        let view = SnapshotEntityView::from_facts(&facts, SNAPSHOT);
+        let main = view
+            .entities
+            .values()
+            .find(|e| e.name == "main")
+            .expect("main is a core:defines entity");
+        assert!(
+            main.callees.contains(&"unused_fn".to_string()),
+            "LSP call fact (container 'main') must JOIN the tree-sitter entity \
+             src/join.rs:main:7; callees were {:?}",
+            main.callees
         );
     }
 }

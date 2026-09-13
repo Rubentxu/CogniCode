@@ -70,6 +70,9 @@ use crate::domain::ports::call_graph_projection::{
 };
 use crate::domain::value_objects::DependencyType;
 
+#[cfg(feature = "evidence-kernel")]
+use crate::domain::evidence_kernel::{SymbolFqn, SymbolKindDetail};
+
 /// Edge weight stored on the projection: `(dependency_type, sanitized_confidence)`.
 ///
 /// The pair is preserved verbatim from the source `CallGraph` (after
@@ -664,9 +667,21 @@ impl CallGraphProjection {
                 continue;
             };
             identity.insert(fact.subject.get(), fqn.clone());
+            // Loud kind recovery (E38.1 CP-2): a `core:defines` fact MUST
+            // carry the `kind=<SerdeName>` detail (design D3), so an
+            // undecodable detail is a convention violation and panics — it
+            // is never silently degraded to `SymbolKind::Unknown`.
+            let detail = fact.provenance.detail.as_deref();
             kinds.insert(
                 fact.subject.get(),
-                symbol_kind_from_detail(fact.provenance.detail.as_deref()),
+                SymbolKindDetail::decode(detail.unwrap_or_default()).unwrap_or_else(|| {
+                    panic!(
+                        "core:defines fact (entity {}) carries an undecodable kind \
+                         detail {detail:?}: expected '{}<SerdeName>' (design D3)",
+                        fact.subject.get(),
+                        SymbolKindDetail::PREFIX
+                    )
+                }),
             );
         }
 
@@ -713,16 +728,12 @@ impl CallGraphProjection {
             let Some(caller_fqn) = identity.get(&fact.subject.get()) else {
                 continue; // orphan subject: mirrors from_call_graph skip
             };
-            let target_fqn = if id_to_index.contains_key(&SymbolId::new(callee.clone())) {
-                // Exact identity-string match (resolved object reference).
-                Some(callee.clone())
-            } else {
-                // Lowercase-name resolution, lexicographically smallest FQN.
-                name_index
-                    .get(&callee.to_lowercase())
-                    .and_then(|candidates| candidates.iter().next())
-                    .cloned()
-            };
+            // Shared deterministic resolution (E38.1 DUP-7): exact
+            // identity-string match first, then lowercase name with the
+            // lexicographically smallest FQN tie-break.
+            let target_fqn = resolve_callee_identity(callee, &name_index, |candidate| {
+                id_to_index.contains_key(&SymbolId::new(candidate))
+            });
             let Some(target_fqn) = target_fqn else {
                 unresolved += 1; // dropped and counted (design D4)
                 continue;
@@ -752,19 +763,24 @@ impl CallGraphProjection {
     }
 }
 
-/// Parses a legacy FQN `"{file}:{name}:{line}"` into its parts.
+/// Parses an identity string `"{file}:{name}:{line}"` into
+/// `(file, name, line)` through the centralized [`SymbolFqn`] grammar
+/// (E38.1 CP-1 — the one parser for the identity grammar).
 ///
 /// The split runs from the RIGHT so a name (or file path) containing `:`
-/// still reconstructs byte-identically: `Symbol::new` computes
-/// `file + ":" + name + ":" + line`, and this function cuts at exactly the
-/// two rightmost colons. Returns `None` when the trailing segment is not a
-/// line number or fewer than two separators exist.
+/// still reconstructs byte-identically. Returns `None` when the trailing
+/// segment is not a line number or fewer than two separators exist. The
+/// parsed line is preserved AS ENCODED (base is producer-defined:
+/// fact-side 1-based / legacy-side 0-based).
 #[cfg(feature = "evidence-kernel")]
 pub(crate) fn parse_fqn(fqn: &str) -> Option<(String, String, u32)> {
-    let (rest, line) = fqn.rsplit_once(':')?;
-    let (file, name) = rest.rsplit_once(':')?;
-    let line = line.parse::<u32>().ok()?;
-    Some((file.to_string(), name.to_string(), line))
+    SymbolFqn::parse(fqn).map(|parsed| {
+        (
+            parsed.file().to_string(),
+            parsed.name().to_string(),
+            parsed.line(),
+        )
+    })
 }
 
 /// Reconstructs a [`Symbol`] whose computed FQN is byte-identical to the
@@ -790,51 +806,26 @@ fn reconstruct_symbol(fqn: &str, kind: crate::domain::value_objects::SymbolKind)
     }
 }
 
-/// Resolves the `kind=<SerdeName>` provenance-detail convention (design D3)
-/// onto a [`SymbolKind`], defaulting to [`SymbolKind::Unknown`] when the
-/// detail is absent or malformed.
+/// Deterministic callee resolution shared by the fact-derived projections
+/// (E38.1 DUP-7 — the ONE resolver; design D4/D5 rule): an exact
+/// identity-string match against an emitted node wins; otherwise the callee
+/// name is matched case-insensitively against `name_index` (lowercase name →
+/// candidate FQNs) and ties break on the lexicographically smallest candidate
+/// FQN (the `BTreeSet` iteration order). Returns `None` when nothing matches
+/// — callers count and drop the edge (design D4) or skip it (design D5).
 #[cfg(feature = "evidence-kernel")]
-pub(crate) fn symbol_kind_from_detail(
-    detail: Option<&str>,
-) -> crate::domain::value_objects::SymbolKind {
-    match detail.and_then(|d| d.strip_prefix("kind=")) {
-        Some(name) => symbol_kind_from_serde_name(name),
-        None => crate::domain::value_objects::SymbolKind::Unknown,
+pub(crate) fn resolve_callee_identity(
+    callee: &str,
+    name_index: &std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+    is_emitted_node: impl Fn(&str) -> bool,
+) -> Option<String> {
+    if is_emitted_node(callee) {
+        return Some(callee.to_string());
     }
-}
-
-/// Inverse of the `kind=<SerdeName>` convention used by the fact bridge
-/// (`tree_sitter_facts::symbol_kind_name`): every serde variant name maps
-/// back onto its [`SymbolKind`]. Exhaustive so a new variant fails
-/// compilation here.
-#[cfg(feature = "evidence-kernel")]
-fn symbol_kind_from_serde_name(name: &str) -> crate::domain::value_objects::SymbolKind {
-    use crate::domain::value_objects::SymbolKind;
-    match name {
-        "Function" => SymbolKind::Function,
-        "Class" => SymbolKind::Class,
-        "Module" => SymbolKind::Module,
-        "Variable" => SymbolKind::Variable,
-        "Parameter" => SymbolKind::Parameter,
-        "Type" => SymbolKind::Type,
-        "Method" => SymbolKind::Method,
-        "Property" => SymbolKind::Property,
-        "Field" => SymbolKind::Field,
-        "Import" => SymbolKind::Import,
-        "EnumVariant" => SymbolKind::EnumVariant,
-        "Trait" => SymbolKind::Trait,
-        "Generic" => SymbolKind::Generic,
-        "Constant" => SymbolKind::Constant,
-        "Constructor" => SymbolKind::Constructor,
-        "Struct" => SymbolKind::Struct,
-        "Enum" => SymbolKind::Enum,
-        "Interface" => SymbolKind::Interface,
-        "File" => SymbolKind::File,
-        "Namespace" => SymbolKind::Namespace,
-        "Package" => SymbolKind::Package,
-        "Unknown" => SymbolKind::Unknown,
-        _ => SymbolKind::Unknown,
-    }
+    name_index
+        .get(&callee.to_lowercase())
+        .and_then(|candidates| candidates.iter().next())
+        .cloned()
 }
 
 impl CallGraphProjection {
@@ -1836,7 +1827,7 @@ mod tests {
 
 #[cfg(all(test, feature = "evidence-kernel"))]
 mod fact_tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use crate::domain::evidence_kernel::fact::{Fact, FactValue, ProducerKind, ProvenanceRecord};
     use crate::domain::evidence_kernel::ids::{FactId, SnapshotId};
@@ -1850,7 +1841,7 @@ mod fact_tests {
     /// Canonical `core:defines` fact for one symbol: subject and object are
     /// the legacy FQN, `kind=<SerdeName>` rides `provenance.detail` (D3).
     fn define_fact(id: u64, fqn: &str, kind: SymbolKind) -> Fact {
-        let detail = format!("kind={}", serde_name(kind));
+        let detail = SymbolKindDetail::encode(kind);
         Fact::new(
             FactId::new(id),
             crate::domain::evidence_kernel::ids::EntityId::new(id),
@@ -1883,34 +1874,6 @@ mod fact_tests {
             ),
         )
         .expect("deterministic producer")
-    }
-
-    /// The serde name of a `SymbolKind` variant (the `kind=<K>` convention).
-    fn serde_name(kind: SymbolKind) -> &'static str {
-        match kind {
-            SymbolKind::Function => "Function",
-            SymbolKind::Class => "Class",
-            SymbolKind::Module => "Module",
-            SymbolKind::Variable => "Variable",
-            SymbolKind::Parameter => "Parameter",
-            SymbolKind::Type => "Type",
-            SymbolKind::Method => "Method",
-            SymbolKind::Property => "Property",
-            SymbolKind::Field => "Field",
-            SymbolKind::Import => "Import",
-            SymbolKind::EnumVariant => "EnumVariant",
-            SymbolKind::Trait => "Trait",
-            SymbolKind::Generic => "Generic",
-            SymbolKind::Constant => "Constant",
-            SymbolKind::Constructor => "Constructor",
-            SymbolKind::Struct => "Struct",
-            SymbolKind::Enum => "Enum",
-            SymbolKind::Interface => "Interface",
-            SymbolKind::File => "File",
-            SymbolKind::Namespace => "Namespace",
-            SymbolKind::Package => "Package",
-            SymbolKind::Unknown => "Unknown",
-        }
     }
 
     /// One symbol per line: `test.rs:A:1`, `test.rs:B:2`, … — the FQN format
@@ -2132,11 +2095,45 @@ mod fact_tests {
         assert_eq!(widget.fully_qualified_name(), "src/lib.rs:Widget:7");
     }
 
-    /// Keeps the map import referenced even if helpers above stop using it
-    /// (the tie-break internals are BTreeMap-based, mirroring the impl).
+    /// E38.1 task 1.3 — the shared resolver prefers an exact identity-string
+    /// match (resolved object reference) over any name-index candidate.
     #[test]
-    fn internals_use_ordered_maps_for_determinism() {
-        let map: BTreeMap<String, u8> = BTreeMap::new();
-        assert!(map.is_empty());
+    fn resolver_prefers_exact_identity_match() {
+        let mut index: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        index
+            .entry("greet".to_string())
+            .or_default()
+            .insert("a.rs:greet:1".to_string());
+        let resolved = resolve_callee_identity("z.rs:greet:9", &index, |candidate| {
+            candidate == "z.rs:greet:9"
+        });
+        assert_eq!(resolved.as_deref(), Some("z.rs:greet:9"));
     }
+
+    /// E38.1 task 1.3 — name resolution is case-insensitive and ties break
+    /// on the lexicographically smallest candidate FQN (design D4 rule).
+    #[test]
+    fn resolver_tie_breaks_on_lexicographically_smallest_fqn() {
+        let mut index: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for fqn in ["z.rs:dup:9", "a.rs:dup:4", "m.rs:dup:7"] {
+            index
+                .entry("dup".to_string())
+                .or_default()
+                .insert(fqn.to_string());
+        }
+        let resolved = resolve_callee_identity("DUP", &index, |_| false);
+        assert_eq!(resolved.as_deref(), Some("a.rs:dup:4"));
+    }
+
+    /// E38.1 task 1.3 — an unmatchable callee resolves to `None` (callers
+    /// count and drop the edge, design D4; or skip it, design D5).
+    #[test]
+    fn resolver_returns_none_for_unmatchable_callee() {
+        let index: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        assert_eq!(resolve_callee_identity("ghost", &index, |_| false), None);
+    }
+
+    // E38.1 U5 trim: the `internals_use_ordered_maps_for_determinism`
+    // import-keeper test was removed — the resolver tests above exercise
+    // the BTreeMap/BTreeSet tie-break directly, so the imports are live.
 }

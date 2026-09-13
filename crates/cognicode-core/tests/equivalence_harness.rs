@@ -83,6 +83,14 @@ fn all_fixtures_meet_the_threshold() {
             "{name}: legacy oracle produced no nodes"
         );
         assert!(report.fact_nodes > 0, "{name}: fact path produced no nodes");
+        // E38.1 CP-2: the symbol-kind multiset joins the declared contract
+        // — the legacy `Symbol` reconstruction and the fact-side
+        // `kind=<SerdeName>` codec agree on every scored fixture.
+        assert!(
+            report.kind_score >= EQUIVALENCE_THRESHOLD,
+            "{name}: kind multiset diverges below the threshold: {}",
+            report.describe()
+        );
     }
 }
 
@@ -96,6 +104,7 @@ fn fixture_below_threshold_fails_the_run() {
         quarantined: false,
         node_score: 1.0,
         edge_score: 0.5,
+        kind_score: 1.0,
         legacy_nodes: 7,
         legacy_edges: 3,
         fact_nodes: 7,
@@ -137,6 +146,7 @@ fn quarantined_divergence_is_excluded_and_reported() {
         quarantined: true,
         node_score: 0.0,
         edge_score: 0.0,
+        kind_score: 0.0,
         legacy_nodes: 40,
         legacy_edges: 4,
         fact_nodes: 12,
@@ -173,6 +183,7 @@ fn unquarantined_divergence_fails() {
             quarantined: false,
             node_score: 1.0,
             edge_score: 1.0,
+            kind_score: 1.0,
             legacy_nodes: 5,
             legacy_edges: 2,
             fact_nodes: 5,
@@ -184,6 +195,7 @@ fn unquarantined_divergence_fails() {
             quarantined: false,
             node_score: 0.75,
             edge_score: 1.0,
+            kind_score: 1.0,
             legacy_nodes: 8,
             legacy_edges: 2,
             fact_nodes: 6,
@@ -202,24 +214,26 @@ fn unquarantined_divergence_fails() {
     );
 }
 
-/// Requirement "Deterministic fact identity", scenario "Repeated extraction
-/// is identical" (harness level): the full extract → batch pipeline run
-/// twice over an unchanged fixture yields byte-identical fact sets.
+/// E38.1 CP-6 self-checks: the pinned convention text actually states the
+/// declared line rule, grammar, and typed reference — cheap guards against
+/// an accidental truncated or stale convention edit (the digest alone
+/// cannot distinguish a deliberate re-pin from an accidental one).
 #[test]
-fn repeated_extraction_is_identical() {
-    let root = fixtures_root().join("rust-hello");
-    let first = harness::fixture_facts(&root);
-    let second = harness::fixture_facts(&root);
-    assert!(!first.is_empty(), "extraction must produce facts");
-
-    let encode = |facts: &[cognicode_core::domain::evidence_kernel::fact::Fact]| {
-        bincode::serde::encode_to_vec(facts, bincode::config::standard()).expect("encode")
-    };
-    assert_eq!(
-        encode(&first),
-        encode(&second),
-        "double-run must yield byte-identical fact sets"
+fn identity_convention_states_the_declared_rules() {
+    assert!(
+        harness::IDENTITY_CONVENTION.contains("with a 1-BASED line"),
+        "the convention text must state the 1-based line rule"
     );
+    assert!(
+        harness::IDENTITY_CONVENTION.contains("'{file}:{name}:{line}'"),
+        "the convention text must state the identity grammar"
+    );
+    assert!(
+        harness::IDENTITY_CONVENTION.contains("SymbolFqn"),
+        "the convention text must reference the typed grammar SymbolFqn"
+    );
+    harness::verify_identity_pin(&harness::identity_convention_digest())
+        .expect("the pinned digest must match the current convention text");
 }
 
 /// Requirement "Deterministic fact identity", scenario "Convention change

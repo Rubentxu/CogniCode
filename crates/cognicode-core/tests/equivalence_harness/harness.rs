@@ -10,7 +10,10 @@
 //!   `bootstrap_registry` → `InMemoryFactStore::commit` →
 //!   `facts_in_snapshot` → `CallGraphProjection::from_facts`.
 //! - **Comparator**: Jaccard over normalized (stably sorted) node/edge
-//!   multisets; per-fixture score compared against
+//!   multisets, PLUS (E38.1 CP-2) a kind-multiset comparison: the LEGACY
+//!   side reconstructs each node's `Symbol` kind, the fact side decodes
+//!   `kind=<SerdeName>` from every `core:defines` detail through the SINGLE
+//!   codec ([`SymbolKindDetail`]); per-fixture score compared against
 //!   [`EQUIVALENCE_THRESHOLD`].
 //!
 //! Quarantine (spec "Quarantine of known-unstable surfaces"): fixtures in
@@ -47,6 +50,8 @@ use std::sync::Arc;
 use cognicode_core::application::fact_bridge::FactBatchBuilder;
 use cognicode_core::application::ingest::extractor::extract_file;
 use cognicode_core::application::services::analysis_service::AnalysisService;
+use cognicode_core::domain::evidence_kernel::SymbolFqn;
+use cognicode_core::domain::evidence_kernel::SymbolKindDetail;
 use cognicode_core::domain::evidence_kernel::bootstrap::bootstrap_registry;
 use cognicode_core::domain::evidence_kernel::fact::Fact;
 use cognicode_core::domain::evidence_kernel::ids::SnapshotId;
@@ -82,13 +87,25 @@ pub const ALL_FIXTURES: [&str; 3] = ["python-hello", "rust-hello", "multi-lang-t
 /// The pinned entity-identity convention (design D3). Changing ANY part of
 /// this text changes the digest and fails the harness until the affected
 /// goldens are explicitly re-pinned as a new baseline.
-pub const IDENTITY_CONVENTION: &str = "e37 entity-identity convention v1: subjects are raw id strings; \
-symbols use the legacy FQN '{file}:{name}:{line}'; EntityIdTable maps sorted \
+///
+/// E38.1 CP-6 (v2): states the 1-BASED line base explicitly and references
+/// the typed grammar [`SymbolFqn`] (E38.1 CP-1) instead of the e37 prose.
+pub const IDENTITY_CONVENTION: &str = "e38.1 entity-identity convention v2: subjects are raw id strings; \
+symbols use the fact-side FQN '{file}:{name}:{line}' with a 1-BASED line (typed \
+grammar centralized in SymbolFqn, from_fact_side); EntityIdTable maps sorted \
 unique subject strings onto EntityId(1..N) per snapshot; no hashing; \
 cross-entity references stay FactValue::Text";
 
 /// The digest of the convention the current goldens were pinned against.
-pub const PINNED_IDENTITY_DIGEST: &str = "fnv1a64:efccc22e912913fe";
+///
+/// Re-pin history (ONE conscious re-pin per the CP-6 rule):
+/// - e37 v1 `fnv1a64:efccc22e912913fe` — original e37 convention prose;
+/// - re-pinned 2026-09-13 (E38.1 CP-6) to `fnv1a64:ec9546e35a003ed6`: the
+///   convention text now states the 1-based line rule and references
+///   `SymbolFqn` as the typed grammar. No fact bytes changed — the
+///   grammar is byte-identical (42/42 goldens, scores unchanged); only the
+///   convention PROSE was pinned more precisely.
+pub const PINNED_IDENTITY_DIGEST: &str = "fnv1a64:ec9546e35a003ed6";
 
 /// The pinned snapshot/workspace the harness commits into.
 pub const SNAPSHOT: SnapshotId = SnapshotId::new(1);
@@ -141,6 +158,8 @@ pub struct FixtureReport {
     pub node_score: f64,
     /// Jaccard over the normalized edge multisets.
     pub edge_score: f64,
+    /// Jaccard over the normalized symbol-kind multisets (E38.1 CP-2).
+    pub kind_score: f64,
     /// Legacy node/edge multiset sizes.
     pub legacy_nodes: usize,
     pub legacy_edges: usize,
@@ -152,9 +171,10 @@ pub struct FixtureReport {
 }
 
 impl FixtureReport {
-    /// The score compared against the threshold: the weaker multiset score.
+    /// The score compared against the threshold: the weakest multiset score
+    /// (node, edge, or kind).
     pub fn min_score(&self) -> f64 {
-        self.node_score.min(self.edge_score)
+        self.node_score.min(self.edge_score).min(self.kind_score)
     }
 
     /// True when a non-quarantined surface would fail the declared contract.
@@ -165,7 +185,7 @@ impl FixtureReport {
     /// One-line human-readable report entry (includes name and scores).
     pub fn describe(&self) -> String {
         format!(
-            "fixture '{}' [{}]: node_score={:.4} edge_score={:.4} \
+            "fixture '{}' [{}]: node_score={:.4} edge_score={:.4} kind_score={:.4} \
              legacy(nodes={}, edges={}) fact(nodes={}, edges={}, unresolved={})",
             self.name,
             if self.quarantined {
@@ -175,6 +195,7 @@ impl FixtureReport {
             },
             self.node_score,
             self.edge_score,
+            self.kind_score,
             self.legacy_nodes,
             self.legacy_edges,
             self.fact_nodes,
@@ -248,18 +269,25 @@ pub fn run(fixtures_root: &Path) -> HarnessRun {
 /// Builds both projections for one fixture and scores them.
 fn compare_fixture(name: &str, dir: &Path, quarantined: bool) -> FixtureReport {
     let legacy = legacy_projection(dir);
-    let fact = fact_projection(dir);
+
+    // One extraction feeds both the fact projection and the fact-side kind
+    // multiset (the kind scores ride the SAME facts the projection does).
+    let facts = fixture_facts(dir);
+    let fact = fact_projection_from_committed(&facts);
 
     let legacy_nodes = legacy_node_multiset(&legacy);
     let legacy_edges = legacy_edge_multiset(&legacy);
     let fact_nodes = node_multiset(&fact);
     let fact_edges = edge_multiset(&fact);
+    let legacy_kinds = legacy_kind_multiset(&legacy);
+    let fact_kinds = fact_kind_multiset(&facts);
 
     FixtureReport {
         name: name.to_string(),
         quarantined,
         node_score: multiset_jaccard(&legacy_nodes, &fact_nodes),
         edge_score: multiset_jaccard(&legacy_edges, &fact_edges),
+        kind_score: multiset_jaccard(&legacy_kinds, &fact_kinds),
         legacy_nodes: legacy_nodes.len(),
         legacy_edges: legacy_edges.len(),
         fact_nodes: fact_nodes.len(),
@@ -277,13 +305,6 @@ pub fn legacy_projection(fixture_dir: &Path) -> CallGraphProjection {
         .expect("legacy build_project_graph");
     let graph = service.get_project_graph();
     CallGraphProjection::from_call_graph(&graph)
-}
-
-/// The FACT path (design D7): extract → batch → bootstrap → commit →
-/// read back → `from_facts`.
-pub fn fact_projection(fixture_dir: &Path) -> CallGraphProjection {
-    let facts = fixture_facts(fixture_dir);
-    fact_projection_from_committed(&facts)
 }
 
 /// Walks one fixture and extracts the canonical fact batch (design D3):
@@ -387,14 +408,22 @@ pub fn edge_multiset(projection: &CallGraphProjection) -> Vec<(String, String, S
 
 /// Normalizes a LEGACY-engine FQN onto the fact-side line convention: the
 /// legacy parser stores the 0-based `start.row` in the trailing FQN
-/// segment, the extractor stores `start.row + 1` (design D3). Non-parsing
-/// identity strings pass through unchanged.
+/// segment (`SymbolFqn::from_legacy_side`), the extractor stores
+/// `start.row + 1` (design D3, E38.1 CP-1). The re-base is the TYPED
+/// declared step: parse through the centralized grammar, then re-assemble
+/// with the legacy 0-based line shifted onto the fact-side 1-based
+/// constructor. Identity strings that do not fit the grammar pass through
+/// unchanged.
 pub fn normalize_legacy_fqn(fqn: &str) -> String {
-    match fqn.rsplit_once(':') {
-        Some((prefix, line)) => match line.parse::<u32>() {
-            Ok(row) => format!("{prefix}:{}", row + 1),
-            Err(_) => fqn.to_string(),
-        },
+    match SymbolFqn::parse(fqn) {
+        Some(parsed) => SymbolFqn::from_fact_side(
+            parsed.file().to_string(),
+            parsed.name().to_string(),
+            // Declared 0-based → 1-based re-base (legacy `start.row` onto
+            // the extractor's `start.row + 1`); NOT a blind string bump.
+            parsed.line() + 1,
+        )
+        .assemble(),
         None => fqn.to_string(),
     }
 }
@@ -428,6 +457,38 @@ pub fn legacy_edge_multiset(
         .collect();
     edges.sort();
     edges
+}
+
+/// Normalized LEGACY kind multiset (E38.1 CP-2): the serde name of every
+/// projection node's RECONSTRUCTED `Symbol` kind (`CallGraphProjection::
+/// resolve_symbol`), sorted. Kind fidelity rides the legacy aggregate, so
+/// a codec drift on the fact side cannot hide behind equal node/edge sets.
+pub fn legacy_kind_multiset(projection: &CallGraphProjection) -> Vec<String> {
+    let mut kinds: Vec<String> = projection
+        .graph()
+        .node_indices()
+        .filter_map(|ni| projection.resolve_symbol(&projection.graph()[ni]))
+        .map(|symbol| SymbolKindDetail::serde_name(*symbol.kind()).to_string())
+        .collect();
+    kinds.sort();
+    kinds
+}
+
+/// Normalized FACT kind multiset (E38.1 CP-2): the serde name decoded from
+/// EVERY `core:defines` fact's `kind=<SerdeName>` provenance detail through
+/// the SINGLE codec ([`SymbolKindDetail`]), sorted. Undecodable details are
+/// skipped here — the projection path fails loudly on them; this multiset
+/// measures the decodable kind payload both sides declare.
+pub fn fact_kind_multiset(facts: &[Fact]) -> Vec<String> {
+    let mut kinds: Vec<String> = facts
+        .iter()
+        .filter(|f| f.predicate.as_str() == "core:defines")
+        .filter_map(|f| f.provenance.detail.as_deref())
+        .filter_map(SymbolKindDetail::decode)
+        .map(|kind| SymbolKindDetail::serde_name(kind).to_string())
+        .collect();
+    kinds.sort();
+    kinds
 }
 
 /// Jaccard over MULTISETS (count-aware): `sum(min) / sum(max)`; two empty

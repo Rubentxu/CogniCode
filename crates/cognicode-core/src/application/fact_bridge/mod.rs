@@ -6,6 +6,37 @@
 //! [`FactBatchBuilder`], whose `finish()` canonicalizes the batch (design
 //! D3) so the caller commits one deterministic fact set per snapshot.
 //!
+//! # Canonical subject grammar (E38.1 CP-3)
+//!
+//! Every observation SUBJECT that denotes a symbol is that symbol's
+//! 1-BASED fact-side FQN `"{file}:{name}:{line}"` (typed grammar:
+//! `domain::evidence_kernel::SymbolFqn::from_fact_side`), byte-identical to
+//! the `core:defines` fact the DeterministicAnalyzer emits for the same
+//! symbol. RuntimeObserver observations therefore JOIN the tree-sitter
+//! entities in the snapshot view:
+//!
+//! - [`tree_sitter_facts`] subjects are symbol FQNs (defines/calls/
+//!   references) or file paths (contains/imports) — the fact-side grammar.
+//! - [`lsp_facts`] container references resolve the reported container
+//!   name against the extraction context (the `get_symbols` symbols of the
+//!   walked files): exact name match, `SymbolKind::File` excluded,
+//!   duplicate names tie-break on the lexicographically smallest FQN (the
+//!   shared-resolver rule). A resolved container becomes the enclosing
+//!   symbol's 1-based fact-side FQN.
+//! - [`lsp_facts`] hierarchy subjects are the queried symbol itself —
+//!   always resolvable, so always the fact-side FQN.
+//! - DETERMINISTIC FALLBACK (never invented entities): when no container
+//!   is reported, or the container matches no extraction-context symbol,
+//!   the subject is the reference site's FILE PATH. File paths are never
+//!   `core:defines` subjects, so a fallback subject can never fabricate or
+//!   mis-join an entity — it stays a documented non-joinable subject form.
+//!
+//! The `Symbol` aggregate stores the ZERO-BASED tree-sitter `start.row`
+//! (legacy-side grammar, `SymbolFqn::from_legacy_side`); the extraction
+//! context re-bases it onto the fact side with the declared `+1` step —
+//! the same convention alignment the equivalence harness normalizes
+//! (`normalize_legacy_fqn`).
+//!
 //! Module map:
 //!
 //! - [`entity_table`] — snapshot-scoped sorted `EntityId(1..N)` assignment

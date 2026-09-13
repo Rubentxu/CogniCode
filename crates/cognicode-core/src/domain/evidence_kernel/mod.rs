@@ -21,6 +21,13 @@
 //! - [`continuity`] — stable-identity continuity layer (E38 design D1/D3/D4):
 //!   snapshot entity views + semantic fingerprint v1 + the tiered T0–T3
 //!   matcher with pinned thresholds (WU-3).
+//! - [`symbol_fqn`] — typed `"{file}:{name}:{line}"` identity (E38.1 CP-1).
+//! - [`symbol_kind_detail`] — the `kind=<SerdeName>` codec (E38.1 CP-2).
+//!
+//! Gating exception (E38.1): [`symbol_fqn`] is compiled UNCONDITIONALLY —
+//! the identity grammar is shared by the always-compiled legacy path
+//! (`domain::aggregates::Symbol`) and the fact path, and the canonical
+//! grammar must be centralized, not duplicated per feature gate.
 
 #[cfg(feature = "evidence-kernel")]
 pub mod bootstrap;
@@ -38,29 +45,16 @@ pub mod ports;
 pub mod relation;
 #[cfg(feature = "evidence-kernel")]
 pub mod snapshot;
+pub mod symbol_fqn;
+#[cfg(feature = "evidence-kernel")]
+pub mod symbol_kind_detail;
 
+// Facade re-exports (E38.1 U5 trim): only the two names actually consumed
+// through this module path remain. Every other kernel type is reached via
+// its canonical submodule path (`evidence_kernel::fact::Fact`,
+// `evidence_kernel::ports::FactStore`, …) — a grep-verified zero-consumer
+// re-export block (bootstrap/continuity/evidence/fact/ids/ports/relation/
+// snapshot) was removed.
+pub use symbol_fqn::SymbolFqn;
 #[cfg(feature = "evidence-kernel")]
-pub use bootstrap::{CORE_RELATIONS, bootstrap_registry};
-#[cfg(feature = "evidence-kernel")]
-pub use continuity::{
-    ContinuityOutcome, ContinuityResult, ContinuityStatus, EntityFacts, MatchTier,
-    MatcherThresholds, SemanticFingerprint, SnapshotEntityView, fingerprint, match_snapshots,
-    similarity,
-};
-#[cfg(feature = "evidence-kernel")]
-pub use evidence::{Evidence, EvidenceGrade};
-#[cfg(feature = "evidence-kernel")]
-pub use fact::{Fact, FactError, FactValue, ProducerKind, ProvenanceRecord};
-#[cfg(feature = "evidence-kernel")]
-pub use ids::{
-    EntityId, EvidenceId, FactId, OccurrenceId, ParseSnapshotIdError, SnapshotId, StableEntityId,
-};
-#[cfg(feature = "evidence-kernel")]
-pub use ports::{
-    EvidenceStore, FactStore, FileRename, KernelError, RenameEvidencePort, SchemaError,
-    SchemaRegistry, SnapshotStore,
-};
-#[cfg(feature = "evidence-kernel")]
-pub use relation::{RelationKind, RelationKindError, RelationSpec};
-#[cfg(feature = "evidence-kernel")]
-pub use snapshot::SnapshotDescriptor;
+pub use symbol_kind_detail::SymbolKindDetail;
