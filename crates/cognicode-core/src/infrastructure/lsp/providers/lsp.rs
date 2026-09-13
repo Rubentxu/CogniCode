@@ -9,11 +9,19 @@ use crate::infrastructure::parser::Language;
 use serde_json::Value;
 use std::path::Path;
 
+/// Language-server code intelligence.
+///
+/// Serves the **S2** tier of the composite pipeline (LSI M4). Attempts are
+/// readiness-gated by the composite; this provider itself keeps its original
+/// six-op contract.
 pub struct LspIntelligenceProvider {
     process_manager: LspProcessManager,
 }
 
 impl LspIntelligenceProvider {
+    /// Stable provider identity used in tier diagnostics and provenance detail.
+    pub const PROVIDER_ID: &'static str = "lsp";
+
     pub fn new(workspace_root: &Path) -> Self {
         Self {
             process_manager: LspProcessManager::new(workspace_root),

@@ -621,6 +621,18 @@ lsi-identity:
     set -euo pipefail
     cargo test -p cognicode-core --test workspace_isolation --test identity_benchmark --features evidence-kernel -- --nocapture
 
+# LSI M4 semantic provider conformance (E39): declared per-tier precision
+# targets over sandbox/fixtures/lsi-providers (Rust/TS serverless S0/S1,
+# Java availability-gated on the jdtls PATH probe — no spawn), plus the
+# gated fact-bridge tier/provenance unit filters and the CP-5 cross-layer
+# tie-break. Fixed argv; fails on any tier contradiction.
+lsi-providers:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo test -p cognicode-core --test provider_conformance -- --nocapture
+    cargo test -p cognicode-core --test cp5_tie_break --features evidence-kernel -- --nocapture
+    cargo test -p cognicode-core --lib fact_bridge --features evidence-kernel
+
 # ─── Sandbox ─────────────────────────────────────────────────────────────────
 
 sandbox-iac:

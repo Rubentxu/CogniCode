@@ -1,6 +1,7 @@
 use crate::domain::aggregates::Symbol;
 use crate::domain::traits::code_intelligence::{
-    CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, HoverInfo, Reference,
+    CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, HoverInfo, PrecisionTier,
+    ProviderDiagnostic, ProviderOutcome, Reference, TieredCodeIntelligenceProvider, TieredOutcome,
     TypeHierarchy,
 };
 use crate::domain::value_objects::Location;
@@ -11,40 +12,201 @@ use crate::infrastructure::lsp::providers::lsp::LspIntelligenceProvider;
 use crate::infrastructure::parser::Language;
 use std::path::Path;
 use std::sync::Arc;
-use tracing::warn;
+use std::sync::atomic::{AtomicU64, Ordering};
+use tracing::{debug, warn};
 
-pub struct FallbackResult<T> {
-    pub value: T,
-    pub fallback_reason: Option<String>,
+/// Fixed highest-first tier order attempted by the pipeline (LSI M4).
+pub const TIER_ORDER: [PrecisionTier; 3] =
+    [PrecisionTier::S2, PrecisionTier::S1, PrecisionTier::S0];
+
+/// Per-tier enablement policy for the composite pipeline.
+///
+/// A policy-disabled tier is skipped entirely: no attempt, no diagnostic,
+/// no counter increment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TierPolicy {
+    /// Allow the S2 LSP tier to be attempted.
+    pub lsp: bool,
+    /// Allow the S1 local-resolver tier to be attempted.
+    pub local_resolver: bool,
+    /// Allow the S0 tree-sitter tier to be attempted.
+    pub tree_sitter: bool,
 }
 
-impl<T> FallbackResult<T> {
-    pub fn new(value: T) -> Self {
+impl TierPolicy {
+    /// Every pipeline tier enabled (the default for the existing ctors).
+    pub const fn all() -> Self {
         Self {
-            value,
-            fallback_reason: None,
+            lsp: true,
+            local_resolver: true,
+            tree_sitter: true,
         }
     }
 
-    pub fn with_fallback(value: T, reason: impl Into<String>) -> Self {
-        Self {
-            value,
-            fallback_reason: Some(reason.into()),
+    /// Whether `tier` participates in the pipeline under this policy.
+    /// Reserved tiers (S3/S4) have no producer and are never enabled.
+    pub const fn enabled(self, tier: PrecisionTier) -> bool {
+        match tier {
+            PrecisionTier::S2 => self.lsp,
+            PrecisionTier::S1 => self.local_resolver,
+            PrecisionTier::S0 => self.tree_sitter,
+            PrecisionTier::S3 | PrecisionTier::S4 => false,
         }
     }
+}
 
-    pub fn is_fallback(&self) -> bool {
-        self.fallback_reason.is_some()
+impl Default for TierPolicy {
+    fn default() -> Self {
+        Self::all()
     }
+}
+
+/// Lock-free per-tier attempt counters.
+#[derive(Debug, Default)]
+struct TierAtomics {
+    attempts: AtomicU64,
+    served: AtomicU64,
+    unavailable: AtomicU64,
+    errors: AtomicU64,
+    degraded: AtomicU64,
+}
+
+impl TierAtomics {
+    /// Records one attempted tier that did not serve.
+    fn record(&self, outcome: ProviderOutcome) {
+        self.attempts.fetch_add(1, Ordering::Relaxed);
+        let bucket = match outcome {
+            ProviderOutcome::Unavailable => &self.unavailable,
+            ProviderOutcome::Error => &self.errors,
+            ProviderOutcome::Degraded => &self.degraded,
+        };
+        bucket.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Records one attempted tier that served a result.
+    fn record_served(&self) {
+        self.attempts.fetch_add(1, Ordering::Relaxed);
+        self.served.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn snapshot(&self, tier: PrecisionTier) -> TierCounters {
+        TierCounters {
+            tier,
+            attempts: self.attempts.load(Ordering::Relaxed),
+            served: self.served.load(Ordering::Relaxed),
+            unavailable: self.unavailable.load(Ordering::Relaxed),
+            errors: self.errors.load(Ordering::Relaxed),
+            degraded: self.degraded.load(Ordering::Relaxed),
+        }
+    }
+}
+
+/// Snapshot of one tier's attempt counters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TierCounters {
+    /// The tier these counters belong to.
+    pub tier: PrecisionTier,
+    /// Total attempts made against the tier.
+    pub attempts: u64,
+    /// Attempts that produced a served result.
+    pub served: u64,
+    /// Attempts that found the provider unavailable.
+    pub unavailable: u64,
+    /// Attempts that failed with an error.
+    pub errors: u64,
+    /// Attempts that returned a degraded (empty) result.
+    pub degraded: u64,
+}
+
+/// Observable composite pipeline status: one counter row per pipeline tier,
+/// in fixed highest-first order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompositeStatus {
+    /// Counter rows for the pipeline tiers (S2, S1, S0).
+    pub tiers: Vec<TierCounters>,
+}
+
+impl CompositeStatus {
+    /// The counter row for `tier`, when the tier participates in the pipeline.
+    pub fn tier(&self, tier: PrecisionTier) -> Option<&TierCounters> {
+        self.tiers.iter().find(|row| row.tier == tier)
+    }
+}
+
+fn tier_index(tier: PrecisionTier) -> usize {
+    match tier {
+        PrecisionTier::S0 => 0,
+        PrecisionTier::S1 => 1,
+        PrecisionTier::S2 => 2,
+        PrecisionTier::S3 | PrecisionTier::S4 => usize::MAX,
+    }
+}
+
+/// Internal result of one tier attempt.
+enum Attempt<T> {
+    /// The tier served a value.
+    Served(T),
+    /// The tier answered with a degraded (empty) result; fall through.
+    Degraded(ProviderDiagnostic),
+    /// The tier could not be attempted (`Unavailable`) or failed (`Error`).
+    Failed(ProviderDiagnostic),
 }
 
 pub struct CompositeProvider {
     lsp: LspIntelligenceProvider,
     fallback: TreesitterFallbackProvider,
+    policy: TierPolicy,
     wait_timeout_secs: u64,
+    counters: [TierAtomics; 3],
 }
 
 impl CompositeProvider {
+    /// Counter slot for `tier` (pipeline tiers only).
+    fn counters_for(&self, tier: PrecisionTier) -> &TierAtomics {
+        &self.counters[tier_index(tier)]
+    }
+
+    /// Records a non-serving attempt and emits its structured diagnostic.
+    fn record_failure(&self, op: &'static str, diagnostic: &ProviderDiagnostic) {
+        let tier = diagnostic.attempted_tier;
+        match diagnostic.outcome {
+            ProviderOutcome::Degraded => debug!(
+                op,
+                tier = %tier,
+                provider = %diagnostic.provider,
+                outcome = %diagnostic.outcome,
+                message = %diagnostic.message,
+                "tier degraded; falling through"
+            ),
+            ProviderOutcome::Unavailable | ProviderOutcome::Error => warn!(
+                op,
+                tier = %tier,
+                provider = %diagnostic.provider,
+                outcome = %diagnostic.outcome,
+                message = %diagnostic.message,
+                "tier failed; falling through"
+            ),
+        }
+        self.counters_for(tier).record(diagnostic.outcome);
+    }
+
+    /// Records a served attempt.
+    fn record_served(&self, tier: PrecisionTier) {
+        self.counters_for(tier).record_served();
+    }
+
+    /// Records a served attempt and wraps the value with its serving tier
+    /// and the diagnostics of the preceding fall-throughs.
+    fn serve<T>(
+        &self,
+        value: T,
+        tier: PrecisionTier,
+        diagnostics: Vec<ProviderDiagnostic>,
+    ) -> TieredOutcome<T> {
+        self.record_served(tier);
+        TieredOutcome::served_with(value, tier, diagnostics)
+    }
+
     /// Build a LightweightIndex for the given workspace root
     fn build_index(workspace_root: &Path) -> Arc<LightweightIndex> {
         let mut index = LightweightIndex::new();
@@ -52,21 +214,33 @@ impl CompositeProvider {
         Arc::new(index)
     }
 
+    /// Builds a provider with every tier enabled and a 30s LSP readiness bound.
     pub fn new(workspace_root: &Path) -> Self {
-        let arc_index = Self::build_index(workspace_root);
-        Self {
-            lsp: LspIntelligenceProvider::new(workspace_root),
-            fallback: TreesitterFallbackProvider::with_index(arc_index.clone()),
-            wait_timeout_secs: 30,
-        }
+        Self::with_policy_and_timeout(workspace_root, TierPolicy::all(), 30)
     }
 
+    /// Builds a provider with every tier enabled, bounding the LSP readiness wait.
     pub fn with_wait_timeout(workspace_root: &Path, timeout_secs: u64) -> Self {
+        Self::with_policy_and_timeout(workspace_root, TierPolicy::all(), timeout_secs)
+    }
+
+    /// Builds a provider with an explicit per-tier enablement policy.
+    pub fn with_policy(workspace_root: &Path, policy: TierPolicy) -> Self {
+        Self::with_policy_and_timeout(workspace_root, policy, 30)
+    }
+
+    fn with_policy_and_timeout(
+        workspace_root: &Path,
+        policy: TierPolicy,
+        timeout_secs: u64,
+    ) -> Self {
         let arc_index = Self::build_index(workspace_root);
         Self {
             lsp: LspIntelligenceProvider::new(workspace_root),
             fallback: TreesitterFallbackProvider::with_index(arc_index.clone()),
+            policy,
             wait_timeout_secs: timeout_secs,
+            counters: std::array::from_fn(|_| TierAtomics::default()),
         }
     }
 
@@ -74,16 +248,27 @@ impl CompositeProvider {
     where
         F: ProgressCallback,
     {
-        let arc_index = Self::build_index(workspace_root);
-        Self {
-            lsp: LspIntelligenceProvider::new(workspace_root),
-            fallback: TreesitterFallbackProvider::with_index(arc_index.clone()),
-            wait_timeout_secs: 30,
-        }
+        Self::with_policy_and_timeout(workspace_root, TierPolicy::all(), 30)
     }
 
     pub fn wait_timeout_secs(&self) -> u64 {
         self.wait_timeout_secs
+    }
+
+    /// The per-tier policy this provider was built with.
+    pub fn policy(&self) -> TierPolicy {
+        self.policy
+    }
+
+    /// Snapshot of the per-tier attempt counters in fixed highest-first
+    /// pipeline order (S2, S1, S0).
+    pub fn status(&self) -> CompositeStatus {
+        CompositeStatus {
+            tiers: TIER_ORDER
+                .iter()
+                .map(|tier| self.counters_for(*tier).snapshot(*tier))
+                .collect(),
+        }
     }
 
     fn language_from_location(location: &Location) -> Option<Language> {
@@ -116,15 +301,349 @@ impl CompositeProvider {
     }
 }
 
+/// Attempt helpers for the fixed tier pipeline (D2).
+///
+/// Per-op support matrix:
+///
+/// | op | S2 (LSP) | S1 (local resolver) | S0 (tree-sitter) |
+/// |----|----------|---------------------|------------------|
+/// | `get_symbols` | yes | — | yes |
+/// | `find_references` | yes | — | yes |
+/// | `get_hierarchy` | yes | — | yes |
+/// | `get_definition` | yes (authoritative `Ok(None)`) | yes | — |
+/// | `get_document_symbols` | yes | — | yes |
+/// | `hover` | yes | — | yes |
+///
+/// A successful-but-empty result from a non-terminal tier is `Degraded` and
+/// falls through (today's serving semantics); the same result from the
+/// terminal tier is a served answer. Unsupported tiers for an op are skipped
+/// silently, exactly like policy-disabled tiers.
+impl CompositeProvider {
+    /// Summary error for an op whose eligible tiers were all exhausted.
+    fn exhausted(op: &str, diagnostics: &[ProviderDiagnostic]) -> CodeIntelligenceError {
+        let detail = diagnostics
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("; ");
+        CodeIntelligenceError::Internal(format!("{op}: all tiers exhausted ({detail})"))
+    }
+
+    fn diagnostic(
+        tier: PrecisionTier,
+        provider: &str,
+        outcome: ProviderOutcome,
+        message: impl Into<String>,
+    ) -> ProviderDiagnostic {
+        ProviderDiagnostic::new(provider, tier, outcome, message)
+    }
+
+    /// Readiness gate for an S2 attempt driven by a file path.
+    async fn gate_lsp_for_path(
+        &self,
+        path: &Path,
+        op: &'static str,
+    ) -> Result<(), ProviderDiagnostic> {
+        match Language::from_extension(path.extension()) {
+            Some(language) => {
+                self.gate_lsp_language(language, op, path.display().to_string())
+                    .await
+            }
+            None => Err(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Unavailable,
+                format!("{op}: unsupported language for {}", path.display()),
+            )),
+        }
+    }
+
+    /// Readiness gate for an S2 attempt driven by a location.
+    async fn gate_lsp_for_location(
+        &self,
+        location: &Location,
+        op: &'static str,
+    ) -> Result<(), ProviderDiagnostic> {
+        match Self::language_from_location(location) {
+            Some(language) => {
+                self.gate_lsp_language(language, op, location.file().to_string())
+                    .await
+            }
+            None => Err(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Unavailable,
+                format!("{op}: unsupported language for {}", location.file()),
+            )),
+        }
+    }
+
+    async fn gate_lsp_language(
+        &self,
+        language: Language,
+        op: &'static str,
+        file: String,
+    ) -> Result<(), ProviderDiagnostic> {
+        match self.wait_for_lsp_ready(language, None).await {
+            Ok(()) => Ok(()),
+            Err(error) => Err(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Unavailable,
+                format!("{op}: {file}: {error}"),
+            )),
+        }
+    }
+
+    // ── S2 (LSP) attempts ───────────────────────────────────────────────
+
+    async fn attempt_lsp_get_symbols(&self, path: &Path) -> Attempt<Vec<Symbol>> {
+        if let Err(diagnostic) = self.gate_lsp_for_path(path, "get_symbols").await {
+            return Attempt::Failed(diagnostic);
+        }
+        match self.lsp.get_symbols(path).await {
+            Ok(symbols) if !symbols.is_empty() => Attempt::Served(symbols),
+            Ok(_) => Attempt::Degraded(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Degraded,
+                "get_symbols: LSP returned no symbols",
+            )),
+            Err(error) => Attempt::Failed(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Error,
+                format!("get_symbols: {error}"),
+            )),
+        }
+    }
+
+    async fn attempt_lsp_find_references(
+        &self,
+        location: &Location,
+        include_declaration: bool,
+    ) -> Attempt<Vec<Reference>> {
+        if let Err(diagnostic) = self
+            .gate_lsp_for_location(location, "find_references")
+            .await
+        {
+            return Attempt::Failed(diagnostic);
+        }
+        match self
+            .lsp
+            .find_references(location, include_declaration)
+            .await
+        {
+            Ok(references) if !references.is_empty() => Attempt::Served(references),
+            Ok(_) => Attempt::Degraded(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Degraded,
+                "find_references: LSP returned no references",
+            )),
+            Err(error) => Attempt::Failed(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Error,
+                format!("find_references: {error}"),
+            )),
+        }
+    }
+
+    async fn attempt_lsp_hierarchy(&self, location: &Location) -> Attempt<TypeHierarchy> {
+        if let Err(diagnostic) = self.gate_lsp_for_location(location, "get_hierarchy").await {
+            return Attempt::Failed(diagnostic);
+        }
+        match self.lsp.get_hierarchy(location).await {
+            Ok(hierarchy) => Attempt::Served(hierarchy),
+            Err(error) => Attempt::Failed(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Error,
+                format!("get_hierarchy: {error}"),
+            )),
+        }
+    }
+
+    async fn attempt_lsp_definition(&self, location: &Location) -> Attempt<Option<Location>> {
+        if let Err(diagnostic) = self.gate_lsp_for_location(location, "get_definition").await {
+            return Attempt::Failed(diagnostic);
+        }
+        match self.lsp.get_definition(location).await {
+            // LSP `Ok(None)` is an authoritative unresolved answer: no
+            // lower tier may second-guess it (composite.rs historical rule).
+            Ok(definition) => Attempt::Served(definition),
+            Err(error) => Attempt::Failed(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Error,
+                format!("get_definition: {error}"),
+            )),
+        }
+    }
+
+    async fn attempt_lsp_document_symbols(&self, path: &Path) -> Attempt<Vec<DocumentSymbol>> {
+        if let Err(diagnostic) = self.gate_lsp_for_path(path, "get_document_symbols").await {
+            return Attempt::Failed(diagnostic);
+        }
+        match self.lsp.get_document_symbols(path).await {
+            Ok(symbols) if !symbols.is_empty() => Attempt::Served(symbols),
+            Ok(_) => Attempt::Degraded(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Degraded,
+                "get_document_symbols: LSP returned no symbols",
+            )),
+            Err(error) => Attempt::Failed(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Error,
+                format!("get_document_symbols: {error}"),
+            )),
+        }
+    }
+
+    async fn attempt_lsp_hover(&self, location: &Location) -> Attempt<Option<HoverInfo>> {
+        if let Err(diagnostic) = self.gate_lsp_for_location(location, "hover").await {
+            return Attempt::Failed(diagnostic);
+        }
+        match self.lsp.hover(location).await {
+            Ok(Some(info)) if !info.content.is_empty() => {
+                tracing::debug!("LSP hover returned: {}", info.content);
+                Attempt::Served(Some(info))
+            }
+            Ok(Some(_)) => Attempt::Degraded(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Degraded,
+                "hover: LSP returned empty content",
+            )),
+            Ok(None) => Attempt::Degraded(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Degraded,
+                "hover: LSP returned no hover",
+            )),
+            Err(error) => Attempt::Failed(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Error,
+                format!("hover: {error}"),
+            )),
+        }
+    }
+
+    // ── S1 (local resolver) attempts ────────────────────────────────────
+
+    async fn attempt_local_resolver_definition(
+        &self,
+        location: &Location,
+    ) -> Attempt<Option<Location>> {
+        match self.fallback.get_definition(location).await {
+            Ok(Some(found)) => Attempt::Served(Some(found)),
+            Ok(None) => Attempt::Degraded(Self::diagnostic(
+                PrecisionTier::S1,
+                TreesitterFallbackProvider::LOCAL_RESOLVER_PROVIDER_ID,
+                ProviderOutcome::Degraded,
+                "get_definition: local resolver found no definition",
+            )),
+            Err(error) => Attempt::Failed(Self::diagnostic(
+                PrecisionTier::S1,
+                TreesitterFallbackProvider::LOCAL_RESOLVER_PROVIDER_ID,
+                ProviderOutcome::Error,
+                format!("get_definition: {error}"),
+            )),
+        }
+    }
+
+    // ── S0 (tree-sitter) attempts: terminal tier for their ops ──────────
+
+    async fn attempt_tree_sitter_get_symbols(&self, path: &Path) -> Attempt<Vec<Symbol>> {
+        match self.fallback.get_symbols(path).await {
+            Ok(symbols) => Attempt::Served(symbols),
+            Err(error) => Attempt::Failed(Self::diagnostic(
+                PrecisionTier::S0,
+                TreesitterFallbackProvider::PROVIDER_ID,
+                ProviderOutcome::Error,
+                format!("get_symbols: {error}"),
+            )),
+        }
+    }
+
+    async fn attempt_tree_sitter_find_references(
+        &self,
+        location: &Location,
+        include_declaration: bool,
+    ) -> Attempt<Vec<Reference>> {
+        match self
+            .fallback
+            .find_references(location, include_declaration)
+            .await
+        {
+            Ok(references) => Attempt::Served(references),
+            Err(error) => Attempt::Failed(Self::diagnostic(
+                PrecisionTier::S0,
+                TreesitterFallbackProvider::PROVIDER_ID,
+                ProviderOutcome::Error,
+                format!("find_references: {error}"),
+            )),
+        }
+    }
+
+    async fn attempt_tree_sitter_hierarchy(&self, location: &Location) -> Attempt<TypeHierarchy> {
+        match self.fallback.get_hierarchy(location).await {
+            Ok(hierarchy) => Attempt::Served(hierarchy),
+            Err(error) => Attempt::Failed(Self::diagnostic(
+                PrecisionTier::S0,
+                TreesitterFallbackProvider::PROVIDER_ID,
+                ProviderOutcome::Error,
+                format!("get_hierarchy: {error}"),
+            )),
+        }
+    }
+
+    async fn attempt_tree_sitter_document_symbols(
+        &self,
+        path: &Path,
+    ) -> Attempt<Vec<DocumentSymbol>> {
+        match self.fallback.get_document_symbols(path).await {
+            Ok(symbols) => Attempt::Served(symbols),
+            Err(error) => Attempt::Failed(Self::diagnostic(
+                PrecisionTier::S0,
+                TreesitterFallbackProvider::PROVIDER_ID,
+                ProviderOutcome::Error,
+                format!("get_document_symbols: {error}"),
+            )),
+        }
+    }
+
+    async fn attempt_tree_sitter_hover(&self, location: &Location) -> Attempt<Option<HoverInfo>> {
+        match self.fallback.hover(location).await {
+            Ok(hover) => Attempt::Served(hover),
+            Err(error) => Attempt::Failed(Self::diagnostic(
+                PrecisionTier::S0,
+                TreesitterFallbackProvider::PROVIDER_ID,
+                ProviderOutcome::Error,
+                format!("hover: {error}"),
+            )),
+        }
+    }
+}
+
+/// Old-shape mapping of the pipeline outcome: the six-op contract survives
+/// unchanged for `Arc<dyn CodeIntelligenceProvider>` consumers
+/// (`workspace_session`, `lsp_handlers`, CLI, proxy service).
+///
+/// `Served` maps to the value; `Unresolved` maps to each op's historical
+/// "nothing found" shape — `Ok(None)` for definition/hover, a diagnostic
+/// `Err(Internal)` for the collection ops.
 #[async_trait::async_trait]
 impl CodeIntelligenceProvider for CompositeProvider {
     async fn get_symbols(&self, path: &Path) -> Result<Vec<Symbol>, CodeIntelligenceError> {
-        let file_str = path.to_string_lossy().to_string();
-        match self.lsp.get_symbols(path).await {
-            Ok(symbols) if !symbols.is_empty() => Ok(symbols),
-            Ok(_) | Err(_) => {
-                warn!("LSP get_symbols failed for {}, using tree-sitter", file_str);
-                self.fallback.get_symbols(path).await
+        match self.get_symbols_tiered(path).await {
+            TieredOutcome::Served(tiered) => Ok(tiered.value),
+            TieredOutcome::Unresolved(diagnostics) => {
+                Err(Self::exhausted("get_symbols", &diagnostics))
             }
         }
     }
@@ -134,32 +653,13 @@ impl CodeIntelligenceProvider for CompositeProvider {
         location: &Location,
         include_declaration: bool,
     ) -> Result<Vec<Reference>, CodeIntelligenceError> {
-        let file = location.file().to_string();
-
-        if let Some(lang) = Self::language_from_location(location)
-            && let Err(e) = self.wait_for_lsp_ready(lang, None).await
-        {
-            warn!(
-                "LSP not ready for find_references on {}, using tree-sitter: {}",
-                file, e
-            );
-            return self
-                .fallback
-                .find_references(location, include_declaration)
-                .await;
-        }
-
         match self
-            .lsp
-            .find_references(location, include_declaration)
+            .find_references_tiered(location, include_declaration)
             .await
         {
-            Ok(refs) if !refs.is_empty() => Ok(refs),
-            Ok(_) | Err(_) => {
-                warn!("LSP find_references failed for {}, using tree-sitter", file);
-                self.fallback
-                    .find_references(location, include_declaration)
-                    .await
+            TieredOutcome::Served(tiered) => Ok(tiered.value),
+            TieredOutcome::Unresolved(diagnostics) => {
+                Err(Self::exhausted("find_references", &diagnostics))
             }
         }
     }
@@ -168,34 +668,22 @@ impl CodeIntelligenceProvider for CompositeProvider {
         &self,
         location: &Location,
     ) -> Result<TypeHierarchy, CodeIntelligenceError> {
-        self.fallback.get_hierarchy(location).await
+        match self.get_hierarchy_tiered(location).await {
+            TieredOutcome::Served(tiered) => Ok(tiered.value),
+            TieredOutcome::Unresolved(diagnostics) => {
+                Err(Self::exhausted("get_hierarchy", &diagnostics))
+            }
+        }
     }
 
     async fn get_definition(
         &self,
         location: &Location,
     ) -> Result<Option<Location>, CodeIntelligenceError> {
-        let file = location.file().to_string();
-
-        if let Some(lang) = Self::language_from_location(location) {
-            if let Err(e) = self.wait_for_lsp_ready(lang, None).await {
-                warn!(
-                    "LSP not ready for get_definition on {}, using tree-sitter: {}",
-                    file, e
-                );
-                return self.fallback.get_definition(location).await;
-            }
-        } else {
-            return self.fallback.get_definition(location).await;
-        }
-
-        match self.lsp.get_definition(location).await {
-            Ok(Some(loc)) => Ok(Some(loc)),
-            Ok(None) => Ok(None),
-            Err(_e) => {
-                warn!("LSP get_definition failed for {}, trying tree-sitter", file);
-                self.fallback.get_definition(location).await
-            }
+        match self.get_definition_tiered(location).await {
+            TieredOutcome::Served(tiered) => Ok(tiered.value),
+            // Historical shape: unresolved definition is not an error.
+            TieredOutcome::Unresolved(_) => Ok(None),
         }
     }
 
@@ -203,55 +691,225 @@ impl CodeIntelligenceProvider for CompositeProvider {
         &self,
         path: &Path,
     ) -> Result<Vec<DocumentSymbol>, CodeIntelligenceError> {
-        let file_str = path.to_string_lossy().to_string();
-        match self.lsp.get_document_symbols(path).await {
-            Ok(symbols) if !symbols.is_empty() => Ok(symbols),
-            Ok(_) | Err(_) => {
-                warn!(
-                    "LSP document symbols failed for {}, using tree-sitter",
-                    file_str
-                );
-                self.fallback.get_document_symbols(path).await
+        match self.get_document_symbols_tiered(path).await {
+            TieredOutcome::Served(tiered) => Ok(tiered.value),
+            TieredOutcome::Unresolved(diagnostics) => {
+                Err(Self::exhausted("get_document_symbols", &diagnostics))
             }
         }
     }
 
     async fn hover(&self, location: &Location) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
-        let file = location.file().to_string();
-
-        if let Some(lang) = Self::language_from_location(location) {
-            if let Err(e) = self.wait_for_lsp_ready(lang, None).await {
-                warn!(
-                    "LSP not ready for hover on {}, using tree-sitter: {}",
-                    file, e
-                );
-                return self.fallback.hover(location).await;
-            }
-        } else {
-            return self.fallback.hover(location).await;
+        match self.hover_tiered(location).await {
+            TieredOutcome::Served(tiered) => Ok(tiered.value),
+            // Historical shape: unresolved hover is not an error.
+            TieredOutcome::Unresolved(_) => Ok(None),
         }
+    }
+}
 
-        match self.lsp.hover(location).await {
-            Ok(Some(info)) if !info.content.is_empty() => {
-                tracing::debug!("LSP hover returned: {}", info.content);
-                Ok(Some(info))
-            }
-            Ok(Some(_)) => {
-                warn!(
-                    "LSP hover returned empty/unknown content for {}, trying tree-sitter",
-                    file
-                );
-                self.fallback.hover(location).await
-            }
-            Ok(None) => {
-                warn!("LSP hover returned None for {}, trying tree-sitter", file);
-                self.fallback.hover(location).await
-            }
-            Err(e) => {
-                warn!("LSP hover error for {}, trying tree-sitter: {}", file, e);
-                self.fallback.hover(location).await
+/// The fixed highest-first, policy-gated tier pipeline (D2/D3).
+///
+/// Each op walks [`TIER_ORDER`] and attempts only the tiers that support it.
+/// A serving tier is declared on the result, together with the diagnostics
+/// of every failed/degraded attempt that preceded it. Tier counters are
+/// updated per attempt; every fall-through emits structured `tracing`.
+#[async_trait::async_trait]
+impl TieredCodeIntelligenceProvider for CompositeProvider {
+    async fn get_symbols_tiered(&self, path: &Path) -> TieredOutcome<Vec<Symbol>> {
+        let mut diagnostics = Vec::new();
+
+        if self.policy.enabled(PrecisionTier::S2) {
+            match self.attempt_lsp_get_symbols(path).await {
+                Attempt::Served(value) => {
+                    return self.serve(value, PrecisionTier::S2, diagnostics);
+                }
+                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                    self.record_failure("get_symbols", &d);
+                    diagnostics.push(d);
+                }
             }
         }
+        // S1 has no get_symbols op (fixed support matrix): skipped silently.
+
+        if self.policy.enabled(PrecisionTier::S0) {
+            match self.attempt_tree_sitter_get_symbols(path).await {
+                Attempt::Served(value) => {
+                    return self.serve(value, PrecisionTier::S0, diagnostics);
+                }
+                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                    self.record_failure("get_symbols", &d);
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        TieredOutcome::Unresolved(diagnostics)
+    }
+
+    async fn find_references_tiered(
+        &self,
+        location: &Location,
+        include_declaration: bool,
+    ) -> TieredOutcome<Vec<Reference>> {
+        let mut diagnostics = Vec::new();
+
+        if self.policy.enabled(PrecisionTier::S2) {
+            match self
+                .attempt_lsp_find_references(location, include_declaration)
+                .await
+            {
+                Attempt::Served(value) => {
+                    return self.serve(value, PrecisionTier::S2, diagnostics);
+                }
+                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                    self.record_failure("find_references", &d);
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        if self.policy.enabled(PrecisionTier::S0) {
+            match self
+                .attempt_tree_sitter_find_references(location, include_declaration)
+                .await
+            {
+                Attempt::Served(value) => {
+                    return self.serve(value, PrecisionTier::S0, diagnostics);
+                }
+                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                    self.record_failure("find_references", &d);
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        TieredOutcome::Unresolved(diagnostics)
+    }
+
+    async fn get_hierarchy_tiered(&self, location: &Location) -> TieredOutcome<TypeHierarchy> {
+        let mut diagnostics = Vec::new();
+
+        // Behavior delta (D2): the S2 attempt now precedes the tree-sitter
+        // tier for hierarchy (it used to hard-code the fallback).
+        if self.policy.enabled(PrecisionTier::S2) {
+            match self.attempt_lsp_hierarchy(location).await {
+                Attempt::Served(value) => {
+                    return self.serve(value, PrecisionTier::S2, diagnostics);
+                }
+                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                    self.record_failure("get_hierarchy", &d);
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        if self.policy.enabled(PrecisionTier::S0) {
+            match self.attempt_tree_sitter_hierarchy(location).await {
+                Attempt::Served(value) => {
+                    return self.serve(value, PrecisionTier::S0, diagnostics);
+                }
+                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                    self.record_failure("get_hierarchy", &d);
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        TieredOutcome::Unresolved(diagnostics)
+    }
+
+    async fn get_definition_tiered(&self, location: &Location) -> TieredOutcome<Option<Location>> {
+        let mut diagnostics = Vec::new();
+
+        if self.policy.enabled(PrecisionTier::S2) {
+            match self.attempt_lsp_definition(location).await {
+                // `Ok(None)` is served at S2 and never falls through.
+                Attempt::Served(value) => {
+                    return self.serve(value, PrecisionTier::S2, diagnostics);
+                }
+                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                    self.record_failure("get_definition", &d);
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        if self.policy.enabled(PrecisionTier::S1) {
+            match self.attempt_local_resolver_definition(location).await {
+                Attempt::Served(value) => {
+                    return self.serve(value, PrecisionTier::S1, diagnostics);
+                }
+                // S1 is the lowest definition-capable tier: a resolver
+                // `Ok(None)` exhausts the definition chain.
+                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                    self.record_failure("get_definition", &d);
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        TieredOutcome::Unresolved(diagnostics)
+    }
+
+    async fn get_document_symbols_tiered(&self, path: &Path) -> TieredOutcome<Vec<DocumentSymbol>> {
+        let mut diagnostics = Vec::new();
+
+        if self.policy.enabled(PrecisionTier::S2) {
+            match self.attempt_lsp_document_symbols(path).await {
+                Attempt::Served(value) => {
+                    return self.serve(value, PrecisionTier::S2, diagnostics);
+                }
+                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                    self.record_failure("get_document_symbols", &d);
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        if self.policy.enabled(PrecisionTier::S0) {
+            match self.attempt_tree_sitter_document_symbols(path).await {
+                Attempt::Served(value) => {
+                    return self.serve(value, PrecisionTier::S0, diagnostics);
+                }
+                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                    self.record_failure("get_document_symbols", &d);
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        TieredOutcome::Unresolved(diagnostics)
+    }
+
+    async fn hover_tiered(&self, location: &Location) -> TieredOutcome<Option<HoverInfo>> {
+        let mut diagnostics = Vec::new();
+
+        if self.policy.enabled(PrecisionTier::S2) {
+            match self.attempt_lsp_hover(location).await {
+                Attempt::Served(value) => {
+                    return self.serve(value, PrecisionTier::S2, diagnostics);
+                }
+                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                    self.record_failure("hover", &d);
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        if self.policy.enabled(PrecisionTier::S0) {
+            match self.attempt_tree_sitter_hover(location).await {
+                Attempt::Served(value) => {
+                    return self.serve(value, PrecisionTier::S0, diagnostics);
+                }
+                Attempt::Degraded(d) | Attempt::Failed(d) => {
+                    self.record_failure("hover", &d);
+                    diagnostics.push(d);
+                }
+            }
+        }
+
+        TieredOutcome::Unresolved(diagnostics)
     }
 }
 
@@ -275,27 +933,282 @@ mod tests {
         assert!(result.is_ok() || result.is_err());
     }
 
+    /// Design D2 behavior delta: hierarchy attempts the S2 tier before the
+    /// tree-sitter tier (it used to hard-code the fallback). The unknown
+    /// extension makes the S2 attempt `Unavailable` without spawning, so the
+    /// assertion is deterministic and fast.
     #[tokio::test]
-    async fn test_composite_hierarchy_always_uses_fallback() {
-        let provider = CompositeProvider::new(std::path::Path::new("/tmp"));
-        let loc = Location::new("/tmp/test.rs".to_string(), 1, 1);
-        let result = provider.get_hierarchy(&loc).await;
-        assert!(result.is_err());
+    async fn test_hierarchy_attempts_s2_before_s0_and_maps_to_internal_error() {
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("thing.unknownlang");
+        std::fs::write(&file, "fn helper() {}\n").unwrap();
+        let location = Location::new(file.to_string_lossy().to_string(), 1, 4);
+
+        let provider = CompositeProvider::with_policy(tmp.path(), TierPolicy::all());
+        let error = provider
+            .get_hierarchy(&location)
+            .await
+            .expect_err("neither S2 nor S0 can serve hierarchy");
+        let message = error.to_string();
+        let s2_at = message
+            .find("lsp@S2 unavailable")
+            .unwrap_or_else(|| panic!("S2 diagnostic named in summary: {message}"));
+        let s0_at = message
+            .find("tree-sitter@S0 error")
+            .unwrap_or_else(|| panic!("S0 diagnostic named in summary: {message}"));
+        assert!(s2_at < s0_at, "S2 must be attempted before S0: {message}");
+
+        let status = provider.status();
+        let s2 = status.tier(PrecisionTier::S2).expect("S2 counters present");
+        assert_eq!((s2.attempts, s2.unavailable, s2.served), (1, 1, 0));
+        let s0 = status.tier(PrecisionTier::S0).expect("S0 counters present");
+        assert_eq!((s0.attempts, s0.errors), (1, 1));
     }
 
-    #[test]
-    fn test_fallback_result_new() {
-        let result: FallbackResult<i32> = FallbackResult::new(42);
-        assert_eq!(result.value, 42);
-        assert!(!result.is_fallback());
-        assert!(result.fallback_reason.is_none());
+    /// Historical tree-sitter-only hierarchy behavior survives as the
+    /// policy-disabled variant: S0 errors → `Err(Internal)`, and the gated-off
+    /// S2 tier is never attempted.
+    #[tokio::test]
+    async fn test_composite_hierarchy_uses_tree_sitter_when_lsp_gated_off() {
+        let provider = CompositeProvider::with_policy(
+            std::path::Path::new("/tmp"),
+            TierPolicy {
+                lsp: false,
+                ..TierPolicy::all()
+            },
+        );
+        let location = Location::new("/tmp/test.rs".to_string(), 1, 1);
+        let error = provider
+            .get_hierarchy(&location)
+            .await
+            .expect_err("tree-sitter hierarchy is unsupported");
+        assert!(
+            error.to_string().contains("tree-sitter@S0 error"),
+            "{error}"
+        );
+        assert!(
+            !error.to_string().contains("lsp@S2"),
+            "gated-off S2 must not appear in the summary: {error}"
+        );
+        let status = provider.status();
+        assert_eq!(
+            status
+                .tier(PrecisionTier::S2)
+                .expect("S2 counters")
+                .attempts,
+            0,
+            "gated-off S2 must not be attempted"
+        );
     }
 
-    #[test]
-    fn test_fallback_result_with_reason() {
-        let result: FallbackResult<i32> = FallbackResult::with_fallback(42, "Server not ready");
-        assert_eq!(result.value, 42);
-        assert!(result.is_fallback());
-        assert_eq!(result.fallback_reason.as_deref(), Some("Server not ready"));
+    // ── LSI M4 tier pipeline (RED: task 2.1) ────────────────────────────
+
+    /// Scenario "Gated or failed tier falls through": with the LSP tier
+    /// policy-disabled, tree-sitter must serve and DECLARE S0; the gated-off
+    /// tier is skipped without a diagnostic or a counter increment.
+    #[tokio::test]
+    async fn test_gated_lsp_tier_falls_through_declaring_serving_tier() {
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("sample.rs");
+        std::fs::write(&file, "fn helper() {}\n").unwrap();
+
+        let provider = CompositeProvider::with_policy(
+            tmp.path(),
+            TierPolicy {
+                lsp: false,
+                ..TierPolicy::all()
+            },
+        );
+        let outcome = provider.get_symbols_tiered(&file).await;
+
+        assert!(outcome.is_served(), "tree-sitter must serve: {outcome:?}");
+        assert_eq!(outcome.tier(), Some(PrecisionTier::S0));
+        assert!(
+            outcome.diagnostics().is_empty(),
+            "a policy-disabled tier is skipped without a diagnostic: {:?}",
+            outcome.diagnostics()
+        );
+
+        let status = provider.status();
+        let s2 = status.tier(PrecisionTier::S2).expect("S2 counters present");
+        assert_eq!(
+            (s2.attempts, s2.served),
+            (0, 0),
+            "gated-off tier must not be attempted or served"
+        );
+        let s0 = status.tier(PrecisionTier::S0).expect("S0 counters present");
+        assert_eq!((s0.attempts, s0.served), (1, 1));
+    }
+
+    /// Scenario "Fallback diagnostic is attached and counted": an unavailable
+    /// S2 attempt attaches a diagnostic naming provider + tier + outcome,
+    /// falls through, and is counted; the serving tier is declared.
+    #[tokio::test]
+    async fn test_fallback_diagnostic_is_attached_and_counted() {
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        // Unknown extension: no LSP language mapping, so the S2 attempt is
+        // declared Unavailable without spawning any server process.
+        let file = tmp.path().join("notes.unknownlang");
+        std::fs::write(&file, "fn helper() {}\n").unwrap();
+
+        let provider = CompositeProvider::with_policy(tmp.path(), TierPolicy::all());
+        let location = Location::new(file.to_string_lossy().to_string(), 1, 4);
+        let outcome = provider.hover_tiered(&location).await;
+
+        assert!(
+            outcome.is_served(),
+            "tree-sitter hover must serve: {outcome:?}"
+        );
+        assert_eq!(outcome.tier(), Some(PrecisionTier::S0));
+
+        let diagnostics = outcome.diagnostics();
+        assert_eq!(
+            diagnostics.len(),
+            1,
+            "the failed LSP attempt must attach exactly one diagnostic"
+        );
+        assert_eq!(diagnostics[0].attempted_tier, PrecisionTier::S2);
+        assert_eq!(diagnostics[0].outcome, ProviderOutcome::Unavailable);
+        assert!(
+            !diagnostics[0].provider.is_empty(),
+            "diagnostic must name the provider"
+        );
+
+        let status = provider.status();
+        let s2 = status.tier(PrecisionTier::S2).expect("S2 counters present");
+        assert_eq!((s2.attempts, s2.served, s2.unavailable), (1, 0, 1));
+        let s0 = status.tier(PrecisionTier::S0).expect("S0 counters present");
+        assert_eq!((s0.attempts, s0.served), (1, 1));
+    }
+
+    /// S1 is the lowest definition-capable tier: a resolver `Ok(None)` is
+    /// Degraded and exhausts the chain (Unresolved), and the old-trait shape
+    /// stays `Ok(None)`.
+    #[tokio::test]
+    async fn test_local_resolver_none_is_unresolved_and_maps_to_ok_none() {
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("main.rs");
+        std::fs::write(&file, "fn main() { missing_symbol(); }\n").unwrap();
+        let location = Location::new(file.to_string_lossy().to_string(), 1, 13);
+
+        let provider = CompositeProvider::with_policy(
+            tmp.path(),
+            TierPolicy {
+                lsp: false,
+                ..TierPolicy::all()
+            },
+        );
+        let outcome = provider.get_definition_tiered(&location).await;
+        assert!(
+            !outcome.is_served(),
+            "the local resolver found no definition: {outcome:?}"
+        );
+        assert_eq!(outcome.diagnostics().len(), 1);
+        assert_eq!(outcome.diagnostics()[0].attempted_tier, PrecisionTier::S1);
+        assert_eq!(outcome.diagnostics()[0].outcome, ProviderOutcome::Degraded);
+
+        // Counters are cumulative: snapshot them before the old-trait call,
+        // which delegates to the same tiered op.
+        let status = provider.status();
+        let s1 = status.tier(PrecisionTier::S1).expect("S1 counters present");
+        assert_eq!((s1.attempts, s1.served, s1.degraded), (1, 0, 1));
+
+        assert!(provider.get_definition(&location).await.unwrap().is_none());
+    }
+
+    /// Historical old-trait shape (D2): an unresolved hover is `Ok(None)`,
+    /// not an error, even though the S0 attempt failed.
+    #[tokio::test]
+    async fn test_hover_unresolved_maps_to_ok_none() {
+        let provider = CompositeProvider::with_policy(
+            std::path::Path::new("/tmp"),
+            TierPolicy {
+                lsp: false,
+                ..TierPolicy::all()
+            },
+        );
+        let location = Location::new("/nonexistent/missing.rs".to_string(), 1, 1);
+
+        let outcome = provider.hover_tiered(&location).await;
+        assert!(!outcome.is_served());
+        assert_eq!(outcome.diagnostics()[0].attempted_tier, PrecisionTier::S0);
+        assert_eq!(outcome.diagnostics()[0].outcome, ProviderOutcome::Error);
+        assert!(provider.hover(&location).await.unwrap().is_none());
+    }
+
+    /// Historical old-trait shape (D2): an unresolved collection op is
+    /// `Err(Internal)` carrying the exhausted-tier diagnostic summary.
+    #[tokio::test]
+    async fn test_symbols_unresolved_maps_to_internal_error() {
+        let provider = CompositeProvider::with_policy(
+            std::path::Path::new("/tmp"),
+            TierPolicy {
+                lsp: false,
+                ..TierPolicy::all()
+            },
+        );
+        let error = provider
+            .get_symbols(std::path::Path::new("/nonexistent/missing.rs"))
+            .await
+            .expect_err("no tier can parse a missing file");
+        let message = error.to_string();
+        assert!(message.contains("all tiers exhausted"), "{message}");
+        assert!(message.contains("tree-sitter@S0 error"), "{message}");
+    }
+
+    /// The policy-disabled S2 tier is skipped for every op without a
+    /// diagnostic or a counter increment, while S0 keeps serving.
+    #[tokio::test]
+    async fn test_policy_gating_applies_to_every_op() {
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("sample.ts");
+        std::fs::write(&file, "export function helper() {}\n").unwrap();
+        let location = Location::new(file.to_string_lossy().to_string(), 1, 17);
+
+        let provider = CompositeProvider::with_policy(
+            tmp.path(),
+            TierPolicy {
+                lsp: false,
+                ..TierPolicy::all()
+            },
+        );
+
+        let symbols = provider.get_symbols_tiered(&file).await;
+        assert!(symbols.is_served());
+        assert_eq!(symbols.tier(), Some(PrecisionTier::S0));
+
+        let references = provider.find_references_tiered(&location, true).await;
+        assert!(references.is_served());
+        assert_eq!(references.tier(), Some(PrecisionTier::S0));
+
+        let document_symbols = provider.get_document_symbols_tiered(&file).await;
+        assert!(document_symbols.is_served());
+        assert_eq!(document_symbols.tier(), Some(PrecisionTier::S0));
+
+        let hover = provider.hover_tiered(&location).await;
+        assert!(hover.is_served());
+        assert_eq!(hover.tier(), Some(PrecisionTier::S0));
+
+        let status = provider.status();
+        assert_eq!(
+            status
+                .tier(PrecisionTier::S2)
+                .expect("S2 counters")
+                .attempts,
+            0,
+            "gated-off S2 must not be attempted by any op"
+        );
+        let s0 = status.tier(PrecisionTier::S0).expect("S0 counters present");
+        assert_eq!((s0.attempts, s0.served), (4, 4));
     }
 }

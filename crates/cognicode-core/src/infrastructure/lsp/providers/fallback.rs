@@ -9,6 +9,13 @@ use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::path::Path;
 use std::sync::Arc;
 
+/// Tree-sitter parse/heuristic provider with an optional workspace index.
+///
+/// Serves two tiers of the composite pipeline (LSI M4):
+///
+/// * **S1** — the index-backed `get_definition` local resolver
+///   ([`Self::LOCAL_RESOLVER_PROVIDER_ID`]).
+/// * **S0** — all parse/heuristic ops ([`Self::PROVIDER_ID`]).
 pub struct TreesitterFallbackProvider {
     index: Option<Arc<LightweightIndex>>,
 }
@@ -20,6 +27,11 @@ impl Default for TreesitterFallbackProvider {
 }
 
 impl TreesitterFallbackProvider {
+    /// Stable provider identity for the S0 tree-sitter tier.
+    pub const PROVIDER_ID: &'static str = "tree-sitter";
+    /// Stable provider identity for the S1 index-backed definition resolver.
+    pub const LOCAL_RESOLVER_PROVIDER_ID: &'static str = "local-resolver";
+
     pub fn new() -> Self {
         Self { index: None }
     }

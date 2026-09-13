@@ -1,0 +1,35 @@
+# SDDK DAG state — e39-lsi-semantic-providers
+# Orchestrator-maintained. Survives compaction.
+change: e39-lsi-semantic-providers
+program: lsi (Living Software Intelligence, umbrella: cognicode-living-software-intelligence)
+milestone: M4 — Semantic Provider Pipeline (umbrella tasks group 5)
+created: 2026-09-13
+mode: openspec
+delivery_strategy: auto-chain
+delivery_note: >
+  Auto mode (established directive). Chained work-unit slices, stacked-to-main,
+  commits per completed+verified cycle (pattern established e38.1/e38.2).
+  Preflight e38.2 closed the M4 blockers: CP-4 commit id-space collision guard
+  (multi-producer safe), engine determinism, lint GREEN, perf gate noise-attributed.
+prior_evidence:
+  kernel: "FactStore::commit with FactIdSpaceCollision guard; SubjectIndex cross-producer join (e38.1); facts_in_snapshot; typed SymbolFqn/SymbolKindDetail"
+  harness: "equivalence harness with kind multisets (digest fnv1a64:ec9546e35a003ed6); identity benchmark (matcher fnv1a64:e79f623705344f98); 42/42 goldens"
+  e39_backlog_riders: "CP-5 cross-layer tie-break test; DUP-2/3/6 shared test support; GAP S2 generic-projection equivalence harness (ledger)"
+  known_defects:
+    - "build_project_graph_filtered/_async retain legacy unordered name-index (no golden path; flagged)"
+    - "multi-lang-types quarantined (fact path extracts more entities; run-to-run deterministic now)"
+    - "formal UAT runs deferred (A5) — dedicated cycle post-M4"
+m4_exit_gates:
+  - "provider fallback observable"
+  - "no fabricated resolutions"
+  - "Rust/TS/Java semantic fixtures with defined precision targets"
+  - "unresolved state propagates"
+phases:
+  explore: {status: done, artifact: "exploration.md — domain pipeline port (PrecisionTier + ProviderDiagnostic), CompositeProvider tier-pipeline refactor, tier→Provenance mapping, fallback observable via diagnostics+counters, SCIP skipped, Java availability-gated", date: 2026-09-13}
+  propose: {status: done, artifact: "proposal.md (449w) — 4 exit gates mapped 1:1, capabilities None/None with provider-pipeline-conformance flagged candidate, 4 flagged assumptions", date: 2026-09-13}
+  spec: {status: done, artifact: "specs/provider-tier-provenance/spec.md (4 reqs / 5 scen) + specs/provider-pipeline-conformance/spec.md (2 reqs / 3 scen); umbrella semantic-provider-pipeline stays authoritative", date: 2026-09-13}
+  design: {status: done, artifact: "design.md — D1-D8 (tier types no-serde in code_intelligence.rs, additive TieredCodeIntelligenceProvider trait zero-ripple, composite [S2,S1,S0] pipeline + per-op support matrix + atomics status, tier→Provenance S2→Extracted/S1→Inferred/S0→Ambiguous + tier=<T> provider=<id> detail, UnresolvedRecord, ungated pipeline with legacy-extraction-stability guard, Java jdtls PATH probe, SCIP spike criteria recorded); WU1-WU5", date: 2026-09-13}
+  tasks: {status: done, artifact: "tasks.md — 22 tasks / 5 phases; forecast High (~750-950 ln), auto-chain, stacked-to-main; PR1-PR5 chain", date: 2026-09-13}
+  apply: {status: pending}
+  verify: {status: pending}
+  archive: {status: pending}

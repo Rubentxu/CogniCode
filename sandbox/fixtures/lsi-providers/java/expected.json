@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "language": "java",
+  "queries": [
+    {
+      "op": "get_symbols",
+      "file": "src/Main.java",
+      "expected": { "tier": "S2", "outcome": "Served" }
+    },
+    {
+      "op": "hover",
+      "file": "src/Main.java",
+      "line": 7,
+      "column": 23,
+      "expected": { "tier": "S2", "outcome": "Served" }
+    },
+    {
+      "op": "get_definition",
+      "file": "src/Main.java",
+      "line": 7,
+      "column": 23,
+      "expected": { "tier": "S2", "outcome": "Served" }
+    }
+  ]
+}

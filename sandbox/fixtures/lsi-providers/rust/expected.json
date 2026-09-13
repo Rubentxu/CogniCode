@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "language": "rust",
+  "queries": [
+    {
+      "op": "get_symbols",
+      "file": "src/lib.rs",
+      "expected": { "tier": "S0", "outcome": "Served" }
+    },
+    {
+      "op": "get_document_symbols",
+      "file": "src/lib.rs",
+      "expected": { "tier": "S0", "outcome": "Served" }
+    },
+    {
+      "op": "hover",
+      "file": "src/lib.rs",
+      "line": 6,
+      "column": 19,
+      "expected": { "tier": "S0", "outcome": "Served" }
+    },
+    {
+      "op": "find_references",
+      "file": "src/lib.rs",
+      "line": 6,
+      "column": 19,
+      "expected": { "tier": "S0", "outcome": "Served" }
+    },
+    {
+      "op": "get_definition",
+      "file": "src/lib.rs",
+      "line": 6,
+      "column": 19,
+      "expected": { "tier": "S1", "outcome": "Served" }
+    }
+  ]
+}

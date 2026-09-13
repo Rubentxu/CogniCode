@@ -19,7 +19,7 @@ use crate::application::ingest::types::ExtractionResult;
 use crate::domain::evidence_kernel::fact::{Fact, FactValue, ProducerKind, ProvenanceRecord};
 use crate::domain::evidence_kernel::ids::{FactId, SnapshotId};
 use crate::domain::evidence_kernel::relation::RelationKind;
-use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
+use crate::domain::traits::code_intelligence::{PrecisionTier, TieredCodeIntelligenceProvider};
 use crate::domain::value_objects::Provenance;
 
 use super::FactBridgeError;
@@ -38,6 +38,12 @@ struct RelationRecord {
     /// Which deterministic authority observed the relation (never LLM —
     /// rejected at insertion).
     producer: ProducerKind,
+    /// Serving precision tier of the observation (`None` for extraction
+    /// records, which are AST-observed rather than tier-attributed).
+    tier: Option<PrecisionTier>,
+    /// Identity of the provider that served the observation; composed into
+    /// the provenance detail as `provider=<id>` (design D4).
+    provider_id: Option<String>,
 }
 
 /// Stable total order over [`ProducerKind`] (the enum is not `Ord`), used
@@ -53,11 +59,30 @@ fn producer_rank(producer: ProducerKind) -> u8 {
     }
 }
 
+/// One query whose eligible provider tiers were all exhausted (design D5).
+///
+/// Uncertainty is recorded IN MEMORY next to the batch — the bridge never
+/// persists it (no new predicate, no new kernel artifact): consumers read
+/// it with [`FactBatchBuilder::take_unresolved`] before [`finish`]
+/// consumes the builder. An exhausted query contributes NO fact and never
+/// fabricates a subject or target identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnresolvedRecord {
+    /// The site whose query went unresolved: the queried symbol's 1-based
+    /// fact-side FQN for symbol queries, the file path for `get_symbols`.
+    pub site: String,
+    /// The operation that exhausted its tiers (e.g. `"find_references"`).
+    pub query: String,
+    /// The tiers that were attempted and exhausted, in attempt order.
+    pub exhausted_tiers: Vec<PrecisionTier>,
+}
+
 /// Accumulates relation observations and turns them into one canonical,
 /// deterministic fact batch (E37 design D3).
 pub struct FactBatchBuilder {
     snapshot: SnapshotId,
     records: Vec<RelationRecord>,
+    unresolved: Vec<UnresolvedRecord>,
 }
 
 impl FactBatchBuilder {
@@ -66,6 +91,7 @@ impl FactBatchBuilder {
         Self {
             snapshot,
             records: Vec::new(),
+            unresolved: Vec::new(),
         }
     }
 
@@ -76,11 +102,17 @@ impl FactBatchBuilder {
         tree_sitter_facts::collect(self, result);
     }
 
-    /// Adds every relation observable through a code-intelligence provider
-    /// for `files` (design D1; producer `RuntimeObserver`).
+    /// Adds every relation observable through a TIERED code-intelligence
+    /// provider for `files` (design D1/D4; producer `RuntimeObserver`).
+    ///
+    /// Observations are attributed to their serving tier: provenance class
+    /// follows the pinned tier mapping and the detail carries
+    /// `tier=<T> provider=<id>`. Queries with every tier exhausted are
+    /// recorded as in-memory [`UnresolvedRecord`]s (design D5) and emit no
+    /// fact.
     pub async fn add_provider(
         &mut self,
-        provider: &dyn CodeIntelligenceProvider,
+        provider: &dyn TieredCodeIntelligenceProvider,
         files: &[PathBuf],
     ) {
         lsp_facts::collect(self, provider, files).await;
@@ -106,8 +138,77 @@ impl FactBatchBuilder {
             object: object.into(),
             detail,
             producer,
+            tier: None,
+            provider_id: None,
         });
         Ok(())
+    }
+
+    /// Low-level insertion point for one provider observation attributed to
+    /// a serving precision tier (design D4).
+    ///
+    /// `declared_class` is the provenance class the observation claims —
+    /// callers derive it with [`PrecisionTier::provenance_class`]. A class
+    /// contradicting the declared tier fails batch construction with
+    /// [`FactBridgeError::TierProvenanceContradiction`] (no silent accept);
+    /// the stored fact's class is re-derived from `tier` in [`finish`].
+    ///
+    /// `provider_id` is the serving provider's stable identity; `finish`
+    /// appends `tier=<T> provider=<id>` to the provenance detail.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_tiered_observation(
+        &mut self,
+        subject: impl Into<String>,
+        predicate: RelationKind,
+        object: impl Into<String>,
+        producer: ProducerKind,
+        detail: Option<String>,
+        tier: PrecisionTier,
+        declared_class: Provenance,
+        provider_id: impl Into<String>,
+    ) -> Result<(), FactBridgeError> {
+        if producer == ProducerKind::LlmAgent {
+            return Err(FactBridgeError::LlmProvenance);
+        }
+        // The class is derived from the tier (never trusted blindly): a
+        // declared class contradicting its tier fails batch construction
+        // (spec `provider-tier-provenance`, "Pinned tier-to-provenance
+        // mapping"). This is the ONLY way a tier-attributed record enters
+        // the batch, so `finish` can re-derive the class safely.
+        if declared_class != tier.provenance_class() {
+            return Err(FactBridgeError::TierProvenanceContradiction);
+        }
+        self.records.push(RelationRecord {
+            subject: subject.into(),
+            predicate,
+            object: object.into(),
+            detail,
+            producer,
+            tier: Some(tier),
+            provider_id: Some(provider_id.into()),
+        });
+        Ok(())
+    }
+
+    /// Records one exhausted query (design D5): the uncertainty travels
+    /// in memory next to the batch, never as a fact — and never silently.
+    pub fn record_unresolved(&mut self, record: UnresolvedRecord) {
+        tracing::warn!(
+            site = %record.site,
+            query = %record.query,
+            exhausted_tiers = ?record.exhausted_tiers,
+            "query exhausted every eligible tier; no fact emitted"
+        );
+        self.unresolved.push(record);
+    }
+
+    /// Takes the exhausted-query records collected so far (design D5).
+    ///
+    /// Call BEFORE [`finish`] consumes the builder: `finish` drops any
+    /// records not taken, because uncertainty is deliberately not part of
+    /// the persisted fact set.
+    pub fn take_unresolved(&mut self) -> Vec<UnresolvedRecord> {
+        std::mem::take(&mut self.unresolved)
     }
 
     /// Canonicalizes the accumulated observations into `Fact`s (design D3).
@@ -116,9 +217,26 @@ impl FactBatchBuilder {
     /// `(detail, producer)` as deterministic tie-breakers — BEFORE ids
     /// exist. Subject strings then map through a snapshot-scoped
     /// [`EntityIdTable`] and facts take `FactId(1..M)` in canonical order.
+    ///
+    /// Provenance is derived per record (design D4): a tier-attributed
+    /// observation commits under `tier.provenance_class()` (S2→Extracted,
+    /// S1→Inferred, S0→Ambiguous) with `tier=<T> provider=<id>` appended to
+    /// its detail; a tier-less extraction record stays `Extracted` with its
+    /// detail untouched. Exhausted-query records taken with
+    /// [`take_unresolved`] are NOT part of the fact set.
     pub fn finish(self) -> Vec<Fact> {
         let snapshot = self.snapshot;
         let mut records = self.records;
+        // Compose the tier attestation BEFORE sorting so the canonical
+        // order sees the final detail bytes (design D4: deterministic
+        // `tier=<T> provider=<id>` appended after existing entries).
+        for record in &mut records {
+            record.detail = tier_attested_detail(
+                record.detail.take(),
+                record.tier,
+                record.provider_id.as_deref(),
+            );
+        }
         records.sort_by(|a, b| {
             (
                 &a.subject,
@@ -146,18 +264,44 @@ impl FactBatchBuilder {
                 let subject = table
                     .get(&record.subject)
                     .expect("every record subject was registered in the table");
+                let class = record
+                    .tier
+                    .map(PrecisionTier::provenance_class)
+                    .unwrap_or(Provenance::Extracted);
                 Fact::new(
                     FactId::new(i as u64 + 1),
                     subject,
                     record.predicate,
                     FactValue::Text(record.object),
                     snapshot,
-                    ProvenanceRecord::new(Provenance::Extracted, record.producer, record.detail),
+                    ProvenanceRecord::new(class, record.producer, record.detail),
                 )
                 .expect("producers were validated at insertion (never LLM)")
             })
             .collect()
     }
+}
+
+/// Appends the pinned tier attestation `tier=<T> provider=<id>` to a
+/// record's provenance detail (design D4).
+///
+/// The attestation follows any existing entry (e.g. `ref=<Kind>`), so the
+/// composed detail is deterministic. Tier-less records (extraction) keep
+/// their detail exactly as observed.
+fn tier_attested_detail(
+    detail: Option<String>,
+    tier: Option<PrecisionTier>,
+    provider_id: Option<&str>,
+) -> Option<String> {
+    let Some(tier) = tier else {
+        // Tier-less records (extraction) keep their detail untouched.
+        return detail;
+    };
+    let attestation = format!("tier={tier} provider={}", provider_id.unwrap_or("unknown"));
+    Some(match detail {
+        Some(existing) => format!("{existing} {attestation}"),
+        None => attestation,
+    })
 }
 
 #[cfg(test)]
@@ -175,8 +319,8 @@ mod tests {
     use crate::domain::evidence_kernel::ids::{EntityId, SnapshotId};
     use crate::domain::evidence_kernel::relation::RelationKind;
     use crate::domain::traits::code_intelligence::{
-        CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, HoverInfo, Reference,
-        ReferenceKind, TypeHierarchy,
+        DocumentSymbol, HoverInfo, Reference, ReferenceKind, TieredCodeIntelligenceProvider,
+        TieredOutcome, TypeHierarchy,
     };
     use crate::domain::value_objects::{Location, SymbolKind};
     use crate::infrastructure::parser::language_config::RUST_CONFIG;
@@ -399,61 +543,64 @@ mod tests {
     struct JoinObserver;
 
     #[async_trait]
-    impl CodeIntelligenceProvider for JoinObserver {
-        async fn get_symbols(&self, _path: &Path) -> Result<Vec<Symbol>, CodeIntelligenceError> {
+    impl TieredCodeIntelligenceProvider for JoinObserver {
+        async fn get_symbols_tiered(&self, _path: &Path) -> TieredOutcome<Vec<Symbol>> {
             let at = |line: u32| Location::new("src/join.rs", line, 0);
-            Ok(vec![
-                Symbol::new("helper", SymbolKind::Function, at(0)),
-                Symbol::new("unused_fn", SymbolKind::Function, at(4)),
-                Symbol::new("main", SymbolKind::Function, at(6)),
-            ])
+            TieredOutcome::served(
+                vec![
+                    Symbol::new("helper", SymbolKind::Function, at(0)),
+                    Symbol::new("unused_fn", SymbolKind::Function, at(4)),
+                    Symbol::new("main", SymbolKind::Function, at(6)),
+                ],
+                PrecisionTier::S2,
+            )
         }
 
-        async fn find_references(
+        async fn find_references_tiered(
             &self,
             location: &Location,
             _include_declaration: bool,
-        ) -> Result<Vec<Reference>, CodeIntelligenceError> {
+        ) -> TieredOutcome<Vec<Reference>> {
             if location.line() == 4 {
-                return Ok(vec![Reference {
-                    location: Location::new("src/join.rs", 7, 8),
-                    reference_kind: ReferenceKind::Call,
-                    container: Some("main".to_string()),
-                }]);
+                return TieredOutcome::served(
+                    vec![Reference {
+                        location: Location::new("src/join.rs", 7, 8),
+                        reference_kind: ReferenceKind::Call,
+                        container: Some("main".to_string()),
+                    }],
+                    PrecisionTier::S2,
+                );
             }
-            Ok(vec![])
+            TieredOutcome::served(vec![], PrecisionTier::S2)
         }
 
-        async fn get_hierarchy(
-            &self,
-            location: &Location,
-        ) -> Result<TypeHierarchy, CodeIntelligenceError> {
-            Ok(TypeHierarchy {
-                symbol: Symbol::new("queried", SymbolKind::Function, location.clone()),
-                parents: vec![],
-                children: vec![],
-            })
+        async fn get_hierarchy_tiered(&self, location: &Location) -> TieredOutcome<TypeHierarchy> {
+            TieredOutcome::served(
+                TypeHierarchy {
+                    symbol: Symbol::new("queried", SymbolKind::Function, location.clone()),
+                    parents: vec![],
+                    children: vec![],
+                },
+                PrecisionTier::S2,
+            )
         }
 
-        async fn get_definition(
+        async fn get_definition_tiered(
             &self,
             _location: &Location,
-        ) -> Result<Option<Location>, CodeIntelligenceError> {
-            Ok(None)
+        ) -> TieredOutcome<Option<Location>> {
+            TieredOutcome::served(None, PrecisionTier::S2)
         }
 
-        async fn get_document_symbols(
+        async fn get_document_symbols_tiered(
             &self,
             _path: &Path,
-        ) -> Result<Vec<DocumentSymbol>, CodeIntelligenceError> {
-            Ok(vec![])
+        ) -> TieredOutcome<Vec<DocumentSymbol>> {
+            TieredOutcome::served(vec![], PrecisionTier::S2)
         }
 
-        async fn hover(
-            &self,
-            _location: &Location,
-        ) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
-            Ok(None)
+        async fn hover_tiered(&self, _location: &Location) -> TieredOutcome<Option<HoverInfo>> {
+            TieredOutcome::served(None, PrecisionTier::S2)
         }
     }
 
@@ -523,6 +670,152 @@ fn main() {
             "LSP call fact (container 'main') must JOIN the tree-sitter entity \
              src/join.rs:main:7; callees were {:?}",
             main.callees
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // E39 WU-3 (tasks 3.1/3.2, RED-first) — tier-attributed provenance
+    // (specs/provider-tier-provenance)
+    // -------------------------------------------------------------------------
+
+    /// Adds one tier-attributed observation for the queried symbol
+    /// `src/lib.rs:handle:1`.
+    fn add_s0_reference(
+        builder: &mut FactBatchBuilder,
+        class: Provenance,
+    ) -> Result<(), FactBridgeError> {
+        builder.add_tiered_observation(
+            "src/lib.rs:handle:1",
+            relation("core:references"),
+            "helper",
+            ProducerKind::RuntimeObserver,
+            Some("ref=Read".to_string()),
+            PrecisionTier::S0,
+            class,
+            "tree-sitter",
+        )
+    }
+
+    /// Spec scenario "Ambiguous heuristic match stays Ambiguous" (task 3.1):
+    /// an `S0` tree-sitter observation NEVER commits as `Extracted` — the
+    /// pinned tier mapping classes it `Ambiguous`, and the provenance detail
+    /// carries the appended `tier=<T> provider=<id>` attestation.
+    #[test]
+    fn s0_heuristic_observations_are_ambiguous_never_extracted() {
+        let mut builder = FactBatchBuilder::new(SNAPSHOT);
+        add_s0_reference(&mut builder, Provenance::Ambiguous)
+            .expect("an S0 observation declared Ambiguous is well-attributed");
+
+        let facts = builder.finish();
+        assert_eq!(facts.len(), 1);
+        assert_eq!(
+            facts[0].provenance.class,
+            Provenance::Ambiguous,
+            "an S0 heuristic binding must never be classed Extracted"
+        );
+        assert_ne!(facts[0].provenance.class, Provenance::Extracted);
+        assert_eq!(
+            facts[0].provenance.detail.as_deref(),
+            Some("ref=Read tier=S0 provider=tree-sitter"),
+            "the pinned tier attestation is appended after the existing detail"
+        );
+    }
+
+    /// Spec requirement "Pinned tier-to-provenance mapping" (task 3.2): a
+    /// class contradicting its declared tier MUST fail batch construction —
+    /// no silent accept, and the rejected observation leaves no trace.
+    #[test]
+    fn class_contradicting_its_tier_fails_batch_construction() {
+        let mut builder = FactBatchBuilder::new(SNAPSHOT);
+        let err = add_s0_reference(&mut builder, Provenance::Extracted)
+            .expect_err("Extracted contradicts the S0 heuristic tier");
+        assert_eq!(err, FactBridgeError::TierProvenanceContradiction);
+        assert!(
+            builder.finish().is_empty(),
+            "the mis-attributed observation must not enter the batch"
+        );
+    }
+
+    /// Spec scenario "Tier decides provenance class" (task 3.5): the class
+    /// follows the serving tier — `S1` local-resolver observations commit as
+    /// `Inferred` with the resolver's provider identity, `S2` LSP
+    /// observations as `Extracted`.
+    #[test]
+    fn tier_decides_provenance_class() {
+        let mut builder = FactBatchBuilder::new(SNAPSHOT);
+        builder
+            .add_tiered_observation(
+                "src/lib.rs:handle:1",
+                relation("core:references"),
+                "helper",
+                ProducerKind::RuntimeObserver,
+                None,
+                PrecisionTier::S1,
+                Provenance::Inferred,
+                "local-resolver",
+            )
+            .expect("an S1 observation declared Inferred is well-attributed");
+        builder
+            .add_tiered_observation(
+                "src/lib.rs:main:5",
+                relation("core:calls"),
+                "handle",
+                ProducerKind::RuntimeObserver,
+                None,
+                PrecisionTier::S2,
+                Provenance::Extracted,
+                "lsp",
+            )
+            .expect("an S2 observation declared Extracted is well-attributed");
+
+        let facts = builder.finish();
+        let by_subject = |fqn: &str| {
+            facts
+                .iter()
+                .find(|fact| match &fact.object {
+                    FactValue::Text(text) => text == fqn,
+                    _ => false,
+                })
+                .unwrap_or_else(|| panic!("fact with object {fqn} missing"))
+        };
+
+        let inferred = by_subject("helper");
+        assert_eq!(inferred.provenance.class, Provenance::Inferred);
+        assert_eq!(
+            inferred.provenance.detail.as_deref(),
+            Some("tier=S1 provider=local-resolver")
+        );
+
+        let extracted = by_subject("handle");
+        assert_eq!(extracted.provenance.class, Provenance::Extracted);
+        assert_eq!(
+            extracted.provenance.detail.as_deref(),
+            Some("tier=S2 provider=lsp")
+        );
+    }
+
+    /// Extraction records stay tier-less and `Extracted`: the AST observer
+    /// is not a precision tier, and e37's equivalence multiset comparison
+    /// depends on extraction facts keeping their class.
+    #[test]
+    fn tierless_extraction_observations_stay_extracted() {
+        let mut builder = FactBatchBuilder::new(SNAPSHOT);
+        builder
+            .add_observation(
+                "src/lib.rs:handle:1",
+                relation("core:defines"),
+                "src/lib.rs:handle:1",
+                ProducerKind::DeterministicAnalyzer,
+                Some("kind=Function".to_string()),
+            )
+            .expect("deterministic producer");
+
+        let facts = builder.finish();
+        assert_eq!(facts[0].provenance.class, Provenance::Extracted);
+        assert_eq!(
+            facts[0].provenance.detail.as_deref(),
+            Some("kind=Function"),
+            "tier-less records keep their detail untouched"
         );
     }
 }

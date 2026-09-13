@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "language": "ts",
+  "queries": [
+    {
+      "op": "get_symbols",
+      "file": "src/lib.ts",
+      "expected": { "tier": "S0", "outcome": "Served" }
+    },
+    {
+      "op": "get_document_symbols",
+      "file": "src/lib.ts",
+      "expected": { "tier": "S0", "outcome": "Served" }
+    },
+    {
+      "op": "hover",
+      "file": "src/lib.ts",
+      "line": 6,
+      "column": 19,
+      "expected": { "tier": "S0", "outcome": "Served" }
+    },
+    {
+      "op": "find_references",
+      "file": "src/lib.ts",
+      "line": 6,
+      "column": 19,
+      "expected": { "tier": "S0", "outcome": "Served" }
+    },
+    {
+      "op": "get_definition",
+      "file": "src/lib.ts",
+      "line": 6,
+      "column": 19,
+      "expected": { "tier": "S1", "outcome": "Served" }
+    }
+  ]
+}

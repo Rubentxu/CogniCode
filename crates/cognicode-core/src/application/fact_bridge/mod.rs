@@ -54,7 +54,7 @@ pub mod tree_sitter_facts;
 
 use crate::domain::evidence_kernel::relation::RelationKind;
 
-pub use batch_builder::FactBatchBuilder;
+pub use batch_builder::{FactBatchBuilder, UnresolvedRecord};
 pub use entity_table::EntityIdTable;
 
 /// Errors raised while assembling a fact batch.
@@ -65,6 +65,13 @@ pub enum FactBridgeError {
     /// AgentEvidence and is rejected before it can enter a batch.
     #[error("LLM-agent output cannot be recorded as an extracted-fact observation")]
     LlmProvenance,
+    /// An observation's provenance class contradicts the serving precision
+    /// tier it declares (design D4, spec `provider-tier-provenance`):
+    /// e.g. a tree-sitter (`S0`) heuristic stamped `Extracted` instead of
+    /// `Ambiguous`. Batch construction fails rather than silently accepting
+    /// the mis-attributed fact.
+    #[error("provenance class contradicts the observation's declared precision tier")]
+    TierProvenanceContradiction,
 }
 
 /// Constructs a canonical `core:*` relation kind.
