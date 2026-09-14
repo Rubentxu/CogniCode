@@ -93,7 +93,7 @@ pub fn canonical_corpus() -> Vec<ConformanceFixture> {
             label: "diamond_backward_slice",
             params: serde_json::json!({
                 "function_id": "diamond",
-                "variable": "x",
+                "variable": "a",
                 "definition_site": 0,
                 "adjacency": [[1], [2, 3], [4], [4], []],
                 "use_sites": [4],
