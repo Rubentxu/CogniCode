@@ -195,10 +195,36 @@ impl ProgramAnalysisService {
             return self.run_dominators_cfg(params, limits);
         }
 
-        // WU3–WU5: forward + backward slicing, taint, DFG, summaries.
+        // WU3: forward + backward slicing. Both ids share the same runtime
+        // path; the descriptor layer is the only place that knows about the
+        // forward/backward distinction at the param-validation level.
+        if id == &*SLICE_FORWARD {
+            return self.run_slice(params, limits, /*backward=*/ false);
+        }
+        if id == &*SLICE_BACKWARD {
+            return self.run_slice(params, limits, /*backward=*/ true);
+        }
+
+        // WU5: taint placeholder (handled in WU5).
+        if id == &*TAINT_FLOW {
+            return self.run_taint(params, limits);
+        }
+
+        #[cfg(feature = "program-analysis-server")]
+        {
+            if id == &*DFG {
+                return self.run_dfg(params, limits);
+            }
+            // WU4: interprocedural summaries.
+            if id == &*INTERPROC_SUMMARY {
+                return self.run_interproc_summary(params, limits);
+            }
+        }
+
+        // Anything else (shouldn't reach here, but stay total).
         Ok(RunOutput::PageRank(serde_json::json!({
             "algorithm": id.as_str(),
-            "status": "stub",
+            "status": "unhandled",
         })))
     }
 
@@ -237,6 +263,128 @@ impl ProgramAnalysisService {
             "dominators": dom,
         });
         Ok(RunOutput::PageRank(json))
+    }
+
+    /// WU3 forward/backward slice over the supplied CFG.
+    ///
+    /// Required params (validated by `SlicingParams`):
+    /// - `variable`: string name of interest
+    /// - `definition_site`: block id where the definition lives
+    /// - `adjacency`: flat out-neighbor list
+    /// - `use_sites` (optional, backward only): list of block ids that
+    ///   contain a use of `variable`; defaults to `[definition_site]`
+    ///   for forward and `[]` for backward.
+    fn run_slice(
+        &self,
+        params: &serde_json::Value,
+        _limits: &PlanLimits,
+        backward: bool,
+    ) -> Result<RunOutput, AnalyticsError> {
+        use cognicode_graph_algos::algorithms::{backward_slice, forward_slice};
+        let variable = params
+            .get("variable")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AnalyticsError::InvalidParameter("missing 'variable'".into()))?
+            .to_string();
+        let definition_site = params
+            .get("definition_site")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| AnalyticsError::InvalidParameter("missing 'definition_site'".into()))?
+            as usize;
+        let adjacency = parse_adjacency(params)?;
+
+        let nodes: Vec<usize> = if backward {
+            let use_sites: Vec<usize> = params
+                .get("use_sites")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_u64().map(|n| n as usize))
+                        .collect()
+                })
+                .unwrap_or_default();
+            backward_slice(&adjacency, &use_sites)
+        } else {
+            forward_slice(&adjacency, definition_site)
+        };
+
+        let json = serde_json::json!({
+            "algorithm": if backward { "slice_backward" } else { "slice_forward" },
+            "variable": variable,
+            "definition_site": definition_site,
+            "direction": if backward { "backward" } else { "forward" },
+            "nodes": nodes,
+        });
+        Ok(RunOutput::PageRank(json))
+    }
+
+    /// WU3 DFG: intra-procedural def→use edges from a flat statement list.
+    fn run_dfg(
+        &self,
+        params: &serde_json::Value,
+        _limits: &PlanLimits,
+    ) -> Result<RunOutput, AnalyticsError> {
+        use cognicode_graph_algos::algorithms::{DefUseEdge, Statement, dfg_edges};
+        let stmts_json = params
+            .get("statements")
+            .ok_or_else(|| AnalyticsError::InvalidParameter("missing 'statements'".into()))?
+            .as_array()
+            .ok_or_else(|| {
+                AnalyticsError::InvalidParameter("'statements' must be a JSON array".into())
+            })?;
+        let statements: Vec<Statement> =
+            serde_json::from_value(serde_json::Value::Array(stmts_json.clone()))
+                .map_err(|e| AnalyticsError::InvalidParameter(format!("bad statement: {e}")))?;
+        let edges: Vec<DefUseEdge> = dfg_edges(&statements);
+        let json = serde_json::json!({
+            "algorithm": "dfg",
+            "function_id": params.get("function_id"),
+            "edge_count": edges.len(),
+            "edges": edges,
+        });
+        Ok(RunOutput::PageRank(json))
+    }
+
+    /// WU5 taint placeholder. Real implementation lands in WU5.
+    fn run_taint(
+        &self,
+        params: &serde_json::Value,
+        _limits: &PlanLimits,
+    ) -> Result<RunOutput, AnalyticsError> {
+        // Until WU5, the descriptor's params are validated and we return a
+        // structured "stub" response so callers can already wire their
+        // requests through the dispatcher.
+        let sources: Vec<serde_json::Value> = params
+            .get("sources")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let sinks: Vec<serde_json::Value> = params
+            .get("sinks")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        Ok(RunOutput::PageRank(serde_json::json!({
+            "algorithm": "taint_flow",
+            "status": "stub",
+            "note": "WU5 wires the declared-pattern matching; descriptor already validates params.",
+            "source_count": sources.len(),
+            "sink_count": sinks.len(),
+        })))
+    }
+
+    /// WU4 interprocedural summary placeholder.
+    #[cfg(feature = "program-analysis-server")]
+    fn run_interproc_summary(
+        &self,
+        _params: &serde_json::Value,
+        _limits: &PlanLimits,
+    ) -> Result<RunOutput, AnalyticsError> {
+        Ok(RunOutput::PageRank(serde_json::json!({
+            "algorithm": "interproc_summary",
+            "status": "stub",
+            "note": "WU4 wires the call-graph + summary cache.",
+        })))
     }
 
     /// Convenience: returns the full canonical list of M5 algorithm ids.
@@ -414,6 +562,112 @@ mod tests {
                 );
             }
             _ => panic!("expected RunOutput::PageRank for dominators"),
+        }
+    }
+
+    #[test]
+    fn dispatch_forward_slice_end_to_end() {
+        let svc = ProgramAnalysisService::new();
+        // Linear chain 0 -> 1 -> 2; forward slice from 0 should return all.
+        let res = svc
+            .dispatch(
+                &SLICE_FORWARD,
+                &serde_json::json!({
+                    "function_id": "linear",
+                    "variable": "x",
+                    "definition_site": 0,
+                    "adjacency": [[1], [2], []],
+                }),
+                &PlanLimits::default(),
+            )
+            .expect("dispatch should succeed");
+        match res {
+            RunOutput::PageRank(v) => {
+                let nodes: Vec<usize> = v
+                    .get("nodes")
+                    .and_then(|x| x.as_array())
+                    .expect("nodes array")
+                    .iter()
+                    .filter_map(|n| n.as_u64().map(|u| u as usize))
+                    .collect();
+                assert_eq!(nodes, vec![0, 1, 2]);
+                assert_eq!(v.get("direction").and_then(|x| x.as_str()), Some("forward"));
+            }
+            _ => panic!("expected RunOutput::PageRank for slicing"),
+        }
+    }
+
+    #[test]
+    fn dispatch_backward_slice_end_to_end() {
+        let svc = ProgramAnalysisService::new();
+        // Diamond: 0 -> 1; 1 -> 2, 3; 2 -> 4; 3 -> 4; use_sites = [4].
+        let res = svc
+            .dispatch(
+                &SLICE_BACKWARD,
+                &serde_json::json!({
+                    "function_id": "diamond",
+                    "variable": "x",
+                    "definition_site": 0,
+                    "adjacency": [[1], [2, 3], [4], [4], []],
+                    "use_sites": [4],
+                }),
+                &PlanLimits::default(),
+            )
+            .expect("dispatch should succeed");
+        match res {
+            RunOutput::PageRank(v) => {
+                let nodes: Vec<usize> = v
+                    .get("nodes")
+                    .and_then(|x| x.as_array())
+                    .expect("nodes array")
+                    .iter()
+                    .filter_map(|n| n.as_u64().map(|u| u as usize))
+                    .collect();
+                assert_eq!(nodes, vec![0, 1, 2, 3, 4]);
+                assert_eq!(
+                    v.get("direction").and_then(|x| x.as_str()),
+                    Some("backward")
+                );
+            }
+            _ => panic!("expected RunOutput::PageRank for slicing"),
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "program-analysis-server")]
+    fn dispatch_dfg_end_to_end() {
+        let svc = ProgramAnalysisService::new();
+        // x = 1; y = x; z = y
+        let res = svc
+            .dispatch(
+                &DFG,
+                &serde_json::json!({
+                    "function_id": "linear_dfg",
+                    "cfg_digest": "sha256:linear",
+                    "statements": [
+                        {"id": 0, "defs": ["x"], "uses": []},
+                        {"id": 1, "defs": ["y"], "uses": ["x"]},
+                        {"id": 2, "defs": ["z"], "uses": ["y"]},
+                    ],
+                }),
+                &PlanLimits::default(),
+            )
+            .expect("dispatch should succeed");
+        match res {
+            RunOutput::PageRank(v) => {
+                assert_eq!(v.get("edge_count").and_then(|x| x.as_u64()), Some(2));
+                let edges = v
+                    .get("edges")
+                    .and_then(|x| x.as_array())
+                    .expect("edges array");
+                assert_eq!(edges.len(), 2);
+                // Sorted by (from, to, variable) — (0, 1, x) then (1, 2, y).
+                let first = &edges[0];
+                assert_eq!(first.get("from").and_then(|x| x.as_u64()), Some(0));
+                assert_eq!(first.get("to").and_then(|x| x.as_u64()), Some(1));
+                assert_eq!(first.get("variable").and_then(|x| x.as_str()), Some("x"));
+            }
+            _ => panic!("expected RunOutput::PageRank for DFG"),
         }
     }
 }
