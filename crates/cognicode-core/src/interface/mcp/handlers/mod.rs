@@ -3866,6 +3866,7 @@ pub mod aix_handlers;
 pub mod consolidated_handlers;
 pub mod graph_handlers;
 pub mod graph_query_handlers;
+pub mod program_analysis_handlers;
 
 #[cfg(test)]
 mod tests {

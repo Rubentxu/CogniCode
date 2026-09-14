@@ -11,7 +11,7 @@
 //! WU6 adds the conformance harness as a sibling module under
 //! `program_analysis/` (see `conformance`).
 
-mod conformance;
+pub mod conformance;
 
 use std::sync::Arc;
 
