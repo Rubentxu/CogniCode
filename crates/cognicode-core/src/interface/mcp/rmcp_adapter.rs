@@ -1114,6 +1114,86 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     )
                     .with_meta(cognicode_meta("stable", "view", false, false, 100)),
 
+                    // M5.2 WU2: M5 program-analysis algorithm IDs.
+                    Tool::new(
+                        "cfg_per_function",
+                        "Build the CFG (control flow graph) for one function given adjacency, root, and exits.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "algorithm_params": { "type": "object", "description": "Per-tool parameters (see conformance corpus)" },
+                                "limits": { "type": "object", "description": "Optional PlanLimits override" }
+                            },
+                            "required": ["algorithm_params"]
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("experimental", "graph", false, false, 5000)),
+                    Tool::new(
+                        "dominators_cfg",
+                        "Compute per-function dominators over a CFG adjacency slice.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "algorithm_params": { "type": "object" },
+                                "limits": { "type": "object" }
+                            },
+                            "required": ["algorithm_params"]
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("experimental", "graph", false, false, 5000)),
+                    Tool::new(
+                        "slice_forward",
+                        "Forward slice from a (variable, definition_site) criterion.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "algorithm_params": { "type": "object" },
+                                "limits": { "type": "object" }
+                            },
+                            "required": ["algorithm_params"]
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("experimental", "graph", false, false, 5000)),
+                    Tool::new(
+                        "slice_backward",
+                        "Backward slice from a (variable, use_sites[]) criterion.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "algorithm_params": { "type": "object" },
+                                "limits": { "type": "object" }
+                            },
+                            "required": ["algorithm_params"]
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("experimental", "graph", false, false, 5000)),
+                    Tool::new(
+                        "taint_flow",
+                        "Forward taint analysis over a DFG (declarative Rust patterns).",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "algorithm_params": { "type": "object" },
+                                "limits": { "type": "object" }
+                            },
+                            "required": ["algorithm_params"]
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("experimental", "graph", false, false, 5000)),
+                    #[cfg(feature = "program-analysis-server")]
+                    Tool::new(
+                        "interproc_summary",
+                        "Interprocedural summary: bottom-up reads/writes + fixed-point on recursive SCCs.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "algorithm_params": { "type": "object" },
+                                "limits": { "type": "object" }
+                            },
+                            "required": ["algorithm_params"]
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("experimental", "graph", false, false, 5000)),
     ]
 }
 impl ServerHandler for CogniCodeHandler {
@@ -1965,6 +2045,51 @@ async fn call_tool_handler(
                     )
                     .await?;
                 Ok(serde_json::to_string(&output)?)
+            }
+
+            // M5.2 WU2: program-analysis dispatch arms.
+            "cfg_per_function" => {
+                let input: crate::interface::mcp::handlers::program_analysis_handlers::ProgramAnalysisToolInput =
+                    serde_json::from_value(arguments.into())?;
+                crate::interface::mcp::handlers::program_analysis_handlers::handle_cfg(input)
+                    .map_err(InterfaceError::Internal)
+            }
+            "dominators_cfg" => {
+                let input: crate::interface::mcp::handlers::program_analysis_handlers::ProgramAnalysisToolInput =
+                    serde_json::from_value(arguments.into())?;
+                crate::interface::mcp::handlers::program_analysis_handlers::handle_dominators_cfg(
+                    input,
+                )
+                .map_err(InterfaceError::Internal)
+            }
+            "slice_forward" => {
+                let input: crate::interface::mcp::handlers::program_analysis_handlers::ProgramAnalysisToolInput =
+                    serde_json::from_value(arguments.into())?;
+                crate::interface::mcp::handlers::program_analysis_handlers::handle_slice_forward(
+                    input,
+                )
+                .map_err(InterfaceError::Internal)
+            }
+            "slice_backward" => {
+                let input: crate::interface::mcp::handlers::program_analysis_handlers::ProgramAnalysisToolInput =
+                    serde_json::from_value(arguments.into())?;
+                crate::interface::mcp::handlers::program_analysis_handlers::handle_slice_backward(
+                    input,
+                )
+                .map_err(InterfaceError::Internal)
+            }
+            "taint_flow" => {
+                let input: crate::interface::mcp::handlers::program_analysis_handlers::ProgramAnalysisToolInput =
+                    serde_json::from_value(arguments.into())?;
+                crate::interface::mcp::handlers::program_analysis_handlers::handle_taint_flow(input)
+                    .map_err(InterfaceError::Internal)
+            }
+            #[cfg(feature = "program-analysis-server")]
+            "interproc_summary" => {
+                let input: crate::interface::mcp::handlers::program_analysis_handlers::ProgramAnalysisToolInput =
+                    serde_json::from_value(arguments.into())?;
+                crate::interface::mcp::handlers::program_analysis_handlers::handle_interproc_summary(input)
+                    .map_err(InterfaceError::Internal)
             }
 
             _ => Err(InterfaceError::ToolNotFound(tool_name.to_string())),
