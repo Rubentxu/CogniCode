@@ -7,6 +7,11 @@
 //!
 //! The actual algorithm execution (CFG extraction, slicing, etc.) is added in
 //! WU2–WU5; WU1 establishes the dispatch surface and testability scaffold.
+//!
+//! WU6 adds the conformance harness as a sibling module under
+//! `program_analysis/` (see `conformance`).
+
+mod conformance;
 
 use std::sync::Arc;
 
