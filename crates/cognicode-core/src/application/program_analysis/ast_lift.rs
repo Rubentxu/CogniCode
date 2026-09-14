@@ -694,7 +694,6 @@ fn rust_fn() {
             let (fs, _) =
                 lift_rust_source(std::path::Path::new("diamond.rs"), DOMINATORS_DIAMOND_SRC);
             assert!(!fs.is_empty(), "diamond source must yield functions");
-            let f = &fs[0];
 
             // Build CFG params for diamond: 5 statements, adjacency [[1], [2, 3], [4], [4], []].
             let params = serde_json::json!({
@@ -766,7 +765,6 @@ fn rust_fn() {
             let svc = ProgramAnalysisService::new();
             let (fs, _) = lift_rust_source(std::path::Path::new("diamond.rs"), SLICE_BACKWARD_SRC);
             assert!(!fs.is_empty(), "slice source must yield functions");
-            let f = &fs[0];
 
             // Build slice params: variable "a" at definition_site 0 (diamond source defines a).
             // Diamond adjacency: [[1], [2, 3], [4], [4], []].
