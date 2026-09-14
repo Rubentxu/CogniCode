@@ -13,6 +13,9 @@
 
 pub mod conformance;
 
+#[cfg(feature = "program-analysis-server")]
+pub mod ast_lift;
+
 use std::sync::Arc;
 
 use crate::domain::analytics::descriptor::{
