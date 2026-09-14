@@ -1,6 +1,15 @@
 # M5.1b — Statement-Level Extraction: Implementation Receipt
 
-**WU3 of 3** | Commits: `28dce397` (WU1), `6b8bee7f` (WU2) → `b39162e4` (WU3)
+**WU3 of 3** | Commits: `28dce397` (WU1), `6b8bee7f` (WU2), `23d7839e` (WU3), `f333a2fd` (clippy fix), `47b25c86` (docs)
+
+**Verification (orchestrator re-check 2026-09-14):** `cargo clippy -p
+cognicode-core --features program-analysis-server --lib --tests -- -D
+warnings` → exit 0. `cargo fmt --check` → exit 0. `grep -rn 'tokio\|sqlx\|
+reqwest' application/program_analysis/ast_lift.rs application/ingest/
+extractor.rs application/ingest/types.rs` → 0 matches. The original
+agent verification (`verification.md`) claimed clippy clean but missed 2
+unused-variable warnings in the new conformance tests; fix landed in
+`f333a2fd`.
 
 ## What was implemented
 
