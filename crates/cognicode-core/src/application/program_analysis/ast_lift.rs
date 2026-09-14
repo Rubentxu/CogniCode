@@ -46,6 +46,15 @@ use crate::domain::value_objects::{NodeKind, SymbolKind};
 ///
 /// The function is total: empty input → `(vec![], vec![])`; failed
 /// extractions are skipped (REQ-LIFT-06).
+///
+/// **Scope (M5.1 vs M5.1b):** `FunctionLocalView.statements` is always empty
+/// in this lift. The current `tree_sitter_facts` extractor does not emit
+/// statement-level facts, so statement-aware algorithms (`cfg_per_function`,
+/// `dominators_cfg`, `slice_forward`, `slice_backward`, `taint_flow`) cannot
+/// be served from lifted source yet. They remain fed by the synthetic
+/// conformance corpus. `interproc_summary`, which only needs the call
+/// adjacency, IS served by this lift. Statement-level extraction is tracked
+/// in M5.1b.
 pub fn lift(extractions: &[ExtractionResult]) -> (Vec<FunctionLocalView>, Vec<Vec<usize>>) {
     let mut functions: Vec<FunctionLocalView> = Vec::new();
     // Map of `node.id` (FQN string) → index in `functions`.
@@ -474,6 +483,37 @@ fn diamond_entry() {
             let (fs, cg) = lift_rust_source(std::path::Path::new("empty.rs"), "");
             assert!(fs.is_empty(), "empty source must produce zero functions");
             assert!(cg.is_empty(), "empty source must produce empty call graph");
+        }
+
+        #[test]
+        fn real_source_chain_shape_yields_single_function() {
+            // A non-branching linear function (no calls to siblings) should
+            // still produce a single FunctionLocalView with calls == [].
+            // This exercises the diamond-vs-chain contract: only when there
+            // are sibling functions do we expect non-empty adjacency.
+            let (fs, cg) = lift_rust_source(std::path::Path::new("linear.rs"), LINEAR_CHAIN_SRC);
+            assert_eq!(fs.len(), cg.len());
+            assert!(!fs.is_empty());
+            for f in &fs {
+                assert!(
+                    f.statements.is_empty(),
+                    "M5.1 lift must NOT emit statements"
+                );
+            }
+        }
+
+        #[test]
+        fn real_source_lift_is_deterministic() {
+            // REQ-LIFT-08: two extractions of the same source must produce
+            // identical bytes (no hidden non-determinism, no time-based
+            // fields in the lift output). FunctionLocalView serializes
+            // deterministically because the index assignment is order-based.
+            let (fs_a, cg_a) = lift_rust_source(std::path::Path::new("det.rs"), LINEAR_CHAIN_SRC);
+            let (fs_b, cg_b) = lift_rust_source(std::path::Path::new("det.rs"), LINEAR_CHAIN_SRC);
+            let ja = serde_json::to_string(&fs_a).unwrap();
+            let jb = serde_json::to_string(&fs_b).unwrap();
+            assert_eq!(ja, jb, "function views must serialize deterministically");
+            assert_eq!(cg_a, cg_b, "call adjacency must be deterministic");
         }
     }
 }
