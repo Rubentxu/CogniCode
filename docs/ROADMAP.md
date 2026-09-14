@@ -620,10 +620,14 @@ See git log for v0.76.x through v0.80.x.
 lifecycle of CogniCode's runtime artifacts (MCP server, sandbox
 containers, skills, IDE integration). Modeled on `asdf-vm`.
 
-**Status**: planning complete. 3 ADRs + 5 OpenSpec specs written.
-Implementation starts with E32-A.
+**Status (2026-08-16)**: ✅ E32 program **CERRADO** (E32-A .. E32-I).
+3 ADRs (ADR-034/035/036) + 5 OpenSpec specs written. Implementación
+shipped entre v0.94.11 (e33-1) y v0.94.14 (E32-I). Pre-existing
+issue: `test_clean_home_install` falla (root cause: `bundle.yaml`
+incluye kinds `[Cogh, Cognicode]` sin componentes definidos — punted
+a ciclo independiente).
 
-### E32-A — `cogh` CLI binary core (rust, asdf-style) ✅ COMPLETED-NO, ⏳ PLANNED
+### E32-A — `cogh` CLI binary core (rust, asdf-style) ✅ COMPLETED (v0.94.11, e33-1)
 
 - Install / list / current / latest / update / uninstall /
   plugin/reshim/doctor/where/version
@@ -631,73 +635,92 @@ Implementation starts with E32-A.
 - Shims directory regenerates on every install
 - Per-project `.cognicode.lock` (JSON)
 - Curl-installable (`curl ... | sh`)
-- Est. 2K LOC of Rust
+- Est. 2K LOC of Rust — shipped en commit `49f4d703` (e33-1)
 
-### E32-B — Plugin manifest + registry client ⏳ PLANNED
+### E32-B — Plugin manifest + registry client ✅ COMPLETED (e33-8 PR #285, v0.94.11)
 
 - `plugin.yaml` schema (apiVersion: cognicode/v1)
 - `sha256` integrity check (mandatory)
 - GitHub Releases registry client
 - Bundled plugins (mcp-server, skills-cognicode-core, sandbox-templates)
 - `cogh plugin add <name> --from-url <git-url>` for community plugins
-- Est. 1K LOC
+- Shipping como `bundled/<name>.yaml` + `crates/cognicode-cli/src/cmd/registry.rs`
 
-### E32-C — portable skill bundles (re-publication) ⏳ PLANNED
+### E32-C — portable skill bundles (re-publication) ✅ COMPLETED (e33-9 PR #286, v0.94.11)
 
 - Drop `compatibility: opencode` field from existing skills
 - Add `manifest.yaml` to each of 4 skills
 - Verify references/ and assets/ structure
 - Doc: `docs/specs/portable-skill-bundle/spec.md`
-- Est. 0.2K LOC
+- 4 skills shipped (sense-and-adapt, recent-refactor, recent-rust, test-pyramid)
 
-### E32-D — opencode IDE adapter ⏳ PLANNED
+### E32-D — opencode IDE adapter ✅ COMPLETED (e33-10 PR #287, v0.94.11)
 
 - Adapter manifest (`integrate` + `uninstall` steps)
 - Patch `~/.config/opencode/opencode.json` (merge, not overwrite)
 - Copy skills to `~/.config/opencode/skills/cognicode-$VERSION/`
-- Est. 0.5K LOC
+- Hardening: E32-I fixed dispatch-order y shim path resolution (v0.94.14)
 
-### E32-E — zcode IDE adapter ⏳ PLANNED
+### E32-E — zcode IDE adapter ✅ COMPLETED (E35 v0.94.13)
 
 - Adapter for `~/.zcode/v2/config.json`
 - Patch `mcp` section
 - Copy skills to `~/.zcode/...`
-- Est. 0.5K LOC
+- Spec: `openspec/specs/cognicode-ide-adapter/spec.md` row 1
 
-### E32-F — claude IDE adapter ⏳ PLANNED
+### E32-F — claude IDE adapter ✅ COMPLETED (E35 v0.94.13)
 
-- Adapter for `~/.claude/claude_desktop_config.json`
-- Patch `mcpServers` section (different field name)
-- Copy skills to `~/.claude/`
-- Est. 0.5K LOC
+- Adapter for `~/.claude/mcp/cognicode-mcp.json` (per-server file, NOT `claude_desktop_config.json`)
+- Patch JSON `mcp` section
+- Copy skills to `~/.claude/...`
+- Spec: `openspec/specs/cognicode-ide-adapter/spec.md` row 3
 
-### E32-G — codex IDE adapter ⏳ PLANNED
+### E32-G — codex IDE adapter ✅ COMPLETED (E35 v0.94.13)
 
-- Adapter for `~/.codex/config.json`
-- Patch `mcp_servers` array
-- Copy skills to `~/.codex/`
-- Est. 0.5K LOC
+- Adapter for `~/.codex/config.toml` (TOML, NOT JSON)
+- Patch `[mcp_servers.cognicode-mcp]` table (TOML, NOT `mcp_servers` array)
+- Copy skills to `~/.codex/...`
+- Spec: `openspec/specs/cognicode-ide-adapter/spec.md` row 4
 
-### E32-H — install / uninstall / update lifecycle tests ⏳ PLANNED
+### E32-H — install / uninstall / update lifecycle tests ✅ COMPLETED (PR #265, e33-12 PR #288)
 
-- E2E: `cogh install --ide all` configures 4 IDEs
+- E2E: `cogh install --ide all` configures 4 IDEs (6/8 scenarios PASS en E32-I verify)
 - E2E: `cogh update` respects `.cognicode.lock`
 - E2E: `cogh uninstall` cleanly removes
 - E2E: `cogh doctor` reports failures correctly
-- Est. 0.5K LOC tests
+- Pre-existing failure: `test_clean_home_install` — root cause identified, punted
+- Tests en `crates/cognicode-cli/src/cmd/lifecycle.rs` (251 LOC originales + 112 LOC E32-I)
 
-### E32-I — OpenCode install (self-application) ⏳ PLANNED
+### E32-I — OpenCode install (self-application) ✅ COMPLETED (v0.94.14, 2026-08-16)
 
-- Apply `cogh install --ide opencode` to the local machine
+- Apply `cogh install --ide opencode` to the local machine — **user-driven** (task 3.3 deferred)
 - Validate that the MCP server + skills + config are wired correctly
-- Document the install process in `CONTEXT.md`
+- Document the install process in `CONTEXT.md` (local-only, per AGENTS.md)
+- 2 MODIFIED requirements en `openspec/specs/{cognicode-cli, cognicode-ide-adapter}/spec.md`
+- Real-config apply recipe: `cogh install mcp-server --ide opencode --profile core`
+  → `jq '.mcp["cognicode-mcp"].command' ~/.config/opencode/opencode.json`
+  → `["/home/<user>/.cognicode/shims/cognicode-mcp"]`
 
 ### Next steps
 
-After E32:
-- **E33**: integrated CI/CD for cogh binary releases (GitHub Actions)
-- **E34**: community plugin registry (GitHub org `Rubentxu/CogniCode-plugins`)
-- **E35**: ZCode + Claude + Codex targeting (post-MVP)
+After E32 (program cerrado):
+- **E33**: integrated CI/CD for cogh binary releases (GitHub Actions) ✅ COMPLETED (e33-1..e33-14, v0.94.11)
+- **E34**: community plugin registry (plugins stay in main repo, no separate org) ✅ COMPLETED (v0.94.12)
+- **E35**: ZCode + Claude + Codex targeting ✅ COMPLETED (v0.94.13)
+
+**Current focus (post-E32/E33/E34/E35) — v1.0.0 readiness**:
+- Gate 1 — T7 stability cadence (5 consecutive nights, operacional)
+- Gate 2 — E31-G scorecard streak (3 ALL-GREEN, operacional)
+- Gate 3 — G8 Scalability AMBER closure ✅ **DONE** (Option B: accept as best-effort, INC-004 closed in E31-B6-rollup, ADR-031 §3 permits AMBER cut)
+- Gate 4 — CHANGELOG v0.90→v1.0.0 ✅ DONE
+- Gate 5 — Roadmap reconciled ✅ **DONE**
+- Gate 6 — Branch cleanup ✅ **DONE**
+- Gate 7 — Tag cut mechanics (deferred until Gates 1-2 green)
+- **Deferred items B1-B6**: B1 ✅ (E31-E2 ACCEPT), B2 ✅ (E31-B2-rollup), B3 ✅ (remote CI workflows disabled 2026-08-16), B5 ✅ (E31-B5-rollup), B6 ✅ (E31-B6-rollup, all incidences closed). Only B4 remains: 47 partial Tier-1 tools (multi-cycle test work).
+- **Fixed pre-existing**: `test_clean_home_install` (v0.94.15 patch)
+- **Pre-existing dirty**: `CONTEXT.md` + `docs/ROADMAP.md` carrying local-only annotations
+
+Ver `docs/V1.0.0-PRE-CUT-CHECKLIST.md` para el plan operativo completo.
 
 ### Cross-references
 
