@@ -133,6 +133,20 @@ pub fn canonical_corpus() -> Vec<ConformanceFixture> {
                 "untaints": [1],
             }),
         },
+        #[cfg(feature = "program-analysis-server")]
+        ConformanceFixture {
+            algorithm: "interproc_summary",
+            label: "two_callers_one_callee",
+            params: serde_json::json!({
+                "function_id": "module",
+                "call_graph": [[], [0], [0]],
+                "functions": [
+                    {"function_id": 0, "calls": [], "statements": []},
+                    {"function_id": 1, "calls": [0], "statements": [{"id": 0, "defs": ["x"], "uses": []}]},
+                    {"function_id": 2, "calls": [0], "statements": [{"id": 0, "defs": ["y"], "uses": ["z"]}]},
+                ],
+            }),
+        },
     ]
 }
 

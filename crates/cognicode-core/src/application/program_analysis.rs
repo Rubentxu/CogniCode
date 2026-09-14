@@ -949,3 +949,104 @@ mod tests {
         }
     }
 }
+
+/// Real acceptance evidence for M5: exercises the PUBLIC
+/// `ProgramAnalysisService` dispatcher end-to-end with the canonical corpus.
+/// This is the same path MCP/CLI callers will use, not a synthetic harness.
+///
+/// Run with:
+///   cargo test -p cognicode-core --features program-analysis-server --lib \
+///     --nocapture program_analysis::acceptance_evidence
+#[cfg(test)]
+mod acceptance_evidence {
+    use super::conformance::{
+        canonical_corpus, mcp_fixture_report, perf_envelope, replay_guard, run_corpus,
+    };
+
+    /// Public algorithm IDs whose canonical fixtures MUST dispatch Ok.
+    /// Mirrors the design-D2 contract.
+    const REQUIRED_PUBLIC_ALGORITHMS: &[&str] = &[
+        "cfg_per_function",
+        "dominators_cfg",
+        "slice_forward",
+        "slice_backward",
+        "taint_flow",
+        "interproc_summary",
+    ];
+
+    #[test]
+    fn public_dispatcher_accepts_every_m5_algorithm_id() {
+        let svc = super::ProgramAnalysisService::new();
+        let corpus = canonical_corpus();
+        let present: std::collections::BTreeSet<&str> =
+            corpus.iter().map(|f| f.algorithm).collect();
+
+        for required in REQUIRED_PUBLIC_ALGORITHMS {
+            assert!(
+                present.contains(required),
+                "canonical_corpus missing public algorithm `{required}`"
+            );
+        }
+
+        let (outcomes, digests) = run_corpus(&svc, &corpus);
+        for o in &outcomes {
+            assert!(o.ok, "dispatch returned Err for fixture `{}`", o.label);
+        }
+        for d in &digests {
+            assert_eq!(d.len(), 64, "digest is not sha256 hex: {d}");
+            assert!(d.chars().all(|c| c.is_ascii_hexdigit()));
+        }
+        // Negative invariant: an unknown algorithm id MUST be rejected.
+        use crate::domain::analytics::descriptor::AlgorithmId;
+        let bogus_id = AlgorithmId::from_static("not_a_real_algorithm");
+        let bogus = serde_json::json!({});
+        let res = svc.dispatch(
+            &bogus_id,
+            &bogus,
+            &crate::domain::plan::limits::PlanLimits::default(),
+        );
+        assert!(res.is_err(), "unknown algorithm id should error");
+    }
+
+    #[test]
+    fn replay_guard_is_byte_identical_for_entire_corpus() {
+        let svc = super::ProgramAnalysisService::new();
+        let corpus = canonical_corpus();
+        let results = replay_guard(&svc, &corpus);
+        for r in &results {
+            assert!(
+                r.identical,
+                "replay mismatch on {}: {} vs {}",
+                r.label, r.digest_a, r.digest_b
+            );
+        }
+    }
+
+    #[test]
+    fn perf_envelope_publishes_median_p95_max() {
+        let svc = super::ProgramAnalysisService::new();
+        let corpus = canonical_corpus();
+        let summary = perf_envelope(&svc, &corpus, u128::MAX);
+        assert_eq!(summary.total_count, corpus.len());
+        assert_eq!(summary.per_fixture.len(), corpus.len());
+        assert!(summary.median_us <= summary.max_us);
+        assert!(summary.p95_us <= summary.max_us);
+        assert_eq!(summary.over_budget_count, 0);
+    }
+
+    #[test]
+    fn mcp_fixture_report_serde_round_trips() {
+        let svc = super::ProgramAnalysisService::new();
+        let corpus = canonical_corpus();
+        let report = mcp_fixture_report(&svc, &corpus);
+        let json = serde_json::to_string(&report).expect("serialize");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        let arr = parsed.as_array().expect("array");
+        assert_eq!(arr.len(), corpus.len());
+        for entry in arr {
+            for key in ["algorithm", "label", "digest", "elapsed_us", "ok"] {
+                assert!(entry.get(key).is_some(), "missing key `{key}` in {entry}");
+            }
+        }
+    }
+}
