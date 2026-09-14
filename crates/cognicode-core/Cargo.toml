@@ -33,6 +33,11 @@ ownership = []
 # default build's public surface is unchanged with the feature off.
 # Off by default.
 evidence-kernel = []
+# `program-analysis-server` enables M5 server-side algorithms (DFG, interprocedural
+# summaries, taint v1) that depend on snapshot-scoped cross-function context.
+# CFG / dominators / slicing remain on the default build (WASM-clean).
+# Off by default.
+program-analysis-server = []
 
 [dependencies]
 # Proc macros for tool definitions

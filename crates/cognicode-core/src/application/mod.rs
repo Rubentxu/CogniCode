@@ -10,6 +10,7 @@ pub mod error;
 pub mod fact_bridge;
 pub mod ingest;
 pub mod investigation_service;
+pub mod program_analysis;
 pub mod services;
 pub mod workspace_session;
 

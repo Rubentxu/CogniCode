@@ -118,6 +118,7 @@ pub mod modularity_descriptor;
 pub mod oracle;
 pub mod pagerank_descriptor;
 pub mod personalized_pagerank_descriptor;
+pub mod program_analysis;
 pub mod scc_descriptor;
 pub mod wcc_descriptor;
 
@@ -133,5 +134,6 @@ pub use modularity_descriptor::*;
 pub use oracle::*;
 pub use pagerank_descriptor::*;
 pub use personalized_pagerank_descriptor::*;
+pub use program_analysis::*;
 pub use scc_descriptor::*;
 pub use wcc_descriptor::*;
