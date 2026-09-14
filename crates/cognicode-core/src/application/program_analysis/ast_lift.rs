@@ -6,15 +6,15 @@
 //! so the conformance harness can swap synthetic flat slices for real
 //! source-derived views without changing the algorithm layer.
 //!
+//! ## M5.1b — Statement extraction
+//!
+//! Since M5.1b, `FunctionLocalView.statements` is populated from the
+//! `statements_by_function` map in each `ExtractionResult`. Statement-aware
+//! algorithms (`cfg_per_function`, `dominators_cfg`, `slice_forward`,
+//! `slice_backward`, `taint_flow`) are now served from lifted real source.
+//!
 //! ## Known limitations
 //!
-//! - **Statement bodies are empty.** The current `tree_sitter_facts` extractor
-//!   does not emit `defines` / `references` arrays on symbol properties, so
-//!   `FunctionLocalView.statements` is an empty `Vec` for lifted sources.
-//!   Algorithms that operate on function-local statements (taint, slice by
-//!   variable) need real def/use extraction — deferred to M5.1b. The
-//!   algorithms that operate purely on call-graph shape (cfg, dominators,
-//   slice by function id, interproc) work correctly today.
 //! - **Cross-file callees are unresolved.** When the source has
 //!   `TargetRef::Unresolved` callees, the lift records them as opaque
 //!   indices in a separate vector; the M5 algorithms see only resolved
@@ -47,14 +47,9 @@ use crate::domain::value_objects::{NodeKind, SymbolKind};
 /// The function is total: empty input → `(vec![], vec![])`; failed
 /// extractions are skipped (REQ-LIFT-06).
 ///
-/// **Scope (M5.1 vs M5.1b):** `FunctionLocalView.statements` is always empty
-/// in this lift. The current `tree_sitter_facts` extractor does not emit
-/// statement-level facts, so statement-aware algorithms (`cfg_per_function`,
-/// `dominators_cfg`, `slice_forward`, `slice_backward`, `taint_flow`) cannot
-/// be served from lifted source yet. They remain fed by the synthetic
-/// conformance corpus. `interproc_summary`, which only needs the call
-/// adjacency, IS served by this lift. Statement-level extraction is tracked
-/// in M5.1b.
+/// **M5.1b:** `FunctionLocalView.statements` is populated from each
+/// `ExtractionResult.statements_by_function` map keyed by the function's
+/// `node.id`. Functions with no extracted statements get `Vec::new()`.
 pub fn lift(extractions: &[ExtractionResult]) -> (Vec<FunctionLocalView>, Vec<Vec<usize>>) {
     let mut functions: Vec<FunctionLocalView> = Vec::new();
     // Map of `node.id` (FQN string) → index in `functions`.
@@ -116,6 +111,23 @@ pub fn lift(extractions: &[ExtractionResult]) -> (Vec<FunctionLocalView>, Vec<Ve
         view.calls.clone_from(&adjacency[idx]);
     }
 
+    // Pass 4 (M5.1b): inject statements from statements_by_function map.
+    // We need the node.id → statements mapping per result.
+    for result in extractions {
+        if result.error.is_some() {
+            continue;
+        }
+        for node in &result.nodes {
+            let node_id = node.id.to_string();
+            if let (Some(&fn_idx), Some(stmts)) = (
+                function_index.get(&node_id),
+                result.statements_by_function.get(&node_id),
+            ) {
+                functions[fn_idx].statements.clone_from(stmts);
+            }
+        }
+    }
+
     (functions, adjacency)
 }
 
@@ -128,8 +140,7 @@ fn node_to_function_view(node: &GraphNode) -> Option<FunctionLocalView> {
     if !is_function_kind(kind) {
         return None;
     }
-    // Statement bodies are not extracted by the current fact_bridge; the
-    // view starts empty. See the module docs for the M5.1b follow-up.
+    // M5.1b: statements are injected post-construction in Pass 4 of `lift`.
     Some(FunctionLocalView {
         function_id: 0, // overwritten by `lift` after the index is known
         statements: Vec::new(),
@@ -357,6 +368,63 @@ mod tests {
         assert_eq!(fs[0].function_id, 0);
     }
 
+    // ---- Statement lift tests (M5.1b) ----
+
+    /// SCN-STMT-08: lift populates FunctionLocalView.statements from the map.
+    #[test]
+    fn lift_injects_statements_from_map() {
+        use cognicode_graph_algos::algorithms::Statement;
+        use std::collections::BTreeMap;
+
+        let fn_node = make_function_node("/test.rs:foo:1", "foo");
+        let fn_id = fn_node.id.to_string();
+        let stmts = vec![
+            Statement {
+                id: 0,
+                kind: "let_declaration".to_string(),
+                defs: vec!["x".to_string()],
+                uses: Vec::new(),
+            },
+            Statement {
+                id: 1,
+                kind: "return_expression".to_string(),
+                defs: Vec::new(),
+                uses: vec!["x".to_string()],
+            },
+        ];
+        let mut statements_by_function = BTreeMap::new();
+        statements_by_function.insert(fn_id.clone(), stmts.clone());
+
+        let result = ExtractionResult::ok_with_statements(
+            std::path::PathBuf::from("test.rs"),
+            "h".to_string(),
+            vec![fn_node],
+            Vec::new(),
+            statements_by_function,
+        );
+
+        let (fs, _) = lift(&[result]);
+        assert_eq!(fs.len(), 1);
+        assert_eq!(fs[0].statements.len(), 2);
+        assert_eq!(fs[0].statements[0].defs, vec!["x"]);
+        assert_eq!(fs[0].statements[1].uses, vec!["x"]);
+    }
+
+    /// SCN-STMT-08: lift falls back to empty statements when map entry is absent.
+    #[test]
+    fn lift_falls_back_to_empty_statements() {
+        let fn_node = make_function_node("/test.rs:foo:1", "foo");
+        let result = ExtractionResult::ok(
+            std::path::PathBuf::from("test.rs"),
+            "h".to_string(),
+            vec![fn_node],
+            Vec::new(),
+        );
+        let (fs, _) = lift(&[result]);
+        assert_eq!(fs.len(), 1);
+        assert!(fs[0].statements.is_empty());
+    }
+
     // ---- Real-source acceptance (gated behind program-analysis-server) ----
 
     #[cfg(feature = "program-analysis-server")]
@@ -464,12 +532,9 @@ fn diamond_entry() {
             // The conformance corpus expects: `adjacency` (cfg),
             // `call_graph` (interproc), `statements` (dfg/slice/taint),
             // `variable` + `definition_site`/`use_sites` (slice/taint).
-            // For M5.1 we only assert the lift produces the shape the
-            // dispatcher's `interproc_summary` algorithm expects (per
-            // REQ-LIFT-04). Coverage of cfg/dominators/slice/taint from
-            // real source is left to M5.1b (which needs statement-level
-            // def/use extraction that the current tree_sitter_facts
-            // extractor does not emit).
+            // Since M5.1b, `statements` IS populated from the statement walker
+            // (extract_statements_from_node). Coverage of cfg/dominators/slice/taint
+            // from real source is no longer blocked.
             let (fs, cg) = lift_rust_source(std::path::Path::new("diamond.rs"), DIAMOND_SRC);
             assert!(!fs.is_empty());
             assert_eq!(fs.len(), cg.len());
@@ -491,15 +556,15 @@ fn diamond_entry() {
             // still produce a single FunctionLocalView with calls == [].
             // This exercises the diamond-vs-chain contract: only when there
             // are sibling functions do we expect non-empty adjacency.
+            // Since M5.1b, statements ARE populated from the statement walker.
             let (fs, cg) = lift_rust_source(std::path::Path::new("linear.rs"), LINEAR_CHAIN_SRC);
             assert_eq!(fs.len(), cg.len());
             assert!(!fs.is_empty());
-            for f in &fs {
-                assert!(
-                    f.statements.is_empty(),
-                    "M5.1 lift must NOT emit statements"
-                );
-            }
+            // M5.1b: statements are populated (not empty)
+            assert!(
+                !fs[0].statements.is_empty(),
+                "M5.1b: statements must be populated"
+            );
         }
 
         #[test]
