@@ -373,17 +373,73 @@ impl ProgramAnalysisService {
         })))
     }
 
-    /// WU4 interprocedural summary placeholder.
+    /// WU4 interprocedural summary: bottom-up accumulation of reads,
+    /// writes, and calls per function, with fixed-point on recursive SCCs.
+    ///
+    /// Required params (validated by `InterprocSummaryParams`):
+    /// - `function_id`: any non-empty string (used as the cache key prefix).
+    ///
+    /// Optional params:
+    /// - `call_graph`: `Vec<Vec<usize>>` of callee indices per function
+    /// - `functions`: list of `{function_id, statements, calls}` records
+    ///   (`statements` follows the DFG shape from WU3)
     #[cfg(feature = "program-analysis-server")]
     fn run_interproc_summary(
         &self,
-        _params: &serde_json::Value,
+        params: &serde_json::Value,
         _limits: &PlanLimits,
     ) -> Result<RunOutput, AnalyticsError> {
+        use cognicode_graph_algos::algorithms::{FunctionLocalView, compute_summaries, summary_id};
+
+        // Default: empty inputs → empty summary list.
+        let call_graph: Vec<Vec<usize>> = params
+            .get("call_graph")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .map(|row| {
+                        row.as_array()
+                            .map(|xs| {
+                                xs.iter()
+                                    .filter_map(|x| x.as_u64().map(|n| n as usize))
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let functions_json = params
+            .get("functions")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let functions: Vec<FunctionLocalView> =
+            serde_json::from_value(serde_json::Value::Array(functions_json))
+                .map_err(|e| AnalyticsError::InvalidParameter(format!("bad functions: {e}")))?;
+
+        let summaries = compute_summaries(&call_graph, &functions);
+
+        // Build the JSON output, attaching a per-summary id.
+        let summaries_json: Vec<serde_json::Value> = summaries
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "function_id": s.function_id,
+                    "kind": s.kind,
+                    "reads": s.reads,
+                    "writes": s.writes,
+                    "calls": s.calls,
+                    "summary_id": summary_id(s),
+                })
+            })
+            .collect();
+
         Ok(RunOutput::PageRank(serde_json::json!({
             "algorithm": "interproc_summary",
-            "status": "stub",
-            "note": "WU4 wires the call-graph + summary cache.",
+            "function_id": params.get("function_id"),
+            "summary_count": summaries.len(),
+            "summaries": summaries_json,
         })))
     }
 
@@ -668,6 +724,80 @@ mod tests {
                 assert_eq!(first.get("variable").and_then(|x| x.as_str()), Some("x"));
             }
             _ => panic!("expected RunOutput::PageRank for DFG"),
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "program-analysis-server")]
+    fn dispatch_interproc_summary_end_to_end() {
+        let svc = ProgramAnalysisService::new();
+        // foo (idx 0, id 1) calls bar (idx 1, id 2); bar is a leaf.
+        let res = svc
+            .dispatch(
+                &INTERPROC_SUMMARY,
+                &serde_json::json!({
+                    "function_id": "module",
+                    "call_graph": [[1], []],
+                    "functions": [
+                        {
+                            "function_id": 1,
+                            "statements": [{"id": 0, "defs": ["x"], "uses": []}],
+                            "calls": [1],
+                        },
+                        {
+                            "function_id": 2,
+                            "statements": [{"id": 0, "defs": ["y"], "uses": ["z"]}],
+                            "calls": [],
+                        },
+                    ],
+                }),
+                &PlanLimits::default(),
+            )
+            .expect("dispatch should succeed");
+        match res {
+            RunOutput::PageRank(v) => {
+                assert_eq!(v.get("summary_count").and_then(|x| x.as_u64()), Some(2));
+                let summaries = v
+                    .get("summaries")
+                    .and_then(|x| x.as_array())
+                    .expect("summaries array");
+                let foo = summaries
+                    .iter()
+                    .find(|s| s.get("function_id").and_then(|x| x.as_u64()) == Some(1))
+                    .expect("foo summary");
+                let bar = summaries
+                    .iter()
+                    .find(|s| s.get("function_id").and_then(|x| x.as_u64()) == Some(2))
+                    .expect("bar summary");
+                assert_eq!(foo.get("kind").and_then(|x| x.as_str()), Some("bottom_up"));
+                assert_eq!(bar.get("kind").and_then(|x| x.as_str()), Some("leaf"));
+                // foo inherits bar's writes (y) and reads (z).
+                let foo_writes: Vec<&str> = foo
+                    .get("writes")
+                    .and_then(|x| x.as_array())
+                    .expect("writes array")
+                    .iter()
+                    .filter_map(|x| x.as_str())
+                    .collect();
+                assert!(foo_writes.contains(&"x"));
+                assert!(foo_writes.contains(&"y"));
+                let foo_reads: Vec<&str> = foo
+                    .get("reads")
+                    .and_then(|x| x.as_array())
+                    .expect("reads array")
+                    .iter()
+                    .filter_map(|x| x.as_str())
+                    .collect();
+                assert!(foo_reads.contains(&"z"));
+                // summary_id is a 64-char hex string.
+                assert_eq!(
+                    foo.get("summary_id")
+                        .and_then(|x| x.as_str())
+                        .map(|s| s.len()),
+                    Some(64)
+                );
+            }
+            _ => panic!("expected RunOutput::PageRank for interproc_summary"),
         }
     }
 }

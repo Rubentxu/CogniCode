@@ -14,6 +14,7 @@ pub mod dominators;
 pub mod dominators_cfg;
 pub mod feedback_arc_set;
 pub mod god_nodes;
+pub mod interproc_summary;
 pub mod k_core;
 pub mod k_shortest_paths_helper;
 pub mod modularity;
@@ -38,6 +39,9 @@ pub use dominators::dominators;
 pub use dominators_cfg::{DominatorInfo, dominators_cfg};
 pub use feedback_arc_set::feedback_arc_set;
 pub use god_nodes::god_nodes;
+pub use interproc_summary::{
+    FunctionLocalView, InterprocSummary, SummaryKind, compute_summaries, summary_id,
+};
 pub use k_core::k_core;
 pub use k_shortest_paths_helper::k_shortest_paths;
 pub use modularity::modularity;
