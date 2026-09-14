@@ -7,10 +7,13 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(unused_imports)]
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use crate::domain::aggregates::{GraphEdge, GraphNode};
 use crate::domain::value_objects::Provenance;
+use cognicode_graph_algos::algorithms::Statement;
+use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // Scan stage types
@@ -63,7 +66,7 @@ pub enum FileType {
 
 /// The result of extracting one file. Contains the `GraphNode`s and
 /// `GraphEdge`s discovered in that file.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractionResult {
     /// Repo-relative path of the source file that was extracted.
     pub source_path: PathBuf,
@@ -73,6 +76,10 @@ pub struct ExtractionResult {
     pub edges: Vec<ExtractionEdge>,
     /// SHA256 content hash of the file at extraction time.
     pub content_hash: String,
+    /// Per-function statement list keyed by the function's NodeId (FQN string).
+    /// Populated by the statement walker (M5.1b).
+    #[serde(default)]
+    pub statements_by_function: BTreeMap<String, Vec<Statement>>,
     /// Error message if extraction failed, else `None`.
     pub error: Option<String>,
 }
@@ -81,7 +88,7 @@ pub struct ExtractionResult {
 ///
 /// `target_ref` may reference a symbol that is not yet in the graph (an
 /// unresolved callee). The Resolve stage resolves these references.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractionEdge {
     /// Source node ID (always resolved — it's in this file).
     pub source: String,
@@ -99,7 +106,7 @@ pub struct ExtractionEdge {
 
 /// A reference to a target node — either resolved (by ID) or unresolved
 /// (by name, to be resolved later by the Resolve stage).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TargetRef {
     /// The target node ID is known (same-file reference).
     Resolved(String),
@@ -121,6 +128,25 @@ impl ExtractionResult {
             nodes,
             edges,
             content_hash: hash,
+            statements_by_function: BTreeMap::new(),
+            error: None,
+        }
+    }
+
+    /// Create a successful extraction result with a pre-populated statements map (M5.1b).
+    pub fn ok_with_statements(
+        path: PathBuf,
+        hash: String,
+        nodes: Vec<GraphNode>,
+        edges: Vec<ExtractionEdge>,
+        statements_by_function: BTreeMap<String, Vec<Statement>>,
+    ) -> Self {
+        Self {
+            source_path: path,
+            nodes,
+            edges,
+            content_hash: hash,
+            statements_by_function,
             error: None,
         }
     }
@@ -132,6 +158,7 @@ impl ExtractionResult {
             nodes: Vec::new(),
             edges: Vec::new(),
             content_hash: hash,
+            statements_by_function: BTreeMap::new(),
             error: Some(error),
         }
     }

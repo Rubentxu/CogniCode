@@ -54,9 +54,9 @@ pub fn extract_streaming(changes: Vec<FileChange>) -> mpsc::Receiver<ExtractionR
             })
             .try_for_each_with(tx, |tx, result| {
                 // blocking_send blocks the rayon worker if the channel is full
+                // Map the error to () to avoid propagating a large SendError type.
                 tx.blocking_send(result).map_err(|e| {
                     tracing::debug!("extract_streaming receiver dropped: {e}");
-                    e
                 })
             });
         tracing::info!(change_count, "ingest: extract_streaming rayon task done");

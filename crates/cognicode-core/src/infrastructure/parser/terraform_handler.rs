@@ -150,6 +150,7 @@ pub fn interpret_terraform(
         nodes,
         edges,
         content_hash: source_hash.into(),
+        statements_by_function: std::collections::BTreeMap::new(),
         error: result.error.clone(),
     }
 }
