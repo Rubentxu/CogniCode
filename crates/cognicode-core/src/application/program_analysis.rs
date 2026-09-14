@@ -345,31 +345,79 @@ impl ProgramAnalysisService {
         Ok(RunOutput::PageRank(json))
     }
 
-    /// WU5 taint placeholder. Real implementation lands in WU5.
+    /// WU5 taint analysis: forward propagation over the DFG from declared
+    /// sources to sinks, with untaint sites clearing tainted state.
+    ///
+    /// Required params (validated by `TaintParams`):
+    /// - `function_id`, `dfg_digest`
+    ///
+    /// Algorithm-specific params (algorithm-specific, validated by the
+    /// descriptor contract — see `TaintPatterns::rust_v1()` for the
+    /// declared Rust v1 pattern set):
+    /// - `language`: e.g. `"rust"`. Currently the algorithm does not
+    ///   match patterns itself; the source/sink site lists come in
+    ///   pre-classified form.
+    /// - `statements`: the DFG input (same shape as WU3)
+    /// - `sources`: list of statement ids that are source sites
+    /// - `sinks`: list of statement ids that are sink sites
+    /// - `untaints`: list of statement ids that contain an untaint call
     fn run_taint(
         &self,
         params: &serde_json::Value,
         _limits: &PlanLimits,
     ) -> Result<RunOutput, AnalyticsError> {
-        // Until WU5, the descriptor's params are validated and we return a
-        // structured "stub" response so callers can already wire their
-        // requests through the dispatcher.
-        let sources: Vec<serde_json::Value> = params
-            .get("sources")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
-        let sinks: Vec<serde_json::Value> = params
-            .get("sinks")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
+        use cognicode_graph_algos::algorithms::{Statement, dfg_edges, taint_forward};
+
+        let stmts_json = params
+            .get("statements")
+            .ok_or_else(|| AnalyticsError::InvalidParameter("missing 'statements'".into()))?
+            .as_array()
+            .ok_or_else(|| {
+                AnalyticsError::InvalidParameter("'statements' must be a JSON array".into())
+            })?;
+        let statements: Vec<Statement> =
+            serde_json::from_value(serde_json::Value::Array(stmts_json.clone()))
+                .map_err(|e| AnalyticsError::InvalidParameter(format!("bad statement: {e}")))?;
+
+        let parse_id_list = |key: &str| -> Result<Vec<usize>, AnalyticsError> {
+            Ok(params
+                .get(key)
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_u64().map(|n| n as usize))
+                        .collect()
+                })
+                .unwrap_or_default())
+        };
+        let sources = parse_id_list("sources")?;
+        let sinks = parse_id_list("sinks")?;
+        let untaints = parse_id_list("untaints")?;
+
+        let edges = dfg_edges(&statements);
+        let result = taint_forward(&edges, &sources, &sinks, &untaints);
+
+        // Encode paths with serde_json directly (TaintSite uses serde).
+        let paths_json: Vec<serde_json::Value> = result
+            .paths
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "source": p.source.stmt_id,
+                    "sink": p.sink.stmt_id,
+                    "intermediates": p.intermediates.iter().map(|s| s.stmt_id).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+
         Ok(RunOutput::PageRank(serde_json::json!({
             "algorithm": "taint_flow",
-            "status": "stub",
-            "note": "WU5 wires the declared-pattern matching; descriptor already validates params.",
-            "source_count": sources.len(),
-            "sink_count": sinks.len(),
+            "function_id": params.get("function_id"),
+            "language": params.get("language"),
+            "path_count": paths_json.len(),
+            "paths": paths_json,
+            "tainted_statements": result.tainted_statements,
+            "untaint_statements": result.untaint_statements,
         })))
     }
 
@@ -798,6 +846,101 @@ mod tests {
                 );
             }
             _ => panic!("expected RunOutput::PageRank for interproc_summary"),
+        }
+    }
+
+    #[test]
+    fn dispatch_taint_end_to_end() {
+        let svc = ProgramAnalysisService::new();
+        // x = src(); y = x; sink(y);
+        let res = svc
+            .dispatch(
+                &TAINT_FLOW,
+                &serde_json::json!({
+                    "function_id": "rust_fn",
+                    "dfg_digest": "sha256:linear",
+                    "language": "rust",
+                    "statements": [
+                        {"id": 0, "defs": ["x"], "uses": ["src"]},
+                        {"id": 1, "defs": ["y"], "uses": ["x"]},
+                        {"id": 2, "defs": [], "uses": ["y"]},
+                    ],
+                    "sources": [0],
+                    "sinks": [2],
+                    "untaints": [],
+                }),
+                &PlanLimits::default(),
+            )
+            .expect("dispatch should succeed");
+        match res {
+            RunOutput::PageRank(v) => {
+                assert_eq!(v.get("path_count").and_then(|x| x.as_u64()), Some(1));
+                let paths = v
+                    .get("paths")
+                    .and_then(|x| x.as_array())
+                    .expect("paths array");
+                assert_eq!(paths.len(), 1);
+                let path = &paths[0];
+                assert_eq!(path.get("source").and_then(|x| x.as_u64()), Some(0));
+                assert_eq!(path.get("sink").and_then(|x| x.as_u64()), Some(2));
+                let intermediates: Vec<usize> = path
+                    .get("intermediates")
+                    .and_then(|x| x.as_array())
+                    .expect("intermediates array")
+                    .iter()
+                    .filter_map(|x| x.as_u64().map(|n| n as usize))
+                    .collect();
+                assert_eq!(intermediates, vec![1]);
+                let tainted: Vec<usize> = v
+                    .get("tainted_statements")
+                    .and_then(|x| x.as_array())
+                    .expect("tainted array")
+                    .iter()
+                    .filter_map(|x| x.as_u64().map(|n| n as usize))
+                    .collect();
+                assert_eq!(tainted, vec![0, 1, 2]);
+            }
+            _ => panic!("expected RunOutput::PageRank for taint"),
+        }
+    }
+
+    #[test]
+    fn dispatch_taint_breaks_on_untaint() {
+        let svc = ProgramAnalysisService::new();
+        // x = src(); y = sanitize(x); sink(y);
+        let res = svc
+            .dispatch(
+                &TAINT_FLOW,
+                &serde_json::json!({
+                    "function_id": "rust_fn",
+                    "dfg_digest": "sha256:sanitized",
+                    "language": "rust",
+                    "statements": [
+                        {"id": 0, "defs": ["x"], "uses": ["src"]},
+                        {"id": 1, "defs": ["y"], "uses": ["x"]},
+                        {"id": 2, "defs": [], "uses": ["y"]},
+                    ],
+                    "sources": [0],
+                    "sinks": [2],
+                    "untaints": [1],
+                }),
+                &PlanLimits::default(),
+            )
+            .expect("dispatch should succeed");
+        match res {
+            RunOutput::PageRank(v) => {
+                // Untaint breaks the path → no taint paths detected.
+                assert_eq!(v.get("path_count").and_then(|x| x.as_u64()), Some(0));
+                let untaint_stmts: Vec<usize> = v
+                    .get("untaint_statements")
+                    .and_then(|x| x.as_array())
+                    .expect("untaint array")
+                    .iter()
+                    .filter_map(|x| x.as_u64().map(|n| n as usize))
+                    .collect();
+                assert_eq!(untaint_stmts, vec![1]);
+            }
+            _ => panic!("expected RunOutput::PageRank for taint"),
         }
     }
 }

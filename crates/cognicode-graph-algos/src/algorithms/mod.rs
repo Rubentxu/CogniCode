@@ -23,6 +23,7 @@ pub mod page_rank;
 pub mod personalized_pagerank;
 pub mod slicing;
 pub mod surprising_connections;
+pub mod taint;
 pub mod transitive_reduction;
 
 pub use all_simple_paths::all_simple_paths;
@@ -50,4 +51,5 @@ pub use page_rank::page_rank;
 pub use personalized_pagerank::personalized_pagerank;
 pub use slicing::{backward_slice, forward_slice};
 pub use surprising_connections::surprising_connections;
+pub use taint::{TaintPath, TaintResult, TaintSite as TaintSiteAlg, taint_forward};
 pub use transitive_reduction::transitive_reduction;
