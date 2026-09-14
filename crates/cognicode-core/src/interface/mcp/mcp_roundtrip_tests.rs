@@ -993,9 +993,10 @@ fn simple_function() {
     mod m5_program_analysis_roundtrip {
         use super::*;
         use crate::application::program_analysis::conformance::canonical_corpus;
+        #[cfg(feature = "program-analysis-server")]
+        use crate::interface::mcp::handlers::program_analysis_handlers::handle_interproc_summary;
         use crate::interface::mcp::handlers::program_analysis_handlers::{
-            ProgramAnalysisToolInput, handle_cfg, handle_interproc_summary, handle_slice_forward,
-            handle_taint_flow,
+            ProgramAnalysisToolInput, handle_cfg, handle_slice_forward, handle_taint_flow,
         };
         use crate::interface::mcp::rmcp_adapter::build_all_tools;
 
