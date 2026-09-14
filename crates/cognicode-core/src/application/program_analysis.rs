@@ -167,13 +167,16 @@ impl ProgramAnalysisService {
 
     /// Dispatch surface for algorithm execution.
     ///
-    /// In WU1 this is a stub returning `Ok(RunOutput::PageRank(json!({})))`
-    /// for supported algorithms. WU2–WU5 wire the per-algorithm execution paths.
+    /// WU2 wires real execution paths for `cfg_per_function` and
+    /// `dominators_cfg`. Both consume the same `adjacency` JSON parameter
+    /// (a flat list of out-neighbor lists) plus a `root` block id; the
+    /// `cfg_per_function` algorithm additionally accepts `exits`. Output
+    /// is JSON-encoded for transport through `RunOutput::PageRank`.
     pub fn dispatch(
         &self,
         id: &AlgorithmId,
         params: &serde_json::Value,
-        _limits: &PlanLimits,
+        limits: &PlanLimits,
     ) -> Result<RunOutput, AnalyticsError> {
         if !self.supports(id) {
             return Err(AnalyticsError::Internal(format!(
@@ -183,8 +186,57 @@ impl ProgramAnalysisService {
         }
         self.validate(id, params)
             .map_err(AnalyticsError::InvalidParameter)?;
-        // WU2–WU5: real execution lands here. WU1 returns a placeholder.
-        Ok(RunOutput::PageRank(serde_json::json!({})))
+
+        // WU2: real CFG + dominators execution paths.
+        if id == &*CFG_PER_FUNCTION {
+            return self.run_cfg(params, limits);
+        }
+        if id == &*DOMINATORS_CFG {
+            return self.run_dominators_cfg(params, limits);
+        }
+
+        // WU3–WU5: forward + backward slicing, taint, DFG, summaries.
+        Ok(RunOutput::PageRank(serde_json::json!({
+            "algorithm": id.as_str(),
+            "status": "stub",
+        })))
+    }
+
+    fn run_cfg(
+        &self,
+        params: &serde_json::Value,
+        _limits: &PlanLimits,
+    ) -> Result<RunOutput, AnalyticsError> {
+        use cognicode_graph_algos::algorithms::{build_cfg, edge_count};
+        let adjacency = parse_adjacency(params)?;
+        let (root, exits) = parse_root_and_exits(params)?;
+        let cfg = build_cfg(&adjacency, root, &exits);
+        let json = serde_json::json!({
+            "algorithm": "cfg_per_function",
+            "entry": cfg.entry,
+            "blocks": cfg.blocks,
+            "edges": cfg.edges,
+            "block_count": cfg.blocks.len(),
+            "edge_count": edge_count(&cfg),
+        });
+        Ok(RunOutput::PageRank(json))
+    }
+
+    fn run_dominators_cfg(
+        &self,
+        params: &serde_json::Value,
+        _limits: &PlanLimits,
+    ) -> Result<RunOutput, AnalyticsError> {
+        use cognicode_graph_algos::algorithms::dominators_cfg;
+        let adjacency = parse_adjacency(params)?;
+        let (root, _exits) = parse_root_and_exits(params)?;
+        let dom = dominators_cfg(&adjacency, root);
+        let json = serde_json::json!({
+            "algorithm": "dominators_cfg",
+            "entry": root,
+            "dominators": dom,
+        });
+        Ok(RunOutput::PageRank(json))
     }
 
     /// Convenience: returns the full canonical list of M5 algorithm ids.
@@ -204,6 +256,58 @@ impl ProgramAnalysisService {
         ids.sort_by(|a, b| a.as_str().cmp(b.as_str()));
         ids
     }
+}
+
+/// Parse the flat adjacency list from the dispatch params.
+///
+/// Expected shape:
+/// ```json
+/// { "adjacency": [[1, 2], [3], [], [4]], "root": 0, "exits": [4] }
+/// ```
+///
+/// `exits` is optional; defaults to an empty list. `root` defaults to 0.
+fn parse_adjacency(params: &serde_json::Value) -> Result<Vec<Vec<usize>>, AnalyticsError> {
+    let adjacency = params
+        .get("adjacency")
+        .ok_or_else(|| AnalyticsError::InvalidParameter("missing 'adjacency'".into()))?;
+    let arr = adjacency.as_array().ok_or_else(|| {
+        AnalyticsError::InvalidParameter("'adjacency' must be a JSON array".into())
+    })?;
+    let mut out: Vec<Vec<usize>> = Vec::with_capacity(arr.len());
+    for (i, row) in arr.iter().enumerate() {
+        let row_arr = row.as_array().ok_or_else(|| {
+            AnalyticsError::InvalidParameter(format!("adjacency[{i}] must be a JSON array"))
+        })?;
+        let mut nbrs: Vec<usize> = Vec::with_capacity(row_arr.len());
+        for v in row_arr {
+            let n = v.as_u64().ok_or_else(|| {
+                AnalyticsError::InvalidParameter(format!(
+                    "adjacency[{i}] elements must be non-negative integers"
+                ))
+            })?;
+            nbrs.push(n as usize);
+        }
+        out.push(nbrs);
+    }
+    Ok(out)
+}
+
+fn parse_root_and_exits(params: &serde_json::Value) -> Result<(usize, Vec<usize>), AnalyticsError> {
+    let root = params
+        .get("root")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| AnalyticsError::InvalidParameter("missing or invalid 'root'".into()))?
+        as usize;
+    let exits: Vec<usize> = params
+        .get("exits")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_u64().map(|n| n as usize))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok((root, exits))
 }
 
 #[cfg(test)]
@@ -260,11 +364,56 @@ mod tests {
     #[test]
     fn dispatch_succeeds_for_supported_algorithm() {
         let svc = ProgramAnalysisService::new();
+        // WU2 dispatch: CFG runs on adjacency + root (function_id is a
+        // contractual no-op here; the descriptor still requires it for
+        // forward compatibility with tree-sitter wiring in M5.1).
         let res = svc.dispatch(
             &CFG_PER_FUNCTION,
-            &serde_json::json!({"function_id": "f1"}),
+            &serde_json::json!({
+                "function_id": "f1",
+                "adjacency": [[1], [2], []],
+                "root": 0,
+                "exits": [2],
+            }),
             &PlanLimits::default(),
         );
-        assert!(res.is_ok());
+        assert!(res.is_ok(), "dispatch should succeed: {res:?}");
+    }
+
+    #[test]
+    fn dispatch_dominators_cfg_end_to_end() {
+        let svc = ProgramAnalysisService::new();
+        let res = svc
+            .dispatch(
+                &DOMINATORS_CFG,
+                &serde_json::json!({
+                    "function_id": "diamond",
+                    "cfg_digest": "sha256:test",
+                    "adjacency": [[1], [2, 3], [4], [4], []],
+                    "root": 0,
+                }),
+                &PlanLimits::default(),
+            )
+            .expect("dispatch should succeed");
+        // RunOutput::PageRank wraps a JSON value; extract the dominator info.
+        match res {
+            RunOutput::PageRank(v) => {
+                let dom = v.get("dominators").expect("dominators key present");
+                let arr = dom.as_array().expect("dominators is an array");
+                assert_eq!(arr.len(), 5, "diamond has 5 blocks");
+                // entry self-dominates
+                let entry_dom = arr
+                    .iter()
+                    .find(|x| x.get("block_id").and_then(|b| b.as_u64()) == Some(0))
+                    .expect("entry present");
+                assert_eq!(
+                    entry_dom
+                        .get("immediate_dominator")
+                        .and_then(|v| v.as_u64()),
+                    Some(0)
+                );
+            }
+            _ => panic!("expected RunOutput::PageRank for dominators"),
+        }
     }
 }
