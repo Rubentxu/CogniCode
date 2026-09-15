@@ -24,6 +24,7 @@ use super::admission::AdmittedDetector;
 use super::detector_ir::{AnalysisCapability, DetectorStep, SubjectPattern};
 use super::execution::{AnalysisInput, BackendError, DetectorBackend};
 use super::finding::{CausalStepKind, EvidenceClass};
+use super::grounding::GroundingRef;
 use super::outcome::{
     CausalObservation, DetectorMatch, DetectorOutcome, EvidenceKind, ProducedEvidence,
 };
@@ -37,6 +38,10 @@ pub struct AstConstruct {
     pub line: u32,
     /// Human-readable detail.
     pub detail: String,
+    /// The canonical fact this construct was projected from, if the backend
+    /// could establish one. `None` means "explainable but not groundable".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grounding: Option<GroundingRef>,
 }
 
 /// One source unit and the constructs observed in it.
@@ -189,6 +194,7 @@ mod tests {
                         subject: SubjectPattern::new(subject).unwrap(),
                         line: 12,
                         detail: "md5::Md5::new()".to_string(),
+                        grounding: None,
                     }],
                 }],
             }),

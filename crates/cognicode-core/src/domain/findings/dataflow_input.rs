@@ -13,6 +13,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use super::SubjectPattern;
+use super::grounding::GroundingRef;
 
 /// Where a statement sits in the source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,6 +38,14 @@ pub struct DataflowStatement {
     pub subjects: BTreeSet<SubjectPattern>,
     /// Source location (for messages and the causal chain).
     pub location: DataflowLocation,
+    /// The canonical fact this statement was projected from, if the pipeline
+    /// recorded one.
+    ///
+    /// Dataflow statements are synthesised from many observations, so this is
+    /// frequently `None`. That is deliberate: a statement that cannot be
+    /// grounded may still explain a path, but it cannot open the gate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grounding: Option<GroundingRef>,
 }
 
 impl DataflowStatement {

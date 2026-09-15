@@ -33,6 +33,7 @@ fn node(id: u64, subject: &str, line: u32) -> GraphNode {
         subject: SubjectPattern::new(subject).unwrap(),
         path: "src/app.rs".to_string(),
         line,
+        grounding: None,
     }
 }
 
@@ -69,7 +70,18 @@ fn clean_graph() -> GraphInput {
             node(2, "service.handler", 20),
             node(3, "persistence.write", 30),
         ],
-        edges: vec![GraphEdge { from: 1, to: 2 }, GraphEdge { from: 2, to: 3 }],
+        edges: vec![
+            GraphEdge {
+                from: 1,
+                to: 2,
+                grounding: None,
+            },
+            GraphEdge {
+                from: 2,
+                to: 3,
+                grounding: None,
+            },
+        ],
     }
 }
 
@@ -80,7 +92,18 @@ fn sanitized_graph() -> GraphInput {
             node(2, "security.sanitizer", 20),
             node(3, "persistence.write", 30),
         ],
-        edges: vec![GraphEdge { from: 1, to: 2 }, GraphEdge { from: 2, to: 3 }],
+        edges: vec![
+            GraphEdge {
+                from: 1,
+                to: 2,
+                grounding: None,
+            },
+            GraphEdge {
+                from: 2,
+                to: 3,
+                grounding: None,
+            },
+        ],
     }
 }
 

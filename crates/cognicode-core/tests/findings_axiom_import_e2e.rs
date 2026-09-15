@@ -52,6 +52,7 @@ fn ast_input() -> AnalysisInput {
                     subject: SubjectPattern::new("security.md5_usage").unwrap(),
                     line: 12,
                     detail: "md5::Md5::new()".to_string(),
+                    grounding: None,
                 }],
             }],
         }),

@@ -160,6 +160,9 @@ impl<'a> DetectorExecutor<'a> {
         // A run must be pinned to a scope: without one its ids could not be
         // verified against any snapshot later.
         let scope = input.scope.clone().ok_or(ExecutionError::MissingScope)?;
+        if !scope.is_valid() {
+            return Err(ExecutionError::InvalidScope);
+        }
 
         // The admitted definition is re-validated: admission validated it, but
         // the executor never trusts an unvalidated definition.
@@ -389,6 +392,8 @@ pub enum ExecutionError {
     InvalidDefinition(DetectorIrError),
     /// The input carried no analysis scope.
     MissingScope,
+    /// The input's scope is pinned to the invalid `SnapshotId::NONE` sentinel.
+    InvalidScope,
     /// No backend could satisfy the requirements.
     Plan(PlanError),
     /// A backend failed.
@@ -407,6 +412,9 @@ impl fmt::Display for ExecutionError {
             Self::InvalidDefinition(err) => write!(f, "invalid detector definition: {err}"),
             Self::MissingScope => {
                 f.write_str("analysis input carries no (workspace, snapshot) scope")
+            }
+            Self::InvalidScope => {
+                f.write_str("analysis input scope is pinned to the invalid snapshot sentinel")
             }
             Self::Plan(err) => write!(f, "planning failed: {err}"),
             Self::Backend(err) => write!(f, "backend failed: {err}"),
@@ -574,6 +582,44 @@ mod tests {
             other => panic!("expected a contract violation, got {other:?}"),
         }
     }
+    /// e62.3 WU0: `SnapshotId::NONE` is the kernel's invalid sentinel, so a
+    /// scope pinned to it is not pinned at all and must be refused before the
+    /// backend runs — otherwise `Some(scope)` would satisfy the scope
+    /// requirement while carrying no snapshot.
+    #[test]
+    fn a_scope_pinned_to_the_none_sentinel_is_refused() {
+        let mut registry = BackendRegistry::new();
+        registry.register(Box::new(AstBackend));
+        let mut requires = BTreeSet::new();
+        requires.insert(AnalysisCapability::AstPattern);
+        let permit =
+            DetectorAdmission::admit(detector_with(requires), "1.0.0", AdmissionSource::Builtin)
+                .unwrap();
+
+        let executor = DetectorExecutor::new(&registry);
+        let mut sink = CountingSink::default();
+        let unpinned = AnalysisScope::new(
+            crate::domain::value_objects::WorkspaceId::try_new("ws").unwrap(),
+            crate::domain::kernel_ids::SnapshotId::NONE,
+        );
+        let err = executor
+            .execute(
+                &permit,
+                &AnalysisInput {
+                    scope: Some(unpinned),
+                    ..Default::default()
+                },
+                &mut sink,
+                ExecutionId::new(1),
+            )
+            .expect_err("an unpinned scope must be refused");
+        assert_eq!(err, ExecutionError::InvalidScope);
+        assert_eq!(
+            sink.0, 0,
+            "no evidence may be recorded from an unpinned execution"
+        );
+    }
+
     /// A backend that reports a kind other than the detector's PRODUCE.
     struct KindLiarBackend;
     impl DetectorBackend for KindLiarBackend {

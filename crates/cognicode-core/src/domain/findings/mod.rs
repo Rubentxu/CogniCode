@@ -28,6 +28,7 @@ pub mod digest;
 pub mod execution;
 pub mod finding;
 pub mod graph_backend;
+pub mod grounding;
 pub mod namespaced;
 pub mod outcome;
 pub mod ports;

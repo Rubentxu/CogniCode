@@ -16,7 +16,7 @@ use crate::domain::evidence_kernel::evidence::Evidence;
 use crate::domain::evidence_kernel::fact::{Fact, ProducerKind};
 use crate::domain::evidence_kernel::ids::{EntityId, EvidenceId, FactId, SnapshotId};
 use crate::domain::evidence_kernel::ports::{
-    EvidenceStore, FactStore, KernelError, SchemaError, SchemaRegistry, SnapshotStore,
+    EvidenceStore, FactStore, KernelError, NewEvidence, SchemaError, SchemaRegistry, SnapshotStore,
 };
 use crate::domain::evidence_kernel::relation::{RelationKind, RelationSpec};
 use crate::domain::evidence_kernel::snapshot::SnapshotDescriptor;
@@ -196,6 +196,8 @@ struct EvidenceTable {
     by_fact: HashMap<(WorkspaceId, SnapshotId, FactId), Vec<Evidence>>,
     /// `(workspace, snapshot, evidence id)` → the evidence record.
     by_id: HashMap<(WorkspaceId, SnapshotId, EvidenceId), Evidence>,
+    /// Next id to allocate in `(workspace, snapshot)`.
+    next_id: HashMap<(WorkspaceId, SnapshotId), u64>,
 }
 
 /// In-memory [`EvidenceStore`], keyed by `(WorkspaceId, SnapshotId, …)`.
@@ -235,7 +237,53 @@ impl EvidenceStore for InMemoryEvidenceStore {
             .entry((ws.clone(), *snap, e.fact))
             .or_default()
             .push(e);
+        // Keep the allocator ahead of explicitly supplied ids.
+        let next = table.next_id.entry((ws.clone(), *snap)).or_insert(1);
+        if id.get() >= *next {
+            *next = id.get() + 1;
+        }
         Ok(id)
+    }
+
+    async fn append_batch(
+        &self,
+        ws: &WorkspaceId,
+        snap: &SnapshotId,
+        batch: Vec<NewEvidence>,
+    ) -> Result<Vec<EvidenceId>, KernelError> {
+        let mut table = self.table.lock().expect("evidence store lock");
+
+        // Allocate every id first, then commit: either the whole batch lands or
+        // nothing does (no orphaned evidence after a mid-batch failure).
+        let mut next = table
+            .next_id
+            .get(&(ws.clone(), *snap))
+            .copied()
+            .unwrap_or(1);
+        let mut planned: Vec<(EvidenceId, NewEvidence)> = Vec::with_capacity(batch.len());
+        for item in batch {
+            planned.push((EvidenceId::new(next), item));
+            next += 1;
+        }
+
+        let mut ids: Vec<EvidenceId> = Vec::with_capacity(planned.len());
+        for (id, item) in planned {
+            let record = Evidence {
+                id,
+                fact: item.fact,
+                grade: item.grade,
+                provenance: item.provenance,
+            };
+            table.by_id.insert((ws.clone(), *snap, id), record.clone());
+            table
+                .by_fact
+                .entry((ws.clone(), *snap, item.fact))
+                .or_default()
+                .push(record);
+            ids.push(id);
+        }
+        table.next_id.insert((ws.clone(), *snap), next);
+        Ok(ids)
     }
 
     async fn get(
@@ -329,7 +377,8 @@ mod tests {
     use crate::domain::evidence_kernel::fact::{Fact, FactValue, ProducerKind, ProvenanceRecord};
     use crate::domain::evidence_kernel::ids::{EntityId, EvidenceId, FactId, SnapshotId};
     use crate::domain::evidence_kernel::ports::{
-        EvidenceStore, FactStore, KernelError, SchemaError, SchemaRegistry, SnapshotStore,
+        EvidenceStore, FactStore, KernelError, NewEvidence, SchemaError, SchemaRegistry,
+        SnapshotStore,
     };
     use crate::domain::evidence_kernel::relation::{RelationKind, RelationSpec};
     use crate::domain::value_objects::{Provenance, RevisionId, WorkspaceId};
@@ -1121,5 +1170,137 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+    // -------------------------------------------------------------------------
+    // WU0b (e62.3) — the store allocates evidence ids, atomically
+    // -------------------------------------------------------------------------
+
+    /// Two batches in the same snapshot get disjoint sequential ids; a batch in
+    /// another snapshot starts its own sequence.
+    #[tokio::test]
+    async fn append_batch_allocates_unique_ids_per_snapshot() {
+        let store = InMemoryEvidenceStore::new();
+        let workspace = ws("alloc");
+        let snap_a = SnapshotId::new(1);
+        let snap_b = SnapshotId::new(2);
+        let provenance = ProvenanceRecord::new(
+            Provenance::Tested,
+            ProducerKind::DeterministicAnalyzer,
+            None,
+        );
+
+        let first = store
+            .append_batch(
+                &workspace,
+                &snap_a,
+                vec![
+                    NewEvidence {
+                        fact: FactId::new(1),
+                        grade: EvidenceGrade::Supports,
+                        provenance: provenance.clone(),
+                    },
+                    NewEvidence {
+                        fact: FactId::new(1),
+                        grade: EvidenceGrade::Corroborates,
+                        provenance: provenance.clone(),
+                    },
+                ],
+            )
+            .await
+            .expect("batch 1");
+        assert_eq!(first, vec![EvidenceId::new(1), EvidenceId::new(2)]);
+
+        let second = store
+            .append_batch(
+                &workspace,
+                &snap_a,
+                vec![NewEvidence {
+                    fact: FactId::new(2),
+                    grade: EvidenceGrade::Supports,
+                    provenance: provenance.clone(),
+                }],
+            )
+            .await
+            .expect("batch 2");
+        assert_eq!(
+            second,
+            vec![EvidenceId::new(3)],
+            "a second batch in the same snapshot must not collide"
+        );
+
+        let other_snapshot = store
+            .append_batch(
+                &workspace,
+                &snap_b,
+                vec![NewEvidence {
+                    fact: FactId::new(1),
+                    grade: EvidenceGrade::Supports,
+                    provenance,
+                }],
+            )
+            .await
+            .expect("batch in B");
+        assert_eq!(
+            other_snapshot,
+            vec![EvidenceId::new(1)],
+            "each snapshot has its own id sequence"
+        );
+
+        assert_eq!(
+            store
+                .for_fact(&workspace, &snap_a, FactId::new(1))
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            store
+                .for_fact(&workspace, &snap_b, FactId::new(1))
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    /// An explicit `add` keeps the allocator ahead, so a later batch cannot
+    /// re-use its id.
+    #[tokio::test]
+    async fn explicit_add_advances_the_allocator() {
+        let store = InMemoryEvidenceStore::new();
+        let workspace = ws("ahead");
+        let snap = SnapshotId::new(1);
+        let provenance = ProvenanceRecord::new(
+            Provenance::Tested,
+            ProducerKind::DeterministicAnalyzer,
+            None,
+        );
+        store
+            .add(
+                &workspace,
+                &snap,
+                Evidence {
+                    id: EvidenceId::new(7),
+                    fact: FactId::new(1),
+                    grade: EvidenceGrade::Supports,
+                    provenance: provenance.clone(),
+                },
+            )
+            .await
+            .expect("add");
+        let ids = store
+            .append_batch(
+                &workspace,
+                &snap,
+                vec![NewEvidence {
+                    fact: FactId::new(1),
+                    grade: EvidenceGrade::Supports,
+                    provenance,
+                }],
+            )
+            .await
+            .expect("batch");
+        assert_eq!(ids, vec![EvidenceId::new(8)]);
     }
 }

@@ -401,6 +401,7 @@ mod tests {
                 path: "src/handler.rs".to_string(),
                 line,
             },
+            grounding: None,
         }
     }
 

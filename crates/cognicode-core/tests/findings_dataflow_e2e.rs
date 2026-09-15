@@ -42,6 +42,7 @@ fn stmt(id: u64, subjects: &[&str], line: u32, defs: &[&str], uses: &[&str]) -> 
             path: "src/handler.rs".to_string(),
             line,
         },
+        grounding: None,
     }
 }
 

@@ -25,8 +25,8 @@ use std::path::Path;
 
 use crate::domain::value_objects::{RevisionId, WorkspaceId};
 
-use super::evidence::Evidence;
-use super::fact::Fact;
+use super::evidence::{Evidence, EvidenceGrade};
+use super::fact::{Fact, ProvenanceRecord};
 use super::ids::{EntityId, EvidenceId, FactId, SnapshotId};
 use super::relation::{RelationKind, RelationSpec};
 use super::snapshot::SnapshotDescriptor;
@@ -140,6 +140,17 @@ pub trait FactStore: Send + Sync {
     ) -> Result<Vec<Fact>, KernelError>;
 }
 
+/// Evidence to append, without an id: the store allocates it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewEvidence {
+    /// The fact this evidence grades.
+    pub fact: FactId,
+    /// Support / refute / corroborate.
+    pub grade: EvidenceGrade,
+    /// How the evidence was obtained.
+    pub provenance: ProvenanceRecord,
+}
+
 /// Kernel evidence port.
 ///
 /// Kernel-namespaced (design D2): distinct from the legacy
@@ -158,6 +169,21 @@ pub trait EvidenceStore: Send + Sync {
         snap: &SnapshotId,
         e: Evidence,
     ) -> Result<EvidenceId, KernelError>;
+
+    /// Appends a batch of evidence **in `snap`** of `ws`, **allocating the
+    /// ids itself**.
+    ///
+    /// This is the canonical write path: evidence ids are assigned by the
+    /// store (a per-snapshot sequence), so two executions in the same
+    /// snapshot can never collide, and the batch is atomic — either every
+    /// item is committed or none is, so a failure mid-batch cannot leave
+    /// orphaned evidence behind.
+    async fn append_batch(
+        &self,
+        ws: &WorkspaceId,
+        snap: &SnapshotId,
+        batch: Vec<NewEvidence>,
+    ) -> Result<Vec<EvidenceId>, KernelError>;
 
     /// One piece of evidence by id, read pinned to `snap` of `ws`.
     async fn get(

@@ -34,13 +34,48 @@ pub struct AnalysisScope {
 
 impl AnalysisScope {
     /// Construct a scope.
+    ///
+    /// Prefer [`try_new`](Self::try_new) at trust boundaries: `SnapshotId::NONE`
+    /// is the kernel's invalid sentinel and a scope pinned to it is not pinned
+    /// to any snapshot at all.
     pub fn new(workspace: WorkspaceId, snapshot: SnapshotId) -> Self {
         Self {
             workspace,
             snapshot,
         }
     }
+
+    /// Construct a scope, rejecting the invalid `SnapshotId::NONE` sentinel.
+    pub fn try_new(
+        workspace: WorkspaceId,
+        snapshot: SnapshotId,
+    ) -> Result<Self, AnalysisScopeError> {
+        if snapshot == SnapshotId::NONE {
+            return Err(AnalysisScopeError::InvalidSnapshot);
+        }
+        Ok(Self::new(workspace, snapshot))
+    }
+
+    /// Whether the scope is pinned to a valid snapshot.
+    pub fn is_valid(&self) -> bool {
+        self.snapshot != SnapshotId::NONE
+    }
 }
+
+/// Why a scope is invalid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnalysisScopeError {
+    /// `SnapshotId::NONE` is the kernel's invalid sentinel.
+    InvalidSnapshot,
+}
+
+impl std::fmt::Display for AnalysisScopeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("analysis scope snapshot is the invalid NONE sentinel")
+    }
+}
+
+impl std::error::Error for AnalysisScopeError {}
 
 impl std::fmt::Display for AnalysisScope {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -60,6 +95,21 @@ mod tests {
         let json = serde_json::to_string(&scope).unwrap();
         let parsed: AnalysisScope = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, scope);
+    }
+
+    #[test]
+    fn none_snapshot_is_rejected() {
+        let workspace = WorkspaceId::try_new("w").unwrap();
+        assert_eq!(
+            AnalysisScope::try_new(workspace.clone(), SnapshotId::NONE).unwrap_err(),
+            AnalysisScopeError::InvalidSnapshot
+        );
+        assert!(!AnalysisScope::new(workspace.clone(), SnapshotId::NONE).is_valid());
+        assert!(
+            AnalysisScope::try_new(workspace, SnapshotId::new(1))
+                .unwrap()
+                .is_valid()
+        );
     }
 
     #[test]

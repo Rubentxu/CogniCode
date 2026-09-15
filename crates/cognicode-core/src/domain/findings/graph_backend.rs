@@ -29,6 +29,7 @@ use super::admission::AdmittedDetector;
 use super::detector_ir::{AnalysisCapability, DetectorStep, SubjectPattern};
 use super::execution::{AnalysisInput, BackendError, DetectorBackend};
 use super::finding::{CausalStepKind, EvidenceClass};
+use super::grounding::GroundingRef;
 use super::outcome::{
     CausalObservation, DetectorDiagnostic, DetectorMatch, DetectorOutcome, EvidenceKind,
     ProducedEvidence,
@@ -45,6 +46,9 @@ pub struct GraphNode {
     pub path: String,
     /// 1-based line (for messages).
     pub line: u32,
+    /// The canonical fact this node was projected from, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grounding: Option<GroundingRef>,
 }
 
 /// A directed edge in the graph view.
@@ -54,6 +58,12 @@ pub struct GraphEdge {
     pub from: u64,
     /// Target node id.
     pub to: u64,
+    /// The canonical fact that witnesses this **relation**.
+    ///
+    /// Reachability is proved by traversing edges, so an edge grounding is what
+    /// makes a graph witness checkable: nodes only show the endpoints exist.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grounding: Option<GroundingRef>,
 }
 
 /// The graph view handed to [`GraphBackend`].
@@ -322,6 +332,7 @@ mod tests {
             subject: SubjectPattern::new(subject).unwrap(),
             path: "src/app.rs".to_string(),
             line,
+            grounding: None,
         }
     }
 
@@ -363,7 +374,18 @@ mod tests {
                 node(2, "security.sanitizer", 20),
                 node(3, "persistence.write", 30),
             ],
-            edges: vec![GraphEdge { from: 1, to: 2 }, GraphEdge { from: 2, to: 3 }],
+            edges: vec![
+                GraphEdge {
+                    from: 1,
+                    to: 2,
+                    grounding: None,
+                },
+                GraphEdge {
+                    from: 2,
+                    to: 3,
+                    grounding: None,
+                },
+            ],
         }
     }
 
@@ -375,7 +397,18 @@ mod tests {
                 node(4, "service.handler", 15),
                 node(3, "persistence.write", 30),
             ],
-            edges: vec![GraphEdge { from: 1, to: 4 }, GraphEdge { from: 4, to: 3 }],
+            edges: vec![
+                GraphEdge {
+                    from: 1,
+                    to: 4,
+                    grounding: None,
+                },
+                GraphEdge {
+                    from: 4,
+                    to: 3,
+                    grounding: None,
+                },
+            ],
         }
     }
 
@@ -464,7 +497,11 @@ mod tests {
     fn source_nodes_are_visited_in_deterministic_order() {
         let mut graph = graph_clean();
         graph.nodes.push(node(9, "endpoint.http", 90));
-        graph.edges.push(GraphEdge { from: 9, to: 3 });
+        graph.edges.push(GraphEdge {
+            from: 9,
+            to: 3,
+            grounding: None,
+        });
         let p = permit(admin_traversal_ir("endpoint.http", "persistence.write"));
         let outcome = GraphBackend.run(p.admitted(), &graph_input(graph)).unwrap();
         assert_eq!(outcome.matches.len(), 2);
@@ -486,10 +523,26 @@ mod tests {
                 node(3, "persistence.write", 30),
             ],
             edges: vec![
-                GraphEdge { from: 1, to: 2 },
-                GraphEdge { from: 2, to: 3 },
-                GraphEdge { from: 1, to: 4 },
-                GraphEdge { from: 4, to: 3 },
+                GraphEdge {
+                    from: 1,
+                    to: 2,
+                    grounding: None,
+                },
+                GraphEdge {
+                    from: 2,
+                    to: 3,
+                    grounding: None,
+                },
+                GraphEdge {
+                    from: 1,
+                    to: 4,
+                    grounding: None,
+                },
+                GraphEdge {
+                    from: 4,
+                    to: 3,
+                    grounding: None,
+                },
             ],
         };
         let p = permit(admin_traversal_ir("endpoint.http", "persistence.write"));
