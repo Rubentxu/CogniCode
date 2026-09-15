@@ -185,6 +185,18 @@ test-unit:
     @echo "🧪 Running unit tests..."
     cargo test --workspace --no-fail-fast
 
+# Guard against known-failure noise in cognicode-core lib tests.
+# Fails if a new failure appears OR a baseline failure unexpectedly passes.
+# See scripts/known_failures.yaml.
+check-known-failures:
+    @echo "🔎 Checking known-failure baseline..."
+    python3 scripts/check_known_failures.py
+
+# Regenerate the known-failure baseline after reviewing the drift.
+update-known-failures:
+    @echo "📝 Regenerating known-failure baseline..."
+    python3 scripts/check_known_failures.py --update
+
 # Run ignored tests (flaky, slow, requires external tools)
 test-ignored:
     @echo "🧪 Running ignored tests (single-threaded)..."
