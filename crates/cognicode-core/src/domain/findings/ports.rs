@@ -11,7 +11,7 @@
 
 use super::binding::EvidenceBindings;
 use super::outcome::ProducedEvidence;
-use crate::domain::kernel_ids::EvidenceId;
+use crate::domain::kernel_ids::{EntityId, EvidenceGrade, EvidenceId, FactId, SnapshotId};
 
 /// Why recording evidence failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,16 +51,77 @@ pub trait EvidenceSink {
     -> Result<EvidenceBindings, EvidenceError>;
 }
 
-/// Resolves whether an evidence id exists, **in the scope it was hydrated for**.
+/// A canonical fact, as the findings domain sees it.
 ///
-/// Used by [`FindingVerifier`](super::FindingVerifier) to check referential
-/// truth (U42) before a finding may block. `EvidenceId` is canonical per
+/// Deliberately small: only what verification reasons about. The kernel's
+/// `Fact` carries predicate/object/provenance, which live in the kernel read
+/// model, not in this port.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FactDescriptor {
+    /// The canonical fact id.
+    pub id: FactId,
+    /// The entity the fact is about, when the lookup can attest to it.
+    ///
+    /// `None` means "this lookup cannot vouch for the subject" (a plain
+    /// existence store). The verification rule is fail-closed: a causal step
+    /// that names a subject requires the fact to agree.
+    pub subject: Option<EntityId>,
+    /// The snapshot the fact belongs to.
+    pub snapshot: SnapshotId,
+}
+
+/// Where the canonical fact behind an evidence atom is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FactSlot {
+    /// The fact exists and its identity is known.
+    Resolved(FactDescriptor),
+    /// The evidence points at a fact that does not exist in this scope.
+    Dangling {
+        /// The fact it points at.
+        id: FactId,
+    },
+}
+
+/// A canonical evidence atom, as the findings domain sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvidenceDescriptor {
+    /// The evidence id.
+    pub id: EvidenceId,
+    /// How the evidence relates to its fact.
+    pub grade: EvidenceGrade,
+    /// The fact it grades.
+    pub fact: FactSlot,
+}
+
+/// What a lookup knows about an evidence id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EvidenceResolution<'a> {
+    /// The id resolves and its canonical truth was loaded.
+    Known(&'a EvidenceDescriptor),
+    /// The id does not resolve in this scope.
+    Unknown,
+}
+
+/// Resolves evidence ids to their canonical truth, **in the scope it was
+/// hydrated for**.
+///
+/// Used by [`FindingVerifier`](super::FindingVerifier) to check causal
+/// coherence (U42) before a finding may block. `EvidenceId` is canonical per
 /// snapshot, so a lookup must declare the scope it was loaded from: otherwise
 /// a caller could hydrate snapshot B's evidence for a finding produced in A and
 /// every id would still resolve.
+///
+/// A lookup that only knows ids exist (not what they mean) is a legitimate but
+/// weaker implementation: it must report the truth it can and no more. The
+/// strict verifier is what turns "the fact is not attested" into a refusal.
 pub trait EvidenceLookup {
-    /// Whether `id` is known to the store.
-    fn contains(&self, id: EvidenceId) -> bool;
+    /// Resolve `id` to its canonical truth, if known.
+    fn resolve(&self, id: EvidenceId) -> EvidenceResolution<'_>;
+
+    /// Whether `id` is known to the store at all.
+    fn contains(&self, id: EvidenceId) -> bool {
+        matches!(self.resolve(id), EvidenceResolution::Known(_))
+    }
 
     /// The `(workspace, snapshot)` this lookup was hydrated for.
     ///
@@ -76,6 +137,7 @@ mod tests {
     /// A tiny in-test sink/lookup to exercise the traits.
     struct VecStore {
         items: Vec<ProducedEvidence>,
+        descriptors: Vec<EvidenceDescriptor>,
     }
 
     impl EvidenceSink for VecStore {
@@ -94,13 +156,36 @@ mod tests {
                     ),
                 });
             }
+            for item in produced {
+                if let Some(grounding) = item.grounding {
+                    let id = EvidenceId::new(self.descriptors.len() as u64 + 1);
+                    self.descriptors.push(EvidenceDescriptor {
+                        id,
+                        grade: EvidenceGrade::Supports,
+                        fact: FactSlot::Resolved(FactDescriptor {
+                            id: grounding.fact,
+                            subject: grounding.entity,
+                            snapshot: SnapshotId::new(1),
+                        }),
+                    });
+                }
+            }
             Ok(EvidenceBindings::new(bindings))
         }
     }
 
     impl EvidenceLookup for VecStore {
-        fn contains(&self, id: EvidenceId) -> bool {
-            id.get() >= 1 && (id.get() as usize) <= self.items.len()
+        fn resolve(&self, id: EvidenceId) -> EvidenceResolution<'_> {
+            let raw = id.get();
+            if raw == 0 || (raw as usize) > self.items.len() {
+                return EvidenceResolution::Unknown;
+            }
+            // A pure existence store: it can attest the id and the grade it
+            // recorded, but not the subject of the fact.
+            self.descriptors
+                .get(raw as usize - 1)
+                .map(|d| EvidenceResolution::Known(d))
+                .unwrap_or(EvidenceResolution::Unknown)
         }
 
         fn scope(&self) -> Option<&crate::domain::findings::AnalysisScope> {
@@ -110,7 +195,10 @@ mod tests {
 
     #[test]
     fn sink_assigns_ids_and_lookup_resolves_them() {
-        let mut store = VecStore { items: Vec::new() };
+        let mut store = VecStore {
+            items: Vec::new(),
+            descriptors: Vec::new(),
+        };
         let bindings = store
             .persist(&[
                 ProducedEvidence {

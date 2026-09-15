@@ -11,27 +11,10 @@ use serde::{Deserialize, Serialize};
 use super::fact::ProvenanceRecord;
 use super::ids::{EvidenceId, FactId};
 
-/// How an [`Evidence`] relates to its fact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum EvidenceGrade {
-    /// The evidence supports the fact.
-    Supports,
-    /// The evidence refutes the fact.
-    Refutes,
-    /// Independent evidence that agrees with the fact (corroboration).
-    Corroborates,
-}
-
-impl std::fmt::Display for EvidenceGrade {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            EvidenceGrade::Supports => "Supports",
-            EvidenceGrade::Refutes => "Refutes",
-            EvidenceGrade::Corroborates => "Corroborates",
-        };
-        f.write_str(s)
-    }
-}
+/// Re-export shim (cycle e62.4): the canonical definition moved to the
+/// ungated [`crate::domain::kernel_ids::EvidenceGrade`] so the findings domain
+/// can reason about it without the kernel feature.
+pub use crate::domain::kernel_ids::EvidenceGrade;
 
 /// A graded statement about one fact.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

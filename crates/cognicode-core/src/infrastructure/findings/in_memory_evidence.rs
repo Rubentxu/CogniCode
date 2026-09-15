@@ -8,14 +8,19 @@
 use crate::domain::findings::AnalysisScope;
 use crate::domain::findings::binding::{EvidenceBinding, EvidenceBindings, GroundingFailure};
 use crate::domain::findings::outcome::ProducedEvidence;
-use crate::domain::findings::ports::{EvidenceError, EvidenceLookup, EvidenceSink};
-use crate::domain::kernel_ids::EvidenceId;
+use crate::domain::findings::ports::{
+    EvidenceDescriptor, EvidenceError, EvidenceLookup, EvidenceResolution, EvidenceSink,
+    FactDescriptor, FactSlot,
+};
+use crate::domain::kernel_ids::{EvidenceGrade, EvidenceId, FactId, SnapshotId};
 
 /// Append-only in-memory evidence store.
 #[derive(Debug, Default, Clone)]
 pub struct InMemoryEvidenceStore {
     items: Vec<ProducedEvidence>,
     scope: Option<AnalysisScope>,
+    /// Scratch space so `resolve` can hand out a borrowed descriptor.
+    descriptors: Vec<EvidenceDescriptor>,
 }
 
 impl InMemoryEvidenceStore {
@@ -29,6 +34,7 @@ impl InMemoryEvidenceStore {
         Self {
             items: Vec::new(),
             scope: Some(scope),
+            descriptors: Vec::new(),
         }
     }
 
@@ -71,22 +77,52 @@ impl EvidenceSink for InMemoryEvidenceStore {
         // failure mid-way must not leave evidence behind for a run that never
         // reached the assembler.
         let start = self.items.len() as u64;
+        let snapshot = self
+            .scope
+            .as_ref()
+            .map(|s| s.snapshot)
+            .unwrap_or(SnapshotId::NONE);
         let mut entries = Vec::with_capacity(produced.len());
+        let mut descriptors = Vec::with_capacity(produced.len());
         for (offset, item) in produced.iter().enumerate() {
             let id = EvidenceId::new(start + offset as u64 + 1);
+            // This store holds *projections*, not canonical truth: it can
+            // attest the id it assigned and the entity hint the projection
+            // carried, and nothing more. It never invents a subject, and it
+            // speaks only for the snapshot it was hydrated for.
+            descriptors.push(EvidenceDescriptor {
+                id,
+                grade: EvidenceGrade::Supports,
+                fact: match item.grounding {
+                    Some(g) => FactSlot::Resolved(FactDescriptor {
+                        id: g.fact,
+                        subject: g.entity,
+                        snapshot,
+                    }),
+                    None => FactSlot::Dangling { id: FactId::new(0) },
+                },
+            });
             entries.push(match item.grounding {
                 Some(grounding) => EvidenceBinding::grounded(id, grounding.fact),
                 None => EvidenceBinding::ungrounded(GroundingFailure::NoFact),
             });
         }
         self.items.extend(produced.iter().cloned());
+        self.descriptors.extend(descriptors);
         Ok(EvidenceBindings::new(entries))
     }
 }
 
 impl EvidenceLookup for InMemoryEvidenceStore {
-    fn contains(&self, id: EvidenceId) -> bool {
-        self.get(id).is_some()
+    fn resolve(&self, id: EvidenceId) -> EvidenceResolution<'_> {
+        let raw = id.get();
+        if raw == 0 {
+            return EvidenceResolution::Unknown;
+        }
+        match self.descriptors.get(raw as usize - 1) {
+            Some(descriptor) => EvidenceResolution::Known(descriptor),
+            None => EvidenceResolution::Unknown,
+        }
     }
 
     fn scope(&self) -> Option<&AnalysisScope> {
@@ -157,7 +193,11 @@ mod tests {
         let mut store = InMemoryEvidenceStore::new();
         store.persist(&[sample()]).unwrap();
         let second = store.persist(&[grounded(), sample()]).unwrap();
-        assert_eq!(second.len(), 2, "bindings stay aligned with this run's evidence");
+        assert_eq!(
+            second.len(),
+            2,
+            "bindings stay aligned with this run's evidence"
+        );
         assert_eq!(second.id(0), Some(EvidenceId::new(2)));
         assert_eq!(
             second.id(1),

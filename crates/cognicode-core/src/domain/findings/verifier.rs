@@ -18,9 +18,16 @@
 use std::fmt;
 
 use super::finding::{Finding, FindingError, FindingGate};
-use super::ports::EvidenceLookup;
+use super::ports::{
+    EvidenceDescriptor, EvidenceLookup, EvidenceResolution, FactDescriptor, FactSlot,
+};
 use super::scope::AnalysisScope;
-use crate::domain::kernel_ids::EvidenceId;
+use crate::domain::kernel_ids::{EvidenceGrade, EvidenceId, FactId, SnapshotId};
+
+/// The id of a descriptor (kept in one place so error payloads never disagree).
+fn id_of(descriptor: &EvidenceDescriptor) -> EvidenceId {
+    descriptor.id
+}
 
 /// Verifies findings against an evidence store.
 pub struct FindingVerifier<'a> {
@@ -59,32 +66,103 @@ impl<'a> FindingVerifier<'a> {
             return Err(VerificationError::IncompleteExecutionRef);
         }
 
-        // Every claimed evidence id must resolve.
+        let scope_snapshot = finding_scope.map(|s| s.snapshot);
+
+        // Every claimed evidence id must resolve to *canonical truth*: not just
+        // an id that exists, but an evidence atom whose grade and fact agree
+        // with the claim it is being used to support.
         for id in &finding.evidence {
-            if !self.evidence.contains(*id) {
-                return Err(VerificationError::UnresolvedEvidence(*id));
-            }
+            let descriptor = match self.evidence.resolve(*id) {
+                EvidenceResolution::Known(descriptor) => descriptor,
+                EvidenceResolution::Unknown => {
+                    return Err(VerificationError::UnresolvedEvidence(*id));
+                }
+            };
+            Self::check_coherence(*id, descriptor, scope_snapshot, None)?;
         }
 
-        // Every causal step's evidence must resolve and belong to the finding.
+        // Every causal step must be grounded and coherent: it needs both an
+        // evidence atom and a fact, the atom must belong to this finding, and
+        // the fact the step names must be the fact the evidence grades.
         for (step, cs) in finding.causal_chain.iter().enumerate() {
-            if let Some(id) = cs.evidence {
-                if !finding.evidence.contains(&id) {
-                    return Err(VerificationError::CausalEvidenceNotInFinding {
+            let (Some(id), Some(step_fact)) = (cs.evidence, cs.fact) else {
+                return Err(VerificationError::UngroundedCausalStep { step });
+            };
+            if !finding.evidence.contains(&id) {
+                return Err(VerificationError::CausalEvidenceNotInFinding { step, evidence: id });
+            }
+            let descriptor = match self.evidence.resolve(id) {
+                EvidenceResolution::Known(descriptor) => descriptor,
+                EvidenceResolution::Unknown => {
+                    return Err(VerificationError::CausalEvidenceNotResolved {
                         step,
                         evidence: id,
                     });
                 }
-                if !self.evidence.contains(id) {
-                    return Err(VerificationError::CausalEvidenceNotResolved {
+            };
+            let fact = Self::check_coherence(id, descriptor, scope_snapshot, Some(step))?;
+
+            if fact.id != step_fact {
+                return Err(VerificationError::FactMismatch {
+                    step,
+                    step_fact,
+                    evidence_fact: fact.id,
+                });
+            }
+            // A step that names a subject makes a checkable claim about the
+            // fact: the fact must agree, and a fact that cannot attest its
+            // subject cannot back the claim.
+            if let Some(subject) = cs.subject {
+                if fact.subject != Some(subject) {
+                    return Err(VerificationError::SubjectMismatch {
                         step,
-                        evidence: id,
+                        step_subject: subject,
+                        fact_subject: fact.subject,
                     });
                 }
             }
         }
 
         Ok(())
+    }
+
+    /// Verify that an evidence atom may back a claim, returning its fact.
+    ///
+    /// `step` is the causal step index when the atom is being checked in a
+    /// causal position, and `None` when it is checked as claimed evidence.
+    fn check_coherence<'d>(
+        id: EvidenceId,
+        descriptor: &'d EvidenceDescriptor,
+        scope_snapshot: Option<SnapshotId>,
+        step: Option<usize>,
+    ) -> Result<&'d FactDescriptor, VerificationError> {
+        if !descriptor.grade.supports_a_claim() {
+            return Err(VerificationError::RefutingEvidence {
+                evidence: id,
+                grade: descriptor.grade,
+                step,
+            });
+        }
+        let fact = match &descriptor.fact {
+            FactSlot::Resolved(fact) => fact,
+            FactSlot::Dangling { id } => {
+                return Err(VerificationError::DanglingFact {
+                    evidence: id_of(descriptor),
+                    fact: *id,
+                });
+            }
+        };
+        if let Some(snapshot) = scope_snapshot {
+            if fact.snapshot != snapshot {
+                return Err(VerificationError::SnapshotMismatch {
+                    evidence: id_of(descriptor),
+                    fact: fact.id,
+                    fact_snapshot: fact.snapshot,
+                    scope_snapshot: snapshot,
+                });
+            }
+        }
+        Ok(fact)
     }
 
     /// Whether the finding may block the gate: referentially verified AND the
@@ -126,6 +204,58 @@ pub enum VerificationError {
         /// The offending evidence id.
         evidence: EvidenceId,
     },
+    /// A causal step is not grounded: it carries no evidence, or no fact.
+    ///
+    /// An ungrounded route is still explainable; it just cannot gate.
+    UngroundedCausalStep {
+        /// Causal step index.
+        step: usize,
+    },
+    /// The evidence refutes its fact, so it cannot license a claim.
+    RefutingEvidence {
+        /// The evidence id.
+        evidence: EvidenceId,
+        /// Its grade.
+        grade: EvidenceGrade,
+        /// Causal step index, when checked in a causal position.
+        step: Option<usize>,
+    },
+    /// The evidence points at a fact that does not exist in this scope.
+    DanglingFact {
+        /// The evidence id.
+        evidence: EvidenceId,
+        /// The fact it points at.
+        fact: FactId,
+    },
+    /// The fact belongs to a different snapshot than the execution's scope.
+    SnapshotMismatch {
+        /// The evidence id.
+        evidence: EvidenceId,
+        /// The fact id.
+        fact: FactId,
+        /// The snapshot the fact belongs to.
+        fact_snapshot: SnapshotId,
+        /// The snapshot the execution was pinned to.
+        scope_snapshot: SnapshotId,
+    },
+    /// A causal step names a fact that its evidence does not grade.
+    FactMismatch {
+        /// Causal step index.
+        step: usize,
+        /// The fact the step claims.
+        step_fact: FactId,
+        /// The fact the evidence actually grades.
+        evidence_fact: FactId,
+    },
+    /// A causal step names a subject that its fact does not concern.
+    SubjectMismatch {
+        /// Causal step index.
+        step: usize,
+        /// The subject the step claims.
+        step_subject: crate::domain::kernel_ids::EntityId,
+        /// The subject the fact actually carries.
+        fact_subject: Option<crate::domain::kernel_ids::EntityId>,
+    },
 }
 
 impl fmt::Display for VerificationError {
@@ -159,6 +289,56 @@ impl fmt::Display for VerificationError {
                     "causal step {step} references unresolved evidence {evidence}"
                 )
             }
+            Self::UngroundedCausalStep { step } => write!(
+                f,
+                "causal step {step} is not grounded (no evidence or no canonical fact)"
+            ),
+            Self::RefutingEvidence {
+                evidence,
+                grade,
+                step,
+            } => match step {
+                Some(step) => write!(
+                    f,
+                    "causal step {step} is backed by {evidence}, which {grade}s its fact"
+                ),
+                None => write!(
+                    f,
+                    "claimed evidence {evidence} {grade}s its fact and cannot back the finding"
+                ),
+            },
+            Self::DanglingFact { evidence, fact } => write!(
+                f,
+                "evidence {evidence} grades fact {fact}, which does not exist in this scope"
+            ),
+            Self::SnapshotMismatch {
+                evidence,
+                fact,
+                fact_snapshot,
+                scope_snapshot,
+            } => write!(
+                f,
+                "evidence {evidence} grades fact {fact} from snapshot {fact_snapshot}, but the execution was pinned to {scope_snapshot}"
+            ),
+            Self::FactMismatch {
+                step,
+                step_fact,
+                evidence_fact,
+            } => write!(
+                f,
+                "causal step {step} claims fact {step_fact} but its evidence grades {evidence_fact}"
+            ),
+            Self::SubjectMismatch {
+                step,
+                step_subject,
+                fact_subject,
+            } => write!(
+                f,
+                "causal step {step} claims subject {step_subject} but its fact concerns {}",
+                fact_subject
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "<none>".to_string())
+            ),
         }
     }
 }
@@ -178,26 +358,53 @@ mod tests {
     use crate::domain::findings::outcome::{
         CausalObservation, DetectorMatch, DetectorOutcome, EvidenceKind, ProducedEvidence,
     };
+    use crate::domain::findings::ports::{EvidenceDescriptor, FactDescriptor, FactSlot};
     use crate::domain::kernel_ids::{ExecutionId, FactId};
-    use std::collections::HashSet;
 
+    /// A hand-built lookup: every id resolves to a supporting descriptor whose
+    /// fact lives in the given scope's snapshot.
     struct SetLookup {
-        ids: HashSet<EvidenceId>,
+        descriptors: Vec<EvidenceDescriptor>,
         scope: Option<AnalysisScope>,
     }
 
     impl SetLookup {
         fn scoped(ids: &[u64], scope: AnalysisScope) -> Self {
+            let descriptors = ids
+                .iter()
+                .map(|n| EvidenceDescriptor {
+                    id: EvidenceId::new(*n),
+                    grade: EvidenceGrade::Supports,
+                    fact: FactSlot::Resolved(FactDescriptor {
+                        id: FactId::new(7),
+                        subject: None,
+                        snapshot: scope.snapshot,
+                    }),
+                })
+                .collect();
             Self {
-                ids: ids.iter().map(|n| EvidenceId::new(*n)).collect(),
+                descriptors,
                 scope: Some(scope),
             }
+        }
+
+        /// Replace one id's descriptor, so a test can make it refute, dangle,
+        /// or name a different fact.
+        fn with_descriptor(mut self, id: u64, descriptor: EvidenceDescriptor) -> Self {
+            if let Some(slot) = self.descriptors.iter_mut().find(|d| d.id.get() == id) {
+                *slot = descriptor;
+            }
+            self
         }
     }
 
     impl EvidenceLookup for SetLookup {
-        fn contains(&self, id: EvidenceId) -> bool {
-            self.ids.contains(&id)
+        fn resolve(&self, id: EvidenceId) -> EvidenceResolution<'_> {
+            self.descriptors
+                .iter()
+                .find(|d| d.id == id)
+                .map(EvidenceResolution::Known)
+                .unwrap_or(EvidenceResolution::Unknown)
         }
 
         fn scope(&self) -> Option<&AnalysisScope> {
@@ -299,6 +506,114 @@ mod tests {
 
     fn lookup_with(ids: &[u64]) -> SetLookup {
         SetLookup::scoped(ids, scope(1))
+    }
+
+    /// C — evidence that *refutes* its fact can never license a gate, even when
+    /// the id resolves and the shape is perfect.
+    #[test]
+    fn refuting_evidence_never_gates() {
+        let f = build(true);
+        let store = lookup_with(&[1]).with_descriptor(
+            1,
+            EvidenceDescriptor {
+                id: EvidenceId::new(1),
+                grade: EvidenceGrade::Refutes,
+                fact: FactSlot::Resolved(FactDescriptor {
+                    id: FactId::new(7),
+                    subject: None,
+                    snapshot: scope(1).snapshot,
+                }),
+            },
+        );
+        let verifier = FindingVerifier::new(&store);
+        assert!(matches!(
+            verifier.verify_for_gate(&f),
+            Err(VerificationError::RefutingEvidence { .. })
+        ));
+        assert!(!verifier.can_block(&f, &FindingGate::new(EvidenceClass::C, RiskLevel::Low)));
+    }
+
+    /// B — a causal step whose declared fact is not the fact its evidence
+    /// grades is incoherent, even when both facts exist and the ids resolve.
+    #[test]
+    fn a_fact_that_disagrees_with_its_evidence_is_rejected() {
+        let mut f = build(true);
+        f.causal_chain[0].fact = Some(FactId::new(8));
+        let store = lookup_with(&[1]);
+        let verifier = FindingVerifier::new(&store);
+        assert!(matches!(
+            verifier.verify_for_gate(&f),
+            Err(VerificationError::FactMismatch { .. })
+        ));
+    }
+
+    /// A step with no fact (or no evidence) is ungrounded, not verified.
+    #[test]
+    fn an_ungrounded_causal_step_is_rejected() {
+        let mut f = build(true);
+        f.causal_chain[0].fact = None;
+        let store = lookup_with(&[1]);
+        let verifier = FindingVerifier::new(&store);
+        assert!(matches!(
+            verifier.verify_for_gate(&f),
+            Err(VerificationError::UngroundedCausalStep { step: 0 })
+        ));
+    }
+
+    /// Evidence whose fact belongs to another snapshot cannot back a finding
+    /// pinned to this one, even when the evidence id itself resolves.
+    #[test]
+    fn a_fact_from_another_snapshot_is_rejected() {
+        let f = build(true);
+        let store = lookup_with(&[1]).with_descriptor(
+            1,
+            EvidenceDescriptor {
+                id: EvidenceId::new(1),
+                grade: EvidenceGrade::Supports,
+                fact: FactSlot::Resolved(FactDescriptor {
+                    id: FactId::new(7),
+                    subject: None,
+                    snapshot: scope(2).snapshot,
+                }),
+            },
+        );
+        let verifier = FindingVerifier::new(&store);
+        assert!(matches!(
+            verifier.verify_for_gate(&f),
+            Err(VerificationError::SnapshotMismatch { .. })
+        ));
+    }
+
+    /// A step that names a subject makes a checkable claim about its fact.
+    #[test]
+    fn a_step_subject_that_disagrees_with_the_fact_is_rejected() {
+        let mut f = build(true);
+        f.causal_chain[0].subject = Some(crate::domain::kernel_ids::EntityId::new(3));
+        let store = lookup_with(&[1]);
+        let verifier = FindingVerifier::new(&store);
+        assert!(matches!(
+            verifier.verify_for_gate(&f),
+            Err(VerificationError::SubjectMismatch { .. })
+        ));
+    }
+
+    /// Evidence pointing at a fact that does not exist is dangling.
+    #[test]
+    fn dangling_facts_are_rejected() {
+        let f = build(true);
+        let store = lookup_with(&[1]).with_descriptor(
+            1,
+            EvidenceDescriptor {
+                id: EvidenceId::new(1),
+                grade: EvidenceGrade::Supports,
+                fact: FactSlot::Dangling { id: FactId::new(7) },
+            },
+        );
+        let verifier = FindingVerifier::new(&store);
+        assert!(matches!(
+            verifier.verify_for_gate(&f),
+            Err(VerificationError::DanglingFact { .. })
+        ));
     }
 
     #[test]

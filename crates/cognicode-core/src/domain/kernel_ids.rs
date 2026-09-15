@@ -120,6 +120,47 @@ impl fmt::Display for SnapshotId {
 // FactId
 // ============================================================================
 
+/// How a piece of kernel evidence relates to the fact it grades.
+///
+/// **Ungated domain vocabulary (cycle e62.4).** Lifted out of the gated
+/// `evidence_kernel::evidence` for the same reason the ids were lifted in e56:
+/// the findings domain must be able to reason about whether evidence supports
+/// or refutes a fact **without** compiling in the whole kernel. The gated
+/// module re-exports it, so there is a single source of truth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EvidenceGrade {
+    /// The evidence supports the fact.
+    Supports,
+    /// The evidence refutes the fact.
+    Refutes,
+    /// Independent evidence that agrees with the fact (corroboration).
+    Corroborates,
+}
+
+impl EvidenceGrade {
+    /// Whether this grade may back a finding.
+    ///
+    /// `Refutes` never may: evidence that contradicts the fact cannot license
+    /// a gate.
+    pub fn supports_a_claim(self) -> bool {
+        match self {
+            Self::Supports | Self::Corroborates => true,
+            Self::Refutes => false,
+        }
+    }
+}
+
+impl std::fmt::Display for EvidenceGrade {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            EvidenceGrade::Supports => "Supports",
+            EvidenceGrade::Refutes => "Refutes",
+            EvidenceGrade::Corroborates => "Corroborates",
+        };
+        f.write_str(s)
+    }
+}
+
 /// Identifies one canonical fact within the kernel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct FactId(pub u64);

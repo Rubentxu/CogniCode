@@ -5,6 +5,8 @@
 //! the adapter owns the engine and the IR→engine translation.
 
 pub mod axiom_migration;
+#[cfg(feature = "evidence-kernel")]
+pub mod kernel_bridge;
 pub mod m5_dataflow_backend;
 pub mod taint_runner;
 
@@ -13,5 +15,7 @@ pub use axiom_migration::{
     ImportDiagnosticKind, ImportReport, ImportedDetectorDefinition, LegacyDetection,
     LegacyRuleProvenance, LegacySeverity, NormalizedLegacyRule, policy_for,
 };
+#[cfg(feature = "evidence-kernel")]
+pub use kernel_bridge::{CanonicalEvidenceWriter, KernelEvidenceReadModel};
 pub use m5_dataflow_backend::M5DataflowBackend;
 pub use taint_runner::TaintFlowRunner;
