@@ -379,6 +379,14 @@ pub enum FindingError {
     MissingDetectorVersion,
     /// A causal step has an empty label or detail.
     EmptyCausalStep,
+    /// A referenced detector identifier or finding kind is malformed.
+    InvalidIdentifier(super::DetectorIrError),
+}
+
+impl From<super::DetectorIrError> for FindingError {
+    fn from(value: super::DetectorIrError) -> Self {
+        Self::InvalidIdentifier(value)
+    }
 }
 
 impl fmt::Display for FindingError {
@@ -390,6 +398,7 @@ impl fmt::Display for FindingError {
                 f.write_str("detector reference must carry a non-empty version")
             }
             Self::EmptyCausalStep => f.write_str("causal step label and detail must not be empty"),
+            Self::InvalidIdentifier(err) => write!(f, "invalid finding identifier: {err}"),
         }
     }
 }

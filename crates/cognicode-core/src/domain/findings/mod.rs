@@ -15,9 +15,12 @@
 //!   [`DetectorAuthority`] and the fail-loud validator.
 //! - [`finding`] — [`Finding`], [`EvidenceClass`], [`RiskLevel`],
 //!   [`FindingGate`] and the evidence-backed conclusion model.
+//! - [`quality_projection`] — lift legacy `QualityIssue` rows into
+//!   [`Finding`] (conservative, non-blocking).
 
 pub mod detector_ir;
 pub mod finding;
+pub mod quality_projection;
 
 pub use detector_ir::{
     AnalysisLevel, DetectorAuthority, DetectorId, DetectorIr, DetectorIrError, DetectorStep,
@@ -27,3 +30,4 @@ pub use finding::{
     CausalStep, DetectorRef, EvidenceClass, EvidenceRef, Finding, FindingError, FindingGate,
     FindingId, FindingSeverity, FindingStatus, RiskLevel,
 };
+pub use quality_projection::project_quality_issue;
