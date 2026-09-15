@@ -166,9 +166,43 @@ phases:
       ungrounded by construction and cannot block — strictly more conservative
       than before, and the first producer that emits facts makes real findings
       gateable without touching the verifier.
-      NEXT MILESTONE: M7. Deferred within M6's scope: ExecutionPlan<Vec<Stage>>,
-      the real tree-sitter extractor, and threading LegacyRuleProvenance into
-      Finding (needs an execution-context carrier; the IR cannot hold it without
+      Deferred within M6's scope: ExecutionPlan<Vec<Stage>>, the real
+      tree-sitter extractor, and threading LegacyRuleProvenance into Finding
+      (needs an execution-context carrier; the IR cannot hold it without
       corrupting the semantic digest).
+      M7 (Reactive Runtime) started 2026-09-15: e63-lsi-intelligence-event-log-
+      foundation archived (M7.1, U50 CLOSED). The causal Intelligence Event Log:
+      boundary fixed as Evidence Kernel = truth / Intelligence Log = history /
+      Event Bus = delivery (NOT built) / Reactive Runtime = consumer (NOT built).
+      WU1: EventId joins the ungated kernel ids; EventKind is a validated
+      namespaced name with published constructors, NOT an enum every milestone
+      would reopen; ActorRef carries (ActorKind, id) because ADR-044's authority
+      model will key on the kind; the shared namespace.name grammar moved to
+      domain::naming (e56 precedent). WU2/WU6: IntelligenceEvent is immutable,
+      occurred_at is supplied by the caller (no clock in the domain, so replay is
+      reproducible), and payloads are Inline(bounded) | Artifact{digest} — the
+      mechanism behind "a million facts do not produce a million events".
+      WU3/WU4/WU5: IntelligenceEventStore has append/by_id/causal_chain/
+      by_correlation/replay and deliberately NO update/delete/publish/subscribe;
+      InMemoryEventLog fixes the semantics (store-allocated ids from ONE GLOBAL
+      sequence so a cross-tenant cause is detectable, all-or-nothing append, a
+      cause must exist in the workspace or earlier in the same batch, nothing
+      mutated, workspaces isolated); causal_chain reads root-first.
+      WU7/WU8: CausalRecorder never guesses a cause, and the U50 acceptance test
+      drives the REAL slice (real kernel commit + the M6 executor + the canonical
+      bridge, ending at a finding that verifies and gates) asserting
+      causal_chain == [SourceDelta, FactBatchCommitted, AnalysisCompleted,
+      FindingProduced] with every caused_by edge checked, reproducible and
+      incremental replay, and 500 facts as ONE artifact event whose digest
+      identifies the committed bytes. 31 event-log tests + 4 acceptance tests.
+      HONEST CAVEAT: replay is proved only in memory; nothing yet exercises a
+      restart, a partial write or a re-open. That is the first thing a durable
+      adapter must be tested against, and the oracle was written to be the thing
+      such an adapter is diffed against.
+      ADR-043 (causal Event Log) now has the concrete spike evidence it required;
+      ADR-044 (behavior authority) and ADR-045 (execution read sets) stay pending
+      for e64/e66.
+      NEXT: e64 (behavior model + authority table, U52), then e65 (budgets),
+      then e66 (read sets, U61).
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
