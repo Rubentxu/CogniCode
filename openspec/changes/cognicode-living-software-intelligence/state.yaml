@@ -202,7 +202,51 @@ phases:
       ADR-043 (causal Event Log) now has the concrete spike evidence it required;
       ADR-044 (behavior authority) and ADR-045 (execution read sets) stay pending
       for e64/e66.
-      NEXT: e64 (behavior model + authority table, U52), then e65 (budgets),
-      then e66 (read sets, U61).
+      e64-lsi-behavior-authority archived (M7.2 execution identity + M7.3 behavior
+      model, U52 CLOSED). WU0 (e63 preflight): two real holes closed — an event
+      could claim ANOTHER workspace's scope (NewIntelligenceEvent.scope is a
+      public field and validate only checked the kind), now
+      EventStoreError::ScopeWorkspaceMismatch; and a scope pinned to
+      SnapshotId::NONE was accepted, now EventError::InvalidScope in the store's
+      gate. IntelligenceEvent::depth() removed: it claimed "causal depth" and
+      could only ever return 0 or 1, and a lying accessor is worse than none.
+      WU1: AnalysisScope/ActorRef/CorrelationId/AdmissionSource lifted to
+      domain::execution and domain::trust with re-export shims (the e56/e63/e62.4
+      precedent) — each was introduced by one milestone and needed by the next.
+      ExecutionContext { execution_id, scope, actor, correlation, trigger_event };
+      trigger_event is deliberately NOT caused_by: caused_by is the edge between
+      two log records, trigger_event says which event originated an execution.
+      WU2: DetectorExecutionRef.context replaces the separate execution_id/scope
+      fields (authority stays OUTSIDE the context); ExecutionRequest is turned
+      into a context by the executor so the trust boundary cannot be skipped; and
+      AnalysisInput.scope must equal the execution's claimed scope or
+      ExecutionError::InputScopeMismatch fails loud before planning (the same
+      failure mode U42 closed, one layer up). Zero detector semantics changed.
+      WU3/WU4: BehaviorClass is NOT derived from ActorKind (a human can run an
+      AgentBehavior; an agent can request a trusted ReactiveAnalysis), the table
+      models EFFECTS not deliverables (so the M6 executor→assembler→verifier seam
+      stays the only route into findings), and admission is the same sealed-permit
+      boundary M6 proved: BehaviorDefinition → BehaviorAdmission → BehaviorPermit
+      (private fields + seal, no serde, no public ctor). AiGenerated/Imported are
+      DOWNGRADED to AgentBehavior rather than rejected — a declaration never
+      escalates, mirroring "an AI detector is a Candidate".
+      WU5/WU6/WU7: minimal BehaviorRuntime (permit → behavior.started caused by
+      trigger_event → authorize each effect against the effective class → accept
+      to the sink or refuse with policy.behavior_output_rejected carrying
+      behavior_id/class/effect/reason/execution_id). U52 acceptance: the agent
+      attempts a fact that would be VALID from a PureDerivation, so the refusal
+      cannot be ADR-040 again — it is the class; the effect never reaches the
+      sink, FactStore before == after, and the positive control shows the SAME
+      draft accepted and actually committed by a curated PureDerivation.
+      causal_chain(rejection) == [trigger, behavior.started,
+      policy.behavior_output_rejected]. 13 behavior + 10 execution + 6 acceptance
+      tests. ADR-044 now has its concrete spike evidence.
+      HONEST CAVEAT: BehaviorRuntime has exactly one consumer shape (a
+      deterministic synchronous Behavior returning effects). The boundary is
+      proved; the production runtime that matches events to behaviors does not
+      exist and is not implied by this cycle.
+      NEXT: e65 (M7.4 budgets + observable exhaustion, behavior.budget_exhausted
+      is reserved vocabulary today), then e66 (M7.5 read sets + invalidation,
+      U61).
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
