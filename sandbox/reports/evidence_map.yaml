@@ -241,3 +241,7 @@ generic-graph-equivalence-harness:
   status: verified
   evidence_path: crates/cognicode-core/tests/equivalence_harness/generic_graph.rs
   evidence_note: 'e40 GenericGraph equivalence harness: 5 scenarios (rebuild_byte_identical, dangling_edge_skipped, kind_multiset_matches, empty_facts_yields_empty_projection, pinned_digest_matches) + 1 helper sanity; gated on evidence-kernel + multimodal features; pinned digest sha256:6d22cf734f1094a07df63aea4698e512ae5046f4fa732a322ea43b31678a1cc5; closes RETIREMENT-LEDGER GAP S2'
+cognicode-cli:
+  status: verified
+  evidence_path: crates/cognicode-cli/tests/cogh_cli.rs
+  evidence_note: 'e43 cogh CLI conformance coverage: 7 integration tests locking down 4 contracts (--version, list, current, doctor) via subprocess spawning with CARGO_BIN_EXE_cogh + isolated --home tempdir; verifies REQ #1 (binary version), #6 (list plugin table), #7 (current tracker), #10 (doctor) of openspec/specs/cognicode-cli/spec.md'
