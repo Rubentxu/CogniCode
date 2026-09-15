@@ -68,8 +68,13 @@ phases:
       GraphBackend {GraphQuery} ceiling B with deterministic FLOW/EXCLUDE,
       GraphPath evidence and Source->Flow->Sink causal chain; 95 findings +
       6 AST E2E + 4 graph E2E tests — U41 passes). The seam generalised to a
-      second paradigm with no special case. Next M6 slice: dataflow backend
-      (7.5) over ProgramAnalysisService (no second taint engine), then 7.7
-      Axiom importer.
+      second paradigm with no special case. e59.1-lsi-graph-and-taint-correctness
+      archived (graph: exclusion enforced during traversal so only valid
+      witnesses are reported, multi-FLOW fails loud. M5: T1/T2 characterization
+      written first and BOTH failed — the witness reconstruction ignored
+      untaints, and a later-arriving origin was never propagated through an
+      already-tainted merge; both fixed in cognicode-graph-algos, M6 untouched).
+      Next M6 slice: dataflow backend (7.5) as an application-layer adapter over
+      ProgramAnalysisService (no second taint engine), then 7.7 Axiom importer.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}

@@ -269,6 +269,8 @@ impl ExecutionRecord {
 pub enum BackendError {
     /// The backend's required input view was absent.
     MissingInput(&'static str),
+    /// The detector uses an IR construct this backend does not support yet.
+    UnsupportedIr(String),
     /// An internal backend failure.
     Internal(String),
 }
@@ -277,6 +279,7 @@ impl fmt::Display for BackendError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingInput(view) => write!(f, "backend input `{view}` is missing"),
+            Self::UnsupportedIr(msg) => write!(f, "unsupported detector IR: {msg}"),
             Self::Internal(msg) => write!(f, "backend failure: {msg}"),
         }
     }

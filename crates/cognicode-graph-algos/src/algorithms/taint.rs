@@ -163,10 +163,14 @@ pub fn taint_forward(
                     for o in &origins_at_node {
                         entry.insert(*o);
                     }
-                    if entry.len() != before && !tainted.contains_key(&to) {
-                        // First time this node was tainted — record its
-                        // representative origin (smallest) for the BFS.
-                        tainted.insert(to, *entry.iter().min().unwrap());
+                    if entry.len() != before {
+                        // New origin(s) reached `to`. Re-enqueue even if `to`
+                        // was already tainted, otherwise a later-arriving
+                        // origin would be recorded but never propagated to
+                        // its descendants (unequal-depth merge).
+                        tainted
+                            .entry(to)
+                            .or_insert_with(|| *entry.iter().min().unwrap());
                         next_work.push(to);
                     }
                 }
@@ -180,7 +184,7 @@ pub fn taint_forward(
     for &sink in &sinks_sorted {
         if let Some(origins) = all_origins.get(&sink) {
             for &origin in origins {
-                let intermediates = intermediates_on_chain(&succ, origin, sink);
+                let intermediates = intermediates_on_chain(&succ, origin, sink, &all_origins);
                 paths.push(TaintPath {
                     source: TaintSite { stmt_id: origin },
                     sink: TaintSite { stmt_id: sink },
@@ -207,14 +211,26 @@ pub fn taint_forward(
 /// the DFG successor edges. Returns intermediates (excludes origin and
 /// target). BFS — when multiple paths exist we take the shortest one,
 /// which is deterministic because `succ` is sorted.
+///
+/// Reconstruction is **constraint-aware**: only nodes that this `origin`
+/// actually tainted are traversed. Without this, a witness could route
+/// through a node the taint never reached (e.g. an untainted sanitizer on a
+/// topologically shorter route) while the taint really arrived another way.
 fn intermediates_on_chain(
     succ: &std::collections::BTreeMap<usize, std::collections::BTreeSet<usize>>,
     origin: usize,
     target: usize,
+    tainted_by_origin: &std::collections::BTreeMap<usize, std::collections::BTreeSet<usize>>,
 ) -> Vec<usize> {
     if origin == target {
         return Vec::new();
     }
+    let carries_origin = |node: usize| -> bool {
+        tainted_by_origin
+            .get(&node)
+            .map(|origins| origins.contains(&origin))
+            .unwrap_or(false)
+    };
     use std::collections::{BTreeSet, VecDeque};
     let mut visited: BTreeSet<usize> = BTreeSet::new();
     let mut prev: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
@@ -224,9 +240,7 @@ fn intermediates_on_chain(
 
     while let Some(node) = queue.pop_front() {
         if node == target {
-            // Reconstruct chain: origin ... → target.
-            // We collect predecessors starting from `target` and stop at
-            // origin (which has no predecessor by construction).
+            // Reconstruct chain: origin ... -> target.
             let mut chain: Vec<usize> = Vec::new();
             let mut cur = target;
             while let Some(&p) = prev.get(&cur) {
@@ -237,12 +251,9 @@ fn intermediates_on_chain(
                 cur = p;
             }
             chain.reverse();
-            // Drop origin from the chain — the caller wants intermediates
-            // (i.e. nodes strictly between origin and target).
             if !chain.is_empty() && chain[0] == origin {
                 chain.remove(0);
             }
-            // Also drop target (last in chain) — the caller has it.
             if chain.last().copied() == Some(target) {
                 chain.pop();
             }
@@ -250,14 +261,16 @@ fn intermediates_on_chain(
         }
         if let Some(nbrs) = succ.get(&node) {
             for &nxt in nbrs {
-                if !visited.contains(&nxt) {
-                    visited.insert(nxt);
-                    prev.insert(nxt, node);
-                    queue.push_back(nxt);
+                if visited.contains(&nxt) || !carries_origin(nxt) {
+                    continue;
                 }
+                visited.insert(nxt);
+                prev.insert(nxt, node);
+                queue.push_back(nxt);
             }
         }
     }
+
     Vec::new()
 }
 
