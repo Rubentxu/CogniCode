@@ -131,17 +131,44 @@ phases:
       proved by traversing relations, not by the endpoints existing), with
       fact = authority / entity = hint expressed by entity_agrees_with; no
       backend reads it yet and no analysis behaviour changed).
-      NEXT (M6 closure): e62.4 U42 part 2b — atomic causal evidence (one atom
-      per supporting fact, never fabricating facts) + EvidenceBindings indexed
-      by the original ProducedEvidence index, DetectorExecutor::prepare() /
-      PreparedExecution::finalize() (private fields, single implementation),
-      canonical write bridge (async, outside the domain; FactStore::get first,
-      entity/fact coherence, atomic batch), EvidenceDescriptor read model +
-      KernelEvidenceReadModel::load keeping FindingVerifier sync, full
-      coherence verifier (scope + grade != Refutes + Evidence.fact ==
-      CausalStep.fact + Fact.snapshot == scope.snapshot + causal membership)
-      and the three adversarial UATs (A: cross-snapshot identical ids,
-      B: fact mismatch, C: Refutes never gates) plus AST/Graph/Dataflow
-      conformance.
+      e62.4-lsi-canonical-grounding archived (U42 part 2b, and U42 CLOSED).
+      WU2: evidence is atomic — EvidenceBindings is index-aligned with
+      produced_evidence (Grounded {id, fact} / Ungrounded {reason}), AST emits
+      one atom per construct, Graph emits source node + one atom per traversed
+      relation + sink node with parallel relations naming different facts left
+      ungrounded (ambiguous_relation_grounding), Dataflow one atom per
+      statement; ProducedEvidence.fact became grounding: Option<GroundingRef>
+      and CausalObservation.fact was REMOVED so a step's fact is derived from
+      its evidence binding and can no longer be declared; the assembler claims
+      only grounded ids. WU3: DetectorExecutor::prepare() +
+      PreparedExecution::finalize() (private fields, only constructor is
+      prepare), execute() = prepare + persist + finalize, EvidenceSink::persist
+      persists a whole run in one call. WU4: CanonicalEvidenceWriter (application,
+      async, no block_on in the domain) — FactStore::get first, entity hint
+      refused when it contradicts the canonical subject, one atomic
+      append_batch, store errors stay errors. WU5: EvidenceGrade lifted to the
+      ungated domain::kernel_ids (e56 precedent), EvidenceLookup::resolve
+      replaces bare existence, KernelEvidenceReadModel::load is the only I/O and
+      records missing ids / dangling facts so FindingVerifier stays sync.
+      WU6: coherence verification — evidence resolves, grade != Refutes, not
+      dangling, fact snapshot == execution scope; each causal step must be
+      grounded in BOTH evidence and fact, belong to the finding, and its
+      evidence must grade exactly the claimed fact (SubjectMismatch when a
+      subject is named). ACCEPTANCE PASSED: AST/Graph/Dataflow positives gate
+      through the real kernel stores, and the three adversarial cases fail
+      correctly (A cross-snapshot with identical numeric ids -> ScopeMismatch
+      before any resolve; B FactMismatch; C Refutes never gates).
+      119 domain::findings + 21 application::findings + 88 evidence_kernel +
+      10 canonical-grounding acceptance tests.
+      M6 DONE: tasks 7.1-7.7 complete; U40, U41, U42, U43 and U47 all satisfied.
+      HONEST CAVEAT: no production producer emits canonical facts yet (M5, the
+      graph/DAG lift and the AST lift all leave grounding=None), so real runs are
+      ungrounded by construction and cannot block — strictly more conservative
+      than before, and the first producer that emits facts makes real findings
+      gateable without touching the verifier.
+      NEXT MILESTONE: M7. Deferred within M6's scope: ExecutionPlan<Vec<Stage>>,
+      the real tree-sitter extractor, and threading LegacyRuleProvenance into
+      Finding (needs an execution-context carrier; the IR cannot hold it without
+      corrupting the semantic digest).
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
