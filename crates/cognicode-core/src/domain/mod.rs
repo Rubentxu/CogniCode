@@ -12,6 +12,7 @@ pub mod example_block;
 // LSI Findings & Detector IR (M6) — declarative, validated detector
 // definitions. Additive pure domain (no I/O), mirroring the M5
 // `analytics::program_analysis` precedent; ungated.
+pub mod behaviors;
 pub mod execution;
 pub mod findings;
 // M7 (Living Software Intelligence) — the causal Intelligence Event Log.
