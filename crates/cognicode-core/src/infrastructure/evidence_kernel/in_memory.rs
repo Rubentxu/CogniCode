@@ -161,6 +161,18 @@ impl FactStore for InMemoryFactStore {
             .unwrap_or_default())
     }
 
+    async fn get(
+        &self,
+        ws: &WorkspaceId,
+        snap: &SnapshotId,
+        id: FactId,
+    ) -> Result<Option<Fact>, KernelError> {
+        let facts = self.facts.lock().expect("fact store lock");
+        Ok(facts
+            .get(&(ws.clone(), *snap))
+            .and_then(|rows| rows.iter().find(|f| f.id == id).cloned()))
+    }
+
     async fn facts_in_snapshot(
         &self,
         ws: &WorkspaceId,
@@ -177,15 +189,24 @@ impl FactStore for InMemoryFactStore {
 // InMemoryEvidenceStore
 // ============================================================================
 
-/// In-memory [`EvidenceStore`]: evidence indexed by `(WorkspaceId, FactId)`.
+/// The evidence table, keyed by snapshot on both axes.
+#[derive(Debug, Default)]
+struct EvidenceTable {
+    /// `(workspace, snapshot, fact)` → evidence attached to that fact.
+    by_fact: HashMap<(WorkspaceId, SnapshotId, FactId), Vec<Evidence>>,
+    /// `(workspace, snapshot, evidence id)` → the evidence record.
+    by_id: HashMap<(WorkspaceId, SnapshotId, EvidenceId), Evidence>,
+}
+
+/// In-memory [`EvidenceStore`], keyed by `(WorkspaceId, SnapshotId, …)`.
 ///
-/// The snapshot pin of a read is transitive through the pinned fact: a fact
-/// id belongs to exactly one snapshot's fact set, so `for_fact` returns the
-/// evidence attached to that fact — identical before and after other
-/// snapshots are published.
+/// Fact ids (and evidence ids) are canonical *per snapshot* (`1..M` within
+/// each), so the snapshot must be part of the key: otherwise a read pinned
+/// to snapshot A would observe snapshot B's evidence for the same numeric
+/// fact id, silently violating "historical read remains stable".
 #[derive(Debug, Default)]
 pub struct InMemoryEvidenceStore {
-    evidence: Mutex<HashMap<(WorkspaceId, FactId), Vec<Evidence>>>,
+    table: Mutex<EvidenceTable>,
 }
 
 impl InMemoryEvidenceStore {
@@ -197,26 +218,53 @@ impl InMemoryEvidenceStore {
 
 #[async_trait]
 impl EvidenceStore for InMemoryEvidenceStore {
-    async fn add(&self, ws: &WorkspaceId, e: Evidence) -> Result<EvidenceId, KernelError> {
+    async fn add(
+        &self,
+        ws: &WorkspaceId,
+        snap: &SnapshotId,
+        e: Evidence,
+    ) -> Result<EvidenceId, KernelError> {
         let id = e.id;
-        self.evidence
-            .lock()
-            .expect("evidence store lock")
-            .entry((ws.clone(), e.fact))
+        let mut table = self.table.lock().expect("evidence store lock");
+        if table.by_id.contains_key(&(ws.clone(), *snap, id)) {
+            return Err(KernelError::EvidenceIdCollision(id, *snap));
+        }
+        table.by_id.insert((ws.clone(), *snap, id), e.clone());
+        table
+            .by_fact
+            .entry((ws.clone(), *snap, e.fact))
             .or_default()
             .push(e);
         Ok(id)
     }
 
+    async fn get(
+        &self,
+        ws: &WorkspaceId,
+        snap: &SnapshotId,
+        id: EvidenceId,
+    ) -> Result<Option<Evidence>, KernelError> {
+        Ok(self
+            .table
+            .lock()
+            .expect("evidence store lock")
+            .by_id
+            .get(&(ws.clone(), *snap, id))
+            .cloned())
+    }
+
     async fn for_fact(
         &self,
         ws: &WorkspaceId,
-        _snap: &SnapshotId,
+        snap: &SnapshotId,
         fact: FactId,
     ) -> Result<Vec<Evidence>, KernelError> {
-        let evidence = self.evidence.lock().expect("evidence store lock");
-        Ok(evidence
-            .get(&(ws.clone(), fact))
+        Ok(self
+            .table
+            .lock()
+            .expect("evidence store lock")
+            .by_fact
+            .get(&(ws.clone(), *snap, fact))
             .cloned()
             .unwrap_or_default())
     }
@@ -802,7 +850,10 @@ mod tests {
             ),
         };
 
-        let added = store.add(&workspace, evidence.clone()).await.expect("add");
+        let added = store
+            .add(&workspace, &snap, evidence.clone())
+            .await
+            .expect("add");
         assert_eq!(added, evidence.id);
 
         let found = store
@@ -826,7 +877,10 @@ mod tests {
             grade: EvidenceGrade::Corroborates,
             provenance: ProvenanceRecord::new(Provenance::Manual, ProducerKind::Human, None),
         };
-        store.add(&workspace, evidence.clone()).await.expect("add");
+        store
+            .add(&workspace, &snap_a, evidence.clone())
+            .await
+            .expect("add");
 
         let before = store
             .for_fact(&workspace, &snap_a, fact_id)
@@ -842,7 +896,7 @@ mod tests {
             provenance: ProvenanceRecord::new(Provenance::Manual, ProducerKind::Human, None),
         };
         store
-            .add(&workspace, later)
+            .add(&workspace, &snap_a, later)
             .await
             .expect("add later evidence");
 
@@ -865,5 +919,207 @@ mod tests {
             .await
             .expect("graceful read");
         assert!(found.is_empty());
+    }
+    // -------------------------------------------------------------------------
+    // WU-0 (e62) — characterization: is the evidence read snapshot-pinned?
+    // -------------------------------------------------------------------------
+
+    /// `FactId` is canonical *per snapshot* (`1..M` within each), so the same
+    /// numeric id exists in every snapshot. A read pinned to snapshot A must
+    /// see only A's evidence for that fact.
+    ///
+    /// This test was written BEFORE the store was corrected, to prove the leak.
+    #[tokio::test]
+    async fn evidence_read_is_pinned_to_the_requested_snapshot() {
+        let store = InMemoryEvidenceStore::new();
+        let workspace = ws("leak");
+        let snap_a = SnapshotId::new(1);
+        let snap_b = SnapshotId::new(2);
+        let shared_fact_id = FactId::new(1);
+
+        let from_a = Evidence {
+            id: EvidenceId::new(101),
+            fact: shared_fact_id,
+            grade: EvidenceGrade::Supports,
+            provenance: ProvenanceRecord::new(
+                Provenance::Tested,
+                ProducerKind::DeterministicAnalyzer,
+                None,
+            ),
+        };
+        let from_b = Evidence {
+            id: EvidenceId::new(202),
+            fact: shared_fact_id,
+            grade: EvidenceGrade::Supports,
+            provenance: ProvenanceRecord::new(
+                Provenance::Tested,
+                ProducerKind::DeterministicAnalyzer,
+                None,
+            ),
+        };
+        store
+            .add(&workspace, &snap_a, from_a.clone())
+            .await
+            .expect("add A");
+        store
+            .add(&workspace, &snap_b, from_b.clone())
+            .await
+            .expect("add B");
+
+        let in_a = store
+            .for_fact(&workspace, &snap_a, shared_fact_id)
+            .await
+            .expect("read A");
+        assert_eq!(
+            in_a,
+            vec![from_a],
+            "a read pinned to snapshot A must see exactly A's evidence"
+        );
+        assert!(
+            !in_a.iter().any(|e| e.id == from_b.id),
+            "snapshot B's evidence must never appear in an A-pinned read"
+        );
+
+        let in_b = store
+            .for_fact(&workspace, &snap_b, shared_fact_id)
+            .await
+            .expect("read B");
+        assert_eq!(in_b, vec![from_b]);
+    }
+    /// `EvidenceStore::get` is snapshot-pinned on the id axis too.
+    #[tokio::test]
+    async fn evidence_get_is_pinned_to_the_requested_snapshot() {
+        let store = InMemoryEvidenceStore::new();
+        let workspace = ws("get-pin");
+        let snap_a = SnapshotId::new(1);
+        let snap_b = SnapshotId::new(2);
+        // The same evidence id may exist in different snapshots.
+        let in_a = Evidence {
+            id: EvidenceId::new(101),
+            fact: FactId::new(1),
+            grade: EvidenceGrade::Supports,
+            provenance: ProvenanceRecord::new(
+                Provenance::Tested,
+                ProducerKind::DeterministicAnalyzer,
+                None,
+            ),
+        };
+        let in_b = Evidence {
+            grade: EvidenceGrade::Refutes,
+            ..in_a.clone()
+        };
+        store.add(&workspace, &snap_a, in_a.clone()).await.unwrap();
+        store.add(&workspace, &snap_b, in_b.clone()).await.unwrap();
+
+        assert_eq!(
+            store
+                .get(&workspace, &snap_a, EvidenceId::new(101))
+                .await
+                .unwrap(),
+            Some(in_a)
+        );
+        assert_eq!(
+            store
+                .get(&workspace, &snap_b, EvidenceId::new(101))
+                .await
+                .unwrap(),
+            Some(in_b)
+        );
+        assert!(
+            store
+                .get(&workspace, &snap_a, EvidenceId::new(999))
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    /// Re-using an evidence id inside one snapshot is a collision, not a
+    /// silent merge.
+    #[tokio::test]
+    async fn evidence_id_collision_in_the_same_snapshot_is_rejected() {
+        let store = InMemoryEvidenceStore::new();
+        let workspace = ws("collision");
+        let snap = SnapshotId::new(1);
+        let first = Evidence {
+            id: EvidenceId::new(7),
+            fact: FactId::new(1),
+            grade: EvidenceGrade::Supports,
+            provenance: ProvenanceRecord::new(
+                Provenance::Tested,
+                ProducerKind::DeterministicAnalyzer,
+                None,
+            ),
+        };
+        store.add(&workspace, &snap, first).await.unwrap();
+        let dup = Evidence {
+            id: EvidenceId::new(7),
+            fact: FactId::new(2),
+            grade: EvidenceGrade::Refutes,
+            provenance: ProvenanceRecord::new(
+                Provenance::Tested,
+                ProducerKind::DeterministicAnalyzer,
+                None,
+            ),
+        };
+        assert!(matches!(
+            store.add(&workspace, &snap, dup).await.unwrap_err(),
+            KernelError::EvidenceIdCollision(id, s) if id == EvidenceId::new(7) && s == snap
+        ));
+        // The rejected write left no partial state.
+        assert_eq!(
+            store
+                .for_fact(&workspace, &snap, FactId::new(1))
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            store
+                .get(&workspace, &snap, EvidenceId::new(7))
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    /// `FactStore::get` is snapshot-pinned, and unknown ids degrade to
+    /// `None`.
+    #[tokio::test]
+    async fn fact_get_is_pinned_to_the_requested_snapshot() {
+        let store = InMemoryFactStore::new(registry_with_calls());
+        let workspace = ws("facts-pin");
+        let snap_a = SnapshotId::new(1);
+        let snap_b = SnapshotId::new(2);
+        let object = FactValue::Ref(EntityId::new(99));
+        store
+            .commit(&workspace, &snap_a, vec![fact(1, 10, object.clone(), 1)])
+            .await
+            .expect("commit A");
+        store
+            .commit(&workspace, &snap_b, vec![fact(1, 20, object, 2)])
+            .await
+            .expect("commit B");
+
+        let in_a = store
+            .get(&workspace, &snap_a, FactId::new(1))
+            .await
+            .unwrap()
+            .expect("fact in A");
+        let in_b = store
+            .get(&workspace, &snap_b, FactId::new(1))
+            .await
+            .unwrap()
+            .expect("fact in B");
+        assert_eq!(in_a.subject, EntityId::new(10));
+        assert_eq!(in_b.subject, EntityId::new(20));
+        assert!(
+            store
+                .get(&workspace, &SnapshotId::new(9), FactId::new(1))
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 }

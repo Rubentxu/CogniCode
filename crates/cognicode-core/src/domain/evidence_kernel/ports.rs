@@ -60,6 +60,14 @@ pub enum KernelError {
     #[error("fact id {0} collides with ids already assigned in snapshot {1}")]
     FactIdSpaceCollision(FactId, SnapshotId),
 
+    /// Evidence re-uses an id already assigned in the target snapshot.
+    ///
+    /// Evidence ids are canonical per snapshot, exactly like fact ids; the
+    /// store rejects a duplicate atomically instead of silently merging two
+    /// records.
+    #[error("evidence id {0} already exists in snapshot {1}")]
+    EvidenceIdCollision(EvidenceId, SnapshotId),
+
     /// The revision cannot be mapped onto a snapshot (`RevisionId::NONE`).
     #[error("revision {0} is invalid (0 is the NONE sentinel)")]
     InvalidRevision(RevisionId),
@@ -109,6 +117,18 @@ pub trait FactStore: Send + Sync {
         subject: &EntityId,
     ) -> Result<Vec<Fact>, KernelError>;
 
+    /// One fact by id, read pinned to `snap` of `ws`.
+    ///
+    /// Fact ids are canonical *per snapshot* (`1..M` within each), so the
+    /// snapshot pin is part of the key, not an afterthought. Unknown ids
+    /// yield `None` (graceful read degradation, `facts_of` precedent).
+    async fn get(
+        &self,
+        ws: &WorkspaceId,
+        snap: &SnapshotId,
+        id: FactId,
+    ) -> Result<Option<Fact>, KernelError>;
+
     /// All facts recorded in `snap` of `ws`, in commit order (design D6,
     /// E37 additive read). Consumers that need a canonical order sort the
     /// result themselves. Unknown snapshots yield an empty vector (graceful
@@ -126,12 +146,32 @@ pub trait FactStore: Send + Sync {
 /// `domain::ports::EvidenceStore`; no cross re-exports exist.
 #[async_trait]
 pub trait EvidenceStore: Send + Sync {
-    /// Records one piece of evidence for a workspace, returning its id.
-    async fn add(&self, ws: &WorkspaceId, e: Evidence) -> Result<EvidenceId, KernelError>;
+    /// Records one piece of evidence **in `snap`** of `ws`, returning its id.
+    ///
+    /// The snapshot is part of the key: evidence ids are canonical per
+    /// snapshot, exactly like fact ids, so an unpinned write cannot be
+    /// expressed. Re-using an id already present in the target snapshot is
+    /// rejected with [`KernelError::EvidenceIdCollision`].
+    async fn add(
+        &self,
+        ws: &WorkspaceId,
+        snap: &SnapshotId,
+        e: Evidence,
+    ) -> Result<EvidenceId, KernelError>;
 
-    /// All evidence for `fact`, read pinned to `snap` of `ws`. Evidence
-    /// attaches to a fact, so the snapshot pin is transitive through the
-    /// fact's own pin; unknown facts yield an empty vector.
+    /// One piece of evidence by id, read pinned to `snap` of `ws`.
+    async fn get(
+        &self,
+        ws: &WorkspaceId,
+        snap: &SnapshotId,
+        id: EvidenceId,
+    ) -> Result<Option<Evidence>, KernelError>;
+
+    /// All evidence for `fact`, read pinned to `snap` of `ws`.
+    ///
+    /// The snapshot is explicit: fact ids are canonical *per snapshot*, so a
+    /// read pinned to A must never observe B's evidence for the same numeric
+    /// fact id (that would silently violate "historical read remains stable").
     async fn for_fact(
         &self,
         ws: &WorkspaceId,

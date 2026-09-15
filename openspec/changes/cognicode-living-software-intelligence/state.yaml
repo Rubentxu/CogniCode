@@ -97,9 +97,19 @@ phases:
       AxiomImporter creates no permits — the caller calls
       DetectorAdmission::admit(..., AdmissionSource::Imported). 8 unit + 3 E2E
       tests incl. U-A1..U-A8).
-      NEXT (M6 closure): U42 kernel grounding — CausalStep -> EvidenceId ->
-      canonical Evidence -> FactId -> Fact -> Entity/Snapshot/Provenance, read
-      through an EvidenceDescriptor read model, proven for AST + Graph +
-      Dataflow fixtures.
+      e62.1-lsi-kernel-snapshot-correctness archived (U42 prerequisite, and a
+      REAL kernel defect: InMemoryEvidenceStore keyed evidence by
+      (workspace, FactId) with no snapshot and EvidenceStore::add had no
+      snapshot parameter, so evidence for snapshot B appeared in an A-pinned
+      read whenever the same canonical FactId existed in both. Fixed: add/get
+      pinned to (ws, snapshot) on both axes, FactStore::get added,
+      KernelError::EvidenceIdCollision rejects an id re-use atomically,
+      misleading doc corrected; characterization test written first).
+      NEXT (M6 closure): e62.2 U42 grounding — GroundingRef on the analysis
+      DTOs, atomic causal evidence (one evidence atom per causal step),
+      EvidenceDescriptor read model + KernelEvidenceReadModel::load().await,
+      FindingVerifier full grounding (causal evidence must resolve AND point at
+      the step's own fact in the pinned snapshot; Refutes never enables the
+      gate), proven for AST + Graph + Dataflow.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
