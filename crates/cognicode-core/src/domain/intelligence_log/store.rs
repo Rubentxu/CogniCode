@@ -46,6 +46,16 @@ pub enum EventStoreError {
     },
     /// An event was caused by itself.
     SelfCaused(EventId),
+    /// An event's own scope names a different workspace than the append target.
+    ///
+    /// An event that claims to belong to B must not be recorded as A's: the
+    /// store and the event must agree on whose history this is.
+    ScopeWorkspaceMismatch {
+        /// The workspace the append targeted.
+        append_workspace: WorkspaceId,
+        /// The workspace the event's own scope names.
+        event_workspace: WorkspaceId,
+    },
     /// The event failed validation.
     Invalid(super::event::EventError),
     /// The stored history is inconsistent (a cycle, or a dangling cause).
@@ -68,6 +78,13 @@ impl std::fmt::Display for EventStoreError {
                 "caused_by names {cause}, which belongs to another workspace than {workspace}"
             ),
             Self::SelfCaused(id) => write!(f, "event {id} cannot be caused by itself"),
+            Self::ScopeWorkspaceMismatch {
+                append_workspace,
+                event_workspace,
+            } => write!(
+                f,
+                "the event's scope names workspace {event_workspace}, but the append targets {append_workspace}"
+            ),
             Self::Invalid(err) => write!(f, "invalid event: {err}"),
             Self::Corrupt(msg) => write!(f, "corrupt event history: {msg}"),
             Self::NoPreviousEvent => {

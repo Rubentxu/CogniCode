@@ -7,7 +7,7 @@
 //! ## Semantics fixed here
 //!
 //! - **Ids are allocated by the store**, from one global sequence in append
-//!   order. Nothing else may choose an id. One sequence (rather than one per
+//!   order, shared by every workspace. Nothing else may choose an id. One sequence (rather than one per
 //!   workspace, as the evidence kernel uses) is what makes the workspace check
 //!   on a cause *meaningful*: with per-workspace numbering the same id exists in
 //!   every workspace and "this cause is another tenant's event" would be
@@ -21,9 +21,9 @@
 //!   it would make `causal_chain` silently truncate.
 //! - **Nothing is ever mutated or removed.** There is no update or delete API;
 //!   the value returned by `by_id` cannot change.
-//! - **Workspaces are isolated**: ids are per workspace and a cause from
-//!   another workspace is refused, so one tenant's history can never be
-//!   reached from another's.
+//! - **Workspaces are isolated**: an event's own scope must name the workspace
+//!   it is appended to, and a cause from another workspace is refused, so one
+//!   tenant's history can never be reached from another's.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -80,6 +80,13 @@ impl IntelligenceEventStore for InMemoryEventLog {
         let mut planned: Vec<(EventId, NewIntelligenceEvent)> = Vec::with_capacity(events.len());
         for event in events {
             event.validate().map_err(EventStoreError::Invalid)?;
+            // The store and the event must agree on whose history this is.
+            if &event.scope.workspace != workspace {
+                return Err(EventStoreError::ScopeWorkspaceMismatch {
+                    append_workspace: workspace.clone(),
+                    event_workspace: event.scope.workspace.clone(),
+                });
+            }
             let id = EventId::new(next);
             next += 1;
             // A cause must exist in this workspace — either already stored, or
@@ -237,17 +244,25 @@ mod tests {
         WorkspaceId::try_new(name).unwrap()
     }
 
+    fn scope_of(name: &str, snapshot: u64) -> AnalysisScope {
+        AnalysisScope::new(ws(name), SnapshotId::new(snapshot))
+    }
+
     fn scope(snapshot: u64) -> AnalysisScope {
-        AnalysisScope::new(ws("ws-a"), SnapshotId::new(snapshot))
+        scope_of("ws-a", snapshot)
     }
 
     fn correlation() -> CorrelationId {
         CorrelationId::new("c1").unwrap()
     }
 
-    fn event(kind: std::string::String, caused_by: Option<EventId>) -> NewIntelligenceEvent {
+    fn event_in(
+        name: &str,
+        kind: std::string::String,
+        caused_by: Option<EventId>,
+    ) -> NewIntelligenceEvent {
         NewIntelligenceEvent::new(
-            scope(1),
+            scope_of(name, 1),
             ActorRef::kernel(),
             correlation(),
             caused_by,
@@ -256,6 +271,10 @@ mod tests {
             EventTime::from_millis(1),
         )
         .unwrap()
+    }
+
+    fn event(kind: std::string::String, caused_by: Option<EventId>) -> NewIntelligenceEvent {
+        event_in("ws-a", kind, caused_by)
     }
 
     fn chain_event(caused_by: Option<EventId>) -> NewIntelligenceEvent {
@@ -271,10 +290,9 @@ mod tests {
             .unwrap();
         assert_eq!(a, vec![EventId::new(1), EventId::new(2)]);
 
-        let b = log
-            .append(&ws("ws-b"), vec![chain_event(None)])
-            .await
-            .unwrap();
+        let mut b_event = chain_event(None);
+        b_event.scope = scope_of("ws-b", 1);
+        let b = log.append(&ws("ws-b"), vec![b_event]).await.unwrap();
         assert_eq!(
             b,
             vec![EventId::new(3)],
@@ -347,9 +365,9 @@ mod tests {
     #[tokio::test]
     async fn a_cause_from_another_workspace_is_refused() {
         let log = InMemoryEventLog::new();
-        log.append(&ws("ws-b"), vec![chain_event(None)])
-            .await
-            .unwrap();
+        let mut in_b = chain_event(None);
+        in_b.scope = scope_of("ws-b", 1);
+        log.append(&ws("ws-b"), vec![in_b]).await.unwrap();
         let err = log
             .append(&ws("ws-a"), vec![chain_event(Some(EventId::new(1)))])
             .await
@@ -370,6 +388,48 @@ mod tests {
             Vec::new(),
             "and the foreign event is not visible through a chain either"
         );
+    }
+
+    /// An event whose scope names B must not be recorded as A's history, even
+    /// though the store could happily file it under A.
+    #[tokio::test]
+    async fn an_event_may_not_claim_another_workspaces_scope() {
+        let log = InMemoryEventLog::new();
+        let mut foreign = chain_event(None);
+        foreign.scope = scope_of("ws-b", 1);
+
+        let err = log.append(&ws("ws-a"), vec![foreign]).await.unwrap_err();
+        assert_eq!(
+            err,
+            EventStoreError::ScopeWorkspaceMismatch {
+                append_workspace: ws("ws-a"),
+                event_workspace: ws("ws-b"),
+            }
+        );
+        assert_eq!(
+            log.len(&ws("ws-a")).await.unwrap(),
+            0,
+            "and nothing is written"
+        );
+
+        // The same shape is fine when it is appended to its own workspace.
+        let mut own = chain_event(None);
+        own.scope = scope_of("ws-b", 1);
+        assert!(log.append(&ws("ws-b"), vec![own]).await.is_ok());
+    }
+
+    /// A scope pinned to the invalid sentinel is refused before anything is
+    /// written, however the event was constructed.
+    #[tokio::test]
+    async fn an_unpinned_scope_is_refused() {
+        let log = InMemoryEventLog::new();
+        let mut bad = chain_event(None);
+        bad.scope = AnalysisScope::new(ws("ws-a"), SnapshotId::NONE);
+        assert_eq!(
+            log.append(&ws("ws-a"), vec![bad]).await.unwrap_err(),
+            EventStoreError::Invalid(crate::domain::intelligence_log::EventError::InvalidScope)
+        );
+        assert_eq!(log.len(&ws("ws-a")).await.unwrap(), 0);
     }
 
     #[tokio::test]

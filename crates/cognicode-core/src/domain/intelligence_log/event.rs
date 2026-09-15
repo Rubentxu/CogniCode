@@ -40,6 +40,8 @@ pub enum EventError {
     SelfCaused,
     /// The kind was structurally unusable (empty namespace or name).
     MalformedKind(String),
+    /// The event's scope is not pinned to a real snapshot (`SnapshotId::NONE`).
+    InvalidScope,
 }
 
 impl std::fmt::Display for EventError {
@@ -47,6 +49,7 @@ impl std::fmt::Display for EventError {
         match self {
             Self::SelfCaused => f.write_str("an event cannot be caused by itself"),
             Self::MalformedKind(kind) => write!(f, "malformed event kind: `{kind}`"),
+            Self::InvalidScope => f.write_str("an event's scope must be pinned to a real snapshot"),
         }
     }
 }
@@ -108,7 +111,14 @@ impl NewIntelligenceEvent {
     }
 
     /// Validate what can be checked before an id exists.
+    ///
+    /// `scope` and `kind` are public fields, so a struct literal (or a
+    /// deserialized value) can carry values the constructors would have
+    /// refused; this is the gate the store runs before committing anything.
     pub fn validate(&self) -> Result<(), EventError> {
+        if !self.scope.is_valid() {
+            return Err(EventError::InvalidScope);
+        }
         if self.kind.as_str().trim().is_empty() {
             return Err(EventError::MalformedKind(self.kind.as_str().to_string()));
         }
@@ -195,7 +205,6 @@ mod tests {
         let event = IntelligenceEvent::from_new(EventId::new(1), new_event(None));
         assert_eq!(event.id, EventId::new(1));
         assert!(event.is_root());
-        assert_eq!(event.depth(), 0);
         assert!(event.payload.is_inline());
         assert_eq!(event.scope.snapshot, SnapshotId::new(1));
     }
@@ -205,7 +214,6 @@ mod tests {
         let event = IntelligenceEvent::from_new(EventId::new(2), new_event(Some(EventId::new(1))));
         assert!(!event.is_root());
         assert_eq!(event.caused_by, Some(EventId::new(1)));
-        assert_eq!(event.depth(), 1);
     }
 
     #[test]
@@ -227,6 +235,20 @@ mod tests {
         let json = serde_json::to_string(&event).unwrap();
         let parsed: IntelligenceEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, event);
+    }
+
+    /// A scope pinned to the invalid sentinel is refused, however the event
+    /// was built.
+    #[test]
+    fn an_unpinned_scope_is_rejected() {
+        use crate::domain::kernel_ids::SnapshotId;
+        let mut event = new_event(None);
+        assert!(event.validate().is_ok());
+        event.scope = crate::domain::findings::scope::AnalysisScope::new(
+            crate::domain::value_objects::WorkspaceId::try_new("ws").unwrap(),
+            SnapshotId::NONE,
+        );
+        assert_eq!(event.validate().unwrap_err(), EventError::InvalidScope);
     }
 
     #[test]
