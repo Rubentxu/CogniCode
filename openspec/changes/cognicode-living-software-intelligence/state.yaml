@@ -113,12 +113,35 @@ phases:
       lookup.scope BEFORE resolving any id, so a finding produced in snapshot A
       cannot be verified against a read model from B even when every numeric id
       coincides; adversarial test with identical ids in two snapshots).
-      NEXT (M6 closure): e62.3 U42 grounding — GroundingRef on AST
-      construct / Graph node+edge / Dataflow statement, atomic causal evidence
-      (one atom per supporting fact, never fabricating facts),
-      ProducedEvidence -> kernel Evidence write bridge (async, outside the
-      domain), EvidenceDescriptor read model + KernelEvidenceReadModel::load,
-      full verifier (fact + snapshot + grade != Refutes + causal membership),
-      AST/Graph/Dataflow conformance and the cross-snapshot adversarial UAT.
+      e62.3-lsi-grounding-refs archived (U42 part 2a, WU0+WU1: the reviewer's
+      two pre-conditions for the write bridge. WU0a: SnapshotId::NONE is the
+      kernel's invalid sentinel and is now refused both at construction
+      (AnalysisScope::try_new -> AnalysisScopeError::InvalidSnapshot,
+      is_valid()) and at the trust boundary (DetectorExecutor::execute ->
+      ExecutionError::InvalidScope, before planning and before any backend
+      runs). WU0b: there was no evidence allocator at all — ids were
+      hand-assigned in fixtures — so EvidenceStore::append_batch(ws, snap,
+      Vec<NewEvidence>) now allocates ids from a per-(workspace, snapshot)
+      sequence and commits allocate-all-then-commit-all, giving atomicity per
+      execution (no orphaned evidence after a mid-batch failure) and no
+      collision when two executions run in the same snapshot; explicit add()
+      advances the allocator. WU1: GroundingRef {entity: Option<EntityId>,
+      fact: FactId} added ADDITIVELY as Option on AstConstruct, GraphNode,
+      GraphEdge and DataflowStatement (edges included because reachability is
+      proved by traversing relations, not by the endpoints existing), with
+      fact = authority / entity = hint expressed by entity_agrees_with; no
+      backend reads it yet and no analysis behaviour changed).
+      NEXT (M6 closure): e62.4 U42 part 2b — atomic causal evidence (one atom
+      per supporting fact, never fabricating facts) + EvidenceBindings indexed
+      by the original ProducedEvidence index, DetectorExecutor::prepare() /
+      PreparedExecution::finalize() (private fields, single implementation),
+      canonical write bridge (async, outside the domain; FactStore::get first,
+      entity/fact coherence, atomic batch), EvidenceDescriptor read model +
+      KernelEvidenceReadModel::load keeping FindingVerifier sync, full
+      coherence verifier (scope + grade != Refutes + Evidence.fact ==
+      CausalStep.fact + Fact.snapshot == scope.snapshot + causal membership)
+      and the three adversarial UATs (A: cross-snapshot identical ids,
+      B: fact mismatch, C: Refutes never gates) plus AST/Graph/Dataflow
+      conformance.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
