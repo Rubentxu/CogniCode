@@ -14,7 +14,8 @@ use serde::{Deserialize, Serialize};
 
 use super::FindingKind;
 use super::finding::{CausalStepKind, EvidenceClass};
-use crate::domain::kernel_ids::{EntityId, FactId};
+use super::grounding::GroundingRef;
+use crate::domain::kernel_ids::EntityId;
 
 /// What kind of analysis produced a piece of evidence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -71,10 +72,17 @@ pub struct ProducedEvidence {
     pub kind: EvidenceKind,
     /// Human-readable detail.
     pub detail: String,
-    /// Subject entity, if the backend resolved one.
+    /// Subject entity the backend observed, if it resolved one.
     pub subject: Option<EntityId>,
-    /// Backing fact, if any.
-    pub fact: Option<FactId>,
+    /// The canonical fact this item was projected from, if the backend could
+    /// establish one.
+    ///
+    /// This is the only route by which evidence becomes *grounded*: a backend
+    /// that cannot name a canonical fact must leave it `None` rather than
+    /// point at a convenient one. An ungrounded item is still persistable and
+    /// still explainable — it simply cannot open the gate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grounding: Option<GroundingRef>,
 }
 
 /// One observation on a matched finding's causal path.
@@ -86,9 +94,12 @@ pub struct CausalObservation {
     pub detail: String,
     /// Subject entity, if any.
     pub subject: Option<EntityId>,
-    /// Backing fact, if any.
-    pub fact: Option<FactId>,
     /// Index into [`DetectorOutcome::produced_evidence`], if any.
+    ///
+    /// A step carries **no** fact of its own: the fact of a causal step is the
+    /// canonical fact of the evidence it points at, taken from the evidence
+    /// bindings. Letting a backend also state a fact here would create a
+    /// second, unverified source of truth for the same claim.
     pub evidence: Option<usize>,
 }
 
@@ -145,6 +156,7 @@ impl DetectorOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::kernel_ids::FactId;
 
     #[test]
     fn evidence_kind_classes_are_ordered_by_strength() {
@@ -162,7 +174,7 @@ mod tests {
                 kind: EvidenceKind::AstMatch,
                 detail: "md5 at src/hash.rs:12".to_string(),
                 subject: Some(EntityId::new(1)),
-                fact: None,
+                grounding: Some(GroundingRef::entity(EntityId::new(1), FactId::new(7))),
             }],
             matches: vec![DetectorMatch {
                 kind: FindingKind::new("security.weak_hash").unwrap(),
@@ -172,7 +184,6 @@ mod tests {
                     kind: CausalStepKind::Source,
                     detail: "md5 usage".to_string(),
                     subject: None,
-                    fact: None,
                     evidence: Some(0),
                 }],
             }],

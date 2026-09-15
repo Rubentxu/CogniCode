@@ -170,16 +170,15 @@ mod tests {
     use super::*;
     use crate::domain::findings::admission::{AdmissionSource, DetectorAdmission};
     use crate::domain::findings::assembler::FindingAssembler;
+    use crate::domain::findings::binding::EvidenceBindings;
     use crate::domain::findings::detector_ir::{
         DetectorId, DetectorIr, DetectorStep, FindingKind, SubjectPattern,
     };
-    use crate::domain::findings::finding::{
-        CausalStepKind, EvidenceClass, FindingSeverity, RiskLevel,
-    };
+    use crate::domain::findings::finding::{CausalStepKind, EvidenceClass, RiskLevel};
     use crate::domain::findings::outcome::{
         CausalObservation, DetectorMatch, DetectorOutcome, EvidenceKind, ProducedEvidence,
     };
-    use crate::domain::kernel_ids::ExecutionId;
+    use crate::domain::kernel_ids::{ExecutionId, FactId};
     use std::collections::HashSet;
 
     struct SetLookup {
@@ -273,7 +272,7 @@ mod tests {
                 kind: EvidenceKind::AstMatch,
                 detail: "md5".to_string(),
                 subject: None,
-                fact: None,
+                grounding: Some(super::super::GroundingRef::fact(FactId::new(7))),
             }],
             matches: vec![DetectorMatch {
                 kind: FindingKind::new("security.weak_hash").unwrap(),
@@ -283,14 +282,16 @@ mod tests {
                     kind: CausalStepKind::Source,
                     detail: "md5".to_string(),
                     subject: None,
-                    fact: None,
                     evidence: Some(0),
                 }],
             }],
             diagnostics: vec![],
         };
-        let ids = vec![EvidenceId::new(1)];
-        FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &ids)
+        let bindings = EvidenceBindings::new(vec![super::super::EvidenceBinding::grounded(
+            EvidenceId::new(1),
+            FactId::new(7),
+        )]);
+        FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &bindings)
             .unwrap()
             .pop()
             .unwrap()

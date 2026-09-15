@@ -22,6 +22,7 @@
 pub mod admission;
 pub mod assembler;
 pub mod ast_backend;
+pub mod binding;
 pub mod dataflow_input;
 pub mod detector_ir;
 pub mod digest;
@@ -44,6 +45,7 @@ pub use admission::{
 };
 pub use assembler::{AssemblyError, FindingAssembler};
 pub use ast_backend::{AstBackend, AstConstruct, AstInput, AstUnit};
+pub use binding::{EvidenceBinding, EvidenceBindings, GroundingFailure};
 pub use dataflow_input::{DataflowFunction, DataflowInput, DataflowLocation, DataflowStatement};
 pub use detector_ir::{
     AnalysisCapability, DetectorAuthority, DetectorDigests, DetectorExecutionRef,
@@ -53,13 +55,14 @@ pub use detector_ir::{
 pub use digest::{DetectorDigest, DigestError, sha256_hex};
 pub use execution::{
     AnalysisInput, BackendContractViolation, BackendError, BackendRegistry, DetectorBackend,
-    DetectorExecutor, ExecutionError, ExecutionRecord, PlanError,
+    DetectorExecutor, ExecutionError, ExecutionRecord, PlanError, PreparedExecution,
 };
 pub use finding::{
     CausalStep, CausalStepKind, EvidenceClass, Finding, FindingError, FindingGate, FindingId,
     FindingOrigin, FindingSeverity, FindingStatus, RiskLevel,
 };
 pub use graph_backend::{GraphBackend, GraphEdge, GraphInput, GraphNode};
+pub use grounding::GroundingRef;
 pub use namespaced::{NamespacedError, NamespacedName};
 pub use outcome::{
     CausalObservation, DetectorDiagnostic, DetectorMatch, DetectorOutcome, EvidenceKind,

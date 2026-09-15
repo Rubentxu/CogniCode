@@ -1,19 +1,34 @@
 //! Detector executor — the mandatory execution seam (M6, cycle e57).
 //!
 //! ```text
-//! AdmittedDetector ──► DetectorExecutor ──► BackendRegistry::plan
-//!                             │                    │
-//!                             │                    ▼
-//!                             │              DetectorBackend (e.g. AstBackend)
-//!                             │                    │
-//!                             │                    ▼
-//!                             │              DetectorOutcome
+//! ExecutionPermit ──► DetectorExecutor::prepare ──► BackendRegistry::plan
+//!                             │                          │
+//!                             │                          ▼
+//!                             │                    DetectorBackend (e.g. AstBackend)
+//!                             │                          │
+//!                             │                          ▼
+//!                             │                    DetectorOutcome
 //!                             ▼
-//!                      EvidenceSink (assigns EvidenceId)
+//!                     PreparedExecution
+//!                             │
+//!              ┌──────────────┴──────────────┐
+//!              ▼                             ▼
+//!   EvidenceSink (sync)            application bridge (async)
+//!              └──────────────┬──────────────┘
+//!                             ▼
+//!                   PreparedExecution::finalize
 //!                             │
 //!                             ▼
 //!                     FindingAssembler ──► Finding
 //! ```
+//!
+//! The split exists so evidence can be persisted **asynchronously outside the
+//! domain** (the kernel store is async; the domain must not `block_on`). It is
+//! not an escape hatch: [`PreparedExecution`] has private fields and can only
+//! be created by [`DetectorExecutor::prepare`], so admission, planning and the
+//! backend-contract checks cannot be skipped. [`DetectorExecutor::execute`] is
+//! implemented as `prepare` + `finalize` so there is exactly one
+//! implementation of the seam.
 //!
 //! The executor **only** accepts an [`AdmittedDetector`], so a raw
 //! [`DetectorIr`](super::DetectorIr) whose authority the caller claims can
@@ -29,15 +44,16 @@ use std::fmt;
 use super::admission::{AdmittedDetector, ExecutionPermit};
 use super::assembler::{AssemblyError, FindingAssembler};
 use super::ast_backend::AstInput;
+use super::binding::EvidenceBindings;
 use super::dataflow_input::DataflowInput;
 use super::detector_ir::{AnalysisCapability, DetectorExecutionRef, DetectorIrError};
 use super::finding::{EvidenceClass, Finding, FindingGate};
 use super::graph_backend::GraphInput;
-use super::outcome::{DetectorDiagnostic, DetectorOutcome};
+use super::outcome::{DetectorDiagnostic, DetectorOutcome, ProducedEvidence};
 use super::ports::{EvidenceError, EvidenceSink};
 use super::scope::AnalysisScope;
 use super::verifier::{FindingVerifier, VerificationError};
-use crate::domain::kernel_ids::{EvidenceId, ExecutionId};
+use crate::domain::kernel_ids::ExecutionId;
 
 /// The shared input envelope handed to a backend.
 ///
@@ -142,19 +158,24 @@ impl<'a> DetectorExecutor<'a> {
         Self { registry }
     }
 
-    /// Execute a permitted detector.
+    /// Run everything that does not need I/O: admission, planning, the
+    /// backend, and the backend-contract checks.
+    ///
+    /// The returned [`PreparedExecution`] carries the raw outcome and the
+    /// execution reference. Evidence is **not** persisted yet: that is the
+    /// async step the caller performs (directly with an [`EvidenceSink`], or
+    /// through the application bridge that writes to the kernel).
     ///
     /// Takes an [`ExecutionPermit`] (not a bare [`AdmittedDetector`]): the
     /// permit can only be minted by
     /// [`DetectorAdmission`](super::DetectorAdmission), so a caller cannot
     /// assert authority.
-    pub fn execute(
+    pub fn prepare(
         &self,
         permit: &ExecutionPermit,
         input: &AnalysisInput,
-        sink: &mut dyn EvidenceSink,
         execution_id: ExecutionId,
-    ) -> Result<ExecutionRecord, ExecutionError> {
+    ) -> Result<PreparedExecution, ExecutionError> {
         let admitted = permit.admitted();
 
         // A run must be pinned to a scope: without one its ids could not be
@@ -213,28 +234,96 @@ impl<'a> DetectorExecutor<'a> {
             }
         }
 
-        // Persist evidence first, so the assembler can assign real ids.
-        let mut evidence = Vec::with_capacity(outcome.produced_evidence.len());
-        for produced in &outcome.produced_evidence {
-            let id = sink
-                .record(produced.clone())
-                .map_err(ExecutionError::Evidence)?;
-            evidence.push(id);
-        }
-
         let execution = permit
             .execution_ref(Some(execution_id), Some(scope))
             .map_err(ExecutionError::InvalidDefinition)?;
 
-        let findings = FindingAssembler::assemble(admitted, &execution, &outcome, &evidence)
-            .map_err(ExecutionError::Assembly)?;
-
-        Ok(ExecutionRecord {
+        Ok(PreparedExecution {
+            admitted: admitted.clone(),
             backend: backend.name().to_string(),
             execution,
+            outcome,
+        })
+    }
+
+    /// Execute a permitted detector, persisting evidence synchronously.
+    ///
+    /// A convenience over [`prepare`](Self::prepare) for callers that already
+    /// hold a sync [`EvidenceSink`]. Callers that must do async I/O (such as
+    /// the kernel write bridge) use `prepare` + `finalize` directly.
+    pub fn execute(
+        &self,
+        permit: &ExecutionPermit,
+        input: &AnalysisInput,
+        sink: &mut dyn EvidenceSink,
+        execution_id: ExecutionId,
+    ) -> Result<ExecutionRecord, ExecutionError> {
+        let prepared = self.prepare(permit, input, execution_id)?;
+        let bindings = sink
+            .persist(prepared.produced_evidence())
+            .map_err(ExecutionError::Evidence)?;
+        prepared.finalize(&bindings)
+    }
+}
+
+/// An execution that has run but whose evidence has not been persisted yet.
+///
+/// Fields are private and the only constructor is
+/// [`DetectorExecutor::prepare`], so a `PreparedExecution` is proof that
+/// admission, planning and the backend-contract checks all ran.
+#[derive(Debug, Clone)]
+pub struct PreparedExecution {
+    admitted: AdmittedDetector,
+    backend: String,
+    execution: DetectorExecutionRef,
+    outcome: DetectorOutcome,
+}
+
+impl PreparedExecution {
+    /// The admitted detector that ran.
+    pub fn admitted(&self) -> &AdmittedDetector {
+        &self.admitted
+    }
+
+    /// The backend that ran.
+    pub fn backend(&self) -> &str {
+        &self.backend
+    }
+
+    /// The detector execution reference (captures the scope).
+    pub fn execution(&self) -> &DetectorExecutionRef {
+        &self.execution
+    }
+
+    /// The raw backend outcome.
+    pub fn outcome(&self) -> &DetectorOutcome {
+        &self.outcome
+    }
+
+    /// The evidence that still needs persisting, in backend order.
+    pub fn produced_evidence(&self) -> &[ProducedEvidence] {
+        &self.outcome.produced_evidence
+    }
+
+    /// The scope this run is pinned to.
+    pub fn scope(&self) -> Option<&AnalysisScope> {
+        self.execution.scope.as_ref()
+    }
+
+    /// Assemble findings once the evidence has been persisted.
+    ///
+    /// `bindings` must be index-aligned with [`Self::produced_evidence`].
+    pub fn finalize(self, bindings: &EvidenceBindings) -> Result<ExecutionRecord, ExecutionError> {
+        let findings =
+            FindingAssembler::assemble(&self.admitted, &self.execution, &self.outcome, bindings)
+                .map_err(ExecutionError::Assembly)?;
+
+        Ok(ExecutionRecord {
+            backend: self.backend,
+            execution: self.execution,
             findings,
-            evidence,
-            diagnostics: outcome.diagnostics,
+            bindings: bindings.clone(),
+            diagnostics: self.outcome.diagnostics,
         })
     }
 }
@@ -248,8 +337,9 @@ pub struct ExecutionRecord {
     pub execution: DetectorExecutionRef,
     /// Findings produced.
     pub findings: Vec<Finding>,
-    /// Evidence ids assigned this run (index-aligned with produced evidence).
-    pub evidence: Vec<EvidenceId>,
+    /// How each produced evidence item was bound (index-aligned), so a caller
+    /// can tell a grounded route from a merely explainable one.
+    pub bindings: EvidenceBindings,
     /// Non-fatal diagnostics.
     pub diagnostics: Vec<DetectorDiagnostic>,
 }
@@ -446,16 +536,27 @@ mod tests {
         )
     }
 
-    /// A sink that discards evidence and assigns sequential ids.
+    /// A sink that discards evidence and assigns sequential ids, grounding
+    /// whatever the backend grounded.
     #[derive(Default)]
     struct CountingSink(usize);
     impl EvidenceSink for CountingSink {
-        fn record(
+        fn persist(
             &mut self,
-            _e: super::super::ProducedEvidence,
-        ) -> Result<EvidenceId, EvidenceError> {
-            self.0 += 1;
-            Ok(EvidenceId::new(self.0 as u64))
+            produced: &[super::super::ProducedEvidence],
+        ) -> Result<EvidenceBindings, EvidenceError> {
+            let mut entries = Vec::with_capacity(produced.len());
+            for item in produced {
+                self.0 += 1;
+                let id = EvidenceId::new(self.0 as u64);
+                entries.push(match item.grounding {
+                    Some(g) => super::super::EvidenceBinding::grounded(id, g.fact),
+                    None => super::super::EvidenceBinding::ungrounded(
+                        super::super::GroundingFailure::NoFact,
+                    ),
+                });
+            }
+            Ok(EvidenceBindings::new(entries))
         }
     }
 
@@ -481,7 +582,7 @@ mod tests {
                     kind: EvidenceKind::RuntimeTrace, // class A > ceiling C
                     detail: "overclaimed".to_string(),
                     subject: None,
-                    fact: None,
+                    grounding: None,
                 }],
                 matches: vec![DetectorMatch {
                     // Must match the detector's PRODUCE kind to reach the

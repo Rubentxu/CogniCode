@@ -259,46 +259,110 @@ impl DetectorBackend for GraphBackend {
             }
         }
 
+        // How each hop is witnessed. A hop with more than one parallel edge is
+        // only usable when every parallel edge names the *same* fact: otherwise
+        // no single fact can be said to ground the hop, and the hop fails
+        // closed rather than picking one arbitrarily.
+        let mut relations: BTreeMap<(u64, u64), Vec<&GraphEdge>> = BTreeMap::new();
+        for edge in &graph.edges {
+            relations
+                .entry((edge.from, edge.to))
+                .or_default()
+                .push(edge);
+        }
+
+        let render = |id: u64| -> String {
+            node_by_id
+                .get(&id)
+                .map(|n| format!("{} at {}:{}", n.subject, n.path, n.line))
+                .unwrap_or_else(|| format!("node {id}"))
+        };
+
         for path in paths {
-            let evidence_index = outcome.produced_evidence.len();
-            let render = |id: u64| -> String {
-                node_by_id
-                    .get(&id)
-                    .map(|n| format!("{} at {}:{}", n.subject, n.path, n.line))
-                    .unwrap_or_else(|| format!("node {id}"))
-            };
+            // Atoms are per *element of the witness*, not one blob per path:
+            // the source node, one per traversed relation, and the sink node.
+            // Reachability is proved by the relations, so the hop carrying an
+            // ambiguous grounding is exactly the one that must not gate.
+            let mut atoms: Vec<usize> = Vec::with_capacity(path.len() * 2);
+            let mut causal: Vec<CausalObservation> = Vec::with_capacity(path.len() * 2);
+            let mut ambiguous_hops: Vec<(u64, u64)> = Vec::new();
+
+            let source_id = path[0];
+            let source_node = node_by_id.get(&source_id);
+            let source_evidence = outcome.produced_evidence.len();
             outcome.produced_evidence.push(ProducedEvidence {
                 kind: EvidenceKind::GraphPath,
-                detail: path
-                    .iter()
-                    .map(|id| render(*id))
-                    .collect::<Vec<_>>()
-                    .join(" -> "),
-                subject: None,
-                fact: None,
+                detail: render(source_id),
+                subject: source_node.and_then(|n| n.grounding).and_then(|g| g.entity),
+                grounding: source_node.and_then(|n| n.grounding),
+            });
+            atoms.push(source_evidence);
+            causal.push(CausalObservation {
+                kind: CausalStepKind::Source,
+                detail: render(source_id),
+                subject: source_node.and_then(|n| n.grounding).and_then(|g| g.entity),
+                evidence: Some(source_evidence),
             });
 
-            let last = path.len().saturating_sub(1);
-            let causal: Vec<CausalObservation> = path
-                .iter()
-                .enumerate()
-                .map(|(i, id)| {
-                    let kind = if i == 0 {
-                        CausalStepKind::Source
-                    } else if i == last {
-                        CausalStepKind::Sink
-                    } else {
-                        CausalStepKind::Flow
-                    };
-                    CausalObservation {
-                        kind,
-                        detail: render(*id),
-                        subject: None,
-                        fact: None,
-                        evidence: Some(evidence_index),
+            for hop in path.windows(2) {
+                let (from, to) = (hop[0], hop[1]);
+                let edges = relations.get(&(from, to)).cloned().unwrap_or_default();
+                let grounding = match edges.as_slice() {
+                    [] => None,
+                    [only] => only.grounding,
+                    many => {
+                        let mut facts = many.iter().map(|e| e.grounding);
+                        let first = facts.next().flatten();
+                        if many.iter().any(|e| e.grounding.is_some()) && facts.any(|g| g != first) {
+                            ambiguous_hops.push((from, to));
+                            None
+                        } else {
+                            first
+                        }
                     }
-                })
-                .collect();
+                };
+
+                let relation_evidence = outcome.produced_evidence.len();
+                outcome.produced_evidence.push(ProducedEvidence {
+                    kind: EvidenceKind::GraphPath,
+                    detail: format!("{} -> {}", render(from), render(to)),
+                    subject: grounding.and_then(|g| g.entity),
+                    grounding,
+                });
+                atoms.push(relation_evidence);
+                causal.push(CausalObservation {
+                    kind: CausalStepKind::Flow,
+                    detail: format!("{} -> {}", render(from), render(to)),
+                    subject: grounding.and_then(|g| g.entity),
+                    evidence: Some(relation_evidence),
+                });
+            }
+
+            let sink_id = path[path.len() - 1];
+            let sink_node = node_by_id.get(&sink_id);
+            let sink_evidence = outcome.produced_evidence.len();
+            outcome.produced_evidence.push(ProducedEvidence {
+                kind: EvidenceKind::GraphPath,
+                detail: render(sink_id),
+                subject: sink_node.and_then(|n| n.grounding).and_then(|g| g.entity),
+                grounding: sink_node.and_then(|n| n.grounding),
+            });
+            atoms.push(sink_evidence);
+            causal.push(CausalObservation {
+                kind: CausalStepKind::Sink,
+                detail: render(sink_id),
+                subject: sink_node.and_then(|n| n.grounding).and_then(|g| g.entity),
+                evidence: Some(sink_evidence),
+            });
+
+            for (from, to) in ambiguous_hops {
+                outcome.diagnostics.push(DetectorDiagnostic {
+                    code: "ambiguous_relation_grounding".to_string(),
+                    message: format!(
+                        "relation {from} -> {to} is witnessed by parallel edges with different facts; the hop is left ungrounded rather than attributed arbitrarily"
+                    ),
+                });
+            }
 
             outcome.matches.push(DetectorMatch {
                 kind: produce.clone(),
@@ -308,7 +372,7 @@ impl DetectorBackend for GraphBackend {
                     sink,
                     path.len().saturating_sub(1)
                 ),
-                evidence: vec![evidence_index],
+                evidence: atoms,
                 causal,
             });
         }
@@ -428,18 +492,34 @@ mod tests {
             .run(p.admitted(), &graph_input(graph_clean()))
             .unwrap();
         assert_eq!(outcome.matches.len(), 1);
-        assert_eq!(outcome.produced_evidence.len(), 1);
+        // Atomic witness: source node, one atom per traversed relation, sink
+        // node. A single blob per path could not be grounded edge by edge.
+        assert_eq!(outcome.produced_evidence.len(), 4);
         assert_eq!(outcome.produced_evidence[0].kind, EvidenceKind::GraphPath);
+        let details: Vec<&str> = outcome
+            .produced_evidence
+            .iter()
+            .map(|e| e.detail.as_str())
+            .collect();
+        assert!(details[0].contains("endpoint.http"), "{details:?}");
+        assert!(details[1].contains("->"), "{details:?}");
+        assert!(details[3].contains("persistence.write"), "{details:?}");
+        assert_eq!(
+            outcome.matches[0].evidence,
+            vec![0, 1, 2, 3],
+            "the match claims every atom of its witness"
+        );
         assert_eq!(
             outcome.matches[0].kind.as_str(),
             "architecture.direct_db_access"
         );
-        // Causal chain: Source -> Flow -> Sink.
+        // Causal chain: Source -> Flow (one per traversed relation) -> Sink.
         let kinds: Vec<CausalStepKind> = outcome.matches[0].causal.iter().map(|c| c.kind).collect();
         assert_eq!(
             kinds,
             vec![
                 CausalStepKind::Source,
+                CausalStepKind::Flow,
                 CausalStepKind::Flow,
                 CausalStepKind::Sink
             ]
@@ -506,9 +586,88 @@ mod tests {
         let outcome = GraphBackend.run(p.admitted(), &graph_input(graph)).unwrap();
         assert_eq!(outcome.matches.len(), 2);
         // Deterministic: the first path starts at node 1, the second at 9.
+        // Each path contributes four atoms (source, two relations, sink).
         assert!(outcome.produced_evidence[0].detail.contains(":10"));
-        assert!(outcome.produced_evidence[1].detail.contains(":90"));
+        assert!(outcome.produced_evidence[4].detail.contains(":90"));
     }
+    /// Two parallel relations with *different* facts leave the hop ungrounded:
+    /// no single fact can be said to witness it, and picking one arbitrarily
+    /// would fabricate a causal claim.
+    #[test]
+    fn parallel_edges_with_different_facts_leave_the_hop_ungrounded() {
+        let graph = GraphInput {
+            nodes: vec![
+                node(1, "endpoint.http", 10),
+                node(2, "persistence.write", 30),
+            ],
+            edges: vec![
+                GraphEdge {
+                    from: 1,
+                    to: 2,
+                    grounding: Some(GroundingRef::fact(crate::domain::kernel_ids::FactId::new(
+                        1,
+                    ))),
+                },
+                GraphEdge {
+                    from: 1,
+                    to: 2,
+                    grounding: Some(GroundingRef::fact(crate::domain::kernel_ids::FactId::new(
+                        2,
+                    ))),
+                },
+            ],
+        };
+        let p = permit(admin_traversal_ir("endpoint.http", "persistence.write"));
+        let outcome = GraphBackend.run(p.admitted(), &graph_input(graph)).unwrap();
+        assert_eq!(outcome.matches.len(), 1, "the relation is still found");
+        assert_eq!(outcome.produced_evidence.len(), 3, "source, hop, sink");
+        assert!(
+            outcome.produced_evidence[1].grounding.is_none(),
+            "the ambiguous hop must fail closed"
+        );
+        assert!(
+            outcome
+                .diagnostics
+                .iter()
+                .any(|d| d.code == "ambiguous_relation_grounding"),
+            "the ambiguity must be reported, not hidden: {:?}",
+            outcome.diagnostics
+        );
+    }
+
+    /// Two parallel relations that name the *same* fact are not ambiguous.
+    #[test]
+    fn parallel_edges_with_the_same_fact_stay_grounded() {
+        let fact = Some(GroundingRef::fact(crate::domain::kernel_ids::FactId::new(
+            1,
+        )));
+        let graph = GraphInput {
+            nodes: vec![
+                node(1, "endpoint.http", 10),
+                node(2, "persistence.write", 30),
+            ],
+            edges: vec![
+                GraphEdge {
+                    from: 1,
+                    to: 2,
+                    grounding: fact,
+                },
+                GraphEdge {
+                    from: 1,
+                    to: 2,
+                    grounding: fact,
+                },
+            ],
+        };
+        let p = permit(admin_traversal_ir("endpoint.http", "persistence.write"));
+        let outcome = GraphBackend.run(p.admitted(), &graph_input(graph)).unwrap();
+        assert_eq!(
+            outcome.produced_evidence[1].grounding, fact,
+            "identical parallel edges agree on the fact"
+        );
+        assert!(outcome.diagnostics.is_empty());
+    }
+
     #[test]
     fn finds_an_alternate_clean_path_when_the_shortest_witness_is_sanitized() {
         //   endpoint(1) ── sanitizer(2) ── persistence(3)
@@ -548,7 +707,12 @@ mod tests {
         let p = permit(admin_traversal_ir("endpoint.http", "persistence.write"));
         let outcome = GraphBackend.run(p.admitted(), &graph_input(graph)).unwrap();
         assert_eq!(outcome.matches.len(), 1, "the clean path must be found");
-        let detail = &outcome.produced_evidence[0].detail;
+        let detail: String = outcome
+            .produced_evidence
+            .iter()
+            .map(|e| e.detail.clone())
+            .collect::<Vec<_>>()
+            .join(" | ");
         assert!(
             detail.contains("service.handler"),
             "witness must go through the service, got: {detail}"

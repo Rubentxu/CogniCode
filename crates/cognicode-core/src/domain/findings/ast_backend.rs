@@ -123,6 +123,10 @@ impl DetectorBackend for AstBackend {
                     continue;
                 }
 
+                // One evidence atom per matched construct, carrying whatever
+                // canonical fact the AST lift recorded for it. A construct the
+                // lift could not ground stays ungrounded: it is still reported,
+                // it just cannot open the gate.
                 let evidence_index = outcome.produced_evidence.len();
                 outcome.produced_evidence.push(ProducedEvidence {
                     kind: EvidenceKind::AstMatch,
@@ -130,8 +134,8 @@ impl DetectorBackend for AstBackend {
                         "{} at {}:{} ({})",
                         construct.subject, unit.path, construct.line, construct.detail
                     ),
-                    subject: None,
-                    fact: None,
+                    subject: construct.grounding.and_then(|g| g.entity),
+                    grounding: construct.grounding,
                 });
 
                 outcome.matches.push(DetectorMatch {
@@ -144,8 +148,7 @@ impl DetectorBackend for AstBackend {
                             "{} at {}:{}",
                             construct.subject, unit.path, construct.line
                         ),
-                        subject: None,
-                        fact: None,
+                        subject: construct.grounding.and_then(|g| g.entity),
                         evidence: Some(evidence_index),
                     }],
                 });

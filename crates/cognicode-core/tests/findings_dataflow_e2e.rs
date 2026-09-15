@@ -23,10 +23,10 @@ use cognicode_core::domain::findings::{
     DataflowFunction, DataflowInput, DataflowLocation, DataflowStatement, DetectorAdmission,
     DetectorAuthority, DetectorBackend, DetectorExecutor, DetectorFindingPolicy, DetectorId,
     DetectorIr, DetectorStep, EvidenceClass, ExecutionError, ExecutionRecord, FindingGate,
-    FindingKind, FindingVerifier, GraphBackend, PromotionAuthority, PromotionRequest, RiskLevel,
-    SubjectPattern,
+    FindingKind, FindingVerifier, GraphBackend, GroundingRef, PromotionAuthority, PromotionRequest,
+    RiskLevel, SubjectPattern,
 };
-use cognicode_core::domain::kernel_ids::ExecutionId;
+use cognicode_core::domain::kernel_ids::{EntityId, ExecutionId, FactId};
 use cognicode_core::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
 
 fn stmt(id: u64, subjects: &[&str], line: u32, defs: &[&str], uses: &[&str]) -> DataflowStatement {
@@ -42,7 +42,12 @@ fn stmt(id: u64, subjects: &[&str], line: u32, defs: &[&str], uses: &[&str]) -> 
             path: "src/handler.rs".to_string(),
             line,
         },
-        grounding: None,
+        // Grounded: the pass recorded the canonical fact for each statement it
+        // projected, so a dataflow witness can be checked for coherence.
+        grounding: Some(GroundingRef::entity(
+            EntityId::new(id),
+            FactId::new(500 + id),
+        )),
     }
 }
 

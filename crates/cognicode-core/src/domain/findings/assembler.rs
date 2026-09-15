@@ -12,30 +12,38 @@
 use std::fmt;
 
 use super::admission::AdmittedDetector;
+use super::binding::EvidenceBindings;
 use super::detector_ir::DetectorExecutionRef;
 use super::finding::{CausalStep, EvidenceClass, Finding, FindingError, FindingId, FindingOrigin};
 use super::outcome::{DetectorMatch, DetectorOutcome};
 use crate::domain::kernel_ids::EvidenceId;
 
-/// Assigns evidence ids, class, execution ref and causal chain.
+/// Assigns evidence bindings, class, execution ref and causal chain.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FindingAssembler;
 
 impl FindingAssembler {
-    /// Assemble findings from a backend outcome.
+    /// Assemble findings from a backend outcome and its evidence bindings.
     ///
-    /// `evidence_ids` must be index-aligned with
-    /// [`DetectorOutcome::produced_evidence`] (the executor records evidence
-    /// in order).
+    /// `bindings` must be index-aligned with
+    /// [`DetectorOutcome::produced_evidence`].
+    ///
+    /// Two rules make the result auditable:
+    ///
+    /// - a finding claims **only grounded** evidence, so its `evidence` set is
+    ///   exactly what carries canonical truth;
+    /// - a causal step's fact is taken from the *binding*, never from the
+    ///   backend's own observation, so a step cannot state a fact its evidence
+    ///   does not carry.
     pub fn assemble(
         admitted: &AdmittedDetector,
         execution: &DetectorExecutionRef,
         outcome: &DetectorOutcome,
-        evidence_ids: &[EvidenceId],
+        bindings: &EvidenceBindings,
     ) -> Result<Vec<Finding>, AssemblyError> {
-        if evidence_ids.len() != outcome.produced_evidence.len() {
+        if bindings.len() != outcome.produced_evidence.len() {
             return Err(AssemblyError::EvidenceArity {
-                ids: evidence_ids.len(),
+                ids: bindings.len(),
                 produced: outcome.produced_evidence.len(),
             });
         }
@@ -46,7 +54,7 @@ impl FindingAssembler {
                 admitted,
                 execution,
                 outcome,
-                evidence_ids,
+                bindings,
                 match_index,
                 m,
             )?);
@@ -58,18 +66,23 @@ impl FindingAssembler {
         admitted: &AdmittedDetector,
         execution: &DetectorExecutionRef,
         outcome: &DetectorOutcome,
-        evidence_ids: &[EvidenceId],
+        bindings: &EvidenceBindings,
         match_index: usize,
         m: &DetectorMatch,
     ) -> Result<Finding, AssemblyError> {
-        // Resolve the match's evidence ids.
-        let mut evidence = Vec::with_capacity(m.evidence.len());
+        // The finding claims the grounded subset of the match's evidence: an
+        // ungrounded item is still produced and still explainable, but it
+        // carries no canonical truth and must not appear as claimed evidence.
+        let mut evidence: Vec<EvidenceId> = Vec::with_capacity(m.evidence.len());
         for &index in &m.evidence {
-            let id = evidence_ids
+            let binding = bindings
                 .get(index)
-                .copied()
                 .ok_or(AssemblyError::EvidenceIndexOutOfRange { match_index, index })?;
-            evidence.push(id);
+            if let Some(id) = binding.id() {
+                if !evidence.contains(&id) {
+                    evidence.push(id);
+                }
+            }
         }
 
         // The assembler owns the class: the strongest class its evidence
@@ -86,32 +99,48 @@ impl FindingAssembler {
         // every causal evidence id to belong to this finding's evidence set.
         let mut causal_chain = Vec::with_capacity(m.causal.len());
         for (step, obs) in m.causal.iter().enumerate() {
-            let evidence_id = match obs.evidence {
+            // A step is grounded when the evidence it points at is grounded;
+            // its fact *is* that evidence's canonical fact.
+            let grounded = match obs.evidence {
                 None => None,
                 Some(index) => {
-                    let id = evidence_ids.get(index).copied().ok_or(
-                        AssemblyError::CausalEvidenceOutOfRange {
-                            match_index,
-                            step,
-                            index,
-                        },
-                    )?;
-                    if !evidence.contains(&id) {
-                        return Err(AssemblyError::CausalEvidenceNotInFinding {
-                            match_index,
-                            step,
-                            evidence: id,
-                        });
+                    let binding =
+                        bindings
+                            .get(index)
+                            .ok_or(AssemblyError::CausalEvidenceOutOfRange {
+                                match_index,
+                                step,
+                                index,
+                            })?;
+                    match binding {
+                        super::binding::EvidenceBinding::Grounded { id, fact } => {
+                            if !evidence.contains(id) {
+                                return Err(AssemblyError::CausalEvidenceNotInFinding {
+                                    match_index,
+                                    step,
+                                    evidence: *id,
+                                });
+                            }
+                            Some((*id, *fact))
+                        }
+                        super::binding::EvidenceBinding::Ungrounded { .. } => None,
                     }
-                    Some(id)
                 }
             };
 
             let mut causal =
                 CausalStep::new(obs.kind, obs.detail.clone()).map_err(AssemblyError::Invalid)?;
             causal.subject = obs.subject;
-            causal.fact = obs.fact;
-            causal.evidence = evidence_id;
+            match grounded {
+                Some((id, fact)) => {
+                    causal.evidence = Some(id);
+                    causal.fact = Some(fact);
+                }
+                None => {
+                    causal.evidence = None;
+                    causal.fact = None;
+                }
+            }
             causal_chain.push(causal);
         }
 
@@ -226,13 +255,33 @@ impl std::error::Error for AssemblyError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::findings::GroundingRef;
     use crate::domain::findings::admission::{AdmissionSource, DetectorAdmission};
+    use crate::domain::findings::binding::EvidenceBinding;
     use crate::domain::findings::detector_ir::{
         DetectorId, DetectorIr, DetectorStep, FindingKind, SubjectPattern,
     };
     use crate::domain::findings::finding::{CausalStepKind, FindingSeverity, RiskLevel};
     use crate::domain::findings::outcome::{CausalObservation, EvidenceKind, ProducedEvidence};
-    use crate::domain::kernel_ids::ExecutionId;
+    use crate::domain::kernel_ids::{ExecutionId, FactId};
+
+    /// Bindings for `n` grounded items, ids `1..=n`, all grading `FactId(7)`.
+    fn grounded(n: usize) -> EvidenceBindings {
+        EvidenceBindings::new(
+            (1..=n)
+                .map(|i| EvidenceBinding::grounded(EvidenceId::new(i as u64), FactId::new(7)))
+                .collect(),
+        )
+    }
+
+    fn grounded_evidence(kind: EvidenceKind, detail: &str) -> ProducedEvidence {
+        ProducedEvidence {
+            kind,
+            detail: detail.to_string(),
+            subject: None,
+            grounding: Some(GroundingRef::fact(FactId::new(7))),
+        }
+    }
 
     fn permit() -> super::super::admission::ExecutionPermit {
         let ir = DetectorIr {
@@ -257,12 +306,7 @@ mod tests {
 
     fn outcome_with(kind: EvidenceKind) -> DetectorOutcome {
         DetectorOutcome {
-            produced_evidence: vec![ProducedEvidence {
-                kind,
-                detail: "md5 at src/hash.rs:12".to_string(),
-                subject: None,
-                fact: None,
-            }],
+            produced_evidence: vec![grounded_evidence(kind, "md5 at src/hash.rs:12")],
             matches: vec![DetectorMatch {
                 kind: FindingKind::new("security.weak_hash").unwrap(),
                 message: "MD5 used".to_string(),
@@ -271,7 +315,6 @@ mod tests {
                     kind: CausalStepKind::Source,
                     detail: "md5 usage".to_string(),
                     subject: None,
-                    fact: None,
                     evidence: Some(0),
                 }],
             }],
@@ -284,10 +327,13 @@ mod tests {
         let permit = permit();
         let execution = permit.execution_ref(Some(ExecutionId(5)), None).unwrap();
         let outcome = outcome_with(EvidenceKind::AstMatch);
-        let ids = vec![EvidenceId::new(11)];
+        let bindings = EvidenceBindings::new(vec![EvidenceBinding::grounded(
+            EvidenceId::new(11),
+            FactId::new(7),
+        )]);
 
         let findings =
-            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &ids).unwrap();
+            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &bindings).unwrap();
         assert_eq!(findings.len(), 1);
         let f = &findings[0];
         assert_eq!(f.id.as_str(), "security.weak_hash:exec5:m0");
@@ -300,6 +346,11 @@ mod tests {
         assert_eq!(f.detector.execution_id, Some(ExecutionId(5)));
         assert_eq!(f.origin, FindingOrigin::Detector);
         assert_eq!(f.causal_chain[0].evidence, Some(EvidenceId::new(11)));
+        assert_eq!(
+            f.causal_chain[0].fact,
+            Some(FactId::new(7)),
+            "a causal step's fact comes from the evidence binding, not the backend"
+        );
         assert!(f.validate().is_ok());
     }
 
@@ -308,17 +359,14 @@ mod tests {
         let permit = permit();
         let execution = permit.execution_ref(None, None).unwrap();
         let mut outcome = outcome_with(EvidenceKind::AstMatch);
-        outcome.produced_evidence.push(ProducedEvidence {
-            kind: EvidenceKind::RuntimeTrace,
-            detail: "observed".to_string(),
-            subject: None,
-            fact: None,
-        });
+        outcome
+            .produced_evidence
+            .push(grounded_evidence(EvidenceKind::RuntimeTrace, "observed"));
         outcome.matches[0].evidence = vec![0, 1];
-        let ids = vec![EvidenceId::new(1), EvidenceId::new(2)];
+        let bindings = grounded(2);
 
         let findings =
-            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &ids).unwrap();
+            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &bindings).unwrap();
         assert_eq!(findings[0].evidence_class, EvidenceClass::A);
     }
 
@@ -329,9 +377,9 @@ mod tests {
         let mut outcome = outcome_with(EvidenceKind::Hypothesis);
         outcome.matches[0].evidence = vec![];
         outcome.matches[0].causal[0].evidence = None;
-        let ids = vec![EvidenceId::new(1)];
+        let bindings = grounded(1);
         let findings =
-            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &ids).unwrap();
+            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &bindings).unwrap();
         assert_eq!(findings[0].evidence_class, EvidenceClass::D);
         assert!(findings[0].evidence.is_empty());
     }
@@ -341,8 +389,13 @@ mod tests {
         let permit = permit();
         let execution = permit.execution_ref(None, None).unwrap();
         let outcome = outcome_with(EvidenceKind::AstMatch);
-        let err =
-            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &[]).unwrap_err();
+        let err = FindingAssembler::assemble(
+            permit.admitted(),
+            &execution,
+            &outcome,
+            &EvidenceBindings::default(),
+        )
+        .unwrap_err();
         assert_eq!(
             err,
             AssemblyError::EvidenceArity {
@@ -357,18 +410,15 @@ mod tests {
         let permit = permit();
         let execution = permit.execution_ref(None, None).unwrap();
         let mut outcome = outcome_with(EvidenceKind::AstMatch);
-        outcome.produced_evidence.push(ProducedEvidence {
-            kind: EvidenceKind::AstMatch,
-            detail: "other".to_string(),
-            subject: None,
-            fact: None,
-        });
+        outcome
+            .produced_evidence
+            .push(grounded_evidence(EvidenceKind::AstMatch, "other"));
         // Evidence set is [0]; causal step points at index 1.
         outcome.matches[0].causal[0].evidence = Some(1);
-        let ids = vec![EvidenceId::new(1), EvidenceId::new(2)];
+        let bindings = grounded(2);
 
-        let err =
-            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &ids).unwrap_err();
+        let err = FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &bindings)
+            .unwrap_err();
         assert_eq!(
             err,
             AssemblyError::CausalEvidenceNotInFinding {
@@ -406,10 +456,10 @@ mod tests {
             DetectorAdmission::admit(ir.clone(), "1.0.0", AdmissionSource::Builtin).unwrap();
         let execution = permit.execution_ref(Some(ExecutionId(1)), None).unwrap();
         let outcome = outcome_with(EvidenceKind::AstMatch);
-        let ids = vec![EvidenceId::new(1)];
+        let bindings = grounded(1);
 
         let findings =
-            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &ids).unwrap();
+            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &bindings).unwrap();
         assert_eq!(findings[0].severity, FindingSeverity::Critical);
         assert_eq!(findings[0].risk, RiskLevel::Critical);
         // The evidence class is still capped by the evidence itself (AST).
@@ -423,7 +473,8 @@ mod tests {
         let permit2 = DetectorAdmission::admit(ir, "1.0.0", AdmissionSource::Builtin).unwrap();
         let execution2 = permit2.execution_ref(Some(ExecutionId(1)), None).unwrap();
         let findings2 =
-            FindingAssembler::assemble(permit2.admitted(), &execution2, &outcome, &ids).unwrap();
+            FindingAssembler::assemble(permit2.admitted(), &execution2, &outcome, &bindings)
+                .unwrap();
         assert_eq!(findings2[0].severity, FindingSeverity::Info);
         assert_eq!(findings2[0].risk, RiskLevel::Low);
     }

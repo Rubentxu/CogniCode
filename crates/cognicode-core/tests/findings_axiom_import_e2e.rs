@@ -14,10 +14,10 @@ use cognicode_core::application::findings::axiom_migration::{
 use cognicode_core::domain::findings::{
     AdmissionSource, AnalysisInput, AnalysisScope, AstBackend, AstConstruct, AstInput, AstUnit,
     BackendRegistry, CausalStepKind, DetectorAdmission, DetectorAuthority, DetectorExecutor,
-    EvidenceClass, FindingGate, FindingVerifier, PromotionAuthority, PromotionRequest, RiskLevel,
-    SubjectPattern,
+    EvidenceClass, FindingGate, FindingVerifier, GroundingRef, PromotionAuthority,
+    PromotionRequest, RiskLevel, SubjectPattern,
 };
-use cognicode_core::domain::kernel_ids::ExecutionId;
+use cognicode_core::domain::kernel_ids::{ExecutionId, FactId};
 use cognicode_core::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
 
 fn legacy_weak_hash_rule(severity: LegacySeverity) -> NormalizedLegacyRule {
@@ -52,7 +52,7 @@ fn ast_input() -> AnalysisInput {
                     subject: SubjectPattern::new("security.md5_usage").unwrap(),
                     line: 12,
                     detail: "md5::Md5::new()".to_string(),
-                    grounding: None,
+                    grounding: Some(GroundingRef::fact(FactId::new(7))),
                 }],
             }],
         }),

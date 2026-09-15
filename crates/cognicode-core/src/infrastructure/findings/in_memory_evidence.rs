@@ -6,6 +6,7 @@
 //! the kernel `EvidenceStore` in a later wiring cycle.
 
 use crate::domain::findings::AnalysisScope;
+use crate::domain::findings::binding::{EvidenceBinding, EvidenceBindings, GroundingFailure};
 use crate::domain::findings::outcome::ProducedEvidence;
 use crate::domain::findings::ports::{EvidenceError, EvidenceLookup, EvidenceSink};
 use crate::domain::kernel_ids::EvidenceId;
@@ -62,9 +63,24 @@ impl InMemoryEvidenceStore {
 }
 
 impl EvidenceSink for InMemoryEvidenceStore {
-    fn record(&mut self, evidence: ProducedEvidence) -> Result<EvidenceId, EvidenceError> {
-        self.items.push(evidence);
-        Ok(EvidenceId::new(self.items.len() as u64))
+    fn persist(
+        &mut self,
+        produced: &[ProducedEvidence],
+    ) -> Result<EvidenceBindings, EvidenceError> {
+        // Ids are allocated first, then every item is committed: an adapter
+        // failure mid-way must not leave evidence behind for a run that never
+        // reached the assembler.
+        let start = self.items.len() as u64;
+        let mut entries = Vec::with_capacity(produced.len());
+        for (offset, item) in produced.iter().enumerate() {
+            let id = EvidenceId::new(start + offset as u64 + 1);
+            entries.push(match item.grounding {
+                Some(grounding) => EvidenceBinding::grounded(id, grounding.fact),
+                None => EvidenceBinding::ungrounded(GroundingFailure::NoFact),
+            });
+        }
+        self.items.extend(produced.iter().cloned());
+        Ok(EvidenceBindings::new(entries))
     }
 }
 
@@ -88,7 +104,18 @@ mod tests {
             kind: EvidenceKind::AstMatch,
             detail: "x".to_string(),
             subject: None,
-            fact: None,
+            grounding: None,
+        }
+    }
+
+    fn grounded() -> ProducedEvidence {
+        ProducedEvidence {
+            kind: EvidenceKind::AstMatch,
+            detail: "grounded".to_string(),
+            subject: None,
+            grounding: Some(crate::domain::findings::GroundingRef::fact(
+                crate::domain::kernel_ids::FactId::new(7),
+            )),
         }
     }
 
@@ -96,14 +123,47 @@ mod tests {
     fn assigns_sequential_ids_and_resolves_them() {
         let mut store = InMemoryEvidenceStore::new();
         assert!(store.is_empty());
-        let a = store.record(sample()).unwrap();
-        let b = store.record(sample()).unwrap();
-        assert_eq!(a, EvidenceId::new(1));
-        assert_eq!(b, EvidenceId::new(2));
+        let bindings = store.persist(&[sample(), grounded()]).unwrap();
+        assert_eq!(
+            bindings.id(0),
+            None,
+            "an item with no canonical fact is ungrounded, not fabricated"
+        );
+        assert_eq!(bindings.fact(0), None);
+        assert_eq!(bindings.id(1), Some(EvidenceId::new(2)));
+        assert_eq!(
+            bindings.fact(1),
+            Some(crate::domain::kernel_ids::FactId::new(7))
+        );
+        assert_eq!(
+            bindings.grounded_ids(),
+            vec![EvidenceId::new(2)],
+            "only the grounded item is claimable"
+        );
         assert_eq!(store.len(), 2);
-        assert!(store.contains(a));
+        assert!(store.contains(EvidenceId::new(1)));
         assert!(!store.contains(EvidenceId::new(3)));
-        assert_eq!(store.get(a).map(|e| e.kind), Some(EvidenceKind::AstMatch));
+        assert_eq!(
+            store.get(EvidenceId::new(1)).map(|e| e.kind),
+            Some(EvidenceKind::AstMatch)
+        );
         assert!(store.get(EvidenceId::new(0)).is_none());
+    }
+
+    /// A second run in the same store continues the id sequence and keeps
+    /// bindings index-aligned with *its* produced evidence.
+    #[test]
+    fn a_second_run_continues_the_sequence() {
+        let mut store = InMemoryEvidenceStore::new();
+        store.persist(&[sample()]).unwrap();
+        let second = store.persist(&[grounded(), sample()]).unwrap();
+        assert_eq!(second.len(), 2, "bindings stay aligned with this run's evidence");
+        assert_eq!(second.id(0), Some(EvidenceId::new(2)));
+        assert_eq!(
+            second.id(1),
+            None,
+            "the second item is ungrounded, so it is not claimable"
+        );
+        assert_eq!(store.len(), 3, "both runs are persisted");
     }
 }

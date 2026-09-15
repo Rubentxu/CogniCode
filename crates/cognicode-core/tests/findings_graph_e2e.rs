@@ -22,9 +22,9 @@ use cognicode_core::domain::findings::{
     DetectorAdmission, DetectorAuthority, DetectorBackend, DetectorExecutor, DetectorFindingPolicy,
     DetectorId, DetectorIr, DetectorStep, EvidenceClass, ExecutionError, ExecutionRecord,
     FindingGate, FindingKind, FindingVerifier, GraphBackend, GraphEdge, GraphInput, GraphNode,
-    PromotionAuthority, PromotionRequest, RiskLevel, SubjectPattern,
+    GroundingRef, PromotionAuthority, PromotionRequest, RiskLevel, SubjectPattern,
 };
-use cognicode_core::domain::kernel_ids::ExecutionId;
+use cognicode_core::domain::kernel_ids::{EntityId, ExecutionId, FactId};
 use cognicode_core::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
 
 fn node(id: u64, subject: &str, line: u32) -> GraphNode {
@@ -33,7 +33,22 @@ fn node(id: u64, subject: &str, line: u32) -> GraphNode {
         subject: SubjectPattern::new(subject).unwrap(),
         path: "src/app.rs".to_string(),
         line,
-        grounding: None,
+        // Grounded: every node in this fixture is projected from a canonical
+        // fact about the entity it represents.
+        grounding: Some(GroundingRef::entity(
+            EntityId::new(id),
+            FactId::new(100 + id),
+        )),
+    }
+}
+
+/// An edge grounded in its own canonical fact: reachability is proved by the
+/// relations, so the hop has to carry truth of its own.
+fn edge(from: u64, to: u64) -> GraphEdge {
+    GraphEdge {
+        from,
+        to,
+        grounding: Some(GroundingRef::fact(FactId::new(1000 + from * 10 + to))),
     }
 }
 
@@ -70,18 +85,7 @@ fn clean_graph() -> GraphInput {
             node(2, "service.handler", 20),
             node(3, "persistence.write", 30),
         ],
-        edges: vec![
-            GraphEdge {
-                from: 1,
-                to: 2,
-                grounding: None,
-            },
-            GraphEdge {
-                from: 2,
-                to: 3,
-                grounding: None,
-            },
-        ],
+        edges: vec![edge(1, 2), edge(2, 3)],
     }
 }
 
@@ -92,18 +96,7 @@ fn sanitized_graph() -> GraphInput {
             node(2, "security.sanitizer", 20),
             node(3, "persistence.write", 30),
         ],
-        edges: vec![
-            GraphEdge {
-                from: 1,
-                to: 2,
-                grounding: None,
-            },
-            GraphEdge {
-                from: 2,
-                to: 3,
-                grounding: None,
-            },
-        ],
+        edges: vec![edge(1, 2), edge(2, 3)],
     }
 }
 
@@ -171,17 +164,32 @@ fn u41_graph_flow_through_the_unchanged_seam() {
         "a graph path is class B evidence"
     );
 
-    // The causal chain is source -> flow -> sink, each attributed to evidence.
+    // The causal chain is source -> flow ... -> sink, one step per traversed
+    // relation, and every step is attributed to its own evidence atom.
     let kinds: Vec<_> = finding.causal_chain.iter().map(|c| c.kind).collect();
     assert_eq!(
         kinds,
         vec![
             cognicode_core::domain::findings::CausalStepKind::Source,
             cognicode_core::domain::findings::CausalStepKind::Flow,
+            cognicode_core::domain::findings::CausalStepKind::Flow,
             cognicode_core::domain::findings::CausalStepKind::Sink,
         ]
     );
     assert!(finding.causal_chain.iter().all(|c| c.evidence.is_some()));
+    let step_evidence: Vec<_> = finding
+        .causal_chain
+        .iter()
+        .map(|c| c.evidence.unwrap())
+        .collect();
+    let mut unique = step_evidence.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(
+        unique.len(),
+        step_evidence.len(),
+        "each causal step must be backed by its own evidence atom, not one shared blob"
+    );
 
     let verifier = FindingVerifier::new(&store);
     assert!(verifier.verify_for_gate(finding).is_ok());

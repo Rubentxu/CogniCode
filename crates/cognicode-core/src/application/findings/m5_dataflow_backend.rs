@@ -35,11 +35,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::taint_runner::TaintFlowRunner;
-use crate::application::program_analysis::{TaintFlowPath, TaintFlowRequest, TaintFlowStatement};
+use crate::application::program_analysis::{TaintFlowRequest, TaintFlowStatement};
 use crate::domain::findings::{
     AdmissionSource, AdmittedDetector, AnalysisCapability, AnalysisInput, BackendError,
     CausalObservation, CausalStepKind, DataflowFunction, DataflowStatement, DetectorBackend,
-    DetectorDiagnostic, DetectorMatch, DetectorOutcome, EvidenceClass, EvidenceKind, FindingKind,
+    DetectorDiagnostic, DetectorMatch, DetectorOutcome, EvidenceClass, EvidenceKind,
     ProducedEvidence, SubjectPattern,
 };
 use crate::domain::plan::limits::PlanLimits;
@@ -242,39 +242,45 @@ impl<R: TaintFlowRunner> DetectorBackend for M5DataflowBackend<R> {
                 function.statements.iter().map(|s| (s.id, s)).collect();
 
             for path in &result.paths {
-                outcome.produced_evidence.push(evidence_for(
-                    function,
-                    path,
-                    &by_id,
-                    flow_source,
-                    flow_sink,
-                ));
-                let evidence_index = outcome.produced_evidence.len() - 1;
+                // One evidence atom per statement on the witness, each carrying
+                // the canonical fact the *statement* was projected from, if the
+                // pipeline recorded one.
+                //
+                // This is deliberately conservative: a statement synthesised
+                // from several observations has no single canonical fact, so it
+                // stays ungrounded. The path is still found and still explained
+                // — it simply cannot open the gate.
+                let ids: Vec<u64> = std::iter::once(path.source as u64)
+                    .chain(path.intermediates.iter().map(|m| *m as u64))
+                    .chain(std::iter::once(path.sink as u64))
+                    .collect();
+                let start = outcome.produced_evidence.len();
+                let last = ids.len().saturating_sub(1);
 
-                let mut causal = Vec::with_capacity(path.intermediates.len() + 2);
-                causal.push(CausalObservation {
-                    kind: CausalStepKind::Source,
-                    detail: render(&by_id, path.source as u64),
-                    subject: None,
-                    fact: None,
-                    evidence: Some(evidence_index),
-                });
-                for mid in &path.intermediates {
+                let mut causal = Vec::with_capacity(ids.len());
+                for (i, id) in ids.iter().enumerate() {
+                    let grounding = by_id.get(id).and_then(|s| s.grounding);
+                    outcome.produced_evidence.push(ProducedEvidence {
+                        kind: EvidenceKind::DataflowPath,
+                        detail: render(&by_id, *id),
+                        subject: grounding.and_then(|g| g.entity),
+                        grounding,
+                    });
+
+                    let kind = if i == 0 {
+                        CausalStepKind::Source
+                    } else if i == last {
+                        CausalStepKind::Sink
+                    } else {
+                        CausalStepKind::Flow
+                    };
                     causal.push(CausalObservation {
-                        kind: CausalStepKind::Flow,
-                        detail: render(&by_id, *mid as u64),
-                        subject: None,
-                        fact: None,
-                        evidence: Some(evidence_index),
+                        kind,
+                        detail: render(&by_id, *id),
+                        subject: grounding.and_then(|g| g.entity),
+                        evidence: Some(start + i),
                     });
                 }
-                causal.push(CausalObservation {
-                    kind: CausalStepKind::Sink,
-                    detail: render(&by_id, path.sink as u64),
-                    subject: None,
-                    fact: None,
-                    evidence: Some(evidence_index),
-                });
 
                 outcome.matches.push(DetectorMatch {
                     kind: produce.clone(),
@@ -285,40 +291,13 @@ impl<R: TaintFlowRunner> DetectorBackend for M5DataflowBackend<R> {
                         function.id,
                         path.intermediates.len() + 1
                     ),
-                    evidence: vec![evidence_index],
+                    evidence: (start..start + ids.len()).collect(),
                     causal,
                 });
             }
         }
 
         Ok(outcome)
-    }
-}
-
-fn evidence_for(
-    function: &DataflowFunction,
-    path: &TaintFlowPath,
-    by_id: &BTreeMap<u64, &DataflowStatement>,
-    flow_source: &SubjectPattern,
-    flow_sink: &SubjectPattern,
-) -> ProducedEvidence {
-    let mut rendered: Vec<String> = Vec::new();
-    rendered.push(render(by_id, path.source as u64));
-    for mid in &path.intermediates {
-        rendered.push(render(by_id, *mid as u64));
-    }
-    rendered.push(render(by_id, path.sink as u64));
-    ProducedEvidence {
-        kind: EvidenceKind::DataflowPath,
-        detail: format!(
-            "{} -> {} in `{}`: {}",
-            flow_source,
-            flow_sink,
-            function.id,
-            rendered.join(" -> ")
-        ),
-        subject: None,
-        fact: None,
     }
 }
 
@@ -524,12 +503,22 @@ mod tests {
                 CausalStepKind::Sink
             ]
         );
-        assert!(
-            outcome.matches[0]
-                .causal
-                .iter()
-                .all(|c| c.evidence == Some(0))
-        );
+        // Each step is backed by its own atom: a statement's evidence must be
+        // attributable to that statement, not to one blob for the whole path.
+        let step_evidence: Vec<usize> = outcome.matches[0]
+            .causal
+            .iter()
+            .map(|c| c.evidence.expect("every step is attributed"))
+            .collect();
+        assert_eq!(step_evidence, vec![0, 1, 2]);
+        assert_eq!(outcome.matches[0].evidence, vec![0, 1, 2]);
+        let details: Vec<&str> = outcome
+            .produced_evidence
+            .iter()
+            .map(|e| e.detail.as_str())
+            .collect();
+        assert!(details[0].contains("security.user_input"), "{details:?}");
+        assert!(details[2].contains("security.sql_execution"), "{details:?}");
     }
 
     #[test]
@@ -607,10 +596,16 @@ mod tests {
             .run(permit().admitted(), &input_with(statements))
             .unwrap();
         assert_eq!(outcome.matches.len(), 1);
+        // Source statement, the statement that flows through, and the sink.
+        let details: Vec<&str> = outcome
+            .produced_evidence
+            .iter()
+            .map(|e| e.detail.as_str())
+            .collect();
+        assert!(details[0].contains("security.user_input"), "{details:?}");
         assert!(
-            outcome.produced_evidence[0]
-                .detail
-                .contains("security.user_input -> security.sql_execution")
+            details.last().unwrap().contains("security.sql_execution"),
+            "{details:?}"
         );
     }
     #[test]

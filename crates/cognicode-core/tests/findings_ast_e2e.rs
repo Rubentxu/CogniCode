@@ -20,10 +20,13 @@ use cognicode_core::domain::findings::{
     AstBackend, AstConstruct, AstInput, AstUnit, BackendRegistry, DetectorAdmission,
     DetectorAuthority, DetectorExecutor, DetectorFindingPolicy, DetectorId, DetectorIr,
     DetectorStep, EvidenceClass, ExecutionError, ExecutionPermit, ExecutionRecord, Finding,
-    FindingGate, FindingKind, FindingVerifier, PromotionAuthority, PromotionRequest,
-    RejectAllApprovals, RiskLevel, SubjectPattern, VerificationError,
+    FindingGate, FindingKind, FindingVerifier, GroundingFailure, GroundingRef, PromotionAuthority,
+    PromotionRequest, RejectAllApprovals, RiskLevel, SubjectPattern, VerificationError,
 };
-use cognicode_core::domain::kernel_ids::ExecutionId;
+// The sync persistence port, so `prepare` + `persist` + `finalize` can be
+// driven by hand in the seam test.
+use cognicode_core::domain::findings::ports::EvidenceSink;
+use cognicode_core::domain::kernel_ids::{EntityId, EvidenceId, ExecutionId, FactId};
 use cognicode_core::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
 
 fn weak_hash_ir(claimed_authority: DetectorAuthority) -> DetectorIr {
@@ -57,11 +60,28 @@ fn ast_input() -> AnalysisInput {
                     subject: SubjectPattern::new("security.md5_usage").unwrap(),
                     line: 12,
                     detail: "md5::Md5::new()".to_string(),
-                    grounding: None,
+                    // Grounded: the AST lift recorded the canonical fact this
+                    // construct came from, so evidence can be checked for
+                    // coherence, not merely for existence.
+                    grounding: Some(GroundingRef::entity(EntityId::new(1), FactId::new(7))),
                 }],
             }],
         }),
     }
+}
+
+/// The same analysis, lifted without recording a canonical fact — i.e. the
+/// world before the kernel bridge exists.
+fn ast_input_ungrounded() -> AnalysisInput {
+    let mut input = ast_input();
+    if let Some(ast) = input.ast.as_mut() {
+        for unit in &mut ast.units {
+            for construct in &mut unit.constructs {
+                construct.grounding = None;
+            }
+        }
+    }
+    input
 }
 
 fn registry() -> BackendRegistry {
@@ -260,4 +280,103 @@ fn scope() -> AnalysisScope {
         cognicode_core::domain::value_objects::WorkspaceId::try_new("workspace").unwrap(),
         cognicode_core::domain::kernel_ids::SnapshotId::new(1),
     )
+}
+
+#[test]
+fn an_ungrounded_analysis_is_explained_but_never_blocks() {
+    // The reviewer's rule: a backend that cannot name a canonical fact must not
+    // invent one. The finding is still produced and still explains the route —
+    // it simply carries no claim and cannot open the gate.
+    let candidate = DetectorAdmission::admit(
+        weak_hash_ir(DetectorAuthority::Candidate),
+        "1.0.0",
+        AdmissionSource::HumanCurated,
+    )
+    .unwrap();
+    let gated = DetectorAdmission::promote(&candidate, verified_promotion(&candidate)).unwrap();
+
+    let registry = registry();
+    let executor = DetectorExecutor::new(&registry);
+    let mut store = InMemoryEvidenceStore::with_scope(scope());
+    let record = executor
+        .execute(
+            &gated,
+            &ast_input_ungrounded(),
+            &mut store,
+            ExecutionId::new(1),
+        )
+        .expect("an ungrounded run is not an error");
+
+    let finding = &record.findings[0];
+    // Explained: the causal chain is intact and human-readable.
+    assert_eq!(finding.causal_chain.len(), 1);
+    assert!(
+        finding.causal_chain[0]
+            .detail
+            .contains("security.md5_usage")
+    );
+    // Claimed: nothing. No canonical truth, no citation.
+    assert_eq!(finding.evidence, Vec::<EvidenceId>::new());
+    assert_eq!(finding.causal_chain[0].evidence, None);
+    assert_eq!(finding.causal_chain[0].fact, None);
+    // The class still describes the strength of the analysis (AST), which is a
+    // different dimension from grounding.
+    assert_eq!(finding.evidence_class, EvidenceClass::C);
+    assert_eq!(
+        record.bindings.ungrounded(),
+        vec![(0, GroundingFailure::NoFact)],
+        "the run reports exactly why nothing could be grounded"
+    );
+
+    let verifier = FindingVerifier::new(&store);
+    assert!(matches!(
+        verifier.verify_for_gate(finding),
+        Err(VerificationError::NotExplainable)
+    ));
+    assert!(
+        !verifier.can_block(finding, &blocker_gate()),
+        "correct incomplete: an ungrounded route must never block"
+    );
+}
+
+#[test]
+fn prepare_persists_nothing_and_finalize_assembles() {
+    // The seam split exists so evidence can be persisted asynchronously
+    // outside the domain. `prepare` must therefore run admission, planning and
+    // the backend-contract checks *without* touching any store.
+    let candidate = DetectorAdmission::admit(
+        weak_hash_ir(DetectorAuthority::Candidate),
+        "1.0.0",
+        AdmissionSource::HumanCurated,
+    )
+    .unwrap();
+    let gated = DetectorAdmission::promote(&candidate, verified_promotion(&candidate)).unwrap();
+
+    let registry = registry();
+    let executor = DetectorExecutor::new(&registry);
+    let mut store = InMemoryEvidenceStore::with_scope(scope());
+
+    let prepared = executor
+        .prepare(&gated, &ast_input(), ExecutionId::new(1))
+        .expect("prepare must succeed");
+    assert_eq!(
+        store.len(),
+        0,
+        "prepare must not persist anything: that is the caller's async step"
+    );
+    assert_eq!(prepared.backend(), "ast");
+    assert_eq!(prepared.produced_evidence().len(), 1);
+    assert_eq!(
+        prepared.scope().map(|s| s.snapshot),
+        Some(cognicode_core::domain::kernel_ids::SnapshotId::new(1))
+    );
+
+    let bindings = store
+        .persist(prepared.produced_evidence())
+        .expect("persist");
+    let record = prepared.finalize(&bindings).expect("finalize");
+    assert_eq!(record.findings.len(), 1);
+    assert_eq!(record.bindings.grounded_ids().len(), 1);
+    let verifier = FindingVerifier::new(&store);
+    assert!(verifier.can_block(&record.findings[0], &blocker_gate()));
 }

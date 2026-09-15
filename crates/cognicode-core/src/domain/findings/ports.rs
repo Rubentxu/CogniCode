@@ -9,6 +9,7 @@
 //!
 //! Pure domain: no I/O.
 
+use super::binding::EvidenceBindings;
 use super::outcome::ProducedEvidence;
 use crate::domain::kernel_ids::EvidenceId;
 
@@ -36,10 +37,18 @@ impl std::fmt::Display for EvidenceError {
 
 impl std::error::Error for EvidenceError {}
 
-/// Records produced evidence and assigns it a kernel [`EvidenceId`].
+/// Persists a run's produced evidence and reports how each item was bound.
+///
+/// The whole run is persisted in **one call**, so an adapter can commit it
+/// atomically: writing items one at a time would leave orphaned evidence behind
+/// if a later item failed, evidence no finding would ever cite.
+///
+/// The returned [`EvidenceBindings`] are index-aligned with `produced`, and an
+/// item the sink cannot ground is reported as ungrounded rather than dropped.
 pub trait EvidenceSink {
-    /// Persist one piece of evidence, returning its assigned id.
-    fn record(&mut self, evidence: ProducedEvidence) -> Result<EvidenceId, EvidenceError>;
+    /// Persist the run's evidence, in order.
+    fn persist(&mut self, produced: &[ProducedEvidence])
+    -> Result<EvidenceBindings, EvidenceError>;
 }
 
 /// Resolves whether an evidence id exists, **in the scope it was hydrated for**.
@@ -70,9 +79,22 @@ mod tests {
     }
 
     impl EvidenceSink for VecStore {
-        fn record(&mut self, evidence: ProducedEvidence) -> Result<EvidenceId, EvidenceError> {
-            self.items.push(evidence);
-            Ok(EvidenceId::new(self.items.len() as u64))
+        fn persist(
+            &mut self,
+            produced: &[ProducedEvidence],
+        ) -> Result<EvidenceBindings, EvidenceError> {
+            let mut bindings = Vec::with_capacity(produced.len());
+            for item in produced {
+                self.items.push(item.clone());
+                let id = EvidenceId::new(self.items.len() as u64);
+                bindings.push(match item.grounding {
+                    Some(grounding) => super::super::EvidenceBinding::grounded(id, grounding.fact),
+                    None => super::super::EvidenceBinding::ungrounded(
+                        super::super::GroundingFailure::NoFact,
+                    ),
+                });
+            }
+            Ok(EvidenceBindings::new(bindings))
         }
     }
 
@@ -89,17 +111,41 @@ mod tests {
     #[test]
     fn sink_assigns_ids_and_lookup_resolves_them() {
         let mut store = VecStore { items: Vec::new() };
-        let id = store
-            .record(ProducedEvidence {
-                kind: super::super::EvidenceKind::AstMatch,
-                detail: "x".to_string(),
-                subject: None,
-                fact: None,
-            })
+        let bindings = store
+            .persist(&[
+                ProducedEvidence {
+                    kind: super::super::EvidenceKind::AstMatch,
+                    detail: "grounded".to_string(),
+                    subject: None,
+                    grounding: Some(super::super::GroundingRef::fact(
+                        crate::domain::kernel_ids::FactId::new(7),
+                    )),
+                },
+                ProducedEvidence {
+                    kind: super::super::EvidenceKind::AstMatch,
+                    detail: "ungrounded".to_string(),
+                    subject: None,
+                    grounding: None,
+                },
+            ])
             .unwrap();
-        assert_eq!(id, EvidenceId::new(1));
-        assert!(store.contains(id));
-        assert!(!store.contains(EvidenceId::new(2)));
+        assert_eq!(bindings.id(0), Some(EvidenceId::new(1)));
+        assert_eq!(
+            bindings.fact(0),
+            Some(crate::domain::kernel_ids::FactId::new(7))
+        );
+        assert_eq!(
+            bindings.id(1),
+            None,
+            "an ungrounded item carries no claim, not even an id: the finding must not cite it"
+        );
+        assert_eq!(bindings.fact(1), None, "no fact, no grounding");
+        assert_eq!(
+            bindings.ungrounded(),
+            vec![(1, super::super::GroundingFailure::NoFact)]
+        );
+        assert!(store.contains(EvidenceId::new(1)));
+        assert!(!store.contains(EvidenceId::new(3)));
     }
 
     #[test]
