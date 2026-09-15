@@ -156,11 +156,14 @@ mod tests {
         }
     }
 
-    fn gated_detector() -> super::super::admission::AdmittedDetector {
+    fn gated_detector() -> super::super::admission::ExecutionPermit {
         let ir = DetectorIr {
             id: DetectorId::new("security.weak_hash").unwrap(),
             name: "weak hash".to_string(),
-            requires: std::collections::BTreeSet::new(),
+            policy: super::super::detector_ir::DetectorFindingPolicy::default(),
+            requires: [super::super::AnalysisCapability::AstPattern]
+                .into_iter()
+                .collect(),
             authority: super::super::DetectorAuthority::Candidate,
             steps: vec![
                 DetectorStep::Match {
@@ -180,13 +183,16 @@ mod tests {
     }
 
     fn build(gated: bool) -> Finding {
-        let admitted = if gated {
+        let permit = if gated {
             gated_detector()
         } else {
             let ir = DetectorIr {
                 id: DetectorId::new("security.weak_hash").unwrap(),
                 name: "weak hash".to_string(),
-                requires: std::collections::BTreeSet::new(),
+                policy: super::super::detector_ir::DetectorFindingPolicy::default(),
+                requires: [super::super::AnalysisCapability::AstPattern]
+                    .into_iter()
+                    .collect(),
                 authority: super::super::DetectorAuthority::Gated,
                 steps: vec![
                     DetectorStep::Match {
@@ -199,7 +205,7 @@ mod tests {
             };
             DetectorAdmission::admit(ir, "1", AdmissionSource::AiGenerated).unwrap()
         };
-        let execution = admitted.execution_ref(Some(ExecutionId(1))).unwrap();
+        let execution = permit.execution_ref(Some(ExecutionId(1))).unwrap();
         let outcome = DetectorOutcome {
             produced_evidence: vec![ProducedEvidence {
                 kind: EvidenceKind::AstMatch,
@@ -209,8 +215,6 @@ mod tests {
             }],
             matches: vec![DetectorMatch {
                 kind: FindingKind::new("security.weak_hash").unwrap(),
-                severity: FindingSeverity::Warning,
-                risk: RiskLevel::Medium,
                 message: "md5".to_string(),
                 evidence: vec![0],
                 causal: vec![CausalObservation {
@@ -224,7 +228,7 @@ mod tests {
             diagnostics: vec![],
         };
         let ids = vec![EvidenceId::new(1)];
-        FindingAssembler::assemble(&admitted, &execution, &outcome, &ids)
+        FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &ids)
             .unwrap()
             .pop()
             .unwrap()

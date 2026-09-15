@@ -6,12 +6,12 @@
 #
 #   python3 scripts/check_known_failures.py
 #
-# Contract: CI/agents MUST run scripts/check_known_failures.py. It fails if
+# Contract: a run must match this set EXACTLY. The checker fails if
 #   - a test fails that is NOT in this baseline (new regression), or
 #   - a baseline test PASSES (unexpectedly fixed; regenerate the baseline).
 #
-# Scope: this baseline is environment-scoped. Do not copy it across CI
-# runners with a different workspace root.
+# Scope: environment-scoped; do not copy across CI runners with a
+# different workspace root.
 
 package: cognicode-core
 target: lib
@@ -89,11 +89,11 @@ entries:
     category: environment_dependency
     first_seen: 2026-09-15
     reason: workspace-root/cwd resolution via the MCP file handlers
-  - test: interface::mcp::file_ops_handlers::tests::edit_operations_tests::test_edit_file_validation
+  - test: interface::mcp::file_ops_handlers::tests::edit_operations_tests::test_edit_file_valid_tree_sitter_edit
     category: environment_dependency
     first_seen: 2026-09-15
     reason: workspace-root/cwd resolution via the MCP file handlers
-  - test: interface::mcp::file_ops_handlers::tests::edit_operations_tests::test_edit_file_valid_tree_sitter_edit
+  - test: interface::mcp::file_ops_handlers::tests::edit_operations_tests::test_edit_file_validation
     category: environment_dependency
     first_seen: 2026-09-15
     reason: workspace-root/cwd resolution via the MCP file handlers

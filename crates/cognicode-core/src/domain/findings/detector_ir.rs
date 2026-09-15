@@ -26,6 +26,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use super::digest::DetectorDigest;
+use super::finding::{FindingSeverity, RiskLevel};
 use super::namespaced::NamespacedName;
 use crate::domain::kernel_ids::ExecutionId;
 
@@ -348,6 +349,38 @@ impl fmt::Display for DetectorAuthority {
 // DetectorIr
 // ============================================================================
 
+/// Detector-owned policy for a produced finding's severity and risk.
+///
+/// Backends observe matches; they do **not** decide how severe or risky the
+/// result is. The policy lives in the detector definition (and therefore in
+/// the instance digest), so a backend cannot inflate a finding's risk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DetectorFindingPolicy {
+    /// Severity assigned to every finding this detector produces.
+    pub default_severity: FindingSeverity,
+    /// Risk assigned to every finding this detector produces.
+    pub default_risk: RiskLevel,
+}
+
+impl DetectorFindingPolicy {
+    /// Construct a policy.
+    pub fn new(default_severity: FindingSeverity, default_risk: RiskLevel) -> Self {
+        Self {
+            default_severity,
+            default_risk,
+        }
+    }
+}
+
+impl Default for DetectorFindingPolicy {
+    fn default() -> Self {
+        Self {
+            default_severity: FindingSeverity::Warning,
+            default_risk: RiskLevel::Medium,
+        }
+    }
+}
+
 /// A validated detector definition.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DetectorIr {
@@ -355,6 +388,9 @@ pub struct DetectorIr {
     pub id: DetectorId,
     /// Human-readable name.
     pub name: String,
+    /// Severity/risk policy for findings this detector produces.
+    #[serde(default)]
+    pub policy: DetectorFindingPolicy,
     /// Analysis capabilities the detector requires.
     pub requires: BTreeSet<AnalysisCapability>,
     /// GATE authority (candidate vs gated).
@@ -431,6 +467,20 @@ impl DetectorIr {
                 if !self.requires.contains(&capability) {
                     return Err(DetectorIrError::MissingCapability { capability, index });
                 }
+            }
+        }
+
+        // V9 — a detector with executable steps must declare at least one
+        // capability. An empty `requires` is only legal for a PRODUCE-only
+        // (pure aggregator) detector, otherwise the planner could hand it to
+        // any backend.
+        if self.requires.is_empty() {
+            if let Some(index) = self
+                .steps
+                .iter()
+                .position(|s| !matches!(s, DetectorStep::Produce { .. }))
+            {
+                return Err(DetectorIrError::NoDeclaredCapability { index });
             }
         }
 
@@ -612,6 +662,11 @@ pub enum DetectorIrError {
         /// Index of the offending step.
         index: usize,
     },
+    /// The detector has executable steps but declares no capability.
+    NoDeclaredCapability {
+        /// Index of the first executable step.
+        index: usize,
+    },
     /// A step needs a capability the detector did not declare.
     MissingCapability {
         /// The capability that is required.
@@ -651,6 +706,10 @@ impl fmt::Display for DetectorIrError {
             Self::MatchAfterFlow { index } => {
                 write!(f, "MATCH at index {index} appears after a FLOW")
             }
+            Self::NoDeclaredCapability { index } => write!(
+                f,
+                "step at index {index} is executable but the detector declares no capability"
+            ),
             Self::MissingCapability { capability, index } => write!(
                 f,
                 "step at index {index} requires capability {capability}, which the detector does not declare"
@@ -701,6 +760,7 @@ mod tests {
         DetectorIr {
             id: DetectorId::new("security.sql_injection").unwrap(),
             name: "SQL injection".to_string(),
+            policy: DetectorFindingPolicy::default(),
             requires,
             authority: DetectorAuthority::Candidate,
             steps,

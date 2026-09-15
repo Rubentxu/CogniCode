@@ -16,7 +16,9 @@ Usage::
     python3 scripts/check_known_failures.py --update      # regenerate baseline
     python3 scripts/check_known_failures.py --package cognicode-core --target lib
 
-Exit codes: 0 = matches baseline, 1 = drift, 2 = harness error.
+Exit codes: 0 = matches baseline, 1 = drift, 2 = harness error (the suite did
+not run: compile failure / missing binary). ``--update`` is refused on a
+harness error so a broken build cannot wipe the baseline.
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ DEFAULT_BASELINE = REPO_ROOT / "scripts" / "known_failures.yaml"
 FAILED_RE = re.compile(r"^test (\S+) \.\.\. FAILED$", re.MULTILINE)
 
 
-def run_tests(package: str, target: str) -> str:
+def run_tests(package: str, target: str) -> tuple[int, str]:
     cmd = ["cargo", "test", "-p", package]
     if target == "lib":
         cmd.append("--lib")
@@ -46,7 +48,21 @@ def run_tests(package: str, target: str) -> str:
         text=True,
     )
     # cargo writes test results to stdout; keep both to be safe.
-    return proc.stdout + "\n" + proc.stderr
+    return proc.returncode, proc.stdout + "\n" + proc.stderr
+
+
+def is_harness_failure(output: str) -> bool:
+    """True when the suite never ran (compile error, missing binary, panic in
+    the harness). Such a run must never be treated as "zero failures"."""
+    if "error: could not compile" in output or "error: could not find" in output:
+        return True
+    if re.search(r"^error\[E\d+\]", output, re.MULTILINE):
+        return True
+    if re.search(r"^error: ", output, re.MULTILINE) and "test result:" not in output:
+        return True
+    if "test result:" not in output:
+        return True
+    return False
 
 
 def observed_failures(output: str) -> set[str]:
@@ -78,17 +94,31 @@ def load_baseline(path: Path) -> dict:
     return {"package": package, "target": target, "entries": entries}
 
 
-def write_baseline(path: Path, package: str, target: str, tests: list[str]) -> None:
+def write_baseline(
+    path: Path,
+    package: str,
+    target: str,
+    tests: list[str],
+    previous: dict[str, dict] | None = None,
+) -> None:
+    """Rewrite the baseline, preserving category/first_seen/reason for entries
+    that already existed (so --update does not erase provenance)."""
+    previous = previous or {}
     today = _dt.date.today().isoformat()
     out = [
-        "# Known-failure baseline — machine-readable",
+        "# Known-failure baseline — cognicode-core lib tests",
         "#",
-        "# Regenerate with: python3 scripts/check_known_failures.py --update",
+        "# Machine-readable list of tests that fail in this environment for",
+        "# reasons OUTSIDE the code under review (see `reason`). Maintained so a",
+        "# new regression is never lost in the noise:",
         "#",
-        "# Contract: a run must match this set EXACTLY. New failures or",
-        "# unexpectedly-fixed tests fail the check so regressions cannot hide.",
+        "#   python3 scripts/check_known_failures.py",
         "#",
-        "# Scope: environment-scoped; do not copy across runners with a",
+        "# Contract: a run must match this set EXACTLY. The checker fails if",
+        "#   - a test fails that is NOT in this baseline (new regression), or",
+        "#   - a baseline test PASSES (unexpectedly fixed; regenerate the baseline).",
+        "#",
+        "# Scope: environment-scoped; do not copy across CI runners with a",
         "# different workspace root.",
         "",
         f"package: {package}",
@@ -97,11 +127,20 @@ def write_baseline(path: Path, package: str, target: str, tests: list[str]) -> N
         "entries:",
     ]
     for test in tests:
+        prior = previous.get(test)
+        if prior:
+            category = prior.get("category", "environment_dependency")
+            first_seen = prior.get("first_seen", today)
+            reason = prior.get("reason", "environment/cwd dependency (review before removing)")
+        else:
+            category = "environment_dependency"
+            first_seen = today
+            reason = "environment/cwd dependency (review before removing)"
         out += [
             f"  - test: {test}",
-            "    category: environment_dependency",
-            f"    first_seen: {today}",
-            "    reason: environment/cwd dependency (review before removing)",
+            f"    category: {category}",
+            f"    first_seen: {first_seen}",
+            f"    reason: {reason}",
         ]
     path.write_text("\n".join(out) + "\n")
 
@@ -120,11 +159,23 @@ def main() -> int:
     target = args.target or baseline.get("target") or "lib"
 
     print(f"[known-failures] running `cargo test -p {package}` (target={target}) …")
-    output = run_tests(package, target)
+    returncode, output = run_tests(package, target)
+
+    if is_harness_failure(output):
+        print(
+            "[known-failures] HARNESS ERROR: the test suite did not run "
+            "(compile error or missing binary); refusing to compare or update.",
+            file=sys.stderr,
+        )
+        tail = "\n".join(output.splitlines()[-15:])
+        print(tail, file=sys.stderr)
+        return 2
+
     observed = observed_failures(output)
 
     if args.update:
-        write_baseline(baseline_path, package, target, sorted(observed))
+        previous = {e["test"]: e for e in baseline["entries"]}
+        write_baseline(baseline_path, package, target, sorted(observed), previous)
         print(f"[known-failures] baseline updated: {len(observed)} entries -> {baseline_path}")
         return 0
 

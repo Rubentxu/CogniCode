@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use super::admission::AdmittedDetector;
 use super::detector_ir::{AnalysisCapability, DetectorStep, SubjectPattern};
 use super::execution::{AnalysisInput, BackendError, DetectorBackend};
-use super::finding::{CausalStepKind, FindingSeverity, RiskLevel};
+use super::finding::{CausalStepKind, EvidenceClass};
 use super::outcome::{
     CausalObservation, DetectorMatch, DetectorOutcome, EvidenceKind, ProducedEvidence,
 };
@@ -65,13 +65,16 @@ impl DetectorBackend for AstBackend {
     }
 
     fn capabilities(&self) -> BTreeSet<AnalysisCapability> {
-        // It matches syntactic constructs and resolves declared subjects.
-        [
-            AnalysisCapability::AstPattern,
-            AnalysisCapability::SemanticResolution,
-        ]
-        .into_iter()
-        .collect()
+        // It matches syntactic constructs against already-classified subjects.
+        // It does NOT resolve symbols or types, so it must not advertise
+        // `SemanticResolution`: a detector that needs it must plan elsewhere.
+        [AnalysisCapability::AstPattern].into_iter().collect()
+    }
+
+    fn evidence_ceiling(&self) -> EvidenceClass {
+        // AST matching can never produce stronger than partial static
+        // evidence (class C): no graph paths, no runtime traces.
+        EvidenceClass::C
     }
 
     fn run(
@@ -128,8 +131,6 @@ impl DetectorBackend for AstBackend {
 
                 outcome.matches.push(DetectorMatch {
                     kind: produce.clone(),
-                    severity: FindingSeverity::Warning,
-                    risk: RiskLevel::Medium,
                     message: format!("{} detected at {}:{}", produce, unit.path, construct.line),
                     evidence: vec![evidence_index],
                     causal: vec![CausalObservation {
@@ -154,13 +155,14 @@ impl DetectorBackend for AstBackend {
 mod tests {
     use super::*;
     use crate::domain::findings::DetectorAuthority;
-    use crate::domain::findings::admission::{AdmissionSource, DetectorAdmission};
+    use crate::domain::findings::admission::{AdmissionSource, DetectorAdmission, ExecutionPermit};
     use crate::domain::findings::detector_ir::{DetectorId, DetectorIr, FindingKind};
 
-    fn admitted_md5() -> AdmittedDetector {
+    fn admitted_md5() -> ExecutionPermit {
         let ir = DetectorIr {
             id: DetectorId::new("security.weak_hash").unwrap(),
             name: "weak hash".to_string(),
+            policy: super::super::detector_ir::DetectorFindingPolicy::default(),
             requires: [AnalysisCapability::AstPattern].into_iter().collect(),
             authority: DetectorAuthority::Gated,
             steps: vec![
@@ -193,7 +195,7 @@ mod tests {
     #[test]
     fn matches_the_declared_subject() {
         let outcome = AstBackend
-            .run(&admitted_md5(), &input_with("security.md5_usage"))
+            .run(admitted_md5().admitted(), &input_with("security.md5_usage"))
             .unwrap();
         assert_eq!(outcome.matches.len(), 1);
         assert_eq!(outcome.produced_evidence.len(), 1);
@@ -204,7 +206,10 @@ mod tests {
     #[test]
     fn ignores_unrelated_constructs() {
         let outcome = AstBackend
-            .run(&admitted_md5(), &input_with("security.sha256_usage"))
+            .run(
+                admitted_md5().admitted(),
+                &input_with("security.sha256_usage"),
+            )
             .unwrap();
         assert!(outcome.is_empty());
         assert!(outcome.diagnostics.is_empty());
@@ -213,7 +218,7 @@ mod tests {
     #[test]
     fn missing_ast_input_fails_loud() {
         let err = AstBackend
-            .run(&admitted_md5(), &AnalysisInput::default())
+            .run(admitted_md5().admitted(), &AnalysisInput::default())
             .unwrap_err();
         assert_eq!(err, BackendError::MissingInput("ast"));
     }
@@ -223,6 +228,7 @@ mod tests {
         let ir = DetectorIr {
             id: DetectorId::new("security.no_match").unwrap(),
             name: "no match".to_string(),
+            policy: super::super::detector_ir::DetectorFindingPolicy::default(),
             requires: BTreeSet::new(),
             authority: DetectorAuthority::Candidate,
             steps: vec![DetectorStep::Produce {
@@ -231,7 +237,7 @@ mod tests {
         };
         let admitted = DetectorAdmission::admit(ir, "1", AdmissionSource::Builtin).unwrap();
         let outcome = AstBackend
-            .run(&admitted, &input_with("security.md5_usage"))
+            .run(admitted.admitted(), &input_with("security.md5_usage"))
             .unwrap();
         assert!(outcome.is_empty());
         assert_eq!(outcome.diagnostics[0].code, "no_match_steps");

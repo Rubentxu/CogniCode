@@ -122,6 +122,7 @@ impl FindingAssembler {
         ))
         .map_err(AssemblyError::Invalid)?;
 
+        let policy = admitted.definition.policy;
         let message = if m.message.trim().is_empty() {
             format!("detector {} matched", admitted.definition.id)
         } else {
@@ -132,8 +133,8 @@ impl FindingAssembler {
             id,
             kind: m.kind.clone(),
             origin: FindingOrigin::Detector,
-            severity: m.severity,
-            risk: m.risk,
+            severity: policy.default_severity,
+            risk: policy.default_risk,
             evidence_class,
             evidence,
             detector: execution.clone(),
@@ -232,13 +233,15 @@ mod tests {
     use crate::domain::findings::finding::{CausalStepKind, FindingSeverity, RiskLevel};
     use crate::domain::findings::outcome::{CausalObservation, EvidenceKind, ProducedEvidence};
     use crate::domain::kernel_ids::ExecutionId;
-    use std::collections::BTreeSet;
 
-    fn admitted() -> super::super::admission::AdmittedDetector {
+    fn permit() -> super::super::admission::ExecutionPermit {
         let ir = DetectorIr {
             id: DetectorId::new("security.weak_hash").unwrap(),
             name: "weak hash".to_string(),
-            requires: BTreeSet::new(),
+            policy: super::super::detector_ir::DetectorFindingPolicy::default(),
+            requires: [super::super::AnalysisCapability::AstPattern]
+                .into_iter()
+                .collect(),
             authority: super::super::DetectorAuthority::Gated,
             steps: vec![
                 DetectorStep::Match {
@@ -262,8 +265,6 @@ mod tests {
             }],
             matches: vec![DetectorMatch {
                 kind: FindingKind::new("security.weak_hash").unwrap(),
-                severity: FindingSeverity::Warning,
-                risk: RiskLevel::Medium,
                 message: "MD5 used".to_string(),
                 evidence: vec![0],
                 causal: vec![CausalObservation {
@@ -280,12 +281,13 @@ mod tests {
 
     #[test]
     fn assembles_a_finding_with_assigned_class_and_execution() {
-        let admitted = admitted();
-        let execution = admitted.execution_ref(Some(ExecutionId(5))).unwrap();
+        let permit = permit();
+        let execution = permit.execution_ref(Some(ExecutionId(5))).unwrap();
         let outcome = outcome_with(EvidenceKind::AstMatch);
         let ids = vec![EvidenceId::new(11)];
 
-        let findings = FindingAssembler::assemble(&admitted, &execution, &outcome, &ids).unwrap();
+        let findings =
+            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &ids).unwrap();
         assert_eq!(findings.len(), 1);
         let f = &findings[0];
         assert_eq!(f.id.as_str(), "security.weak_hash:exec5:m0");
@@ -303,8 +305,8 @@ mod tests {
 
     #[test]
     fn class_is_the_strongest_of_the_evidence() {
-        let admitted = admitted();
-        let execution = admitted.execution_ref(None).unwrap();
+        let permit = permit();
+        let execution = permit.execution_ref(None).unwrap();
         let mut outcome = outcome_with(EvidenceKind::AstMatch);
         outcome.produced_evidence.push(ProducedEvidence {
             kind: EvidenceKind::RuntimeTrace,
@@ -315,29 +317,32 @@ mod tests {
         outcome.matches[0].evidence = vec![0, 1];
         let ids = vec![EvidenceId::new(1), EvidenceId::new(2)];
 
-        let findings = FindingAssembler::assemble(&admitted, &execution, &outcome, &ids).unwrap();
+        let findings =
+            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &ids).unwrap();
         assert_eq!(findings[0].evidence_class, EvidenceClass::A);
     }
 
     #[test]
     fn no_evidence_yields_class_d() {
-        let admitted = admitted();
-        let execution = admitted.execution_ref(None).unwrap();
+        let permit = permit();
+        let execution = permit.execution_ref(None).unwrap();
         let mut outcome = outcome_with(EvidenceKind::Hypothesis);
         outcome.matches[0].evidence = vec![];
         outcome.matches[0].causal[0].evidence = None;
         let ids = vec![EvidenceId::new(1)];
-        let findings = FindingAssembler::assemble(&admitted, &execution, &outcome, &ids).unwrap();
+        let findings =
+            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &ids).unwrap();
         assert_eq!(findings[0].evidence_class, EvidenceClass::D);
         assert!(findings[0].evidence.is_empty());
     }
 
     #[test]
     fn rejects_arity_mismatch() {
-        let admitted = admitted();
-        let execution = admitted.execution_ref(None).unwrap();
+        let permit = permit();
+        let execution = permit.execution_ref(None).unwrap();
         let outcome = outcome_with(EvidenceKind::AstMatch);
-        let err = FindingAssembler::assemble(&admitted, &execution, &outcome, &[]).unwrap_err();
+        let err =
+            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &[]).unwrap_err();
         assert_eq!(
             err,
             AssemblyError::EvidenceArity {
@@ -349,8 +354,8 @@ mod tests {
 
     #[test]
     fn rejects_causal_evidence_not_in_finding() {
-        let admitted = admitted();
-        let execution = admitted.execution_ref(None).unwrap();
+        let permit = permit();
+        let execution = permit.execution_ref(None).unwrap();
         let mut outcome = outcome_with(EvidenceKind::AstMatch);
         outcome.produced_evidence.push(ProducedEvidence {
             kind: EvidenceKind::AstMatch,
@@ -362,7 +367,8 @@ mod tests {
         outcome.matches[0].causal[0].evidence = Some(1);
         let ids = vec![EvidenceId::new(1), EvidenceId::new(2)];
 
-        let err = FindingAssembler::assemble(&admitted, &execution, &outcome, &ids).unwrap_err();
+        let err =
+            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &ids).unwrap_err();
         assert_eq!(
             err,
             AssemblyError::CausalEvidenceNotInFinding {
@@ -371,5 +377,54 @@ mod tests {
                 evidence: EvidenceId::new(2),
             }
         );
+    }
+    #[test]
+    fn detector_policy_not_the_backend_decides_severity_and_risk() {
+        // The backend's DetectorMatch carries neither severity nor risk; the
+        // assembler takes both from the detector's finding policy.
+        let mut ir = super::super::detector_ir::DetectorIr {
+            id: DetectorId::new("security.weak_hash").unwrap(),
+            name: "weak hash".to_string(),
+            policy: super::super::detector_ir::DetectorFindingPolicy::new(
+                FindingSeverity::Critical,
+                RiskLevel::Critical,
+            ),
+            requires: [super::super::AnalysisCapability::AstPattern]
+                .into_iter()
+                .collect(),
+            authority: super::super::DetectorAuthority::Candidate,
+            steps: vec![
+                DetectorStep::Match {
+                    subject: SubjectPattern::new("security.md5_usage").unwrap(),
+                },
+                DetectorStep::Produce {
+                    kind: FindingKind::new("security.weak_hash").unwrap(),
+                },
+            ],
+        };
+        let permit =
+            DetectorAdmission::admit(ir.clone(), "1.0.0", AdmissionSource::Builtin).unwrap();
+        let execution = permit.execution_ref(Some(ExecutionId(1))).unwrap();
+        let outcome = outcome_with(EvidenceKind::AstMatch);
+        let ids = vec![EvidenceId::new(1)];
+
+        let findings =
+            FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &ids).unwrap();
+        assert_eq!(findings[0].severity, FindingSeverity::Critical);
+        assert_eq!(findings[0].risk, RiskLevel::Critical);
+        // The evidence class is still capped by the evidence itself (AST).
+        assert_eq!(findings[0].evidence_class, EvidenceClass::C);
+
+        // Changing only the policy changes severity/risk...
+        ir.policy = super::super::detector_ir::DetectorFindingPolicy::new(
+            FindingSeverity::Info,
+            RiskLevel::Low,
+        );
+        let permit2 = DetectorAdmission::admit(ir, "1.0.0", AdmissionSource::Builtin).unwrap();
+        let execution2 = permit2.execution_ref(Some(ExecutionId(1))).unwrap();
+        let findings2 =
+            FindingAssembler::assemble(permit2.admitted(), &execution2, &outcome, &ids).unwrap();
+        assert_eq!(findings2[0].severity, FindingSeverity::Info);
+        assert_eq!(findings2[0].risk, RiskLevel::Low);
     }
 }

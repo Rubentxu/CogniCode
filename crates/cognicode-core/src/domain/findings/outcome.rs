@@ -13,7 +13,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::FindingKind;
-use super::finding::{CausalStepKind, EvidenceClass, FindingSeverity, RiskLevel};
+use super::finding::{CausalStepKind, EvidenceClass};
 use crate::domain::kernel_ids::{EntityId, FactId};
 
 /// What kind of analysis produced a piece of evidence.
@@ -58,6 +58,12 @@ impl EvidenceKind {
     }
 }
 
+impl std::fmt::Display for EvidenceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
 /// A piece of evidence a backend produced, before an id is assigned.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProducedEvidence {
@@ -87,14 +93,15 @@ pub struct CausalObservation {
 }
 
 /// A match a backend observed, before evidence ids are assigned.
+///
+/// Deliberately carries **no** severity/risk: a backend observes facts, it
+/// does not decide how severe or risky the result is. Severity and risk come
+/// from the detector's [`DetectorFindingPolicy`](super::DetectorFindingPolicy),
+/// applied by the assembler.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DetectorMatch {
     /// What the match constitutes.
     pub kind: FindingKind,
-    /// Display severity (backend-proposed).
-    pub severity: FindingSeverity,
-    /// Risk (backend-proposed).
-    pub risk: RiskLevel,
     /// Human-readable message.
     pub message: String,
     /// Indices into [`DetectorOutcome::produced_evidence`].
@@ -159,8 +166,6 @@ mod tests {
             }],
             matches: vec![DetectorMatch {
                 kind: FindingKind::new("security.weak_hash").unwrap(),
-                severity: FindingSeverity::Warning,
-                risk: RiskLevel::Medium,
                 message: "weak hash".to_string(),
                 evidence: vec![0],
                 causal: vec![CausalObservation {
