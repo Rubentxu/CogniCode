@@ -33,6 +33,7 @@ use super::finding::{
     CausalStep, CausalStepKind, EvidenceClass, Finding, FindingId, FindingOrigin, FindingSeverity,
     FindingStatus, RiskLevel,
 };
+use super::namespaced::sanitize_segment;
 
 /// Namespace used for projected quality findings (`quality.<category>`).
 pub const QUALITY_NAMESPACE: &str = "quality";
@@ -42,32 +43,6 @@ pub const LEGACY_DETECTOR_ID: &str = "legacy.quality";
 
 /// Synthetic detector version for legacy quality rows.
 pub const LEGACY_DETECTOR_VERSION: &str = "legacy";
-
-/// Sanitize an arbitrary label into a non-empty `ns.name` segment.
-///
-/// Lowercases, maps non-alphanumerics to `_`, collapses runs, trims
-/// leading/trailing `_`. Falls back to `uncategorized`.
-fn sanitize_segment(input: &str) -> String {
-    let mut out = String::new();
-    let mut prev_underscore = false;
-    for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
-            prev_underscore = false;
-        } else if !prev_underscore && !out.is_empty() {
-            out.push('_');
-            prev_underscore = true;
-        }
-    }
-    while out.ends_with('_') {
-        out.pop();
-    }
-    if out.is_empty() {
-        "uncategorized".to_string()
-    } else {
-        out
-    }
-}
 
 /// Map a legacy severity string to the display severity.
 fn severity_from_str(value: &str) -> FindingSeverity {

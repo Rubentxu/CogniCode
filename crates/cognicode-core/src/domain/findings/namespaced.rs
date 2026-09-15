@@ -37,6 +37,32 @@ impl fmt::Display for NamespacedError {
 
 impl std::error::Error for NamespacedError {}
 
+/// Sanitize an arbitrary label into a valid, non-empty `ns.name` segment.
+///
+/// Lowercases, maps non-alphanumerics to `_`, collapses runs, trims
+/// leading/trailing `_`. Falls back to `uncategorized`.
+pub fn sanitize_segment(input: &str) -> String {
+    let mut out = String::new();
+    let mut prev_underscore = false;
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+            prev_underscore = false;
+        } else if !prev_underscore && !out.is_empty() {
+            out.push('_');
+            prev_underscore = true;
+        }
+    }
+    while out.ends_with('_') {
+        out.pop();
+    }
+    if out.is_empty() {
+        "uncategorized".to_string()
+    } else {
+        out
+    }
+}
+
 /// A validated `namespace.name` identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]

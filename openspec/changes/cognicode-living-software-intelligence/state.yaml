@@ -87,9 +87,19 @@ phases:
       V11; PlanLimits are now genuinely enforced where checkable
       (max_visited_nodes/max_visited_edges/max_path_count|max_result_rows) and
       error instead of truncating, with the rest documented as not enforced).
-      AST + Graph + Dataflow are FROZEN as base infrastructure. Next M6 slice:
-      7.7 Axiom importer (imported detectors always enter as Candidate); then
-      U42 kernel grounding (CausalStep -> EvidenceId -> Evidence -> Fact ->
-      Entity/Snapshot/Provenance) as the real M6 closure.
+      AST + Graph + Dataflow are FROZEN as base infrastructure.
+      e61-lsi-axiom-migration archived (umbrella 7.7: selective legacy migration,
+      NOT an axiom revival — a NormalizedLegacyRule carries explicit executable
+      semantics or nothing; translator taxonomy A/B/C/D/E where D/E are skipped
+      with stable diagnostics instead of fabricating a detector; capability
+      derived from semantics; legacy severity maps to finding POLICY only and
+      never to Gated; LegacyRuleProvenance kept beside the small semantic IR;
+      AxiomImporter creates no permits — the caller calls
+      DetectorAdmission::admit(..., AdmissionSource::Imported). 8 unit + 3 E2E
+      tests incl. U-A1..U-A8).
+      NEXT (M6 closure): U42 kernel grounding — CausalStep -> EvidenceId ->
+      canonical Evidence -> FactId -> Fact -> Entity/Snapshot/Provenance, read
+      through an EvidenceDescriptor read model, proven for AST + Graph +
+      Dataflow fixtures.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
