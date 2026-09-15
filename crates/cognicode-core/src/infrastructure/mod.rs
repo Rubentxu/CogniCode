@@ -11,6 +11,7 @@ pub mod avc;
 pub mod evidence_kernel;
 #[cfg(feature = "multimodal")]
 pub mod extraction;
+pub mod findings;
 pub mod git;
 #[cfg(feature = "multimodal")]
 pub mod github;

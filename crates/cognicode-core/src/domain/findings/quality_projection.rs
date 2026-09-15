@@ -27,9 +27,8 @@
 
 use crate::domain::ports::quality_store::QualityIssue;
 
-use super::detector_ir::{
-    DetectorAuthority, DetectorDigest, DetectorExecutionRef, DetectorId, FindingKind,
-};
+use super::detector_ir::{DetectorAuthority, DetectorExecutionRef, DetectorId, FindingKind};
+use super::digest::DetectorDigest;
 use super::finding::{
     CausalStep, CausalStepKind, EvidenceClass, Finding, FindingId, FindingOrigin, FindingSeverity,
     FindingStatus, RiskLevel,
@@ -120,6 +119,9 @@ pub fn project_quality_issue(issue: &QualityIssue) -> Result<Finding, super::Fin
         LEGACY_DETECTOR_VERSION,
         DetectorAuthority::Candidate,
         DetectorDigest::from_content(&format!("{LEGACY_DETECTOR_ID}@{LEGACY_DETECTOR_VERSION}")),
+        DetectorDigest::from_content(&format!(
+            "{LEGACY_DETECTOR_ID}@{LEGACY_DETECTOR_VERSION}@instance"
+        )),
         None,
     )?;
 

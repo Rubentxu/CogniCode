@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt;
 
+use super::digest::DetectorDigest;
 use super::namespaced::NamespacedName;
 use crate::domain::kernel_ids::ExecutionId;
 
@@ -453,11 +454,21 @@ impl DetectorIr {
             .collect()
     }
 
-    /// Stable content digest of this definition.
+    /// Digest of the detector **semantics** — `(id, requires, steps)`.
     ///
-    /// Captured in [`DetectorExecutionRef`] so a finding can be tied to the
-    /// exact detector *content* that produced it (not just its id/version).
-    pub fn digest(&self) -> DetectorDigest {
+    /// Excludes `name` and `authority`, so renaming a detector or promoting
+    /// it from `Candidate` to `Gated` does not change its semantic identity.
+    /// This is what historical replay and detector comparison key on.
+    pub fn semantic_digest(&self) -> DetectorDigest {
+        let canonical = serde_json::to_string(&(&self.id, &self.requires, &self.steps))
+            .unwrap_or_else(|_| format!("{}{:?}{:?}", self.id, self.requires, self.steps));
+        DetectorDigest::from_content(&canonical)
+    }
+
+    /// Digest of the **exact instance**, including `name` and `authority`.
+    ///
+    /// Used for audit of the admitted definition.
+    pub fn instance_digest(&self) -> DetectorDigest {
         let canonical = serde_json::to_string(self).unwrap_or_else(|_| format!("{self:?}"));
         DetectorDigest::from_content(&canonical)
     }
@@ -472,64 +483,9 @@ impl DetectorIr {
 // Execution reference (authority captured at run time)
 // ============================================================================
 
-/// Stable content digest of a detector definition (`fnv1a64:<hex>`).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct DetectorDigest(String);
-
-impl DetectorDigest {
-    /// Construct from an already-formatted digest string.
-    pub fn new(value: impl Into<String>) -> Result<Self, DetectorIrError> {
-        let value = value.into();
-        if !value.starts_with("fnv1a64:") || value.len() <= "fnv1a64:".len() {
-            return Err(DetectorIrError::InvalidDigest { value });
-        }
-        Ok(Self(value))
-    }
-
-    /// Compute the canonical digest of arbitrary content.
-    pub fn from_content(content: &str) -> Self {
-        Self(fnv1a64(content))
-    }
-
-    /// Borrow the raw digest.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl TryFrom<String> for DetectorDigest {
-    type Error = DetectorIrError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<DetectorDigest> for String {
-    fn from(value: DetectorDigest) -> Self {
-        value.0
-    }
-}
-
-impl fmt::Display for DetectorDigest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-/// FNV-1a 64-bit digest, formatted `fnv1a64:<16 hex>` (house convention).
-fn fnv1a64(data: &str) -> String {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in data.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("fnv1a64:{hash:016x}")
-}
-
 /// The detector **as executed**: id, version, the authority it held *at
-/// execution time*, its content digest, and an optional execution id.
+/// execution time*, its semantic + instance digests, and an optional
+/// execution id.
 ///
 /// Capturing authority here is what makes the AI-detector rule safe: a
 /// `Candidate` run never yields a blocking finding, even if the detector is
@@ -542,19 +498,23 @@ pub struct DetectorExecutionRef {
     pub version: String,
     /// Authority the detector held when it produced the finding.
     pub authority_at_execution: DetectorAuthority,
-    /// Content digest of the executed definition.
-    pub detector_digest: DetectorDigest,
+    /// Digest of the detector semantics (stable across name/authority).
+    pub semantic_digest: DetectorDigest,
+    /// Digest of the exact admitted instance (includes name + authority).
+    pub instance_digest: DetectorDigest,
     /// Optional link to a concrete execution record.
     pub execution_id: Option<ExecutionId>,
 }
 
 impl DetectorExecutionRef {
     /// Construct an execution reference explicitly.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: DetectorId,
         version: impl Into<String>,
         authority_at_execution: DetectorAuthority,
-        detector_digest: DetectorDigest,
+        semantic_digest: DetectorDigest,
+        instance_digest: DetectorDigest,
         execution_id: Option<ExecutionId>,
     ) -> Result<Self, DetectorIrError> {
         let version = version.into();
@@ -565,16 +525,17 @@ impl DetectorExecutionRef {
             id,
             version,
             authority_at_execution,
-            detector_digest,
+            semantic_digest,
+            instance_digest,
             execution_id,
         })
     }
 
-    /// Capture an execution reference **from** a detector definition.
+    /// Capture an execution reference **from** a raw detector definition.
     ///
-    /// This is the constructor backends should use: it records the
-    /// definition's id, its content digest and — crucially — the authority
-    /// the definition holds now.
+    /// Prefer [`AdmittedDetector::execution_ref`](super::AdmittedDetector::execution_ref)
+    /// in production: it sources the authority from the admission guard
+    /// rather than from a caller-supplied definition.
     pub fn from_definition(
         definition: &DetectorIr,
         version: impl Into<String>,
@@ -584,7 +545,8 @@ impl DetectorExecutionRef {
             definition.id.clone(),
             version,
             definition.authority,
-            definition.digest(),
+            definition.semantic_digest(),
+            definition.instance_digest(),
             execution_id,
         )
     }
@@ -592,6 +554,13 @@ impl DetectorExecutionRef {
     /// Whether the executed detector held blocking authority.
     pub fn can_block(&self) -> bool {
         self.authority_at_execution.can_block()
+    }
+
+    /// Whether the execution reference is structurally complete.
+    pub fn is_well_formed(&self) -> bool {
+        !self.version.trim().is_empty()
+            && !self.semantic_digest.as_str().is_empty()
+            && !self.instance_digest.as_str().is_empty()
     }
 }
 
@@ -609,11 +578,6 @@ pub enum DetectorIrError {
     /// A namespaced identifier is malformed.
     InvalidIdentifier {
         /// Why it was rejected.
-        value: String,
-    },
-    /// A digest string is malformed.
-    InvalidDigest {
-        /// The offending value.
         value: String,
     },
     /// No `PRODUCE` step was declared.
@@ -664,9 +628,6 @@ impl fmt::Display for DetectorIrError {
             Self::EmptyVersion => f.write_str("detector version must not be empty"),
             Self::InvalidIdentifier { value } => {
                 write!(f, "invalid namespaced identifier: {value}")
-            }
-            Self::InvalidDigest { value } => {
-                write!(f, "invalid digest `{value}` (expected `fnv1a64:<hex>`)")
             }
             Self::NoProduce => f.write_str("detector must declare at least one PRODUCE step"),
             Self::DuplicateProduce { index } => {
@@ -971,24 +932,40 @@ mod tests {
     }
 
     #[test]
-    fn digest_is_stable_and_order_sensitive() {
+    fn semantic_digest_is_stable_and_content_sensitive() {
         let a = detector(caps([AnalysisCapability::GraphQuery]), flow_steps());
         let b = detector(caps([AnalysisCapability::GraphQuery]), flow_steps());
         assert_eq!(
-            a.digest(),
-            b.digest(),
+            a.semantic_digest(),
+            b.semantic_digest(),
             "identical definitions digest equally"
         );
 
         let mut c = a.clone();
-        c.name = "different".to_string();
+        c.steps.pop();
         assert_ne!(
-            a.digest(),
-            c.digest(),
-            "a content change changes the digest"
+            a.semantic_digest(),
+            c.semantic_digest(),
+            "a step change changes the semantic digest"
         );
 
-        assert!(a.digest().as_str().starts_with("fnv1a64:"));
+        assert!(a.semantic_digest().as_str().starts_with("sha256:"));
+    }
+
+    #[test]
+    fn semantic_digest_ignores_name_and_authority() {
+        let mut a = detector(caps([AnalysisCapability::GraphQuery]), flow_steps());
+        let baseline = a.semantic_digest();
+
+        // Renaming does not change the algorithm.
+        a.name = "renamed".to_string();
+        assert_eq!(a.semantic_digest(), baseline);
+
+        // Promoting Candidate -> Gated does not change the algorithm...
+        a.authority = DetectorAuthority::Gated;
+        assert_eq!(a.semantic_digest(), baseline);
+        // ...but it does change the instance digest.
+        assert_ne!(a.instance_digest(), baseline);
     }
 
     #[test]
@@ -1003,20 +980,29 @@ mod tests {
             execution.authority_at_execution,
             DetectorAuthority::Candidate
         );
-        assert_eq!(execution.detector_digest, ir.digest());
+        assert_eq!(execution.semantic_digest, ir.semantic_digest());
+        assert_eq!(execution.instance_digest, ir.instance_digest());
         assert_eq!(execution.execution_id, Some(ExecutionId(9)));
+        assert!(execution.is_well_formed());
         assert!(!execution.can_block());
     }
 
     #[test]
-    fn execution_ref_rejects_empty_version_and_bad_digest() {
+    fn execution_ref_rejects_empty_version() {
         let id = DetectorId::new("security.sql_injection").unwrap();
         let digest = DetectorDigest::from_content("x");
         assert_eq!(
-            DetectorExecutionRef::new(id, "", DetectorAuthority::Gated, digest, None).unwrap_err(),
+            DetectorExecutionRef::new(
+                id,
+                "",
+                DetectorAuthority::Gated,
+                digest.clone(),
+                digest,
+                None,
+            )
+            .unwrap_err(),
             DetectorIrError::EmptyVersion
         );
-        assert!(DetectorDigest::new("not-a-digest").is_err());
     }
 
     #[test]

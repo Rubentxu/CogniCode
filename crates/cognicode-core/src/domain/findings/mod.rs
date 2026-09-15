@@ -19,21 +19,46 @@
 //! - [`quality_projection`] — lift legacy `QualityIssue` rows into
 //!   [`Finding`] (conservative, non-blocking).
 
+pub mod admission;
+pub mod assembler;
+pub mod ast_backend;
 pub mod detector_ir;
+pub mod digest;
+pub mod execution;
 pub mod finding;
 pub mod namespaced;
+pub mod outcome;
+pub mod ports;
 pub mod quality_projection;
+pub mod verifier;
 
 pub use crate::domain::kernel_ids::{EntityId, EvidenceId, FactId};
+pub use admission::{
+    AdmissionError, AdmissionRef, AdmissionSource, AdmittedDetector, DetectorAdmission,
+    DetectorVersion, PromotionApproval,
+};
+pub use assembler::{AssemblyError, FindingAssembler};
+pub use ast_backend::{AstBackend, AstConstruct, AstInput, AstUnit};
 pub use detector_ir::{
-    AnalysisCapability, DetectorAuthority, DetectorDigest, DetectorExecutionRef, DetectorId,
-    DetectorIr, DetectorIrError, DetectorStep, EscalationTier, FindingKind, SubjectPattern,
+    AnalysisCapability, DetectorAuthority, DetectorExecutionRef, DetectorId, DetectorIr,
+    DetectorIrError, DetectorStep, EscalationTier, FindingKind, SubjectPattern,
+};
+pub use digest::{DetectorDigest, DigestError, sha256_hex};
+pub use execution::{
+    AnalysisInput, BackendError, BackendRegistry, DetectorBackend, DetectorExecutor,
+    ExecutionError, ExecutionRecord, PlanError,
 };
 pub use finding::{
     CausalStep, CausalStepKind, EvidenceClass, Finding, FindingError, FindingGate, FindingId,
     FindingOrigin, FindingSeverity, FindingStatus, RiskLevel,
 };
 pub use namespaced::{NamespacedError, NamespacedName};
+pub use outcome::{
+    CausalObservation, DetectorDiagnostic, DetectorMatch, DetectorOutcome, EvidenceKind,
+    ProducedEvidence,
+};
+pub use ports::{EvidenceError, EvidenceLookup, EvidenceSink};
 pub use quality_projection::{
     LEGACY_DETECTOR_ID, LEGACY_DETECTOR_VERSION, QUALITY_NAMESPACE, project_quality_issue,
 };
+pub use verifier::{FindingVerifier, VerificationError};

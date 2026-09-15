@@ -400,7 +400,7 @@ impl Finding {
         !self.evidence.is_empty()
             && !self.causal_chain.is_empty()
             && !self.detector.version.trim().is_empty()
-            && !self.detector.detector_digest.as_str().is_empty()
+            && !self.detector.semantic_digest.as_str().is_empty()
             && self
                 .causal_chain
                 .iter()
@@ -505,7 +505,8 @@ mod tests {
             DetectorId::new("security.sql_injection").unwrap(),
             "1.0.0",
             authority,
-            super::super::detector_ir::DetectorDigest::from_content("detector-content"),
+            super::super::digest::DetectorDigest::from_content("detector-content"),
+            super::super::digest::DetectorDigest::from_content("detector-content"),
             None,
         )
         .unwrap()

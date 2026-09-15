@@ -1,0 +1,375 @@
+//! Finding assembler — the single place that turns backend output into
+//! [`Finding`]s (M6, cycle e57).
+//!
+//! Backends emit raw [`DetectorOutcome`]s; only the assembler assigns the
+//! evidence class, the detector execution reference, evidence ids, the
+//! origin, the causal chain and the finding id. This is what keeps every
+//! backend (AST now; graph/dataflow later) producing findings the same way,
+//! so no backend can invent its own `Finding` shape or inflate its class.
+//!
+//! Pure domain: no I/O.
+
+use std::fmt;
+
+use super::admission::AdmittedDetector;
+use super::detector_ir::DetectorExecutionRef;
+use super::finding::{CausalStep, EvidenceClass, Finding, FindingError, FindingId, FindingOrigin};
+use super::outcome::{DetectorMatch, DetectorOutcome};
+use crate::domain::kernel_ids::EvidenceId;
+
+/// Assigns evidence ids, class, execution ref and causal chain.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FindingAssembler;
+
+impl FindingAssembler {
+    /// Assemble findings from a backend outcome.
+    ///
+    /// `evidence_ids` must be index-aligned with
+    /// [`DetectorOutcome::produced_evidence`] (the executor records evidence
+    /// in order).
+    pub fn assemble(
+        admitted: &AdmittedDetector,
+        execution: &DetectorExecutionRef,
+        outcome: &DetectorOutcome,
+        evidence_ids: &[EvidenceId],
+    ) -> Result<Vec<Finding>, AssemblyError> {
+        if evidence_ids.len() != outcome.produced_evidence.len() {
+            return Err(AssemblyError::EvidenceArity {
+                ids: evidence_ids.len(),
+                produced: outcome.produced_evidence.len(),
+            });
+        }
+
+        let mut findings = Vec::with_capacity(outcome.matches.len());
+        for (match_index, m) in outcome.matches.iter().enumerate() {
+            findings.push(Self::assemble_one(
+                admitted,
+                execution,
+                outcome,
+                evidence_ids,
+                match_index,
+                m,
+            )?);
+        }
+        Ok(findings)
+    }
+
+    fn assemble_one(
+        admitted: &AdmittedDetector,
+        execution: &DetectorExecutionRef,
+        outcome: &DetectorOutcome,
+        evidence_ids: &[EvidenceId],
+        match_index: usize,
+        m: &DetectorMatch,
+    ) -> Result<Finding, AssemblyError> {
+        // Resolve the match's evidence ids.
+        let mut evidence = Vec::with_capacity(m.evidence.len());
+        for &index in &m.evidence {
+            let id = evidence_ids
+                .get(index)
+                .copied()
+                .ok_or(AssemblyError::EvidenceIndexOutOfRange { match_index, index })?;
+            evidence.push(id);
+        }
+
+        // The assembler owns the class: the strongest class its evidence
+        // supports, or D when there is no evidence.
+        let evidence_class = m
+            .evidence
+            .iter()
+            .filter_map(|i| outcome.produced_evidence.get(*i))
+            .map(|pe| pe.kind.class())
+            .min()
+            .unwrap_or(EvidenceClass::D);
+
+        // Build the causal chain, resolving evidence indices and requiring
+        // every causal evidence id to belong to this finding's evidence set.
+        let mut causal_chain = Vec::with_capacity(m.causal.len());
+        for (step, obs) in m.causal.iter().enumerate() {
+            let evidence_id = match obs.evidence {
+                None => None,
+                Some(index) => {
+                    let id = evidence_ids.get(index).copied().ok_or(
+                        AssemblyError::CausalEvidenceOutOfRange {
+                            match_index,
+                            step,
+                            index,
+                        },
+                    )?;
+                    if !evidence.contains(&id) {
+                        return Err(AssemblyError::CausalEvidenceNotInFinding {
+                            match_index,
+                            step,
+                            evidence: id,
+                        });
+                    }
+                    Some(id)
+                }
+            };
+
+            let mut causal =
+                CausalStep::new(obs.kind, obs.detail.clone()).map_err(AssemblyError::Invalid)?;
+            causal.subject = obs.subject;
+            causal.fact = obs.fact;
+            causal.evidence = evidence_id;
+            causal_chain.push(causal);
+        }
+
+        let execution_key = execution.execution_id.map(|e| e.0).unwrap_or(0);
+        let id = FindingId::new(format!(
+            "{}:exec{}:m{}",
+            admitted.definition.id, execution_key, match_index
+        ))
+        .map_err(AssemblyError::Invalid)?;
+
+        let message = if m.message.trim().is_empty() {
+            format!("detector {} matched", admitted.definition.id)
+        } else {
+            m.message.clone()
+        };
+
+        let finding = Finding {
+            id,
+            kind: m.kind.clone(),
+            origin: FindingOrigin::Detector,
+            severity: m.severity,
+            risk: m.risk,
+            evidence_class,
+            evidence,
+            detector: execution.clone(),
+            status: super::finding::FindingStatus::Open,
+            message,
+            causal_chain,
+        };
+
+        finding.validate().map_err(AssemblyError::Invalid)?;
+        Ok(finding)
+    }
+}
+
+/// Why assembly failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AssemblyError {
+    /// `evidence_ids` and `produced_evidence` lengths differ.
+    EvidenceArity {
+        /// Number of ids provided.
+        ids: usize,
+        /// Number of evidence produced.
+        produced: usize,
+    },
+    /// A match referenced an evidence index out of range.
+    EvidenceIndexOutOfRange {
+        /// Match index.
+        match_index: usize,
+        /// Referenced evidence index.
+        index: usize,
+    },
+    /// A causal observation referenced an evidence index out of range.
+    CausalEvidenceOutOfRange {
+        /// Match index.
+        match_index: usize,
+        /// Causal step index.
+        step: usize,
+        /// Referenced evidence index.
+        index: usize,
+    },
+    /// A causal step pointed at evidence not in the finding's evidence set.
+    CausalEvidenceNotInFinding {
+        /// Match index.
+        match_index: usize,
+        /// Causal step index.
+        step: usize,
+        /// The offending evidence id.
+        evidence: EvidenceId,
+    },
+    /// The assembled finding failed structural validation.
+    Invalid(FindingError),
+}
+
+impl fmt::Display for AssemblyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EvidenceArity { ids, produced } => write!(
+                f,
+                "evidence id count ({ids}) does not match produced evidence ({produced})"
+            ),
+            Self::EvidenceIndexOutOfRange { match_index, index } => {
+                write!(
+                    f,
+                    "match {match_index} references evidence index {index} out of range"
+                )
+            }
+            Self::CausalEvidenceOutOfRange {
+                match_index,
+                step,
+                index,
+            } => write!(
+                f,
+                "match {match_index} causal step {step} references evidence index {index} out of range"
+            ),
+            Self::CausalEvidenceNotInFinding {
+                match_index,
+                step,
+                evidence,
+            } => write!(
+                f,
+                "match {match_index} causal step {step} references {evidence} not in the finding's evidence"
+            ),
+            Self::Invalid(err) => write!(f, "assembled finding is invalid: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for AssemblyError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::findings::admission::{AdmissionSource, DetectorAdmission};
+    use crate::domain::findings::detector_ir::{
+        DetectorId, DetectorIr, DetectorStep, FindingKind, SubjectPattern,
+    };
+    use crate::domain::findings::finding::{CausalStepKind, FindingSeverity, RiskLevel};
+    use crate::domain::findings::outcome::{CausalObservation, EvidenceKind, ProducedEvidence};
+    use crate::domain::kernel_ids::ExecutionId;
+    use std::collections::BTreeSet;
+
+    fn admitted() -> super::super::admission::AdmittedDetector {
+        let ir = DetectorIr {
+            id: DetectorId::new("security.weak_hash").unwrap(),
+            name: "weak hash".to_string(),
+            requires: BTreeSet::new(),
+            authority: super::super::DetectorAuthority::Gated,
+            steps: vec![
+                DetectorStep::Match {
+                    subject: SubjectPattern::new("security.md5_usage").unwrap(),
+                },
+                DetectorStep::Produce {
+                    kind: FindingKind::new("security.weak_hash").unwrap(),
+                },
+            ],
+        };
+        DetectorAdmission::admit(ir, "1.0.0", AdmissionSource::HumanCurated).unwrap()
+    }
+
+    fn outcome_with(kind: EvidenceKind) -> DetectorOutcome {
+        DetectorOutcome {
+            produced_evidence: vec![ProducedEvidence {
+                kind,
+                detail: "md5 at src/hash.rs:12".to_string(),
+                subject: None,
+                fact: None,
+            }],
+            matches: vec![DetectorMatch {
+                kind: FindingKind::new("security.weak_hash").unwrap(),
+                severity: FindingSeverity::Warning,
+                risk: RiskLevel::Medium,
+                message: "MD5 used".to_string(),
+                evidence: vec![0],
+                causal: vec![CausalObservation {
+                    kind: CausalStepKind::Source,
+                    detail: "md5 usage".to_string(),
+                    subject: None,
+                    fact: None,
+                    evidence: Some(0),
+                }],
+            }],
+            diagnostics: vec![],
+        }
+    }
+
+    #[test]
+    fn assembles_a_finding_with_assigned_class_and_execution() {
+        let admitted = admitted();
+        let execution = admitted.execution_ref(Some(ExecutionId(5))).unwrap();
+        let outcome = outcome_with(EvidenceKind::AstMatch);
+        let ids = vec![EvidenceId::new(11)];
+
+        let findings = FindingAssembler::assemble(&admitted, &execution, &outcome, &ids).unwrap();
+        assert_eq!(findings.len(), 1);
+        let f = &findings[0];
+        assert_eq!(f.id.as_str(), "security.weak_hash:exec5:m0");
+        assert_eq!(f.evidence, vec![EvidenceId::new(11)]);
+        assert_eq!(
+            f.evidence_class,
+            EvidenceClass::C,
+            "AST evidence -> class C"
+        );
+        assert_eq!(f.detector.execution_id, Some(ExecutionId(5)));
+        assert_eq!(f.origin, FindingOrigin::Detector);
+        assert_eq!(f.causal_chain[0].evidence, Some(EvidenceId::new(11)));
+        assert!(f.validate().is_ok());
+    }
+
+    #[test]
+    fn class_is_the_strongest_of_the_evidence() {
+        let admitted = admitted();
+        let execution = admitted.execution_ref(None).unwrap();
+        let mut outcome = outcome_with(EvidenceKind::AstMatch);
+        outcome.produced_evidence.push(ProducedEvidence {
+            kind: EvidenceKind::RuntimeTrace,
+            detail: "observed".to_string(),
+            subject: None,
+            fact: None,
+        });
+        outcome.matches[0].evidence = vec![0, 1];
+        let ids = vec![EvidenceId::new(1), EvidenceId::new(2)];
+
+        let findings = FindingAssembler::assemble(&admitted, &execution, &outcome, &ids).unwrap();
+        assert_eq!(findings[0].evidence_class, EvidenceClass::A);
+    }
+
+    #[test]
+    fn no_evidence_yields_class_d() {
+        let admitted = admitted();
+        let execution = admitted.execution_ref(None).unwrap();
+        let mut outcome = outcome_with(EvidenceKind::Hypothesis);
+        outcome.matches[0].evidence = vec![];
+        outcome.matches[0].causal[0].evidence = None;
+        let ids = vec![EvidenceId::new(1)];
+        let findings = FindingAssembler::assemble(&admitted, &execution, &outcome, &ids).unwrap();
+        assert_eq!(findings[0].evidence_class, EvidenceClass::D);
+        assert!(findings[0].evidence.is_empty());
+    }
+
+    #[test]
+    fn rejects_arity_mismatch() {
+        let admitted = admitted();
+        let execution = admitted.execution_ref(None).unwrap();
+        let outcome = outcome_with(EvidenceKind::AstMatch);
+        let err = FindingAssembler::assemble(&admitted, &execution, &outcome, &[]).unwrap_err();
+        assert_eq!(
+            err,
+            AssemblyError::EvidenceArity {
+                ids: 0,
+                produced: 1
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_causal_evidence_not_in_finding() {
+        let admitted = admitted();
+        let execution = admitted.execution_ref(None).unwrap();
+        let mut outcome = outcome_with(EvidenceKind::AstMatch);
+        outcome.produced_evidence.push(ProducedEvidence {
+            kind: EvidenceKind::AstMatch,
+            detail: "other".to_string(),
+            subject: None,
+            fact: None,
+        });
+        // Evidence set is [0]; causal step points at index 1.
+        outcome.matches[0].causal[0].evidence = Some(1);
+        let ids = vec![EvidenceId::new(1), EvidenceId::new(2)];
+
+        let err = FindingAssembler::assemble(&admitted, &execution, &outcome, &ids).unwrap_err();
+        assert_eq!(
+            err,
+            AssemblyError::CausalEvidenceNotInFinding {
+                match_index: 0,
+                step: 0,
+                evidence: EvidenceId::new(2),
+            }
+        );
+    }
+}
