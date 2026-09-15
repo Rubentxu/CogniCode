@@ -844,9 +844,29 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn detect_opencode_finds_config() {
-        // The user's existing opencode config makes this true
-        assert!(std::path::Path::new(&opencode_config_path()).exists());
+        // Hermetic: give the child a temp HOME with a stub opencode config
+        // instead of relying on the developer's real ~/.config/opencode.
+        let tmp = tempfile::tempdir().expect("tempdir for HOME");
+        let prev_home = std::env::var_os("HOME");
+        // SAFETY: #[serial] excludes concurrent env mutation.
+        unsafe {
+            std::env::set_var("HOME", tmp.path());
+        }
+        let oc_dir = tmp.path().join(".config/opencode");
+        std::fs::create_dir_all(&oc_dir).expect("mkdir opencode config dir");
+        std::fs::write(oc_dir.join("opencode.json"), "{}").expect("write stub config");
+
+        let detected = detect_opencode();
+
+        unsafe {
+            match &prev_home {
+                Some(h) => std::env::set_var("HOME", h),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+        assert!(detected, "detect_opencode should find the stub config");
     }
     #[test]
     #[serial]

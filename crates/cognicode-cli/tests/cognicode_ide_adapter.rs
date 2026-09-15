@@ -20,24 +20,15 @@
 //! The IDE adapters look up their config paths under `$HOME`
 //! (`~/.config/opencode/opencode.json`, etc.) — they do NOT honour
 //! `--home`. To isolate the tests from the developer's real `$HOME`,
-//! each test writes a tiny shell wrapper at setup time:
-//!
-//! ```text
-//! #!/bin/sh
-//! export HOME="$1"; shift; exec "$@"
-//! ```
-//!
-//! The test then invokes the wrapper with the tempdir as `$1` and
-//! `cogh` plus its arguments as the rest. This redirect propagates
-//! only to the subprocess tree, so the test process's own `$HOME`
-//! is untouched. Each test owns its own wrapper + tempdir, so
-//! parallel execution is safe.
+//! each test gives the spawned `cogh` its own `$HOME` via
+//! `Command::env("HOME", &fake_home)`. This propagates only to the
+//! child process, so the test process's own `$HOME` is untouched.
+//! Each test owns its own temp `$HOME`, so parallel execution is safe.
 //!
 //! TDD contract: every test is RED before this commit, GREEN after.
 
 use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output};
 
 use tempfile::TempDir;
@@ -47,43 +38,21 @@ fn cogh() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_cogh"))
 }
 
-/// Build a tiny shell wrapper that sets `HOME=$1` then `exec`s the
-/// remaining args. Returns the wrapper's path (lives in a tempdir
-/// that is cleaned up at the end of the test).
-fn home_wrapper() -> (TempDir, PathBuf) {
-    let dir = tempfile::tempdir().expect("tempdir for wrapper");
-    let path = dir.path().join("with-home.sh");
-    let mut f = fs::File::create(&path).expect("create wrapper");
-    writeln!(
-        f,
-        "#!/bin/sh\nexport HOME=\"$1\"; shift; exec \"$@\"\n"
-    )
-    .expect("write wrapper");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&path).expect("stat wrapper").permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&path, perms).expect("chmod wrapper");
-    }
-    (dir, path)
+/// Create a fresh temp dir to act as the child process's `$HOME`.
+fn fake_home() -> TempDir {
+    tempfile::tempdir().expect("tempdir for fake HOME")
 }
 
-/// Run `cogh --home <cogh_home> <args...>` under the wrapper with the
-/// given `home` redirected to `fake_home`.
-fn run_with_home(
-    wrapper: &Path,
-    fake_home: &Path,
-    cogh_home: &Path,
-    args: &[&str],
-) -> Output {
-    let mut cmd = Command::new(wrapper);
-    cmd.arg(fake_home).arg(cogh());
+/// Run `cogh --home <cogh_home> <args...>` with `HOME` set to
+/// `fake_home` for the child process only.
+fn run_with_home(fake_home: &Path, cogh_home: &Path, args: &[&str]) -> Output {
+    let mut cmd = Command::new(cogh());
+    cmd.env("HOME", fake_home);
     cmd.arg("--home").arg(cogh_home);
     for a in args {
         cmd.arg(a);
     }
-    cmd.output().expect("spawn cogh via wrapper")
+    cmd.output().expect("spawn cogh")
 }
 
 fn stdout(out: &Output) -> String {
@@ -91,8 +60,8 @@ fn stdout(out: &Output) -> String {
 }
 
 /// Initialise `<cogh_home>` via `cogh init` under the fake HOME.
-fn init_home(wrapper: &Path, fake_home: &Path, cogh_home: &Path) -> Output {
-    let out = run_with_home(wrapper, fake_home, cogh_home, &["init"]);
+fn init_home(fake_home: &Path, cogh_home: &Path) -> Output {
+    let out = run_with_home(fake_home, cogh_home, &["init"]);
     assert!(
         out.status.success(),
         "cogh init must succeed; got {:?}\nstderr: {}",
@@ -117,8 +86,8 @@ const OPENCODE_WITH_CHRONOS: &str = r#"{
 
 #[test]
 fn cogh_ide_detect_lists_opencode_when_config_present() {
-    let (wrapper_dir, wrapper) = home_wrapper();
-    let fake_home = wrapper_dir.path();
+    let fake_home_dir = fake_home();
+    let fake_home = fake_home_dir.path();
     let cogh_home = tempfile::tempdir().expect("cogh home");
 
     // Stub opencode config so detect finds it.
@@ -126,7 +95,7 @@ fn cogh_ide_detect_lists_opencode_when_config_present() {
     fs::create_dir_all(&oc_dir).expect("mkdir opencode config dir");
     fs::write(oc_dir.join("opencode.json"), "{}").expect("write opencode config");
 
-    let out = run_with_home(&wrapper, fake_home, cogh_home.path(), &["ide", "detect"]);
+    let out = run_with_home(fake_home, cogh_home.path(), &["ide", "detect"]);
     assert!(
         out.status.success(),
         "cogh ide detect must exit 0; got {:?}\nstderr: {}",
@@ -150,12 +119,12 @@ fn cogh_ide_detect_lists_opencode_when_config_present() {
 
 #[test]
 fn cogh_ide_detect_lists_no_ides_on_empty_home() {
-    let (wrapper_dir, wrapper) = home_wrapper();
-    let fake_home = wrapper_dir.path();
+    let fake_home_dir = fake_home();
+    let fake_home = fake_home_dir.path();
     let cogh_home = tempfile::tempdir().expect("cogh home");
 
     // Empty HOME — no IDE configs.
-    let out = run_with_home(&wrapper, fake_home, cogh_home.path(), &["ide", "detect"]);
+    let out = run_with_home(fake_home, cogh_home.path(), &["ide", "detect"]);
     assert!(
         out.status.success(),
         "cogh ide detect must exit 0 on empty home; got {:?}",
@@ -178,11 +147,11 @@ fn cogh_ide_detect_lists_no_ides_on_empty_home() {
 
 #[test]
 fn cogh_init_includes_three_ide_plugins() {
-    let (wrapper_dir, wrapper) = home_wrapper();
-    let fake_home = wrapper_dir.path();
+    let fake_home_dir = fake_home();
+    let fake_home = fake_home_dir.path();
     let cogh_home = tempfile::tempdir().expect("cogh home");
 
-    let _ = init_home(&wrapper, fake_home, cogh_home.path());
+    let _ = init_home(fake_home, cogh_home.path());
 
     // As of v0.94.15 the bundled plugins are mcp-server, skills-cognicode-core,
     // sandbox-templates, zcode, claude, codex. (opencode is NOT bundled — it's
@@ -207,18 +176,13 @@ fn cogh_init_includes_three_ide_plugins() {
 
 #[test]
 fn cogh_plugin_list_shows_ide_plugins_with_manifests() {
-    let (wrapper_dir, wrapper) = home_wrapper();
-    let fake_home = wrapper_dir.path();
+    let fake_home_dir = fake_home();
+    let fake_home = fake_home_dir.path();
     let cogh_home = tempfile::tempdir().expect("cogh home");
 
-    let _ = init_home(&wrapper, fake_home, cogh_home.path());
+    let _ = init_home(fake_home, cogh_home.path());
 
-    let out = run_with_home(
-        &wrapper,
-        fake_home,
-        cogh_home.path(),
-        &["plugin", "list"],
-    );
+    let out = run_with_home(fake_home, cogh_home.path(), &["plugin", "list"]);
     assert!(
         out.status.success(),
         "cogh plugin list must exit 0; got {:?}",
@@ -240,8 +204,8 @@ fn cogh_plugin_list_shows_ide_plugins_with_manifests() {
 
 #[test]
 fn cogh_ide_install_opencode_writes_mcp_entry_preserving_existing() {
-    let (wrapper_dir, wrapper) = home_wrapper();
-    let fake_home = wrapper_dir.path();
+    let fake_home_dir = fake_home();
+    let fake_home = fake_home_dir.path();
     let cogh_home = tempfile::tempdir().expect("cogh home");
 
     // Stub opencode config with a pre-existing MCP entry.
@@ -250,10 +214,9 @@ fn cogh_ide_install_opencode_writes_mcp_entry_preserving_existing() {
     let oc_config = oc_dir.join("opencode.json");
     fs::write(&oc_config, OPENCODE_WITH_CHRONOS).expect("write opencode config");
 
-    let _ = init_home(&wrapper, fake_home, cogh_home.path());
+    let _ = init_home(fake_home, cogh_home.path());
 
     let out = run_with_home(
-        &wrapper,
         fake_home,
         cogh_home.path(),
         &["ide", "install", "opencode", "--plugin", "mcp-server"],
@@ -284,8 +247,8 @@ fn cogh_ide_install_opencode_writes_mcp_entry_preserving_existing() {
 
 #[test]
 fn cogh_ide_uninstall_opencode_removes_mcp_entry() {
-    let (wrapper_dir, wrapper) = home_wrapper();
-    let fake_home = wrapper_dir.path();
+    let fake_home_dir = fake_home();
+    let fake_home = fake_home_dir.path();
     let cogh_home = tempfile::tempdir().expect("cogh home");
 
     // Stub opencode config with BOTH entries so we can assert the
@@ -305,10 +268,9 @@ fn cogh_ide_uninstall_opencode_removes_mcp_entry() {
     )
     .expect("write opencode config");
 
-    let _ = init_home(&wrapper, fake_home, cogh_home.path());
+    let _ = init_home(fake_home, cogh_home.path());
 
     let out = run_with_home(
-        &wrapper,
         fake_home,
         cogh_home.path(),
         &["ide", "uninstall", "opencode", "--version", "0.94.15"],
@@ -338,8 +300,8 @@ fn cogh_ide_uninstall_opencode_removes_mcp_entry() {
 
 #[test]
 fn cogh_ide_install_zcode_writes_zcode_specific_path() {
-    let (wrapper_dir, wrapper) = home_wrapper();
-    let fake_home = wrapper_dir.path();
+    let fake_home_dir = fake_home();
+    let fake_home = fake_home_dir.path();
     let cogh_home = tempfile::tempdir().expect("cogh home");
 
     // Stub zcode config.
@@ -348,10 +310,9 @@ fn cogh_ide_install_zcode_writes_zcode_specific_path() {
     let zc_config = zc_dir.join("config.json");
     fs::write(&zc_config, "{}").expect("write zcode config");
 
-    let _ = init_home(&wrapper, fake_home, cogh_home.path());
+    let _ = init_home(fake_home, cogh_home.path());
 
     let out = run_with_home(
-        &wrapper,
         fake_home,
         cogh_home.path(),
         &["ide", "install", "zcode", "--plugin", "mcp-server"],

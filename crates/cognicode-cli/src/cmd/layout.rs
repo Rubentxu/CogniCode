@@ -416,9 +416,56 @@ pub fn cmd_plugin_update(home: &CognicodeHome, plugin: &str) -> Result<()> {
     Ok(())
 }
 
+/// Shared test support for tests that need an isolated `COGNICODE_HOME`.
+///
+/// `cognicode_home()` reads process-global env, so any test that exercises
+/// code reaching it must both (a) point `COGNICODE_HOME` at a temp dir, and
+/// (b) be marked `#[serial]` to avoid racing other env-mutating tests.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::ffi::OsString;
+    use std::path::Path;
+
+    /// Redirect `COGNICODE_HOME` to a fresh temp dir, restoring the previous
+    /// value on drop. Callers MUST be `#[serial]`.
+    pub(crate) struct TempCognicodeHome {
+        dir: tempfile::TempDir,
+        prev: Option<OsString>,
+    }
+
+    impl TempCognicodeHome {
+        pub(crate) fn new() -> Self {
+            let dir = tempfile::tempdir().expect("tempdir for COGNICODE_HOME");
+            let prev = std::env::var_os("COGNICODE_HOME");
+            // SAFETY: callers are #[serial]; no concurrent env mutation.
+            unsafe {
+                std::env::set_var("COGNICODE_HOME", dir.path());
+            }
+            Self { dir, prev }
+        }
+
+        pub(crate) fn path(&self) -> &Path {
+            self.dir.path()
+        }
+    }
+
+    impl Drop for TempCognicodeHome {
+        fn drop(&mut self) {
+            // SAFETY: callers are #[serial]; no concurrent env mutation.
+            unsafe {
+                match &self.prev {
+                    Some(v) => std::env::set_var("COGNICODE_HOME", v),
+                    None => std::env::remove_var("COGNICODE_HOME"),
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn resolve_from_explicit_path() {
@@ -428,6 +475,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn resolve_from_env_var() {
         let tmp = std::env::temp_dir().join("cogh-test-env");
         // SAFETY: tests in the same process can race on env vars; we use

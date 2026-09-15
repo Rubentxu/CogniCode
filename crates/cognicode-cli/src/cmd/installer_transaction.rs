@@ -357,6 +357,8 @@ impl InstallerTransaction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout::test_support::TempCognicodeHome;
+    use serial_test::serial;
 
     /// The embedded bundle must be co-versioned with the crate.
     ///
@@ -401,7 +403,11 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn advance_skips_through_all_stages() {
+        // Reaches filesystem stages (cache/shims/install dirs) via
+        // `cognicode_home()`, so isolate COGNICODE_HOME.
+        let _home = TempCognicodeHome::new();
         // Use 0 components so Downloading stage is a no-op (no network call).
         // This tests that the stage state machine advances correctly.
         let yaml = r#"
@@ -455,7 +461,10 @@ components: []
     }
 
     #[test]
+    #[serial]
     fn commit_writes_manifest_file() {
+        // Writes to `cognicode_home()/install/<version>/manifest.yaml`.
+        let _home = TempCognicodeHome::new();
         let yaml = r#"
 apiVersion: cognicode.bundle/v1
 version: "0.94.0"

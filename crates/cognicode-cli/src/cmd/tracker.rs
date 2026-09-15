@@ -35,9 +35,11 @@ pub fn read_version() -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::env;
 
     #[test]
+    #[serial]
     fn write_and_read_version() {
         // Use a temp directory to avoid polluting the real tracker
         let tmp = env::temp_dir().join(format!("cogh-tracker-test-{}", process_id()));

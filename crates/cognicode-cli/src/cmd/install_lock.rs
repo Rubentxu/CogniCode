@@ -61,9 +61,13 @@ pub fn release_lock(guard: LockGuard) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout::test_support::TempCognicodeHome;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn lock_acquire_and_release() {
+        let _home = TempCognicodeHome::new();
         let guard = acquire_lock().unwrap();
         let path = lock_path();
         assert!(path.exists(), "lock file should exist");
@@ -72,7 +76,9 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn lock_guard_releases_on_drop() {
+        let _home = TempCognicodeHome::new();
         let guard = acquire_lock().unwrap();
         let path = lock_path();
         assert!(path.exists());

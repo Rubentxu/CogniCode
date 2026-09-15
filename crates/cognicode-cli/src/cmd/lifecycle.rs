@@ -170,6 +170,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn doctor_reports_clean_install() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-doc-{}", std::process::id()));
         setup_temp_home(&tmp).unwrap();
@@ -183,6 +184,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn install_creates_mcp_server_version_dir() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-inst-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
@@ -265,6 +267,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn uninstall_opencode_ide_removes_entry_and_skills() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-oc-un-{}", std::process::id()));
         setup_temp_home(&tmp).unwrap();
@@ -482,6 +485,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn plugin_list_shows_bundled_plugins() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-pl-{}", std::process::id()));
         setup_temp_home(&tmp).unwrap();
@@ -579,6 +583,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn install_lock_acquire_creates_lock_file() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-lock-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
@@ -626,6 +631,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires bundle version to match CARGO_PKG_VERSION"]
+    #[serial]
     fn test_cogh_install_runs_successfully() {
         let temp_home = tempfile::tempdir().unwrap();
         let original_home = std::env::var("HOME").ok();
@@ -673,6 +679,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_cogh_list_shows_installed() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-list-{}", std::process::id()));
         setup_temp_home(&tmp).unwrap();
@@ -688,6 +695,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_cogh_current_returns_version() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-current-{}", std::process::id()));
         setup_temp_home(&tmp).unwrap();
@@ -703,6 +711,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_cogh_update_respects_lockfile() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-update-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
@@ -765,6 +774,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_cogh_doctor_reports_health() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-doctor-{}", std::process::id()));
         setup_temp_home(&tmp).unwrap();
@@ -782,6 +792,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_install_lock_acquire_and_release() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-lock-para-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
@@ -833,6 +844,7 @@ mod tests {
     // E32-I: Self-application test — install OpenCode adapter locally
 
     #[test]
+    #[serial]
     fn test_self_apply_opencode_adapter() {
         // Skip if OpenCode is not detected
         if !detect_opencode() {

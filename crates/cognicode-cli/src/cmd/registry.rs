@@ -143,19 +143,20 @@ mod tests {
     fn sha256_of_empty_file() {
         // sha256 of zero bytes is
         // e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-        let tmp = std::env::temp_dir().join(format!("cogh-sha-{}.bin", std::process::id()));
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tmp = dir.path().join("empty.bin");
         std::fs::write(&tmp, b"").unwrap();
         verify_sha256(
             &tmp,
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         )
         .unwrap();
-        let _ = std::fs::remove_file(&tmp);
     }
 
     #[test]
     fn sha256_detects_mismatch() {
-        let tmp = std::env::temp_dir().join(format!("cogh-sha-{}.bin", std::process::id()));
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tmp = dir.path().join("hello.bin");
         std::fs::write(&tmp, b"hello").unwrap();
         assert!(
             verify_sha256(
@@ -164,7 +165,6 @@ mod tests {
             )
             .is_err()
         );
-        let _ = std::fs::remove_file(&tmp);
     }
 
     #[test]
