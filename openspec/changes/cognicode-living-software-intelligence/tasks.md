@@ -1,5 +1,9 @@
 # Tasks: Living Software Intelligence Foundation
 
+> **Completion state is authoritative in `state.yaml`.** The checkboxes below
+> describe the original decomposition and are intentionally left immutable;
+> consult `state.yaml` for operational status. (Contract chosen in cycle e55.)
+
 ## 1. Baseline and contracts
 
 - [ ] 1.1 Inventory current MCP/CLI/Explorer consumers of CallGraph/GenericGraph.
@@ -54,7 +58,7 @@
 
 ## 7. Findings and detectors
 
-- [ ] 7.1 Define Finding/Risk/EvidenceGrade lifecycle.
+- [ ] 7.1 Define Finding/Risk/EvidenceClass lifecycle.
 - [ ] 7.2 Define Detector IR schema/parser/validator.
 - [ ] 7.3 Implement AST detector backend.
 - [ ] 7.4 Implement graph-pattern backend.

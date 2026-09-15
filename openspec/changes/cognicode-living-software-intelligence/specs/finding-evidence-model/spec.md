@@ -16,9 +16,9 @@ Every blocking Finding MUST link the Evidence supporting the decision and the de
 - WHEN a user requests its explanation
 - THEN source/sink/path or equivalent evidence and causal lineage are available
 
-### Requirement: Evidence grades
+### Requirement: Evidence classes
 
-The platform SHALL expose evidence grade A/B/C/D and policies MAY gate on grade plus risk.
+The platform SHALL expose evidence classes A/B/C/D — the strength of the finding's supporting evidence. This is distinct from the kernel `EvidenceGrade` (Supports/Refutes/Corroborates), which records how one piece of evidence relates to a fact. Policies MAY gate on class plus risk.
 
 #### Scenario: Hypothesis cannot satisfy strong gate
 
