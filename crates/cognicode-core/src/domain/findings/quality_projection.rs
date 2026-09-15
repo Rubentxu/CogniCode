@@ -12,21 +12,26 @@
 //!
 //! - `evidence_class = C` (partial static evidence), never `A`/`B`;
 //! - `evidence` is left **empty** (no fabricated handles);
-//! - the causal chain carries only the `location` step.
+//! - the causal chain carries only the `location` step;
+//! - the detector execution ref is `legacy.quality@legacy` recorded with
+//!   **`Candidate` authority at execution** — legacy issues never inherit
+//!   blocking authority;
+//! - [`FindingOrigin::LegacyQuality`] preserves `issue_id` + `rule_id` so
+//!   the finding can be traced back to the legacy row.
 //!
 //! Consequently a projected finding is **not** [`Finding::is_explainable`]
 //! and **cannot block** the new gates — a re-evidence pass must upgrade it
-//! before it participates. This is the safe compatibility direction: the
-//! new model can *represent* every legacy issue without silently
-//! inheriting legacy blocking authority.
+//! before it participates.
 //!
 //! Pure domain: no I/O, no `sqlx`, no `tokio`.
 
 use crate::domain::ports::quality_store::QualityIssue;
 
-use super::detector_ir::{DetectorId, FindingKind};
+use super::detector_ir::{
+    DetectorAuthority, DetectorDigest, DetectorExecutionRef, DetectorId, FindingKind,
+};
 use super::finding::{
-    CausalStep, DetectorRef, EvidenceClass, Finding, FindingId, FindingSeverity, FindingStatus,
+    CausalStep, EvidenceClass, Finding, FindingId, FindingOrigin, FindingSeverity, FindingStatus,
     RiskLevel,
 };
 
@@ -83,23 +88,23 @@ fn risk_for(severity: FindingSeverity) -> RiskLevel {
     }
 }
 
-/// Map a legacy status string to the finding status.
+/// Map a legacy status string to a distinct finding status.
+///
+/// `false_positive`, `wontfix` and `suppressed` are **not** collapsed:
+/// they are a false positive, an accepted risk and a suppression
+/// respectively.
 fn status_from_str(value: &str) -> FindingStatus {
     match value.trim().to_ascii_lowercase().as_str() {
         "accepted" | "confirmed" | "acknowledged" => FindingStatus::Accepted,
         "fixed" | "resolved" | "closed" | "done" => FindingStatus::Fixed,
-        "false_positive" | "falsepositive" | "wontfix" | "ignored" | "suppressed" => {
-            FindingStatus::FalsePositive
-        }
+        "false_positive" | "falsepositive" => FindingStatus::FalsePositive,
+        "wontfix" | "risk_accepted" | "riskaccepted" | "accept_risk" => FindingStatus::RiskAccepted,
+        "suppressed" | "ignored" | "exempt" => FindingStatus::Suppressed,
         _ => FindingStatus::Open,
     }
 }
 
 /// Project a legacy [`QualityIssue`] into a [`Finding`].
-///
-/// Infallible in practice: sanitization/normalization guarantees a valid
-/// id, kind and message, so the only reachable error is a genuinely
-/// malformed legacy row (e.g. an empty message).
 pub fn project_quality_issue(issue: &QualityIssue) -> Result<Finding, super::FindingError> {
     let kind = FindingKind::new(format!(
         "{}.{}",
@@ -108,9 +113,14 @@ pub fn project_quality_issue(issue: &QualityIssue) -> Result<Finding, super::Fin
     ))?;
 
     let severity = severity_from_str(&issue.severity);
-    let detector = DetectorRef::new(
+
+    // The legacy detector never held blocking authority.
+    let detector = DetectorExecutionRef::new(
         DetectorId::new(LEGACY_DETECTOR_ID)?,
         LEGACY_DETECTOR_VERSION,
+        DetectorAuthority::Candidate,
+        DetectorDigest::from_content(&format!("{LEGACY_DETECTOR_ID}@{LEGACY_DETECTOR_VERSION}")),
+        None,
     )?;
 
     let location = format!("{}:{}", issue.file_path, issue.line);
@@ -119,6 +129,10 @@ pub fn project_quality_issue(issue: &QualityIssue) -> Result<Finding, super::Fin
     let mut finding = Finding {
         id: FindingId::new(format!("quality-{}", issue.id))?,
         kind,
+        origin: FindingOrigin::LegacyQuality {
+            issue_id: issue.id,
+            rule_id: issue.rule_id.clone(),
+        },
         severity,
         risk: risk_for(severity),
         evidence_class: EvidenceClass::C,
@@ -157,10 +171,17 @@ mod tests {
     }
 
     #[test]
-    fn projects_identity_and_kind() {
+    fn projects_identity_kind_and_origin() {
         let f = project_quality_issue(&issue("critical", "security", "open", "boom")).unwrap();
         assert_eq!(f.id.as_str(), "quality-7");
         assert_eq!(f.kind.as_str(), "quality.security");
+        assert_eq!(
+            f.origin,
+            FindingOrigin::LegacyQuality {
+                issue_id: 7,
+                rule_id: "rule-1".to_string(),
+            }
+        );
     }
 
     #[test]
@@ -197,12 +218,25 @@ mod tests {
     }
 
     #[test]
-    fn maps_status_variants() {
+    fn status_dispositions_are_distinct() {
+        // wontfix != false positive.
         assert_eq!(
-            project_quality_issue(&issue("info", "c", "open", "x"))
+            project_quality_issue(&issue("info", "c", "wontfix", "x"))
                 .unwrap()
                 .status,
-            FindingStatus::Open
+            FindingStatus::RiskAccepted
+        );
+        assert_eq!(
+            project_quality_issue(&issue("info", "c", "false_positive", "x"))
+                .unwrap()
+                .status,
+            FindingStatus::FalsePositive
+        );
+        assert_eq!(
+            project_quality_issue(&issue("info", "c", "suppressed", "x"))
+                .unwrap()
+                .status,
+            FindingStatus::Suppressed
         );
         assert_eq!(
             project_quality_issue(&issue("info", "c", "accepted", "x"))
@@ -217,10 +251,10 @@ mod tests {
             FindingStatus::Fixed
         );
         assert_eq!(
-            project_quality_issue(&issue("info", "c", "false_positive", "x"))
+            project_quality_issue(&issue("info", "c", "whatever", "x"))
                 .unwrap()
                 .status,
-            FindingStatus::FalsePositive
+            FindingStatus::Open
         );
     }
 
@@ -234,11 +268,13 @@ mod tests {
 
     #[test]
     fn projected_finding_is_not_explainable_and_cannot_block() {
-        // Conservative policy: legacy rows have no evidence handles, so they
-        // cannot block the new gates until re-evidenced.
         let f = project_quality_issue(&issue("critical", "security", "open", "boom")).unwrap();
         assert!(f.evidence.is_empty());
         assert!(!f.is_explainable());
+        assert_eq!(
+            f.detector.authority_at_execution,
+            DetectorAuthority::Candidate
+        );
         let gate = super::super::FindingGate::new(EvidenceClass::C, RiskLevel::Low);
         assert!(!f.can_block(&gate), "projected findings must not block");
     }

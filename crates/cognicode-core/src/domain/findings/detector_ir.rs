@@ -1,117 +1,158 @@
 //! Detector IR (M6.1) — a declarative, validated detector definition.
 //!
 //! A detector is expressed as a small ordered program of steps
-//! (`MATCH` / `FLOW` / `EXCLUDE` / `VERIFY` / `PRODUCE`) plus the analysis
-//! [`AnalysisLevel`] it needs. The IR is validated **before admission**:
-//! an unsupported construct, a malformed pattern or a level that is too
-//! low for the requested verification fails loud with a structured
-//! [`DetectorIrError`].
+//! (`MATCH` / `FLOW` / `EXCLUDE` / `VERIFY` / `PRODUCE`) plus the set of
+//! analysis **capabilities** it requires. The IR is validated **before
+//! admission**: an unsupported construct, a malformed identifier, or a
+//! missing capability fails loud with a structured [`DetectorIrError`].
 //!
-//! Authority is explicit: an AI-authored detector starts as
-//! [`DetectorAuthority::Candidate`] and cannot block CI
-//! ([`DetectorAuthority::can_block`] is the single gate predicate).
+//! ## Three distinct concepts (M6 contract hardening)
+//!
+//! - [`AnalysisCapability`] — *what* the detector needs (a set, not a
+//!   linear level: an LLM is not a super-set of symbolic execution).
+//! - [`EscalationTier`] — *how expensive* satisfying that capability is
+//!   (planning/cost only).
+//! - [`DetectorAuthority`] — *whether* the detector may block CI.
+//!
+//! Authority travels into the produced finding as
+//! [`DetectorExecutionRef::authority_at_execution`], so a detector that was
+//! a `Candidate` at run time can never contribute a blocking finding —
+//! even if it is promoted to `Gated` later.
 //!
 //! Pure domain: no I/O, no `sqlx`, no `tokio`.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::fmt;
 
+use super::namespaced::NamespacedName;
+
 // ============================================================================
-// Analysis escalation ladder
+// Analysis capability (what the detector needs)
 // ============================================================================
 
-/// Cost/expressiveness level an analysis backend provides.
+/// A capability an analysis backend can provide.
 ///
-/// Ordered from cheapest to most expensive; a detector that declares a
-/// weaker level than its steps require is rejected (see
-/// [`DetectorIr::validate`]). Declared order is significant: the derived
-/// `Ord` matches the escalation ladder.
+/// Declared order is cost order (`AstPattern` cheapest … `LlmReasoning`
+/// most expensive) but the type is **set-based**, not a linear ladder:
+/// `LlmReasoning` does **not** satisfy `SymbolicFeasibility`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum AnalysisLevel {
+pub enum AnalysisCapability {
     /// Syntactic pattern matching over an AST.
     AstPattern,
-    /// Semantic query (resolved symbols, types).
-    SemanticQuery,
-    /// Graph query over call/flow projections.
+    /// Semantic resolution (symbols, types).
+    SemanticResolution,
+    /// Graph queries over call/flow projections.
     GraphQuery,
     /// Data-flow analysis (def-use, reaching definitions).
     Dataflow,
     /// Selective abstract interpretation.
     AbstractInterpretation,
     /// Symbolic execution / SMT feasibility checks.
-    Symbolic,
+    SymbolicFeasibility,
     /// Runtime trace corroboration.
-    RuntimeCorroboration,
+    RuntimeEvidence,
     /// LLM context reasoning (least authoritative).
-    LlmContext,
+    LlmReasoning,
 }
 
-impl AnalysisLevel {
-    /// Ascending cost rank (`AstPattern = 0` … `LlmContext = 7`).
-    pub fn rank(self) -> u8 {
-        self as u8
-    }
-
+impl AnalysisCapability {
     /// Stable UPPER_SNAKE name for diagnostics.
     pub fn name(self) -> &'static str {
         match self {
             Self::AstPattern => "AST_PATTERN",
-            Self::SemanticQuery => "SEMANTIC_QUERY",
+            Self::SemanticResolution => "SEMANTIC_RESOLUTION",
             Self::GraphQuery => "GRAPH_QUERY",
             Self::Dataflow => "DATAFLOW",
             Self::AbstractInterpretation => "ABSTRACT_INTERPRETATION",
-            Self::Symbolic => "SYMBOLIC",
-            Self::RuntimeCorroboration => "RUNTIME_CORROBORATION",
-            Self::LlmContext => "LLM_CONTEXT",
+            Self::SymbolicFeasibility => "SYMBOLIC_FEASIBILITY",
+            Self::RuntimeEvidence => "RUNTIME_EVIDENCE",
+            Self::LlmReasoning => "LLM_REASONING",
+        }
+    }
+
+    /// The escalation tier that provides this capability (cost only).
+    pub fn tier(self) -> EscalationTier {
+        match self {
+            Self::AstPattern => EscalationTier::T0Ast,
+            Self::SemanticResolution => EscalationTier::T1Semantic,
+            Self::GraphQuery => EscalationTier::T2Graph,
+            Self::Dataflow => EscalationTier::T3Dataflow,
+            Self::AbstractInterpretation | Self::SymbolicFeasibility => EscalationTier::T4Formal,
+            Self::RuntimeEvidence | Self::LlmReasoning => EscalationTier::T5Contextual,
         }
     }
 }
 
-impl fmt::Display for AnalysisLevel {
+impl fmt::Display for AnalysisCapability {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.name())
     }
 }
 
-// ============================================================================
-// Namespaced patterns
-// ============================================================================
-
-/// Validate the `ns.name` namespace grammar (at least one `.`, no empty
-/// segments). Matches the canonical detector-IR examples such as
-/// `security.user_input`.
-fn parse_namespaced(value: &str) -> Result<(), &'static str> {
-    let parts: Vec<&str> = value.split('.').collect();
-    if parts.len() < 2 {
-        return Err("expected at least one '.' separator (namespace.name)");
-    }
-    if parts.iter().any(|segment| segment.is_empty()) {
-        return Err("namespace segments must not be empty");
-    }
-    Ok(())
+/// Cost band for planning, derived from a capability set. Not authority,
+/// not correctness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EscalationTier {
+    /// AST / syntactic.
+    T0Ast,
+    /// Semantic resolution.
+    T1Semantic,
+    /// Graph queries.
+    T2Graph,
+    /// Data flow.
+    T3Dataflow,
+    /// Formal (abstract interpretation, symbolic).
+    T4Formal,
+    /// Contextual (runtime evidence, LLM).
+    T5Contextual,
 }
+
+impl EscalationTier {
+    /// Ascending cost rank (`T0Ast = 0` … `T5Contextual = 5`).
+    pub fn rank(self) -> u8 {
+        self as u8
+    }
+}
+
+impl fmt::Display for EscalationTier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::T0Ast => "T0_AST",
+            Self::T1Semantic => "T1_SEMANTIC",
+            Self::T2Graph => "T2_GRAPH",
+            Self::T3Dataflow => "T3_DATAFLOW",
+            Self::T4Formal => "T4_FORMAL",
+            Self::T5Contextual => "T5_CONTEXTUAL",
+        })
+    }
+}
+
+// ============================================================================
+// Namespaced identifiers
+// ============================================================================
 
 /// A namespaced subject a detector matches or flows over
 /// (e.g. `security.user_input`).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct SubjectPattern(String);
+pub struct SubjectPattern(NamespacedName);
 
 impl SubjectPattern {
     /// Construct a validated subject pattern.
     pub fn new(value: impl Into<String>) -> Result<Self, DetectorIrError> {
-        let value = value.into();
-        parse_namespaced(&value).map_err(|reason| DetectorIrError::InvalidNamespace {
-            value: value.clone(),
-            reason,
-        })?;
-        Ok(Self(value))
+        NamespacedName::new(value)
+            .map(Self)
+            .map_err(|err| DetectorIrError::InvalidIdentifier {
+                value: format!("{err}"),
+            })
     }
 
     /// Borrow the raw pattern.
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
@@ -125,36 +166,35 @@ impl TryFrom<String> for SubjectPattern {
 
 impl From<SubjectPattern> for String {
     fn from(value: SubjectPattern) -> Self {
-        value.0
+        value.0.into()
     }
 }
 
 impl fmt::Display for SubjectPattern {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(self.as_str())
     }
 }
 
 /// A namespaced finding kind a detector produces
 /// (e.g. `security.sql_injection`).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct FindingKind(String);
+pub struct FindingKind(NamespacedName);
 
 impl FindingKind {
     /// Construct a validated finding kind.
     pub fn new(value: impl Into<String>) -> Result<Self, DetectorIrError> {
-        let value = value.into();
-        parse_namespaced(&value).map_err(|reason| DetectorIrError::InvalidNamespace {
-            value: value.clone(),
-            reason,
-        })?;
-        Ok(Self(value))
+        NamespacedName::new(value)
+            .map(Self)
+            .map_err(|err| DetectorIrError::InvalidIdentifier {
+                value: format!("{err}"),
+            })
     }
 
     /// Borrow the raw kind.
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
@@ -168,13 +208,56 @@ impl TryFrom<String> for FindingKind {
 
 impl From<FindingKind> for String {
     fn from(value: FindingKind) -> Self {
-        value.0
+        value.0.into()
     }
 }
 
 impl fmt::Display for FindingKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(self.as_str())
+    }
+}
+
+/// Stable detector identifier (namespaced, e.g. `security.sql_injection`).
+///
+/// Namespacing is required so packs and federated detectors cannot collide.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct DetectorId(NamespacedName);
+
+impl DetectorId {
+    /// Construct a validated, namespaced detector id.
+    pub fn new(value: impl Into<String>) -> Result<Self, DetectorIrError> {
+        NamespacedName::new(value)
+            .map(Self)
+            .map_err(|err| DetectorIrError::InvalidIdentifier {
+                value: format!("{err}"),
+            })
+    }
+
+    /// Borrow the raw id.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl TryFrom<String> for DetectorId {
+    type Error = DetectorIrError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<DetectorId> for String {
+    fn from(value: DetectorId) -> Self {
+        value.0.into()
+    }
+}
+
+impl fmt::Display for DetectorId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -213,54 +296,27 @@ impl DetectorStep {
             Self::Produce { .. } => "PRODUCE",
         }
     }
-}
 
-/// Stable detector identifier (non-empty).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct DetectorId(String);
-
-impl DetectorId {
-    /// Construct a non-empty detector id.
-    pub fn new(value: impl Into<String>) -> Result<Self, DetectorIrError> {
-        let value = value.into();
-        if value.trim().is_empty() {
-            return Err(DetectorIrError::EmptyId);
+    /// Capabilities this step cannot run without (its floor).
+    pub fn required_capabilities(&self) -> BTreeSet<AnalysisCapability> {
+        let mut set = BTreeSet::new();
+        match self {
+            Self::Match { .. } => {}
+            Self::Flow { .. } | Self::Exclude { .. } => {
+                set.insert(AnalysisCapability::GraphQuery);
+            }
+            Self::Verify { feasible_path } => {
+                if *feasible_path {
+                    set.insert(AnalysisCapability::SymbolicFeasibility);
+                }
+            }
+            Self::Produce { .. } => {}
         }
-        Ok(Self(value))
-    }
-
-    /// Borrow the raw id.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl TryFrom<String> for DetectorId {
-    type Error = DetectorIrError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<DetectorId> for String {
-    fn from(value: DetectorId) -> Self {
-        value.0
-    }
-}
-
-impl fmt::Display for DetectorId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        set
     }
 }
 
 /// Whether a detector may block CI.
-///
-/// AI-authored detectors start as [`Candidate`](Self::Candidate) and have
-/// no GATE authority; only a promoted [`Gated`](Self::Gated) detector may
-/// block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DetectorAuthority {
@@ -293,12 +349,12 @@ impl fmt::Display for DetectorAuthority {
 /// A validated detector definition.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DetectorIr {
-    /// Stable detector id.
+    /// Stable, namespaced detector id.
     pub id: DetectorId,
     /// Human-readable name.
     pub name: String,
-    /// The analysis level the detector declares it needs.
-    pub required_level: AnalysisLevel,
+    /// Analysis capabilities the detector requires.
+    pub requires: BTreeSet<AnalysisCapability>,
     /// GATE authority (candidate vs gated).
     pub authority: DetectorAuthority,
     /// Ordered program steps.
@@ -309,13 +365,9 @@ impl DetectorIr {
     /// Validate the detector before admission.
     ///
     /// Fails loud with a structured [`DetectorIrError`] when the definition
-    /// is malformed or demands a construct the declared
-    /// [`AnalysisLevel`] cannot support.
+    /// is malformed or omits a capability its steps cannot run without.
     pub fn validate(&self) -> Result<(), DetectorIrError> {
         // V1/V2 — identity
-        if self.id.as_str().trim().is_empty() {
-            return Err(DetectorIrError::EmptyId);
-        }
         if self.name.trim().is_empty() {
             return Err(DetectorIrError::EmptyName);
         }
@@ -340,10 +392,9 @@ impl DetectorIr {
             }
         }
 
-        // V5/V6/V8 — ordering + minimum escalation level
+        // V5/V6/V8 — ordering
         let mut seen_match = false;
         let mut seen_flow = false;
-        let mut minimum = AnalysisLevel::AstPattern;
         for (index, step) in self.steps.iter().enumerate() {
             match step {
                 DetectorStep::Match { .. } => {
@@ -357,40 +408,194 @@ impl DetectorIr {
                         return Err(DetectorIrError::FlowWithoutMatch { index });
                     }
                     seen_flow = true;
-                    minimum = minimum.max(AnalysisLevel::GraphQuery);
                 }
                 DetectorStep::Exclude { .. } => {
                     if !seen_flow {
                         return Err(DetectorIrError::ExcludeBeforeFlow { index });
                     }
                 }
-                DetectorStep::Verify { feasible_path } => {
+                DetectorStep::Verify { .. } => {
                     if !seen_flow {
                         return Err(DetectorIrError::VerifyBeforeFlow { index });
-                    }
-                    if *feasible_path {
-                        minimum = minimum.max(AnalysisLevel::Symbolic);
                     }
                 }
                 DetectorStep::Produce { .. } => {}
             }
         }
 
-        // V7 — declared level must be at least what the steps demand
-        if self.required_level < minimum {
-            return Err(DetectorIrError::LevelTooLow {
-                required: self.required_level,
-                minimum,
-            });
+        // V7 — declared capabilities must cover every step's floor
+        for (index, step) in self.steps.iter().enumerate() {
+            for capability in step.required_capabilities() {
+                if !self.requires.contains(&capability) {
+                    return Err(DetectorIrError::MissingCapability { capability, index });
+                }
+            }
         }
 
         Ok(())
     }
 
-    /// Whether this detector may block CI (delegates to authority AND
-    /// requires the definition to be valid).
+    /// Cost tier implied by the declared capability set (`T0Ast` if empty).
+    pub fn escalation_tier(&self) -> EscalationTier {
+        self.requires
+            .iter()
+            .map(|capability| capability.tier())
+            .max()
+            .unwrap_or(EscalationTier::T0Ast)
+    }
+
+    /// The capabilities the steps cannot run without (the floor).
+    pub fn required_capabilities(&self) -> BTreeSet<AnalysisCapability> {
+        self.steps
+            .iter()
+            .flat_map(|step| step.required_capabilities())
+            .collect()
+    }
+
+    /// Stable content digest of this definition.
+    ///
+    /// Captured in [`DetectorExecutionRef`] so a finding can be tied to the
+    /// exact detector *content* that produced it (not just its id/version).
+    pub fn digest(&self) -> DetectorDigest {
+        let canonical = serde_json::to_string(self).unwrap_or_else(|_| format!("{self:?}"));
+        DetectorDigest::from_content(&canonical)
+    }
+
+    /// Whether this detector may block CI (authority AND valid definition).
     pub fn can_block(&self) -> bool {
         self.authority.can_block() && self.validate().is_ok()
+    }
+}
+
+// ============================================================================
+// Execution reference (authority captured at run time)
+// ============================================================================
+
+/// Minimal execution identifier (moved to `domain::kernel_ids` in e56).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ExecutionId(pub u64);
+
+/// Stable content digest of a detector definition (`fnv1a64:<hex>`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct DetectorDigest(String);
+
+impl DetectorDigest {
+    /// Construct from an already-formatted digest string.
+    pub fn new(value: impl Into<String>) -> Result<Self, DetectorIrError> {
+        let value = value.into();
+        if !value.starts_with("fnv1a64:") || value.len() <= "fnv1a64:".len() {
+            return Err(DetectorIrError::InvalidDigest { value });
+        }
+        Ok(Self(value))
+    }
+
+    /// Compute the canonical digest of arbitrary content.
+    pub fn from_content(content: &str) -> Self {
+        Self(fnv1a64(content))
+    }
+
+    /// Borrow the raw digest.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for DetectorDigest {
+    type Error = DetectorIrError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<DetectorDigest> for String {
+    fn from(value: DetectorDigest) -> Self {
+        value.0
+    }
+}
+
+impl fmt::Display for DetectorDigest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// FNV-1a 64-bit digest, formatted `fnv1a64:<16 hex>` (house convention).
+fn fnv1a64(data: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in data.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("fnv1a64:{hash:016x}")
+}
+
+/// The detector **as executed**: id, version, the authority it held *at
+/// execution time*, its content digest, and an optional execution id.
+///
+/// Capturing authority here is what makes the AI-detector rule safe: a
+/// `Candidate` run never yields a blocking finding, even if the detector is
+/// promoted to `Gated` afterwards.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DetectorExecutionRef {
+    /// Detector identity.
+    pub id: DetectorId,
+    /// Detector version at production time.
+    pub version: String,
+    /// Authority the detector held when it produced the finding.
+    pub authority_at_execution: DetectorAuthority,
+    /// Content digest of the executed definition.
+    pub detector_digest: DetectorDigest,
+    /// Optional link to a concrete execution record.
+    pub execution_id: Option<ExecutionId>,
+}
+
+impl DetectorExecutionRef {
+    /// Construct an execution reference explicitly.
+    pub fn new(
+        id: DetectorId,
+        version: impl Into<String>,
+        authority_at_execution: DetectorAuthority,
+        detector_digest: DetectorDigest,
+        execution_id: Option<ExecutionId>,
+    ) -> Result<Self, DetectorIrError> {
+        let version = version.into();
+        if version.trim().is_empty() {
+            return Err(DetectorIrError::EmptyVersion);
+        }
+        Ok(Self {
+            id,
+            version,
+            authority_at_execution,
+            detector_digest,
+            execution_id,
+        })
+    }
+
+    /// Capture an execution reference **from** a detector definition.
+    ///
+    /// This is the constructor backends should use: it records the
+    /// definition's id, its content digest and — crucially — the authority
+    /// the definition holds now.
+    pub fn from_definition(
+        definition: &DetectorIr,
+        version: impl Into<String>,
+        execution_id: Option<ExecutionId>,
+    ) -> Result<Self, DetectorIrError> {
+        Self::new(
+            definition.id.clone(),
+            version,
+            definition.authority,
+            definition.digest(),
+            execution_id,
+        )
+    }
+
+    /// Whether the executed detector held blocking authority.
+    pub fn can_block(&self) -> bool {
+        self.authority_at_execution.can_block()
     }
 }
 
@@ -401,16 +606,19 @@ impl DetectorIr {
 /// Structured validation failure for a detector definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DetectorIrError {
-    /// The detector id is empty.
-    EmptyId,
     /// The detector name is empty.
     EmptyName,
-    /// A namespaced pattern is malformed.
-    InvalidNamespace {
+    /// The detector version is empty.
+    EmptyVersion,
+    /// A namespaced identifier is malformed.
+    InvalidIdentifier {
+        /// Why it was rejected.
+        value: String,
+    },
+    /// A digest string is malformed.
+    InvalidDigest {
         /// The offending value.
         value: String,
-        /// Why it was rejected.
-        reason: &'static str,
     },
     /// No `PRODUCE` step was declared.
     NoProduce,
@@ -444,22 +652,25 @@ pub enum DetectorIrError {
         /// Index of the offending step.
         index: usize,
     },
-    /// The declared `required_level` is weaker than the steps demand.
-    LevelTooLow {
-        /// Declared level.
-        required: AnalysisLevel,
-        /// Minimum level implied by the steps.
-        minimum: AnalysisLevel,
+    /// A step needs a capability the detector did not declare.
+    MissingCapability {
+        /// The capability that is required.
+        capability: AnalysisCapability,
+        /// Index of the step that requires it.
+        index: usize,
     },
 }
 
 impl fmt::Display for DetectorIrError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyId => f.write_str("detector id must not be empty"),
             Self::EmptyName => f.write_str("detector name must not be empty"),
-            Self::InvalidNamespace { value, reason } => {
-                write!(f, "invalid namespaced pattern `{value}`: {reason}")
+            Self::EmptyVersion => f.write_str("detector version must not be empty"),
+            Self::InvalidIdentifier { value } => {
+                write!(f, "invalid namespaced identifier: {value}")
+            }
+            Self::InvalidDigest { value } => {
+                write!(f, "invalid digest `{value}` (expected `fnv1a64:<hex>`)")
             }
             Self::NoProduce => f.write_str("detector must declare at least one PRODUCE step"),
             Self::DuplicateProduce { index } => {
@@ -483,9 +694,9 @@ impl fmt::Display for DetectorIrError {
             Self::MatchAfterFlow { index } => {
                 write!(f, "MATCH at index {index} appears after a FLOW")
             }
-            Self::LevelTooLow { required, minimum } => write!(
+            Self::MissingCapability { capability, index } => write!(
                 f,
-                "declared level {required} is too low; steps require at least {minimum}"
+                "step at index {index} requires capability {capability}, which the detector does not declare"
             ),
         }
     }
@@ -509,7 +720,11 @@ mod tests {
         FindingKind::new(value).expect("valid kind")
     }
 
-    fn base_steps() -> Vec<DetectorStep> {
+    fn caps(items: impl IntoIterator<Item = AnalysisCapability>) -> BTreeSet<AnalysisCapability> {
+        items.into_iter().collect()
+    }
+
+    fn flow_steps() -> Vec<DetectorStep> {
         vec![
             DetectorStep::Match {
                 subject: subject("security.user_input"),
@@ -525,81 +740,74 @@ mod tests {
         ]
     }
 
-    fn detector(level: AnalysisLevel, steps: Vec<DetectorStep>) -> DetectorIr {
+    fn detector(requires: BTreeSet<AnalysisCapability>, steps: Vec<DetectorStep>) -> DetectorIr {
         DetectorIr {
-            id: DetectorId::new("det.sql_injection").unwrap(),
+            id: DetectorId::new("security.sql_injection").unwrap(),
             name: "SQL injection".to_string(),
-            required_level: level,
+            requires,
             authority: DetectorAuthority::Candidate,
             steps,
         }
     }
 
     #[test]
-    fn analysis_level_rank_is_strictly_ascending() {
-        let ladder = [
-            AnalysisLevel::AstPattern,
-            AnalysisLevel::SemanticQuery,
-            AnalysisLevel::GraphQuery,
-            AnalysisLevel::Dataflow,
-            AnalysisLevel::AbstractInterpretation,
-            AnalysisLevel::Symbolic,
-            AnalysisLevel::RuntimeCorroboration,
-            AnalysisLevel::LlmContext,
-        ];
-        for pair in ladder.windows(2) {
-            assert!(
-                pair[0].rank() < pair[1].rank(),
-                "{} must rank below {}",
-                pair[0],
-                pair[1]
-            );
-            assert!(pair[0] < pair[1], "Ord must match rank order");
-        }
-        assert_eq!(ladder[0].rank(), 0);
-        assert_eq!(ladder[7].rank(), 7);
-    }
-
-    #[test]
-    fn analysis_level_display() {
-        assert_eq!(AnalysisLevel::AstPattern.to_string(), "AST_PATTERN");
-        assert_eq!(AnalysisLevel::GraphQuery.to_string(), "GRAPH_QUERY");
-        assert_eq!(AnalysisLevel::LlmContext.to_string(), "LLM_CONTEXT");
-    }
-
-    #[test]
-    fn subject_pattern_accepts_namespaced() {
+    fn capability_tiers_are_ordered_but_capabilities_are_a_set() {
+        assert!(EscalationTier::T0Ast.rank() < EscalationTier::T5Contextual.rank());
+        assert_eq!(AnalysisCapability::AstPattern.tier(), EscalationTier::T0Ast);
         assert_eq!(
-            subject("security.user_input").as_str(),
-            "security.user_input"
+            AnalysisCapability::Dataflow.tier(),
+            EscalationTier::T3Dataflow
         );
         assert_eq!(
-            kind("security.sql_injection").as_str(),
-            "security.sql_injection"
+            AnalysisCapability::SymbolicFeasibility.tier(),
+            EscalationTier::T4Formal
+        );
+        assert_eq!(
+            AnalysisCapability::LlmReasoning.tier(),
+            EscalationTier::T5Contextual
+        );
+
+        // Key property: LLM reasoning does NOT imply symbolic feasibility.
+        let llm_only = detector(caps([AnalysisCapability::LlmReasoning]), flow_steps());
+        assert!(
+            !llm_only
+                .requires
+                .contains(&AnalysisCapability::SymbolicFeasibility)
         );
     }
 
     #[test]
-    fn subject_pattern_rejects_malformed() {
-        for bad in ["", "ns.", ".name", "a..b", "nons", "  "] {
-            let err = SubjectPattern::new(bad).unwrap_err();
-            assert!(
-                matches!(err, DetectorIrError::InvalidNamespace { .. }),
-                "`{bad}` must be rejected, got {err:?}"
-            );
-        }
+    fn escalation_tier_is_the_max_of_required_capabilities() {
+        let ir = detector(
+            caps([AnalysisCapability::GraphQuery, AnalysisCapability::Dataflow]),
+            flow_steps(),
+        );
+        assert_eq!(ir.escalation_tier(), EscalationTier::T3Dataflow);
+
+        let empty = detector(caps([]), vec![DetectorStep::Produce { kind: kind("a.b") }]);
+        assert_eq!(empty.escalation_tier(), EscalationTier::T0Ast);
+    }
+
+    #[test]
+    fn namespaced_identifiers_require_a_dot() {
+        assert!(DetectorId::new("security.sql_injection").is_ok());
+        assert!(DetectorId::new("nons").is_err());
+        assert!(SubjectPattern::new("security.user_input").is_ok());
+        assert!(SubjectPattern::new("nons").is_err());
+        assert!(FindingKind::new("nons").is_err());
     }
 
     #[test]
     fn valid_graph_flow_detector_admits() {
-        let ir = detector(AnalysisLevel::GraphQuery, base_steps());
+        let ir = detector(caps([AnalysisCapability::GraphQuery]), flow_steps());
         ir.validate().expect("graph-flow detector must admit");
     }
 
     #[test]
     fn unsupported_construct_fails_loud() {
-        // VERIFY feasible_path demands SYMBOLIC, but the detector declares
-        // only AST_PATTERN → rejected before scanning.
+        // VERIFY feasible_path needs SYMBOLIC_FEASIBILITY. Declare enough for
+        // the FLOW (GraphQuery) but omit the symbolic capability, so the
+        // unsupported construct is what fails.
         let steps = vec![
             DetectorStep::Match {
                 subject: subject("security.user_input"),
@@ -616,14 +824,44 @@ mod tests {
                 kind: kind("security.sql_injection"),
             },
         ];
-        let ir = detector(AnalysisLevel::AstPattern, steps);
+        let ir = detector(caps([AnalysisCapability::GraphQuery]), steps);
         assert_eq!(
             ir.validate().unwrap_err(),
-            DetectorIrError::LevelTooLow {
-                required: AnalysisLevel::AstPattern,
-                minimum: AnalysisLevel::Symbolic,
+            DetectorIrError::MissingCapability {
+                capability: AnalysisCapability::SymbolicFeasibility,
+                index: 2,
             }
         );
+    }
+
+    #[test]
+    fn declaring_the_capability_admits_the_verify_step() {
+        let steps = vec![
+            DetectorStep::Match {
+                subject: subject("security.user_input"),
+            },
+            DetectorStep::Flow {
+                source: subject("security.user_input"),
+                sink: subject("security.sql_execution"),
+                max_hops: None,
+            },
+            DetectorStep::Verify {
+                feasible_path: true,
+            },
+            DetectorStep::Produce {
+                kind: kind("security.sql_injection"),
+            },
+        ];
+        let ir = detector(
+            caps([
+                AnalysisCapability::GraphQuery,
+                AnalysisCapability::SymbolicFeasibility,
+            ]),
+            steps,
+        );
+        ir.validate()
+            .expect("declaring the capability admits the detector");
+        assert_eq!(ir.escalation_tier(), EscalationTier::T4Formal);
     }
 
     #[test]
@@ -638,7 +876,7 @@ mod tests {
                 kind: kind("security.sql_injection"),
             },
         ];
-        let ir = detector(AnalysisLevel::GraphQuery, steps);
+        let ir = detector(caps([AnalysisCapability::GraphQuery]), steps);
         assert_eq!(
             ir.validate().unwrap_err(),
             DetectorIrError::FlowWithoutMatch { index: 0 }
@@ -658,7 +896,7 @@ mod tests {
                 kind: kind("security.sql_injection"),
             },
         ];
-        let ir = detector(AnalysisLevel::GraphQuery, steps);
+        let ir = detector(caps([AnalysisCapability::GraphQuery]), steps);
         assert_eq!(
             ir.validate().unwrap_err(),
             DetectorIrError::ExcludeBeforeFlow { index: 1 }
@@ -670,7 +908,7 @@ mod tests {
         let steps = vec![DetectorStep::Match {
             subject: subject("security.user_input"),
         }];
-        let ir = detector(AnalysisLevel::AstPattern, steps);
+        let ir = detector(caps([]), steps);
         assert_eq!(ir.validate().unwrap_err(), DetectorIrError::NoProduce);
     }
 
@@ -689,7 +927,7 @@ mod tests {
                 max_hops: None,
             },
         ];
-        let ir = detector(AnalysisLevel::GraphQuery, steps);
+        let ir = detector(caps([AnalysisCapability::GraphQuery]), steps);
         assert_eq!(
             ir.validate().unwrap_err(),
             DetectorIrError::ProduceNotLast { index: 1 }
@@ -709,7 +947,7 @@ mod tests {
                 kind: kind("security.b"),
             },
         ];
-        let ir = detector(AnalysisLevel::AstPattern, steps);
+        let ir = detector(caps([]), steps);
         assert_eq!(
             ir.validate().unwrap_err(),
             DetectorIrError::DuplicateProduce { index: 2 }
@@ -717,31 +955,83 @@ mod tests {
     }
 
     #[test]
-    fn empty_identity_rejected() {
-        let mut ir = detector(AnalysisLevel::GraphQuery, base_steps());
+    fn empty_name_rejected() {
+        let mut ir = detector(caps([AnalysisCapability::GraphQuery]), flow_steps());
         ir.name = "   ".to_string();
         assert_eq!(ir.validate().unwrap_err(), DetectorIrError::EmptyName);
-        assert_eq!(DetectorId::new("").unwrap_err(), DetectorIrError::EmptyId);
     }
 
     #[test]
     fn candidate_detector_cannot_block() {
-        let mut ir = detector(AnalysisLevel::GraphQuery, base_steps());
+        let mut ir = detector(caps([AnalysisCapability::GraphQuery]), flow_steps());
         ir.authority = DetectorAuthority::Candidate;
         assert!(!ir.can_block());
-        assert!(!DetectorAuthority::Candidate.can_block());
 
         ir.authority = DetectorAuthority::Gated;
         assert!(ir.can_block());
 
-        // A gated but invalid detector still cannot block.
         ir.steps.clear();
-        assert!(!ir.can_block());
+        assert!(!ir.can_block(), "invalid gated detector still cannot block");
+    }
+
+    #[test]
+    fn digest_is_stable_and_order_sensitive() {
+        let a = detector(caps([AnalysisCapability::GraphQuery]), flow_steps());
+        let b = detector(caps([AnalysisCapability::GraphQuery]), flow_steps());
+        assert_eq!(
+            a.digest(),
+            b.digest(),
+            "identical definitions digest equally"
+        );
+
+        let mut c = a.clone();
+        c.name = "different".to_string();
+        assert_ne!(
+            a.digest(),
+            c.digest(),
+            "a content change changes the digest"
+        );
+
+        assert!(a.digest().as_str().starts_with("fnv1a64:"));
+    }
+
+    #[test]
+    fn execution_ref_captures_authority_and_digest() {
+        let ir = detector(caps([AnalysisCapability::GraphQuery]), flow_steps());
+        let execution =
+            DetectorExecutionRef::from_definition(&ir, "1.0.0", Some(ExecutionId(9))).unwrap();
+
+        assert_eq!(execution.id, ir.id);
+        assert_eq!(execution.version, "1.0.0");
+        assert_eq!(
+            execution.authority_at_execution,
+            DetectorAuthority::Candidate
+        );
+        assert_eq!(execution.detector_digest, ir.digest());
+        assert_eq!(execution.execution_id, Some(ExecutionId(9)));
+        assert!(!execution.can_block());
+    }
+
+    #[test]
+    fn execution_ref_rejects_empty_version_and_bad_digest() {
+        let id = DetectorId::new("security.sql_injection").unwrap();
+        let digest = DetectorDigest::from_content("x");
+        assert_eq!(
+            DetectorExecutionRef::new(id, "", DetectorAuthority::Gated, digest, None).unwrap_err(),
+            DetectorIrError::EmptyVersion
+        );
+        assert!(DetectorDigest::new("not-a-digest").is_err());
     }
 
     #[test]
     fn detector_ir_round_trip() {
-        let ir = detector(AnalysisLevel::Symbolic, base_steps());
+        let ir = detector(
+            caps([
+                AnalysisCapability::GraphQuery,
+                AnalysisCapability::SymbolicFeasibility,
+            ]),
+            flow_steps(),
+        );
         let json = serde_json::to_string(&ir).expect("serialize");
         let parsed: DetectorIr = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, ir);
@@ -750,7 +1040,6 @@ mod tests {
     #[test]
     fn malformed_subject_fails_deserialization() {
         let bad = r#"{"step":"match","subject":"not-namespaced"}"#;
-        // The `try_from` on `SubjectPattern` must reject it.
         let attempted: Result<DetectorStep, _> = serde_json::from_str(bad);
         assert!(
             attempted.is_err(),

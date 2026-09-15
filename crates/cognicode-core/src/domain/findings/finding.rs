@@ -1,8 +1,9 @@
 //! Findings & evidence classes (M6.2).
 //!
 //! A [`Finding`] is an **evidence-backed conclusion** — never a bare
-//! assertion. It carries the evidence that supports it, the detector and
-//! version that produced it, and a causal chain explaining *why* the
+//! assertion. It carries the evidence that supports it, the detector
+//! **as executed** (id, version, content digest and the authority it held
+//! at run time), its origin, and a causal chain explaining *why* the
 //! conclusion holds. Gates decide whether a finding may block; a
 //! hypothesis-grade finding cannot satisfy a strong gate.
 //!
@@ -11,7 +12,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use super::detector_ir::{DetectorId, FindingKind};
+use super::detector_ir::{DetectorExecutionRef, FindingKind};
 
 // ============================================================================
 // Evidence class
@@ -37,8 +38,9 @@ pub enum EvidenceClass {
 impl EvidenceClass {
     /// Whether this class is at least as strong as `minimum`.
     ///
-    /// `satisfies(A)` is true for every class; `satisfies(B)` only for
-    /// `A`/`B`; a `D` hypothesis never satisfies a `B` requirement.
+    /// `satisfies(D)` is true for every class (D is the weakest bar);
+    /// `satisfies(B)` is true only for `A`/`B`; a `D` hypothesis never
+    /// satisfies a `B` requirement.
     pub fn satisfies(self, minimum: EvidenceClass) -> bool {
         self <= minimum
     }
@@ -130,6 +132,12 @@ impl fmt::Display for RiskLevel {
 // ============================================================================
 
 /// Lifecycle status of a finding.
+///
+/// `FalsePositive`, `RiskAccepted` and `Suppressed` are **distinct
+/// dispositions** and must not be collapsed: a false positive was never
+/// real, a risk acceptance is a real finding we chose not to fix, and a
+/// suppression is a policy exemption. Governance, historical replay and
+/// false-positive measurement all depend on the difference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FindingStatus {
@@ -139,12 +147,19 @@ pub enum FindingStatus {
     Accepted,
     /// Fixed by a change.
     Fixed,
-    /// Determined to be a false positive.
+    /// Determined never to have been real.
     FalsePositive,
+    /// Real, but the risk is explicitly accepted.
+    RiskAccepted,
+    /// Hidden by an explicit suppression/exemption policy.
+    Suppressed,
 }
 
 impl FindingStatus {
     /// Whether the finding still participates in gates.
+    ///
+    /// Only `Open` and `Accepted` are active: fixed, false-positive,
+    /// risk-accepted and suppressed findings do not block.
     pub fn is_active(self) -> bool {
         matches!(self, Self::Open | Self::Accepted)
     }
@@ -157,8 +172,29 @@ impl fmt::Display for FindingStatus {
             Self::Accepted => "Accepted",
             Self::Fixed => "Fixed",
             Self::FalsePositive => "FalsePositive",
+            Self::RiskAccepted => "RiskAccepted",
+            Self::Suppressed => "Suppressed",
         })
     }
+}
+
+// ============================================================================
+// Origin
+// ============================================================================
+
+/// Where a finding came from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "origin", rename_all = "snake_case")]
+pub enum FindingOrigin {
+    /// Produced by executing a detector.
+    Detector,
+    /// Projected from a legacy quality issue (preserves the legacy link).
+    LegacyQuality {
+        /// The legacy `QualityIssue.id`.
+        issue_id: i64,
+        /// The legacy rule id.
+        rule_id: String,
+    },
 }
 
 // ============================================================================
@@ -208,39 +244,16 @@ impl fmt::Display for FindingId {
 
 /// Opaque handle to one piece of supporting evidence.
 ///
-/// DELIBERATE-DEFERRAL (M6): the kernel `EvidenceId` lives behind the
-/// `evidence-kernel` Cargo feature (off by default). Findings are ungated,
-/// so they reference evidence through this small opaque id; the wiring
-/// cycle that connects findings to the kernel store will map
-/// `EvidenceId → EvidenceRef` in one place.
+/// Still feature-gate-neutral in e55; e56 replaces it with the kernel
+/// `EvidenceId` extracted to an ungated `domain::kernel_ids`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct EvidenceRef(pub u64);
 
-/// The detector (and version) that produced a finding.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DetectorRef {
-    /// Detector identity.
-    pub id: DetectorId,
-    /// Detector version at production time.
-    pub version: String,
-}
-
-impl DetectorRef {
-    /// Construct a detector reference with a non-empty version.
-    pub fn new(id: DetectorId, version: impl Into<String>) -> Result<Self, FindingError> {
-        let version = version.into();
-        if version.trim().is_empty() {
-            return Err(FindingError::MissingDetectorVersion);
-        }
-        Ok(Self { id, version })
-    }
-}
-
 /// One step of a finding's causal explanation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CausalStep {
-    /// Short label (e.g. `source`, `flow`, `sink`).
+    /// Short label (e.g. `source`, `flow`, `sink`, `location`).
     pub label: String,
     /// Human-readable detail.
     pub detail: String,
@@ -272,6 +285,8 @@ pub struct Finding {
     pub id: FindingId,
     /// What was found (namespaced kind).
     pub kind: FindingKind,
+    /// Where it came from.
+    pub origin: FindingOrigin,
     /// Display severity.
     pub severity: FindingSeverity,
     /// Evaluated risk.
@@ -280,8 +295,8 @@ pub struct Finding {
     pub evidence_class: EvidenceClass,
     /// Supporting evidence handles.
     pub evidence: Vec<EvidenceRef>,
-    /// Detector + version that produced it.
-    pub detector: DetectorRef,
+    /// Detector as executed (id, version, digest, authority at run time).
+    pub detector: DetectorExecutionRef,
     /// Lifecycle status.
     pub status: FindingStatus,
     /// Human-readable message.
@@ -300,21 +315,21 @@ impl Finding {
             return Err(FindingError::EmptyMessage);
         }
         if self.detector.version.trim().is_empty() {
-            return Err(FindingError::MissingDetectorVersion);
+            return Err(FindingError::EmptyDetectorVersion);
         }
         Ok(())
     }
 
     /// Whether the finding is fully explainable.
     ///
-    /// A finding is explainable when it links at least one piece of
-    /// evidence, carries a non-empty causal chain, and names the detector
-    /// version that produced it (umbrella REQ "Blocking finding is
-    /// explainable").
+    /// Requires: at least one evidence handle, a non-empty causal chain with
+    /// no empty steps, and a detector execution reference carrying a version
+    /// and a content digest.
     pub fn is_explainable(&self) -> bool {
         !self.evidence.is_empty()
             && !self.causal_chain.is_empty()
             && !self.detector.version.trim().is_empty()
+            && !self.detector.detector_digest.as_str().is_empty()
             && self
                 .causal_chain
                 .iter()
@@ -323,14 +338,14 @@ impl Finding {
 
     /// Whether this finding may block the given gate.
     ///
-    /// Requires: the finding is [`validate`](Self::validate)d, active,
-    /// fully explainable, and admitted by the gate (risk at least
-    /// `min_risk` **and** evidence class at least as strong as
-    /// `min_evidence_class`).
+    /// Requires: valid, active, fully explainable, admitted by the gate
+    /// (risk + evidence class), **and** the detector that produced it held
+    /// blocking authority *at execution time*.
     pub fn can_block(&self, gate: &FindingGate) -> bool {
         self.validate().is_ok()
             && self.status.is_active()
             && self.is_explainable()
+            && self.detector.can_block()
             && gate.admits(self)
     }
 }
@@ -358,7 +373,7 @@ impl FindingGate {
     }
 
     /// Whether the finding clears this gate's class and risk thresholds
-    /// (ignoring status and explainability).
+    /// (ignoring status, explainability and detector authority).
     pub fn admits(&self, finding: &Finding) -> bool {
         finding.risk >= self.min_risk && finding.evidence_class.satisfies(self.min_evidence_class)
     }
@@ -375,8 +390,8 @@ pub enum FindingError {
     EmptyId,
     /// The message is empty.
     EmptyMessage,
-    /// The detector reference has no version.
-    MissingDetectorVersion,
+    /// The detector execution reference has no version.
+    EmptyDetectorVersion,
     /// A causal step has an empty label or detail.
     EmptyCausalStep,
     /// A referenced detector identifier or finding kind is malformed.
@@ -394,8 +409,8 @@ impl fmt::Display for FindingError {
         match self {
             Self::EmptyId => f.write_str("finding id must not be empty"),
             Self::EmptyMessage => f.write_str("finding message must not be empty"),
-            Self::MissingDetectorVersion => {
-                f.write_str("detector reference must carry a non-empty version")
+            Self::EmptyDetectorVersion => {
+                f.write_str("detector execution reference must carry a non-empty version")
             }
             Self::EmptyCausalStep => f.write_str("causal step label and detail must not be empty"),
             Self::InvalidIdentifier(err) => write!(f, "invalid finding identifier: {err}"),
@@ -412,20 +427,34 @@ impl std::error::Error for FindingError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::findings::detector_ir::{DetectorAuthority, DetectorId};
 
-    fn detector_ref() -> DetectorRef {
-        DetectorRef::new(DetectorId::new("det.sql_injection").unwrap(), "1.0.0").unwrap()
+    fn detector_at(authority: DetectorAuthority) -> DetectorExecutionRef {
+        DetectorExecutionRef::new(
+            DetectorId::new("security.sql_injection").unwrap(),
+            "1.0.0",
+            authority,
+            super::super::detector_ir::DetectorDigest::from_content("detector-content"),
+            None,
+        )
+        .unwrap()
     }
 
-    fn finding(class: EvidenceClass, risk: RiskLevel, status: FindingStatus) -> Finding {
+    fn finding(
+        class: EvidenceClass,
+        risk: RiskLevel,
+        status: FindingStatus,
+        authority: DetectorAuthority,
+    ) -> Finding {
         Finding {
             id: FindingId::new("f-1").unwrap(),
             kind: FindingKind::new("security.sql_injection").unwrap(),
+            origin: FindingOrigin::Detector,
             severity: FindingSeverity::Critical,
             risk,
             evidence_class: class,
             evidence: vec![EvidenceRef(1), EvidenceRef(2)],
-            detector: detector_ref(),
+            detector: detector_at(authority),
             status,
             message: "tainted input reaches SQL execution".to_string(),
             causal_chain: vec![
@@ -476,11 +505,18 @@ mod tests {
         assert!(FindingStatus::Accepted.is_active());
         assert!(!FindingStatus::Fixed.is_active());
         assert!(!FindingStatus::FalsePositive.is_active());
+        assert!(!FindingStatus::RiskAccepted.is_active());
+        assert!(!FindingStatus::Suppressed.is_active());
     }
 
     #[test]
     fn explainable_requires_evidence_and_causal_chain() {
-        let f = finding(EvidenceClass::A, RiskLevel::High, FindingStatus::Open);
+        let f = finding(
+            EvidenceClass::A,
+            RiskLevel::High,
+            FindingStatus::Open,
+            DetectorAuthority::Gated,
+        );
         assert!(f.is_explainable());
 
         let mut no_evidence = f.clone();
@@ -494,25 +530,63 @@ mod tests {
 
     #[test]
     fn hypothesis_cannot_satisfy_strong_gate() {
-        // Umbrella REQ "Hypothesis cannot satisfy strong gate".
         let gate = FindingGate::new(EvidenceClass::B, RiskLevel::Medium);
 
-        let hypothesis = finding(EvidenceClass::D, RiskLevel::High, FindingStatus::Open);
+        let hypothesis = finding(
+            EvidenceClass::D,
+            RiskLevel::High,
+            FindingStatus::Open,
+            DetectorAuthority::Gated,
+        );
         assert!(
             !hypothesis.can_block(&gate),
             "grade D must not clear a grade-B gate"
         );
         assert!(!gate.admits(&hypothesis));
 
-        let verified = finding(EvidenceClass::A, RiskLevel::High, FindingStatus::Open);
+        let verified = finding(
+            EvidenceClass::A,
+            RiskLevel::High,
+            FindingStatus::Open,
+            DetectorAuthority::Gated,
+        );
         assert!(verified.can_block(&gate), "grade A clears a grade-B gate");
     }
 
     #[test]
+    fn candidate_detector_never_blocks_even_when_promoted_later() {
+        // P0: authority is captured at execution time.
+        let gate = FindingGate::new(EvidenceClass::A, RiskLevel::Low);
+        let candidate_run = finding(
+            EvidenceClass::A,
+            RiskLevel::Critical,
+            FindingStatus::Open,
+            DetectorAuthority::Candidate,
+        );
+        assert!(
+            !candidate_run.can_block(&gate),
+            "a Candidate detector's finding must never block, regardless of evidence class"
+        );
+        assert!(!candidate_run.detector.can_block());
+
+        let gated_run = finding(
+            EvidenceClass::A,
+            RiskLevel::Critical,
+            FindingStatus::Open,
+            DetectorAuthority::Gated,
+        );
+        assert!(gated_run.can_block(&gate));
+    }
+
+    #[test]
     fn blocking_finding_is_explainable() {
-        // Umbrella REQ "Blocking finding is explainable".
         let gate = FindingGate::new(EvidenceClass::B, RiskLevel::Medium);
-        let f = finding(EvidenceClass::A, RiskLevel::Critical, FindingStatus::Open);
+        let f = finding(
+            EvidenceClass::A,
+            RiskLevel::Critical,
+            FindingStatus::Open,
+            DetectorAuthority::Gated,
+        );
         assert!(f.can_block(&gate));
         assert!(!f.evidence.is_empty(), "blocking finding links evidence");
         assert!(
@@ -525,10 +599,27 @@ mod tests {
     fn inactive_or_unvalidated_findings_cannot_block() {
         let gate = FindingGate::new(EvidenceClass::B, RiskLevel::Low);
 
-        let fixed = finding(EvidenceClass::A, RiskLevel::High, FindingStatus::Fixed);
-        assert!(!fixed.can_block(&gate));
+        for status in [
+            FindingStatus::Fixed,
+            FindingStatus::FalsePositive,
+            FindingStatus::RiskAccepted,
+            FindingStatus::Suppressed,
+        ] {
+            let f = finding(
+                EvidenceClass::A,
+                RiskLevel::High,
+                status,
+                DetectorAuthority::Gated,
+            );
+            assert!(!f.can_block(&gate), "{status} must not block");
+        }
 
-        let mut invalid = finding(EvidenceClass::A, RiskLevel::High, FindingStatus::Open);
+        let mut invalid = finding(
+            EvidenceClass::A,
+            RiskLevel::High,
+            FindingStatus::Open,
+            DetectorAuthority::Gated,
+        );
         invalid.message = "  ".to_string();
         assert!(!invalid.can_block(&gate));
         assert_eq!(invalid.validate().unwrap_err(), FindingError::EmptyMessage);
@@ -537,17 +628,18 @@ mod tests {
     #[test]
     fn gate_rejects_low_risk() {
         let gate = FindingGate::new(EvidenceClass::C, RiskLevel::High);
-        let low_risk = finding(EvidenceClass::A, RiskLevel::Low, FindingStatus::Open);
+        let low_risk = finding(
+            EvidenceClass::A,
+            RiskLevel::Low,
+            FindingStatus::Open,
+            DetectorAuthority::Gated,
+        );
         assert!(!gate.admits(&low_risk));
     }
 
     #[test]
     fn constructors_reject_empty_parts() {
         assert_eq!(FindingId::new("").unwrap_err(), FindingError::EmptyId);
-        assert_eq!(
-            DetectorRef::new(DetectorId::new("d").unwrap(), "").unwrap_err(),
-            FindingError::MissingDetectorVersion
-        );
         assert_eq!(
             CausalStep::new("", "x").unwrap_err(),
             FindingError::EmptyCausalStep
@@ -559,8 +651,29 @@ mod tests {
     }
 
     #[test]
+    fn origin_preserves_legacy_link() {
+        let origin = FindingOrigin::LegacyQuality {
+            issue_id: 7,
+            rule_id: "rule-1".to_string(),
+        };
+        let mut f = finding(
+            EvidenceClass::C,
+            RiskLevel::Low,
+            FindingStatus::Open,
+            DetectorAuthority::Candidate,
+        );
+        f.origin = origin.clone();
+        assert_eq!(f.origin, origin);
+    }
+
+    #[test]
     fn finding_round_trip() {
-        let f = finding(EvidenceClass::B, RiskLevel::High, FindingStatus::Accepted);
+        let f = finding(
+            EvidenceClass::B,
+            RiskLevel::High,
+            FindingStatus::Accepted,
+            DetectorAuthority::Gated,
+        );
         let json = serde_json::to_string(&f).expect("serialize");
         let parsed: Finding = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed, f);
