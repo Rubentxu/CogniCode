@@ -22,6 +22,7 @@
 pub mod admission;
 pub mod assembler;
 pub mod ast_backend;
+pub mod dataflow_input;
 pub mod detector_ir;
 pub mod digest;
 pub mod execution;
@@ -41,6 +42,7 @@ pub use admission::{
 };
 pub use assembler::{AssemblyError, FindingAssembler};
 pub use ast_backend::{AstBackend, AstConstruct, AstInput, AstUnit};
+pub use dataflow_input::{DataflowFunction, DataflowInput, DataflowLocation, DataflowStatement};
 pub use detector_ir::{
     AnalysisCapability, DetectorAuthority, DetectorDigests, DetectorExecutionRef,
     DetectorFindingPolicy, DetectorId, DetectorIr, DetectorIrError, DetectorStep, EscalationTier,

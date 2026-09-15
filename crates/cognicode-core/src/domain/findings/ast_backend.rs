@@ -179,6 +179,7 @@ mod tests {
 
     fn input_with(subject: &str) -> AnalysisInput {
         AnalysisInput {
+            dataflow: None,
             graph: None,
             ast: Some(AstInput {
                 units: vec![AstUnit {

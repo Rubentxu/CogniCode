@@ -47,6 +47,7 @@ fn weak_hash_ir(claimed_authority: DetectorAuthority) -> DetectorIr {
 
 fn ast_input() -> AnalysisInput {
     AnalysisInput {
+        dataflow: None,
         graph: None,
         ast: Some(AstInput {
             units: vec![AstUnit {

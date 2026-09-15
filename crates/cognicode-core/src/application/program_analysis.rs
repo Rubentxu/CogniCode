@@ -30,6 +30,61 @@ use crate::domain::analytics::program_analysis::{
 use crate::domain::analytics::program_analysis::{DFG, INTERPROC_SUMMARY};
 use crate::domain::plan::limits::PlanLimits;
 
+/// A statement in a typed taint-flow request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaintFlowStatement {
+    /// Stable statement id within the function.
+    pub id: usize,
+    /// Statement kind tag (free-form).
+    pub kind: String,
+    /// Variables defined.
+    pub defs: Vec<String>,
+    /// Variables used.
+    pub uses: Vec<String>,
+}
+
+/// Typed request for the forward-taint algorithm.
+///
+/// This is the *application* contract: MCP/API present it as JSON, M6 passes
+/// it as typed data. There is exactly one implementation behind it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaintFlowRequest {
+    /// Function identity.
+    pub function_id: String,
+    /// DFG digest of the function (pinned by the caller).
+    pub dfg_digest: String,
+    /// The function's statements.
+    pub statements: Vec<TaintFlowStatement>,
+    /// Statement ids that are source sites.
+    pub sources: Vec<usize>,
+    /// Statement ids that are sink sites.
+    pub sinks: Vec<usize>,
+    /// Statement ids whose defs are sanitised.
+    pub untaints: Vec<usize>,
+}
+
+/// One typed taint path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaintFlowPath {
+    /// Source statement id.
+    pub source: usize,
+    /// Sink statement id.
+    pub sink: usize,
+    /// Intermediates strictly between source and sink.
+    pub intermediates: Vec<usize>,
+}
+
+/// Typed result of a forward-taint run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaintFlowResult {
+    /// Detected paths, sorted by `(source, sink)`.
+    pub paths: Vec<TaintFlowPath>,
+    /// All statements reached by any source.
+    pub tainted_statements: Vec<usize>,
+    /// Statements treated as sanitise sites.
+    pub untaint_statements: Vec<usize>,
+}
+
 /// Service facade for running M5 program-analysis algorithms.
 ///
 /// Construction is cheap; descriptors are stateless. The service holds a
@@ -369,12 +424,52 @@ impl ProgramAnalysisService {
     /// - `sources`: list of statement ids that are source sites
     /// - `sinks`: list of statement ids that are sink sites
     /// - `untaints`: list of statement ids that contain an untaint call
+    /// Typed forward-taint entry point.
+    ///
+    /// `dispatch(TAINT_FLOW)` delegates here; M6 backends call it directly.
+    /// One implementation, two presentations.
+    pub fn taint_flow(
+        &self,
+        request: &TaintFlowRequest,
+        _limits: &PlanLimits,
+    ) -> Result<TaintFlowResult, AnalyticsError> {
+        use cognicode_graph_algos::algorithms::{Statement, dfg_edges, taint_forward};
+
+        let statements: Vec<Statement> = request
+            .statements
+            .iter()
+            .map(|s| Statement {
+                id: s.id,
+                kind: s.kind.clone(),
+                defs: s.defs.clone(),
+                uses: s.uses.clone(),
+            })
+            .collect();
+
+        let edges = dfg_edges(&statements);
+        let result = taint_forward(&edges, &request.sources, &request.sinks, &request.untaints);
+
+        Ok(TaintFlowResult {
+            paths: result
+                .paths
+                .iter()
+                .map(|p| TaintFlowPath {
+                    source: p.source.stmt_id,
+                    sink: p.sink.stmt_id,
+                    intermediates: p.intermediates.iter().map(|s| s.stmt_id).collect(),
+                })
+                .collect(),
+            tainted_statements: result.tainted_statements,
+            untaint_statements: result.untaint_statements,
+        })
+    }
+
     fn run_taint(
         &self,
         params: &serde_json::Value,
         _limits: &PlanLimits,
     ) -> Result<RunOutput, AnalyticsError> {
-        use cognicode_graph_algos::algorithms::{Statement, dfg_edges, taint_forward};
+        use cognicode_graph_algos::algorithms::Statement;
 
         let stmts_json = params
             .get("statements")
@@ -402,18 +497,42 @@ impl ProgramAnalysisService {
         let sinks = parse_id_list("sinks")?;
         let untaints = parse_id_list("untaints")?;
 
-        let edges = dfg_edges(&statements);
-        let result = taint_forward(&edges, &sources, &sinks, &untaints);
+        // One implementation: delegate to the typed facade.
+        let request = TaintFlowRequest {
+            function_id: params
+                .get("function_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            dfg_digest: params
+                .get("dfg_digest")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            statements: statements
+                .iter()
+                .map(|s| TaintFlowStatement {
+                    id: s.id,
+                    kind: s.kind.clone(),
+                    defs: s.defs.clone(),
+                    uses: s.uses.clone(),
+                })
+                .collect(),
+            sources,
+            sinks,
+            untaints,
+        };
+        let result = self.taint_flow(&request, _limits)?;
 
-        // Encode paths with serde_json directly (TaintSite uses serde).
+        // JSON presentation of the same typed result.
         let paths_json: Vec<serde_json::Value> = result
             .paths
             .iter()
             .map(|p| {
                 serde_json::json!({
-                    "source": p.source.stmt_id,
-                    "sink": p.sink.stmt_id,
-                    "intermediates": p.intermediates.iter().map(|s| s.stmt_id).collect::<Vec<_>>(),
+                    "source": p.source,
+                    "sink": p.sink,
+                    "intermediates": p.intermediates,
                 })
             })
             .collect();

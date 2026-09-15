@@ -86,6 +86,7 @@ fn sanitized_graph() -> GraphInput {
 
 fn input(graph: GraphInput) -> AnalysisInput {
     AnalysisInput {
+        dataflow: None,
         ast: None,
         graph: Some(graph),
     }

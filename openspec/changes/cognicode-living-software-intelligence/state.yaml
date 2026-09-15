@@ -74,7 +74,14 @@ phases:
       written first and BOTH failed — the witness reconstruction ignored
       untaints, and a later-arriving origin was never propagated through an
       already-tainted merge; both fixed in cognicode-graph-algos, M6 untouched).
-      Next M6 slice: dataflow backend (7.5) as an application-layer adapter over
-      ProgramAnalysisService (no second taint engine), then 7.7 Axiom importer.
+      e60-lsi-dataflow-backend archived (typed M5 taint facade with
+      dispatch delegating to it; pure DataflowInput DTO; TaintFlowRunner
+      application-local seam; M5DataflowBackend {Dataflow} ceiling B mapping
+      MATCH/FLOW/EXCLUDE to sources/sinks/untaints and emitting DataflowPath
+      evidence with a Source->Flow*->Sink chain; engine errors stay errors;
+      IR reachability rule V10; 97 findings + 8 application + 6 AST + 4 graph +
+      5 dataflow tests). THREE paradigms (AST/Graph/Dataflow) now traverse the
+      same core with no special case. Next M6 slice: 7.7 Axiom importer; then
+      M6 UAT conformance (U42 via the kernel evidence adapter).
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}

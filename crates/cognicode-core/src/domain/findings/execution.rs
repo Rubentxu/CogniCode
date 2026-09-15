@@ -29,6 +29,7 @@ use std::fmt;
 use super::admission::{AdmittedDetector, ExecutionPermit};
 use super::assembler::{AssemblyError, FindingAssembler};
 use super::ast_backend::AstInput;
+use super::dataflow_input::DataflowInput;
 use super::detector_ir::{AnalysisCapability, DetectorExecutionRef, DetectorIrError};
 use super::finding::{EvidenceClass, Finding, FindingGate};
 use super::graph_backend::GraphInput;
@@ -47,6 +48,8 @@ pub struct AnalysisInput {
     pub ast: Option<AstInput>,
     /// Graph view (GraphBackend).
     pub graph: Option<GraphInput>,
+    /// Dataflow view (dataflow backends, e.g. `M5DataflowBackend`).
+    pub dataflow: Option<DataflowInput>,
 }
 
 /// A backend that executes a detector against an [`AnalysisInput`].
@@ -271,6 +274,9 @@ pub enum BackendError {
     MissingInput(&'static str),
     /// The detector uses an IR construct this backend does not support yet.
     UnsupportedIr(String),
+    /// The underlying analysis engine failed. An engine error must never be
+    /// silently degraded into "nothing found".
+    Analysis(String),
     /// An internal backend failure.
     Internal(String),
 }
@@ -280,6 +286,7 @@ impl fmt::Display for BackendError {
         match self {
             Self::MissingInput(view) => write!(f, "backend input `{view}` is missing"),
             Self::UnsupportedIr(msg) => write!(f, "unsupported detector IR: {msg}"),
+            Self::Analysis(msg) => write!(f, "analysis engine error: {msg}"),
             Self::Internal(msg) => write!(f, "backend failure: {msg}"),
         }
     }

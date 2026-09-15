@@ -382,6 +382,7 @@ mod tests {
     fn graph_input(graph: GraphInput) -> AnalysisInput {
         AnalysisInput {
             ast: None,
+            dataflow: None,
             graph: Some(graph),
         }
     }

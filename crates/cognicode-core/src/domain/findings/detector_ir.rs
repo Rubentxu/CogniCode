@@ -300,14 +300,16 @@ impl DetectorStep {
         }
     }
 
-    /// Capabilities this step cannot run without (its floor).
+    /// Capabilities this step cannot run without (its hard floor).
+    ///
+    /// `FLOW`/`EXCLUDE` are **reachability** constructs: they are satisfied by
+    /// either `GraphQuery` or `Dataflow`, so they are checked by the dedicated
+    /// reachability rule rather than listed here (a dataflow detector must not
+    /// be forced to claim `GraphQuery`).
     pub fn required_capabilities(&self) -> BTreeSet<AnalysisCapability> {
         let mut set = BTreeSet::new();
         match self {
-            Self::Match { .. } => {}
-            Self::Flow { .. } | Self::Exclude { .. } => {
-                set.insert(AnalysisCapability::GraphQuery);
-            }
+            Self::Match { .. } | Self::Flow { .. } | Self::Exclude { .. } => {}
             Self::Verify { feasible_path } => {
                 if *feasible_path {
                     set.insert(AnalysisCapability::SymbolicFeasibility);
@@ -316,6 +318,11 @@ impl DetectorStep {
             Self::Produce { .. } => {}
         }
         set
+    }
+
+    /// Whether this step is a reachability construct (FLOW / EXCLUDE).
+    pub fn is_reachability(&self) -> bool {
+        matches!(self, Self::Flow { .. } | Self::Exclude { .. })
     }
 }
 
@@ -475,6 +482,17 @@ impl DetectorIr {
                 if !self.requires.contains(&capability) {
                     return Err(DetectorIrError::MissingCapability { capability, index });
                 }
+            }
+        }
+
+        // V10 — reachability constructs need a reachability capability.
+        // `FLOW`/`EXCLUDE` can be served by a graph engine (GraphQuery) or a
+        // dataflow engine (Dataflow); declaring neither is unsupported.
+        if let Some(index) = self.steps.iter().position(|s| s.is_reachability()) {
+            let reachable = self.requires.contains(&AnalysisCapability::GraphQuery)
+                || self.requires.contains(&AnalysisCapability::Dataflow);
+            if !reachable {
+                return Err(DetectorIrError::MissingReachabilityCapability { index });
             }
         }
 
@@ -703,6 +721,11 @@ pub enum DetectorIrError {
     },
     /// The detector declares no capability.
     NoDeclaredCapability,
+    /// A reachability step (FLOW/EXCLUDE) but neither GraphQuery nor Dataflow.
+    MissingReachabilityCapability {
+        /// Index of the offending step.
+        index: usize,
+    },
     /// A step needs a capability the detector did not declare.
     MissingCapability {
         /// The capability that is required.
@@ -745,6 +768,10 @@ impl fmt::Display for DetectorIrError {
             Self::NoDeclaredCapability => {
                 f.write_str("a detector must declare at least one capability")
             }
+            Self::MissingReachabilityCapability { index } => write!(
+                f,
+                "step at index {index} is a reachability construct (FLOW/EXCLUDE) but the detector declares neither GRAPH_QUERY nor DATAFLOW"
+            ),
             Self::MissingCapability { capability, index } => write!(
                 f,
                 "step at index {index} requires capability {capability}, which the detector does not declare"
