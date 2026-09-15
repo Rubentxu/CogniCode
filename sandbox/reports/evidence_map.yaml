@@ -245,3 +245,7 @@ cognicode-cli:
   status: verified
   evidence_path: crates/cognicode-cli/tests/cogh_cli.rs
   evidence_note: 'e43 cogh CLI conformance coverage: 7 integration tests locking down 4 contracts (--version, list, current, doctor) via subprocess spawning with CARGO_BIN_EXE_cogh + isolated --home tempdir; verifies REQ #1 (binary version), #6 (list plugin table), #7 (current tracker), #10 (doctor) of openspec/specs/cognicode-cli/spec.md'
+portable-skill-bundle:
+  status: verified
+  evidence_path: crates/cognicode-cli/tests/portable_skill_bundle.rs
+  evidence_note: 'e44 portable-skill-bundle conformance: 8 integration tests covering REQ #1 (bundle loads + non-directory rejection), #2 (manifest required + maturity validated + missing SKILL.md), #3 (no IDE-specific compatibility field), #4 (manifest parsed and printed), #7 (referenced scripts must exist on disk); REQ #5 (versioning with MCP server) and #6 (requires-plugin cascading) are network-dependent and out of scope'
