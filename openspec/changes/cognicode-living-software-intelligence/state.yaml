@@ -42,7 +42,11 @@ phases:
       projection, 10 tests); e55-lsi-m6-contract-hardening archived
       (capability/tier split, execution-authority capture (P0),
       namespaced-id unification, distinct status dispositions, legacy origin;
-      46 findings tests). Next M6 slice: e56 kernel-id extraction +
-      structured causal, then detector backends (7.3-7.5).
+      46 findings tests); e56-lsi-kernel-ids-causal archived (kernel ids
+      lifted to ungated `domain::kernel_ids` + `ExecutionId`, `EvidenceRef`
+      replaced by kernel `EvidenceId`, structured navigable `CausalStep`;
+      47 findings + 12 kernel-id tests, gated kernel still green).
+      M6 contract coherent end to end. Next M6 slice: detector backends
+      (7.3 AST, 7.4 graph, 7.5 dataflow) then 7.7 Axiom importer.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
