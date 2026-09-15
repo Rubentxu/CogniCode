@@ -143,8 +143,10 @@ fn create_claude_config(tmp: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use crate::install;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn init_creates_layout_and_bundled_plugins() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-init-{}", std::process::id()));
         setup_temp_home(&tmp).unwrap();
@@ -196,6 +198,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn install_opencode_ide_patches_config_and_skills() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-oc-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
@@ -306,6 +309,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn install_codex_ide_patches_toml_config() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-codex-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
@@ -358,6 +362,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn install_zcode_ide_patches_config_and_skills() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-zcode-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
@@ -415,6 +420,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn install_claude_ide_patches_config_and_skills() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-claude-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
@@ -486,6 +492,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_clean_home_install() {
         let temp_home = tempfile::tempdir().unwrap();
         let original_home = std::env::var("HOME").ok();
@@ -534,6 +541,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn tracker_write_and_read_version_roundtrip() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-tracker-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
@@ -891,6 +899,7 @@ mod tests {
     // both the atomic bundle install (tracker update) and the IDE integration.
 
     #[test]
+    #[serial]
     fn test_install_with_ide_and_profile_dispatches_both() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-ide-prof-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);

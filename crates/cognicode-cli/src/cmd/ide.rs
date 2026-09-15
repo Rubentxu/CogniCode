@@ -683,6 +683,7 @@ pub type CognicodeHomeSup = crate::layout::CognicodeHome;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::io::Write;
 
     #[test]
@@ -760,6 +761,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn integrate_opencode_writes_mcp_entry() {
         let tmp = std::env::temp_dir().join(format!("cogh-oc-{}", std::process::id()));
         std::fs::create_dir_all(tmp.join(".config/opencode")).unwrap();
@@ -805,6 +807,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn uninstall_opencode_removes_entry() {
         let tmp = std::env::temp_dir().join(format!("cogh-oc-un-{}", std::process::id()));
         std::fs::create_dir_all(tmp.join(".config/opencode")).unwrap();
@@ -846,6 +849,7 @@ mod tests {
         assert!(std::path::Path::new(&opencode_config_path()).exists());
     }
     #[test]
+    #[serial]
     fn integrate_zcode_creates_mcp_section() {
         let tmp = std::env::temp_dir().join(format!("cogh-zcode-{}", std::process::id()));
         std::fs::create_dir_all(tmp.join(".zcode/v2")).unwrap();
@@ -874,6 +878,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn uninstall_zcode_removes_entry() {
         let tmp = std::env::temp_dir().join(format!("cogh-zcode-un-{}", std::process::id()));
         std::fs::create_dir_all(tmp.join(".zcode/v2")).unwrap();
@@ -909,6 +914,7 @@ mod tests {
         assert!(p.ends_with("config.json"));
     }
     #[test]
+    #[serial]
     fn integrate_claude_writes_mcp_file() {
         let tmp = std::env::temp_dir().join(format!("cogh-claude-{}", std::process::id()));
         std::fs::create_dir_all(tmp.join(".claude")).unwrap();
@@ -931,6 +937,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn uninstall_claude_removes_mcp_file() {
         let tmp = std::env::temp_dir().join(format!("cogh-claude-un-{}", std::process::id()));
         std::fs::create_dir_all(tmp.join(".claude")).unwrap();
@@ -956,6 +963,7 @@ mod tests {
         assert!(p.ends_with(".claude"));
     }
     #[test]
+    #[serial]
     fn integrate_codex_inserts_mcp_server() {
         let tmp = std::env::temp_dir().join(format!("cogh-codex-{}", std::process::id()));
         std::fs::create_dir_all(tmp.join(".codex")).unwrap();
@@ -990,6 +998,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn uninstall_codex_removes_entry() {
         let tmp = std::env::temp_dir().join(format!("cogh-codex-un-{}", std::process::id()));
         std::fs::create_dir_all(tmp.join(".codex")).unwrap();
