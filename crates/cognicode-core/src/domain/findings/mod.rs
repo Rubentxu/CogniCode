@@ -24,13 +24,13 @@ pub mod finding;
 pub mod namespaced;
 pub mod quality_projection;
 
+pub use crate::domain::kernel_ids::{EntityId, EvidenceId, FactId};
 pub use detector_ir::{
     AnalysisCapability, DetectorAuthority, DetectorDigest, DetectorExecutionRef, DetectorId,
-    DetectorIr, DetectorIrError, DetectorStep, EscalationTier, ExecutionId, FindingKind,
-    SubjectPattern,
+    DetectorIr, DetectorIrError, DetectorStep, EscalationTier, FindingKind, SubjectPattern,
 };
 pub use finding::{
-    CausalStep, EvidenceClass, EvidenceRef, Finding, FindingError, FindingGate, FindingId,
+    CausalStep, CausalStepKind, EvidenceClass, Finding, FindingError, FindingGate, FindingId,
     FindingOrigin, FindingSeverity, FindingStatus, RiskLevel,
 };
 pub use namespaced::{NamespacedError, NamespacedName};

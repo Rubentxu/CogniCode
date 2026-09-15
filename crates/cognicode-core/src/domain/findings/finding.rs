@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use super::detector_ir::{DetectorExecutionRef, FindingKind};
+use crate::domain::kernel_ids::{EntityId, EvidenceId, FactId};
 
 // ============================================================================
 // Evidence class
@@ -242,35 +243,105 @@ impl fmt::Display for FindingId {
     }
 }
 
-/// Opaque handle to one piece of supporting evidence.
-///
-/// Still feature-gate-neutral in e55; e56 replaces it with the kernel
-/// `EvidenceId` extracted to an ungated `domain::kernel_ids`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct EvidenceRef(pub u64);
+/// The role a causal step plays in a finding's explanation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CausalStepKind {
+    /// Where tainted/interesting data enters.
+    Source,
+    /// A flow/traversal between subjects.
+    Flow,
+    /// A call edge.
+    Call,
+    /// A sanitizer that neutralises the flow.
+    Sanitizer,
+    /// A guard that constrains the flow.
+    Guard,
+    /// Where the effect materialises.
+    Sink,
+    /// A runtime observation.
+    RuntimeObservation,
+    /// A feasibility verification.
+    Verification,
+    /// A bare location (used by legacy projections).
+    Location,
+}
 
-/// One step of a finding's causal explanation.
+impl CausalStepKind {
+    /// Stable label used for diagnostics.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Source => "source",
+            Self::Flow => "flow",
+            Self::Call => "call",
+            Self::Sanitizer => "sanitizer",
+            Self::Guard => "guard",
+            Self::Sink => "sink",
+            Self::RuntimeObservation => "runtime_observation",
+            Self::Verification => "verification",
+            Self::Location => "location",
+        }
+    }
+}
+
+impl fmt::Display for CausalStepKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// One **navigable** step of a finding's causal explanation.
+///
+/// Beyond a human-readable `detail`, a step can point at the kernel
+/// entities/facts/evidence that ground it, so a consumer (Explorer) can
+/// walk finding -> subject entity -> fact -> evidence rather than render
+/// opaque strings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CausalStep {
-    /// Short label (e.g. `source`, `flow`, `sink`, `location`).
-    pub label: String,
-    /// Human-readable detail.
+    /// The role of this step.
+    pub kind: CausalStepKind,
+    /// Subject entity this step concerns, if any.
+    pub subject: Option<EntityId>,
+    /// Fact backing this step, if any.
+    pub fact: Option<FactId>,
+    /// Evidence backing this step, if any.
+    pub evidence: Option<EvidenceId>,
+    /// Human-readable detail (must be non-empty).
     pub detail: String,
 }
 
 impl CausalStep {
-    /// Construct a causal step with non-empty label and detail.
-    pub fn new(label: impl Into<String>, detail: impl Into<String>) -> Result<Self, FindingError> {
-        let label = label.into();
+    /// Construct a causal step with a non-empty detail.
+    pub fn new(kind: CausalStepKind, detail: impl Into<String>) -> Result<Self, FindingError> {
         let detail = detail.into();
-        if label.trim().is_empty() {
-            return Err(FindingError::EmptyCausalStep);
-        }
         if detail.trim().is_empty() {
             return Err(FindingError::EmptyCausalStep);
         }
-        Ok(Self { label, detail })
+        Ok(Self {
+            kind,
+            subject: None,
+            fact: None,
+            evidence: None,
+            detail,
+        })
+    }
+
+    /// Attach the subject entity this step concerns.
+    pub fn with_subject(mut self, subject: EntityId) -> Self {
+        self.subject = Some(subject);
+        self
+    }
+
+    /// Attach the fact backing this step.
+    pub fn with_fact(mut self, fact: FactId) -> Self {
+        self.fact = Some(fact);
+        self
+    }
+
+    /// Attach the evidence backing this step.
+    pub fn with_evidence(mut self, evidence: EvidenceId) -> Self {
+        self.evidence = Some(evidence);
+        self
     }
 }
 
@@ -293,8 +364,8 @@ pub struct Finding {
     pub risk: RiskLevel,
     /// Strength of the supporting evidence.
     pub evidence_class: EvidenceClass,
-    /// Supporting evidence handles.
-    pub evidence: Vec<EvidenceRef>,
+    /// Supporting evidence handles (kernel evidence ids).
+    pub evidence: Vec<EvidenceId>,
     /// Detector as executed (id, version, digest, authority at run time).
     pub detector: DetectorExecutionRef,
     /// Lifecycle status.
@@ -333,7 +404,7 @@ impl Finding {
             && self
                 .causal_chain
                 .iter()
-                .all(|step| !step.label.trim().is_empty() && !step.detail.trim().is_empty())
+                .all(|step| !step.detail.trim().is_empty())
     }
 
     /// Whether this finding may block the given gate.
@@ -453,13 +524,13 @@ mod tests {
             severity: FindingSeverity::Critical,
             risk,
             evidence_class: class,
-            evidence: vec![EvidenceRef(1), EvidenceRef(2)],
+            evidence: vec![EvidenceId::new(1), EvidenceId::new(2)],
             detector: detector_at(authority),
             status,
             message: "tainted input reaches SQL execution".to_string(),
             causal_chain: vec![
-                CausalStep::new("source", "request.query").unwrap(),
-                CausalStep::new("sink", "db.execute").unwrap(),
+                CausalStep::new(CausalStepKind::Source, "request.query").unwrap(),
+                CausalStep::new(CausalStepKind::Sink, "db.execute").unwrap(),
             ],
         }
     }
@@ -641,11 +712,7 @@ mod tests {
     fn constructors_reject_empty_parts() {
         assert_eq!(FindingId::new("").unwrap_err(), FindingError::EmptyId);
         assert_eq!(
-            CausalStep::new("", "x").unwrap_err(),
-            FindingError::EmptyCausalStep
-        );
-        assert_eq!(
-            CausalStep::new("x", " ").unwrap_err(),
+            CausalStep::new(CausalStepKind::Source, " ").unwrap_err(),
             FindingError::EmptyCausalStep
         );
     }
@@ -664,6 +731,31 @@ mod tests {
         );
         f.origin = origin.clone();
         assert_eq!(f.origin, origin);
+    }
+
+    #[test]
+    fn causal_step_is_navigable_and_round_trips() {
+        let step = CausalStep::new(CausalStepKind::Sink, "db.execute")
+            .unwrap()
+            .with_subject(EntityId::new(42))
+            .with_fact(FactId::new(7))
+            .with_evidence(EvidenceId::new(3));
+
+        assert_eq!(step.kind, CausalStepKind::Sink);
+        assert_eq!(step.kind.name(), "sink");
+        assert_eq!(step.subject, Some(EntityId::new(42)));
+        assert_eq!(step.fact, Some(FactId::new(7)));
+        assert_eq!(step.evidence, Some(EvidenceId::new(3)));
+
+        let json = serde_json::to_string(&step).unwrap();
+        let parsed: CausalStep = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, step);
+
+        // A bare step has no navigation targets but is still valid.
+        let bare = CausalStep::new(CausalStepKind::Source, "request.query").unwrap();
+        assert_eq!(bare.subject, None);
+        assert_eq!(bare.fact, None);
+        assert_eq!(bare.evidence, None);
     }
 
     #[test]

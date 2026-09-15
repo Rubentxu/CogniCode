@@ -26,6 +26,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use super::namespaced::NamespacedName;
+use crate::domain::kernel_ids::ExecutionId;
 
 // ============================================================================
 // Analysis capability (what the detector needs)
@@ -470,11 +471,6 @@ impl DetectorIr {
 // ============================================================================
 // Execution reference (authority captured at run time)
 // ============================================================================
-
-/// Minimal execution identifier (moved to `domain::kernel_ids` in e56).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct ExecutionId(pub u64);
 
 /// Stable content digest of a detector definition (`fnv1a64:<hex>`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

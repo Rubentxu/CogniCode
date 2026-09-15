@@ -13,6 +13,11 @@ pub mod example_block;
 // definitions. Additive pure domain (no I/O), mirroring the M5
 // `analytics::program_analysis` precedent; ungated.
 pub mod findings;
+// Kernel identifiers (EntityId / FactId / EvidenceId / SnapshotId /
+// OccurrenceId / StableEntityId / ExecutionId) — ungated domain
+// vocabulary (cycle e56). The gated `evidence_kernel::ids` re-exports
+// these so the kernel keeps one source of truth.
+pub mod kernel_ids;
 // LSI evidence kernel (E36 M1) — canonical `Fact`/`Evidence`/`Provenance`
 // /`Snapshot` types plus the kernel store ports. The kernel SUBMODULES stay
 // hidden on default builds so the byte-level surface is unchanged

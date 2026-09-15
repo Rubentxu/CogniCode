@@ -31,8 +31,8 @@ use super::detector_ir::{
     DetectorAuthority, DetectorDigest, DetectorExecutionRef, DetectorId, FindingKind,
 };
 use super::finding::{
-    CausalStep, EvidenceClass, Finding, FindingId, FindingOrigin, FindingSeverity, FindingStatus,
-    RiskLevel,
+    CausalStep, CausalStepKind, EvidenceClass, Finding, FindingId, FindingOrigin, FindingSeverity,
+    FindingStatus, RiskLevel,
 };
 
 /// Namespace used for projected quality findings (`quality.<category>`).
@@ -124,7 +124,7 @@ pub fn project_quality_issue(issue: &QualityIssue) -> Result<Finding, super::Fin
     )?;
 
     let location = format!("{}:{}", issue.file_path, issue.line);
-    let causal_chain = vec![CausalStep::new("location", location)?];
+    let causal_chain = vec![CausalStep::new(CausalStepKind::Location, location)?];
 
     let mut finding = Finding {
         id: FindingId::new(format!("quality-{}", issue.id))?,
@@ -262,7 +262,7 @@ mod tests {
     fn carries_location_as_causal_step() {
         let f = project_quality_issue(&issue("info", "c", "open", "x")).unwrap();
         assert_eq!(f.causal_chain.len(), 1);
-        assert_eq!(f.causal_chain[0].label, "location");
+        assert_eq!(f.causal_chain[0].kind, CausalStepKind::Location);
         assert_eq!(f.causal_chain[0].detail, "src/main.rs:42");
     }
 
