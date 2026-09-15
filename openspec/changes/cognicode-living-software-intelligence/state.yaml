@@ -46,7 +46,12 @@ phases:
       lifted to ungated `domain::kernel_ids` + `ExecutionId`, `EvidenceRef`
       replaced by kernel `EvidenceId`, structured navigable `CausalStep`;
       47 findings + 12 kernel-id tests, gated kernel still green).
-      M6 contract coherent end to end. Next M6 slice: detector backends
-      (7.3 AST, 7.4 graph, 7.5 dataflow) then 7.7 Axiom importer.
+      e57-lsi-detector-executor-ast archived (DetectorAdmission trust
+      boundary, SHA-256 semantic/instance digests, DetectorExecutor +
+      BackendRegistry planner + AstBackend, FindingAssembler as the single
+      Finding factory, FindingVerifier referential truth; 79 findings +
+      5 E2E tests — U40/U43/U47 pass). M6 first safe vertical slice done.
+      Next M6 slice: graph backend (7.4) then dataflow backend (7.5) over
+      ProgramAnalysisService, then 7.7 Axiom importer.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
