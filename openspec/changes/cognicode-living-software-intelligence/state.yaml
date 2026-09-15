@@ -51,13 +51,19 @@ phases:
       BackendRegistry planner + AstBackend, FindingAssembler as the single
       Finding factory, FindingVerifier referential truth; 79 findings +
       5 E2E tests — U40/U43/U47 pass). M6 first safe vertical slice done.
-      e58.1-lsi-trust-policy-hardening archived (ExecutionPermit capability
-      boundary — authority unforgeable by construction; backend evidence
-      ceiling + DetectorFindingPolicy so a backend cannot influence the gate;
-      AstBackend advertises AstPattern only; IR rule V9; known-failure
-      checker hardened; 83 findings + 6 E2E tests). U42 full causal grounding
-      remains OPEN (needs the kernel evidence adapter). Next M6 slice: graph
-      backend (7.4) then dataflow backend (7.5) over ProgramAnalysisService,
-      then 7.7 Axiom importer.
+      e58.1-lsi-trust-policy-hardening archived (ExecutionPermit cannot be
+      directly forged or deserialized; raw detector authority is normalized
+      at admission; backend evidence ceiling + DetectorFindingPolicy so a
+      backend cannot influence the gate; AstBackend advertises AstPattern
+      only; IR rule V9; known-failure checker hardened).
+      e58.2-lsi-authority-verification archived (fail-closed restore;
+      VerifiedPromotion/ApprovalVerifier; logic/policy/semantic digests;
+      DetectorMatch kind validated against PRODUCE; requires={} rejected;
+      DetectorIr::can_block removed).
+      PRECISE STATUS: persisted promotion authenticity remains PENDING trusted
+      approval verification (M9/M13); the default restore path never restores
+      Gated. U42 full causal grounding remains OPEN (needs the kernel evidence
+      adapter). Next M6 slice: graph backend (7.4) then dataflow backend (7.5)
+      over ProgramAnalysisService, then 7.7 Axiom importer.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
