@@ -1,7 +1,8 @@
 //! Conformance harness for M5 program-analysis algorithms.
 //!
-//! Implements the contract from `openspec/changes/m5-program-analysis-core/
-//! specs/program-analysis-conformance/spec.md`:
+//! Implements the contract from `openspec/specs/program-analysis-conformance/spec.md`
+//! (originally authored under `openspec/changes/m5-program-analysis-core/`,
+//! archived to the canonical spec tree in 2026-09-15):
 //!
 //! - Canonical fixture corpus per algorithm kind (one Rust fixture each).
 //! - Digest-pin protocol: SHA-256 of the canonical-JSON output.

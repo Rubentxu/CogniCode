@@ -224,3 +224,16 @@ provider-pipeline-conformance:
     (contradiction fails the run), availability-gated language coverage (Rust/TS serverless
     declared tiers, Java declared-unavailable); verify report PASS WITH WARNINGS (validator-admitted),
     Java readiness bounds pinned in e39.1 (d2358bcf)'
+
+program-analysis-core:
+  status: verified
+  evidence_path: crates/cognicode-core/src/application/program_analysis.rs + crates/cognicode-graph-algos/src/algorithms/{cfg,dominators,slicer,interproc,taint}.rs tests
+  evidence_note: 'M5 program analysis core: CFG, DFG, slicing, dominators_cfg, interproc_summary, taint v1 via ProgramAnalysisService::dispatch; 22 program_analysis tests + 161 graph-algos tests; originally authored under openspec/changes/m5-program-analysis-core/, archived to canonical spec tree in 2026-09-15 (commit pending); pre-existing MCP path-canonicalization failures documented as not-introduced-by-M5'
+program-analysis-conformance:
+  status: verified
+  evidence_path: crates/cognicode-core/src/application/program_analysis/conformance.rs + crates/cognicode-core/src/application/program_analysis/acceptance_evidence.rs
+  evidence_note: 'M5 conformance harness: canonical corpus + replay_guard + perf_envelope + mcp_fixture_report; originally authored under openspec/changes/m5-program-analysis-core/, archived to canonical spec tree in 2026-09-15 (commit pending); SPEC reference in conformance.rs:3-5 updated'
+mcp-wiring:
+  status: verified
+  evidence_path: crates/cognicode-core/src/interface/mcp/handlers/program_analysis_handlers.rs + crates/cognicode-core/src/interface/mcp/mcp_roundtrip_tests.rs (m5_program_analysis_roundtrip module)
+  evidence_note: 'M5.2 MCP wiring: 6 algorithm IDs exposed via tools/call; replay contract proven via test_cfg_per_function_digest_matches_conformance; originally authored under openspec/changes/m5-mcp-wiring/, archived to canonical spec tree in 2026-09-15 (commit pending); SPEC reference in program_analysis_handlers.rs:3-4 updated'

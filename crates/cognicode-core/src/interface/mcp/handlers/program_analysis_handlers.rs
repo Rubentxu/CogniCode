@@ -1,6 +1,7 @@
 //! MCP handlers for the M5 program-analysis algorithm IDs.
 //!
-//! Per design D1 (m5-mcp-wiring), each handler reuses
+//! Per design D1 (`m5-mcp-wiring`, archived to `openspec/specs/mcp-wiring/spec.md`
+//! in 2026-09-15), each handler reuses
 //! [`crate::application::program_analysis::ProgramAnalysisService`] as the
 //! single dispatch entry point. The handlers extract a JSON-friendly value
 //! from [`crate::domain::analytics::descriptor::RunOutput`] using the same
