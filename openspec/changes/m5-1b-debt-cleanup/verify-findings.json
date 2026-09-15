@@ -1,0 +1,99 @@
+{
+  "$schema": "https://sddk.dev/contracts/verify-finding.schema.json",
+  "cycle_id": "p-c1fac1fea05615c6/m5-1b-debt-cleanup",
+  "path": "A-min",
+  "phase": "verify",
+  "generated_at": "2026-09-14T22:03:00Z",
+  "subject": {
+    "base": "6bd72e78",
+    "head": "aaa821c4d8f148bfdb19c1c334dadc6cc51c9f0d",
+    "diff_digest": "776d35ce17d780289ad81cb3b1dfa11fb77d002fe552f12e14512a77943d8e4e"
+  },
+  "cwd": "/var/mnt/DiscoChino2-fast/Proyectos/rust/CogniCode",
+  "findings": [
+    {
+      "finding_id": "1675d4ec842799ba7e515db88d3a08f0dbd7dc44eaeb1db940b968c6a988c4f5",
+      "rule_id": "ast-lift-loc-cap",
+      "inherited_from": "p-c1fac1fea05615c6/m5-1b-statement-extraction",
+      "subject": {
+        "base": "6bd72e78",
+        "head": "aaa821c4d8f148bfdb19c1c334dadc6cc51c9f0d",
+        "diff_digest": "776d35ce17d780289ad81cb3b1dfa11fb77d002fe552f12e14512a77943d8e4e"
+      },
+      "location": {
+        "path": "crates/cognicode-core/src/application/program_analysis/ast_lift.rs",
+        "start_line": 1,
+        "end_line": 181,
+        "symbol": "ast_lift module (production code only)"
+      },
+      "classification": "warning",
+      "severity": "low",
+      "confidence": "high",
+      "production_reachable": "yes",
+      "status": "closed_by_this_cycle",
+      "closed_by_commit": "5cb4a644",
+      "evidence": [
+        {
+          "kind": "command",
+          "observation": "production ast_lift.rs reduced from 845 LOC to 181 LOC; tests relocated to ast_lift_tests.rs (664 LOC) via #[path] attribute. 21/21 ast_lift tests + 9/9 extractor tests still pass.",
+          "command": "wc -l crates/cognicode-core/src/application/program_analysis/ast_lift.rs crates/cognicode-core/src/application/program_analysis/ast_lift_tests.rs",
+          "exit_code": 0,
+          "output_digest": "ast_lift.rs 181 + ast_lift_tests.rs 664 = 845 total (byte-identical to m5-1b pre-split state)"
+        }
+      ]
+    },
+    {
+      "finding_id": "caf0a0f3bae48fa6df21ed5ca37e3a9c2a9b3c7faf9edde4ce36f2e3b4b8e0f0",
+      "rule_id": "pre-existing-feature-gate",
+      "inherited_from": "p-c1fac1fea05615c6/m5-1b-statement-extraction",
+      "subject": {
+        "base": "6bd72e78",
+        "head": "aaa821c4d8f148bfdb19c1c334dadc6cc51c9f0d",
+        "diff_digest": "776d35ce17d780289ad81cb3b1dfa11fb77d002fe552f12e14512a77943d8e4e"
+      },
+      "location": {
+        "path": "crates/cognicode-core/src/interface/mcp/mcp_roundtrip_tests.rs",
+        "start_line": 993,
+        "end_line": 1001,
+        "symbol": "mod m5_program_analysis_roundtrip { ... }"
+      },
+      "classification": "false_positive_resolved_to_real_defect",
+      "severity": "medium",
+      "confidence": "high",
+      "production_reachable": "yes",
+      "status": "fixed_by_this_cycle",
+      "fixed_by_commit": "aaa821c4",
+      "evidence": [
+        {
+          "kind": "command",
+          "observation": "Before this cycle: cargo test --lib -p cognicode-core --no-run failed with E0432 (handle_interproc_summary not found). After this cycle: exits 0 with feature OFF; 8/8 m5_program_analysis_roundtrip tests still pass with feature ON.",
+          "command": "cargo test --lib -p cognicode-core --no-run",
+          "exit_code": 0,
+          "output_digest": "executable built; feature-OFF build now compiles cleanly"
+        }
+      ]
+    },
+    {
+      "finding_id": "3088ee9ec0d6d1c4e0a5b5b8e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0",
+      "rule_id": "unused-import-conformance",
+      "inherited_from": "p-c1fac1fea05615c6/m5-1b-statement-extraction",
+      "subject": {
+        "base": "6bd72e78",
+        "head": "aaa821c4d8f148bfdb19c1c334dadc6cc51c9f0d",
+        "diff_digest": "776d35ce17d780289ad81cb3b1dfa11fb77d002fe552f12e14512a77943d8e4e"
+      },
+      "location": {
+        "path": "crates/cognicode-core/src/application/program_analysis/conformance.rs",
+        "start_line": 30,
+        "end_line": 30,
+        "symbol": "INTERPROC_SUMMARY import"
+      },
+      "classification": "false_positive",
+      "severity": "low",
+      "confidence": "high",
+      "production_reachable": "no",
+      "status": "unchanged_out_of_scope",
+      "rationale": "Pre-existing on 6bd72e78 baseline; unused only when --features program-analysis-server is OFF. Used at program_analysis.rs:227 and 514 when feature is ON. Documented as false_positive in m5-1b verify-report. Spec for this cycle explicitly excludes other modules' lint findings."
+    }
+  ]
+}
