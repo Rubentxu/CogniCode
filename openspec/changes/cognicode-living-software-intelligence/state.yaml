@@ -36,6 +36,8 @@ phases:
       conformance coverage, CP-3 cross-producer edge cases). M6 (Findings &
       Detector IR) started 2026-09-15: e52-lsi-detector-ir archived
       (umbrella task 7.2 — Detector IR domain model + fail-loud validator,
-      15 tests). Next M6 slice: finding/evidence-class model (task 7.1).
+      15 tests); e53-lsi-finding-model archived (task 7.1 — Finding /
+      evidence-class model + gate, 11 tests). Next M6 slice: a detector
+      backend (task 7.3) or QualityIssue projection (task 7.6).
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}

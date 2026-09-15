@@ -13,10 +13,17 @@
 //!
 //! - [`detector_ir`] — [`AnalysisLevel`], [`DetectorStep`], [`DetectorIr`],
 //!   [`DetectorAuthority`] and the fail-loud validator.
+//! - [`finding`] — [`Finding`], [`EvidenceClass`], [`RiskLevel`],
+//!   [`FindingGate`] and the evidence-backed conclusion model.
 
 pub mod detector_ir;
+pub mod finding;
 
 pub use detector_ir::{
     AnalysisLevel, DetectorAuthority, DetectorId, DetectorIr, DetectorIrError, DetectorStep,
     FindingKind, SubjectPattern,
+};
+pub use finding::{
+    CausalStep, DetectorRef, EvidenceClass, EvidenceRef, Finding, FindingError, FindingGate,
+    FindingId, FindingSeverity, FindingStatus, RiskLevel,
 };
