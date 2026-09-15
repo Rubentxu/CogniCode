@@ -256,8 +256,20 @@ impl InstallerTransaction {
         if bundle_path.exists() {
             std::fs::read_to_string(&bundle_path).map_err(|e| InstallerError::Io(bundle_path, e))
         } else {
-            // Embedded fallback for distribution installers
-            Ok(include_str!("../../../../bundles/v0.94.14/bundle.yaml").to_string())
+            // Embedded fallback for distribution installers.
+            //
+            // The path is derived from CARGO_PKG_VERSION so the crate
+            // version is the single source of truth: bumping the version
+            // without adding `bundles/v<version>/bundle.yaml` fails the
+            // build loudly instead of silently shipping a mismatched
+            // bundle that `assert_pkg_version` would later reject.
+            Ok(include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../bundles/v",
+                env!("CARGO_PKG_VERSION"),
+                "/bundle.yaml"
+            ))
+            .to_string())
         }
     }
 
@@ -345,6 +357,29 @@ impl InstallerTransaction {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The embedded bundle must be co-versioned with the crate.
+    ///
+    /// The compile-time `include_str!` path is derived from
+    /// `CARGO_PKG_VERSION`, so a missing directory fails the build. This
+    /// test closes the remaining gap: a bundle directory that exists but
+    /// whose internal `version:` field was not bumped.
+    #[test]
+    fn embedded_bundle_version_matches_pkg_version() {
+        let yaml = InstallerTransaction::load_bundle_manifest()
+            .expect("embedded bundle manifest must be readable");
+        let manifest =
+            BundleManifest::from_str(&yaml).expect("embedded bundle manifest must parse");
+
+        assert_eq!(
+            manifest.version,
+            env!("CARGO_PKG_VERSION"),
+            "embedded bundle version must equal CARGO_PKG_VERSION"
+        );
+        manifest
+            .assert_pkg_version()
+            .expect("embedded bundle must satisfy assert_pkg_version");
+    }
 
     #[test]
     fn install_stage_ordering() {

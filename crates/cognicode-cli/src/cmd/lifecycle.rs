@@ -23,15 +23,20 @@ use super::layout::{CognicodeHome, cmd_init, cmd_install};
 use super::profile;
 use super::tracker;
 
-/// Locate the cogh binary.
+/// Locate the freshly built `cogh` binary.
 ///
-/// The cli crate is at `<workspace>/crates/cognicode-cli/`. The binary
-/// is built at `<workspace>/target/debug/cogh`. We resolve the binary
-/// path relative to CARGO_MANIFEST_DIR.
+/// The unit-test executable lives at `<target-dir>/debug/deps/cogh-<hash>`;
+/// its companion `cogh` binary sits two directories up in
+/// `<target-dir>/debug/`. Deriving the path from `current_exe()` keeps this
+/// correct regardless of a custom `CARGO_TARGET_DIR`: a hardcoded
+/// `<workspace>/target/debug/cogh` silently resolved to a stale binary,
+/// masking the real behaviour under test.
 fn cogh_bin() -> std::path::PathBuf {
-    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest_dir.parent().and_then(|p| p.parent()).unwrap();
-    workspace_root.join("target").join("debug").join("cogh")
+    let exe = std::env::current_exe().expect("current_exe should be available in tests");
+    exe.parent()
+        .and_then(|p| p.parent())
+        .expect("test executable should live in <target-dir>/debug/deps")
+        .join(format!("cogh{}", std::env::consts::EXE_SUFFIX))
 }
 
 /// Run `cogh` with the given args, in a temp HOME.
