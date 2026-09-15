@@ -30,5 +30,12 @@ phases:
       87993f90 (e39 semantic provider pipeline), d2358bcf (e39.1 provider UX
       hardening); two promoted capability specs in openspec/specs/
       (provider-tier-provenance, provider-pipeline-conformance).
+      M5 milestones archived 2026-09-13 (m5-program-analysis-core, m5-1-ast-lifting,
+      m5-1b-statement-extraction, m5-1b-debt-cleanup, m5-mcp-wiring) plus the
+      e40-e42 housekeeping slices (generic-graph equivalence harness, DFG
+      conformance coverage, CP-3 cross-producer edge cases). M6 (Findings &
+      Detector IR) started 2026-09-15: e52-lsi-detector-ir archived
+      (umbrella task 7.2 — Detector IR domain model + fail-loud validator,
+      15 tests). Next M6 slice: finding/evidence-class model (task 7.1).
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}

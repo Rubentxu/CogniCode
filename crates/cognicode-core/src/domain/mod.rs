@@ -9,6 +9,10 @@ pub mod analytics;
 pub mod error;
 pub mod events;
 pub mod example_block;
+// LSI Findings & Detector IR (M6) — declarative, validated detector
+// definitions. Additive pure domain (no I/O), mirroring the M5
+// `analytics::program_analysis` precedent; ungated.
+pub mod findings;
 // LSI evidence kernel (E36 M1) — canonical `Fact`/`Evidence`/`Provenance`
 // /`Snapshot` types plus the kernel store ports. The kernel SUBMODULES stay
 // hidden on default builds so the byte-level surface is unchanged
