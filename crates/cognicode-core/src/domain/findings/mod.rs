@@ -26,6 +26,7 @@ pub mod detector_ir;
 pub mod digest;
 pub mod execution;
 pub mod finding;
+pub mod graph_backend;
 pub mod namespaced;
 pub mod outcome;
 pub mod ports;
@@ -36,7 +37,7 @@ pub use crate::domain::kernel_ids::{EntityId, EvidenceId, FactId};
 pub use admission::{
     AdmissionError, AdmissionRef, AdmissionSource, AdmittedDetector, AdmittedDetectorRecord,
     ApprovalVerifier, DetectorAdmission, DetectorVersion, EligibleSourceVerifier, ExecutionPermit,
-    PromotionAuthority, PromotionRequest, RejectAllApprovals, VerifiedPromotion,
+    PromotionAuthority, PromotionRequest, PromotionTarget, RejectAllApprovals, VerifiedPromotion,
 };
 pub use assembler::{AssemblyError, FindingAssembler};
 pub use ast_backend::{AstBackend, AstConstruct, AstInput, AstUnit};
@@ -54,6 +55,7 @@ pub use finding::{
     CausalStep, CausalStepKind, EvidenceClass, Finding, FindingError, FindingGate, FindingId,
     FindingOrigin, FindingSeverity, FindingStatus, RiskLevel,
 };
+pub use graph_backend::{GraphBackend, GraphEdge, GraphInput, GraphNode};
 pub use namespaced::{NamespacedError, NamespacedName};
 pub use outcome::{
     CausalObservation, DetectorDiagnostic, DetectorMatch, DetectorOutcome, EvidenceKind,

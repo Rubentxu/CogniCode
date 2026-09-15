@@ -36,6 +36,7 @@ use std::fmt;
 use super::detector_ir::{
     DetectorAuthority, DetectorExecutionRef, DetectorId, DetectorIr, DetectorIrError,
 };
+use super::digest::DetectorDigest;
 use crate::domain::kernel_ids::ExecutionId;
 
 /// A non-empty detector version.
@@ -126,22 +127,40 @@ pub struct AdmissionRef {
     pub approval: Option<String>,
 }
 
+/// The exact object a promotion approves: detector, version, semantics and
+/// the source it was admitted from.
+///
+/// Derived from an [`ExecutionPermit`] (never supplied by the caller), so a
+/// promotion cannot be "re-pointed" at a different version, a different logic
+/// (semantic digest) or a different admission source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromotionTarget {
+    /// The detector being promoted.
+    pub detector_id: DetectorId,
+    /// The exact version.
+    pub version: DetectorVersion,
+    /// The semantic digest (`logic + policy`) of the approved definition.
+    pub semantic_digest: DetectorDigest,
+    /// The admission source the detector was admitted from.
+    pub source: AdmissionSource,
+}
+
 /// A request to promote a detector, to be vetted by an [`ApprovalVerifier`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PromotionRequest {
-    /// The detector being promoted.
-    pub detector_id: DetectorId,
-    /// The source the promotion concerns.
-    pub source: AdmissionSource,
+    /// What is being approved — derived from the permit.
+    pub target: PromotionTarget,
     /// The alleged approving authority.
     pub approver: String,
 }
 
 impl PromotionRequest {
-    /// Construct a request with a non-empty approver.
-    pub fn new(
-        detector_id: DetectorId,
-        source: AdmissionSource,
+    /// Build a request for exactly the detector a permit authorises.
+    ///
+    /// This is the only public constructor: the caller supplies the approval
+    /// intent (`approver`), never the object being approved.
+    pub fn for_permit(
+        permit: &ExecutionPermit,
         approver: impl Into<String>,
     ) -> Result<Self, AdmissionError> {
         let approver = approver.into();
@@ -149,10 +168,33 @@ impl PromotionRequest {
             return Err(AdmissionError::EmptyApprover);
         }
         Ok(Self {
-            detector_id,
-            source,
+            target: permit.promotion_target(),
             approver,
         })
+    }
+
+    /// Rebuild the request a persisted record describes (used by
+    /// [`DetectorAdmission::restore_with`]).
+    fn from_record(record: &AdmittedDetectorRecord, approver: impl Into<String>) -> Self {
+        Self {
+            target: PromotionTarget {
+                detector_id: record.definition.id.clone(),
+                version: record.version.clone(),
+                semantic_digest: record.definition.semantic_digest(),
+                source: record.admission.source,
+            },
+            approver: approver.into(),
+        }
+    }
+
+    /// The approving authority.
+    pub fn approver(&self) -> &str {
+        &self.approver
+    }
+
+    /// The approved target.
+    pub fn target(&self) -> &PromotionTarget {
+        &self.target
     }
 }
 
@@ -187,7 +229,7 @@ pub struct EligibleSourceVerifier;
 
 impl ApprovalVerifier for EligibleSourceVerifier {
     fn verify(&self, request: &PromotionRequest) -> bool {
-        request.source.is_trusted_to_gate() && !request.approver.trim().is_empty()
+        request.target.source.is_trusted_to_gate() && !request.approver.trim().is_empty()
     }
 }
 
@@ -212,9 +254,14 @@ impl VerifiedPromotion {
         &self.request
     }
 
+    /// The approved target.
+    pub fn target(&self) -> &PromotionTarget {
+        &self.request.target
+    }
+
     /// The approved detector id.
     pub fn detector_id(&self) -> &DetectorId {
-        &self.request.detector_id
+        &self.request.target.detector_id
     }
 
     /// The approving authority.
@@ -239,7 +286,7 @@ impl PromotionAuthority {
         }
         if !verifier.verify(&request) {
             return Err(AdmissionError::PromotionRejected {
-                detector: request.detector_id.as_str().to_string(),
+                detector: request.target.detector_id.as_str().to_string(),
             });
         }
         Ok(VerifiedPromotion {
@@ -362,6 +409,16 @@ impl ExecutionPermit {
         )
     }
 
+    /// The exact target a promotion would approve.
+    pub fn promotion_target(&self) -> PromotionTarget {
+        PromotionTarget {
+            detector_id: self.admitted.definition.id.clone(),
+            version: self.admitted.version.clone(),
+            semantic_digest: self.admitted.definition.semantic_digest(),
+            source: self.admitted.admission.source,
+        }
+    }
+
     /// Capture a persistence record.
     pub fn record(&self) -> AdmittedDetectorRecord {
         AdmittedDetectorRecord::from_admitted(&self.admitted)
@@ -407,10 +464,25 @@ impl DetectorAdmission {
         permit: &ExecutionPermit,
         verified: VerifiedPromotion,
     ) -> Result<ExecutionPermit, AdmissionError> {
-        if verified.detector_id() != permit.id() {
+        // Bind the promotion to the exact permit: detector, version, semantics
+        // and admission source must all match.
+        let target = permit.promotion_target();
+        if verified.target() != &target {
             return Err(AdmissionError::PromotionMismatch {
-                permit: permit.id().as_str().to_string(),
-                promotion: verified.detector_id().as_str().to_string(),
+                permit: format!(
+                    "{}@{} semantic={} source={}",
+                    target.detector_id,
+                    target.version,
+                    target.semantic_digest.as_str(),
+                    target.source
+                ),
+                promotion: format!(
+                    "{}@{} semantic={} source={}",
+                    verified.target().detector_id,
+                    verified.target().version,
+                    verified.target().semantic_digest.as_str(),
+                    verified.target().source
+                ),
             });
         }
         let mut admitted = permit.admitted.clone();
@@ -462,11 +534,7 @@ impl DetectorAdmission {
         let authority = if record.authority == DetectorAuthority::Gated {
             match &record.admission.approval {
                 Some(approver) => {
-                    let request = PromotionRequest {
-                        detector_id: definition.id.clone(),
-                        source: record.admission.source,
-                        approver: approver.clone(),
-                    };
+                    let request = PromotionRequest::from_record(record, approver.clone());
                     if PromotionAuthority::verify(verifier, request).is_ok() {
                         DetectorAuthority::Gated
                     } else {
@@ -564,13 +632,12 @@ mod tests {
         }
     }
 
-    fn promote_with<const N: usize>(
+    fn promote_with(
         permit: &ExecutionPermit,
         verifier: &dyn ApprovalVerifier,
         approver: &str,
     ) -> Result<ExecutionPermit, AdmissionError> {
-        let request =
-            PromotionRequest::new(permit.id().clone(), AdmissionSource::HumanCurated, approver)?;
+        let request = PromotionRequest::for_permit(permit, approver)?;
         let verified = PromotionAuthority::verify(verifier, request)?;
         DetectorAdmission::promote(permit, verified)
     }
@@ -598,34 +665,157 @@ mod tests {
 
         // The default verifier rejects everything: no promotion possible.
         assert!(matches!(
-            promote_with::<0>(&permit, &RejectAllApprovals, "security-team").unwrap_err(),
+            promote_with(&permit, &RejectAllApprovals, "security-team").unwrap_err(),
             AdmissionError::PromotionRejected { .. }
         ));
 
         // Only a verifier that actually accepts yields a Gated permit.
-        let gated = promote_with::<0>(&permit, &EligibleSourceVerifier, "security-team").unwrap();
+        let gated = promote_with(&permit, &EligibleSourceVerifier, "security-team").unwrap();
         assert_eq!(gated.authority(), DetectorAuthority::Gated);
         assert!(gated.can_block());
         assert_eq!(permit.authority(), DetectorAuthority::Candidate);
     }
 
     #[test]
-    fn promote_rejects_a_mismatched_detector() {
+    fn promote_rejects_a_target_from_another_permit() {
         let permit = DetectorAdmission::admit(
             definition(DetectorAuthority::Candidate),
             "1.0.0",
             AdmissionSource::HumanCurated,
         )
         .unwrap();
-        let request = PromotionRequest::new(
-            DetectorId::new("other.detector").unwrap(),
+
+        let other = DetectorAdmission::admit(
+            {
+                let mut ir = definition(DetectorAuthority::Candidate);
+                ir.id = DetectorId::new("other.detector").unwrap();
+                ir
+            },
+            "1.0.0",
             AdmissionSource::HumanCurated,
-            "team",
         )
         .unwrap();
+
+        let request = PromotionRequest::for_permit(&other, "team").unwrap();
         let verified = PromotionAuthority::verify(&EligibleSourceVerifier, request).unwrap();
         assert!(matches!(
             DetectorAdmission::promote(&permit, verified).unwrap_err(),
+            AdmissionError::PromotionMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn promotion_is_bound_to_the_admission_source() {
+        let mut ir = definition(DetectorAuthority::Candidate);
+        ir.id = DetectorId::new("security.same_id").unwrap();
+
+        let ai =
+            DetectorAdmission::admit(ir.clone(), "1.0.0", AdmissionSource::AiGenerated).unwrap();
+        let human = DetectorAdmission::admit(ir, "1.0.0", AdmissionSource::HumanCurated).unwrap();
+
+        // A promotion verified for the human-curated permit must NOT promote
+        // the AI permit (whose source the requester cannot rewrite).
+        let request = PromotionRequest::for_permit(&human, "team").unwrap();
+        let verified = PromotionAuthority::verify(&EligibleSourceVerifier, request).unwrap();
+        assert!(matches!(
+            DetectorAdmission::promote(&ai, verified).unwrap_err(),
+            AdmissionError::PromotionMismatch { .. }
+        ));
+
+        // The AI permit cannot even build an approvable request with the
+        // eligible-source verifier.
+        let ai_request = PromotionRequest::for_permit(&ai, "team").unwrap();
+        assert_eq!(ai_request.target().source, AdmissionSource::AiGenerated);
+        assert!(matches!(
+            PromotionAuthority::verify(&EligibleSourceVerifier, ai_request).unwrap_err(),
+            AdmissionError::PromotionRejected { .. }
+        ));
+    }
+
+    #[test]
+    fn promotion_is_bound_to_version_and_logic() {
+        let mut ir = definition(DetectorAuthority::Candidate);
+        ir.id = DetectorId::new("security.versioned").unwrap();
+
+        let v1 =
+            DetectorAdmission::admit(ir.clone(), "1.0.0", AdmissionSource::HumanCurated).unwrap();
+        let v2 = DetectorAdmission::admit(ir, "2.0.0", AdmissionSource::HumanCurated).unwrap();
+
+        let verified = PromotionAuthority::verify(
+            &EligibleSourceVerifier,
+            PromotionRequest::for_permit(&v1, "team").unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(
+            DetectorAdmission::promote(&v2, verified).unwrap_err(),
+            AdmissionError::PromotionMismatch { .. }
+        ));
+
+        // Different logic (different steps) => different semantic digest.
+        let mut changed = definition(DetectorAuthority::Candidate);
+        changed.id = DetectorId::new("security.versioned").unwrap();
+        changed.steps = vec![DetectorStep::Produce {
+            kind: FindingKind::new("security.weak_hash").unwrap(),
+        }];
+        let new_logic =
+            DetectorAdmission::admit(changed, "1.0.0", AdmissionSource::HumanCurated).unwrap();
+        let verified2 = PromotionAuthority::verify(
+            &EligibleSourceVerifier,
+            PromotionRequest::for_permit(&v1, "team").unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(
+            DetectorAdmission::promote(&new_logic, verified2).unwrap_err(),
+            AdmissionError::PromotionMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn renaming_does_not_invalidate_an_approval() {
+        let mut ir = definition(DetectorAuthority::Candidate);
+        ir.id = DetectorId::new("security.renamed").unwrap();
+        let a =
+            DetectorAdmission::admit(ir.clone(), "1.0.0", AdmissionSource::HumanCurated).unwrap();
+
+        let mut renamed = ir;
+        renamed.name = "a totally different display name".to_string();
+        let b = DetectorAdmission::admit(renamed, "1.0.0", AdmissionSource::HumanCurated).unwrap();
+
+        assert_eq!(a.promotion_target(), b.promotion_target());
+        let verified = PromotionAuthority::verify(
+            &EligibleSourceVerifier,
+            PromotionRequest::for_permit(&a, "team").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            DetectorAdmission::promote(&b, verified)
+                .unwrap()
+                .authority(),
+            DetectorAuthority::Gated
+        );
+    }
+
+    #[test]
+    fn policy_change_requires_a_new_approval() {
+        let mut ir = definition(DetectorAuthority::Candidate);
+        ir.id = DetectorId::new("security.policy").unwrap();
+        let low =
+            DetectorAdmission::admit(ir.clone(), "1.0.0", AdmissionSource::HumanCurated).unwrap();
+
+        ir.policy = DetectorFindingPolicy::new(
+            super::super::finding::FindingSeverity::Critical,
+            super::super::finding::RiskLevel::Critical,
+        );
+        let high = DetectorAdmission::admit(ir, "1.0.0", AdmissionSource::HumanCurated).unwrap();
+
+        assert_ne!(low.promotion_target(), high.promotion_target());
+        let verified = PromotionAuthority::verify(
+            &EligibleSourceVerifier,
+            PromotionRequest::for_permit(&low, "team").unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(
+            DetectorAdmission::promote(&high, verified).unwrap_err(),
             AdmissionError::PromotionMismatch { .. }
         ));
     }
@@ -669,7 +859,7 @@ mod tests {
             AdmissionSource::HumanCurated,
         )
         .unwrap();
-        let gated = promote_with::<0>(&permit, &EligibleSourceVerifier, "team").unwrap();
+        let gated = promote_with(&permit, &EligibleSourceVerifier, "team").unwrap();
         let record = gated.record();
 
         let restored = DetectorAdmission::restore_with(&record, &EligibleSourceVerifier).unwrap();
@@ -724,13 +914,14 @@ mod tests {
 
     #[test]
     fn promotion_requires_a_non_empty_approver() {
+        let permit = DetectorAdmission::admit(
+            definition(DetectorAuthority::Candidate),
+            "1.0.0",
+            AdmissionSource::Builtin,
+        )
+        .unwrap();
         assert_eq!(
-            PromotionRequest::new(
-                DetectorId::new("security.weak_hash").unwrap(),
-                AdmissionSource::Builtin,
-                "  "
-            )
-            .unwrap_err(),
+            PromotionRequest::for_permit(&permit, "  ").unwrap_err(),
             AdmissionError::EmptyApprover
         );
     }

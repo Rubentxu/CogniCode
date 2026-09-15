@@ -175,12 +175,8 @@ mod tests {
             ],
         };
         let candidate = DetectorAdmission::admit(ir, "1", AdmissionSource::HumanCurated).unwrap();
-        let request = super::super::admission::PromotionRequest::new(
-            candidate.id().clone(),
-            AdmissionSource::HumanCurated,
-            "team",
-        )
-        .unwrap();
+        let request =
+            super::super::admission::PromotionRequest::for_permit(&candidate, "team").unwrap();
         let verified = super::super::admission::PromotionAuthority::verify(
             &super::super::admission::EligibleSourceVerifier,
             request,

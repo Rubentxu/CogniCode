@@ -47,6 +47,7 @@ fn weak_hash_ir(claimed_authority: DetectorAuthority) -> DetectorIr {
 
 fn ast_input() -> AnalysisInput {
     AnalysisInput {
+        graph: None,
         ast: Some(AstInput {
             units: vec![AstUnit {
                 path: "src/hash.rs".to_string(),
@@ -81,12 +82,7 @@ impl cognicode_core::domain::findings::ApprovalVerifier for AcceptAll {
 fn verified_promotion(
     permit: &ExecutionPermit,
 ) -> cognicode_core::domain::findings::VerifiedPromotion {
-    let request = PromotionRequest::new(
-        permit.id().clone(),
-        AdmissionSource::HumanCurated,
-        "security-team",
-    )
-    .unwrap();
+    let request = PromotionRequest::for_permit(permit, "security-team").unwrap();
     PromotionAuthority::verify(&AcceptAll, request).unwrap()
 }
 

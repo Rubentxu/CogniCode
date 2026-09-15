@@ -31,6 +31,7 @@ use super::assembler::{AssemblyError, FindingAssembler};
 use super::ast_backend::AstInput;
 use super::detector_ir::{AnalysisCapability, DetectorExecutionRef, DetectorIrError};
 use super::finding::{EvidenceClass, Finding, FindingGate};
+use super::graph_backend::GraphInput;
 use super::outcome::{DetectorDiagnostic, DetectorOutcome};
 use super::ports::{EvidenceError, EvidenceSink};
 use super::verifier::{FindingVerifier, VerificationError};
@@ -44,6 +45,8 @@ use crate::domain::kernel_ids::{EvidenceId, ExecutionId};
 pub struct AnalysisInput {
     /// AST/construct view (AstBackend).
     pub ast: Option<AstInput>,
+    /// Graph view (GraphBackend).
+    pub graph: Option<GraphInput>,
 }
 
 /// A backend that executes a detector against an [`AnalysisInput`].

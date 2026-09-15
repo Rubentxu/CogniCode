@@ -63,7 +63,13 @@ phases:
       PRECISE STATUS: persisted promotion authenticity remains PENDING trusted
       approval verification (M9/M13); the default restore path never restores
       Gated. U42 full causal grounding remains OPEN (needs the kernel evidence
-      adapter). Next M6 slice: graph backend (7.4) then dataflow backend (7.5)
-      over ProgramAnalysisService, then 7.7 Axiom importer.
+      adapter). e59-lsi-graph-backend archived (WU-0 promotion bound to the
+      exact PromotionTarget: detector/version/semantic-digest/source;
+      GraphBackend {GraphQuery} ceiling B with deterministic FLOW/EXCLUDE,
+      GraphPath evidence and Source->Flow->Sink causal chain; 95 findings +
+      6 AST E2E + 4 graph E2E tests — U41 passes). The seam generalised to a
+      second paradigm with no special case. Next M6 slice: dataflow backend
+      (7.5) over ProgramAnalysisService (no second taint engine), then 7.7
+      Axiom importer.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
