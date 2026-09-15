@@ -38,6 +38,7 @@ use super::detector_ir::{
 };
 use super::digest::DetectorDigest;
 use super::scope::AnalysisScope;
+use crate::domain::execution::ExecutionContext;
 use crate::domain::kernel_ids::ExecutionId;
 
 /// A non-empty detector version.
@@ -366,16 +367,14 @@ impl ExecutionPermit {
     /// Build the execution reference for a run under this permit.
     pub fn execution_ref(
         &self,
-        execution_id: Option<ExecutionId>,
-        scope: Option<AnalysisScope>,
+        context: Option<ExecutionContext>,
     ) -> Result<DetectorExecutionRef, DetectorIrError> {
         DetectorExecutionRef::new(
             self.admitted.definition.id.clone(),
             self.admitted.version.as_str(),
             self.admitted.authority,
             self.admitted.definition.digests(),
-            execution_id,
-            scope,
+            context,
         )
     }
 

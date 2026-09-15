@@ -29,6 +29,7 @@ use super::digest::DetectorDigest;
 use super::finding::{FindingSeverity, RiskLevel};
 use super::namespaced::NamespacedName;
 use super::scope::AnalysisScope;
+use crate::domain::execution::{ActorRef, CorrelationId, ExecutionContext};
 use crate::domain::kernel_ids::ExecutionId;
 
 // ============================================================================
@@ -639,14 +640,19 @@ pub struct DetectorExecutionRef {
     pub authority_at_execution: DetectorAuthority,
     /// The four digests of the executed definition.
     pub digests: DetectorDigests,
-    /// Optional link to a concrete execution record.
-    pub execution_id: Option<ExecutionId>,
-    /// The `(workspace, snapshot)` the run was pinned to.
+    /// The concrete execution this finding came from.
     ///
-    /// `None` only for findings that never came from a scoped analysis run
-    /// (the legacy QualityIssue projection); every `DetectorExecutor` run sets
-    /// it. A scoped verification rejects a finding without one.
-    pub scope: Option<AnalysisScope>,
+    /// `None` only for findings that never came from a real run (the legacy
+    /// QualityIssue projection); every `DetectorExecutor` run sets it. A scoped
+    /// verification rejects a finding without one.
+    ///
+    /// The execution id and the scope used to be separate fields; they are one
+    /// [`ExecutionContext`] now because they are two facets of the same thing —
+    /// and because M7 needs the actor and the correlation beside them. Authority
+    /// stays *outside*: `authority_at_execution` says what the execution was
+    /// allowed to do, and it comes from admission, never from the context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<ExecutionContext>,
 }
 
 impl DetectorExecutionRef {
@@ -656,8 +662,7 @@ impl DetectorExecutionRef {
         version: impl Into<String>,
         authority_at_execution: DetectorAuthority,
         digests: DetectorDigests,
-        execution_id: Option<ExecutionId>,
-        scope: Option<AnalysisScope>,
+        context: Option<ExecutionContext>,
     ) -> Result<Self, DetectorIrError> {
         let version = version.into();
         if version.trim().is_empty() {
@@ -668,8 +673,7 @@ impl DetectorExecutionRef {
             version,
             authority_at_execution,
             digests,
-            execution_id,
-            scope,
+            context,
         })
     }
 
@@ -680,17 +684,35 @@ impl DetectorExecutionRef {
     pub fn from_definition(
         definition: &DetectorIr,
         version: impl Into<String>,
-        execution_id: Option<ExecutionId>,
-        scope: Option<AnalysisScope>,
+        context: Option<ExecutionContext>,
     ) -> Result<Self, DetectorIrError> {
         Self::new(
             definition.id.clone(),
             version,
             definition.authority,
             definition.digests(),
-            execution_id,
-            scope,
+            context,
         )
+    }
+
+    /// The execution id, when this finding came from a real run.
+    pub fn execution_id(&self) -> Option<ExecutionId> {
+        self.context.as_ref().map(|c| c.execution_id)
+    }
+
+    /// The `(workspace, snapshot)` the run was pinned to.
+    pub fn scope(&self) -> Option<&AnalysisScope> {
+        self.context.as_ref().map(|c| &c.scope)
+    }
+
+    /// Who ran it.
+    pub fn actor(&self) -> Option<&ActorRef> {
+        self.context.as_ref().map(|c| &c.actor)
+    }
+
+    /// The logical operation it belonged to.
+    pub fn correlation(&self) -> Option<&CorrelationId> {
+        self.context.as_ref().map(|c| &c.correlation)
     }
 
     /// Whether the executed detector held blocking authority.
@@ -1136,12 +1158,28 @@ mod tests {
         assert_ne!(a.instance_digest(), baseline);
     }
 
+    /// A detector execution context for tests.
+    fn test_context(id: u64) -> crate::domain::execution::ExecutionContext {
+        crate::domain::execution::ExecutionContext::try_new(
+            ExecutionId(id),
+            crate::domain::findings::AnalysisScope::new(
+                crate::domain::value_objects::WorkspaceId::try_new("ws").unwrap(),
+                SnapshotId::new(1),
+            ),
+            crate::domain::execution::ActorRef::detector("security.sql_injection"),
+            crate::domain::execution::CorrelationId::new("c").unwrap(),
+            None,
+        )
+        .unwrap()
+    }
+
+    use crate::domain::kernel_ids::SnapshotId;
+
     #[test]
     fn execution_ref_captures_authority_and_digest() {
         let ir = detector(caps([AnalysisCapability::GraphQuery]), flow_steps());
         let execution =
-            DetectorExecutionRef::from_definition(&ir, "1.0.0", Some(ExecutionId(9)), None)
-                .unwrap();
+            DetectorExecutionRef::from_definition(&ir, "1.0.0", Some(test_context(9))).unwrap();
 
         assert_eq!(execution.id, ir.id);
         assert_eq!(execution.version, "1.0.0");
@@ -1153,7 +1191,7 @@ mod tests {
         assert_eq!(execution.digests.instance, ir.instance_digest());
         assert_eq!(execution.digests.logic, ir.logic_digest());
         assert_eq!(execution.digests.policy, ir.policy_digest());
-        assert_eq!(execution.execution_id, Some(ExecutionId(9)));
+        assert_eq!(execution.execution_id(), Some(ExecutionId(9)));
         assert!(execution.is_well_formed());
         assert!(!execution.can_block());
     }
@@ -1169,8 +1207,7 @@ mod tests {
             instance: digest,
         };
         assert_eq!(
-            DetectorExecutionRef::new(id, "", DetectorAuthority::Gated, digests, None, None)
-                .unwrap_err(),
+            DetectorExecutionRef::new(id, "", DetectorAuthority::Gated, digests, None).unwrap_err(),
             DetectorIrError::EmptyVersion
         );
     }

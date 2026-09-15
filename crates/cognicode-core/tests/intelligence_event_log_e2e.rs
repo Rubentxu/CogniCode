@@ -38,9 +38,9 @@ use cognicode_core::domain::evidence_kernel::relation::RelationKind;
 use cognicode_core::domain::findings::{
     AdmissionSource, AnalysisCapability, AnalysisInput, AnalysisScope, AstBackend, AstConstruct,
     AstInput, AstUnit, BackendRegistry, DetectorAdmission, DetectorAuthority, DetectorExecutor,
-    DetectorFindingPolicy, DetectorId, DetectorIr, DetectorStep, EvidenceClass, FindingGate,
-    FindingKind, FindingVerifier, GroundingRef, PromotionAuthority, PromotionRequest, RiskLevel,
-    SubjectPattern,
+    DetectorFindingPolicy, DetectorId, DetectorIr, DetectorStep, EvidenceClass, ExecutionRequest,
+    FindingGate, FindingKind, FindingVerifier, GroundingRef, PromotionAuthority, PromotionRequest,
+    RiskLevel, SubjectPattern,
 };
 use cognicode_core::domain::intelligence_log::IntelligenceEventStore;
 use cognicode_core::domain::intelligence_log::event::EventTime;
@@ -61,6 +61,17 @@ const BATCH_SIZE: u64 = 500;
 
 fn workspace() -> WorkspaceId {
     WorkspaceId::try_new("ws-u50").unwrap()
+}
+
+/// The execution request every test run uses (M7.2): a deterministic actor,
+/// a fixed correlation, and the scope the fixture views were projected from.
+fn test_request(id: u64) -> ExecutionRequest {
+    ExecutionRequest::new(
+        ExecutionId::new(id),
+        scope(),
+        ActorRef::detector("test.detector"),
+        CorrelationId::new("test-correlation").unwrap(),
+    )
 }
 
 fn scope() -> AnalysisScope {
@@ -208,7 +219,7 @@ async fn run_slice(
     let registry = registry();
     let executor = DetectorExecutor::new(&registry);
     let prepared = executor
-        .prepare(&gated_detector(), &ast_input(), ExecutionId::new(1))
+        .prepare(&gated_detector(), &ast_input(), test_request(1))
         .expect("prepare");
     let bindings = CanonicalEvidenceWriter::new(facts, evidence)
         .persist(&scope(), prepared.produced_evidence(), &provenance())

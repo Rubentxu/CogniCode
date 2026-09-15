@@ -19,12 +19,14 @@ use cognicode_core::domain::findings::{
     AdmissionSource, AdmittedDetectorRecord, AnalysisCapability, AnalysisInput, AnalysisScope,
     AstBackend, AstConstruct, AstInput, AstUnit, BackendRegistry, DetectorAdmission,
     DetectorAuthority, DetectorExecutor, DetectorFindingPolicy, DetectorId, DetectorIr,
-    DetectorStep, EvidenceClass, ExecutionError, ExecutionPermit, ExecutionRecord, Finding,
-    FindingGate, FindingKind, FindingVerifier, GroundingFailure, GroundingRef, PromotionAuthority,
-    PromotionRequest, RejectAllApprovals, RiskLevel, SubjectPattern, VerificationError,
+    DetectorStep, EvidenceClass, ExecutionError, ExecutionPermit, ExecutionRecord,
+    ExecutionRequest, Finding, FindingGate, FindingKind, FindingVerifier, GroundingFailure,
+    GroundingRef, PromotionAuthority, PromotionRequest, RejectAllApprovals, RiskLevel,
+    SubjectPattern, VerificationError,
 };
 // The sync persistence port, so `prepare` + `persist` + `finalize` can be
 // driven by hand in the seam test.
+use cognicode_core::domain::execution::{ActorRef, CorrelationId};
 use cognicode_core::domain::findings::ports::EvidenceSink;
 use cognicode_core::domain::kernel_ids::{EntityId, EvidenceId, ExecutionId, FactId};
 use cognicode_core::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
@@ -114,7 +116,7 @@ fn run(permit: &ExecutionPermit) -> (InMemoryEvidenceStore, ExecutionRecord) {
     let executor = DetectorExecutor::new(&registry);
     let mut store = InMemoryEvidenceStore::with_scope(scope());
     let record = executor
-        .execute(permit, &ast_input(), &mut store, ExecutionId::new(1))
+        .execute(permit, &ast_input(), &mut store, test_request(1))
         .expect("execution must succeed");
     assert_eq!(record.backend, "ast");
     (store, record)
@@ -147,7 +149,7 @@ fn u40_candidate_run_produces_a_finding_but_cannot_block() {
     );
     // The run's scope is captured on the execution reference.
     assert_eq!(
-        finding.detector.scope.as_ref().map(|s| s.snapshot),
+        finding.detector.scope().as_ref().map(|s| s.snapshot),
         Some(cognicode_core::domain::kernel_ids::SnapshotId::new(1)),
         "the execution must carry the analysis scope"
     );
@@ -257,7 +259,7 @@ fn u47_planning_fails_loud_when_no_backend_covers_capabilities() {
     let executor = DetectorExecutor::new(&registry);
     let mut store = InMemoryEvidenceStore::with_scope(scope());
     let err = executor
-        .execute(&permit, &ast_input(), &mut store, ExecutionId::new(1))
+        .execute(&permit, &ast_input(), &mut store, test_request(1))
         .expect_err("no backend provides Dataflow");
     match err {
         ExecutionError::Plan(plan) => {
@@ -273,6 +275,17 @@ fn registry_and_capability_sets_are_stable() {
     let requires: BTreeSet<AnalysisCapability> =
         [AnalysisCapability::AstPattern].into_iter().collect();
     assert_eq!(registry.plan(&requires).unwrap().name(), "ast");
+}
+
+/// The execution request every test run uses (M7.2): a deterministic actor,
+/// a fixed correlation, and the scope the fixture views were projected from.
+fn test_request(id: u64) -> ExecutionRequest {
+    ExecutionRequest::new(
+        ExecutionId::new(id),
+        scope(),
+        ActorRef::detector("test.detector"),
+        CorrelationId::new("test-correlation").unwrap(),
+    )
 }
 
 fn scope() -> AnalysisScope {
@@ -299,12 +312,7 @@ fn an_ungrounded_analysis_is_explained_but_never_blocks() {
     let executor = DetectorExecutor::new(&registry);
     let mut store = InMemoryEvidenceStore::with_scope(scope());
     let record = executor
-        .execute(
-            &gated,
-            &ast_input_ungrounded(),
-            &mut store,
-            ExecutionId::new(1),
-        )
+        .execute(&gated, &ast_input_ungrounded(), &mut store, test_request(1))
         .expect("an ungrounded run is not an error");
 
     let finding = &record.findings[0];
@@ -357,7 +365,7 @@ fn prepare_persists_nothing_and_finalize_assembles() {
     let mut store = InMemoryEvidenceStore::with_scope(scope());
 
     let prepared = executor
-        .prepare(&gated, &ast_input(), ExecutionId::new(1))
+        .prepare(&gated, &ast_input(), test_request(1))
         .expect("prepare must succeed");
     assert_eq!(
         store.len(),

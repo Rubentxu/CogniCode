@@ -55,7 +55,8 @@ pub use detector_ir::{
 pub use digest::{DetectorDigest, DigestError, sha256_hex};
 pub use execution::{
     AnalysisInput, BackendContractViolation, BackendError, BackendRegistry, DetectorBackend,
-    DetectorExecutor, ExecutionError, ExecutionRecord, PlanError, PreparedExecution,
+    DetectorExecutor, ExecutionError, ExecutionRecord, ExecutionRequest, PlanError,
+    PreparedExecution,
 };
 pub use finding::{
     CausalStep, CausalStepKind, EvidenceClass, Finding, FindingError, FindingGate, FindingId,

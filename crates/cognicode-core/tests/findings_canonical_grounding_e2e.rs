@@ -37,14 +37,15 @@ use cognicode_core::domain::evidence_kernel::fact::{
 use cognicode_core::domain::evidence_kernel::ports::{
     EvidenceStore, FactStore, KernelError, NewEvidence,
 };
+use cognicode_core::domain::execution::{ActorRef, CorrelationId};
 use cognicode_core::domain::findings::{
     AdmissionSource, AnalysisCapability, AnalysisInput, AnalysisScope, AstBackend, AstConstruct,
     AstInput, AstUnit, BackendRegistry, DataflowFunction, DataflowInput, DataflowLocation,
     DataflowStatement, DetectorAdmission, DetectorAuthority, DetectorBackend, DetectorExecutor,
     DetectorFindingPolicy, DetectorId, DetectorIr, DetectorStep, EvidenceBinding, EvidenceClass,
-    FindingGate, FindingKind, FindingVerifier, GraphBackend, GraphEdge, GraphInput, GraphNode,
-    GroundingRef, PromotionAuthority, PromotionRequest, RiskLevel, SubjectPattern,
-    VerificationError,
+    ExecutionRequest, FindingGate, FindingKind, FindingVerifier, GraphBackend, GraphEdge,
+    GraphInput, GraphNode, GroundingRef, PromotionAuthority, PromotionRequest, RiskLevel,
+    SubjectPattern, VerificationError,
 };
 use cognicode_core::domain::kernel_ids::{EntityId, EvidenceId, ExecutionId, FactId, SnapshotId};
 use cognicode_core::domain::value_objects::{Provenance, WorkspaceId};
@@ -60,6 +61,17 @@ const FACT: u64 = 7;
 
 fn workspace() -> WorkspaceId {
     WorkspaceId::try_new(WS).expect("valid workspace")
+}
+
+/// The execution request every test run uses (M7.2): a deterministic actor,
+/// a fixed correlation, and the scope the fixture views were projected from.
+fn test_request(id: u64) -> ExecutionRequest {
+    ExecutionRequest::new(
+        ExecutionId::new(id),
+        scope(SNAP_A),
+        ActorRef::detector("test.detector"),
+        CorrelationId::new("test-correlation").unwrap(),
+    )
 }
 
 fn scope(snapshot: u64) -> AnalysisScope {
@@ -305,7 +317,7 @@ async fn run(
     let registry = registry();
     let executor = DetectorExecutor::new(&registry);
     let prepared = executor
-        .prepare(permit, input, ExecutionId::new(1))
+        .prepare(permit, input, test_request(1))
         .expect("prepare");
     let scope = prepared.scope().cloned().expect("scoped");
     let bindings = CanonicalEvidenceWriter::new(facts, evidence)
@@ -631,11 +643,7 @@ async fn a_store_failure_is_an_error_not_an_ungrounded_item() {
     let registry = registry();
     let executor = DetectorExecutor::new(&registry);
     let prepared = executor
-        .prepare(
-            &gated(weak_hash_ir()),
-            &ast_input(FACT),
-            ExecutionId::new(1),
-        )
+        .prepare(&gated(weak_hash_ir()), &ast_input(FACT), test_request(1))
         .expect("prepare");
 
     // Nothing was written merely by preparing.

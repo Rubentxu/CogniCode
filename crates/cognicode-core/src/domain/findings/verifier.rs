@@ -47,7 +47,7 @@ impl<'a> FindingVerifier<'a> {
         // canonical per snapshot, so a finding produced in snapshot A must
         // never be verified against a read model hydrated from B — even when
         // every numeric id happens to coincide.
-        let finding_scope = finding.detector.scope.as_ref();
+        let finding_scope = finding.detector.scope();
         let lookup_scope = self.evidence.scope();
         if finding_scope != lookup_scope {
             return Err(VerificationError::ScopeMismatch {
@@ -412,6 +412,18 @@ mod tests {
         }
     }
 
+    /// A detector execution context for tests, in `scope(snapshot)`.
+    fn test_context(id: u64) -> crate::domain::execution::ExecutionContext {
+        crate::domain::execution::ExecutionContext::try_new(
+            ExecutionId(id),
+            scope(1),
+            crate::domain::execution::ActorRef::detector("security.weak_hash"),
+            crate::domain::execution::CorrelationId::new("c").unwrap(),
+            None,
+        )
+        .unwrap()
+    }
+
     fn scope(snapshot: u64) -> AnalysisScope {
         AnalysisScope::new(
             crate::domain::value_objects::WorkspaceId::try_new("ws").unwrap(),
@@ -471,9 +483,7 @@ mod tests {
             };
             DetectorAdmission::admit(ir, "1", AdmissionSource::AiGenerated).unwrap()
         };
-        let execution = permit
-            .execution_ref(Some(ExecutionId(1)), Some(scope(1)))
-            .unwrap();
+        let execution = permit.execution_ref(Some(test_context(1))).unwrap();
         let outcome = DetectorOutcome {
             produced_evidence: vec![ProducedEvidence {
                 kind: EvidenceKind::AstMatch,
@@ -676,7 +686,7 @@ mod tests {
         // resolves.
         let f = build(true);
         assert_eq!(
-            f.detector.scope.as_ref().map(|s| s.snapshot),
+            f.detector.scope().as_ref().map(|s| s.snapshot),
             Some(crate::domain::kernel_ids::SnapshotId::new(1))
         );
 

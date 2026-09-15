@@ -53,7 +53,8 @@ use super::outcome::{DetectorDiagnostic, DetectorOutcome, ProducedEvidence};
 use super::ports::{EvidenceError, EvidenceSink};
 use super::scope::AnalysisScope;
 use super::verifier::{FindingVerifier, VerificationError};
-use crate::domain::kernel_ids::ExecutionId;
+use crate::domain::execution::{ActorRef, CorrelationId, ExecutionContext, ExecutionContextError};
+use crate::domain::kernel_ids::{EventId, ExecutionId};
 
 /// The shared input envelope handed to a backend.
 ///
@@ -72,6 +73,82 @@ pub struct AnalysisInput {
     pub graph: Option<GraphInput>,
     /// Dataflow view (dataflow backends, e.g. `M5DataflowBackend`).
     pub dataflow: Option<DataflowInput>,
+}
+
+/// What a caller must state before an execution may run (M7.2, cycle e64).
+///
+/// The executor turns this into an [`ExecutionContext`] and attaches it to the
+/// execution reference, so every real run is identity-bearing and its place in
+/// the causal history is recorded rather than inferred.
+///
+/// `scope` here answers "what does this run claim to be executed against". That
+/// is a *different question* from [`AnalysisInput::scope`], which answers "what
+/// snapshot were these views projected from". The executor requires the two to
+/// agree ([`ExecutionError::InputScopeMismatch`]): a run against snapshot A fed
+/// with views from B would otherwise produce findings whose ids resolve in the
+/// wrong snapshot — exactly the class of defect U42 closed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionRequest {
+    /// Which execution this is.
+    pub execution_id: ExecutionId,
+    /// The `(workspace, snapshot)` the run claims to execute against.
+    pub scope: AnalysisScope,
+    /// Who is running it.
+    pub actor: ActorRef,
+    /// The logical operation it belongs to.
+    pub correlation: CorrelationId,
+    /// The event that originated it, if any.
+    pub trigger_event: Option<EventId>,
+}
+
+impl ExecutionRequest {
+    /// A request by an explicit actor.
+    pub fn new(
+        execution_id: ExecutionId,
+        scope: AnalysisScope,
+        actor: ActorRef,
+        correlation: CorrelationId,
+    ) -> Self {
+        Self {
+            execution_id,
+            scope,
+            actor,
+            correlation,
+            trigger_event: None,
+        }
+    }
+
+    /// A request where the detector is the actor (the common case).
+    pub fn detector(
+        execution_id: ExecutionId,
+        scope: AnalysisScope,
+        detector: &super::detector_ir::DetectorId,
+        correlation: CorrelationId,
+    ) -> Self {
+        Self::new(
+            execution_id,
+            scope,
+            ActorRef::detector(detector.as_str()),
+            correlation,
+        )
+    }
+
+    /// Record which event triggered this execution.
+    pub fn triggered_by(mut self, event: EventId) -> Self {
+        self.trigger_event = Some(event);
+        self
+    }
+
+    /// Turn the request into a context, rejecting an unpinned scope.
+    pub fn into_context(self) -> Result<ExecutionContext, ExecutionContextError> {
+        ExecutionContext::try_new(
+            self.execution_id,
+            self.scope,
+            self.actor,
+            self.correlation,
+            self.trigger_event,
+        )
+    }
 }
 
 /// A backend that executes a detector against an [`AnalysisInput`].
@@ -174,15 +251,26 @@ impl<'a> DetectorExecutor<'a> {
         &self,
         permit: &ExecutionPermit,
         input: &AnalysisInput,
-        execution_id: ExecutionId,
+        request: ExecutionRequest,
     ) -> Result<PreparedExecution, ExecutionError> {
         let admitted = permit.admitted();
 
-        // A run must be pinned to a scope: without one its ids could not be
-        // verified against any snapshot later.
-        let scope = input.scope.clone().ok_or(ExecutionError::MissingScope)?;
-        if !scope.is_valid() {
+        // The views must say where they came from: without a scope their ids
+        // could not be verified against any snapshot later.
+        let input_scope = input.scope.clone().ok_or(ExecutionError::MissingScope)?;
+        if !input_scope.is_valid() {
             return Err(ExecutionError::InvalidScope);
+        }
+
+        // …and the execution must claim to run against exactly that snapshot.
+        let context = request
+            .into_context()
+            .map_err(|_| ExecutionError::InvalidScope)?;
+        if context.scope != input_scope {
+            return Err(ExecutionError::InputScopeMismatch {
+                context: context.scope,
+                input: input_scope,
+            });
         }
 
         // The admitted definition is re-validated: admission validated it, but
@@ -235,7 +323,7 @@ impl<'a> DetectorExecutor<'a> {
         }
 
         let execution = permit
-            .execution_ref(Some(execution_id), Some(scope))
+            .execution_ref(Some(context))
             .map_err(ExecutionError::InvalidDefinition)?;
 
         Ok(PreparedExecution {
@@ -256,9 +344,9 @@ impl<'a> DetectorExecutor<'a> {
         permit: &ExecutionPermit,
         input: &AnalysisInput,
         sink: &mut dyn EvidenceSink,
-        execution_id: ExecutionId,
+        request: ExecutionRequest,
     ) -> Result<ExecutionRecord, ExecutionError> {
-        let prepared = self.prepare(permit, input, execution_id)?;
+        let prepared = self.prepare(permit, input, request)?;
         let bindings = sink
             .persist(prepared.produced_evidence())
             .map_err(ExecutionError::Evidence)?;
@@ -307,7 +395,12 @@ impl PreparedExecution {
 
     /// The scope this run is pinned to.
     pub fn scope(&self) -> Option<&AnalysisScope> {
-        self.execution.scope.as_ref()
+        self.execution.scope()
+    }
+
+    /// The execution context.
+    pub fn context(&self) -> Option<&ExecutionContext> {
+        self.execution.context.as_ref()
     }
 
     /// Assemble findings once the evidence has been persisted.
@@ -484,6 +577,17 @@ pub enum ExecutionError {
     MissingScope,
     /// The input's scope is pinned to the invalid `SnapshotId::NONE` sentinel.
     InvalidScope,
+    /// The execution's claimed scope and the views' scope disagree.
+    ///
+    /// Two different questions with one answer required: a run against snapshot
+    /// A fed with views projected from B would produce findings whose ids
+    /// resolve against the wrong snapshot.
+    InputScopeMismatch {
+        /// The scope the execution claimed.
+        context: AnalysisScope,
+        /// The scope the views declared.
+        input: AnalysisScope,
+    },
     /// No backend could satisfy the requirements.
     Plan(PlanError),
     /// A backend failed.
@@ -506,6 +610,10 @@ impl fmt::Display for ExecutionError {
             Self::InvalidScope => {
                 f.write_str("analysis input scope is pinned to the invalid snapshot sentinel")
             }
+            Self::InputScopeMismatch { context, input } => write!(
+                f,
+                "the execution claims {context} but its views were projected from {input}"
+            ),
             Self::Plan(err) => write!(f, "planning failed: {err}"),
             Self::Backend(err) => write!(f, "backend failed: {err}"),
             Self::BackendContract(err) => write!(f, "backend contract violation: {err}"),
@@ -528,6 +636,21 @@ mod tests {
         DetectorMatch, DetectorOutcome, EvidenceKind, ProducedEvidence,
     };
     use crate::domain::kernel_ids::EvidenceId;
+
+    /// The execution request every executor test uses.
+    fn test_request(id: u64) -> ExecutionRequest {
+        test_request_in(id, scope())
+    }
+
+    /// A request for a specific scope, so a test can make the two disagree.
+    fn test_request_in(id: u64, scope: AnalysisScope) -> ExecutionRequest {
+        ExecutionRequest::new(
+            ExecutionId::new(id),
+            scope,
+            crate::domain::execution::ActorRef::detector("test.detector"),
+            crate::domain::execution::CorrelationId::new("test-correlation").unwrap(),
+        )
+    }
 
     fn scope() -> AnalysisScope {
         AnalysisScope::new(
@@ -670,7 +793,7 @@ mod tests {
                     ..Default::default()
                 },
                 &mut sink,
-                ExecutionId::new(1),
+                test_request(1),
             )
             .expect_err("overclaim must be rejected");
         match err {
@@ -711,7 +834,7 @@ mod tests {
                     ..Default::default()
                 },
                 &mut sink,
-                ExecutionId::new(1),
+                test_request(1),
             )
             .expect_err("an unpinned scope must be refused");
         assert_eq!(err, ExecutionError::InvalidScope);
@@ -719,6 +842,45 @@ mod tests {
             sink.0, 0,
             "no evidence may be recorded from an unpinned execution"
         );
+    }
+
+    /// The execution's claimed scope and the views' scope are two different
+    /// questions, and the executor requires the same answer: a run against A fed
+    /// with views from B would produce findings whose ids resolve against the
+    /// wrong snapshot.
+    #[test]
+    fn an_input_scope_that_disagrees_with_the_execution_is_refused() {
+        use crate::domain::kernel_ids::SnapshotId;
+
+        let mut registry = BackendRegistry::new();
+        registry.register(Box::new(AstBackend));
+        let mut requires = BTreeSet::new();
+        requires.insert(AnalysisCapability::AstPattern);
+        let permit =
+            DetectorAdmission::admit(detector_with(requires), "1.0.0", AdmissionSource::Builtin)
+                .unwrap();
+
+        let executor = DetectorExecutor::new(&registry);
+        let mut sink = CountingSink::default();
+        let elsewhere = AnalysisScope::new(
+            crate::domain::value_objects::WorkspaceId::try_new("ws").unwrap(),
+            SnapshotId::new(2),
+        );
+        let err = executor
+            .execute(
+                &permit,
+                &AnalysisInput {
+                    // Views projected from snapshot 1…
+                    scope: Some(scope()),
+                    ..Default::default()
+                },
+                &mut sink,
+                // …but the execution claims snapshot 2.
+                test_request_in(1, elsewhere),
+            )
+            .expect_err("a scope disagreement must fail loud");
+        assert!(matches!(err, ExecutionError::InputScopeMismatch { .. }));
+        assert_eq!(sink.0, 0, "nothing may run under a disputed scope");
     }
 
     /// A backend that reports a kind other than the detector's PRODUCE.
@@ -771,7 +933,7 @@ mod tests {
                     ..Default::default()
                 },
                 &mut sink,
-                ExecutionId::new(1),
+                test_request(1),
             )
             .expect_err("invented kind must be rejected");
         match err {

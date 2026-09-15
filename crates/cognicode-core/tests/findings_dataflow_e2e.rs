@@ -18,13 +18,14 @@ use std::collections::BTreeSet;
 
 use cognicode_core::application::findings::M5DataflowBackend;
 use cognicode_core::application::program_analysis::ProgramAnalysisService;
+use cognicode_core::domain::execution::{ActorRef, CorrelationId};
 use cognicode_core::domain::findings::{
     AnalysisCapability, AnalysisInput, AnalysisScope, AstBackend, BackendRegistry, CausalStepKind,
     DataflowFunction, DataflowInput, DataflowLocation, DataflowStatement, DetectorAdmission,
     DetectorAuthority, DetectorBackend, DetectorExecutor, DetectorFindingPolicy, DetectorId,
-    DetectorIr, DetectorStep, EvidenceClass, ExecutionError, ExecutionRecord, FindingGate,
-    FindingKind, FindingVerifier, GraphBackend, GroundingRef, PromotionAuthority, PromotionRequest,
-    RiskLevel, SubjectPattern,
+    DetectorIr, DetectorStep, EvidenceClass, ExecutionError, ExecutionRecord, ExecutionRequest,
+    FindingGate, FindingKind, FindingVerifier, GraphBackend, GroundingRef, PromotionAuthority,
+    PromotionRequest, RiskLevel, SubjectPattern,
 };
 use cognicode_core::domain::kernel_ids::{EntityId, ExecutionId, FactId};
 use cognicode_core::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
@@ -134,7 +135,7 @@ fn run(
     let executor = DetectorExecutor::new(&registry);
     let mut store = InMemoryEvidenceStore::with_scope(scope());
     let record = executor
-        .execute(permit, &input(function), &mut store, ExecutionId::new(11))
+        .execute(permit, &input(function), &mut store, test_request(11))
         .expect("execution must succeed");
     (store, record)
 }
@@ -265,7 +266,7 @@ fn u41_multi_capability_detector_fails_loud() {
             &permit,
             &input(tainted_function()),
             &mut store,
-            ExecutionId::new(1),
+            test_request(1),
         )
         .expect_err("no single backend covers both capabilities");
     match err {
@@ -357,7 +358,7 @@ fn u41_exceeded_limits_stay_execution_errors() {
     let executor = DetectorExecutor::new(&registry);
     let mut store = InMemoryEvidenceStore::with_scope(scope());
     let err = executor
-        .execute(&permit, &input(function), &mut store, ExecutionId::new(1))
+        .execute(&permit, &input(function), &mut store, test_request(1))
         .expect_err("an exceeded limit must fail the execution");
     match err {
         ExecutionError::Backend(cognicode_core::domain::findings::BackendError::Analysis(
@@ -370,6 +371,17 @@ fn u41_exceeded_limits_stay_execution_errors() {
         }
         other => panic!("expected ExecutionError::Backend(Analysis), got {other:?}"),
     }
+}
+
+/// The execution request every test run uses (M7.2): a deterministic actor,
+/// a fixed correlation, and the scope the fixture views were projected from.
+fn test_request(id: u64) -> ExecutionRequest {
+    ExecutionRequest::new(
+        ExecutionId::new(id),
+        scope(),
+        ActorRef::detector("test.detector"),
+        CorrelationId::new("test-correlation").unwrap(),
+    )
 }
 
 fn scope() -> AnalysisScope {

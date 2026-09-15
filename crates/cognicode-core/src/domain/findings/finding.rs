@@ -513,7 +513,6 @@ mod tests {
                 instance: d,
             },
             None,
-            None,
         )
         .unwrap()
     }

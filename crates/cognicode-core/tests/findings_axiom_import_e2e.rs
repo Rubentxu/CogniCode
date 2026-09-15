@@ -11,11 +11,12 @@ use cognicode_core::application::findings::axiom_migration::{
     AxiomDetectorTranslator, AxiomImportResult, ImportedDetectorDefinition, LegacyDetection,
     LegacySeverity, NormalizedLegacyRule,
 };
+use cognicode_core::domain::execution::{ActorRef, CorrelationId};
 use cognicode_core::domain::findings::{
     AdmissionSource, AnalysisInput, AnalysisScope, AstBackend, AstConstruct, AstInput, AstUnit,
     BackendRegistry, CausalStepKind, DetectorAdmission, DetectorAuthority, DetectorExecutor,
-    EvidenceClass, FindingGate, FindingVerifier, GroundingRef, PromotionAuthority,
-    PromotionRequest, RiskLevel, SubjectPattern,
+    EvidenceClass, ExecutionRequest, FindingGate, FindingVerifier, GroundingRef,
+    PromotionAuthority, PromotionRequest, RiskLevel, SubjectPattern,
 };
 use cognicode_core::domain::kernel_ids::{ExecutionId, FactId};
 use cognicode_core::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
@@ -84,7 +85,7 @@ fn u_a8_imported_detector_uses_the_same_chain_as_a_builtin() {
     let executor = DetectorExecutor::new(&registry);
     let mut store = InMemoryEvidenceStore::with_scope(scope());
     let record = executor
-        .execute(&permit, &ast_input(), &mut store, ExecutionId::new(3))
+        .execute(&permit, &ast_input(), &mut store, test_request(3))
         .expect("imported detector must execute");
 
     assert_eq!(record.backend, "ast");
@@ -154,13 +155,24 @@ fn u_a8_imported_detector_gates_only_through_a_governance_verifier() {
     let executor = DetectorExecutor::new(&registry);
     let mut store = InMemoryEvidenceStore::with_scope(scope());
     let record = executor
-        .execute(&gated, &ast_input(), &mut store, ExecutionId::new(4))
+        .execute(&gated, &ast_input(), &mut store, test_request(4))
         .unwrap();
     let verifier = FindingVerifier::new(&store);
     assert!(verifier.can_block(
         &record.findings[0],
         &FindingGate::new(EvidenceClass::C, RiskLevel::Low)
     ));
+}
+
+/// The execution request every test run uses (M7.2): a deterministic actor,
+/// a fixed correlation, and the scope the fixture views were projected from.
+fn test_request(id: u64) -> ExecutionRequest {
+    ExecutionRequest::new(
+        ExecutionId::new(id),
+        scope(),
+        ActorRef::detector("test.detector"),
+        CorrelationId::new("test-correlation").unwrap(),
+    )
 }
 
 fn scope() -> AnalysisScope {

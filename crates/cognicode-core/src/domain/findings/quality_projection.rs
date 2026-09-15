@@ -101,7 +101,7 @@ pub fn project_quality_issue(issue: &QualityIssue) -> Result<Finding, super::Fin
             semantic: d.clone(),
             instance: d,
         },
-        None,
+        // No execution context: this finding never came from a run.
         None,
     )?;
 

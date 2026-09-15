@@ -144,7 +144,7 @@ impl FindingAssembler {
             causal_chain.push(causal);
         }
 
-        let execution_key = execution.execution_id.map(|e| e.0).unwrap_or(0);
+        let execution_key = execution.execution_id().map(|e| e.get()).unwrap_or(0);
         let id = FindingId::new(format!(
             "{}:exec{}:m{}",
             admitted.definition.id, execution_key, match_index
@@ -283,6 +283,21 @@ mod tests {
         }
     }
 
+    /// A detector execution context for tests.
+    fn test_context(id: u64) -> crate::domain::execution::ExecutionContext {
+        crate::domain::execution::ExecutionContext::try_new(
+            ExecutionId(id),
+            crate::domain::findings::AnalysisScope::new(
+                crate::domain::value_objects::WorkspaceId::try_new("ws").unwrap(),
+                crate::domain::kernel_ids::SnapshotId::new(1),
+            ),
+            crate::domain::execution::ActorRef::detector("security.weak_hash"),
+            crate::domain::execution::CorrelationId::new("c").unwrap(),
+            None,
+        )
+        .unwrap()
+    }
+
     fn permit() -> super::super::admission::ExecutionPermit {
         let ir = DetectorIr {
             id: DetectorId::new("security.weak_hash").unwrap(),
@@ -325,7 +340,7 @@ mod tests {
     #[test]
     fn assembles_a_finding_with_assigned_class_and_execution() {
         let permit = permit();
-        let execution = permit.execution_ref(Some(ExecutionId(5)), None).unwrap();
+        let execution = permit.execution_ref(Some(test_context(5))).unwrap();
         let outcome = outcome_with(EvidenceKind::AstMatch);
         let bindings = EvidenceBindings::new(vec![EvidenceBinding::grounded(
             EvidenceId::new(11),
@@ -343,7 +358,7 @@ mod tests {
             EvidenceClass::C,
             "AST evidence -> class C"
         );
-        assert_eq!(f.detector.execution_id, Some(ExecutionId(5)));
+        assert_eq!(f.detector.execution_id(), Some(ExecutionId(5)));
         assert_eq!(f.origin, FindingOrigin::Detector);
         assert_eq!(f.causal_chain[0].evidence, Some(EvidenceId::new(11)));
         assert_eq!(
@@ -357,7 +372,7 @@ mod tests {
     #[test]
     fn class_is_the_strongest_of_the_evidence() {
         let permit = permit();
-        let execution = permit.execution_ref(None, None).unwrap();
+        let execution = permit.execution_ref(None).unwrap();
         let mut outcome = outcome_with(EvidenceKind::AstMatch);
         outcome
             .produced_evidence
@@ -373,7 +388,7 @@ mod tests {
     #[test]
     fn no_evidence_yields_class_d() {
         let permit = permit();
-        let execution = permit.execution_ref(None, None).unwrap();
+        let execution = permit.execution_ref(None).unwrap();
         let mut outcome = outcome_with(EvidenceKind::Hypothesis);
         outcome.matches[0].evidence = vec![];
         outcome.matches[0].causal[0].evidence = None;
@@ -387,7 +402,7 @@ mod tests {
     #[test]
     fn rejects_arity_mismatch() {
         let permit = permit();
-        let execution = permit.execution_ref(None, None).unwrap();
+        let execution = permit.execution_ref(None).unwrap();
         let outcome = outcome_with(EvidenceKind::AstMatch);
         let err = FindingAssembler::assemble(
             permit.admitted(),
@@ -408,7 +423,7 @@ mod tests {
     #[test]
     fn rejects_causal_evidence_not_in_finding() {
         let permit = permit();
-        let execution = permit.execution_ref(None, None).unwrap();
+        let execution = permit.execution_ref(None).unwrap();
         let mut outcome = outcome_with(EvidenceKind::AstMatch);
         outcome
             .produced_evidence
@@ -454,7 +469,7 @@ mod tests {
         };
         let permit =
             DetectorAdmission::admit(ir.clone(), "1.0.0", AdmissionSource::Builtin).unwrap();
-        let execution = permit.execution_ref(Some(ExecutionId(1)), None).unwrap();
+        let execution = permit.execution_ref(Some(test_context(1))).unwrap();
         let outcome = outcome_with(EvidenceKind::AstMatch);
         let bindings = grounded(1);
 
@@ -471,7 +486,7 @@ mod tests {
             RiskLevel::Low,
         );
         let permit2 = DetectorAdmission::admit(ir, "1.0.0", AdmissionSource::Builtin).unwrap();
-        let execution2 = permit2.execution_ref(Some(ExecutionId(1)), None).unwrap();
+        let execution2 = permit2.execution_ref(Some(test_context(1))).unwrap();
         let findings2 =
             FindingAssembler::assemble(permit2.admitted(), &execution2, &outcome, &bindings)
                 .unwrap();

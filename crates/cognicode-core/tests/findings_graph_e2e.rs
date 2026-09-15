@@ -17,12 +17,14 @@
 
 use std::collections::BTreeSet;
 
+use cognicode_core::domain::execution::{ActorRef, CorrelationId};
 use cognicode_core::domain::findings::{
     AdmissionSource, AnalysisCapability, AnalysisInput, AnalysisScope, AstBackend, BackendRegistry,
     DetectorAdmission, DetectorAuthority, DetectorBackend, DetectorExecutor, DetectorFindingPolicy,
     DetectorId, DetectorIr, DetectorStep, EvidenceClass, ExecutionError, ExecutionRecord,
-    FindingGate, FindingKind, FindingVerifier, GraphBackend, GraphEdge, GraphInput, GraphNode,
-    GroundingRef, PromotionAuthority, PromotionRequest, RiskLevel, SubjectPattern,
+    ExecutionRequest, FindingGate, FindingKind, FindingVerifier, GraphBackend, GraphEdge,
+    GraphInput, GraphNode, GroundingRef, PromotionAuthority, PromotionRequest, RiskLevel,
+    SubjectPattern,
 };
 use cognicode_core::domain::kernel_ids::{EntityId, ExecutionId, FactId};
 use cognicode_core::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
@@ -129,7 +131,7 @@ fn run(
     let executor = DetectorExecutor::new(&registry);
     let mut store = InMemoryEvidenceStore::with_scope(scope());
     let record = executor
-        .execute(permit, &input(graph), &mut store, ExecutionId::new(7))
+        .execute(permit, &input(graph), &mut store, test_request(7))
         .expect("execution must succeed");
     (store, record)
 }
@@ -252,12 +254,7 @@ fn u41_planning_rejects_a_detector_the_graph_backend_cannot_run() {
     let executor = DetectorExecutor::new(&registry);
     let mut store = InMemoryEvidenceStore::with_scope(scope());
     let err = executor
-        .execute(
-            &permit,
-            &input(clean_graph()),
-            &mut store,
-            ExecutionId::new(1),
-        )
+        .execute(&permit, &input(clean_graph()), &mut store, test_request(1))
         .expect_err("no backend provides SymbolicFeasibility");
     match err {
         ExecutionError::Plan(plan) => {
@@ -278,6 +275,17 @@ fn u41_planning_rejects_a_detector_the_graph_backend_cannot_run() {
         "GraphBackend must advertise only GraphQuery"
     );
     assert_eq!(GraphBackend.evidence_ceiling(), EvidenceClass::B);
+}
+
+/// The execution request every test run uses (M7.2): a deterministic actor,
+/// a fixed correlation, and the scope the fixture views were projected from.
+fn test_request(id: u64) -> ExecutionRequest {
+    ExecutionRequest::new(
+        ExecutionId::new(id),
+        scope(),
+        ActorRef::detector("test.detector"),
+        CorrelationId::new("test-correlation").unwrap(),
+    )
 }
 
 fn scope() -> AnalysisScope {
