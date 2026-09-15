@@ -428,11 +428,28 @@ impl ProgramAnalysisService {
     ///
     /// `dispatch(TAINT_FLOW)` delegates here; M6 backends call it directly.
     /// One implementation, two presentations.
+    ///
+    /// # Enforced limits
+    ///
+    /// Deterministic, cheaply checkable bounds are enforced and **error**
+    /// (never truncate silently):
+    ///
+    /// - `max_visited_nodes` — number of statements supplied;
+    /// - `max_visited_edges` — DFG edge count;
+    /// - `max_path_count` (or, failing that, `max_result_rows`) — number of
+    ///   reported paths.
+    ///
+    /// # Not enforced (declared honestly)
+    ///
+    /// `time_ms`, `cancellation`, `max_memory_bytes`, `max_depth` and
+    /// `max_hops` are **not** enforced by this v1 facade. Callers must not
+    /// assume they are.
     pub fn taint_flow(
         &self,
         request: &TaintFlowRequest,
-        _limits: &PlanLimits,
+        limits: &PlanLimits,
     ) -> Result<TaintFlowResult, AnalyticsError> {
+        use crate::domain::plan::limits::PlanLimitKind;
         use cognicode_graph_algos::algorithms::{Statement, dfg_edges, taint_forward};
 
         let statements: Vec<Statement> = request
@@ -446,8 +463,35 @@ impl ProgramAnalysisService {
             })
             .collect();
 
+        if let Some(max) = limits.max_visited_nodes {
+            if statements.len() as u64 > max {
+                return Err(AnalyticsError::LimitExceeded(
+                    PlanLimitKind::MaxVisitedNodes,
+                ));
+            }
+        }
+
         let edges = dfg_edges(&statements);
+        if let Some(max) = limits.max_visited_edges {
+            if edges.len() as u64 > max {
+                return Err(AnalyticsError::LimitExceeded(
+                    PlanLimitKind::MaxVisitedEdges,
+                ));
+            }
+        }
+
         let result = taint_forward(&edges, &request.sources, &request.sinks, &request.untaints);
+
+        // Path-count bound: a pathological analysis must fail, not truncate.
+        if let Some(max) = limits.max_path_count {
+            if result.paths.len() as u64 > max {
+                return Err(AnalyticsError::LimitExceeded(PlanLimitKind::MaxPathCount));
+            }
+        } else if let Some(max) = limits.max_result_rows {
+            if result.paths.len() as u64 > max {
+                return Err(AnalyticsError::LimitExceeded(PlanLimitKind::MaxResultRows));
+            }
+        }
 
         Ok(TaintFlowResult {
             paths: result

@@ -271,3 +271,96 @@ fn u41_multi_capability_detector_fails_loud() {
         other => panic!("expected a planning error, got {other:?}"),
     }
 }
+
+#[test]
+fn u41_unrelated_match_subject_cannot_seed_a_traversal() {
+    // MATCH security.cookie is an observation; FLOW.source is
+    // security.user_input. The cookie chain reaches the sink, no user_input
+    // site does ⇒ nothing is reported.
+    let mut ir = sql_injection_ir();
+    ir.steps.insert(
+        1,
+        DetectorStep::Match {
+            subject: SubjectPattern::new("security.cookie").unwrap(),
+        },
+    );
+    let permit = DetectorAdmission::admit(
+        ir,
+        "1.0.0",
+        cognicode_core::domain::findings::AdmissionSource::HumanCurated,
+    )
+    .unwrap();
+
+    let function = DataflowFunction {
+        id: "handler".to_string(),
+        statements: vec![
+            stmt(1, &["security.cookie"], 10, &["c"], &[]),
+            stmt(2, &[], 11, &["d"], &["c"]),
+            stmt(3, &["security.sql_execution"], 12, &[], &["d"]),
+            stmt(5, &["security.user_input"], 20, &["u"], &[]),
+        ],
+    };
+    let (_store, record) = run(&permit, function);
+    assert!(
+        record.findings.is_empty(),
+        "a cookie-originated path must never be reported as user_input reaching the sink"
+    );
+}
+
+#[test]
+fn u41_exceeded_limits_stay_execution_errors() {
+    // max_path_count = 1 with two paths ⇒ AnalyticsError::LimitExceeded ⇒
+    // BackendError::Analysis ⇒ ExecutionError::Backend. Never truncated, never
+    // silently empty.
+    let limits = cognicode_core::domain::plan::limits::PlanLimits {
+        time_ms: Some(30_000),
+        cancellation: None,
+        max_depth: None,
+        max_hops: None,
+        max_visited_nodes: Some(1_000_000),
+        max_visited_edges: None,
+        max_result_rows: None,
+        max_path_count: Some(1),
+        max_memory_bytes: Some(512 * 1024 * 1024),
+    };
+    let mut registry = BackendRegistry::new();
+    registry.register(Box::new(M5DataflowBackend::with_limits(
+        ProgramAnalysisService::new(),
+        limits,
+    )));
+
+    let permit = DetectorAdmission::admit(
+        sql_injection_ir(),
+        "1.0.0",
+        cognicode_core::domain::findings::AdmissionSource::HumanCurated,
+    )
+    .unwrap();
+
+    // Two sinks reachable from the single source ⇒ two paths.
+    let function = DataflowFunction {
+        id: "handler".to_string(),
+        statements: vec![
+            stmt(1, &["security.user_input"], 10, &["a"], &[]),
+            stmt(2, &[], 11, &["b"], &["a"]),
+            stmt(3, &["security.sql_execution"], 12, &[], &["b"]),
+            stmt(4, &["security.sql_execution"], 13, &[], &["b"]),
+        ],
+    };
+
+    let executor = DetectorExecutor::new(&registry);
+    let mut store = InMemoryEvidenceStore::new();
+    let err = executor
+        .execute(&permit, &input(function), &mut store, ExecutionId::new(1))
+        .expect_err("an exceeded limit must fail the execution");
+    match err {
+        ExecutionError::Backend(cognicode_core::domain::findings::BackendError::Analysis(
+            message,
+        )) => {
+            assert!(
+                message.contains("limit exceeded"),
+                "expected a limit error, got: {message}"
+            );
+        }
+        other => panic!("expected ExecutionError::Backend(Analysis), got {other:?}"),
+    }
+}

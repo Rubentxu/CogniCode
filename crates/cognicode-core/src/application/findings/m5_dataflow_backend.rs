@@ -9,9 +9,15 @@
 //!
 //! | IR | M5 request |
 //! |----|-----------|
-//! | `MATCH <subject>` | source sites |
+//! | `MATCH <subject>` | declared observation only — **never** a source |
 //! | `FLOW <a> -> <b>` | `a` → source sites, `b` → sink sites |
 //! | `EXCLUDE <x>` | `x` → untaint sites |
+//!
+//! `FLOW.source` is the single **authoritative** reachability source. Extra
+//! `MATCH` subjects are observations; if one of them were allowed to seed a
+//! traversal, an unrelated construct could be reported as having reached the
+//! sink. (IR rule V11 also requires `FLOW.source` to be declared by a
+//! `MATCH`.)
 //!
 //! Reachability is **not** recomputed here: whatever M5 returns is what M6
 //! reports. An eliminated (sanitised) path cannot reappear.
@@ -165,15 +171,12 @@ impl<R: TaintFlowRunner> DetectorBackend for M5DataflowBackend<R> {
             .as_ref()
             .ok_or(BackendError::MissingInput("dataflow"))?;
 
-        let mut match_subjects: Vec<&SubjectPattern> = Vec::new();
         let mut flows: Vec<(&SubjectPattern, &SubjectPattern)> = Vec::new();
         let mut excludes: Vec<&SubjectPattern> = Vec::new();
         let mut produce = None;
         for step in &admitted.definition.steps {
             match step {
-                crate::domain::findings::DetectorStep::Match { subject } => {
-                    match_subjects.push(subject)
-                }
+                crate::domain::findings::DetectorStep::Match { .. } => {}
                 crate::domain::findings::DetectorStep::Flow { source, sink, .. } => {
                     flows.push((source, sink))
                 }
@@ -207,9 +210,11 @@ impl<R: TaintFlowRunner> DetectorBackend for M5DataflowBackend<R> {
             }
         };
 
-        // Source sites: MATCH subjects plus the FLOW source subject.
-        let mut source_subjects: Vec<&SubjectPattern> = match_subjects;
-        source_subjects.push(flow_source);
+        // FLOW.source is the single authoritative reachability source.
+        // MATCH subjects are declared observations and must never seed a
+        // traversal: doing so could report an unrelated construct as having
+        // reached the sink.
+        let source_subjects: Vec<&SubjectPattern> = vec![flow_source];
 
         let mut outcome = DetectorOutcome::empty();
         for function in &dataflow.functions {
@@ -604,5 +609,110 @@ mod tests {
                 .detail
                 .contains("security.user_input -> security.sql_execution")
         );
+    }
+    #[test]
+    fn unrelated_match_subject_cannot_seed_a_traversal() {
+        // MATCH security.cookie is an *observation*; only FLOW.source
+        // (security.user_input) may seed the traversal. Here the cookie chain
+        // reaches the sink but no user_input site does, so nothing is found.
+        let mut ir = ir();
+        ir.steps.insert(
+            1,
+            DetectorStep::Match {
+                subject: SubjectPattern::new("security.cookie").unwrap(),
+            },
+        );
+        let permit = DetectorAdmission::admit(ir, "1.0.0", AdmissionSource::HumanCurated).unwrap();
+
+        let backend = M5DataflowBackend::new(ProgramAnalysisService::new());
+        let statements = vec![
+            stmt(1, &["security.cookie"], 10, &["c"], &[]),
+            stmt(2, &[], 11, &["d"], &["c"]),
+            stmt(3, &["security.sql_execution"], 12, &[], &["d"]),
+            stmt(5, &["security.user_input"], 20, &["u"], &[]),
+        ];
+        let outcome = backend
+            .run(permit.admitted(), &input_with(statements))
+            .unwrap();
+
+        assert!(
+            outcome.matches.is_empty(),
+            "an unrelated MATCH subject must not be reported as reaching the sink"
+        );
+    }
+
+    #[test]
+    fn request_sources_are_only_the_flow_source() {
+        let mut ir = ir();
+        ir.steps.insert(
+            1,
+            DetectorStep::Match {
+                subject: SubjectPattern::new("security.cookie").unwrap(),
+            },
+        );
+        let permit = DetectorAdmission::admit(ir, "1.0.0", AdmissionSource::HumanCurated).unwrap();
+        let backend = M5DataflowBackend::new(CountingRunner::new());
+        let statements = vec![
+            stmt(1, &["security.cookie"], 10, &["c"], &[]),
+            stmt(5, &["security.user_input"], 20, &["u"], &[]),
+            stmt(3, &["security.sql_execution"], 12, &[], &["u"]),
+        ];
+        backend
+            .run(permit.admitted(), &input_with(statements))
+            .unwrap();
+        assert_eq!(
+            backend.runner.last_request().sources,
+            vec![5],
+            "only the FLOW source (statement 5) may seed the traversal"
+        );
+    }
+
+    fn tight_limits() -> PlanLimits {
+        PlanLimits {
+            max_path_count: Some(1),
+            ..default_limits()
+        }
+    }
+
+    /// Two sinks reachable from one source ⇒ two paths.
+    fn two_path_statements() -> Vec<DataflowStatement> {
+        vec![
+            stmt(1, &["security.user_input"], 10, &["a"], &[]),
+            stmt(2, &[], 11, &["b"], &["a"]),
+            stmt(3, &["security.sql_execution"], 12, &[], &["b"]),
+            stmt(4, &["security.sql_execution"], 13, &[], &["b"]),
+        ]
+    }
+
+    #[test]
+    fn exceeding_the_path_budget_is_an_error_not_a_truncation() {
+        let backend = M5DataflowBackend::with_limits(ProgramAnalysisService::new(), tight_limits());
+        let err = backend
+            .run(permit().admitted(), &input_with(two_path_statements()))
+            .unwrap_err();
+        assert!(
+            matches!(err, BackendError::Analysis(_)),
+            "an exceeded limit must surface as an analysis error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn exceeding_the_node_budget_is_an_error() {
+        let mut limits = default_limits();
+        limits.max_visited_nodes = Some(0);
+        let backend = M5DataflowBackend::with_limits(ProgramAnalysisService::new(), limits);
+        let err = backend
+            .run(permit().admitted(), &input_with(chained_statements()))
+            .unwrap_err();
+        assert!(matches!(err, BackendError::Analysis(_)));
+    }
+
+    #[test]
+    fn within_budget_two_paths_are_reported() {
+        let backend = M5DataflowBackend::new(ProgramAnalysisService::new());
+        let outcome = backend
+            .run(permit().admitted(), &input_with(two_path_statements()))
+            .unwrap();
+        assert_eq!(outcome.matches.len(), 2);
     }
 }

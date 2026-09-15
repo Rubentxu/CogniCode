@@ -485,6 +485,32 @@ impl DetectorIr {
             }
         }
 
+        // V11 — `FLOW.source` is the authoritative reachability source, so it
+        // must be declared by a MATCH. Extra MATCH subjects are informational
+        // observations and never seed a traversal.
+        if let Some(index) = self
+            .steps
+            .iter()
+            .position(|s| matches!(s, DetectorStep::Flow { .. }))
+        {
+            let declared: BTreeSet<&SubjectPattern> = self
+                .steps
+                .iter()
+                .filter_map(|s| match s {
+                    DetectorStep::Match { subject } => Some(subject),
+                    _ => None,
+                })
+                .collect();
+            for (i, step) in self.steps.iter().enumerate() {
+                if let DetectorStep::Flow { source, .. } = step {
+                    if !declared.contains(source) {
+                        return Err(DetectorIrError::UndeclaredFlowSource { index: i });
+                    }
+                }
+            }
+            let _ = index;
+        }
+
         // V10 — reachability constructs need a reachability capability.
         // `FLOW`/`EXCLUDE` can be served by a graph engine (GraphQuery) or a
         // dataflow engine (Dataflow); declaring neither is unsupported.
@@ -721,6 +747,11 @@ pub enum DetectorIrError {
     },
     /// The detector declares no capability.
     NoDeclaredCapability,
+    /// A `FLOW.source` that no `MATCH` declares.
+    UndeclaredFlowSource {
+        /// Index of the offending `FLOW` step.
+        index: usize,
+    },
     /// A reachability step (FLOW/EXCLUDE) but neither GraphQuery nor Dataflow.
     MissingReachabilityCapability {
         /// Index of the offending step.
@@ -768,6 +799,10 @@ impl fmt::Display for DetectorIrError {
             Self::NoDeclaredCapability => {
                 f.write_str("a detector must declare at least one capability")
             }
+            Self::UndeclaredFlowSource { index } => write!(
+                f,
+                "FLOW at index {index} uses a source subject that no MATCH declares; FLOW.source is the authoritative reachability source"
+            ),
             Self::MissingReachabilityCapability { index } => write!(
                 f,
                 "step at index {index} is a reachability construct (FLOW/EXCLUDE) but the detector declares neither GRAPH_QUERY nor DATAFLOW"
@@ -1188,5 +1223,49 @@ mod tests {
             ir.validate().unwrap_err(),
             DetectorIrError::NoDeclaredCapability
         );
+    }
+    #[test]
+    fn flow_source_must_be_a_declared_match_subject() {
+        // MATCH cookie + FLOW user_input -> sink is incoherent: the
+        // authoritative reachability source is undeclared.
+        let steps = vec![
+            DetectorStep::Match {
+                subject: subject("security.cookie"),
+            },
+            DetectorStep::Flow {
+                source: subject("security.user_input"),
+                sink: subject("security.sql_execution"),
+                max_hops: None,
+            },
+            DetectorStep::Produce {
+                kind: kind("security.incoherent"),
+            },
+        ];
+        let ir = detector(caps([AnalysisCapability::GraphQuery]), steps);
+        assert_eq!(
+            ir.validate().unwrap_err(),
+            DetectorIrError::UndeclaredFlowSource { index: 1 }
+        );
+
+        // Declaring the flow source as well is coherent.
+        let steps = vec![
+            DetectorStep::Match {
+                subject: subject("security.cookie"),
+            },
+            DetectorStep::Match {
+                subject: subject("security.user_input"),
+            },
+            DetectorStep::Flow {
+                source: subject("security.user_input"),
+                sink: subject("security.sql_execution"),
+                max_hops: None,
+            },
+            DetectorStep::Produce {
+                kind: kind("security.coherent"),
+            },
+        ];
+        let ir = detector(caps([AnalysisCapability::GraphQuery]), steps);
+        ir.validate()
+            .expect("declaring the flow source admits the detector");
     }
 }
