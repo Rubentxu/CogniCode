@@ -16,6 +16,8 @@ pub mod git;
 #[cfg(feature = "multimodal")]
 pub mod github;
 pub mod graph;
+// M7 — in-memory append-only Intelligence Event Log (reference oracle).
+pub mod intelligence_log;
 pub mod lsp;
 pub mod mermaid;
 pub mod parser;

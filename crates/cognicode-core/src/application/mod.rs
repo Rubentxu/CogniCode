@@ -9,7 +9,10 @@ pub mod error;
 #[cfg(feature = "evidence-kernel")]
 pub mod fact_bridge;
 pub mod findings;
+// M7 — recording causal slices into the Intelligence Event Log (application
+// helper; the log itself is pure domain).
 pub mod ingest;
+pub mod intelligence_log;
 pub mod investigation_service;
 pub mod program_analysis;
 pub mod services;

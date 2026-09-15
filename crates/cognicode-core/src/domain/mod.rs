@@ -13,6 +13,14 @@ pub mod example_block;
 // definitions. Additive pure domain (no I/O), mirroring the M5
 // `analytics::program_analysis` precedent; ungated.
 pub mod findings;
+// M7 (Living Software Intelligence) — the causal Intelligence Event Log.
+// Additive pure domain (no I/O), ungated: the log records *what happened*,
+// never canonical truth (that is the evidence kernel's job).
+pub mod intelligence_log;
+// Shared namespaced-name grammar (`namespace.name`) — ungated vocabulary
+// (cycle e63), re-exported by `findings::namespaced` so one validator serves
+// both the M6 findings surface and the M7 event log.
+pub mod naming;
 // Kernel identifiers (EntityId / FactId / EvidenceId / SnapshotId /
 // OccurrenceId / StableEntityId / ExecutionId) — ungated domain
 // vocabulary (cycle e56). The gated `evidence_kernel::ids` re-exports

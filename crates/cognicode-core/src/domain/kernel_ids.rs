@@ -161,6 +161,32 @@ impl std::fmt::Display for EvidenceGrade {
     }
 }
 
+/// Identifies one record in the Intelligence Event Log.
+///
+/// **Ungated domain vocabulary (cycle e63).** The log is append-only and its
+/// ids are assigned by the store, never by the producer — the same lesson the
+/// evidence kernel learned with `EvidenceId`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct EventId(pub u64);
+
+impl EventId {
+    /// Construct an event id.
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    /// The raw value.
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for EventId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "evt:{}", self.0)
+    }
+}
+
 /// Identifies one canonical fact within the kernel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct FactId(pub u64);
