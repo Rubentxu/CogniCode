@@ -461,26 +461,20 @@ impl DetectorIr {
             }
         }
 
+        // V9 — every detector must declare at least one capability. An empty
+        // `requires` would be a subset of every backend's capability set, so
+        // the planner could hand it to an arbitrary backend. Aggregation will
+        // get an explicit capability (`Aggregation`) when it is implemented.
+        if self.requires.is_empty() {
+            return Err(DetectorIrError::NoDeclaredCapability);
+        }
+
         // V7 — declared capabilities must cover every step's floor
         for (index, step) in self.steps.iter().enumerate() {
             for capability in step.required_capabilities() {
                 if !self.requires.contains(&capability) {
                     return Err(DetectorIrError::MissingCapability { capability, index });
                 }
-            }
-        }
-
-        // V9 — a detector with executable steps must declare at least one
-        // capability. An empty `requires` is only legal for a PRODUCE-only
-        // (pure aggregator) detector, otherwise the planner could hand it to
-        // any backend.
-        if self.requires.is_empty() {
-            if let Some(index) = self
-                .steps
-                .iter()
-                .position(|s| !matches!(s, DetectorStep::Produce { .. }))
-            {
-                return Err(DetectorIrError::NoDeclaredCapability { index });
             }
         }
 
@@ -504,28 +498,59 @@ impl DetectorIr {
             .collect()
     }
 
-    /// Digest of the detector **semantics** — `(id, requires, steps)`.
+    /// Digest of the detector **logic** — `(id, requires, steps)`.
     ///
-    /// Excludes `name` and `authority`, so renaming a detector or promoting
-    /// it from `Candidate` to `Gated` does not change its semantic identity.
-    /// This is what historical replay and detector comparison key on.
-    pub fn semantic_digest(&self) -> DetectorDigest {
+    /// Excludes `name`, `authority` and `policy`, so renaming or promoting a
+    /// detector does not change its logic identity.
+    pub fn logic_digest(&self) -> DetectorDigest {
         let canonical = serde_json::to_string(&(&self.id, &self.requires, &self.steps))
             .unwrap_or_else(|_| format!("{}{:?}{:?}", self.id, self.requires, self.steps));
         DetectorDigest::from_content(&canonical)
     }
 
-    /// Digest of the **exact instance**, including `name` and `authority`.
+    /// Digest of the detector's finding **policy** (severity + risk).
+    pub fn policy_digest(&self) -> DetectorDigest {
+        let canonical =
+            serde_json::to_string(&self.policy).unwrap_or_else(|_| format!("{:?}", self.policy));
+        DetectorDigest::from_content(&canonical)
+    }
+
+    /// Digest of the detector **semantics** — `logic_digest + policy_digest`.
     ///
-    /// Used for audit of the admitted definition.
+    /// The policy governs the finding severity/risk that reach the gate, so a
+    /// policy change (e.g. `Medium` -> `Critical`) MUST change the semantic
+    /// digest even though the logic digest stays the same.
+    pub fn semantic_digest(&self) -> DetectorDigest {
+        DetectorDigest::from_content(&format!(
+            "{}:{}",
+            self.logic_digest().as_str(),
+            self.policy_digest().as_str()
+        ))
+    }
+
+    /// Digest of the **exact instance** — the whole definition, including
+    /// `name`, `authority` and `policy`.
     pub fn instance_digest(&self) -> DetectorDigest {
         let canonical = serde_json::to_string(self).unwrap_or_else(|_| format!("{self:?}"));
         DetectorDigest::from_content(&canonical)
     }
 
-    /// Whether this detector may block CI (authority AND valid definition).
-    pub fn can_block(&self) -> bool {
-        self.authority.can_block() && self.validate().is_ok()
+    /// All four digests, captured together for an execution record.
+    pub fn digests(&self) -> DetectorDigests {
+        DetectorDigests {
+            logic: self.logic_digest(),
+            policy: self.policy_digest(),
+            semantic: self.semantic_digest(),
+            instance: self.instance_digest(),
+        }
+    }
+
+    /// The single kind this detector produces (validation guarantees one).
+    pub fn produced_kind(&self) -> Option<&FindingKind> {
+        self.steps.iter().find_map(|s| match s {
+            DetectorStep::Produce { kind } => Some(kind),
+            _ => None,
+        })
     }
 }
 
@@ -533,9 +558,28 @@ impl DetectorIr {
 // Execution reference (authority captured at run time)
 // ============================================================================
 
+/// The four digests of a detector definition, captured together.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DetectorDigests {
+    /// `(id, requires, steps)`.
+    pub logic: DetectorDigest,
+    /// The finding policy.
+    pub policy: DetectorDigest,
+    /// `logic + policy`.
+    pub semantic: DetectorDigest,
+    /// The whole definition.
+    pub instance: DetectorDigest,
+}
+
+impl DetectorDigests {
+    /// Compute all digests of a definition.
+    pub fn of(definition: &DetectorIr) -> Self {
+        definition.digests()
+    }
+}
+
 /// The detector **as executed**: id, version, the authority it held *at
-/// execution time*, its semantic + instance digests, and an optional
-/// execution id.
+/// execution time*, its digests, and an optional execution id.
 ///
 /// Capturing authority here is what makes the AI-detector rule safe: a
 /// `Candidate` run never yields a blocking finding, even if the detector is
@@ -548,23 +592,19 @@ pub struct DetectorExecutionRef {
     pub version: String,
     /// Authority the detector held when it produced the finding.
     pub authority_at_execution: DetectorAuthority,
-    /// Digest of the detector semantics (stable across name/authority).
-    pub semantic_digest: DetectorDigest,
-    /// Digest of the exact admitted instance (includes name + authority).
-    pub instance_digest: DetectorDigest,
+    /// The four digests of the executed definition.
+    pub digests: DetectorDigests,
     /// Optional link to a concrete execution record.
     pub execution_id: Option<ExecutionId>,
 }
 
 impl DetectorExecutionRef {
     /// Construct an execution reference explicitly.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: DetectorId,
         version: impl Into<String>,
         authority_at_execution: DetectorAuthority,
-        semantic_digest: DetectorDigest,
-        instance_digest: DetectorDigest,
+        digests: DetectorDigests,
         execution_id: Option<ExecutionId>,
     ) -> Result<Self, DetectorIrError> {
         let version = version.into();
@@ -575,17 +615,15 @@ impl DetectorExecutionRef {
             id,
             version,
             authority_at_execution,
-            semantic_digest,
-            instance_digest,
+            digests,
             execution_id,
         })
     }
 
     /// Capture an execution reference **from** a raw detector definition.
     ///
-    /// Prefer [`AdmittedDetector::execution_ref`](super::AdmittedDetector::execution_ref)
-    /// in production: it sources the authority from the admission guard
-    /// rather than from a caller-supplied definition.
+    /// Prefer [`ExecutionPermit::execution_ref`](super::ExecutionPermit::execution_ref)
+    /// in production: it sources the authority from the admission permit.
     pub fn from_definition(
         definition: &DetectorIr,
         version: impl Into<String>,
@@ -595,8 +633,7 @@ impl DetectorExecutionRef {
             definition.id.clone(),
             version,
             definition.authority,
-            definition.semantic_digest(),
-            definition.instance_digest(),
+            definition.digests(),
             execution_id,
         )
     }
@@ -609,8 +646,10 @@ impl DetectorExecutionRef {
     /// Whether the execution reference is structurally complete.
     pub fn is_well_formed(&self) -> bool {
         !self.version.trim().is_empty()
-            && !self.semantic_digest.as_str().is_empty()
-            && !self.instance_digest.as_str().is_empty()
+            && !self.digests.logic.as_str().is_empty()
+            && !self.digests.policy.as_str().is_empty()
+            && !self.digests.semantic.as_str().is_empty()
+            && !self.digests.instance.as_str().is_empty()
     }
 }
 
@@ -662,11 +701,8 @@ pub enum DetectorIrError {
         /// Index of the offending step.
         index: usize,
     },
-    /// The detector has executable steps but declares no capability.
-    NoDeclaredCapability {
-        /// Index of the first executable step.
-        index: usize,
-    },
+    /// The detector declares no capability.
+    NoDeclaredCapability,
     /// A step needs a capability the detector did not declare.
     MissingCapability {
         /// The capability that is required.
@@ -706,10 +742,9 @@ impl fmt::Display for DetectorIrError {
             Self::MatchAfterFlow { index } => {
                 write!(f, "MATCH at index {index} appears after a FLOW")
             }
-            Self::NoDeclaredCapability { index } => write!(
-                f,
-                "step at index {index} is executable but the detector declares no capability"
-            ),
+            Self::NoDeclaredCapability => {
+                f.write_str("a detector must declare at least one capability")
+            }
             Self::MissingCapability { capability, index } => write!(
                 f,
                 "step at index {index} requires capability {capability}, which the detector does not declare"
@@ -979,16 +1014,16 @@ mod tests {
     }
 
     #[test]
-    fn candidate_detector_cannot_block() {
+    fn raw_ir_authority_is_only_a_claim() {
+        // The raw IR no longer answers "can I block?" — authority is enforced
+        // at the admission boundary (see `admission.rs`). It only carries the
+        // claimed authority.
         let mut ir = detector(caps([AnalysisCapability::GraphQuery]), flow_steps());
-        ir.authority = DetectorAuthority::Candidate;
-        assert!(!ir.can_block());
-
         ir.authority = DetectorAuthority::Gated;
-        assert!(ir.can_block());
+        assert!(ir.authority.can_block(), "the claim itself is readable");
 
-        ir.steps.clear();
-        assert!(!ir.can_block(), "invalid gated detector still cannot block");
+        ir.authority = DetectorAuthority::Candidate;
+        assert!(!ir.authority.can_block());
     }
 
     #[test]
@@ -1040,8 +1075,10 @@ mod tests {
             execution.authority_at_execution,
             DetectorAuthority::Candidate
         );
-        assert_eq!(execution.semantic_digest, ir.semantic_digest());
-        assert_eq!(execution.instance_digest, ir.instance_digest());
+        assert_eq!(execution.digests.semantic, ir.semantic_digest());
+        assert_eq!(execution.digests.instance, ir.instance_digest());
+        assert_eq!(execution.digests.logic, ir.logic_digest());
+        assert_eq!(execution.digests.policy, ir.policy_digest());
         assert_eq!(execution.execution_id, Some(ExecutionId(9)));
         assert!(execution.is_well_formed());
         assert!(!execution.can_block());
@@ -1051,16 +1088,14 @@ mod tests {
     fn execution_ref_rejects_empty_version() {
         let id = DetectorId::new("security.sql_injection").unwrap();
         let digest = DetectorDigest::from_content("x");
+        let digests = DetectorDigests {
+            logic: digest.clone(),
+            policy: digest.clone(),
+            semantic: digest.clone(),
+            instance: digest,
+        };
         assert_eq!(
-            DetectorExecutionRef::new(
-                id,
-                "",
-                DetectorAuthority::Gated,
-                digest.clone(),
-                digest,
-                None,
-            )
-            .unwrap_err(),
+            DetectorExecutionRef::new(id, "", DetectorAuthority::Gated, digests, None).unwrap_err(),
             DetectorIrError::EmptyVersion
         );
     }
@@ -1086,6 +1121,45 @@ mod tests {
         assert!(
             attempted.is_err(),
             "non-namespaced subject must not deserialize"
+        );
+    }
+    #[test]
+    fn policy_change_changes_semantic_digest_but_not_logic_digest() {
+        let mut ir = detector(caps([AnalysisCapability::GraphQuery]), flow_steps());
+        ir.policy = DetectorFindingPolicy::new(
+            super::super::finding::FindingSeverity::Info,
+            super::super::finding::RiskLevel::Low,
+        );
+        let logic = ir.logic_digest();
+        let semantic_low = ir.semantic_digest();
+
+        ir.policy = DetectorFindingPolicy::new(
+            super::super::finding::FindingSeverity::Critical,
+            super::super::finding::RiskLevel::Critical,
+        );
+        assert_eq!(ir.logic_digest(), logic, "logic is unchanged by the policy");
+        assert_ne!(
+            ir.semantic_digest(),
+            semantic_low,
+            "a policy change must change the semantic digest"
+        );
+        assert_ne!(ir.policy_digest(), DetectorDigest::from_content("other"));
+    }
+
+    #[test]
+    fn empty_requires_is_rejected() {
+        let mut ir = detector(caps([]), flow_steps());
+        assert_eq!(
+            ir.validate().unwrap_err(),
+            DetectorIrError::NoDeclaredCapability
+        );
+        // Even a PRODUCE-only detector must declare a capability.
+        ir.steps = vec![DetectorStep::Produce {
+            kind: kind("security.weak_hash"),
+        }];
+        assert_eq!(
+            ir.validate().unwrap_err(),
+            DetectorIrError::NoDeclaredCapability
         );
     }
 }

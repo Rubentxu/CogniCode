@@ -229,7 +229,7 @@ mod tests {
             id: DetectorId::new("security.no_match").unwrap(),
             name: "no match".to_string(),
             policy: super::super::detector_ir::DetectorFindingPolicy::default(),
-            requires: BTreeSet::new(),
+            requires: [AnalysisCapability::AstPattern].into_iter().collect(),
             authority: DetectorAuthority::Candidate,
             steps: vec![DetectorStep::Produce {
                 kind: FindingKind::new("security.no_match").unwrap(),

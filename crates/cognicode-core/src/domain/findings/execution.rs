@@ -161,6 +161,21 @@ impl<'a> DetectorExecutor<'a> {
             .run(admitted, input)
             .map_err(ExecutionError::Backend)?;
 
+        // A backend may not invent a finding kind: every match must carry the
+        // single kind the detector's PRODUCE step declares.
+        let expected_kind = admitted.definition.produced_kind().cloned();
+        for m in &outcome.matches {
+            if expected_kind.as_ref() != Some(&m.kind) {
+                return Err(ExecutionError::BackendContract(
+                    BackendContractViolation::UnexpectedFindingKind {
+                        backend: backend.name().to_string(),
+                        expected: expected_kind.clone(),
+                        produced: m.kind.clone(),
+                    },
+                ));
+            }
+        }
+
         // A backend may not claim evidence stronger than its declared ceiling,
         // so it cannot inflate a finding's evidence class.
         let ceiling = backend.evidence_ceiling();
@@ -289,6 +304,15 @@ impl std::error::Error for PlanError {}
 /// A backend breached its declared contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackendContractViolation {
+    /// The backend produced a finding kind other than the detector's PRODUCE.
+    UnexpectedFindingKind {
+        /// Backend name.
+        backend: String,
+        /// The kind the detector declares.
+        expected: Option<super::FindingKind>,
+        /// The kind the backend produced.
+        produced: super::FindingKind,
+    },
     /// The backend produced evidence stronger than its declared ceiling.
     EvidenceCeilingExceeded {
         /// Backend name.
@@ -307,6 +331,18 @@ pub enum BackendContractViolation {
 impl fmt::Display for BackendContractViolation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UnexpectedFindingKind {
+                backend,
+                expected,
+                produced,
+            } => write!(
+                f,
+                "backend `{backend}` produced finding kind `{produced}`, but the detector declares `{}`",
+                expected
+                    .as_ref()
+                    .map(|k| k.to_string())
+                    .unwrap_or_else(|| "<none>".to_string())
+            ),
             Self::EvidenceCeilingExceeded {
                 backend,
                 index,
@@ -405,7 +441,9 @@ mod tests {
                     fact: None,
                 }],
                 matches: vec![DetectorMatch {
-                    kind: FindingKind::new("security.overclaimed").unwrap(),
+                    // Must match the detector's PRODUCE kind to reach the
+                    // evidence-ceiling check.
+                    kind: FindingKind::new("security.weak_hash").unwrap(),
                     message: "overclaimed".to_string(),
                     evidence: vec![],
                     causal: vec![],
@@ -496,6 +534,68 @@ mod tests {
                 assert_eq!(ceiling, EvidenceClass::C);
             }
             other => panic!("expected a contract violation, got {other:?}"),
+        }
+    }
+    /// A backend that reports a kind other than the detector's PRODUCE.
+    struct KindLiarBackend;
+    impl DetectorBackend for KindLiarBackend {
+        fn name(&self) -> &'static str {
+            "kind-liar"
+        }
+        fn capabilities(&self) -> BTreeSet<AnalysisCapability> {
+            [AnalysisCapability::AstPattern].into_iter().collect()
+        }
+        fn evidence_ceiling(&self) -> EvidenceClass {
+            EvidenceClass::C
+        }
+        fn run(
+            &self,
+            _admitted: &AdmittedDetector,
+            _input: &AnalysisInput,
+        ) -> Result<DetectorOutcome, BackendError> {
+            Ok(DetectorOutcome {
+                produced_evidence: vec![],
+                matches: vec![DetectorMatch {
+                    kind: FindingKind::new("architecture.layer_violation").unwrap(),
+                    message: "invented".to_string(),
+                    evidence: vec![],
+                    causal: vec![],
+                }],
+                diagnostics: vec![],
+            })
+        }
+    }
+
+    #[test]
+    fn backend_cannot_invent_a_finding_kind() {
+        let mut registry = BackendRegistry::new();
+        registry.register(Box::new(KindLiarBackend));
+        let mut requires = BTreeSet::new();
+        requires.insert(AnalysisCapability::AstPattern);
+        let permit =
+            DetectorAdmission::admit(detector_with(requires), "1.0.0", AdmissionSource::Builtin)
+                .unwrap();
+
+        let executor = DetectorExecutor::new(&registry);
+        let mut sink = CountingSink::default();
+        let err = executor
+            .execute(
+                &permit,
+                &AnalysisInput::default(),
+                &mut sink,
+                ExecutionId::new(1),
+            )
+            .expect_err("invented kind must be rejected");
+        match err {
+            ExecutionError::BackendContract(BackendContractViolation::UnexpectedFindingKind {
+                expected,
+                produced,
+                ..
+            }) => {
+                assert_eq!(expected.unwrap().as_str(), "security.weak_hash");
+                assert_eq!(produced.as_str(), "architecture.layer_violation");
+            }
+            other => panic!("expected an unexpected-kind violation, got {other:?}"),
         }
     }
 }

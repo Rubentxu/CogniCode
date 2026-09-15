@@ -35,13 +35,15 @@ pub mod verifier;
 pub use crate::domain::kernel_ids::{EntityId, EvidenceId, FactId};
 pub use admission::{
     AdmissionError, AdmissionRef, AdmissionSource, AdmittedDetector, AdmittedDetectorRecord,
-    DetectorAdmission, DetectorVersion, ExecutionPermit, PromotionApproval,
+    ApprovalVerifier, DetectorAdmission, DetectorVersion, EligibleSourceVerifier, ExecutionPermit,
+    PromotionAuthority, PromotionRequest, RejectAllApprovals, VerifiedPromotion,
 };
 pub use assembler::{AssemblyError, FindingAssembler};
 pub use ast_backend::{AstBackend, AstConstruct, AstInput, AstUnit};
 pub use detector_ir::{
-    AnalysisCapability, DetectorAuthority, DetectorExecutionRef, DetectorFindingPolicy, DetectorId,
-    DetectorIr, DetectorIrError, DetectorStep, EscalationTier, FindingKind, SubjectPattern,
+    AnalysisCapability, DetectorAuthority, DetectorDigests, DetectorExecutionRef,
+    DetectorFindingPolicy, DetectorId, DetectorIr, DetectorIrError, DetectorStep, EscalationTier,
+    FindingKind, SubjectPattern,
 };
 pub use digest::{DetectorDigest, DigestError, sha256_hex};
 pub use execution::{

@@ -1,39 +1,41 @@
-//! Detector admission — a real capability boundary (M6, cycles e57 / e58.1).
+//! Detector admission — the trust boundary (M6, cycles e57 / e58.1 / e58.2).
 //!
 //! A [`DetectorIr`] carries a public, deserializable `authority` field, so a
-//! caller could submit `{ generated_by_llm, authority: Gated }`. e57 stopped
-//! *normalising* the authority on the official path; e58.1 makes authority
-//! **unforgeable by construction**:
+//! caller could submit `{ generated_by_llm, authority: Gated }`. This module
+//! ensures raw authority is never trusted:
 //!
-//! - [`AdmittedDetector`] is plain data — it is **not** serializable and
-//!   **not** directly executable.
-//! - [`ExecutionPermit`] has private fields and a private
-//!   [`AdmissionSeal`], so it cannot be constructed or deserialized outside
-//!   this module. The executor accepts only a permit.
-//! - Persistence goes through [`AdmittedDetectorRecord`] (serializable), and
-//!   recovery must re-enter through [`DetectorAdmission::restore`], which
-//!   re-validates the definition and re-applies the admission policy.
+//! - [`AdmittedDetector`] is plain data: **not serializable**, **not directly
+//!   executable**.
+//! - [`ExecutionPermit`] has private fields and a private seal and is **not**
+//!   `Serialize`/`Deserialize`, so it can only be minted here. The executor
+//!   accepts only a permit.
+//! - Promotion requires a [`VerifiedPromotion`] — likewise private-sealed and
+//!   NOT serializable — which can only be produced by running an
+//!   [`ApprovalVerifier`] over a [`PromotionRequest`].
+//! - Persistence uses [`AdmittedDetectorRecord`] (serializable). Recovery is
+//!   **fail-closed**: [`DetectorAdmission::restore`] always yields
+//!   `Candidate`; only [`DetectorAdmission::restore_with`], given an explicit
+//!   [`ApprovalVerifier`], can recover `Gated` — and then only if the
+//!   verifier actually validates the recorded approval.
 //!
-//! ```text
-//! Raw DetectorIr ─► admit ──► ExecutionPermit (Candidate)
-//!                                 ▲   │
-//!                promote(approval)┘   │
-//!                                     ▼
-//!                        DetectorExecutor::execute(&ExecutionPermit, …)
+//! ## Honest scope
 //!
-//! AdmittedDetectorRecord ─► restore (re-validate + policy) ─► ExecutionPermit
-//! ```
-//!
-//! Not cryptographic: the approval's authenticity is a governance concern for
-//! M9/M13. The type system prevents *construction*; `restore` prevents a
-//! hand-written JSON record from silently minting a `Gated` permit.
+//! "Unforgeable by construction" holds for the **in-memory capability**: no
+//! code outside this module can build an `ExecutionPermit` or a
+//! `VerifiedPromotion`. It does **not** yet hold for the *authenticity of a
+//! persisted approval string* — that needs a trusted approver registry, a
+//! governance/ChangeProposal flow and (eventually) signatures (M9/M13). The
+//! default restore path therefore never restores `Gated`, and the shipped
+//! [`RejectAllApprovals`] verifier rejects everything.
 //!
 //! Pure domain: no I/O.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use super::detector_ir::{DetectorAuthority, DetectorExecutionRef, DetectorIr, DetectorIrError};
+use super::detector_ir::{
+    DetectorAuthority, DetectorExecutionRef, DetectorId, DetectorIr, DetectorIrError,
+};
 use crate::domain::kernel_ids::ExecutionId;
 
 /// A non-empty detector version.
@@ -92,8 +94,10 @@ pub enum AdmissionSource {
 }
 
 impl AdmissionSource {
-    /// Whether this source is trusted to *gate*. Even when trusted, admission
-    /// starts a detector as `Candidate`; promotion is a separate transition.
+    /// Whether this source is *eligible* to be trusted to gate.
+    ///
+    /// Eligibility alone never grants authority: a promotion still needs an
+    /// [`ApprovalVerifier`] to accept it.
     pub fn is_trusted_to_gate(self) -> bool {
         matches!(self, Self::Builtin | Self::HumanCurated)
     }
@@ -115,28 +119,133 @@ impl fmt::Display for AdmissionSource {
 pub struct AdmissionRef {
     /// Where the definition came from.
     pub source: AdmissionSource,
-    /// The approver of a promotion, if the detector was promoted.
+    /// The approver recorded for a promotion, if any.
+    ///
+    /// A stored string is **not** proof of authority: recovering `Gated` from
+    /// persistence requires a verifier to accept it.
     pub approval: Option<String>,
 }
 
-/// An explicit approval token for promoting a detector to `Gated`.
-///
-/// In production this is issued by the governance/ChangeProposal path
-/// (M9/M13); here it is a plain value so the transition is explicit.
+/// A request to promote a detector, to be vetted by an [`ApprovalVerifier`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PromotionApproval {
-    /// Identifier of the approving authority (non-empty).
+pub struct PromotionRequest {
+    /// The detector being promoted.
+    pub detector_id: DetectorId,
+    /// The source the promotion concerns.
+    pub source: AdmissionSource,
+    /// The alleged approving authority.
     pub approver: String,
 }
 
-impl PromotionApproval {
-    /// Construct an approval with a non-empty approver.
-    pub fn new(approver: impl Into<String>) -> Result<Self, AdmissionError> {
+impl PromotionRequest {
+    /// Construct a request with a non-empty approver.
+    pub fn new(
+        detector_id: DetectorId,
+        source: AdmissionSource,
+        approver: impl Into<String>,
+    ) -> Result<Self, AdmissionError> {
         let approver = approver.into();
         if approver.trim().is_empty() {
             return Err(AdmissionError::EmptyApprover);
         }
-        Ok(Self { approver })
+        Ok(Self {
+            detector_id,
+            source,
+            approver,
+        })
+    }
+}
+
+/// Decides whether a [`PromotionRequest`] is authorised.
+///
+/// The real implementation (trusted approver registry / ChangeProposal
+/// governance) is supplied at the composition root in M9/M13. The shipped
+/// default, [`RejectAllApprovals`], authorises nothing.
+pub trait ApprovalVerifier {
+    /// Whether this request is authorised.
+    fn verify(&self, request: &PromotionRequest) -> bool;
+}
+
+/// The fail-closed default: authorises nothing.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RejectAllApprovals;
+
+impl ApprovalVerifier for RejectAllApprovals {
+    fn verify(&self, _request: &PromotionRequest) -> bool {
+        false
+    }
+}
+
+/// A non-cryptographic placeholder verifier: authorises a promotion when the
+/// source is eligible and an approver is named.
+///
+/// Documented as a **placeholder** pending M9/M13: it does not prove that the
+/// approver actually approved anything. Never wire it as the production
+/// verifier without replacing it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct EligibleSourceVerifier;
+
+impl ApprovalVerifier for EligibleSourceVerifier {
+    fn verify(&self, request: &PromotionRequest) -> bool {
+        request.source.is_trusted_to_gate() && !request.approver.trim().is_empty()
+    }
+}
+
+/// Private seal for [`VerifiedPromotion`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PromotionSeal(());
+
+/// A promotion that an [`ApprovalVerifier`] has authorised.
+///
+/// Private fields + private seal + no serde: it can only be produced by
+/// [`PromotionAuthority::verify`]. [`DetectorAdmission::promote`] accepts
+/// only this type, so a caller cannot promote by asserting authority.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedPromotion {
+    request: PromotionRequest,
+    _seal: PromotionSeal,
+}
+
+impl VerifiedPromotion {
+    /// The vetted request.
+    pub fn request(&self) -> &PromotionRequest {
+        &self.request
+    }
+
+    /// The approved detector id.
+    pub fn detector_id(&self) -> &DetectorId {
+        &self.request.detector_id
+    }
+
+    /// The approving authority.
+    pub fn approver(&self) -> &str {
+        &self.request.approver
+    }
+}
+
+/// The only minter of [`VerifiedPromotion`]s.
+#[derive(Debug, Clone, Copy)]
+pub struct PromotionAuthority;
+
+impl PromotionAuthority {
+    /// Run a verifier over a request; mint a [`VerifiedPromotion`] only on
+    /// success.
+    pub fn verify(
+        verifier: &dyn ApprovalVerifier,
+        request: PromotionRequest,
+    ) -> Result<VerifiedPromotion, AdmissionError> {
+        if request.approver.trim().is_empty() {
+            return Err(AdmissionError::EmptyApprover);
+        }
+        if !verifier.verify(&request) {
+            return Err(AdmissionError::PromotionRejected {
+                detector: request.detector_id.as_str().to_string(),
+            });
+        }
+        Ok(VerifiedPromotion {
+            request,
+            _seal: PromotionSeal(()),
+        })
     }
 }
 
@@ -158,7 +267,7 @@ pub struct AdmittedDetector {
 
 impl AdmittedDetector {
     /// Detector id.
-    pub fn id(&self) -> &super::DetectorId {
+    pub fn id(&self) -> &DetectorId {
         &self.definition.id
     }
 
@@ -170,10 +279,8 @@ impl AdmittedDetector {
 
 /// The serializable persistence DTO for an admitted detector.
 ///
-/// Recovering from a record **must** go through
-/// [`DetectorAdmission::restore`], which re-validates the definition and
-/// re-applies the admission policy — a JSON record cannot simply be turned
-/// into an executable permit.
+/// Recovering from a record goes through [`DetectorAdmission::restore`]
+/// (fail-closed) or [`DetectorAdmission::restore_with`] (verifier-gated).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AdmittedDetectorRecord {
     /// The definition.
@@ -211,9 +318,9 @@ struct AdmissionSeal(());
 /// The capability token that authorises execution.
 ///
 /// Private fields + a private seal mean the only ways to obtain one are
-/// [`DetectorAdmission::admit`], [`DetectorAdmission::promote`] and
-/// [`DetectorAdmission::restore`]. It is deliberately **not**
-/// `Serialize`/`Deserialize`, so JSON cannot mint one.
+/// [`DetectorAdmission::admit`], [`DetectorAdmission::promote`],
+/// [`DetectorAdmission::restore`] and [`DetectorAdmission::restore_with`].
+/// It is deliberately **not** `Serialize`/`Deserialize`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionPermit {
     admitted: AdmittedDetector,
@@ -227,7 +334,7 @@ impl ExecutionPermit {
     }
 
     /// Detector id.
-    pub fn id(&self) -> &super::DetectorId {
+    pub fn id(&self) -> &DetectorId {
         self.admitted.id()
     }
 
@@ -250,8 +357,7 @@ impl ExecutionPermit {
             self.admitted.definition.id.clone(),
             self.admitted.version.as_str(),
             self.admitted.authority,
-            self.admitted.definition.semantic_digest(),
-            self.admitted.definition.instance_digest(),
+            self.admitted.definition.digests(),
             execution_id,
         )
     }
@@ -280,7 +386,6 @@ impl DetectorAdmission {
         definition
             .validate()
             .map_err(AdmissionError::InvalidDefinition)?;
-        // Discard any authority claimed by the untrusted definition.
         definition.authority = DetectorAuthority::Candidate;
 
         Ok(ExecutionPermit {
@@ -297,37 +402,79 @@ impl DetectorAdmission {
         })
     }
 
-    /// Promote a permitted detector to `Gated` through the trusted transition.
+    /// Promote a permitted detector using a **verified** promotion.
     pub fn promote(
         permit: &ExecutionPermit,
-        approval: PromotionApproval,
+        verified: VerifiedPromotion,
     ) -> Result<ExecutionPermit, AdmissionError> {
+        if verified.detector_id() != permit.id() {
+            return Err(AdmissionError::PromotionMismatch {
+                permit: permit.id().as_str().to_string(),
+                promotion: verified.detector_id().as_str().to_string(),
+            });
+        }
         let mut admitted = permit.admitted.clone();
         admitted.authority = DetectorAuthority::Gated;
         admitted.definition.authority = DetectorAuthority::Gated;
-        admitted.admission.approval = Some(approval.approver);
+        admitted.admission.approval = Some(verified.approver().to_string());
         Ok(ExecutionPermit {
             admitted,
             _seal: AdmissionSeal(()),
         })
     }
 
-    /// Restore a permit from a persistence record.
+    /// Restore a permit from a persistence record — **fail-closed**.
     ///
-    /// Re-validates the definition and re-applies the admission policy: a
-    /// record that claims `Gated` **without** a recorded approval is
-    /// downgraded to `Candidate`, so a hand-written JSON record cannot mint
-    /// gate authority.
+    /// The definition is re-validated and the authority is forced to
+    /// `Candidate`, whatever the record claims. A stored approval string is
+    /// never treated as proof of authority. Use
+    /// [`restore_with`](Self::restore_with) to recover `Gated` through a
+    /// verifier.
     pub fn restore(record: &AdmittedDetectorRecord) -> Result<ExecutionPermit, AdmissionError> {
         let mut definition = record.definition.clone();
         definition
             .validate()
             .map_err(AdmissionError::InvalidDefinition)?;
+        definition.authority = DetectorAuthority::Candidate;
 
-        let claimed_gated = record.authority == DetectorAuthority::Gated;
-        let approved = record.admission.approval.is_some();
-        let authority = if claimed_gated && approved {
-            DetectorAuthority::Gated
+        Ok(ExecutionPermit {
+            admitted: AdmittedDetector {
+                definition,
+                version: record.version.clone(),
+                authority: DetectorAuthority::Candidate,
+                admission: record.admission.clone(),
+            },
+            _seal: AdmissionSeal(()),
+        })
+    }
+
+    /// Restore a permit, recovering `Gated` only if `verifier` validates the
+    /// recorded approval. Otherwise the permit is `Candidate` (fail-closed).
+    pub fn restore_with(
+        record: &AdmittedDetectorRecord,
+        verifier: &dyn ApprovalVerifier,
+    ) -> Result<ExecutionPermit, AdmissionError> {
+        let mut definition = record.definition.clone();
+        definition
+            .validate()
+            .map_err(AdmissionError::InvalidDefinition)?;
+
+        let authority = if record.authority == DetectorAuthority::Gated {
+            match &record.admission.approval {
+                Some(approver) => {
+                    let request = PromotionRequest {
+                        detector_id: definition.id.clone(),
+                        source: record.admission.source,
+                        approver: approver.clone(),
+                    };
+                    if PromotionAuthority::verify(verifier, request).is_ok() {
+                        DetectorAuthority::Gated
+                    } else {
+                        DetectorAuthority::Candidate
+                    }
+                }
+                None => DetectorAuthority::Candidate,
+            }
         } else {
             DetectorAuthority::Candidate
         };
@@ -352,8 +499,20 @@ pub enum AdmissionError {
     EmptyVersion,
     /// The definition failed validation.
     InvalidDefinition(DetectorIrError),
-    /// A promotion approval has no approver.
+    /// A promotion request has no approver.
     EmptyApprover,
+    /// The verifier rejected the promotion.
+    PromotionRejected {
+        /// The detector the promotion targeted.
+        detector: String,
+    },
+    /// The promotion was for a different detector than the permit.
+    PromotionMismatch {
+        /// The permit's detector id.
+        permit: String,
+        /// The promotion's detector id.
+        promotion: String,
+    },
 }
 
 impl fmt::Display for AdmissionError {
@@ -361,7 +520,17 @@ impl fmt::Display for AdmissionError {
         match self {
             Self::EmptyVersion => f.write_str("detector version must not be empty"),
             Self::InvalidDefinition(err) => write!(f, "detector definition rejected: {err}"),
-            Self::EmptyApprover => f.write_str("promotion approval must name a non-empty approver"),
+            Self::EmptyApprover => f.write_str("promotion request must name a non-empty approver"),
+            Self::PromotionRejected { detector } => {
+                write!(
+                    f,
+                    "promotion of `{detector}` was rejected by the approval verifier"
+                )
+            }
+            Self::PromotionMismatch { permit, promotion } => write!(
+                f,
+                "promotion targets `{promotion}` but the permit is for `{permit}`"
+            ),
         }
     }
 }
@@ -370,15 +539,16 @@ impl std::error::Error for AdmissionError {}
 
 #[cfg(test)]
 mod tests {
-    use super::super::detector_ir::{DetectorId, DetectorStep, FindingKind, SubjectPattern};
+    use super::super::detector_ir::{
+        DetectorFindingPolicy, DetectorStep, FindingKind, SubjectPattern,
+    };
     use super::*;
-    use std::collections::BTreeSet;
 
     fn definition(authority: DetectorAuthority) -> DetectorIr {
         DetectorIr {
             id: DetectorId::new("security.weak_hash").unwrap(),
             name: "weak hash".to_string(),
-            policy: super::super::detector_ir::DetectorFindingPolicy::default(),
+            policy: DetectorFindingPolicy::default(),
             requires: [super::super::AnalysisCapability::AstPattern]
                 .into_iter()
                 .collect(),
@@ -394,6 +564,17 @@ mod tests {
         }
     }
 
+    fn promote_with<const N: usize>(
+        permit: &ExecutionPermit,
+        verifier: &dyn ApprovalVerifier,
+        approver: &str,
+    ) -> Result<ExecutionPermit, AdmissionError> {
+        let request =
+            PromotionRequest::new(permit.id().clone(), AdmissionSource::HumanCurated, approver)?;
+        let verified = PromotionAuthority::verify(verifier, request)?;
+        DetectorAdmission::promote(permit, verified)
+    }
+
     #[test]
     fn ai_definition_claiming_gated_is_forced_to_candidate() {
         let permit = DetectorAdmission::admit(
@@ -402,58 +583,56 @@ mod tests {
             AdmissionSource::AiGenerated,
         )
         .unwrap();
-
-        assert_eq!(permit.authority(), DetectorAuthority::Candidate);
-        assert_eq!(
-            permit.admitted().definition.authority,
-            DetectorAuthority::Candidate
-        );
-        assert!(!permit.can_block());
-        assert!(permit.admitted().admission.approval.is_none());
-    }
-
-    #[test]
-    fn trusted_source_still_starts_as_candidate() {
-        let permit = DetectorAdmission::admit(
-            definition(DetectorAuthority::Gated),
-            "1.0.0",
-            AdmissionSource::HumanCurated,
-        )
-        .unwrap();
         assert_eq!(permit.authority(), DetectorAuthority::Candidate);
         assert!(!permit.can_block());
     }
 
     #[test]
-    fn promote_is_the_only_path_to_gated_and_needs_an_approval() {
+    fn promote_requires_a_verified_promotion() {
         let permit = DetectorAdmission::admit(
             definition(DetectorAuthority::Candidate),
             "1.0.0",
             AdmissionSource::HumanCurated,
         )
         .unwrap();
-        let approval = PromotionApproval::new("security-team").unwrap();
-        let gated = DetectorAdmission::promote(&permit, approval).unwrap();
 
+        // The default verifier rejects everything: no promotion possible.
+        assert!(matches!(
+            promote_with::<0>(&permit, &RejectAllApprovals, "security-team").unwrap_err(),
+            AdmissionError::PromotionRejected { .. }
+        ));
+
+        // Only a verifier that actually accepts yields a Gated permit.
+        let gated = promote_with::<0>(&permit, &EligibleSourceVerifier, "security-team").unwrap();
         assert_eq!(gated.authority(), DetectorAuthority::Gated);
         assert!(gated.can_block());
-        assert_eq!(
-            gated.admitted().admission.approval.as_deref(),
-            Some("security-team")
-        );
-        // The original permit is untouched.
         assert_eq!(permit.authority(), DetectorAuthority::Candidate);
-
-        assert_eq!(
-            PromotionApproval::new("").unwrap_err(),
-            AdmissionError::EmptyApprover
-        );
     }
 
     #[test]
-    fn json_record_claiming_gated_without_approval_restores_as_candidate() {
-        // A hand-written JSON record that claims Gated but records no approval
-        // must NOT mint gate authority on restore.
+    fn promote_rejects_a_mismatched_detector() {
+        let permit = DetectorAdmission::admit(
+            definition(DetectorAuthority::Candidate),
+            "1.0.0",
+            AdmissionSource::HumanCurated,
+        )
+        .unwrap();
+        let request = PromotionRequest::new(
+            DetectorId::new("other.detector").unwrap(),
+            AdmissionSource::HumanCurated,
+            "team",
+        )
+        .unwrap();
+        let verified = PromotionAuthority::verify(&EligibleSourceVerifier, request).unwrap();
+        assert!(matches!(
+            DetectorAdmission::promote(&permit, verified).unwrap_err(),
+            AdmissionError::PromotionMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn json_record_with_forged_approval_cannot_restore_gated() {
+        // authority=Gated + approval="forged" must NOT restore as Gated.
         let forged = r#"{
             "definition": {
                 "id": "security.weak_hash",
@@ -467,37 +646,40 @@ mod tests {
             },
             "version": "1.0.0",
             "authority": "gated",
-            "admission": { "source": "ai_generated", "approval": null }
+            "admission": { "source": "human_curated", "approval": "forged" }
         }"#;
         let record: AdmittedDetectorRecord = serde_json::from_str(forged).unwrap();
-        assert_eq!(record.authority, DetectorAuthority::Gated);
 
+        // Fail-closed restore: Candidate.
         let permit = DetectorAdmission::restore(&record).unwrap();
-        assert_eq!(
-            permit.authority(),
-            DetectorAuthority::Candidate,
-            "an unapproved Gated record must be downgraded"
-        );
+        assert_eq!(permit.authority(), DetectorAuthority::Candidate);
         assert!(!permit.can_block());
+
+        // Even with a verifier, the shipped default rejects it.
+        let permit2 = DetectorAdmission::restore_with(&record, &RejectAllApprovals).unwrap();
+        assert_eq!(permit2.authority(), DetectorAuthority::Candidate);
+        assert!(!permit2.can_block());
     }
 
     #[test]
-    fn restore_honours_a_recorded_approval_and_revalidates() {
+    fn restore_with_a_verifier_recovers_gated_when_validated() {
         let permit = DetectorAdmission::admit(
             definition(DetectorAuthority::Candidate),
             "2.0.0",
             AdmissionSource::HumanCurated,
         )
         .unwrap();
-        let gated =
-            DetectorAdmission::promote(&permit, PromotionApproval::new("team").unwrap()).unwrap();
-
+        let gated = promote_with::<0>(&permit, &EligibleSourceVerifier, "team").unwrap();
         let record = gated.record();
-        let restored = DetectorAdmission::restore(&record).unwrap();
-        assert_eq!(restored.authority(), DetectorAuthority::Gated);
-        assert!(restored.can_block());
 
-        // A record whose definition does not validate is rejected on restore.
+        let restored = DetectorAdmission::restore_with(&record, &EligibleSourceVerifier).unwrap();
+        assert_eq!(restored.authority(), DetectorAuthority::Gated);
+
+        // Fail-closed restore never recovers Gated.
+        let plain = DetectorAdmission::restore(&record).unwrap();
+        assert_eq!(plain.authority(), DetectorAuthority::Candidate);
+
+        // A record whose definition does not validate is rejected.
         let mut broken = record.clone();
         broken.definition.steps.clear();
         assert!(matches!(
@@ -521,31 +703,6 @@ mod tests {
     }
 
     #[test]
-    fn execution_ref_sources_authority_from_the_permit() {
-        let permit = DetectorAdmission::admit(
-            definition(DetectorAuthority::Candidate),
-            "2.3.4",
-            AdmissionSource::AiGenerated,
-        )
-        .unwrap();
-        let candidate_run = permit.execution_ref(Some(ExecutionId(1))).unwrap();
-        assert_eq!(
-            candidate_run.authority_at_execution,
-            DetectorAuthority::Candidate
-        );
-        assert!(!candidate_run.can_block());
-
-        let gated =
-            DetectorAdmission::promote(&permit, PromotionApproval::new("team").unwrap()).unwrap();
-        let gated_run = gated.execution_ref(Some(ExecutionId(2))).unwrap();
-        assert!(gated_run.can_block());
-
-        // Same semantics, different authority.
-        assert_eq!(candidate_run.semantic_digest, gated_run.semantic_digest);
-        assert_ne!(candidate_run.instance_digest, gated_run.instance_digest);
-    }
-
-    #[test]
     fn admit_rejects_empty_version_and_invalid_definition() {
         assert_eq!(
             DetectorAdmission::admit(
@@ -563,5 +720,18 @@ mod tests {
             DetectorAdmission::admit(invalid, "1.0.0", AdmissionSource::Builtin).unwrap_err(),
             AdmissionError::InvalidDefinition(_)
         ));
+    }
+
+    #[test]
+    fn promotion_requires_a_non_empty_approver() {
+        assert_eq!(
+            PromotionRequest::new(
+                DetectorId::new("security.weak_hash").unwrap(),
+                AdmissionSource::Builtin,
+                "  "
+            )
+            .unwrap_err(),
+            AdmissionError::EmptyApprover
+        );
     }
 }

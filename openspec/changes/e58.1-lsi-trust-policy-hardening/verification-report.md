@@ -1,5 +1,7 @@
 # Verification Report — cycle e58.1 — trust/policy hardening
 
+> **Correction (cycle e58.2).** This report over-stated one property. `restore` was **fail-open** for a forged `approval` string, so a hand-written JSON record claiming `Gated` *with* an approval was restored as `Gated`. "JSON cannot mint executable authority" was therefore only true for the in-memory capability, not for the persisted promotion. e58.2 made `restore` fail-closed, added `VerifiedPromotion`/`ApprovalVerifier`, split the digests and validated `DetectorMatch.kind` against `PRODUCE`. See `openspec/changes/e58.2-lsi-authority-verification/`.
+
 > Cycle: A-lite | Milestone: M6 | Phase: verify | Date: 2026-09-15
 
 ## Summary

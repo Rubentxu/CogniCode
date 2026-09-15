@@ -175,11 +175,18 @@ mod tests {
             ],
         };
         let candidate = DetectorAdmission::admit(ir, "1", AdmissionSource::HumanCurated).unwrap();
-        DetectorAdmission::promote(
-            &candidate,
-            super::super::admission::PromotionApproval::new("team").unwrap(),
+        let request = super::super::admission::PromotionRequest::new(
+            candidate.id().clone(),
+            AdmissionSource::HumanCurated,
+            "team",
         )
-        .unwrap()
+        .unwrap();
+        let verified = super::super::admission::PromotionAuthority::verify(
+            &super::super::admission::EligibleSourceVerifier,
+            request,
+        )
+        .unwrap();
+        DetectorAdmission::promote(&candidate, verified).unwrap()
     }
 
     fn build(gated: bool) -> Finding {

@@ -400,7 +400,7 @@ impl Finding {
         !self.evidence.is_empty()
             && !self.causal_chain.is_empty()
             && !self.detector.version.trim().is_empty()
-            && !self.detector.semantic_digest.as_str().is_empty()
+            && !self.detector.digests.semantic.as_str().is_empty()
             && self
                 .causal_chain
                 .iter()
@@ -501,12 +501,17 @@ mod tests {
     use crate::domain::findings::detector_ir::{DetectorAuthority, DetectorId};
 
     fn detector_at(authority: DetectorAuthority) -> DetectorExecutionRef {
+        let d = super::super::digest::DetectorDigest::from_content("detector-content");
         DetectorExecutionRef::new(
             DetectorId::new("security.sql_injection").unwrap(),
             "1.0.0",
             authority,
-            super::super::digest::DetectorDigest::from_content("detector-content"),
-            super::super::digest::DetectorDigest::from_content("detector-content"),
+            super::super::detector_ir::DetectorDigests {
+                logic: d.clone(),
+                policy: d.clone(),
+                semantic: d.clone(),
+                instance: d,
+            },
             None,
         )
         .unwrap()

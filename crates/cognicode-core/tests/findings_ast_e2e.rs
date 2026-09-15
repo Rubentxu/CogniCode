@@ -1,4 +1,4 @@
-//! End-to-end vertical slice for M6 (cycles e57 / e58.1).
+//! End-to-end vertical slice for M6 (cycles e57 / e58.1 / e58.2).
 //!
 //! Proves the full safe path for the Detector IR:
 //!
@@ -9,10 +9,9 @@
 //!
 //! and the safety properties:
 //! - a `Candidate` run never blocks (U43), even when its evidence verifies;
-//! - the same detector promoted to `Gated` does block, with the same semantic
-//!   digest but a different instance digest (U57 promotion identity);
-//! - a hand-written JSON record cannot mint gate authority;
-//! - the AST backend cannot claim graph/runtime evidence (ceiling contract).
+//! - promotion needs a `VerifiedPromotion` minted by an `ApprovalVerifier`;
+//! - a persisted record cannot be turned into a `Gated` permit by default;
+//! - the AST backend cannot invent a kind or claim graph/runtime evidence.
 
 use std::collections::BTreeSet;
 
@@ -21,7 +20,8 @@ use cognicode_core::domain::findings::{
     AstConstruct, AstInput, AstUnit, BackendRegistry, DetectorAdmission, DetectorAuthority,
     DetectorExecutor, DetectorFindingPolicy, DetectorId, DetectorIr, DetectorStep, EvidenceClass,
     ExecutionError, ExecutionPermit, ExecutionRecord, Finding, FindingGate, FindingKind,
-    FindingVerifier, PromotionApproval, RiskLevel, SubjectPattern, VerificationError,
+    FindingVerifier, PromotionAuthority, PromotionRequest, RejectAllApprovals, RiskLevel,
+    SubjectPattern, VerificationError,
 };
 use cognicode_core::domain::kernel_ids::ExecutionId;
 use cognicode_core::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
@@ -70,6 +70,26 @@ fn blocker_gate() -> FindingGate {
     FindingGate::new(EvidenceClass::C, RiskLevel::Low)
 }
 
+/// A verifier that would accept a HumanCurated promotion (test double).
+struct AcceptAll;
+impl cognicode_core::domain::findings::ApprovalVerifier for AcceptAll {
+    fn verify(&self, _request: &PromotionRequest) -> bool {
+        true
+    }
+}
+
+fn verified_promotion(
+    permit: &ExecutionPermit,
+) -> cognicode_core::domain::findings::VerifiedPromotion {
+    let request = PromotionRequest::new(
+        permit.id().clone(),
+        AdmissionSource::HumanCurated,
+        "security-team",
+    )
+    .unwrap();
+    PromotionAuthority::verify(&AcceptAll, request).unwrap()
+}
+
 fn run(permit: &ExecutionPermit) -> (InMemoryEvidenceStore, ExecutionRecord) {
     let registry = registry();
     let executor = DetectorExecutor::new(&registry);
@@ -87,8 +107,6 @@ fn findings(record: &ExecutionRecord) -> &[Finding] {
 
 #[test]
 fn u40_candidate_run_produces_a_finding_but_cannot_block() {
-    // A raw definition claiming `Gated` from an AI source is forced to
-    // Candidate by admission.
     let permit = DetectorAdmission::admit(
         weak_hash_ir(DetectorAuthority::Gated),
         "1.0.0",
@@ -110,10 +128,7 @@ fn u40_candidate_run_produces_a_finding_but_cannot_block() {
     );
 
     let verifier = FindingVerifier::new(&store);
-    assert!(
-        verifier.verify_for_gate(finding).is_ok(),
-        "evidence resolves and the finding is explainable"
-    );
+    assert!(verifier.verify_for_gate(finding).is_ok());
     assert!(
         !verifier.can_block(finding, &blocker_gate()),
         "U43: a Candidate run must never block, even when referentially valid"
@@ -128,9 +143,7 @@ fn promoted_detector_blocks_and_keeps_semantic_identity() {
         AdmissionSource::HumanCurated,
     )
     .unwrap();
-    let gated =
-        DetectorAdmission::promote(&candidate, PromotionApproval::new("security-team").unwrap())
-            .unwrap();
+    let gated = DetectorAdmission::promote(&candidate, verified_promotion(&candidate)).unwrap();
     assert!(gated.can_block());
 
     let (candidate_store, candidate_record) = run(&candidate);
@@ -143,32 +156,32 @@ fn promoted_detector_blocks_and_keeps_semantic_identity() {
 
     // Same algorithm, different authority.
     assert_eq!(
-        candidate_record.findings[0].detector.semantic_digest,
-        gated_record.findings[0].detector.semantic_digest,
+        candidate_record.findings[0].detector.digests.semantic,
+        gated_record.findings[0].detector.digests.semantic,
         "promotion does not change the semantic identity"
     );
     assert_ne!(
-        candidate_record.findings[0].detector.instance_digest,
-        gated_record.findings[0].detector.instance_digest,
+        candidate_record.findings[0].detector.digests.instance,
+        gated_record.findings[0].detector.digests.instance,
         "promotion changes the instance digest"
+    );
+    assert_eq!(
+        candidate_record.findings[0].detector.digests.logic,
+        gated_record.findings[0].detector.digests.logic
     );
 }
 
 #[test]
 fn unresolved_evidence_blocks_even_a_gated_finding() {
-    let gated = DetectorAdmission::promote(
-        &DetectorAdmission::admit(
-            weak_hash_ir(DetectorAuthority::Candidate),
-            "1.0.0",
-            AdmissionSource::HumanCurated,
-        )
-        .unwrap(),
-        PromotionApproval::new("team").unwrap(),
+    let candidate = DetectorAdmission::admit(
+        weak_hash_ir(DetectorAuthority::Candidate),
+        "1.0.0",
+        AdmissionSource::HumanCurated,
     )
     .unwrap();
+    let gated = DetectorAdmission::promote(&candidate, verified_promotion(&candidate)).unwrap();
 
     let (_store, record) = run(&gated);
-    // Verify against an EMPTY store: the evidence does not resolve.
     let empty_store = InMemoryEvidenceStore::new();
     let verifier = FindingVerifier::new(&empty_store);
     assert!(matches!(
@@ -179,10 +192,40 @@ fn unresolved_evidence_blocks_even_a_gated_finding() {
 }
 
 #[test]
+fn a_persisted_record_cannot_restore_gate_authority_by_default() {
+    // Persist a Candidate, hand-edit the record to claim Gated with a forged
+    // approval string.
+    let permit = DetectorAdmission::admit(
+        weak_hash_ir(DetectorAuthority::Candidate),
+        "1.0.0",
+        AdmissionSource::HumanCurated,
+    )
+    .unwrap();
+    let mut record = permit.record();
+    record.authority = DetectorAuthority::Gated;
+    record.admission.approval = Some("forged".to_string());
+
+    let json = serde_json::to_string(&record).unwrap();
+    let parsed: AdmittedDetectorRecord = serde_json::from_str(&json).unwrap();
+
+    // Default restore is fail-closed: Candidate.
+    assert_eq!(
+        DetectorAdmission::restore(&parsed).unwrap().authority(),
+        DetectorAuthority::Candidate
+    );
+    // Even the verifier path with the shipped reject-all default: Candidate.
+    assert_eq!(
+        DetectorAdmission::restore_with(&parsed, &RejectAllApprovals)
+            .unwrap()
+            .authority(),
+        DetectorAuthority::Candidate
+    );
+}
+
+#[test]
 fn u47_planning_fails_loud_when_no_backend_covers_capabilities() {
     let mut ir = weak_hash_ir(DetectorAuthority::Candidate);
     ir.requires = [AnalysisCapability::Dataflow].into_iter().collect();
-    // The AST backend does not provide Dataflow.
     let permit = DetectorAdmission::admit(ir, "1.0.0", AdmissionSource::Builtin).unwrap();
 
     let registry = registry();
@@ -200,30 +243,9 @@ fn u47_planning_fails_loud_when_no_backend_covers_capabilities() {
 }
 
 #[test]
-fn a_json_record_cannot_mint_gate_authority() {
-    // Persist a Candidate, then hand-edit the record to claim Gated with no
-    // approval: restore must downgrade it.
-    let permit = DetectorAdmission::admit(
-        weak_hash_ir(DetectorAuthority::Candidate),
-        "1.0.0",
-        AdmissionSource::AiGenerated,
-    )
-    .unwrap();
-    let mut record = permit.record();
-    record.authority = DetectorAuthority::Gated;
-
-    let json = serde_json::to_string(&record).unwrap();
-    let parsed: AdmittedDetectorRecord = serde_json::from_str(&json).unwrap();
-    let restored = DetectorAdmission::restore(&parsed).unwrap();
-    assert_eq!(restored.authority(), DetectorAuthority::Candidate);
-    assert!(!restored.can_block());
-}
-
-#[test]
 fn registry_and_capability_sets_are_stable() {
     let registry = registry();
-    let requires: BTreeSet<AnalysisCapability> = BTreeSet::new();
-    // An empty requirement set is satisfied by any backend (PRODUCE-only
-    // aggregators are the only legal detectors with no requirement).
+    let requires: BTreeSet<AnalysisCapability> =
+        [AnalysisCapability::AstPattern].into_iter().collect();
     assert_eq!(registry.plan(&requires).unwrap().name(), "ast");
 }

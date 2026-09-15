@@ -114,14 +114,18 @@ pub fn project_quality_issue(issue: &QualityIssue) -> Result<Finding, super::Fin
     let severity = severity_from_str(&issue.severity);
 
     // The legacy detector never held blocking authority.
+    let d =
+        DetectorDigest::from_content(&format!("{LEGACY_DETECTOR_ID}@{LEGACY_DETECTOR_VERSION}"));
     let detector = DetectorExecutionRef::new(
         DetectorId::new(LEGACY_DETECTOR_ID)?,
         LEGACY_DETECTOR_VERSION,
         DetectorAuthority::Candidate,
-        DetectorDigest::from_content(&format!("{LEGACY_DETECTOR_ID}@{LEGACY_DETECTOR_VERSION}")),
-        DetectorDigest::from_content(&format!(
-            "{LEGACY_DETECTOR_ID}@{LEGACY_DETECTOR_VERSION}@instance"
-        )),
+        super::detector_ir::DetectorDigests {
+            logic: d.clone(),
+            policy: d.clone(),
+            semantic: d.clone(),
+            instance: d,
+        },
         None,
     )?;
 
