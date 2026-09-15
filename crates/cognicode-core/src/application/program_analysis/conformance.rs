@@ -27,8 +27,11 @@ use std::time::Instant;
 
 use crate::application::program_analysis::ProgramAnalysisService;
 use crate::domain::analytics::descriptor::RunOutput;
+#[cfg(feature = "program-analysis-server")]
+use crate::domain::analytics::program_analysis::DFG;
 use crate::domain::analytics::program_analysis::{
-    CFG_PER_FUNCTION, DOMINATORS_CFG, INTERPROC_SUMMARY, SLICE_BACKWARD, SLICE_FORWARD, TAINT_FLOW,
+    CFG_PER_FUNCTION, DOMINATORS_CFG, INTERPROC_SUMMARY, SLICE_BACKWARD, SLICE_FORWARD,
+    TAINT_FLOW,
 };
 use crate::domain::plan::limits::PlanLimits;
 
@@ -134,6 +137,42 @@ pub fn canonical_corpus() -> Vec<ConformanceFixture> {
                 "untaints": [1],
             }),
         },
+        // DFG conformance: 2 fixtures covering the basic emission contract.
+        // e41 (RETIREMENT-LEDGER housekeeping) — closes the "DFG has no
+        // conformance coverage" gap (no fixture of `algorithm = "dfg"` was
+        // registered in m5-program-analysis-core; the dispatch exists at
+        // program_analysis.rs:348 but was never exercised end-to-end).
+        #[cfg(feature = "program-analysis-server")]
+        ConformanceFixture {
+            algorithm: "dfg",
+            label: "linear_def_use_chain",
+            params: serde_json::json!({
+                "function_id": "linear_chain",
+                "cfg_digest": "sha256:linear_chain_cfg",
+                "statements": [
+                    {"id": 0, "defs": ["x"], "uses": ["src"]},
+                    {"id": 1, "defs": ["y"], "uses": ["x"]},
+                    {"id": 2, "defs": ["z"], "uses": ["y"]},
+                    {"id": 3, "defs": [], "uses": ["z"]},
+                ],
+            }),
+        },
+        #[cfg(feature = "program-analysis-server")]
+        ConformanceFixture {
+            algorithm: "dfg",
+            label: "diamond_diamond_diamond",
+            params: serde_json::json!({
+                "function_id": "diamond",
+                "cfg_digest": "sha256:diamond_cfg",
+                "statements": [
+                    {"id": 0, "defs": ["x"], "uses": ["src"]},
+                    {"id": 1, "defs": ["a"], "uses": ["x"]},
+                    {"id": 2, "defs": ["b"], "uses": ["x"]},
+                    {"id": 3, "defs": ["y"], "uses": ["a", "b"]},
+                    {"id": 4, "defs": [], "uses": ["y"]},
+                ],
+            }),
+        },
         #[cfg(feature = "program-analysis-server")]
         ConformanceFixture {
             algorithm: "interproc_summary",
@@ -180,6 +219,8 @@ pub fn run_corpus(
             "slice_forward" => SLICE_FORWARD.clone(),
             "slice_backward" => SLICE_BACKWARD.clone(),
             "taint_flow" => TAINT_FLOW.clone(),
+            #[cfg(feature = "program-analysis-server")]
+            "dfg" => DFG.clone(),
             #[cfg(feature = "program-analysis-server")]
             "interproc_summary" => INTERPROC_SUMMARY.clone(),
             other => panic!("unknown algorithm in fixture corpus: {other}"),
@@ -230,7 +271,7 @@ pub fn run_corpus(
                     .unwrap_or_else(|e| format!("encode_error:{e}").into_bytes());
                 (true, bytes)
             }
-            Err(e) => (false, format!("dispatch_error:{e}").into_bytes()),
+            Err(e) => (false, format!("dispatch_error:{e:?}").into_bytes()),
         };
 
         let mut hasher = Sha256::new();
