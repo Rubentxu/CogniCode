@@ -336,6 +336,7 @@ mod tests {
     use crate::domain::aggregates::Symbol;
     use crate::domain::evidence_kernel::fact::{Fact, FactValue, ProducerKind};
     use crate::domain::evidence_kernel::ids::{EntityId, SnapshotId};
+    use crate::domain::evidence_kernel::relation::RelationKind;
     use crate::domain::traits::code_intelligence::{
         DocumentSymbol, HoverInfo, ProviderDiagnostic, ProviderOutcome, Reference, TypeHierarchy,
         TypeHierarchyNode,
@@ -343,6 +344,7 @@ mod tests {
     use crate::domain::value_objects::{Location, Provenance, SymbolKind};
 
     use super::*;
+    use crate::domain::evidence_kernel::continuity::view::SnapshotEntityView;
 
     const SNAPSHOT: u64 = 1;
 
@@ -914,5 +916,265 @@ mod tests {
             tier_provider_id(PrecisionTier::S0),
             TreesitterFallbackProvider::PROVIDER_ID
         );
+    }
+
+    // =========================================================================
+    // e42: CP-3 cross-producer edge cases
+    // (RETIREMENT-LEDGER: cross-producer join contract)
+    // =========================================================================
+
+    /// Edge case: the LSP provider reports a reference whose `container` is
+    /// `None` (some LSP servers omit the enclosing-symbol metadata for
+    /// module-level references). The bridge MUST fall back to the
+    /// reference site's FILE PATH as the subject — never fabricate a fact.
+    /// (E38.1 CP-3 deterministic-fallback rule.)
+    #[tokio::test]
+    async fn cp3_unreported_container_falls_back_to_file_path() {
+        struct NoContainerObserver;
+        #[async_trait]
+        impl TieredCodeIntelligenceProvider for NoContainerObserver {
+            async fn get_symbols_tiered(&self, _path: &Path) -> TieredOutcome<Vec<Symbol>> {
+                TieredOutcome::served(
+                    vec![Symbol::new(
+                        "thing",
+                        SymbolKind::Function,
+                        Location::new("src/lib.rs", 0, 0),
+                    )],
+                    PrecisionTier::S0,
+                )
+            }
+            async fn find_references_tiered(
+                &self,
+                _location: &Location,
+                _include_declaration: bool,
+            ) -> TieredOutcome<Vec<Reference>> {
+                TieredOutcome::served(
+                    vec![Reference {
+                        location: Location::new("src/lib.rs", 10, 4),
+                        reference_kind: ReferenceKind::Call,
+                        container: None, // <-- no enclosing symbol reported
+                    }],
+                    PrecisionTier::S0,
+                )
+            }
+            async fn get_hierarchy_tiered(
+                &self,
+                _location: &Location,
+            ) -> TieredOutcome<TypeHierarchy> {
+                TieredOutcome::served(
+                    TypeHierarchy {
+                        symbol: Symbol::new("queried", SymbolKind::Function, _location.clone()),
+                        parents: vec![],
+                        children: vec![],
+                    },
+                    PrecisionTier::S0,
+                )
+            }
+            async fn get_definition_tiered(
+                &self,
+                _location: &Location,
+            ) -> TieredOutcome<Option<Location>> {
+                TieredOutcome::unresolved(vec![])
+            }
+            async fn get_document_symbols_tiered(
+                &self,
+                _path: &Path,
+            ) -> TieredOutcome<Vec<DocumentSymbol>> {
+                TieredOutcome::served(vec![], PrecisionTier::S0)
+            }
+            async fn hover_tiered(
+                &self,
+                _location: &Location,
+            ) -> TieredOutcome<Option<HoverInfo>> {
+                TieredOutcome::served(None, PrecisionTier::S0)
+            }
+        }
+
+        let mut builder = FactBatchBuilder::new(SnapshotId::new(SNAPSHOT));
+        let files = vec![PathBuf::from("src/lib.rs")];
+
+        // Pre-declare `thing` as a core:defines entity so the
+        // SnapshotEntityView can resolve it. This simulates the
+        // DeterministicAnalyzer's contribution to the same snapshot.
+        builder
+            .add_observation(
+                "src/lib.rs:thing:1",
+                RelationKind::try_new("core:defines").expect("canonical predicate"),
+                "src/lib.rs:thing:1",
+                ProducerKind::DeterministicAnalyzer,
+                Some("kind=Function".to_string()),
+            )
+            .expect("deterministic producer is accepted");
+
+        builder.add_provider(&NoContainerObserver, &files).await;
+        let facts = builder.finish();
+
+        // Use SnapshotEntityView to verify the call fact's subject is the
+        // FILE entity (not a fabricated symbol entity).
+        let view = SnapshotEntityView::from_facts(&facts, SnapshotId::new(SNAPSHOT));
+
+        // The call fact MUST exist (reference was served).
+        let calls: Vec<&Fact> = facts
+            .iter()
+            .filter(|f| f.predicate.as_str() == "core:calls")
+            .collect();
+        assert_eq!(
+            calls.len(),
+            1,
+            "the served reference MUST emit exactly one core:calls fact; got {calls:?}"
+        );
+
+        // The `thing` symbol entity MUST exist (it was declared by the
+        // pre-declared core:defines) but its `callees` MUST be EMPTY — the
+        // call fact was emitted with a different subject (the file path,
+        // which is not a core:defines entity; the LSP reference did NOT
+        // join `thing`).
+        let thing_entity = view
+            .entities
+            .values()
+            .find(|e| e.fqn == "src/lib.rs:thing:1")
+            .expect("the `thing` symbol entity must exist");
+        assert!(
+            thing_entity.callees.is_empty(),
+            "with no container reported, the call fact MUST NOT join `thing`; \
+             thing.callees was {:?}",
+            thing_entity.callees
+        );
+        // And the call fact's subject EntityId MUST NOT be the thing
+        // entity's id (no silent fallback to the only declared symbol).
+        assert_ne!(
+            calls[0].subject, thing_entity.entity,
+            "no-container reference MUST NOT silently join the closest declared symbol; \
+             got subject={:?}, thing_entity={:?}",
+            calls[0].subject, thing_entity.entity
+        );
+    }
+
+    /// Edge case: the LSP provider reports a container name that does NOT
+    /// match any symbol in the extraction context. The bridge MUST NOT
+    /// fabricate an entity; it MUST fall back to the file path.
+    /// (E38.1 CP-3: \"no container matches no extraction-context symbol\".)
+    #[tokio::test]
+    async fn cp3_unresolvable_container_falls_back_to_file_path() {
+        struct PhantomContainerObserver;
+        #[async_trait]
+        impl TieredCodeIntelligenceProvider for PhantomContainerObserver {
+            async fn get_symbols_tiered(&self, _path: &Path) -> TieredOutcome<Vec<Symbol>> {
+                // Only `real_fn` exists — `phantom_container` will not match.
+                TieredOutcome::served(
+                    vec![Symbol::new(
+                        "real_fn",
+                        SymbolKind::Function,
+                        Location::new("src/lib.rs", 0, 0),
+                    )],
+                    PrecisionTier::S0,
+                )
+            }
+            async fn find_references_tiered(
+                &self,
+                _location: &Location,
+                _include_declaration: bool,
+            ) -> TieredOutcome<Vec<Reference>> {
+                TieredOutcome::served(
+                    vec![Reference {
+                        location: Location::new("src/lib.rs", 5, 4),
+                        reference_kind: ReferenceKind::Call,
+                        container: Some("phantom_container".to_string()), // <-- not in index
+                    }],
+                    PrecisionTier::S0,
+                )
+            }
+            async fn get_hierarchy_tiered(
+                &self,
+                _location: &Location,
+            ) -> TieredOutcome<TypeHierarchy> {
+                TieredOutcome::served(
+                    TypeHierarchy {
+                        symbol: Symbol::new("queried", SymbolKind::Function, _location.clone()),
+                        parents: vec![],
+                        children: vec![],
+                    },
+                    PrecisionTier::S0,
+                )
+            }
+            async fn get_definition_tiered(
+                &self,
+                _location: &Location,
+            ) -> TieredOutcome<Option<Location>> {
+                TieredOutcome::unresolved(vec![])
+            }
+            async fn get_document_symbols_tiered(
+                &self,
+                _path: &Path,
+            ) -> TieredOutcome<Vec<DocumentSymbol>> {
+                TieredOutcome::served(vec![], PrecisionTier::S0)
+            }
+            async fn hover_tiered(
+                &self,
+                _location: &Location,
+            ) -> TieredOutcome<Option<HoverInfo>> {
+                TieredOutcome::served(None, PrecisionTier::S0)
+            }
+        }
+
+        let mut builder = FactBatchBuilder::new(SnapshotId::new(SNAPSHOT));
+        let files = vec![PathBuf::from("src/lib.rs")];
+
+        // Pre-declare `real_fn` as a core:defines entity (simulates the
+        // DeterministicAnalyzer contribution to the same snapshot).
+        builder
+            .add_observation(
+                "src/lib.rs:real_fn:1",
+                RelationKind::try_new("core:defines").expect("canonical predicate"),
+                "src/lib.rs:real_fn:1",
+                ProducerKind::DeterministicAnalyzer,
+                Some("kind=Function".to_string()),
+            )
+            .expect("deterministic producer is accepted");
+
+        builder.add_provider(&PhantomContainerObserver, &files).await;
+        let facts = builder.finish();
+
+        // The call fact MUST exist (reference was served).
+        let calls: Vec<&Fact> = facts
+            .iter()
+            .filter(|f| f.predicate.as_str() == "core:calls")
+            .collect();
+        assert_eq!(calls.len(), 1);
+
+        // The call fact's subject EntityId MUST NOT be the `real_fn`
+        // entity's id: an unresolvable container MUST NOT silently join
+        // the closest match.
+        let view = SnapshotEntityView::from_facts(&facts, SnapshotId::new(SNAPSHOT));
+        let real_fn_entity = view
+            .entities
+            .values()
+            .find(|e| e.fqn == "src/lib.rs:real_fn:1")
+            .expect("the `real_fn` symbol entity must exist");
+        assert_ne!(
+            calls[0].subject, real_fn_entity.entity,
+            "unresolvable container MUST NOT silently match `real_fn` (CP-3); \
+             got subject={:?}, real_fn_entity={:?}",
+            calls[0].subject, real_fn_entity.entity
+        );
+        // `real_fn.callees` MUST be empty (the call did NOT join it).
+        assert!(
+            real_fn_entity.callees.is_empty(),
+            "with an unresolvable container, the call fact MUST NOT join \
+             `real_fn`; real_fn.callees was {:?}",
+            real_fn_entity.callees
+        );
+
+        // Defensive: no entity may carry the `phantom_container` string
+        // (confirms no fallback invented an entity).
+        for entity in view.entities.values() {
+            assert!(
+                !entity.fqn.contains("phantom_container") && !entity.name.contains("phantom_container"),
+                "no entity may carry the unresolvable container name; \
+                 found entity with fqn=`{fqn}`, name=`{name}`",
+                fqn = entity.fqn,
+                name = entity.name
+            );
+        }
     }
 }
