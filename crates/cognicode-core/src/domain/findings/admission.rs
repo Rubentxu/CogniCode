@@ -81,40 +81,7 @@ impl fmt::Display for DetectorVersion {
     }
 }
 
-/// Where a detector definition came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AdmissionSource {
-    /// Shipped with the platform.
-    Builtin,
-    /// Curated and reviewed by a human.
-    HumanCurated,
-    /// Proposed by an AI agent.
-    AiGenerated,
-    /// Imported from an external source (e.g. a pack).
-    Imported,
-}
-
-impl AdmissionSource {
-    /// Whether this source is *eligible* to be trusted to gate.
-    ///
-    /// Eligibility alone never grants authority: a promotion still needs an
-    /// [`ApprovalVerifier`] to accept it.
-    pub fn is_trusted_to_gate(self) -> bool {
-        matches!(self, Self::Builtin | Self::HumanCurated)
-    }
-}
-
-impl fmt::Display for AdmissionSource {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Builtin => "Builtin",
-            Self::HumanCurated => "HumanCurated",
-            Self::AiGenerated => "AiGenerated",
-            Self::Imported => "Imported",
-        })
-    }
-}
+pub use crate::domain::trust::AdmissionSource;
 
 /// Provenance recorded at admission.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

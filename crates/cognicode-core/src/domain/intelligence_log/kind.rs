@@ -1,4 +1,4 @@
-//! Event kinds and actors (M7, cycle e63).
+//! Event kinds (M7, cycle e63).
 //!
 //! ## Why not an enum
 //!
@@ -7,39 +7,19 @@
 //! it, every stored event would need a migration when a variant is renamed,
 //! and an open vocabulary (`plugin.*`, `company.*`) would be impossible.
 //!
-//! A kind is therefore a **validated namespaced name** (`namespace.name`,
-//! the shared grammar), with the kinds that e63 actually emits published as
-//! constants. Adding a kind is adding a string, not changing a type.
+//! A kind is therefore a **validated namespaced name** (`namespace.name`, the
+//! shared grammar), with the kinds actually emitted published as constructors.
+//! Adding a kind is adding a string, not changing a type.
 //!
-//! ## Actors
-//!
-//! An [`ActorRef`] says *who* caused an event. The kind is what the future
-//! behavior-authority model (ADR-044) will key on — an agent and a detector are
-//! different actors even when they produce the same evidence.
+//! Actors ([`ActorRef`]) now live in [`crate::domain::execution::actor`], since
+//! they identify an *execution*, not an event; they are re-exported here so
+//! event-log call sites keep working.
 
 use serde::{Deserialize, Serialize};
 
 use crate::domain::naming::{NamespacedError, NamespacedName};
 
-/// Why an actor reference was rejected.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KindError {
-    /// The actor id was empty.
-    EmptyActor,
-    /// The kind name is not a valid `namespace.name`.
-    Kind(NamespacedError),
-}
-
-impl std::fmt::Display for KindError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::EmptyActor => f.write_str("an actor id must not be empty"),
-            Self::Kind(err) => write!(f, "invalid event kind: {err}"),
-        }
-    }
-}
-
-impl std::error::Error for KindError {}
+pub use crate::domain::execution::actor::{ActorError as KindError, ActorKind, ActorRef};
 
 /// What kind of thing an event kind is, as a validated namespaced name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -88,7 +68,7 @@ impl From<EventKind> for String {
     }
 }
 
-/// The event kinds e63 emits, and the ones reserved by the umbrella contracts.
+/// The event kinds the platform emits, and the ones its contracts reserve.
 ///
 /// Published as constructors rather than an enum: the vocabulary has to stay
 /// open, but the *names actually in use* must be greppable and typo-proof.
@@ -123,17 +103,22 @@ impl EventKinds {
         Self::expect_valid("finding.produced")
     }
 
-    /// A behavior started (reserved: no behavior runtime exists yet).
+    /// A behavior execution started.
     pub fn behavior_started() -> EventKind {
         Self::expect_valid("behavior.started")
     }
 
-    /// A behavior's output was rejected by policy (reserved, ADR-044).
+    /// A behavior completed, having produced its accepted effects.
+    pub fn behavior_completed() -> EventKind {
+        Self::expect_valid("behavior.completed")
+    }
+
+    /// A behavior's output was rejected by policy (ADR-044).
     pub fn behavior_output_rejected() -> EventKind {
         Self::expect_valid("policy.behavior_output_rejected")
     }
 
-    /// A behavior exhausted its budget (reserved, M7.4).
+    /// A behavior exhausted its budget (M7.4).
     pub fn behavior_budget_exhausted() -> EventKind {
         Self::expect_valid("behavior.budget_exhausted")
     }
@@ -151,104 +136,10 @@ impl EventKinds {
             Self::analysis_completed(),
             Self::finding_produced(),
             Self::behavior_started(),
+            Self::behavior_completed(),
             Self::behavior_output_rejected(),
             Self::behavior_budget_exhausted(),
         ]
-    }
-}
-
-/// Who caused an event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ActorKind {
-    /// The kernel itself (a fact batch was committed).
-    Kernel,
-    /// A human acting directly.
-    Human,
-    /// A deterministic detector or analyzer.
-    Detector,
-    /// A behavior (M7.3; no behavior runtime exists yet).
-    Behavior,
-    /// An AI agent.
-    Agent,
-    /// A component that is none of the above.
-    System,
-}
-
-impl ActorKind {
-    /// Stable name for diagnostics.
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Kernel => "kernel",
-            Self::Human => "human",
-            Self::Detector => "detector",
-            Self::Behavior => "behavior",
-            Self::Agent => "agent",
-            Self::System => "system",
-        }
-    }
-}
-
-/// An identified actor.
-///
-/// The pair `(kind, id)` is deliberate: "who" is not just a string, because the
-/// authority model (ADR-044) will treat the same string differently depending
-/// on whether a detector or an agent said it.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ActorRef {
-    /// What kind of actor.
-    pub kind: ActorKind,
-    /// Stable identifier within that kind.
-    pub id: String,
-}
-
-impl ActorRef {
-    /// Construct an actor reference, rejecting an empty id.
-    pub fn new(kind: ActorKind, id: impl Into<String>) -> Result<Self, KindError> {
-        let id = id.into();
-        if id.trim().is_empty() {
-            return Err(KindError::EmptyActor);
-        }
-        Ok(Self { kind, id })
-    }
-
-    /// The kernel itself.
-    pub fn kernel() -> Self {
-        Self {
-            kind: ActorKind::Kernel,
-            id: "kernel".to_string(),
-        }
-    }
-
-    /// A deterministic detector.
-    pub fn detector(id: impl Into<String>) -> Self {
-        Self::new(ActorKind::Detector, id).expect("detector id must not be empty")
-    }
-
-    /// A human.
-    pub fn human(id: impl Into<String>) -> Self {
-        Self::new(ActorKind::Human, id).expect("human id must not be empty")
-    }
-
-    /// An AI agent.
-    pub fn agent(id: impl Into<String>) -> Self {
-        Self::new(ActorKind::Agent, id).expect("agent id must not be empty")
-    }
-
-    /// A behavior.
-    pub fn behavior(id: impl Into<String>) -> Self {
-        Self::new(ActorKind::Behavior, id).expect("behavior id must not be empty")
-    }
-
-    /// A generic component.
-    pub fn system(id: impl Into<String>) -> Self {
-        Self::new(ActorKind::System, id).expect("system id must not be empty")
-    }
-}
-
-impl std::fmt::Display for ActorRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.kind.name(), self.id)
     }
 }
 
@@ -281,13 +172,13 @@ mod tests {
 
     #[test]
     fn an_unknown_namespace_is_allowed() {
-        // Open vocabulary: a plugin may publish `company.foo.thing` without
-        // changing a core type.
+        // Open vocabulary: a plugin may publish `company.audit_recorded`
+        // without changing a core type.
         assert!(EventKind::new("company.audit_recorded").is_ok());
     }
 
     #[test]
-    fn actors_carry_kind_and_id() {
+    fn actors_are_re_exported_from_their_real_home() {
         let kernel = ActorRef::kernel();
         assert_eq!(kernel.kind, ActorKind::Kernel);
         assert_eq!(kernel.to_string(), "kernel:kernel");
@@ -299,22 +190,14 @@ mod tests {
             ActorRef::new(ActorKind::Agent, "  "),
             Err(KindError::EmptyActor)
         );
-        assert_eq!(
-            ActorRef::new(ActorKind::Human, "").unwrap_err(),
-            KindError::EmptyActor
-        );
     }
 
     #[test]
-    fn kinds_and_actors_round_trip() {
+    fn kinds_round_trip() {
         let kind = EventKinds::analysis_completed();
         let json = serde_json::to_string(&kind).unwrap();
         assert_eq!(json, "\"analysis.completed\"");
         assert_eq!(serde_json::from_str::<EventKind>(&json).unwrap(), kind);
         assert!(serde_json::from_str::<EventKind>("\"nons\"").is_err());
-
-        let actor = ActorRef::agent("reviewer-1");
-        let json = serde_json::to_string(&actor).unwrap();
-        assert_eq!(serde_json::from_str::<ActorRef>(&json).unwrap(), actor);
     }
 }

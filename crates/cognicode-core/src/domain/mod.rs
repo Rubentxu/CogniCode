@@ -12,6 +12,7 @@ pub mod example_block;
 // LSI Findings & Detector IR (M6) — declarative, validated detector
 // definitions. Additive pure domain (no I/O), mirroring the M5
 // `analytics::program_analysis` precedent; ungated.
+pub mod execution;
 pub mod findings;
 // M7 (Living Software Intelligence) — the causal Intelligence Event Log.
 // Additive pure domain (no I/O), ungated: the log records *what happened*,
@@ -21,6 +22,8 @@ pub mod intelligence_log;
 // (cycle e63), re-exported by `findings::namespaced` so one validator serves
 // both the M6 findings surface and the M7 event log.
 pub mod naming;
+// Shared trust vocabulary (`AdmissionSource`) — ungated (cycle e64).
+pub mod trust;
 // Kernel identifiers (EntityId / FactId / EvidenceId / SnapshotId /
 // OccurrenceId / StableEntityId / ExecutionId) — ungated domain
 // vocabulary (cycle e56). The gated `evidence_kernel::ids` re-exports

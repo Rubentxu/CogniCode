@@ -47,7 +47,10 @@ pub mod store;
 
 pub use event::{EventError, EventTime, IntelligenceEvent, NewIntelligenceEvent};
 pub use ids::CorrelationId;
-pub use kind::{ActorKind, ActorRef, EventKind, EventKinds, KindError};
+pub use kind::{EventKind, EventKinds};
+// Re-exported from their real home (`domain::execution`) so event-log call
+// sites keep resolving.
+pub use crate::domain::execution::{ActorKind, ActorRef, CorrelationId as Correlation};
 pub use payload::{
     BoundedEventPayload, ContentDigest, EventPayloadRef, MAX_INLINE_PAYLOAD_BYTES, PayloadError,
 };
