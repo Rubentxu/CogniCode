@@ -22,6 +22,9 @@
 #[path = "equivalence_harness/harness.rs"]
 mod harness;
 
+#[path = "equivalence_harness/generic_graph.rs"]
+mod generic_graph;
+
 use std::path::Path;
 
 use harness::{
