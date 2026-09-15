@@ -49,7 +49,9 @@ use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::{GraphNode, NodeId};
 use cognicode_core::domain::evidence_kernel::SymbolKindDetail;
-use cognicode_core::domain::evidence_kernel::fact::{Fact, FactValue, ProducerKind, ProvenanceRecord};
+use cognicode_core::domain::evidence_kernel::fact::{
+    Fact, FactValue, ProducerKind, ProvenanceRecord,
+};
 use cognicode_core::domain::evidence_kernel::ids::{EntityId, FactId, SnapshotId};
 use cognicode_core::domain::evidence_kernel::ports::FactStore;
 use cognicode_core::domain::evidence_kernel::relation::RelationKind;
@@ -267,11 +269,8 @@ async fn dangling_edge_skipped() {
     );
 
     // Sanity: the dangling target MUST NOT appear as the target of any edge.
-    let targets: Vec<&cognicode_core::domain::aggregates::NodeId> = projection
-        .edges
-        .iter()
-        .map(|e| &e.target)
-        .collect();
+    let targets: Vec<&cognicode_core::domain::aggregates::NodeId> =
+        projection.edges.iter().map(|e| &e.target).collect();
     assert!(
         !targets
             .iter()
@@ -339,8 +338,7 @@ async fn pinned_digest_matches() {
     // seeding, any divergence from the pinned digest fails the build until
     // the projection contract change is consciously committed.
     assert_eq!(
-        actual,
-        PINNED_GENERIC_PROJECTION_DIGEST,
+        actual, PINNED_GENERIC_PROJECTION_DIGEST,
         "projection contract changed; re-pin PINNED_GENERIC_PROJECTION_DIGEST \
          and commit the new baseline (mirror of e37 PINNED_IDENTITY_DIGEST rule)"
     );

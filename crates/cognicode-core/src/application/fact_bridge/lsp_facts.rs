@@ -982,10 +982,7 @@ mod tests {
             ) -> TieredOutcome<Vec<DocumentSymbol>> {
                 TieredOutcome::served(vec![], PrecisionTier::S0)
             }
-            async fn hover_tiered(
-                &self,
-                _location: &Location,
-            ) -> TieredOutcome<Option<HoverInfo>> {
+            async fn hover_tiered(&self, _location: &Location) -> TieredOutcome<Option<HoverInfo>> {
                 TieredOutcome::served(None, PrecisionTier::S0)
             }
         }
@@ -1109,10 +1106,7 @@ mod tests {
             ) -> TieredOutcome<Vec<DocumentSymbol>> {
                 TieredOutcome::served(vec![], PrecisionTier::S0)
             }
-            async fn hover_tiered(
-                &self,
-                _location: &Location,
-            ) -> TieredOutcome<Option<HoverInfo>> {
+            async fn hover_tiered(&self, _location: &Location) -> TieredOutcome<Option<HoverInfo>> {
                 TieredOutcome::served(None, PrecisionTier::S0)
             }
         }
@@ -1132,7 +1126,9 @@ mod tests {
             )
             .expect("deterministic producer is accepted");
 
-        builder.add_provider(&PhantomContainerObserver, &files).await;
+        builder
+            .add_provider(&PhantomContainerObserver, &files)
+            .await;
         let facts = builder.finish();
 
         // The call fact MUST exist (reference was served).
@@ -1169,7 +1165,8 @@ mod tests {
         // (confirms no fallback invented an entity).
         for entity in view.entities.values() {
             assert!(
-                !entity.fqn.contains("phantom_container") && !entity.name.contains("phantom_container"),
+                !entity.fqn.contains("phantom_container")
+                    && !entity.name.contains("phantom_container"),
                 "no entity may carry the unresolvable container name; \
                  found entity with fqn=`{fqn}`, name=`{name}`",
                 fqn = entity.fqn,
