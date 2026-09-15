@@ -19,6 +19,7 @@ use std::fmt;
 
 use super::finding::{Finding, FindingError, FindingGate};
 use super::ports::EvidenceLookup;
+use super::scope::AnalysisScope;
 use crate::domain::kernel_ids::EvidenceId;
 
 /// Verifies findings against an evidence store.
@@ -35,6 +36,19 @@ impl<'a> FindingVerifier<'a> {
     /// Verify that a finding is well-formed, explainable, has a complete
     /// execution reference, and that all its evidence is referentially real.
     pub fn verify_for_gate(&self, finding: &Finding) -> Result<(), VerificationError> {
+        // Scope first, before resolving any id: `FactId`/`EvidenceId` are
+        // canonical per snapshot, so a finding produced in snapshot A must
+        // never be verified against a read model hydrated from B — even when
+        // every numeric id happens to coincide.
+        let finding_scope = finding.detector.scope.as_ref();
+        let lookup_scope = self.evidence.scope();
+        if finding_scope != lookup_scope {
+            return Err(VerificationError::ScopeMismatch {
+                finding: finding_scope.cloned(),
+                lookup: lookup_scope.cloned(),
+            });
+        }
+
         finding.validate().map_err(VerificationError::Malformed)?;
 
         if !finding.is_explainable() {
@@ -83,6 +97,13 @@ impl<'a> FindingVerifier<'a> {
 /// Why a finding failed gate verification.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerificationError {
+    /// The finding's analysis scope does not match the lookup's.
+    ScopeMismatch {
+        /// Scope recorded on the finding's execution.
+        finding: Option<AnalysisScope>,
+        /// Scope the lookup was hydrated for.
+        lookup: Option<AnalysisScope>,
+    },
     /// The finding is structurally invalid.
     Malformed(FindingError),
     /// The finding is not explainable (no evidence / causal chain).
@@ -110,6 +131,18 @@ pub enum VerificationError {
 impl fmt::Display for VerificationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ScopeMismatch { finding, lookup } => write!(
+                f,
+                "scope mismatch: the finding was produced in {} but the lookup was hydrated for {}",
+                finding
+                    .as_ref()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "<unscoped>".into()),
+                lookup
+                    .as_ref()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "<unscoped>".into())
+            ),
             Self::Malformed(err) => write!(f, "finding is malformed: {err}"),
             Self::NotExplainable => f.write_str("finding is not explainable"),
             Self::IncompleteExecutionRef => {
@@ -149,11 +182,35 @@ mod tests {
     use crate::domain::kernel_ids::ExecutionId;
     use std::collections::HashSet;
 
-    struct SetLookup(HashSet<EvidenceId>);
+    struct SetLookup {
+        ids: HashSet<EvidenceId>,
+        scope: Option<AnalysisScope>,
+    }
+
+    impl SetLookup {
+        fn scoped(ids: &[u64], scope: AnalysisScope) -> Self {
+            Self {
+                ids: ids.iter().map(|n| EvidenceId::new(*n)).collect(),
+                scope: Some(scope),
+            }
+        }
+    }
+
     impl EvidenceLookup for SetLookup {
         fn contains(&self, id: EvidenceId) -> bool {
-            self.0.contains(&id)
+            self.ids.contains(&id)
         }
+
+        fn scope(&self) -> Option<&AnalysisScope> {
+            self.scope.as_ref()
+        }
+    }
+
+    fn scope(snapshot: u64) -> AnalysisScope {
+        AnalysisScope::new(
+            crate::domain::value_objects::WorkspaceId::try_new("ws").unwrap(),
+            crate::domain::kernel_ids::SnapshotId::new(snapshot),
+        )
     }
 
     fn gated_detector() -> super::super::admission::ExecutionPermit {
@@ -208,7 +265,9 @@ mod tests {
             };
             DetectorAdmission::admit(ir, "1", AdmissionSource::AiGenerated).unwrap()
         };
-        let execution = permit.execution_ref(Some(ExecutionId(1))).unwrap();
+        let execution = permit
+            .execution_ref(Some(ExecutionId(1)), Some(scope(1)))
+            .unwrap();
         let outcome = DetectorOutcome {
             produced_evidence: vec![ProducedEvidence {
                 kind: EvidenceKind::AstMatch,
@@ -238,7 +297,7 @@ mod tests {
     }
 
     fn lookup_with(ids: &[u64]) -> SetLookup {
-        SetLookup(ids.iter().map(|n| EvidenceId::new(*n)).collect())
+        SetLookup::scoped(ids, scope(1))
     }
 
     #[test]
@@ -291,6 +350,37 @@ mod tests {
                 step: 0,
                 evidence: EvidenceId::new(99),
             }
+        );
+    }
+    #[test]
+    fn scope_mismatch_is_rejected_before_any_id_is_resolved() {
+        // The SAME evidence id (and the same numeric fact) exists in snapshots
+        // 1 and 2. A finding produced in snapshot 1 verified against a lookup
+        // hydrated from snapshot 2 must be rejected even though every id
+        // resolves.
+        let f = build(true);
+        assert_eq!(
+            f.detector.scope.as_ref().map(|s| s.snapshot),
+            Some(crate::domain::kernel_ids::SnapshotId::new(1))
+        );
+
+        let wrong_snapshot = SetLookup::scoped(&[1], scope(2));
+        let verifier = FindingVerifier::new(&wrong_snapshot);
+        assert!(matches!(
+            verifier.verify_for_gate(&f).unwrap_err(),
+            VerificationError::ScopeMismatch { .. }
+        ));
+        assert!(
+            !verifier.can_block(&f, &FindingGate::new(EvidenceClass::C, RiskLevel::Low)),
+            "a finding must never be verified against another snapshot"
+        );
+
+        // Sanity: the same ids against the CORRECT snapshot verify fine.
+        let right_snapshot = SetLookup::scoped(&[1], scope(1));
+        assert!(
+            FindingVerifier::new(&right_snapshot)
+                .verify_for_gate(&f)
+                .is_ok()
         );
     }
 }

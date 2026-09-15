@@ -105,11 +105,20 @@ phases:
       pinned to (ws, snapshot) on both axes, FactStore::get added,
       KernelError::EvidenceIdCollision rejects an id re-use atomically,
       misleading doc corrected; characterization test written first).
-      NEXT (M6 closure): e62.2 U42 grounding — GroundingRef on the analysis
-      DTOs, atomic causal evidence (one evidence atom per causal step),
-      EvidenceDescriptor read model + KernelEvidenceReadModel::load().await,
-      FindingVerifier full grounding (causal evidence must resolve AND point at
-      the step's own fact in the pinned snapshot; Refutes never enables the
-      gate), proven for AST + Graph + Dataflow.
+      e62.2-lsi-analysis-scope archived (U42 part 1: AnalysisScope
+      {workspace, snapshot} is part of a detector execution's identity —
+      AnalysisInput.scope required by DetectorExecutor (MissingScope),
+      captured on DetectorExecutionRef; EvidenceLookup declares the scope it
+      was hydrated for and FindingVerifier checks finding.scope ==
+      lookup.scope BEFORE resolving any id, so a finding produced in snapshot A
+      cannot be verified against a read model from B even when every numeric id
+      coincides; adversarial test with identical ids in two snapshots).
+      NEXT (M6 closure): e62.3 U42 grounding — GroundingRef on AST
+      construct / Graph node+edge / Dataflow statement, atomic causal evidence
+      (one atom per supporting fact, never fabricating facts),
+      ProducedEvidence -> kernel Evidence write bridge (async, outside the
+      domain), EvidenceDescriptor read model + KernelEvidenceReadModel::load,
+      full verifier (fact + snapshot + grade != Refutes + causal membership),
+      AST/Graph/Dataflow conformance and the cross-snapshot adversarial UAT.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}

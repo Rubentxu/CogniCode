@@ -381,6 +381,7 @@ mod tests {
 
     fn graph_input(graph: GraphInput) -> AnalysisInput {
         AnalysisInput {
+            scope: None,
             ast: None,
             dataflow: None,
             graph: Some(graph),

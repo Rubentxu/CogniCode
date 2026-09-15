@@ -18,7 +18,7 @@
 use std::collections::BTreeSet;
 
 use cognicode_core::domain::findings::{
-    AdmissionSource, AnalysisCapability, AnalysisInput, AstBackend, BackendRegistry,
+    AdmissionSource, AnalysisCapability, AnalysisInput, AnalysisScope, AstBackend, BackendRegistry,
     DetectorAdmission, DetectorAuthority, DetectorBackend, DetectorExecutor, DetectorFindingPolicy,
     DetectorId, DetectorIr, DetectorStep, EvidenceClass, ExecutionError, ExecutionRecord,
     FindingGate, FindingKind, FindingVerifier, GraphBackend, GraphEdge, GraphInput, GraphNode,
@@ -86,6 +86,7 @@ fn sanitized_graph() -> GraphInput {
 
 fn input(graph: GraphInput) -> AnalysisInput {
     AnalysisInput {
+        scope: Some(scope()),
         dataflow: None,
         ast: None,
         graph: Some(graph),
@@ -110,7 +111,7 @@ fn run(
 ) -> (InMemoryEvidenceStore, ExecutionRecord) {
     let registry = registry();
     let executor = DetectorExecutor::new(&registry);
-    let mut store = InMemoryEvidenceStore::new();
+    let mut store = InMemoryEvidenceStore::with_scope(scope());
     let record = executor
         .execute(permit, &input(graph), &mut store, ExecutionId::new(7))
         .expect("execution must succeed");
@@ -218,7 +219,7 @@ fn u41_planning_rejects_a_detector_the_graph_backend_cannot_run() {
 
     let registry = registry();
     let executor = DetectorExecutor::new(&registry);
-    let mut store = InMemoryEvidenceStore::new();
+    let mut store = InMemoryEvidenceStore::with_scope(scope());
     let err = executor
         .execute(
             &permit,
@@ -246,4 +247,11 @@ fn u41_planning_rejects_a_detector_the_graph_backend_cannot_run() {
         "GraphBackend must advertise only GraphQuery"
     );
     assert_eq!(GraphBackend.evidence_ceiling(), EvidenceClass::B);
+}
+
+fn scope() -> AnalysisScope {
+    AnalysisScope::new(
+        cognicode_core::domain::value_objects::WorkspaceId::try_new("workspace").unwrap(),
+        cognicode_core::domain::kernel_ids::SnapshotId::new(1),
+    )
 }

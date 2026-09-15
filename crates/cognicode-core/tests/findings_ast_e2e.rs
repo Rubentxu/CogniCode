@@ -16,12 +16,12 @@
 use std::collections::BTreeSet;
 
 use cognicode_core::domain::findings::{
-    AdmissionSource, AdmittedDetectorRecord, AnalysisCapability, AnalysisInput, AstBackend,
-    AstConstruct, AstInput, AstUnit, BackendRegistry, DetectorAdmission, DetectorAuthority,
-    DetectorExecutor, DetectorFindingPolicy, DetectorId, DetectorIr, DetectorStep, EvidenceClass,
-    ExecutionError, ExecutionPermit, ExecutionRecord, Finding, FindingGate, FindingKind,
-    FindingVerifier, PromotionAuthority, PromotionRequest, RejectAllApprovals, RiskLevel,
-    SubjectPattern, VerificationError,
+    AdmissionSource, AdmittedDetectorRecord, AnalysisCapability, AnalysisInput, AnalysisScope,
+    AstBackend, AstConstruct, AstInput, AstUnit, BackendRegistry, DetectorAdmission,
+    DetectorAuthority, DetectorExecutor, DetectorFindingPolicy, DetectorId, DetectorIr,
+    DetectorStep, EvidenceClass, ExecutionError, ExecutionPermit, ExecutionRecord, Finding,
+    FindingGate, FindingKind, FindingVerifier, PromotionAuthority, PromotionRequest,
+    RejectAllApprovals, RiskLevel, SubjectPattern, VerificationError,
 };
 use cognicode_core::domain::kernel_ids::ExecutionId;
 use cognicode_core::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
@@ -47,6 +47,7 @@ fn weak_hash_ir(claimed_authority: DetectorAuthority) -> DetectorIr {
 
 fn ast_input() -> AnalysisInput {
     AnalysisInput {
+        scope: Some(scope()),
         dataflow: None,
         graph: None,
         ast: Some(AstInput {
@@ -90,7 +91,7 @@ fn verified_promotion(
 fn run(permit: &ExecutionPermit) -> (InMemoryEvidenceStore, ExecutionRecord) {
     let registry = registry();
     let executor = DetectorExecutor::new(&registry);
-    let mut store = InMemoryEvidenceStore::new();
+    let mut store = InMemoryEvidenceStore::with_scope(scope());
     let record = executor
         .execute(permit, &ast_input(), &mut store, ExecutionId::new(1))
         .expect("execution must succeed");
@@ -122,6 +123,12 @@ fn u40_candidate_run_produces_a_finding_but_cannot_block() {
     assert_eq!(
         finding.detector.authority_at_execution,
         DetectorAuthority::Candidate
+    );
+    // The run's scope is captured on the execution reference.
+    assert_eq!(
+        finding.detector.scope.as_ref().map(|s| s.snapshot),
+        Some(cognicode_core::domain::kernel_ids::SnapshotId::new(1)),
+        "the execution must carry the analysis scope"
     );
 
     let verifier = FindingVerifier::new(&store);
@@ -179,7 +186,7 @@ fn unresolved_evidence_blocks_even_a_gated_finding() {
     let gated = DetectorAdmission::promote(&candidate, verified_promotion(&candidate)).unwrap();
 
     let (_store, record) = run(&gated);
-    let empty_store = InMemoryEvidenceStore::new();
+    let empty_store = InMemoryEvidenceStore::with_scope(scope());
     let verifier = FindingVerifier::new(&empty_store);
     assert!(matches!(
         verifier.verify_for_gate(&record.findings[0]),
@@ -227,7 +234,7 @@ fn u47_planning_fails_loud_when_no_backend_covers_capabilities() {
 
     let registry = registry();
     let executor = DetectorExecutor::new(&registry);
-    let mut store = InMemoryEvidenceStore::new();
+    let mut store = InMemoryEvidenceStore::with_scope(scope());
     let err = executor
         .execute(&permit, &ast_input(), &mut store, ExecutionId::new(1))
         .expect_err("no backend provides Dataflow");
@@ -245,4 +252,11 @@ fn registry_and_capability_sets_are_stable() {
     let requires: BTreeSet<AnalysisCapability> =
         [AnalysisCapability::AstPattern].into_iter().collect();
     assert_eq!(registry.plan(&requires).unwrap().name(), "ast");
+}
+
+fn scope() -> AnalysisScope {
+    AnalysisScope::new(
+        cognicode_core::domain::value_objects::WorkspaceId::try_new("workspace").unwrap(),
+        cognicode_core::domain::kernel_ids::SnapshotId::new(1),
+    )
 }

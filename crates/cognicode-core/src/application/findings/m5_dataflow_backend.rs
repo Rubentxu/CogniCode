@@ -445,6 +445,7 @@ mod tests {
 
     fn input_with(statements: Vec<DataflowStatement>) -> AnalysisInput {
         AnalysisInput {
+            scope: None,
             ast: None,
             graph: None,
             dataflow: Some(DataflowInput {
@@ -563,6 +564,7 @@ mod tests {
             .run(
                 permit().admitted(),
                 &AnalysisInput {
+                    scope: None,
                     ast: None,
                     graph: None,
                     dataflow: None,

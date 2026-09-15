@@ -42,13 +42,22 @@ pub trait EvidenceSink {
     fn record(&mut self, evidence: ProducedEvidence) -> Result<EvidenceId, EvidenceError>;
 }
 
-/// Resolves whether an evidence id exists.
+/// Resolves whether an evidence id exists, **in the scope it was hydrated for**.
 ///
 /// Used by [`FindingVerifier`](super::FindingVerifier) to check referential
-/// truth (U42) before a finding may block.
+/// truth (U42) before a finding may block. `EvidenceId` is canonical per
+/// snapshot, so a lookup must declare the scope it was loaded from: otherwise
+/// a caller could hydrate snapshot B's evidence for a finding produced in A and
+/// every id would still resolve.
 pub trait EvidenceLookup {
     /// Whether `id` is known to the store.
     fn contains(&self, id: EvidenceId) -> bool;
+
+    /// The `(workspace, snapshot)` this lookup was hydrated for.
+    ///
+    /// `None` means "unscoped": verification then requires the finding to be
+    /// unscoped too (the legacy QualityIssue projection).
+    fn scope(&self) -> Option<&super::scope::AnalysisScope>;
 }
 
 #[cfg(test)]
@@ -70,6 +79,10 @@ mod tests {
     impl EvidenceLookup for VecStore {
         fn contains(&self, id: EvidenceId) -> bool {
             id.get() >= 1 && (id.get() as usize) <= self.items.len()
+        }
+
+        fn scope(&self) -> Option<&crate::domain::findings::AnalysisScope> {
+            None
         }
     }
 

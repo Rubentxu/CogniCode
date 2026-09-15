@@ -35,6 +35,7 @@ use super::finding::{EvidenceClass, Finding, FindingGate};
 use super::graph_backend::GraphInput;
 use super::outcome::{DetectorDiagnostic, DetectorOutcome};
 use super::ports::{EvidenceError, EvidenceSink};
+use super::scope::AnalysisScope;
 use super::verifier::{FindingVerifier, VerificationError};
 use crate::domain::kernel_ids::{EvidenceId, ExecutionId};
 
@@ -44,6 +45,11 @@ use crate::domain::kernel_ids::{EvidenceId, ExecutionId};
 /// fails loud ([`BackendError::MissingInput`]) when its view is absent.
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisInput {
+    /// The exact `(workspace, snapshot)` the views were projected from.
+    ///
+    /// Required for execution: `FactId`/`EvidenceId` are canonical per
+    /// snapshot, so a run without a scope could not be verified later.
+    pub scope: Option<AnalysisScope>,
     /// AST/construct view (AstBackend).
     pub ast: Option<AstInput>,
     /// Graph view (GraphBackend).
@@ -151,6 +157,10 @@ impl<'a> DetectorExecutor<'a> {
     ) -> Result<ExecutionRecord, ExecutionError> {
         let admitted = permit.admitted();
 
+        // A run must be pinned to a scope: without one its ids could not be
+        // verified against any snapshot later.
+        let scope = input.scope.clone().ok_or(ExecutionError::MissingScope)?;
+
         // The admitted definition is re-validated: admission validated it, but
         // the executor never trusts an unvalidated definition.
         admitted
@@ -210,7 +220,7 @@ impl<'a> DetectorExecutor<'a> {
         }
 
         let execution = permit
-            .execution_ref(Some(execution_id))
+            .execution_ref(Some(execution_id), Some(scope))
             .map_err(ExecutionError::InvalidDefinition)?;
 
         let findings = FindingAssembler::assemble(admitted, &execution, &outcome, &evidence)
@@ -377,6 +387,8 @@ impl std::error::Error for BackendContractViolation {}
 pub enum ExecutionError {
     /// The admitted definition failed validation.
     InvalidDefinition(DetectorIrError),
+    /// The input carried no analysis scope.
+    MissingScope,
     /// No backend could satisfy the requirements.
     Plan(PlanError),
     /// A backend failed.
@@ -393,6 +405,9 @@ impl fmt::Display for ExecutionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidDefinition(err) => write!(f, "invalid detector definition: {err}"),
+            Self::MissingScope => {
+                f.write_str("analysis input carries no (workspace, snapshot) scope")
+            }
             Self::Plan(err) => write!(f, "planning failed: {err}"),
             Self::Backend(err) => write!(f, "backend failed: {err}"),
             Self::BackendContract(err) => write!(f, "backend contract violation: {err}"),
@@ -415,6 +430,13 @@ mod tests {
         DetectorMatch, DetectorOutcome, EvidenceKind, ProducedEvidence,
     };
     use crate::domain::kernel_ids::EvidenceId;
+
+    fn scope() -> AnalysisScope {
+        AnalysisScope::new(
+            crate::domain::value_objects::WorkspaceId::try_new("ws").unwrap(),
+            crate::domain::kernel_ids::SnapshotId::new(1),
+        )
+    }
 
     /// A sink that discards evidence and assigns sequential ids.
     #[derive(Default)]
@@ -534,7 +556,10 @@ mod tests {
         let err = executor
             .execute(
                 &permit,
-                &AnalysisInput::default(),
+                &AnalysisInput {
+                    scope: Some(scope()),
+                    ..Default::default()
+                },
                 &mut sink,
                 ExecutionId::new(1),
             )
@@ -594,7 +619,10 @@ mod tests {
         let err = executor
             .execute(
                 &permit,
-                &AnalysisInput::default(),
+                &AnalysisInput {
+                    scope: Some(scope()),
+                    ..Default::default()
+                },
                 &mut sink,
                 ExecutionId::new(1),
             )

@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn assembles_a_finding_with_assigned_class_and_execution() {
         let permit = permit();
-        let execution = permit.execution_ref(Some(ExecutionId(5))).unwrap();
+        let execution = permit.execution_ref(Some(ExecutionId(5)), None).unwrap();
         let outcome = outcome_with(EvidenceKind::AstMatch);
         let ids = vec![EvidenceId::new(11)];
 
@@ -306,7 +306,7 @@ mod tests {
     #[test]
     fn class_is_the_strongest_of_the_evidence() {
         let permit = permit();
-        let execution = permit.execution_ref(None).unwrap();
+        let execution = permit.execution_ref(None, None).unwrap();
         let mut outcome = outcome_with(EvidenceKind::AstMatch);
         outcome.produced_evidence.push(ProducedEvidence {
             kind: EvidenceKind::RuntimeTrace,
@@ -325,7 +325,7 @@ mod tests {
     #[test]
     fn no_evidence_yields_class_d() {
         let permit = permit();
-        let execution = permit.execution_ref(None).unwrap();
+        let execution = permit.execution_ref(None, None).unwrap();
         let mut outcome = outcome_with(EvidenceKind::Hypothesis);
         outcome.matches[0].evidence = vec![];
         outcome.matches[0].causal[0].evidence = None;
@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn rejects_arity_mismatch() {
         let permit = permit();
-        let execution = permit.execution_ref(None).unwrap();
+        let execution = permit.execution_ref(None, None).unwrap();
         let outcome = outcome_with(EvidenceKind::AstMatch);
         let err =
             FindingAssembler::assemble(permit.admitted(), &execution, &outcome, &[]).unwrap_err();
@@ -355,7 +355,7 @@ mod tests {
     #[test]
     fn rejects_causal_evidence_not_in_finding() {
         let permit = permit();
-        let execution = permit.execution_ref(None).unwrap();
+        let execution = permit.execution_ref(None, None).unwrap();
         let mut outcome = outcome_with(EvidenceKind::AstMatch);
         outcome.produced_evidence.push(ProducedEvidence {
             kind: EvidenceKind::AstMatch,
@@ -404,7 +404,7 @@ mod tests {
         };
         let permit =
             DetectorAdmission::admit(ir.clone(), "1.0.0", AdmissionSource::Builtin).unwrap();
-        let execution = permit.execution_ref(Some(ExecutionId(1))).unwrap();
+        let execution = permit.execution_ref(Some(ExecutionId(1)), None).unwrap();
         let outcome = outcome_with(EvidenceKind::AstMatch);
         let ids = vec![EvidenceId::new(1)];
 
@@ -421,7 +421,7 @@ mod tests {
             RiskLevel::Low,
         );
         let permit2 = DetectorAdmission::admit(ir, "1.0.0", AdmissionSource::Builtin).unwrap();
-        let execution2 = permit2.execution_ref(Some(ExecutionId(1))).unwrap();
+        let execution2 = permit2.execution_ref(Some(ExecutionId(1)), None).unwrap();
         let findings2 =
             FindingAssembler::assemble(permit2.admitted(), &execution2, &outcome, &ids).unwrap();
         assert_eq!(findings2[0].severity, FindingSeverity::Info);

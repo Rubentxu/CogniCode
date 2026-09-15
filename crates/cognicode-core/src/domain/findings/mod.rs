@@ -32,6 +32,7 @@ pub mod namespaced;
 pub mod outcome;
 pub mod ports;
 pub mod quality_projection;
+pub mod scope;
 pub mod verifier;
 
 pub use crate::domain::kernel_ids::{EntityId, EvidenceId, FactId};
@@ -67,4 +68,5 @@ pub use ports::{EvidenceError, EvidenceLookup, EvidenceSink};
 pub use quality_projection::{
     LEGACY_DETECTOR_ID, LEGACY_DETECTOR_VERSION, QUALITY_NAMESPACE, project_quality_issue,
 };
+pub use scope::AnalysisScope;
 pub use verifier::{FindingVerifier, VerificationError};

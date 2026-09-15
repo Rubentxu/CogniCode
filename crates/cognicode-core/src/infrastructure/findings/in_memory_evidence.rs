@@ -5,6 +5,7 @@
 //! house `u64` newtype convention. The production adapter binds the sink to
 //! the kernel `EvidenceStore` in a later wiring cycle.
 
+use crate::domain::findings::AnalysisScope;
 use crate::domain::findings::outcome::ProducedEvidence;
 use crate::domain::findings::ports::{EvidenceError, EvidenceLookup, EvidenceSink};
 use crate::domain::kernel_ids::EvidenceId;
@@ -13,12 +14,26 @@ use crate::domain::kernel_ids::EvidenceId;
 #[derive(Debug, Default, Clone)]
 pub struct InMemoryEvidenceStore {
     items: Vec<ProducedEvidence>,
+    scope: Option<AnalysisScope>,
 }
 
 impl InMemoryEvidenceStore {
-    /// Create an empty store.
+    /// Create an empty, unscoped store.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create an empty store hydrated for a specific analysis scope.
+    pub fn with_scope(scope: AnalysisScope) -> Self {
+        Self {
+            items: Vec::new(),
+            scope: Some(scope),
+        }
+    }
+
+    /// The scope this store was hydrated for.
+    pub fn scope(&self) -> Option<&AnalysisScope> {
+        self.scope.as_ref()
     }
 
     /// Number of recorded evidence items.
@@ -56,6 +71,10 @@ impl EvidenceSink for InMemoryEvidenceStore {
 impl EvidenceLookup for InMemoryEvidenceStore {
     fn contains(&self, id: EvidenceId) -> bool {
         self.get(id).is_some()
+    }
+
+    fn scope(&self) -> Option<&AnalysisScope> {
+        self.scope.as_ref()
     }
 }
 

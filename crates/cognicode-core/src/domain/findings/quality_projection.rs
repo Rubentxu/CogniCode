@@ -102,6 +102,7 @@ pub fn project_quality_issue(issue: &QualityIssue) -> Result<Finding, super::Fin
             instance: d,
         },
         None,
+        None,
     )?;
 
     let location = format!("{}:{}", issue.file_path, issue.line);

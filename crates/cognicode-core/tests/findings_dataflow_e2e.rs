@@ -19,7 +19,7 @@ use std::collections::BTreeSet;
 use cognicode_core::application::findings::M5DataflowBackend;
 use cognicode_core::application::program_analysis::ProgramAnalysisService;
 use cognicode_core::domain::findings::{
-    AnalysisCapability, AnalysisInput, AstBackend, BackendRegistry, CausalStepKind,
+    AnalysisCapability, AnalysisInput, AnalysisScope, AstBackend, BackendRegistry, CausalStepKind,
     DataflowFunction, DataflowInput, DataflowLocation, DataflowStatement, DetectorAdmission,
     DetectorAuthority, DetectorBackend, DetectorExecutor, DetectorFindingPolicy, DetectorId,
     DetectorIr, DetectorStep, EvidenceClass, ExecutionError, ExecutionRecord, FindingGate,
@@ -97,6 +97,7 @@ fn sanitized_function() -> DataflowFunction {
 
 fn input(function: DataflowFunction) -> AnalysisInput {
     AnalysisInput {
+        scope: Some(scope()),
         ast: None,
         graph: None,
         dataflow: Some(DataflowInput {
@@ -125,7 +126,7 @@ fn run(
 ) -> (InMemoryEvidenceStore, ExecutionRecord) {
     let registry = registry();
     let executor = DetectorExecutor::new(&registry);
-    let mut store = InMemoryEvidenceStore::new();
+    let mut store = InMemoryEvidenceStore::with_scope(scope());
     let record = executor
         .execute(permit, &input(function), &mut store, ExecutionId::new(11))
         .expect("execution must succeed");
@@ -252,7 +253,7 @@ fn u41_multi_capability_detector_fails_loud() {
 
     let registry = registry();
     let executor = DetectorExecutor::new(&registry);
-    let mut store = InMemoryEvidenceStore::new();
+    let mut store = InMemoryEvidenceStore::with_scope(scope());
     let err = executor
         .execute(
             &permit,
@@ -348,7 +349,7 @@ fn u41_exceeded_limits_stay_execution_errors() {
     };
 
     let executor = DetectorExecutor::new(&registry);
-    let mut store = InMemoryEvidenceStore::new();
+    let mut store = InMemoryEvidenceStore::with_scope(scope());
     let err = executor
         .execute(&permit, &input(function), &mut store, ExecutionId::new(1))
         .expect_err("an exceeded limit must fail the execution");
@@ -363,4 +364,11 @@ fn u41_exceeded_limits_stay_execution_errors() {
         }
         other => panic!("expected ExecutionError::Backend(Analysis), got {other:?}"),
     }
+}
+
+fn scope() -> AnalysisScope {
+    AnalysisScope::new(
+        cognicode_core::domain::value_objects::WorkspaceId::try_new("workspace").unwrap(),
+        cognicode_core::domain::kernel_ids::SnapshotId::new(1),
+    )
 }

@@ -28,6 +28,7 @@ use std::fmt;
 use super::digest::DetectorDigest;
 use super::finding::{FindingSeverity, RiskLevel};
 use super::namespaced::NamespacedName;
+use super::scope::AnalysisScope;
 use crate::domain::kernel_ids::ExecutionId;
 
 // ============================================================================
@@ -640,6 +641,12 @@ pub struct DetectorExecutionRef {
     pub digests: DetectorDigests,
     /// Optional link to a concrete execution record.
     pub execution_id: Option<ExecutionId>,
+    /// The `(workspace, snapshot)` the run was pinned to.
+    ///
+    /// `None` only for findings that never came from a scoped analysis run
+    /// (the legacy QualityIssue projection); every `DetectorExecutor` run sets
+    /// it. A scoped verification rejects a finding without one.
+    pub scope: Option<AnalysisScope>,
 }
 
 impl DetectorExecutionRef {
@@ -650,6 +657,7 @@ impl DetectorExecutionRef {
         authority_at_execution: DetectorAuthority,
         digests: DetectorDigests,
         execution_id: Option<ExecutionId>,
+        scope: Option<AnalysisScope>,
     ) -> Result<Self, DetectorIrError> {
         let version = version.into();
         if version.trim().is_empty() {
@@ -661,6 +669,7 @@ impl DetectorExecutionRef {
             authority_at_execution,
             digests,
             execution_id,
+            scope,
         })
     }
 
@@ -672,6 +681,7 @@ impl DetectorExecutionRef {
         definition: &DetectorIr,
         version: impl Into<String>,
         execution_id: Option<ExecutionId>,
+        scope: Option<AnalysisScope>,
     ) -> Result<Self, DetectorIrError> {
         Self::new(
             definition.id.clone(),
@@ -679,6 +689,7 @@ impl DetectorExecutionRef {
             definition.authority,
             definition.digests(),
             execution_id,
+            scope,
         )
     }
 
@@ -1129,7 +1140,8 @@ mod tests {
     fn execution_ref_captures_authority_and_digest() {
         let ir = detector(caps([AnalysisCapability::GraphQuery]), flow_steps());
         let execution =
-            DetectorExecutionRef::from_definition(&ir, "1.0.0", Some(ExecutionId(9))).unwrap();
+            DetectorExecutionRef::from_definition(&ir, "1.0.0", Some(ExecutionId(9)), None)
+                .unwrap();
 
         assert_eq!(execution.id, ir.id);
         assert_eq!(execution.version, "1.0.0");
@@ -1157,7 +1169,8 @@ mod tests {
             instance: digest,
         };
         assert_eq!(
-            DetectorExecutionRef::new(id, "", DetectorAuthority::Gated, digests, None).unwrap_err(),
+            DetectorExecutionRef::new(id, "", DetectorAuthority::Gated, digests, None, None)
+                .unwrap_err(),
             DetectorIrError::EmptyVersion
         );
     }

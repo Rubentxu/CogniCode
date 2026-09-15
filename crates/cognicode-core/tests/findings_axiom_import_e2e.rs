@@ -12,9 +12,10 @@ use cognicode_core::application::findings::axiom_migration::{
     LegacySeverity, NormalizedLegacyRule,
 };
 use cognicode_core::domain::findings::{
-    AdmissionSource, AnalysisInput, AstBackend, AstConstruct, AstInput, AstUnit, BackendRegistry,
-    CausalStepKind, DetectorAdmission, DetectorAuthority, DetectorExecutor, EvidenceClass,
-    FindingGate, FindingVerifier, PromotionAuthority, PromotionRequest, RiskLevel, SubjectPattern,
+    AdmissionSource, AnalysisInput, AnalysisScope, AstBackend, AstConstruct, AstInput, AstUnit,
+    BackendRegistry, CausalStepKind, DetectorAdmission, DetectorAuthority, DetectorExecutor,
+    EvidenceClass, FindingGate, FindingVerifier, PromotionAuthority, PromotionRequest, RiskLevel,
+    SubjectPattern,
 };
 use cognicode_core::domain::kernel_ids::ExecutionId;
 use cognicode_core::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
@@ -43,6 +44,7 @@ fn translate(severity: LegacySeverity) -> ImportedDetectorDefinition {
 
 fn ast_input() -> AnalysisInput {
     AnalysisInput {
+        scope: Some(scope()),
         ast: Some(AstInput {
             units: vec![AstUnit {
                 path: "src/hash.rs".to_string(),
@@ -79,7 +81,7 @@ fn u_a8_imported_detector_uses_the_same_chain_as_a_builtin() {
     // Same seam as any other detector.
     let registry = registry();
     let executor = DetectorExecutor::new(&registry);
-    let mut store = InMemoryEvidenceStore::new();
+    let mut store = InMemoryEvidenceStore::with_scope(scope());
     let record = executor
         .execute(&permit, &ast_input(), &mut store, ExecutionId::new(3))
         .expect("imported detector must execute");
@@ -149,7 +151,7 @@ fn u_a8_imported_detector_gates_only_through_a_governance_verifier() {
 
     let registry = registry();
     let executor = DetectorExecutor::new(&registry);
-    let mut store = InMemoryEvidenceStore::new();
+    let mut store = InMemoryEvidenceStore::with_scope(scope());
     let record = executor
         .execute(&gated, &ast_input(), &mut store, ExecutionId::new(4))
         .unwrap();
@@ -158,4 +160,11 @@ fn u_a8_imported_detector_gates_only_through_a_governance_verifier() {
         &record.findings[0],
         &FindingGate::new(EvidenceClass::C, RiskLevel::Low)
     ));
+}
+
+fn scope() -> AnalysisScope {
+    AnalysisScope::new(
+        cognicode_core::domain::value_objects::WorkspaceId::try_new("workspace").unwrap(),
+        cognicode_core::domain::kernel_ids::SnapshotId::new(1),
+    )
 }
