@@ -254,7 +254,7 @@ phases:
       now takes &dyn Clock, checks budget AFTER authority and BEFORE sink.
       BudgetAuthorizer check uses time checkpoint for Time budgets, spent counter
       for EffectCount budgets. WU5 (acceptance): 6 UAT-U52 scenarios
-      (EffectCount exhaustion, Time exhaustion via MockClock, authority denial before
+      (EffectCount exhaustion, Time exhaustion via FakeClock, authority denial before
       budget, AiGenerated silent cap, snapshot integrity, causal chain).
       6 e64 regression + 4 e63 regression + 10 e62.4 regression tests all green.
       ADR-RX-005 promoted. behavior-budgets spec in openspec/specs/.
