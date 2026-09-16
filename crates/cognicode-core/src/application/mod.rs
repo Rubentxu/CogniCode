@@ -53,6 +53,9 @@ pub mod portable_execution;
 // Facts. WU2 will add fork(); WU3 will compose with e68 SemanticFactDelta.
 pub mod program_analysis;
 pub mod services;
+// e76 WU1 — self-hosting baseline. Composes canonical ingestion
+// primitives; no parallel digest scheme; no I/O on the FS.
+pub mod self_hosting;
 // e72 WU1 — ChangeProposal (M9). Intent-only, no authority. Creation !=
 // authority. Author class (Human/Plugin/LlmAgent) is recorded for e73's
 // adversarial gate; the proposal itself does not grant apply power.
