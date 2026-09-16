@@ -27,8 +27,13 @@ pub mod investigation_service;
 // e70 WU1+WU2 — Local CI vertical orchestration (in-memory WorkExecutor,
 // planner → executor → bundle → gate → LocalVerticalReport).
 pub mod local_ci;
+// e71 WU1 — SoftwareWorld foundation (M9). Lineage + isolation metadata,
+// not a second truth store. Reuses canonical SnapshotId; never mirrors
+// Facts. WU2 will add fork(); WU3 will compose with e68 SemanticFactDelta.
 pub mod program_analysis;
 pub mod services;
+#[cfg(feature = "evidence-kernel")]
+pub mod software_world;
 pub mod workspace_session;
 
 // Re-export error types for convenience
