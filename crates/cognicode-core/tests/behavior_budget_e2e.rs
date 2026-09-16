@@ -25,8 +25,8 @@ use cognicode_core::domain::evidence_kernel::bootstrap::bootstrap_registry;
 use cognicode_core::domain::evidence_kernel::ports::FactStore;
 use cognicode_core::domain::execution::{ActorRef, CorrelationId, ExecutionContext};
 use cognicode_core::domain::findings::AnalysisScope;
-use cognicode_core::domain::intelligence_log::event::EventTime;
 use cognicode_core::domain::intelligence_log::IntelligenceEventStore;
+use cognicode_core::domain::intelligence_log::event::EventTime;
 use cognicode_core::domain::kernel_ids::{EntityId, ExecutionId, SnapshotId};
 use cognicode_core::domain::trust::AdmissionSource;
 use cognicode_core::domain::value_objects::WorkspaceId;
@@ -174,7 +174,8 @@ async fn u52_a_pure_derivation_effect_count_exhausts_at_3() {
     )
     .unwrap();
     let permit =
-        BehaviorAdmission::admit_with_budget(behavior_def, AdmissionSource::Builtin, budget).unwrap();
+        BehaviorAdmission::admit_with_budget(behavior_def, AdmissionSource::Builtin, budget)
+            .unwrap();
 
     let context = ExecutionContext::try_new(
         ExecutionId::new(1),
@@ -224,13 +225,19 @@ async fn u52_a_pure_derivation_effect_count_exhausts_at_3() {
     // Property 2: previously-allowed effects remain per runtime semantics.
     assert_eq!(
         sink.applied[..],
-        [BehaviorEffectKind::RecordEvidence, BehaviorEffectKind::RecordEvidence],
+        [
+            BehaviorEffectKind::RecordEvidence,
+            BehaviorEffectKind::RecordEvidence
+        ],
         "exactly the first 2 effects were applied"
     );
 
     // Property 3: BudgetExhausted is produced (not Ok(empty), not panic).
     assert!(
-        matches!(outcome.budget_exhaustions[0].0.kind, BudgetKind::EffectCount),
+        matches!(
+            outcome.budget_exhaustions[0].0.kind,
+            BudgetKind::EffectCount
+        ),
         "BehaviorOutcome::BudgetExhausted must be produced for EffectCount"
     );
 
@@ -274,7 +281,8 @@ async fn u52_c_agent_authority_denies_before_budget_checked() {
     )
     .unwrap();
     let permit =
-        BehaviorAdmission::admit_with_budget(behavior_def, AdmissionSource::Builtin, budget).unwrap();
+        BehaviorAdmission::admit_with_budget(behavior_def, AdmissionSource::Builtin, budget)
+            .unwrap();
 
     let context = ExecutionContext::try_new(
         ExecutionId::new(4),
@@ -380,7 +388,8 @@ async fn u52_snapshot_integrity_factstore_unchanged_after_exhaustion() {
     )
     .unwrap();
     let permit =
-        BehaviorAdmission::admit_with_budget(behavior_def, AdmissionSource::Builtin, budget).unwrap();
+        BehaviorAdmission::admit_with_budget(behavior_def, AdmissionSource::Builtin, budget)
+            .unwrap();
 
     let context = ExecutionContext::try_new(
         ExecutionId::new(5),
@@ -411,7 +420,10 @@ async fn u52_snapshot_integrity_factstore_unchanged_after_exhaustion() {
         "Property 3: budget exhaustion must be produced (not Ok(empty))"
     );
     assert!(
-        matches!(outcome.budget_exhaustions[0].0.kind, BudgetKind::EffectCount),
+        matches!(
+            outcome.budget_exhaustions[0].0.kind,
+            BudgetKind::EffectCount
+        ),
         "Property 3: exhaustion kind must be EffectCount"
     );
 
@@ -488,7 +500,8 @@ async fn u52_causal_chain_includes_exhaustion_event() {
     )
     .unwrap();
     let permit =
-        BehaviorAdmission::admit_with_budget(behavior_def, AdmissionSource::Builtin, budget).unwrap();
+        BehaviorAdmission::admit_with_budget(behavior_def, AdmissionSource::Builtin, budget)
+            .unwrap();
 
     let context = ExecutionContext::try_new(
         ExecutionId::new(6),
@@ -507,11 +520,7 @@ async fn u52_causal_chain_includes_exhaustion_event() {
         .await
         .unwrap();
 
-    assert_eq!(
-        outcome.accepted.len(),
-        1,
-        "first effect should be accepted"
-    );
+    assert_eq!(outcome.accepted.len(), 1, "first effect should be accepted");
     assert_eq!(
         outcome.rejected.len(),
         1,
@@ -526,10 +535,7 @@ async fn u52_causal_chain_includes_exhaustion_event() {
     let (_, exhaustion_event_id) = &outcome.budget_exhaustions[0];
 
     // Verify the chain contains trigger → behavior.started → behavior.budget_exhausted.
-    let chain = log
-        .causal_chain(&ws(), *exhaustion_event_id)
-        .await
-        .unwrap();
+    let chain = log.causal_chain(&ws(), *exhaustion_event_id).await.unwrap();
 
     // With exhaustion caused by started_event (not rejection_event), the chain is:
     // [behavior.budget_exhausted, behavior.started] = 2 events.
@@ -573,7 +579,8 @@ async fn u52_b_reactive_analysis_time_exhausts_via_fake_clock() {
     )
     .unwrap();
     let permit =
-        BehaviorAdmission::admit_with_budget(behavior_def, AdmissionSource::Builtin, budget).unwrap();
+        BehaviorAdmission::admit_with_budget(behavior_def, AdmissionSource::Builtin, budget)
+            .unwrap();
 
     let context = ExecutionContext::try_new(
         ExecutionId::new(2),

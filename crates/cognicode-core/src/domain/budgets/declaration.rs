@@ -26,7 +26,9 @@ pub struct BudgetDeclaration {
 impl BudgetDeclaration {
     /// No budget at all: every kind is unlimited.
     pub fn none() -> Self {
-        Self { per_kind: Vec::new() }
+        Self {
+            per_kind: Vec::new(),
+        }
     }
 
     /// Declare a time budget in milliseconds.

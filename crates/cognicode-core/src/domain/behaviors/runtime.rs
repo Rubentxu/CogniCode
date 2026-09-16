@@ -370,21 +370,14 @@ impl<'a> BehaviorRuntime<'a> {
             budgets::state::record_time(&mut budget_state, now_millis);
 
             // Check Time budget.
-            if let Err(e) = authorizer.check(
-                &budget_state,
-                budgets::BudgetKind::Time,
-                1,
-            ) {
+            if let Err(e) = authorizer.check(&budget_state, budgets::BudgetKind::Time, 1) {
                 budget_exhausted = Some(e);
             }
 
             // Check EffectCount budget (each effect is one count).
             if budget_exhausted.is_none() {
-                if let Err(e) = authorizer.check(
-                    &budget_state,
-                    budgets::BudgetKind::EffectCount,
-                    1,
-                ) {
+                if let Err(e) = authorizer.check(&budget_state, budgets::BudgetKind::EffectCount, 1)
+                {
                     budget_exhausted = Some(e);
                 }
             }
@@ -438,7 +431,9 @@ impl<'a> BehaviorRuntime<'a> {
 
                 outcome.rejection_events.push(rejection_event);
                 outcome.rejected.push(violation);
-                outcome.budget_exhaustions.push((exhaustion, exhaustion_event));
+                outcome
+                    .budget_exhaustions
+                    .push((exhaustion, exhaustion_event));
                 continue;
             }
 
@@ -513,11 +508,9 @@ fn payload(fields: &[(&str, String)]) -> Result<EventPayloadRef, BehaviorRuntime
 }
 
 /// The bounded payload of a budget exhaustion event.
-fn budget_payload(
-    fields: &[(&str, String)],
-) -> Result<EventPayloadRef, BehaviorRuntimeError> {
-    let mut built = BoundedEventPayload::new("budget exhausted")
-        .map_err(BehaviorRuntimeError::Payload)?;
+fn budget_payload(fields: &[(&str, String)]) -> Result<EventPayloadRef, BehaviorRuntimeError> {
+    let mut built =
+        BoundedEventPayload::new("budget exhausted").map_err(BehaviorRuntimeError::Payload)?;
     for (key, value) in fields {
         built = built
             .with_field(*key, value.clone())

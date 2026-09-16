@@ -33,7 +33,10 @@ impl BudgetState {
     /// Construct state from a declaration and the wall-clock start time.
     ///
     /// Starts with all counters at 0 and no time checkpoint.
-    pub fn new(_declaration: &super::declaration::BudgetDeclaration, started_at_millis: u64) -> Self {
+    pub fn new(
+        _declaration: &super::declaration::BudgetDeclaration,
+        started_at_millis: u64,
+    ) -> Self {
         Self {
             per_kind: BTreeMap::new(),
             started_at_millis,
@@ -100,7 +103,9 @@ mod tests {
         use std::num::NonZeroU64;
         let mut d = BudgetDeclaration::time(NonZeroU64::new(time).unwrap());
         if effects > 0 {
-            d = d.merge(&BudgetDeclaration::effects(NonZeroU64::new(effects).unwrap()));
+            d = d.merge(&BudgetDeclaration::effects(
+                NonZeroU64::new(effects).unwrap(),
+            ));
         }
         d
     }

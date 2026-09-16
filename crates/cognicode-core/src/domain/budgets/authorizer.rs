@@ -197,9 +197,7 @@ mod tests {
 
         // Second effect at t=80: checkpoint=80, ceiling=100, remaining=20 — 30ms does NOT fit.
         super::super::state::record_time(&mut state, 80);
-        let err = auth
-            .check(&state, BudgetKind::Time, 30)
-            .unwrap_err();
+        let err = auth.check(&state, BudgetKind::Time, 30).unwrap_err();
         assert_eq!(err.kind, BudgetKind::Time);
         assert_eq!(err.remaining, 20);
         assert_eq!(err.attempted, 30);
@@ -228,9 +226,7 @@ mod tests {
         let auth = BudgetAuthorizer::new(decl);
         let state = state(0); // spent=0
 
-        let err = auth
-            .check(&state, BudgetKind::EffectCount, 10)
-            .unwrap_err();
+        let err = auth.check(&state, BudgetKind::EffectCount, 10).unwrap_err();
         assert!(err.reason().contains("effect_count"));
         // `remaining` in the error is ceiling - spent = 5 - 0 = 5.
         assert!(err.reason().contains("5 remaining"));
@@ -253,7 +249,11 @@ mod tests {
             auth.commit(&mut state, BudgetKind::EffectCount, 1);
         }
         assert_eq!(state.spent(BudgetKind::EffectCount), 3);
-        assert_eq!(state.spent(BudgetKind::Time), 0, "time untouched by effect spend");
+        assert_eq!(
+            state.spent(BudgetKind::Time),
+            0,
+            "time untouched by effect spend"
+        );
 
         // Time budget still at 0 spent.
         assert!(auth.check(&state, BudgetKind::Time, 100).is_ok());
