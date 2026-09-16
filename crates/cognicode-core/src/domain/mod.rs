@@ -9,6 +9,12 @@ pub mod analytics;
 pub mod error;
 pub mod events;
 pub mod example_block;
+// M7.5 Read-Sets (e66) — execution read-dependency recorder and
+// invalidation query. Pure domain (no I/O), ungated: the recorder
+// admits fact IDs by reference and the query is a set-membership
+// check. Mirrors the budgets (e65) precedent for additive
+// incremental scope that does not touch the canonical store.
+pub mod readset;
 // LSI Findings & Detector IR (M6) — declarative, validated detector
 // definitions. Additive pure domain (no I/O), mirroring the M5
 // `analytics::program_analysis` precedent; ungated.
