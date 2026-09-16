@@ -32,6 +32,11 @@ pub mod local_ci;
 // Facts. WU2 will add fork(); WU3 will compose with e68 SemanticFactDelta.
 pub mod program_analysis;
 pub mod services;
+// e72 WU1 — ChangeProposal (M9). Intent-only, no authority. Creation !=
+// authority. Author class (Human/Plugin/LlmAgent) is recorded for e73's
+// adversarial gate; the proposal itself does not grant apply power.
+#[cfg(feature = "evidence-kernel")]
+pub mod change_proposal;
 #[cfg(feature = "evidence-kernel")]
 pub mod software_world;
 pub mod workspace_session;
