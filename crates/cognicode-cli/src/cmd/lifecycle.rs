@@ -176,9 +176,14 @@ mod tests {
         setup_temp_home(&tmp).unwrap();
         let out = run_cogh(&tmp, &["doctor"]).unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
+        // e74 WU4: doctor output changed shape. The previous contract
+        // asserted `home exists`, which was the only string the old
+        // filesystem-only doctor printed. The new contract is a
+        // four-dimension report; the dimension `Core health` is the
+        // direct descendant of the old "home exists" check.
         assert!(
-            stdout.contains("home exists"),
-            "doctor missing 'home exists'"
+            stdout.contains("Core health"),
+            "doctor missing 'Core health' dimension; stdout was: {stdout}"
         );
         let _ = std::fs::remove_dir_all(&tmp);
     }
