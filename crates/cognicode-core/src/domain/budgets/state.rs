@@ -19,31 +19,37 @@ use super::kind::BudgetKind;
 pub struct BudgetState {
     /// How much has been spent per kind. Only kinds that have been touched are
     /// present; untouched kinds are absent (equivalent to 0 spent).
+    /// For `Time` budgets, this counter is NOT used for checks; see `time_checkpoint`.
     per_kind: BTreeMap<BudgetKind, u64>,
     /// When this execution started, in monotonic milliseconds.
     started_at_millis: u64,
+    /// The last recorded time checkpoint, in monotonic milliseconds.
+    /// Used only for Time budget checks: the check compares this against the
+    /// ceiling, NOT the per_kind spent counter (which tracks effect-count).
+    time_checkpoint_millis: u64,
 }
 
 impl BudgetState {
     /// Construct state from a declaration and the wall-clock start time.
     ///
-    /// Starts with all counters at 0. A kind with ceiling=10 but spent=0 has
-    /// 10 remaining; it is absent from `per_kind` until the first spend.
+    /// Starts with all counters at 0 and no time checkpoint.
     pub fn new(_declaration: &super::declaration::BudgetDeclaration, started_at_millis: u64) -> Self {
         Self {
             per_kind: BTreeMap::new(),
             started_at_millis,
+            time_checkpoint_millis: 0,
         }
     }
 
     /// How much has been spent for `kind` (0 if never touched).
+    ///
+    /// Note: for `Time` budgets, this returns the per-kind spent counter, which is
+    /// NOT used for Time budget checks. Use `elapsed_millis` for Time checks.
     pub fn spent(&self, kind: BudgetKind) -> u64 {
         self.per_kind.get(&kind).copied().unwrap_or(0)
     }
 
     /// The wall-clock elapsed since this execution started, in milliseconds.
-    ///
-    /// `clock` supplies `now_millis()`; callers must pass a monotonic source.
     pub fn elapsed_millis(&self, now_millis: u64) -> u64 {
         now_millis.saturating_sub(self.started_at_millis)
     }
@@ -51,6 +57,19 @@ impl BudgetState {
     /// The start timestamp, in monotonic milliseconds.
     pub fn started_at(&self) -> u64 {
         self.started_at_millis
+    }
+
+    /// Record a time checkpoint at `now_millis`.
+    ///
+    /// For Time budgets, the check uses this checkpoint (not the per_kind spent
+    /// counter) to determine whether wall-clock time has exhausted the ceiling.
+    pub fn record_time_checkpoint(&mut self, now_millis: u64) {
+        self.time_checkpoint_millis = now_millis;
+    }
+
+    /// The last recorded time checkpoint, in monotonic milliseconds.
+    pub fn time_checkpoint(&self) -> u64 {
+        self.time_checkpoint_millis
     }
 
     /// Increment the spent counter for `kind` by `amount`.
@@ -62,10 +81,14 @@ impl BudgetState {
     }
 }
 
-/// Internal mutation for budget state. Exposed as pub(crate) so
-/// `BehaviorRuntime` can commit spends (the only authorized mutator).
+/// Commit a spend for `kind` with `amount`.
 pub(crate) fn commit_spend(state: &mut BudgetState, kind: BudgetKind, amount: u64) {
     state.spend(kind, amount);
+}
+
+/// Record a time checkpoint at `now_millis`.
+pub(crate) fn record_time(state: &mut BudgetState, now_millis: u64) {
+    state.record_time_checkpoint(now_millis);
 }
 
 #[cfg(test)]
