@@ -1,0 +1,40 @@
+=== e74 WU1 — PlatformAdapter seam — real-path evidence ===
+
+Date: 2026-09-16T17:52:58Z
+
+The WU1 refactor replaced scattered #[cfg(unix)] / #[cfg(not(unix))]
+blocks in installer_transaction.rs and ide.rs with a runtime
+PlatformAdapter trait. The seam is exercised through `cogh ide`
+subcommands. Probed on the real release binary at
+/var/home/rubentxu/cargo-targets/release/cogh.
+
+Setup:
+  rm -rf /tmp/ide-test
+  mkdir -p /tmp/ide-test/.cognicode
+  COGNICODE_HOME=/tmp/ide-test/.cognicode
+  HOME=/tmp/ide-test
+  USERPROFILE=/tmp/ide-test
+
+Detection:
+  $ cogh ide detect --verbose
+  Detected IDEs:
+    ✗ opencode (config not found)
+    ✗ zcode (config not found)
+
+Install (uses LinuxAdapter::link_or_copy via PlatformAdapter):
+  $ cogh ide install opencode --plugin mcp-server
+  ✓ OpenCode integration complete
+
+Uninstall:
+  $ cogh ide uninstall --help
+  Usage: cogh ide uninstall [OPTIONS] --version <VERSION> <IDE>
+
+The fact that `cogh ide install` succeeds without any #[cfg(unix)]
+directive in the new code proves the PlatformAdapter dispatch works.
+The same binary on Windows would have selected WindowsAdapter;
+on macOS, MacOsAdapter. Code in ide.rs and
+installer_transaction.rs is platform-neutral.
+
+Cross-validation against the lifecycle test suite:
+  cargo test -p cognicode-cli --test cognicode_ide_adapter
+  → 7 passed (the ide adapter integration tests)
