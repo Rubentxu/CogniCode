@@ -438,8 +438,7 @@ fn with_bundle(outcome: ExecutionOutcome, bundle_id: EvidenceBundleId) -> Execut
 mod tests {
     use super::*;
     use crate::application::portable_execution::outcome::{
-        BoundedViolation, ExecutionOutcome, Failure, Missing, MissingCapability, SuccessDetail,
-        ViolatedBound,
+        ExecutionOutcome, MissingCapability, ViolatedBound,
     };
     use crate::application::portable_execution::spec::{ExecutionBounds, RequiresIsolation};
     use crate::domain::naming::NamespacedName;
@@ -504,8 +503,8 @@ mod tests {
                 // We DO NOT have a Pass / authority signal here.
                 // The bridge (evidence_translate) maps Success to
                 // FactSlot::Dangling which the gate rejects.
-                assert!(matches!(detail.stdout, Some(_)));
-                assert!(matches!(detail.stderr, Some(_)));
+                assert!(detail.stdout.is_some());
+                assert!(detail.stderr.is_some());
             }
             other => panic!("expected Success, got {:?}", other),
         }

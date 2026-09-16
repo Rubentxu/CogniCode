@@ -81,8 +81,7 @@ pub enum BaselineError {
 /// 3. For each file in order:
 ///    a. SHA-256 digest the bytes via `content_digest`.
 ///    b. Record `(path, sha256)`.
-///    c. Accumulate into a running FNV-1a 64-bit hash over the
-///       SHA-256 hex string.
+///    c. Accumulate into a running FNV-1a 64-bit hash over the SHA-256 hex string.
 /// 4. Hex-encode the final FNV-1a state as `composite`.
 pub fn compute_baseline(files: &[BaselineFile]) -> Result<BaselineDigest, BaselineError> {
     if files.is_empty() {

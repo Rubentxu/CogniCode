@@ -155,7 +155,7 @@ pub fn compare_platforms<N: PlatformNormaliser>(
             .iter()
             .map(|o| (o.platform, normaliser.canonicalize(&o.raw)))
             .collect();
-        canonicals.sort_by(|a, b| a.0.cmp(&b.0));
+        canonicals.sort_by_key(|(p, _)| *p);
         let first = &canonicals[0].1;
         let mut divergent: Vec<PlatformKind> = Vec::new();
         for (p, c) in &canonicals[1..] {

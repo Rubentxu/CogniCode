@@ -66,7 +66,7 @@ mod closure_gate {
         // (3) Synthesise observations: all must_observe fired;
         //     the must_not_observe signals are absent (raw is
         //     empty for absent observations).
-        let mut observed_oracle_ids: BTreeSet<String> = corpus
+        let observed_oracle_ids: BTreeSet<String> = corpus
             .mutations
             .iter()
             .flat_map(|m| m.expected_oracle_ids.iter().cloned())

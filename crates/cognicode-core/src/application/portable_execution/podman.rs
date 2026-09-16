@@ -56,8 +56,9 @@
 //!     - Linux   -> `linux::discover()`
 //!     - macOS   -> `macos::discover()`
 //!     - Windows -> `windows::discover()`
-//!   On a host that does not match any of these, the function
-//!   returns `MissingCapability::HostNotEligible`.
+//!
+//! On a host that does not match any of these, the function returns
+//! `MissingCapability::HostNotEligible`.
 //!
 //! ## What this module does NOT do
 //!
@@ -493,7 +494,6 @@ pub fn host_podman_endpoint() -> Result<PodmanEndpoint, DiscoveryError> {
 /// job is to declare intent and surface the right
 /// `MissingCapability::HostNotEligible` when invoked on a host that
 /// does not match. The Linux path is the production path.
-
 #[cfg(target_os = "linux")]
 pub mod linux {
     use super::{DiscoveryError, PodmanEndpoint};

@@ -205,20 +205,15 @@ pub struct WorkspaceMount {
 }
 
 /// POSIX-style propagation flag. Backend-defined semantics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum MountPropagation {
     /// No propagation to peer mounts.
+    #[default]
     Private,
     /// Propagation is shared; children see peer changes.
     Shared,
     /// Slave propagation: receives but does not transmit.
     Slave,
-}
-
-impl Default for MountPropagation {
-    fn default() -> Self {
-        Self::Private
-    }
 }
 
 impl ExecutionSpec {

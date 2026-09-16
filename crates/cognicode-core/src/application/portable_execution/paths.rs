@@ -183,11 +183,14 @@ fn collapse_dot_segments(s: &str) -> String {
         match comp {
             "" | "." => continue,
             ".." => {
-                if let Some(top) = stack.last() {
-                    if *top != ".." && !is_root_marker(*top) {
-                        stack.pop();
-                        continue;
-                    }
+                let can_pop = stack
+                    .last()
+                    .copied()
+                    .map(|t| t != ".." && !is_root_marker(t))
+                    .unwrap_or(false);
+                if can_pop {
+                    stack.pop();
+                    continue;
                 }
                 stack.push("..");
             }
