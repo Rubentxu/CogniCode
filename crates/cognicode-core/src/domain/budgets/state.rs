@@ -62,8 +62,9 @@ impl BudgetState {
     }
 }
 
-/// Internal mutation for budget state. Exposed only to `BudgetAuthorizer`.
-pub(super) fn commit_spend(state: &mut BudgetState, kind: BudgetKind, amount: u64) {
+/// Internal mutation for budget state. Exposed as pub(crate) so
+/// `BehaviorRuntime` can commit spends (the only authorized mutator).
+pub(crate) fn commit_spend(state: &mut BudgetState, kind: BudgetKind, amount: u64) {
     state.spend(kind, amount);
 }
 

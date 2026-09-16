@@ -42,6 +42,8 @@ use cognicode_core::domain::behaviors::{
     BehaviorEffect, BehaviorEffectKind, BehaviorEffectSink, BehaviorPermit, BehaviorRuntime,
     FactDraft,
 };
+#[cfg(any(test, feature = "test-support"))]
+use cognicode_core::application::behaviors::MockClock;
 use cognicode_core::domain::evidence_kernel::bootstrap::bootstrap_registry;
 use cognicode_core::domain::evidence_kernel::fact::{
     Fact, FactValue, ProducerKind, ProvenanceRecord,
@@ -215,6 +217,7 @@ async fn u52_an_agent_behavior_cannot_commit_a_valid_fact() {
         .expect("read");
 
     let mut sink = BufferingSink::default();
+    let clock = MockClock::start();
     let outcome = BehaviorRuntime::new(&log, EventTime::from_millis(2))
         .run(
             &permit,
@@ -223,6 +226,7 @@ async fn u52_an_agent_behavior_cannot_commit_a_valid_fact() {
                 draft: valid_draft(),
             },
             &mut sink,
+            &clock,
         )
         .await
         .expect("the run itself succeeds: a refusal is an outcome, not a crash");
@@ -328,6 +332,7 @@ async fn u52_the_same_fact_is_accepted_from_a_curated_pure_derivation() {
     assert!(!permit.admitted().was_downgraded());
 
     let mut sink = BufferingSink::default();
+    let clock = MockClock::start();
     let outcome = BehaviorRuntime::new(&log, EventTime::from_millis(2))
         .run(
             &permit,
@@ -336,6 +341,7 @@ async fn u52_the_same_fact_is_accepted_from_a_curated_pure_derivation() {
                 draft: valid_draft(),
             },
             &mut sink,
+            &clock,
         )
         .await
         .unwrap();
@@ -414,8 +420,9 @@ async fn u52_a_behavior_keeps_what_its_downgraded_class_still_allows() {
     .unwrap();
 
     let mut sink = BufferingSink::default();
+    let clock = MockClock::start();
     let outcome = BehaviorRuntime::new(&log, EventTime::from_millis(3))
-        .run(&permit, &context(Some(trigger)), &WantsToPropose, &mut sink)
+        .run(&permit, &context(Some(trigger)), &WantsToPropose, &mut sink, &clock)
         .await
         .unwrap();
 
@@ -454,8 +461,9 @@ async fn u52_requesting_an_analysis_grants_no_new_authority() {
     .unwrap();
 
     let mut sink = BufferingSink::default();
+    let clock = MockClock::start();
     let outcome = BehaviorRuntime::new(&log, EventTime::from_millis(4))
-        .run(&permit, &context(Some(trigger)), &WantsAnalysis, &mut sink)
+        .run(&permit, &context(Some(trigger)), &WantsAnalysis, &mut sink, &clock)
         .await
         .unwrap();
 
@@ -499,6 +507,7 @@ async fn u52_the_log_records_the_effective_class_and_the_claim() {
         BehaviorAdmission::admit(declaring_pure_derivation(), AdmissionSource::AiGenerated)
             .unwrap();
     let mut sink = BufferingSink::default();
+    let clock = MockClock::start();
     let outcome = BehaviorRuntime::new(&log, EventTime::from_millis(5))
         .run(
             &permit,
@@ -507,6 +516,7 @@ async fn u52_the_log_records_the_effective_class_and_the_claim() {
                 draft: valid_draft(),
             },
             &mut sink,
+            &clock,
         )
         .await
         .unwrap();

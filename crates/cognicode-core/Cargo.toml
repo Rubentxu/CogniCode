@@ -38,6 +38,11 @@ evidence-kernel = []
 # CFG / dominators / slicing remain on the default build (WASM-clean).
 # Off by default.
 program-analysis-server = []
+# `test-support` enables test utilities that need to be compiled into the
+# library even when running integration tests (where cfg(test) is not active
+# for the library itself). Currently gates `MockClock`.
+# Off by default.
+test-support = []
 
 [dependencies]
 # Proc macros for tool definitions

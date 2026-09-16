@@ -1,21 +1,19 @@
-//! The minimal behavior runtime (M7.3, cycle e64, ADR-044).
+//! The minimal governed behavior runtime (M7.3 e64 / M7.4 e65).
 //!
-//! ## What this is
+//! ## Authorization + Budget enforcement
 //!
 //! ```text
 //! permit ──► start execution ──► produce/attempt effect
 //!                                      │
-//!                              authorize (policy table)
+//!                              authorize (policy table)   ← e64
 //!                                      │
-//!                        accept ──► adapter ;  reject ──► policy event
-//! ```
+//!                          check budget ceiling          ← e65
+//!                                      │
+//!               accept ──► adapter ;  reject ──► policy + exhaustion event
 //!
-//! ## What this deliberately is not
-//!
-//! No subscription matching, no scheduler, no retry, no backoff, no workers, no
-//! parallel behaviors, no durable queue, no transport. None of it is needed to
-//! answer the question this cut exists to answer — *is the authority boundary
-//! real?* — and building it first would mean building it on an unproven boundary.
+//! Note: this implementation deliberately does not include subscriptions,
+//! scheduling, retries, backoff, workers, parallel behaviors, durable queues,
+//! or transports — those concerns are deferred beyond M7.4.
 //!
 //! ## The shape of the guarantee
 //!
@@ -25,7 +23,7 @@
 //! therefore structural: there is no branch in which an unauthorized effect is
 //! handed to an adapter and undone afterwards.
 //!
-//! ## Two records of every run
+//! ## Two records of every run (e64) + budget exhaustion event (e65)
 //!
 //! `behavior.started` is caused by the execution's `trigger_event` — the event
 //! that originated the execution, not the previous log entry — and the
@@ -33,10 +31,15 @@
 //! `causal_chain(rejection)` read as
 //! `[trigger, behavior.started, policy.behavior_output_rejected]`.
 //!
-//! Pure domain: the log and the effect sink are ports.
+//! When a budget ceiling is exceeded, the runtime additionally emits
+//! `execution.budget_exhausted` caused by the `behavior_output_rejected` event.
+//!
+//! Domain ports: the log and the effect sink. Clock is an application port.
 
 use super::admission::BehaviorPermit;
 use super::class::{BehaviorAuthorityPolicy, BehaviorClass, BehaviorEffectKind};
+use crate::application::behaviors::Clock;
+use crate::domain::budgets::{self, BudgetAuthorizer, BudgetExhausted, BudgetState};
 use crate::domain::execution::ExecutionContext;
 use crate::domain::intelligence_log::event::{EventTime, IntelligenceEvent, NewIntelligenceEvent};
 use crate::domain::intelligence_log::kind::{ActorRef, EventKind, EventKinds};
@@ -216,12 +219,21 @@ pub struct BehaviorOutcome {
     pub rejection_events: Vec<EventId>,
     /// The `behavior.completed` event, if the run finished cleanly.
     pub completed_event: Option<EventId>,
+    /// Budget exhaustion records, in order of occurrence.
+    /// Each entry is `(BudgetExhausted, event_id)` where the event is
+    /// `execution.budget_exhausted` caused by the corresponding rejection event.
+    pub budget_exhaustions: Vec<(BudgetExhausted, EventId)>,
 }
 
 impl BehaviorOutcome {
     /// Whether any effect was refused.
     pub fn has_violations(&self) -> bool {
         !self.rejected.is_empty()
+    }
+
+    /// Whether any budget was exhausted during this run.
+    pub fn has_budget_exhaustions(&self) -> bool {
+        !self.budget_exhaustions.is_empty()
     }
 }
 
@@ -237,20 +249,40 @@ impl<'a> BehaviorRuntime<'a> {
         Self { log, now }
     }
 
-    /// Run an admitted behavior, authorizing every effect before the sink.
+    /// Run an admitted behavior, authorizing every effect and enforcing budget
+    /// ceilings before the sink is reached.
+    ///
+    /// The execution order for each effect is:
+    ///
+    /// 1. Authority check (`BehaviorAuthorityPolicy::allows`) — e64 seam
+    /// 2. Budget check (`BudgetAuthorizer::check`) — e65 seam
+    /// 3. Sink dispatch — only reached if both pass
+    /// 4. Budget commit (`BudgetAuthorizer::commit`) — only on confirmed sink success
+    ///
+    /// When a budget ceiling is exceeded, the runtime emits **both**
+    /// `policy.behavior_output_rejected` and `execution.budget_exhausted`.
+    /// The behavior continues running: subsequent effects are checked and refused
+    /// independently.
     pub async fn run(
         &self,
         permit: &BehaviorPermit,
         context: &ExecutionContext,
         behavior: &dyn Behavior,
         sink: &mut dyn BehaviorEffectSink,
+        clock: &dyn Clock,
     ) -> Result<BehaviorOutcome, BehaviorRuntimeError> {
         let admitted = permit.admitted();
         let class = admitted.effective_class();
+        let budget_decl = permit.budget_declaration();
 
         // The actor is the behavior, not the caller: the log must attribute the
         // act to whatever actually did it.
         let actor = ActorRef::behavior(admitted.id().as_str());
+
+        // Budget state: owned by this execution, starts at wall-clock start time.
+        let started_at = clock.now_millis();
+        let mut budget_state = BudgetState::new(budget_decl, started_at);
+        let authorizer = BudgetAuthorizer::new(budget_decl.clone());
 
         let started_event = self
             .append(
@@ -277,41 +309,133 @@ impl<'a> BehaviorRuntime<'a> {
             rejected: Vec::new(),
             rejection_events: Vec::new(),
             completed_event: None,
+            budget_exhaustions: Vec::new(),
         };
 
         for effect in behavior.execute(context) {
             let kind = effect.kind();
-            if BehaviorAuthorityPolicy::allows(class, kind) {
-                sink.apply(&effect).map_err(BehaviorRuntimeError::Sink)?;
-                outcome.accepted.push(kind);
+
+            // Step 1: authority check (e64 seam — unchanged).
+            if !BehaviorAuthorityPolicy::allows(class, kind) {
+                // Refused *before* the sink: nothing for an adapter to undo.
+                let violation = PolicyViolation {
+                    behavior_id: admitted.id().as_str().to_string(),
+                    class,
+                    effect: kind,
+                    detail: effect.describe(),
+                };
+                let event = self
+                    .append(
+                        context,
+                        &actor,
+                        EventKinds::behavior_output_rejected(),
+                        payload(&[
+                            ("behavior_id", violation.behavior_id.clone()),
+                            ("class", class.name().to_string()),
+                            ("effect", kind.name().to_string()),
+                            ("reason", violation.reason()),
+                            ("detail", violation.detail.clone()),
+                            ("execution_id", context.execution_id.to_string()),
+                        ])?,
+                        Some(started_event),
+                    )
+                    .await?;
+                outcome.rejection_events.push(event);
+                outcome.rejected.push(violation);
                 continue;
             }
 
-            // Refused *before* the sink: nothing for an adapter to undo.
-            let violation = PolicyViolation {
-                behavior_id: admitted.id().as_str().to_string(),
-                class,
-                effect: kind,
-                detail: effect.describe(),
-            };
-            let event = self
-                .append(
-                    context,
-                    &actor,
-                    EventKinds::behavior_output_rejected(),
-                    payload(&[
-                        ("behavior_id", violation.behavior_id.clone()),
-                        ("class", class.name().to_string()),
-                        ("effect", kind.name().to_string()),
-                        ("reason", violation.reason()),
-                        ("detail", violation.detail.clone()),
-                        ("execution_id", context.execution_id.to_string()),
-                    ])?,
-                    Some(started_event),
-                )
-                .await?;
-            outcome.rejection_events.push(event);
-            outcome.rejected.push(violation);
+            // Step 2: budget check (e65 seam).
+            // Map each effect kind to the budget kind(s) it charges.
+            let now_millis = clock.now_millis();
+            let mut budget_exhausted: Option<BudgetExhausted> = None;
+
+            // Check Time budget (wall-clock elapsed).
+            if let Err(e) = authorizer.check(
+                &budget_state,
+                budgets::BudgetKind::Time,
+                1, // each effect consumes 1 time unit for counting purposes
+                now_millis,
+            ) {
+                budget_exhausted = Some(e);
+            }
+
+            // Check EffectCount budget (each effect is one count).
+            if budget_exhausted.is_none() {
+                if let Err(e) = authorizer.check(
+                    &budget_state,
+                    budgets::BudgetKind::EffectCount,
+                    1,
+                    now_millis,
+                ) {
+                    budget_exhausted = Some(e);
+                }
+            }
+
+            // Step 2b: refusal path — budget exceeded.
+            if let Some(exhaustion) = budget_exhausted {
+                let violation = PolicyViolation {
+                    behavior_id: admitted.id().as_str().to_string(),
+                    class,
+                    effect: kind,
+                    detail: effect.describe(),
+                };
+                let rejection_event = self
+                    .append(
+                        context,
+                        &actor,
+                        EventKinds::behavior_output_rejected(),
+                        payload(&[
+                            ("behavior_id", violation.behavior_id.clone()),
+                            ("class", class.name().to_string()),
+                            ("effect", kind.name().to_string()),
+                            ("reason", "budget_exhausted".to_string()),
+                            ("detail", violation.detail.clone()),
+                            ("execution_id", context.execution_id.to_string()),
+                        ])?,
+                        Some(started_event),
+                    )
+                    .await?;
+
+                // Emit budget exhaustion event caused by the rejection.
+                let exhaustion_event = self
+                    .append(
+                        context,
+                        &actor,
+                        EventKinds::behavior_budget_exhausted(),
+                        budget_payload(&[
+                            ("behavior_id", admitted.id().as_str().to_string()),
+                            ("class", class.name().to_string()),
+                            ("kind", exhaustion.kind.name().to_string()),
+                            ("remaining", exhaustion.remaining.to_string()),
+                            ("attempted", exhaustion.attempted.to_string()),
+                            ("execution_id", context.execution_id.to_string()),
+                        ])?,
+                        Some(rejection_event),
+                    )
+                    .await?;
+
+                outcome.rejection_events.push(rejection_event);
+                outcome.rejected.push(violation);
+                outcome.budget_exhaustions.push((exhaustion, exhaustion_event));
+                continue;
+            }
+
+            // Step 3: sink dispatch (only reached when both authority and budget pass).
+            sink.apply(&effect).map_err(BehaviorRuntimeError::Sink)?;
+
+            // Step 4: budget commit — record what was actually spent.
+            let after_millis = clock.now_millis();
+            authorizer.commit(&mut budget_state, budgets::BudgetKind::Time, 1);
+            authorizer.commit(&mut budget_state, budgets::BudgetKind::EffectCount, 1);
+            // Also record the wall-clock elapsed for time budget tracking.
+            budgets::state::commit_spend(
+                &mut budget_state,
+                budgets::BudgetKind::Time,
+                after_millis.saturating_sub(now_millis),
+            );
+
+            outcome.accepted.push(kind);
         }
 
         if !outcome.has_violations() {
@@ -365,6 +489,20 @@ impl<'a> BehaviorRuntime<'a> {
 fn payload(fields: &[(&str, String)]) -> Result<EventPayloadRef, BehaviorRuntimeError> {
     let mut built =
         BoundedEventPayload::new("behavior execution").map_err(BehaviorRuntimeError::Payload)?;
+    for (key, value) in fields {
+        built = built
+            .with_field(*key, value.clone())
+            .map_err(BehaviorRuntimeError::Payload)?;
+    }
+    Ok(EventPayloadRef::inline(built))
+}
+
+/// The bounded payload of a budget exhaustion event.
+fn budget_payload(
+    fields: &[(&str, String)],
+) -> Result<EventPayloadRef, BehaviorRuntimeError> {
+    let mut built = BoundedEventPayload::new("budget exhausted")
+        .map_err(BehaviorRuntimeError::Payload)?;
     for (key, value) in fields {
         built = built
             .with_field(*key, value.clone())

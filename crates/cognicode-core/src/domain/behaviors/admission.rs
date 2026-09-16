@@ -35,6 +35,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use super::class::{BehaviorAuthorityPolicy, BehaviorClass, BehaviorEffectKind};
+use crate::domain::budgets::BudgetDeclaration;
 use crate::domain::naming::{NamespacedError, NamespacedName};
 use crate::domain::trust::AdmissionSource;
 
@@ -181,6 +182,7 @@ pub struct AdmittedBehavior {
     definition: BehaviorDefinition,
     effective_class: BehaviorClass,
     source: AdmissionSource,
+    budget_declaration: BudgetDeclaration,
 }
 
 impl AdmittedBehavior {
@@ -220,6 +222,11 @@ impl AdmittedBehavior {
     pub fn may(&self, effect: BehaviorEffectKind) -> bool {
         BehaviorAuthorityPolicy::allows(self.effective_class, effect)
     }
+
+    /// The budget ceiling declared for this behavior's execution.
+    pub fn budget_declaration(&self) -> &BudgetDeclaration {
+        &self.budget_declaration
+    }
 }
 
 /// Private seal: only this module can construct a [`BehaviorPermit`].
@@ -257,6 +264,11 @@ impl BehaviorPermit {
     pub fn may(&self, effect: BehaviorEffectKind) -> bool {
         self.admitted.may(effect)
     }
+
+    /// The budget ceiling for this behavior's execution.
+    pub fn budget_declaration(&self) -> &BudgetDeclaration {
+        self.admitted.budget_declaration()
+    }
 }
 
 /// The single trust boundary for behaviors.
@@ -264,7 +276,7 @@ impl BehaviorPermit {
 pub struct BehaviorAdmission;
 
 impl BehaviorAdmission {
-    /// Admit a behavior definition from `source`.
+    /// Admit a behavior definition from `source` with no declared budget.
     ///
     /// The effective class is the declared one **only** for
     /// [`AdmissionSource::Builtin`] and [`AdmissionSource::HumanCurated`].
@@ -273,6 +285,23 @@ impl BehaviorAdmission {
     pub fn admit(
         definition: BehaviorDefinition,
         source: AdmissionSource,
+    ) -> Result<BehaviorPermit, BehaviorAdmissionError> {
+        Self::admit_with_budget(definition, source, BudgetDeclaration::none())
+    }
+
+    /// Admit a behavior definition from `source` with an explicit budget ceiling.
+    ///
+    /// The effective class is the declared one **only** for
+    /// [`AdmissionSource::Builtin`] and [`AdmissionSource::HumanCurated`].
+    /// Anything else runs as [`BehaviorClass::AgentBehavior`]: a declaration
+    /// never escalates.
+    ///
+    /// The budget declaration is stored on the permit and enforced at runtime.
+    /// A behavior with no declared budgets runs unbounded.
+    pub fn admit_with_budget(
+        definition: BehaviorDefinition,
+        source: AdmissionSource,
+        budget: BudgetDeclaration,
     ) -> Result<BehaviorPermit, BehaviorAdmissionError> {
         let effective_class = match source {
             AdmissionSource::Builtin | AdmissionSource::HumanCurated => definition.declared_class,
@@ -285,6 +314,7 @@ impl BehaviorAdmission {
                 definition,
                 effective_class,
                 source,
+                budget_declaration: budget,
             },
             _seal: BehaviorSeal(()),
         })
