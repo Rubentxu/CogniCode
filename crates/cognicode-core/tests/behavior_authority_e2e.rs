@@ -36,14 +36,14 @@
 #![cfg(feature = "evidence-kernel")]
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
+use cognicode_core::application::behaviors::Clock;
 use cognicode_core::domain::behaviors::{
     Behavior, BehaviorAdmission, BehaviorAdmissionError, BehaviorClass, BehaviorDefinition,
     BehaviorEffect, BehaviorEffectKind, BehaviorEffectSink, BehaviorPermit, BehaviorRuntime,
     FactDraft,
 };
-#[cfg(any(test, feature = "test-support"))]
-use cognicode_core::application::behaviors::MockClock;
 use cognicode_core::domain::evidence_kernel::bootstrap::bootstrap_registry;
 use cognicode_core::domain::evidence_kernel::fact::{
     Fact, FactValue, ProducerKind, ProvenanceRecord,
@@ -65,6 +65,25 @@ use cognicode_core::infrastructure::evidence_kernel::in_memory::{
     InMemoryFactStore, InMemorySchemaRegistry,
 };
 use cognicode_core::infrastructure::intelligence_log::InMemoryEventLog;
+
+// ── Local clock fake (same pattern as behavior_budget_e2e.rs) ───────────────────
+
+#[derive(Default)]
+struct FakeClock {
+    millis: AtomicU64,
+}
+
+impl FakeClock {
+    fn advance(&self, ms: u64) {
+        self.millis.fetch_add(ms, Ordering::SeqCst);
+    }
+}
+
+impl Clock for FakeClock {
+    fn now_millis(&self) -> u64 {
+        self.millis.load(Ordering::SeqCst)
+    }
+}
 
 const SNAP: u64 = 1;
 
@@ -217,7 +236,7 @@ async fn u52_an_agent_behavior_cannot_commit_a_valid_fact() {
         .expect("read");
 
     let mut sink = BufferingSink::default();
-    let clock = MockClock::start();
+    let clock = FakeClock::default();
     let outcome = BehaviorRuntime::new(&log, EventTime::from_millis(2))
         .run(
             &permit,
@@ -332,7 +351,7 @@ async fn u52_the_same_fact_is_accepted_from_a_curated_pure_derivation() {
     assert!(!permit.admitted().was_downgraded());
 
     let mut sink = BufferingSink::default();
-    let clock = MockClock::start();
+    let clock = FakeClock::default();
     let outcome = BehaviorRuntime::new(&log, EventTime::from_millis(2))
         .run(
             &permit,
@@ -420,9 +439,15 @@ async fn u52_a_behavior_keeps_what_its_downgraded_class_still_allows() {
     .unwrap();
 
     let mut sink = BufferingSink::default();
-    let clock = MockClock::start();
+    let clock = FakeClock::default();
     let outcome = BehaviorRuntime::new(&log, EventTime::from_millis(3))
-        .run(&permit, &context(Some(trigger)), &WantsToPropose, &mut sink, &clock)
+        .run(
+            &permit,
+            &context(Some(trigger)),
+            &WantsToPropose,
+            &mut sink,
+            &clock,
+        )
         .await
         .unwrap();
 
@@ -461,9 +486,15 @@ async fn u52_requesting_an_analysis_grants_no_new_authority() {
     .unwrap();
 
     let mut sink = BufferingSink::default();
-    let clock = MockClock::start();
+    let clock = FakeClock::default();
     let outcome = BehaviorRuntime::new(&log, EventTime::from_millis(4))
-        .run(&permit, &context(Some(trigger)), &WantsAnalysis, &mut sink, &clock)
+        .run(
+            &permit,
+            &context(Some(trigger)),
+            &WantsAnalysis,
+            &mut sink,
+            &clock,
+        )
         .await
         .unwrap();
 
@@ -507,7 +538,7 @@ async fn u52_the_log_records_the_effective_class_and_the_claim() {
         BehaviorAdmission::admit(declaring_pure_derivation(), AdmissionSource::AiGenerated)
             .unwrap();
     let mut sink = BufferingSink::default();
-    let clock = MockClock::start();
+    let clock = FakeClock::default();
     let outcome = BehaviorRuntime::new(&log, EventTime::from_millis(5))
         .run(
             &permit,
