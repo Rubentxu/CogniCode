@@ -80,10 +80,11 @@ pub struct TrialInput {
     /// Work results from running the affected-work plan over the
     /// candidate.
     pub work_results: Vec<PerWorkReport>,
-    /// Evidence bundle assembled during the trial.
+    /// Evidence bundle assembled during the trial. The
+    /// [`TrialExecutor`](super::executor::TrialExecutor) will evaluate
+    /// this bundle against its configured [`PolicySpec`] to produce
+    /// the [`PolicyDecision`] (the verdict).
     pub evidence_bundle: EvidenceBundle,
-    /// Gate decision produced by e69's PolicyGate over the bundle.
-    pub gate: PolicyDecision,
 }
 
 /// Lineage-labelled envelope of a trial run.
@@ -122,15 +123,20 @@ pub struct TrialEvidence {
     pub gate: PolicyDecision,
 }
 
-/// Pure composition: assemble a [`TrialEvidence`] from a [`TrialInput`]
-/// and a caller-supplied [`TrialId`].
+/// Pure composition: assemble a [`TrialEvidence`] from a [`TrialInput`],
+/// a caller-supplied [`TrialId`], and a [`PolicyDecision`].
 ///
-/// This is the entire "executor" responsibility for WU2: there is no
-/// effectful behaviour, no clock access, no graph store. The function
-/// is total and deterministic; the only inputs are the proposal, the
-/// world, the snapshots, the facts, the work results, the bundle, the
-/// gate, and the trial id.
-pub fn assemble_trial_evidence(trial_id: TrialId, input: TrialInput) -> TrialEvidence {
+/// The trial executor computes the gate decision by evaluating the
+/// input's evidence bundle against a configured [`PolicySpec`]. The
+/// assembler itself is pure: it does not run the gate. This split
+/// keeps `assemble_trial_evidence` total and deterministic; the
+/// gate-evaluation side-effect lives in
+/// [`super::executor::DefaultTrialExecutor`].
+pub fn assemble_trial_evidence(
+    trial_id: TrialId,
+    input: TrialInput,
+    gate: PolicyDecision,
+) -> TrialEvidence {
     TrialEvidence {
         trial_id,
         proposal_id: input.proposal.id,
@@ -140,6 +146,6 @@ pub fn assemble_trial_evidence(trial_id: TrialId, input: TrialInput) -> TrialEvi
         candidate_facts: input.candidate_facts,
         work_results: input.work_results,
         evidence_bundle: input.evidence_bundle,
-        gate: input.gate,
+        gate,
     }
 }

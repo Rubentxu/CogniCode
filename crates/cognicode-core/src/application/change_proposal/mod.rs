@@ -21,10 +21,15 @@
 //! [`TrialEvidence`]: crate::application::change_proposal::trial::TrialEvidence
 
 #[cfg(feature = "evidence-kernel")]
+pub mod executor;
+#[cfg(feature = "evidence-kernel")]
 pub mod proposal;
 #[cfg(feature = "evidence-kernel")]
 pub mod trial;
 
+#[cfg(all(test, feature = "evidence-kernel"))]
+#[path = "executor_tests.rs"]
+mod executor_tests;
 #[cfg(all(test, feature = "evidence-kernel"))]
 #[path = "proposal_tests.rs"]
 mod proposal_tests;

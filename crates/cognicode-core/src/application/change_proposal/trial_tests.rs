@@ -95,11 +95,10 @@ fn assemble_trial_evidence_is_deterministic() {
         candidate_facts: vec![],
         work_results: vec![],
         evidence_bundle: empty_bundle(),
-        gate: passing_decision(),
     };
 
-    let ev1 = assemble_trial_evidence(trial_id.clone(), input.clone());
-    let ev2 = assemble_trial_evidence(trial_id.clone(), input);
+    let ev1 = assemble_trial_evidence(trial_id.clone(), input.clone(), passing_decision());
+    let ev2 = assemble_trial_evidence(trial_id.clone(), input, passing_decision());
 
     assert_eq!(ev1, ev2);
 }
@@ -119,10 +118,9 @@ fn trial_evidence_carries_lineage_labels() {
         candidate_facts: vec![],
         work_results: vec![],
         evidence_bundle: empty_bundle(),
-        gate: passing_decision(),
     };
 
-    let ev = assemble_trial_evidence(trial_id.clone(), input);
+    let ev = assemble_trial_evidence(trial_id.clone(), input, passing_decision());
 
     assert_eq!(ev.trial_id, trial_id);
     assert_eq!(ev.proposal_id, proposal.id);
@@ -148,10 +146,9 @@ fn trial_carries_policy_decision_without_synthesising_a_new_one() {
         candidate_facts: vec![],
         work_results: vec![],
         evidence_bundle: empty_bundle(),
-        gate: blocking_decision(),
     };
 
-    let ev = assemble_trial_evidence(TrialId::from_string("t-3"), input);
+    let ev = assemble_trial_evidence(TrialId::from_string("t-3"), input, blocking_decision());
     assert!(!ev.gate.is_pass());
     assert_eq!(ev.gate.outcome, PolicyOutcome::Block);
     assert_eq!(ev.gate.reasons.len(), 1);
@@ -180,10 +177,9 @@ fn trial_assembles_with_empty_candidate_facts() {
         candidate_facts: vec![], // config-only → no facts
         work_results: vec![],
         evidence_bundle: empty_bundle(),
-        gate: passing_decision(),
     };
 
-    let ev = assemble_trial_evidence(TrialId::from_string("t-cfg"), input);
+    let ev = assemble_trial_evidence(TrialId::from_string("t-cfg"), input, passing_decision());
     assert!(ev.candidate_facts.is_empty());
     assert!(ev.work_results.is_empty());
     assert!(ev.gate.is_pass());
@@ -203,10 +199,9 @@ fn trial_assembles_with_empty_work_results() {
         candidate_facts: vec![],
         work_results: vec![], // no scheduled work ran
         evidence_bundle: empty_bundle(),
-        gate: passing_decision(),
     };
 
-    let ev = assemble_trial_evidence(TrialId::from_string("t-empty"), input);
+    let ev = assemble_trial_evidence(TrialId::from_string("t-empty"), input, passing_decision());
     assert!(ev.work_results.is_empty());
     assert!(ev.candidate_facts.is_empty());
 }
@@ -238,10 +233,9 @@ fn trial_assembles_with_realistic_payload() {
                 raw: Some("thread main panicked".to_string()),
             }],
         ),
-        gate: blocking_decision(),
     };
 
-    let ev = assemble_trial_evidence(TrialId::from_string("t-real"), input);
+    let ev = assemble_trial_evidence(TrialId::from_string("t-real"), input, blocking_decision());
     assert_eq!(ev.evidence_bundle.id, EvidenceBundleId(42));
     assert_eq!(ev.evidence_bundle.len(), 1);
     assert!(!ev.gate.is_pass());
@@ -263,7 +257,6 @@ fn trial_input_carries_world_but_not_facts_inside_the_world() {
         candidate_facts: vec![],
         work_results: vec![],
         evidence_bundle: empty_bundle(),
-        gate: passing_decision(),
     };
 
     // The world's source_state is Base (it has no Forked variant),
