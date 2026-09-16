@@ -55,6 +55,9 @@ pub mod program_analysis;
 pub mod services;
 // e76 WU1 — self-hosting baseline. Composes canonical ingestion
 // primitives; no parallel digest scheme; no I/O on the FS.
+// Gated by `evidence-kernel` because it imports
+// `portable_execution::content_digest` for SHA-256 hashing.
+#[cfg(feature = "evidence-kernel")]
 pub mod self_hosting;
 // e72 WU1 — ChangeProposal (M9). Intent-only, no authority. Creation !=
 // authority. Author class (Human/Plugin/LlmAgent) is recorded for e73's
