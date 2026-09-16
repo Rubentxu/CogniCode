@@ -62,6 +62,54 @@ For granular commit history, see `git log v0.50.0..v0.86.0`.
 
 ## [Unreleased]
 
+### LSI program foundation — M6 / M7.1 / M7.2 / M7.3 / M7.4 (cycles e36 → e65)
+
+The Living Software Intelligence (LSI) program lands the evidence-kernel foundation
+plus the reactive runtime boundary. Cycles e36-e65 close M0-M3, M5, M6 and M7.1-7.4
+on the LSI roadmap (`docs/CogniCode_Living_Software_Intelligence/docs/roadmap/ROADMAP.md`).
+M4 (semantic provider pipeline) was delivered in e39/e39.1 separately.
+
+- **M0 / M1 — Baseline + Evidence Kernel Foundation** (e36): 47 tests on
+  `domain::evidence_kernel` (snapshot-pinned reads, LLM-provenance rejection,
+  per-`EventId` global sequence, fact round-trip, kernel idempotency).
+- **M2 — Projection Bridge** (e37): `CallGraphProjection::from_facts`,
+  `FactGenericGraphProjection` (multimodal-gated), 42/42 LSI goldens byte-identical,
+  equivalence harness with multi-lang-types fixture (QUARANTINED 0.5969).
+- **M3 — Stable Identity & Temporal Snapshots** (e38): continuity matcher
+  (tier mechanics T0-T3, fail-closed ambiguity), rename-evidence adapter,
+  identity-benchmark with 7 cases (line-shift 1.0000 / rename precision-recall 1.0000),
+  workspace-isolation suite (collisions=0).
+- **M5 — Program Analysis Core** (m5-*): 49 tests on `program_analysis::ast_lift`,
+  6 algorithm IDs wired into MCP (`cfg_per_function`, `dominators_cfg`,
+  `slice_forward`, `slice_backward`, `taint_flow`, `interproc_summary`),
+  conformance harness, replay contract via SHA-256 digest.
+- **M6 — Findings & Detector IR** (e52 → e62.4): Detector IR with fail-loud validator,
+  3 paradigms (AST / Graph / Dataflow) sharing the same core, M6 contract hardening,
+  authority verification, kernel snapshot correctness (U42 prerequisite), grounding refs
+  and canonical grounding (U42 closed, 3 adversarial acceptance tests).
+- **M7.1 — Intelligence Event Log** (e63, U50): causal log with namespaced kinds,
+  bounded payloads (`Inline | Artifact{digest}`), no clock in the domain,
+  cause-existence-before-reference invariant, all-or-nothing append,
+  `InMemoryEventLog` with one global sequence + `EventId → WorkspaceId` index.
+- **M7.2 / M7.3 — Execution identity + Behavior authority** (e64, U52):
+  `ExecutionContext` unified (scope / actor / correlation / trigger_event);
+  `DetectorExecutionRef.context`; `AnalysisInput.scope == context.scope` invariant;
+  `BehaviorAuthorityPolicy` table; `BehaviorAdmission` → sealed `BehaviorPermit`;
+  `AiGenerated` / `Imported` downgrade to `AgentBehavior` (a declaration never escalates);
+  `policy.behavior_output_rejected` event on authority refusal.
+- **M7.4 — Behavior budgets + observable exhaustion** (e65): `BudgetKind` enum
+  (Time / EffectCount / FactVisits), `BudgetAuthorizer` runs AFTER authority
+  (refusal does NOT decrement); `BehaviorRuntime` accepts `&dyn Clock` (Clock port
+  in `application::behaviors`); `CausalRecorder::record_behavior_budget_exhausted`
+  consumes `ExecutionContext` as a unit; `behavior.budget_exhausted` event with
+  `caused_by = behavior.started`; FakeClock is local to the integration test
+  (port is consumable from outside the crate). UAT-U52 acceptance: 6/6 green;
+  deterministic counters vs temporal budget split; five-property atomicity
+  contract (effect does NOT reach sink; `BehaviorOutcome::BudgetExhausted`;
+  causal chain `[trigger, behavior.started, behavior.budget_exhausted]`;
+  FactStore count unchanged). 79/79 scoped tests green; e64 / e63 / e62.4
+  regressions clean.
+
 ### v1.0.0 — operational cut (pending pre-cut gates)
 
 The actual v1.0.0 tag cut is gated by:
