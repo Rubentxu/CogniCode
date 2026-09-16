@@ -35,6 +35,9 @@ pub enum InstallerError {
     #[error("SHA256 mismatch: downloaded file does not match expected hash")]
     Sha256Mismatch,
 
+    #[error("shim install error: {0}")]
+    ShimInstall(String),
+
     #[error("unknown error: {0}")]
     Unknown(String),
 }

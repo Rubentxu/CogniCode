@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use crate::bundle_manifest::BundleManifest;
 use crate::error::{BundleManifestError, InstallerError};
 use crate::layout;
+use crate::platform_adapter;
 use crate::registry;
 use crate::rollback_journal::{RollbackJournal, SideEffect};
 use sha2::Digest;
@@ -162,24 +163,19 @@ fn advance_stage(
 
             // Create shims for each binary
             let install_dir = layout::install_dir(&manifest.version);
+            let adapter = platform_adapter::current_adapter();
             for comp in &manifest.components {
                 let bin_path = install_dir.join(&comp.name).join("bin").join(&comp.name);
                 if bin_path.exists() {
                     let shim_path = layout::shims_dir().join(&comp.name);
-                    if let Some(parent) = shim_path.parent() {
-                        std::fs::create_dir_all(parent)
-                            .map_err(|e| InstallerError::Io(shim_path.clone(), e))?;
-                    }
-                    #[cfg(unix)]
-                    std::os::unix::fs::symlink(&bin_path, &shim_path)
-                        .map_err(|e| InstallerError::Io(shim_path.clone(), e))?;
-                    #[cfg(not(unix))]
-                    std::fs::copy(&bin_path, &shim_path)
-                        .map_err(|e| InstallerError::Io(shim_path.clone(), e))?;
-                    journal.record(SideEffect::CreatedSymlink {
-                        link: shim_path,
-                        target: bin_path,
-                    });
+                    let effect = adapter
+                        .install_shim(&bin_path, &shim_path)
+                        .map_err(|e| InstallerError::ShimInstall(e.to_string()))?;
+                    let (link, target) = match effect {
+                        platform_adapter::ShimSideEffect::Symlinked { link, target } => (link, target),
+                        platform_adapter::ShimSideEffect::Copied { dest, source } => (dest, source),
+                    };
+                    journal.record(SideEffect::CreatedSymlink { link, target });
                 }
             }
             Ok(())

@@ -17,6 +17,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 
+use crate::platform_adapter;
+
 /// A step in an integrate / uninstall recipe.
 #[derive(Debug, Clone)]
 pub enum Step {
@@ -106,22 +108,14 @@ impl Step {
                 Ok(())
             }
             Step::Symlink { source, target } => {
-                if let Some(parent) = target.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-                #[cfg(unix)]
-                {
-                    std::os::unix::fs::symlink(source, target)
-                        .map_err(|e| anyhow!("symlink failed: {}", e))?;
-                }
-                #[cfg(not(unix))]
-                {
-                    if source.is_dir() {
-                        copy_dir_recursive(source, target)?;
-                    } else {
-                        std::fs::copy(source, target)?;
-                    }
-                }
+                // e74 WU1: route through the platform adapter so that
+                // Unix-family hosts symlink and Windows copies. This
+                // replaces the previous `cfg(unix)`/`cfg(not(unix))`
+                // duplication that mixed business policy with platform
+                // mechanics.
+                platform_adapter::current_adapter()
+                    .link_or_copy(source, target)
+                    .map_err(|e| anyhow!("link_or_copy failed: {}", e))?;
                 Ok(())
             }
         }
