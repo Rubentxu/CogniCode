@@ -53,7 +53,7 @@
 //! - Paths with spaces and Unicode: preserved verbatim after
 //!   normalization.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 /// The kind of host we are running on. Used to decide whether
 /// canonicalization should lowercase the path (Windows, macOS by

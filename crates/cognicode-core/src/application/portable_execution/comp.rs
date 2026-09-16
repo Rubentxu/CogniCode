@@ -43,7 +43,7 @@ use crate::application::local_ci::WorkExecutor;
 use crate::application::portable_execution::backend::ExecutionBackend;
 use crate::application::portable_execution::evidence_translate;
 use crate::application::portable_execution::outcome::{ExecutionOutcome, MissingCapability};
-use crate::application::portable_execution::spec::{ExecutionSpec, RequiresIsolation};
+use crate::application::portable_execution::spec::ExecutionSpec;
 
 /// Stable id used for the synthetic slot returned when the seam
 /// refuses to call the backend. Real producers carry slots that are

@@ -73,7 +73,7 @@ use std::time::{Duration, Instant};
 use crate::application::evidence_bundle::EvidenceBundleId;
 use crate::application::portable_execution::backend::{BackendCapabilities, ExecutionBackend};
 use crate::application::portable_execution::native::{
-    bounded_capture, wait_with_timeout, BoundedCapture, WaitOutcome, MAX_CAPTURED_BYTES,
+    bounded_capture, wait_with_timeout, WaitOutcome,
     NATIVE_BUNDLE_ID,
 };
 use crate::application::portable_execution::outcome::{

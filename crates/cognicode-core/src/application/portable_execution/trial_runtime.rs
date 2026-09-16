@@ -69,13 +69,11 @@ use std::collections::BTreeMap;
 use crate::application::change_proposal::executor::TrialExecutor;
 use crate::application::change_proposal::trial::{TrialEvidence, TrialId, TrialInput};
 use crate::application::change_tracking::planner::WorkId as CiWorkId;
-use crate::application::evidence_bundle::{
-    EvidenceBundle, EvidenceBundleId, ProducerSlot, ProducerSource,
-};
+use crate::application::evidence_bundle::{ProducerSlot, ProducerSource};
 use crate::application::evidence_bundle::BundleEntry;
 use crate::application::local_ci::WorkExecutor;
 use crate::application::policy_gate::{PolicyOutcome, PolicySpec};
-use crate::application::portable_execution::backend::{BackendCapabilities, ExecutionBackend};
+use crate::application::portable_execution::backend::ExecutionBackend;
 use crate::application::portable_execution::comp::BackendFacadeWorkExecutor;
 use crate::application::portable_execution::outcome::MissingCapability;
 

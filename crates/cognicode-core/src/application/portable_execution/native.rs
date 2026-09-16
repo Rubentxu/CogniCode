@@ -65,7 +65,6 @@
 //!   concept.
 
 use std::io::Read;
-use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -74,7 +73,7 @@ use crate::application::portable_execution::backend::{BackendCapabilities, Execu
 use crate::application::portable_execution::outcome::{
     Captured, ExecutionOutcome, Failure, Missing, MissingCapability,
 };
-use crate::application::portable_execution::spec::{ExecutionSpec, RequiresIsolation};
+use crate::application::portable_execution::spec::ExecutionSpec;
 
 /// Hard cap on captured stdout/stderr per stream. 64 KiB is large
 /// enough for typical test/build output and small enough to keep the
