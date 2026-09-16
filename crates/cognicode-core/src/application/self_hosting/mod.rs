@@ -37,15 +37,22 @@
 //! - `mutation_corpus_acceptance.rs` — end-to-end acceptance for
 //!   the WU3 mutation corpus (real source mutation applied).
 
+#[cfg(all(test, feature = "evidence-kernel"))]
 pub mod acceptance;
 pub mod baseline;
+#[cfg(all(test, feature = "evidence-kernel"))]
 pub mod baseline_edge_cases;
 pub mod closure;
+#[cfg(all(test, feature = "evidence-kernel"))]
 pub mod closure_replay_shape;
 pub mod mutation_corpus;
+#[cfg(all(test, feature = "evidence-kernel"))]
 pub mod mutation_corpus_acceptance;
 pub mod platform_equivalence;
+#[cfg(all(test, feature = "evidence-kernel"))]
 pub mod platform_equivalence_acceptance;
+#[cfg(all(test, feature = "evidence-kernel"))]
 pub mod platform_equivalence_edge_cases;
 pub mod prediction;
+#[cfg(all(test, feature = "evidence-kernel"))]
 pub mod prediction_acceptance;
