@@ -47,6 +47,7 @@ pub mod comp;
 pub mod evidence_translate;
 pub mod native;
 pub mod outcome;
+pub mod paths;
 pub mod podman;
 pub mod spec;
 
@@ -58,6 +59,9 @@ pub use native::{NativeProcessBackend, MAX_CAPTURED_BYTES, NATIVE_BUNDLE_ID};
 pub use outcome::{
     BoundedViolation, Captured, ExecutionOutcome, Failure, Missing, MissingCapability,
     SuccessDetail, ViolatedBound,
+};
+pub use paths::{
+    canonicalize, content_digest, host_path_for_spawn, CanonicalPath, ContentDigest, HostKind,
 };
 pub use podman::{
     default_discovery, host_podman_endpoint, DiscoveryError, PodmanBackend, PodmanDiscovery,
