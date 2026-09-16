@@ -1,0 +1,16 @@
+=== e74 install-smoke simulation ===
+Date: 2026-09-16T17:49:45Z
+Tarballs:
+  cognicode-v0.95.0-linux-x86-64.tar.gz (23.3 MB) → explorer-api, cognicode-mcp
+  cognicode-cli-v0.95.0-linux-x86-64.tar.gz (2.9 MB) → cogh
+
+Clean HOME: /tmp/smoke-home
+Stage dir: /tmp/smoke-stage
+
+cogh --version         → cogh 0.95.0
+cogh --help            → CogniCode version manager (10+ commands visible)
+cognicode-mcp --version → cognicode-mcp 0.95.0
+explorer-api --version → explorer-api 0.95.0
+
+All 3 binaries are the public release artifacts and respond
+correctly on a clean HOME with no install steps performed.

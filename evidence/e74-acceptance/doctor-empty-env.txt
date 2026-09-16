@@ -1,0 +1,9 @@
+==> cogh doctor (linux-x86-64 / linux / x86_64)
+  FAIL Core health          home /tmp/.cognicode does not exist
+    -> run `cogh install <profile>` to bootstrap the layout
+  FAIL MCP                  cognicode-mcp binary not found
+    -> install a profile that includes the Daemon kind (e.g. `reviewer`)
+  PASS Native analysis      host-native: parsing, canonical Facts, read-only analysis (no container runtime required)
+  UNAVAILABLE Isolation backend    no Podman/Docker/WSL/Hyper-V/VM detected
+    -> isolation is OPTIONAL; install one manually only if you need sandboxed project-code execution (e75). CogniCode core analysis works without any isolation backend.
+==> overall: UNHEALTHY

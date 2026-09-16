@@ -1,0 +1,19 @@
+=== e74 install-smoke job simulation (extended to all 3 binaries) ===
+Date: 2026-09-16T17:50:21Z
+Tarballs (matching release.yml):
+  cognicode-cli-v0.95.0-linux-x86-64.tar.gz → cogh
+  cognicode-v0.95.0-linux-x86-64.tar.gz     → explorer-api, cognicode-mcp
+
+Clean HOME: /tmp/fullsmoke/smoke-home with XDG_* + USERPROFILE aliased
+
+Smoke results:
+  cogh --version              → cogh 0.95.0
+  cognicode-mcp --version     → cognicode-mcp 0.95.0
+  explorer-api --version      → explorer-api 0.95.0
+  CogH --help | head -20      → prints command surface (visible above)
+
+The release.yml install-smoke job was extended to assert all three
+binaries on each lane. Previously it only checked cogh --version +
+cogh --help; the extended contract catches the failure mode where
+explorer-api or cognicode-mcp fails to build on a non-Linux runner
+(e.g. macOS aarch64 Windows MSVC edge cases).

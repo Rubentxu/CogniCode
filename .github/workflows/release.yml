@@ -102,6 +102,10 @@ jobs:
 
       - name: Build native binaries
         run: |
+          # --bin explorer-api is part of the cognicode-runtime package
+          # along with --bin explorer-mcp. We build the package
+          # (-p cognicode-runtime) and explicitly select the explorer-api
+          # binary; cognicode-mcp is built via its own -p path.
           cargo build --release \
             --target ${{ matrix.rust_target }} \
             -p cognicode-mcp \
@@ -122,7 +126,10 @@ jobs:
           # Strip `.exe` so the extension handling lives in one place
           # below.
           BIN_SUFFIX="${{ matrix.cli_extension }}"
-          BIN_LIST=(explorer-api${BIN_SUFFIX} cognicode-mcp${BIN_SUFFIX} cognicode-runtime${BIN_SUFFIX})
+          # BIN_LIST contains ONLY binaries whose package name == bin
+          # name; cognicode-runtime is a package that produces
+          # explorer-api + explorer-mcp, not a binary itself.
+          BIN_LIST=(explorer-api${BIN_SUFFIX} cognicode-mcp${BIN_SUFFIX})
           # On Windows, the binary lives under target/<triple>/release/.exe;
           # on Unix, it does not have an extension.
           tar -czf "dist/cognicode-${VERSION}-${{ matrix.target }}.tar.gz" \
@@ -168,7 +175,12 @@ jobs:
           set -euo pipefail
           VERSION="${GITHUB_REF#refs/tags/v}"
           mkdir -p smoke-stage
+          # The cli tarball (cogh) — install authority.
           tar -xzf "dist/cognicode-cli-${VERSION}-${{ matrix.target }}.tar.gz" -C smoke-stage
+          # The main tarball (explorer-api + cognicode-mcp). The two
+          # binaries here are the runtime surface; install-smoke must
+          # cover all of them, not just the CLI manager.
+          tar -xzf "dist/cognicode-${VERSION}-${{ matrix.target }}.tar.gz" -C smoke-stage
           BIN_SUFFIX="${{ matrix.cli_extension }}"
           # Clean HOME — proves no implicit init from real user state.
           export HOME="$(pwd)/smoke-home"
@@ -177,11 +189,14 @@ jobs:
           export USERPROFILE="$HOME"  # Windows env var
           mkdir -p "$HOME"
           COGH="./smoke-stage/cogh${BIN_SUFFIX}"
-          chmod +x "$COGH"
-          # Must exit 0 and print a version.
+          chmod +x "$COGH" "./smoke-stage/cognicode-mcp${BIN_SUFFIX}" "./smoke-stage/explorer-api${BIN_SUFFIX}"
+          # All three binaries must print a version on `--version`.
+          # A silent crash here means the runtime surface did not
+          # build correctly on this lane.
           "$COGH" --version
-          # `cogh doctor` is a WU4 follow-up but the binary must not
-          # crash on `--help`.
+          "./smoke-stage/cognicode-mcp${BIN_SUFFIX}" --version
+          "./smoke-stage/explorer-api${BIN_SUFFIX}" --version
+          # cogh `--help` prints the command surface — also a smoke.
           "$COGH" --help | head -20
 
   # -----------------------------------------------------------------
