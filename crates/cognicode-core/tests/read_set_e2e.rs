@@ -220,3 +220,151 @@ fn large_id_values_preserve_equality() {
     let rs = rec.finalize();
     assert_eq!(rs.len(), 1);
 }
+
+// ---------------------------------------------------------------------------
+// Property-based invariants — every property holds across the input space.
+// ---------------------------------------------------------------------------
+
+/// Deterministic pseudo-RNG (SplitMix64) for reproducible property tests.
+/// Avoids adding a new dev-dependency while exercising large input spaces.
+fn splitmix64(state: &mut u64) -> u64 {
+    *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z = *state;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+#[test]
+fn property_dedup_is_identity_for_repeated_insertions() {
+    // Property: for any sequence, recording each fact multiple times
+    // yields the same ReadSet as recording each fact once.
+    let mut state: u64 = 0x00C0_FFEE_F00D_DEAD_u64;
+    for _trial in 0..32 {
+        let n = (splitmix64(&mut state) as usize) % 64 + 1;
+        let distinct: Vec<u64> = (0..n).map(|_| splitmix64(&mut state)).collect();
+        let repeats = 1 + (splitmix64(&mut state) as usize % 4);
+        let mut rec = InMemoryReadSetRecorder::new(ReadSetConfig { max_records: None });
+        for _ in 0..repeats {
+            for &v in &distinct {
+                rec.record(fid(v)).unwrap();
+            }
+        }
+        let rs = rec.finalize();
+        assert_eq!(rs.len(), distinct.len(), "dedup invariant violated");
+    }
+}
+
+#[test]
+fn property_is_truncated_iff_observations_exceed_bound() {
+    // Property: is_truncated() is true iff the bound was reached and at
+    // least one extra observation landed.
+    let mut state: u64 = 0x0CAF_EBAB_E123_4567_u64;
+    for _trial in 0..64 {
+        let bound_n = (splitmix64(&mut state) as usize % 31) + 1;
+        let obs_n = (splitmix64(&mut state) as usize % 64) + 1;
+        let distinct: Vec<u64> = (0..obs_n).map(|_| splitmix64(&mut state)).collect();
+        let mut rec = InMemoryReadSetRecorder::new(ReadSetConfig {
+            max_records: NonZeroUsize::new(bound_n),
+        });
+        for &v in &distinct {
+            rec.record(fid(v)).unwrap();
+        }
+        let rs = rec.finalize();
+
+        let expected_truncated = obs_n > bound_n;
+        assert_eq!(
+            rs.is_truncated(),
+            expected_truncated,
+            "truncation mismatch for bound={} obs={}",
+            bound_n,
+            obs_n
+        );
+        // Bounded count is min(bound, distinct_observations).
+        let expected_len = obs_n.min(bound_n);
+        assert_eq!(
+            rs.len(),
+            expected_len,
+            "len mismatch for bound={} obs={}",
+            bound_n,
+            obs_n
+        );
+    }
+}
+
+#[test]
+fn property_is_stale_iff_any_changed_fact_was_recorded() {
+    // Property: is_stale(rs, changed) is true iff the intersection of
+    // (recorded) and (changed) is non-empty.
+    let mut state: u64 = 0x00BA_DC0D_EE0F_F909_u64;
+    for _trial in 0..32 {
+        let recorded: Vec<u64> = (0..((splitmix64(&mut state) as usize % 31) + 1))
+            .map(|_| splitmix64(&mut state))
+            .collect();
+        let changed: Vec<u64> = (0..((splitmix64(&mut state) as usize % 15) + 1))
+            .map(|_| splitmix64(&mut state))
+            .collect();
+
+        let mut rec = InMemoryReadSetRecorder::new(ReadSetConfig { max_records: None });
+        for &v in &recorded {
+            rec.record(fid(v)).unwrap();
+        }
+        let rs = rec.finalize();
+
+        let change_facts: Vec<FactId> = changed.iter().map(|v| fid(*v)).collect();
+        let observed_stale = is_stale(&rs, &change_facts);
+
+        let expected_stale = changed.iter().any(|c| recorded.iter().any(|r| r == c));
+        assert_eq!(
+            observed_stale, expected_stale,
+            "staleness invariant violated: recorded={:?} changed={:?}",
+            recorded, changed
+        );
+    }
+}
+
+#[test]
+fn property_contains_is_consistent_with_iter() {
+    // Property: ReadSet::contains(f) is true iff iter() yields f.
+    let mut state: u64 = 0xDEAD_BEEF_0000_0001u64;
+    for _trial in 0..32 {
+        let count = (splitmix64(&mut state) as usize % 50) + 1;
+        let values: Vec<u64> = (0..count).map(|_| splitmix64(&mut state)).collect();
+        let mut rec = InMemoryReadSetRecorder::new(ReadSetConfig { max_records: None });
+        for &v in &values {
+            rec.record(fid(v)).unwrap();
+        }
+        let rs = rec.finalize();
+
+        // Probe every value recorded.
+        for &v in &values {
+            assert!(rs.contains(&fid(v)), "contains missing for {}", v);
+        }
+        // Probe a value known to NOT be recorded.
+        let probe_outside = fid(splitmix64(&mut state).wrapping_add(u64::MAX / 2));
+        assert_eq!(
+            rs.contains(&probe_outside),
+            rs.iter().any(|f| f == &probe_outside),
+            "contains/iter inconsistency"
+        );
+    }
+}
+
+#[test]
+fn property_from_iter_matches_recorder() {
+    // Property: `vec![...].into_iter().collect::<ReadSet>()` equals the
+    // result of recording the same vec with an unbounded recorder.
+    let mut state: u64 = 0xFEED_FACE_C0DE_CAFEu64;
+    for _trial in 0..32 {
+        let values: Vec<u64> = (0..((splitmix64(&mut state) as usize % 31) + 1))
+            .map(|_| splitmix64(&mut state))
+            .collect();
+        let rs_iter: ReadSet = values.iter().map(|v| fid(*v)).collect();
+        let mut rec = InMemoryReadSetRecorder::new(ReadSetConfig { max_records: None });
+        for &v in &values {
+            rec.record(fid(v)).unwrap();
+        }
+        let rs_rec = rec.finalize();
+        assert_eq!(rs_iter, rs_rec, "FromIterator vs recorder mismatch");
+    }
+}

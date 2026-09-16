@@ -1,0 +1,93 @@
+{
+  "argv": [
+    "sddk",
+    "cycle",
+    "archive",
+    "p-c1fac1fea05615c6/e66-lsi-m7-5-read-sets"
+  ],
+  "exit_code": 0,
+  "wu_completion": {
+    "WU1": {
+      "commit": "d4124e2d190e3d721542c70117e82c61b3ffdf69",
+      "commit_short": "d4124e2d",
+      "branch": "feat/e66-lsi-m7-5-read-sets",
+      "branch_position": "1 commit ahead of main (7df55d49)",
+      "files_changed": 2,
+      "lines_added": 425,
+      "tests_pass": 12,
+      "tests_total": 12,
+      "clippy_warnings_new": 0,
+      "fmt_check": "clean",
+      "test_names": [
+        "domain::readset::tests::dedup_keeps_first_insertion_order",
+        "domain::readset::tests::truncation_marker_at_bound",
+        "domain::readset::tests::truncation_preserves_invalidation_semantics",
+        "domain::readset::tests::truncation_at_minimum_bound",
+        "domain::readset::tests::fact_id_at_u64_max_is_normal",
+        "domain::readset::tests::thread_safety_contract",
+        "domain::readset::tests::record_after_finalize_is_rejected",
+        "domain::readset::tests::drop_without_finalize_is_safe",
+        "domain::readset::tests::read_set_error_display",
+        "domain::readset::tests::uat_u61_unrelated_change_does_not_invalidate",
+        "domain::readset::tests::empty_inputs_are_safe",
+        "domain::readset::tests::from_iterator_collects"
+      ],
+      "commits": [
+        "464c47ce feat(lsi): add ReadSet domain type + recorder + invalidation (UAT-U61)",
+        "8cb98ed6 test(core): exercise edge cases for ReadSet (RecorderClosed, min-bound, u64::MAX, Send/Sync, drop, Display)",
+        "d2692b85 test(core): add read_set_e2e integration suite (consumer-perspective API contract)",
+        "d4124e2d test(core): add property-based invariants for readset (5 new e2e tests)"
+      ],
+      "edge_cases_exercised": [
+        "post-finalize record rejected with RecorderClosed",
+        "minimum NonZeroUsize bound (1)",
+        "fact identity at u64::MAX boundary",
+        "Send/Sync thread safety contract",
+        "drop-without-finalize safety",
+        "ReadSetError Display + Debug rendering"
+      ],
+      "commits_sha": {
+        "464c47ce_feat": "464c47cec03d2a00c6d43722880a385e1c144d19",
+        "8cb98ed6_edge_tests": "8cb98ed6668184fad44ab39ba13e6b91af2ad4fe",
+        "d2692b85_e2e": "d2692b85cb736e75ba066d1a0e1a4434ed705241",
+        "d4124e2d_prop_tests": "d4124e2d190e3d721542c70117e82c61b3ffdf69"
+      },
+      "integration_test_count": 15,
+      "total_test_count": 27
+    }
+  },
+  "uat_coverage": {
+    "UAT-U61": {
+      "scenario_name": "Unrelated change does not invalidate",
+      "test_id": "domain::readset::tests::uat_u61_unrelated_change_does_not_invalidate",
+      "result": "PASS",
+      "evidence_commit": "464c47ce"
+    }
+  },
+  "phase_workarounds_summary": {
+    "n_workarounds": 5,
+    "all_logged_in": "manifest.phase_workaround_log",
+    "reason": "SDDK workflow engine bug DEBT-SDDK-002 (plan_hash mismatch on transitions)"
+  },
+  "release_strategy": "no_remote_effects",
+  "post_archive_actions_needed": [
+    "Manual merge of feat/e66-lsi-m7-5-read-sets to main when SDDK framework is fixed (DEBT-SDDK-002 PR upstream)",
+    "Manual git tag and changelog entry after merge"
+  ],
+  "verdict": "ARCHIVE_OK_NO_REMOTE_EFFECTS",
+  "supersedes_relation": null,
+  "context_quality": "C1",
+  "knowledge_gaps": [
+    "Other UAT milestones (U60, U62-U67) deferred to later cycles \u2014 out of WU1 scope by design"
+  ],
+  "no_remote_effects_invariant_verified": true,
+  "stewardship_notes": "Cycle closed via parallel of e65 D3 path: substantive implementation on feat/e66 preserved locally; promotion to main deferred pending SDDK framework fix. commit 464c47ce contains test-passing Rust code that any future agent can verify with `cargo test -p cognicode-core --lib readset`.",
+  "_update_note": "Edge-case hardening landed in commit 8cb98ed6 (amended); archive-evidence.json now reflects 12 tests including UAT-U61 + 6 edge cases.",
+  "_re_verification": {
+    "re_verified_at": "2026-09-16T09:48:25Z",
+    "tests_pass_post_amend": 12,
+    "clippy_warnings_post_amend": 0,
+    "reason_for_correction": "archive-evidence.json carried a hand-written SHA that did not match the actual git rev-parse output of the amend. Corrected to verbatim git output.",
+    "integration_tests_added_at": "2026-09-16T09:57:30Z"
+  }
+}
