@@ -266,6 +266,19 @@ impl<'a> BehaviorRuntime<'a> {
     /// `policy.behavior_output_rejected` and `behavior.budget_exhausted`.
     /// The exhaustion event is caused by `behavior.started` (not the rejection),
     /// giving the chain `[trigger, behavior.started, behavior.budget_exhausted]`.
+    ///
+    /// ## Atomicity contract (e65 WU3)
+    ///
+    /// The runtime commits effects **incrementally** (one-by-one after each sink
+    /// confirmation). The atomicity guarantee is structural, not transactional:
+    /// a rejected effect is refused BEFORE the sink is reached, so a sink adapter
+    /// never has to defend against or undo a refused effect. Previously-accepted
+    /// effects that were already confirmed by the sink remain committed; a single
+    /// exhaustion event cannot create a half-applied canonical mutation because
+    /// the refusal happens at the policy layer, not the adapter layer.
+    ///
+    /// In other words: budget exhaustion means "this effect was refused before
+    /// the sink" — not "undo everything".
     pub async fn run(
         &self,
         permit: &BehaviorPermit,

@@ -354,6 +354,18 @@ async fn u52_d_aigenerated_high_budget_silently_capped() {
 
 #[tokio::test]
 async fn u52_snapshot_integrity_factstore_unchanged_after_exhaustion() {
+    // Demonstrates the five-property atomicity contract (e65 WU5-tighten):
+    //
+    // 1. The effect crossing the budget does NOT reach the sink.
+    // 2. Previously-allowed effects remain per runtime semantics.
+    // 3. BehaviorOutcome::BudgetExhausted is produced (not Ok(empty), not panic).
+    // 4. behavior.budget_exhausted is recorded causally after behavior.started.
+    // 5. Canonical state remains consistent.
+    //
+    // Contract: the runtime commits incrementally (structural atomicity, not
+    // transactional). Refusal happens at the policy layer before the sink, so
+    // a sink adapter never has to undo a refused effect. The fact store reflects
+    // only effects that passed both authority and budget checks.
     use std::num::NonZeroU64;
     let budget = BudgetDeclaration::effects(NonZeroU64::new(1).unwrap());
 
@@ -393,20 +405,69 @@ async fn u52_snapshot_integrity_factstore_unchanged_after_exhaustion() {
         .await
         .unwrap();
 
+    // Property 3: BehaviorOutcome::BudgetExhausted is produced.
     assert!(
         outcome.has_budget_exhaustions(),
-        "budget exhaustion must have occurred"
+        "Property 3: budget exhaustion must be produced (not Ok(empty))"
+    );
+    assert!(
+        matches!(outcome.budget_exhaustions[0].0.kind, BudgetKind::EffectCount),
+        "Property 3: exhaustion kind must be EffectCount"
     );
 
+    // Property 1: the effect crossing the budget does NOT reach the sink.
+    // FourEvidenceBehavior produces 4 effects; budget=1 means effects 2-4 are rejected.
+    let total_produced = 4;
+    let budget_limit = 1u64;
+    let expected_accepted = budget_limit;
+    let expected_rejected = total_produced - budget_limit;
+    assert_eq!(
+        outcome.accepted.len() as u64,
+        expected_accepted,
+        "Property 1: exactly {} effect(s) accepted within budget=1",
+        expected_accepted
+    );
+    assert_eq!(
+        outcome.rejected.len() as u64,
+        expected_rejected,
+        "Property 1: {} effect(s) rejected before reaching sink",
+        expected_rejected
+    );
+    assert_eq!(
+        sink.applied.len(),
+        outcome.accepted.len(),
+        "Property 1: accepted effects reached the sink; rejected never did (refuse-before-adapter)"
+    );
+
+    // Property 2: previously-allowed effects remain.
+    assert_eq!(
+        sink.applied[..],
+        [BehaviorEffectKind::RecordEvidence],
+        "Property 2: the first (budget-allowed) effect was applied; later ones refused"
+    );
+
+    // Property 4: behavior.budget_exhausted is causally after behavior.started.
+    let (_, exhaustion_event_id) = &outcome.budget_exhaustions[0];
+    let chain = log.causal_chain(&ws(), *exhaustion_event_id).await.unwrap();
+    let kinds: Vec<&str> = chain.iter().map(|e| e.kind.as_str()).collect();
+    assert!(
+        kinds.contains(&"behavior.started"),
+        "Property 4: chain must include behavior.started before budget_exhausted: got {:?}",
+        kinds
+    );
+
+    // Property 5: canonical state remains consistent (fact store unchanged).
+    // BufferingSink does not write to the fact store; the fact store was never
+    // touched, which demonstrates the structural atomicity invariant: the rejected
+    // effects never reached any persistence layer.
     let count_after = facts
         .facts_in_snapshot(&ws(), &SnapshotId::new(SNAP))
         .await
         .expect("read")
         .len();
-
     assert_eq!(
         count_before, count_after,
-        "FactStore must be byte-identical after exhaustion (snapshot integrity invariant)"
+        "Property 5: FactStore count unchanged — no partial canonical mutation"
     );
 }
 
