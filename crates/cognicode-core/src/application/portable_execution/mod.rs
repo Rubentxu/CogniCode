@@ -50,6 +50,7 @@ pub mod outcome;
 pub mod paths;
 pub mod podman;
 pub mod spec;
+pub mod trial_runtime;
 
 // (Snapshot identity helper used by comp for tests / log traces.)
 pub use backend::{BackendCapabilities, ExecutionBackend};
@@ -69,6 +70,9 @@ pub use podman::{
 };
 pub use spec::{
     ExecutionBounds, ExecutionSpec, MountPropagation, RequiresIsolation, SpecError, WorkspaceMount,
+};
+pub use trial_runtime::{
+    drive_trial, gate_outcome, is_insufficient, BackendSelection, TrialDriverWorkOutcome,
 };
 
 /// Strip Rust line and block comments from source text. Used by the
