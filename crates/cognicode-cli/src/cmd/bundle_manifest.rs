@@ -41,7 +41,7 @@ fn default_bundle_kind() -> String {
 }
 
 /// Target platform triple.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum Platform {
     LinuxX86_64,
@@ -49,6 +49,19 @@ pub enum Platform {
     MacOsX86_64,
     MacOsAarch64,
     WindowsX86_64,
+}
+
+impl std::fmt::Display for Platform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Platform::LinuxX86_64 => "linux-x86-64",
+            Platform::LinuxAarch64 => "linux-aarch64",
+            Platform::MacOsX86_64 => "mac-os-x86-64",
+            Platform::MacOsAarch64 => "mac-os-aarch64",
+            Platform::WindowsX86_64 => "windows-x86-64",
+        };
+        f.write_str(s)
+    }
 }
 
 /// Component kind (the binary / asset being installed).

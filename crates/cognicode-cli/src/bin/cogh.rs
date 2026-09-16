@@ -33,6 +33,8 @@ mod lockfile;
 mod manifest;
 #[path = "../cmd/platform_adapter.rs"]
 mod platform_adapter;
+#[path = "../cmd/doctor.rs"]
+mod doctor;
 #[path = "../cmd/profile.rs"]
 mod profile;
 #[path = "../cmd/registry.rs"]

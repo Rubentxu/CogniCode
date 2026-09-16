@@ -298,31 +298,12 @@ pub fn cmd_reshim(home: &CognicodeHome) -> Result<()> {
 }
 
 pub fn cmd_doctor(home: &CognicodeHome) -> Result<()> {
-    let mut issues = 0;
-    println!("==> cogh doctor ({})", home.root.display());
-    if !home.is_initialized() {
-        println!("  ✗ home not initialized");
-        return Ok(());
-    }
-    println!("  ✓ home exists");
-    if home.bin().exists() {
-        println!("  ✓ bin/ exists");
-    } else {
-        println!("  ✗ bin/ missing");
-        issues += 1;
-    }
-    if home.shims().exists() {
-        println!("  ✓ shims/ exists");
-    } else {
-        println!("  ✗ shims/ missing");
-        issues += 1;
-    }
-    if home.tracker_version().exists() {
-        println!("  ✓ tracker/version exists");
-    } else {
-        println!("  ⚠ tracker/version missing (no version pinned)");
-    }
-    println!("==> {} issues", issues);
+    // e74 WU4: route through `doctor::run_doctor` so the report has
+    // four orthogonal dimensions (Core health, MCP, Native analysis,
+    // Isolation backend) and an Unavailable status for missing
+    // optional backends instead of being flagged as a failed install.
+    let report = crate::doctor::run_doctor(&home.root);
+    print!("{report}");
     Ok(())
 }
 

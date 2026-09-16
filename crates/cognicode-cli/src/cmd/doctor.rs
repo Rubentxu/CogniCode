@@ -1,0 +1,481 @@
+//! e74 WU4 — `cogh doctor` capability discovery.
+//!
+//! The doctor command reports health across four orthogonal
+//! dimensions so that an installation with a missing optional
+//! dependency (e.g. no Podman on Windows) is not flagged as broken:
+//!
+//!   1. **Core health** — the basic install (home, shims, tracker).
+//!   2. **MCP health** — the local daemon / MCP bridge starts up.
+//!   3. **Native analysis** — host-native parsing / canonical Facts /
+//!      read-only analysis work without any container runtime.
+//!   4. **Optional isolation** — sandbox / container backend
+//!      (Podman / Docker / WSL / Hyper-V / VM). Reported as
+//!      `Unavailable` when not present; doctor MUST NOT try to enable
+//!      or install any of these backends.
+//!
+//! ## Hard rule
+//!
+//! `cogh doctor` reports and provides remediation hints, but it does
+//! **not** automatically install WSL, Hyper-V, Podman, Docker or a VM.
+//! These are invasive host changes that the user must opt into.
+//! Automatic enabling of those features is forbidden by the e74 spec.
+
+use std::fmt;
+use std::path::Path;
+
+/// Outcome of a single doctor check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckStatus {
+    /// Capability present and working.
+    Pass,
+    /// Capability present but with caveats (e.g. optional sub-feature missing).
+    Warn,
+    /// Capability required for core functionality is missing.
+    Fail,
+    /// Capability is an optional/host-extras layer that the current
+    /// environment does not provide. This is *not* a failed install.
+    Unavailable,
+}
+
+impl fmt::Display for CheckStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            CheckStatus::Pass => "PASS",
+            CheckStatus::Warn => "WARN",
+            CheckStatus::Fail => "FAIL",
+            CheckStatus::Unavailable => "UNAVAILABLE",
+        };
+        f.write_str(s)
+    }
+}
+
+/// A single dimension reported by `cogh doctor`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DoctorCheck {
+    pub name: String,
+    pub status: CheckStatus,
+    pub detail: String,
+    /// Optional remediation hint shown when the check is not Pass.
+    pub remediation: Option<String>,
+}
+
+impl DoctorCheck {
+    pub fn pass(name: &str, detail: impl Into<String>) -> Self {
+        Self {
+            name: name.to_string(),
+            status: CheckStatus::Pass,
+            detail: detail.into(),
+            remediation: None,
+        }
+    }
+
+    pub fn warn(name: &str, detail: impl Into<String>, remediation: impl Into<String>) -> Self {
+        Self {
+            name: name.to_string(),
+            status: CheckStatus::Warn,
+            detail: detail.into(),
+            remediation: Some(remediation.into()),
+        }
+    }
+
+    pub fn fail(name: &str, detail: impl Into<String>, remediation: impl Into<String>) -> Self {
+        Self {
+            name: name.to_string(),
+            status: CheckStatus::Fail,
+            detail: detail.into(),
+            remediation: Some(remediation.into()),
+        }
+    }
+
+    pub fn unavailable(name: &str, detail: impl Into<String>, remediation: impl Into<String>) -> Self {
+        Self {
+            name: name.to_string(),
+            status: CheckStatus::Unavailable,
+            detail: detail.into(),
+            remediation: Some(remediation.into()),
+        }
+    }
+}
+
+/// Whole `cogh doctor` report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DoctorReport {
+    pub platform: crate::platform_adapter::PlatformReport,
+    pub checks: Vec<DoctorCheck>,
+}
+
+impl DoctorReport {
+    /// True iff every check is `Pass`, `Warn`, or `Unavailable`.
+    /// `Fail` makes the whole report unhealthy.
+    pub fn is_healthy(&self) -> bool {
+        self.checks
+            .iter()
+            .all(|c| !matches!(c.status, CheckStatus::Fail))
+    }
+
+    /// True iff the install can run core analysis WITHOUT requiring
+    /// any isolation backend. e74 PRT-001: a Windows user without
+    /// Podman must still get core analysis PASS.
+    pub fn core_analysis_available(&self) -> bool {
+        self.checks.iter().any(|c| {
+            c.name == "Core health" && matches!(c.status, CheckStatus::Pass | CheckStatus::Warn)
+        }) && self.checks.iter().any(|c| {
+            c.name == "Native analysis" && matches!(c.status, CheckStatus::Pass | CheckStatus::Warn)
+        })
+    }
+}
+
+impl fmt::Display for DoctorReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(
+            f,
+            "==> cogh doctor ({} / {} / {})",
+            self.platform.triple, self.platform.os, self.platform.arch
+        )?;
+        for c in &self.checks {
+            writeln!(f, "  {:<8} {:<20} {}", c.status, c.name, c.detail)?;
+            if let Some(r) = &c.remediation {
+                if !matches!(c.status, CheckStatus::Pass) {
+                    writeln!(f, "    -> {r}")?;
+                }
+            }
+        }
+        writeln!(
+            f,
+            "==> overall: {}",
+            if self.is_healthy() { "healthy" } else { "UNHEALTHY" }
+        )?;
+        Ok(())
+    }
+}
+
+// ---------- per-dimension probes ----------
+
+/// Probe 1: Core health (filesystem layout).
+pub fn probe_core_health(home_root: &Path) -> DoctorCheck {
+    if !home_root.exists() {
+        return DoctorCheck::fail(
+            "Core health",
+            format!("home {} does not exist", home_root.display()),
+            "run `cogh install <profile>` to bootstrap the layout",
+        );
+    }
+    let bin = home_root.join("bin");
+    let shims = home_root.join("shims");
+    let mut missing: Vec<&str> = Vec::new();
+    if !bin.exists() {
+        missing.push("bin/");
+    }
+    if !shims.exists() {
+        missing.push("shims/");
+    }
+    if missing.is_empty() {
+        DoctorCheck::pass("Core health", "home, bin/, shims/ present")
+    } else {
+        DoctorCheck::fail(
+            "Core health",
+            format!("missing: {}", missing.join(", ")),
+            "run `cogh install <profile>` to materialize the layout",
+        )
+    }
+}
+
+/// Probe 2: MCP health (cognicode-mcp availability).
+///
+/// We do NOT spawn the daemon here — the probe is "can the binary be
+/// located?", which is what the install contract guarantees. A full
+/// spawn probe belongs in WU6 runtime smoke; doctor stays lightweight.
+pub fn probe_mcp_health(home_root: &Path) -> DoctorCheck {
+    let mcp = home_root.join("bin").join("cognicode-mcp");
+    if mcp.exists() {
+        DoctorCheck::pass("MCP", "cognicode-mcp binary present")
+    } else {
+        DoctorCheck::fail(
+            "MCP",
+            "cognicode-mcp binary not found",
+            "install a profile that includes the Daemon kind (e.g. `reviewer`)",
+        )
+    }
+}
+
+/// Probe 3: Native analysis (host-native parsing + canonical Facts +
+/// read-only analysis). Always Pass — these never require a container
+/// runtime (e74 PRT-001).
+pub fn probe_native_analysis() -> DoctorCheck {
+    DoctorCheck::pass(
+        "Native analysis",
+        "host-native: parsing, canonical Facts, read-only analysis \
+         (no container runtime required)",
+    )
+}
+
+/// Probe 4: Optional isolation backend.
+///
+/// Reports `Unavailable` (NOT `Fail`) when no isolation runtime is
+/// present. e74 directive: doctor MUST NOT auto-enable WSL, Hyper-V,
+/// Podman, Docker, or a VM.
+pub fn probe_optional_isolation() -> DoctorCheck {
+    use crate::platform_adapter::{PlatformFamily, detect_host_platform};
+    let host = detect_host_platform();
+    let family = match host {
+        crate::platform_adapter::Platform::WindowsX86_64 => PlatformFamily::Windows,
+        _ => PlatformFamily::Unix,
+    };
+    // Check for at least one isolation backend on the host.
+    // We probe lightweight, non-spawning signals:
+    //   - Podman:   look for `podman` in PATH (Unix); on Windows, look
+    //               for `podman.exe` and absence of WSL.
+    //   - Docker:   look for `docker` in PATH.
+    //   - WSL:      on Windows, `wsl.exe --status` exit 0 (NOT run here
+    //               to avoid spawning); we only check file presence.
+    //   - Hyper-V:  requires admin; we never probe.
+    //
+    // For e74 the contract is: doctor REPORTS, never enables.
+    // The probe is intentionally conservative: if nothing obvious is
+    // on disk, we say Unavailable with a remediation that lists the
+    // supported backends but does NOT install them.
+    let backend = detect_isolation_backend(family);
+    match backend {
+        Some(name) => DoctorCheck::pass(
+            "Isolation backend",
+            format!("{name} detected (optional, host extras)"),
+        ),
+        None => DoctorCheck::unavailable(
+            "Isolation backend",
+            "no Podman/Docker/WSL/Hyper-V/VM detected",
+            "isolation is OPTIONAL; install one manually only if you need \
+             sandboxed project-code execution (e75). CogniCode core analysis \
+             works without any isolation backend.",
+        ),
+    }
+}
+
+fn detect_isolation_backend(family: crate::platform_adapter::PlatformFamily) -> Option<&'static str> {
+    // Light-touch probe: just check PATH presence. We deliberately do
+    // NOT spawn the binary — that would change doctor from a report
+    // into an action.
+    let which = |name: &str| which_exists(name);
+    match family {
+        crate::platform_adapter::PlatformFamily::Unix => {
+            if which("podman") {
+                Some("podman")
+            } else if which("docker") {
+                Some("docker")
+            } else {
+                None
+            }
+        }
+        crate::platform_adapter::PlatformFamily::Windows => {
+            // On Windows: Podman Desktop or WSL would be the typical path.
+            if which("podman.exe") {
+                Some("podman.exe")
+            } else if which("wsl.exe") {
+                Some("wsl.exe")
+            } else if which("docker.exe") {
+                Some("docker.exe")
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn which_exists(name: &str) -> bool {
+    if let Some(paths) = std::env::var_os("PATH") {
+        for p in std::env::split_paths(&paths) {
+            if p.join(name).exists() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Run the full doctor probe set against a home directory.
+pub fn run_doctor(home_root: &Path) -> DoctorReport {
+    let platform = crate::platform_adapter::PlatformReport::for_host();
+    let checks = vec![
+        probe_core_health(home_root),
+        probe_mcp_health(home_root),
+        probe_native_analysis(),
+        probe_optional_isolation(),
+    ];
+    DoctorReport { platform, checks }
+}
+
+// ---------- tests ----------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp_home() -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let p = std::env::temp_dir().join(format!(
+            "cognicode-doctor-test-{}-{n}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    #[test]
+    fn probe_core_health_passes_when_bin_and_shims_exist() {
+        let home = tmp_home();
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::fs::create_dir_all(home.join("shims")).unwrap();
+        let check = probe_core_health(&home);
+        assert_eq!(check.status, CheckStatus::Pass);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn probe_core_health_fails_when_home_missing() {
+        let home = tmp_home();
+        let missing = home.join("nope");
+        let check = probe_core_health(&missing);
+        assert_eq!(check.status, CheckStatus::Fail);
+        assert!(check.remediation.is_some());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn probe_core_health_fails_when_layout_partial() {
+        let home = tmp_home();
+        // bin/ exists, shims/ does not.
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        let check = probe_core_health(&home);
+        assert_eq!(check.status, CheckStatus::Fail);
+        assert!(check.detail.contains("shims/"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn probe_mcp_health_passes_when_daemon_binary_present() {
+        let home = tmp_home();
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::fs::write(home.join("bin").join("cognicode-mcp"), b"fake").unwrap();
+        let check = probe_mcp_health(&home);
+        assert_eq!(check.status, CheckStatus::Pass);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn probe_mcp_health_fails_when_binary_missing() {
+        let home = tmp_home();
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        let check = probe_mcp_health(&home);
+        assert_eq!(check.status, CheckStatus::Fail);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn probe_native_analysis_always_passes() {
+        // e74 PRT-001: native analysis never depends on a container.
+        let check = probe_native_analysis();
+        assert_eq!(check.status, CheckStatus::Pass);
+        assert!(check.detail.contains("no container runtime"));
+    }
+
+    #[test]
+    fn probe_optional_isolation_is_never_fail() {
+        // Even with no backend on PATH, isolation must report
+        // Unavailable, never Fail. The install must not be flagged
+        // as broken just because no Podman/Docker is present.
+        let check = probe_optional_isolation();
+        assert!(
+            matches!(
+                check.status,
+                CheckStatus::Pass | CheckStatus::Unavailable
+            ),
+            "isolation must never be Fail; got {:?}",
+            check.status
+        );
+    }
+
+    #[test]
+    fn probe_optional_isolation_remediation_mentions_no_install() {
+        // The directive: doctor MUST NOT install isolation backends.
+        // We pin this contractually: the remediation hint must never
+        // promise to install anything.
+        let check = probe_optional_isolation();
+        if let Some(r) = &check.remediation {
+            let lower = r.to_lowercase();
+            assert!(
+                !lower.contains("install ") || lower.contains("manually"),
+                "remediation must never auto-install: {r}"
+            );
+        }
+    }
+
+    #[test]
+    fn report_is_healthy_when_no_failures() {
+        let home = tmp_home();
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::fs::create_dir_all(home.join("shims")).unwrap();
+        std::fs::write(home.join("bin").join("cognicode-mcp"), b"fake").unwrap();
+        let report = run_doctor(&home);
+        assert!(report.is_healthy());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn report_unhealthy_when_core_fails() {
+        let home = tmp_home();
+        // empty home → Core health fails
+        let report = run_doctor(&home);
+        assert!(!report.is_healthy());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn report_core_analysis_available_with_clean_install() {
+        let home = tmp_home();
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::fs::create_dir_all(home.join("shims")).unwrap();
+        std::fs::write(home.join("bin").join("cognicode-mcp"), b"fake").unwrap();
+        let report = run_doctor(&home);
+        // Even if isolation is Unavailable, core analysis is available
+        // — the e74 PRT-001 contract.
+        assert!(report.core_analysis_available());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn report_chip_layout_has_four_dimensions() {
+        // The four dimensions are an explicit contract: changing this
+        // list is a deliberate UX decision, not a refactor.
+        let home = tmp_home();
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::fs::create_dir_all(home.join("shims")).unwrap();
+        let report = run_doctor(&home);
+        let names: Vec<&str> = report.checks.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["Core health", "MCP", "Native analysis", "Isolation backend"]
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn check_status_display() {
+        assert_eq!(format!("{}", CheckStatus::Pass), "PASS");
+        assert_eq!(format!("{}", CheckStatus::Warn), "WARN");
+        assert_eq!(format!("{}", CheckStatus::Fail), "FAIL");
+        assert_eq!(format!("{}", CheckStatus::Unavailable), "UNAVAILABLE");
+    }
+
+    #[test]
+    fn doctor_report_display_includes_platform() {
+        let home = tmp_home();
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::fs::create_dir_all(home.join("shims")).unwrap();
+        let report = run_doctor(&home);
+        let rendered = format!("{report}");
+        assert!(rendered.contains("cogh doctor"));
+        assert!(rendered.contains("overall:"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+}
