@@ -248,5 +248,21 @@ phases:
       NEXT: e65 (M7.4 budgets + observable exhaustion, behavior.budget_exhausted
       is reserved vocabulary today), then e66 (M7.5 read sets + invalidation,
       U61).
+      e65-lsi-m7-4-budgets archived (M7.4 behavior budgets, U52 CLOSED).
+      Budget vocabulary: BudgetKind {Time, EffectCount, FactVisits},
+      BudgetDeclaration with named ctors, BudgetState (private fields, owned by
+      runtime), BudgetAuthorizer with check/commit protocol. WU1 (budget domain
+      module): 23 unit tests. WU4 (Clock port): SystemClock + MockClock, no
+      tokio in domain. WU2 (runtime integration): BehaviorRuntime::run
+      now takes &dyn Clock, checks budget AFTER authority and BEFORE sink.
+      BudgetAuthorizer check uses time checkpoint for Time budgets, spent counter
+      for EffectCount budgets. WU5 (acceptance): 6 UAT-U52 scenarios
+      (EffectCount exhaustion, Time exhaustion via MockClock, authority denial before
+      budget, AiGenerated silent cap, snapshot integrity, causal chain).
+      6 e64 regression + 4 e63 regression + 10 e62.4 regression tests all green.
+      ADR-RX-005 promoted. behavior-budgets spec in openspec/specs/.
+      HONEST CAVEAT: BehaviorRuntime has exactly one consumer shape (deterministic
+      synchronous Behavior). The boundary is proved; the production runtime that
+      matches events to behaviors does not exist and is not implied by this cycle.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
