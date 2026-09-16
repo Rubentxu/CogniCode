@@ -3,6 +3,8 @@
 //! This module contains the application services that orchestrate
 //! domain logic and provide use case implementations.
 
+pub mod behaviors;
+// M7.4 Behavior Runtime adapters — Clock port + SystemClock (application, not domain).
 pub mod commands;
 pub mod dto;
 pub mod error;
