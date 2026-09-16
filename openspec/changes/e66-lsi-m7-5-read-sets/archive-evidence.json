@@ -8,8 +8,8 @@
   "exit_code": 0,
   "wu_completion": {
     "WU1": {
-      "commit": "d4124e2d190e3d721542c70117e82c61b3ffdf69",
-      "commit_short": "d4124e2d",
+      "commit": "03b831136b403ef6bd1e55f6307c1fc9bd7a5eca",
+      "commit_short": "03b83113",
       "branch": "feat/e66-lsi-m7-5-read-sets",
       "branch_position": "1 commit ahead of main (7df55d49)",
       "files_changed": 2,
@@ -50,10 +50,12 @@
         "464c47ce_feat": "464c47cec03d2a00c6d43722880a385e1c144d19",
         "8cb98ed6_edge_tests": "8cb98ed6668184fad44ab39ba13e6b91af2ad4fe",
         "d2692b85_e2e": "d2692b85cb736e75ba066d1a0e1a4434ed705241",
-        "d4124e2d_prop_tests": "d4124e2d190e3d721542c70117e82c61b3ffdf69"
+        "03b83113_prop_tests_amended": "03b831136b403ef6bd1e55f6307c1fc9bd7a5eca"
       },
       "integration_test_count": 15,
-      "total_test_count": 27
+      "total_test_count": 27,
+      "evidence_commit": "7458e7b2b6cb9e09d84b51d8b11b457e58fc2f91",
+      "last_evidence_commit": "deb071c8f79d3c54c5e5caf42a36e6bd4f133a95"
     }
   },
   "uat_coverage": {
@@ -88,6 +90,14 @@
     "tests_pass_post_amend": 12,
     "clippy_warnings_post_amend": 0,
     "reason_for_correction": "archive-evidence.json carried a hand-written SHA that did not match the actual git rev-parse output of the amend. Corrected to verbatim git output.",
-    "integration_tests_added_at": "2026-09-16T09:57:30Z"
+    "integration_tests_added_at": "2026-09-16T09:57:30Z",
+    "final_sha_strategy": {
+      "rationale": "commit (archival doc) always lags the WU code commit; we record the WU code SHA as HEAD~1 to keep the chicken-and-egg stable",
+      "wu_code_commit": "03b831136b403ef6bd1e55f6307c1fc9bd7a5eca",
+      "evidence_doc_commit": "7458e7b2b6cb9e09d84b51d8b11b457e58fc2f91"
+    },
+    "final_strategy": {
+      "rationale": "Archive-evidence tracks the WU code commit at HEAD~1 (stable across doc amendments). The doc itself does NOT track its own SHA \u2014 that would be a chicken-and-egg loop. The \"evidence_commit\" field captures the most recent doc commit for audit, and any future reader can verify by running `git log -1 -- docs/...` from the WU commit to see the doc history."
+    }
   }
 }
