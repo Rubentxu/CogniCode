@@ -1,4 +1,4 @@
-//! U52 — behavior budget enforcement (M7.4, cycle e65).
+//! E65 — behavior budget enforcement (M7.4, cycle e65).
 //!
 //! These tests verify the full budget enforcement pipeline:
 //! authority check → budget check → sink dispatch → budget commit.
@@ -158,10 +158,10 @@ impl Behavior for WantsToCommitFact {
 
 // ── DETERMINISTIC COUNTER SCENARIOS (no clock) ──────────────────────────────────
 
-// ── U52-A: PureDerivation with EffectCount budget ────────────────────────────────
+// ── E65-A: PureDerivation with EffectCount budget ────────────────────────────────
 
 #[tokio::test]
-async fn u52_a_pure_derivation_effect_count_exhausts_at_3() {
+async fn e65_a_pure_derivation_effect_count_exhausts_at_3() {
     use std::num::NonZeroU64;
     let budget = BudgetDeclaration::effects(NonZeroU64::new(2).unwrap());
 
@@ -263,10 +263,10 @@ async fn u52_a_pure_derivation_effect_count_exhausts_at_3() {
     assert_eq!(count_before, count_after, "fact store must not change");
 }
 
-// ── U52-C: Authority denies BEFORE budget is checked ─────────────────────────────
+// ── E65-C: Authority denies BEFORE budget is checked ─────────────────────────────
 
 #[tokio::test]
-async fn u52_c_agent_authority_denies_before_budget_checked() {
+async fn e65_c_agent_authority_denies_before_budget_checked() {
     use std::num::NonZeroU64;
     let budget = BudgetDeclaration::effects(NonZeroU64::new(10).unwrap());
 
@@ -323,10 +323,10 @@ async fn u52_c_agent_authority_denies_before_budget_checked() {
     );
 }
 
-// ── U52-D: AiGenerated behavior with declared infinite budget is silently capped ──
+// ── E65-D: AiGenerated behavior with declared infinite budget is silently capped ──
 
 #[tokio::test]
-async fn u52_d_aigenerated_high_budget_silently_capped() {
+async fn e65_d_aigenerated_high_budget_silently_capped() {
     let behavior_def = BehaviorDefinition::new(
         "ai.derivation",
         "ai derivation",
@@ -358,10 +358,10 @@ async fn u52_d_aigenerated_high_budget_silently_capped() {
     );
 }
 
-// ── U52-E: Snapshot integrity — fact store unchanged after exhaustion ─────────────
+// ── E65-E: Snapshot integrity — fact store unchanged after exhaustion ─────────────
 
 #[tokio::test]
-async fn u52_snapshot_integrity_factstore_unchanged_after_exhaustion() {
+async fn e65_snapshot_integrity_factstore_unchanged_after_exhaustion() {
     // Demonstrates the five-property atomicity contract (e65 WU5-tighten):
     //
     // 1. The effect crossing the budget does NOT reach the sink.
@@ -483,10 +483,10 @@ async fn u52_snapshot_integrity_factstore_unchanged_after_exhaustion() {
     );
 }
 
-// ── U52-F: Causal chain includes exhaustion event ───────────────────────────────
+// ── E65-F: Causal chain includes exhaustion event ───────────────────────────────
 
 #[tokio::test]
-async fn u52_causal_chain_includes_exhaustion_event() {
+async fn e65_causal_chain_includes_exhaustion_event() {
     use std::num::NonZeroU64;
     let budget = BudgetDeclaration::effects(NonZeroU64::new(1).unwrap());
 
@@ -563,10 +563,10 @@ async fn u52_causal_chain_includes_exhaustion_event() {
 
 // ── TEMPORAL SCENARIOS (with FakeClock) ─────────────────────────────────────────
 
-// ── U52-B: ReactiveAnalysis with Time budget ─────────────────────────────────────
+// ── E65-B: ReactiveAnalysis with Time budget ─────────────────────────────────────
 
 #[tokio::test]
-async fn u52_b_reactive_analysis_time_exhausts_via_fake_clock() {
+async fn e65_b_reactive_analysis_time_exhausts_via_fake_clock() {
     use std::num::NonZeroU64;
     let budget = BudgetDeclaration::time(NonZeroU64::new(100).unwrap());
 
