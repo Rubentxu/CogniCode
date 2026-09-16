@@ -48,3 +48,6 @@ mod evaluation_tests;
 #[cfg(all(test, feature = "evidence-kernel"))]
 #[path = "permit_tests.rs"]
 mod permit_tests;
+#[cfg(all(test, feature = "evidence-kernel"))]
+#[path = "pipeline_tests.rs"]
+mod pipeline_tests;
