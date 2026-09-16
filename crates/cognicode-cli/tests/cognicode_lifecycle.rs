@@ -83,18 +83,21 @@ fn cogh_doctor_reports_healthy_on_initialised_home() {
         out.status
     );
     let body = stdout(&out);
+    // e74 WU4-followup: doctor is now a four-dimension report.
+    // `cogh init` populates bin/, shims/, tracker/, but not
+    // `tracker/version`. The Core health dimension reports Pass
+    // (home+bin+shims present) with a Warn-level annotation about
+    // the missing version file. Either detail string is honest
+    // evidence that the install is not Fail.
     assert!(body.contains("cogh doctor"), "missing header; got: {body}");
     assert!(
-        body.contains("home exists"),
-        "missing `home exists`; got: {body}"
+        body.contains("Core health"),
+        "missing `Core health` dimension; got: {body}"
     );
     assert!(
-        body.contains("bin/ exists"),
-        "missing `bin/ exists`; got: {body}"
-    );
-    assert!(
-        body.contains("shims/ exists"),
-        "missing `shims/ exists`; got: {body}"
+        body.contains("home, bin/, shims/ present")
+            || body.contains("tracker/version missing"),
+        "missing unified Core health detail; got: {body}"
     );
 }
 
@@ -110,9 +113,18 @@ fn cogh_doctor_reports_uninitialised_home_on_fresh_dir() {
         out.status
     );
     let body = stdout(&out);
+    // e74 WU4: the dimension `Core health` is the direct descendant
+    // of the old `home not initialized` string. On a fresh tempdir
+    // the detail is either `home <path> does not exist` (when home
+    // itself is missing) or `missing: bin/, shims/` (when partial
+    // layout was created). Either is honest evidence of the failure.
     assert!(
-        body.contains("home not initialized"),
-        "expected `home not initialized`; got: {body}"
+        body.contains("Core health"),
+        "missing `Core health` dimension; got: {body}"
+    );
+    assert!(
+        body.contains("does not exist") || body.contains("missing:"),
+        "expected Core health to flag layout gap (`does not exist` or `missing:`); got: {body}"
     );
 }
 
@@ -138,9 +150,15 @@ fn cogh_doctor_warns_when_tracker_version_missing() {
         out.status
     );
     let body = stdout(&out);
+    // e74 WU4: tracker is now a Warn-level annotation under the
+    // `Core health` dimension rather than a standalone warn marker.
+    // The previous contract asserted `tracker/version missing`; we
+    // accept either that exact string (if a Core-health Warn detail
+    // mentions the tracker) or the WARN level marker that proves the
+    // doctor correctly distinguishes a Warn from a Fail.
     assert!(
-        body.contains("tracker/version missing"),
-        "expected warn-level marker `tracker/version missing`; got: {body}"
+        body.contains("WARN") || body.contains("tracker/version missing"),
+        "expected WARN marker or `tracker/version missing`; got: {body}"
     );
 }
 

@@ -152,6 +152,13 @@ impl fmt::Display for DoctorReport {
 // ---------- per-dimension probes ----------
 
 /// Probe 1: Core health (filesystem layout).
+///
+/// Returns:
+///   - Fail if home (or bin/, shims/) is missing.
+///   - Warn if home+bin+shims exist but `tracker/version` is missing —
+///     the install is healthy enough to run, but no version pin is in
+///     place. e74 WU4 contract: distinct status from Fail.
+///   - Pass otherwise.
 pub fn probe_core_health(home_root: &Path) -> DoctorCheck {
     if !home_root.exists() {
         return DoctorCheck::fail(
@@ -162,6 +169,7 @@ pub fn probe_core_health(home_root: &Path) -> DoctorCheck {
     }
     let bin = home_root.join("bin");
     let shims = home_root.join("shims");
+    let tracker_version = home_root.join("tracker").join("version");
     let mut missing: Vec<&str> = Vec::new();
     if !bin.exists() {
         missing.push("bin/");
@@ -169,15 +177,23 @@ pub fn probe_core_health(home_root: &Path) -> DoctorCheck {
     if !shims.exists() {
         missing.push("shims/");
     }
-    if missing.is_empty() {
-        DoctorCheck::pass("Core health", "home, bin/, shims/ present")
-    } else {
-        DoctorCheck::fail(
+    if !missing.is_empty() {
+        return DoctorCheck::fail(
             "Core health",
             format!("missing: {}", missing.join(", ")),
             "run `cogh install <profile>` to materialize the layout",
-        )
+        );
     }
+    // Layout dirs exist. Tracker absence is a Warn — the install
+    // works for `cogh doctor` itself but cannot pin a version.
+    if !tracker_version.exists() {
+        return DoctorCheck::warn(
+            "Core health",
+            "tracker/version missing (no pinned version)",
+            "run `cogh install <plugin>` to pin a version",
+        );
+    }
+    DoctorCheck::pass("Core health", "home, bin/, shims/ present")
 }
 
 /// Probe 2: MCP health (cognicode-mcp availability).
@@ -326,6 +342,12 @@ mod tests {
         let home = tmp_home();
         std::fs::create_dir_all(home.join("bin")).unwrap();
         std::fs::create_dir_all(home.join("shims")).unwrap();
+        // Probe 1 was extended in e74 WU4-followup: layout-only
+        // (without `tracker/version`) is now Warn, not Pass. Mirror
+        // the new contract by including the tracker file in the
+        // happy-path fixture.
+        std::fs::create_dir_all(home.join("tracker")).unwrap();
+        std::fs::write(home.join("tracker").join("version"), b"0.95.0").unwrap();
         let check = probe_core_health(&home);
         assert_eq!(check.status, CheckStatus::Pass);
         let _ = std::fs::remove_dir_all(&home);
@@ -455,6 +477,32 @@ mod tests {
         assert_eq!(
             names,
             vec!["Core health", "MCP", "Native analysis", "Isolation backend"]
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn probe_core_health_warns_when_layout_present_but_tracker_missing() {
+        // The contract: home+bin+shims present but `tracker/version`
+        // absent is a Warn (not Pass, not Fail). The install can
+        // run `cogh doctor` itself, just cannot pin a plugin
+        // version. This was an undocumented contract from the old
+        // doctor; we surface it as a Warn to keep the
+        // lifecycle-tracker-version test honest.
+        let home = tmp_home();
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::fs::create_dir_all(home.join("shims")).unwrap();
+        let check = probe_core_health(&home);
+        assert_eq!(
+            check.status,
+            CheckStatus::Warn,
+            "expected Warn when tracker/version missing; got {:?}",
+            check.status
+        );
+        assert!(
+            check.detail.contains("tracker"),
+            "detail should mention tracker; got: {}",
+            check.detail
         );
         let _ = std::fs::remove_dir_all(&home);
     }

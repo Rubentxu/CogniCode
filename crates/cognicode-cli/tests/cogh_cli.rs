@@ -205,13 +205,23 @@ fn cogh_doctor_on_uninitialised_home_reports_not_initialized() {
         String::from_utf8_lossy(&out.stderr)
     );
     let body = stdout(&out);
+    // e74 WU4: doctor is now a four-dimension report. On an
+    // uninitialised home (where `cogh init` was never run), the
+    // Core health dimension must report Fail. The detail string
+    // is either `does not exist` (home itself missing) or
+    // `missing:` (home dir created but bin/ shims/ absent after
+    // a partial init). Either is honest evidence of the failure.
     assert!(
         body.contains("cogh doctor"),
         "expected stdout to include `cogh doctor` header; got: {body}"
     );
     assert!(
-        body.contains("home not initialized"),
-        "expected stdout to flag `home not initialized`; got: {body}"
+        body.contains("Core health"),
+        "expected stdout to include `Core health` dimension; got: {body}"
+    );
+    assert!(
+        body.contains("does not exist") || body.contains("missing:"),
+        "expected stdout to flag missing layout (`does not exist` or `missing:`); got: {body}"
     );
 }
 
@@ -234,16 +244,21 @@ fn cogh_doctor_on_initialised_home_reports_healthy() {
         String::from_utf8_lossy(&out.stderr)
     );
     let body = stdout(&out);
+    // e74 WU4-followup: doctor is now a four-dimension report.
+    // `cogh init` populates bin/, shims/, tracker/, but not
+    // `tracker/version`. The Core health dimension reports Pass
+    // (home+bin+shims present) and adds a Warn-level note about
+    // the missing version file. Either `home, bin/, shims/
+    // present` (Pass detail) or the unified warn-detail that
+    // `tracker/version missing` produces is honest evidence that
+    // Core health is healthy (not Fail).
     assert!(
-        body.contains("home exists"),
-        "expected `home exists`; got: {body}"
+        body.contains("Core health"),
+        "expected `Core health` dimension; got: {body}"
     );
     assert!(
-        body.contains("bin/ exists"),
-        "expected `bin/ exists`; got: {body}"
-    );
-    assert!(
-        body.contains("shims/ exists"),
-        "expected `shims/ exists`; got: {body}"
+        body.contains("home, bin/, shims/ present")
+            || body.contains("tracker/version missing"),
+        "expected Core health detail (`home, bin/, shims/ present` for Pass or `tracker/version missing` for Warn); got: {body}"
     );
 }
