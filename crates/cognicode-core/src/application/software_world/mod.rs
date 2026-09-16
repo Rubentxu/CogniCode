@@ -61,8 +61,13 @@
 //! lives behind that gate.
 
 #[cfg(feature = "evidence-kernel")]
+pub mod fork;
+#[cfg(feature = "evidence-kernel")]
 pub mod world;
 
+#[cfg(all(test, feature = "evidence-kernel"))]
+#[path = "fork_tests.rs"]
+mod fork_tests;
 #[cfg(all(test, feature = "evidence-kernel"))]
 #[path = "world_tests.rs"]
 mod world_tests;
