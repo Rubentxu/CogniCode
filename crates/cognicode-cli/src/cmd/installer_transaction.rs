@@ -9,7 +9,7 @@
 
 use std::path::PathBuf;
 
-use crate::bundle_manifest::BundleManifest;
+use crate::bundle_manifest::{BundleManifest, Platform};
 use crate::error::{BundleManifestError, InstallerError};
 use crate::layout;
 use crate::platform_adapter;
@@ -203,6 +203,13 @@ impl InstallerTransaction {
         manifest
             .assert_pkg_version()
             .map_err(|e| InstallerError::VersionMismatch(BundleManifestError(e)))?;
+        // e74 WU2: refuse to load a wrong-platform bundle. No fallback
+        // to a different platform's artifacts. The distribution matrix
+        // is the contract; running the Linux bundle on Windows is the
+        // bug we are explicitly preventing here.
+        manifest
+            .assert_host_platform(platform_adapter::detect_host_platform())
+            .map_err(|e| InstallerError::ManifestParse(BundleManifestError(e)))?;
 
         // Filter components by profile
         let filtered_components: Vec<_> = manifest.components_for_profile(profile);
@@ -495,5 +502,58 @@ components:
             }
             other => panic!("expected Committed, got {:?}", other),
         }
+    }
+
+    // ----- e74 WU2: platform matching in the install pipeline -----
+
+    /// Pin the e74 WU2 contract: `assert_host_platform` is part of
+    /// the manifest-loading path. A bundle whose `platform` does not
+    /// match the host's detected platform must be rejected before
+    /// any install work happens, and the error message must be loud.
+    ///
+    /// This is the "no Windows-fallback-to-Linux" guarantee.
+    #[test]
+    fn installer_rejects_wrong_platform_bundle_with_loud_error() {
+        // Simulate the wrong-platform scenario: parse the embedded
+        // bundle, then point assert_host_platform at a non-matching
+        // platform. The call must fail loudly with both the bundle
+        // platform and the requested host platform in the error.
+        let yaml = InstallerTransaction::load_bundle_manifest()
+            .expect("embedded bundle manifest must be readable");
+        let manifest =
+            BundleManifest::from_str(&yaml).expect("embedded bundle manifest must parse");
+        let host = platform_adapter::detect_host_platform();
+
+        // First, the matching case must succeed. (This is the same
+        // assertion as `embedded_bundle_version_matches_pkg_version`
+        // but for platform, kept here so this test stands alone.)
+        manifest
+            .assert_host_platform(host)
+            .expect("current host must match embedded bundle platform");
+
+        // Then, force a mismatch by picking a different triple.
+        let wrong_host = match host {
+            Platform::LinuxX86_64 => Platform::WindowsX86_64,
+            Platform::LinuxAarch64 => Platform::MacOsX86_64,
+            Platform::MacOsX86_64 => Platform::LinuxX86_64,
+            Platform::MacOsAarch64 => Platform::LinuxAarch64,
+            Platform::WindowsX86_64 => Platform::LinuxX86_64,
+        };
+        let err = manifest
+            .assert_host_platform(wrong_host)
+            .expect_err("wrong-platform bundle must be rejected");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("no fallback") || msg.contains("wrong-platform"),
+            "error must explain the no-fallback policy: {msg}"
+        );
+        assert!(
+            msg.contains(&format!("{:?}", wrong_host)),
+            "error must mention the rejected host: {msg}"
+        );
+        assert!(
+            msg.contains(&format!("{:?}", manifest.platform)),
+            "error must mention the bundle platform: {msg}"
+        );
     }
 }

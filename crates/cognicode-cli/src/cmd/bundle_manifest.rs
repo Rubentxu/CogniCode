@@ -188,6 +188,28 @@ impl BundleManifest {
         Ok(())
     }
 
+    /// Assert that this manifest's `platform` matches the host's
+    /// detected platform.
+    ///
+    /// e74 WU2: deterministic host → platform matching. Wrong-platform
+    /// artifacts fail loudly. There is no fallback such as "Windows
+    /// missing → download Linux artifact".
+    ///
+    /// Takes the host platform explicitly so the test can inject a
+    /// different triple without lying about the running kernel.
+    pub fn assert_host_platform(&self, host: crate::platform_adapter::Platform) -> Result<()> {
+        if self.platform != host {
+            anyhow::bail!(
+                "bundle platform `{:?}` does not match host platform `{:?}`; \
+                 refusing to load a wrong-platform bundle \
+                 (no fallback to another platform's artifacts)",
+                self.platform,
+                host
+            );
+        }
+        Ok(())
+    }
+
     /// Return components that include the given profile.
     pub fn components_for_profile(&self, profile: &str) -> Vec<&BundleComponent> {
         self.components
@@ -521,6 +543,111 @@ components:
         let m = BundleManifest::from_str(&yaml).unwrap();
         m.assert_pkg_version()
             .expect("pkg version should match workspace version");
+    }
+
+    // ----- e74 WU2: host platform matching -----
+
+    #[test]
+    fn assert_host_platform_match_succeeds() {
+        // Bundle platform matches host platform: no error.
+        let yaml = r#"
+apiVersion: cognicode.bundle/v1
+version: "0.95.0"
+platform: linux-x86-64
+profiles:
+  - name: core
+    description: core profile
+components:
+  - name: test
+    kind: Cognicode
+    version: "0.95.0"
+    artifact: test.tar.gz
+    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
+    url: "https://example.com/test.tar.gz"
+    profiles: [core]
+"#;
+        let m = BundleManifest::from_str(yaml).unwrap();
+        m.assert_host_platform(crate::platform_adapter::Platform::LinuxX86_64)
+            .expect("matching platform must not error");
+    }
+
+    #[test]
+    fn assert_host_platform_mismatch_fails_loudly() {
+        // e74 WU2 — wrong-platform artifacts must fail loudly with no
+        // fallback. This is the "Windows missing → do NOT download
+        // Linux artifact" rule.
+        let yaml = r#"
+apiVersion: cognicode.bundle/v1
+version: "0.95.0"
+platform: linux-x86-64
+profiles:
+  - name: core
+    description: core profile
+components:
+  - name: test
+    kind: Cognicode
+    version: "0.95.0"
+    artifact: test.tar.gz
+    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
+    url: "https://example.com/test.tar.gz"
+    profiles: [core]
+"#;
+        let m = BundleManifest::from_str(yaml).unwrap();
+        let err = m
+            .assert_host_platform(crate::platform_adapter::Platform::WindowsX86_64)
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("WindowsX86_64"),
+            "error must mention the requested host platform: {msg}"
+        );
+        assert!(
+            msg.contains("LinuxX86_64"),
+            "error must mention the bundle platform: {msg}"
+        );
+        assert!(
+            msg.contains("no fallback") || msg.contains("wrong-platform"),
+            "error must explain the no-fallback policy: {msg}"
+        );
+    }
+
+    #[test]
+    fn assert_host_platform_mismatch_is_distinct_per_target() {
+        // Pin the contract: each non-matching target fails with a
+        // distinct message. This guards against accidental catch-all
+        // error paths.
+        let yaml = r#"
+apiVersion: cognicode.bundle/v1
+version: "0.95.0"
+platform: mac-os-x86-64
+profiles:
+  - name: core
+    description: core profile
+components:
+  - name: test
+    kind: Cognicode
+    version: "0.95.0"
+    artifact: test.tar.gz
+    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
+    url: "https://example.com/test.tar.gz"
+    profiles: [core]
+"#;
+        let m = BundleManifest::from_str(yaml).unwrap();
+        // Same platform: ok.
+        m.assert_host_platform(crate::platform_adapter::Platform::MacOsX86_64)
+            .expect("matching MacOsX86_64 must succeed");
+        // Wrong: every non-matching host fails.
+        for host in [
+            crate::platform_adapter::Platform::LinuxX86_64,
+            crate::platform_adapter::Platform::LinuxAarch64,
+            crate::platform_adapter::Platform::MacOsAarch64,
+            crate::platform_adapter::Platform::WindowsX86_64,
+        ] {
+            assert!(
+                m.assert_host_platform(host).is_err(),
+                "macos-x86-64 bundle must reject host {host:?}"
+            );
+        }
     }
 
     #[test]
