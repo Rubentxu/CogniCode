@@ -8,6 +8,8 @@ pub mod axiom_migration;
 #[cfg(feature = "evidence-kernel")]
 pub mod grounded_ast_projection;
 #[cfg(feature = "evidence-kernel")]
+pub mod grounded_finding_flow;
+#[cfg(feature = "evidence-kernel")]
 pub mod kernel_bridge;
 pub mod m5_dataflow_backend;
 pub mod taint_runner;
