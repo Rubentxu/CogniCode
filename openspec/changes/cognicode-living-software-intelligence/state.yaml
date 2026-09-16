@@ -245,9 +245,6 @@ phases:
       deterministic synchronous Behavior returning effects). The boundary is
       proved; the production runtime that matches events to behaviors does not
       exist and is not implied by this cycle.
-      NEXT: e65 (M7.4 budgets + observable exhaustion, behavior.budget_exhausted
-      is reserved vocabulary today), then e66 (M7.5 read sets + invalidation,
-      U61).
       e65-lsi-m7-4-budgets archived (M7.4 behavior budgets, U52 CLOSED).
       Budget vocabulary: BudgetKind {Time, EffectCount, FactVisits},
       BudgetDeclaration with named ctors, BudgetState (private fields, owned by
@@ -264,5 +261,6 @@ phases:
       HONEST CAVEAT: BehaviorRuntime has exactly one consumer shape (deterministic
       synchronous Behavior). The boundary is proved; the production runtime that
       matches events to behaviors does not exist and is not implied by this cycle.
+      NEXT: e66 (M7.5 read sets + invalidation, U61).
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
