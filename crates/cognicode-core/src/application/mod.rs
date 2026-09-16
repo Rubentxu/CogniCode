@@ -11,9 +11,14 @@ pub mod change_tracking;
 pub mod commands;
 pub mod dto;
 pub mod error;
+// e69 WU1 — EvidenceBundle data types (application-layer; derived; not canonical).
+pub mod evidence_bundle;
+// e69 WU3 — PolicyGate (application-layer; the only authority that
+// turns an EvidenceBundle into a structured decision).
 #[cfg(feature = "evidence-kernel")]
 pub mod fact_bridge;
 pub mod findings;
+pub mod policy_gate;
 // M7 — recording causal slices into the Intelligence Event Log (application
 // helper; the log itself is pure domain).
 pub mod ingest;
