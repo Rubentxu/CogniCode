@@ -94,7 +94,6 @@ impl BudgetAuthorizer {
         state: &BudgetState,
         kind: BudgetKind,
         amount: u64,
-        now_millis: u64,
     ) -> Result<u64, BudgetExhausted> {
         let Some(ceiling) = self.declaration.ceiling(kind) else {
             // No ceiling for this kind: always allowed.
@@ -103,10 +102,10 @@ impl BudgetAuthorizer {
 
         let ceiling_val = ceiling.get();
 
-        // Time budgets measure wall-clock elapsed time; other budgets measure
-        // committed spends. This is the only semantic difference in the authorizer.
+        // Time budgets measure wall-clock elapsed time via the last recorded checkpoint;
+        // other budgets measure committed spends. This is the only semantic difference.
         let reference = match kind {
-            BudgetKind::Time => state.elapsed_millis(now_millis),
+            BudgetKind::Time => state.time_checkpoint(),
             BudgetKind::EffectCount | BudgetKind::FactVisits => state.spent(kind),
         };
 
@@ -160,17 +159,17 @@ mod tests {
         let mut state = state(0);
 
         // First effect: allowed.
-        auth.check(&state, BudgetKind::EffectCount, 1, 0).unwrap();
+        auth.check(&state, BudgetKind::EffectCount, 1).unwrap();
         auth.commit(&mut state, BudgetKind::EffectCount, 1);
         assert_eq!(state.spent(BudgetKind::EffectCount), 1);
 
         // Second effect: allowed.
-        auth.check(&state, BudgetKind::EffectCount, 1, 0).unwrap();
+        auth.check(&state, BudgetKind::EffectCount, 1).unwrap();
         auth.commit(&mut state, BudgetKind::EffectCount, 1);
         assert_eq!(state.spent(BudgetKind::EffectCount), 2);
 
         // Third effect: refused.
-        let err = auth.check(&state, BudgetKind::EffectCount, 1, 0).unwrap_err();
+        let err = auth.check(&state, BudgetKind::EffectCount, 1).unwrap_err();
         assert_eq!(err.kind, BudgetKind::EffectCount);
         assert_eq!(err.remaining, 0);
         assert_eq!(err.attempted, 1);
@@ -183,20 +182,23 @@ mod tests {
 
     #[test]
     fn time_budget_refuses_after_elapsed_exceeds_ceiling() {
-        let decl = time_decl(100); // 100ms
+        use std::num::NonZeroU64;
+        let decl = BudgetDeclaration::time(NonZeroU64::new(100).unwrap());
         let auth = BudgetAuthorizer::new(decl);
-        let mut state = state(0); // started at t=0
 
-        // Check at t=50: elapsed=50ms, ceiling=100ms, remaining=50ms — 30ms spend fits.
-        assert!(auth.check(&state, BudgetKind::Time, 30, 50).is_ok());
+        // First effect at t=50: checkpoint=50, ceiling=100, remaining=50 — 30ms fits.
+        let mut state = BudgetState::new(&BudgetDeclaration::none(), 0);
+        super::super::state::record_time(&mut state, 50);
+        assert!(auth.check(&state, BudgetKind::Time, 30).is_ok());
 
-        // Commit the 30ms spend (time-per-effect duration, not wall-clock).
-        auth.commit(&mut state, BudgetKind::Time, 30);
-        assert_eq!(state.spent(BudgetKind::Time), 30);
+        // Commit first effect: effect count increments.
+        auth.commit(&mut state, BudgetKind::EffectCount, 1);
+        assert_eq!(state.spent(BudgetKind::EffectCount), 1);
 
-        // Check at t=80: elapsed=80ms, ceiling=100ms, remaining=20ms — 30ms spend does NOT fit.
+        // Second effect at t=80: checkpoint=80, ceiling=100, remaining=20 — 30ms does NOT fit.
+        super::super::state::record_time(&mut state, 80);
         let err = auth
-            .check(&state, BudgetKind::Time, 30, 80)
+            .check(&state, BudgetKind::Time, 30)
             .unwrap_err();
         assert_eq!(err.kind, BudgetKind::Time);
         assert_eq!(err.remaining, 20);
@@ -213,7 +215,7 @@ mod tests {
 
         // Any amount for any kind is fine when no budgets are declared.
         let remaining = auth
-            .check(&state, BudgetKind::EffectCount, u64::MAX, 0)
+            .check(&state, BudgetKind::EffectCount, u64::MAX)
             .unwrap();
         assert_eq!(remaining, u64::MAX);
     }
@@ -227,7 +229,7 @@ mod tests {
         let state = state(0); // spent=0
 
         let err = auth
-            .check(&state, BudgetKind::EffectCount, 10, 0)
+            .check(&state, BudgetKind::EffectCount, 10)
             .unwrap_err();
         assert!(err.reason().contains("effect_count"));
         // `remaining` in the error is ceiling - spent = 5 - 0 = 5.
@@ -247,14 +249,14 @@ mod tests {
 
         // Spend 3 effects.
         for _ in 0..3 {
-            auth.check(&state, BudgetKind::EffectCount, 1, 0).unwrap();
+            auth.check(&state, BudgetKind::EffectCount, 1).unwrap();
             auth.commit(&mut state, BudgetKind::EffectCount, 1);
         }
         assert_eq!(state.spent(BudgetKind::EffectCount), 3);
         assert_eq!(state.spent(BudgetKind::Time), 0, "time untouched by effect spend");
 
         // Time budget still at 0 spent.
-        assert!(auth.check(&state, BudgetKind::Time, 100, 0).is_ok());
+        assert!(auth.check(&state, BudgetKind::Time, 100).is_ok());
     }
 
     // ── commit only on success ────────────────────────────────────────────────

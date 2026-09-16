@@ -346,16 +346,18 @@ impl<'a> BehaviorRuntime<'a> {
             }
 
             // Step 2: budget check (e65 seam).
-            // Map each effect kind to the budget kind(s) it charges.
+            // Check Time budget using wall-clock elapsed via the time checkpoint.
             let now_millis = clock.now_millis();
             let mut budget_exhausted: Option<BudgetExhausted> = None;
 
-            // Check Time budget (wall-clock elapsed).
+            // Record time checkpoint before checking.
+            budgets::state::record_time(&mut budget_state, now_millis);
+
+            // Check Time budget.
             if let Err(e) = authorizer.check(
                 &budget_state,
                 budgets::BudgetKind::Time,
-                1, // each effect consumes 1 time unit for counting purposes
-                now_millis,
+                1,
             ) {
                 budget_exhausted = Some(e);
             }
@@ -366,7 +368,6 @@ impl<'a> BehaviorRuntime<'a> {
                     &budget_state,
                     budgets::BudgetKind::EffectCount,
                     1,
-                    now_millis,
                 ) {
                     budget_exhausted = Some(e);
                 }
@@ -426,14 +427,8 @@ impl<'a> BehaviorRuntime<'a> {
 
             // Step 4: budget commit — record what was actually spent.
             let after_millis = clock.now_millis();
-            authorizer.commit(&mut budget_state, budgets::BudgetKind::Time, 1);
+            budgets::state::record_time(&mut budget_state, after_millis);
             authorizer.commit(&mut budget_state, budgets::BudgetKind::EffectCount, 1);
-            // Also record the wall-clock elapsed for time budget tracking.
-            budgets::state::commit_spend(
-                &mut budget_state,
-                budgets::BudgetKind::Time,
-                after_millis.saturating_sub(now_millis),
-            );
 
             outcome.accepted.push(kind);
         }
