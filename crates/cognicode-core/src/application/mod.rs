@@ -37,6 +37,11 @@ pub mod services;
 // adversarial gate; the proposal itself does not grant apply power.
 #[cfg(feature = "evidence-kernel")]
 pub mod change_proposal;
+// e73 WU1 — PromotionEvaluation (M9). Three-way dry-run over
+// base/candidate/current worlds. WU2 will add PromotionPermit +
+// apply authority.
+#[cfg(feature = "evidence-kernel")]
+pub mod promotion_authority;
 #[cfg(feature = "evidence-kernel")]
 pub mod software_world;
 pub mod workspace_session;
