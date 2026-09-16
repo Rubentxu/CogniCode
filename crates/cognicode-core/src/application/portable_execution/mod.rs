@@ -45,6 +45,7 @@
 pub mod backend;
 pub mod comp;
 pub mod evidence_translate;
+pub mod native;
 pub mod outcome;
 pub mod spec;
 
@@ -52,6 +53,7 @@ pub mod spec;
 pub use backend::{BackendCapabilities, ExecutionBackend};
 pub use comp::{BackendFacadeWorkExecutor, StaticBackendFacade};
 pub use evidence_translate as evidence_translation;
+pub use native::{NativeProcessBackend, MAX_CAPTURED_BYTES, NATIVE_BUNDLE_ID};
 pub use outcome::{
     BoundedViolation, Captured, ExecutionOutcome, Failure, Missing, MissingCapability,
     SuccessDetail, ViolatedBound,
