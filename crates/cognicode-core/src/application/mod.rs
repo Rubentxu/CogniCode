@@ -12,12 +12,19 @@ pub mod commands;
 pub mod dto;
 pub mod error;
 // e69 WU1 — EvidenceBundle data types (application-layer; derived; not canonical).
+// Gated by `evidence-kernel` because it consumes e66/e68 gated types.
+#[cfg(feature = "evidence-kernel")]
 pub mod evidence_bundle;
 // e69 WU3 — PolicyGate (application-layer; the only authority that
 // turns an EvidenceBundle into a structured decision).
 #[cfg(feature = "evidence-kernel")]
 pub mod fact_bridge;
 pub mod findings;
+// e69 WU3 — PolicyGate (application-layer; the only authority that
+// turns an EvidenceBundle into a structured decision). Gated by
+// `evidence-kernel` because it consumes gated types from
+// `evidence_bundle`.
+#[cfg(feature = "evidence-kernel")]
 pub mod policy_gate;
 // M7 — recording causal slices into the Intelligence Event Log (application
 // helper; the log itself is pure domain).
@@ -25,7 +32,9 @@ pub mod ingest;
 pub mod intelligence_log;
 pub mod investigation_service;
 // e70 WU1+WU2 — Local CI vertical orchestration (in-memory WorkExecutor,
-// planner → executor → bundle → gate → LocalVerticalReport).
+// planner → executor → bundle → gate → LocalVerticalReport). Gated by
+// `evidence-kernel` because it consumes e68/e69 gated types.
+#[cfg(feature = "evidence-kernel")]
 pub mod local_ci;
 // e71 WU1 — SoftwareWorld foundation (M9). Lineage + isolation metadata,
 // not a second truth store. Reuses canonical SnapshotId; never mirrors
