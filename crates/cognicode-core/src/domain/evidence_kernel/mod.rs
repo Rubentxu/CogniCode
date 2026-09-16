@@ -44,6 +44,8 @@ pub mod ports;
 #[cfg(feature = "evidence-kernel")]
 pub mod relation;
 #[cfg(feature = "evidence-kernel")]
+pub mod semantic_diff;
+#[cfg(feature = "evidence-kernel")]
 pub mod snapshot;
 pub mod symbol_fqn;
 #[cfg(feature = "evidence-kernel")]

@@ -4,6 +4,9 @@
 //! domain logic and provide use case implementations.
 
 pub mod behaviors;
+// e68 WU2 — affected-work planner over WU1 FactDelta + e66 ReadSet.
+#[cfg(feature = "evidence-kernel")]
+pub mod change_tracking;
 // M7.4 Behavior Runtime adapters — Clock port + SystemClock (application, not domain).
 pub mod commands;
 pub mod dto;
