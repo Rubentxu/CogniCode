@@ -470,9 +470,12 @@ async fn u52_causal_chain_includes_exhaustion_event() {
         .await
         .unwrap();
 
+    // With exhaustion caused by started_event (not rejection_event), the chain is:
+    // [behavior.budget_exhausted, behavior.started] = 2 events.
     assert!(
-        chain.len() >= 3,
-        "chain must have at least 3 events: started, some intermediate, exhaustion"
+        chain.len() >= 2,
+        "chain must have at least 2 events: started and exhaustion, got {}",
+        chain.len()
     );
 
     // Last event is behavior.budget_exhausted.

@@ -21,10 +21,13 @@
 //! delivery. Committing an event and telling somebody about it are different
 //! operations, and the log has to survive the process dying between them.
 
+use crate::domain::behaviors::BehaviorClass;
+use crate::domain::budgets::BudgetKind;
+use crate::domain::execution::ExecutionContext;
 use crate::domain::findings::scope::AnalysisScope;
 use crate::domain::intelligence_log::event::{EventTime, NewIntelligenceEvent};
 use crate::domain::intelligence_log::ids::CorrelationId;
-use crate::domain::intelligence_log::kind::{ActorRef, EventKind};
+use crate::domain::intelligence_log::kind::{ActorRef, EventKind, EventKinds};
 use crate::domain::intelligence_log::payload::{
     BoundedEventPayload, EventPayloadRef, PayloadError,
 };
@@ -107,6 +110,55 @@ impl<'a> CausalRecorder<'a> {
     ) -> Result<EventId, EventStoreError> {
         self.record_with_cause(Some(cause), scope, kind, payload)
             .await
+    }
+
+    /// Record a `behavior.budget_exhausted` event caused by the `behavior.started`
+    /// event (NOT the rejection event — this keeps the chain short and precise).
+    ///
+    /// Consumes `ExecutionContext` as a unit so the caller passes the full identity
+    /// rather than decomposing it into `(scope, actor, correlation)`.
+    ///
+    /// Event chain: `trigger_event → behavior.started → behavior.budget_exhausted`.
+    pub async fn record_behavior_budget_exhausted(
+        &mut self,
+        context: &ExecutionContext,
+        started_event: EventId,
+        behavior_id: &str,
+        class: BehaviorClass,
+        kind: BudgetKind,
+        remaining: u64,
+        attempted: u64,
+    ) -> Result<EventId, EventStoreError> {
+        let mut payload = BoundedEventPayload::new("budget exhausted")
+            .map_err(|e| EventStoreError::Store(e.to_string()))?;
+        payload = payload
+            .with_field("behavior_id", behavior_id.to_string())
+            .map_err(|e| EventStoreError::Store(e.to_string()))?;
+        payload = payload
+            .with_field("effective_class", class.name().to_string())
+            .map_err(|e| EventStoreError::Store(e.to_string()))?;
+        payload = payload
+            .with_field("kind", kind.name().to_string())
+            .map_err(|e| EventStoreError::Store(e.to_string()))?;
+        payload = payload
+            .with_field("remaining", remaining.to_string())
+            .map_err(|e| EventStoreError::Store(e.to_string()))?;
+        payload = payload
+            .with_field("attempted", attempted.to_string())
+            .map_err(|e| EventStoreError::Store(e.to_string()))?;
+        payload = payload
+            .with_field("execution_id", context.execution_id.to_string())
+            .map_err(|e| EventStoreError::Store(e.to_string()))?;
+        let payload_ref = EventPayloadRef::inline(payload);
+
+        // caused_by is the started_event, NOT the rejection_event.
+        self.record_with_cause(
+            Some(started_event),
+            context.scope.clone(),
+            EventKinds::behavior_budget_exhausted(),
+            payload_ref,
+        )
+        .await
     }
 
     async fn record_with_cause(

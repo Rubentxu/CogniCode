@@ -32,13 +32,16 @@
 //! `[trigger, behavior.started, policy.behavior_output_rejected]`.
 //!
 //! When a budget ceiling is exceeded, the runtime additionally emits
-//! `execution.budget_exhausted` caused by the `behavior_output_rejected` event.
+//! `behavior.budget_exhausted` caused by the `behavior.started` event (not the
+//! rejection event). The full chain is:
+//! `[trigger, behavior.started, behavior.budget_exhausted]`.
 //!
 //! Domain ports: the log and the effect sink. Clock is an application port.
 
 use super::admission::BehaviorPermit;
 use super::class::{BehaviorAuthorityPolicy, BehaviorClass, BehaviorEffectKind};
 use crate::application::behaviors::Clock;
+use crate::application::intelligence_log::CausalRecorder;
 use crate::domain::budgets::{self, BudgetAuthorizer, BudgetExhausted, BudgetState};
 use crate::domain::execution::ExecutionContext;
 use crate::domain::intelligence_log::event::{EventTime, IntelligenceEvent, NewIntelligenceEvent};
@@ -221,7 +224,7 @@ pub struct BehaviorOutcome {
     pub completed_event: Option<EventId>,
     /// Budget exhaustion records, in order of occurrence.
     /// Each entry is `(BudgetExhausted, event_id)` where the event is
-    /// `execution.budget_exhausted` caused by the corresponding rejection event.
+    /// `behavior.budget_exhausted` caused by the `behavior.started` event.
     pub budget_exhaustions: Vec<(BudgetExhausted, EventId)>,
 }
 
@@ -260,9 +263,9 @@ impl<'a> BehaviorRuntime<'a> {
     /// 4. Budget commit (`BudgetAuthorizer::commit`) — only on confirmed sink success
     ///
     /// When a budget ceiling is exceeded, the runtime emits **both**
-    /// `policy.behavior_output_rejected` and `execution.budget_exhausted`.
-    /// The behavior continues running: subsequent effects are checked and refused
-    /// independently.
+    /// `policy.behavior_output_rejected` and `behavior.budget_exhausted`.
+    /// The exhaustion event is caused by `behavior.started` (not the rejection),
+    /// giving the chain `[trigger, behavior.started, behavior.budget_exhausted]`.
     pub async fn run(
         &self,
         permit: &BehaviorPermit,
@@ -398,23 +401,27 @@ impl<'a> BehaviorRuntime<'a> {
                     )
                     .await?;
 
-                // Emit budget exhaustion event caused by the rejection.
-                let exhaustion_event = self
-                    .append(
+                // Emit behavior.budget_exhausted caused by started_event (not rejection_event).
+                // Uses CausalRecorder to consume ExecutionContext as a unit.
+                let mut rec = CausalRecorder::new(
+                    self.log,
+                    context.scope.workspace.clone(),
+                    actor.clone(),
+                    context.correlation.clone(),
+                    self.now,
+                );
+                let exhaustion_event = rec
+                    .record_behavior_budget_exhausted(
                         context,
-                        &actor,
-                        EventKinds::behavior_budget_exhausted(),
-                        budget_payload(&[
-                            ("behavior_id", admitted.id().as_str().to_string()),
-                            ("class", class.name().to_string()),
-                            ("kind", exhaustion.kind.name().to_string()),
-                            ("remaining", exhaustion.remaining.to_string()),
-                            ("attempted", exhaustion.attempted.to_string()),
-                            ("execution_id", context.execution_id.to_string()),
-                        ])?,
-                        Some(rejection_event),
+                        started_event,
+                        admitted.id().as_str(),
+                        class,
+                        exhaustion.kind,
+                        exhaustion.remaining,
+                        exhaustion.attempted,
                     )
-                    .await?;
+                    .await
+                    .map_err(BehaviorRuntimeError::Log)?;
 
                 outcome.rejection_events.push(rejection_event);
                 outcome.rejected.push(violation);
