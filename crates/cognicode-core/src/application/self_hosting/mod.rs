@@ -14,7 +14,10 @@
 //! - `prediction.rs` — WU2 (sealed prediction vs observation scoring).
 //! - `mutation_corpus.rs` — WU3 (controlled mutation corpus with
 //!   pre-declared expected outcomes).
+//! - `platform_equivalence.rs` — WU4 (cross-platform equivalence
+//!   comparison + historical replay bootstrap).
 
 pub mod baseline;
 pub mod mutation_corpus;
+pub mod platform_equivalence;
 pub mod prediction;
