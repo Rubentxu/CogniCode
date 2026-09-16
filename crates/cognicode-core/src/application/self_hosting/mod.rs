@@ -18,9 +18,19 @@
 //!   comparison + historical replay bootstrap).
 //! - `closure.rs` — closure gate (the structural proof that the
 //!   pieces compose end-to-end).
+//! - `acceptance.rs` — end-to-end acceptance tests that walk the
+//!   real `cognicode-core/src/` directory at test time, exercising
+//!   the real public API (`compute_baseline`) on real file bytes.
+//! - `platform_equivalence_acceptance.rs` — end-to-end acceptance
+//!   for the WU4 platform equivalence public API.
+//! - `prediction_acceptance.rs` — end-to-end acceptance for the
+//!   WU2 prediction public API.
 
+pub mod acceptance;
 pub mod baseline;
 pub mod closure;
 pub mod mutation_corpus;
 pub mod platform_equivalence;
+pub mod platform_equivalence_acceptance;
 pub mod prediction;
+pub mod prediction_acceptance;
