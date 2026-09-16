@@ -21,15 +21,22 @@
 //! - `acceptance.rs` — end-to-end acceptance tests that walk the
 //!   real `cognicode-core/src/` directory at test time, exercising
 //!   the real public API (`compute_baseline`) on real file bytes.
+//! - `baseline_edge_cases.rs` — edge cases for the baseline
+//!   public API (non-UTF-8 bytes, duplicate bytes, determinism,
+//!   empty input error path).
 //! - `platform_equivalence_acceptance.rs` — end-to-end acceptance
 //!   for the WU4 platform equivalence public API.
 //! - `prediction_acceptance.rs` — end-to-end acceptance for the
 //!   WU2 prediction public API.
+//! - `mutation_corpus_acceptance.rs` — end-to-end acceptance for
+//!   the WU3 mutation corpus (real source mutation applied).
 
 pub mod acceptance;
 pub mod baseline;
+pub mod baseline_edge_cases;
 pub mod closure;
 pub mod mutation_corpus;
+pub mod mutation_corpus_acceptance;
 pub mod platform_equivalence;
 pub mod platform_equivalence_acceptance;
 pub mod prediction;
