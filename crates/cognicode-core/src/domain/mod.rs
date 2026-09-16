@@ -13,6 +13,10 @@ pub mod example_block;
 // definitions. Additive pure domain (no I/O), mirroring the M5
 // `analytics::program_analysis` precedent; ungated.
 pub mod behaviors;
+// M7.4 Behavior Budgets (e65) — budget vocabulary, authorizer, and state.
+// Pure domain (no I/O, no clocks). Ungated: budgets are declarative ceilings
+// and the refusal path never reaches the canonical store.
+pub mod budgets;
 pub mod execution;
 pub mod findings;
 // M7 (Living Software Intelligence) — the causal Intelligence Event Log.
