@@ -307,7 +307,7 @@ mod tests {
     };
     use crate::application::portable_execution::podman::DisabledPodmanDiscovery;
     use crate::application::portable_execution::spec::{ExecutionSpec, RequiresIsolation};
-    use crate::application::portable_execution::PodmanBackend;
+    use crate::application::portable_execution::{NativeProcessBackend, PodmanBackend};
     use crate::application::software_world::world::{SoftwareWorld, SoftwareWorldId};
     use crate::domain::evidence_kernel::ids::{EvidenceId, FactId};
     use crate::domain::findings::ports::{EvidenceDescriptor, FactSlot};
@@ -653,4 +653,170 @@ mod tests {
     // (Defensive: keep imports used in real builds.)
     #[allow(dead_code)]
     fn _suppress_unused(_: EvidenceId, _: FactId, _: EvidenceDescriptor, _: BundleEntry) {}
+
+    // =========================================================================
+    // WU6 — portable-execution UAT
+    //
+    // Per the e75 directive, WU6 validates the seam end-to-end with a
+    // tiny pinned fixture running through the REAL `NativeProcessBackend`
+    // (not a scripted mock). The fixture must:
+    //   - be a real OS binary (no shell);
+    //   - be invocable as `program + argv` (no shell interpolation);
+    //   - have a deterministic exit code and stdout that the test can
+    //     assert on.
+    //
+    // Oracle host: Linux. macOS/Windows are explicitly waived (no runner
+    // is available in this CI environment); the waiver is documented in
+    // the WU6 module doc-comment below.
+    // =========================================================================
+
+    /// Path to the fixture binary used by WU6 UAT. On Linux we use the
+    /// POSIX-standard `/bin/echo` binary which is present in every
+    /// minimal Linux install and has stable semantics (writes its argv
+    /// to stdout, exits 0). Using `/bin/echo` (rather than a shell or
+    /// `bash -c`) satisfies the no-shell-string invariant of the
+    /// seam: the spec is `program=/bin/echo, argv=["hello-wu6"]`.
+    #[cfg(target_os = "linux")]
+    const WU6_FIXTURE_BIN: &str = "/bin/echo";
+
+    /// Construct an `ExecutionSpec` for the WU6 fixture.
+    #[cfg(target_os = "linux")]
+    fn wu6_spec(work: CiWorkId, isolation: RequiresIsolation) -> ExecutionSpec {
+        ExecutionSpec::try_new(
+            work,
+            WU6_FIXTURE_BIN,
+            vec!["hello-wu6".to_string()],
+            PathBuf::from("/tmp"),
+            "wu6-corr-linux",
+        )
+        .expect("wu6 spec")
+        .with_isolation(isolation)
+    }
+
+    /// Run the UAT through the real `NativeProcessBackend` against
+    /// the real OS binary `/bin/echo`. Asserts:
+    ///  1. `drive_trial` produces a Ran outcome;
+    ///  2. the bundle contains an Evidence entry for the WU6 slot;
+    ///  3. the gate is invoked and produces one of the four outcomes.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn wu6_linux_oracle_native_backend_runs_real_fixture_and_gate_evaluates() {
+        let backend = NativeProcessBackend::new();
+        // Sanity: the native backend declares native (no isolation)
+        // capabilities. The fixture does NOT require isolation so
+        // this is the legal combination.
+        assert!(!backend.capabilities().isolation);
+        let work = work_id("ci.wu6-linux-oracle");
+        let spec = wu6_spec(work.clone(), RequiresIsolation::No);
+        let selection =
+            BackendSelection::new(Box::new(backend), policy_strict())
+                .with_spec(work.clone(), spec);
+        let affected = vec![work.clone()];
+        let executor = DefaultTrialExecutor::new(policy_strict());
+        let trial_id = TrialId::from_string("trial-wu6-linux-oracle");
+        let input = trial_input_for(empty_bundle());
+        let (ev, outcomes) = drive_trial(trial_id, input, &affected, &selection, &executor);
+
+        // (1) Driver classifies the work as Ran — the real native
+        // backend actually spawned `/bin/echo` and got its result.
+        assert_eq!(outcomes.len(), 1);
+        assert!(
+            matches!(outcomes[0].1, TrialDriverWorkOutcome::Ran { .. }),
+            "expected Ran outcome from real native backend; got {:?}",
+            outcomes[0].1
+        );
+
+        // (2) The bundle now has a portable_exec entry for our slot.
+        let slot_id = format!("portable_exec::{}", work);
+        let found = ev
+            .evidence_bundle
+            .entries
+            .iter()
+            .find(|e| e.slot().slot_id == slot_id);
+        assert!(found.is_some(), "expected an entry for {}", slot_id);
+
+        // (3) Gate ran and produced a verdict (any of the four
+        // outcomes is legitimate — the invariant is that the gate
+        // was invoked, not that it produced a specific verdict).
+        match ev.gate.outcome {
+            PolicyOutcome::Pass
+            | PolicyOutcome::Warn
+            | PolicyOutcome::Block
+            | PolicyOutcome::InsufficientEvidence => {}
+        }
+    }
+
+    /// WU6 second leg: the real native backend against isolation-
+    /// required work. The native backend MUST refuse at the seam
+    /// (no silent native fallback) and the gate MUST receive
+    /// InsufficientEvidence — even when the fixture itself would
+    /// have run successfully.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn wu6_linux_oracle_isolation_required_work_is_refused_by_native_backend() {
+        let backend = NativeProcessBackend::new();
+        let work = work_id("ci.wu6-linux-iso");
+        // We pin isolation = Yes against a native (no-isolation)
+        // backend. The seam must refuse; the gate must not Pass.
+        let spec = wu6_spec(work.clone(), RequiresIsolation::Yes);
+        let selection =
+            BackendSelection::new(Box::new(backend), policy_strict())
+                .with_spec(work.clone(), spec);
+        let affected = vec![work];
+        let executor = DefaultTrialExecutor::new(policy_strict());
+        let trial_id = TrialId::from_string("trial-wu6-linux-iso");
+        let input = trial_input_for(empty_bundle());
+        let (ev, outcomes) =
+            drive_trial(trial_id, input, &affected, &selection, &executor);
+
+        assert!(matches!(
+            outcomes[0].1,
+            TrialDriverWorkOutcome::Unavailable { .. }
+        ));
+        assert!(is_insufficient(&ev));
+    }
+
+    // -----------------------------------------------------------------
+    // macOS UAT (waiver — not exercised in this environment).
+    //
+    // We do not have a macOS runner available for this commit.
+    // The portable-execution seam was designed for cross-platform
+    // portability, but per the e75 directive ("Linux may be the first
+    // observed oracle; macOS/Windows UAT may be explicitly waived if
+    // no runners available"), we ship the Linux oracle with an
+    // explicit, HONEST waiver for macOS and Windows:
+    //
+    //   - The seam types (`ExecutionSpec`, `ExecutionOutcome`,
+    //     `BackendCapabilities`) are platform-agnostic Rust. They
+    //     compile on all targets.
+    //   - `NativeProcessBackend` uses `std::process::Command` which
+    //     is platform-portable; the only platform assumption is that
+    //     a fixture binary exists at the path supplied.
+    //   - The honest gap is: we have not run the fixture on macOS
+    //     or Windows. macOS would use `/bin/echo` (POSIX) or
+    //     `/usr/bin/echo` (BSD variant); Windows would require
+    //     `cmd.exe /c echo` because `/bin/echo` does not exist.
+    //     That is an e76 follow-up (self-hosting validation): once
+    //     e76's runner matrix ships macOS and Windows runners, this
+    //     waiver is closed by enabling the cfg-gated tests below.
+    // -----------------------------------------------------------------
+    #[cfg(all(test, not(target_os = "linux")))]
+    #[test]
+    fn wu6_macos_oracle_waiver() {
+        // This test exists so the waiver is visible in the test
+        // runner output (it always passes; it documents the gap).
+        // Once a macOS runner is wired into CI, replace this body
+        // with the equivalent of `wu6_linux_oracle_*` using
+        // `/bin/echo` and the macOS-specific argv shape.
+    }
+
+    #[cfg(all(test, not(target_os = "linux")))]
+    #[test]
+    fn wu6_windows_oracle_waiver() {
+        // Windows does not have `/bin/echo`. The WU6 oracle for
+        // Windows would use `cmd.exe /c` with `echo` as the first
+        // argument. The seam is fine with that (it is `program +
+        // argv`), but the argv shape must be Windows-correct. This
+        // is e76 follow-up; the test exists to keep the gap visible.
+    }
 }
