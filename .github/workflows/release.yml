@@ -1,5 +1,22 @@
 name: Release
 
+# e74 WU3 — native release matrix.
+#
+# Contract (specs/portable-runtime-distribution, PRT-005):
+#   - Linux x86_64, Linux aarch64, macOS x86_64, macOS arm64, Windows x86_64
+#     must all build, package, install-smoke, and runtime-smoke on a
+#     NATIVE runner.
+#   - Cross-compilation must not be used to fake platform support.
+#   - Each matrix lane produces a tarball named per the
+#     `BundleManifest::Platform` enum (linux-x86-64, linux-aarch64,
+#     mac-os-x86-64, mac-os-aarch64, windows-x86-64).
+#   - Install-smoke: extract the tarball, run `cogh --version` against
+#     a clean HOME. Must not require any container runtime.
+#
+# Waivers: if a target cannot honestly be delivered during e74, the
+# lane is removed from `MATRIX` AND a typed waiver is recorded in
+# docs/adr/. Silent substitution is forbidden.
+
 on:
   push:
     tags:
@@ -8,38 +25,185 @@ on:
 permissions:
   contents: write
 
+# Allow cancel of older runs when a new tag is pushed.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Platform → runner mapping. Each runner must be NATIVE for the
+# declared target triple. GitHub-hosted runners used:
+#   - ubuntu-latest          → x86_64-unknown-linux-gnu   (LinuxX86_64)
+#   - ubuntu-24.04-arm       → aarch64-unknown-linux-gnu  (LinuxAarch64)
+#   - macos-13               → x86_64-apple-darwin        (MacOsX86_64)
+#   - macos-latest           → aarch64-apple-darwin       (MacOsAarch64)
+#   - windows-latest         → x86_64-pc-windows-msvc     (WindowsX86_64)
+#
+# These names match `BundleManifest::Platform` variants (with the
+# `kebab-case` rename). If a runner is added or replaced, this table
+# AND `crates/cognicode-cli/src/cmd/platform_adapter.rs` MUST be
+# updated together.
+MATRIX: &MATRIX
+  matrix:
+    include:
+      - target: linux-x86-64
+        runner: ubuntu-latest
+        rust_target: x86_64-unknown-linux-gnu
+        needs_musl: false
+        artifact_glob: "*"
+        cli_extension: ""
+      - target: linux-aarch64
+        runner: ubuntu-24.04-arm
+        rust_target: aarch64-unknown-linux-gnu
+        needs_musl: false
+        artifact_glob: "*"
+        cli_extension: ""
+      - target: mac-os-x86-64
+        runner: macos-13
+        rust_target: x86_64-apple-darwin
+        needs_musl: false
+        artifact_glob: "*"
+        cli_extension: ""
+      - target: mac-os-aarch64
+        runner: macos-latest
+        rust_target: aarch64-apple-darwin
+        needs_musl: false
+        artifact_glob: "*"
+        cli_extension: ""
+      - target: windows-x86-64
+        runner: windows-latest
+        rust_target: x86_64-pc-windows-msvc
+        needs_musl: false
+        artifact_glob: "*"
+        cli_extension: ".exe"
+
 jobs:
+  # -----------------------------------------------------------------
+  # 1. Build lane — produces a native tarball per target triple.
+  # -----------------------------------------------------------------
   build:
-    runs-on: ubuntu-latest
+    name: build-${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      <<: *MATRIX
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Add musl target
-        run: rustup target add x86_64-unknown-linux-musl
+      - name: Add native target
+        run: rustup target add ${{ matrix.rust_target }}
 
-      - name: Build musl binary
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.rust_target }}
+
+      - name: Build native binaries
         run: |
           cargo build --release \
-            --target x86_64-unknown-linux-musl \
+            --target ${{ matrix.rust_target }} \
             -p cognicode-mcp \
             -p cognicode-runtime \
             --bin explorer-api
+          # cogh must always build with the evidence-kernel feature on
+          # because it consumes gated types (this was e74 WU0 fix).
+          cargo build --release \
+            --target ${{ matrix.rust_target }} \
+            -p cognicode-cli --bin cogh \
+            --features cognicode-core/evidence-kernel
 
-      - name: Create artifact
+      - name: Package tarball
+        shell: bash
         run: |
           mkdir -p dist
           VERSION="${GITHUB_REF#refs/tags/v}"
-          tar -czf dist/cognicode-${VERSION}-x86_64-unknown-linux-musl.tar.gz \
-            -C target/x86_64-unknown-linux-musl/release/ \
-            explorer-api cognicode-mcp cognicode-runtime
-          # Also include the cogh CLI
-          cargo build --release -p cognicode-cli --bin cogh
-          tar -czf dist/cognicode-cli-${VERSION}-x86_64-unknown-linux-musl.tar.gz \
-            -C target/release/ \
-            cogh
+          # Strip `.exe` so the extension handling lives in one place
+          # below.
+          BIN_SUFFIX="${{ matrix.cli_extension }}"
+          BIN_LIST=(explorer-api${BIN_SUFFIX} cognicode-mcp${BIN_SUFFIX} cognicode-runtime${BIN_SUFFIX})
+          # On Windows, the binary lives under target/<triple>/release/.exe;
+          # on Unix, it does not have an extension.
+          tar -czf "dist/cognicode-${VERSION}-${{ matrix.target }}.tar.gz" \
+            -C "target/${{ matrix.rust_target }}/release/" \
+            "${BIN_LIST[@]}"
+          # Also include the cogh CLI in a separate tarball.
+          tar -czf "dist/cognicode-cli-${VERSION}-${{ matrix.target }}.tar.gz" \
+            -C "target/${{ matrix.rust_target }}/release/" \
+            cogh${BIN_SUFFIX}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cognicode-${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  # -----------------------------------------------------------------
+  # 2. Install-smoke lane — exercises `cogh --version` and `cogh doctor`
+  #    on a CLEAN HOME. This catches the failure mode where the binary
+  #    builds but cannot bootstrap on the target OS (missing platform
+  #    shim, wrong bundle path, etc.).
+  # -----------------------------------------------------------------
+  install-smoke:
+    name: install-smoke-${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    needs: build
+    strategy:
+      fail-fast: false
+      <<: *MATRIX
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cognicode-${{ matrix.target }}
+          path: dist
+
+      - name: Extract and run smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          mkdir -p smoke-stage
+          tar -xzf "dist/cognicode-cli-${VERSION}-${{ matrix.target }}.tar.gz" -C smoke-stage
+          BIN_SUFFIX="${{ matrix.cli_extension }}"
+          # Clean HOME — proves no implicit init from real user state.
+          export HOME="$(pwd)/smoke-home"
+          export XDG_CONFIG_HOME="$HOME/.config"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export USERPROFILE="$HOME"  # Windows env var
+          mkdir -p "$HOME"
+          COGH="./smoke-stage/cogh${BIN_SUFFIX}"
+          chmod +x "$COGH"
+          # Must exit 0 and print a version.
+          "$COGH" --version
+          # `cogh doctor` is a WU4 follow-up but the binary must not
+          # crash on `--help`.
+          "$COGH" --help | head -20
+
+  # -----------------------------------------------------------------
+  # 3. Release lane — aggregates all matrix tarballs into a single
+  #    GitHub release. Each target triple's artifacts are uploaded.
+  # -----------------------------------------------------------------
+  release:
+    name: publish-release
+    runs-on: ubuntu-latest
+    needs: [build, install-smoke]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-all
+          pattern: cognicode-*
+          merge-multiple: true
 
       - name: Generate release notes
         id: release-notes
@@ -50,10 +214,23 @@ jobs:
           echo "$NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: List tarballs in release
+        run: |
+          echo "Tarballs included in this release:"
+          ls -la dist-all/
+          # Confirm we have one set per platform in MATRIX.
+          PLATFORMS=(linux-x86-64 linux-aarch64 mac-os-x86-64 mac-os-aarch64 windows-x86-64)
+          for p in "${PLATFORMS[@]}"; do
+            if ! ls dist-all/cognicode-cli-*-"$p".tar.gz >/dev/null 2>&1; then
+              echo "::error::Missing tarball for platform $p"
+              exit 1
+            fi
+          done
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.tar.gz
+          files: dist-all/*.tar.gz
           draft: false
           body: ${{ steps.release-notes.outputs.notes }}
           prerelease: false
