@@ -16,8 +16,11 @@
 //!   pre-declared expected outcomes).
 //! - `platform_equivalence.rs` — WU4 (cross-platform equivalence
 //!   comparison + historical replay bootstrap).
+//! - `closure.rs` — closure gate (the structural proof that the
+//!   pieces compose end-to-end).
 
 pub mod baseline;
+pub mod closure;
 pub mod mutation_corpus;
 pub mod platform_equivalence;
 pub mod prediction;
