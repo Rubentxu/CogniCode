@@ -9,9 +9,12 @@
 //! `ingest_rust_facts`, `DetectorDigest`) rather than introducing a
 //! parallel digest scheme.
 //!
-//! See `baseline.rs` for WU1 (deterministic self-model baseline) and
-//! `prediction.rs` for WU2 (sealed prediction vs observation
-//! scoring).
+//! Sub-modules:
+//! - `baseline.rs` — WU1 (deterministic self-model baseline).
+//! - `prediction.rs` — WU2 (sealed prediction vs observation scoring).
+//! - `mutation_corpus.rs` — WU3 (controlled mutation corpus with
+//!   pre-declared expected outcomes).
 
 pub mod baseline;
+pub mod mutation_corpus;
 pub mod prediction;
