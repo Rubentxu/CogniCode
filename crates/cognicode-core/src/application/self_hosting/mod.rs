@@ -26,6 +26,9 @@
 //!   empty input error path).
 //! - `platform_equivalence_acceptance.rs` — end-to-end acceptance
 //!   for the WU4 platform equivalence public API.
+//! - `platform_equivalence_edge_cases.rs` — edge cases for the
+//!   WU4 normaliser (UTF-8 BOM, mixed CRLF/LF, empty payload,
+//!   single platform, partial divergence).
 //! - `prediction_acceptance.rs` — end-to-end acceptance for the
 //!   WU2 prediction public API.
 //! - `mutation_corpus_acceptance.rs` — end-to-end acceptance for
@@ -39,5 +42,6 @@ pub mod mutation_corpus;
 pub mod mutation_corpus_acceptance;
 pub mod platform_equivalence;
 pub mod platform_equivalence_acceptance;
+pub mod platform_equivalence_edge_cases;
 pub mod prediction;
 pub mod prediction_acceptance;
