@@ -5,6 +5,26 @@
 > the moment of writing. Built because the WU-completion summaries
 > were inspection-based; this is evidence-based.
 
+## Mapping to the umbrella spec
+
+The governing umbrella spec is
+[`portable-runtime-distribution`](../../cognicode-living-software-intelligence/specs/portable-runtime-distribution/spec.md)
+in the LSI umbrella. It declares 6 requirements (`PRT-001`..`PRT-006`).
+This traceability file uses an e74-local numbering scheme (`PRT-001`..`PRT-008`)
+where the first 6 IDs align 1:1 with the spec, and `PRT-007`/`PRT-008`
+are e74-specific extension requirements:
+
+| This doc | Umbrella spec | Topic                              |
+|----------|---------------|------------------------------------|
+| PRT-001  | PRT-001       | Native-first core                  |
+| PRT-002  | PRT-002       | Supported release targets          |
+| PRT-006  | PRT-003       | Platform semantics behind adapters |
+| PRT-004  | PRT-004       | Capability-oriented doctor         |
+| PRT-003  | PRT-005       | Release pipeline parity            |
+| PRT-005  | PRT-006       | Installer machinery does not own lifecycle |
+| PRT-007  | — (e74 extension) | Install trajectory is atomic + locked + rollback-able |
+| PRT-008  | — (e74 extension) | Cross-platform UAT evidence collection |
+
 ## 1. PRT-001 — Native analysis works without any container runtime
 
 **Requirement.** A user on Windows or any other host without Podman
