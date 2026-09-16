@@ -36,6 +36,18 @@ pub mod investigation_service;
 // `evidence-kernel` because it consumes e68/e69 gated types.
 #[cfg(feature = "evidence-kernel")]
 pub mod local_ci;
+// e75 WU1 — Portable execution seam (spec + outcome + backend trait).
+// Container-free: no process spawning here. The trait surface added
+// in this module is the only host-execution seam, kept distinct from
+// WorkExecutor (see `crate::application::local_ci::WorkExecutor`).
+// The composition that bridges both seams lives in
+// `application::portable_execution::comp` and is total, pure, no-IO.
+// Gated by `evidence-kernel` because `comp` consumes e70
+// (`local_ci::WorkExecutor`, `evidence_bundle::Outcome`, …) and
+// `evidence_translate` consumes `evidence_bundle::*` and
+// `domain::evidence_kernel::ids::*`.
+#[cfg(feature = "evidence-kernel")]
+pub mod portable_execution;
 // e71 WU1 — SoftwareWorld foundation (M9). Lineage + isolation metadata,
 // not a second truth store. Reuses canonical SnapshotId; never mirrors
 // Facts. WU2 will add fork(); WU3 will compose with e68 SemanticFactDelta.
