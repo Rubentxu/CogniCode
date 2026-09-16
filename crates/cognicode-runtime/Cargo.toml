@@ -12,7 +12,7 @@ name = "explorer-mcp"
 path = "src/bin/mcp.rs"
 
 [dependencies]
-cognicode-core = { path = "../cognicode-core" }
+cognicode-core = { path = "../cognicode-core", features = ["evidence-kernel"] }
 cognicode-explorer = { path = "../cognicode-explorer", default-features = false }
 cognicode-ladybug = { path = "../cognicode-ladybug", optional = true }
 async-trait.workspace = true

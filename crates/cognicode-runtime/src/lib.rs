@@ -64,6 +64,11 @@ pub struct Runtime {
     pub ingest_commit_port: Option<Arc<dyn cognicode_core::domain::ports::IngestCommitPort>>,
 }
 
+// ============================================================================
+// e67 — Production Grounding activation seam
+// ============================================================================
+pub mod grounding;
+
 /// Plain DTO carrying the 10 LadybugStore port traits into
 /// [`bootstrap_with_backend`]. Replaces the previous single-implementer
 /// backend trait indirection (collapsed into a struct of

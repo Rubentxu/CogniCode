@@ -1,0 +1,18 @@
+{
+  "$schema": "internal://cognicode/lsi-grounding-fixture/v1",
+  "fixture_path": "sample.rs",
+  "expected_predicates": [
+    "core:defines",
+    "core:contains",
+    "core:calls"
+  ],
+  "expected_subject_kinds": {
+    "core:defines": "symbol",
+    "core:contains": "file",
+    "core:calls": "symbol"
+  },
+  "expected_min_defines": 2,
+  "expected_min_calls": 1,
+  "expected_min_contains": 1,
+  "notes": "Predicate set must NOT exceed the bridge's canonical mapping (design D2 of e37); a regression here means a producer leaked a non-core:* predicate."
+}

@@ -50,6 +50,7 @@
 pub mod batch_builder;
 pub mod entity_table;
 pub mod lsp_facts;
+pub mod production_grounding;
 pub mod tree_sitter_facts;
 
 use crate::domain::evidence_kernel::relation::RelationKind;
