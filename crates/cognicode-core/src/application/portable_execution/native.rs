@@ -252,14 +252,16 @@ impl ExecutionBackend for NativeProcessBackend {
     }
 }
 
-enum WaitOutcome {
+/// Outcome of a non-blocking wait call: the child either exited or
+/// the timeout fired.
+pub(super) enum WaitOutcome {
     Exited(std::process::ExitStatus),
     TimedOut,
 }
 
 /// Wait for the child up to `limit`. If the timeout fires, returns
 /// `TimedOut` and lets the caller decide what to do (kill, etc.).
-fn wait_with_timeout(
+pub(super) fn wait_with_timeout(
     child: &mut std::process::Child,
     limit: Duration,
 ) -> WaitOutcome {
@@ -333,7 +335,7 @@ fn bounded_violation(
 /// whether the cap was hit. `finalize()` returns the bounded
 /// `Captured` payload; `finalize_opt()` returns `None` for an
 /// empty stream (used in error paths where reading was aborted).
-struct BoundedCapture {
+pub(super) struct BoundedCapture {
     bytes: Vec<u8>,
     truncated: bool,
     saw_any: bool,
@@ -348,7 +350,7 @@ impl BoundedCapture {
         }
     }
 
-    fn finalize(mut self) -> Captured {
+    pub(super) fn finalize(mut self) -> Captured {
         if self.bytes.is_empty() {
             return Captured::inlined("");
         }
@@ -359,7 +361,7 @@ impl BoundedCapture {
         Captured::inlined(text)
     }
 
-    fn finalize_opt(self) -> Option<Captured> {
+    pub(super) fn finalize_opt(self) -> Option<Captured> {
         if self.saw_any {
             Some(self.finalize())
         } else {
@@ -368,7 +370,7 @@ impl BoundedCapture {
     }
 }
 
-fn bounded_capture<R: Read + Send + 'static>(
+pub(super) fn bounded_capture<R: Read + Send + 'static>(
     pipe: Option<R>,
 ) -> BoundedCapture {
     let mut cap = BoundedCapture::new();

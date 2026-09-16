@@ -47,6 +47,7 @@ pub mod comp;
 pub mod evidence_translate;
 pub mod native;
 pub mod outcome;
+pub mod podman;
 pub mod spec;
 
 // (Snapshot identity helper used by comp for tests / log traces.)
@@ -57,6 +58,10 @@ pub use native::{NativeProcessBackend, MAX_CAPTURED_BYTES, NATIVE_BUNDLE_ID};
 pub use outcome::{
     BoundedViolation, Captured, ExecutionOutcome, Failure, Missing, MissingCapability,
     SuccessDetail, ViolatedBound,
+};
+pub use podman::{
+    default_discovery, host_podman_endpoint, DiscoveryError, PodmanBackend, PodmanDiscovery,
+    PodmanEndpoint, ProbePodmanDiscovery, DisabledPodmanDiscovery,
 };
 pub use spec::{
     ExecutionBounds, ExecutionSpec, MountPropagation, RequiresIsolation, SpecError, WorkspaceMount,
