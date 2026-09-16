@@ -18,6 +18,9 @@
 //!   comparison + historical replay bootstrap).
 //! - `closure.rs` — closure gate (the structural proof that the
 //!   pieces compose end-to-end).
+//! - `closure_replay_shape.rs` — extended closure gate tests for
+//!   the `HistoricalReplay` shape (the cross-WS bridge between
+//!   WU1/WU2 and the user-driven closure follow-up cycle).
 //! - `acceptance.rs` — end-to-end acceptance tests that walk the
 //!   real `cognicode-core/src/` directory at test time, exercising
 //!   the real public API (`compute_baseline`) on real file bytes.
@@ -38,6 +41,7 @@ pub mod acceptance;
 pub mod baseline;
 pub mod baseline_edge_cases;
 pub mod closure;
+pub mod closure_replay_shape;
 pub mod mutation_corpus;
 pub mod mutation_corpus_acceptance;
 pub mod platform_equivalence;
