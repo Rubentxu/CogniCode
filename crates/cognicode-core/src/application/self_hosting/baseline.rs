@@ -188,17 +188,16 @@ mod tests {
     fn baseline_module_does_not_leak_platform_specific_identifiers() {
         // The module is pure and platform-neutral. The seam-level
         // invariant: no platform-specific runtime identifier leaks
-        // into the seam. We exclude the test module itself (it
-        // necessarily enumerates the forbidden identifiers as data
-        // for the check).
+        // into the seam. We strip doc comments and the test
+        // module itself (it necessarily enumerates the forbidden
+        // identifiers as data for the check).
         let full = include_str!("baseline.rs");
-        let cut_at = full.find("\n#[cfg(test)]\nmod tests").unwrap_or(full.len());
-        let src = &full[..cut_at];
-        let lower = src.to_lowercase();
+        let stripped = crate::application::portable_execution::strip_doc_comments_and_tests(full);
+        let lower = stripped.to_lowercase();
         for forbidden in ["podman", "systemd", "quadlet", "wsl", "hyper-v", "docker"] {
             assert!(
                 !lower.contains(forbidden),
-                "self_hosting::baseline code (non-test) must not leak platform-specific symbol: {forbidden}"
+                "self_hosting::baseline code (non-test, non-doc) must not leak platform-specific symbol: {forbidden}"
             );
         }
     }

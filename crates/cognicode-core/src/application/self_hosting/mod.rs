@@ -9,6 +9,9 @@
 //! `ingest_rust_facts`, `DetectorDigest`) rather than introducing a
 //! parallel digest scheme.
 //!
-//! See `baseline.rs` for WU1 (deterministic self-model baseline).
+//! See `baseline.rs` for WU1 (deterministic self-model baseline) and
+//! `prediction.rs` for WU2 (sealed prediction vs observation
+//! scoring).
 
 pub mod baseline;
+pub mod prediction;
