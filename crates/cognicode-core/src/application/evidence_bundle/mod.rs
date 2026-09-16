@@ -24,6 +24,12 @@
 
 pub mod producer;
 
+// Re-exports for consumers of `evidence_bundle` (so they don't have
+// to reach into the `producer` sub-module for the canonical types).
+pub use producer::{
+    EvidenceProducer, Outcome, ProducerOutput, StaticProducer, aggregate, aggregate_fresh,
+};
+
 use crate::domain::findings::ports::EvidenceDescriptor;
 
 /// Opaque per-bundle identifier. Allocated in process for e69;

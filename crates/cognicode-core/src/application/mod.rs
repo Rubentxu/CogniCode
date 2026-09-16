@@ -24,6 +24,9 @@ pub mod policy_gate;
 pub mod ingest;
 pub mod intelligence_log;
 pub mod investigation_service;
+// e70 WU1+WU2 — Local CI vertical orchestration (in-memory WorkExecutor,
+// planner → executor → bundle → gate → LocalVerticalReport).
+pub mod local_ci;
 pub mod program_analysis;
 pub mod services;
 pub mod workspace_session;
