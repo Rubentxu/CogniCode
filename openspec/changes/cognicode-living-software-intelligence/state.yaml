@@ -281,6 +281,35 @@ phases:
       Closure: cycle never instantiated as formal SDDK record (DEBT-SDDK-003
       degraded-but-governed mode); durable on-disk record is the verification
       report (b364413f) + archive-manifest landed together with e66 in 382a0c10.
-      NEXT: e68 (semantic Fact diff + affected-work planner).
+      e68-lsi-semantic-diff-affected-work archived (M8 foundation: semantic
+      change → affected work mapping, U61 follow-on). Single commit 02592ff4
+      (1698 insertions) covering WU1 SemanticFactDelta (FactSemanticKey =
+      (subject, predicate, object); FactId deliberately absent from semantic
+      equality so renumbering does not produce spurious diff; modify = removed +
+      added), WU2 AffectedWorkPlanner reusing e66 ReadSet + InvalidationQuery
+      port (SchedulingReason ∈ {Affected, Unaffected, Unknown}), WU3 adversarial
+      + invariants tests. 9 + 16 = 25 tests all green. Closure: degraded-but-
+      governed; archive-manifest landed together with e69+e70. NEXT: e69
+      (EvidenceBundle + PolicyGate).
+      e69-lsi-evidence-bundle-policy-gate archived (M8 foundation: structured
+      evidence → policy decision). Single commit b39bb524 covering WU1
+      EvidenceBundle + BundleEntry (Evidence / Missing / Failed / Unknown
+      terminal classifications; ready_for_gate semantics), WU2 EvidenceProducer
+      trait (one impl per source kind: cargo test, just, cogh, detector run,
+      build result, analysis result), WU3 PolicyGate::evaluate(bundle, policy) →
+      GateVerdict ∈ {Pass, Warn, Block, InsufficientEvidence}. Closure:
+      degraded-but-governed; archive-manifest landed together with e70. NEXT:
+      e70 (local CI vertical).
+      e70-lsi-local-ci-vertical archived (M8 vertical: planner + executor +
+      bundle + gate + explanations). Single commit c0975660 (1543 insertions)
+      covering WU1 WorkExecutor trait + InMemoryWorkExecutor, WU2 why_scheduled
+      + why_decided as separately typed explanations, WU3 15/15 end-to-end
+      adversarial + invariants. Authority ≠ Execution: anything can implement
+      WorkExecutor but cannot mint authority; gate is the gate. Unknown is not
+      Unaffected: planner Unknown executes conservatively; Missing slot on
+      required rule yields InsufficientEvidence. Closure: degraded-but-
+      governed; archive-manifest landed together with e68+e69. MANDATORY STOP
+      after e70 per the authorized envelope — M9 (Fork / Trial / Promote) MUST
+      NOT be opened automatically without strategic architecture review.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
