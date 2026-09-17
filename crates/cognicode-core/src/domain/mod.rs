@@ -35,6 +35,11 @@ pub mod intelligence_log;
 pub mod naming;
 // Shared trust vocabulary (`AdmissionSource`) — ungated (cycle e64).
 pub mod trust;
+// Executable Architecture (e77, M10 first slice) — typed architecture
+// constraints and a minimal `use` parser. Pure domain (no I/O, no
+// `sqlx`/`tokio`); ungated. The evaluator and admission flow live in
+// `application::architecture` so the domain layer stays I/O-free.
+pub mod architecture;
 // Kernel identifiers (EntityId / FactId / EvidenceId / SnapshotId /
 // OccurrenceId / StableEntityId / ExecutionId) — ungated domain
 // vocabulary (cycle e56). The gated `evidence_kernel::ids` re-exports

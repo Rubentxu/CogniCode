@@ -3,6 +3,7 @@
 //! This module contains the application services that orchestrate
 //! domain logic and provide use case implementations.
 
+pub mod architecture;
 pub mod behaviors;
 // e68 WU2 — affected-work planner over WU1 FactDelta + e66 ReadSet.
 #[cfg(feature = "evidence-kernel")]
