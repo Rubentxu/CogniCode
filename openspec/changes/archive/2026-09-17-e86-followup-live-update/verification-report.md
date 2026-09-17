@@ -4,8 +4,16 @@
 **Date:** 2026-09-17
 **Author:** orchestrator (SDDK AUTO-RUN)
 **Branch:** main
-**HEAD:** `de22c9ca0415a00bcda283b6ff999ad4ea68bae1` (== `origin/main`)
-**Cycle commit range:** `9d446974` (feat) → `de22c9ca` (archive)
+**HEAD at archive push:** `bfa819e64f38bfcdad3f3a4ad1a8e6b3ad4f5a1d`
+**HEAD == origin/main:** verified at archive time.
+**Cycle commit range:** `9d446974` (feat) → `de22c9ca` (archive) → `bfa819e6` (docs pin)
+
+> The HEAD SHA above is the value of `main` at the moment this report
+> was archived. Any subsequent commits (e.g. doc fixes after a re-read)
+> will advance HEAD without invalidating this report — the cycle
+> deliverables (174/174 tests passing, exit gates green, regression
+> pinned) are all captured in commits `9d446974` and `de22c9ca`. The
+> docs-pin commit `bfa819e6` is a follow-up edit only.
 
 ## Scope
 
