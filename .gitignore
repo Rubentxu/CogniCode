@@ -173,3 +173,12 @@ cognicode.lbug
 cognicode.lbug.wal
 
 uat-guided-v1.0.0-current.html
+
+# `crates/cognicode-cli/src/bin/` holds SOURCE, not build output: the package
+# produces several binaries (`cogh`, `cognicode`, `cognicode-release`).
+# A very common global ignore pattern is a bare `bin/`, which silently drops NEW
+# files added there while leaving already-tracked ones alone. That is exactly how
+# `src/bin/release.rs` was lost on the first v0.95.0 release attempt: local builds
+# passed and CI failed with "can't find bin". A repository-level negation wins
+# over core.excludesFile, so declare the layout here.
+!crates/cognicode-cli/src/bin/
