@@ -491,12 +491,6 @@ pub fn verify_release(
     })
 }
 
-/// Helper for tests and the CLI: the canonical payload filenames for a platform.
-pub fn expected_payloads(version: &str, platform: Platform) -> Vec<PathBuf> {
-    published_components()
-        .map(|c| PathBuf::from(artifact_filename(c.kind.stem(), version, platform)))
-        .collect()
-}
 
 #[cfg(test)]
 mod tests {

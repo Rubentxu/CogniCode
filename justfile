@@ -861,3 +861,26 @@ verify-version-sync:
         echo "::warning::version-sync: workspace version ($WORKSPACE_VERSION) differs from latest tag (v$LATEST_TAG)"
         exit 0
     fi
+
+# Verify the release contract coherence (R9, support tiers, runners) in CI form
+release-check:
+    bash scripts/check-release-matrix.sh
+
+# Generate the release artifacts for a staging directory of produced payloads.
+# Derives BundleManifest v2, the ReleaseInventory and SHA256SUMS.
+#   just release-generate staging release 0.95.0 v0.95.0 <source-commit>
+release-generate staging out version tag source_commit:
+    cargo run --release --bin cognicode-release -- generate \
+        --staging {{staging}} --out {{out}} \
+        --version {{version}} --tag {{tag}} --source-commit {{source_commit}}
+
+# Verify a staged release against the e84 contract (R1-R9) without publishing.
+#   just release-verify release 0.95.0 v0.95.0
+release-verify staging version tag:
+    cargo run --release --bin cognicode-release -- verify \
+        --staging {{staging}} --version {{version}} --tag {{tag}}
+
+# Show the canonical payload names for a platform (the per-lane ledger)
+release-plan platform version:
+    cargo run --release --bin cognicode-release -- plan \
+        --platform {{platform}} --version {{version}}

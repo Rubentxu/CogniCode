@@ -1,46 +1,52 @@
 #!/usr/bin/env bash
-# e74 WU3 — release matrix coherence check.
+# e85 — release contract coherence check.
 #
-# Validates that the platform targets declared in the release matrix
-# (.github/workflows/release.yml) match the BundleManifest::Platform
-# variants in Rust (crates/cognicode-cli/src/cmd/bundle_manifest.rs).
+# Enforces the release invariants in CI:
 #
-# Why this script: when a new target is added (or one is dropped with
-# a waiver), the YAML matrix and the Rust enum must stay in sync. This
-# is the cheapest way to catch drift before it becomes a wrong-platform
-# artifact shipped to users.
+#   R9  the workflow's declared `rust_target` for a platform must be exactly the
+#       token the Rust contract derives for that platform. The contract
+#       (`cognicode-release platform-token`) is the authority; the workflow must
+#       not carry a second, drifting copy of the mapping.
 #
-# Invariants enforced:
-#   1. Every target in the YAML matrix is a known BundleManifest::Platform.
-#   2. Every BundleManifest::Platform appears at least once in the matrix
-#      (no silent gap).
-#   3. Each runner is from a vetted GitHub-hosted runner allowlist.
+#   Tier-1 completeness: every platform the contract publishes must have a lane,
+#       and every lane must be a platform the contract knows.
 #
-# Exit codes:
-#   0 — matrix is in sync
-#   1 — at least one mismatch (with a descriptive diff)
+#   Runner allowlist: a lane must use a vetted native GitHub-hosted runner.
 #
-# Usage:  scripts/check-release-matrix.sh
+# This replaces the e74 version, which required *every* `Platform` variant to
+# have a matrix lane. e84 WU9 deliberately changed that: Tier 1 is Linux GNU on
+# native runners (x86_64 + aarch64), while MUSL, macOS and Windows keep their
+# Platform variants and adapter seams without being advertised as supported.
+# The old invariant would have forced us to claim support we do not have.
+#
+# Exit codes: 0 in sync, 1 mismatch.
 
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 WORKFLOW=".github/workflows/release.yml"
-BUNDLE_RS="crates/cognicode-cli/src/cmd/bundle_manifest.rs"
+# Resolve the real target directory: it can be moved by CARGO_TARGET_DIR or by a
+# repository `.cargo/config.toml`, so never assume `target/`.
+TARGET_DIR=$(cargo metadata --format-version 1 --no-deps 2>/dev/null \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])' 2>/dev/null \
+    || echo "${CARGO_TARGET_DIR:-target}")
+RELEASE_BIN="$TARGET_DIR/release/cognicode-release"
 
 if [[ ! -f "$WORKFLOW" ]]; then
     echo "FAIL: $WORKFLOW not found"
     exit 1
 fi
 
-if [[ ! -f "$BUNDLE_RS" ]]; then
-    echo "FAIL: $BUNDLE_RS not found"
+if [[ ! -x "$RELEASE_BIN" ]]; then
+    echo "building $RELEASE_BIN ..."
+    cargo build --release --bin cognicode-release >/dev/null
+fi
+if [[ ! -x "$RELEASE_BIN" ]]; then
+    echo "FAIL: could not build $RELEASE_BIN"
     exit 1
 fi
 
-# Allowlist of runners. Adding a new runner requires updating this list
-# AND documenting why it is allowed in the comment block above.
 ALLOWED_RUNNERS=(
     "ubuntu-latest"
     "ubuntu-24.04-arm"
@@ -51,85 +57,82 @@ ALLOWED_RUNNERS=(
     "windows-11-arm"
 )
 
-# Extract platform targets from YAML: lines like `      - target: linux-x86-64`
-# then immediately followed by `        runner: ubuntu-latest` (or similar).
-YAML_TARGETS=$(grep -E '^\s*-\s*target:\s*[a-z0-9-]+\s*$' "$WORKFLOW" \
-    | sed -E 's/.*target:\s*([a-z0-9-]+).*/\1/' \
-    | sort -u)
+# --- what the contract publishes ------------------------------------------------
+mapfile -t TIER1_TOKENS < <("$RELEASE_BIN" platforms | sort -u)
 
-# Extract runners from the same blocks.
-YAML_RUNNERS=$(grep -E '^\s*runner:\s*[a-zA-Z0-9_-]+\s*$' "$WORKFLOW" \
-    | sed -E 's/.*runner:\s*([a-zA-Z0-9_-]+).*/\1/' \
-    | sort -u)
+# --- what the workflow declares -------------------------------------------------
+mapfile -t LANE_PLATFORMS < <(grep -E '^[[:space:]]*(-[[:space:]]+)?platform:[[:space:]]*[a-z0-9-]+[[:space:]]*$' "$WORKFLOW" \
+    | sed -E 's/.*platform:[[:space:]]*([a-z0-9-]+).*/\1/' | sort -u)
+mapfile -t LANE_TOKENS < <(grep -E '^[[:space:]]*(-[[:space:]]+)?rust_target:[[:space:]]*[a-z0-9_-]+[[:space:]]*$' "$WORKFLOW" \
+    | sed -E 's/.*rust_target:[[:space:]]*([a-z0-9_-]+).*/\1/' | sort -u)
+mapfile -t LANE_RUNNERS < <(grep -E '^[[:space:]]*(-[[:space:]]+)?runner:[[:space:]]*[a-zA-Z0-9_.-]+[[:space:]]*$' "$WORKFLOW" \
+    | sed -E 's/.*runner:[[:space:]]*([a-zA-Z0-9_.-]+).*/\1/' | sort -u)
 
-# Extract BundleManifest::Platform variants from Rust. The enum is
-# defined with `LinuxX86_64,` etc.; we lower-case + kebab-case convert.
-RUST_VARIANTS=$(grep -E '^\s*(Linux|MacOs|Windows)(X86_64|Aarch64),?\s*$' "$BUNDLE_RS" \
-    | sed -E 's/.*\b(Linux|MacOs|Windows)(X86_64|Aarch64).*/\1\2/' \
-    | sort -u)
-# Convert PascalCase → kebab-case:
-#   LinuxX86_64    → linux-x86-64
-#   LinuxAarch64   → linux-aarch64
-#   MacOsX86_64    → mac-os-x86-64
-#   MacOsAarch64   → mac-os-aarch64
-#   WindowsX86_64  → windows-x86-64
-RUST_TARGETS=$(echo "$RUST_VARIANTS" \
-    | sed -E 's/LinuxX86_64/linux-x86-64/; s/LinuxAarch64/linux-aarch64/; s/MacOsX86_64/mac-os-x86-64/; s/MacOsAarch64/mac-os-aarch64/; s/WindowsX86_64/windows-x86-64/' \
-    | sort -u)
+contains() { local needle=$1; shift; local x; for x in "$@"; do [[ "$x" == "$needle" ]] && return 0; done; return 1; }
 
-echo "=== Release matrix coherence check (e74 WU3) ==="
+echo "=== e85 release contract coherence ==="
 echo
-echo "Targets in YAML matrix:"
-echo "$YAML_TARGETS" | sed 's/^/  /'
+echo "Tier-1 tokens published by the contract:"
+printf '  %s\n' "${TIER1_TOKENS[@]}"
 echo
-echo "Targets in BundleManifest::Platform:"
-echo "$RUST_TARGETS" | sed 's/^/  /'
+echo "Lanes declared in $WORKFLOW:"
+printf '  %s\n' "${LANE_PLATFORMS[@]}"
 echo
 
 ERRORS=0
 
-# 1. Every YAML target must be a known Rust variant.
-while IFS= read -r t; do
-    [[ -z "$t" ]] && continue
-    if ! grep -qx "$t" <<<"$RUST_TARGETS"; then
-        echo "FAIL: YAML target '$t' is not a known BundleManifest::Platform."
-        echo "      Add the variant to $BUNDLE_RS or remove the matrix lane."
-        ERRORS=$((ERRORS + 1))
-    fi
-done <<<"$YAML_TARGETS"
+if [[ "${#LANE_PLATFORMS[@]}" -ne "${#LANE_TOKENS[@]}" ]]; then
+    echo "FAIL: ${#LANE_PLATFORMS[@]} lane(s) but ${#LANE_TOKENS[@]} rust_target(s)."
+    ERRORS=$((ERRORS + 1))
+fi
 
-# 2. Every Rust variant must appear in the matrix (no silent gaps).
-while IFS= read -r t; do
-    [[ -z "$t" ]] && continue
-    if ! grep -qx "$t" <<<"$YAML_TARGETS"; then
-        echo "FAIL: BundleManifest::Platform '$t' has no YAML matrix lane."
-        echo "      Add it to $WORKFLOW or issue an explicit waiver in docs/adr/."
+# --- R9: every lane platform must resolve, and its derived token must be used ----
+for platform in "${LANE_PLATFORMS[@]}"; do
+    derived=$("$RELEASE_BIN" platform-token --platform "$platform" 2>/dev/null || true)
+    if [[ -z "$derived" ]]; then
+        echo "FAIL: lane platform '$platform' is not a platform the contract knows."
+        ERRORS=$((ERRORS + 1))
+        continue
+    fi
+    if contains "$derived" "${LANE_TOKENS[@]}"; then
+        echo "  ok  $platform -> $derived"
+    else
+        echo "FAIL: lane '$platform' should declare rust_target '$derived' (R9)."
         ERRORS=$((ERRORS + 1))
     fi
-done <<<"$RUST_TARGETS"
+done
 
-# 3. Every runner must be on the allowlist.
-while IFS= read -r r; do
-    [[ -z "$r" ]] && continue
-    allowed=0
-    for a in "${ALLOWED_RUNNERS[@]}"; do
-        if [[ "$r" == "$a" ]]; then
-            allowed=1
-            break
-        fi
-    done
-    if [[ "$allowed" == "0" ]]; then
-        echo "FAIL: Runner '$r' is not in the vetted allowlist."
-        echo "      Allowlist: ${ALLOWED_RUNNERS[*]}"
+# --- no lane outside the published tier -----------------------------------------
+for token in "${LANE_TOKENS[@]}"; do
+    if ! contains "$token" "${TIER1_TOKENS[@]}"; then
+        echo "FAIL: lane '$token' is not published by the contract (R9)."
         ERRORS=$((ERRORS + 1))
     fi
-done <<<"$YAML_RUNNERS"
+done
+
+# --- no silent gap: everything we promise must actually be built -----------------
+for token in "${TIER1_TOKENS[@]}"; do
+    if contains "$token" "${LANE_TOKENS[@]}"; then
+        echo "  ok  published '$token' has a lane"
+    else
+        echo "FAIL: the contract publishes '$token' but no lane builds it."
+        ERRORS=$((ERRORS + 1))
+    fi
+done
+
+# --- runner allowlist -----------------------------------------------------------
+for runner in "${LANE_RUNNERS[@]}"; do
+    if contains "$runner" "${ALLOWED_RUNNERS[@]}"; then
+        echo "  ok  runner '$runner' is vetted"
+    else
+        echo "FAIL: runner '$runner' is not on the vetted allowlist."
+        ERRORS=$((ERRORS + 1))
+    fi
+done
 
 echo
-if [[ "$ERRORS" -eq 0 ]]; then
-    echo "OK: release matrix and BundleManifest::Platform are in sync."
-    exit 0
-else
-    echo "FAIL: $ERRORS mismatch(es) found."
+if [[ "$ERRORS" -gt 0 ]]; then
+    echo "RESULT: FAIL ($ERRORS problem(s))"
     exit 1
 fi
+echo "RESULT: OK"

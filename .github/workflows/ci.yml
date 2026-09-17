@@ -87,3 +87,28 @@ jobs:
       - name: Verify version sync
         run: just verify-version-sync
         continue-on-error: true
+
+  # e85 — the release contract must hold in CI, not only at release time.
+  release-contract:
+    name: release-contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      # R9: the workflow's declared targets must be exactly the ones the Rust
+      # contract derives, every published platform must have a lane, and every
+      # runner must be vetted. This script existed since e74 but was never
+      # invoked, so it protected nothing automatically.
+      - name: Release contract coherence (R1-R9)
+        run: bash scripts/check-release-matrix.sh
+
+      # The adversarial suite for the v2 schema, naming, digests, inventory,
+      # manifest generation and the verify gate.
+      - name: Release contract tests
+        run: cargo test -p cognicode-cli --bin cognicode-release

@@ -383,9 +383,6 @@ pub struct ReleaseInventory {
 }
 
 impl ReleaseInventory {
-    pub fn installable(&self) -> impl Iterator<Item = &ProducedArtifact> {
-        self.artifacts.iter().filter(|a| a.installable)
-    }
 
     pub fn for_platform(&self, platform: Platform) -> impl Iterator<Item = &ProducedArtifact> {
         self.artifacts
@@ -559,9 +556,4 @@ pub fn build_inventory(
         source_commit: source_commit.to_string(),
         artifacts,
     })
-}
-
-/// A reference to a layer for `components` classification in reports.
-pub fn layer_of(kind: ArtifactKind) -> Layer {
-    kind.layer()
 }
