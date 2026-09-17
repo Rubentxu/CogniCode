@@ -379,14 +379,29 @@ phases:
       ledger row; no fabricated receipts; D3-DEFER administrative closure;
       archive semantics NOT equivalent to successful normal orchestrator closure.
       Current strategic checkpoint = post-e76, post-M9-reconciliation.
+      e77-lsi-executable-architecture archived: Architecture intent → ConstraintCandidate
+      → explicit admission/approval → ArchitectureConstraint → graph/fact evaluation
+      → grounded ArchitectureDriftFinding → EvidenceBundle / PolicyGate. ADR text alone
+      has ZERO execution/gating authority. e76 self-hosting as consumer via controlled
+      architectural mutations. 32 tests pass (20 unit + 10 adversarial E2E + 2 self-host
+      + 1 ignored documenting 4 real drifts via DEBT-SDDK-004).
+      e77.1-lsi-canonical-evidence-grounding archived: corrective cycle for the
+      trust-boundary gap discovered during e77 closure. The first slice of e77 minted
+      DetectorAuthority::Gated, synthetic FNV-1a EvidenceId, and placeholder
+      DetectorDigests in the architecture evaluator, bypassing the canonical evidence
+      path. Without a corrigendum, e79 (AI Foundation) would have inherited the
+      synthetic minting path. e77.1: new domain DTO ArchitectureViolation (carries no
+      DetectorAuthority/EvidenceId/DetectorDigests, optional GroundingRef);
+      EvaluationReport { violations, statements_examined, matches } instead of
+      Vec<Finding> (type system now makes it impossible for the evaluator to produce
+      a gateable Finding by itself); ArchitectureGroundingBridge converts violations
+      to ProducedEvidence (kind ArchitectureSource, propagated grounding); new
+      EvidenceKind::ArchitectureSource variant (class C, partial static evidence).
+      14 unit + 14 WU3 adversarial E2E tests; 451 total tests pass across affected
+      subsystems. Closure reference: corrigendum.md in
+      openspec/changes/e77-1-canonical-evidence-grounding/. The original e77 archive
+      and commits are unchanged.
       NEXT:
-        e77-lsi-executable-architecture (A-lite evolutive per user directive 2026-09-17):
-        Architecture intent → ConstraintCandidate → explicit admission/approval →
-        ArchitectureConstraint → graph/fact evaluation → grounded
-        ArchitectureDriftFinding → EvidenceBundle / PolicyGate. ADR text alone
-        has ZERO execution/gating authority. Reuse e76 self-hosting as consumer
-        via controlled architectural mutations. DO NOT open generalized Packs
-        (e78) yet — at least 2 real consumers required before authorizing.
         e78 (Pack Ecosystem): DEFERRED per consumer-count checkpoint (2026-09-17,
         post e77 WU6 closure). Confirmed consumers of the architecture module:
         1 (cognicode-core self-host test). The "second consumer" requirement is
@@ -395,6 +410,14 @@ phases:
         manifest surface, (b) another extension pack (e.g. security packs) needs
         capability advertisement, (c) a third-party plugin reaches the admission
         surface.
+        e79 (AI Foundation + read-only agents): NEXT after e77.1. With the e77.1
+        corrigendum in place, e79 can introduce LLM-generated hypotheses that flow
+        through the canonical evidence pipeline without inheriting the synthetic
+        minting path. EvidenceKind::Hypothesis already exists (class D, lowest);
+        canonical writer will route hypotheses through the same EvidenceLookup
+        as architecture sources, requiring a real fact anchor before the verifier
+        accepts them.
+        e80 (AutomatedAuthorPolicy + Fix Agent): pending (M11 unblocker).
         M11 (AI Investigation / Critic / Fix Agent): BLOCKED until
         AutomatedAuthorPromotionPolicy lands. e73's permit/promotion surface is
         the substrate; the policy is the seam.
