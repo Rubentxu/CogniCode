@@ -44,8 +44,21 @@ SKILLS_DIR = REPO_ROOT / "skills"
 # changed over the cycle (e84.1 lives under
 # openspec/changes/archive/2026-09-17-e84-1-skill-productization/
 # now), so we walk all archive entries and the active change dir.
+#
+# Determinism: when multiple catalogs exist (future cycles will
+# append), pick the one whose directory name has the most recent
+# YYYY-MM-DD- prefix. Falls back to the active change dir.
+_DATE_PREFIX = re.compile(r"^(\d{4}-\d{2}-\d{2})-")
+
+
+def _catalog_sort_key(path: Path) -> str:
+    """Return the date prefix (or '' if missing) for sorting."""
+    m = _DATE_PREFIX.match(path.parent.parent.name)
+    return m.group(1) if m else ""
+
+
 def _find_catalog() -> Path | None:
-    candidates = []
+    candidates: list[Path] = []
     arch = REPO_ROOT / "openspec/changes/archive"
     if arch.exists():
         for sub in arch.iterdir():
@@ -54,7 +67,12 @@ def _find_catalog() -> Path | None:
             cand = sub / "artifacts" / "runtime-tools-list.json"
             if cand.exists():
                 candidates.append(cand)
-    return candidates[0] if candidates else None
+    if not candidates:
+        return None
+    # Sort by date prefix descending; newest wins. Stable tie-break
+    # by full path so behavior is deterministic.
+    candidates.sort(key=lambda p: (_catalog_sort_key(p), p.as_posix()), reverse=True)
+    return candidates[0]
 
 
 CATALOG_FILE = _find_catalog() or (

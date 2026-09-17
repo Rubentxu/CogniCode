@@ -146,16 +146,29 @@ returns an empty result:
 2. Re-issue your tool call.
 3. If still empty, try a subdirectory rather than `.`.
 
-**Known runtime quirk (recorded in e84.1 WU18).** In some MCP
-sessions, the graph built by `build_graph` is not visible to
-subsequent graph tools in the same session. If you see "No call
-graph available" even after a successful `build_graph`, this is a
-runtime persistence bug, not a workflow error. Workarounds:
+**Known runtime quirk (configuration-dependent, e84.1 WU18
+follow-up).** In the default MCP configuration, `build_graph`
+then any graph reader (`graph_explain`, `graph_communities`,
+`graph_pagerank`, etc.) work in the same process — both share the
+in-memory graph cache (`CachedGraphStore` fallback wrapping
+`analysis_service.graph_cache()`).
 
-- Call `check_architecture` first — it auto-builds the graph and
-  exposes it to the handler chain.
-- Or use the Explorer UI for graph-heavy workflows until this is
-  fixed (recorded in WU19).
+When the runtime is configured with a **persistent SQLite-backed
+`GraphStore`** (via `HandlerContext::with_graph_store`), only the
+**manifest** is persisted by `build_graph`. The graph itself is
+loaded by the manifest-driven cache path on the **next**
+`build_graph` call. In that configuration, a fresh `graph_explain`
+immediately after `build_graph` may return "No call graph
+available".
+
+Workarounds for the persistent configuration:
+
+- Call `check_architecture` first — it auto-builds and
+  self-loads.
+- Or use the Explorer UI for graph-heavy workflows.
+
+The unit test for the default fallback path passes; the persistent
+path is unverified.
 
 Do **not** keep retrying `build_graph` in a loop; that won't fix
 it.
