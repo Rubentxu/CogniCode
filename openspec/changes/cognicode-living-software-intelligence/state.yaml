@@ -658,5 +658,61 @@ phases:
         evidence path CLEAN (0 drifts), historical scoring CORRECT, dataset split
         SEALED (e81), shadow comparison DETERMINISTIC (e82), authority boundary
         SEALED (e80a/e80b). P1.4 RESOLVED; DEBT-SDDK-006 STILL EXPLICIT.
+        e83 (Held-out Promotion + Governed Improvement): ARCHIVED 2026-09-17
+        (impl 518b3e1d, archive-manifest.md, characterization.md). M13 closure
+        cycle implementing umbrella tasks 13.5 and 13.6. Invariant established:
+        OPTIMIZE improvement + CONFIRM unacceptable regression = NO governed
+        promotion, and HeldOut PASS + Trial PASS + CleanPromotionReady + verified
+        external approval + FAILING CONFIRM = NO GovernedImprovementPermit. WU0-B
+        characterized the promotion lineage holes first: with only (Pass +
+        proposal_id) checked, a passing trial was reusable against a different
+        candidate world and a proposal could be evaluated against a base it never
+        targeted. WU1 adds evaluate_promotion_lineage(GovernedPromotionInput)
+        enforcing proposal.base_world == base.id, candidate.parent_world ==
+        Some(base.id), candidate.base_snapshot == base.base_snapshot,
+        trial.proposal_id == proposal.id, trial.world_id == candidate.id and
+        trial.base_snapshot == base.base_snapshot, with typed block reasons;
+        evaluate_promotion is untouched so generic M9 promotion stays generic
+        (WU10), and the guarantee is scoped exactly to the governed path. New
+        module application::governed_improvement: GovernedCandidateBinding (lineage
+        validated at construction; proves identity inside the governed workflow,
+        NOT binary attestation), CandidateFreeze (sealed, private fields, no serde;
+        produced only from an agreeing OPTIMIZE report), HeldOutPolicySpec
+        (explicit immutable policy with canonical digest; strict_no_regression
+        default; no hidden thresholds), HeldOutPromotionGate (CONFIRM only;
+        identity mismatches are Err not Block; incomplete or divergent CONFIRM
+        yields InsufficientEvidence, never Pass; OPTIMIZE never participates),
+        HeldOutGatePass (sealed, only on Pass; not an authorization and not a
+        permit), GovernedImprovementPermit (sealed; composes pass + real permit
+        only for the same proposal and candidate world; exposes no owned permit),
+        apply_governed_improvement (delegates to e73 apply_with_permit, preserving
+        world-drift fail-closed), and GovernedImprovementReceipt (serializable
+        audit data, no seals). WU8: no synthetic canonical Evidence for the
+        held-out result; the historical CONFIRM gate and the e69 trial PolicyGate
+        stay separate. WU19: no event bus; typed outcomes plus the receipt are the
+        audit artifacts. 23 e83 tests (WU12-WU22) green including the mandatory
+        optimize-win/confirm-loss negative (blocks despite trial PASS,
+        CleanPromotionReady and verified human approval) and the positive governed
+        E2E producing Applied plus a receipt; e82 20, e81 23, e76 71, e80a 42,
+        e80b 48; e82.1 self-host 0 drifts; cargo test --lib --features
+        evidence-kernel 2599 passed / 2 failed (classified DEBT-SDDK-006);
+        workspace build GREEN; clippy touched surface no new warnings. WU23
+        stability gate GREEN: 5 consecutive checker runs exact and 3 full lib
+        failure-set captures md5-identical; the e82.1 baseline transient did NOT
+        reproduce and remains an open observation. Physical source mutation NOT
+        performed (unchanged since e73; PromotionApplyOutcome::Applied remains the
+        authority/apply marker). ADR-051 moved PROPOSED -> ACCEPTED after its own
+        validation clause was satisfied and documented (local; docs/adr is
+        gitignored).
+        M13 (Historical Replay / Continuous Improvement): 13.1 Historical replay
+        dataset SATISFIED, 13.2 OPTIMIZE/CONFIRM separation SATISFIED,
+        13.3 FailureRegime taxonomy SATISFIED, 13.4 Shadow comparison SATISFIED,
+        13.5 Held-out promotion gate SATISFIED, 13.6 Governed improvement E2E
+        SATISFIED. tasks.md checkboxes deliberately NOT rewritten (historical
+        record).
+        STOP. Next step is a final umbrella/roadmap reconciliation (M11/M13
+        status, ADR status, DEBT-SDDK-006, e78 consumer-count checkpoint) and only
+        then a decision on entry into the post-roadmap Control Plane package.
+        CP0 Backstage is NOT started.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
