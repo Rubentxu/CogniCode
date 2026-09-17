@@ -1,18 +1,42 @@
-//! `cogh::bundle_manifest` — `bundle.yaml` schema for co-versioned bundle releases.
+//! `cogh::bundle_manifest` — `bundle.yaml` schema **v2** for co-versioned bundles.
 //!
-//! Spec: `openspec/specs/release-bundle-contract/spec.md`.
-//! Schema v1 (`apiVersion: cognicode.bundle/v1`). A bundle aggregates the
-//! components that cogh installs together as one co-versioned release.
+//! e85 implements the contract decided in e84
+//! (`openspec/changes/e84-cognicode-distribution-artifact-contract/wu2-*`).
+//!
+//! ## Changes from v1
+//!
+//! * `apiVersion` is exactly `cognicode.bundle/v2`. There is no open-ended
+//!   `vN` acceptance: the code supports the schema it understands.
+//! * `profiles[].include_kinds` is **removed**. `components[].profiles` is the
+//!   single, authoritative encoding of profile membership (e84 R7). v1 had two
+//!   encodings, one of them inert, and they disagreed — the default profile
+//!   resolved to zero components.
+//! * `sha256` is parsed into an [`ArtifactDigest`], which rejects placeholders
+//!   (e84 R5). v1 accepted `0000…0001` because it only checked length and hexness.
+//! * artifact filename and URL are **derived** from the component name, version
+//!   and platform, and must match exactly (e84 R1).
+//! * a component's `kind` must be Layer 1 (e84 WU7): a bundle is `cogh`'s install
+//!   plan, so it must not contain `cogh` itself, `SHA256SUMS`, or the inventory.
+//! * every declared profile must resolve to at least one component.
+//! * **`assert_pkg_version` is gone.** Under e84's Layer 0 / Layer 1 split, the
+//!   installed runtime version is free to differ from the running `cogh`
+//!   bootstrap version. Tying them together was the v1 assumption that made an
+//!   embedded, version-pinned manifest look authoritative.
 
+use std::collections::HashSet;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-/// Bundled release manifest (`bundle.yaml`).
-///
-/// Schema v1 (`apiVersion: cognicode.bundle/v1`).
-/// A bundle aggregates the components that cogh installs together as one co-versioned release.
+use crate::release_contract::{
+    ArtifactDigest, ArtifactKind, artifact_filename, artifact_url, platform_token,
+};
+
+/// The only `apiVersion` this code understands.
+pub const BUNDLE_API_VERSION: &str = "cognicode.bundle/v2";
+
+/// Bundled release manifest (`bundle.yaml`), schema v2.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BundleManifest {
     #[serde(rename = "apiVersion")]
@@ -29,7 +53,7 @@ pub struct BundleManifest {
     #[serde(default)]
     pub released_at: Option<String>,
 
-    /// Named install profiles (e.g. core / reviewer / full).
+    /// Named install profiles (e.g. core / reviewer).
     #[serde(default)]
     pub profiles: Vec<ProfileDef>,
 
@@ -41,7 +65,7 @@ fn default_bundle_kind() -> String {
 }
 
 /// Target platform triple.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum Platform {
     LinuxX86_64,
@@ -53,62 +77,45 @@ pub enum Platform {
 
 impl std::fmt::Display for Platform {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
+        f.write_str(match self {
             Platform::LinuxX86_64 => "linux-x86-64",
             Platform::LinuxAarch64 => "linux-aarch64",
             Platform::MacOsX86_64 => "mac-os-x86-64",
             Platform::MacOsAarch64 => "mac-os-aarch64",
             Platform::WindowsX86_64 => "windows-x86-64",
-        };
-        f.write_str(s)
+        })
     }
 }
 
-/// Component kind (the binary / asset being installed).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "PascalCase")]
-pub enum ComponentKind {
-    /// Reserved for forward compat (cogh doesn't install itself).
-    Cogh,
-    /// The cognicode daily CLI.
-    Cognicode,
-    /// The local daemon (also serves as MCP bridge per ADR-039).
-    Daemon,
-    /// IDE-agnostic skill bundles.
-    Skill,
-    /// Sandbox container templates.
-    Sandbox,
-    /// Reserved for forward compat (e36 — embedded Explorer assets).
-    ExplorerAsset,
-    /// A bundled plugin.
-    Plugin,
-}
-
-/// A single component within a bundle.
+/// A single installable component within a bundle.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BundleComponent {
+    /// Canonical component name. Must equal `kind.stem()`.
     pub name: String,
-    pub kind: ComponentKind,
+    /// Layer 1 artifact kind. Layer 0 and meta kinds are rejected.
+    pub kind: ArtifactKind,
+    /// Component version. Must equal the bundle version.
     pub version: String,
+    /// Derived artifact filename. Must equal the canonical name.
     pub artifact: String,
-    /// Lowercase hex SHA256 of the artifact file (mandatory).
-    pub sha256: String,
-    /// Full download URL.
+    /// Computed SHA256 of the artifact. Placeholders are rejected.
+    pub sha256: ArtifactDigest,
+    /// Derived download URL. Must equal the canonical URL.
     pub url: String,
-    /// Which profiles include this component (subset of bundle.profiles[].name).
+    /// Profiles that include this component. The authoritative encoding.
     #[serde(default)]
     pub profiles: Vec<String>,
 }
 
-/// A named profile (e.g., "core", "reviewer", "full").
+/// A named profile (e.g., "core", "reviewer").
+///
+/// v2 has no `include_kinds`: membership lives on the component, where it
+/// travels with the artifact and cannot drift.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProfileDef {
     pub name: String,
     #[serde(default)]
     pub description: String,
-    /// Component KINDS this profile includes (loose filter).
-    #[serde(default)]
-    pub include_kinds: Vec<ComponentKind>,
 }
 
 impl BundleManifest {
@@ -119,100 +126,158 @@ impl BundleManifest {
         Self::from_str(&text)
     }
 
-    /// Parse from a YAML string.
+    /// Parse from a YAML string and validate.
     pub fn from_str(s: &str) -> Result<Self> {
         let m: BundleManifest = serde_yaml::from_str(s).with_context(|| "parse bundle.yaml")?;
         m.validate()?;
         Ok(m)
     }
 
-    /// Validate the manifest.
+    /// Serialise back to YAML, canonical field order.
+    pub fn to_yaml(&self) -> Result<String> {
+        Ok(serde_yaml::to_string(self)?)
+    }
+
+    /// Validate every v2 contract invariant.
     pub fn validate(&self) -> Result<()> {
-        // 1. apiVersion must be `cognicode.bundle/v\d+`
-        if !self.api_version.starts_with("cognicode.bundle/v") {
-            anyhow::bail!(
-                "apiVersion must start with `cognicode.bundle/v`, got {}",
+        // 1. Exactly the schema this code understands.
+        if self.api_version != BUNDLE_API_VERSION {
+            bail!(
+                "apiVersion must be exactly `{BUNDLE_API_VERSION}`, got `{}`; \
+                 this build understands only that schema",
                 self.api_version
             );
         }
-        let api_num = &self.api_version["cognicode.bundle/v".len()..];
-        if api_num.parse::<u32>().is_err() {
-            anyhow::bail!("apiVersion numeric part is not a valid u32: {}", api_num);
-        }
 
-        // 2. version matches semver-ish (digits.digits.digits[-...])
+        // 2. Semver-ish version.
         if !is_semver_like(&self.version) {
-            anyhow::bail!(
+            bail!(
                 "version must match `^\\d+\\.\\d+\\.\\d+(-.*)?$`, got {}",
                 self.version
             );
         }
 
-        // 3. each component: sha256 is 64 hex; name unique; profiles non-empty
-        let mut seen_names = std::collections::HashSet::new();
-        for (i, c) in self.components.iter().enumerate() {
-            if c.sha256.len() != 64 || !c.sha256.chars().all(|ch| ch.is_ascii_hexdigit()) {
-                anyhow::bail!(
-                    "component[{}] sha256 must be 64 hex chars, got {}",
-                    i,
-                    c.sha256
-                );
+        // 3. Profiles: non-empty, unique names.
+        if self.profiles.is_empty() {
+            bail!("bundle must declare at least one profile");
+        }
+        let mut profile_names: HashSet<&str> = HashSet::new();
+        for (i, p) in self.profiles.iter().enumerate() {
+            if p.name.trim().is_empty() {
+                bail!("profile[{i}] name must not be empty");
             }
-            if c.name.is_empty() {
-                anyhow::bail!("component[{}] name must not be empty", i);
-            }
-            if !seen_names.insert(&c.name) {
-                anyhow::bail!("duplicate component name: {}", c.name);
-            }
-            if c.profiles.is_empty() {
-                anyhow::bail!(
-                    "component[{}] profiles must not be empty (every component must declare at least one profile)",
-                    i
-                );
+            if !profile_names.insert(p.name.as_str()) {
+                bail!("duplicate profile name: {}", p.name);
             }
         }
 
-        // 4. profile names referenced by components must exist in profiles[]
-        let profile_names: std::collections::HashSet<&str> =
-            self.profiles.iter().map(|p| p.name.as_str()).collect();
-        for c in &self.components {
+        // 4. Components.
+        if self.components.is_empty() {
+            bail!("bundle must declare at least one component");
+        }
+        let mut seen: HashSet<&str> = HashSet::new();
+        for (i, c) in self.components.iter().enumerate() {
+            if c.name.trim().is_empty() {
+                bail!("component[{i}] name must not be empty");
+            }
+            if !seen.insert(c.name.as_str()) {
+                bail!("duplicate component name: {}", c.name);
+            }
+
+            // 4a. A bundle is cogh's install plan: Layer 1 only.
+            if !c.kind.is_installable() {
+                bail!(
+                    "component[{}] `{}` has kind {:?} which is not a Layer 1 \
+                     installable component; a bundle must not contain the \
+                     bootstrap, checksums or release metadata",
+                    i,
+                    c.name,
+                    c.kind
+                );
+            }
+
+            // 4b. One name per component.
+            if c.name != c.kind.stem() {
+                bail!(
+                    "component[{}] name `{}` must equal its kind stem `{}`",
+                    i,
+                    c.name,
+                    c.kind.stem()
+                );
+            }
+
+            // 4c. Version lockstep.
+            if c.version != self.version {
+                bail!(
+                    "component `{}` version `{}` != bundle version `{}`",
+                    c.name,
+                    c.version,
+                    self.version
+                );
+            }
+
+            // 4d. Derived artifact name.
+            let expected_artifact = artifact_filename(&c.name, &self.version, self.platform);
+            if c.artifact != expected_artifact {
+                bail!(
+                    "component `{}` artifact `{}` is not canonical; expected `{}`",
+                    c.name,
+                    c.artifact,
+                    expected_artifact
+                );
+            }
+
+            // 4e. Derived URL.
+            let expected_url = artifact_url(&self.version, &c.artifact);
+            if c.url != expected_url {
+                bail!(
+                    "component `{}` url `{}` is not canonical; expected `{}`",
+                    c.name,
+                    c.url,
+                    expected_url
+                );
+            }
+
+            // 4f. Profile membership: non-empty, all declared.
+            if c.profiles.is_empty() {
+                bail!("component `{}` must declare at least one profile", c.name);
+            }
             for p in &c.profiles {
                 if !profile_names.contains(p.as_str()) {
-                    anyhow::bail!("component[{}] references unknown profile `{}`", c.name, p);
+                    bail!("component `{}` references unknown profile `{}`", c.name, p);
                 }
             }
         }
 
-        Ok(())
-    }
+        // 5. No profile may be a no-op.
+        for name in &profile_names {
+            if self.components_for_profile(name).is_empty() {
+                bail!(
+                    "profile `{name}` resolves to zero components; \
+                     a profile that installs nothing is a contract violation"
+                );
+            }
+        }
 
-    /// Assert the bundle's version matches the running cogh's CARGO_PKG_VERSION.
-    /// Returns Err with a clear message if mismatched; CLI tool upgrade required.
-    pub fn assert_pkg_version(&self) -> Result<()> {
-        let pkg = env!("CARGO_PKG_VERSION");
-        if self.version != pkg {
-            anyhow::bail!(
-                "bundle version `{}` does not match cogh's CARGO_PKG_VERSION `{}`; \
-                 you are running a mismatched installer (CLI upgrade required)",
-                self.version,
-                pkg
+        // 6. The platform token must be a known one (guards against a future
+        //    variant added to the enum without a mapping).
+        if platform_token(self.platform).is_empty() {
+            bail!(
+                "platform `{}` has no canonical Rust target token",
+                self.platform
             );
         }
+
         Ok(())
     }
 
-    /// Assert that this manifest's `platform` matches the host's
-    /// detected platform.
+    /// Assert that this manifest's `platform` matches the host's platform.
     ///
-    /// e74 WU2: deterministic host → platform matching. Wrong-platform
-    /// artifacts fail loudly. There is no fallback such as "Windows
-    /// missing → download Linux artifact".
-    ///
-    /// Takes the host platform explicitly so the test can inject a
-    /// different triple without lying about the running kernel.
-    pub fn assert_host_platform(&self, host: crate::platform_adapter::Platform) -> Result<()> {
+    /// Deterministic host → platform matching. Wrong-platform bundles fail
+    /// loudly, with no fallback to another platform's artifacts.
+    pub fn assert_host_platform(&self, host: Platform) -> Result<()> {
         if self.platform != host {
-            anyhow::bail!(
+            bail!(
                 "bundle platform `{:?}` does not match host platform `{:?}`; \
                  refusing to load a wrong-platform bundle \
                  (no fallback to another platform's artifacts)",
@@ -231,49 +296,37 @@ impl BundleManifest {
             .collect()
     }
 
-    /// Find a component by exact name (returns Option, no error).
+    /// Find a component by exact name.
     pub fn component_by_name(&self, name: &str) -> Option<&BundleComponent> {
         self.components.iter().find(|c| c.name == name)
     }
 
     /// Find all components of a given kind.
-    pub fn components_by_kind(&self, kind: ComponentKind) -> Vec<&BundleComponent> {
+    pub fn components_by_kind(&self, kind: ArtifactKind) -> Vec<&BundleComponent> {
         self.components.iter().filter(|c| c.kind == kind).collect()
     }
 
-    /// Owned-string adapter: converts this manifest into an install plan.
-    ///
-    /// Consumes the manifest and returns an [`InstallPlan`] with the same
-    /// version, profile, and components. The profile defaults to `"default"`
-    /// if the manifest has no profiles.
+    /// The profile names, in declaration order.
+    pub fn profile_names(&self) -> Vec<&str> {
+        self.profiles.iter().map(|p| p.name.as_str()).collect()
+    }
+
+    /// Convert into an install plan, defaulting to the first declared profile.
     pub fn into_install_plan(self) -> InstallPlan {
         let profile = self
             .profiles
             .first()
             .map(|p| p.name.clone())
-            .unwrap_or_else(|| "default".to_string());
+            .unwrap_or_else(|| "core".to_string());
         InstallPlan {
             version: self.version,
             profile,
             components: self.components,
         }
     }
-
-    /// Filter this manifest's components for a specific target platform.
-    ///
-    /// Since bundle manifests are already platform-specific by design,
-    /// this method returns `Self` unchanged (the platform field is
-    /// authoritative). The method exists to satisfy the adapter interface.
-    pub fn for_target_platform(self, _platform: Platform) -> Self {
-        // BundleManifest is already per-platform; the platform field
-        // is validated at parse time and cannot be mismatched.
-        self
-    }
 }
 
 /// Install plan derived from a [`BundleManifest`].
-///
-/// Represents the resolved, platform-specific set of components to install.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallPlan {
     /// Bundle version (semver).
@@ -285,16 +338,14 @@ pub struct InstallPlan {
 }
 
 fn is_semver_like(s: &str) -> bool {
-    // Strict: \d+\.\d+\.\d+(-.*)?
     let mut parts = s.splitn(2, '-');
     let numeric = parts.next().unwrap_or("");
-    let _suffix = parts.next();
     let mut nums = numeric.split('.');
     let a = nums.next().unwrap_or("");
     let b = nums.next().unwrap_or("");
     let c = nums.next().unwrap_or("");
     if nums.next().is_some() {
-        return false; // extra dots
+        return false;
     }
     a.parse::<u32>().is_ok() && b.parse::<u32>().is_ok() && c.parse::<u32>().is_ok()
 }
@@ -303,420 +354,263 @@ fn is_semver_like(s: &str) -> bool {
 mod tests {
     use super::*;
 
-    const SAMPLE_YAML: &str = r#"
-apiVersion: cognicode.bundle/v1
-kind: Bundle
-version: "0.94.1"
-platform: linux-x86-64
-released_at: "2026-08-12T14:00:00Z"
-profiles:
-  - name: core
-    description: "Installer + daily CLI"
-    include_kinds: [Cogh, Cognicode]
-  - name: reviewer
-    description: "Adds daemon"
-    include_kinds: [Cogh, Cognicode, Daemon]
-  - name: full
-    description: "Adds sandbox + skills"
-    include_kinds: [Cogh, Cognicode, Daemon, Skill, Sandbox]
-components:
-  - name: cognicode-mcp
-    kind: Daemon
-    version: "0.94.1"
-    artifact: cognicode-mcp-0.94.1-x86_64-unknown-linux-gnu.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
-    url: "https://example.com/cognicode-mcp-0.94.1.tar.gz"
-    profiles: [reviewer, full]
-  - name: skills-cognicode-core
-    kind: Skill
-    version: "0.94.1"
-    artifact: skills-cognicode-core-0.94.1.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000002"
-    url: "https://example.com/skills-cognicode-core-0.94.1.tar.gz"
-    profiles: [full]
-  - name: sandbox-templates
-    kind: Sandbox
-    version: "0.94.1"
-    artifact: sandbox-templates-0.94.1.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000003"
-    url: "https://example.com/sandbox-templates-0.94.1.tar.gz"
-    profiles: [full]
-"#;
+    /// A realistic-looking, non-placeholder digest.
+    const DIGEST: &str = "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e";
 
-    #[test]
-    fn parse_full_bundle() {
-        let m = BundleManifest::from_str(SAMPLE_YAML).unwrap();
-        assert_eq!(m.version, "0.94.1");
-        assert_eq!(m.profiles.len(), 3);
-        assert_eq!(m.profiles[0].name, "core");
-        assert_eq!(m.components.len(), 3);
-        assert_eq!(m.components[0].name, "cognicode-mcp");
-        assert_eq!(m.components[0].kind, ComponentKind::Daemon);
-    }
-
-    #[test]
-    fn parse_minimal_bundle() {
-        let yaml = r#"
-apiVersion: cognicode.bundle/v1
-version: "0.94.1"
-platform: linux-x86-64
-profiles:
-  - name: core
-    description: core profile
-components:
-  - name: cognicode-cli
-    kind: Cognicode
-    version: "0.94.1"
-    artifact: cognicode-0.94.1.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
-    url: "https://example.com/cognicode-0.94.1.tar.gz"
-    profiles: [core]
-"#;
-        let m = BundleManifest::from_str(yaml).unwrap();
-        assert_eq!(m.kind, "Bundle");
-        assert!(m.released_at.is_none());
-        assert_eq!(m.profiles.len(), 1);
-        assert_eq!(m.components.len(), 1);
-    }
-
-    #[test]
-    fn reject_bad_apiversion() {
-        let yaml = r#"
-apiVersion: cognicode.bundle/v999abc
-version: "0.94.1"
-platform: linux-x86-64
-components:
-  - name: test
-    kind: Cognicode
-    version: "0.94.1"
-    artifact: test.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
-    url: "https://example.com/test.tar.gz"
-    profiles: [core]
-"#;
-        let err = BundleManifest::from_str(yaml).unwrap_err();
-        assert!(err.to_string().contains("apiVersion"));
-    }
-
-    #[test]
-    fn reject_bad_sha256() {
-        let yaml = r#"
-apiVersion: cognicode.bundle/v1
-version: "0.94.1"
-platform: linux-x86-64
-components:
-  - name: test
-    kind: Cognicode
-    version: "0.94.1"
-    artifact: test.tar.gz
-    sha256: "not-hex-at-all"
-    url: "https://example.com/test.tar.gz"
-    profiles: [core]
-"#;
-        let err = BundleManifest::from_str(yaml).unwrap_err();
-        assert!(err.to_string().contains("sha256"));
-    }
-
-    #[test]
-    fn reject_duplicate_component_name() {
-        let yaml = r#"
-apiVersion: cognicode.bundle/v1
-version: "0.94.1"
-platform: linux-x86-64
-components:
-  - name: cognicode-cli
-    kind: Cognicode
-    version: "0.94.1"
-    artifact: a.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
-    url: "https://example.com/a.tar.gz"
-    profiles: [core]
-  - name: cognicode-cli
-    kind: Daemon
-    version: "0.94.1"
-    artifact: b.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000002"
-    url: "https://example.com/b.tar.gz"
-    profiles: [core]
-"#;
-        let err = BundleManifest::from_str(yaml).unwrap_err();
-        assert!(err.to_string().contains("duplicate"));
-    }
-
-    #[test]
-    fn reject_unknown_profile_ref() {
-        let yaml = r#"
-apiVersion: cognicode.bundle/v1
-version: "0.94.1"
-platform: linux-x86-64
-profiles:
-  - name: core
-    description: core
-    include_kinds: [Cognicode]
-components:
-  - name: test
-    kind: Cognicode
-    version: "0.94.1"
-    artifact: test.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
-    url: "https://example.com/test.tar.gz"
-    profiles: [nonexistent]
-"#;
-        let err = BundleManifest::from_str(yaml).unwrap_err();
-        assert!(err.to_string().contains("unknown profile"));
-    }
-
-    #[test]
-    fn components_for_profile_filter() {
-        let m = BundleManifest::from_str(SAMPLE_YAML).unwrap();
-        // reviewer includes cognicode-mcp (Daemon)
-        let reviewer = m.components_for_profile("reviewer");
-        assert_eq!(reviewer.len(), 1);
-        assert_eq!(reviewer[0].name, "cognicode-mcp");
-        // full includes all 3
-        let full = m.components_for_profile("full");
-        assert_eq!(full.len(), 3);
-        // core has no matching components in our fixture
-        let core = m.components_for_profile("core");
-        assert_eq!(core.len(), 0);
-    }
-
-    #[test]
-    fn components_by_kind_filter() {
-        let m = BundleManifest::from_str(SAMPLE_YAML).unwrap();
-        let daemons = m.components_by_kind(ComponentKind::Daemon);
-        assert_eq!(daemons.len(), 1);
-        assert_eq!(daemons[0].name, "cognicode-mcp");
-        let skills = m.components_by_kind(ComponentKind::Skill);
-        assert_eq!(skills.len(), 1);
-        assert_eq!(skills[0].name, "skills-cognicode-core");
-        let sandboxes = m.components_by_kind(ComponentKind::Sandbox);
-        assert_eq!(sandboxes.len(), 1);
-        assert_eq!(sandboxes[0].name, "sandbox-templates");
-    }
-
-    #[test]
-    fn component_by_name_lookup() {
-        let m = BundleManifest::from_str(SAMPLE_YAML).unwrap();
-        assert!(m.component_by_name("cognicode-mcp").is_some());
-        assert_eq!(
-            m.component_by_name("cognicode-mcp").unwrap().kind,
-            ComponentKind::Daemon
-        );
-        assert!(m.component_by_name("nonexistent").is_none());
-    }
-
-    #[test]
-    fn assert_pkg_version_mismatch() {
-        let yaml = r#"
-apiVersion: cognicode.bundle/v1
-version: "99.99.99"
-platform: linux-x86-64
-profiles:
-  - name: core
-    description: core profile
-components:
-  - name: test
-    kind: Cognicode
-    version: "99.99.99"
-    artifact: test.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
-    url: "https://example.com/test.tar.gz"
-    profiles: [core]
-"#;
-        let m = BundleManifest::from_str(yaml).unwrap();
-        let err = m.assert_pkg_version().unwrap_err();
-        assert!(err.to_string().contains("99.99.99"));
-        assert!(err.to_string().contains("mismatch"));
-    }
-
-    #[test]
-    fn assert_pkg_version_match() {
-        // Uses env!("CARGO_PKG_VERSION") to reflect current workspace version
-        let yaml = format!(
+    fn bundle_with(components: &str, profiles: &str) -> String {
+        format!(
             r#"
-apiVersion: cognicode.bundle/v1
-version: "{}"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "0.95.0"
 platform: linux-x86-64
+released_at: "2026-09-17T00:00:00Z"
 profiles:
-  - name: core
-    description: core profile
+{profiles}
 components:
-  - name: test
-    kind: Cognicode
-    version: "{}"
-    artifact: test.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
-    url: "https://example.com/test.tar.gz"
-    profiles: [core]
-"#,
-            env!("CARGO_PKG_VERSION"),
-            env!("CARGO_PKG_VERSION")
-        );
+{components}
+"#
+        )
+    }
+
+    fn core_and_reviewer() -> String {
+        "  - name: core\n    description: Daily CLI\n  - name: reviewer\n    description: Adds daemon\n"
+            .to_string()
+    }
+
+    fn cognicode_component(profiles: &str) -> String {
+        format!(
+            r#"  - name: cognicode
+    kind: cognicode
+    version: "0.95.0"
+    artifact: cognicode-0.95.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "{DIGEST}"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/cognicode-0.95.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [{profiles}]
+"#
+        )
+    }
+
+    #[test]
+    fn parse_valid_v2_bundle() {
+        let yaml = bundle_with(&cognicode_component("core, reviewer"), &core_and_reviewer());
         let m = BundleManifest::from_str(&yaml).unwrap();
-        m.assert_pkg_version()
-            .expect("pkg version should match workspace version");
-    }
-
-    // ----- e74 WU2: host platform matching -----
-
-    #[test]
-    fn assert_host_platform_match_succeeds() {
-        // Bundle platform matches host platform: no error.
-        let yaml = r#"
-apiVersion: cognicode.bundle/v1
-version: "0.95.0"
-platform: linux-x86-64
-profiles:
-  - name: core
-    description: core profile
-components:
-  - name: test
-    kind: Cognicode
-    version: "0.95.0"
-    artifact: test.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
-    url: "https://example.com/test.tar.gz"
-    profiles: [core]
-"#;
-        let m = BundleManifest::from_str(yaml).unwrap();
-        m.assert_host_platform(crate::platform_adapter::Platform::LinuxX86_64)
-            .expect("matching platform must not error");
+        assert_eq!(m.version, "0.95.0");
+        assert_eq!(m.platform, Platform::LinuxX86_64);
+        assert_eq!(m.profile_names(), vec!["core", "reviewer"]);
+        assert_eq!(m.components.len(), 1);
+        assert_eq!(m.components_for_profile("core").len(), 1);
+        assert_eq!(m.components_for_profile("reviewer").len(), 1);
     }
 
     #[test]
-    fn assert_host_platform_mismatch_fails_loudly() {
-        // e74 WU2 — wrong-platform artifacts must fail loudly with no
-        // fallback. This is the "Windows missing → do NOT download
-        // Linux artifact" rule.
-        let yaml = r#"
-apiVersion: cognicode.bundle/v1
-version: "0.95.0"
-platform: linux-x86-64
-profiles:
-  - name: core
-    description: core profile
-components:
-  - name: test
-    kind: Cognicode
-    version: "0.95.0"
-    artifact: test.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
-    url: "https://example.com/test.tar.gz"
-    profiles: [core]
-"#;
-        let m = BundleManifest::from_str(yaml).unwrap();
-        let err = m
-            .assert_host_platform(crate::platform_adapter::Platform::WindowsX86_64)
-            .unwrap_err();
-        let msg = err.to_string();
+    fn round_trips_through_yaml() {
+        let yaml = bundle_with(&cognicode_component("core, reviewer"), &core_and_reviewer());
+        let m = BundleManifest::from_str(&yaml).unwrap();
+        let again = BundleManifest::from_str(&m.to_yaml().unwrap()).unwrap();
+        assert_eq!(m, again);
+    }
+
+    // ---- WU17 adversarial cases ----
+
+    #[test]
+    fn reject_v1_apiversion() {
+        let yaml = bundle_with(&cognicode_component("core"), &core_and_reviewer())
+            .replace("cognicode.bundle/v2", "cognicode.bundle/v1");
         assert!(
-            msg.contains("WindowsX86_64"),
-            "error must mention the requested host platform: {msg}"
-        );
-        assert!(
-            msg.contains("LinuxX86_64"),
-            "error must mention the bundle platform: {msg}"
-        );
-        assert!(
-            msg.contains("no fallback") || msg.contains("wrong-platform"),
-            "error must explain the no-fallback policy: {msg}"
+            BundleManifest::from_str(&yaml)
+                .unwrap_err()
+                .to_string()
+                .contains("apiVersion")
         );
     }
 
     #[test]
-    fn assert_host_platform_mismatch_is_distinct_per_target() {
-        // Pin the contract: each non-matching target fails with a
-        // distinct message. This guards against accidental catch-all
-        // error paths.
-        let yaml = r#"
-apiVersion: cognicode.bundle/v1
-version: "0.95.0"
-platform: mac-os-x86-64
-profiles:
-  - name: core
-    description: core profile
-components:
-  - name: test
-    kind: Cognicode
-    version: "0.95.0"
-    artifact: test.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
-    url: "https://example.com/test.tar.gz"
-    profiles: [core]
-"#;
-        let m = BundleManifest::from_str(yaml).unwrap();
-        // Same platform: ok.
-        m.assert_host_platform(crate::platform_adapter::Platform::MacOsX86_64)
-            .expect("matching MacOsX86_64 must succeed");
-        // Wrong: every non-matching host fails.
-        for host in [
-            crate::platform_adapter::Platform::LinuxX86_64,
-            crate::platform_adapter::Platform::LinuxAarch64,
-            crate::platform_adapter::Platform::MacOsAarch64,
-            crate::platform_adapter::Platform::WindowsX86_64,
+    fn reject_arbitrary_future_apiversion() {
+        // v1 accepted any numeric `vN`. v2 supports exactly what it understands.
+        for bad in [
+            "cognicode.bundle/v3",
+            "cognicode.bundle/v999",
+            "cognicode.bundle/v2beta",
         ] {
+            let yaml = bundle_with(&cognicode_component("core"), &core_and_reviewer())
+                .replace("cognicode.bundle/v2", bad);
             assert!(
-                m.assert_host_platform(host).is_err(),
-                "macos-x86-64 bundle must reject host {host:?}"
+                BundleManifest::from_str(&yaml).is_err(),
+                "apiVersion `{bad}` must be rejected"
             );
         }
     }
 
     #[test]
-    fn into_install_plan_uses_first_profile_as_default() {
-        let m = BundleManifest::from_str(SAMPLE_YAML).unwrap();
-        let plan = m.into_install_plan();
-        assert_eq!(plan.version, "0.94.1");
-        assert_eq!(plan.profile, "core"); // first profile
-        assert_eq!(plan.components.len(), 3);
+    fn reject_placeholder_digest() {
+        for placeholder in [
+            "0000000000000000000000000000000000000000000000000000000000000001",
+            "0000000000000000000000000000000000000000000000000000000000000002",
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        ] {
+            let yaml = bundle_with(&cognicode_component("core, reviewer"), &core_and_reviewer())
+                .replace(DIGEST, placeholder);
+            let err = format!("{:#}", BundleManifest::from_str(&yaml).unwrap_err());
+            assert!(
+                err.contains("placeholder"),
+                "placeholder {placeholder} must be rejected as a placeholder, got: {err}"
+            );
+        }
     }
 
     #[test]
-    fn into_install_plan_uses_default_when_no_profiles() {
-        let yaml = r#"
-apiVersion: cognicode.bundle/v1
-version: "0.94.1"
-platform: linux-x86-64
-profiles:
-  - name: default
-    description: default install profile
-components:
-  - name: cognicode-cli
-    kind: Cognicode
-    version: "0.94.1"
-    artifact: cognicode-0.94.1.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
-    url: "https://example.com/cognicode-0.94.1.tar.gz"
-    profiles: [default]
-"#;
-        let m = BundleManifest::from_str(yaml).unwrap();
-        let plan = m.into_install_plan();
-        assert_eq!(plan.profile, "default");
+    fn reject_malformed_digest() {
+        let yaml = bundle_with(&cognicode_component("core"), &core_and_reviewer())
+            .replace(DIGEST, "not-hex-at-all");
+        assert!(BundleManifest::from_str(&yaml).is_err());
     }
 
     #[test]
-    fn into_install_plan_preserves_components() {
-        let m = BundleManifest::from_str(SAMPLE_YAML).unwrap();
-        let plan = m.into_install_plan();
-        let names: Vec<_> = plan.components.iter().map(|c| c.name.clone()).collect();
-        assert_eq!(
-            names,
-            vec![
-                "cognicode-mcp",
-                "skills-cognicode-core",
-                "sandbox-templates"
-            ]
+    fn reject_wrong_artifact_filename() {
+        let yaml = bundle_with(&cognicode_component("core"), &core_and_reviewer()).replace(
+            "cognicode-0.95.0-x86_64-unknown-linux-gnu.tar.gz",
+            "cognicode-0.95.0-linux-x86-64.tar.gz",
         );
+        let err = BundleManifest::from_str(&yaml).unwrap_err().to_string();
+        assert!(err.contains("not canonical"), "got: {err}");
     }
 
     #[test]
-    fn for_target_platform_is_noop() {
-        // BundleManifest is already platform-specific at parse time,
-        // so for_target_platform returns self unchanged.
-        let m = BundleManifest::from_str(SAMPLE_YAML).unwrap();
-        let filtered = m.for_target_platform(Platform::LinuxX86_64);
-        // All components should be preserved since the manifest is already Linux
-        assert_eq!(filtered.components.len(), 3);
+    fn reject_wrong_platform_token_in_filename() {
+        // An artifact built for x86 listed in an aarch64 manifest.
+        let yaml = bundle_with(&cognicode_component("core"), &core_and_reviewer())
+            .replace("platform: linux-x86-64", "platform: linux-aarch64");
+        let err = BundleManifest::from_str(&yaml).unwrap_err().to_string();
+        assert!(err.contains("not canonical"), "got: {err}");
+    }
+
+    #[test]
+    fn reject_non_canonical_url() {
+        let yaml = bundle_with(&cognicode_component("core"), &core_and_reviewer())
+            .replace("releases/download/v0.95.0/", "releases/download/");
+        let err = BundleManifest::from_str(&yaml).unwrap_err().to_string();
+        assert!(err.contains("url"), "got: {err}");
+    }
+
+    #[test]
+    fn reject_version_mismatch() {
+        let yaml = bundle_with(&cognicode_component("core"), &core_and_reviewer()).replace(
+            "    version: \"0.95.0\"\n    artifact",
+            "    version: \"0.94.0\"\n    artifact",
+        );
+        let err = BundleManifest::from_str(&yaml).unwrap_err().to_string();
+        assert!(err.contains("!= bundle version"), "got: {err}");
+    }
+
+    #[test]
+    fn reject_duplicate_component() {
+        let one = cognicode_component("core");
+        let yaml = bundle_with(&format!("{one}{one}"), &core_and_reviewer());
+        let err = BundleManifest::from_str(&yaml).unwrap_err().to_string();
+        assert!(err.contains("duplicate component"), "got: {err}");
+    }
+
+    #[test]
+    fn reject_duplicate_profile_name() {
+        let profiles = "  - name: core\n    description: a\n  - name: core\n    description: b\n";
+        let yaml = bundle_with(&cognicode_component("core"), profiles);
+        let err = BundleManifest::from_str(&yaml).unwrap_err().to_string();
+        assert!(err.contains("duplicate profile"), "got: {err}");
+    }
+
+    #[test]
+    fn reject_unknown_profile_reference() {
+        let yaml = bundle_with(
+            &cognicode_component("core, nonexistent"),
+            &core_and_reviewer(),
+        );
+        let err = BundleManifest::from_str(&yaml).unwrap_err().to_string();
+        assert!(err.contains("unknown profile"), "got: {err}");
+    }
+
+    #[test]
+    fn reject_empty_component_profiles() {
+        let yaml = bundle_with(&cognicode_component(""), &core_and_reviewer());
+        let err = BundleManifest::from_str(&yaml).unwrap_err().to_string();
+        assert!(err.contains("at least one profile"), "got: {err}");
+    }
+
+    #[test]
+    fn reject_profile_that_resolves_to_zero_components() {
+        // `core` is declared but nothing is in it. This was the v1 defect that
+        // made the DEFAULT install path install nothing.
+        let yaml = bundle_with(&cognicode_component("reviewer"), &core_and_reviewer());
+        let err = BundleManifest::from_str(&yaml).unwrap_err().to_string();
+        assert!(err.contains("zero components"), "got: {err}");
+    }
+
+    #[test]
+    fn reject_layer0_and_meta_kinds_in_a_bundle() {
+        for kind in ["cogh", "bundle-manifest", "release-inventory", "checksums"] {
+            let c = format!(
+                r#"  - name: {kind_to_test}
+    kind: {kind}
+    version: "0.95.0"
+    artifact: "x"
+    sha256: "{DIGEST}"
+    url: "y"
+    profiles: [core]
+"#,
+                kind_to_test = kind
+            );
+            let yaml = bundle_with(&c, &core_and_reviewer());
+            assert!(
+                BundleManifest::from_str(&yaml).is_err(),
+                "kind `{kind}` must not be allowed inside a bundle"
+            );
+        }
+    }
+
+    #[test]
+    fn reject_component_name_not_matching_kind() {
+        let yaml = bundle_with(&cognicode_component("core"), &core_and_reviewer())
+            .replace("- name: cognicode", "- name: cognicode-renamed");
+        assert!(BundleManifest::from_str(&yaml).is_err());
+    }
+
+    #[test]
+    fn reject_bad_version_string() {
+        let yaml = bundle_with(&cognicode_component("core"), &core_and_reviewer())
+            .replace("version: \"0.95.0\"", "version: \"not-semver\"");
+        assert!(BundleManifest::from_str(&yaml).is_err());
+    }
+
+    #[test]
+    fn reject_missing_profiles_section() {
+        let yaml = bundle_with(&cognicode_component("core"), "  []\n");
+        assert!(BundleManifest::from_str(&yaml).is_err());
+    }
+
+    #[test]
+    fn wrong_platform_bundle_is_rejected() {
+        let yaml = bundle_with(&cognicode_component("core, reviewer"), &core_and_reviewer());
+        let m = BundleManifest::from_str(&yaml).unwrap();
+        assert!(m.assert_host_platform(Platform::LinuxAarch64).is_err());
+        assert!(m.assert_host_platform(Platform::LinuxX86_64).is_ok());
+    }
+
+    #[test]
+    fn there_is_no_pkg_version_lockstep() {
+        // e84's Layer 0 / Layer 1 split means the installed runtime version is
+        // free to differ from the running cogh bootstrap version. A bundle at a
+        // version other than this binary's must still validate; that coupling is
+        // what v1's `assert_pkg_version` enforced and v2 removes.
+        let yaml = bundle_with(&cognicode_component("core, reviewer"), &core_and_reviewer())
+            .replace("0.95.0", "1.2.3");
+        let m = BundleManifest::from_str(&yaml)
+            .expect("a bundle version different from cogh's must still validate");
+        assert_eq!(m.version, "1.2.3");
+        assert_ne!(
+            m.version,
+            env!("CARGO_PKG_VERSION").to_string(),
+            "the fixture must differ from this binary's version for the test to mean anything"
+        );
     }
 }

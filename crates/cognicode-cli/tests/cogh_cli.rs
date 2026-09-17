@@ -257,8 +257,7 @@ fn cogh_doctor_on_initialised_home_reports_healthy() {
         "expected `Core health` dimension; got: {body}"
     );
     assert!(
-        body.contains("home, bin/, shims/ present")
-            || body.contains("tracker/version missing"),
+        body.contains("home, bin/, shims/ present") || body.contains("tracker/version missing"),
         "expected Core health detail (`home, bin/, shims/ present` for Pass or `tracker/version missing` for Warn); got: {body}"
     );
 }

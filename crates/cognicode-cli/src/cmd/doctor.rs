@@ -87,7 +87,11 @@ impl DoctorCheck {
         }
     }
 
-    pub fn unavailable(name: &str, detail: impl Into<String>, remediation: impl Into<String>) -> Self {
+    pub fn unavailable(
+        name: &str,
+        detail: impl Into<String>,
+        remediation: impl Into<String>,
+    ) -> Self {
         Self {
             name: name.to_string(),
             status: CheckStatus::Unavailable,
@@ -143,7 +147,11 @@ impl fmt::Display for DoctorReport {
         writeln!(
             f,
             "==> overall: {}",
-            if self.is_healthy() { "healthy" } else { "UNHEALTHY" }
+            if self.is_healthy() {
+                "healthy"
+            } else {
+                "UNHEALTHY"
+            }
         )?;
         Ok(())
     }
@@ -266,7 +274,9 @@ pub fn probe_optional_isolation() -> DoctorCheck {
     }
 }
 
-fn detect_isolation_backend(family: crate::platform_adapter::PlatformFamily) -> Option<&'static str> {
+fn detect_isolation_backend(
+    family: crate::platform_adapter::PlatformFamily,
+) -> Option<&'static str> {
     // Light-touch probe: just check PATH presence. We deliberately do
     // NOT spawn the binary — that would change doctor from a report
     // into an action.
@@ -329,10 +339,8 @@ mod tests {
         use std::sync::atomic::{AtomicU64, Ordering};
         static N: AtomicU64 = AtomicU64::new(0);
         let n = N.fetch_add(1, Ordering::SeqCst);
-        let p = std::env::temp_dir().join(format!(
-            "cognicode-doctor-test-{}-{n}",
-            std::process::id()
-        ));
+        let p =
+            std::env::temp_dir().join(format!("cognicode-doctor-test-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&p).unwrap();
         p
     }
@@ -408,10 +416,7 @@ mod tests {
         // as broken just because no Podman/Docker is present.
         let check = probe_optional_isolation();
         assert!(
-            matches!(
-                check.status,
-                CheckStatus::Pass | CheckStatus::Unavailable
-            ),
+            matches!(check.status, CheckStatus::Pass | CheckStatus::Unavailable),
             "isolation must never be Fail; got {:?}",
             check.status
         );

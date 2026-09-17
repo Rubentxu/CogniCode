@@ -13,6 +13,8 @@ mod bundle_manifest;
 mod bundled;
 #[path = "../cmd/cache.rs"]
 mod cache;
+#[path = "../cmd/doctor.rs"]
+mod doctor;
 #[path = "../cmd/error.rs"]
 mod error;
 #[path = "../cmd/ide.rs"]
@@ -33,12 +35,18 @@ mod lockfile;
 mod manifest;
 #[path = "../cmd/platform_adapter.rs"]
 mod platform_adapter;
-#[path = "../cmd/doctor.rs"]
-mod doctor;
 #[path = "../cmd/profile.rs"]
 mod profile;
 #[path = "../cmd/registry.rs"]
 mod registry;
+#[path = "../cmd/release_contract.rs"]
+mod release_contract;
+#[cfg(test)]
+#[path = "../cmd/release_factory.rs"]
+mod release_factory;
+#[cfg(test)]
+#[path = "../cmd/release_test_support.rs"]
+mod release_test_support;
 #[path = "../cmd/rollback_journal.rs"]
 mod rollback_journal;
 #[path = "../cmd/skill.rs"]

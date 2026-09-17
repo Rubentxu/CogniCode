@@ -1,6 +1,9 @@
 //! `cogh::profile` — Profile filtering for bundle components.
 //!
-//! Provides functions to filter components by install profile.
+//! Under schema v2, `components[].profiles` is the single authoritative encoding
+//! of profile membership (e84 R7). v1 also carried a `profiles[].include_kinds`
+//! field which was parsed but never read, and which disagreed with the component
+//! side; it was removed in e85.
 
 use crate::bundle_manifest::{BundleComponent, BundleManifest};
 
@@ -18,13 +21,10 @@ pub fn filter_by_profile<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bundle_manifest::{BundleManifest, ComponentKind, Platform};
 
-    #[test]
-    fn filter_by_profile_returns_matching_components() {
-        let yaml = r#"
-apiVersion: cognicode.bundle/v1
-version: "0.94.0"
+    const DEV_YAML: &str = r#"
+apiVersion: cognicode.bundle/v2
+version: "0.95.0"
 platform: linux-x86-64
 profiles:
   - name: core
@@ -32,32 +32,34 @@ profiles:
   - name: full
     description: full profile
 components:
-  - name: cli
-    kind: Cognicode
-    version: "0.94.0"
-    artifact: cli.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
-    url: "https://example.com/cli.tar.gz"
+  - name: cognicode
+    kind: cognicode
+    version: "0.95.0"
+    artifact: cognicode-0.95.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/cognicode-0.95.0-x86_64-unknown-linux-gnu.tar.gz"
     profiles: [core]
-  - name: daemon
-    kind: Daemon
-    version: "0.94.0"
-    artifact: daemon.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000002"
-    url: "https://example.com/daemon.tar.gz"
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "0.95.0"
+    artifact: cognicode-mcp-0.95.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "1a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e9f2c1d4b7e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/cognicode-mcp-0.95.0-x86_64-unknown-linux-gnu.tar.gz"
     profiles: [full]
 "#;
-        let manifest = BundleManifest::from_str(yaml).unwrap();
 
-        let core_components = filter_by_profile(&manifest, "core");
-        assert_eq!(core_components.len(), 1);
-        assert_eq!(core_components[0].name, "cli");
+    #[test]
+    fn filter_by_profile_returns_matching_components() {
+        let manifest = BundleManifest::from_str(DEV_YAML).unwrap();
 
-        let full_components = filter_by_profile(&manifest, "full");
-        assert_eq!(full_components.len(), 1);
-        assert_eq!(full_components[0].name, "daemon");
+        let core = filter_by_profile(&manifest, "core");
+        assert_eq!(core.len(), 1);
+        assert_eq!(core[0].name, "cognicode");
 
-        let nonexistent = filter_by_profile(&manifest, "nonexistent");
-        assert!(nonexistent.is_empty());
+        let full = filter_by_profile(&manifest, "full");
+        assert_eq!(full.len(), 1);
+        assert_eq!(full[0].name, "cognicode-mcp");
+
+        assert!(filter_by_profile(&manifest, "nonexistent").is_empty());
     }
 }

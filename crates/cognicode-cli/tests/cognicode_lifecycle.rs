@@ -95,8 +95,7 @@ fn cogh_doctor_reports_healthy_on_initialised_home() {
         "missing `Core health` dimension; got: {body}"
     );
     assert!(
-        body.contains("home, bin/, shims/ present")
-            || body.contains("tracker/version missing"),
+        body.contains("home, bin/, shims/ present") || body.contains("tracker/version missing"),
         "missing unified Core health detail; got: {body}"
     );
 }

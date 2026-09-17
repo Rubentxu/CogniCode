@@ -17,6 +17,36 @@ use crate::registry;
 use crate::rollback_journal::{RollbackJournal, SideEffect};
 use sha2::Digest;
 
+/// Environment variable naming an explicit `bundle.yaml` to install from.
+///
+/// This is the seam that lets a release tool, a test, or a user point `cogh` at
+/// an exact generated manifest instead of relying on any embedded fallback.
+pub const ENV_BUNDLE_MANIFEST: &str = "COGNICODE_BUNDLE_MANIFEST";
+
+/// Environment variable overriding the origin used to FETCH release artifacts.
+///
+/// Manifests always carry canonical `github.com` URLs, and the v2 contract
+/// rejects anything else. This override changes only the fetch origin, never the
+/// manifest. It is what makes mirrors, air-gapped installs, and deterministic
+/// offline tests possible without weakening the canonical-URL rule.
+pub const ENV_RELEASE_BASE_URL: &str = "COGNICODE_RELEASE_BASE_URL";
+
+/// Rewrite a canonical component URL onto the configured fetch origin, if any.
+pub fn resolve_download_url(canonical: &str) -> String {
+    let Some(base) = std::env::var_os(ENV_RELEASE_BASE_URL) else {
+        return canonical.to_string();
+    };
+    let base = base.to_string_lossy();
+    let base = base.trim_end_matches('/');
+    if base.is_empty() {
+        return canonical.to_string();
+    }
+    match canonical.strip_prefix(crate::release_contract::RELEASE_DOWNLOAD_BASE) {
+        Some(rest) => format!("{base}{rest}"),
+        None => canonical.to_string(),
+    }
+}
+
 /// Verifies a file against an expected sha256 hash.
 pub fn verify_sha256(path: &std::path::Path, expected: &str) -> Result<(), InstallerError> {
     let actual = compute_sha256(path)?;
@@ -107,7 +137,7 @@ fn advance_stage(
                     .build()
                     .map_err(|e| InstallerError::Network("reqwest".into(), e.to_string()))?;
                 let mut response = client
-                    .get(&comp.url)
+                    .get(resolve_download_url(&comp.url))
                     .send()
                     .map_err(|e| InstallerError::Network(comp.url.clone(), e.to_string()))?;
                 if !response.status().is_success() {
@@ -129,7 +159,7 @@ fn advance_stage(
             let cache_dir = layout::cache_dir();
             for comp in &manifest.components {
                 let path = cache_dir.join(format!("{}.tar.gz", comp.name));
-                verify_sha256(&path, &comp.sha256)?;
+                verify_sha256(&path, comp.sha256.as_str())?;
                 journal.record(SideEffect::VerifiedSha256(path));
             }
             Ok(())
@@ -151,11 +181,10 @@ fn advance_stage(
             Ok(())
         }
         InstallStage::InstallingShims => {
-            // Ensure the shims directory exists even when no components match
-            // the active profile (e.g. `core` includes reserved kinds `[Cogh,
-            // Cognicode]` with no registered components). The layout must
-            // materialize so subsequent `cogh doctor` / `cogh where` calls
-            // find a well-formed `~/.cognicode/shims/` path.
+            // Ensure the shims directory exists even when the selected profile
+            // has no matching components. The layout must materialize so
+            // subsequent `cogh doctor` / `cogh where` calls find a well-formed
+            // `~/.cognicode/shims/` path.
             let shims_dir = layout::shims_dir();
             std::fs::create_dir_all(&shims_dir)
                 .map_err(|e| InstallerError::Io(shims_dir.clone(), e))?;
@@ -172,7 +201,9 @@ fn advance_stage(
                         .install_shim(&bin_path, &shim_path)
                         .map_err(|e| InstallerError::ShimInstall(e.to_string()))?;
                     let (link, target) = match effect {
-                        platform_adapter::ShimSideEffect::Symlinked { link, target } => (link, target),
+                        platform_adapter::ShimSideEffect::Symlinked { link, target } => {
+                            (link, target)
+                        }
                         platform_adapter::ShimSideEffect::Copied { dest, source } => (dest, source),
                     };
                     journal.record(SideEffect::CreatedSymlink { link, target });
@@ -197,12 +228,15 @@ impl InstallerTransaction {
     pub fn run(profile: &str) -> Result<PathBuf, InstallerError> {
         let yaml = Self::load_bundle_manifest()?;
 
-        // Parse and assert version
+        // Parse and validate the v2 contract.
+        //
+        // e85: there is deliberately NO lockstep between the bundle version and
+        // this binary's version. Under e84's Layer 0 / Layer 1 split, the
+        // installed runtime version is free to differ from the running `cogh`
+        // bootstrap version, so `assert_pkg_version` was removed in favour of
+        // letting the manifest validation decide what is installable.
         let mut manifest = BundleManifest::from_str(&yaml)
             .map_err(|e| InstallerError::ManifestParse(BundleManifestError(e)))?;
-        manifest
-            .assert_pkg_version()
-            .map_err(|e| InstallerError::VersionMismatch(BundleManifestError(e)))?;
         // e74 WU2: refuse to load a wrong-platform bundle. No fallback
         // to a different platform's artifacts. The distribution matrix
         // is the contract; running the Linux bundle on Windows is the
@@ -253,27 +287,47 @@ impl InstallerTransaction {
         }
     }
 
-    /// Load bundle manifest from disk or fall back to embedded asset.
+    /// Resolve the bundle manifest `cogh` should install from.
+    ///
+    /// Precedence, highest first:
+    ///
+    /// 1. `COGNICODE_BUNDLE_MANIFEST` — an explicit path to a manifest.
+    /// 2. `~/.cognicode/bundle.yaml` — a manifest placed in `COGNICODE_HOME`.
+    /// 3. A **dev-only** embedded fixture, announced with a loud warning.
+    ///
+    /// ## Why the embedded fixture is not authoritative (e85 WU8)
+    ///
+    /// e84 requires manifests to be **generated from produced artifacts**, with
+    /// digests computed from the packaged bytes. Such a manifest cannot honestly
+    /// be committed before those artifacts exist, so a version-pinned embedded
+    /// manifest can never be the production authority.
+    ///
+    /// Remote resolution of `version + platform -> published BundleManifest v2`
+    /// is **e86**. Until then `cogh` can install only from an explicitly provided
+    /// manifest. The fallback below exists solely so offline development and this
+    /// crate's own tests have a well-formed v2 manifest to parse; its digests are
+    /// not the digests of any real artifact, so an install driven by it fails at
+    /// the SHA256 stage by construction rather than silently succeeding.
     fn load_bundle_manifest() -> Result<String, InstallerError> {
-        let bundle_path = layout::bundle_yaml_path();
-        if bundle_path.exists() {
-            std::fs::read_to_string(&bundle_path).map_err(|e| InstallerError::Io(bundle_path, e))
-        } else {
-            // Embedded fallback for distribution installers.
-            //
-            // The path is derived from CARGO_PKG_VERSION so the crate
-            // version is the single source of truth: bumping the version
-            // without adding `bundles/v<version>/bundle.yaml` fails the
-            // build loudly instead of silently shipping a mismatched
-            // bundle that `assert_pkg_version` would later reject.
-            Ok(include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../bundles/v",
-                env!("CARGO_PKG_VERSION"),
-                "/bundle.yaml"
-            ))
-            .to_string())
+        if let Some(explicit) = std::env::var_os(ENV_BUNDLE_MANIFEST) {
+            let path = PathBuf::from(explicit);
+            return std::fs::read_to_string(&path).map_err(|e| InstallerError::Io(path, e));
         }
+
+        let home_manifest = layout::bundle_yaml_path();
+        if home_manifest.exists() {
+            return std::fs::read_to_string(&home_manifest)
+                .map_err(|e| InstallerError::Io(home_manifest, e));
+        }
+
+        eprintln!(
+            "warning: no bundle manifest provided; falling back to the DEV-ONLY fixture.\n\
+             Real installs must use a generated release manifest: set {ENV_BUNDLE_MANIFEST} \
+             or place one at {}.\n\
+             Remote resolution of version+platform is not implemented until e86.",
+            home_manifest.display()
+        );
+        Ok(include_str!("dev-bundle.yaml").to_string())
     }
 
     /// Advance the transaction to the next stage.
@@ -363,27 +417,26 @@ mod tests {
     use crate::layout::test_support::TempCognicodeHome;
     use serial_test::serial;
 
-    /// The embedded bundle must be co-versioned with the crate.
+    /// The dev-only fixture must be a well-formed v2 manifest.
     ///
-    /// The compile-time `include_str!` path is derived from
-    /// `CARGO_PKG_VERSION`, so a missing directory fails the build. This
-    /// test closes the remaining gap: a bundle directory that exists but
-    /// whose internal `version:` field was not bumped.
+    /// NOTE: the fixture is explicitly **not** authoritative and is not a
+    /// published release manifest (e85 WU8). This test pins only that it parses,
+    /// that it is v2, and that no declared profile is a no-op.
     #[test]
-    fn embedded_bundle_version_matches_pkg_version() {
-        let yaml = InstallerTransaction::load_bundle_manifest()
-            .expect("embedded bundle manifest must be readable");
-        let manifest =
-            BundleManifest::from_str(&yaml).expect("embedded bundle manifest must parse");
+    fn dev_fixture_is_well_formed_v2() {
+        let yaml = include_str!("dev-bundle.yaml");
+        let manifest = BundleManifest::from_str(yaml).expect("dev fixture must parse as v2");
 
         assert_eq!(
-            manifest.version,
-            env!("CARGO_PKG_VERSION"),
-            "embedded bundle version must equal CARGO_PKG_VERSION"
+            manifest.api_version,
+            crate::bundle_manifest::BUNDLE_API_VERSION
         );
-        manifest
-            .assert_pkg_version()
-            .expect("embedded bundle must satisfy assert_pkg_version");
+        for profile in manifest.profile_names() {
+            assert!(
+                !manifest.components_for_profile(profile).is_empty(),
+                "dev fixture profile `{profile}` must not resolve to zero components"
+            );
+        }
     }
 
     #[test]
@@ -408,21 +461,15 @@ mod tests {
     #[test]
     #[serial]
     fn advance_skips_through_all_stages() {
-        // Reaches filesystem stages (cache/shims/install dirs) via
-        // `cognicode_home()`, so isolate COGNICODE_HOME.
+        // Drive the real pipeline end to end against a real release that is
+        // generated by the factory and served locally, so the Downloading,
+        // VerifyingSha256 and Extracting stages genuinely execute.
         let _home = TempCognicodeHome::new();
-        // Use 0 components so Downloading stage is a no-op (no network call).
-        // This tests that the stage state machine advances correctly.
-        let yaml = r#"
-apiVersion: cognicode.bundle/v1
-version: "0.94.0"
-platform: linux-x86-64
-profiles:
-  - name: core
-    description: core profile
-components: []
-"#;
-        let manifest = BundleManifest::from_str(yaml).unwrap();
+        let release = crate::release_test_support::local_release(env!("CARGO_PKG_VERSION"))
+            .expect("stage a local release");
+        crate::release_test_support::point_at(&release);
+
+        let manifest = BundleManifest::from_path(&release.manifest_path).unwrap();
         let journal = RollbackJournal::new();
 
         let mut tx = InstallerTransaction::Running {
@@ -469,19 +516,19 @@ components: []
         // Writes to `cognicode_home()/install/<version>/manifest.yaml`.
         let _home = TempCognicodeHome::new();
         let yaml = r#"
-apiVersion: cognicode.bundle/v1
+apiVersion: cognicode.bundle/v2
 version: "0.94.0"
 platform: linux-x86-64
 profiles:
   - name: core
     description: core profile
 components:
-  - name: cognicode-cli
-    kind: Cognicode
+  - name: cognicode
+    kind: cognicode
     version: "0.94.0"
-    artifact: cognicode-0.94.0.tar.gz
-    sha256: "0000000000000000000000000000000000000000000000000000000000000001"
-    url: "https://example.com/cognicode-0.94.0.tar.gz"
+    artifact: cognicode-0.94.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.94.0/cognicode-0.94.0-x86_64-unknown-linux-gnu.tar.gz"
     profiles: [core]
 "#;
         let manifest = BundleManifest::from_str(yaml).unwrap();

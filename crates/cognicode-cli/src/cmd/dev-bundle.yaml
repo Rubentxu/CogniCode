@@ -1,0 +1,37 @@
+# DEV-ONLY FIXTURE — NOT A PUBLISHED RELEASE MANIFEST. NOT AUTHORITATIVE.
+#
+# e85 WU8. Real bundle manifests are GENERATED from produced artifacts (with
+# digests computed from the packaged bytes) and published as release assets.
+# Such a manifest cannot be committed before its artifacts exist, so this file
+# is only a well-formed v2 manifest for offline development and crate tests.
+#
+# The digests below are NOT the digests of any real artifact. An install driven
+# by this fixture fails at the SHA256 stage by construction, which is the
+# correct behaviour: you cannot install bytes you did not download.
+#
+# Remote resolution of `version + platform -> published BundleManifest v2` is e86.
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "0.95.0"
+platform: linux-x86-64
+released_at: "2026-09-17T00:00:00Z"
+profiles:
+  - name: core
+    description: "Daily CLI"
+  - name: reviewer
+    description: "Adds the MCP bridge daemon for IDE integration"
+components:
+  - name: cognicode
+    kind: cognicode
+    version: "0.95.0"
+    artifact: cognicode-0.95.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/cognicode-0.95.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core, reviewer]
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "0.95.0"
+    artifact: cognicode-mcp-0.95.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "1a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e9f2c1d4b7e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/cognicode-mcp-0.95.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [reviewer]

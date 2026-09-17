@@ -105,8 +105,9 @@ impl PlatformAdapter for LinuxAdapter {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("create shim parent {}", parent.display()))?;
         }
-        std::os::unix::fs::symlink(bin_path, shim_path)
-            .with_context(|| format!("symlink {} -> {}", shim_path.display(), bin_path.display()))?;
+        std::os::unix::fs::symlink(bin_path, shim_path).with_context(|| {
+            format!("symlink {} -> {}", shim_path.display(), bin_path.display())
+        })?;
         Ok(ShimSideEffect::Symlinked {
             link: shim_path.to_path_buf(),
             target: bin_path.to_path_buf(),
@@ -118,9 +119,8 @@ impl PlatformAdapter for LinuxAdapter {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("create target parent {}", parent.display()))?;
         }
-        std::os::unix::fs::symlink(source, target).with_context(|| {
-            format!("symlink {} -> {}", target.display(), source.display())
-        })
+        std::os::unix::fs::symlink(source, target)
+            .with_context(|| format!("symlink {} -> {}", target.display(), source.display()))
     }
 
     fn user_home_dir(&self) -> PathBuf {
@@ -175,8 +175,9 @@ impl PlatformAdapter for MacOsAdapter {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("create shim parent {}", parent.display()))?;
         }
-        std::os::unix::fs::symlink(bin_path, shim_path)
-            .with_context(|| format!("symlink {} -> {}", shim_path.display(), bin_path.display()))?;
+        std::os::unix::fs::symlink(bin_path, shim_path).with_context(|| {
+            format!("symlink {} -> {}", shim_path.display(), bin_path.display())
+        })?;
         Ok(ShimSideEffect::Symlinked {
             link: shim_path.to_path_buf(),
             target: bin_path.to_path_buf(),
@@ -188,9 +189,8 @@ impl PlatformAdapter for MacOsAdapter {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("create target parent {}", parent.display()))?;
         }
-        std::os::unix::fs::symlink(source, target).with_context(|| {
-            format!("symlink {} -> {}", target.display(), source.display())
-        })
+        std::os::unix::fs::symlink(source, target)
+            .with_context(|| format!("symlink {} -> {}", target.display(), source.display()))
     }
 
     fn user_home_dir(&self) -> PathBuf {
@@ -235,9 +235,8 @@ impl PlatformAdapter for WindowsAdapter {
                 std::fs::create_dir_all(parent)
                     .with_context(|| format!("create target parent {}", parent.display()))?;
             }
-            std::fs::copy(source, target).with_context(|| {
-                format!("copy {} -> {}", source.display(), target.display())
-            })?;
+            std::fs::copy(source, target)
+                .with_context(|| format!("copy {} -> {}", source.display(), target.display()))?;
             Ok(())
         } else {
             // Source missing — fail loudly rather than silently
@@ -410,7 +409,10 @@ mod tests {
             }
             other => panic!("expected Copied, got {other:?}"),
         }
-        assert!(!shim.is_symlink(), "shim should be a regular file on Windows");
+        assert!(
+            !shim.is_symlink(),
+            "shim should be a regular file on Windows"
+        );
         let on_disk = std::fs::read(&shim).unwrap();
         assert_eq!(on_disk, b"fake-binary");
 
@@ -461,7 +463,10 @@ mod tests {
         LinuxAdapter
             .link_or_copy(&src, &dst)
             .expect("link_or_copy should succeed");
-        assert!(dst.is_symlink(), "Linux link_or_copy of file must be symlink");
+        assert!(
+            dst.is_symlink(),
+            "Linux link_or_copy of file must be symlink"
+        );
         let meta = std::fs::symlink_metadata(&dst).unwrap();
         assert!(meta.file_type().is_symlink());
         assert_eq!(std::fs::read(&dst).unwrap(), b"hello");
