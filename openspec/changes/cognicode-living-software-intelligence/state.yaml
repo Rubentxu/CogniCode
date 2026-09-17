@@ -554,7 +554,49 @@ phases:
         M13 (Historical Replay / Continuous Improvement): 13.1 SATISFIED, 13.2
         SATISFIED. 13.3 FailureRegime, 13.4 analyzer shadow comparison, 13.5
         held-out promotion gate and 13.6 governed improvement E2E remain for
-        e82/e83. NEXT: e82 (AnalyzerCurrent vs AnalyzerCandidate + FailureRegime
-        + shadow evaluation), NOT started by this cycle.
+        e82/e83.
+        e82 (Shadow Evaluation + Failure Regimes): ARCHIVED 2026-09-17 (impl
+        654e5ab1, archive-manifest.md, characterization.md). Implements umbrella
+        tasks 13.3 (FailureRegime taxonomy contract) and 13.4 (analyzer shadow
+        comparison). Measurement + diagnosis only; never selection, promotion or
+        authority. Additive e81 seam: HistoricalReplayPlan::run_role(role,
+        predictor) runs one role, and run() is now compatibility sugar over it,
+        so e83 can later sequence OPTIMIZE -> freeze candidate -> CONFIRM
+        without reworking e81. New module application::shadow_evaluation:
+        AnalyzerDescriptor {analyzer_id, revision_digest} for exact revision
+        identity; AnalyzerSide {Current, Candidate} as the evaluation ROLE
+        (outside the descriptor, so a control experiment can put the same
+        revision on both sides); AnalyzerUnderTest over the single reused
+        HistoricalPredictor contract (no current/candidate trait split);
+        ShadowEvaluationPlan with an evaluation_digest binding corpus + split +
+        both revisions (no authority in e82; for e83 provenance);
+        pair_case_results pairing by (role, case id) and failing loud on role
+        mismatch, duplicate or one-sided cases; signed descriptive ScoreDelta
+        (candidate - current) with no Improved/Regressed/Better/Worse encoding;
+        FailureRegime taxonomy with typed FailureRegimeEvidence, never derived
+        by string parsing and never mapping false_negative > 0 to ImpactMiss;
+        ShadowRoleReport with no selection field. Built-in classifications are
+        only the sound ones: EvidenceIncomplete (from e81
+        ReplayCaseOutcome::Incomplete) and PlatformDivergence (from e76
+        compare_platforms, >= 2 distinct platforms only); GroundingFailure,
+        ImpactMiss, ArchitectureMiss and ProviderDegradation are a documented
+        contract plus a FailureRegimeClassifier adapter seam. Incomplete stays
+        explicit: no ScoreDelta when either side is incomplete, never zeros.
+        20 e82 tests (WU18 A-T + WU22 vertical) and 23 e81 tests green; cargo
+        test --lib baseline-exact; workspace build GREEN. Characterization
+        finding recorded (not repaired): e76 score() documents "FP: expected
+        absent + observed present" but counts any firing expected observation as
+        TP regardless of expected_present; e82 fixtures follow the
+        implementation and the global scorer is untouched. Out of scope and
+        untouched: held-out promotion gate, candidate superiority, thresholds,
+        FixAgent, PromotionAuthorization/PromotionPermit, ChangeProposal
+        creation, source mutation, P1.4, DEBT-SDDK-006.
+        M13 (Historical Replay / Continuous Improvement): 13.1, 13.2, 13.3, 13.4
+        SATISFIED. 13.5 held-out promotion gate and 13.6 governed improvement
+        E2E remain for e83.
+        NEXT: e82.1 (P1.4 CausalRecorder architecture boundary), THEN e83
+        (held-out promotion + governed improvement E2E). Neither started by this
+        cycle. P1.4 remains explicit; e82 did NOT wire the e77 evaluator into
+        any authority-bearing gate.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
