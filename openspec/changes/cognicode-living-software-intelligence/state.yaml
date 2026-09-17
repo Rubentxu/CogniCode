@@ -714,5 +714,43 @@ phases:
         status, ADR status, DEBT-SDDK-006, e78 consumer-count checkpoint) and only
         then a decision on entry into the post-roadmap Control Plane package.
         CP0 Backstage is NOT started.
-  verify: {status: pending}
-  archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
+        final umbrella reconciliation (lsi-final-umbrella-reconciliation,
+        2026-09-17, archive-manifest.md). Administrative only; no product
+        implementation. M11 — AI Investigation / Critic / Fix Agent: CLOSED
+        (12.1-12.6 SATISFIED). Qualification for 12.6: AI write-side security is
+        satisfied at the candidate/proposal/authority boundary; physical source
+        mutation remains OUTSIDE the AI foundation by design. M13 — Historical
+        Replay / Continuous Improvement: CLOSED (13.1-13.6 SATISFIED; evidence in
+        the e81/e82/e82.1/e82.2/e83 archives). tasks.md checkboxes deliberately
+        NOT rewritten (historical record). e78 Pack Ecosystem: re-evaluated
+        consumer-count checkpoint at current HEAD -> DEFERRED. Genuine distinct
+        operational/product consumers of the executable architecture capability:
+        0; the checkpoint's counted 1 remains a verification surface (self-host).
+        The two other architecture e2e files are the same capability's acceptance
+        surface, the AI semantic miner is a candidate PRODUCER, and the MCP tool
+        named check_architecture is NOT a consumer (it is a legacy CycleDetector
+        over the call graph and hard-codes violations: vec![]). Triggers
+        preserved: detector-pack manifest need, another real extension pack,
+        third-party/plugin admission consumer. DEBT-SDDK-004 RESOLVED;
+        DEBT-SDDK-006 OPEN / NON-BLOCKING (two classified interproc_summary
+        feature-gating baseline entries; housekeeping severity; trigger = next
+        bounded maintenance opportunity; known_failures.yaml NOT edited).
+        Architecture self-host 0 drift. ADR audit (LOCAL ONLY, docs/adr is
+        gitignored): 043/044/045/046/047/049/050/051 audited against their own
+        validation clauses and promoted to EXECUTED with an Execution-evidence
+        section (implementing cycles + affected consumers/rollback); ADR-048
+        deliberately left PROPOSED because e78 is deferred. No ADR edit was
+        pushed. Verification: sddk ledger verify GREEN (123 events), architecture
+        self-host 0 drift, known-failure checker exact (41 entries), cargo test
+        --lib baseline-exact, evidence-kernel suite only the two DEBT-SDDK-006
+        failures, cargo build --workspace GREEN. Focused e79-e83 suites were not
+        re-run (reconciliation, not another acceptance campaign).
+        UMBRELLA LIFECYCLE: apply COMPLETE (implemented roadmap M0-M9, M11, M13,
+        M10 executable architecture); verify DONE; archive DONE — SCOPED closure,
+        recorded plainly: one milestone (M10 Packs / e78) closes as DEFERRED BY
+        DESIGN, not satisfied, because its consumer-count checkpoint is unmet.
+        Nothing is claimed done that is not. NEXT: a decision on whether Backstage
+        is an adequate host for the headless architecture + Explorer (CP0 Backstage
+        Fit Spike). CP0 NOT STARTED; e78 NOT started; DEBT-SDDK-006 NOT fixed.
+  verify: {status: done, date: 2026-09-17, note: scoped closure of the implemented roadmap; evidence = e79-e83 archives + lsi-final-umbrella-reconciliation/archive-manifest.md}
+  archive: {status: done, date: 2026-09-17, note: scoped closure — e78 recorded DEFERRED WITH TRIGGER (consumer-count checkpoint unmet, 0 genuine product consumers); see lsi-final-umbrella-reconciliation/archive-manifest.md}
