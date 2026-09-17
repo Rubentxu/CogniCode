@@ -39,15 +39,15 @@ This directory holds the architecture decision records (ADRs) for the CogniCode 
 | [ADR-040](./ADR-040-provenance-evidence-hypothesis.md) | Separate Fact, Evidence and Hypothesis | ACCEPTED | 2026-09-12 |
 | [ADR-041](./ADR-041-storage-vs-compute-separation.md) | Storage backend separated from incremental compute | PROPOSED | 2026-09-12 |
 | [ADR-042](./ADR-042-detector-ir-escalation.md) | Detector IR with cost-aware escalation | PROPOSED | 2026-09-12 |
-| [ADR-043](./ADR-043-intelligence-event-log.md) | Intelligence Event Log for causal operational history | PROPOSED | 2026-09-12 |
-| [ADR-044](./ADR-044-reactive-behavior-classes.md) | Three behavior classes with different authority | PROPOSED | 2026-09-12 |
-| [ADR-045](./ADR-045-read-set-tracing.md) | Execution read sets as first-class lineage | PROPOSED | 2026-09-12 |
-| [ADR-046](./ADR-046-software-world-fork-promote.md) | Software World Fork, Trial, Diff and Promote | PROPOSED | 2026-09-12 |
-| [ADR-047](./ADR-047-evidence-based-delivery.md) | Evidence Bundle as CI promotion unit | PROPOSED | 2026-09-12 |
+| [ADR-043](./ADR-043-intelligence-event-log.md) | Intelligence Event Log for causal operational history | EXECUTED | 2026-09-12 |
+| [ADR-044](./ADR-044-reactive-behavior-classes.md) | Three behavior classes with different authority | EXECUTED | 2026-09-12 |
+| [ADR-045](./ADR-045-read-set-tracing.md) | Execution read sets as first-class lineage | EXECUTED | 2026-09-12 |
+| [ADR-046](./ADR-046-software-world-fork-promote.md) | Software World Fork, Trial, Diff and Promote | EXECUTED | 2026-09-12 |
+| [ADR-047](./ADR-047-evidence-based-delivery.md) | Evidence Bundle as CI promotion unit | EXECUTED | 2026-09-12 |
 | [ADR-048](./ADR-048-pack-manifest-ontology.md) | Packs as extension and governance unit | PROPOSED | 2026-09-12 |
-| [ADR-049](./ADR-049-executable-architecture-knowledge.md) | Architecture knowledge as versioned executable constraints | PROPOSED | 2026-09-12 |
-| [ADR-050](./ADR-050-code-authorship-without-authority.md) | Code authorship without authority for AI and packs | PROPOSED | 2026-09-12 |
-| [ADR-051](./ADR-051-historical-heldout-promotion.md) | Historical replay and held-out promotion | PROPOSED | 2026-09-12 |
+| [ADR-049](./ADR-049-executable-architecture-knowledge.md) | Architecture knowledge as versioned executable constraints | EXECUTED | 2026-09-12 |
+| [ADR-050](./ADR-050-code-authorship-without-authority.md) | Code authorship without authority for AI and packs | EXECUTED | 2026-09-12 |
+| [ADR-051](./ADR-051-historical-heldout-promotion.md) | Historical replay and held-out promotion | EXECUTED | 2026-09-12 (executed 2026-09-17, e83) |
 
 ## Format
 

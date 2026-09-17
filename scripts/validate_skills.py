@@ -39,7 +39,25 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
-CATALOG_FILE = (
+
+# Locate the runtime catalog under the archive dir. The path
+# changed over the cycle (e84.1 lives under
+# openspec/changes/archive/2026-09-17-e84-1-skill-productization/
+# now), so we walk all archive entries and the active change dir.
+def _find_catalog() -> Path | None:
+    candidates = []
+    arch = REPO_ROOT / "openspec/changes/archive"
+    if arch.exists():
+        for sub in arch.iterdir():
+            if not sub.is_dir():
+                continue
+            cand = sub / "artifacts" / "runtime-tools-list.json"
+            if cand.exists():
+                candidates.append(cand)
+    return candidates[0] if candidates else None
+
+
+CATALOG_FILE = _find_catalog() or (
     REPO_ROOT
     / "openspec/changes/e84-1-cognicode-skill-productization/artifacts/runtime-tools-list.json"
 )
