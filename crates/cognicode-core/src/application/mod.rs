@@ -5,6 +5,12 @@
 
 pub mod architecture;
 pub mod behaviors;
+// M11 (AI Foundation, cycle e79) — read-only AI support.
+// Provides `FakeLlmPort` (deterministic in-memory adapter),
+// `SemanticMiner`, and `FindingCritic`. No canonical writes;
+// no authority minting; no patch application. Authority is the
+// e77 admission surface's job, not this module's.
+pub mod ai;
 // e68 WU2 — affected-work planner over WU1 FactDelta + e66 ReadSet.
 #[cfg(feature = "evidence-kernel")]
 pub mod change_tracking;

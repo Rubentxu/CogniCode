@@ -40,6 +40,13 @@ pub mod trust;
 // `sqlx`/`tokio`); ungated. The evaluator and admission flow live in
 // `application::architecture` so the domain layer stays I/O-free.
 pub mod architecture;
+// AI Foundation (e79, M11 first slice) — bounded immutable input
+// (`InvestigationFrame`), provider-neutral `LlmPort`, advisory
+// `Hypothesis` and `Critique`. Pure domain (no I/O, no HTTP, no
+// provider SDK). The application layer under `application::ai`
+// provides the in-memory deterministic adapter; real provider
+// adapters are future work gated by DEBT-SDDK-003.
+pub mod ai;
 // Kernel identifiers (EntityId / FactId / EvidenceId / SnapshotId /
 // OccurrenceId / StableEntityId / ExecutionId) — ungated domain
 // vocabulary (cycle e56). The gated `evidence_kernel::ids` re-exports
