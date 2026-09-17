@@ -339,6 +339,51 @@ pub fn cmd_update(
     Ok(())
 }
 
+pub fn cmd_rollback(home: &CognicodeHome, plugin: Option<String>) -> Result<()> {
+    let _ = (home, plugin);
+    // 1. Resolve which journal to roll back: prefer the journal that matches
+    //    the currently pinned tracker (so `cogh rollback` is "undo the active
+    //    install"). If there is no tracker, take the highest-version journal
+    //    on disk.
+    let target = crate::lifecycle_journal::journal_path_for_current().or_else(|| {
+        crate::lifecycle_journal::list_committed().ok().and_then(|vs| {
+            vs.last().map(|v| crate::lifecycle_journal::journal_path(&v))
+        })
+    });
+    let path = match target {
+        Some(p) if p.exists() => p,
+        Some(p) => {
+            // The journal we expected is missing — the install either never
+            // happened (no tracker) or the journal was wiped. Either way,
+            // the honest answer is "nothing to roll back".
+            println!("nothing to roll back (no journal at {})", p.display());
+            return Ok(());
+        }
+        None => {
+            println!("nothing to roll back (no journal directory)");
+            return Ok(());
+        }
+    };
+
+    println!("rolling back from {}", path.display());
+
+    // 2. Load the journal and roll back. We MUST clone the loaded journal
+    //    and commit the clone — the same Drop-reversal hazard we found in
+    //    lifecycle_journal::write applies to the in-memory deserialised
+    //    journal too if its Drop runs without a commit.
+    let journal = crate::lifecycle_journal::load(&path)
+        .map_err(|e| anyhow!("load journal {}: {e}", path.display()))?;
+    let mut safe = journal;
+    safe.commit();
+    safe.rollback()
+        .map_err(|e| anyhow!("rollback failed: {e}"))?;
+
+    // 3. Best-effort: remove the journal file so a second `cogh rollback`
+    //    reports "nothing to roll back" instead of running again.
+    crate::lifecycle_journal::remove(&path);
+    Ok(())
+}
+
 pub fn cmd_reshim(home: &CognicodeHome) -> Result<()> {
     println!(
         "reshim: would regenerate {} (not yet implemented)",
@@ -706,6 +751,68 @@ mod tests {
             !bundle_path.exists(),
             "dry-run must not write bundle.yaml, found {}",
             bundle_path.display()
+        );
+    }
+
+    // ----- e86 T7: cmd_rollback happy path and "nothing to roll back" -----
+
+    #[test]
+    #[serial]
+    fn cmd_rollback_reports_nothing_when_no_journal_exists() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+        // No journal has been written yet — `cmd_rollback` must not panic,
+        // and must report "nothing to roll back" instead of trying to read.
+        cmd_rollback(&home, None).expect("cmd_rollback must succeed (no journal)");
+    }
+
+    #[test]
+    #[serial]
+    fn cmd_rollback_reverses_a_committed_install() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+
+        // Simulate a committed install: write a manifest file and a journal
+        // describing the side-effects. The journal's WroteManifest reverses
+        // to remove the manifest, so after rollback the manifest is gone.
+        let version = "0.95.0";
+        let install_dir = home_dir.path().join("install").join(version);
+        std::fs::create_dir_all(&install_dir).unwrap();
+        let manifest_path = install_dir.join("manifest.yaml");
+        std::fs::write(&manifest_path, "apiVersion: v1\nversion: 0.95.0\n").unwrap();
+        assert!(manifest_path.exists());
+
+        // Persist the journal to ~/.cognicode/journal/<version>.json by hand
+        // (the same shape `InstallerTransaction::commit` produces).
+        use crate::rollback_journal::{RollbackJournal, SideEffect};
+        let mut j = RollbackJournal::new();
+        j.record(SideEffect::CreatedDir(install_dir.clone()));
+        j.record(SideEffect::WroteManifest(manifest_path.clone()));
+        let envelope = crate::lifecycle_journal::PersistedJournal {
+            version: version.to_string(),
+            committed_at_unix: Some(0),
+            previous_tracker: None,
+            effects: j,
+        };
+        let journal_path = crate::lifecycle_journal::journal_path(version);
+        std::fs::create_dir_all(journal_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &journal_path,
+            serde_json::to_string_pretty(&envelope).unwrap(),
+        )
+        .unwrap();
+
+        cmd_rollback(&home, None).expect("rollback must succeed");
+
+        assert!(
+            !manifest_path.exists(),
+            "manifest must be removed after rollback"
+        );
+        assert!(
+            !journal_path.exists(),
+            "journal must be removed after rollback"
         );
     }
 }

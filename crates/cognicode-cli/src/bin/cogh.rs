@@ -153,6 +153,11 @@ pub enum Command {
     },
     /// Regenerate the shims directory
     Reshim,
+    /// Reverse the last install (e86 REQ-LJ-04)
+    Rollback {
+        /// Plugin name (reserved for future use; today the active install is the only target)
+        plugin: Option<String>,
+    },
     /// Validate the install + diagnose issues
     Doctor,
     /// Print the resolved path to a binary
@@ -314,6 +319,7 @@ fn main() -> anyhow::Result<()> {
             layout::cmd_update(&home, plugin, channel, base_url, staging, profile, dry_run)
         }
         Command::Reshim => layout::cmd_reshim(&home),
+        Command::Rollback { plugin } => layout::cmd_rollback(&home, plugin),
         Command::Doctor => layout::cmd_doctor(&home),
         Command::Where { binary } => layout::cmd_where(&home, &binary),
         Command::Version => version::cmd_version(&home),
