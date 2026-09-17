@@ -42,14 +42,19 @@ pub struct PersistedJournal {
 
 /// Path to the journal for a given version.
 pub fn journal_path(version: &str) -> PathBuf {
-    cognicode_home().join("journal").join(format!("{version}.json"))
+    cognicode_home()
+        .join("journal")
+        .join(format!("{version}.json"))
 }
 
 /// Path to the journal for the currently installed version. Returns
 /// `None` if there is no tracker (i.e. no install yet).
 pub fn journal_path_for_current() -> Option<PathBuf> {
     let tracker_path = cognicode_home().join("tracker").join("version");
-    let version = std::fs::read_to_string(&tracker_path).ok()?.trim().to_string();
+    let version = std::fs::read_to_string(&tracker_path)
+        .ok()?
+        .trim()
+        .to_string();
     if version.is_empty() {
         None
     } else {

@@ -35,8 +35,7 @@ use serde::{Deserialize, Serialize};
 use crate::bundle_manifest::Platform;
 use crate::error::InstallerError;
 use crate::release_contract::{
-    RELEASE_DOWNLOAD_BASE, RELEASE_REPO, TIER1_PLATFORMS, bundle_manifest_filename,
-    platform_token,
+    RELEASE_DOWNLOAD_BASE, RELEASE_REPO, TIER1_PLATFORMS, bundle_manifest_filename, platform_token,
 };
 
 /// Default GitHub API base URL.
@@ -217,9 +216,12 @@ pub fn resolve_release(req: &ResolveRequest) -> Result<ResolvedRelease, Installe
         asset.browser_download_url.clone()
     };
 
-    let release_url = release
-        .html_url
-        .unwrap_or_else(|| format!("https://github.com/{RELEASE_REPO}/releases/tag/{}", release.tag_name));
+    let release_url = release.html_url.unwrap_or_else(|| {
+        format!(
+            "https://github.com/{RELEASE_REPO}/releases/tag/{}",
+            release.tag_name
+        )
+    });
 
     Ok(ResolvedRelease {
         version,
@@ -242,23 +244,18 @@ fn fetch_release_latest(req: &ResolveRequest) -> Result<GhRelease, InstallerErro
         req.base_url.as_deref().unwrap_or(DEFAULT_API_BASE)
     );
     let resp = http_get(&url, req.base_url.as_deref())?;
-    serde_json::from_str::<GhRelease>(&resp).map_err(|e| {
-        InstallerError::ResolveFailed(format!("parse latest release: {e}"))
-    })
+    serde_json::from_str::<GhRelease>(&resp)
+        .map_err(|e| InstallerError::ResolveFailed(format!("parse latest release: {e}")))
 }
 
-fn fetch_release_by_tag(
-    req: &ResolveRequest,
-    tag: &str,
-) -> Result<GhRelease, InstallerError> {
+fn fetch_release_by_tag(req: &ResolveRequest, tag: &str) -> Result<GhRelease, InstallerError> {
     let url = format!(
         "{}/repos/{RELEASE_REPO}/releases/tags/{tag}",
         req.base_url.as_deref().unwrap_or(DEFAULT_API_BASE)
     );
     let resp = http_get(&url, req.base_url.as_deref())?;
-    serde_json::from_str::<GhRelease>(&resp).map_err(|e| {
-        InstallerError::ResolveFailed(format!("parse release `{tag}`: {e}"))
-    })
+    serde_json::from_str::<GhRelease>(&resp)
+        .map_err(|e| InstallerError::ResolveFailed(format!("parse release `{tag}`: {e}")))
 }
 
 /// HTTP GET with a 60s timeout and bearer-token auth when the env var is set.
@@ -309,9 +306,8 @@ fn load_release_from_staging(dir: &Path) -> Result<GhRelease, InstallerError> {
     if let Ok(single) = serde_json::from_str::<GhRelease>(&text) {
         return Ok(single);
     }
-    let list: Vec<GhListRelease> = serde_json::from_str(&text).map_err(|e| {
-        InstallerError::ResolveFailed(format!("parse staging list: {e}"))
-    })?;
+    let list: Vec<GhListRelease> = serde_json::from_str(&text)
+        .map_err(|e| InstallerError::ResolveFailed(format!("parse staging list: {e}")))?;
     list.into_iter()
         .find(|r| !r.draft && !r.prerelease)
         .map(|r| GhRelease {
@@ -474,7 +470,11 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         write_staging_release(
             &tmp.path(),
-            &sample_release_with_assets("0.95.0", false, &["bundle-0.95.0-x86_64-unknown-linux-gnu.yaml"]),
+            &sample_release_with_assets(
+                "0.95.0",
+                false,
+                &["bundle-0.95.0-x86_64-unknown-linux-gnu.yaml"],
+            ),
         );
         let err = resolve_release(&req_with_staging(tmp.path(), Platform::WindowsX86_64))
             .expect_err("windows-x86-64 must be refused");
@@ -493,7 +493,11 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         write_staging_release(
             &tmp.path(),
-            &sample_release_with_assets("0.96.0-rc1", true, &["bundle-0.96.0-rc1-x86_64-unknown-linux-gnu.yaml"]),
+            &sample_release_with_assets(
+                "0.96.0-rc1",
+                true,
+                &["bundle-0.96.0-rc1-x86_64-unknown-linux-gnu.yaml"],
+            ),
         );
         let err = resolve_release(&req_with_staging(tmp.path(), Platform::LinuxX86_64))
             .expect_err("draft must be refused");
@@ -539,7 +543,10 @@ mod tests {
             .expect_err("missing staging must fail");
         match err {
             InstallerError::ResolveFailed(msg) => {
-                assert!(msg.contains("staging"), "message must mention staging: {msg}");
+                assert!(
+                    msg.contains("staging"),
+                    "message must mention staging: {msg}"
+                );
                 assert!(msg.contains("releases.json"), "must name the file: {msg}");
             }
             other => panic!("expected ResolveFailed, got {other:?}"),

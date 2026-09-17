@@ -412,8 +412,7 @@ impl InstallerTransaction {
                 // install (the install is correct); we surface them as a
                 // warning on stderr and the next `cogh rollback` will report
                 // "nothing to roll back" (REQ-LJ-01).
-                let journal_path =
-                    crate::lifecycle_journal::journal_path(&manifest.version);
+                let journal_path = crate::lifecycle_journal::journal_path(&manifest.version);
                 if let Err(e) = crate::lifecycle_journal::write(
                     &journal,
                     &manifest,
@@ -640,7 +639,10 @@ components:
 
         let envelope = crate::lifecycle_journal::load_envelope(&journal_path).expect("load");
         assert_eq!(envelope.version, "0.94.0");
-        assert!(!envelope.effects.effects().is_empty(), "journal must carry effects");
+        assert!(
+            !envelope.effects.effects().is_empty(),
+            "journal must carry effects"
+        );
         assert!(
             envelope
                 .effects

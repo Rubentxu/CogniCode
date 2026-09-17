@@ -221,7 +221,8 @@ impl RollbackJournal {
     /// Deserialise a journal from JSON. The result has `committed: false`
     /// by construction (we are loading it to reverse it).
     pub fn from_json(s: &str) -> Result<Self, InstallerError> {
-        serde_json::from_str::<RollbackJournal>(s).map_err(|e| InstallerError::Serialize(e.to_string()))
+        serde_json::from_str::<RollbackJournal>(s)
+            .map_err(|e| InstallerError::Serialize(e.to_string()))
     }
 
     /// Reverse all side-effects in LIFO order.
@@ -328,33 +329,31 @@ impl RollbackJournal {
                     ))
                 })?;
             }
-            SideEffect::WroteTracker { path, previous } => {
-                match previous {
-                    Some(prev) => {
-                        if let Some(parent) = path.parent() {
-                            let _ = std::fs::create_dir_all(parent);
-                        }
-                        std::fs::write(path, prev).map_err(|e| {
+            SideEffect::WroteTracker { path, previous } => match previous {
+                Some(prev) => {
+                    if let Some(parent) = path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    std::fs::write(path, prev).map_err(|e| {
+                        InstallerError::Rollback(format!(
+                            "restore WroteTracker {}: {}",
+                            path.display(),
+                            e
+                        ))
+                    })?;
+                }
+                None => {
+                    if path.exists() {
+                        std::fs::remove_file(path).map_err(|e| {
                             InstallerError::Rollback(format!(
-                                "restore WroteTracker {}: {}",
+                                "remove WroteTracker (no previous) {}: {}",
                                 path.display(),
                                 e
                             ))
                         })?;
                     }
-                    None => {
-                        if path.exists() {
-                            std::fs::remove_file(path).map_err(|e| {
-                                InstallerError::Rollback(format!(
-                                    "remove WroteTracker (no previous) {}: {}",
-                                    path.display(),
-                                    e
-                                ))
-                            })?;
-                        }
-                    }
                 }
-            }
+            },
         }
         Ok(())
     }
@@ -642,6 +641,9 @@ mod tests {
         });
 
         journal.rollback().unwrap();
-        assert!(!tracker.exists(), "tracker must be removed when previous was None");
+        assert!(
+            !tracker.exists(),
+            "tracker must be removed when previous was None"
+        );
     }
 }

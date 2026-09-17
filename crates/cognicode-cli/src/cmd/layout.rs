@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 
-use crate::platform_adapter;
 use crate::Cli;
+use crate::platform_adapter;
 
 // ===== Install root resolution =====
 
@@ -319,14 +319,21 @@ pub fn cmd_update(
         .map_err(|e| anyhow!("failed to resolve latest release: {e}"))?;
 
     if dry_run {
-        println!("would install {} from {}", resolved.version, resolved.manifest_url);
+        println!(
+            "would install {} from {}",
+            resolved.version, resolved.manifest_url
+        );
         return Ok(());
     }
 
     // Download the manifest to ~/.cognicode/bundle.yaml.
     let bundle_yaml_path = home.bundle_yaml_path();
-    let manifest_yaml = download_to_string(&resolved.manifest_url)
-        .map_err(|e| anyhow!("download bundle manifest from {}: {e}", resolved.manifest_url))?;
+    let manifest_yaml = download_to_string(&resolved.manifest_url).map_err(|e| {
+        anyhow!(
+            "download bundle manifest from {}: {e}",
+            resolved.manifest_url
+        )
+    })?;
     if let Some(parent) = bundle_yaml_path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create bundle dir {}", parent.display()))?;
@@ -346,9 +353,12 @@ pub fn cmd_rollback(home: &CognicodeHome, plugin: Option<String>) -> Result<()> 
     //    install"). If there is no tracker, take the highest-version journal
     //    on disk.
     let target = crate::lifecycle_journal::journal_path_for_current().or_else(|| {
-        crate::lifecycle_journal::list_committed().ok().and_then(|vs| {
-            vs.last().map(|v| crate::lifecycle_journal::journal_path(&v))
-        })
+        crate::lifecycle_journal::list_committed()
+            .ok()
+            .and_then(|vs| {
+                vs.last()
+                    .map(|v| crate::lifecycle_journal::journal_path(&v))
+            })
     });
     let path = match target {
         Some(p) if p.exists() => p,
@@ -568,9 +578,9 @@ fn download_to_string(url: &str) -> std::result::Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bundle_manifest::Platform;
     use crate::lifecycle_resolver::Channel;
     use crate::release_contract::bundle_manifest_filename;
-    use crate::bundle_manifest::Platform;
     use serial_test::serial;
 
     #[test]
