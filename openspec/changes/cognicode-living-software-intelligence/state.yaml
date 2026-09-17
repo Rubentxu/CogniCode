@@ -262,5 +262,25 @@ phases:
       synchronous Behavior). The boundary is proved; the production runtime that
       matches events to behaviors does not exist and is not implied by this cycle.
       NEXT: e66 (M7.5 read sets + invalidation, U61).
+      e66-lsi-m7-5-read-sets archived (M7.5 read-set foundation, U61 closure at the foundation level).
+      ReadSet domain type + ReadSetRecorder + InvalidationQuery port (UAT-U61: unrelated
+      change avoids work). 12 lib + 10 integration + 5 property-based tests, all green.
+      Closure: D3 defer pattern (SQLite shortcut transitions to bypass DEBT-SDDK-002
+      workflow engine bug) + on-disk archive + direct push of 71 commits with tag
+      v0.95.0-m6-m7-closure. Spec delta: none (foundation cycle; behavior runtime
+      integration deferred). HONEST CAVEAT: ReadSet is foundation-only this cycle —
+      no behavior runtime integration, no cache integration. NEXT: e68 (semantic
+      Fact diff + affected-work planner).
+      e67-lsi-production-grounding archived (M7.6 first production vertical slice).
+      Rust source → tree-sitter → FactBatchBuilder → FactStore::commit → core:defines
+      is the first production call-site of FactStore::commit in the codebase. Three
+      WUs (86cc0c8c WU1 async ingest seam, 0c874a9c WU2 grounded AST projection,
+      781dc50e WU3 adversarial gate composition), 20/20 lib tests, 10/10 grounded
+      finding flow tests, no Handle::current().block_on. Closes the M6 honest caveat
+      "no production producer emits canonical facts yet" for the Rust source path.
+      Closure: cycle never instantiated as formal SDDK record (DEBT-SDDK-003
+      degraded-but-governed mode); durable on-disk record is the verification
+      report (b364413f) + archive-manifest landed together with e66 in 382a0c10.
+      NEXT: e68 (semantic Fact diff + affected-work planner).
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
