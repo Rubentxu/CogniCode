@@ -387,6 +387,14 @@ phases:
         has ZERO execution/gating authority. Reuse e76 self-hosting as consumer
         via controlled architectural mutations. DO NOT open generalized Packs
         (e78) yet — at least 2 real consumers required before authorizing.
+        e78 (Pack Ecosystem): DEFERRED per consumer-count checkpoint (2026-09-17,
+        post e77 WU6 closure). Confirmed consumers of the architecture module:
+        1 (cognicode-core self-host test). The "second consumer" requirement is
+        not met; opening e78 now would create infrastructure without evidence.
+        Revisit trigger: any of (a) detector-pack re-architecture needs the
+        manifest surface, (b) another extension pack (e.g. security packs) needs
+        capability advertisement, (c) a third-party plugin reaches the admission
+        surface.
         M11 (AI Investigation / Critic / Fix Agent): BLOCKED until
         AutomatedAuthorPromotionPolicy lands. e73's permit/promotion surface is
         the substrate; the policy is the seam.
