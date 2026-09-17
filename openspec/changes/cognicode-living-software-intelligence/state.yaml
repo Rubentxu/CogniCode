@@ -489,18 +489,40 @@ phases:
         introduced (documented adapter seam only). 42 promotion_authority tests
         green including the WU7 adversarial cases A-L; cargo test --lib
         baseline-exact; workspace build GREEN. Out of scope and untouched:
-        FixAgent, live providers, P1.4, e78. NEXT: e80b (Fix Agent ->
-        ChangeProposal only), NOT started by this cycle.
-        e80 (AutomatedAuthorPolicy + Fix Agent): the authority question is now
-        ANSWERED by e80a. A proposal whose author is LlmAgent or Plugin, even
-        with all tests and gates passed, cannot mint a PromotionPermit without
-        a VERIFIED external human approval bound to the exact promotion
-        attempt. The remaining e80b work is the Fix Agent (producing a
-        ChangeProposal), which must cross the authority boundary e80a
-        established. NOT started by e80a.
-        M11 (AI Investigation / Critic / Fix Agent): the automated-authority
-        half is GREEN (e80a). The write-half remains BLOCKED only on e80b (the
-        Fix Agent itself), which is now a scoped implementation question rather
-        than an open policy question.
+        FixAgent, live providers, P1.4, e78. (FixAgent landed later in e80b.)
+        e80b (Fix Agent -> ChangeProposal): ARCHIVED 2026-09-17 (impl 9d28781e,
+        archive-manifest.md, characterization.md). Implements umbrella task 12.5
+        and nothing beyond the proposal boundary. New domain vocabulary
+        domain::ai::patch: SourcePatchCandidate (untrusted, full-file
+        replacement edits), validate_source_patch (frame identity, request
+        digest, observed-read-set subset of the declared scope, base scope,
+        empty-patch and edit/payload budgets, relative/canonical path rules,
+        traversal rejection, duplicate-path rejection), ValidatedSourcePatch
+        (RelativePath only, no public constructor, canonical_bytes()),
+        content-addressed PatchRef (sha256), and the minimal PatchArtifactSink
+        port with a deterministic in-memory adapter. ResponseOutput gains
+        SourcePatchCandidate(..) so no parsing convention stands between
+        free-form text and an action proposal; the critic and the miner ignore
+        it (documented). application::ai::fix_agent::FixAgent turns a bounded
+        InvestigationFrame into a validated patch artifact and a ChangeProposal
+        whose requested_by is ALWAYS RequestedBy::LlmAgent from configuration:
+        the trusted envelope (proposal_id, base_world) is caller-supplied and
+        the candidate has no author field. FixOutcome preserves lineage (frame,
+        request digest, provider, model, agent ref, observed read count); no
+        event bus was introduced. WU8 adversarial cases A-P plus WU9 integration
+        (an automated proposal cannot obtain a permit without a verified
+        external approval; a verified approval lets the existing e80a path
+        authorise; the FixAgent takes part in neither call). 69 application::ai
+        tests and 42 promotion_authority tests green; cargo test --lib
+        baseline-exact; workspace build GREEN. Out of scope and untouched:
+        source mutation, Git, automatic trial, automatic promotion,
+        self-approval, live providers, e78, P1.4, DEBT-SDDK-006.
+        M11 (AI Investigation / Critic / Fix Agent): 12.1-12.4 SATISFIED; 12.5
+        Fix Agent SATISFIED (e80b); 12.6 read/tool/write security SATISFIED for
+        the current AI foundation, with the write-side boundary covered at the
+        candidate/proposal level by the WU8 adversarial suite and the source
+        audits. Actual source mutation and apply remain OUTSIDE the AI
+        foundation by design. NEXT: e81 (Historical Replay + strict
+        OPTIMIZE/CONFIRM separation), NOT started by this cycle.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
