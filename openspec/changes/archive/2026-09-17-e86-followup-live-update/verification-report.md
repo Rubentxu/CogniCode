@@ -4,16 +4,18 @@
 **Date:** 2026-09-17
 **Author:** orchestrator (SDDK AUTO-RUN)
 **Branch:** main
-**HEAD at archive push:** `bfa819e64f38bfcdad3f3a4ad1a8e6b3ad4f5a1d`
-**HEAD == origin/main:** verified at archive time.
-**Cycle commit range:** `9d446974` (feat) → `de22c9ca` (archive) → `bfa819e6` (docs pin)
+**HEAD at archive push:** `bfa819e6` (initial pin)
+**HEAD at doc-clarify:** `e4c6840e`
+**HEAD == origin/main:** verified at archive time and at doc-clarify time.
+**Cycle commit range:** `9d446974` (feat) → `de22c9ca` (archive) → `bfa819e6` (docs pin) → `e4c6840e` (docs clarify)
 
-> The HEAD SHA above is the value of `main` at the moment this report
-> was archived. Any subsequent commits (e.g. doc fixes after a re-read)
-> will advance HEAD without invalidating this report — the cycle
-> deliverables (174/174 tests passing, exit gates green, regression
-> pinned) are all captured in commits `9d446974` and `de22c9ca`. The
-> docs-pin commit `bfa819e6` is a follow-up edit only.
+> Two HEAD snapshots are pinned above (archive push and the most
+> recent doc-clarify commit). Both were verified against
+> `origin/main` at the time. Any commits after `e4c6840e` advance
+> HEAD without invalidating this report — the cycle deliverables
+> (174/174 tests passing, exit gates green, regression pinned) are
+> all captured in commits `9d446974` and `de22c9ca`. The
+> `bfa819e6`/`e4c6840e` commits are doc-only follow-ups.
 
 ## Scope
 
