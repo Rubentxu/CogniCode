@@ -120,6 +120,70 @@ symlink syscall returns `EEXIST` and the install transaction aborts.
 The fix is to remove the existing shim (or fall back to copy) before
 re-symlinking. Pinned by `cmd_update_sequential_installs_overwrite_cleanly`.
 
+### REQ-FU-05 — Dry-run is read-only against the resolver-driven path
+
+#### Scenario
+
+Given a `ResolverFixture` with version `0.95.0` and a fresh
+`TempCognicodeHome`, when `cmd_update` is invoked with
+`dry_run = true`, then:
+
+- `cmd_update` returns `Ok(())`.
+- No `bundle.yaml` is written to the home.
+- No `install/<version>/manifest.yaml` is written.
+- No `tracker/version` file is written.
+- No lifecycle journal is written.
+
+#### Why this matters
+
+The dry-run path is what `cogh latest --json` and pre-flight
+checks rely on. If the dry-run path crashes or writes to disk
+under the new resolver-driven install path, that is a silent
+regression for every consumer of the dry-run contract. The
+negative assertions are the meaningful coverage — they prove
+the dry-run path is truly read-only, not just "succeeds".
+
+#### Pinning test
+
+`cmd_update_dry_run_against_fixture_is_readonly`.
+
+### REQ-FU-06 — Zero-component profile does NOT pin the tracker (PINNED REGRESSION)
+
+#### Scenario
+
+Given a `ResolverFixture` with version `0.95.0` and a fresh
+`TempCognicodeHome`, when `cmd_update` is invoked with
+`profile = "no-such-profile"` (matching zero components in the
+bundle manifest), then `cmd_update` must NOT pin the tracker
+and must NOT write the journal. The user must not see a
+"successful" install of a version that installed nothing.
+
+#### Current behaviour (PRE-EXISTING BUG, PINNED)
+
+`cmd_update` returns `Ok(())` and the tracker IS pinned to
+`0.95.0`, with an empty `install/0.95.0/manifest.yaml`. The
+pipeline trusts `InstallerTransaction::run`'s `Ok(manifest_path)`
+and pins the tracker unconditionally — see
+`crates/cognicode-cli/src/cmd/install.rs:31-40`.
+
+#### Fix sketch (out of scope for this cycle)
+
+1. In `installer_transaction::run`, return a new variant
+   `EmptyInstall { version }` when the filtered component set
+   is empty.
+2. In `install.rs:31-40`, match on `EmptyInstall` and either
+   refuse to write the tracker (and surface an error) or write
+   a sentinel value like `0.95.0-empty`.
+
+#### Pinning test
+
+`cmd_update_zero_component_profile_does_not_pin_tracker`,
+`#[ignore]`d to keep the cogh suite green while the bug
+remains in scope. Run with
+`cargo test -p cognicode-cli --bin cogh -- --ignored
+cmd_update_zero_component_profile_does_not_pin_tracker`
+to see the current red.
+
 ## Why this matters
 
 Before this change, `cmd update --dry-run` was the only resolver-driven

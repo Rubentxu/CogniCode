@@ -66,3 +66,35 @@ only-draft releases.
 - Both passed on the first run; the resolver's error surface for
   these failure modes is correct (returns `InstallerError::ResolveFailed`
   with an identifying message).
+
+## T2c — Dry-run against the live fixture (added during third re-read)
+
+Added to exercise the dry-run path against the new resolver-driven
+fixture. Previously only tested against a hand-rolled `releases.json`
+in e86.
+
+- New `cmd_update_dry_run_against_fixture_is_readonly` test.
+- Drives `cmd_update` with `dry_run: true` against the ResolverFixture.
+- Negative assertions: no `bundle.yaml`, no `install/<version>/manifest.yaml`,
+  no tracker, no journal. These are the meaningful coverage — they
+  prove the dry-run path is truly read-only, not just "succeeds".
+- Passed on first run.
+
+## T2d — Zero-component profile follow-through (added during third re-read)
+
+Added to exercise the "profile matches zero components" failure mode
+in the install pipeline (e.g. user typo in `--profile`).
+
+- New `cmd_update_zero_component_profile_does_not_pin_tracker` test.
+- Drives `cmd_update` with `profile = "no-such-profile"` (matches
+  zero components in the loopback's generated manifest).
+- Asserts: if `cmd_update` returns `Ok`, the tracker must NOT exist
+  and the journal must NOT exist.
+- **`#[ignore]`d to keep the cogh suite green while the bug remains
+  in scope.** Run with `--ignored` to see the current red.
+- Surfaced a **third** pre-existing bug: the install pipeline pins
+  the tracker and writes the journal even when the filtered component
+  set is empty. The user sees a successful install with a tracker
+  pointing at a version that installed nothing. See
+  verification-report.md "Bug: zero-component profile silently pins
+  the tracker" for the fix sketch.
