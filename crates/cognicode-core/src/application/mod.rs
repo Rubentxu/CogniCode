@@ -75,6 +75,10 @@ pub mod historical_replay;
 // Measurement and diagnosis only; composes e81 and grants no authority.
 #[cfg(feature = "evidence-kernel")]
 pub mod shadow_evaluation;
+// e83 — governed self-improvement path (M13 13.5/13.6). Composes e81/e82
+// historical replay, e82.1/e73 promotion lineage and e80a external authority.
+#[cfg(feature = "evidence-kernel")]
+pub mod governed_improvement;
 // e72 WU1 — ChangeProposal (M9). Intent-only, no authority. Creation !=
 // authority. Author class (Human/Plugin/LlmAgent) is recorded for e73's
 // adversarial gate; the proposal itself does not grant apply power.

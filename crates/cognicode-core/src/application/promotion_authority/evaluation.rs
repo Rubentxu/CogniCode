@@ -31,10 +31,12 @@
 //! trial, does not touch the filesystem, and does not record an
 //! audit trail (the audit trail lives in e73 WU2).
 
+use crate::application::change_proposal::proposal::ChangeProposal;
 use crate::application::change_proposal::proposal::ChangeProposalId;
 use crate::application::change_proposal::trial::TrialEvidence;
 use crate::application::policy_gate::PolicyOutcome;
 use crate::application::software_world::world::SoftwareWorld;
+use crate::application::software_world::world::SoftwareWorldId;
 use crate::domain::evidence_kernel::ids::SnapshotId;
 
 /// Three-way promotion input.
@@ -96,6 +98,48 @@ pub enum PromotionBlockReason {
         expected: ChangeProposalId,
         actual: ChangeProposalId,
     },
+    /// (e83) The proposal targets a different base world than the one
+    /// supplied. The tested candidate would not be evidence for this
+    /// proposal.
+    ProposalBaseWorldMismatch {
+        /// The proposal's `base_world`.
+        proposal_world: SoftwareWorldId,
+        /// The base world supplied for evaluation.
+        base_world: SoftwareWorldId,
+    },
+    /// (e83) The candidate world was not derived from the base world.
+    CandidateNotDerivedFromBase {
+        /// The candidate world.
+        candidate_world: SoftwareWorldId,
+        /// Its actual parent, if any.
+        actual_parent: Option<SoftwareWorldId>,
+        /// The base world it should have been forked from.
+        base_world: SoftwareWorldId,
+    },
+    /// (e83) The candidate was measured against a different canonical base
+    /// snapshot than the base world offers.
+    CandidateBaseSnapshotMismatch {
+        /// The candidate's `base_snapshot`.
+        candidate_snapshot: SnapshotId,
+        /// The base world's `base_snapshot`.
+        base_snapshot: SnapshotId,
+    },
+    /// (e83) The trial was run against a different world than the candidate
+    /// being promoted.
+    TrialWorldMismatch {
+        /// The candidate world under promotion.
+        expected: SoftwareWorldId,
+        /// The world the trial recorded.
+        actual: SoftwareWorldId,
+    },
+    /// (e83) The trial was run against a different canonical base snapshot
+    /// than the base world offers.
+    TrialBaseSnapshotMismatch {
+        /// The base world's `base_snapshot`.
+        expected: SnapshotId,
+        /// The snapshot the trial recorded.
+        actual: SnapshotId,
+    },
 }
 
 /// Lineage metadata attached to a promotion dry-run.
@@ -155,15 +199,12 @@ pub fn evaluate_promotion(
     input: PromotionEvaluationInput,
     trial: Option<&TrialEvidence>,
 ) -> PromotionDryRun {
-    let lineage = PromotionLineage {
-        proposal: input.proposal.clone(),
-        base_world: input.base.id.clone(),
-        candidate_world: input.candidate.id.clone(),
-        current_world: input.current.id.clone(),
-        base_snapshot: input.base.base_snapshot,
-        current_snapshot: input.current.base_snapshot,
-        base_matches_current: input.base.base_snapshot == input.current.base_snapshot,
-    };
+    let lineage = build_lineage(
+        input.proposal.clone(),
+        input.base,
+        input.candidate,
+        input.current,
+    );
 
     // 1. Trial required.
     let trial = match trial {
@@ -206,6 +247,182 @@ pub fn evaluate_promotion(
     }
 
     // 5. Clean.
+    PromotionDryRun {
+        status: PromotionStatus::CleanPromotionReady,
+        lineage,
+    }
+}
+
+/// Build the lineage view shared by both evaluators.
+fn build_lineage(
+    proposal: ChangeProposalId,
+    base: &SoftwareWorld,
+    candidate: &SoftwareWorld,
+    current: &SoftwareWorld,
+) -> PromotionLineage {
+    PromotionLineage {
+        proposal,
+        base_world: base.id.clone(),
+        candidate_world: candidate.id.clone(),
+        current_world: current.id.clone(),
+        base_snapshot: base.base_snapshot,
+        current_snapshot: current.base_snapshot,
+        base_matches_current: base.base_snapshot == current.base_snapshot,
+    }
+}
+
+// ============================================================================
+// e83 — authority-bearing promotion evaluation
+// ============================================================================
+
+/// Authority-bearing promotion input (e83).
+///
+/// Unlike [`PromotionEvaluationInput`], this carries the **proposal itself**, so
+/// the evaluator can validate full lineage: proposal target, candidate
+/// derivation, candidate base snapshot, and the trial's world/snapshot identity.
+///
+/// The generic M9 path stays generic on purpose (e83 WU10): a `ChangeProposal`
+/// that is not a continuous-improvement candidate does not need historical
+/// replay lineage. Any promotion performed **through the governed-improvement
+/// API** uses this evaluator structurally.
+pub struct GovernedPromotionInput<'a> {
+    /// The proposal being promoted.
+    pub proposal: &'a ChangeProposal,
+    /// The world the proposal was authored against.
+    pub base: &'a SoftwareWorld,
+    /// The candidate world the trial measured.
+    pub candidate: &'a SoftwareWorld,
+    /// The world as it is right now.
+    pub current: &'a SoftwareWorld,
+}
+
+/// Evaluate a promotion with full lineage validation (e83).
+///
+/// Rules, in order (fail-closed on the first violation):
+///
+/// 1. `proposal.base_world == base.id`.
+/// 2. `candidate.parent_world == Some(base.id)`.
+/// 3. `candidate.base_snapshot == base.base_snapshot`.
+/// 4. Trial evidence is required.
+/// 5. Trial gate outcome is `Pass`.
+/// 6. `trial.proposal_id == proposal.id`.
+/// 7. `trial.world_id == candidate.id`.
+/// 8. `trial.base_snapshot == base.base_snapshot`.
+/// 9. `base.base_snapshot == current.base_snapshot`.
+/// 10. Otherwise: clean.
+///
+/// Only after identity and lineage are valid may the trial gate be trusted as
+/// evidence for **this** candidate.
+pub fn evaluate_promotion_lineage(
+    input: GovernedPromotionInput<'_>,
+    trial: Option<&TrialEvidence>,
+) -> PromotionDryRun {
+    let lineage = build_lineage(
+        input.proposal.id.clone(),
+        input.base,
+        input.candidate,
+        input.current,
+    );
+
+    // 1. The proposal must target the base world we are evaluating against.
+    if input.proposal.base_world != input.base.id {
+        return PromotionDryRun {
+            status: PromotionStatus::Blocked(PromotionBlockReason::ProposalBaseWorldMismatch {
+                proposal_world: input.proposal.base_world.clone(),
+                base_world: input.base.id.clone(),
+            }),
+            lineage,
+        };
+    }
+
+    // 2. The candidate must be derived from that base.
+    if input.candidate.parent_world.as_ref() != Some(&input.base.id) {
+        return PromotionDryRun {
+            status: PromotionStatus::Blocked(PromotionBlockReason::CandidateNotDerivedFromBase {
+                candidate_world: input.candidate.id.clone(),
+                actual_parent: input.candidate.parent_world.clone(),
+                base_world: input.base.id.clone(),
+            }),
+            lineage,
+        };
+    }
+
+    // 3. The candidate must have been measured against the same canonical base.
+    if input.candidate.base_snapshot != input.base.base_snapshot {
+        return PromotionDryRun {
+            status: PromotionStatus::Blocked(
+                PromotionBlockReason::CandidateBaseSnapshotMismatch {
+                    candidate_snapshot: input.candidate.base_snapshot,
+                    base_snapshot: input.base.base_snapshot,
+                },
+            ),
+            lineage,
+        };
+    }
+
+    // 4. Trial required.
+    let trial = match trial {
+        Some(t) => t,
+        None => {
+            return PromotionDryRun {
+                status: PromotionStatus::Blocked(PromotionBlockReason::NoTrialEvidence),
+                lineage,
+            };
+        }
+    };
+
+    // 5. Trial gate must be Pass.
+    if trial.gate.outcome != PolicyOutcome::Pass {
+        return PromotionDryRun {
+            status: PromotionStatus::Blocked(PromotionBlockReason::TrialGateNotPassing {
+                actual: trial.gate.outcome,
+            }),
+            lineage,
+        };
+    }
+
+    // 6. The trial must be for this proposal.
+    if trial.proposal_id != input.proposal.id {
+        return PromotionDryRun {
+            status: PromotionStatus::Blocked(PromotionBlockReason::TrialProposalMismatch {
+                expected: input.proposal.id.clone(),
+                actual: trial.proposal_id.clone(),
+            }),
+            lineage,
+        };
+    }
+
+    // 7. The trial must have measured THIS candidate world.
+    if trial.world_id != input.candidate.id {
+        return PromotionDryRun {
+            status: PromotionStatus::Blocked(PromotionBlockReason::TrialWorldMismatch {
+                expected: input.candidate.id.clone(),
+                actual: trial.world_id.clone(),
+            }),
+            lineage,
+        };
+    }
+
+    // 8. ... against THIS canonical base snapshot.
+    if trial.base_snapshot != input.base.base_snapshot {
+        return PromotionDryRun {
+            status: PromotionStatus::Blocked(PromotionBlockReason::TrialBaseSnapshotMismatch {
+                expected: input.base.base_snapshot,
+                actual: trial.base_snapshot,
+            }),
+            lineage,
+        };
+    }
+
+    // 9. C must not have diverged from A.
+    if !lineage.base_matches_current {
+        return PromotionDryRun {
+            status: PromotionStatus::ConflictRequiresReevaluation,
+            lineage,
+        };
+    }
+
+    // 10. Clean.
     PromotionDryRun {
         status: PromotionStatus::CleanPromotionReady,
         lineage,
