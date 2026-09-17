@@ -522,7 +522,39 @@ phases:
         the current AI foundation, with the write-side boundary covered at the
         candidate/proposal level by the WU8 adversarial suite and the source
         audits. Actual source mutation and apply remain OUTSIDE the AI
-        foundation by design. NEXT: e81 (Historical Replay + strict
-        OPTIMIZE/CONFIRM separation), NOT started by this cycle.
+        foundation by design.
+        e81 (Historical Replay Dataset Split): ARCHIVED 2026-09-17 (impl
+        c7086edc, archive-manifest.md, characterization.md). Implements umbrella
+        tasks 13.1 (historical replay dataset format) and 13.2 (OPTIMIZE/CONFIRM
+        disjoint sets). New module application::historical_replay (gated by
+        evidence-kernel, like the e76 foundation it builds on): HistoricalCase
+        with explicit base and successor refs; HistoricalPredictionInput
+        {case_id, base_snapshot, base_source_ref} as the ONLY view a predictor
+        receives, so successor/observation/outcome leakage is prevented by the
+        API rather than by convention; HistoricalCorpus with unique ids,
+        canonical id order and an order-invariant digest (duplicates fail loud);
+        DatasetRole + DatasetSplit with private fields, canonical sorted ids, a
+        ROLE-encoded digest and no mutation API; HistoricalReplayPlan::prepare
+        validating corpus validity, split invariants and corpus membership, so
+        an overlap or unknown id yields ZERO predictor invocations by
+        construction; a frozen plan that owns its corpus and id vectors so
+        caller mutation cannot change role assignment; ReplayReport/
+        ReplayReports keeping OPTIMIZE and CONFIRM separate with no blended
+        total. Reuse: e76 SealedPrediction/Observation/ScoreMatrix/score()
+        unchanged as the only score model; HistoricalReplay stays an observation
+        container (WU0 REUSE) and did NOT become HistoricalCase. WU14: e76's
+        score() cannot express "no observation recorded", so e81 adds a
+        replay-level ReplayCaseOutcome::Incomplete(NoRecordedObservation)
+        instead of faking an unknown count, without changing the global scorer.
+        23 e81 tests (WU10 cases A-O + WU11 e76 vertical + audits) and 66 e76
+        self_hosting tests green; cargo test --lib baseline-exact; workspace
+        build GREEN. Out of scope and untouched: candidate comparison,
+        FailureRegime, shadow evaluation, held-out promotion, thresholds,
+        self-improvement, FixAgent invocation, e78, P1.4, DEBT-SDDK-006.
+        M13 (Historical Replay / Continuous Improvement): 13.1 SATISFIED, 13.2
+        SATISFIED. 13.3 FailureRegime, 13.4 analyzer shadow comparison, 13.5
+        held-out promotion gate and 13.6 governed improvement E2E remain for
+        e82/e83. NEXT: e82 (AnalyzerCurrent vs AnalyzerCandidate + FailureRegime
+        + shadow evaluation), NOT started by this cycle.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
