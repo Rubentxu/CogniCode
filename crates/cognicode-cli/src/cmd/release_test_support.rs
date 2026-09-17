@@ -29,6 +29,14 @@ pub struct LocalRelease {
     pub manifest_path: PathBuf,
     /// Loopback base URL to point `COGNICODE_RELEASE_BASE_URL` at.
     pub base_url: String,
+    /// Directory holding the `releases.json` fixture the e86 `lifecycle_resolver`
+    /// reads when `--staging` is set. `None` until [`ResolverFixture::build`] is
+    /// called; legacy callers (`point_at`) never need it.
+    pub staging_dir: Option<PathBuf>,
+    /// Root directory served by the loopback HTTP server. Exposed so test
+    /// fixtures can place extra files (manifests, additional payloads) under
+    /// the canonical `/v{version}/` URL prefix.
+    pub serve_root: PathBuf,
     /// Kept alive so the directory is not deleted while the server serves it.
     _server: ServerGuard,
     _tmp: tempfile::TempDir,
@@ -160,6 +168,8 @@ pub fn local_release(version: &str) -> Result<LocalRelease> {
         dir,
         manifest_path,
         base_url,
+        staging_dir: None,
+        serve_root,
         _server: server,
         _tmp: tmp,
     })
@@ -190,5 +200,115 @@ pub fn unpoint() {
     unsafe {
         std::env::remove_var(ENV_BUNDLE_MANIFEST);
         std::env::remove_var(ENV_RELEASE_BASE_URL);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ResolverFixture — staging dir + base URL ready for lifecycle_resolver
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A bundle that pairs a [`LocalRelease`] with a `releases.json` the
+/// `lifecycle_resolver` can consume. This is the e86 followup test seam:
+/// it lets the new resolver-driven path run the same real-payload install
+/// that the legacy `point_at` seam ran.
+pub struct ResolverFixture {
+    pub release: LocalRelease,
+    /// Path of the staging directory; pass to `lifecycle_resolver` as
+    /// `staging_dir`. Contains a single `releases.json`.
+    pub staging_dir: PathBuf,
+}
+
+impl ResolverFixture {
+    /// Build the fixture for `version` on Linux x86_64 (the only Tier-1
+    /// platform covered by `LocalRelease` today). Same loopback server as
+    /// `LocalRelease::local_release`, plus a `releases.json` whose manifest
+    /// asset URL is rewritten to that loopback.
+    pub fn build(version: &str) -> Result<Self> {
+        let release = local_release(version)?;
+        let staging_dir = release._tmp.path().join("staging-resolver");
+        std::fs::create_dir_all(&staging_dir).context("create resolver staging dir")?;
+
+        // Place the canonical bundle manifest under the loopback-served
+        // `/v{version}/` so `cmd_update`'s GET <manifest_url> lands on a
+        // 200. The generator writes it to `release.dir` (the `out_dir` of
+        // `generate_release`), but the HTTP server only serves
+        // `serve_root/v{version}/`. Without this copy, `cmd_update` would
+        // 404 the manifest and abort.
+        let manifest_name =
+            crate::release_contract::bundle_manifest_filename(version, Platform::LinuxX86_64);
+        let served_manifest = release
+            .serve_root
+            .join(format!("v{version}"))
+            .join(&manifest_name);
+        std::fs::copy(&release.manifest_path, &served_manifest).with_context(|| {
+            format!(
+                "copy manifest {} -> {}",
+                release.manifest_path.display(),
+                served_manifest.display()
+            )
+        })?;
+
+        // The fixture must satisfy `lifecycle_resolver::load_release_from_staging`:
+        // a single GhRelease object (or a list — both are accepted).
+        //
+        // The manifest asset URL is rewritten so `cmd_update`'s download
+        // step hits the loopback, not the canonical github.com URL the
+        // generator wrote. `--base-url` is the mechanism for that in
+        // production; the fixture bakes the rewrite in directly because
+        // staging-dir tests deliberately skip the API and need the URL
+        // pre-rewritten.
+        let manifest_url = format!("{}/v{}/{}", release.base_url, version, manifest_name);
+        let json = format!(
+            r#"{{
+  "tag_name": "v{version}",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-09-17T19:07:59Z",
+  "html_url": "{base}/Rubentxu/CogniCode/releases/tag/v{version}",
+  "assets": [
+    {{ "name": "{manifest_name}", "browser_download_url": "{manifest_url}" }}
+  ]
+}}"#,
+            base = release.base_url,
+            version = version,
+            manifest_name = manifest_name,
+            manifest_url = manifest_url,
+        );
+        std::fs::write(staging_dir.join("releases.json"), json)
+            .context("write releases.json fixture")?;
+
+        Ok(Self {
+            staging_dir,
+            release,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bundle_manifest::Platform;
+    use crate::lifecycle_resolver::{Channel, ResolveRequest, resolve_release};
+
+    #[test]
+    #[serial_test::serial]
+    fn resolver_fixture_emits_valid_releases_json() {
+        let fx = ResolverFixture::build("0.95.0").expect("build fixture");
+        let req = ResolveRequest {
+            host_platform: Platform::LinuxX86_64,
+            channel: Channel::Stable,
+            requested_version: "latest".to_string(),
+            base_url: None,
+            staging_dir: Some(fx.staging_dir.clone()),
+        };
+        let resolved = resolve_release(&req).expect("resolver must accept the fixture");
+        assert_eq!(resolved.version, "0.95.0");
+        assert_eq!(resolved.tag, "v0.95.0");
+        // The manifest URL must be the loopback URL, not github.com.
+        assert!(
+            resolved.manifest_url.starts_with(&fx.release.base_url),
+            "manifest_url must be loopback, got {}",
+            resolved.manifest_url
+        );
     }
 }

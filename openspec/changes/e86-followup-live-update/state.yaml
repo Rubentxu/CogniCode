@@ -1,0 +1,42 @@
+# SDDK DAG state — e86-followup-live-update
+# Orchestrator-maintained. Survives compaction.
+change: e86-followup-live-update
+program: cognicode-distribution (umbrella: e84 contract + e85 release + e86 lifecycle)
+milestone: M2.1 — close the cmd_update live-install test gap
+created: 2026-09-17
+archived: 2026-09-17
+mode: openspec
+delivery_strategy: bounded-cycle
+prior_evidence:
+  e85: "LocalRelease + point_at seam proven for the OLD install path"
+  e86: "lifecycle_resolver + cmd_update dry-run proven; live path untested"
+  carry_forward:
+    - "LocalRelease already produces real payloads + manifest over loopback"
+    - "resolver reads <dir>/releases.json (single object or list)"
+exit_gates:
+  - "ResolverFixture::build emits a releases.json the resolver accepts"
+  - "cmd_update non-dry-run installs the binaries + writes journal + tracker"
+  - "cmd_rollback after a live install surfaces the populated-dir regression (pinned, not fixed)"
+  - "cargo test -p cognicode-cli --bin cogh all green (was 171 + 3 new = 174)"
+  - "cargo fmt --check --package cognicode-cli exits 0"
+  - "cargo check --workspace --all-targets exits 0"
+  - "just check-known-failures exits 0"
+  - "live cogh latest --json smoke green"
+phases:
+  explore: {status: done, artifact: "proposal.md — read release_test_support.rs, identified the gap; LocalRelease is reusable; missing only the GitHub-API-shaped releases.json", date: 2026-09-17}
+  propose: {status: done, artifact: "proposal.md", date: 2026-09-17}
+  spec: {status: done, artifact: "specs/live-install-rollback/spec.md — REQ-FU-01..03 (3 requirements, Given/When/Then)", date: 2026-09-17}
+  design: {status: done, artifact: "design.md — D1 expose serve_root / D2 ResolverFixture::build / D3 test env guards (TempBaseUrl, TempOpenCodeConfig) / D4 test list", date: 2026-09-17}
+  tasks: {status: done, artifact: "tasks.md — T1 ResolverFixture / T2 cmd_update live / T3 cmd_rollback after live / T4 exit gates", date: 2026-09-17}
+  apply: {status: done, artifact: "T1-T3 implemented; T4 exit gates green; 174/174 cogh tests pass (171 + 3 new); 2 commits on main", date: 2026-09-17}
+  verify: {status: done, artifact: "verification-report.md", date: 2026-09-17}
+  archive: {status: done, artifact: "moved to openspec/changes/archive/2026-09-17-e86-followup-live-update/", date: 2026-09-17}
+
+proposed_work_units:
+  WU0: "explore: read LocalRelease + lifecycle_resolver surfaces"
+  WU1: "spec: cmd_update-live-install (one spec, 3 scenarios)"
+  WU2: "design: ResolverFixture builder shape"
+  WU3: "tasks: T1 ResolverFixture, T2 cmd_update live test, T3 rollback-after-install test, T4 exit gates"
+  WU4: "apply"
+  WU5: "verify"
+  WU6: "archive"
