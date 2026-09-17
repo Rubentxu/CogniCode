@@ -71,6 +71,10 @@ pub mod self_hosting;
 // `portable_execution::content_digest` (SHA-256) and the e76 replay foundation.
 #[cfg(feature = "evidence-kernel")]
 pub mod historical_replay;
+// e82 — analyzer shadow evaluation + failure-regime diagnosis (M13 13.3/13.4).
+// Measurement and diagnosis only; composes e81 and grants no authority.
+#[cfg(feature = "evidence-kernel")]
+pub mod shadow_evaluation;
 // e72 WU1 — ChangeProposal (M9). Intent-only, no authority. Creation !=
 // authority. Author class (Human/Plugin/LlmAgent) is recorded for e73's
 // adversarial gate; the proposal itself does not grant apply power.

@@ -104,10 +104,27 @@ impl HistoricalReplayPlan {
     /// The same plan plus the same predictor always produces the same reports.
     /// Incomplete cases are reported as incomplete; they are never scored as if
     /// they were observed.
+    ///
+    /// Compatibility sugar over [`Self::run_role`].
     pub fn run(&self, predictor: &dyn HistoricalPredictor) -> ReplayReports {
-        let optimize = self.replay_role(DatasetRole::Optimize, &self.optimize, predictor);
-        let confirm = self.replay_role(DatasetRole::Confirm, &self.confirm, predictor);
-        ReplayReports::new(optimize, confirm)
+        ReplayReports::new(
+            self.run_role(DatasetRole::Optimize, predictor),
+            self.run_role(DatasetRole::Confirm, predictor),
+        )
+    }
+
+    /// Run exactly ONE role.
+    ///
+    /// Additive seam (e82): shadow evaluation compares a single role, and e83
+    /// can later sequence `OPTIMIZE -> freeze candidate -> CONFIRM` without
+    /// reworking e81. Identical semantics to the corresponding half of
+    /// [`Self::run`].
+    pub fn run_role(&self, role: DatasetRole, predictor: &dyn HistoricalPredictor) -> ReplayReport {
+        let ids = match role {
+            DatasetRole::Optimize => &self.optimize,
+            DatasetRole::Confirm => &self.confirm,
+        };
+        self.replay_role(role, ids, predictor)
     }
 
     fn replay_role(
