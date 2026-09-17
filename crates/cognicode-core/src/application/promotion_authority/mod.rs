@@ -51,3 +51,8 @@ mod permit_tests;
 #[cfg(all(test, feature = "evidence-kernel"))]
 #[path = "pipeline_tests.rs"]
 mod pipeline_tests;
+
+// e80a WU0 — authority-gap characterization (asserts the pre-e80a hole).
+#[cfg(all(test, feature = "evidence-kernel"))]
+#[path = "authority_characterization_tests.rs"]
+mod authority_characterization_tests;
