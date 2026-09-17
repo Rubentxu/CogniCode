@@ -1203,10 +1203,27 @@ components:
     // run with --include-ignored reports it. When the bug is fixed,
     // drop the `#[ignore]` and the test goes green.
 
+    // ----- e86.1 REQ-LJ-04: zero-component profile must fail loudly -----
+    //
+    // A typo'd `--profile core-typo` matches zero components in the
+    // bundle manifest. Before the e86.1 fix, the install pipeline ran
+    // all stages with an empty component list, wrote an empty
+    // `install/<version>/manifest.yaml`, pinned the tracker, and
+    // returned `Ok(())` — the most insidious masking failure mode.
+    //
+    // After the e86.1 fix
+    // (`installer_transaction::run` returns
+    // `InstallerError::EmptyInstall` when the filtered component set
+    // is empty), the install refuses to do anything. This test
+    // asserts that:
+    //
+    // 1. `cmd_update` returns `Err(EmptyInstall)`.
+    // 2. The tracker is NOT written.
+    // 3. The lifecycle journal is NOT written.
+
     #[test]
     #[serial]
-    #[ignore = "pinned regression — see comment block; run with --ignored"]
-    fn cmd_update_zero_component_profile_does_not_pin_tracker() {
+    fn cmd_update_zero_component_profile_returns_empty_install_error() {
         use crate::release_test_support::ResolverFixture;
 
         let _home = test_support::TempCognicodeHome::new();
@@ -1216,10 +1233,6 @@ components:
         let home = CognicodeHome::resolve(Some(_home.path())).expect("resolve home");
         home.init().expect("home.init");
 
-        // "no-such-profile" matches zero components in the loopback's
-        // generated bundle manifest (the manifest only declares
-        // "core"). If the install pipeline ever starts writing a
-        // tracker for an empty install, this test will fail.
         let result = cmd_update(
             &home,
             None,
@@ -1230,18 +1243,38 @@ components:
             false,
         );
 
-        if result.is_ok() {
-            assert!(
-                !home.tracker_version().exists(),
-                "PINNED REGRESSION: install of a zero-component profile must NOT pin the tracker \
-                 (would mask the missing-profile failure mode). Fix in install.rs:31-40."
-            );
-            assert!(
-                !crate::lifecycle_journal::journal_path("0.95.0").exists(),
-                "PINNED REGRESSION: install of a zero-component profile must NOT write a journal"
-            );
-        }
+        let err = result
+            .expect_err("zero-component profile install must return Err(EmptyInstall), not Ok(())");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("EmptyInstall")
+                || msg.contains("matches no components")
+                || msg.contains("no-such-profile"),
+            "error must clearly identify the empty-profile failure mode, got: {msg}"
+        );
+
+        // Side effects must be absent.
+        assert!(
+            !home.tracker_version().exists(),
+            "zero-component install must NOT pin the tracker"
+        );
+        assert!(
+            !crate::lifecycle_journal::journal_path("0.95.0").exists(),
+            "zero-component install must NOT write a lifecycle journal"
+        );
+        assert!(
+            !install_manifest_path("0.95.0").exists(),
+            "zero-component install must NOT write an install manifest"
+        );
     }
+
+    // e86 followup pinned regression #2: stale-shim sequential install.
+    //
+    // After the e86.1 fix (install_shim removes existing link before
+    // re-symlinking), the second install must succeed cleanly.
+    // Before the fix, the test landed in the `Err` arm of the
+    // conditional match. This test is the strict-success tripwire:
+    // if the bug ever resurfaces, this test fails loudly.
 
     #[test]
     #[serial]
@@ -1332,6 +1365,61 @@ components:
         }
     }
 
+    // e86 followup pinned regression #2: stale-shim sequential install.
+    //
+    // After the e86.1 fix (install_shim removes existing link before
+    // re-symlinking), the second install must succeed cleanly.
+    // Before the fix, the test landed in the `Err` arm of the
+    // conditional match. This test is the strict-success tripwire:
+    // if the bug ever resurfaces, this test fails loudly.
+
+    #[test]
+    #[serial]
+    fn cmd_update_sequential_installs_succeed_cleanly() {
+        use crate::release_test_support::ResolverFixture;
+
+        let _home = test_support::TempCognicodeHome::new();
+        let fx = ResolverFixture::build("0.95.0").expect("build resolver fixture");
+        let _base = test_support::TempBaseUrl::set(&fx.release.base_url);
+        let _opencode = test_support::TempOpenCodeConfig::disable();
+        let home = CognicodeHome::resolve(Some(_home.path())).expect("resolve home");
+        home.init().expect("home.init");
+
+        // First install.
+        cmd_update(
+            &home,
+            None,
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "core".to_string(),
+            false,
+        )
+        .expect("first install must succeed");
+
+        // Second install. Must also succeed — if the stale-shim
+        // regression ever resurfaces, this test fails loudly
+        // instead of landing in the conditional-match Err arm.
+        cmd_update(
+            &home,
+            None,
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "core".to_string(),
+            false,
+        )
+        .expect("sequential install must succeed on e86.1+ HEAD");
+
+        // Tracker must still read 0.95.0.
+        assert_eq!(
+            std::fs::read_to_string(home.tracker_version())
+                .expect("read tracker")
+                .trim(),
+            "0.95.0"
+        );
+    }
+
     // ----- e86 followup T3: rollback after live install -----
     //
     // A live install via `cmd_update` writes a journal. `cmd_rollback` must
@@ -1375,30 +1463,21 @@ components:
         // pinned tracker, so it MUST find 0.95.0's journal — that is the
         // round-trip contract this followup is closing.
         //
-        // The rollback itself surfaces a known pre-existing issue: the
-        // journal records `CreatedDir` for the install/ and cache/
-        // directories, and `rollback_journal` removes them with `rmdir`,
-        // which fails on a populated directory. That is a real bug in
-        // the rollback logic (e86 rollback only handled the legacy
-        // single-file manifest install, not the full install with
-        // extracted tarballs and cached downloads). It is out of scope
-        // for this followup; we assert the regression here so it does
-        // not get lost, and we will not block this cycle on it.
-        let rollback_err = cmd_rollback(&home, None)
-            .expect_err("rollback is expected to fail on populated dirs until the rollback-journal cleanup is fixed");
-        let msg = format!("{rollback_err}");
+        // The rollback reverses the side-effects in LIFO order:
+        // child effects first (WroteManifest, CreatedSymlink, Extracted),
+        // then the parent `CreatedDir`s. With the e86.1 fix
+        // (rollback_journal.rs `CreatedDir` reversal is now idempotent
+        // and uses `remove_dir_all`), the populated install dir is
+        // removed successfully even though its contents were not
+        // individually journaled.
+        cmd_rollback(&home, None).expect("rollback must succeed after live install");
         assert!(
-            msg.contains("rollback") && (msg.contains("Directory not empty") || msg.contains("39")),
-            "rollback must surface the populated-dir regression, got: {msg}"
+            !install_manifest.exists(),
+            "rollback must have removed the install manifest"
         );
-
-        // The journal must still be on disk — rollback aborted mid-way
-        // because of the regression above. A second rollback is therefore
-        // a no-op redo, not "nothing to do". Assert the journal is
-        // untouched so this state is observable.
         assert!(
-            journal_path.exists(),
-            "journal must still exist after a partial-rollback failure"
+            !journal_path.exists(),
+            "rollback must have removed the journal"
         );
     }
 }

@@ -60,6 +60,16 @@ pub enum InstallerError {
     #[error("resolve failed: {0}")]
     ResolveFailed(String),
 
+    /// The selected profile matched zero components in the bundle
+    /// manifest (e86.1 REQ-LJ-04). Without this, a typo'd profile
+    /// would silently install nothing while still pinning the
+    /// tracker and writing the lifecycle journal — the most
+    /// insidious masking failure mode in the install pipeline.
+    #[error(
+        "profile {0:?} matches no components in bundle manifest version {1}; refusing to install nothing"
+    )]
+    EmptyInstall(String, String),
+
     #[error("unknown error: {0}")]
     Unknown(String),
 }

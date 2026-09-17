@@ -260,9 +260,26 @@ impl RollbackJournal {
     fn reverse_one(effect: &SideEffect) -> Result<(), InstallerError> {
         match effect {
             SideEffect::CreatedDir(path) => {
-                std::fs::remove_dir(path).map_err(|e| {
-                    InstallerError::Rollback(format!("remove CreatedDir {}: {}", path.display(), e))
-                })?;
+                // Idempotent: a sibling reversal may have already removed
+                // this dir (e.g. a later `CreatedDir(install_dir)` recorded
+                // for the manifest parent dir uses `remove_dir_all`, which
+                // removes this dir as a side effect). Only attempt removal
+                // when the path still exists.
+                if path.exists() {
+                    // Use `remove_dir_all` (not `remove_dir`) because a
+                    // recorded `CreatedDir` may end up being the last one
+                    // reversed for a dir whose contents were not themselves
+                    // journaled as individual side-effects (e.g. an
+                    // extraction that overwrites files in a previously-
+                    // installed component dir).
+                    std::fs::remove_dir_all(path).map_err(|e| {
+                        InstallerError::Rollback(format!(
+                            "remove CreatedDir {}: {}",
+                            path.display(),
+                            e
+                        ))
+                    })?;
+                }
             }
             SideEffect::Downloaded(path) => {
                 std::fs::remove_file(path).map_err(|e| {
@@ -645,5 +662,65 @@ mod tests {
             !tracker.exists(),
             "tracker must be removed when previous was None"
         );
+    }
+
+    // ---- e86.1 REQ-LJ-04: rollback reverses a POPULATED CreatedDir ----
+    //
+    // Before the e86.1 fix, `CreatedDir` reversal used
+    // `std::fs::remove_dir` (empty-only), which fails with ENOTEMPTY
+    // on a populated dir. A real `cogh update` writes the install
+    // manifest + extracted components + shims into the install
+    // root, so the populated-dir case is the actual production
+    // case. This test pins the new behaviour: a CreatedDir that
+    // contains un-journaled children is removed by `remove_dir_all`.
+
+    #[test]
+    fn test_rollback_reverses_populated_created_dir() {
+        let tmp = create_temp_dir();
+        let dir = tmp.path().join("install/0.95.0");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Populate the dir with content that was NOT journaled as
+        // individual side-effects (this is exactly the production
+        // case: extracted tarballs land here without per-file
+        // journal entries).
+        std::fs::write(dir.join("manifest.yaml"), b"components: []").unwrap();
+        std::fs::create_dir_all(dir.join("cognicode/bin")).unwrap();
+        std::fs::write(dir.join("cognicode/bin/cognicode"), b"\x7fELF").unwrap();
+
+        let mut journal = RollbackJournal::new();
+        journal.record(SideEffect::CreatedDir(dir.clone()));
+
+        journal
+            .rollback()
+            .expect("populated CreatedDir must roll back");
+        assert!(!dir.exists(), "populated dir must be removed");
+    }
+
+    // ---- e86.1 REQ-LJ-04: rollback is idempotent for CreatedDir ----
+    //
+    // A CreatedDir that was already removed by a sibling reversal
+    // (e.g. a later CreatedDir for the same path uses
+    // `remove_dir_all` which sweeps the earlier entry) must be a
+    // no-op, not a hard error.
+
+    #[test]
+    fn test_rollback_is_idempotent_for_double_created_dir() {
+        let tmp = create_temp_dir();
+        let dir = tmp.path().join("install/0.95.0");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("file.txt"), b"x").unwrap();
+
+        let mut journal = RollbackJournal::new();
+        // Recorded twice — the second entry uses `remove_dir_all`
+        // and will sweep everything; the first entry must then
+        // be a no-op.
+        journal.record(SideEffect::CreatedDir(dir.clone()));
+        journal.record(SideEffect::CreatedDir(dir.clone()));
+
+        journal
+            .rollback()
+            .expect("double CreatedDir must roll back");
+        assert!(!dir.exists(), "double-CreatedDir must be removed");
     }
 }

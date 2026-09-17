@@ -105,6 +105,27 @@ impl PlatformAdapter for LinuxAdapter {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("create shim parent {}", parent.display()))?;
         }
+        // e86.1: idempotent on re-install. A previous install may have
+        // left a symlink at `shim_path` (pointing at the previous
+        // version's bin); `std::os::unix::fs::symlink` returns EEXIST
+        // in that case. Detect and remove the existing link first;
+        // record the same `CreatedSymlink` side-effect either way.
+        if let Ok(existing_target) = std::fs::read_link(shim_path) {
+            if existing_target == bin_path {
+                // Already the correct link — no-op.
+                return Ok(ShimSideEffect::Symlinked {
+                    link: shim_path.to_path_buf(),
+                    target: bin_path.to_path_buf(),
+                });
+            }
+            std::fs::remove_file(shim_path)
+                .with_context(|| format!("remove existing shim {}", shim_path.display()))?;
+        } else if shim_path.exists() {
+            // Not a symlink (e.g. a real file from a Windows-style
+            // shim copy, or a corrupt path). Remove before relinking.
+            std::fs::remove_file(shim_path)
+                .with_context(|| format!("remove existing shim {}", shim_path.display()))?;
+        }
         std::os::unix::fs::symlink(bin_path, shim_path).with_context(|| {
             format!("symlink {} -> {}", shim_path.display(), bin_path.display())
         })?;
@@ -174,6 +195,21 @@ impl PlatformAdapter for MacOsAdapter {
         if let Some(parent) = shim_path.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("create shim parent {}", parent.display()))?;
+        }
+        // e86.1: idempotent on re-install. See LinuxAdapter::install_shim
+        // for the rationale; the macOS adapter shares the same fix.
+        if let Ok(existing_target) = std::fs::read_link(shim_path) {
+            if existing_target == bin_path {
+                return Ok(ShimSideEffect::Symlinked {
+                    link: shim_path.to_path_buf(),
+                    target: bin_path.to_path_buf(),
+                });
+            }
+            std::fs::remove_file(shim_path)
+                .with_context(|| format!("remove existing shim {}", shim_path.display()))?;
+        } else if shim_path.exists() {
+            std::fs::remove_file(shim_path)
+                .with_context(|| format!("remove existing shim {}", shim_path.display()))?;
         }
         std::os::unix::fs::symlink(bin_path, shim_path).with_context(|| {
             format!("symlink {} -> {}", shim_path.display(), bin_path.display())

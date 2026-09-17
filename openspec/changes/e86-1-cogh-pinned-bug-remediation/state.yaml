@@ -1,0 +1,44 @@
+# SDDK DAG state — e86-1-cogh-pinned-bug-remediation
+# Orchestrator-maintained. Survives compaction.
+change: e86-1-cogh-pinned-bug-remediation
+program: cognicode-distribution (umbrella: e84 contract + e85 release + e86 lifecycle)
+milestone: M2.2 — close the 3 pinned regressions from e86-followup
+created: 2026-09-17
+mode: openspec
+delivery_strategy: bounded-cycle
+prior_evidence:
+  e86_followup: "Three regressions pinned, not fixed: (1) rollback populated CreatedDir, (2) stale-shim sequential install, (3) zero-component profile silent tracker pin"
+  audit_on_HEAD: "All 3 reproduce (initially misread Bug 2 as not reproducing — verified via eprintln)"
+exit_gates:
+  - "Bug 1: rollback reverses populated CreatedDir (test_rollback_reverses_populated_created_dir PASS)"
+  - "Bug 2: install_shim is idempotent on re-install (cmd_update_sequential_installs_succeed_cleanly PASS)"
+  - "Bug 3: zero-component profile returns Err(EmptyInstall) (cmd_update_zero_component_profile_returns_empty_install_error PASS)"
+  - "cmd_rollback_after_live_install strict success"
+  - "cargo test -p cognicode-cli --bin cogh 184 passed; 0 failed; 1 ignored"
+  - "cargo fmt -p cognicode-cli --check exits 0"
+  - "cargo check --workspace exits 0"
+  - "just check-known-failures exits 0"
+  - "python3 scripts/validate_skills.py PASS"
+phases:
+  explore: {status: done, artifact: "proposal.md — read 3 pinned tests + re-ran them with eprintln diagnostics; all 3 reproduce", date: 2026-09-17}
+  propose: {status: done, artifact: "proposal.md — full remediation (all 3 bugs)", date: 2026-09-17}
+  spec: {status: done, artifact: "specs/lifecycle-journal-populated-dir-empty-profile/spec.md — REQ-LJ-04..10 (7 requirements)", date: 2026-09-17}
+  design: {status: done, artifact: "design.md — WU1/WU2/WU3 code changes + WU4/WU5/WU6/WU7 test changes + LIFO reversal order analysis + install_shim idempotency semantics", date: 2026-09-17}
+  tasks: {status: done, artifact: "tasks.md — WU0..WU8", date: 2026-09-17}
+  apply: {status: done, artifacts: ["rollback_journal.rs:262 (CreatedDir reversal — remove_dir_all + idempotent)", "platform_adapter.rs:103 (Linux install_shim idempotent)", "platform_adapter.rs:195 (macOS install_shim idempotent)", "error.rs:63-69 (EmptyInstall variant)", "installer_transaction.rs:252-261 (early return)", "layout.rs:1206-1270 (zero-component test)", "layout.rs:1379-1422 (sequential-install tripwire)", "layout.rs:1434-1483 (rollback strict-success)", "rollback_journal.rs:667-721 (new unit tests)"], date: 2026-09-17}
+  verify: {status: done, artifact: "verification-report.md", date: 2026-09-17}
+gates_observed:
+  cogh_tests: "184 passed; 0 failed; 1 ignored"
+  cargo_check_workspace: "exit 0"
+  cargo_fmt_cli_check: "exit 0"
+  python_validate_skills: "PASS"
+  bash_verify_skills: "PASS"
+  known_failures: "41 intact"
+  live_cogh_version: "0.95.0"
+follow_through:
+  - "Bug 2 (stale-shim) FIXED — install_shim removes existing link before re-symlinking"
+  - "Pre-existing fmt drift in boundary_tests.rs (e79) left untouched"
+  - "Pre-existing 3 CLI help mis-descriptions (Class C from e84.1 WU19) left untouched"
+  - "Pre-existing cli install #[ignore]d test (bundle version mismatch) left untouched"
+carried_into_next_cycle: []
+next_step: "STOP for review. Do NOT auto-open e85 (real artifact publishing). Next bounded cycle would be e84.2 (CLI help truth) or e86.2 (real Linux install UAT)."

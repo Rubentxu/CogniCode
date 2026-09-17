@@ -249,6 +249,17 @@ impl InstallerTransaction {
         let filtered_components: Vec<_> = manifest.components_for_profile(profile);
         manifest.components = filtered_components.into_iter().cloned().collect();
 
+        // e86.1 REQ-LJ-04: refuse to install a zero-component profile
+        // silently. Without this, a typo'd `--profile core-typo` exits
+        // `Ok(())` while having installed nothing — the most insidious
+        // masking failure mode in the install pipeline.
+        if manifest.components.is_empty() {
+            return Err(InstallerError::EmptyInstall(
+                profile.to_string(),
+                manifest.version.clone(),
+            ));
+        }
+
         // Create journal and run through stages
         let journal = RollbackJournal::new();
         let mut tx = Self::Running {
