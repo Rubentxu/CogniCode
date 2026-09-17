@@ -1,0 +1,52 @@
+# SDDK DAG state — e85-cognicode-linux-release-factory
+# Orchestrator-maintained. Survives compaction.
+change: e85-cognicode-linux-release-factory
+program: cognicode-distribution (umbrella: e84 contract + e85 release + e86 lifecycle)
+milestone: M1 — Linux Tier-1 release factory (umbrella tasks group 1)
+created: 2026-09-17
+archived: 2026-09-17
+mode: openspec
+delivery_strategy: bounded-cycle
+delivery_note: >
+  Implemented and published on 2026-09-17. The cycle deliverable is the
+  release factory plus its first concrete release (v0.95.0). Implementation
+  preceded the archive step (5 commits on `v0.95.0` branch were merged to
+  `main` and tagged as `v0.95.0` before the openspec change was archived).
+prior_evidence:
+  e84: "R1 derived names / R2 one component per artifact / R3-R4 no orphans no phantoms / R5 real computed digest / R6 manifest generated from artifacts / R7 components[].profiles authoritative / R8 tag == v{version} / R9 Platform<->target token total; KEEP_CUSTOM_RELEASE"
+  factory_modules:
+    bundle_manifest_v2: "crates/cognicode-cli/src/cmd/bundle_manifest.rs (616 LOC, 19 unit tests, full v2 contract)"
+    canonical_contract: "crates/cognicode-cli/src/cmd/release_contract.rs (558 LOC, no platform/artifact retyped elsewhere)"
+    release_factory: "crates/cognicode-cli/src/cmd/release_factory.rs (830 LOC, generate + verify + SHA256SUMS + 16 tests)"
+    release_tool: "crates/cognicode-cli/src/bin/release.rs (221 LOC, 6 subcommands: platforms / platform-token / name / plan / generate / verify)"
+  workflow: ".github/workflows/release.yml (303 LOC, draft-first, attest, verify twice)"
+  guard: "scripts/check-release-matrix.sh (R9 enforced via cognicode-release itself)"
+  producer_workflow: "wired into .github/workflows/ci.yml (line 109) and justfile recipes release-check / release-generate / release-verify / release-plan"
+  layer_separation: "BundleManifest projects only Layer-1 installables (cogh / SHA256SUMS / inventory are NEVER installable); enforced by validate()"
+  embedded_authority_removed: "include_str! points to crates/cognicode-cli/src/cmd/dev-bundle.yaml with explicit DEV-ONLY header and a test that pins non-authoritativeness; fixture digests are placeholders by design (install driven by it must fail at SHA256 step); seam reserved for e86"
+m1_exit_gates:
+  - "BundleManifest v2 schema and validation in code (R1-R9)"
+  - "release-verify executable locally without a GitHub Release"
+  - "Linux Tier-1 release published (x86_64 + aarch64 GNU) with real computed digests"
+  - "SHA256SUMS published + verified by re-download"
+  - "Artifact attestations published + gh attestation verify exit 0"
+  - "No Layer-0 / meta kinds inside any BundleManifest"
+  - "No phantom, no orphan, no placeholder digest, no empty profile"
+  - "Tagged commit points to the e85 implementation commit"
+phases:
+  explore: {status: done, artifact: "see e84 (R1-R9 + KEEP_CUSTOM_RELEASE accepted in e84 archive)", date: 2026-09-17}
+  propose: {status: done, artifact: "proposal.md — implements e84 contract; non-goals enumerated (cogh latest/update, mise, UAT, Backstage)", date: 2026-09-17}
+  spec: {status: done, artifact: "no delta specs; BundleManifest v2 contract is implemented in code and the v2 schema is the executable spec, pinned by the 35 adversarial tests", date: 2026-09-17}
+  design: {status: done, artifact: "wu01-bootstrap-manifest-paradox.md (ReleaseInventory vs BundleManifest vs cogh separation) + wu03-product-surface.md (cogh L0 + cognicode + cognicode-mcp L1; explorer-api classified PUBLIC PRODUCT but not in e85 surface)", date: 2026-09-17}
+  tasks: {status: done, artifact: "tasks.md — WU0..WU18 (apply: 16 done, WU14 publish + WU15 verify the published release done; WU14 publish verified by tag v0.95.0 → 72662180^{}; WU15 verified by re-download + release-verify local pass + gh attestation verify exit 0 + sha256sum -c OK)", date: 2026-09-17}
+  apply: {status: done, artifact: "5 commits on v0.95.0 → main: 2611b98d (BundleManifest v2 + factory), 40b01125 (workflow), da82188c (harden+fmt), b8dd0935 (verification report), 72662180 (track bin/release.rs); tag v0.95.0 → 72662180; release published non-draft at 2026-09-17T19:07:59Z", date: 2026-09-17}
+  verify: {status: done, artifact: "verification-report.md (35/35 release-tool tests + 147/147 cogh tests + e2e install + 16-step workflow run 35261160115 all green) + audit pass 2026-09-17 (release-verify OK on 10/10 checks, 9/9 adversarial attacks REJECTED, sha256sum -c over re-download OK, gh attestation verify exit 0, all 4 manifest URLs HTTP 200, no placeholder digests)", date: 2026-09-17}
+  archive: {status: done, artifact: "moved to openspec/changes/archive/2026-09-17-e85-cognicode-linux-release-factory/ on 2026-09-17; preserved proposal.md, state.yaml, tasks.md, verification-report.md, wu01-bootstrap-manifest-paradox.md, wu03-product-surface.md", date: 2026-09-17}
+
+# Carried into e86
+carried_into_e86:
+  - "cogh subcommands Latest / Update / Rollback (stubs in CLI, no semantics yet)"
+  - "version + platform -> published BundleManifest v2 remote resolution (e84 WU0.1 seam)"
+  - "user-facing Rollback command (RollbackJournal machinery exists; command absent)"
+  - "channel-aware cogh self-update"
+  - "explorer-api as published Layer-1 once its own profile semantics are decided"

@@ -1,0 +1,48 @@
+# SDDK DAG state — e86-cogh-lifecycle
+# Orchestrator-maintained. Survives compaction.
+change: e86-cogh-lifecycle
+program: cognicode-distribution (umbrella: e84 contract + e85 release + e86 lifecycle)
+milestone: M2 — cogh lifecycle (latest / update / rollback / remote resolution)
+created: 2026-09-17
+mode: openspec
+delivery_strategy: bounded-cycle
+delivery_note: >
+  Consumer-side. Reads the e85 release artifacts; does not modify them.
+  Single backend: the existing InstallerTransaction pipeline. No edit to
+  BundleManifest v2 or the release workflow.
+prior_evidence:
+  e84: "Layer 0 / Layer 1 separation; RollbackJournal machinery exists but `cogh rollback` is absent (characterized)"
+  e85: "BundleManifest v2 + ReleaseInventory + SHA256SUMS + attestations published at v0.95.0; `cogh install` already consumes a generated manifest via InstallerTransaction::load_bundle_manifest"
+  carry_forward:
+    - "cogh CLI already declares Latest / Update / Rollback subcommands (stubs)"
+    - "InstallerTransaction is the single install pipeline"
+    - "dev-bundle.yaml seam reserved for e86 is now obsolete — we have a real remote"
+m2_exit_gates:
+  - "cogh latest returns the latest published v0.X.Y for the host platform"
+  - "cogh update re-uses InstallerTransaction end-to-end"
+  - "cogh rollback reverses the last install via RollbackJournal"
+  - "Resolution contract: version + platform -> published BundleManifest v2 (no recompile)"
+  - "Draft-first safety: refuses drafts"
+  - "Refuses non-Tier-1 platforms with a clear message"
+  - "All e85 adversarial checks still pass (no regression on R1-R9)"
+  - "Existing 147 cogh tests stay green"
+  - "Workspace build, known-failure baseline, architecture self-host, fmt"
+phases:
+  explore: {status: done, artifact: "exploration.md — read-only investigation; confirmed backend reuse (run_install), no-op cmd_latest/cmd_update, in-memory RollbackJournal, GitHub Releases API shape, test seam reuse, module ownership, one cross-cutting change (InstallerError variants)", date: 2026-09-17}
+  propose: {status: done, artifact: "proposal.md", date: 2026-09-17}
+  spec: {status: done, artifact: "specs/lifecycle-resolver/spec.md (10 reqs / 10 scen) + specs/lifecycle-journal/spec.md (5 reqs / 6 scen) + specs/lifecycle-draft-safety/spec.md (3 reqs / 4 scen)", date: 2026-09-17}
+  design: {status: done, artifact: "design.md — D1 single resolver / D2 reqwest blocking + 60s / D3 draft-first as one branch / D4 update = resolve + download + run_install / D5 journal path / D6 reuse RollbackJournal / D7 commit-time write / D8 CLI flags", date: 2026-09-17}
+  tasks: {status: done, artifact: "tasks.md — 11 tasks (T1 InstallerError / T2 RollbackJournal JSON / T3 lifecycle_journal module / T4 commit writes journal / T5 lifecycle_resolver module / T6 wire update / T7 cogh rollback / T8 CLI flags / T9 ResolverFixture / T10 E2E / T11 exit gates); ~700-900 LOC; ~22 new tests; 8 files touched", date: 2026-09-17}
+  apply: {status: pending}
+  verify: {status: pending}
+  archive: {status: pending}
+
+# Concrete task slices (filled in at design + tasks phases)
+proposed_work_units:
+  WU0: "explore: study InstallerTransaction surface, gh API response shape, RollbackJournal write/read format, current cli stubs"
+  WU1: "spec: lifecycle-resolver (version + platform -> BundleManifest v2 URL); lifecycle-journal (read + reverse); lifecycle-draft-safety"
+  WU2: "design: surface map for `cogh latest / update / rollback`; module ownership; attestation verification seam"
+  WU3: "tasks: implementation plan, sequenced, with each task bounded to one assertion"
+  WU4: "apply: implement Latest / Update / Rollback; re-use InstallerTransaction; add tests"
+  WU5: "verify: run the exit gates end-to-end on a synthetic home, capture evidence"
+  WU6: "archive"
