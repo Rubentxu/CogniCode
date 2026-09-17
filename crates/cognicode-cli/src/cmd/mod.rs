@@ -8,6 +8,8 @@ pub mod error;
 pub mod install;
 pub mod install_lock;
 pub mod installer_transaction;
+pub mod lifecycle_journal;
+pub mod lifecycle_resolver;
 pub mod profile;
 pub mod rollback_journal;
 pub mod tracker;

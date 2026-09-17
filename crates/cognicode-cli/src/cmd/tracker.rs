@@ -32,6 +32,20 @@ pub fn read_version() -> Result<String> {
     Ok(v.trim().to_string())
 }
 
+/// Read the tracker as an `Option`, distinguishing "no tracker" from
+/// "tracker with content". Used by the install pipeline to capture the
+/// previous pin before overwriting it (e86 lifecycle-journal).
+pub fn read_version_optional() -> Option<String> {
+    let path = tracker_path();
+    let v = std::fs::read_to_string(&path).ok()?;
+    let trimmed = v.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -3,12 +3,24 @@
 //! Records side-effects during an install transaction and reverses them
 //! in reverse order (LIFO) when the journal is dropped or explicitly rolled back.
 //! The journal is committed by going out of scope with no-op `commit()`.
+//!
+//! e86: the journal gains `WroteTracker` (to restore the previous tracker
+//! version on rollback) and JSON serialise / deserialise so a committed
+//! install can be reversed later by a separate `cogh rollback` invocation.
 
 use crate::error::InstallerError;
+use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt as stdfmt;
 use std::path::PathBuf;
 
 /// Side-effect recorded in the journal during an install transaction.
-#[derive(Debug, Clone)]
+///
+/// Serialised to JSON with a `"type"` discriminator so the on-disk form is
+/// stable across schema changes. We cannot use `#[serde(tag = "type")]` on a
+/// newtype variant (serde limitation), so the serialise / deserialise impls
+/// are hand-written.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SideEffect {
     /// A directory was created.
     CreatedDir(PathBuf),
@@ -30,15 +42,153 @@ pub enum SideEffect {
     RemovedDir(PathBuf),
     /// A manifest file was written.
     WroteManifest(PathBuf),
+    /// The version tracker file was written. `previous` is the value that
+    /// existed before the install, so the rollback restores the prior pin.
+    /// `None` means "no tracker existed before".
+    WroteTracker {
+        path: PathBuf,
+        previous: Option<String>,
+    },
+}
+
+impl SideEffect {
+    /// Stable tag name used in the serialised JSON.
+    fn tag(&self) -> &'static str {
+        match self {
+            SideEffect::CreatedDir(_) => "CreatedDir",
+            SideEffect::Downloaded(_) => "Downloaded",
+            SideEffect::VerifiedSha256(_) => "VerifiedSha256",
+            SideEffect::Extracted(_) => "Extracted",
+            SideEffect::CreatedSymlink { .. } => "CreatedSymlink",
+            SideEffect::PatchedJson { .. } => "PatchedJson",
+            SideEffect::RemovedDir(_) => "RemovedDir",
+            SideEffect::WroteManifest(_) => "WroteManifest",
+            SideEffect::WroteTracker { .. } => "WroteTracker",
+        }
+    }
+}
+
+impl Serialize for SideEffect {
+    fn serialize<S: Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = ser.serialize_map(Some(2))?;
+        map.serialize_entry("type", self.tag())?;
+        match self {
+            SideEffect::CreatedDir(p)
+            | SideEffect::Downloaded(p)
+            | SideEffect::VerifiedSha256(p)
+            | SideEffect::Extracted(p)
+            | SideEffect::RemovedDir(p)
+            | SideEffect::WroteManifest(p) => {
+                map.serialize_entry("path", p)?;
+            }
+            SideEffect::CreatedSymlink { link, target } => {
+                map.serialize_entry("link", link)?;
+                map.serialize_entry("target", target)?;
+            }
+            SideEffect::PatchedJson {
+                path,
+                key,
+                old_value,
+            } => {
+                map.serialize_entry("path", path)?;
+                map.serialize_entry("key", key)?;
+                map.serialize_entry("old_value", old_value)?;
+            }
+            SideEffect::WroteTracker { path, previous } => {
+                map.serialize_entry("path", path)?;
+                map.serialize_entry("previous", previous)?;
+            }
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for SideEffect {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = SideEffect;
+            fn expecting(&self, f: &mut stdfmt::Formatter<'_>) -> stdfmt::Result {
+                f.write_str("a SideEffect JSON object with a `type` discriminator")
+            }
+            fn visit_map<M: de::MapAccess<'de>>(self, mut map: M) -> Result<SideEffect, M::Error> {
+                let mut tag: Option<String> = None;
+                let mut path: Option<PathBuf> = None;
+                let mut link: Option<PathBuf> = None;
+                let mut target: Option<PathBuf> = None;
+                let mut key: Option<String> = None;
+                let mut old_value: Option<Option<serde_json::Value>> = None;
+                let mut previous: Option<Option<String>> = None;
+                while let Some(k) = map.next_key::<String>()? {
+                    match k.as_str() {
+                        "type" => tag = Some(map.next_value()?),
+                        "path" => path = Some(map.next_value()?),
+                        "link" => link = Some(map.next_value()?),
+                        "target" => target = Some(map.next_value()?),
+                        "key" => key = Some(map.next_value()?),
+                        "old_value" => old_value = Some(map.next_value()?),
+                        "previous" => previous = Some(map.next_value()?),
+                        _ => {
+                            let _: serde::de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+                let tag = tag.ok_or_else(|| de::Error::missing_field("type"))?;
+                let need_path = |field: &'static str| -> Result<PathBuf, M::Error> {
+                    path.clone().ok_or_else(|| de::Error::missing_field(field))
+                };
+                Ok(match tag.as_str() {
+                    "CreatedDir" => SideEffect::CreatedDir(need_path("path")?),
+                    "Downloaded" => SideEffect::Downloaded(need_path("path")?),
+                    "VerifiedSha256" => SideEffect::VerifiedSha256(need_path("path")?),
+                    "Extracted" => SideEffect::Extracted(need_path("path")?),
+                    "RemovedDir" => SideEffect::RemovedDir(need_path("path")?),
+                    "WroteManifest" => SideEffect::WroteManifest(need_path("path")?),
+                    "CreatedSymlink" => SideEffect::CreatedSymlink {
+                        link: link.ok_or_else(|| de::Error::missing_field("link"))?,
+                        target: target.ok_or_else(|| de::Error::missing_field("target"))?,
+                    },
+                    "PatchedJson" => SideEffect::PatchedJson {
+                        path: need_path("path")?,
+                        key: key.ok_or_else(|| de::Error::missing_field("key"))?,
+                        old_value: old_value.unwrap_or(None),
+                    },
+                    "WroteTracker" => SideEffect::WroteTracker {
+                        path: need_path("path")?,
+                        previous: previous.unwrap_or(None),
+                    },
+                    other => {
+                        return Err(de::Error::unknown_variant(
+                            other,
+                            &[
+                                "CreatedDir",
+                                "Downloaded",
+                                "VerifiedSha256",
+                                "Extracted",
+                                "CreatedSymlink",
+                                "PatchedJson",
+                                "RemovedDir",
+                                "WroteManifest",
+                                "WroteTracker",
+                            ],
+                        ));
+                    }
+                })
+            }
+        }
+        de.deserialize_map(V)
+    }
 }
 
 /// Rollback journal for atomic install operations.
 ///
 /// Records side-effects during a transaction and reverses them in LIFO order
 /// on rollback. Commit is a no-op (journal simply goes out of scope with effects applied).
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct RollbackJournal {
     effects: Vec<SideEffect>,
+    #[serde(skip, default)]
     committed: bool,
 }
 
@@ -54,6 +204,24 @@ impl RollbackJournal {
     /// Record a side-effect in the journal.
     pub fn record(&mut self, effect: SideEffect) {
         self.effects.push(effect);
+    }
+
+    /// Read-only access to the recorded effects (in commit order).
+    pub fn effects(&self) -> &[SideEffect] {
+        &self.effects
+    }
+
+    /// Serialise the journal to JSON. `committed` is skipped — the
+    /// serialised form represents the persisted record, not the runtime
+    /// state.
+    pub fn to_json(&self) -> Result<String, InstallerError> {
+        serde_json::to_string_pretty(self).map_err(|e| InstallerError::Serialize(e.to_string()))
+    }
+
+    /// Deserialise a journal from JSON. The result has `committed: false`
+    /// by construction (we are loading it to reverse it).
+    pub fn from_json(s: &str) -> Result<Self, InstallerError> {
+        serde_json::from_str::<RollbackJournal>(s).map_err(|e| InstallerError::Serialize(e.to_string()))
     }
 
     /// Reverse all side-effects in LIFO order.
@@ -159,6 +327,33 @@ impl RollbackJournal {
                         e
                     ))
                 })?;
+            }
+            SideEffect::WroteTracker { path, previous } => {
+                match previous {
+                    Some(prev) => {
+                        if let Some(parent) = path.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        std::fs::write(path, prev).map_err(|e| {
+                            InstallerError::Rollback(format!(
+                                "restore WroteTracker {}: {}",
+                                path.display(),
+                                e
+                            ))
+                        })?;
+                    }
+                    None => {
+                        if path.exists() {
+                            std::fs::remove_file(path).map_err(|e| {
+                                InstallerError::Rollback(format!(
+                                    "remove WroteTracker (no previous) {}: {}",
+                                    path.display(),
+                                    e
+                                ))
+                            })?;
+                        }
+                    }
+                }
             }
         }
         Ok(())
@@ -375,5 +570,78 @@ mod tests {
         j2.record(SideEffect::CreatedDir(dir_b.clone()));
         j2.rollback().unwrap();
         assert!(!dir_b.exists()); // created last, removed first
+    }
+
+    // ---- e86 WU2 / T2: JSON round-trip + WroteTracker reversal ----
+
+    #[test]
+    fn test_serialise_round_trip() {
+        let mut journal = RollbackJournal::new();
+        journal.record(SideEffect::CreatedDir(PathBuf::from("/tmp/c")));
+        journal.record(SideEffect::Downloaded(PathBuf::from("/tmp/d.tar.gz")));
+        journal.record(SideEffect::WroteManifest(PathBuf::from("/tmp/m.yaml")));
+        journal.record(SideEffect::WroteTracker {
+            path: PathBuf::from("/tmp/tracker"),
+            previous: Some("0.94.0".to_string()),
+        });
+
+        let json = journal.to_json().expect("serialise");
+        // `committed` MUST NOT appear (skipped on serialise).
+        assert!(
+            !json.contains("\"committed\""),
+            "committed field must not leak into the persisted form: {json}"
+        );
+        // Every effect's tag must be present.
+        assert!(json.contains("\"CreatedDir\""));
+        assert!(json.contains("\"Downloaded\""));
+        assert!(json.contains("\"WroteManifest\""));
+        assert!(json.contains("\"WroteTracker\""));
+        assert!(json.contains("\"previous\": \"0.94.0\""));
+
+        let loaded = RollbackJournal::from_json(&json).expect("deserialise");
+        assert_eq!(loaded.effects().len(), 4);
+        assert_eq!(
+            loaded.effects()[3],
+            SideEffect::WroteTracker {
+                path: PathBuf::from("/tmp/tracker"),
+                previous: Some("0.94.0".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn test_wrote_tracker_reverse_with_previous() {
+        let tmp = create_temp_dir();
+        let tracker = tmp.path().join("tracker/version");
+        std::fs::create_dir_all(tracker.parent().unwrap()).unwrap();
+        std::fs::write(&tracker, "0.95.0").unwrap();
+
+        let mut journal = RollbackJournal::new();
+        journal.record(SideEffect::WroteTracker {
+            path: tracker.clone(),
+            previous: Some("0.94.0".to_string()),
+        });
+
+        journal.rollback().unwrap();
+        let restored = std::fs::read_to_string(&tracker).unwrap();
+        assert_eq!(restored.trim(), "0.94.0");
+    }
+
+    #[test]
+    fn test_wrote_tracker_reverse_with_no_previous_removes_file() {
+        let tmp = create_temp_dir();
+        let tracker = tmp.path().join("tracker/version");
+        std::fs::create_dir_all(tracker.parent().unwrap()).unwrap();
+        std::fs::write(&tracker, "0.95.0").unwrap();
+        assert!(tracker.exists());
+
+        let mut journal = RollbackJournal::new();
+        journal.record(SideEffect::WroteTracker {
+            path: tracker.clone(),
+            previous: None,
+        });
+
+        journal.rollback().unwrap();
+        assert!(!tracker.exists(), "tracker must be removed when previous was None");
     }
 }

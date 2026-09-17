@@ -389,6 +389,11 @@ impl InstallerTransaction {
                 let yaml = serde_yaml::to_string(&manifest)
                     .map_err(|e| InstallerError::Serialize(e.to_string()))?;
 
+                // Capture the tracker value BEFORE the install overwrites it,
+                // so a future rollback can restore it (e86 REQ-LJ-02).
+                let previous_tracker = crate::tracker::read_version_optional();
+                let tracker_path = crate::layout::tracker_dir().join("version");
+
                 // Ensure parent directory exists (record for rollback)
                 if let Some(parent) = manifest_path.parent() {
                     std::fs::create_dir_all(parent)
@@ -400,6 +405,35 @@ impl InstallerTransaction {
                 std::fs::write(&manifest_path, yaml)
                     .map_err(|e| InstallerError::Io(manifest_path.clone(), e))?;
                 journal.record(SideEffect::WroteManifest(manifest_path.clone()));
+
+                // Persist the journal BEFORE we mark it committed, so the
+                // on-disk record reflects the side-effects even if the
+                // tracker write below fails. Errors are non-fatal for the
+                // install (the install is correct); we surface them as a
+                // warning on stderr and the next `cogh rollback` will report
+                // "nothing to roll back" (REQ-LJ-01).
+                let journal_path =
+                    crate::lifecycle_journal::journal_path(&manifest.version);
+                if let Err(e) = crate::lifecycle_journal::write(
+                    &journal,
+                    &manifest,
+                    previous_tracker.as_deref(),
+                    &journal_path,
+                ) {
+                    eprintln!(
+                        "warning: failed to persist install journal at {}: {}",
+                        journal_path.display(),
+                        e
+                    );
+                }
+
+                // Record the tracker write for the in-memory journal so that
+                // an in-process rollback (e.g. a test that fails after commit)
+                // can still restore it.
+                journal.record(SideEffect::WroteTracker {
+                    path: tracker_path,
+                    previous: previous_tracker,
+                });
 
                 // Commit journal (no-op, but marks as non-rollbackable)
                 journal.commit();
@@ -544,11 +578,81 @@ components:
         match result {
             InstallerTransaction::Committed { manifest_path } => {
                 assert!(manifest_path.exists(), "manifest should be written");
+                // The persisted journal MUST be on disk next to the install
+                // (e86 REQ-LJ-01) so a later `cogh rollback` can replay it.
+                let journal_path = crate::lifecycle_journal::journal_path("0.94.0");
+                assert!(
+                    journal_path.exists(),
+                    "persisted journal should be written next to install at {}",
+                    journal_path.display()
+                );
                 // Clean up
                 let _ = std::fs::remove_file(&manifest_path);
+                let _ = std::fs::remove_file(&journal_path);
             }
             other => panic!("expected Committed, got {:?}", other),
         }
+    }
+
+    // ----- e86 WU4: commit persists the journal next to the install -----
+    // (The `commit_writes_manifest_file` test above already pins this; the
+    // dedicated test below re-asserts it as a behaviour contract and adds the
+    // round-trip through `lifecycle_journal::load`.)
+
+    #[test]
+    #[serial]
+    fn commit_writes_journal_next_to_install() {
+        let _home = TempCognicodeHome::new();
+        let yaml = r#"
+apiVersion: cognicode.bundle/v2
+version: "0.94.0"
+platform: linux-x86-64
+profiles:
+  - name: core
+    description: core profile
+components:
+  - name: cognicode
+    kind: cognicode
+    version: "0.94.0"
+    artifact: cognicode-0.94.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.94.0/cognicode-0.94.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#;
+        let manifest = BundleManifest::from_str(yaml).unwrap();
+        let tx = InstallerTransaction::Running {
+            stage: InstallStage::WritingManifest,
+            journal: RollbackJournal::new(),
+            manifest,
+        };
+        let result = tx.commit().expect("commit must succeed");
+        let manifest_path = match result {
+            InstallerTransaction::Committed { manifest_path } => manifest_path,
+            other => panic!("expected Committed, got {:?}", other),
+        };
+
+        let journal_path = crate::lifecycle_journal::journal_path("0.94.0");
+        assert!(
+            journal_path.exists(),
+            "persisted journal must exist at {}",
+            journal_path.display()
+        );
+
+        let envelope = crate::lifecycle_journal::load_envelope(&journal_path).expect("load");
+        assert_eq!(envelope.version, "0.94.0");
+        assert!(!envelope.effects.effects().is_empty(), "journal must carry effects");
+        assert!(
+            envelope
+                .effects
+                .effects()
+                .iter()
+                .any(|e| matches!(e, crate::rollback_journal::SideEffect::WroteManifest(_))),
+            "persisted journal must include WroteManifest, got {:?}",
+            envelope.effects.effects()
+        );
+
+        let _ = std::fs::remove_file(&manifest_path);
+        let _ = std::fs::remove_file(&journal_path);
     }
 
     // ----- e74 WU2: platform matching in the install pipeline -----

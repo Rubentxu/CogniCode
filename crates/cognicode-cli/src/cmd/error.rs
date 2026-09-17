@@ -6,6 +6,8 @@
 use std::path::PathBuf;
 use thiserror::Error;
 
+use crate::bundle_manifest::Platform;
+
 /// Bundle manifest parse or validation error (wraps anyhow::Error).
 #[derive(Debug, Error)]
 #[error("manifest error: {0}")]
@@ -37,6 +39,26 @@ pub enum InstallerError {
 
     #[error("shim install error: {0}")]
     ShimInstall(String),
+
+    /// The host platform is not in the e85 Tier-1 surface (e86 REQ-LR-01).
+    #[error("platform {0:?} is not in the e85 Tier-1 surface; supported: {1}")]
+    PlatformNotInTier1(Platform, String),
+
+    /// A release was refused because it is still a draft or a prerelease
+    /// (e86 REQ-LR-03 / REQ-LDS-01).
+    #[error("{0}")]
+    DraftRelease(String),
+
+    /// A release exists but lacks the per-platform bundle manifest asset
+    /// (e86 REQ-LR-04).
+    #[error("no per-platform manifest asset for platform {0:?}; available: {1:?}")]
+    NoMatchingManifest(Platform, Vec<String>),
+
+    /// Generic resolver failure (network error, JSON parse error, missing
+    /// fixture file, etc.). Distinct from `Network` so the resolver layer
+    /// can carry a clear single message (e86 REQ-LR-08 / REQ-LR-09).
+    #[error("resolve failed: {0}")]
+    ResolveFailed(String),
 
     #[error("unknown error: {0}")]
     Unknown(String),

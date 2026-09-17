@@ -29,6 +29,10 @@ mod installer_transaction;
 mod layout;
 #[path = "../cmd/lifecycle.rs"]
 mod lifecycle;
+#[path = "../cmd/lifecycle_journal.rs"]
+mod lifecycle_journal;
+#[path = "../cmd/lifecycle_resolver.rs"]
+mod lifecycle_resolver;
 #[path = "../cmd/lockfile.rs"]
 mod lockfile;
 #[path = "../cmd/manifest.rs"]
