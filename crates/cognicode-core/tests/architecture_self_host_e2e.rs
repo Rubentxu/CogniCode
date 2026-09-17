@@ -207,32 +207,33 @@ fn self_host_evaluator_finds_zero_drift_on_clean_source() {
     }
 
     let gate = FindingGate::new(EvidenceClass::B, RiskLevel::Medium);
-    let mut all_findings: Vec<String> = Vec::new();
+    let mut all_violations: Vec<String> = Vec::new();
     for constraint in registry.admission.admitted() {
         let report = registry
             .evaluate(constraint, &source)
             .expect("self-host evaluation must succeed");
-        for finding in &report.findings {
-            // Only count findings that clear the gate (load-bearing).
-            if gate.admits(finding) {
-                all_findings.push(format!(
-                    "{} ({}): {}",
-                    finding.kind.as_str(),
-                    finding
-                        .causal_chain
-                        .first()
-                        .map(|s| s.detail.clone())
-                        .unwrap_or_default(),
-                    finding.message,
-                ));
-            }
+        for violation in &report.violations {
+            // Record every violation. The post-e77.1 evaluator
+            // emits violations as the primary output; the gate is
+            // only consulted by downstream assembly. We log all
+            // violations so the self-host test still flags the
+            // real drifts in `cognicode-core`'s source.
+            all_violations.push(format!(
+                "{} @ {}:{} -> {} (rationale: {})",
+                violation.finding_kind.as_str(),
+                violation.file_path,
+                violation.line,
+                violation.dependency_path,
+                violation.rationale,
+            ));
         }
     }
+    let _ = gate; // kept for parity with prior shape; unused on violations.
 
     assert!(
-        all_findings.is_empty(),
+        all_violations.is_empty(),
         "self-host: architecture evaluator found drifts in cognicode-core's own source:\n  - {}",
-        all_findings.join("\n  - ")
+        all_violations.join("\n  - ")
     );
 }
 
@@ -283,11 +284,11 @@ fn self_host_evaluator_finds_real_drift_in_synthetic_fixture() {
         .evaluate(&constraint, &source)
         .expect("evaluator must succeed on valid input");
     assert_eq!(
-        report.findings.len(),
+        report.violations.len(),
         1,
         "evaluator must find the synthetic drift"
     );
-    assert_eq!(report.findings[0].kind.as_str(), "architecture.layer_dependency");
+    assert_eq!(report.violations[0].finding_kind.as_str(), "architecture.layer_dependency");
 }
 
 #[test]

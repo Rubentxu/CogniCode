@@ -29,6 +29,7 @@
 
 pub mod constraint;
 pub mod use_parser;
+pub mod violation;
 
 // Re-export the public surface explicitly. Callers should not reach into
 // submodules.
@@ -39,3 +40,4 @@ pub use constraint::{
     ForbiddenDependencyRule, LayerDependencyRule, LayerId, NamespaceBoundaryRule,
 };
 pub use use_parser::{parse_use_lines, UseStatement, UseStatementError};
+pub use violation::{ArchitectureViolation, ViolationId};

@@ -31,6 +31,11 @@ pub enum EvidenceKind {
     RuntimeTrace,
     /// A hypothesis with no mechanical backing.
     Hypothesis,
+    /// A static architectural observation (e77.1) — a `use`
+    /// statement that violates a layer / forbidden-dependency /
+    /// namespace-boundary rule. The evidence class is `C` (partial
+    /// static evidence) because there is no runtime confirmation.
+    ArchitectureSource,
 }
 
 impl EvidenceKind {
@@ -42,7 +47,7 @@ impl EvidenceKind {
         match self {
             Self::RuntimeTrace => EvidenceClass::A,
             Self::GraphPath | Self::DataflowPath => EvidenceClass::B,
-            Self::AstMatch => EvidenceClass::C,
+            Self::AstMatch | Self::ArchitectureSource => EvidenceClass::C,
             Self::Hypothesis => EvidenceClass::D,
         }
     }
@@ -55,6 +60,7 @@ impl EvidenceKind {
             Self::DataflowPath => "dataflow_path",
             Self::RuntimeTrace => "runtime_trace",
             Self::Hypothesis => "hypothesis",
+            Self::ArchitectureSource => "architecture_source",
         }
     }
 }

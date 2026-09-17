@@ -144,7 +144,7 @@ fn admitted_constraint_produces_findings() {
         }],
     };
     let report = registry.evaluate(&constraint, &source).unwrap();
-    assert_eq!(report.findings.len(), 1);
+    assert_eq!(report.violations.len(), 1);
 }
 
 /// **Row 3.** A `Candidate` admitter (`AdmitterRole::Other`) cannot
@@ -222,7 +222,7 @@ fn rule_kinds_are_independent() {
     let mut total = 0;
     for c in registry.admission.admitted() {
         let report = registry.evaluate(c, &source).unwrap();
-        total += report.findings.len();
+        total += report.violations.len();
     }
     // Only the layer rule fires on this source.
     assert_eq!(total, 1);
@@ -240,7 +240,7 @@ fn empty_source_yields_zero_findings() {
     let report = registry
         .evaluate(&constraint, &ArchitectureSource::default())
         .unwrap();
-    assert!(report.findings.is_empty());
+    assert!(report.violations.is_empty());
 }
 
 /// **Row 8.** The system clock works (smoke test for the time
@@ -270,9 +270,9 @@ fn evaluation_is_deterministic() {
     };
     let a = registry.evaluate(&constraint, &source).unwrap();
     let b = registry.evaluate(&constraint, &source).unwrap();
-    assert_eq!(a.findings.len(), b.findings.len());
-    assert_eq!(a.findings[0].id, b.findings[0].id);
-    assert_eq!(a.findings[0].evidence, b.findings[0].evidence);
+    assert_eq!(a.violations.len(), b.violations.len());
+    assert_eq!(a.violations[0].id, b.violations[0].id);
+    assert_eq!(a.violations[0].dependency_path, b.violations[0].dependency_path);
 }
 
 /// **Row 10.** An empty rule body is rejected (admission-level

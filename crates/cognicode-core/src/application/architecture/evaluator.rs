@@ -1,10 +1,23 @@
-//! Architecture evaluator (WU3) and drift finding construction (WU4).
+//! Architecture evaluator (e77.1, M10 corrective slice).
 //!
-//! The evaluator is the **only** component that may emit architecture
-//! drift findings, and it consults only admitted
-//! [`ArchitectureConstraint`]s (see [`crate::application::architecture::registry`]).
+//! The evaluator's **primary output** is a list of
+//! [`ArchitectureViolation`]s, not a list of [`Finding`]s. The
+//! distinction is load-bearing:
 //!
-//! Output shape:
+//! * A violation is a *detection*. It carries enough navigation
+//!   information (constraint, file, line, dependency path) for a
+//!   human or an automated tool to act on, plus an **optional**
+//!   [`GroundingRef`] that bridges to canonical evidence.
+//! * A finding is a *gated conclusion*. It carries
+//!   `DetectorAuthority`, `EvidenceId`s, `DetectorDigests`, a
+//!   causal chain grounded in canonical evidence, and a status.
+//!   Building a finding requires the canonical evidence pipeline:
+//!   `ProducedEvidence → CanonicalEvidenceWriter → FindingAssembler
+//!   → FindingVerifier`. Architecture observations that have not
+//!   been routed through that pipeline are not findings.
+//!
+//! The split mirrors the path that every other detector finding
+//! already follows (see `application::findings::kernel_bridge`).
 //!
 //! ```text
 //! ArchitectureConstraint (admitted)
@@ -14,38 +27,31 @@
 //!        │
 //!        ▼
 //! EvaluationReport {
-//!     findings: Vec<Finding>,
+//!     violations: Vec<ArchitectureViolation>,
 //! }
 //! ```
 //!
-//! Each emitted `Finding` is a normal M6/M7 finding with a namespaced
-//! kind in the `architecture.*` namespace. The causal chain explains
-//! the violation (`Source: file:line` → `Flow: use crate::infrastructure`
-//! → `Sink: infrastructure`). The `evidence` field is populated from
-//! synthetic evidence ids (no I/O; the kernel evidence handles are
-//! stubs the application can later replace with real ones).
+//! Assembly into `Finding`s is the caller's responsibility. The
+//! `application::architecture::grounding` module (WU2) provides the
+//! helper that wires violations through canonical evidence.
 //!
 //! ## Authority model
 //!
-//! Drift findings are emitted with `DetectorAuthority::Gated` (the
-//! constraint is admitted by a promoted admitter, and the gate is the
-//! caller's `FindingGate`). This is what makes the load-bearing
-//! property "ADR text alone → ZERO findings" hold: no constraint, no
-//! detector definition, no finding.
+//! The evaluator does **not** mint authority. A violation carries
+//! no `DetectorAuthority` field at all. If a downstream consumer
+//! wants a `Finding`, it must derive the authority from the
+//! canonical path — which today cannot mint `Gated` without an
+//! actual detector execution. This is the structural reason an
+//! admitted constraint cannot, by itself, confer gate authority.
 
 use std::fmt;
 
 use crate::domain::architecture::{
-    ArchitectureConstraint, ArchitectureConstraintKind, ForbiddenDependencyRule,
-    LayerDependencyRule, NamespaceBoundaryRule,
+    ArchitectureConstraint, ArchitectureConstraintKind, ArchitectureViolation, ForbiddenDependencyRule,
+    LayerDependencyRule, NamespaceBoundaryRule, ViolationId,
 };
 use crate::domain::architecture::{LayerId, UseStatement};
-use crate::domain::findings::{
-    CausalStep, CausalStepKind, DetectorAuthority, DetectorExecutionRef, DetectorId,
-    EvidenceClass, Finding, FindingKind, FindingOrigin, FindingSeverity, FindingStatus,
-    RiskLevel,
-};
-use crate::domain::kernel_ids::EvidenceId;
+use crate::domain::findings::FindingKind;
 
 // ============================================================================
 // Source
@@ -54,17 +60,11 @@ use crate::domain::kernel_ids::EvidenceId;
 /// A single source file under evaluation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceFile {
-    /// The file path (e.g. `src/domain/foo.rs`).
     pub file_path: String,
-    /// Optional module path (e.g. `domain::foo`). When `None`, the
-    /// evaluator falls back to deriving the layer from `file_path`.
     pub module_path: Option<String>,
-    /// The full source text.
     pub source: String,
 }
 
-/// The collection of source files under evaluation. Default
-/// (`Default::default()`) yields an empty source → zero findings.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ArchitectureSource {
     pub files: Vec<SourceFile>,
@@ -74,17 +74,15 @@ pub struct ArchitectureSource {
 // Report
 // ============================================================================
 
-/// Report of an evaluation pass.
+/// Report of an evaluation pass. Carries violations only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvaluationReport {
-    /// The findings emitted by this pass. May be empty.
-    pub findings: Vec<Finding>,
+    /// The architecture observations the evaluator emitted.
+    pub violations: Vec<ArchitectureViolation>,
     /// How many `use` statements were considered.
     pub statements_examined: u32,
     /// How many of them matched the constraint's forbidden surface.
-    /// Equals `findings.len()` for the three rule families of e77,
-    /// but kept as a separate field so future rule kinds (e.g. that
-    /// fire once per file) can diverge.
+    /// Equals `violations.len()` for the three rule families of e77.
     pub matches: u32,
 }
 
@@ -94,8 +92,7 @@ pub struct EvaluationReport {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArchitectureEvaluatorError {
-    /// A `use` statement could not be parsed. Should not happen with
-    /// the hand-rolled parser; included so the surface is closed.
+    /// A `use` statement could not be parsed.
     ParseFailed(String),
     /// A constraint had a malformed id.
     BadConstraintId,
@@ -127,15 +124,15 @@ impl ArchitectureEvaluator {
 
     /// Evaluate an admitted constraint against the source.
     ///
-    /// Only admitted constraints reach this method (the registry
-    /// guards it). Non-admitted constraints are rejected upstream.
+    /// The evaluator only consults admitted constraints (the
+    /// registry guards it). Non-admitted constraints are rejected
+    /// upstream. The output is a list of [`ArchitectureViolation`]s
+    /// — never [`Finding`](crate::domain::findings::Finding)s.
     pub fn evaluate(
         &self,
         constraint: &ArchitectureConstraint,
         source: &ArchitectureSource,
     ) -> Result<EvaluationReport, ArchitectureEvaluatorError> {
-        // Parse every file once. A parse failure is a hard error: if
-        // we silently drop a file we might miss real drifts.
         let mut statements: Vec<UseStatement> = Vec::new();
         for file in &source.files {
             let mut parsed = crate::domain::architecture::parse_use_lines(&file.source, &file.file_path)
@@ -157,13 +154,13 @@ impl ArchitectureEvaluator {
                 self.find_boundary_violations(rule, &statements)
             }
         };
-        let mut findings = Vec::with_capacity(matches.len());
+        let mut violations = Vec::with_capacity(matches.len());
         for stmt in &matches {
-            let finding = self.build_finding(constraint, stmt)?;
-            findings.push(finding);
+            let violation = self.build_violation(constraint, stmt)?;
+            violations.push(violation);
         }
         Ok(EvaluationReport {
-            findings,
+            violations,
             statements_examined,
             matches: matches.len() as u32,
         })
@@ -229,78 +226,40 @@ impl ArchitectureEvaluator {
             .collect()
     }
 
-    fn build_finding(
+    /// Construct an [`ArchitectureViolation`] from a matched
+    /// statement. The violation carries an *optional*
+    /// [`GroundingRef`] — when the canonical mapping is not yet
+    /// available, it is `None` and the violation is explanatory
+    /// only.
+    ///
+    /// The grounding is **never** filled in here. Filling in the
+    /// grounding requires the canonical mapping (WU2), which is
+    /// outside the evaluator's responsibility.
+    fn build_violation(
         &self,
         constraint: &ArchitectureConstraint,
         stmt: &UseStatement,
-    ) -> Result<Finding, ArchitectureEvaluatorError> {
-        let kind_str = constraint.kind.finding_kind();
-        let kind = FindingKind::new(kind_str)
+    ) -> Result<ArchitectureViolation, ArchitectureEvaluatorError> {
+        let finding_kind = FindingKind::new(constraint.kind.finding_kind())
             .map_err(|_| ArchitectureEvaluatorError::BadConstraintId)?;
-
-        let detector_id = DetectorId::new(format!("architecture.evaluator.{}", constraint.id.as_str()))
-            .map_err(|_| ArchitectureEvaluatorError::BadConstraintId)?;
-        let execution_ref = DetectorExecutionRef::new(
-            detector_id,
-            constraint.admitted_at.clone(),
-            DetectorAuthority::Gated,
-            crate::domain::findings::DetectorDigests::of_for_kind(&kind),
-            None,
-        )
-        .map_err(|_| ArchitectureEvaluatorError::BadConstraintId)?;
-
-        // Synthetic evidence id; replaced by the application layer
-        // when wired into the EvidenceBundle pipeline. The id is
-        // derived from a stable hash of `file:line` so it is unique
-        // per (file, line) pair while staying `u64`.
-        let evidence_id = EvidenceId::new(stable_hash_id(&stmt.file_path, stmt.line));
-        let causal_chain = vec![
-            CausalStep::new(
-                CausalStepKind::Source,
-                format!("file `{}` line {}", stmt.file_path, stmt.line),
-            )
-            .ok(),
-            CausalStep::new(
-                CausalStepKind::Flow,
-                format!("`use {}`", stmt.path),
-            )
-            .ok(),
-            CausalStep::new(
-                CausalStepKind::Sink,
-                format!("forbidden by constraint `{}`", constraint.id.as_str()),
-            )
-            .ok(),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-
-        let message = format!(
-            "architecture drift: `use {}` in `{}:{}` violates constraint `{}`",
-            stmt.path,
-            stmt.file_path,
+        let from_layer = layer_of(stmt);
+        let id = ViolationId::compute(
+            &constraint.id,
+            &stmt.file_path,
             stmt.line,
-            constraint.id.as_str()
+            &stmt.path,
         );
-
-        Ok(Finding {
-            id: crate::domain::findings::FindingId::new(format!(
-                "arch:{constraint_id}:{file}:{line}",
-                constraint_id = constraint.id.as_str(),
-                file = stmt.file_path,
-                line = stmt.line
-            ))
-            .map_err(|_| ArchitectureEvaluatorError::BadConstraintId)?,
-            kind,
-            origin: FindingOrigin::Detector,
-            severity: FindingSeverity::Warning,
-            risk: RiskLevel::High,
-            evidence_class: EvidenceClass::B,
-            evidence: vec![evidence_id],
-            detector: execution_ref,
-            status: FindingStatus::Open,
-            message,
-            causal_chain,
+        Ok(ArchitectureViolation {
+            id,
+            constraint_id: constraint.id.clone(),
+            finding_kind,
+            file_path: stmt.file_path.clone(),
+            module_path: stmt.module_path.clone(),
+            line: stmt.line,
+            dependency_path: stmt.path.clone(),
+            from_layer,
+            grounding: None,
+            rationale: constraint.kind.rationale().to_string(),
         })
     }
 }
@@ -318,55 +277,18 @@ fn layer_of(stmt: &UseStatement) -> LayerId {
 }
 
 fn target_layer_of(path: &str) -> LayerId {
-    // The use_parser normalises leading `crate::`/`self::`/`super::`
-    // off, so the first segment is the layer (when applicable).
     let first = path.split("::").next().unwrap_or("");
     LayerId::from_module_path(first)
 }
 
-/// Deterministic, non-cryptographic `u64` hash of `(file, line)`.
-///
-/// Used to mint synthetic evidence ids for architecture-drift
-/// findings. Stability across runs is required so that re-evaluating
-/// the same source produces the same id; this lets tests compare
-/// reports across runs without flakiness. Cryptographic strength is
-/// not required.
-fn stable_hash_id(file_path: &str, line: u32) -> u64 {
-    // FNV-1a 64-bit. Stable, fast, no external dependency.
-    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
-    const FNV_PRIME: u64 = 0x100000001b3;
-    let mut hash = FNV_OFFSET;
-    for byte in file_path.as_bytes() {
-        hash ^= *byte as u64;
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-    for byte in line.to_le_bytes() {
-        hash ^= byte as u64;
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-    hash
-}
-
-// We need a `DetectorDigests::of_for_kind` because we don't have a
-// full DetectorIr. We synthesise a minimal digest set so the
-// `DetectorExecutionRef::new` accepts it.
-impl crate::domain::findings::DetectorDigests {
-    /// Construct a placeholder digest set for the architecture
-    /// evaluator's synthetic detector references. The digests are not
-    /// semantically meaningful (they do not back a real DetectorIr)
-    /// but they are non-empty and pass the structural validation.
-    pub fn of_for_kind(kind: &FindingKind) -> Self {
-        use crate::domain::findings::{DetectorDigest, DetectorDigests};
-        let s = kind.as_str();
-        DetectorDigests {
-            logic: DetectorDigest::new(format!("logic:{s}"))
-                .unwrap_or_else(|_| DetectorDigest::from_content("logic:placeholder")),
-            policy: DetectorDigest::new(format!("policy:{s}"))
-                .unwrap_or_else(|_| DetectorDigest::from_content("policy:placeholder")),
-            semantic: DetectorDigest::new(format!("semantic:{s}"))
-                .unwrap_or_else(|_| DetectorDigest::from_content("semantic:placeholder")),
-            instance: DetectorDigest::new(format!("instance:{s}"))
-                .unwrap_or_else(|_| DetectorDigest::from_content("instance:placeholder")),
+impl ArchitectureConstraintKind {
+    /// Human-readable rationale for the rule. Used by the violation
+    /// DTO so downstream consumers do not need to re-derive it.
+    fn rationale(&self) -> &str {
+        match self {
+            Self::LayerDependency(rule) => &rule.rationale,
+            Self::ForbiddenDependency(rule) => &rule.rationale,
+            Self::NamespaceBoundary(rule) => &rule.rationale,
         }
     }
 }
@@ -374,9 +296,7 @@ impl crate::domain::findings::DetectorDigests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::architecture::{
-        Admitter, AdmitterRole, ArchitectureConstraintId, LayerId,
-    };
+    use crate::domain::architecture::{Admitter, AdmitterRole, ArchitectureConstraintId, LayerId};
 
     fn admitted_constraint(rule: ArchitectureConstraintKind) -> ArchitectureConstraint {
         ArchitectureConstraint {
@@ -393,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn clean_source_yields_no_findings() {
+    fn clean_source_yields_no_violations() {
         let constraint = admitted_constraint(ArchitectureConstraintKind::LayerDependency(
             LayerDependencyRule {
                 from_layer: LayerId::Domain,
@@ -404,11 +324,13 @@ mod tests {
         let report = ArchitectureEvaluator::new()
             .evaluate(&constraint, &ArchitectureSource::default())
             .unwrap();
-        assert!(report.findings.is_empty());
+        assert!(report.violations.is_empty());
+        assert_eq!(report.statements_examined, 0);
+        assert_eq!(report.matches, 0);
     }
 
     #[test]
-    fn domain_reaching_infrastructure_emits_finding() {
+    fn domain_reaching_infrastructure_emits_violation() {
         let constraint = admitted_constraint(ArchitectureConstraintKind::LayerDependency(
             LayerDependencyRule {
                 from_layer: LayerId::Domain,
@@ -426,14 +348,18 @@ mod tests {
         let report = ArchitectureEvaluator::new()
             .evaluate(&constraint, &source)
             .unwrap();
-        assert_eq!(report.findings.len(), 1);
-        assert_eq!(report.findings[0].kind.as_str(), "architecture.layer_dependency");
+        assert_eq!(report.violations.len(), 1);
+        let v = &report.violations[0];
+        assert_eq!(v.finding_kind.as_str(), "architecture.layer_dependency");
+        assert_eq!(v.dependency_path, "infrastructure::db");
+        assert_eq!(v.line, 1);
+        assert_eq!(v.from_layer, LayerId::Domain);
+        // No canonical grounding yet: the violation is explanatory only.
+        assert!(v.grounding.is_none());
     }
 
     #[test]
-    fn application_reaching_infrastructure_emits_no_finding() {
-        // The constraint targets `Domain → Infrastructure` only. An
-        // application-layer file reaching infrastructure is allowed.
+    fn violation_id_is_deterministic() {
         let constraint = admitted_constraint(ArchitectureConstraintKind::LayerDependency(
             LayerDependencyRule {
                 from_layer: LayerId::Domain,
@@ -443,19 +369,19 @@ mod tests {
         ));
         let source = ArchitectureSource {
             files: vec![SourceFile {
-                file_path: "src/application/foo.rs".into(),
-                module_path: Some("application::foo".into()),
+                file_path: "src/domain/foo.rs".into(),
+                module_path: Some("domain::foo".into()),
                 source: "use crate::infrastructure::db;\n".into(),
             }],
         };
-        let report = ArchitectureEvaluator::new()
-            .evaluate(&constraint, &source)
-            .unwrap();
-        assert!(report.findings.is_empty());
+        let a = ArchitectureEvaluator::new().evaluate(&constraint, &source).unwrap();
+        let b = ArchitectureEvaluator::new().evaluate(&constraint, &source).unwrap();
+        assert_eq!(a.violations.len(), b.violations.len());
+        assert_eq!(a.violations[0].id, b.violations[0].id);
     }
 
     #[test]
-    fn forbidden_dependency_emits_finding() {
+    fn forbidden_dependency_emits_violation() {
         let constraint = admitted_constraint(ArchitectureConstraintKind::ForbiddenDependency(
             ForbiddenDependencyRule {
                 from_layer: LayerId::Domain,
@@ -473,12 +399,12 @@ mod tests {
         let report = ArchitectureEvaluator::new()
             .evaluate(&constraint, &source)
             .unwrap();
-        assert_eq!(report.findings.len(), 1);
-        assert_eq!(report.findings[0].kind.as_str(), "architecture.forbidden_dependency");
+        assert_eq!(report.violations.len(), 1);
+        assert_eq!(report.violations[0].finding_kind.as_str(), "architecture.forbidden_dependency");
     }
 
     #[test]
-    fn namespace_boundary_emits_finding() {
+    fn namespace_boundary_emits_violation() {
         let constraint = admitted_constraint(ArchitectureConstraintKind::NamespaceBoundary(
             NamespaceBoundaryRule {
                 caller_namespace: "domain::evidence_kernel".into(),
@@ -496,29 +422,44 @@ mod tests {
         let report = ArchitectureEvaluator::new()
             .evaluate(&constraint, &source)
             .unwrap();
-        assert_eq!(report.findings.len(), 1);
-        assert_eq!(report.findings[0].kind.as_str(), "architecture.namespace_boundary");
+        assert_eq!(report.violations.len(), 1);
+        assert_eq!(report.violations[0].finding_kind.as_str(), "architecture.namespace_boundary");
     }
 
+    /// The e77 first slice exposed a `Finding` with `Gated` authority
+    /// from the evaluator. The post-e77.1 evaluator must NOT expose
+    /// `Gated` anywhere — type-level guarantee.
     #[test]
-    fn adr_text_alone_does_not_emit_findings() {
-        // The whole point: an `adr_ref` string with no admitted
-        // constraint cannot reach the evaluator. We verify here that
-        // calling the evaluator with no constraint at all yields zero
-        // findings (this is a smoke test; the registry enforces the
-        // stronger property of refusing non-admitted candidates).
+    fn report_does_not_mention_gated_authority() {
+        let constraint = admitted_constraint(ArchitectureConstraintKind::LayerDependency(
+            LayerDependencyRule {
+                from_layer: LayerId::Domain,
+                forbidden_targets: vec![LayerId::Infrastructure],
+                rationale: "test".into(),
+            },
+        ));
+        let source = ArchitectureSource {
+            files: vec![SourceFile {
+                file_path: "src/domain/foo.rs".into(),
+                module_path: Some("domain::foo".into()),
+                source: "use crate::infrastructure::db;\n".into(),
+            }],
+        };
         let report = ArchitectureEvaluator::new()
-            .evaluate(
-                &admitted_constraint(ArchitectureConstraintKind::LayerDependency(
-                    LayerDependencyRule {
-                        from_layer: LayerId::Domain,
-                        forbidden_targets: vec![LayerId::Infrastructure],
-                        rationale: "test".into(),
-                    },
-                )),
-                &ArchitectureSource::default(),
-            )
+            .evaluate(&constraint, &source)
             .unwrap();
-        assert!(report.findings.is_empty());
+        let dbg = format!("{report:?}");
+        assert!(!dbg.contains("Gated"), "report must not contain Gated: {dbg}");
+        // The primary output type is `EvaluationReport`, not a finding
+        // shape. We assert the absence of the `findings` field by
+        // checking the field name explicitly.
+        assert!(
+            !dbg.contains("findings:"),
+            "report must not have a `findings` field: {dbg}"
+        );
+        assert!(
+            dbg.contains("violations:"),
+            "report must have a `violations` field: {dbg}"
+        );
     }
 }

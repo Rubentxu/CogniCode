@@ -11,6 +11,7 @@
 
 pub mod admission;
 pub mod evaluator;
+pub mod grounding;
 pub mod registry;
 
 pub use admission::{
@@ -21,4 +22,5 @@ pub use evaluator::{
     ArchitectureEvaluator, ArchitectureEvaluatorError, ArchitectureSource, EvaluationReport,
     SourceFile,
 };
+pub use grounding::ArchitectureGroundingBridge;
 pub use registry::{ArchitectureRegistry, ArchitectureRegistryError};
