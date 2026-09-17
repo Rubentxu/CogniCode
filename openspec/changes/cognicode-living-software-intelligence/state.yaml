@@ -452,6 +452,26 @@ phases:
         ChangeProposal, automated authorship, PromotionPermit minting)
         remains for e80. 12.5 Fix Agent NOT STARTED. M11 read-only AI
         foundation is GREEN; M11 BLOCKED for write/authority remains.
+        e79.1 (LSI trust-baseline-hardening): ARCHIVED 2026-09-17 (impl commit
+        0840ed20, archive-manifest.md). Bounded stabilization of three
+        governance debts ahead of e80a. DEBT-SDDK-002 RESOLVED: audited ledger
+        migration v2 normalized the two malformed cycle.supersede events and
+        was swapped in atomically only after a real `sddk ledger verify` came
+        back GREEN on an isolated copy; the SDDK workflow engine was then
+        proven end-to-end by canary cycle
+        e79-1-canary-characterize-debt-002, driven through the full normal
+        lifecycle (build -> verify -> release -> CLOSED via supersede
+        --reason external-obsolete). DEBT-SDDK-005 RESOLVED: the rename_symbol
+        tests no longer drop a fixture under TMPDIR and recurse the whole temp
+        root via walkdir (measured 19.36s -> 0.00s with TMPDIR=/tmp).
+        DEBT-SDDK-004 PARTIAL: 3/4 drifts repaired (domain test double for
+        SchemaRegistry, port-owned CodeVerifierError, Clock moved to
+        domain::behaviors::ports); P1.4 (domain::behaviors::runtime ->
+        application::intelligence_log::CausalRecorder) deliberately deferred
+        to a real semantic port decision. e77 self-host now reports exactly 1
+        drift, down from 4. cargo test --lib terminates and its failure set
+        matches scripts/known_failures.yaml exactly (41 environment-scoped
+        entries; no new regressions).
         e80 (AutomatedAuthorPolicy + Fix Agent): BLOCKED pending explicit
         strategic authorization. The review must answer: what additional
         authority is required for a proposal whose author is LlmAgent or
