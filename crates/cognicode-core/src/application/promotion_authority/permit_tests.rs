@@ -2,9 +2,9 @@
 //!
 //! Adversarial coverage of `PromotionPermit` and `apply_with_permit`:
 //!
-//! 1. A permit is only issued over a CleanPromotionReady dry-run.
-//! 2. Issuing over a Blocked dry-run fails (DryRunNotClean).
-//! 3. Issuing over a Conflict dry-run fails.
+//! 1. A permit is only issued from a sealed `PromotionAuthorization`.
+//! 2. A Blocked dry-run yields no authorization (DryRunNotClean).
+//! 3. A Conflict dry-run yields no authorization (DryRunNotClean).
 //! 4. `apply_with_permit` requires a valid permit (defensive: a
 //!    hand-crafted invalid permit is rejected).
 //! 5. `apply_with_permit` rejects when the world has drifted since
@@ -23,9 +23,12 @@ use crate::application::promotion_authority::evaluation::{
     PromotionBlockReason, PromotionDryRun, PromotionEvaluationInput, PromotionStatus,
     evaluate_promotion,
 };
+use crate::application::promotion_authority::authorization::{
+    PromotionAuthorization, PromotionAuthorizationError, PromotionAuthorizationPolicy,
+};
 use crate::application::promotion_authority::permit::{
-    PromotionApplyError, PromotionApplyOutcome, PromotionPermitError, PromotionPermitId,
-    apply_with_permit, assert_world_matches_permit, issue_promotion_permit,
+    PromotionApplyError, PromotionApplyOutcome, PromotionPermitId, apply_with_permit,
+    assert_world_matches_permit, issue_promotion_permit,
 };
 use crate::application::software_world::world::SoftwareWorld;
 use crate::application::software_world::world::SoftwareWorldId;
@@ -37,6 +40,26 @@ fn world(id: &str, snap: u64) -> SoftwareWorld {
 
 fn proposal_id(s: &str) -> ChangeProposalId {
     ChangeProposalId::from_string(s)
+}
+
+/// The Human-authored proposal used by the clean dry-run fixture.
+fn human_proposal() -> ChangeProposal {
+    ChangeProposal::new(
+        proposal_id("p-1"),
+        SoftwareWorldId::from_string("w-A"),
+        ProposalKind::SourcePatch {
+            patch_ref: "patch-1".to_string(),
+        },
+        RequestedBy::Human {
+            user_ref: "alice".to_string(),
+        },
+    )
+}
+
+/// Seal an authorization for the Human-authored fixture.
+fn authorized(run: PromotionDryRun) -> PromotionAuthorization {
+    PromotionAuthorizationPolicy::authorize(&human_proposal(), run, None)
+        .expect("human-authored clean dry-run is authorised")
 }
 
 // --- helper: build a CleanPromotionReady dry-run --------------------
@@ -194,33 +217,32 @@ fn conflict_dry_run() -> PromotionDryRun {
 #[test]
 fn permit_issued_over_clean_dry_run() {
     let run = clean_dry_run();
-    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), run)
-        .expect("clean dry-run should issue a permit");
+    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), authorized(run));
     assert_eq!(permit.id, PromotionPermitId::from_string("pm-1"));
     assert_eq!(permit.proposal, proposal_id("p-1"));
 }
 
 #[test]
-fn permit_refused_over_blocked_dry_run() {
+fn blocked_dry_run_yields_no_authorization() {
     let run = blocked_dry_run();
-    let err = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), run)
-        .expect_err("blocked dry-run must not issue a permit");
+    let err = PromotionAuthorizationPolicy::authorize(&human_proposal(), run, None)
+        .expect_err("blocked dry-run must not be authorised");
     assert_eq!(
         err,
-        PromotionPermitError::DryRunNotClean {
+        PromotionAuthorizationError::DryRunNotClean {
             actual: PromotionStatus::Blocked(PromotionBlockReason::NoTrialEvidence)
         }
     );
 }
 
 #[test]
-fn permit_refused_over_conflict_dry_run() {
+fn conflict_dry_run_yields_no_authorization() {
     let run = conflict_dry_run();
-    let err = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), run)
-        .expect_err("conflict dry-run must not issue a permit");
+    let err = PromotionAuthorizationPolicy::authorize(&human_proposal(), run, None)
+        .expect_err("conflict dry-run must not be authorised");
     assert_eq!(
         err,
-        PromotionPermitError::DryRunNotClean {
+        PromotionAuthorizationError::DryRunNotClean {
             actual: PromotionStatus::ConflictRequiresReevaluation
         }
     );
@@ -231,7 +253,7 @@ fn permit_refused_over_conflict_dry_run() {
 #[test]
 fn apply_with_valid_permit_yields_applied_outcome() {
     let run = clean_dry_run();
-    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), run).unwrap();
+    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), authorized(run));
     let current = world("w-C", 10);
     let outcome = apply_with_permit(&current, &permit);
     assert!(matches!(
@@ -246,7 +268,7 @@ fn apply_with_valid_permit_yields_applied_outcome() {
 #[test]
 fn apply_with_permit_after_world_drifts_is_rejected() {
     let run = clean_dry_run();
-    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), run).unwrap();
+    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), authorized(run));
     // World has drifted since the permit was issued.
     let drifted = world("w-C", 11);
     let outcome = apply_with_permit(&drifted, &permit);
@@ -262,7 +284,7 @@ fn apply_with_permit_after_world_drifts_is_rejected() {
 #[test]
 fn assert_world_matches_permit_returns_snapshot_on_match() {
     let run = clean_dry_run();
-    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), run).unwrap();
+    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), authorized(run));
     let current = world("w-C", 10);
     let snap = assert_world_matches_permit(&current, &permit).unwrap();
     assert_eq!(snap, SnapshotId::new(10));
@@ -271,7 +293,7 @@ fn assert_world_matches_permit_returns_snapshot_on_match() {
 #[test]
 fn assert_world_matches_permit_returns_error_on_drift() {
     let run = clean_dry_run();
-    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), run).unwrap();
+    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), authorized(run));
     let drifted = world("w-C", 11);
     let err = assert_world_matches_permit(&drifted, &permit).unwrap_err();
     assert_eq!(
@@ -288,22 +310,22 @@ fn assert_world_matches_permit_returns_error_on_drift() {
 #[test]
 fn permit_carries_full_dry_run_lineage() {
     let run = clean_dry_run();
-    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), run).unwrap();
-    assert_eq!(permit.dry_run.status, PromotionStatus::CleanPromotionReady);
-    assert_eq!(permit.dry_run.lineage.proposal, proposal_id("p-1"));
+    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), authorized(run));
+    assert_eq!(permit.dry_run().status, PromotionStatus::CleanPromotionReady);
+    assert_eq!(permit.dry_run().lineage.proposal, proposal_id("p-1"));
     assert_eq!(
-        permit.dry_run.lineage.base_world,
+        permit.dry_run().lineage.base_world,
         SoftwareWorldId::from_string("w-A")
     );
     assert_eq!(
-        permit.dry_run.lineage.candidate_world,
+        permit.dry_run().lineage.candidate_world,
         SoftwareWorldId::from_string("w-B")
     );
     assert_eq!(
-        permit.dry_run.lineage.current_world,
+        permit.dry_run().lineage.current_world,
         SoftwareWorldId::from_string("w-C")
     );
-    assert!(permit.dry_run.lineage.base_matches_current);
+    assert!(permit.dry_run().lineage.base_matches_current);
 }
 
 // --- 8. No auto-promotion -----------------------------------------
@@ -320,7 +342,7 @@ fn proposal_alone_is_not_sufficient_for_apply() {
     // `PromotionApplyOutcome::Applied` is `apply_with_permit`, and
     // that function requires a `&PromotionPermit` argument.
     let run = clean_dry_run();
-    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), run).unwrap();
+    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), authorized(run));
     let current = world("w-C", 10);
     // The signature `apply_with_permit(&SoftwareWorld, &PromotionPermit)`
     // makes it impossible to call without a permit. If this test

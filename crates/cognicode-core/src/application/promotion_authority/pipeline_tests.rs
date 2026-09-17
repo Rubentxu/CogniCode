@@ -35,12 +35,16 @@ use crate::application::change_tracking::planner::WorkId;
 use crate::application::evidence_bundle::{BundleEntry, EvidenceBundle, EvidenceBundleId};
 use crate::application::evidence_bundle::{ProducerSlot, ProducerSource};
 use crate::application::policy_gate::{GateRule, PolicyOutcome, PolicySpec, ReasonVerdict};
+use crate::application::promotion_authority::authorization::{
+    PromotionAuthorization, PromotionAuthorizationError, PromotionAuthorizationPolicy,
+};
 use crate::application::promotion_authority::evaluation::{
-    PromotionBlockReason, PromotionEvaluationInput, PromotionStatus, evaluate_promotion,
+    PromotionBlockReason, PromotionDryRun, PromotionEvaluationInput, PromotionStatus,
+    evaluate_promotion,
 };
 use crate::application::promotion_authority::permit::{
-    PromotionApplyError, PromotionApplyOutcome, PromotionPermitError, PromotionPermitId,
-    apply_with_permit, assert_world_matches_permit, issue_promotion_permit,
+    PromotionApplyError, PromotionApplyOutcome, PromotionPermitId, apply_with_permit,
+    assert_world_matches_permit, issue_promotion_permit,
 };
 use crate::application::software_world::world::{SoftwareWorld, SoftwareWorldId};
 use crate::domain::evidence_kernel::ids::{EvidenceId, FactId, SnapshotId};
@@ -56,6 +60,26 @@ fn world(id: &str, snap: u64) -> SoftwareWorld {
 
 fn proposal_id(s: &str) -> ChangeProposalId {
     ChangeProposalId::from_string(s)
+}
+
+/// The Human-authored proposal that `build_trial_input` builds.
+fn human_proposal() -> ChangeProposal {
+    ChangeProposal::new(
+        proposal_id("p-1"),
+        SoftwareWorldId::from_string("w-A"),
+        ProposalKind::SourcePatch {
+            patch_ref: "patch".to_string(),
+        },
+        RequestedBy::Human {
+            user_ref: "alice".to_string(),
+        },
+    )
+}
+
+/// Seal an authorization for the Human-authored fixture.
+fn authorized(run: PromotionDryRun) -> PromotionAuthorization {
+    PromotionAuthorizationPolicy::authorize(&human_proposal(), run, None)
+        .expect("human-authored clean dry-run is authorised")
 }
 
 fn slot(source: ProducerSource, id: &str) -> ProducerSlot {
@@ -182,11 +206,11 @@ fn pipeline_trial_with_missing_required_evidence_blocks_permit() {
         })
     );
 
-    let err = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), run)
-        .expect_err("blocked dry-run must not issue a permit");
+    let err = PromotionAuthorizationPolicy::authorize(&human_proposal(), run, None)
+        .expect_err("blocked dry-run must not be authorised");
     assert!(matches!(
         err,
-        PromotionPermitError::DryRunNotClean {
+        PromotionAuthorizationError::DryRunNotClean {
             actual: PromotionStatus::Blocked(_),
         }
     ));
@@ -222,8 +246,7 @@ fn pipeline_trial_with_passing_evidence_yields_clean_promotion_and_permit() {
     );
     assert_eq!(run.status, PromotionStatus::CleanPromotionReady);
 
-    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), run)
-        .expect("clean dry-run should issue a permit");
+    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), authorized(run));
     assert_eq!(permit.issued_for_snapshot, SnapshotId::new(10));
 
     let outcome = apply_with_permit(&current, &permit);
@@ -237,9 +260,9 @@ fn pipeline_trial_with_passing_evidence_yields_clean_promotion_and_permit() {
         }
     }
 
-    assert_eq!(permit.dry_run.lineage.base_snapshot, SnapshotId::new(10));
-    assert_eq!(permit.dry_run.lineage.current_snapshot, SnapshotId::new(10));
-    assert!(permit.dry_run.lineage.base_matches_current);
+    assert_eq!(permit.dry_run().lineage.base_snapshot, SnapshotId::new(10));
+    assert_eq!(permit.dry_run().lineage.current_snapshot, SnapshotId::new(10));
+    assert!(permit.dry_run().lineage.base_matches_current);
 }
 
 #[test]
@@ -280,26 +303,23 @@ fn pipeline_trial_with_insufficient_grade_blocks_permit() {
         })
     );
 
-    let err = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), run)
-        .expect_err("insufficient evidence must not issue a permit");
+    let err = PromotionAuthorizationPolicy::authorize(&human_proposal(), run, None)
+        .expect_err("insufficient evidence must not be authorised");
     assert!(matches!(
         err,
-        PromotionPermitError::DryRunNotClean {
+        PromotionAuthorizationError::DryRunNotClean {
             actual: PromotionStatus::Blocked(_),
         }
     ));
 }
 
-/// Documented M9 assumption pin: the trial gate does not check author
-/// class. An automated author (plugin or LLM agent) whose proposal has
-/// no recorded human co-authorisation can still build a trial and a
-/// dry-run. This is the contract being pinned. Any future ADR that
-/// promotes automated authors to "require human co-auth" must extend
-/// `evaluate_promotion` with a
-/// `PromotionBlockReason::AutomatedAuthorWithoutCoAuth` check, at which
-/// point this assertion is the breaking point.
+/// e80a flip of the old M9 assumption pin. The trial gate still does not
+/// check author class (that question stays technical), but the *authority*
+/// step now refuses an automated author with no verified external approval.
+/// The dry-run is still `CleanPromotionReady`; the authorization is what
+/// fails. See `authority_tests.rs` for the exhaustive adversarial suite.
 #[test]
-fn pipeline_automated_author_promotion_under_current_gate_contract() {
+fn pipeline_automated_author_cannot_promote_without_external_approval() {
     let exec = executor_requiring(EvidenceGrade::Supports);
     let mut input = build_trial_input("p-1", bundle_with_passing_tests());
     // Override the proposal's author with an automated class.
@@ -316,7 +336,7 @@ fn pipeline_automated_author_promotion_under_current_gate_contract() {
     let trial_outcome = exec.run_trial(TrialId::from_string("t-1"), input.clone());
     let trial = assemble_trial_evidence(
         TrialId::from_string("t-1"),
-        input,
+        input.clone(),
         trial_outcome.gate.clone(),
     );
     assert_eq!(trial_outcome.gate.outcome, PolicyOutcome::Pass);
@@ -333,17 +353,15 @@ fn pipeline_automated_author_promotion_under_current_gate_contract() {
         },
         Some(&trial),
     );
-    // Pinned: current contract lets the permit through.
+    // Technical evaluation is unchanged: still clean.
     assert_eq!(run.status, PromotionStatus::CleanPromotionReady);
-    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), run)
-        .expect("permit should still issue under the current gate contract");
-    let outcome = apply_with_permit(&current, &permit);
+
+    // Authority: refused. No approval -> no authorization -> no permit.
+    let err = PromotionAuthorizationPolicy::authorize(&input.proposal, run, None)
+        .expect_err("automated author must not be authorised without approval");
     assert!(matches!(
-        outcome,
-        PromotionApplyOutcome::Applied {
-            applied_to_snapshot,
-            ..
-        } if applied_to_snapshot == SnapshotId::new(10)
+        err,
+        PromotionAuthorizationError::AutomatedAuthorRequiresExternalApproval { .. }
     ));
 }
 
@@ -374,7 +392,7 @@ fn pipeline_world_drift_after_permit_rejects_apply_with_audit_marker() {
         },
         Some(&trial),
     );
-    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), run).unwrap();
+    let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), authorized(run));
 
     let drifted = world("w-C", 12);
     let outcome = apply_with_permit(&drifted, &permit);

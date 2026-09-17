@@ -2,9 +2,21 @@
 //!
 //! A [`PromotionPermit`] is the authority to apply a
 //! [`ChangeProposal`](crate::application::change_proposal::proposal::ChangeProposal)
-//! to the current world. It is **only** issued over a
+//! to the current world. It is **only** issued from a sealed
+//! [`PromotionAuthorization`](crate::application::promotion_authority::authorization::PromotionAuthorization),
+//! which in turn is only granted over a `CleanPromotionReady`
 //! [`PromotionDryRun`](crate::application::promotion_authority::evaluation::PromotionDryRun)
-//! whose status is [`CleanPromotionReady`](crate::application::promotion_authority::evaluation::PromotionStatus::CleanPromotionReady).
+//! by
+//! [`PromotionAuthorizationPolicy`](crate::application::promotion_authority::authorization::PromotionAuthorizationPolicy).
+//!
+//! ## e80a: minting requires authority, not just cleanliness
+//!
+//! Before e80a, `issue_promotion_permit(id, dry_run)` minted a permit from a
+//! clean dry-run alone, so an automated author could self-promote. Now the
+//! minting function takes a [`PromotionAuthorization`], which for an automated
+//! author can only be obtained with a verified external human approval bound
+//! to the exact promotion attempt. The compiler makes
+//! `CleanPromotionReady alone → PromotionPermit` impossible.
 //!
 //! ## Creation is not authority
 //!
@@ -44,6 +56,7 @@
 //! log records the rejection; no mutation happens.
 
 use crate::application::change_proposal::proposal::ChangeProposalId;
+use crate::application::promotion_authority::authorization::PromotionAuthorization;
 use crate::application::promotion_authority::evaluation::{PromotionDryRun, PromotionStatus};
 use crate::application::software_world::world::SoftwareWorld;
 use crate::domain::evidence_kernel::ids::SnapshotId;
@@ -74,57 +87,82 @@ impl std::fmt::Display for PromotionPermitId {
 
 /// Authority to apply a proposal.
 ///
-/// A permit is the only thing that grants apply power. It carries the
+/// A permit is the only thing that grants apply power. It carries the sealed
+/// [`PromotionAuthorization`] that enabled its minting, plus the
 /// [`PromotionDryRun`](crate::application::promotion_authority::evaluation::PromotionDryRun)
-/// that justified it so an auditor can reconstruct why the permit
-/// exists.
+/// that justified it, so an auditor can reconstruct *why* the permit exists and
+/// *who* authorised it.
+///
+/// The `authorization` field is private, which makes external struct-literal
+/// construction impossible: the only way to obtain a `PromotionPermit` is
+/// [`issue_promotion_permit`] over a sealed [`PromotionAuthorization`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PromotionPermit {
     /// Stable identifier of this permit.
     pub id: PromotionPermitId,
     /// The proposal the permit authorises.
     pub proposal: ChangeProposalId,
-    /// The dry-run that justified the permit. Stored verbatim so the
-    /// audit trail can be reconstructed without re-running anything.
-    pub dry_run: PromotionDryRun,
     /// Snapshot id the permit was issued against (the `current.base_snapshot`
     /// at issue time). The permit becomes invalid if the world's
     /// base_snapshot changes after issue.
     pub issued_for_snapshot: SnapshotId,
+    /// The sealed authority decision that enabled this permit. Private so a
+    /// caller cannot construct a permit by literal without authority. Boxed
+    /// to keep `PromotionPermit` (and enums that carry it) small.
+    authorization: Box<PromotionAuthorization>,
 }
 
-/// Why a permit could not be issued.
+impl PromotionPermit {
+    /// The dry-run the permit was issued over (audit).
+    pub fn dry_run(&self) -> &PromotionDryRun {
+        self.authorization.dry_run()
+    }
+
+    /// The sealed authority decision behind the permit.
+    pub fn authorization(&self) -> &PromotionAuthorization {
+        &self.authorization
+    }
+
+    /// The author class this permit was authorised for (audit).
+    pub fn author(&self) -> &crate::application::change_proposal::proposal::RequestedBy {
+        self.authorization.author()
+    }
+
+    /// The verified external approver, when one was required (audit).
+    pub fn external_approver(&self) -> Option<&crate::domain::execution::actor::ActorRef> {
+        self.authorization.external_approval().map(|a| a.approver())
+    }
+}
+
+/// Why a permit could not be applied.
+///
+/// Kept for [`apply_with_permit`]'s defensive branch: a permit always carries
+/// an authorization, so this should be unreachable through the public API.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromotionPermitError {
-    /// The dry-run status is not `CleanPromotionReady`. No permit can
-    /// be issued over a `Conflict` or `Blocked` dry-run.
+    /// The permit's authorization does not cover a `CleanPromotionReady`
+    /// dry-run. Defensive only.
     DryRunNotClean { actual: PromotionStatus },
 }
 
-/// Issue a [`PromotionPermit`] from a [`PromotionDryRun`].
+/// Issue a [`PromotionPermit`] from a sealed [`PromotionAuthorization`].
 ///
-/// Total fallible function. The only successful path is when the
-/// dry-run's status is
-/// [`CleanPromotionReady`](crate::application::promotion_authority::evaluation::PromotionStatus::CleanPromotionReady).
-///
-/// The permit's `issued_for_snapshot` is taken from the dry-run's
-/// `lineage.current_snapshot` — that is the snapshot the dry-run
-/// confirmed was not diverged from the base.
+/// Infallible: an authorization already proves the dry-run was
+/// `CleanPromotionReady` and, for an automated author, that a verified external
+/// approval was bound to the attempt. A `CleanPromotionReady` dry-run alone can
+/// no longer mint a permit: the compiler requires the authorization value.
 pub fn issue_promotion_permit(
     id: PromotionPermitId,
-    dry_run: PromotionDryRun,
-) -> Result<PromotionPermit, PromotionPermitError> {
-    if dry_run.status != PromotionStatus::CleanPromotionReady {
-        return Err(PromotionPermitError::DryRunNotClean {
-            actual: dry_run.status.clone(),
-        });
-    }
-    Ok(PromotionPermit {
+    authorization: PromotionAuthorization,
+) -> PromotionPermit {
+    let proposal = authorization.dry_run().lineage.proposal.clone();
+    let issued_for_snapshot = authorization.dry_run().lineage.current_snapshot;
+    PromotionPermit {
         id,
-        proposal: dry_run.lineage.proposal.clone(),
-        issued_for_snapshot: dry_run.lineage.current_snapshot,
-        dry_run,
-    })
+        proposal,
+        issued_for_snapshot,
+        authorization: Box::new(authorization),
+    }
 }
 
 /// Outcome of an `apply_with_permit` call.
@@ -183,10 +221,10 @@ pub fn apply_with_permit(
     // Defensive: a permit must always carry CleanPromotionReady (the
     // constructor forbids anything else), but if a caller bypassed
     // the constructor, we still refuse.
-    if permit.dry_run.status != PromotionStatus::CleanPromotionReady {
+    if permit.dry_run().status != PromotionStatus::CleanPromotionReady {
         return PromotionApplyOutcome::Rejected(PromotionApplyError::PermitInvalid {
             reason: PromotionPermitError::DryRunNotClean {
-                actual: permit.dry_run.status.clone(),
+                actual: permit.dry_run().status.clone(),
             },
         });
     }

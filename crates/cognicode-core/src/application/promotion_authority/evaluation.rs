@@ -74,6 +74,15 @@ pub enum PromotionStatus {
 ///
 /// The variants are deliberately disjoint so that callers (audit
 /// reports, CI dashboards) can distinguish them at a glance.
+///
+/// ## Authorship is not a technical block (e80a)
+///
+/// This enum used to carry an `AutomatedAuthorWithoutCoAuth` variant that was
+/// never constructed. Automated-author enforcement is an *authority* decision,
+/// not a technical-readiness one, so it now lives in
+/// [`PromotionAuthorizationPolicy`](super::authorization::PromotionAuthorizationPolicy).
+/// The variant was removed rather than rewired, so there is exactly one
+/// automated-author rule in the codebase.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromotionBlockReason {
     /// No trial evidence was supplied. Promotion requires trial.
@@ -87,10 +96,6 @@ pub enum PromotionBlockReason {
         expected: ChangeProposalId,
         actual: ChangeProposalId,
     },
-    /// The proposal's author is automated (plugin or LLM agent) and
-    /// no human co-authorisation is recorded. The umbrella rule says
-    /// automated authors may propose but must not self-promote.
-    AutomatedAuthorWithoutCoAuth,
 }
 
 /// Lineage metadata attached to a promotion dry-run.

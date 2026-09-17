@@ -38,6 +38,8 @@
 //! just inspects the snapshot ids and the trial envelope.
 
 #[cfg(feature = "evidence-kernel")]
+pub mod authorization;
+#[cfg(feature = "evidence-kernel")]
 pub mod evaluation;
 #[cfg(feature = "evidence-kernel")]
 pub mod permit;
@@ -56,3 +58,10 @@ mod pipeline_tests;
 #[cfg(all(test, feature = "evidence-kernel"))]
 #[path = "authority_characterization_tests.rs"]
 mod authority_characterization_tests;
+
+// e80a — shared fixtures + the WU7 adversarial authority suite.
+#[cfg(all(test, feature = "evidence-kernel"))]
+mod authority_test_support;
+#[cfg(all(test, feature = "evidence-kernel"))]
+#[path = "authority_tests.rs"]
+mod authority_tests;
