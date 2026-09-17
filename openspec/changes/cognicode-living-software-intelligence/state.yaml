@@ -625,5 +625,38 @@ phases:
         reproduced (five subsequent runs OK, three default-lib runs md5-identical,
         rustc verifier suite passes under 64-core load); known_failures.yaml was
         NOT modified.
+        e82.2 (Historical Score Correctness): ARCHIVED 2026-09-17 (impl c58f260c,
+        archive-manifest.md, characterization.md). Corrects the e76 scorer defect
+        characterized by e82: score() documented "expected=false + observed=true
+        => FP" but matched on the observation alone, counting that cell as TP.
+        Tolerable while scores were only observation (e81/e82); not tolerable
+        once e83 feeds them into a promotion gate. The expectation loop now
+        matches on (expected_present, observed); missing observations keep the
+        documented "treated as absent" semantics. Nothing else changed:
+        ScoreMatrix, ReplayCaseOutcome, FailureRegime, the shadow evaluator and
+        the replay engine are untouched, and no threshold or policy was added.
+        WU0 blast radius: three production consumers (HistoricalReplay::score,
+        e81 replay, e82 shadow comparison) and every fixture using
+        expected_present=false were classified - none depended on the defective
+        cell, which is why the defect was masked. The real exposure was
+        MutationCorpus::to_sealed_prediction, where a forbidden oracle that fired
+        was scored TP instead of FP, hiding a "MUST NOT fire" violation. WU4
+        rerun produced ZERO changed fixtures (e76 self_hosting 71, e81
+        historical_replay 23, e82 shadow_evaluation 20), independently confirming
+        the classification; no historical corpus meaning was altered. WU3: unknown
+        remains 0 from score(); no unknown counts were invented, and a case with
+        no recorded observation stays e81 ReplayCaseOutcome::Incomplete. New
+        truth-table tests cover the 2x2 table, the missing-observation cells, an
+        unexpected present observation, order invariance, and duplicate
+        observation ids (last-wins, pinned and documented as a limitation rather
+        than widened into scope). cargo test --lib baseline-exact; workspace build
+        GREEN; e82.1 self-host 0 drift.
+        M13 (Historical Replay / Continuous Improvement): 13.1-13.4 SATISFIED.
+        13.5 held-out promotion gate and 13.6 governed improvement E2E remain for
+        e83.
+        STOP before e83. All five pre-e83 pillars are green: architecture
+        evidence path CLEAN (0 drifts), historical scoring CORRECT, dataset split
+        SEALED (e81), shadow comparison DETERMINISTIC (e82), authority boundary
+        SEALED (e80a/e80b). P1.4 RESOLVED; DEBT-SDDK-006 STILL EXPLICIT.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
