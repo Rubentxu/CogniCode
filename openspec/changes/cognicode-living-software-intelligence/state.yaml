@@ -472,14 +472,35 @@ phases:
         drift, down from 4. cargo test --lib terminates and its failure set
         matches scripts/known_failures.yaml exactly (41 environment-scoped
         entries; no new regressions).
-        e80 (AutomatedAuthorPolicy + Fix Agent): BLOCKED pending explicit
-        strategic authorization. The review must answer: what additional
-        authority is required for a proposal whose author is LlmAgent or
-        Plugin, even when all its tests and gates have passed? e73's
-        permit/promotion surface is the substrate; the policy is the seam.
-        M11 (AI Investigation / Critic / Fix Agent): write-half still
-        BLOCKED until AutomatedAuthorPromotionPolicy lands (e80).
-        e73's permit/promotion surface is the substrate; the policy is the
-        seam.
+        e80a (Automated Author Authority): ARCHIVED 2026-09-17 (WU0 4bdb597a,
+        impl cfefd548, archive-manifest.md). Authority-only cycle that closes
+        the gap where a machine-authored ChangeProposal could mint a
+        PromotionPermit with no human involvement. New layer
+        application::promotion_authority::authorization: PromotionApprovalTarget
+        (bound to the exact attempt), ExternalApprovalVerifier (fail-closed
+        default RejectAllExternalApprovals), sealed VerifiedExternalApproval,
+        sealed PromotionAuthorization, and PromotionAuthorizationPolicy.
+        issue_promotion_permit now requires a PromotionAuthorization, so a
+        CleanPromotionReady dry-run alone can no longer mint a permit; the
+        dead PromotionBlockReason::AutomatedAuthorWithoutCoAuth was removed
+        rather than rewired, leaving one automated-author rule. Human-authored
+        promotion semantics are preserved; apply_with_permit stays
+        authorship-agnostic and world-drift fail-closed. No event bus was
+        introduced (documented adapter seam only). 42 promotion_authority tests
+        green including the WU7 adversarial cases A-L; cargo test --lib
+        baseline-exact; workspace build GREEN. Out of scope and untouched:
+        FixAgent, live providers, P1.4, e78. NEXT: e80b (Fix Agent ->
+        ChangeProposal only), NOT started by this cycle.
+        e80 (AutomatedAuthorPolicy + Fix Agent): the authority question is now
+        ANSWERED by e80a. A proposal whose author is LlmAgent or Plugin, even
+        with all tests and gates passed, cannot mint a PromotionPermit without
+        a VERIFIED external human approval bound to the exact promotion
+        attempt. The remaining e80b work is the Fix Agent (producing a
+        ChangeProposal), which must cross the authority boundary e80a
+        established. NOT started by e80a.
+        M11 (AI Investigation / Critic / Fix Agent): the automated-authority
+        half is GREEN (e80a). The write-half remains BLOCKED only on e80b (the
+        Fix Agent itself), which is now a scoped implementation question rather
+        than an open policy question.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
