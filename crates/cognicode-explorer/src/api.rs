@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::http::header;
+use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
@@ -607,6 +608,8 @@ pub fn router_with_state(state: ApiState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/api/health", get(health))
+        // CP0 Backstage fit spike: read-only, non-authoritative probe.
+        .route("/control-plane/probe", get(control_plane_probe))
         .route("/api/workspaces/open", post(open_workspace))
         .route("/api/workspaces/:workspace_id/spotter", get(spotter))
         .route(
@@ -729,6 +732,8 @@ pub fn router(state: ApiState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/api/health", get(health))
+        // CP0 Backstage fit spike: read-only, non-authoritative probe.
+        .route("/control-plane/probe", get(control_plane_probe))
         .route("/api/workspaces/open", post(open_workspace))
         .route("/api/workspaces/:workspace_id/spotter", get(spotter))
         .route(
@@ -1118,6 +1123,52 @@ async fn not_found_stub() -> impl IntoResponse {
 
 async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "status": "ok", "service": "cognicode-explorer" }))
+}
+
+/// `GET /control-plane/probe` — CP0 Backstage fit spike.
+///
+/// Read-only, non-authoritative, and stateless: it exists so an OUTER-LOOP host
+/// (the Backstage spike under `integrations/backstage`) can prove it is talking
+/// to a real CogniCode service **without receiving any authority**.
+///
+/// This is deliberately NOT the CP1 Control API. There is no
+/// `ControlQueryService`, no `AttentionItem`, no `CaseView`, no Investigation
+/// and no promotion surface. See
+/// `openspec/changes/cp0-backstage-fit-spike/`.
+///
+/// ## Identity is context, never authority
+///
+/// The optional `X-CogniCode-Actor-Subject` / `X-CogniCode-Actor-Source` headers
+/// are echoed as **diagnostics only**. Nothing here verifies them, and nothing
+/// here can mint `VerifiedExternalApproval`, `PromotionAuthorization`, or
+/// `PromotionPermit`. A host's authenticated user is not a CogniCode authority.
+async fn control_plane_probe(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+) -> Json<serde_json::Value> {
+    let workspace = state.workspace.current_workspace().ok();
+    Json(serde_json::json!({
+        "service": "cognicode-explorer",
+        "service_version": env!("CARGO_PKG_VERSION"),
+        "workspace_id": workspace.as_ref().map(|w| w.id.clone()),
+        "analysis_identity": workspace.as_ref().and_then(|w| w.indexed_at.clone()),
+        "symbol_count": workspace.as_ref().map(|w| w.symbol_count),
+        "relation_count": workspace.as_ref().map(|w| w.relation_count),
+        "capabilities": ["explorer", "graph", "search", "moldql", "analytics", "mcp"],
+        "actor_context": {
+            "actor_subject": probe_header(&headers, "x-cognicode-actor-subject"),
+            "actor_source": probe_header(&headers, "x-cognicode-actor-source"),
+            "authority": "none",
+        },
+    }))
+}
+
+/// Read one optional diagnostic header as an owned string.
+fn probe_header(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
 }
 
 async fn open_workspace(

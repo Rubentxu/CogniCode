@@ -1,0 +1,49 @@
+cycle: cp0-backstage-fit-spike
+title: Backstage fit spike (optional host shell for a future Control Plane)
+kind: spike
+status: done
+outcome: FIT_WITH_CONSTRAINTS
+
+path: B-direct
+base_commit: 03b15676
+
+non_goals:
+  - ControlQueryService / AttentionItem / CaseView / Investigation / approval UI
+  - fixing the check_architecture MCP tool
+  - e78 packs
+  - CP1
+
+work_units:
+  WU1:  {task: toolchain characterization, state: done}
+  WU2:  {task: npm package resolution under legacy-peer-deps, state: done}
+  WU3:  {task: rust GET /control-plane/probe (read-only, stateless), state: done}
+  WU4:  {task: backend plugin createBackendPlugin + probe proxy, state: done}
+  WU5:  {task: frontend plugin createFrontendPlugin + /cognicode page, state: source_authored_unbuilt}
+  WU6:  {task: ContextCapsule v1 + explorer deep link, state: done}
+  WU7:  {task: catalog component annotation mapping, state: not_done}
+  WU8:  {task: actor -> identity context propagation, state: done}
+  WU9:  {task: removability (bounded subtree), state: done}
+  WU10: {task: no canonical state in host, state: done}
+  WU11: {task: unavailability never becomes stale truth, state: done}
+  WU12: {task: UAT CP0-U1..U12, state: partial}
+  WU16: {task: fit decision matrix, state: done}
+
+evidence:
+  - kind: test
+    what: integrations/backstage vitest
+    result: 3 files, 17 tests passed
+  - kind: grep
+    what: /control-plane/probe registered in api.rs router and router_with_state
+    result: present
+  - kind: build
+    what: cargo check -p cognicode-explorer (default features)
+    result: clean
+
+not_verified:
+  - frontend plugin build/typecheck
+  - UAT CP0-U1/U2/U4/U5 (browser)
+
+unknown_impact:
+  - whether the Control Plane will ever need multi-plugin host capabilities
+
+removability: delete integrations/backstage/ ; no workspace member, no crate dependency
