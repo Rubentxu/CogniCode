@@ -322,6 +322,11 @@ fn struct_body(src: &str, name: &str) -> String {
 
 #[test]
 fn l_no_ai_module_imports_a_permit_minting_constructor() {
+    // Production modules only. e80b's WU9 integration test under
+    // `application/ai` deliberately references this surface to prove the
+    // composition (an automated proposal cannot obtain a permit without a
+    // verified approval), so test modules are excluded by design. The
+    // production boundary is what must remain unreachable.
     let ai_dirs = ["application/ai", "domain/ai"];
     let forbidden = [
         "issue_promotion_permit",
@@ -335,6 +340,10 @@ fn l_no_ai_module_imports_a_permit_minting_constructor() {
             continue;
         }
         for entry in walk_rs(&root) {
+            let name = entry.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name.ends_with("_tests.rs") || name.contains("test_support") || name == "boundary_tests.rs" {
+                continue;
+            }
             let text = std::fs::read_to_string(&entry).unwrap_or_default();
             // Ignore comment-only mentions: strip line comments before checking.
             let code: String = text

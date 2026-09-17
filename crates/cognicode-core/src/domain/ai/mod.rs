@@ -20,9 +20,16 @@
 //! (advisory). The `LlmResponse` carries the inputs that the lineage
 //! layer audits; the absence of any write surface in this module is the
 //! load-bearing invariant.
+//!
+//! e80b adds [`patch`]: a typed `SourcePatchCandidate` (a suggestion), a
+//! `ValidatedSourcePatch` (a structurally safe candidate), and a
+//! `PatchArtifactSink` port. None of these is a `ChangeProposal`, a source
+//! mutation, evidence, or authority — the patch types carry no envelope and no
+//! approval surface.
 
 pub mod frame;
 pub mod hypothesis;
+pub mod patch;
 pub mod port;
 pub mod request;
 pub mod response;
@@ -34,6 +41,11 @@ pub use frame::{
 pub use hypothesis::{
     Critique, CritiqueDisposition, CritiqueError, Hypothesis, HypothesisConfidence, HypothesisError,
     HypothesisId, HypothesisRef, HypothesisStatement,
+};
+pub use patch::{
+    PatchArtifactError, PatchArtifactSink, PatchBaseScope, PatchBudget, PatchRef,
+    PatchValidationError, RelativePath, SourceEdit, SourcePatchCandidate, ValidatedSourceEdit,
+    ValidatedSourcePatch, validate_relative_path, validate_source_patch,
 };
 pub use port::{LlmPort, LlmPortError};
 pub use request::{InvestigationRequest, RequestProvenance, ToolCall};

@@ -134,6 +134,11 @@ pub fn build_request(frame: &InvestigationFrame) -> InvestigationRequest {
 /// cycles may interpret candidate kinds and emit `ConstraintCandidate`
 /// or `DetectorCandidate` directly. The conversion is deterministic
 /// and pure.
+///
+/// A `SourcePatchCandidate` (e80b) is a write-side suggestion and is therefore
+/// outside the miner's vocabulary: the miner mines hypotheses, constraints, and
+/// detector ideas, never patches. Such a response yields no miner output; it is
+/// handled by the `FixAgent` instead.
 pub fn convert_response(response: &LlmResponse, _frame: &InvestigationFrame) -> Vec<MinerOutput> {
     match response.output() {
         ResponseOutput::Hypotheses(hs) => hs
@@ -186,6 +191,8 @@ pub fn convert_response(response: &LlmResponse, _frame: &InvestigationFrame) -> 
             });
             vec![MinerOutput::Suggestion(hyp)]
         }
+        // Write-side suggestion, outside the miner's vocabulary.
+        ResponseOutput::SourcePatchCandidate(_) => Vec::new(),
     }
 }
 
@@ -288,6 +295,16 @@ mod tests {
                 empty_read_set(),
                 summary,
             ),
+            ResponseOutput::SourcePatchCandidate(candidate) => {
+                LlmResponse::new_source_patch_candidate(
+                    frame.id(),
+                    req.content_digest(),
+                    req_prov,
+                    resp_prov,
+                    empty_read_set(),
+                    candidate,
+                )
+            }
         }
     }
 

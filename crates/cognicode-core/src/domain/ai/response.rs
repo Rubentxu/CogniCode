@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::ai::frame::InvestigationFrameId;
 use crate::domain::ai::hypothesis::{Critique, Hypothesis};
+use crate::domain::ai::patch::SourcePatchCandidate;
 use crate::domain::ai::request::RequestProvenance;
 use crate::domain::kernel_ids::FactId;
 use crate::domain::readset::{InMemoryReadSetRecorder, ReadSet, ReadSetConfig};
@@ -91,6 +92,17 @@ pub struct LlmResponse {
 }
 
 /// The bounded output of one LlmPort invocation.
+///
+/// ## e80b: a fix candidate is a suggestion, not an action
+///
+/// [`Self::SourcePatchCandidate`] is how a model proposes a source change. It
+/// is deliberately a *typed* candidate rather than an `Advisory` string, so no
+/// parsing convention stands between free-form text and an action proposal.
+/// The candidate is still not a `ChangeProposal`, not a mutation, not evidence,
+/// and not authority: converting it into a proposal requires the trusted
+/// `FixAgent` orchestration plus the [`validate_source_patch`] boundary.
+///
+/// [`validate_source_patch`]: crate::domain::ai::patch::validate_source_patch
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResponseOutput {
     /// A list of AI-generated hypotheses.
@@ -104,6 +116,10 @@ pub enum ResponseOutput {
         /// A bounded summary string.
         summary: String,
     },
+    /// An AI-produced source patch suggestion (e80b). Untrusted,
+    /// non-authoritative: it must pass the validation boundary before it can
+    /// back a `ChangeProposal::SourcePatch`.
+    SourcePatchCandidate(SourcePatchCandidate),
 }
 
 impl LlmResponse {
@@ -163,6 +179,29 @@ impl LlmResponse {
             output: ResponseOutput::Advisory {
                 summary: summary.into(),
             },
+        }
+    }
+
+    /// Construct a source-patch-candidate response (e80b).
+    ///
+    /// The candidate is untrusted: it must cross
+    /// [`validate_source_patch`](crate::domain::ai::patch::validate_source_patch)
+    /// before it can back a proposal.
+    pub fn new_source_patch_candidate(
+        frame_id: InvestigationFrameId,
+        request_digest: u64,
+        request_provenance: RequestProvenance,
+        response_provenance: ResponseProvenance,
+        observed_read_set: ReadSet,
+        candidate: SourcePatchCandidate,
+    ) -> Self {
+        Self {
+            frame_id,
+            request_provenance,
+            request_digest,
+            response_provenance,
+            observed_read_set,
+            output: ResponseOutput::SourcePatchCandidate(candidate),
         }
     }
 

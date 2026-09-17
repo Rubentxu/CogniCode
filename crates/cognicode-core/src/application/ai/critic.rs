@@ -133,12 +133,15 @@ pub fn build_critique_request(frame: &InvestigationFrame, targets: &[CritiqueTar
 /// The critic accepts responses whose output is `Critiques` (the
 /// natural shape) and `Advisory` (treated as `NeedsInvestigation`
 /// for every target). Hypotheses are ignored — the critic must
-/// return critiques, not suggestions.
+/// return critiques, not suggestions. A `SourcePatchCandidate` is a
+/// write-side suggestion (e80b) and is likewise out of the critic's
+/// vocabulary: it is ignored here and handled by the `FixAgent`.
 pub fn extract_critiques(response: &LlmResponse) -> Vec<Critique> {
     match response.output() {
         ResponseOutput::Critiques(cs) => cs.clone(),
         ResponseOutput::Advisory { .. } => Vec::new(), // No critique without explicit disposition.
         ResponseOutput::Hypotheses(_) => Vec::new(),
+        ResponseOutput::SourcePatchCandidate(_) => Vec::new(),
     }
 }
 
