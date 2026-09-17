@@ -6,7 +6,7 @@
 **Branch:** main
 **HEAD at archive push:** `bfa819e6` (initial pin)
 **HEAD at doc-clarify:** `e4c6840e`
-**HEAD == origin/main:** verified at archive time and at doc-clarify time.
+**HEAD == origin/main:** verified at archive and doc-clarify times.
 **Cycle commit range:** `9d446974` (feat) → `de22c9ca` (archive) → `bfa819e6` (docs pin) → `e4c6840e` (docs clarify)
 
 > Two HEAD snapshots are pinned above (archive push and the most
