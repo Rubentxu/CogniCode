@@ -19,6 +19,8 @@ Source: `crates/cognicode-cli/src/bin/cogh.rs` (25 subcommands), `src/cmd/layout
 | `cogh latest` | **STUB** | prints `(latest --all: not yet implemented)` |
 | `cogh update` | **STUB** | prints `(update all: not yet implemented)` |
 | `cogh reshim` | **STUB** | prints `reshim: would regenerate … (not yet implemented)` |
+| `cogh rollback` | **ABSENT** | the subcommand does not exist — `Rollback` appears **0** times in `cogh.rs`. Rollback exists only as *internal transaction machinery* (`rollback_journal` + the `Failed` state of `InstallerTransaction`), never as a user-facing command. |
+| transaction rollback | IMPLEMENTED | on a failed stage the `InstallerTransaction` advances to `Failed` and the journal drives compensation. Safe-install is real; *user-initiated* rollback is not exposed. |
 | `cogh where` | IMPLEMENTED | resolves the shim path |
 | `cogh doctor` | IMPLEMENTED | `doctor::run_doctor`, 4 orthogonal dimensions |
 | `cogh version` | IMPLEMENTED | `version::cmd_version` |
