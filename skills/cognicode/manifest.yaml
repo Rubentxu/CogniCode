@@ -1,0 +1,34 @@
+apiVersion: cognicode/v1
+kind: SkillBundle
+name: cognicode
+description: |
+  General entry point for using CogniCode on a project you didn't write.
+  User-facing skill. Pairs with cognicode-mcp for deeper MCP work.
+version: "1.0.0"
+maturity: stable
+homepage: https://github.com/Rubentxu/CogniCode
+authors:
+  - CogniCode Team
+
+# This skill requires only that the user has installed the runtime.
+# It does not require any specific plugin — the commands it teaches
+# (cogh, cognicode) are part of the base install.
+requires: []
+
+# Compatible with the same IDEs as the runtime.
+ide_compatibility:
+  - opencode
+  - zcode
+  - claude
+  - codex
+
+# This skill has no scripts or assets of its own. It teaches the
+# use of commands and tools that are part of the runtime.
+scripts: []
+assets: []
+
+# Skill-version compatibility metadata. Decoupled from the runtime
+# binary version. A skill can be re-released independently of the
+# binary.
+compatibility:
+  cognicode_runtime: ">=0.95"

@@ -199,17 +199,39 @@ maturity: stable
     }
 
     #[test]
-    fn validate_cognicode_mcp_driven_bundle() {
-        // The actual portable skill bundle in the repo. Use the
-        // workspace root (CARGO_MANIFEST_DIR is the crate dir; we need
-        // to go up two levels to reach the repo root).
+    fn validate_cognicode_mcp_bundle() {
+        // The actual portable skill bundle in the repo (e84.1).
+        // Use the workspace root (CARGO_MANIFEST_DIR is the crate
+        // dir; we need to go up two levels to reach the repo root).
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let repo_root = manifest_dir.parent().and_then(|p| p.parent()).unwrap();
-        let path = repo_root.join("skills/cognicode-mcp-driven");
+        let path = repo_root.join("skills/cognicode-mcp");
         let m = validate_bundle(&path).expect("bundle must validate");
-        assert_eq!(m.name, "cognicode-mcp-driven");
-        assert_eq!(m.version, "0.92.0");
+        assert_eq!(m.name, "cognicode-mcp");
+        assert_eq!(m.version, "1.0.0");
         assert!(m.requires.contains(&"mcp-server".to_string()));
+    }
+
+    #[test]
+    fn validate_cognicode_bundle() {
+        // The general entry-point bundle (e84.1).
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = manifest_dir.parent().and_then(|p| p.parent()).unwrap();
+        let path = repo_root.join("skills/cognicode");
+        let m = validate_bundle(&path).expect("bundle must validate");
+        assert_eq!(m.name, "cognicode");
+        assert_eq!(m.version, "1.0.0");
+    }
+
+    #[test]
+    fn validate_cognicode_developer_bundle() {
+        // The developer-only bundle (e84.1).
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = manifest_dir.parent().and_then(|p| p.parent()).unwrap();
+        let path = repo_root.join("skills/cognicode-developer");
+        let m = validate_bundle(&path).expect("bundle must validate");
+        assert_eq!(m.name, "cognicode-developer");
+        assert_eq!(m.version, "1.0.0");
     }
 
     #[test]

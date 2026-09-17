@@ -1,0 +1,20 @@
+Premium LSP server for AI agents with code analysis and refactoring
+
+Usage: cognicode [OPTIONS] [COMMAND]
+
+Commands:
+  analyze        Analyze code in the given directory
+  serve          Start the MCP server
+  refactor       Refactor a symbol
+  index          Index commands for symbol indexing
+  graph          Graph commands for call graph operations
+  navigate       Navigate to code locations using LSP (go to definition, hover, find references)
+  doctor         Check LSP server availability and installation status
+  docs-ingest    Ingest Markdown / ADR files into the Generic Graph Layer. Compiled in ONLY when the `multimodal` Cargo feature is active — on a default build the variant is absent and `cognicode docs-ingest` returns "Unknown command"
+  issues-ingest  Ingest GitHub issues from the given owner/repo into the Generic Graph Layer. Compiled in ONLY when the `multimodal` Cargo feature is active — on a default build the variant is absent and `cognicode issues-ingest` returns "Unknown command"
+  help           Print this message or the help of the given subcommand(s)
+
+Options:
+  -v, --verbose  Enable verbose logging
+  -h, --help     Print help
+  -V, --version  Print version

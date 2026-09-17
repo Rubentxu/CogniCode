@@ -1,0 +1,27 @@
+apiVersion: cognicode/v1
+kind: SkillBundle
+name: cognicode-developer
+description: |
+  Onboarding for CogniCode contributors — SDDK/OpenSpec workflow,
+  internal `just` recipes, architecture rules, release gates.
+  Developer-only. NOT for users of CogniCode.
+version: "1.0.0"
+maturity: stable
+homepage: https://github.com/Rubentxu/CogniCode
+authors:
+  - CogniCode Team
+
+# This skill does not require runtime plugins. It is about
+# developing CogniCode itself, not using it.
+requires: []
+
+# The IDE compatibility for a developer workflow is the developer's
+# own IDE choice. We don't constrain it here.
+ide_compatibility:
+  - any
+
+scripts: []
+assets: []
+
+# No runtime compatibility — this skill does not teach the use of
+# the runtime; it teaches the development of the runtime.

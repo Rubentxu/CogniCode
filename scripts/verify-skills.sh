@@ -7,6 +7,24 @@ for skill in skills/*/; do
     name=$(basename "$skill")
     echo "Checking $name..."
 
+    # SkillSet (e84.1) has SET.yaml, not SKILL.md + manifest.yaml.
+    if [ -f "$skill/SET.yaml" ]; then
+        echo "  SET.yaml present (SkillSet)"
+        if ! python3 -c "import yaml; yaml.safe_load(open('$skill/SET.yaml'))" 2>/dev/null; then
+            echo "  ERROR: SET.yaml is not valid YAML"
+            exit 1
+        fi
+        echo "  SET.yaml syntax OK"
+        kind=$(python3 -c "import yaml; m=yaml.safe_load(open('$skill/SET.yaml')); print(m.get('kind',''))" 2>/dev/null)
+        if [ "$kind" != "SkillSet" ]; then
+            echo "  ERROR: SET.yaml kind must be 'SkillSet', got '$kind'"
+            exit 1
+        fi
+        echo "  SET.yaml kind OK"
+        echo "  PASS"
+        continue
+    fi
+
     if [ ! -f "$skill/SKILL.md" ]; then
         echo "  ERROR: SKILL.md missing"
         exit 1

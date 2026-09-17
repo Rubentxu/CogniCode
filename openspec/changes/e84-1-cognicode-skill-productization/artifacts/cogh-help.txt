@@ -1,0 +1,27 @@
+CogniCode version manager
+
+Usage: cogh [OPTIONS] <COMMAND>
+
+Commands:
+  install    Install a plugin at a specific version
+  uninstall  Uninstall a plugin version
+  list       List installed plugins and versions
+  current    Show the active version pin
+  latest     Show the latest stable version for a plugin
+  update     Update a plugin to the latest version (respects .cognicode.lock)
+  reshim     Regenerate the shims directory
+  rollback   Reverse the last install (e86 REQ-LJ-04)
+  doctor     Validate the install + diagnose issues
+  where      Print the resolved path to a binary
+  init       Initialize ~/.cognicode/ with bundled plugins
+  plugin     Plugin management (add/remove/list)
+  skill      Validate a portable skill bundle
+  ide        IDE-specific operations (detect, install)
+  version    Print cogh + CogniCode version
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+      --home <HOME>  Path to COGNICODE_HOME (defaults to ~/.cognicode)
+  -v, --verbose      Verbose output
+  -h, --help         Print help
+  -V, --version      Print version

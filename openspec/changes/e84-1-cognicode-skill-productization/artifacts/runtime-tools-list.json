@@ -1,0 +1,2133 @@
+[
+  {
+    "name": "build_graph",
+    "description": "Build the call graph for a project directory. Must be called before get_call_hierarchy, analyze_impact, or check_architecture.",
+    "inputSchema": {
+      "properties": {
+        "directory": {
+          "description": "Path to project directory to analyze (default: current working directory)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 3000,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "get_file_symbols",
+    "description": "Extract symbols (functions, classes, variables) from a source file. Set compressed=true for natural language summary. Set hierarchical=true for tree output.",
+    "inputSchema": {
+      "properties": {
+        "compressed": {
+          "description": "Return compressed natural language summary instead of JSON (default: false)",
+          "type": "boolean"
+        },
+        "file_path": {
+          "description": "Path to the source file",
+          "type": "string"
+        },
+        "hierarchical": {
+          "description": "Group symbols by nesting (parent→children tree) (default: false)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "file_path"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "file",
+        "estimated_latency_ms": 150,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "get_call_hierarchy",
+    "description": "Traverse call graph to find callers (incoming) or callees (outgoing). Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "compressed": {
+          "description": "Return compressed summary",
+          "type": "boolean"
+        },
+        "depth": {
+          "description": "Traversal depth (default: 1)",
+          "type": "integer"
+        },
+        "direction": {
+          "description": "Traverse direction",
+          "enum": [
+            "incoming",
+            "outgoing"
+          ],
+          "type": "string"
+        },
+        "symbol_name": {
+          "description": "Fully qualified symbol name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol_name",
+        "direction"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 250,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "analyze_impact",
+    "description": "Analyze the impact of changing a symbol. Returns impacted files and risk level.",
+    "inputSchema": {
+      "properties": {
+        "compressed": {
+          "description": "Return compressed summary",
+          "type": "boolean"
+        },
+        "symbol_name": {
+          "description": "Symbol to analyze",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol_name"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 250,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "find_usages",
+    "description": "Find all usages of a symbol across the project.",
+    "inputSchema": {
+      "properties": {
+        "context_lines": {
+          "description": "Number of surrounding source lines to include per usage (default: none)",
+          "type": "integer"
+        },
+        "include_declaration": {
+          "description": "Include definition (default: true)",
+          "type": "boolean"
+        },
+        "symbol_name": {
+          "description": "Symbol to search",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol_name"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "search",
+        "estimated_latency_ms": 400,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "get_complexity",
+    "description": "Calculate code complexity metrics (cyclomatic, cognitive, nesting).",
+    "inputSchema": {
+      "properties": {
+        "file_path": {
+          "description": "Path to source file",
+          "type": "string"
+        },
+        "function_name": {
+          "description": "Optional specific function",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_path"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "quality",
+        "estimated_latency_ms": 200,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "get_entry_points",
+    "description": "Find symbols with no incoming edges (entry points in the call graph). Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "compressed": {
+          "description": "Return compressed natural language summary instead of JSON (default: false)",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 150,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "get_leaf_functions",
+    "description": "Find symbols with no outgoing edges (leaf functions in the call graph). Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "compressed": {
+          "description": "Return compressed natural language summary instead of JSON (default: false)",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 150,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "trace_path",
+    "description": "Find execution path between two symbols using BFS.",
+    "inputSchema": {
+      "properties": {
+        "all": {
+          "description": "If true, return ALL paths (BFS exhaustive). If false, return only the shortest path (default: false)",
+          "type": "boolean"
+        },
+        "max_depth": {
+          "description": "Maximum depth for path search (default: 10)",
+          "type": "integer"
+        },
+        "source": {
+          "description": "Source symbol name (function or method)",
+          "type": "string"
+        },
+        "target": {
+          "description": "Target symbol name (function or method)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 300,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "export_mermaid",
+    "description": "Export call graph or subgraph as Mermaid flowchart. Optionally render to SVG with a theme.",
+    "inputSchema": {
+      "properties": {
+        "format": {
+          "description": "Output format",
+          "enum": [
+            "code",
+            "svg"
+          ],
+          "type": "string"
+        },
+        "include_external": {
+          "description": "Include external dependencies (default: false)",
+          "type": "boolean"
+        },
+        "max_depth": {
+          "description": "Maximum depth for traversal (default: 3)",
+          "type": "integer"
+        },
+        "root_symbol": {
+          "description": "Subgraph root symbol (optional - if not provided, exports entire graph)",
+          "type": "string"
+        },
+        "theme": {
+          "description": "Theme for SVG rendering",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "composite",
+        "estimated_latency_ms": 400,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "get_hot_paths",
+    "description": "Find functions with highest fan-in (most called functions).",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "description": "Number of hot paths to return (default: 10)",
+          "type": "integer"
+        },
+        "min_fan_in": {
+          "description": "Minimum fan-in threshold (default: 2)",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 250,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "query_symbol_index",
+    "description": "Query the symbol index to find locations of a symbol by name (case-insensitive).",
+    "inputSchema": {
+      "properties": {
+        "directory": {
+          "description": "Directory to search in (default: current working directory)",
+          "type": "string"
+        },
+        "symbol_name": {
+          "description": "Symbol name to query (case-insensitive)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol_name"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "search",
+        "estimated_latency_ms": 300,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "build_call_subgraph",
+    "description": "Build an on-demand call subgraph centered on a symbol.",
+    "inputSchema": {
+      "properties": {
+        "depth": {
+          "description": "Traversal depth (default: 3)",
+          "type": "integer"
+        },
+        "direction": {
+          "description": "Traversal direction (default: both)",
+          "enum": [
+            "in",
+            "out",
+            "both"
+          ],
+          "type": "string"
+        },
+        "directory": {
+          "description": "Directory to search in (default: current working directory)",
+          "type": "string"
+        },
+        "symbol_name": {
+          "description": "Symbol name to build subgraph around",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol_name"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 500,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "get_per_file_graph",
+    "description": "Get the call graph for a specific file.",
+    "inputSchema": {
+      "properties": {
+        "file_path": {
+          "description": "File path to get graph for",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_path"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 200,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "get_symbol_code",
+    "description": "Get the full source code of a symbol at a given location, including docstrings.",
+    "inputSchema": {
+      "properties": {
+        "col": {
+          "description": "Column number (0-indexed)",
+          "type": "integer"
+        },
+        "file": {
+          "description": "Path to the source file",
+          "type": "string"
+        },
+        "line": {
+          "description": "Line number (1-indexed)",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "file",
+        "line",
+        "col"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "file",
+        "estimated_latency_ms": 100,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "go_to_definition",
+    "description": "Navigate to the definition of a symbol using LSP.",
+    "inputSchema": {
+      "properties": {
+        "column": {
+          "type": "integer"
+        },
+        "file_path": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "file_path",
+        "line",
+        "column"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "navigation",
+        "estimated_latency_ms": 150,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "hover",
+    "description": "Get type information and documentation for a symbol at a position using LSP.",
+    "inputSchema": {
+      "properties": {
+        "column": {
+          "type": "integer"
+        },
+        "file_path": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "file_path",
+        "line",
+        "column"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "navigation",
+        "estimated_latency_ms": 150,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "find_references",
+    "description": "Find all references to a symbol using LSP.",
+    "inputSchema": {
+      "properties": {
+        "column": {
+          "type": "integer"
+        },
+        "file_path": {
+          "type": "string"
+        },
+        "include_declaration": {
+          "default": true,
+          "type": "boolean"
+        },
+        "line": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "file_path",
+        "line",
+        "column"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "navigation",
+        "estimated_latency_ms": 300,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "read_file",
+    "description": "Smart file reader with semantic modes.",
+    "inputSchema": {
+      "properties": {
+        "chunk_size": {
+          "description": "Chunk size for streaming reads (optional)",
+          "type": "integer"
+        },
+        "continuation_token": {
+          "description": "Continuation token for pagination (optional)",
+          "type": "string"
+        },
+        "end_line": {
+          "description": "End line for partial read (1-indexed, default: last line)",
+          "type": "integer"
+        },
+        "mode": {
+          "description": "Read mode",
+          "enum": [
+            "raw",
+            "outline",
+            "symbols",
+            "compressed"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "description": "Path to the file to read (required)",
+          "type": "string"
+        },
+        "start_line": {
+          "description": "Start line for partial read (1-indexed, default: 1)",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "file",
+        "estimated_latency_ms": 100,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "search_content",
+    "description": "Search file contents with .gitignore awareness.",
+    "inputSchema": {
+      "properties": {
+        "case_insensitive": {
+          "description": "Case insensitive search (default: false)",
+          "type": "boolean"
+        },
+        "context_lines": {
+          "description": "Number of context lines around matches (default: 2)",
+          "type": "integer"
+        },
+        "file_glob": {
+          "description": "Glob pattern to filter files (e.g., '*.rs')",
+          "type": "string"
+        },
+        "max_results": {
+          "description": "Maximum number of results to return (default: 50)",
+          "type": "integer"
+        },
+        "path": {
+          "description": "Path to search within (optional, defaults to workspace root)",
+          "type": "string"
+        },
+        "pattern": {
+          "description": "Search pattern (required)",
+          "type": "string"
+        },
+        "regex": {
+          "description": "Whether to treat pattern as regex (default: true)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pattern"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "search",
+        "estimated_latency_ms": 400,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "list_files",
+    "description": "List project files with .gitignore awareness.",
+    "inputSchema": {
+      "properties": {
+        "glob": {
+          "description": "Glob pattern to filter results (e.g., '**/*.rs')",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Maximum number of results (default: 100)",
+          "type": "integer"
+        },
+        "max_depth": {
+          "description": "Maximum depth for recursive traversal",
+          "type": "integer"
+        },
+        "offset": {
+          "description": "Pagination offset (default: 0)",
+          "type": "integer"
+        },
+        "path": {
+          "description": "Path to list (optional, defaults to workspace root)",
+          "type": "string"
+        },
+        "recursive": {
+          "description": "Whether to list files recursively (default: true)",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "file",
+        "estimated_latency_ms": 200,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "retrieve_and_verify",
+    "description": "Search for code matching a query and verify Rust files via sandboxed rustc compilation. Combines lexical search with compile-check verification.",
+    "inputSchema": {
+      "properties": {
+        "language": {
+          "description": "Language filter (reserved for future use, defaults to 'rust')",
+          "type": "string"
+        },
+        "max_results": {
+          "description": "Maximum number of results to return (default: 20)",
+          "type": "integer"
+        },
+        "query": {
+          "description": "Search query string (required)",
+          "type": "string"
+        },
+        "verify": {
+          "description": "Whether to verify Rust files via rustc compilation (default: true)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "search",
+        "estimated_latency_ms": 800,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "write_file",
+    "description": "Create or overwrite files within the workspace.",
+    "inputSchema": {
+      "properties": {
+        "content": {
+          "description": "Content to write (required)",
+          "type": "string"
+        },
+        "create_dirs": {
+          "description": "Whether to create parent directories if they don't exist (default: false)",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Path to the file to write (required)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "file",
+        "estimated_latency_ms": 100,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "edit_file",
+    "description": "Edit files with syntax validation.",
+    "inputSchema": {
+      "properties": {
+        "edits": {
+          "description": "Edits to apply (required)",
+          "items": {
+            "properties": {
+              "newString": {
+                "description": "The replacement text (required)",
+                "type": "string"
+              },
+              "oldString": {
+                "description": "The exact text to replace (required)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "oldString",
+              "newString"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "path": {
+          "description": "Path to the file to edit (required)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "edits"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "file",
+        "estimated_latency_ms": 200,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "safe_refactor",
+    "description": "Perform safe refactoring with validation and preview.",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "description": "Refactor action",
+          "enum": [
+            "rename",
+            "extract",
+            "inline",
+            "move",
+            "change_signature"
+          ],
+          "type": "string"
+        },
+        "params": {
+          "description": "Action-specific parameters",
+          "type": "object"
+        },
+        "target": {
+          "description": "Target symbol name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "target"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "refactor",
+        "estimated_latency_ms": 1000,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "ask_about_code",
+    "description": "Answer questions about code flow by tracing execution paths between symbols.",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "description": "Maximum number of answers (default: 10)",
+          "type": "integer"
+        },
+        "question": {
+          "description": "Question about code flow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "aix",
+        "estimated_latency_ms": 5000,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "experimental"
+      }
+    }
+  },
+  {
+    "name": "find_pattern_by_intent",
+    "description": "Match natural language intent descriptions to known code patterns.",
+    "inputSchema": {
+      "properties": {
+        "intent": {
+          "description": "Natural language intent description",
+          "type": "string"
+        },
+        "list_patterns": {
+          "description": "Whether to list all available patterns",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "intent"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "aix",
+        "estimated_latency_ms": 5000,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "experimental"
+      }
+    }
+  },
+  {
+    "name": "nl_to_symbol",
+    "description": "Convert natural language descriptions to symbol matches using keyword extraction and semantic search.",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "description": "Maximum number of results (default: 20)",
+          "type": "integer"
+        },
+        "query": {
+          "description": "Natural language description of symbol to find",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "search",
+        "estimated_latency_ms": 500,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "detect_god_functions",
+    "description": "Find overly large or complex functions (god functions) that should be refactored.",
+    "inputSchema": {
+      "properties": {
+        "min_complexity": {
+          "description": "Minimum cyclomatic complexity threshold (default: 15)",
+          "type": "integer"
+        },
+        "min_fan_in": {
+          "description": "Minimum fan-in threshold (default: 5)",
+          "type": "integer"
+        },
+        "min_lines": {
+          "description": "Minimum lines of code threshold (default: 50)",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "quality",
+        "estimated_latency_ms": 1000,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "detect_long_parameter_lists",
+    "description": "Find functions with too many parameters that should be consolidated into structs.",
+    "inputSchema": {
+      "properties": {
+        "max_params": {
+          "description": "Maximum number of parameters allowed (default: 5)",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "quality",
+        "estimated_latency_ms": 600,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "generate_contract",
+    "description": "Generate an AVC truth contract from an existing function. Returns syntax, semantic, and safety constraints.",
+    "inputSchema": {
+      "properties": {
+        "file_path": {
+          "description": "Path to the source file containing the function",
+          "type": "string"
+        },
+        "function_name": {
+          "description": "Name of the function to generate a contract for",
+          "type": "string"
+        }
+      },
+      "required": [
+        "function_name",
+        "file_path"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "composite",
+        "estimated_latency_ms": 500,
+        "requires_graph": false,
+        "requires_persistence": true,
+        "stability": "gated"
+      }
+    }
+  },
+  {
+    "name": "validate_contract",
+    "description": "Validate generated code against an AVC truth contract. Returns pass/fail with violations and fix suggestions.",
+    "inputSchema": {
+      "properties": {
+        "contract_id": {
+          "description": "ID of the contract to validate against",
+          "type": "string"
+        },
+        "generated_code": {
+          "description": "The code to validate",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_id",
+        "generated_code"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "composite",
+        "estimated_latency_ms": 300,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_pagerank",
+    "description": "Compute PageRank importance scores for all symbols in the call graph. Returns a ranked list of symbols by dependency importance. High-scoring symbols are 'god nodes' (heavily depended-upon). Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "alpha": {
+          "description": "Damping factor (default: 0.85). Must be in (0.0, 1.0].",
+          "type": "number"
+        },
+        "max_iterations": {
+          "description": "Max fixed-point iterations (default: 100)",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 2500,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_all_paths",
+    "description": "Find all simple paths between two symbols in the call graph. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "from_symbol": {
+          "description": "Source symbol name (substring match, case-insensitive)",
+          "type": "string"
+        },
+        "max_hops": {
+          "description": "Maximum number of intermediate nodes (default: 5)",
+          "type": "integer"
+        },
+        "to_symbol": {
+          "description": "Target symbol name (substring match, case-insensitive)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_symbol",
+        "to_symbol"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 1500,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_condensed",
+    "description": "Compute the SCC condensation of the call graph: every strongly connected component is collapsed into a single node, producing an acyclic condensation DAG. Use to spot circular dependency clusters. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 500,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_god_nodes",
+    "description": "Find god nodes — symbols with unusually high PageRank (above the supplied percentile). These are symbols that too many things depend on and are prime refactoring candidates. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "percentile": {
+          "description": "Percentile threshold in [0.0, 1.0] (default: 0.95). Symbols at or above this PageRank percentile are returned.",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 1000,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_reduced",
+    "description": "Compute the transitive reduction of the call graph — the minimal set of dependency edges that preserves reachability. Redundant edges (implied by longer paths) are dropped. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 500,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_feedback_arcs",
+    "description": "Find a feedback arc set — edges whose removal would make the call graph acyclic. The greedy heuristic is not optimal but fast; use the result as a starting point when breaking circular dependencies. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 1000,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_communities",
+    "description": "Detect code communities using Label Propagation. Groups symbols that are tightly coupled into clusters. Returns communities with cohesion scores. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "max_iterations": {
+          "description": "Max label propagation iterations (default: 100)",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 2500,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_community_detail",
+    "description": "Get details for a specific community detected by graph_communities (members, internal/external edge counts, cohesion score, and top god nodes within the community). Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "community_id": {
+          "description": "Sequential community id from graph_communities output",
+          "type": "integer"
+        },
+        "max_iterations": {
+          "description": "Max label propagation iterations used to re-detect communities (default: 100)",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "community_id"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 500,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_surprising_connections",
+    "description": "Find surprising cross-community connections. These are edges between symbols in different communities, indicating unexpected coupling. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "max_iterations": {
+          "description": "Max label propagation iterations (default: 100)",
+          "type": "integer"
+        },
+        "top_n": {
+          "description": "Max connections to return (default: 20)",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 1200,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_search_idf",
+    "description": "Search symbols ranked by IDF (Inverse Document Frequency) importance. Rare terms score higher. Includes hub bypass for cleaner results. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "max_results": {
+          "description": "Max results (default: 20)",
+          "type": "integer"
+        },
+        "query": {
+          "description": "Search query (symbol name or partial)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "search",
+        "estimated_latency_ms": 400,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_insights",
+    "description": "Get a complete architecture health report: god nodes, circular dependencies, community overview, surprising cross-module connections, and a health score (0-100). Requires build_graph first.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "composite",
+        "estimated_latency_ms": 2000,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_suggest_questions",
+    "description": "Generate intelligent questions about the codebase architecture based on graph analysis. Helps identify areas that need attention. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "composite",
+        "estimated_latency_ms": 5000,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "experimental"
+      }
+    }
+  },
+  {
+    "name": "graph_query",
+    "description": "Natural language graph topology query. Ask 'what connects X to Y?' and get a subgraph with provenance. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "budget": {
+          "description": "Maximum nodes to collect (default: 1500)",
+          "type": "integer"
+        },
+        "max_depth": {
+          "description": "Maximum BFS depth from seed nodes (default: 3)",
+          "type": "integer"
+        },
+        "question": {
+          "description": "Natural language question about the graph topology",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 800,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_explain",
+    "description": "Composite deep-dive on a symbol: callers, callees, fan-in/out, complexity. Saves multiple tool calls. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "depth": {
+          "description": "Neighbor depth (default: 2)",
+          "type": "integer"
+        },
+        "symbol": {
+          "description": "Symbol name to explain",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "composite",
+        "estimated_latency_ms": 1000,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "detect_drift",
+    "description": "Analyze a source file for intent drift (S7000: docstring-body mismatch), AVC violations (S7001: unsafe/panic/unwrap), obsolete patterns (S7002: try! macro), and forbidden terms (S7003). Persists high-drift findings to the drift_events store.",
+    "inputSchema": {
+      "properties": {
+        "file_path": {
+          "description": "Path to the source file to analyze (required)",
+          "type": "string"
+        },
+        "function_name": {
+          "description": "Optional function name to scope analysis to a single function",
+          "type": "string"
+        },
+        "threshold": {
+          "description": "Minimum drift score threshold (default: 0.5). Only findings with drift_score >= threshold are included.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "file_path"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "quality",
+        "estimated_latency_ms": 1500,
+        "requires_graph": false,
+        "requires_persistence": true,
+        "stability": "experimental"
+      }
+    }
+  },
+  {
+    "name": "get_type_references",
+    "description": "List type annotation references for a symbol (param types, return types, field types). Uses References edges from type-ref extraction. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "symbol_name": {
+          "description": "Symbol name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol_name"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 250,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "get_imports",
+    "description": "List all imports for a file. Uses Imports edges from the ingest pipeline. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "file_path": {
+          "description": "File path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_path"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 200,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "get_implementors",
+    "description": "Find all types that implement a given trait/interface. Uses Implements edges. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "trait_name": {
+          "description": "Trait or interface name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "trait_name"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 400,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "get_members",
+    "description": "List methods and fields of a class/struct. Uses Contains edges. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "class_name": {
+          "description": "Class or struct name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "class_name"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 250,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_query_filtered",
+    "description": "Graph query with provenance, node kind, and community filters. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "filters": {
+          "properties": {
+            "community_id": {
+              "type": "integer"
+            },
+            "exclude_kinds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "node_kinds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "provenance": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "question": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 800,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "export_callflow",
+    "description": "Export a community-level Mermaid architecture call-flow diagram. Shows module-level relationships.",
+    "inputSchema": {
+      "properties": {
+        "format": {
+          "enum": [
+            "code"
+          ],
+          "type": "string"
+        },
+        "max_sections": {
+          "description": "Max architecture sections (default: 8)",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "composite",
+        "estimated_latency_ms": 600,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "solid_audit",
+    "description": "Analyze code for SOLID principle violations (SRP, OCP, LSP, ISP, DIP). Returns violations with severity, location, and suggestions. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "quality",
+        "estimated_latency_ms": 2000,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_analyze",
+    "description": "Run advanced graph algorithms: scc, reduced, or feedback_arcs.",
+    "inputSchema": {
+      "properties": {
+        "mode": {
+          "enum": [
+            "scc",
+            "reduced",
+            "feedback_arcs"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 1500,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "project_overview",
+    "description": "Get a comprehensive project overview at quick, medium, or detailed levels.",
+    "inputSchema": {
+      "properties": {
+        "detail": {
+          "enum": [
+            "quick",
+            "medium",
+            "detailed"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "composite",
+        "estimated_latency_ms": 3000,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "experimental"
+      }
+    }
+  },
+  {
+    "name": "codebase_map",
+    "description": "Generate a compact, LLM-optimized codebase map. Format: compact (~400 tokens) or detailed (~2000).",
+    "inputSchema": {
+      "properties": {
+        "format": {
+          "enum": [
+            "compact",
+            "detailed"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "composite",
+        "estimated_latency_ms": 1000,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "project_insights",
+    "description": "Dashboard in a single call: symbols, edges, entry points, dead code, health score, hot paths.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "composite",
+        "estimated_latency_ms": 3000,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "experimental"
+      }
+    }
+  },
+  {
+    "name": "smart_search",
+    "description": "Run semantic_search + ranked_symbols + graph_search_idf in parallel with deduplication. Returns merged results ranked by combined score.",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "description": "Maximum number of results (default: 20)",
+          "type": "integer"
+        },
+        "query": {
+          "description": "Search query string",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "composite",
+        "estimated_latency_ms": 2000,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "check_architecture",
+    "description": "Detect cycles and architecture violations using Tarjan SCC algorithm. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "scope": {
+          "description": "Optional scope to filter analysis (e.g., module name)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 200,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "graph_checkpoint",
+    "description": "Manage graph checkpoints: create (build+checkpoint), current (get latest), restore (get by id), list (list all). Requires build_graph first.",
+    "inputSchema": {
+      "properties": {
+        "checkpoint_id": {
+          "description": "Checkpoint ID for restore operation",
+          "type": "integer"
+        },
+        "operation": {
+          "description": "Operation: create, current, restore, list (default: create)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 500,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "merge_graphs",
+    "description": "Merge per-file call graphs into a consolidated project graph.",
+    "inputSchema": {
+      "properties": {
+        "file_paths": {
+          "description": "List of source file paths to merge",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "file_paths"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 500,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "build_lightweight_index",
+    "description": "Build a lightweight symbol index for fast lookups. Supports strategies: lightweight, on_demand, per_file, full.",
+    "inputSchema": {
+      "properties": {
+        "directory": {
+          "description": "Directory to index (default: cwd)",
+          "type": "string"
+        },
+        "strategy": {
+          "description": "Indexing strategy (default: lightweight)",
+          "enum": [
+            "lightweight",
+            "on_demand",
+            "per_file",
+            "full"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 300,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "reparse_on_edit",
+    "description": "Incrementally reindex changed files without rebuilding the full graph. Much faster than full rebuild for small edits. Requires persistence feature.",
+    "inputSchema": {
+      "properties": {
+        "file_paths": {
+          "description": "List of changed file paths to reindex",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "file_paths"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 200,
+        "requires_graph": false,
+        "requires_persistence": true,
+        "stability": "experimental"
+      }
+    }
+  },
+  {
+    "name": "iac_query",
+    "description": "Query infrastructure-as-code resources (Terraform, Ansible) and their dependencies from the graph. Requires build_graph first. Accepts bare resource names (aws_instance.web) or canonical IDs (tf:main.tf:aws_instance.web). Returns resource type, dependencies, and dependents. Uses the in-memory graph (ladybug persistence is wired at the runtime layer).",
+    "inputSchema": {
+      "properties": {
+        "depth": {
+          "default": 2,
+          "description": "Max traversal depth (default: 2)",
+          "type": "integer"
+        },
+        "resource_id": {
+          "description": "Resource ID: bare name (aws_instance.web) or canonical (tf:main.tf:aws_instance.web)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "resource_id"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "infra",
+        "estimated_latency_ms": 500,
+        "requires_graph": true,
+        "requires_persistence": true,
+        "stability": "experimental"
+      }
+    }
+  },
+  {
+    "name": "review_pr",
+    "description": "Analyze PR impact: provide changed files, get risk level, impacted files, and breaking changes.",
+    "inputSchema": {
+      "properties": {
+        "files": {
+          "description": "Changed file paths",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "files"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "composite",
+        "estimated_latency_ms": 2000,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "list_view_specs",
+    "description": "List all ViewSpecs visible to the current workspace (built-in + persisted runtime). Returns descriptors (id, title, is_builtin, source). Use read_view_spec to fetch the full 13-field JSON for any spec.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "view",
+        "estimated_latency_ms": 100,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "read_view_spec",
+    "description": "Read a full ViewSpec by id (built-in kebab id like 'overview', 'call-graph'; or runtime UUID). Returns the complete 13-field ViewSpec JSON. Built-in specs synthesize with empty data_source/transform/props — use list_view_specs for discovery.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "description": "ViewSpec id (built-in kebab id or UUID)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "view",
+        "estimated_latency_ms": 100,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable"
+      }
+    }
+  },
+  {
+    "name": "cfg_per_function",
+    "description": "Build the CFG (control flow graph) for one function given adjacency, root, and exits.",
+    "inputSchema": {
+      "properties": {
+        "algorithm_params": {
+          "description": "Per-tool parameters (see conformance corpus)",
+          "type": "object"
+        },
+        "limits": {
+          "description": "Optional PlanLimits override",
+          "type": "object"
+        }
+      },
+      "required": [
+        "algorithm_params"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 5000,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "experimental"
+      }
+    }
+  },
+  {
+    "name": "dominators_cfg",
+    "description": "Compute per-function dominators over a CFG adjacency slice.",
+    "inputSchema": {
+      "properties": {
+        "algorithm_params": {
+          "type": "object"
+        },
+        "limits": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "algorithm_params"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 5000,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "experimental"
+      }
+    }
+  },
+  {
+    "name": "slice_forward",
+    "description": "Forward slice from a (variable, definition_site) criterion.",
+    "inputSchema": {
+      "properties": {
+        "algorithm_params": {
+          "type": "object"
+        },
+        "limits": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "algorithm_params"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 5000,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "experimental"
+      }
+    }
+  },
+  {
+    "name": "slice_backward",
+    "description": "Backward slice from a (variable, use_sites[]) criterion.",
+    "inputSchema": {
+      "properties": {
+        "algorithm_params": {
+          "type": "object"
+        },
+        "limits": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "algorithm_params"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 5000,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "experimental"
+      }
+    }
+  },
+  {
+    "name": "taint_flow",
+    "description": "Forward taint analysis over a DFG (declarative Rust patterns).",
+    "inputSchema": {
+      "properties": {
+        "algorithm_params": {
+          "type": "object"
+        },
+        "limits": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "algorithm_params"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "category": "graph",
+        "estimated_latency_ms": 5000,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "experimental"
+      }
+    }
+  }
+]

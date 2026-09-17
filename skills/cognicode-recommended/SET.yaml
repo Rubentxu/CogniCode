@@ -1,0 +1,21 @@
+apiVersion: cognicode/v1
+kind: SkillSet
+name: cognicode-recommended
+description: |
+  Curated bundle of user-facing CogniCode skills. The default
+  install for any user who wants "CogniCode, just working".
+version: "1.0.0"
+maturity: stable
+homepage: https://github.com/Rubentxu/CogniCode
+authors:
+  - CogniCode Team
+
+# Skills in this set, in load order. Each entry is a SkillSource
+# pointer; resolution rules are documented in WU14.
+includes:
+  - source: skills/cognicode
+  - source: skills/cognicode-mcp
+
+# Skills explicitly NOT included.
+excludes:
+  - skills/cognicode-developer

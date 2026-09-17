@@ -1,0 +1,32 @@
+apiVersion: cognicode/v1
+kind: SkillBundle
+name: cognicode-mcp
+description: |
+  Workflow guide for CogniCode's MCP server — tool selection,
+  graph prerequisites, read-before-write, incremental re-analysis,
+  error recovery. User-facing skill.
+version: "1.0.0"
+maturity: stable
+homepage: https://github.com/Rubentxu/CogniCode
+authors:
+  - CogniCode Team
+
+# This skill depends on the mcp-server plugin being installed.
+# Without it, none of the workflow steps will work.
+requires:
+  - mcp-server
+
+ide_compatibility:
+  - opencode
+  - zcode
+  - claude
+  - codex
+
+scripts: []
+assets: []
+
+# Skill-version compatibility metadata. Decoupled from the runtime
+# binary version. The 73-tool surface has been stable since the
+# 0.95 release; earlier 0.92.x builds had 68 tools.
+compatibility:
+  cognicode_runtime: ">=0.95"
