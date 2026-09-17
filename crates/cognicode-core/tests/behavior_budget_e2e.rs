@@ -636,3 +636,104 @@ async fn e65_b_reactive_analysis_time_exhausts_via_fake_clock() {
         );
     }
 }
+
+// ── e82.1 WU2: budget-exhausted event shape equivalence ─────────────────────────
+
+/// The `behavior.budget_exhausted` event used to be built by the
+/// application-layer `CausalRecorder` helper. It is now produced on the same
+/// domain `IntelligenceEventStore` path as every other runtime event.
+///
+/// This test pins the complete semantic shape (kind, causal edge, payload
+/// summary, and every payload field) so the two constructions cannot silently
+/// diverge.
+#[tokio::test]
+async fn e82_1_budget_exhausted_event_shape_is_unchanged() {
+    use cognicode_core::domain::behaviors::runtime::event_fields;
+    use std::num::NonZeroU64;
+
+    let budget = BudgetDeclaration::effects(NonZeroU64::new(2).unwrap());
+    let log = InMemoryEventLog::new();
+    let behavior_def = BehaviorDefinition::new(
+        "test.four_evidence",
+        "four evidence",
+        BehaviorClass::PureDerivation,
+        [BehaviorEffectKind::RecordEvidence],
+    )
+    .unwrap();
+    let permit =
+        BehaviorAdmission::admit_with_budget(behavior_def, AdmissionSource::Builtin, budget)
+            .unwrap();
+    let context = ExecutionContext::try_new(
+        ExecutionId::new(1),
+        scope(),
+        ActorRef::kernel(),
+        CorrelationId::new("e82-1-shape").unwrap(),
+        None,
+    )
+    .unwrap();
+
+    let mut sink = BufferingSink::default();
+    let clock = FakeClock::default();
+    let outcome = BehaviorRuntime::new(&log, EventTime::from_millis(1))
+        .run(&permit, &context, &FourEvidenceBehavior, &mut sink, &clock)
+        .await
+        .unwrap();
+
+    assert!(outcome.has_budget_exhaustions());
+    let (exhaustion, event_id) = &outcome.budget_exhaustions[0];
+    let event = log
+        .by_id(&ws(), *event_id)
+        .await
+        .unwrap()
+        .expect("budget-exhausted event present");
+
+    // Kind.
+    assert_eq!(event.kind.as_str(), "behavior.budget_exhausted");
+
+    // Causal edge is behavior.started, NOT policy.behavior_output_rejected.
+    let cause = event
+        .caused_by
+        .expect("budget_exhausted is caused by behavior.started");
+    assert_eq!(cause, outcome.started_event);
+    let started = log.by_id(&ws(), cause).await.unwrap().expect("started event");
+    assert_eq!(started.kind.as_str(), "behavior.started");
+
+    // Scope carried verbatim.
+    assert_eq!(event.scope.workspace, ws());
+
+    // Payload summary.
+    let summary = event
+        .payload
+        .inline_payload()
+        .map(|p| p.summary().to_string())
+        .expect("inline payload");
+    assert_eq!(summary, "budget exhausted");
+
+    // Payload fields: exactly the documented six, with the documented values.
+    let fields = event_fields(&event);
+    assert_eq!(
+        fields.len(),
+        6,
+        "payload must carry exactly six fields, got {fields:?}"
+    );
+    let remaining = exhaustion.remaining.to_string();
+    let attempted = exhaustion.attempted.to_string();
+    assert_eq!(
+        fields.get("behavior_id").map(String::as_str),
+        Some("test.four_evidence")
+    );
+    assert_eq!(
+        fields.get("effective_class").map(String::as_str),
+        Some(outcome.effective_class.name())
+    );
+    assert_eq!(
+        fields.get("kind").map(String::as_str),
+        Some(exhaustion.kind.name())
+    );
+    assert_eq!(fields.get("remaining").map(String::as_str), Some(remaining.as_str()));
+    assert_eq!(fields.get("attempted").map(String::as_str), Some(attempted.as_str()));
+    assert_eq!(
+        fields.get("execution_id").map(String::as_str),
+        Some(context.execution_id.to_string().as_str())
+    );
+}

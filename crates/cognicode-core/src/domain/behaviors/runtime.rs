@@ -41,7 +41,6 @@
 use super::admission::BehaviorPermit;
 use super::class::{BehaviorAuthorityPolicy, BehaviorClass, BehaviorEffectKind};
 use super::ports::Clock;
-use crate::application::intelligence_log::CausalRecorder;
 use crate::domain::budgets::{self, BudgetAuthorizer, BudgetExhausted, BudgetState};
 use crate::domain::execution::ExecutionContext;
 use crate::domain::intelligence_log::event::{EventTime, IntelligenceEvent, NewIntelligenceEvent};
@@ -407,27 +406,26 @@ impl<'a> BehaviorRuntime<'a> {
                     )
                     .await?;
 
-                // Emit behavior.budget_exhausted caused by started_event (not rejection_event).
-                // Uses CausalRecorder to consume ExecutionContext as a unit.
-                let mut rec = CausalRecorder::new(
-                    self.log,
-                    context.scope.workspace.clone(),
-                    actor.clone(),
-                    context.correlation.clone(),
-                    self.now,
-                );
-                let exhaustion_event = rec
-                    .record_behavior_budget_exhausted(
+                // Emit behavior.budget_exhausted caused by started_event (not rejection_event),
+                // through the same domain IntelligenceEventStore path as every other runtime
+                // event. No application-layer helper is involved: the domain port is already
+                // the correct abstraction for this capability.
+                let exhaustion_event = self
+                    .append(
                         context,
-                        started_event,
-                        admitted.id().as_str(),
-                        class,
-                        exhaustion.kind,
-                        exhaustion.remaining,
-                        exhaustion.attempted,
+                        &actor,
+                        EventKinds::behavior_budget_exhausted(),
+                        budget_payload(&[
+                            ("behavior_id", admitted.id().as_str().to_string()),
+                            ("effective_class", class.name().to_string()),
+                            ("kind", exhaustion.kind.name().to_string()),
+                            ("remaining", exhaustion.remaining.to_string()),
+                            ("attempted", exhaustion.attempted.to_string()),
+                            ("execution_id", context.execution_id.to_string()),
+                        ])?,
+                        Some(started_event),
                     )
-                    .await
-                    .map_err(BehaviorRuntimeError::Log)?;
+                    .await?;
 
                 outcome.rejection_events.push(rejection_event);
                 outcome.rejected.push(violation);
