@@ -311,5 +311,42 @@ phases:
       governed; archive-manifest landed together with e68+e69. MANDATORY STOP
       after e70 per the authorized envelope — M9 (Fork / Trial / Promote) MUST
       NOT be opened automatically without strategic architecture review.
+      e74-lsi-portable-runtime-distribution archived (M14 foundation: native-first
+      for Linux/macOS/Windows). Six WUs committed separately: WU1 PlatformAdapter
+      seam (replaces scattered cfg(unix)/cfg(not(unix))), WU2 deterministic
+      bundle resolution (BundleManifest::Platform is canonical, no wrong-platform
+      fallback; scripts/check-release-matrix.sh enforces coherence), WU3 native
+      release matrix (5 platform lanes, install-smoke over 3 binaries), WU4
+      cogh doctor capability discovery (4 dimensions: native/optional/external/self),
+      WU5 packaging spike (cargo-dist REJECTED — native per-lane packaging in
+      e75+), WU6 cross-platform UAT plan + evidence script. macOS/Windows lanes
+      have explicit waivers (no native runner in CI). Closure: degraded-but-
+      governed; archive-manifest + WU4-followup fix + traceability doc +
+      closure-authorization landed together. NEXT: e75 (portable execution).
+      e75-lsi-portable-execution archived (M14 portable execution contract +
+      host-execution adapters). WU0 execution baseline ownership map (no code),
+      WU1 portable execution contract (ExecutionBackend trait + ExecutionSpec +
+      ExecutionOutcome; backend selected by policy, NOT silent fallback), WU2
+      NativeProcessBackend (host execution; BackendUnavailable is a typed error),
+      WU3 PodmanBackend + host discovery (Linux direct / macOS machine / Windows
+      WSL), WU4 workspace/mount normalization (canonical knowledge preservation),
+      WU5 wire ExecutionBackend into TrialExecutor via trial_runtime (no
+      parallel verdict — e69 PolicyGate remains the gate), WU6 portable-execution
+      UAT with Linux oracle + macOS/Windows waivers. Closure: degraded-but-
+      governed; archive-manifest landed together with e76. NEXT: e76
+      (self-hosting validation).
+      e76-lsi-self-hosting-validation archived (M14 self-hosting validation:
+      CogniCode analyzes itself). WU1 deterministic self-model baseline (stable
+      across rebuilds, byte-identical for same input), WU2 sealed prediction vs
+      observation scoring (prediction committed before observation), WU3
+      controlled mutation corpus with pre-declared outcomes (7+ mutations:
+      add/remove/rename function, line reorder, BOM/CR-LF, partial divergence),
+      WU4 platform equivalence + historical replay bootstrap. Acceptance: 66
+      self_hosting + 89 portable_execution = 155 tests, 271 pass / 0 fail on
+      scoped regression; 0 clippy findings on touched paths. HONEST LIMITATIONS:
+      macOS/Windows UAT waived (Linux-only runner); e76 closure is structural
+      + shape-verified (compare_replay is todo!() by design — runtime closure
+      is a separate follow-up). STRATEGIC STOP after e76: M9 (Fork / Trial /
+      Promote) requires explicit user authorization before opening.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
