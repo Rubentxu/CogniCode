@@ -66,6 +66,11 @@ pub mod services;
 // `portable_execution::content_digest` for SHA-256 hashing.
 #[cfg(feature = "evidence-kernel")]
 pub mod self_hosting;
+// e81 — historical replay + immutable OPTIMIZE/CONFIRM dataset split (M13).
+// Gated by `evidence-kernel` for the same reason as `self_hosting`: it imports
+// `portable_execution::content_digest` (SHA-256) and the e76 replay foundation.
+#[cfg(feature = "evidence-kernel")]
+pub mod historical_replay;
 // e72 WU1 — ChangeProposal (M9). Intent-only, no authority. Creation !=
 // authority. Author class (Human/Plugin/LlmAgent) is recorded for e73's
 // adversarial gate; the proposal itself does not grant apply power.
