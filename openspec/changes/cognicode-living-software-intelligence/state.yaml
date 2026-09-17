@@ -401,6 +401,40 @@ phases:
       subsystems. Closure reference: corrigendum.md in
       openspec/changes/e77-1-canonical-evidence-grounding/. The original e77 archive
       and commits are unchanged.
+      e79-lsi-ai-foundation-readonly-agents archived (M11 first slice, read-only).
+      The AI foundation is bounded to read-only investigation:
+        domain::ai = {InvestigationFrame, InvestigationRequest, LlmResponse,
+        Hypothesis, Critique, LlmPort} — provider-neutral; provider/model are
+        opaque String identifiers, no OpenAI/Anthropic/Ollama SDK in core.
+        application::ai = {FakeLlmPort (only e79 LlmPort impl; deterministic,
+        keyed by (frame_id, request_digest)), SemanticMiner (Vec<MinerOutput>),
+        FindingCritic (Vec<Critique>), boundary_tests (WU6)}.
+      Authority boundary audited: no LlmResponse -> Fact / Evidence / Gated
+      Finding / admitted ArchitectureConstraint / PromotionPermit / source or
+      config apply path. No import of domain::ai or application::ai from any
+      canonical write path (architecture/admission, change_tracking,
+      fact_bridge, promotion_authority). The three existing LLM-rejection
+      boundaries from e77.1 (Fact::new, InMemoryFactStore::commit_batch,
+      EvidenceStore::append_batch) are REUSED, not duplicated. Real provider
+      adapters and the Fix Agent remain gated by DEBT-SDDK-003.
+      Verification: 21 domain::ai + 25 application::ai = 46 AI tests pass;
+      nearby subsystems (architecture, findings, readset) 7+16+112+21+12=168
+      tests pass; cargo build --workspace GREEN. full cargo test --lib NOT
+      EXECUTED (DEBT-SDDK-005 futex stall — surgical subsystem slices are the
+      working contract under the governed degraded verification mode).
+      Implementation commit 14a3a721 (3383 insertions, 14 files); archive
+      artifact = explore-report.md + archive-manifest.md + this state entry.
+      Closure pattern: D3-DEFER administrative (same as e67..e77.1). The
+      closure archive semantics are NOT equivalent to a successful normal
+      orchestrator lifecycle.
+      Umbrella AI task mapping (12.1..12.6): 12.1 InvestigationFrame
+      SATISFIED, 12.2 LlmPort SATISFIED, 12.3 Semantic Miner prototype
+      SATISFIED, 12.4 Finding Critic prototype SATISFIED, 12.5 Fix Agent
+      NOT STARTED (e80), 12.6 Read/tool lineage + security PARTIALLY
+      SATISFIED by read-only surface (the read path is bounded and proven
+      by WU6 boundary tests; the write-side half — patches, ChangeProposal,
+      automated authorship, PromotionPermit minting — belongs to e80 and is
+      NOT satisfied here).
       NEXT:
         e78 (Pack Ecosystem): DEFERRED per consumer-count checkpoint (2026-09-17,
         post e77 WU6 closure). Confirmed consumers of the architecture module:
@@ -410,16 +444,22 @@ phases:
         manifest surface, (b) another extension pack (e.g. security packs) needs
         capability advertisement, (c) a third-party plugin reaches the admission
         surface.
-        e79 (AI Foundation + read-only agents): NEXT after e77.1. With the e77.1
-        corrigendum in place, e79 can introduce LLM-generated hypotheses that flow
-        through the canonical evidence pipeline without inheriting the synthetic
-        minting path. EvidenceKind::Hypothesis already exists (class D, lowest);
-        canonical writer will route hypotheses through the same EvidenceLookup
-        as architecture sources, requiring a real fact anchor before the verifier
-        accepts them.
-        e80 (AutomatedAuthorPolicy + Fix Agent): pending (M11 unblocker).
-        M11 (AI Investigation / Critic / Fix Agent): BLOCKED until
-        AutomatedAuthorPromotionPolicy lands. e73's permit/promotion surface is
-        the substrate; the policy is the seam.
+        e79 (AI Foundation + read-only agents): ARCHIVED 2026-09-17 (commit
+        14a3a721, archive-manifest.md). Read-only foundation closed: 12.1
+        InvestigationFrame, 12.2 LlmPort, 12.3 Semantic Miner prototype, 12.4
+        Finding Critic prototype are SATISFIED. 12.6 read lineage + security
+        is PARTIALLY SATISFIED by read-only surface; write-side (patches,
+        ChangeProposal, automated authorship, PromotionPermit minting)
+        remains for e80. 12.5 Fix Agent NOT STARTED. M11 read-only AI
+        foundation is GREEN; M11 BLOCKED for write/authority remains.
+        e80 (AutomatedAuthorPolicy + Fix Agent): BLOCKED pending explicit
+        strategic authorization. The review must answer: what additional
+        authority is required for a proposal whose author is LlmAgent or
+        Plugin, even when all its tests and gates have passed? e73's
+        permit/promotion surface is the substrate; the policy is the seam.
+        M11 (AI Investigation / Critic / Fix Agent): write-half still
+        BLOCKED until AutomatedAuthorPromotionPolicy lands (e80).
+        e73's permit/promotion surface is the substrate; the policy is the
+        seam.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
