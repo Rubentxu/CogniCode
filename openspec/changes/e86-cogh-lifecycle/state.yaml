@@ -33,7 +33,7 @@ phases:
   spec: {status: done, artifact: "specs/lifecycle-resolver/spec.md (10 reqs / 10 scen) + specs/lifecycle-journal/spec.md (5 reqs / 6 scen) + specs/lifecycle-draft-safety/spec.md (3 reqs / 4 scen)", date: 2026-09-17}
   design: {status: done, artifact: "design.md — D1 single resolver / D2 reqwest blocking + 60s / D3 draft-first as one branch / D4 update = resolve + download + run_install / D5 journal path / D6 reuse RollbackJournal / D7 commit-time write / D8 CLI flags", date: 2026-09-17}
   tasks: {status: done, artifact: "tasks.md — 11 tasks (T1 InstallerError / T2 RollbackJournal JSON / T3 lifecycle_journal module / T4 commit writes journal / T5 lifecycle_resolver module / T6 wire update / T7 cogh rollback / T8 CLI flags / T9 ResolverFixture / T10 E2E / T11 exit gates); ~700-900 LOC; ~22 new tests; 8 files touched", date: 2026-09-17}
-  apply: {status: pending}
+  apply: {status: in_progress, artifact: "T1-T5 done (InstallerError variants, RollbackJournal WroteTracker + JSON, lifecycle_journal module, commit writes journal, lifecycle_resolver module); 165 cogh tests pass (was 147 + 18 new); commit 2009a681 on main", date: 2026-09-17}
   verify: {status: pending}
   archive: {status: pending}
 
