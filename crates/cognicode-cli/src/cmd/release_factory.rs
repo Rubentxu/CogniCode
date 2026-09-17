@@ -491,7 +491,6 @@ pub fn verify_release(
     })
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -383,7 +383,6 @@ pub struct ReleaseInventory {
 }
 
 impl ReleaseInventory {
-
     pub fn for_platform(&self, platform: Platform) -> impl Iterator<Item = &ProducedArtifact> {
         self.artifacts
             .iter()

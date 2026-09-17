@@ -94,8 +94,10 @@ jobs:
           RELEASE=target/release/cognicode-release
           mkdir -p dist
           # The published product surface is the contract's, not this script's.
-          for component in $("$RELEASE" plan --platform ${{ matrix.platform }} --version "$VERSION" \
-                              | sed -E 's/-'"$VERSION"'-[^/]+\.tar\.gz$//'); do
+          # `plan` prints the canonical filenames; strip the derived
+          # `-{version}-{token}.tar.gz` suffix to recover the component name.
+          for filename in $("$RELEASE" plan --platform ${{ matrix.platform }} --version "$VERSION"); do
+            component="${filename%-$VERSION-*}"
             filename=$("$RELEASE" name --component "$component" \
                        --platform ${{ matrix.platform }} --version "$VERSION")
             stage=$(mktemp -d)
@@ -210,8 +212,13 @@ jobs:
           set -euo pipefail
           TAG="${{ steps.v.outputs.tag }}"
           NOTES=$(bash scripts/generate-release-notes.sh "" "$TAG" || echo "CogniCode $TAG")
-          gh release create "$TAG" --draft --title "CogniCode $TAG" --notes "$NOTES" \
-            --target "$GITHUB_SHA" || gh release view "$TAG" >/dev/null
+          # The tag already exists (it triggered this run), so do NOT pass
+          # --target: that flag is for creating a missing tag.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists; reusing it"
+          else
+            gh release create "$TAG" --draft --title "CogniCode $TAG" --notes "$NOTES"
+          fi
 
       - name: Upload payload artifacts
         env:
