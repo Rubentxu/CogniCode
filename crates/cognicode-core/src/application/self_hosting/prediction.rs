@@ -191,18 +191,29 @@ impl ScoreMatrix {
 /// Compare a sealed prediction to a set of observations and
 /// produce a [`ScoreMatrix`].
 ///
-/// Algorithm:
-/// 1. Index observations by `id`.
-/// 2. For each expected observation:
-///    - if observed present → TP,
-///    - if observed absent (or missing) → FN (the prediction was
-///      not borne out by reality).
-/// 3. For each observation not in the expected set:
-///    - if observation present → FP (unexpected signal),
-///    - else → TN.
-/// 4. Anything that does not appear in either side is `unknown`
-///    (this should be empty if prediction and observation sets are
-///    complete; we surface it for transparency).
+/// Algorithm (the documented truth table, per expectation):
+///
+/// ```text
+/// expected_present  observed   result
+/// true              true       TP
+/// true              false      FN
+/// true              missing    FN   (a missing observation is absent)
+/// false             true       FP   (an unexpected signal)
+/// false             false      TN
+/// false             missing    TN
+/// ```
+///
+/// Then every observation absent from the expected set is counted:
+/// present → FP, absent → TN.
+///
+/// The `(false, true)` cell was previously counted as TP because the
+/// implementation matched on the observation alone. That contradicted the
+/// documented contract and hid real violations of "this MUST NOT fire"
+/// expectations; it is corrected here (e82.2).
+///
+/// `unknown` remains 0 from this function. A case with no recorded observation
+/// at all is represented by e81's `ReplayCaseOutcome::Incomplete`, not by an
+/// invented unknown count.
 pub fn score(prediction: &SealedPrediction, observations: &[Observation]) -> ScoreMatrix {
     use std::collections::HashMap;
     let obs_index: HashMap<&str, bool> =
@@ -211,23 +222,12 @@ pub fn score(prediction: &SealedPrediction, observations: &[Observation]) -> Sco
     let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
     for exp in &prediction.expected {
         seen.insert(exp.id.as_str());
-        match obs_index.get(exp.id.as_str()) {
-            Some(true) => matrix.true_positive += 1,
-            Some(false) => {
-                if exp.expected_present {
-                    matrix.false_negative += 1;
-                } else {
-                    matrix.true_negative += 1;
-                }
-            }
-            None => {
-                // No observation at all — treat as absent.
-                if exp.expected_present {
-                    matrix.false_negative += 1;
-                } else {
-                    matrix.true_negative += 1;
-                }
-            }
+        let observed = obs_index.get(exp.id.as_str()).copied();
+        match (exp.expected_present, observed) {
+            (true, Some(true)) => matrix.true_positive += 1,
+            (true, Some(false)) | (true, None) => matrix.false_negative += 1,
+            (false, Some(true)) => matrix.false_positive += 1,
+            (false, Some(false)) | (false, None) => matrix.true_negative += 1,
         }
     }
     for obs in observations {
@@ -383,5 +383,83 @@ mod tests {
                 "self_hosting::prediction code (non-test, non-doc) must not leak identifier: {forbidden}"
             );
         }
+    }
+
+    // ── e82.2: scorer truth table ────────────────────────────────────────
+
+    /// Score a single (expectation, observation) cell.
+    fn cell(expected_present: bool, observed: Option<bool>) -> ScoreMatrix {
+        let prediction = SealedPrediction::seal("truth-table", vec![exp("x", expected_present)]);
+        let observations: Vec<Observation> = match observed {
+            Some(present) => vec![obs("x", present)],
+            None => Vec::new(),
+        };
+        score(&prediction, &observations)
+    }
+
+    fn counts(matrix: &ScoreMatrix) -> (usize, usize, usize, usize) {
+        (
+            matrix.true_positive,
+            matrix.false_positive,
+            matrix.false_negative,
+            matrix.true_negative,
+        )
+    }
+
+    #[test]
+    fn e82_2_score_truth_table_is_exactly_the_documented_contract() {
+        // expected=true, observed=true -> TP
+        assert_eq!(counts(&cell(true, Some(true))), (1, 0, 0, 0));
+        // expected=true, observed=false -> FN
+        assert_eq!(counts(&cell(true, Some(false))), (0, 0, 1, 0));
+        // expected=false, observed=true -> FP (the corrected cell)
+        assert_eq!(counts(&cell(false, Some(true))), (0, 1, 0, 0));
+        // expected=false, observed=false -> TN
+        assert_eq!(counts(&cell(false, Some(false))), (0, 0, 0, 1));
+    }
+
+    #[test]
+    fn e82_2_missing_observation_is_treated_as_absent() {
+        // expected=true, observation missing -> FN
+        assert_eq!(counts(&cell(true, None)), (0, 0, 1, 0));
+        // expected=false, observation missing -> TN
+        assert_eq!(counts(&cell(false, None)), (0, 0, 0, 1));
+    }
+
+    #[test]
+    fn e82_2_unexpected_present_observation_is_a_false_positive() {
+        let prediction = SealedPrediction::seal("t", vec![exp("known", true)]);
+        let observations = vec![obs("known", true), obs("surprise", true)];
+        assert_eq!(counts(&score(&prediction, &observations)), (1, 1, 0, 0));
+    }
+
+    #[test]
+    fn e82_2_truth_table_is_order_invariant() {
+        let a = SealedPrediction::seal("t", vec![exp("x", false), exp("y", true)]);
+        let b = SealedPrediction::seal("t", vec![exp("y", true), exp("x", false)]);
+        let observations = vec![obs("x", true), obs("y", true)];
+        assert_eq!(score(&a, &observations), score(&b, &observations));
+        let reversed = vec![obs("y", true), obs("x", true)];
+        assert_eq!(score(&a, &observations), score(&a, &reversed));
+    }
+
+    #[test]
+    fn e82_2_duplicate_observation_ids_have_last_wins_semantics() {
+        // CHARACTERIZED, not changed: `score` indexes observations into a map
+        // keyed by id, so the LAST duplicate wins. That is deterministic (not
+        // order-random), but it is a silent collapse. Rejecting duplicates
+        // would change the signature and widen e82.2's scope, so it is pinned
+        // here and recorded as a limitation instead.
+        let prediction = SealedPrediction::seal("t", vec![exp("x", true)]);
+        let present_then_absent = vec![obs("x", true), obs("x", false)];
+        let absent_then_present = vec![obs("x", false), obs("x", true)];
+        assert_eq!(
+            counts(&score(&prediction, &present_then_absent)),
+            (0, 0, 1, 0)
+        );
+        assert_eq!(
+            counts(&score(&prediction, &absent_then_present)),
+            (1, 0, 0, 0)
+        );
     }
 }
