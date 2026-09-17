@@ -1,0 +1,72 @@
+cycle: e84-cognicode-distribution-artifact-contract
+title: Distribution Reality & Artifact Contract
+kind: characterization-and-contract
+status: done
+stop_for_review_before: e85
+
+non_goals:
+  - Backstage / Control Plane
+  - new MCP tools, new analysis features
+  - pack ecosystem, AI agents, architecture UX
+  - IDE adapter expansion
+  - redesign of CogniCode core
+  - a generic version manager
+  - publishing a real release (e85)
+  - lifecycle implementation (e86)
+  - channels implementation (e87)
+  - Linux UAT (e88)
+
+work_units:
+  WU0: {task: characterize current distribution, state: done, artifact: wu0-distribution-characterization.md}
+  WU1: {task: prove producer/consumer mismatch, state: done, artifact: wu1-producer-consumer-mismatch.md, mismatches: 7}
+  WU2: {task: canonical release vocabulary, state: done, artifact: wu2-canonical-release-contract.md}
+  WU3: {task: bootstrap vs lifecycle, state: done, artifact: wu3-bootstrap-vs-lifecycle.md}
+  WU4: {task: revisit ADR-035, state: proposed_local, artifact: wu4-adr-035-revisit.md}
+  WU5: {task: evaluate release factory, state: done, artifact: wu5-release-factory-evaluation.md}
+  WU6: {task: evaluate installation channels, state: done, artifact: wu6-installation-channels-matrix.md}
+  WU7: {task: installation ownership, state: done, artifact: wu7-installation-ownership.md}
+  WU8: {task: release manifest generation, state: done, artifact: wu8-release-manifest-generation.md}
+  WU9: {task: support tiers, state: done, artifact: wu9-support-tiers.md}
+  WU10: {task: no product feature work, state: confirmed}
+
+key_evidence:
+  - all_gh_releases_are_drafts: true
+  - placeholder_digests: 15
+  - default_profile_resolves_to_zero_components: true
+  - include_kinds_is_inert: true
+  - embedded_manifest_is_bundles_v0.95.0: true
+
+decisions:
+  dist:      KEEP_CUSTOM_RELEASE        # confirms existing ADR-052 (ACEPTADO); no new ADR
+  mise:      primary_layer0_channel
+  install_sh: primary
+  aqua:      secondary
+  homebrew:  secondary
+  nix:       secondary
+  asdf:      compatibility_only
+  cargo_binstall: compatibility_only
+  sdkman:    not_initially_justified
+  proto:     not_initially_justified
+
+contradicted_prior_claims:
+  - cargo-binstall does not work from our tarballs as-is (needs [package.metadata.binstall] + crates.io publish)
+  - SDKMAN is not JVM-only and can ship arbitrary multiplatform binaries (real blocker is vendor onboarding)
+
+confirmations_of_prior_claims:
+  - mise native github backend, no plugin, autodetect, checksums, mise.lock, attestations
+  - mise aqua backend consumes aqua definitions
+  - asdf 0.16 Go rewrite removed `global`/`local`/`update`
+  - aqua generates definitions from a GitHub release; policy-as-code + cosign + SLSA + minisign + attestations
+
+cross_cutting_finding: release publishes tarballs only; no SHA256SUMS and no attestations -> every channel's verification story is conditional on the e84 contract
+
+additional_finding: scripts/check-release-matrix.sh enforces matrix<->Platform coherence but is never invoked by justfile or CI
+
+unverified:
+  - mise autodetection against our non-standard tokens without asset_pattern
+  - cargo crate publish status
+  - homebrew-core acceptance of a prebuilt-binary formula
+  - asdf Windows support
+  - dist build-feature parity / archive-name parity / byte-reproducibility
+
+next: e85 (release factory / real artifact publishing) -- AWAITING REVIEW
