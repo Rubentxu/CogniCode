@@ -348,5 +348,47 @@ phases:
       + shape-verified (compare_replay is todo!() by design — runtime closure
       is a separate follow-up). STRATEGIC STOP after e76: M9 (Fork / Trial /
       Promote) requires explicit user authorization before opening.
+      === M9 RECONCILIATION (2026-09-17, post-hoc) ===
+      M9 status, reconciled:
+        M9 implementation        CLOSED (e71 + e72 + e73 code in main; archive
+                                 manifests landed in this umbrella's change dir)
+        M9 technical verification GREEN
+        M9 strategic decision    PASSED by explicit user directive 2026-09-17
+        ADR-046 status           remains PROPOSED until its own acceptance /
+                                 evidence requirements are satisfied (spike/UAT
+                                 evidence NOT formally registered; the rule in
+                                 ADR-046 § "Validation before ACCEPTED" stands)
+        administrative closure   D3-DEFER for e71/e72/e73
+      M9 strategic continuation was explicitly approved by the user after
+      implementation review.
+      This approval is a roadmap/governance decision and MUST NOT be interpreted
+      as satisfying ADR-046's independent acceptance/evidence requirements.
+      ADR-046 remains PROPOSED until those requirements are separately demonstrated.
+      e71-lsi-software-world-fork (M9.1) archived: SoftwareWorld foundation +
+      fork() + world-diff wiring. 9 commits total across M9 split per cycle
+      (3 WUs in e71, 3 in e72, 3 in e73). 22 files, ~4200 insertions.
+      e72-lsi-trial-execution (M9.2) archived: ChangeProposal (intent-only,
+      creation != authority) + TrialEvidence (lineage envelope over e68/e69/e70,
+      no parallel verdict) + TrialExecutor trait + DefaultTrialExecutor
+      (reuses e69 PolicyGate).
+      e73-lsi-promotion-gate (M9.3) archived: PromotionEvaluation three-way
+      (base/candidate/current, fail-closed) + PromotionPermit + apply fail-closed +
+      adversarial end-to-end pipeline gate (proposal→trial→evaluation→permit→
+      apply).
+      All three cycles: formal SDDK lifecycle was never instantiated; no fake
+      ledger row; no fabricated receipts; D3-DEFER administrative closure;
+      archive semantics NOT equivalent to successful normal orchestrator closure.
+      Current strategic checkpoint = post-e76, post-M9-reconciliation.
+      NEXT:
+        e77-lsi-executable-architecture (A-lite evolutive per user directive 2026-09-17):
+        Architecture intent → ConstraintCandidate → explicit admission/approval →
+        ArchitectureConstraint → graph/fact evaluation → grounded
+        ArchitectureDriftFinding → EvidenceBundle / PolicyGate. ADR text alone
+        has ZERO execution/gating authority. Reuse e76 self-hosting as consumer
+        via controlled architectural mutations. DO NOT open generalized Packs
+        (e78) yet — at least 2 real consumers required before authorizing.
+        M11 (AI Investigation / Critic / Fix Agent): BLOCKED until
+        AutomatedAuthorPromotionPolicy lands. e73's permit/promotion surface is
+        the substrate; the policy is the seam.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
