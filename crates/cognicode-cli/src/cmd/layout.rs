@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 
+use crate::platform_adapter;
 use crate::Cli;
 
 // ===== Install root resolution =====
@@ -267,25 +268,74 @@ pub fn cmd_current(home: &CognicodeHome) -> Result<()> {
     Ok(())
 }
 
-pub fn cmd_latest(home: &CognicodeHome, plugin: Option<String>, all: bool) -> Result<()> {
+pub fn cmd_latest(
+    home: &CognicodeHome,
+    plugin: Option<String>,
+    all: bool,
+    channel: crate::lifecycle_resolver::Channel,
+    base_url: Option<String>,
+    staging: Option<PathBuf>,
+    json: bool,
+) -> Result<()> {
+    let _ = (all, plugin);
+    let req = crate::lifecycle_resolver::ResolveRequest {
+        host_platform: platform_adapter::detect_host_platform(),
+        channel,
+        requested_version: "latest".to_string(),
+        base_url,
+        staging_dir: staging,
+    };
+    let resolved = crate::lifecycle_resolver::resolve_release(&req)
+        .map_err(|e| anyhow!("failed to resolve latest release: {e}"))?;
     let _ = home;
-    if all {
-        println!("(latest --all: not yet implemented)");
-    } else if let Some(p) = plugin {
-        println!("(latest {}: not yet implemented)", p);
+    if json {
+        let body = crate::lifecycle_resolver::resolved_to_json(&resolved)
+            .map_err(|e| anyhow!("serialise json: {e}"))?;
+        println!("{body}");
     } else {
-        println!("(latest: pass --all or a plugin name)");
+        println!("{}", resolved.tag);
     }
     Ok(())
 }
 
-pub fn cmd_update(home: &CognicodeHome, plugin: Option<String>) -> Result<()> {
-    let _ = home;
-    if let Some(p) = plugin {
-        println!("(update {}: not yet implemented)", p);
-    } else {
-        println!("(update all: not yet implemented)");
+pub fn cmd_update(
+    home: &CognicodeHome,
+    plugin: Option<String>,
+    channel: crate::lifecycle_resolver::Channel,
+    base_url: Option<String>,
+    staging: Option<PathBuf>,
+    profile: String,
+    dry_run: bool,
+) -> Result<()> {
+    let _ = plugin;
+    let req = crate::lifecycle_resolver::ResolveRequest {
+        host_platform: platform_adapter::detect_host_platform(),
+        channel,
+        requested_version: "latest".to_string(),
+        base_url,
+        staging_dir: staging,
+    };
+    let resolved = crate::lifecycle_resolver::resolve_release(&req)
+        .map_err(|e| anyhow!("failed to resolve latest release: {e}"))?;
+
+    if dry_run {
+        println!("would install {} from {}", resolved.version, resolved.manifest_url);
+        return Ok(());
     }
+
+    // Download the manifest to ~/.cognicode/bundle.yaml.
+    let bundle_yaml_path = home.bundle_yaml_path();
+    let manifest_yaml = download_to_string(&resolved.manifest_url)
+        .map_err(|e| anyhow!("download bundle manifest from {}: {e}", resolved.manifest_url))?;
+    if let Some(parent) = bundle_yaml_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create bundle dir {}", parent.display()))?;
+    }
+    std::fs::write(&bundle_yaml_path, &manifest_yaml)
+        .with_context(|| format!("write bundle manifest {}", bundle_yaml_path.display()))?;
+
+    // Delegate to the existing single install pipeline.
+    let _manifest_path = crate::install::run_install(home, &profile)?;
     Ok(())
 }
 
@@ -443,9 +493,39 @@ pub(crate) mod test_support {
     }
 }
 
+/// Download a manifest URL to a string. Used by `cmd_update` after the
+/// resolver has resolved a `ResolvedRelease`. Uses `reqwest::blocking` with a
+/// 60s timeout, matching the resolver's policy (e86 D2).
+fn download_to_string(url: &str) -> std::result::Result<String, String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .user_agent(concat!("cogh/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| format!("build http client: {e}"))?;
+    let mut req = client.get(url);
+    if let Ok(token) = std::env::var("COGNICODE_GITHUB_TOKEN") {
+        if !token.is_empty() {
+            req = req.bearer_auth(token);
+        }
+    }
+    let resp = req.send().map_err(|e| format!("GET {url}: {e}"))?;
+    let status = resp.status();
+    let body = resp.text().map_err(|e| format!("read body: {e}"))?;
+    if !status.is_success() {
+        return Err(format!(
+            "HTTP {status} — body: {}",
+            &body[..body.len().min(200)]
+        ));
+    }
+    Ok(body)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lifecycle_resolver::Channel;
+    use crate::release_contract::bundle_manifest_filename;
+    use crate::bundle_manifest::Platform;
     use serial_test::serial;
 
     #[test]
@@ -527,5 +607,105 @@ mod tests {
         home.init().unwrap();
         assert!(home.is_initialized());
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // ----- e86 T6: cmd_latest and cmd_update end-to-end (with staging) -----
+
+    fn staging_release_json(version: &str, asset_name: &str) -> String {
+        format!(
+            r#"{{
+  "tag_name": "v{version}",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-09-17T19:07:59Z",
+  "html_url": "https://github.com/Rubentxu/CogniCode/releases/tag/v{version}",
+  "assets": [
+    {{ "name": "{asset_name}", "browser_download_url": "https://example.invalid/{asset_name}" }}
+  ]
+}}"#
+        )
+    }
+
+    #[test]
+    #[serial]
+    fn cmd_latest_with_staging_prints_tag() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let staging_dir = tempfile::TempDir::new().unwrap();
+        let asset_name = bundle_manifest_filename("0.95.0", Platform::LinuxX86_64);
+        std::fs::write(
+            staging_dir.path().join("releases.json"),
+            staging_release_json("0.95.0", &asset_name),
+        )
+        .unwrap();
+
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        cmd_latest(
+            &home,
+            None,
+            false,
+            Channel::Stable,
+            None,
+            Some(staging_dir.path().to_path_buf()),
+            false,
+        )
+        .expect("cmd_latest must succeed with a valid staging fixture");
+    }
+
+    #[test]
+    #[serial]
+    fn cmd_latest_with_staging_json_prints_object() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let staging_dir = tempfile::TempDir::new().unwrap();
+        let asset_name = bundle_manifest_filename("0.95.0", Platform::LinuxX86_64);
+        std::fs::write(
+            staging_dir.path().join("releases.json"),
+            staging_release_json("0.95.0", &asset_name),
+        )
+        .unwrap();
+
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        cmd_latest(
+            &home,
+            None,
+            false,
+            Channel::Stable,
+            None,
+            Some(staging_dir.path().to_path_buf()),
+            true,
+        )
+        .expect("cmd_latest --json must succeed");
+    }
+
+    #[test]
+    #[serial]
+    fn cmd_update_dry_run_with_staging_does_not_write_bundle_yaml() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let staging_dir = tempfile::TempDir::new().unwrap();
+        let asset_name = bundle_manifest_filename("0.95.0", Platform::LinuxX86_64);
+        std::fs::write(
+            staging_dir.path().join("releases.json"),
+            staging_release_json("0.95.0", &asset_name),
+        )
+        .unwrap();
+
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        cmd_update(
+            &home,
+            None,
+            Channel::Stable,
+            None,
+            Some(staging_dir.path().to_path_buf()),
+            "core".to_string(),
+            true, // dry-run
+        )
+        .expect("cmd_update --dry-run must succeed");
+
+        // The dry-run path must NOT have downloaded or written anything.
+        let bundle_path = home.bundle_yaml_path();
+        assert!(
+            !bundle_path.exists(),
+            "dry-run must not write bundle.yaml, found {}",
+            bundle_path.display()
+        );
     }
 }

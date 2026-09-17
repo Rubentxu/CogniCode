@@ -6,6 +6,7 @@
 // See docs/adr/ADR-034-cognicode-distribution-package.md.
 
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 #[path = "../cmd/bundle_manifest.rs"]
 mod bundle_manifest;
@@ -38,7 +39,7 @@ mod lockfile;
 #[path = "../cmd/manifest.rs"]
 mod manifest;
 #[path = "../cmd/platform_adapter.rs"]
-mod platform_adapter;
+pub mod platform_adapter;
 #[path = "../cmd/profile.rs"]
 mod profile;
 #[path = "../cmd/registry.rs"]
@@ -117,11 +118,38 @@ pub enum Command {
         /// Show latest for all plugins
         #[arg(long)]
         all: bool,
+        /// Channel selector (stable by default; preview not yet published)
+        #[arg(long, default_value = "stable")]
+        channel: String,
+        /// Override the GitHub base URL (for air-gapped installs and tests)
+        #[arg(long)]
+        base_url: Option<String>,
+        /// Read releases.json from this directory instead of hitting the API
+        #[arg(long)]
+        staging: Option<PathBuf>,
+        /// Emit a JSON object instead of the plain tag
+        #[arg(long)]
+        json: bool,
     },
     /// Update a plugin to the latest version (respects .cognicode.lock)
     Update {
         /// Plugin name (omit for all)
         plugin: Option<String>,
+        /// Channel selector (stable by default; preview not yet published)
+        #[arg(long, default_value = "stable")]
+        channel: String,
+        /// Override the GitHub base URL (for air-gapped installs and tests)
+        #[arg(long)]
+        base_url: Option<String>,
+        /// Read releases.json from this directory instead of hitting the API
+        #[arg(long)]
+        staging: Option<PathBuf>,
+        /// Profile to install (default: core)
+        #[arg(long, default_value = "core")]
+        profile: String,
+        /// Resolve the latest release but do not download or install
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Regenerate the shims directory
     Reshim,
@@ -259,8 +287,32 @@ fn main() -> anyhow::Result<()> {
         } => layout::cmd_uninstall(&home, &plugin, &version, &ide),
         Command::List { installed } => layout::cmd_list(&home, installed),
         Command::Current => layout::cmd_current(&home),
-        Command::Latest { plugin, all } => layout::cmd_latest(&home, plugin, all),
-        Command::Update { plugin } => layout::cmd_update(&home, plugin),
+        Command::Latest {
+            plugin,
+            all,
+            channel,
+            base_url,
+            staging,
+            json,
+        } => {
+            let channel = channel
+                .parse::<lifecycle_resolver::Channel>()
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            layout::cmd_latest(&home, plugin, all, channel, base_url, staging, json)
+        }
+        Command::Update {
+            plugin,
+            channel,
+            base_url,
+            staging,
+            profile,
+            dry_run,
+        } => {
+            let channel = channel
+                .parse::<lifecycle_resolver::Channel>()
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            layout::cmd_update(&home, plugin, channel, base_url, staging, profile, dry_run)
+        }
         Command::Reshim => layout::cmd_reshim(&home),
         Command::Doctor => layout::cmd_doctor(&home),
         Command::Where { binary } => layout::cmd_where(&home, &binary),
