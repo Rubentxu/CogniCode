@@ -77,9 +77,25 @@ that use direct GitHub URLs still work.
 - For `cogh`-side install (future, e86): see WU14 SkillSource
   model.
 
-## Spike verdict (placeholder — to be filled after commit + push)
+## Spike verdict — PASS
 
-After this cycle's commits are pushed, re-run the tests above and
-record results. The expected verdict is: **PASS** — direct GitHub
-installation works, validator passes, runtime catalog matches
-skill references, no machine-specific paths.
+Re-run after commit `0a838a1f` pushed:
+
+- **Test 1 (direct GitHub raw URL reachable):**
+  `https://raw.githubusercontent.com/Rubentxu/CogniCode/main/skills/cognicode/SKILL.md`
+  returns 200 with valid frontmatter (`name: cognicode`,
+  `description: General entry point...`). PASS.
+- **Test 2 (frontmatter parses as valid YAML):** PASS.
+- **Test 3 (direct GitHub install works, no manifest.yaml required):**
+  PASS — a skills.sh-shaped install layout works without the
+  manifest.yaml. The `manifest.yaml` is read only by `cogh` (and
+  is optional for skills.sh).
+- **Test 4 (no machine-specific paths):** PASS — `validate_skills.py`
+  PASS for all 4 skills.
+- **Test 5 (runtime catalog matches skill references):** PASS — 51
+  MCP tool references validated against the 73-tool runtime
+  catalog.
+
+Index presence on skills.sh: deferred to whatever skills.sh's
+discovery cadence is. Direct GitHub installation is the
+**technical acceptance criterion** and is green.
