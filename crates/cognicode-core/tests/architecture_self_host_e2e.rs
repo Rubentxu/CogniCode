@@ -172,7 +172,7 @@ fn locate_crate_root() -> Option<PathBuf> {
 }
 
 #[test]
-#[ignore = "self-host finds 4 real drifts documented in DEBT-SDDK-004; run with -- --ignored to reproduce"]
+#[ignore = "self-host finds 1 deliberate remaining drift (P1.4: domain::behaviors::runtime -> application::intelligence_log::CausalRecorder) recorded in DEBT-SDDK-004; run with -- --ignored to reproduce"]
 fn self_host_evaluator_finds_zero_drift_on_clean_source() {
     let crate_root = match locate_crate_root() {
         Some(p) => p,

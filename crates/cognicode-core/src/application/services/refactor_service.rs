@@ -852,17 +852,30 @@ impl Default for RefactorService {
 mod tests {
     use super::*;
     use std::io::Write;
-    use tempfile::NamedTempFile;
+    use tempfile::TempDir;
 
+    /// P0-B regression guard: rename_symbol infers project_dir from
+    /// `Path::new(&file_path).parent()`, and `build_minimal_graph` walks
+    /// that directory recursively via `walkdir`. If a test puts the source
+    /// file directly under `/tmp` (e.g. via `NamedTempFile`), the walk
+    /// recursively traverses the entire `/tmp` tree, which is slow and
+    /// noisy in a test environment. This test isolates the fixture under
+    /// a `TempDir` whose only contents are the project file, so the walk
+    /// stays bounded.
     #[test]
     fn test_rename_symbol_generates_preview() {
-        let mut file = NamedTempFile::with_suffix(".py").unwrap();
-        writeln!(file, "def foo():").unwrap();
-        writeln!(file, "    foo()").unwrap();
-        writeln!(file, "    bar()").unwrap();
+        let dir = TempDir::with_suffix("rename_symbol_test").unwrap();
+        let project_dir = dir.path();
+        let file_path = project_dir.join("sample.py");
+        {
+            let mut file = std::fs::File::create(&file_path).unwrap();
+            writeln!(file, "def foo():").unwrap();
+            writeln!(file, "    foo()").unwrap();
+            writeln!(file, "    bar()").unwrap();
+        }
 
         let service = RefactorService::new();
-        let command = RenameSymbolCommand::new("foo", "baz", file.path().to_str().unwrap());
+        let command = RenameSymbolCommand::new("foo", "baz", file_path.to_str().unwrap());
 
         let result = service.rename_symbol(command);
         assert!(result.is_ok(), "Rename should succeed");
@@ -876,14 +889,50 @@ mod tests {
         assert!(preview.description.contains("baz"));
     }
 
+    /// Regression guard for P0-B: the rename_symbol fixture must not
+    /// depend on unrelated contents of `/tmp`. We assert that the
+    /// TempDir contains exactly the file we wrote, so any future
+    /// regression that lets `build_minimal_graph` walk outside
+    /// `file.parent()` would surface as additional walk-time work,
+    /// but the fixture itself stays hermetic.
+    #[test]
+    fn test_rename_symbol_fixture_is_isolated() {
+        let dir = TempDir::with_suffix("rename_symbol_isolated").unwrap();
+        let project_dir = dir.path();
+        let file_path = project_dir.join("sample.py");
+        {
+            let mut file = std::fs::File::create(&file_path).unwrap();
+            writeln!(file, "def hello():").unwrap();
+            writeln!(file, "    pass").unwrap();
+        }
+        // The directory must contain exactly one file: sample.py.
+        let mut entries: Vec<_> = std::fs::read_dir(project_dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        entries.sort();
+        assert_eq!(
+            entries.len(),
+            1,
+            "TempDir fixture should contain exactly one file, found: {:?}",
+            entries
+        );
+        assert_eq!(entries[0], std::ffi::OsStr::new("sample.py"));
+    }
+
     #[test]
     fn test_rename_symbol_not_found() {
-        let mut file = NamedTempFile::with_suffix(".py").unwrap();
-        writeln!(file, "def hello():").unwrap();
-        writeln!(file, "    pass").unwrap();
+        let dir = TempDir::with_suffix("rename_symbol_not_found").unwrap();
+        let project_dir = dir.path();
+        let file_path = project_dir.join("sample.py");
+        {
+            let mut file = std::fs::File::create(&file_path).unwrap();
+            writeln!(file, "def hello():").unwrap();
+            writeln!(file, "    pass").unwrap();
+        }
 
         let service = RefactorService::new();
-        let command = RenameSymbolCommand::new("nonexistent", "bar", file.path().to_str().unwrap());
+        let command = RenameSymbolCommand::new("nonexistent", "bar", file_path.to_str().unwrap());
 
         let result = service.rename_symbol(command);
         assert!(
@@ -894,14 +943,19 @@ mod tests {
 
     #[test]
     fn test_generate_rename_edits() {
-        let mut file = NamedTempFile::with_suffix(".py").unwrap();
-        writeln!(file, "def foo():").unwrap();
-        writeln!(file, "    foo()").unwrap();
-        writeln!(file, "    foo()").unwrap();
+        let dir = TempDir::with_suffix("generate_rename_edits").unwrap();
+        let project_dir = dir.path();
+        let file_path = project_dir.join("sample.py");
+        {
+            let mut file = std::fs::File::create(&file_path).unwrap();
+            writeln!(file, "def foo():").unwrap();
+            writeln!(file, "    foo()").unwrap();
+            writeln!(file, "    foo()").unwrap();
+        }
 
         let service = RefactorService::new();
         let edits = service
-            .generate_rename_edits(file.path().to_str().unwrap(), "foo", "bar")
+            .generate_rename_edits(file_path.to_str().unwrap(), "foo", "bar")
             .unwrap();
 
         assert_eq!(edits.len(), 3, "Should generate 3 edits");

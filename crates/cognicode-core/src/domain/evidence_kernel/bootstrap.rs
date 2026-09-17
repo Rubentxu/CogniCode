@@ -68,13 +68,55 @@ mod tests {
     use super::{CORE_RELATIONS, bootstrap_registry, canonical_spec};
     use crate::domain::evidence_kernel::ports::{SchemaError, SchemaRegistry};
     use crate::domain::evidence_kernel::relation::{RelationKind, RelationSpec};
-    use crate::infrastructure::evidence_kernel::in_memory::InMemorySchemaRegistry;
+    use std::sync::Mutex;
+
+    /// Test-only in-process implementation of the domain [`SchemaRegistry`]
+    /// port. Lives inside `mod tests` so the domain layer does not depend on
+    /// `infrastructure::InMemorySchemaRegistry` from a test target (P1.1).
+    /// The semantics intentionally mirror the production in-memory adapter:
+    /// the vocabulary is append-only, `register` rejects re-registration,
+    /// and `list` returns entries in deterministic (insertion) order.
+    struct TestSchemaRegistry {
+        entries: Mutex<Vec<(RelationKind, RelationSpec)>>,
+    }
+
+    impl TestSchemaRegistry {
+        fn new() -> Self {
+            Self {
+                entries: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl SchemaRegistry for TestSchemaRegistry {
+        fn register(&self, k: RelationKind, s: RelationSpec) -> Result<(), SchemaError> {
+            let mut entries = self.entries.lock().expect("test mutex poisoned");
+            if entries.iter().any(|(kind, _)| kind == &k) {
+                return Err(SchemaError::AlreadyRegistered(k));
+            }
+            entries.push((k, s));
+            Ok(())
+        }
+
+        fn lookup(&self, k: &RelationKind) -> Option<RelationSpec> {
+            self.entries
+                .lock()
+                .expect("test mutex poisoned")
+                .iter()
+                .find(|(kind, _)| kind == k)
+                .map(|(_, spec)| spec.clone())
+        }
+
+        fn list(&self) -> Vec<(RelationKind, RelationSpec)> {
+            self.entries.lock().expect("test mutex poisoned").clone()
+        }
+    }
 
     /// The bootstrap must be idempotent: two consecutive calls succeed, and
     /// the vocabulary is exactly the six canonical predicates afterwards.
     #[test]
     fn bootstrap_registry_is_idempotent_and_registers_exactly_six() {
-        let registry = InMemorySchemaRegistry::new();
+        let registry = TestSchemaRegistry::new();
         bootstrap_registry(&registry).expect("first bootstrap");
         bootstrap_registry(&registry).expect("second bootstrap is an idempotent no-op");
 
@@ -98,7 +140,7 @@ mod tests {
     /// idempotency contract is symmetric).
     #[test]
     fn bootstrap_accepts_pre_registered_identical_specs() {
-        let registry = InMemorySchemaRegistry::new();
+        let registry = TestSchemaRegistry::new();
         registry
             .register(
                 RelationKind::try_new("core:calls").expect("valid kind"),
@@ -113,7 +155,7 @@ mod tests {
     /// with `AlreadyRegistered` (append-only vocabulary, design D2).
     #[test]
     fn bootstrap_rejects_conflicting_specs() {
-        let registry = InMemorySchemaRegistry::new();
+        let registry = TestSchemaRegistry::new();
         registry
             .register(
                 RelationKind::try_new("core:calls").expect("valid kind"),
@@ -132,7 +174,7 @@ mod tests {
     /// `core:annotated_by` have no M2 producer (design D2).
     #[test]
     fn bootstrap_leaves_non_canonical_predicates_unregistered() {
-        let registry = InMemorySchemaRegistry::new();
+        let registry = TestSchemaRegistry::new();
         bootstrap_registry(&registry).expect("bootstrap");
         for name in ["core:uses_generic", "core:annotated_by"] {
             let kind = RelationKind::try_new(name).expect("valid kind");

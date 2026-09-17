@@ -36,11 +36,11 @@
 //! rejection event). The full chain is:
 //! `[trigger, behavior.started, behavior.budget_exhausted]`.
 //!
-//! Domain ports: the log and the effect sink. Clock is an application port.
+//! Domain ports: the log, the effect sink, and the `Clock` capability.
 
 use super::admission::BehaviorPermit;
 use super::class::{BehaviorAuthorityPolicy, BehaviorClass, BehaviorEffectKind};
-use crate::application::behaviors::Clock;
+use super::ports::Clock;
 use crate::application::intelligence_log::CausalRecorder;
 use crate::domain::budgets::{self, BudgetAuthorizer, BudgetExhausted, BudgetState};
 use crate::domain::execution::ExecutionContext;

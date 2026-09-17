@@ -1,22 +1,15 @@
-//! Clock port for the behavior runtime (M7.4, cycle e65).
+//! Concrete `Clock` adapters for the behavior runtime (M7.4, cycle e65).
 //!
-//! The domain layer must never block or read the system clock directly. This
-//! port supplies the current time as a monotonic millisecond counter, allowing
-//! the `BehaviorRuntime` to measure elapsed time for `Time` budgets without
-//! pulling in `tokio` or `std::time` into the domain layer.
+//! The `Clock` *trait* is owned by the domain (`crate::domain::behaviors::ports`).
+//! This module provides the production adapter (`SystemClock`) and the
+//! deterministic test double (`MockClock`) that satisfy the trait.
 //!
-//! Application layer: `SystemClock` uses `std::time::Instant` (no `async`).
-//! Tests: `MockClock` is advanceable and deterministic.
+//! Application layer responsibility: provide monotonic, `Send + Sync`
+//! implementations without forcing the domain to depend on `std::time`
+//! or `tokio`. `SystemClock` uses `std::time::Instant` (no `async`,
+//! no runtime dependency); `MockClock` is advanceable and deterministic.
 
-/// A monotonic wall-clock for budget measurement.
-///
-/// Implementors must guarantee that `now_millis()` never decreases between calls
-/// within a single execution (monotonicity). `SystemClock` uses `Instant`, which
-/// satisfies this. `MockClock` satisfies it by construction.
-pub trait Clock: Send + Sync {
-    /// The current time in monotonic milliseconds.
-    fn now_millis(&self) -> u64;
-}
+use crate::domain::behaviors::ports::Clock;
 
 /// System wall-clock using `std::time::Instant`.
 ///

@@ -20,7 +20,7 @@ pub use code_intelligence::{
     CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, Reference, ReferenceKind,
     TypeHierarchy,
 };
-pub use code_verifier::{CodeVerifier, CompilationResult};
+pub use code_verifier::{CodeVerifier, CodeVerifierError, CompilationResult};
 pub use dependency_repository::{DependencyError, DependencyRepository};
 pub use file_system::{FileSystem, TextEdit, VfsError, VfsResult};
 pub use graph_query_port::{

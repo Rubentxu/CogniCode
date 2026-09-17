@@ -31,6 +31,7 @@
 
 pub mod admission;
 pub mod class;
+pub mod ports;
 pub mod runtime;
 
 pub use admission::{
@@ -38,6 +39,7 @@ pub use admission::{
     BehaviorPermit,
 };
 pub use class::{BehaviorAuthorityPolicy, BehaviorClass, BehaviorEffectKind};
+pub use ports::Clock;
 pub use runtime::{
     Behavior, BehaviorEffect, BehaviorEffectSink, BehaviorOutcome, BehaviorRuntime,
     BehaviorRuntimeError, FactDraft, PolicyViolation,

@@ -3,8 +3,7 @@
 //! This verifier checks Rust source files by compiling them with `rustc` in a
 //! sandboxed temporary directory.
 
-use crate::application::error::AppResult;
-use crate::domain::traits::code_verifier::{CodeVerifier, CompilationResult};
+use crate::domain::traits::code_verifier::{CodeVerifier, CodeVerifierError, CompilationResult};
 use async_trait::async_trait;
 use std::fs;
 use std::io::Write;
@@ -31,28 +30,22 @@ impl RustVerifier {
     ///
     /// Creates a TempDir with prefix `cognicode_rust_verify_`, writes content to a temp file,
     /// and returns both the TempDir (for lifetime management) and the temp file path.
-    fn setup_temp_file(content: &str, file_name: &str) -> AppResult<(TempDir, std::path::PathBuf)> {
+    fn setup_temp_file(
+        content: &str,
+        file_name: &str,
+    ) -> Result<(TempDir, std::path::PathBuf), CodeVerifierError> {
         let temp_dir = TempDir::with_prefix("cognicode_rust_verify_").map_err(|e| {
-            crate::application::error::AppError::InternalError(format!(
-                "Failed to create temp dir: {}",
-                e
-            ))
+            CodeVerifierError::SubprocessFailed(format!("Failed to create temp dir: {}", e))
         })?;
 
         let temp_file_path = temp_dir.path().join(file_name);
 
         {
             let mut file = std::fs::File::create(&temp_file_path).map_err(|e| {
-                crate::application::error::AppError::InvalidParameter(format!(
-                    "Failed to create temp file: {}",
-                    e
-                ))
+                CodeVerifierError::SubprocessFailed(format!("Failed to create temp file: {}", e))
             })?;
             file.write_all(content.as_bytes()).map_err(|e| {
-                crate::application::error::AppError::InvalidParameter(format!(
-                    "Failed to write to temp file: {}",
-                    e
-                ))
+                CodeVerifierError::SubprocessFailed(format!("Failed to write to temp file: {}", e))
             })?;
         }
 
@@ -62,24 +55,27 @@ impl RustVerifier {
     /// Runs rustc asynchronously with kill_on_drop(true).
     ///
     /// When the returned future is dropped (e.g., on timeout), the child process is killed.
-    async fn run_rustc_async(temp_file: std::path::PathBuf) -> AppResult<std::process::Output> {
+    async fn run_rustc_async(
+        temp_file: std::path::PathBuf,
+    ) -> Result<std::process::Output, CodeVerifierError> {
         let mut cmd = tokio::process::Command::new("rustc");
         cmd.args(RUSTC_ARGS).arg(&temp_file).kill_on_drop(true);
 
         cmd.output().await.map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                crate::application::error::AppError::InvalidParameter("rustc not found".to_string())
+                CodeVerifierError::ToolchainUnavailable("rustc".to_string())
             } else {
-                crate::application::error::AppError::InternalError(format!(
-                    "rustc execution failed: {}",
-                    e
-                ))
+                CodeVerifierError::SubprocessFailed(format!("rustc execution failed: {}", e))
             }
         })
     }
 
     /// Internal synchronous verification logic.
-    fn verify_impl(&self, path: &str, _timeout_secs: Option<u64>) -> AppResult<CompilationResult> {
+    fn verify_impl(
+        &self,
+        path: &str,
+        _timeout_secs: Option<u64>,
+    ) -> Result<CompilationResult, CodeVerifierError> {
         // Check if file extension is .rs
         let file_path = Path::new(path);
         if file_path.extension().and_then(|e| e.to_str()) != Some("rs") {
@@ -89,12 +85,8 @@ impl RustVerifier {
         }
 
         // Read the file content
-        let content = fs::read_to_string(path).map_err(|e| {
-            crate::application::error::AppError::InvalidParameter(format!(
-                "Failed to read file for verification: {}",
-                e
-            ))
-        })?;
+        let content = fs::read_to_string(path)
+            .map_err(|e| CodeVerifierError::FileUnreadable(e.to_string()))?;
 
         // Get the file name for temp file
         let file_name = file_path
@@ -131,11 +123,9 @@ impl RustVerifier {
             }
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::NotFound {
-                    Err(crate::application::error::AppError::InvalidParameter(
-                        "rustc not found".to_string(),
-                    ))
+                    Err(CodeVerifierError::ToolchainUnavailable("rustc".to_string()))
                 } else {
-                    Err(crate::application::error::AppError::InternalError(format!(
+                    Err(CodeVerifierError::SubprocessFailed(format!(
                         "rustc execution failed: {}",
                         e
                     )))
@@ -147,7 +137,7 @@ impl RustVerifier {
 
 #[async_trait]
 impl CodeVerifier for RustVerifier {
-    fn verify(&self, path: &str) -> AppResult<CompilationResult> {
+    fn verify(&self, path: &str) -> Result<CompilationResult, CodeVerifierError> {
         self.verify_impl(path, None)
     }
 
@@ -155,7 +145,7 @@ impl CodeVerifier for RustVerifier {
         &self,
         path: &str,
         timeout_secs: u64,
-    ) -> AppResult<CompilationResult> {
+    ) -> Result<CompilationResult, CodeVerifierError> {
         let file_path_owned = path.to_string();
 
         // Read file content and set up temp file (file I/O - can be blocking)
@@ -166,12 +156,8 @@ impl CodeVerifier for RustVerifier {
             .unwrap_or("lib.rs")
             .to_string();
 
-        let content = std::fs::read_to_string(&file_path_owned).map_err(|e| {
-            crate::application::error::AppError::InvalidParameter(format!(
-                "Failed to read file for verification: {}",
-                e
-            ))
-        })?;
+        let content = std::fs::read_to_string(&file_path_owned)
+            .map_err(|e| CodeVerifierError::FileUnreadable(e.to_string()))?;
 
         // Set up temp file (file I/O - can be blocking)
         let (temp_dir, temp_file_path) = Self::setup_temp_file(&content, &file_name)?;
@@ -206,9 +192,7 @@ impl CodeVerifier for RustVerifier {
                 })
             }
             Ok(Err(e)) => Err(e),
-            Err(_) => Err(crate::application::error::AppError::InvalidParameter(
-                "Verification timed out".to_string(),
-            )),
+            Err(_) => Err(CodeVerifierError::Timeout(timeout_secs)),
         }
     }
 }

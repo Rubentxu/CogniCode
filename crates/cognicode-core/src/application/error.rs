@@ -114,6 +114,16 @@ impl From<crate::domain::traits::SearchError> for AppError {
     }
 }
 
+impl From<crate::domain::traits::CodeVerifierError> for AppError {
+    fn from(err: crate::domain::traits::CodeVerifierError) -> Self {
+        // The verifier port reports infrastructure/toolchain failures.
+        // Surface them through `InternalError` so the application layer can
+        // log and decide recovery without depending on domain error
+        // categories.
+        AppError::InternalError(err.to_string())
+    }
+}
+
 /// Result type for application operations
 pub type AppResult<T> = Result<T, AppError>;
 
