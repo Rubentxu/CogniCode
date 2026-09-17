@@ -598,5 +598,32 @@ phases:
         (held-out promotion + governed improvement E2E). Neither started by this
         cycle. P1.4 remains explicit; e82 did NOT wire the e77 evaluator into
         any authority-bearing gate.
+        e82.1 (Behavior Event Boundary): ARCHIVED 2026-09-17 (impl 2bfc1383,
+        archive-manifest.md, characterization.md). Closes P1.4 and RESOLVES
+        DEBT-SDDK-004. WU0 finding: P1.4 never needed a new port. BehaviorRuntime
+        already holds the DOMAIN port &dyn IntelligenceEventStore and already
+        emits behavior.started, policy.behavior_output_rejected and
+        behavior.completed through it, and runtime.rs already had a private
+        append(...) plus an unused budget_payload(...); only
+        behavior.budget_exhausted went through the application-layer
+        CausalRecorder helper, which was accidental convenience rather than
+        abstraction. The event is now emitted through the same domain port path
+        with EventKinds::behavior_budget_exhausted(), budget_payload(...) and
+        caused_by = Some(started_event); field order and values match the
+        recorder exactly. CausalRecorder is untouched and remains a legitimate
+        application helper; no BehaviorEventRecorder port was created. Semantic
+        equivalence is pinned by the new
+        behavior_budget_e2e::e82_1_budget_exhausted_event_shape_is_unchanged
+        (kind, causal edge, scope, payload summary, all six payload fields).
+        e77 self-host went from exactly 1 drift to exactly 0, and the
+        #[ignore] on the self-host test was removed because it existed solely to
+        protect this drift; the test now runs as normal verification. 17
+        behavior runtime lib tests, 7 behavior_budget_e2e, 6
+        behavior_authority_e2e and 4 intelligence_event_log_e2e green; cargo
+        test --lib baseline-exact; workspace build GREEN. Recorded, not
+        absorbed: one check_known_failures run reported DRIFT that could not be
+        reproduced (five subsequent runs OK, three default-lib runs md5-identical,
+        rustc verifier suite passes under 64-core load); known_failures.yaml was
+        NOT modified.
   verify: {status: pending}
   archive: {status: pending, note: archive after milestone slices complete; split-per-milestone remains sanctioned by INTEGRATION.md if preferred}
