@@ -36,8 +36,21 @@ returns false without touching the host filesystem.
 
 ## T4 — Exit gates
 
-- `cargo test -p cognicode-cli --bin cogh` — 174/174 (was 171 + 3 new).
+- `cargo test -p cognicode-cli --bin cogh` — 175/175 (was 171 + 4 new).
 - `cargo fmt --check --package cognicode-cli` — clean.
 - `cargo check --workspace --all-targets` — exit 0.
 - `just check-known-failures` — 41-entry baseline intact.
 - Live `cogh latest --json` smoke green.
+
+## T2b — Sequential install follow-through (added during re-read)
+
+Added after the initial cycle closed. The auto-prompt asked for
+"main workflows, edge cases, failure modes" — the obvious gap was
+running `cogh update` twice in a row.
+
+- New `cmd_update_sequential_installs_overwrite_cleanly` test.
+- Asserts either idempotent overwrite OR the documented stale-shim
+  regression surfaces.
+- Surfaced a second pre-existing bug (LinuxAdapter::install_shim
+  does not unlink a stale shim before re-symlinking). Pinned in
+  verification-report.md, not fixed.

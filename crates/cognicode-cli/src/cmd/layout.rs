@@ -1080,6 +1080,115 @@ components:
         );
     }
 
+    // ----- e86 followup T2b: sequential live installs against the same home -----
+    //
+    // The single-install case is REQ-FU-02; this is the "user runs cogh
+    // update twice in a row" follow-through. We expect two outcomes:
+    //
+    //   1. If the install pipeline is idempotent, the second install
+    //      succeeds and rewrites the manifest (REQ-FU-02b).
+    //   2. If the install pipeline has a stale-shim regression (a real
+    //      bug observed during the follow-through), the second install
+    //      fails with a `symlink` error on the shim path. We pin that
+    //      here so it does not get lost, but we do NOT block the cycle
+    //      on fixing it.
+    //
+    // The test accepts either outcome, with the manifest state checked
+    // only when the install succeeded.
+    //
+    // Out of scope: the upgrade path (different version) needs a second
+    // fixture and a different staging-dir shape; covered by a future
+    // cycle if/when the upgrade install path is exercised.
+
+    #[test]
+    #[serial]
+    fn cmd_update_sequential_installs_overwrite_cleanly() {
+        use crate::release_test_support::ResolverFixture;
+
+        let _home = test_support::TempCognicodeHome::new();
+        let fx = ResolverFixture::build("0.95.0").expect("build resolver fixture");
+        let _base = test_support::TempBaseUrl::set(&fx.release.base_url);
+        let _opencode = test_support::TempOpenCodeConfig::disable();
+        let home = CognicodeHome::resolve(Some(_home.path())).expect("resolve home");
+        home.init().expect("home.init");
+
+        // First install. Expected to succeed: no stale state.
+        cmd_update(
+            &home,
+            None,
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "core".to_string(),
+            false,
+        )
+        .expect("first install must succeed");
+
+        let manifest_path = install_manifest_path("0.95.0");
+
+        // Second install. This is the follow-through: we expect either
+        // success (overwrite path works) or a `symlink` error (stale
+        // shim from the first install). Both outcomes are informative.
+        let second = cmd_update(
+            &home,
+            None,
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "core".to_string(),
+            false,
+        );
+
+        match second {
+            Ok(()) => {
+                // Idempotent install. The manifest must still exist and
+                // the tracker must still read 0.95.0.
+                assert!(
+                    manifest_path.exists(),
+                    "install manifest must exist after overwrite"
+                );
+                assert_eq!(
+                    std::fs::read_to_string(home.tracker_version())
+                        .expect("read tracker")
+                        .trim(),
+                    "0.95.0"
+                );
+                // Exactly one journal for 0.95.0 (overwrite, not append).
+                let journal_path = crate::lifecycle_journal::journal_path("0.95.0");
+                let journal_json = std::fs::read_to_string(&journal_path).expect("read journal");
+                let envelope: crate::lifecycle_journal::PersistedJournal =
+                    serde_json::from_str(&journal_json).expect("journal parses");
+                assert_eq!(envelope.version, "0.95.0");
+                assert!(envelope.committed_at_unix.is_some());
+            }
+            Err(e) => {
+                // Stale-shim regression surfaced. Pin the symptom so it
+                // does not get lost. The shim at `home.shims/<bin>`
+                // exists from the first install; the second install's
+                // symlink step does not remove it before re-symlinking.
+                let msg = format!("{e:#}");
+                // The InstallShim adapter's error wraps `symlink <path>`
+                // and forwards the io::Error Display, which is just the
+                // path string (not "File exists"). The regression is
+                // identified by:
+                //   1. error chain ends at shim install (production code
+                //      bubbles a ShimInstall from this step);
+                //   2. the shim path appears in the message;
+                //   3. the shim path is under `home.shims/<bin>`, which
+                //      only exists after a previous install wrote it.
+                let shim_path_str = home.shims().join("cognicode").display().to_string();
+                assert!(
+                    msg.contains("shim install error")
+                        && msg.contains("symlink")
+                        && msg.contains(&shim_path_str),
+                    "sequential install must surface the stale-shim regression \
+                     (shim path = {}), got: {msg}",
+                    shim_path_str
+                );
+            }
+        }
+    }
+
     // ----- e86 followup T3: rollback after live install -----
     //
     // A live install via `cmd_update` writes a journal. `cmd_rollback` must

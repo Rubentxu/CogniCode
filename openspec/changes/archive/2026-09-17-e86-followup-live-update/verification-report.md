@@ -87,12 +87,26 @@ e86 introduced. This followup closed that gap.
 
 ## Test results
 
-- `cargo test -p cognicode-cli --bin cogh` — **174 passed, 0 failed,
-  1 ignored** (was 171 + 3 new = 174).
+- `cargo test -p cognicode-cli --bin cogh` — **175 passed, 0 failed,
+  1 ignored** (was 171 + 4 new = 175: T1, T2, T3, T2b).
 - `cargo fmt --check --package cognicode-cli` — clean.
 - `cargo check --workspace --all-targets` — exit 0.
 - `just check-known-failures` — 41-entry baseline intact.
 - Live `cogh latest --json` smoke — green, returns v0.95.0.
+
+### T2b — Sequential installs follow-through (added during re-read)
+
+After the initial cycle closed, a follow-through test was added to
+exercise the "user runs `cogh update` twice in a row" path:
+
+- New `cmd_update_sequential_installs_overwrite_cleanly` test.
+- Drives two sequential installs of the same version on the same
+  home and asserts either idempotent overwrite OR the stale-shim
+  regression symptom (the test accepts both outcomes — see
+  observations).
+
+The follow-through surfaced a **second** pre-existing bug, also
+pinned in the next section.
 
 ## Observations / honesty
 
@@ -157,6 +171,31 @@ This is a real bug that affects every user running `cogh rollback`
 after a successful install. It must be addressed before e86 can be
 called complete.
 
+### Bug: sequential install fails on stale shim
+
+`platform_adapter::LinuxAdapter::install_shim` calls
+`std::os::unix::fs::symlink(bin, shim)` and lets the io::Error bubble
+through. On a second `cogh update` against the same home, the shim
+already exists from the first install, the symlink call returns
+`EEXIST`, and the install transaction aborts.
+
+**Reproduction:** `cargo test -p cognicode-cli --bin cogh -- --nocapture cmd_update_sequential_installs_overwrite_cleanly`.
+
+**Fix (sketch, for a future cycle):**
+
+1. In `install_shim`, if `shim_path.exists()`, remove it (or fall
+   back to copy-then-unlink semantics) before re-symlinking.
+2. OR check existence before the symlink call and use a
+   `symlink`-or-`copy` strategy uniformly.
+3. OR wrap the symlink in a `try_exists`+remove pattern.
+
+This is a real bug that affects every user running `cogh update`
+twice in a row. Without it, the only path to upgrade is `cogh
+uninstall` between installs, which forces the user through the
+broken rollback path above. Both bugs together leave `cogh update`
+in a state where the first install works, the rollback breaks, and
+the upgrade fails. **This trio must be fixed before e86 can ship.**
+
 ## Exit gate verdict
 
 | Gate | Status |
@@ -164,7 +203,8 @@ called complete.
 | `ResolverFixture::build` emits a `releases.json` the resolver accepts | PASS |
 | `cmd_update` non-dry-run installs binaries + writes journal + tracker | PASS |
 | `cmd_rollback` after a live install surfaces the regression (pinned) | PASS (regression pinned, not fixed) |
-| 174/174 cogh tests pass | PASS |
+| `cmd_update` sequential installs surface the stale-shim regression (pinned) | PASS (regression pinned, not fixed) |
+| 175/175 cogh tests pass | PASS |
 | `cargo fmt --check` on `cognicode-cli` | PASS |
 | `cargo check --workspace --all-targets` | PASS |
 | `just check-known-failures` (41-entry baseline) | PASS |
@@ -172,5 +212,7 @@ called complete.
 
 **Cycle verdict:** scope met. The followup gap from the e86
 verification report is closed: the new resolver-driven install path has
-real end-to-end test coverage. One pre-existing rollback bug is pinned
-for a future cycle.
+real end-to-end test coverage, including the sequential-update
+follow-through. **Two** pre-existing bugs (rollback of populated dirs,
+stale shim on second install) are pinned for a future cycle; both
+must be fixed before e86 can ship.

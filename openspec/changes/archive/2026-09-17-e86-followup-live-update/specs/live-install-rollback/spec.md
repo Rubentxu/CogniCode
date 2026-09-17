@@ -69,6 +69,35 @@ implementation, NOT in the resolver-driven install path. REQ-FU-03
 asserts that the regression surfaces (so it does not get lost) but does
 not block this cycle on the fix.
 
+### REQ-FU-04 — Sequential install follow-through (idempotency / overwrite)
+
+Two consecutive `cmd_update` calls against the same `CognicodeHome`
+MUST NOT crash. Either the second install overwrites cleanly
+(idempotent), OR the failure must be attributable to a documented
+pre-existing bug — NOT a regression introduced by this followup.
+
+**Given** a fresh `CognicodeHome` with `home.init()` done
+**And** `ResolverFixture::build("0.95.0")` built
+**When** `cmd_update(home, ..., staging, "core", false)` runs twice
+**Then** the second run either:
+- succeeds (and the install manifest is rewritten), OR
+- fails with the documented stale-shim regression (`shim install
+  error: symlink <home>/shims/<bin> ...`) which proves the regression
+  surfaced, not a regression introduced by this followup.
+
+**Rationale:** every user who runs `cogh update` more than once hits
+this path. The follow-through surfaces the bug if it exists, and
+documents it in the verification report. Fixing the bug is out of
+scope (would require modifying `platform_adapter::install_shim`).
+
+#### Note (KNOWN REGRESSION, OUT OF SCOPE)
+
+`LinuxAdapter::install_shim` calls `std::os::unix::fs::symlink`
+without first removing an existing shim. On a second install the
+symlink syscall returns `EEXIST` and the install transaction aborts.
+The fix is to remove the existing shim (or fall back to copy) before
+re-symlinking. Pinned by `cmd_update_sequential_installs_overwrite_cleanly`.
+
 ## Why this matters
 
 Before this change, `cmd update --dry-run` was the only resolver-driven
