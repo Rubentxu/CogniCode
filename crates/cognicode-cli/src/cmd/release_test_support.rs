@@ -311,4 +311,117 @@ mod tests {
             resolved.manifest_url
         );
     }
+
+    // ----- e86 followup T1 failure-mode follow-through -----
+    //
+    // The happy-path test above pins the contract on a well-formed fixture.
+    // The two tests below exercise the most likely user-facing failure modes:
+    //
+    // 1. Malformed `releases.json` — a user passes a stale or hand-edited
+    //    staging dir; the resolver must return a `ResolveFailed` error,
+    //    not panic.
+    // 2. `releases.json` lists only draft / prerelease releases — the
+    //    resolver must reject the request per REQ-LR-03 / REQ-LDS-01.
+    //
+    // These are the failure modes most likely to bite users in production
+    // because the staging-dir path is precisely how integration tests and
+    // air-gapped installs configure the resolver. The resolver must
+    // surface the failure mode, not swallow it.
+    //
+    // Note: `GhRelease`/`GhListRelease`/`GhAsset` are private to the
+    // resolver module, so we construct the draft-only list as a raw JSON
+    // string matching the wire shape (the field names and types must
+    // match what `lifecycle_resolver::load_release_from_staging` parses).
+    // If the resolver ever renames those fields the test will fail with
+    // a parse error instead of a draft-rejection — that is itself
+    // informative.
+
+    use crate::error::InstallerError;
+
+    fn staging_dir_with_json(json: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("releases.json"), json).expect("write releases.json");
+        dir
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn resolver_fixture_rejects_malformed_releases_json() {
+        // Garbage that is neither a single release object nor a list. The
+        // resolver must surface a ResolveFailed error with a parse
+        // message — never panic, never silently fall back.
+        let staging = staging_dir_with_json("this is not json {{");
+        let req = ResolveRequest {
+            host_platform: Platform::LinuxX86_64,
+            channel: Channel::Stable,
+            requested_version: "latest".to_string(),
+            base_url: None,
+            staging_dir: Some(staging.path().to_path_buf()),
+        };
+        let err = resolve_release(&req).expect_err("resolver must reject malformed JSON");
+        match err {
+            InstallerError::ResolveFailed(msg) => {
+                assert!(
+                    msg.contains("parse") || msg.contains("staging"),
+                    "error must identify the failure mode, got: {msg}"
+                );
+            }
+            other => panic!("expected ResolveFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn resolver_fixture_rejects_only_draft_releases_in_list() {
+        // Two releases, both drafts. The resolver must surface
+        // ResolveFailed ("no non-draft, non-prerelease release") per the
+        // REQ-LR-03 / REQ-LDS-01 contract.
+        //
+        // Note: the Gh* structs are private, so we hand-roll the JSON
+        // matching the wire shape. Field names: tag_name, draft,
+        // prerelease, assets[].name, assets[].browser_download_url.
+        let json = r#"[
+          {
+            "tag_name": "v0.95.0-rc.1",
+            "draft": true,
+            "prerelease": true,
+            "assets": [
+              {
+                "name": "bundle-0.95.0-x86_64-unknown-linux-gnu.yaml",
+                "browser_download_url": "http://127.0.0.1:1/v0.95.0/bundle.yaml"
+              }
+            ]
+          },
+          {
+            "tag_name": "v0.95.0",
+            "draft": true,
+            "prerelease": false,
+            "assets": [
+              {
+                "name": "bundle-0.95.0-x86_64-unknown-linux-gnu.yaml",
+                "browser_download_url": "http://127.0.0.1:1/v0.95.0/bundle.yaml"
+              }
+            ]
+          }
+        ]"#;
+        let staging = staging_dir_with_json(json);
+        let req = ResolveRequest {
+            host_platform: Platform::LinuxX86_64,
+            channel: Channel::Stable,
+            requested_version: "latest".to_string(),
+            base_url: None,
+            staging_dir: Some(staging.path().to_path_buf()),
+        };
+        let err = resolve_release(&req)
+            .expect_err("resolver must reject a list with only draft releases");
+        match err {
+            InstallerError::ResolveFailed(msg) => {
+                assert!(
+                    msg.contains("non-draft") || msg.contains("draft"),
+                    "error must identify the draft-rejection, got: {msg}"
+                );
+            }
+            other => panic!("expected ResolveFailed for draft-only list, got {other:?}"),
+        }
+    }
 }

@@ -31,6 +31,28 @@ canonical bundle manifest at that URL.
 a `ResolvedRelease` whose `manifest_url` starts with the loopback
 base URL.
 
+#### REQ-FU-01b — ResolverFixture failure modes
+
+The resolver MUST surface, not swallow, the most likely user-facing
+failure modes on the staging-dir path:
+
+**Given** a staging dir with malformed `releases.json`
+**When** `resolve_release(staging_dir=...)` runs
+**Then** the resolver returns `InstallerError::ResolveFailed` with a
+message that identifies the parse failure.
+
+**Given** a staging dir whose `releases.json` is a list containing
+only draft / prerelease releases
+**When** `resolve_release(staging_dir=..., requested_version="latest")` runs
+**Then** the resolver returns `InstallerError::ResolveFailed` with a
+message that identifies the draft-only rejection (per REQ-LR-03 /
+REQ-LDS-01).
+
+**Rationale:** the staging-dir path is exactly how integration tests
+and air-gapped installs configure the resolver. Failures here are
+not rare; the resolver must NOT panic, NOT silently fall back to the
+network, and NOT swallow the error.
+
 ### REQ-FU-02 — Live install through `cmd_update`
 
 `cmd_update(home, ..., staging, profile, /*dry_run=*/false)` MUST

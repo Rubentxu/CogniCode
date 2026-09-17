@@ -36,7 +36,7 @@ returns false without touching the host filesystem.
 
 ## T4 — Exit gates
 
-- `cargo test -p cognicode-cli --bin cogh` — 175/175 (was 171 + 4 new).
+- `cargo test -p cognicode-cli --bin cogh` — 177/177 (was 171 + 6 new).
 - `cargo fmt --check --package cognicode-cli` — clean.
 - `cargo check --workspace --all-targets` — exit 0.
 - `just check-known-failures` — 41-entry baseline intact.
@@ -54,3 +54,15 @@ running `cogh update` twice in a row.
 - Surfaced a second pre-existing bug (LinuxAdapter::install_shim
   does not unlink a stale shim before re-symlinking). Pinned in
   verification-report.md, not fixed.
+
+## T1b — ResolverFixture failure-mode follow-through (added during second re-read)
+
+Added to exercise the most likely user-facing failure modes on the
+staging-dir path: malformed `releases.json` and a list of
+only-draft releases.
+
+- New `resolver_fixture_rejects_malformed_releases_json` test.
+- New `resolver_fixture_rejects_only_draft_releases_in_list` test.
+- Both passed on the first run; the resolver's error surface for
+  these failure modes is correct (returns `InstallerError::ResolveFailed`
+  with an identifying message).

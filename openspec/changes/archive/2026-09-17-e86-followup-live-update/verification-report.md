@@ -87,8 +87,10 @@ e86 introduced. This followup closed that gap.
 
 ## Test results
 
-- `cargo test -p cognicode-cli --bin cogh` — **175 passed, 0 failed,
-  1 ignored** (was 171 + 4 new = 175: T1, T2, T3, T2b).
+- `cargo test -p cognicode-cli --bin cogh` — **177 passed, 0 failed,
+  1 ignored** (was 171 + 6 new: T1 happy, T2 live install, T3 rollback
+  regression pin, T2b sequential install, T1b malformed JSON,
+  T1b draft-only list).
 - `cargo fmt --check --package cognicode-cli` — clean.
 - `cargo check --workspace --all-targets` — exit 0.
 - `just check-known-failures` — 41-entry baseline intact.
@@ -107,6 +109,25 @@ exercise the "user runs `cogh update` twice in a row" path:
 
 The follow-through surfaced a **second** pre-existing bug, also
 pinned in the next section.
+
+### T1b — ResolverFixture failure-mode follow-through (added during second re-read)
+
+The T1 happy-path test pins the contract on a well-formed fixture.
+The most likely user-facing failure modes — malformed `releases.json`
+and a list of only-draft releases — were not exercised. The
+follow-through adds two tests:
+
+- `resolver_fixture_rejects_malformed_releases_json` — staging dir
+  contains `"this is not json {{"`. Resolver must return
+  `InstallerError::ResolveFailed` with a parse-failure message, not
+  panic.
+- `resolver_fixture_rejects_only_draft_releases_in_list` — staging
+  dir contains a list of two releases, both `draft: true`. Resolver
+  must reject per REQ-LR-03 / REQ-LDS-01 and return
+  `InstallerError::ResolveFailed`.
+
+Both tests passed on the first run. The resolver's error surface is
+correct for these failure modes — no regression to fix.
 
 ## Observations / honesty
 
@@ -201,10 +222,11 @@ the upgrade fails. **This trio must be fixed before e86 can ship.**
 | Gate | Status |
 |------|--------|
 | `ResolverFixture::build` emits a `releases.json` the resolver accepts | PASS |
+| `ResolverFixture` failure modes (malformed JSON, draft-only list) surface `ResolveFailed` | PASS |
 | `cmd_update` non-dry-run installs binaries + writes journal + tracker | PASS |
 | `cmd_rollback` after a live install surfaces the regression (pinned) | PASS (regression pinned, not fixed) |
 | `cmd_update` sequential installs surface the stale-shim regression (pinned) | PASS (regression pinned, not fixed) |
-| 175/175 cogh tests pass | PASS |
+| 177/177 cogh tests pass | PASS |
 | `cargo fmt --check` on `cognicode-cli` | PASS |
 | `cargo check --workspace --all-targets` | PASS |
 | `just check-known-failures` (41-entry baseline) | PASS |
