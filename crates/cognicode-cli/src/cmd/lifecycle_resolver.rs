@@ -41,6 +41,27 @@ use crate::release_contract::{
 /// Default GitHub API base URL.
 pub const DEFAULT_API_BASE: &str = "https://api.github.com";
 
+/// Environment variable naming the GitHub API origin (release/manifest side).
+///
+/// Used by `lifecycle_resolver::fetch_release_latest` and
+/// `fetch_release_by_tag` to construct `/repos/{RELEASE_REPO}/releases/...`
+/// API URLs. Default is `https://api.github.com`.
+///
+/// ## Precedence (highest first)
+///
+/// 1. `COGNICODE_API_BASE_URL` — env-var override.
+/// 2. `COGNICODE_RELEASE_BASE_URL` — legacy alias, accepted for
+///    back-compat (E86.2.2 did not break this public surface).
+/// 3. `ResolveRequest::base_url` — programmatic override.
+/// 4. [`DEFAULT_API_BASE`] — default (`https://api.github.com`).
+///
+/// E86.2.2 split this concept from the asset-side
+/// `COGNICODE_ASSET_BASE_URL` (which governs component download URL
+/// rewriting, not release metadata resolution). The two variables are
+/// deliberately distinct: an air-gapped install with a custom asset mirror
+/// can still talk to the real GitHub API for release metadata.
+pub const ENV_API_BASE_URL: &str = "COGNICODE_API_BASE_URL";
+
 /// Default download base URL for release assets.
 pub const DEFAULT_DOWNLOAD_BASE: &str = RELEASE_DOWNLOAD_BASE;
 
@@ -238,29 +259,53 @@ pub fn resolve_release(req: &ResolveRequest) -> Result<ResolvedRelease, Installe
 // HTTP fetch (reqwest::blocking)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Resolve the API origin to use for release/manifest HTTP calls.
+///
+/// Precedence (highest first):
+/// 1. `COGNICODE_API_BASE_URL` — env-var override (E86.2.2 canonical).
+/// 2. `COGNICODE_RELEASE_BASE_URL` — legacy alias (kept for back-compat).
+/// 3. `req.base_url` — programmatic override.
+/// 4. [`DEFAULT_API_BASE`] — default (`https://api.github.com`).
+///
+/// This is the **release/API side**. The asset/download side is governed by
+/// `installer_transaction::resolve_download_url` reading
+/// `COGNICODE_ASSET_BASE_URL`. The two variables are deliberately distinct.
+fn resolve_api_base(req: &ResolveRequest) -> String {
+    if let Ok(v) = std::env::var(ENV_API_BASE_URL) {
+        if !v.is_empty() {
+            return v.trim_end_matches('/').to_string();
+        }
+    }
+    if let Ok(v) = std::env::var("COGNICODE_RELEASE_BASE_URL") {
+        if !v.is_empty() {
+            return v.trim_end_matches('/').to_string();
+        }
+    }
+    if let Some(b) = &req.base_url {
+        return b.clone();
+    }
+    DEFAULT_API_BASE.to_string()
+}
+
 fn fetch_release_latest(req: &ResolveRequest) -> Result<GhRelease, InstallerError> {
-    let url = format!(
-        "{}/repos/{RELEASE_REPO}/releases/latest",
-        req.base_url.as_deref().unwrap_or(DEFAULT_API_BASE)
-    );
-    let resp = http_get(&url, req.base_url.as_deref())?;
+    let api_base = resolve_api_base(req);
+    let url = format!("{}/repos/{RELEASE_REPO}/releases/latest", api_base);
+    let resp = http_get(&url)?;
     serde_json::from_str::<GhRelease>(&resp)
         .map_err(|e| InstallerError::ResolveFailed(format!("parse latest release: {e}")))
 }
 
 fn fetch_release_by_tag(req: &ResolveRequest, tag: &str) -> Result<GhRelease, InstallerError> {
-    let url = format!(
-        "{}/repos/{RELEASE_REPO}/releases/tags/{tag}",
-        req.base_url.as_deref().unwrap_or(DEFAULT_API_BASE)
-    );
-    let resp = http_get(&url, req.base_url.as_deref())?;
+    let api_base = resolve_api_base(req);
+    let url = format!("{}/repos/{RELEASE_REPO}/releases/tags/{tag}", api_base);
+    let resp = http_get(&url)?;
     serde_json::from_str::<GhRelease>(&resp)
         .map_err(|e| InstallerError::ResolveFailed(format!("parse release `{tag}`: {e}")))
 }
 
 /// HTTP GET with a 60s timeout and bearer-token auth when the env var is set.
 /// Returns the body as a string.
-fn http_get(url: &str, _base_url: Option<&str>) -> Result<String, InstallerError> {
+fn http_get(url: &str) -> Result<String, InstallerError> {
     let client = reqwest::blocking::Client::builder()
         .timeout(HTTP_TIMEOUT)
         .user_agent(concat!("cogh/", env!("CARGO_PKG_VERSION")))
@@ -420,6 +465,7 @@ pub fn resolved_to_json(r: &ResolvedRelease) -> Result<String, InstallerError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use tempfile::TempDir;
 
     fn req_with_staging(dir: &Path, platform: Platform) -> ResolveRequest {
@@ -907,6 +953,219 @@ mod tests {
             bearer_a.as_deref(),
             Some("Bearer test-token-abc"),
             "first request always carries the bearer regardless of policy"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // E86.2.2 — release/API side vs asset/component download side
+    //
+    // Before E86.2.2 the single COGNICODE_RELEASE_BASE_URL controlled BOTH the
+    // GitHub API origin and the asset download origin. That conflated two
+    // distinct surfaces and caused the 403 bug when users pointed the variable
+    // at api.github.com (which serves the API but not the assets).
+    //
+    // The split:
+    //   * COGNICODE_API_BASE_URL — release/manifest resolver side.
+    //   * COGNICODE_ASSET_BASE_URL — component download side (installer).
+    //
+    // Legacy COGNICODE_RELEASE_BASE_URL still works on both sides as a
+    // back-compat alias (REQ-86-2-2-02), but the canonical names differ.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Spin up a single-shot loopback HTTP server that records which host it
+    /// received a request from. Used by the env-var precedence tests below.
+    fn one_shot_server() -> (
+        std::sync::mpsc::Receiver<String>,
+        String,
+        u16,
+        std::thread::JoinHandle<()>,
+    ) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::mpsc;
+        use std::thread;
+
+        let (tx, rx) = mpsc::channel();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let port = listener.local_addr().expect("local_addr").port();
+        let handle = thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let raw = String::from_utf8_lossy(&buf[..n]).to_string();
+                let _ = tx.send(raw);
+                // Reply with a minimal valid releases response so the resolver
+                // doesn't panic and the test can assert success.
+                let body = json!({
+                    "tag_name": "v0.95.0",
+                    "draft": false,
+                    "prerelease": false,
+                    "published_at": "2026-09-17T19:07:59Z",
+                    "html_url": "https://github.com/Rubentxu/CogniCode/releases/tag/v0.95.0",
+                    "assets": [{
+                        "name": "bundle-0.95.0-x86_64-unknown-linux-gnu.yaml",
+                        "browser_download_url":
+                            "https://objects.githubusercontent.com/bundle.yaml"
+                    }]
+                });
+                let body_str = body.to_string();
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body_str.len(),
+                    body_str
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+        (rx, format!("http://127.0.0.1:{}", port), port, handle)
+    }
+
+    // REQ-86-2-2-02: ENV_API_BASE_URL takes priority over req.base_url.
+    #[test]
+    #[serial_test::serial]
+    fn t_e86_2_2_02_resolver_reads_api_base_url() {
+        let (rx, loopback, port, _h) = one_shot_server();
+
+        // SAFETY: #[serial] guards against concurrent env mutation.
+        unsafe {
+            std::env::remove_var(ENV_API_BASE_URL);
+            std::env::remove_var("COGNICODE_RELEASE_BASE_URL");
+            std::env::remove_var("COGNICODE_GITHUB_TOKEN");
+        }
+
+        unsafe {
+            std::env::set_var(ENV_API_BASE_URL, &loopback);
+        }
+
+        let req = ResolveRequest {
+            host_platform: Platform::LinuxX86_64,
+            channel: Channel::Stable,
+            requested_version: "latest".to_string(),
+            base_url: None, // deliberately None — ENV_API_BASE_URL must take priority
+            staging_dir: None,
+        };
+
+        let result = resolve_release(&req);
+
+        unsafe {
+            std::env::remove_var(ENV_API_BASE_URL);
+        }
+
+        let req_received = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("loopback server should have received a request");
+        let port_str = format!("127.0.0.1:{}", port);
+        assert!(
+            req_received.contains(&port_str),
+            "resolver must contact the loopback server set by ENV_API_BASE_URL, not api.github.com; \
+             received request: {}",
+            req_received
+        );
+        assert!(
+            !req_received.contains("api.github.com"),
+            "resolver must NOT contact api.github.com when ENV_API_BASE_URL is set"
+        );
+
+        let r = result.expect("resolver should succeed with 200 from loopback");
+        assert_eq!(r.version, "0.95.0");
+    }
+
+    // REQ-86-2-2-02: legacy COGNICODE_RELEASE_BASE_URL is still honored on
+    // the API side when COGNICODE_API_BASE_URL is unset.
+    #[test]
+    #[serial_test::serial]
+    fn t_e86_2_2_06_legacy_release_base_url_still_works_api_side() {
+        let (rx, loopback, port, _h) = one_shot_server();
+
+        unsafe {
+            std::env::remove_var(ENV_API_BASE_URL);
+            std::env::remove_var("COGNICODE_RELEASE_BASE_URL");
+            std::env::remove_var("COGNICODE_GITHUB_TOKEN");
+        }
+
+        unsafe {
+            std::env::set_var("COGNICODE_RELEASE_BASE_URL", &loopback);
+        }
+
+        let req = ResolveRequest {
+            host_platform: Platform::LinuxX86_64,
+            channel: Channel::Stable,
+            requested_version: "latest".to_string(),
+            base_url: None,
+            staging_dir: None,
+        };
+
+        let result = resolve_release(&req);
+
+        unsafe {
+            std::env::remove_var("COGNICODE_RELEASE_BASE_URL");
+        }
+
+        let req_received = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("loopback server should have received a request");
+        let port_str = format!("127.0.0.1:{}", port);
+        assert!(
+            req_received.contains(&port_str),
+            "legacy COGNICODE_RELEASE_BASE_URL must still be honored on the API side; \
+             received request: {}",
+            req_received
+        );
+
+        let r = result.expect("resolver should succeed");
+        assert_eq!(r.version, "0.95.0");
+    }
+
+    // REQ-86-2-2-02: ENV_API_BASE_URL beats legacy COGNICODE_RELEASE_BASE_URL
+    // on the API side.
+    #[test]
+    #[serial_test::serial]
+    fn t_e86_2_2_07_api_base_url_beats_legacy_release_base_url() {
+        let (rx_primary, primary, primary_port, _h_primary) = one_shot_server();
+
+        unsafe {
+            std::env::remove_var(ENV_API_BASE_URL);
+            std::env::remove_var("COGNICODE_RELEASE_BASE_URL");
+            std::env::remove_var("COGNICODE_GITHUB_TOKEN");
+        }
+
+        // Set both, but different values. The new variable must win.
+        unsafe {
+            std::env::set_var(ENV_API_BASE_URL, &primary);
+            std::env::set_var(
+                "COGNICODE_RELEASE_BASE_URL",
+                "http://this-host-should-NOT-be-contacted.invalid",
+            );
+        }
+
+        let req = ResolveRequest {
+            host_platform: Platform::LinuxX86_64,
+            channel: Channel::Stable,
+            requested_version: "latest".to_string(),
+            base_url: None,
+            staging_dir: None,
+        };
+
+        let _ = resolve_release(&req);
+
+        unsafe {
+            std::env::remove_var(ENV_API_BASE_URL);
+            std::env::remove_var("COGNICODE_RELEASE_BASE_URL");
+        }
+
+        let req_received = rx_primary
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("primary loopback should have received a request");
+        let primary_port_str = format!("127.0.0.1:{}", primary_port);
+        assert!(
+            req_received.contains(&primary_port_str),
+            "ENV_API_BASE_URL must beat COGNICODE_RELEASE_BASE_URL on the API side; \
+             received request: {}",
+            req_received
+        );
+        assert!(
+            !req_received.contains("this-host-should-NOT-be-contacted.invalid"),
+            "legacy env var must NOT have been contacted when ENV_API_BASE_URL is set"
         );
     }
 }

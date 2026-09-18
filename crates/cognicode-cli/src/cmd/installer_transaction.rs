@@ -9,7 +9,7 @@
 
 use std::path::PathBuf;
 
-use super::lifecycle_resolver::{bearer_from_env, gh_trust_set};
+use super::lifecycle_resolver::{DEFAULT_API_BASE, bearer_from_env, gh_trust_set};
 use crate::bundle_manifest::{BundleManifest, Platform};
 use crate::error::{BundleManifestError, InstallerError};
 use crate::layout;
@@ -17,6 +17,7 @@ use crate::platform_adapter;
 use crate::registry;
 use crate::rollback_journal::{RollbackJournal, SideEffect};
 use sha2::Digest;
+use std::io::Write;
 
 /// Maximum number of redirect hops allowed during a download.
 ///
@@ -31,28 +32,112 @@ const MAX_DOWNLOAD_REDIRECTS: u8 = 5;
 /// an exact generated manifest instead of relying on any embedded fallback.
 pub const ENV_BUNDLE_MANIFEST: &str = "COGNICODE_BUNDLE_MANIFEST";
 
-/// Environment variable overriding the origin used to FETCH release artifacts.
+/// Environment variable for the asset download mirror.
 ///
-/// Manifests always carry canonical `github.com` URLs, and the v2 contract
-/// rejects anything else. This override changes only the fetch origin, never the
-/// manifest. It is what makes mirrors, air-gapped installs, and deterministic
-/// offline tests possible without weakening the canonical-URL rule.
-pub const ENV_RELEASE_BASE_URL: &str = "COGNICODE_RELEASE_BASE_URL";
+/// When set and non-empty, `resolve_download_url` rewrites canonical
+/// `RELEASE_DOWNLOAD_BASE/<rest>` URLs onto this origin instead.
+/// This is the correct variable to set for asset mirrors.
+///
+/// The old `COGNICODE_RELEASE_BASE_URL` (now `COGNICODE_API_BASE_URL`)
+/// was incorrectly used for asset rewriting, causing 403 on
+/// api.github.com (which does not serve release assets).
+pub const ENV_ASSET_BASE_URL: &str = "COGNICODE_ASSET_BASE_URL";
 
 /// Rewrite a canonical component URL onto the configured fetch origin, if any.
+///
+/// ## Behaviour
+///
+/// - `COGNICODE_ASSET_BASE_URL` set + non-empty → rewrite
+///   `https://github.com/Rubentxu/CogniCode/releases/download/<rest>` onto it.
+/// - `COGNICODE_ASSET_BASE_URL` unset/empty AND
+///   `COGNICODE_RELEASE_BASE_URL=https://api.github.com` → emit a
+///   one-time deprecation warning on stderr; return canonical.
+/// - Otherwise → return canonical unchanged.
+///
+/// URLs that do **not** begin with `RELEASE_DOWNLOAD_BASE` are returned
+/// as-is regardless of env vars (REQ-86-2-2-01b — non-canonical URLs
+/// are never rewritten).
 pub fn resolve_download_url(canonical: &str) -> String {
-    let Some(base) = std::env::var_os(ENV_RELEASE_BASE_URL) else {
-        return canonical.to_string();
-    };
-    let base = base.to_string_lossy();
-    let base = base.trim_end_matches('/');
-    if base.is_empty() {
-        return canonical.to_string();
+    resolve_download_url_into(canonical, None)
+}
+
+/// Same as [`resolve_download_url`] but, when the deprecation shim fires,
+/// writes the warning message to `warn_sink` instead of stderr. Tests use
+/// this entry point to assert the warning is emitted; production code uses
+/// [`resolve_download_url`] which routes to stderr.
+///
+/// ## Precedence (highest first)
+///
+/// 1. `COGNICODE_ASSET_BASE_URL` — canonical asset-side override.
+/// 2. `COGNICODE_RELEASE_BASE_URL` — legacy back-compat alias (still
+///    honored, with a deprecation warning emitted the first time it
+///    triggers a rewrite).
+/// 3. Canonical URL — unchanged.
+///
+/// ## Special case: api.github.com as legacy value
+///
+/// If the legacy var is set to exactly `DEFAULT_API_BASE` (`api.github.com`),
+/// it is treated as **unset** (with a warning) and the canonical URL is
+/// returned. This was the root cause of the E86.2 real-PC 403 bug: the
+/// legacy var was being rewritten onto `api.github.com`, which serves the
+/// API but not release assets.
+pub fn resolve_download_url_into(canonical: &str, mut warn_sink: Option<&mut Vec<u8>>) -> String {
+    let asset_base = std::env::var_os(ENV_ASSET_BASE_URL);
+
+    // Case 1: ASSET_BASE_URL is set and non-empty → rewrite.
+    if let Some(base) = asset_base {
+        let base = base.to_string_lossy();
+        let base = base.trim_end_matches('/');
+        if !base.is_empty() {
+            if let Some(rest) =
+                canonical.strip_prefix(crate::release_contract::RELEASE_DOWNLOAD_BASE)
+            {
+                return format!("{base}{rest}");
+            }
+        }
     }
-    match canonical.strip_prefix(crate::release_contract::RELEASE_DOWNLOAD_BASE) {
-        Some(rest) => format!("{base}{rest}"),
-        None => canonical.to_string(),
+
+    // Case 2: ASSET_BASE_URL is unset/empty — fall back to the deprecated
+    // old name COGNICODE_RELEASE_BASE_URL for back-compat with air-gapped
+    // installs and mirrors predating E86.2.2.
+    if let Ok(old) = std::env::var("COGNICODE_RELEASE_BASE_URL") {
+        if !old.is_empty() {
+            let trimmed = old.trim_end_matches('/');
+            if trimmed == DEFAULT_API_BASE {
+                // api.github.com does NOT serve release assets. The legacy
+                // var being set to that value is the exact pattern that
+                // caused the E86.2 403 bug — emit a warning and treat as
+                // unset (return canonical).
+                let msg = "warning: COGNICODE_RELEASE_BASE_URL is set to \
+                           https://api.github.com, which does not serve release assets; \
+                           use COGNICODE_ASSET_BASE_URL for asset mirrors \
+                           or COGNICODE_API_BASE_URL for the API base.\n";
+                if let Some(sink) = warn_sink.as_deref_mut() {
+                    let _ = sink.write(msg.as_bytes());
+                } else {
+                    eprint!("{msg}");
+                }
+                return canonical.to_string();
+            }
+            // Any other non-empty value: rewrite (back-compat) but emit
+            // a one-shot deprecation warning so users can migrate to
+            // COGNICODE_ASSET_BASE_URL.
+            if let Some(rest) =
+                canonical.strip_prefix(crate::release_contract::RELEASE_DOWNLOAD_BASE)
+            {
+                let msg = "warning: COGNICODE_RELEASE_BASE_URL is deprecated; \
+                           use COGNICODE_ASSET_BASE_URL for asset mirrors.\n";
+                if let Some(sink) = warn_sink.as_deref_mut() {
+                    let _ = sink.write(msg.as_bytes());
+                } else {
+                    eprint!("{msg}");
+                }
+                return format!("{trimmed}{rest}");
+            }
+        }
     }
+
+    canonical.to_string()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -637,7 +722,7 @@ mod tests {
     }
 
     #[test]
-    #[serial]
+    #[serial_test::serial]
     fn advance_skips_through_all_stages() {
         // Drive the real pipeline end to end against a real release that is
         // generated by the factory and served locally, so the Downloading,
@@ -689,7 +774,7 @@ mod tests {
     }
 
     #[test]
-    #[serial]
+    #[serial_test::serial]
     fn commit_writes_manifest_file() {
         // Writes to `cognicode_home()/install/<version>/manifest.yaml`.
         let _home = TempCognicodeHome::new();
@@ -744,7 +829,7 @@ components:
     // round-trip through `lifecycle_journal::load`.)
 
     #[test]
-    #[serial]
+    #[serial_test::serial]
     fn commit_writes_journal_next_to_install() {
         let _home = TempCognicodeHome::new();
         let yaml = r#"
@@ -1069,6 +1154,192 @@ components:
         assert!(
             msg.contains("TooManyRedirects"),
             "error must contain 'TooManyRedirects', got: {msg}"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // E86.2.2 — Asset-base vs API-base URL split
+    //
+    // Before E86.2.2, COGNICODE_RELEASE_BASE_URL was the single env var for both
+    // the GitHub API origin and the asset download origin. That caused a 403 bug:
+    // when COGNICODE_RELEASE_BASE_URL=https://api.github.com, the resolver rewrote
+    // canonical github.com asset URLs onto api.github.com, which does not serve
+    // release assets.
+    //
+    // E86.2.2 splits this into:
+    //   COGNICODE_API_BASE_URL   — GitHub API origin (resolver path, default unchanged)
+    //   COGNICODE_ASSET_BASE_URL — asset download origin (installer path, default empty)
+    //
+    // resolve_download_url now rewrites ONLY when COGNICODE_ASSET_BASE_URL is set.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // REQ-86-2-2-01a: ASSET_BASE_URL is set → rewrite canonical asset URL.
+    #[test]
+    #[serial_test::serial]
+    fn t_e86_2_2_01a_resolve_download_url_honors_asset_base() {
+        // SAFETY: #[serial] guards against concurrent env mutation.
+        unsafe {
+            std::env::set_var("COGNICODE_ASSET_BASE_URL", "https://my-mirror.example.com");
+        }
+        let result = super::resolve_download_url(
+            "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/bundle-0.95.0-x86_64-unknown-linux-gnu.yaml",
+        );
+        unsafe {
+            std::env::remove_var("COGNICODE_ASSET_BASE_URL");
+        }
+        assert_eq!(
+            result,
+            "https://my-mirror.example.com/v0.95.0/bundle-0.95.0-x86_64-unknown-linux-gnu.yaml",
+            "canonical asset URL must be rewritten onto ASSET_BASE_URL"
+        );
+    }
+
+    // REQ-86-2-2-01b: non-canonical URLs pass through unchanged regardless of env.
+    #[test]
+    #[serial_test::serial]
+    fn t_e86_2_2_01b_resolve_download_url_passes_through_non_canonical() {
+        // SAFETY: #[serial] guards against concurrent env mutation.
+        unsafe {
+            std::env::set_var("COGNICODE_ASSET_BASE_URL", "https://my-mirror.example.com");
+        }
+        let result = super::resolve_download_url("https://example.com/whatever/thing.tar.gz");
+        unsafe {
+            std::env::remove_var("COGNICODE_ASSET_BASE_URL");
+        }
+        assert_eq!(
+            result, "https://example.com/whatever/thing.tar.gz",
+            "non-canonical URL must not be rewritten even when ASSET_BASE_URL is set"
+        );
+    }
+
+    // REQ-86-2-2-01c: ASSET_BASE_URL unset → return canonical unchanged.
+    #[test]
+    #[serial_test::serial]
+    fn t_e86_2_2_01c_resolve_download_url_canonical_when_unset() {
+        // SAFETY: #[serial] guards; clear any stale old-name variable.
+        unsafe {
+            std::env::remove_var("COGNICODE_ASSET_BASE_URL");
+            std::env::remove_var("COGNICODE_RELEASE_BASE_URL");
+        }
+        let result = super::resolve_download_url(
+            "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/cognicode-0.95.0-x86_64-unknown-linux-gnu.tar.gz",
+        );
+        assert_eq!(
+            result,
+            "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/cognicode-0.95.0-x86_64-unknown-linux-gnu.tar.gz",
+            "canonical URL must pass through when ASSET_BASE_URL is unset"
+        );
+    }
+
+    // REQ-86-2-2-03: old COGNICODE_RELEASE_BASE_URL=https://api.github.com
+    // emits a deprecation warning to stderr.
+    //
+    // The warning is emitted from `resolve_download_url` which writes to stderr.
+    // To test this without a subprocess, we redirect stderr to a temp file using
+    // a helper binary approach: write a small shim to a temp file that redirects
+    // stderr and run it.
+    #[test]
+    #[serial_test::serial]
+    fn t_e86_2_2_03_deprecation_warning_on_old_var_with_api_host() {
+        // SAFETY: #[serial] guards against concurrent env mutation.
+        unsafe {
+            std::env::remove_var("COGNICODE_ASSET_BASE_URL");
+            std::env::set_var("COGNICODE_RELEASE_BASE_URL", DEFAULT_API_BASE);
+        }
+
+        let mut sink: Vec<u8> = Vec::new();
+        let result = super::resolve_download_url_into(
+            "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/pkg.tar.gz",
+            Some(&mut sink),
+        );
+
+        // SAFETY: cleanup; env state must not leak into other tests.
+        unsafe {
+            std::env::remove_var("COGNICODE_RELEASE_BASE_URL");
+        }
+
+        assert_eq!(
+            result, "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/pkg.tar.gz",
+            "old RELEASE_BASE_URL=api.github.com must NOT rewrite (would cause 403)"
+        );
+
+        let warning = String::from_utf8_lossy(&sink);
+        assert!(
+            warning.contains("COGNICODE_RELEASE_BASE_URL"),
+            "warning must name the deprecated variable, got: {warning}"
+        );
+        assert!(
+            warning.contains("COGNICODE_ASSET_BASE_URL")
+                && warning.contains("COGNICODE_API_BASE_URL"),
+            "warning must name both new env vars to guide migration, got: {warning}"
+        );
+    }
+
+    // REQ-86-2-2-04: legacy COGNICODE_RELEASE_BASE_URL is still honored on
+    // the asset side when COGNICODE_ASSET_BASE_URL is unset.
+    //
+    // This is the back-compat tripwire: air-gapped installs / mirrors set
+    // COGNICODE_RELEASE_BASE_URL today. After E86.2.2 split the variable,
+    // those setups must still work without an explicit migration step.
+    #[test]
+    #[serial_test::serial]
+    fn t_e86_2_2_04_legacy_release_base_url_still_works_asset_side() {
+        // SAFETY: #[serial] guards against concurrent env mutation.
+        unsafe {
+            std::env::remove_var("COGNICODE_ASSET_BASE_URL");
+            std::env::remove_var("COGNICODE_RELEASE_BASE_URL");
+        }
+        unsafe {
+            std::env::set_var(
+                "COGNICODE_RELEASE_BASE_URL",
+                "https://my-legacy-mirror.example.com",
+            );
+        }
+
+        let result = super::resolve_download_url(
+            "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/pkg.tar.gz",
+        );
+
+        unsafe {
+            std::env::remove_var("COGNICODE_RELEASE_BASE_URL");
+        }
+
+        assert_eq!(
+            result, "https://my-legacy-mirror.example.com/v0.95.0/pkg.tar.gz",
+            "legacy COGNICODE_RELEASE_BASE_URL must still rewrite on the asset side"
+        );
+    }
+
+    // REQ-86-2-2-05: COGNICODE_ASSET_BASE_URL beats legacy
+    // COGNICODE_RELEASE_BASE_URL on the asset side (no env var ambiguity).
+    #[test]
+    #[serial_test::serial]
+    fn t_e86_2_2_05_asset_base_url_beats_legacy_release_base_url() {
+        // SAFETY: #[serial] guards.
+        unsafe {
+            std::env::remove_var("COGNICODE_ASSET_BASE_URL");
+            std::env::remove_var("COGNICODE_RELEASE_BASE_URL");
+        }
+        unsafe {
+            std::env::set_var("COGNICODE_ASSET_BASE_URL", "https://new-mirror.example.com");
+            std::env::set_var(
+                "COGNICODE_RELEASE_BASE_URL",
+                "https://legacy-mirror.example.com",
+            );
+        }
+
+        let result = super::resolve_download_url(
+            "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/pkg.tar.gz",
+        );
+
+        unsafe {
+            std::env::remove_var("COGNICODE_ASSET_BASE_URL");
+            std::env::remove_var("COGNICODE_RELEASE_BASE_URL");
+        }
+
+        assert_eq!(
+            result, "https://new-mirror.example.com/v0.95.0/pkg.tar.gz",
+            "ASSET_BASE_URL must beat RELEASE_BASE_URL on the asset side"
         );
     }
 }

@@ -8,8 +8,11 @@
 //! verifies is the digest of the bytes actually served over HTTP.
 //!
 //! The only thing that is local is the *origin*: the manifest carries canonical
-//! `github.com` URLs and `COGNICODE_RELEASE_BASE_URL` redirects the fetch to a
-//! loopback server for the duration of the test.
+//! `github.com` URLs and `COGNICODE_ASSET_BASE_URL` redirects the fetch to a
+//! loopback server for the duration of the test. E86.2.2 split the legacy
+//! `COGNICODE_RELEASE_BASE_URL` into two variables — one for the API/release
+//! resolver side and one for the asset/component download side — but this
+//! fixture only needs the **asset** side.
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
@@ -17,7 +20,7 @@ use std::process::{Child, Command};
 use anyhow::{Context, Result};
 
 use crate::bundle_manifest::Platform;
-use crate::installer_transaction::{ENV_BUNDLE_MANIFEST, ENV_RELEASE_BASE_URL};
+use crate::installer_transaction::{ENV_ASSET_BASE_URL, ENV_BUNDLE_MANIFEST};
 use crate::release_contract::{artifact_filename, platform_token, published_components};
 use crate::release_factory::generate_release;
 
@@ -27,7 +30,7 @@ pub struct LocalRelease {
     pub dir: PathBuf,
     /// Path of the generated per-platform bundle manifest.
     pub manifest_path: PathBuf,
-    /// Loopback base URL to point `COGNICODE_RELEASE_BASE_URL` at.
+    /// Loopback base URL for the asset mirror (`COGNICODE_ASSET_BASE_URL`).
     pub base_url: String,
     /// Directory holding the `releases.json` fixture the e86 `lifecycle_resolver`
     /// reads when `--staging` is set. `None` until [`ResolverFixture::build`] is
@@ -187,11 +190,18 @@ fn wait_for_server(base_url: &str) {
 }
 
 /// Point the process at a generated release. Caller must set `COGNICODE_HOME`.
+///
+/// E86.2.2: sets `COGNICODE_ASSET_BASE_URL` (the installer-side override),
+/// **not** the legacy `COGNICODE_RELEASE_BASE_URL`. The asset-side variable
+/// is what `installer_transaction::resolve_download_url` reads to rewrite
+/// canonical github.com component URLs onto this loopback. The resolver-side
+/// (`COGNICODE_API_BASE_URL`) is intentionally left untouched because
+/// `point_at` is only used by the installer pipeline, not the resolver.
 pub fn point_at(release: &LocalRelease) {
     // SAFETY: tests using this are `#[serial]`.
     unsafe {
         std::env::set_var(ENV_BUNDLE_MANIFEST, &release.manifest_path);
-        std::env::set_var(ENV_RELEASE_BASE_URL, &release.base_url);
+        std::env::set_var(ENV_ASSET_BASE_URL, &release.base_url);
     }
 }
 
@@ -199,7 +209,7 @@ pub fn point_at(release: &LocalRelease) {
 pub fn unpoint() {
     unsafe {
         std::env::remove_var(ENV_BUNDLE_MANIFEST);
-        std::env::remove_var(ENV_RELEASE_BASE_URL);
+        std::env::remove_var(ENV_ASSET_BASE_URL);
     }
 }
 

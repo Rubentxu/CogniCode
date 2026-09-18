@@ -547,10 +547,16 @@ pub(crate) mod test_support {
         }
     }
 
-    /// Set `COGNICODE_RELEASE_BASE_URL` for the lifetime of the guard. Used by
+    /// Set `COGNICODE_ASSET_BASE_URL` for the lifetime of the guard. Used by
     /// the e86 followup fixture tests so the install pipeline rewrites
     /// canonical github.com component URLs onto the loopback server.
     /// Callers MUST be `#[serial]`.
+    ///
+    /// E86.2.2 split the legacy `COGNICODE_RELEASE_BASE_URL` into two:
+    /// `COGNICODE_ASSET_BASE_URL` (this one) for the installer-side
+    /// rewriting, and `COGNICODE_API_BASE_URL` for the resolver-side.
+    /// The installer tests below only need the asset override; the resolver
+    /// tests use `TempApiBase` or pass a `base_url` to the `ResolveRequest`.
     ///
     /// Also clears `COGNICODE_BUNDLE_MANIFEST` on construction. That env var
     /// is the legacy `point_at()` seam: if a previous `#[serial]` test
@@ -566,11 +572,11 @@ pub(crate) mod test_support {
 
     impl TempBaseUrl {
         pub(crate) fn set(base_url: &str) -> Self {
-            let prev = std::env::var_os("COGNICODE_RELEASE_BASE_URL");
+            let prev = std::env::var_os("COGNICODE_ASSET_BASE_URL");
             let prev_bundle_manifest = std::env::var_os("COGNICODE_BUNDLE_MANIFEST");
             // SAFETY: callers are #[serial].
             unsafe {
-                std::env::set_var("COGNICODE_RELEASE_BASE_URL", base_url);
+                std::env::set_var("COGNICODE_ASSET_BASE_URL", base_url);
                 std::env::remove_var("COGNICODE_BUNDLE_MANIFEST");
             }
             Self {
@@ -585,8 +591,8 @@ pub(crate) mod test_support {
             // SAFETY: callers are #[serial].
             unsafe {
                 match &self.prev {
-                    Some(v) => std::env::set_var("COGNICODE_RELEASE_BASE_URL", v),
-                    None => std::env::remove_var("COGNICODE_RELEASE_BASE_URL"),
+                    Some(v) => std::env::set_var("COGNICODE_ASSET_BASE_URL", v),
+                    None => std::env::remove_var("COGNICODE_ASSET_BASE_URL"),
                 }
                 match &self.prev_bundle_manifest {
                     Some(v) => std::env::set_var("COGNICODE_BUNDLE_MANIFEST", v),
