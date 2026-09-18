@@ -205,7 +205,24 @@ pub fn read_opencode_config() -> Result<Value> {
 }
 
 /// Atomic JSON write (tmp + rename).
+///
+/// DEBT-1: if the file already exists and parses to a JSON value that is
+/// *semantically equal* to `value`, the write is skipped entirely — no
+/// content change, no mtime bump, no inode churn ("HOME zero-touch" for
+/// repeated installs). Semantic equality is structural JSON equality
+/// (`serde_json::Value`), not byte equality; key order and formatting
+/// differences do not count as changes. A real semantic change still
+/// goes through the atomic tmp+rename path.
 fn write_json_atomic(path: &Path, value: &Value) -> Result<()> {
+    if path.exists() {
+        if let Ok(text) = std::fs::read_to_string(path) {
+            if let Ok(current) = serde_json::from_str::<Value>(&text) {
+                if current == *value {
+                    return Ok(());
+                }
+            }
+        }
+    }
     let tmp = path.with_extension("json.tmp");
     if let Some(parent) = tmp.parent() {
         std::fs::create_dir_all(parent)
@@ -910,6 +927,145 @@ mod tests {
     use super::*;
     use serial_test::serial;
     use std::io::Write;
+
+    /// DEBT-1: semantic equality, not byte equality. A file with the same
+    /// JSON under different formatting/key order must not be rewritten.
+    #[test]
+    fn t_debt1_write_json_atomic_semantic_equal_different_formatting_skips() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("cfg.json");
+        // Compact, keys in non-canonical order.
+        std::fs::write(&target, r#"{"b":1,"a":{"z":true,"y":[1,2]}}"#).unwrap();
+        filetime::set_file_mtime(&target, filetime::FileTime::from_unix_time(1, 0)).unwrap();
+        let meta_before = std::fs::metadata(&target).unwrap();
+
+        let value: Value = serde_json::from_str(r#"{"a":{"y":[1,2],"z":true},"b":1}"#).unwrap();
+        write_json_atomic(&target, &value).expect("write must succeed");
+
+        let meta_after = std::fs::metadata(&target).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            r#"{"b":1,"a":{"z":true,"y":[1,2]}}"#,
+            "semantically equal content must be preserved byte-for-byte"
+        );
+        assert_eq!(
+            meta_before.modified().unwrap(),
+            meta_after.modified().unwrap(),
+            "semantically equal write must not touch mtime"
+        );
+    }
+
+    /// DEBT-1: a real semantic change still goes through the atomic
+    /// tmp+rename path and lands on disk.
+    #[test]
+    fn t_debt1_write_json_atomic_real_change_writes_atomically() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("cfg.json");
+        std::fs::write(&target, r#"{"a":1}"#).unwrap();
+
+        let value: Value = serde_json::from_str(r#"{"a":2}"#).unwrap();
+        write_json_atomic(&target, &value).expect("write must succeed");
+
+        let text = std::fs::read_to_string(&target).unwrap();
+        let parsed: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(parsed["a"], 2, "semantic change must be persisted");
+        assert!(
+            !target.with_extension("json.tmp").exists(),
+            "atomic rename must not leave the tmp file behind"
+        );
+    }
+
+    /// DEBT-1: an unparseable existing file is not silently preserved —
+    /// it is replaced (can't establish semantic equality).
+    #[test]
+    fn t_debt1_write_json_atomic_unparseable_existing_is_replaced() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("cfg.json");
+        std::fs::write(&target, "not json {{{").unwrap();
+
+        let value: Value = serde_json::from_str(r#"{"a":1}"#).unwrap();
+        write_json_atomic(&target, &value).expect("write must succeed");
+
+        let parsed: Value =
+            serde_json::from_str(&std::fs::read_to_string(&target).unwrap()).unwrap();
+        assert_eq!(parsed["a"], 1);
+    }
+
+    /// DEBT-1 characterization RED: `Step::MergeJson` with an entry that is
+    /// already present must be a semantic no-op — the file must not be
+    /// touched (mtime, inode, bytes). Current code rewrites unconditionally.
+    #[test]
+    #[serial]
+    fn t_debt1_merge_json_semantic_noop_skips_write() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("opencode.json");
+        let original = r#"{
+  "mcp": {
+    "cognicode-mcp": {
+      "command": [
+        "/shims/cognicode-mcp"
+      ],
+      "enabled": true,
+      "type": "stdio"
+    }
+  }
+}"#;
+        std::fs::write(&target, original).unwrap();
+
+        // Redirect OpenCodePaths at the disposable config for the
+        // duration of the test.
+        let prev = std::env::var("OPENCODE_CONFIG").ok();
+        unsafe {
+            std::env::set_var("OPENCODE_CONFIG", &target);
+        }
+
+        // Freeze mtime to a known past value so a rewrite is detectable
+        // even on filesystems with coarse timestamps.
+        let past = filetime::FileTime::from_unix_time(1_000_000_000, 0);
+        filetime::set_file_mtime(&target, past).unwrap();
+        let meta_before = std::fs::metadata(&target).unwrap();
+        let sha_before = crate::release_contract::sha256_file(&target).unwrap();
+
+        let steps = integrate_opencode(
+            &tmp.path().join("skills"),
+            "0.95.0",
+            &["/shims/cognicode-mcp".to_string()],
+        )
+        .unwrap();
+        for step in steps {
+            step.execute().unwrap();
+        }
+
+        // Restore env before asserting so failures don't leak it.
+        match prev {
+            Some(v) => unsafe {
+                std::env::set_var("OPENCODE_CONFIG", v);
+            },
+            None => unsafe {
+                std::env::remove_var("OPENCODE_CONFIG");
+            },
+        }
+
+        let meta_after = std::fs::metadata(&target).unwrap();
+        let sha_after = crate::release_contract::sha256_file(&target).unwrap();
+        assert_eq!(
+            sha_before, sha_after,
+            "DEBT-1: semantic no-op must not change file content"
+        );
+        {
+            use std::os::unix::fs::MetadataExt;
+            assert_eq!(
+                meta_before.ino(),
+                meta_after.ino(),
+                "DEBT-1: semantic no-op must not rewrite the file (inode changed)"
+            );
+        }
+        assert_eq!(
+            meta_before.modified().unwrap(),
+            meta_after.modified().unwrap(),
+            "DEBT-1: semantic no-op must not touch mtime"
+        );
+    }
 
     /// Plant a version home with a bundle manifest declaring the
     /// `skills-for-claude` skill bundle (pairwise-distinct from the

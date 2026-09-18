@@ -494,6 +494,7 @@ dependencies = [
  "clap",
  "cognicode-core",
  "dirs",
+ "filetime",
  "flate2",
  "rayon",
  "reqwest 0.12.28",
