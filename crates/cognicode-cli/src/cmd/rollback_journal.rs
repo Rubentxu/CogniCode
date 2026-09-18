@@ -218,11 +218,21 @@ impl RollbackJournal {
         serde_json::to_string_pretty(self).map_err(|e| InstallerError::Serialize(e.to_string()))
     }
 
-    /// Deserialise a journal from JSON. The result has `committed: false`
-    /// by construction (we are loading it to reverse it).
+    /// Deserialise a journal from JSON.
+    ///
+    /// DEBT-4 architectural rule: a deserialized RollbackJournal MUST NOT
+    /// retain armed Drop rollback behaviour. A load is an observation, not
+    /// an operation; only an explicit `rollback()` call may reverse
+    /// effects, and only after the caller has validated applicability.
+    /// Drop-neutralization happens at the source (this constructor and
+    /// [`lifecycle_journal::load`]) so no consumer can re-introduce the
+    /// hazard: dropping a loaded journal in any early-return path must
+    /// never silently replay a reversal.
     pub fn from_json(s: &str) -> Result<Self, InstallerError> {
-        serde_json::from_str::<RollbackJournal>(s)
-            .map_err(|e| InstallerError::Serialize(e.to_string()))
+        let mut journal: RollbackJournal =
+            serde_json::from_str(s).map_err(|e| InstallerError::Serialize(e.to_string()))?;
+        journal.committed = true;
+        Ok(journal)
     }
 
     /// Reverse all side-effects in LIFO order.

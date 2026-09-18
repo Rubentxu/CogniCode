@@ -102,10 +102,17 @@ pub fn write(
 }
 
 /// Load a journal from disk and return its in-memory form.
+///
+/// DEBT-4 architectural rule: a deserialized RollbackJournal MUST NOT
+/// retain armed Drop rollback behaviour. The returned journal is
+/// Drop-neutralized (`committed = true`): dropping it never replays a
+/// reversal. Executing a rollback is an explicit `journal.rollback()`
+/// call by a consumer that has validated applicability (tracker match).
 pub fn load(path: &Path) -> Result<RollbackJournal, InstallerError> {
     let text = std::fs::read_to_string(path).map_err(|e| InstallerError::Io(path.into(), e))?;
-    let envelope: PersistedJournal = serde_json::from_str(&text)
+    let mut envelope: PersistedJournal = serde_json::from_str(&text)
         .map_err(|e| InstallerError::Serialize(format!("journal `{}`: {}", path.display(), e)))?;
+    envelope.effects.commit();
     Ok(envelope.effects)
 }
 
@@ -149,7 +156,72 @@ pub fn list_committed() -> Result<Vec<String>, InstallerError> {
 mod tests {
     use super::*;
     use crate::bundle_manifest::{BundleManifest, Platform};
+    use serial_test::serial;
     use tempfile::TempDir;
+
+    /// DEBT-4 tripwire: every deserialized journal MUST be Drop-neutralized.
+    /// Dropping a loaded journal in an early-return path must never silently
+    /// replay a reversal (the journal is an observation until the consumer
+    /// explicitly validates applicability and calls `rollback()`).
+    #[test]
+    #[serial]
+    fn t_debt4_loaded_journal_is_drop_neutralized() {
+        let tmp = TempDir::new().unwrap();
+        let journal_dir = tmp.path().join("journal");
+        std::fs::create_dir_all(&journal_dir).unwrap();
+        let marker_dir = tmp.path().join("versions").join("0.95.0");
+        std::fs::create_dir_all(&marker_dir).unwrap();
+        let manifest = marker_dir.join("manifest.yaml");
+        std::fs::write(&manifest, "version: 0.95.0\n").unwrap();
+
+        unsafe {
+            std::env::set_var("COGNICODE_HOME", tmp.path());
+        }
+
+        let mut j = crate::rollback_journal::RollbackJournal::new();
+        j.record(crate::rollback_journal::SideEffect::WroteManifest(
+            manifest.clone(),
+        ));
+        let manifest_fixture = manifest_for("0.95.0");
+        write(
+            &j,
+            &manifest_fixture,
+            None,
+            &journal_dir.join("0.95.0.json"),
+        )
+        .unwrap();
+
+        let path = journal_path("0.95.0");
+        // Drop without commit: the loaded journal must NOT revert effects.
+        {
+            let loaded = load(&path).expect("load must succeed");
+            let _ = loaded; // dropped armed = bug
+        }
+        assert!(
+            manifest.exists(),
+            "DEBT-4: a deserialized journal must be Drop-neutralized; \
+             dropping it must not silently replay a reversal"
+        );
+        // Same guarantee through from_json (source-level neutralization).
+        {
+            let loaded2 =
+                crate::rollback_journal::RollbackJournal::from_json(&j.to_json().unwrap())
+                    .expect("from_json must succeed");
+            let _ = loaded2;
+        }
+        assert!(
+            manifest.exists(),
+            "DEBT-4: from_json must also produce a Drop-neutralized journal"
+        );
+
+        unsafe {
+            if let Some(v) = std::env::var("COGNICODE_HOME_PREV").ok() {
+                std::env::set_var("COGNICODE_HOME", v);
+            } else {
+                std::env::remove_var("COGNICODE_HOME");
+            }
+        }
+    }
 
     fn manifest_for(version: &str) -> BundleManifest {
         let yaml = format!(
