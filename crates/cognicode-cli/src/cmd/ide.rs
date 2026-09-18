@@ -294,7 +294,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
 // ===== ZCode adapter (E32-E) =====
 
 pub fn detect_zcode() -> bool {
-    ZCodePaths::resolve().config_file.exists()
+    ZCodePaths::resolve().config_file.is_file()
 }
 
 /// ZCode ownership root. Single source of truth for both the config file
@@ -524,7 +524,7 @@ pub fn uninstall_claude(version: &str) -> Result<()> {
 // ===== Codex adapter (E32-G) =====
 
 pub fn detect_codex() -> bool {
-    CodexPaths::resolve().config_file.exists()
+    CodexPaths::resolve().config_file.is_file()
 }
 
 /// Codex ownership root. Single source of truth for both the config file
@@ -1507,6 +1507,180 @@ mcp_servers.existing.args = ['y']
         assert!(
             detected,
             "detect_opencode must return true when opencode.json exists; got false"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // ===== E86.6 — detect_zcode / detect_codex use is_file =====
+
+    /// T1 (RED before fix): `detect_zcode()` must return FALSE when the
+    /// resolved `config_file` is a directory, not a regular file.
+    /// Same shape as `t_e86_5_detect_opencode_returns_false_when_config_is_directory`,
+    /// but for the ZCode adapter.
+    #[test]
+    #[serial]
+    fn t_e86_6_detect_zcode_returns_false_when_config_is_directory() {
+        let tmp =
+            std::env::temp_dir().join(format!("cogh-e86-6-detect-zc-dir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let fake_home = tmp.join("fake-home");
+        // ZCodePaths default config_file: $HOME/.zcode/v2/config.json
+        let fake_config_path = fake_home.join(".zcode/v2/config.json");
+        std::fs::create_dir_all(&fake_config_path).unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        let prev_cfg = std::env::var_os("ZCODE_CONFIG");
+        unsafe {
+            std::env::set_var("HOME", &fake_home);
+            std::env::remove_var("ZCODE_CONFIG");
+        }
+
+        let paths = ZCodePaths::resolve();
+        assert!(
+            paths.config_file.exists()
+                && !paths.config_file.is_file()
+                && paths.config_file.is_dir(),
+            "config_file shape precondition failed; got {}",
+            paths.config_file.display()
+        );
+
+        let detected = detect_zcode();
+
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+            match prev_cfg {
+                Some(v) => std::env::set_var("ZCODE_CONFIG", v),
+                None => std::env::remove_var("ZCODE_CONFIG"),
+            }
+        }
+
+        assert!(
+            !detected,
+            "detect_zcode must return false when config_file is a directory; got true"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// T2 (happy path): `detect_zcode()` returns true when the resolved
+    /// `config_file` is a regular file.
+    #[test]
+    #[serial]
+    fn t_e86_6_detect_zcode_returns_true_when_config_is_file() {
+        let tmp =
+            std::env::temp_dir().join(format!("cogh-e86-6-detect-zc-file-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let fake_home = tmp.join("fake-home");
+        let zc_dir = fake_home.join(".zcode/v2");
+        std::fs::create_dir_all(&zc_dir).unwrap();
+        std::fs::write(zc_dir.join("config.json"), "{}").unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        let prev_cfg = std::env::var_os("ZCODE_CONFIG");
+        unsafe {
+            std::env::set_var("HOME", &fake_home);
+            std::env::remove_var("ZCODE_CONFIG");
+        }
+
+        let detected = detect_zcode();
+
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+            match prev_cfg {
+                Some(v) => std::env::set_var("ZCODE_CONFIG", v),
+                None => std::env::remove_var("ZCODE_CONFIG"),
+            }
+        }
+
+        assert!(
+            detected,
+            "detect_zcode must return true when config.json exists; got false"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// T3 (RED before fix): `detect_codex()` must return FALSE when the
+    /// resolved `config_file` is a directory.
+    #[test]
+    #[serial]
+    fn t_e86_6_detect_codex_returns_false_when_config_is_directory() {
+        let tmp =
+            std::env::temp_dir().join(format!("cogh-e86-6-detect-cdx-dir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let fake_home = tmp.join("fake-home");
+        // CodexPaths default config_file: $HOME/.codex/config.toml
+        let fake_config_path = fake_home.join(".codex/config.toml");
+        std::fs::create_dir_all(&fake_config_path).unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        let prev_cfg = std::env::var_os("CODEX_CONFIG");
+        unsafe {
+            std::env::set_var("HOME", &fake_home);
+            std::env::remove_var("CODEX_CONFIG");
+        }
+
+        let paths = CodexPaths::resolve();
+        assert!(
+            paths.config_file.exists()
+                && !paths.config_file.is_file()
+                && paths.config_file.is_dir(),
+            "config_file shape precondition failed; got {}",
+            paths.config_file.display()
+        );
+
+        let detected = detect_codex();
+
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+            match prev_cfg {
+                Some(v) => std::env::set_var("CODEX_CONFIG", v),
+                None => std::env::remove_var("CODEX_CONFIG"),
+            }
+        }
+
+        assert!(
+            !detected,
+            "detect_codex must return false when config_file is a directory; got true"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// T4 (happy path): `detect_codex()` returns true when the resolved
+    /// `config_file` is a regular file.
+    #[test]
+    #[serial]
+    fn t_e86_6_detect_codex_returns_true_when_config_is_file() {
+        let tmp =
+            std::env::temp_dir().join(format!("cogh-e86-6-detect-cdx-file-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let fake_home = tmp.join("fake-home");
+        let cdx_dir = fake_home.join(".codex");
+        std::fs::create_dir_all(&cdx_dir).unwrap();
+        std::fs::write(cdx_dir.join("config.toml"), "").unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        let prev_cfg = std::env::var_os("CODEX_CONFIG");
+        unsafe {
+            std::env::set_var("HOME", &fake_home);
+            std::env::remove_var("CODEX_CONFIG");
+        }
+
+        let detected = detect_codex();
+
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+            match prev_cfg {
+                Some(v) => std::env::set_var("CODEX_CONFIG", v),
+                None => std::env::remove_var("CODEX_CONFIG"),
+            }
+        }
+
+        assert!(
+            detected,
+            "detect_codex must return true when config.toml exists; got false"
         );
 
         let _ = std::fs::remove_dir_all(&tmp);
