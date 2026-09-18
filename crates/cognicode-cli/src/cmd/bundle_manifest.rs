@@ -302,15 +302,14 @@ impl BundleManifest {
             if b.version != self.version {
                 bail!(
                     "skill bundle `{}` version `{}` != bundle version `{}`",
-                    b.id, b.version, self.version
+                    b.id,
+                    b.version,
+                    self.version
                 );
             }
             for p in &b.profiles {
                 if !profile_names.contains(p.as_str()) {
-                    bail!(
-                        "skill bundle `{}` references unknown profile `{}`",
-                        b.id, p
-                    );
+                    bail!("skill bundle `{}` references unknown profile `{}`", b.id, p);
                 }
             }
         }
@@ -437,6 +436,44 @@ pub fn daemon_cli_binary_name(manifest_path: &Path) -> Result<String> {
                 manifest_path.display()
             )
         })
+}
+
+/// Resolve the on-disk directories of the skill bundles the manifest
+/// declares for `profile` (DEBT-2).
+///
+/// Canonical resolution source for every consumer (installer, IDE
+/// integrators, release tooling): the SkillBundleId comes exclusively
+/// from the manifest's `skill_bundles[]` section at `manifest_path`,
+/// and each declared bundle lives at `<skills_root>/<bundle_id>`.
+///
+/// Returns an empty vec when the manifest declares none for the
+/// profile. Errors loudly when a declared bundle is missing on disk —
+/// never falls back to "first directory found" (`read_dir().next()`
+/// is the retired heuristic; ADR-IDENTITY-MAP-distribution §9.4-11).
+pub fn declared_skill_bundle_dirs(
+    skills_root: &Path,
+    manifest_path: &Path,
+    profile: &str,
+) -> anyhow::Result<Vec<std::path::PathBuf>> {
+    let manifest = BundleManifest::from_path(manifest_path).with_context(|| {
+        format!(
+            "resolve skill bundles from bundle manifest {}",
+            manifest_path.display()
+        )
+    })?;
+    let mut dirs = Vec::new();
+    for bundle in manifest.skill_bundles_for_profile(profile) {
+        let dir = skills_root.join(&bundle.id);
+        anyhow::ensure!(
+            dir.is_dir(),
+            "bundle manifest declares skill bundle `{}` for profile `{profile}`, \
+             but {} is missing; refusing to guess a substitute",
+            bundle.id,
+            dir.display()
+        );
+        dirs.push(dir);
+    }
+    Ok(dirs)
 }
 
 fn is_semver_like(s: &str) -> bool {

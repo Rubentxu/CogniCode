@@ -408,27 +408,35 @@ pub fn integrate_zcode(
 ) -> Result<()> {
     // 1. Skill copy.
     //
-    // DEBT-3.f BLOCKED-BY-DEBT-2: the audit (§9.4-11, sites
-    // :367-374/:477-481/:593-597) flags this `<root>/versions/<v>/<plugin>/skills/`
-    // construction as "first directory under `skills_root`"
-    // territory. Once DEBT-2 introduces a portable-skill-bundle
-    // manifest, this becomes `home.skill_bundle(version, &bundle_id)`
-    // derived from that manifest. The `&Path` argument here is
-    // preserved (instead of taking `&CognicodeHome`) so the
-    // `cognicode-release` binary — which does not link `layout.rs` —
-    // can keep calling this function with a borrowed path.
-    let skills_src = home
-        .join("versions")
-        .join(version)
-        .join(plugin)
-        .join("skills");
+    // DEBT-2: the SkillBundleId comes from the bundle manifest's
+    // `skill_bundles[]` declaration, resolved canonically by
+    // `crate::bundle_manifest::declared_skill_bundle_dirs` against the
+    // version's canonical `skills/` root. The retired heuristic
+    // (`<root>/versions/<v>/<plugin>/skills/`, ADR-IDENTITY-MAP
+    // §9.4-11) is gone: a bundle not declared in the manifest is never
+    // picked up, and a declared-but-missing bundle fails loudly.
+    // The `&Path` argument is preserved (instead of taking
+    // `&CognicodeHome`) so the `cognicode-release` binary — which does
+    // not link `layout.rs` — can keep calling this function with a
+    // borrowed path.
+    let skills_sources = crate::bundle_manifest::declared_skill_bundle_dirs(
+        &home.join("versions").join(version).join("skills"),
+        &home.join("versions").join(version).join("manifest.yaml"),
+        "core",
+    )?;
     let skills_dst = zcode_skills_dir().join(format!("cognicode-{version}"));
-    if skills_src.exists() {
-        copy_dir_recursive(&skills_src, &skills_dst)
-            .with_context(|| format!("copy {} → {}", skills_src.display(), skills_dst.display()))?;
-        println!("✓ copied skills: {}", skills_dst.display());
+    if !skills_sources.is_empty() {
+        for skills_src in skills_sources {
+            copy_dir_recursive(&skills_src, &skills_dst).with_context(|| {
+                format!("copy {} → {}", skills_src.display(), skills_dst.display())
+            })?;
+            println!("✓ copied skills: {}", skills_dst.display());
+        }
     } else {
-        println!("(no skills to copy from {})", skills_src.display());
+        println!(
+            "(no skill bundles declared for this release; nothing copied to {})",
+            skills_dst.display()
+        );
     }
 
     // 2. MCP config merge
@@ -537,23 +545,24 @@ pub fn integrate_claude(
 ) -> Result<()> {
     // 1. Skill copy.
     //
-    // DEBT-3.f BLOCKED-BY-DEBT-2: see the comment in `integrate_zcode`
-    // above. This site (:477-481) has the same shape and the same
-    // follow-up: when DEBT-2 introduces a portable-skill-bundle
-    // manifest, replace this construction with
-    // `home.skill_bundle(version, &bundle_id)`.
-    let skills_src = home
-        .join("versions")
-        .join(version)
-        .join(plugin)
-        .join("skills");
+    let skills_sources = crate::bundle_manifest::declared_skill_bundle_dirs(
+        &home.join("versions").join(version).join("skills"),
+        &home.join("versions").join(version).join("manifest.yaml"),
+        "core",
+    )?;
     let skills_dst = claude_skills_dir().join(format!("cognicode-{version}"));
-    if skills_src.exists() {
-        copy_dir_recursive(&skills_src, &skills_dst)
-            .with_context(|| format!("copy {} → {}", skills_src.display(), skills_dst.display()))?;
-        println!("✓ copied skills: {}", skills_dst.display());
+    if !skills_sources.is_empty() {
+        for skills_src in skills_sources {
+            copy_dir_recursive(&skills_src, &skills_dst).with_context(|| {
+                format!("copy {} → {}", skills_src.display(), skills_dst.display())
+            })?;
+            println!("✓ copied skills: {}", skills_dst.display());
+        }
     } else {
-        println!("(no skills to copy from {})", skills_src.display());
+        println!(
+            "(no skill bundles declared for this release; nothing copied to {})",
+            skills_dst.display()
+        );
     }
 
     // 2. MCP config: write `~/.claude/mcp/<binary_name>.json`.
@@ -665,23 +674,24 @@ pub fn integrate_codex(
 ) -> Result<()> {
     // 1. Skill copy.
     //
-    // DEBT-3.f BLOCKED-BY-DEBT-2: see the comment in `integrate_zcode`
-    // above. This site (:593-597) has the same shape and the same
-    // follow-up: when DEBT-2 introduces a portable-skill-bundle
-    // manifest, replace this construction with
-    // `home.skill_bundle(version, &bundle_id)`.
-    let skills_src = home
-        .join("versions")
-        .join(version)
-        .join(plugin)
-        .join("skills");
+    let skills_sources = crate::bundle_manifest::declared_skill_bundle_dirs(
+        &home.join("versions").join(version).join("skills"),
+        &home.join("versions").join(version).join("manifest.yaml"),
+        "core",
+    )?;
     let skills_dst = codex_skills_dir().join(format!("cognicode-{version}"));
-    if skills_src.exists() {
-        copy_dir_recursive(&skills_src, &skills_dst)
-            .with_context(|| format!("copy {} → {}", skills_src.display(), skills_dst.display()))?;
-        println!("✓ copied skills: {}", skills_dst.display());
+    if !skills_sources.is_empty() {
+        for skills_src in skills_sources {
+            copy_dir_recursive(&skills_src, &skills_dst).with_context(|| {
+                format!("copy {} → {}", skills_src.display(), skills_dst.display())
+            })?;
+            println!("✓ copied skills: {}", skills_dst.display());
+        }
     } else {
-        println!("(no skills to copy from {})", skills_src.display());
+        println!(
+            "(no skill bundles declared for this release; nothing copied to {})",
+            skills_dst.display()
+        );
     }
 
     // 2. Codex config: TOML, [mcp_servers.<binary_name>] section.
@@ -826,19 +836,28 @@ pub fn cmd_ide_install(
     ];
     match ide {
         "opencode" => {
-            // DEBT-3.f BLOCKED-BY-DEBT-2: `skill_path` is constructed
-            // manually as `<root>/versions/<v>/<plugin>/skills/` here.
-            // The audit (§9.4-11, site :737) flags this as
-            // "first directory under `skills_root`" territory — once
-            // DEBT-2 introduces a portable-skill-bundle manifest that
-            // declares the bundle id, this construction becomes
-            // `home.skill_bundle(version, &bundle_id)` derived from
-            // that manifest. Until then, we cannot invent a temporary
-            // abstraction.
-            let skill_path = home.versions().join(version).join(plugin).join("skills");
-            let steps = integrate_opencode(&skill_path, version, &mcp_command)?;
-            for step in steps {
-                step.execute()?;
+            // DEBT-2: `skill_path` is resolved from the bundle
+            // manifest's `skill_bundles[]` declaration via the
+            // canonical `declared_skill_bundle_dirs` helper against
+            // `home.skills_root(version)` — the retired
+            // `<plugin>/skills` construction (ADR-IDENTITY-MAP
+            // §9.4-11, site :737) is gone.
+            let skill_sources = crate::bundle_manifest::declared_skill_bundle_dirs(
+                &home.skills_root(version),
+                &home.version_manifest(version),
+                "core",
+            )?;
+            if skill_sources.is_empty() {
+                return Err(anyhow!(
+                    "no skill bundles declared for version {version}; cannot integrate \
+                     OpenCode without a declared SkillBundleId"
+                ));
+            }
+            for skill_path in skill_sources {
+                let steps = integrate_opencode(&skill_path, version, &mcp_command)?;
+                for step in steps {
+                    step.execute()?;
+                }
             }
             println!("✓ OpenCode integration complete");
             Ok(())
@@ -887,6 +906,40 @@ mod tests {
     use super::*;
     use serial_test::serial;
     use std::io::Write;
+
+    /// Plant a version home with a bundle manifest declaring the
+    /// `skills-for-claude` skill bundle (pairwise-distinct from the
+    /// ComponentId `cognicode-mcp`) plus the bundle dir on disk, so
+    /// DEBT-2 integrators can resolve sources from the manifest.
+    fn plant_skill_bundle_version(home: &Path, version: &str) {
+        let vdir = home.join("versions").join(version);
+        std::fs::create_dir_all(vdir.join("skills").join("skills-for-claude")).unwrap();
+        let yaml = format!(
+            r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "{version}"
+platform: linux-x86-64
+released_at: "2026-01-01T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+skill_bundles:
+  - id: skills-for-claude
+    version: "{version}"
+    profiles: [core]
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "{version}"
+    artifact: cognicode-mcp-{version}-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v{version}/cognicode-mcp-{version}-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#
+        );
+        std::fs::write(vdir.join("manifest.yaml"), yaml).unwrap();
+    }
 
     // ========================================================================
     // DEBT-3.f strict gates — IDE merge key derivation
@@ -990,10 +1043,9 @@ mod tests {
             std::env::set_var("HOME", &tmp);
         }
 
-        // Synthetic skills source so the integrator doesn't bail on
-        // missing skills (no-op path is exercised).
-        let skill_path = tmp.join("skills");
-        std::fs::create_dir_all(&skill_path).unwrap();
+        // DEBT-2: plant the version manifest + declared skill bundle
+        // so the integrator resolves sources from the manifest.
+        plant_skill_bundle_version(tmp.as_path(), "0.92.0");
 
         let mcp_cmd = vec!["/tmp/home/shims/renamed-mcp-binary".to_string()];
         let result = integrate_claude(tmp.as_path(), "mcp-server", "0.92.0", &mcp_cmd);
@@ -1044,8 +1096,9 @@ mod tests {
             std::env::set_var("HOME", &tmp);
         }
 
-        let skill_path = tmp.join("skills");
-        std::fs::create_dir_all(&skill_path).unwrap();
+        // DEBT-2: plant the version manifest + declared skill bundle
+        // so the integrator resolves sources from the manifest.
+        plant_skill_bundle_version(tmp.as_path(), "0.92.0");
 
         let mcp_cmd = vec!["/tmp/home/shims/renamed-mcp-binary".to_string()];
         let result = integrate_codex(tmp.as_path(), "mcp-server", "0.92.0", &mcp_cmd);
@@ -1090,8 +1143,9 @@ mod tests {
             std::env::set_var("HOME", &tmp);
         }
 
-        let skill_path = tmp.join("skills");
-        std::fs::create_dir_all(&skill_path).unwrap();
+        // DEBT-2: plant the version manifest + declared skill bundle
+        // so the integrator resolves sources from the manifest.
+        plant_skill_bundle_version(tmp.as_path(), "0.92.0");
 
         let mcp_cmd = vec!["/tmp/home/shims/renamed-mcp-binary".to_string()];
         let result = integrate_zcode(tmp.as_path(), "mcp-server", "0.92.0", &mcp_cmd);
@@ -1312,6 +1366,8 @@ mod tests {
             std::env::set_var("HOME", &tmp);
         }
         let home = std::path::PathBuf::from(&tmp).join(".cognicode");
+        // DEBT-2: plant manifest + declared skill bundle for resolution.
+        plant_skill_bundle_version(&home, "0.92.0");
         let mcp_cmd = vec!["/bin/cognicode-mcp".to_string()];
         let result = integrate_zcode(&home, "mcp-server", "0.92.0", &mcp_cmd);
         unsafe {
@@ -1373,6 +1429,8 @@ mod tests {
             std::env::set_var("HOME", &tmp);
         }
         let home = std::path::PathBuf::from(&tmp).join(".cognicode");
+        // DEBT-2: plant manifest + declared skill bundle for resolution.
+        plant_skill_bundle_version(&home, "0.92.0");
         let mcp_cmd = vec!["/bin/cognicode-mcp".to_string()];
         let result = integrate_claude(&home, "mcp-server", "0.92.0", &mcp_cmd);
         unsafe {
@@ -1425,6 +1483,8 @@ mod tests {
             std::env::set_var("HOME", &tmp);
         }
         let home = std::path::PathBuf::from(&tmp).join(".cognicode");
+        // DEBT-2: plant manifest + declared skill bundle for resolution.
+        plant_skill_bundle_version(&home, "0.92.0");
         let mcp_cmd = vec!["/bin/cognicode-mcp".to_string(), "stdio".to_string()];
         let result = integrate_codex(&home, "mcp-server", "0.92.0", &mcp_cmd);
         unsafe {

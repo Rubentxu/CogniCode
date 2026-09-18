@@ -222,10 +222,41 @@ mod tests {
         cmd_init(&home).unwrap();
 
         // Pre-create a plugin + version dir so skills copy finds something
-        let skill_src =
-            tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
-        std::fs::create_dir_all(&skill_src).unwrap();
-        std::fs::write(skill_src.join("SKILL.md"), "---\nname: x\n---\n").unwrap();
+        // DEBT-2: plant manifest + declared skill bundle instead of the
+        // legacy `<plugin>/skills` dir (integrators resolve from the
+        // manifest now).
+        {
+            let vdir = tmp.join(".cognicode/versions/v0.93.0");
+            std::fs::create_dir_all(vdir.join("skills/skills-for-claude")).unwrap();
+            std::fs::write(
+                vdir.join("skills/skills-for-claude/SKILL.md"),
+                "---\nname: x\n---\n",
+            )
+            .unwrap();
+            let yaml = r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "0.93.0"
+platform: linux-x86-64
+released_at: "2026-01-01T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+skill_bundles:
+  - id: skills-for-claude
+    version: "0.93.0"
+    profiles: [core]
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "0.93.0"
+    artifact: cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.93.0/cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#;
+            std::fs::write(vdir.join("manifest.yaml"), yaml).unwrap();
+        }
         create_opencode_config(&tmp).unwrap();
 
         // Set HOME so opencode paths resolve to temp dir
@@ -333,10 +364,41 @@ mod tests {
         };
         cmd_init(&home).unwrap();
 
-        let skill_src =
-            tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
-        std::fs::create_dir_all(&skill_src).unwrap();
-        std::fs::write(skill_src.join("SKILL.md"), "---\nname: x\n---\n").unwrap();
+        // DEBT-2: plant manifest + declared skill bundle instead of the
+        // legacy `<plugin>/skills` dir (integrators resolve from the
+        // manifest now).
+        {
+            let vdir = tmp.join(".cognicode/versions/v0.93.0");
+            std::fs::create_dir_all(vdir.join("skills/skills-for-claude")).unwrap();
+            std::fs::write(
+                vdir.join("skills/skills-for-claude/SKILL.md"),
+                "---\nname: x\n---\n",
+            )
+            .unwrap();
+            let yaml = r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "0.93.0"
+platform: linux-x86-64
+released_at: "2026-01-01T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+skill_bundles:
+  - id: skills-for-claude
+    version: "0.93.0"
+    profiles: [core]
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "0.93.0"
+    artifact: cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.93.0/cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#;
+            std::fs::write(vdir.join("manifest.yaml"), yaml).unwrap();
+        }
         create_codex_config(&tmp).unwrap();
 
         // Set HOME so codex paths resolve to temp dir
@@ -387,10 +449,41 @@ mod tests {
         cmd_init(&home).unwrap();
 
         // Pre-create a plugin + version dir so skills copy finds something
-        let skill_src =
-            tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
-        std::fs::create_dir_all(&skill_src).unwrap();
-        std::fs::write(skill_src.join("SKILL.md"), "---\nname: x\n---\n").unwrap();
+        // DEBT-2: plant manifest + declared skill bundle instead of the
+        // legacy `<plugin>/skills` dir (integrators resolve from the
+        // manifest now).
+        {
+            let vdir = tmp.join(".cognicode/versions/v0.93.0");
+            std::fs::create_dir_all(vdir.join("skills/skills-for-claude")).unwrap();
+            std::fs::write(
+                vdir.join("skills/skills-for-claude/SKILL.md"),
+                "---\nname: x\n---\n",
+            )
+            .unwrap();
+            let yaml = r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "0.93.0"
+platform: linux-x86-64
+released_at: "2026-01-01T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+skill_bundles:
+  - id: skills-for-claude
+    version: "0.93.0"
+    profiles: [core]
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "0.93.0"
+    artifact: cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.93.0/cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#;
+            std::fs::write(vdir.join("manifest.yaml"), yaml).unwrap();
+        }
         create_zcode_config(&tmp).unwrap();
 
         // Set HOME so zcode paths resolve to temp dir
@@ -445,10 +538,41 @@ mod tests {
         cmd_init(&home).unwrap();
 
         // Pre-create a plugin + version dir so skills copy finds something
-        let skill_src =
-            tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
-        std::fs::create_dir_all(&skill_src).unwrap();
-        std::fs::write(skill_src.join("SKILL.md"), "---\nname: x\n---\n").unwrap();
+        // DEBT-2: plant manifest + declared skill bundle instead of the
+        // legacy `<plugin>/skills` dir (integrators resolve from the
+        // manifest now).
+        {
+            let vdir = tmp.join(".cognicode/versions/v0.93.0");
+            std::fs::create_dir_all(vdir.join("skills/skills-for-claude")).unwrap();
+            std::fs::write(
+                vdir.join("skills/skills-for-claude/SKILL.md"),
+                "---\nname: x\n---\n",
+            )
+            .unwrap();
+            let yaml = r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "0.93.0"
+platform: linux-x86-64
+released_at: "2026-01-01T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+skill_bundles:
+  - id: skills-for-claude
+    version: "0.93.0"
+    profiles: [core]
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "0.93.0"
+    artifact: cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.93.0/cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#;
+            std::fs::write(vdir.join("manifest.yaml"), yaml).unwrap();
+        }
         create_claude_config(&tmp).unwrap();
 
         // Set HOME so claude paths resolve to temp dir
@@ -868,10 +992,41 @@ mod tests {
         cmd_init(&home).unwrap();
 
         // Pre-create a plugin + version dir so skills copy finds something
-        let skill_src =
-            tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
-        std::fs::create_dir_all(&skill_src).unwrap();
-        std::fs::write(skill_src.join("SKILL.md"), "---\nname: x\n---\n").unwrap();
+        // DEBT-2: plant manifest + declared skill bundle instead of the
+        // legacy `<plugin>/skills` dir (integrators resolve from the
+        // manifest now).
+        {
+            let vdir = tmp.join(".cognicode/versions/v0.93.0");
+            std::fs::create_dir_all(vdir.join("skills/skills-for-claude")).unwrap();
+            std::fs::write(
+                vdir.join("skills/skills-for-claude/SKILL.md"),
+                "---\nname: x\n---\n",
+            )
+            .unwrap();
+            let yaml = r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "0.93.0"
+platform: linux-x86-64
+released_at: "2026-01-01T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+skill_bundles:
+  - id: skills-for-claude
+    version: "0.93.0"
+    profiles: [core]
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "0.93.0"
+    artifact: cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.93.0/cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#;
+            std::fs::write(vdir.join("manifest.yaml"), yaml).unwrap();
+        }
         create_opencode_config(&tmp).unwrap();
 
         // Set HOME so opencode paths resolve to temp dir
@@ -930,10 +1085,41 @@ mod tests {
         std::fs::create_dir_all(&tmp).unwrap();
 
         // Pre-create a plugin + version dir so skills copy finds something
-        let skill_src =
-            tmp.join(".cognicode/versions/v0.93.0/mcp-server/skills/cognicode-mcp-driven");
-        std::fs::create_dir_all(&skill_src).unwrap();
-        std::fs::write(skill_src.join("SKILL.md"), "---\nname: x\n---\n").unwrap();
+        // DEBT-2: plant manifest + declared skill bundle instead of the
+        // legacy `<plugin>/skills` dir (integrators resolve from the
+        // manifest now).
+        {
+            let vdir = tmp.join(".cognicode/versions/v0.93.0");
+            std::fs::create_dir_all(vdir.join("skills/skills-for-claude")).unwrap();
+            std::fs::write(
+                vdir.join("skills/skills-for-claude/SKILL.md"),
+                "---\nname: x\n---\n",
+            )
+            .unwrap();
+            let yaml = r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "0.93.0"
+platform: linux-x86-64
+released_at: "2026-01-01T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+skill_bundles:
+  - id: skills-for-claude
+    version: "0.93.0"
+    profiles: [core]
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "0.93.0"
+    artifact: cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.93.0/cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#;
+            std::fs::write(vdir.join("manifest.yaml"), yaml).unwrap();
+        }
         create_opencode_config(&tmp).unwrap();
 
         // The bundle install must succeed from a real generated release; the
