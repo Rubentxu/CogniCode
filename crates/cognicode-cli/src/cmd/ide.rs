@@ -218,6 +218,47 @@ fn write_json_atomic(path: &Path, value: &Value) -> Result<()> {
     Ok(())
 }
 
+/// Derive the BinaryName (the JSON / TOML merge key) from the
+/// `mcp_command` argument that `cmd_ide_install` already resolves.
+///
+/// DEBT-3.f: replaces the hardcoded `"cognicode-mcp"` literal that
+/// the four IDE integrators (opencode, zcode, claude, codex) used
+/// to pass as the merge key when patching `mcp.cognicode-mcp`,
+/// `.claude/mcp/cognicode-mcp.json`, or
+/// `[mcp_servers.cognicode-mcp]`. The literal silently coupled
+/// BinaryName to a specific component name; if a future plugin
+/// declared a different binary, the IDE integration would write
+/// to the wrong key.
+///
+/// The shim path is the canonical source of truth for the
+/// BinaryName at install time: `cmd_ide_install` already resolves
+/// it via `plugin_mcp_binary_name(...)` and embeds it as the
+/// basename of `mcp_command[0]`. We extract it from there rather
+/// than re-reading the manifest — the manifest-derived name is
+/// authoritative, and the shim path is its on-disk reflection.
+///
+/// Fails loudly when `mcp_command` is empty or the shim path has
+/// no usable filename.
+fn mcp_merge_key_from_command(mcp_command: &[String]) -> Result<String> {
+    let shim_path_str = mcp_command.first().ok_or_else(|| {
+        anyhow!(
+            "mcp_command must contain at least one element (the shim path); \
+             got an empty command"
+        )
+    })?;
+    let shim_path = Path::new(shim_path_str);
+    shim_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| {
+            anyhow!(
+                "mcp_command[0] ({}) has no usable filename; cannot derive merge key",
+                shim_path.display()
+            )
+        })
+}
+
 /// Build the opencode adapter's `integrate` recipe as steps.
 pub fn integrate_opencode(
     skill_path: &Path,
@@ -240,9 +281,12 @@ pub fn integrate_opencode(
         "enabled": true,
         "type": "stdio",
     });
+    // DEBT-3.f: derive the merge key from `mcp_command[0]` (the
+    // shim path), not from a hardcoded `"cognicode-mcp"` literal.
+    let binary_name = mcp_merge_key_from_command(mcp_command)?;
     steps.push(Step::MergeJson {
         target: config_path,
-        path: vec!["mcp".to_string(), "cognicode-mcp".to_string()],
+        path: vec!["mcp".to_string(), binary_name],
         value: mcp_entry,
     });
 
@@ -250,7 +294,7 @@ pub fn integrate_opencode(
 }
 
 /// Build the opencode adapter's `uninstall` recipe as steps.
-pub fn uninstall_opencode(version: &str) -> Result<Vec<Step>> {
+pub fn uninstall_opencode(version: &str, binary_name: &str) -> Result<Vec<Step>> {
     let mut steps = Vec::new();
 
     // 1. Remove skills symlink
@@ -259,11 +303,15 @@ pub fn uninstall_opencode(version: &str) -> Result<Vec<Step>> {
         target: skills_target,
     });
 
-    // 2. Remove MCP entry
+    // 2. Remove MCP entry. DEBT-3.f: take the BinaryName from the
+    //    bundle manifest's DaemonCli component, not from a
+    //    hardcoded `"cognicode-mcp"` literal. The literal silently
+    //    coupled BinaryName to a specific component name; the
+    //    manifest-derived name is the source of truth.
     let config_path = opencode_config_path();
     steps.push(Step::RemoveFromJson {
         target: config_path,
-        path: vec!["mcp".to_string(), "cognicode-mcp".to_string()],
+        path: vec!["mcp".to_string(), binary_name.to_string()],
     });
 
     Ok(steps)
@@ -392,16 +440,18 @@ pub fn integrate_zcode(
             mcp
         ));
     }
-    mcp.as_object_mut()
-        .unwrap()
-        .insert("cognicode-mcp".to_string(), mcp_entry);
+    // DEBT-3.f: derive the merge key from `mcp_command[0]`
+    // (the shim path), not from a hardcoded `"cognicode-mcp"`
+    // literal.
+    let binary_name = mcp_merge_key_from_command(mcp_command)?;
+    mcp.as_object_mut().unwrap().insert(binary_name, mcp_entry);
     write_json_atomic(&config_path, &config)?;
     println!("✓ patched: {}", config_path.display());
 
     Ok(())
 }
 
-pub fn uninstall_zcode(version: &str) -> Result<()> {
+pub fn uninstall_zcode(version: &str, binary_name: &str) -> Result<()> {
     // 1. Remove skills dir
     let skills_dst = zcode_skills_dir().join(format!("cognicode-{version}"));
     if skills_dst.exists() {
@@ -410,7 +460,9 @@ pub fn uninstall_zcode(version: &str) -> Result<()> {
         println!("✓ removed: {}", skills_dst.display());
     }
 
-    // 2. Remove MCP entry
+    // 2. Remove MCP entry. DEBT-3.f: take the BinaryName from
+    //    the bundle manifest's DaemonCli component, not from a
+    //    hardcoded `"cognicode-mcp"` literal.
     let config_path = zcode_config_path();
     if config_path.exists() {
         let mut config = read_zcode_config()?;
@@ -419,7 +471,7 @@ pub fn uninstall_zcode(version: &str) -> Result<()> {
             .ok_or_else(|| anyhow!("zcode config.json is not an object"))?;
         if let Some(mcp) = cfg.get_mut("mcp") {
             if let Some(mcp_obj) = mcp.as_object_mut() {
-                mcp_obj.remove("cognicode-mcp");
+                mcp_obj.remove(binary_name);
             }
         }
         write_json_atomic(&config_path, &config)?;
@@ -488,10 +540,14 @@ pub fn integrate_claude(
         println!("(no skills to copy from {})", skills_src.display());
     }
 
-    // 2. MCP config: write `~/.claude/mcp/cognicode-mcp.json`
+    // 2. MCP config: write `~/.claude/mcp/<binary_name>.json`.
+    //    DEBT-3.f: derive the file stem from `mcp_command[0]`
+    //    (the shim path), not from a hardcoded `"cognicode-mcp"`
+    //    literal.
     let mcp_dir = claude_mcp_dir();
     std::fs::create_dir_all(&mcp_dir).with_context(|| format!("create {}", mcp_dir.display()))?;
-    let target = mcp_dir.join("cognicode-mcp.json");
+    let binary_name = mcp_merge_key_from_command(mcp_command)?;
+    let target = mcp_dir.join(format!("{binary_name}.json"));
     let entry = json!({
         "command": mcp_command[0],
         "args": mcp_command.get(1..).unwrap_or(&[]).to_vec(),
@@ -502,7 +558,7 @@ pub fn integrate_claude(
     Ok(())
 }
 
-pub fn uninstall_claude(version: &str) -> Result<()> {
+pub fn uninstall_claude(version: &str, binary_name: &str) -> Result<()> {
     // 1. Remove skills dir
     let skills_dst = claude_skills_dir().join(format!("cognicode-{version}"));
     if skills_dst.exists() {
@@ -511,8 +567,10 @@ pub fn uninstall_claude(version: &str) -> Result<()> {
         println!("✓ removed: {}", skills_dst.display());
     }
 
-    // 2. Remove MCP file
-    let target = claude_mcp_dir().join("cognicode-mcp.json");
+    // 2. Remove MCP file. DEBT-3.f: take the file stem from the
+    //    bundle manifest's DaemonCli component, not from a
+    //    hardcoded `"cognicode-mcp"` literal.
+    let target = claude_mcp_dir().join(format!("{binary_name}.json"));
     if target.exists() {
         std::fs::remove_file(&target).with_context(|| format!("rm {}", target.display()))?;
         println!("✓ removed: {}", target.display());
@@ -604,7 +662,10 @@ pub fn integrate_codex(
         println!("(no skills to copy from {})", skills_src.display());
     }
 
-    // 2. Codex config: TOML, [mcp_servers.cognicode-mcp] section
+    // 2. Codex config: TOML, [mcp_servers.<binary_name>] section.
+    //    DEBT-3.f: derive the subtable key from `mcp_command[0]`
+    //    (the shim path), not from a hardcoded `"cognicode-mcp"`
+    //    literal.
     let config_path = codex_config_path();
     let mut config = read_codex_config()?;
     let mcp_table = config
@@ -628,7 +689,8 @@ pub fn integrate_codex(
         ("command".to_string(), toml::Value::String(cmd.to_string())),
         ("args".to_string(), args_value),
     ]));
-    mcp_table.insert("cognicode-mcp".to_string(), server);
+    let binary_name = mcp_merge_key_from_command(mcp_command)?;
+    mcp_table.insert(binary_name, server);
 
     // Atomic write
     let tmp = config_path.with_extension("toml.tmp");
@@ -646,7 +708,7 @@ pub fn integrate_codex(
     Ok(())
 }
 
-pub fn uninstall_codex(version: &str) -> Result<()> {
+pub fn uninstall_codex(version: &str, binary_name: &str) -> Result<()> {
     // 1. Remove skills dir
     let skills_dst = codex_skills_dir().join(format!("cognicode-{version}"));
     if skills_dst.exists() {
@@ -655,14 +717,16 @@ pub fn uninstall_codex(version: &str) -> Result<()> {
         println!("✓ removed: {}", skills_dst.display());
     }
 
-    // 2. Remove MCP entry from TOML config
+    // 2. Remove MCP entry from TOML config. DEBT-3.f: take the
+    //    subtable key from the bundle manifest's DaemonCli
+    //    component, not from a hardcoded `"cognicode-mcp"` literal.
     let config_path = codex_config_path();
     if config_path.exists() {
         let mut config = read_codex_config()?;
         if let Some(t) = config.as_table_mut() {
             if let Some(mcp_servers) = t.get_mut("mcp_servers") {
                 if let Some(mcp_table) = mcp_servers.as_table_mut() {
-                    mcp_table.remove("cognicode-mcp");
+                    mcp_table.remove(binary_name);
                 }
             }
         }
@@ -760,18 +824,24 @@ pub fn cmd_ide_install(
 }
 
 pub fn cmd_ide_uninstall(home: &CognicodeHomeSup, ide: &str, version: &str) -> Result<()> {
+    // DEBT-3.f: derive the BinaryName from the bundle manifest's
+    // DaemonCli component, then pass it down to each uninstall
+    // path so they remove the right JSON/TOML/file entry rather
+    // than blindly targeting a hardcoded `"cognicode-mcp"` key.
+    let binary_name =
+        crate::bundle_manifest::daemon_cli_binary_name(&home.version_manifest(version))?;
     match ide {
         "opencode" => {
-            let steps = uninstall_opencode(version)?;
+            let steps = uninstall_opencode(version, &binary_name)?;
             for step in steps {
                 step.execute()?;
             }
             println!("✓ OpenCode uninstall complete");
             Ok(())
         }
-        "zcode" => uninstall_zcode(version),
-        "claude" => uninstall_claude(version),
-        "codex" => uninstall_codex(version),
+        "zcode" => uninstall_zcode(version, &binary_name),
+        "claude" => uninstall_claude(version, &binary_name),
+        "codex" => uninstall_codex(version, &binary_name),
         other => Err(anyhow!(
             "IDE '{}' is not supported by cogh yet (opencode/zcode/claude/codex in E32-D/E/F/G)",
             other
@@ -787,6 +857,234 @@ mod tests {
     use super::*;
     use serial_test::serial;
     use std::io::Write;
+
+    // ========================================================================
+    // DEBT-3.f strict gates — IDE merge key derivation
+    //
+    // Contract: each integrator (`integrate_opencode`, `integrate_zcode`,
+    // `integrate_claude`, `integrate_codex`) MUST derive the JSON/TOML merge
+    // key from `mcp_command[0]` (the shim path), NOT from a hardcoded
+    // `"cognicode-mcp"` literal. The shim path's basename is the
+    // BinaryName, which may legitimately differ from the ComponentId
+    // (the validator currently forces equality, but the IDE integration
+    // must not bake that assumption in).
+    //
+    // These tests exercise `mcp_merge_key_from_command` directly with
+    // pairwise-distinct identities:
+    //
+    //     PluginId   = "mcp-server"
+    //     ComponentId = "cognicode-mcp"
+    //     BinaryName = "renamed-mcp-binary"   (≠ ComponentId by design)
+    //
+    // Pre-DEBT-3.f the integrator passed `"cognicode-mcp"` (ComponentId)
+    // as the merge key, which is wrong because the BinaryName is what
+    // the on-disk shim and IDE config file stem need to agree on.
+    // ========================================================================
+
+    /// T_strict_merge_key_renamed_binary: a divergent BinaryName
+    /// must be returned verbatim from the shim path, with no
+    /// cross-reference to ComponentId or PluginId.
+    #[test]
+    fn t_debt3f_merge_key_renamed_binary() {
+        let cmd = vec!["/tmp/home/shims/renamed-mcp-binary".to_string()];
+        let key = mcp_merge_key_from_command(&cmd).expect("ok");
+        assert_eq!(key, "renamed-mcp-binary");
+        assert_ne!(
+            key, "cognicode-mcp",
+            "merge key must NOT collapse to ComponentId"
+        );
+        assert_ne!(key, "mcp-server", "merge key must NOT collapse to PluginId");
+    }
+
+    /// T_strict_merge_key_legacy_basename: when the shim path
+    /// matches the ComponentId basename, the helper still returns it
+    /// verbatim (no special-casing).
+    #[test]
+    fn t_debt3f_merge_key_legacy_basename() {
+        let cmd = vec!["/tmp/home/shims/cognicode-mcp".to_string()];
+        let key = mcp_merge_key_from_command(&cmd).expect("ok");
+        assert_eq!(key, "cognicode-mcp");
+    }
+
+    /// T_strict_merge_key_empty_command: empty `mcp_command` is a
+    /// programmer error — surface it loudly rather than guess.
+    #[test]
+    fn t_debt3f_merge_key_empty_command_fails_loudly() {
+        let cmd: Vec<String> = vec![];
+        let err = mcp_merge_key_from_command(&cmd).expect_err("must fail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("empty") || msg.contains("at least one"),
+            "error must mention the empty-command contract; got: {msg}"
+        );
+    }
+
+    /// T_strict_merge_key_unusable_filename: a path with no
+    /// usable file name (e.g. trailing slash) is a programmer
+    /// error — surface it loudly.
+    #[test]
+    fn t_debt3f_merge_key_unusable_filename_fails_loudly() {
+        // A path with no `file_name()` (rare but possible)
+        let cmd = vec!["/".to_string()];
+        let err = mcp_merge_key_from_command(&cmd).expect_err("must fail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("no usable filename") || msg.contains("file_name"),
+            "error must mention the unusable-filename contract; got: {msg}"
+        );
+    }
+
+    /// T_strict_e2e_claude_renamed_binary: `integrate_claude` MUST
+    /// write its MCP entry under a file whose stem equals the
+    /// BinaryName embedded in `mcp_command[0]`. If the BinaryName
+    /// diverges from the ComponentId, the file stem must follow the
+    /// BinaryName — never the ComponentId, never the PluginId.
+    ///
+    /// Identities planted:
+    ///     PluginId   = "mcp-server"
+    ///     ComponentId = "cognicode-mcp"
+    ///     BinaryName = "renamed-mcp-binary"
+    ///
+    /// Pre-DEBT-3.f the integrator wrote `~/.claude/mcp/cognicode-mcp.json`
+    /// regardless of binary name; that would silently bind the IDE
+    /// config to a ComponentId-derived stem, which is exactly the
+    /// heuristic the audit (§9.4-11) calls out as identity-bridging.
+    #[test]
+    #[serial]
+    fn t_debt3f_claude_integrate_uses_binary_name_stem() {
+        let tmp = std::env::temp_dir().join(format!("cogh-debt3f-claude-{}", std::process::id()));
+        std::fs::create_dir_all(tmp.join(".claude/mcp")).unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
+
+        // Synthetic skills source so the integrator doesn't bail on
+        // missing skills (no-op path is exercised).
+        let skill_path = tmp.join("skills");
+        std::fs::create_dir_all(&skill_path).unwrap();
+
+        let mcp_cmd = vec!["/tmp/home/shims/renamed-mcp-binary".to_string()];
+        let result = integrate_claude(tmp.as_path(), "mcp-server", "0.92.0", &mcp_cmd);
+
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+        }
+        result.unwrap();
+
+        // The renamed-binary file must exist…
+        let renamed = tmp.join(".claude/mcp/renamed-mcp-binary.json");
+        assert!(
+            renamed.exists(),
+            "integrate_claude must write a file under the BinaryName stem; \
+             expected {} but file is missing. Pre-DEBT-3.f this would have \
+             been ~/.claude/mcp/cognicode-mcp.json (ComponentId alias).",
+            renamed.display()
+        );
+
+        // …and the legacy ComponentId-stem file must NOT exist.
+        let legacy = tmp.join(".claude/mcp/cognicode-mcp.json");
+        assert!(
+            !legacy.exists(),
+            "integrate_claude must NOT write a file under the ComponentId stem; \
+             {} should not exist when BinaryName != ComponentId.",
+            legacy.display()
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// T_strict_e2e_codex_renamed_binary: `integrate_codex` MUST
+    /// insert its MCP subtable under a key equal to the BinaryName
+    /// embedded in `mcp_command[0]`. The TOML key, not a hardcoded
+    /// `"cognicode-mcp"`, must follow the BinaryName.
+    #[test]
+    #[serial]
+    fn t_debt3f_codex_integrate_uses_binary_name_subtable() {
+        let tmp = std::env::temp_dir().join(format!("cogh-debt3f-codex-{}", std::process::id()));
+        // CodexPaths resolves to $HOME/.codex/, so plant that dir first
+        // (otherwise std::fs::write to config.toml below ENOENTs).
+        std::fs::create_dir_all(tmp.join(".codex")).unwrap();
+        let config = tmp.join(".codex/config.toml");
+        std::fs::write(&config, "model = 'test'\n").unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
+
+        let skill_path = tmp.join("skills");
+        std::fs::create_dir_all(&skill_path).unwrap();
+
+        let mcp_cmd = vec!["/tmp/home/shims/renamed-mcp-binary".to_string()];
+        let result = integrate_codex(tmp.as_path(), "mcp-server", "0.92.0", &mcp_cmd);
+
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+        }
+        result.unwrap();
+
+        let text = std::fs::read_to_string(&config).unwrap();
+        let parsed: toml::Value = text.parse().unwrap();
+        let servers = parsed.get("mcp_servers").and_then(|s| s.as_table());
+        assert!(
+            servers
+                .map(|s| s.contains_key("renamed-mcp-binary"))
+                .unwrap_or(false),
+            "integrate_codex must insert a `[mcp_servers.<binary_name>]` subtable; \
+             got text:\n{text}"
+        );
+        assert!(
+            !text.contains("cognicode-mcp"),
+            "integrate_codex must NOT emit a `[mcp_servers.cognicode-mcp]` subtable \
+             when BinaryName != ComponentId; got text:\n{text}"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// T_strict_e2e_zcode_renamed_binary: `integrate_zcode` MUST
+    /// insert its MCP entry under a JSON key equal to the BinaryName
+    /// embedded in `mcp_command[0]`.
+    #[test]
+    #[serial]
+    fn t_debt3f_zcode_integrate_uses_binary_name_key() {
+        let tmp = std::env::temp_dir().join(format!("cogh-debt3f-zcode-{}", std::process::id()));
+        std::fs::create_dir_all(tmp.join(".zcode/v2")).unwrap();
+        let config = tmp.join(".zcode/v2/config.json");
+        std::fs::write(&config, "{}").unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
+
+        let skill_path = tmp.join("skills");
+        std::fs::create_dir_all(&skill_path).unwrap();
+
+        let mcp_cmd = vec!["/tmp/home/shims/renamed-mcp-binary".to_string()];
+        let result = integrate_zcode(tmp.as_path(), "mcp-server", "0.92.0", &mcp_cmd);
+
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+        }
+        result.unwrap();
+
+        let text = std::fs::read_to_string(&config).unwrap();
+        let v: Value = serde_json::from_str(&text).unwrap();
+        assert!(
+            v["mcp"].get("renamed-mcp-binary").is_some(),
+            "integrate_zcode must insert a JSON key equal to BinaryName; got: {text}"
+        );
+        assert!(
+            v["mcp"].get("cognicode-mcp").is_none(),
+            "integrate_zcode must NOT insert a JSON key equal to ComponentId when \
+             BinaryName != ComponentId; got: {text}"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 
     #[test]
     fn merge_path_adds_nested_value() {
@@ -927,7 +1225,7 @@ mod tests {
             std::env::set_var("HOME", &tmp);
         }
 
-        let steps = uninstall_opencode("0.92.0").unwrap();
+        let steps = uninstall_opencode("0.92.0", "cognicode-mcp").unwrap();
         for step in steps {
             step.execute().unwrap();
         }
@@ -1017,7 +1315,7 @@ mod tests {
         unsafe {
             std::env::set_var("HOME", &tmp);
         }
-        let result = uninstall_zcode("0.92.0");
+        let result = uninstall_zcode("0.92.0", "cognicode-mcp");
         unsafe {
             std::env::set_var("HOME", &prev_home);
         }
@@ -1070,7 +1368,7 @@ mod tests {
         unsafe {
             std::env::set_var("HOME", &tmp);
         }
-        let result = uninstall_claude("0.92.0");
+        let result = uninstall_claude("0.92.0", "cognicode-mcp");
         unsafe {
             std::env::set_var("HOME", &prev_home);
         }
@@ -1135,7 +1433,7 @@ mcp_servers.existing.args = ['y']
         unsafe {
             std::env::set_var("HOME", &tmp);
         }
-        let result = uninstall_codex("0.92.0");
+        let result = uninstall_codex("0.92.0", "cognicode-mcp");
         unsafe {
             std::env::set_var("HOME", &prev_home);
         }
@@ -1181,7 +1479,7 @@ mcp_servers.existing.args = ['y']
 
     #[test]
     fn test_uninstall_opencode_steps() {
-        let steps = uninstall_opencode("0.94.9").unwrap();
+        let steps = uninstall_opencode("0.94.9", "cognicode-mcp").unwrap();
         assert!(!steps.is_empty());
     }
 
@@ -1293,7 +1591,7 @@ mcp_servers.existing.args = ['y']
             std::env::set_var("OPENCODE_CONFIG", disposable.join("opencode.json"));
         }
 
-        let steps = uninstall_opencode("0.95.0").unwrap();
+        let steps = uninstall_opencode("0.95.0", "cognicode-mcp").unwrap();
         let mut targets = Vec::new();
         for step in steps {
             match &step {

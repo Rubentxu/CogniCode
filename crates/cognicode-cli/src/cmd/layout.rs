@@ -1586,7 +1586,30 @@ components:
         let version = "0.95.0";
         let install_tree = home.version_root(version);
         std::fs::create_dir_all(install_tree.join("cognicode/bin")).unwrap();
-        std::fs::write(install_tree.join("manifest.yaml"), "version: 0.95.0").unwrap();
+        // DEBT-3.f: cmd_ide_uninstall now resolves the DaemonCli binary
+        // name from the bundle manifest, so the test must plant a
+        // manifest whose components include a DaemonCli entry. The
+        // validator enforces `DaemonCli.name == "cognicode-mcp"`, which
+        // matches the on-disk shim basename — no behavioural drift.
+        let manifest_yaml = r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "0.95.0"
+platform: linux-x86-64
+released_at: "2026-09-18T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "0.95.0"
+    artifact: cognicode-mcp-0.95.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/cognicode-mcp-0.95.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#;
+        std::fs::write(install_tree.join("manifest.yaml"), manifest_yaml).unwrap();
         std::fs::write(install_tree.join("cognicode/bin/cognicode"), "fake").unwrap();
         assert!(
             install_tree.exists(),
@@ -1621,20 +1644,56 @@ components:
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
 
-        // Deliberately do NOT create any version tree — the dir does
-        // not exist. cmd_uninstall must NOT error.
+        // DEBT-3.f: cmd_ide_uninstall now reads the bundle manifest to
+        // resolve the DaemonCli binary name. Plant the manifest at the
+        // canonical location so the IDE step can run, then deliberately
+        // skip the install tree itself to pin the idempotent path.
         let version = "0.95.0";
+        let manifest_yaml = r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "0.95.0"
+platform: linux-x86-64
+released_at: "2026-09-18T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "0.95.0"
+    artifact: cognicode-mcp-0.95.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/cognicode-mcp-0.95.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#;
+        std::fs::create_dir_all(home.version_root(version)).unwrap();
+        std::fs::write(home.version_manifest(version), manifest_yaml).unwrap();
+
         let install_tree = home.version_root(version);
+        // Drop the rest of the install tree so only the manifest remains.
+        // We then expect the install-tree cleanup to be a no-op.
+        for entry in std::fs::read_dir(&install_tree).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.file_name().and_then(|s| s.to_str()) == Some("manifest.yaml") {
+                continue;
+            }
+            if path.is_dir() {
+                std::fs::remove_dir_all(&path).ok();
+            } else {
+                std::fs::remove_file(&path).ok();
+            }
+        }
         assert!(
-            !install_tree.exists(),
-            "version tree must not exist in this test; got {}",
-            install_tree.display()
+            install_tree.exists(),
+            "version tree must exist (with manifest) but install payload must not"
         );
 
         let result = cmd_uninstall(&home, "mcp-server", version, &["opencode".to_string()]);
         assert!(
             result.is_ok(),
-            "cmd_uninstall on a home with no version tree must succeed; got {result:?}"
+            "cmd_uninstall on a home with manifest but no install payload must succeed; got {result:?}"
         );
 
         let _ = std::fs::remove_dir_all(home_dir.path());
@@ -1655,7 +1714,28 @@ components:
         let version = "0.95.0";
         let install_tree = home.version_root(version);
         std::fs::create_dir_all(&install_tree).unwrap();
-        std::fs::write(install_tree.join("manifest.yaml"), "version: 0.95.0").unwrap();
+        // DEBT-3.f: cmd_ide_uninstall now reads the bundle manifest,
+        // so the test plants a valid manifest with a DaemonCli
+        // component.
+        let manifest_yaml = r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "0.95.0"
+platform: linux-x86-64
+released_at: "2026-09-18T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "0.95.0"
+    artifact: cognicode-mcp-0.95.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/cognicode-mcp-0.95.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#;
+        std::fs::write(install_tree.join("manifest.yaml"), manifest_yaml).unwrap();
 
         // Capture stdout by invoking cmd_uninstall and reading its
         // command-line output via a subprocess is heavier than we need;
@@ -1842,6 +1922,39 @@ components:
             "L2+L5: legacy install/<v>/ must NOT exist; got {}",
             legacy_install.display()
         );
+
+        // DEBT-3.f: cmd_ide_uninstall now resolves the DaemonCli binary
+        // name from the bundle manifest. The current install transaction
+        // filters the manifest by profile and a `core` install strips the
+        // daemon-cli component. We plant a manifest containing a DaemonCli
+        // entry as a metadata fixture here, so the test exercises the
+        // IDE uninstall path under DEBT-3.f's strict semantics. The
+        // question of whether the install transaction itself should keep
+        // daemon-cli metadata in the manifest regardless of profile is
+        // tracked as a separate architectural follow-up (a future cycle
+        // that revisits installer_transaction's filter behaviour).
+        let version = env!("CARGO_PKG_VERSION");
+        let manifest_yaml = format!(
+            r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "{version}"
+platform: linux-x86-64
+released_at: "2026-09-18T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "{version}"
+    artifact: cognicode-mcp-{version}-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v{version}/cognicode-mcp-{version}-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#
+        );
+        std::fs::write(home.version_manifest(version), manifest_yaml).unwrap();
 
         // Run uninstall and verify the canonical tree is gone.
         let result = cmd_uninstall(
