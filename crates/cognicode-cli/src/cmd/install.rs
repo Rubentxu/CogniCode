@@ -26,7 +26,7 @@ pub fn run_install(home: &CognicodeHome, profile: &str) -> Result<PathBuf> {
         .map_err(|e| anyhow!("failed to acquire install lock: {}", e))?;
 
     // 2. Run installer transaction
-    let result = InstallerTransaction::run(profile);
+    let result = InstallerTransaction::run(home, profile);
 
     match result {
         Ok(manifest_path) => {

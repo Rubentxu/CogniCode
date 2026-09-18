@@ -317,6 +317,7 @@ fn advance_stage(
     stage: InstallStage,
     journal: &mut RollbackJournal,
     manifest: &BundleManifest,
+    home: &crate::layout::CognicodeHome,
 ) -> Result<(), InstallerError> {
     match stage {
         InstallStage::ResolvingUrl => {
@@ -384,8 +385,10 @@ fn advance_stage(
             Ok(())
         }
         InstallStage::Extracting => {
-            // Extract each component
-            let install_dir = layout::install_dir(&manifest.version);
+            // L2 (ADR-CANONICAL-LAYOUT): extract each component under
+            // `<root>/versions/<v>/<comp>/`, NOT `<root>/install/<v>/<comp>/`.
+            // The canonical install tree is owned by `home.version_root(v)`.
+            let install_dir = home.version_root(&manifest.version);
             std::fs::create_dir_all(&install_dir)
                 .map_err(|e| InstallerError::Io(install_dir.clone(), e))?;
             journal.record(SideEffect::CreatedDir(install_dir.clone()));
@@ -409,8 +412,12 @@ fn advance_stage(
                 .map_err(|e| InstallerError::Io(shims_dir.clone(), e))?;
             journal.record(SideEffect::CreatedDir(shims_dir.clone()));
 
-            // Create shims for each binary
-            let install_dir = layout::install_dir(&manifest.version);
+            // L2 (ADR-CANONICAL-LAYOUT): shim source is under the canonical
+            // `<root>/versions/<v>/<comp>/bin/<comp>` (or wherever the
+            // component bundle places the binary). If the archive has no
+            // `bin/` (e.g. portable skill bundles), the `if bin_path.exists()`
+            // guard below makes the shim stage a no-op for that component.
+            let install_dir = home.version_root(&manifest.version);
             let adapter = platform_adapter::current_adapter();
             for comp in &manifest.components {
                 let bin_path = install_dir.join(&comp.name).join("bin").join(&comp.name);
@@ -444,7 +451,10 @@ impl InstallerTransaction {
     /// Loads the bundle manifest (embedded or from disk), validates the
     /// version, then advances through each pipeline stage.
     /// Returns the path to the written install manifest on success.
-    pub fn run(profile: &str) -> Result<PathBuf, InstallerError> {
+    pub fn run(
+        home: &crate::layout::CognicodeHome,
+        profile: &str,
+    ) -> Result<PathBuf, InstallerError> {
         let yaml = Self::load_bundle_manifest()?;
 
         // Parse and validate the v2 contract.
@@ -488,22 +498,22 @@ impl InstallerTransaction {
         };
 
         // Stage: ResolvingUrl → Downloading
-        tx = tx.advance()?;
+        tx = tx.advance(home)?;
 
         // Stage: Downloading → VerifyingSha256
-        tx = tx.advance()?;
+        tx = tx.advance(home)?;
 
         // Stage: VerifyingSha256 → Extracting
-        tx = tx.advance()?;
+        tx = tx.advance(home)?;
 
         // Stage: Extracting → InstallingShims
-        tx = tx.advance()?;
+        tx = tx.advance(home)?;
 
         // Stage: InstallingShims → WritingManifest
-        tx = tx.advance()?;
+        tx = tx.advance(home)?;
 
         // Stage: WritingManifest → Committed
-        tx = tx.commit()?;
+        tx = tx.commit(home)?;
 
         match tx {
             Self::Committed { manifest_path } => Ok(manifest_path),
@@ -561,7 +571,7 @@ impl InstallerTransaction {
     }
 
     /// Advance the transaction to the next stage.
-    fn advance(self) -> Result<Self, InstallerError> {
+    fn advance(self, home: &crate::layout::CognicodeHome) -> Result<Self, InstallerError> {
         match self {
             Self::Running {
                 stage,
@@ -569,7 +579,7 @@ impl InstallerTransaction {
                 manifest,
             } => {
                 // Execute stage actions before transitioning
-                if let Err(e) = advance_stage(stage, &mut journal, &manifest) {
+                if let Err(e) = advance_stage(stage, &mut journal, &manifest, home) {
                     return Ok(Self::Failed { stage, error: e });
                 }
 
@@ -606,14 +616,16 @@ impl InstallerTransaction {
     }
 
     /// Commit the transaction: write the install manifest and finalize the journal.
-    fn commit(self) -> Result<Self, InstallerError> {
+    fn commit(self, home: &crate::layout::CognicodeHome) -> Result<Self, InstallerError> {
         match self {
             Self::Running {
                 mut journal,
                 manifest,
                 stage: _,
             } => {
-                let manifest_path = layout::install_manifest_path(&manifest.version);
+                // L2 (ADR-CANONICAL-LAYOUT): the manifest now lands at
+                // `<root>/versions/<v>/manifest.yaml`, not `install/<v>/`.
+                let manifest_path = home.version_manifest(&manifest.version);
 
                 // Serialize manifest to YAML
                 let yaml = serde_yaml::to_string(&manifest)
@@ -727,7 +739,9 @@ mod tests {
         // Drive the real pipeline end to end against a real release that is
         // generated by the factory and served locally, so the Downloading,
         // VerifyingSha256 and Extracting stages genuinely execute.
-        let _home = TempCognicodeHome::new();
+        let _temphome = TempCognicodeHome::new();
+        let home =
+            crate::layout::CognicodeHome::resolve(None).expect("resolve home from COGNICODE_HOME");
         let release = crate::release_test_support::local_release(env!("CARGO_PKG_VERSION"))
             .expect("stage a local release");
         crate::release_test_support::point_at(&release);
@@ -742,7 +756,7 @@ mod tests {
         };
 
         for _ in 0..5 {
-            tx = tx.advance().unwrap();
+            tx = tx.advance(&home).unwrap();
         }
 
         // Should be at WritingManifest, ready to commit
@@ -761,7 +775,11 @@ mod tests {
         let committed = InstallerTransaction::Committed {
             manifest_path: PathBuf::from("/tmp/manifest.yaml"),
         };
-        let result = committed.advance().unwrap();
+        // The terminal-state branches do not touch the home at all, but the
+        // argument type still requires a CognicodeHome. We pass a dummy that
+        // is never dereferenced.
+        let home = crate::layout::CognicodeHome::resolve(None).expect("resolve home for dummy arg");
+        let result = committed.advance(&home).unwrap();
         assert!(matches!(result, InstallerTransaction::Committed { .. }));
 
         // Failed
@@ -769,15 +787,18 @@ mod tests {
             stage: InstallStage::Downloading,
             error: InstallerError::Unknown("test".into()),
         };
-        let result = failed.advance().unwrap();
+        let result = failed.advance(&home).unwrap();
         assert!(matches!(result, InstallerTransaction::Failed { .. }));
     }
 
     #[test]
     #[serial_test::serial]
     fn commit_writes_manifest_file() {
-        // Writes to `cognicode_home()/install/<version>/manifest.yaml`.
-        let _home = TempCognicodeHome::new();
+        // L2 (ADR-CANONICAL-LAYOUT): writes to `<root>/versions/<v>/manifest.yaml`,
+        // not `<root>/install/<v>/manifest.yaml`.
+        let _temphome = TempCognicodeHome::new();
+        let home =
+            crate::layout::CognicodeHome::resolve(None).expect("resolve home from COGNICODE_HOME");
         let yaml = r#"
 apiVersion: cognicode.bundle/v2
 version: "0.94.0"
@@ -803,10 +824,15 @@ components:
             manifest,
         };
 
-        let result = tx.commit().unwrap();
+        let result = tx.commit(&home).unwrap();
         match result {
             InstallerTransaction::Committed { manifest_path } => {
                 assert!(manifest_path.exists(), "manifest should be written");
+                assert_eq!(
+                    manifest_path,
+                    home.version_manifest("0.94.0"),
+                    "L2: manifest must land at versions/<v>/manifest.yaml per ADR"
+                );
                 // The persisted journal MUST be on disk next to the install
                 // (e86 REQ-LJ-01) so a later `cogh rollback` can replay it.
                 let journal_path = crate::lifecycle_journal::journal_path("0.94.0");
@@ -831,7 +857,9 @@ components:
     #[test]
     #[serial_test::serial]
     fn commit_writes_journal_next_to_install() {
-        let _home = TempCognicodeHome::new();
+        let _temphome = TempCognicodeHome::new();
+        let home =
+            crate::layout::CognicodeHome::resolve(None).expect("resolve home from COGNICODE_HOME");
         let yaml = r#"
 apiVersion: cognicode.bundle/v2
 version: "0.94.0"
@@ -854,7 +882,7 @@ components:
             journal: RollbackJournal::new(),
             manifest,
         };
-        let result = tx.commit().expect("commit must succeed");
+        let result = tx.commit(&home).expect("commit must succeed");
         let manifest_path = match result {
             InstallerTransaction::Committed { manifest_path } => manifest_path,
             other => panic!("expected Committed, got {:?}", other),
@@ -1023,6 +1051,114 @@ components:
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("build test client with no auto-redirect")
+    }
+
+    // ===== L2 producer retarget tests (ADR-CANONICAL-LAYOUT) =====
+    //
+    // Pinned by the L2 cycle. The producer must write to
+    // `<root>/versions/<v>/...` instead of `<root>/install/<v>/...`.
+    // These tests assert the on-disk shape after a successful commit
+    // against a real release staged by `release_test_support`.
+
+    /// L2 T1 (was RED before fix): after a real commit, the manifest
+    /// lands at `<root>/versions/<v>/manifest.yaml` and the component
+    /// tree lands at `<root>/versions/<v>/<component>/`. Pre-L2 it
+    /// landed at `<root>/install/<v>/...`.
+    #[test]
+    #[serial_test::serial]
+    fn t_l2_extracting_writes_under_versions_layout() {
+        let _temphome = TempCognicodeHome::new();
+        let home =
+            crate::layout::CognicodeHome::resolve(None).expect("resolve home from COGNICODE_HOME");
+        let release = crate::release_test_support::local_release(env!("CARGO_PKG_VERSION"))
+            .expect("stage a local release");
+        crate::release_test_support::point_at(&release);
+
+        // Drive the full pipeline end-to-end and commit.
+        let result = InstallerTransaction::run(&home, "core");
+        let manifest_path = match result {
+            Ok(p) => p,
+            Err(e) => panic!("install transaction must succeed; got {e:?}"),
+        };
+
+        // The manifest must be at versions/<v>/manifest.yaml per ADR.
+        assert!(
+            manifest_path.starts_with(home.version_root(env!("CARGO_PKG_VERSION"))),
+            "L2: manifest must be under versions/<v>/; got {}",
+            manifest_path.display()
+        );
+        assert_eq!(
+            manifest_path,
+            home.version_manifest(env!("CARGO_PKG_VERSION")),
+            "L2: manifest path must equal home.version_manifest(v)"
+        );
+        assert!(
+            manifest_path.exists(),
+            "L2: manifest file must exist on disk"
+        );
+
+        // The legacy install/ tree must NOT exist. This is the inverse
+        // assertion: if it does exist, something is still writing to
+        // the legacy layout and L2 is incomplete.
+        let legacy_install = home.install_manifest_path(env!("CARGO_PKG_VERSION"));
+        assert!(
+            !legacy_install.exists(),
+            "L2: legacy install/<v>/manifest.yaml must NOT exist after L2 commit; got {}",
+            legacy_install.display()
+        );
+
+        // Clean up
+        let _ = std::fs::remove_file(&manifest_path);
+        let version_root = home.version_root(env!("CARGO_PKG_VERSION"));
+        let _ = std::fs::remove_dir_all(&version_root);
+        let journal_path = crate::lifecycle_journal::journal_path(env!("CARGO_PKG_VERSION"));
+        let _ = std::fs::remove_file(&journal_path);
+    }
+
+    /// L2 T2: the journal's `WroteManifest` SideEffect points at the
+    /// canonical `versions/<v>/manifest.yaml`, not `install/<v>/...`.
+    /// The journal is the authoritative undo log; if it points at the
+    /// legacy layout, a future `cogh rollback` would re-create the
+    /// legacy tree.
+    #[test]
+    #[serial_test::serial]
+    fn t_l2_commit_records_versions_layout_in_journal() {
+        let _temphome = TempCognicodeHome::new();
+        let home =
+            crate::layout::CognicodeHome::resolve(None).expect("resolve home from COGNICODE_HOME");
+        let release = crate::release_test_support::local_release(env!("CARGO_PKG_VERSION"))
+            .expect("stage a local release");
+        crate::release_test_support::point_at(&release);
+
+        let result =
+            InstallerTransaction::run(&home, "core").expect("install transaction must succeed");
+
+        let journal_path = crate::lifecycle_journal::journal_path(env!("CARGO_PKG_VERSION"));
+        let envelope =
+            crate::lifecycle_journal::load_envelope(&journal_path).expect("load journal envelope");
+        assert_eq!(envelope.version, env!("CARGO_PKG_VERSION"));
+
+        // The journal must record at least one WroteManifest effect,
+        // and that effect's path must be under versions/<v>/.
+        let wrote = envelope
+            .effects
+            .effects()
+            .iter()
+            .find_map(|e| match e {
+                crate::rollback_journal::SideEffect::WroteManifest(p) => Some(p.clone()),
+                _ => None,
+            })
+            .expect("journal must contain a WroteManifest effect");
+        assert!(
+            wrote.starts_with(home.version_root(env!("CARGO_PKG_VERSION"))),
+            "L2: journal WroteManifest path must be under versions/<v>/; got {}",
+            wrote.display()
+        );
+
+        // Clean up
+        let _ = std::fs::remove_file(&result);
+        let _ = std::fs::remove_dir_all(home.version_root(env!("CARGO_PKG_VERSION")));
+        let _ = std::fs::remove_file(&journal_path);
     }
 
     /// REQ-FIX-01 GREEN — Bearer propagates across a cross-origin redirect.

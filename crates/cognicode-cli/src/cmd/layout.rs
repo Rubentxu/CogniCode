@@ -1149,15 +1149,14 @@ components:
             "bundle.yaml must be the 0.95.0 manifest"
         );
 
-        // The install writes the manifest to `layout::install_manifest_path`
-        // (free fn, env-based). The `CognicodeHome::install_manifest_path`
-        // method has a separate path layout — it is currently inconsistent
-        // with the install transaction's actual write location, so we use
-        // the free fn here to stay pinned to the real install contract.
-        let install_manifest = install_manifest_path("0.95.0");
+        // L2 (ADR-CANONICAL-LAYOUT): the install now writes the manifest
+        // to `<root>/versions/<v>/manifest.yaml` per the canonical
+        // layout. We use `home.version_manifest(v)` to stay pinned to
+        // the new install contract.
+        let install_manifest = home.version_manifest("0.95.0");
         assert!(
             install_manifest.exists(),
-            "install manifest must be written under install/0.95.0/, got {}",
+            "install manifest must be written under versions/0.95.0/, got {}",
             install_manifest.display()
         );
 
@@ -1400,7 +1399,7 @@ components:
         )
         .expect("first install must succeed");
 
-        let manifest_path = install_manifest_path("0.95.0");
+        let manifest_path = home.version_manifest("0.95.0");
 
         // Second install. This is the follow-through: we expect either
         // success (overwrite path works) or a `symlink` error (stale
@@ -1551,7 +1550,7 @@ components:
         )
         .expect("live install must succeed");
 
-        let install_manifest = install_manifest_path("0.95.0");
+        let install_manifest = home.version_manifest("0.95.0");
         assert!(
             install_manifest.exists(),
             "install must have written manifest"

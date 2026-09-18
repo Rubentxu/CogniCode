@@ -537,10 +537,12 @@ mod tests {
         let pinned = std::fs::read_to_string(&tracker_path).expect("tracker missing");
         assert_eq!(pinned.trim(), version);
 
-        // The payload was really downloaded, verified and extracted...
+        // The payload was really downloaded, verified and extracted.
+        // L2 (ADR-CANONICAL-LAYOUT): the extract target is now
+        // `<root>/versions/<v>/<comp>/`, not `<root>/install/<v>/<comp>/`.
         let installed_bin = temp_home
             .path()
-            .join(".cognicode/install")
+            .join(".cognicode/versions")
             .join(version)
             .join("cognicode/bin/cognicode");
         assert!(
