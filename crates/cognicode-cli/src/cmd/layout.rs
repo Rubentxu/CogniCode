@@ -306,18 +306,14 @@ pub fn cmd_uninstall(
     for ide in ides {
         crate::ide::cmd_ide_uninstall(home, ide, version)?;
     }
-    // E86.7: remove the install tree at `<root>/install/<ver>/` so
-    // uninstall actually undoes what install did. The install flow
-    // extracts components into this directory; leaving it on disk
-    // after uninstall made `cogh list` and `cogh where` lie about what
-    // is installed. Idempotent: missing dir is a no-op, not an error.
-    // Pinned by `t_e86_7_cmd_uninstall_removes_install_tree` and
-    // `t_e86_7_cmd_uninstall_idempotent_when_install_tree_missing`.
-    let install_tree = home
-        .install_manifest_path(version)
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| home.root.join("install").join(version));
+    // L3 (ADR-CANONICAL-LAYOUT): remove the canonical version tree at
+    // `<root>/versions/<ver>/` so uninstall undoes what install did.
+    // Pre-L2 the producer wrote to `<root>/install/<ver>/` and E86.7
+    // mirrored that here. After L2 the producer writes to `versions/`,
+    // so cmd_uninstall must follow. Idempotent: missing dir is a no-op.
+    // Pinned by `t_l3_cmd_uninstall_removes_versions_tree` and
+    // `t_l3_cmd_uninstall_idempotent_when_versions_tree_missing`.
+    let install_tree = home.version_root(version);
     if install_tree.exists() {
         std::fs::remove_dir_all(&install_tree)
             .with_context(|| format!("rm -rf install tree at {}", install_tree.display()))?;
@@ -1658,10 +1654,14 @@ components:
     // ===== E86.7 — cmd_uninstall removes the install tree =====
 
     /// T1 (RED before fix): `cmd_uninstall` must remove the install tree
-    /// at `<root>/install/<ver>/` after running. The install flow
+    /// at `<root>/versions/<ver>/` after running. The install flow
     /// extracts components into that directory; uninstall must reverse
     /// that side-effect. Pinned by E86.3's out-of-scope note ("remove
     /// the install tree under versions/{ver}/ or install/{ver}/").
+    ///
+    /// L3 (ADR-CANONICAL-LAYOUT): the producer retargeted to `versions/`
+    /// in commit ded95fbf, so this test was migrated from
+    /// `home.install_manifest_path().parent()` to `home.version_root(v)`.
     #[test]
     #[serial]
     fn t_e86_7_cmd_uninstall_removes_install_tree() {
@@ -1669,17 +1669,11 @@ components:
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
 
-        // Simulate a committed install: create the install tree at the
-        // SAME path that the install transaction writes to. Use
-        // `home.install_manifest_path()` as the source of truth so the
-        // path matches regardless of whether the home was resolved via
-        // override or via COGNICODE_HOME.
+        // Simulate a committed install: create the canonical version tree.
+        // Use `home.version_root()` as the source of truth so the path
+        // matches what the install transaction writes (post-L2).
         let version = "0.95.0";
-        let install_tree = home
-            .install_manifest_path(version)
-            .parent()
-            .expect("install_manifest_path has a parent")
-            .to_path_buf();
+        let install_tree = home.version_root(version);
         std::fs::create_dir_all(install_tree.join("cognicode/bin")).unwrap();
         std::fs::write(install_tree.join("manifest.yaml"), "version: 0.95.0").unwrap();
         std::fs::write(install_tree.join("cognicode/bin/cognicode"), "fake").unwrap();
@@ -1716,24 +1710,20 @@ components:
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
 
-        // Deliberately do NOT create any install tree — the dir does
+        // Deliberately do NOT create any version tree — the dir does
         // not exist. cmd_uninstall must NOT error.
         let version = "0.95.0";
-        let install_tree = home
-            .install_manifest_path(version)
-            .parent()
-            .expect("install_manifest_path has a parent")
-            .to_path_buf();
+        let install_tree = home.version_root(version);
         assert!(
             !install_tree.exists(),
-            "install tree must not exist in this test; got {}",
+            "version tree must not exist in this test; got {}",
             install_tree.display()
         );
 
         let result = cmd_uninstall(&home, "mcp-server", version, &["opencode".to_string()]);
         assert!(
             result.is_ok(),
-            "cmd_uninstall on a home with no install tree must succeed; got {result:?}"
+            "cmd_uninstall on a home with no version tree must succeed; got {result:?}"
         );
 
         let _ = std::fs::remove_dir_all(home_dir.path());
@@ -1752,11 +1742,7 @@ components:
         home.init().unwrap();
 
         let version = "0.95.0";
-        let install_tree = home
-            .install_manifest_path(version)
-            .parent()
-            .expect("install_manifest_path has a parent")
-            .to_path_buf();
+        let install_tree = home.version_root(version);
         std::fs::create_dir_all(&install_tree).unwrap();
         std::fs::write(install_tree.join("manifest.yaml"), "version: 0.95.0").unwrap();
 
@@ -1896,5 +1882,61 @@ components:
         );
 
         let _ = std::fs::remove_dir_all(home_dir.path());
+    }
+
+    // ========================================================================
+    // L3 — cmd_uninstall retargets to the canonical version tree
+    //
+    // Pinned by ADR-CANONICAL-LAYOUT (2026-09-18). After L2 the producer
+    // writes to `<root>/versions/<v>/...`; cmd_uninstall must mirror
+    // that. E86.7 tests above pin the consumer half of this contract
+    // (migrated to use `home.version_root(v)` as the source of truth).
+    //
+    // This single new test pins the round-trip: a live install followed
+    // by cmd_uninstall removes the canonical tree.
+    // ========================================================================
+
+    /// L3 T1 (was RED before fix): after a real install, `cmd_uninstall`
+    /// must remove the canonical `<root>/versions/<v>/` tree — not the
+    /// legacy `<root>/install/<v>/` (which is empty after L2).
+    #[test]
+    #[serial_test::serial]
+    fn t_l3_cmd_uninstall_round_trip_removes_canonical_tree() {
+        let _temphome = test_support::TempCognicodeHome::new();
+        let home = CognicodeHome::resolve(None).expect("resolve home");
+        home.init().expect("init home");
+
+        // Run a real install so the canonical tree exists.
+        let release = crate::release_test_support::local_release(env!("CARGO_PKG_VERSION"))
+            .expect("stage a local release");
+        crate::release_test_support::point_at(&release);
+        crate::installer_transaction::InstallerTransaction::run(&home, "core")
+            .expect("install must succeed");
+
+        let version_root = home.version_root(env!("CARGO_PKG_VERSION"));
+        assert!(
+            version_root.exists(),
+            "L3: canonical version tree must exist after install; got {}",
+            version_root.display()
+        );
+        let legacy_install = home.install_manifest_path(env!("CARGO_PKG_VERSION"));
+        assert!(
+            !legacy_install.exists(),
+            "L3: legacy install/<v>/manifest.yaml must NOT exist post-L2"
+        );
+
+        // Run uninstall and verify the canonical tree is gone.
+        let result = cmd_uninstall(
+            &home,
+            "mcp-server",
+            env!("CARGO_PKG_VERSION"),
+            &["opencode".to_string()],
+        );
+        assert!(result.is_ok(), "cmd_uninstall must succeed; got {result:?}");
+        assert!(
+            !version_root.exists(),
+            "L3: canonical version tree must be removed after cmd_uninstall; got {}",
+            version_root.display()
+        );
     }
 }
