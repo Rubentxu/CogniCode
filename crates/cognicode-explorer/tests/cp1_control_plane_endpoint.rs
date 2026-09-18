@@ -17,7 +17,6 @@ use tower::ServiceExt;
 
 use cognicode_explorer::api::{router, ApiState};
 use axum::Router as AxumRouter;
-use tower::ServiceExt;
 use cognicode_core::application::architecture::{
     ArchitectureAdmissionService, ArchitectureRegistry, ControlQueryService,
     SystemArchitectureClock,
