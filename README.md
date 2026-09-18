@@ -45,6 +45,8 @@ Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified aga
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
+Pin a version with `@0.96.0`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
+
 ### Pre-built binary
 
 Download the latest release from [GitHub Releases](https://github.com/Rubentxu/CogniCode/releases):

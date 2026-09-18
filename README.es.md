@@ -45,6 +45,8 @@ Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los c
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
+Fija una versión con `@0.96.0`. Ambos canales instalan el mismo asset de la release publicada — ver `docs/e87-mise-identity-receipt.md` para la prueba de identidad por digest. Contrato de propiedad: instalado vía mise, mise es dueño del binario `cogh` de Capa 0 (actualiza con `mise upgrade`); `cogh` solo es dueño del runtime de Capa 1 (`~/.cognicode`).
+
 ### Binario precompilado
 
 Descarga la última release desde [GitHub Releases](https://github.com/Rubentxu/CogniCode/releases):
