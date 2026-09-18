@@ -1,0 +1,11 @@
+id: e88-fresh-linux-lifecycle-uat
+title: "e88 — Fresh Linux Lifecycle UAT"
+status: CLOSED
+closed: 2026-09-18
+commits:
+  - 29a1acc2  # docs(release): v0.97.0 receipt + entry gates (G0a/G0b PASS)
+  - c795e964  # fix(lifecycle): restore tracker pin on rollback (F1)
+  - 89b19019  # fix(doctor): state-aware MCP probe (F2)
+  - 735388d1  # chore(release): bump 0.97.1 (release published, run 35380725902)
+  - 6531f9b9  # fix(core): DEBT-SDDK-006 feature-gating closure
+  - 86280659  # docs(uat): e88 FINAL public UAT on v0.97.1 — CLOSED
