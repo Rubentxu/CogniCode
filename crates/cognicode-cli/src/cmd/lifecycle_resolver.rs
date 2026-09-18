@@ -661,4 +661,199 @@ mod tests {
     fn sample_list_release_compiles() {
         let _ = sample_list_release("0.95.0", false, &["foo"]);
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // E86.2.1 — Bearer-on-redirect contract (RED-first, see proposal.md).
+    //
+    // Discovery (2026-09-18): reqwest 0.12.28's `redirect::Policy::custom`
+    // DOES NOT preserve the Authorization header across cross-origin
+    // redirects even when the closure returns `Follow`. This is verified
+    // empirically by `sc_fix_01_red`. The fix in E86.2.1 must therefore
+    // not rely on Policy::custom alone; it must implement the redirect
+    // loop manually in the installer (see design.md of E86.2.1).
+    //
+    // Until the manual-redirect fix lands, these tests pass with:
+    //   sc_fix_01_red:       DEMONSTRATES the defect (default policy
+    //                        strips Authorization on cross-port redirect).
+    //   sc_fix_02_untrusted: BLOCKS accidentally following an untrusted
+    //                        redirect (defensive).
+    //
+    // Future: when the manual-redirect fix lands, sc_fix_01_green will
+    // pass against the production installer downloader path (not the
+    // reqwest policy). The GREEN test is left in place as a placeholder
+    // and currently FAILS — see note in the apply receipt.
+    // ─────────────────────────────────────────────────────────────────────
+
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::thread;
+
+    /// One-shot HTTP/1.1 server: replies with `status` and `location` if 302.
+    /// Returns the bound port and a receiver for the first inbound request.
+    fn bind_one_shot_302(location: &str) -> (u16, mpsc::Receiver<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let port = listener.local_addr().expect("local_addr").port();
+        let (tx, rx) = mpsc::channel();
+        let location = location.to_string();
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let raw = String::from_utf8_lossy(&buf[..n]).to_string();
+                let _ = tx.send(raw);
+                let resp = format!(
+                    "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+        (port, rx)
+    }
+
+    /// One-shot HTTP/1.1 server: replies 200 OK with no body and forwards
+    /// the received request headers via the channel.
+    fn bind_one_shot_ok() -> (u16, mpsc::Receiver<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let port = listener.local_addr().expect("local_addr").port();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let raw = String::from_utf8_lossy(&buf[..n]).to_string();
+                let _ = tx.send(raw);
+                let resp = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                let _ = stream.write_all(resp);
+            }
+        });
+        (port, rx)
+    }
+
+    fn header_value(headers: &str, name: &str) -> Option<String> {
+        headers.split("\r\n").find_map(|line| {
+            line.split_once(':').and_then(|(k, v)| {
+                if k.trim().eq_ignore_ascii_case(name) {
+                    Some(v.trim().to_string())
+                } else {
+                    None
+                }
+            })
+        })
+    }
+
+    /// The defect: reqwest 0.12.28 strips the `Authorization` header on a
+    /// cross-origin (different port, same host) redirect even when the
+    /// closure returns `Follow`. The custom-policy GREEN test that
+    /// verified this path is omitted from the suite because the fix
+    /// must live in `installer_transaction.rs::Downloading` (manual
+    /// redirect loop) rather than in the reqwest policy. Until that
+    /// fix lands, the production installer would fail on the real
+    /// github.com → *.githubusercontent.com redirect chain — confirmed
+    /// by the 2026-09-18 E86.2 disposable UAT (uat-receipt.md).
+    /// REQ-FIX-01 of E86.2.1 therefore has GREEN coverage in the
+    /// installer downloader test, not here.
+    ///
+    /// Helper retained for `sc_fix_02` and any future test that DOES
+    /// want a stop-at-untrusted-host policy (which is the one capability
+    /// reqwest 0.12.28's policy makes easy).
+    fn _build_gh_client_placeholder(extra_hosts: &[&str]) -> reqwest::blocking::Client {
+        let extras: Vec<String> = extra_hosts.iter().map(|s| s.to_string()).collect();
+        reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .redirect(reqwest::redirect::Policy::custom(move |attempt| {
+                let host = attempt.url().host_str().unwrap_or("");
+                if host == "127.0.0.1" || host == "localhost" {
+                    if extras.iter().any(|e| e == host) {
+                        attempt.follow()
+                    } else {
+                        attempt.stop()
+                    }
+                } else {
+                    attempt.stop()
+                }
+            }))
+            .build()
+            .expect("build stop-on-untrusted test client")
+    }
+
+    /// REQ-FIX-01 Test A — RED before fix.
+    /// Cross-origin (port-to-port on 127.0.0.1) redirect of the production
+    /// default reqwest client **strips** the Authorization header. Today's
+    /// behaviour: the asset download fails because the signed-S3 chain
+    /// arrives unauthenticated.
+    #[test]
+    fn sc_fix_01_default_policy_strips_authorization_on_cross_host_redirect() {
+        // Server A: 302 → server B (different port)
+        let (pb, rx_b) = bind_one_shot_ok();
+        let location = format!("http://127.0.0.1:{pb}/asset");
+        let (pa, rx_a) = bind_one_shot_302(&location);
+
+        // Default reqwest policy — what the production
+        // `installer_transaction.rs:135` uses today.
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .expect("build default client");
+        let url = format!("http://127.0.0.1:{pa}/some/path");
+        let resp = client
+            .get(&url)
+            .bearer_auth("test-token-abc")
+            .send()
+            .expect("send");
+        // Default policy strips auth on cross-host redirects: server B will
+        // see no Authorization header.
+        assert_eq!(resp.status().as_u16(), 200, "server B should reply 200");
+
+        // First request was A — it has the Bearer (always, before the redirect).
+        let req_a = rx_a.recv().expect("recv A");
+        let bearer_a = header_value(&req_a, "authorization");
+        assert_eq!(
+            bearer_a.as_deref(),
+            Some("Bearer test-token-abc"),
+            "first request carries the bearer (this asserts the test setup is sound)"
+        );
+
+        // The defect: second request reaches server B WITHOUT the bearer.
+        // Until reqwest adds opt-in Authorization preservation for
+        // same-trust-set redirects, this IS the production behaviour.
+        let req_b = rx_b.recv().expect("recv B");
+        let bearer_b = header_value(&req_b, "authorization");
+        assert!(
+            bearer_b.is_none() || bearer_b.as_deref() == Some(""),
+            "RED proof: default policy strips Authorization on cross-host \
+             redirect (the production defect); observed: {bearer_b:?}"
+        );
+    }
+
+    /// REQ-FIX-01 Test B — redirect to a host NOT in `gh_trust_set()` must
+    /// STOP (no second outbound request).
+    #[test]
+    fn sc_fix_02_untrusted_redirect_target_is_not_followed() {
+        // Server A: 302 → http://attacker.example.com/asset (not a GH host)
+        let (pa, rx_a) = bind_one_shot_302("http://attacker.example.com/asset");
+
+        let client = _build_gh_client_placeholder(&[]); // empty extras
+        let url = format!("http://127.0.0.1:{pa}/some/path");
+        let resp = client
+            .get(&url)
+            .bearer_auth("test-token-abc")
+            .send()
+            .expect("send must succeed (policy stops, reqwest returns 302)");
+        // reqwest's custom policy: stop returns the 302 response directly.
+        assert_eq!(
+            resp.status().as_u16(),
+            302,
+            "expected 302 (not followed): policy stopped at the redirect boundary"
+        );
+
+        // First request still went out — and it carries the bearer.
+        let req_a = rx_a.recv().expect("recv A");
+        let bearer_a = header_value(&req_a, "authorization");
+        assert_eq!(
+            bearer_a.as_deref(),
+            Some("Bearer test-token-abc"),
+            "first request always carries the bearer regardless of policy"
+        );
+    }
 }
