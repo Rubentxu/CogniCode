@@ -63,8 +63,16 @@ pub fn run_install(home: &CognicodeHome, profile: &str) -> Result<PathBuf> {
                             "OpenCode detected, integrating skill bundle at {}",
                             skill_path.display()
                         );
+                        // DEBT-3.f: derive the BinaryName from the bundle
+                        // manifest's DaemonCli component, not from a
+                        // hardcoded `"cognicode-mcp"` literal. The
+                        // manifest is the source of truth; if the
+                        // bundle declares no DaemonCli, fail loudly.
+                        let mcp_binary_name = crate::bundle_manifest::daemon_cli_binary_name(
+                            &home.version_manifest(version),
+                        )?;
                         let mcp_command = vec![
-                            home.shim_path("cognicode-mcp")
+                            home.shim_path(&mcp_binary_name)
                                 .to_string_lossy()
                                 .to_string(),
                         ];

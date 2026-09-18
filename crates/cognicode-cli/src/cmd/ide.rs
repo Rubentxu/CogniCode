@@ -723,11 +723,18 @@ pub fn cmd_ide_install(
     plugin: &str,
     version: &str,
 ) -> Result<()> {
-    // Resolve the MCP command line. The actual binary is at
-    // `~/.cognicode/shims/cognicode-mcp` (after E32-A's shim layout).
+    // Resolve the MCP command line. The BinaryName comes from the
+    // plugin manifest's declared `binaries[].name`, not from a
+    // hardcoded `"cognicode-mcp"` literal. The literal silently
+    // coupled BinaryName to a specific plugin's choice; if a
+    // future plugin declared a different binary, the IDE
+    // integration would point at a shim that didn't exist.
+    // The plugin manifest is the source of truth; if the plugin
+    // declares no binaries, fail loudly.
+    let mcp_binary_name =
+        crate::manifest::plugin_mcp_binary_name(&home.plugin(plugin).join("plugin.yaml"))?;
     let mcp_command = vec![
-        home.shims()
-            .join("cognicode-mcp")
+        home.shim_path(&mcp_binary_name)
             .to_string_lossy()
             .to_string(),
     ];

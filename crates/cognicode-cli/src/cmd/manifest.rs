@@ -118,6 +118,39 @@ impl PluginManifest {
     }
 }
 
+/// Resolve the BinaryName of the MCP server binary that the plugin
+/// declares.
+///
+/// DEBT-3.f: replaces the hardcoded `"cognicode-mcp"` literal that
+/// `ide.rs::cmd_ide_install` used to pass to `home.shim_path(...)`.
+/// The literal silently coupled BinaryName to a specific plugin's
+/// declared binary; if a future plugin declared a different binary
+/// (or no binaries at all), the IDE integration would point at a
+/// shim that didn't exist.
+///
+/// Fails loudly when:
+/// * the plugin manifest cannot be read or parsed;
+/// * the plugin declares no binaries (no source of truth for the
+///   MCP server binary name).
+pub fn plugin_mcp_binary_name(manifest_path: &Path) -> Result<String> {
+    let manifest = PluginManifest::from_path(manifest_path).with_context(|| {
+        format!(
+            "failed to read plugin manifest at {}",
+            manifest_path.display()
+        )
+    })?;
+    manifest
+        .binaries
+        .first()
+        .map(|b| b.name.clone())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "plugin manifest at {} declares no binaries; cannot resolve MCP server binary name",
+                manifest_path.display()
+            )
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,5 +271,108 @@ versions:
 "#;
         let err = PluginManifest::from_str(yaml).unwrap_err();
         assert!(err.to_string().contains("name"));
+    }
+
+    // ========================================================================
+    // DEBT-3.f — strict T3 + T4 for :730 elimination
+    //
+    // These tests pin the contract that the `plugin_mcp_binary_name`
+    // helper (which replaced the hardcoded `"cognicode-mcp"` literal
+    // at `ide.rs:730`) reads the BinaryName from the plugin
+    // manifest's `binaries[0].name` rather than from a hardcoded
+    // literal. The legacy inline form silently coupled BinaryName
+    // to a specific plugin's choice; if a future plugin declared a
+    // different binary (or no binaries at all), the IDE
+    // integration would point at a shim that didn't exist.
+    //
+    // The tests use three pairwise-distinct identity strings
+    // (PluginId / BinaryName) so the assertions cannot green for
+    // the wrong reason.
+    // ========================================================================
+
+    /// DEBT-3.f strict T3: `plugin_mcp_binary_name` reads the
+    /// declared `binaries[0].name`, NOT a hardcoded literal. Plants
+    /// a synthetic plugin manifest with a deliberately-divergent
+    /// BinaryName and asserts the helper returns it verbatim.
+    #[test]
+    fn t_debt3f_strict_plugin_mcp_binary_name_uses_manifest_decl() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let plugin_yaml = tmp.path().join("plugin.yaml");
+        // Three pairwise-distinct identity strings:
+        //   PluginId   = "alt-plugin"
+        //   BinaryName = "renamed-mcp-binary"  (NOT "cognicode-mcp")
+        // If the helper read the literal "cognicode-mcp" the test
+        // would fail; only by consulting the manifest does it
+        // return "renamed-mcp-binary".
+        let yaml = r#"
+apiVersion: cognicode/v1
+kind: Plugin
+name: alt-plugin
+description: synthetic plugin with divergent binary name
+versions:
+  - ref: "v1.0.0"
+    artifact: renamed-mcp-binary-1.0.0.tar.gz
+    sha256: 0000000000000000000000000000000000000000000000000000000000000000
+binaries:
+  - name: renamed-mcp-binary
+    path: bin/renamed-mcp-binary
+    description: MCP server with a different filename
+"#;
+        std::fs::write(&plugin_yaml, yaml).expect("plant plugin.yaml");
+
+        let binary_name =
+            plugin_mcp_binary_name(&plugin_yaml).expect("helper must find a declared binary");
+        assert_eq!(
+            binary_name, "renamed-mcp-binary",
+            "DEBT-3.f strict T3: helper must read binaries[0].name from the manifest, \
+             not a hardcoded literal; got: {binary_name}"
+        );
+        // Belt and suspenders: explicitly assert the helper did NOT
+        // return the legacy literal. (If someone "fixes" the helper
+        // to return a constant string, this assertion fires.)
+        assert_ne!(
+            binary_name, "cognicode-mcp",
+            "DEBT-3.f strict T3: helper MUST NOT return the legacy literal; \
+             the whole point of this commit is to derive the name"
+        );
+    }
+
+    /// DEBT-3.f strict T4: fail loudly when the plugin manifest
+    /// declares no binaries. The legacy inline form would have
+    /// written `home.shim_path("cognicode-mcp")` regardless of
+    /// the plugin's declaration, silently pointing at a shim that
+    /// didn't exist if the plugin had no binaries. The helper
+    /// must refuse to return a derived name and surface the
+    /// missing-identity error to the caller.
+    #[test]
+    fn t_debt3f_strict_plugin_mcp_binary_name_fails_loudly_when_no_binaries() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let plugin_yaml = tmp.path().join("plugin.yaml");
+        // Synthetic plugin with EMPTY binaries list — the source
+        // of truth has no declared binary name.
+        let yaml = r#"
+apiVersion: cognicode/v1
+kind: Plugin
+name: bin-less-plugin
+description: synthetic plugin with no binaries
+versions:
+  - ref: "v1.0.0"
+    artifact: bin-less-1.0.0.tar.gz
+    sha256: 0000000000000000000000000000000000000000000000000000000000000000
+binaries: []
+"#;
+        std::fs::write(&plugin_yaml, yaml).expect("plant plugin.yaml");
+
+        let result = plugin_mcp_binary_name(&plugin_yaml);
+        let err = result.expect_err(
+            "DEBT-3.f strict T4: helper MUST fail loudly when the plugin declares no binaries; \
+             silently returning a default would re-introduce the heuristic the cycle is eliminating",
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("declares no binaries"),
+            "DEBT-3.f strict T4: error message must mention 'declares no binaries' \
+             so the missing-identity is observable to the operator; got: {msg}"
+        );
     }
 }

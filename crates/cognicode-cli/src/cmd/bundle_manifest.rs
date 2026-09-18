@@ -337,6 +337,40 @@ pub struct InstallPlan {
     pub components: Vec<BundleComponent>,
 }
 
+/// Resolve the BinaryName of the DaemonCli component from the
+/// bundle manifest at the given path.
+///
+/// DEBT-3.f: replaces the hardcoded `"cognicode-mcp"` literal that
+/// `install.rs::run_install` and `ide.rs::cmd_ide_install` used to
+/// pass to `home.shim_path(...)`. The literal silently coupled
+/// BinaryName to a specific component name; if a future bundle
+/// shipped a different DaemonCli component (or no DaemonCli at
+/// all), the runtime would write a shim that didn't exist.
+///
+/// Fails loudly when:
+/// * the bundle manifest cannot be read or parsed;
+/// * the bundle has no DaemonCli component (no source of truth
+///   for the MCP server binary name).
+pub fn daemon_cli_binary_name(manifest_path: &Path) -> Result<String> {
+    let manifest = BundleManifest::from_path(manifest_path).with_context(|| {
+        format!(
+            "failed to read bundle manifest at {}",
+            manifest_path.display()
+        )
+    })?;
+    manifest
+        .components_by_kind(ArtifactKind::DaemonCli)
+        .first()
+        .map(|c| c.name.clone())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "bundle manifest at {} declares no DaemonCli component; \
+                 cannot resolve MCP server binary name",
+                manifest_path.display()
+            )
+        })
+}
+
 fn is_semver_like(s: &str) -> bool {
     let mut parts = s.splitn(2, '-');
     let numeric = parts.next().unwrap_or("");
@@ -611,6 +645,137 @@ components:
             m.version,
             env!("CARGO_PKG_VERSION").to_string(),
             "the fixture must differ from this binary's version for the test to mean anything"
+        );
+    }
+
+    // ========================================================================
+    // DEBT-3.f — strict T2a + T2b for :67 elimination
+    //
+    // `daemon_cli_binary_name` replaces the hardcoded `"cognicode-mcp"`
+    // literal at `install.rs:67`. The literal silently coupled BinaryName
+    // to a specific component name; the helper reads it from the bundle
+    // manifest's DaemonCli component.
+    //
+    // The manifest validator enforces `BundleComponent.name ==
+    // kind.stem()` (e84 WU5). For ArtifactKind::DaemonCli, the stem
+    // is "cognicode-mcp", so the helper's return value happens to
+    // equal the legacy literal today. The strict tests therefore
+    // cannot rely on string divergence — they pin the contract by:
+    //
+    //   T2a — bundle with a DaemonCli component returns the
+    //         manifest-declared name (proves the helper READS the
+    //         manifest, not a constant).
+    //   T2b — bundle WITHOUT a DaemonCli component fails loudly
+    //         (proves the helper does NOT silently fall back to a
+    //         hardcoded literal).
+    //
+    // The pair rules out the regression mode where someone
+    // "simplifies" the helper to `fn daemon_cli_binary_name(_: &Path)
+    // -> Result<String> { Ok("cognicode-mcp".into()) }`.
+    // ========================================================================
+
+    fn bundle_with_daemon_cli(daemon_name: &str, version: &str) -> String {
+        // Construct a valid v2 bundle whose only component is a
+        // DaemonCli. The name MUST equal kind.stem() per the
+        // validator, so daemon_name == "cognicode-mcp" today.
+        // The test uses this to verify the helper follows the
+        // manifest, not a literal.
+        //
+        // Note: ArtifactKind serializes as kebab-case in YAML
+        // ("daemon-cli", not "DaemonCli"); the parser is strict
+        // about variant names.
+        let artifact = format!("{daemon_name}-{version}-x86_64-unknown-linux-gnu.tar.gz");
+        let url = format!(
+            "https://github.com/Rubentxu/CogniCode/releases/download/v{version}/{artifact}"
+        );
+        format!(
+            r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "{version}"
+platform: linux-x86-64
+released_at: "2026-09-18T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+components:
+  - name: {daemon_name}
+    kind: daemon-cli
+    version: "{version}"
+    artifact: {artifact}
+    sha256: "{DIGEST}"
+    url: "{url}"
+    profiles: [core]
+"#
+        )
+    }
+
+    fn bundle_without_daemon_cli() -> String {
+        // A bundle whose only component is a non-DaemonCli kind
+        // (Cognicode). The validator requires every declared
+        // profile to resolve to ≥1 component, so we declare only
+        // the profile the cognicode component uses ("core").
+        // Used to verify the helper refuses to derive a name
+        // when the manifest has no DaemonCli.
+        format!(
+            r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "0.95.0"
+platform: linux-x86-64
+released_at: "2026-09-18T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+components:
+{cogh_comp}
+"#,
+            cogh_comp = cognicode_component("core"),
+        )
+    }
+
+    /// DEBT-3.f strict T2a: `daemon_cli_binary_name` reads the
+    /// declared `BundleComponent.name` for the DaemonCli kind, NOT
+    /// a hardcoded literal. Plants a synthetic bundle on disk and
+    /// asserts the helper returns the manifest-declared name.
+    #[test]
+    fn t_debt3f_strict_daemon_cli_binary_name_uses_manifest_decl() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let manifest_path = tmp.path().join("manifest.yaml");
+        let yaml = bundle_with_daemon_cli("cognicode-mcp", "0.95.0");
+        std::fs::write(&manifest_path, &yaml).expect("plant bundle manifest");
+
+        let binary_name = daemon_cli_binary_name(&manifest_path)
+            .expect("helper must resolve the DaemonCli component name");
+        assert_eq!(
+            binary_name, "cognicode-mcp",
+            "DEBT-3.f strict T2a: helper must return the manifest-declared name; \
+             got: {binary_name}"
+        );
+    }
+
+    /// DEBT-3.f strict T2b: `daemon_cli_binary_name` fails loudly
+    /// when the bundle has no DaemonCli component. The legacy
+    /// inline form would have written
+    /// `home.shim_path("cognicode-mcp")` regardless; the helper
+    /// must refuse and surface the missing-identity error.
+    #[test]
+    fn t_debt3f_strict_daemon_cli_binary_name_fails_loudly_when_no_daemon_cli() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let manifest_path = tmp.path().join("manifest.yaml");
+        let yaml = bundle_without_daemon_cli();
+        std::fs::write(&manifest_path, &yaml).expect("plant bundle manifest");
+
+        let result = daemon_cli_binary_name(&manifest_path);
+        let err = result.expect_err(
+            "DEBT-3.f strict T2b: helper MUST fail loudly when the bundle declares no DaemonCli; \
+             silently returning a default would re-introduce the heuristic the cycle is eliminating",
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("declares no DaemonCli component"),
+            "DEBT-3.f strict T2b: error message must mention 'declares no DaemonCli component' \
+             so the missing-identity is observable to the operator; got: {msg}"
         );
     }
 }
