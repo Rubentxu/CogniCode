@@ -5,13 +5,48 @@
 
 use std::path::PathBuf;
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 
 use super::ide;
 use super::install_lock;
 use super::installer_transaction::InstallerTransaction;
 use super::layout::CognicodeHome;
 use super::tracker;
+
+/// Resolve the on-disk directories of the skill bundles the manifest
+/// declares for `profile` (DEBT-2).
+///
+/// The SkillBundleId comes exclusively from the bundle manifest's
+/// `skill_bundles[]` section. Empty when the manifest declares none for
+/// the profile. Errors loudly when a declared bundle is missing on
+/// disk — never falls back to "first directory found".
+fn declared_skill_bundle_dirs(
+    home: &CognicodeHome,
+    version: &str,
+    profile: &str,
+) -> Result<Vec<PathBuf>> {
+    let manifest_path = home.version_manifest(version);
+    let manifest =
+        crate::bundle_manifest::BundleManifest::from_path(&manifest_path).with_context(|| {
+            format!(
+                "resolve skill bundles from bundle manifest {}",
+                manifest_path.display()
+            )
+        })?;
+    let mut dirs = Vec::new();
+    for bundle in manifest.skill_bundles_for_profile(profile) {
+        let dir = home.skill_bundle(version, &bundle.id);
+        anyhow::ensure!(
+            dir.is_dir(),
+            "bundle manifest declares skill bundle `{}` for profile `{profile}`, \
+             but {} is missing on the installed home; refusing to guess a substitute",
+            bundle.id,
+            dir.display()
+        );
+        dirs.push(dir);
+    }
+    Ok(dirs)
+}
 
 /// Run the atomic install transaction with lock and tracker.
 //
@@ -41,64 +76,50 @@ pub fn run_install(home: &CognicodeHome, profile: &str) -> Result<PathBuf> {
 
             // 4. Integrate with IDE adapters if OpenCode is detected.
             //
-            // L4 (ADR-CANONICAL-LAYOUT): the IDE integration's
-            // skill source is `home.skills_root(version)` (per the
-            // portable-skill-bundle spec) — NOT a hardcoded
-            // `<root>/install/<v>/mcp-server/skills`, which assumed a
-            // non-existent `mcp-server` component and pointed at the
-            // legacy layout. The skill bundle name (e.g. `cognicode-core`,
-            // `cognicode-mcp-driven`) is not modelled in the bundle
-            // manifest today, so L4 picks the first directory under
-            // `skills_root` if any exists, or skips integration with a
-            // warning if the home has no portable skill bundles.
+            // L4 (ADR-CANONICAL-LAYOUT): the skill source lives under
+            // `home.skills_root(version)` (per the portable-skill-bundle
+            // spec).
+            //
+            // DEBT-2: the SkillBundleId now comes from the bundle
+            // manifest's `skill_bundles[]` declaration — never from a
+            // `read_dir().next()` scan (that heuristic is retired; see
+            // ADR-IDENTITY-MAP-distribution §9.4-11, site :55-59).
+            // A declared bundle missing on disk is a hard error: no
+            // silent fallback to another directory.
             if ide::detect_opencode() {
-                // DEBT-3.f BLOCKED-BY-DEBT-2: the SkillBundleId is not
-                // modelled in any manifest today, so we cannot pick a
-                // specific bundle by name. The audit (§9.4-11, sites
-                // :55/:56-59) classifies this as "first directory under
-                // `skills_root`" heuristic — DEBT-2 territory. Once
-                // DEBT-2 introduces a portable-skill-bundle manifest
-                // declaring which bundle(s) to integrate, this becomes
-                // `bundle.id` from that manifest, not `read_dir().next()`.
-                let skills_root = home.skills_root(version);
-                let skill_bundle = std::fs::read_dir(&skills_root)
-                    .ok()
-                    .and_then(|mut d| d.next().and_then(|e| e.ok()))
-                    .map(|e| e.path());
-                match skill_bundle {
-                    Some(skill_path) => {
+                let declared = declared_skill_bundle_dirs(home, version, profile)?;
+                if declared.is_empty() {
+                    eprintln!(
+                        "warning: bundle manifest declares no skill bundles for profile \
+                         `{profile}`; skipping OpenCode skill integration"
+                    );
+                    println!("✓ OpenCode integration complete (no skill bundles to integrate)");
+                } else {
+                    // DEBT-3.f: derive the BinaryName from the bundle
+                    // manifest's DaemonCli component, not from a
+                    // hardcoded `"cognicode-mcp"` literal. The
+                    // manifest is the source of truth; if the
+                    // bundle declares no DaemonCli, fail loudly.
+                    let mcp_binary_name = crate::bundle_manifest::daemon_cli_binary_name(
+                        &home.version_manifest(version),
+                    )?;
+                    let mcp_command = vec![
+                        home.shim_path(&mcp_binary_name)
+                            .to_string_lossy()
+                            .to_string(),
+                    ];
+                    for skill_path in declared {
                         println!(
                             "OpenCode detected, integrating skill bundle at {}",
                             skill_path.display()
                         );
-                        // DEBT-3.f: derive the BinaryName from the bundle
-                        // manifest's DaemonCli component, not from a
-                        // hardcoded `"cognicode-mcp"` literal. The
-                        // manifest is the source of truth; if the
-                        // bundle declares no DaemonCli, fail loudly.
-                        let mcp_binary_name = crate::bundle_manifest::daemon_cli_binary_name(
-                            &home.version_manifest(version),
-                        )?;
-                        let mcp_command = vec![
-                            home.shim_path(&mcp_binary_name)
-                                .to_string_lossy()
-                                .to_string(),
-                        ];
                         let steps = ide::integrate_opencode(&skill_path, version, &mcp_command)?;
                         for step in steps {
                             step.execute()
                                 .map_err(|e| anyhow!("IDE integration failed: {}", e))?;
                         }
-                        println!("✓ OpenCode integration complete");
                     }
-                    None => {
-                        eprintln!(
-                            "warning: no skill bundle found under {}; \
-                             skipping OpenCode integration",
-                            skills_root.display()
-                        );
-                        println!("✓ OpenCode integration complete (no skill bundles to integrate)");
-                    }
+                    println!("✓ OpenCode integration complete");
                 }
             }
 
@@ -155,6 +176,78 @@ mod tests {
         assert!(
             result.is_ok(),
             "L4: install must succeed without a skill bundle; got {result:?}"
+        );
+    }
+
+    /// DEBT-2 strict T: `declared_skill_bundle_dirs` must resolve the
+    /// SkillBundleId from the manifest's `skill_bundles[]` declaration
+    /// and reject a declared-but-missing bundle. Identities planted
+    /// pairwise-distinct:
+    ///     ComponentId   = "cognicode-mcp"
+    ///     SkillBundleId = "skills-for-claude"  (≠ ComponentId)
+    #[test]
+    fn t_debt2_declared_skill_bundle_dirs_use_manifest_ids() {
+        use crate::bundle_manifest::BundleManifest;
+        let _temphome = TempCognicodeHome::new();
+        let home = CognicodeHome::resolve(None).expect("resolve home");
+        home.init().expect("init home");
+
+        let version = env!("CARGO_PKG_VERSION");
+        let manifest_yaml = format!(
+            r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "{version}"
+platform: linux-x86-64
+released_at: "2026-01-01T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+skill_bundles:
+  - id: skills-for-claude
+    version: "{version}"
+    profiles: [core]
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "{version}"
+    artifact: cognicode-mcp-{version}-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v{version}/cognicode-mcp-{version}-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#
+        );
+        std::fs::create_dir_all(home.version_root(version)).expect("create version dir");
+        std::fs::write(home.version_manifest(version), &manifest_yaml).expect("write manifest");
+        let manifest = BundleManifest::from_str(&manifest_yaml).expect("manifest valid");
+        assert_ne!(
+            manifest.skill_bundles[0].id, "cognicode-mcp",
+            "gate validity: SkillBundleId must be pairwise-distinct from ComponentId"
+        );
+
+        // Declared but NOT on disk: hard error, no first-dir fallback.
+        let err = declared_skill_bundle_dirs(&home, version, "core")
+            .expect_err("declared-but-missing bundle must fail loudly");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("skills-for-claude") && msg.contains("refusing to guess"),
+            "error must name the declared SkillBundleId and refuse fallback; got: {msg}"
+        );
+
+        // Present on disk: resolved by manifest id, not by directory scan.
+        let bundle_dir = home.skill_bundle(version, "skills-for-claude");
+        std::fs::create_dir_all(&bundle_dir).expect("create skill bundle dir");
+        let dirs = declared_skill_bundle_dirs(&home, version, "core")
+            .expect("declared-and-present must resolve");
+        assert_eq!(dirs, vec![bundle_dir]);
+
+        // A different profile that declares nothing: empty, no fallback
+        // to whichever directory exists.
+        assert!(
+            declared_skill_bundle_dirs(&home, version, "reviewer")
+                .expect("no declarations for profile")
+                .is_empty(),
+            "profiles with no declarations must get no skill bundles"
         );
     }
 }
