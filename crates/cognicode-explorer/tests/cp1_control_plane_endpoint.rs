@@ -15,7 +15,6 @@ use axum::http::{Request, StatusCode};
 use axum::routing::post;
 use tower::ServiceExt;
 
-use cognicode_explorer::api::{router, ApiState};
 use axum::Router as AxumRouter;
 use cognicode_core::application::architecture::{
     ArchitectureAdmissionService, ArchitectureRegistry, ControlQueryService,
@@ -25,6 +24,7 @@ use cognicode_core::domain::architecture::{
     Admitter, AdmitterRole, ArchitectureConstraintId, ArchitectureConstraintKind,
     ConstraintCandidate, LayerDependencyRule, LayerId,
 };
+use cognicode_explorer::api::{ApiState, router};
 use cognicode_explorer::dto::WorkspaceSummary;
 use cognicode_explorer::error::ExplorerError;
 use cognicode_explorer::facades::{
@@ -325,7 +325,6 @@ impl GraphService for MockGraphService {
     }
 }
 
-
 // ============================================================================
 // CP1.0 WU4 — control-plane architecture endpoint
 // ============================================================================
@@ -449,7 +448,9 @@ async fn c1_not_wired_reads_incomplete_never_clean() {
 #[tokio::test]
 async fn c2_empty_admission_reads_incomplete() {
     let state = base_ws("ws-1").with_control_query(
-        Some(Arc::new(ControlQueryService::new(ArchitectureRegistry::new()))),
+        Some(Arc::new(ControlQueryService::new(
+            ArchitectureRegistry::new(),
+        ))),
         empty_source_root("c2"),
     );
     let (status, body) = get(state, "/control-plane/workspaces/ws-1/architecture").await;
@@ -511,8 +512,15 @@ async fn c5_endpoint_path_is_read_only() {
         empty_source_root("c5"),
     );
     for _ in 0..3 {
-        let (_, body) = get(state.clone_state(), "/control-plane/workspaces/ws/architecture").await;
+        let (_, body) = get(
+            state.clone_state(),
+            "/control-plane/workspaces/ws/architecture",
+        )
+        .await;
         assert_eq!(body["status"], "evaluated");
-        assert_eq!(body["constraints"].as_array().unwrap().len(), admitted_before);
+        assert_eq!(
+            body["constraints"].as_array().unwrap().len(),
+            admitted_before
+        );
     }
 }

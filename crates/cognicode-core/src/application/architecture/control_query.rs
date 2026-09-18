@@ -19,7 +19,7 @@
 use crate::application::architecture::ArchitectureRegistry;
 use crate::application::architecture::evaluator::{ArchitectureSource, SourceFile};
 use crate::domain::architecture::{
-    ArchitectureConstraint, ArchitectureConstraintKind, ConstraintCandidate,
+    ArchitectureConstraint, ArchitectureConstraintKind,
 };
 
 /// Overall status of a read projection. The discriminator that keeps
@@ -209,7 +209,6 @@ pub fn source_from_files(files: Vec<(String, Option<String>, String)>) -> Archit
     }
 }
 
-
 /// Build an [`ArchitectureSource`] by scanning the Rust source files of
 /// a workspace source root. `module_path` is derived from the path
 /// relative to the root (`src/domain/service.rs` -> `domain::service`),
@@ -241,9 +240,7 @@ pub fn source_from_source_root(root: &std::path::Path) -> ArchitectureSource {
                 let segments: Vec<String> = rel
                     .components()
                     .map(|c| c.as_os_str().to_string_lossy().to_string())
-                    .filter(
-                        |seg| seg != "mod" && seg != "lib" && seg != "main" && seg != "src",
-                    )
+                    .filter(|seg| seg != "mod" && seg != "lib" && seg != "main" && seg != "src")
                     .collect();
                 files.push(SourceFile {
                     file_path: path.display().to_string(),

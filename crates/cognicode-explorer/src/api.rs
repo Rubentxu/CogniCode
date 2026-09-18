@@ -6,9 +6,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::extract::{Path, Query, State};
+use axum::http::HeaderMap;
 use axum::http::StatusCode;
 use axum::http::header;
-use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
@@ -1240,8 +1240,7 @@ async fn control_plane_architecture(
         }));
     };
 
-    let source =
-        control_query::source_from_source_root(&state.control_source_root);
+    let source = control_query::source_from_source_root(&state.control_source_root);
     let model = cq.query_architecture(&workspace_id, snapshot_ref.as_deref(), &source);
     let status = match model.status {
         control_query::EvaluationStatus::Evaluated => "evaluated",
