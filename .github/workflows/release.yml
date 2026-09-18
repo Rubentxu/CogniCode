@@ -170,6 +170,30 @@ jobs:
           pattern: payloads-*
           merge-multiple: true
 
+      - name: Stage declared skill bundle payloads (DEBT-2)
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"; VERSION="${TAG#v}"
+          fi
+          # Portable skill bundles are platform-neutral tarballs of
+          # skills/<id>/ (the same shape `just bundle-skills` produces).
+          # The release contract declares the canonical surface
+          # (SKILL_BUNDLES); staging every skills/ dir that matches a
+          # published id keeps the no-orphans / no-phantom R3/R4 gates.
+          while IFS= read -r id; do
+            if [ ! -f "skills/$id/manifest.yaml" ]; then
+              echo "::error::published skill bundle `$id` has no skills/$id/manifest.yaml"
+              exit 1
+            fi
+            tar -czf "staging/${id}-${VERSION}.tar.gz" -C "skills/$id" .
+            echo "staged ${id}-${VERSION}.tar.gz"
+          done < <(./target/release/cognicode-release skills --published 2>/dev/null \
+                   || python3 -c "import re,sys; src=open('crates/cognicode-cli/src/cmd/release_contract.rs').read(); ids=re.findall(r'SkillBundleSpec\s*\{\s*id:\s*\"([^\"]+)\",\s*profiles:[^\n]*\n\s*published:\s*true',src); print('\n'.join(ids))")
+          ls -la staging
+
       - name: Resolve version and tag
         id: v
         run: |
