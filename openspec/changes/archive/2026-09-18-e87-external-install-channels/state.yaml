@@ -1,0 +1,10 @@
+id: e87-external-install-channels
+title: "e87 — External Installation Channels"
+status: CLOSED
+closed: 2026-09-18
+commits:
+  - a4cc77b8  # feat(e87): install.sh bootstrap
+  - 39c17476  # docs(e87): README bootstrap + mise channels
+  - 161f2be9  # feat(e87.1): install/resolver bridge
+  - ff78f78e  # fix(e87.1): doctor MCP shim probe
+  - a342a7a1  # feat(e87): mise identity receipt + ownership contract
