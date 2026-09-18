@@ -1,0 +1,6 @@
+change: lifecycle-f3-same-version-noop
+status: CLOSED
+closed_at: 2026-09-18
+head: 04eed537
+release: none (travels in next significant release)
+contract: semantic lifecycle no-op (same-version update) → zero lifecycle mutation
