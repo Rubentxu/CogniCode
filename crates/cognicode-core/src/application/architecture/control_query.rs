@@ -18,9 +18,7 @@
 
 use crate::application::architecture::ArchitectureRegistry;
 use crate::application::architecture::evaluator::{ArchitectureSource, SourceFile};
-use crate::domain::architecture::{
-    ArchitectureConstraint, ArchitectureConstraintKind,
-};
+use crate::domain::architecture::{ArchitectureConstraint, ArchitectureConstraintKind};
 
 /// Overall status of a read projection. The discriminator that keeps
 /// the semantics fail-closed.
