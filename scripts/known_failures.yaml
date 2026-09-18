@@ -15,12 +15,8 @@
 
 package: cognicode-core
 target: lib
-generated: 2026-09-15
+generated: 2026-09-18
 entries:
-  - test: application::program_analysis::acceptance_evidence::public_dispatcher_accepts_every_m5_algorithm_id
-    category: environment_dependency
-    first_seen: 2026-09-15
-    reason: cwd / fixture resolution
   - test: application::services::file_operations::tests::test_edit_file_bytes_changed_on_success
     category: environment_dependency
     first_seen: 2026-09-15
@@ -162,10 +158,6 @@ entries:
     first_seen: 2026-09-15
     reason: depends on file ops / workspace root
   - test: interface::mcp::mcp_roundtrip_tests::tests::file_operations_roundtrip::test_write_file_roundtrip
-    category: environment_dependency
-    first_seen: 2026-09-15
-    reason: depends on file ops / workspace root
-  - test: interface::mcp::mcp_roundtrip_tests::tests::tool_surface_parity::test_allowlist_subset_of_listed
     category: environment_dependency
     first_seen: 2026-09-15
     reason: depends on file ops / workspace root

@@ -915,6 +915,10 @@ fn simple_function() {
                 "graph_surprising_connections",
                 "iac_query",
                 "hover",
+                // DEBT-SDDK-006: the interproc_summary tool is
+                // #[cfg(feature = "program-analysis-server")] in
+                // rmcp_adapter.rs; the expectation must carry the same gate.
+                #[cfg(feature = "program-analysis-server")]
                 "interproc_summary",
                 "list_files",
                 "list_view_specs",

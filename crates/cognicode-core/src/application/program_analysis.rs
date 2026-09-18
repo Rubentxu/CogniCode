@@ -1137,6 +1137,11 @@ mod acceptance_evidence {
         "slice_forward",
         "slice_backward",
         "taint_flow",
+        // DEBT-SDDK-006: the canonical fixture for this algorithm is
+        // #[cfg(feature = "program-analysis-server")] in conformance.rs,
+        // so the requirement must carry the same gate or the default
+        // build asserts a fixture that cannot exist.
+        #[cfg(feature = "program-analysis-server")]
         "interproc_summary",
     ];
 
