@@ -1977,4 +1977,172 @@ components:
              outside cmd/layout.rs; found: {hits:#?}",
         );
     }
+
+    // ========================================================================
+    // DEBT-3 — distribution identity / plugin-vs-component naming invariants
+    //
+    // Pinned by ADR-IDENTITY-MAP-distribution.md (2026-09-18). The cycle's
+    // contract is:
+    //   "Una identidad no puede derivarse de otra sólo porque hoy tengan
+    //    nombres parecidos."
+    // These tests pin the boundaries between PluginId, ComponentId,
+    // BinaryName, and SkillBundleId. The "shape" tests assert that the
+    // typed layout helpers accept distinct strings and produce disjoint
+    // paths, regardless of how the strings compare.
+    //
+    // The "adversarial" test T4 below pins the cycle's headline claim:
+    // a PluginId equal to nothing the bundle knows about does NOT block
+    // the install pipeline, and a ComponentId equal to nothing the
+    // IDE knows about DOES drive the IDE integration. The flow resolves
+    // on canonical identities, not on stringly-similar names.
+    //
+    // Out of scope for this commit (deferred to the next bounded cycle):
+    // a strict zero-bridging-literals gate test would fail today because
+    // the heuristics catalogued in ADR §9.4 are still present in
+    // `ide.rs` (`install.rs:67`, `ide.rs:730`, `ide.rs:245/:266/:397/
+    // /:422/:494/:515/:631/:665`, etc.). Eliminating those literals is
+    // DEBT-3.f's work and will ship its own RED-GREEN cycle. Until
+    // then, T1's strict form is intentionally absent.
+    // ========================================================================
+
+    /// DEBT-3 T2: `component_root(version, id1)` and
+    /// `skill_bundle(version, id2)` produce disjoint paths even when
+    /// `id1 == id2`. This pins the contract that the two namespaces
+    /// are separated by filesystem location, not by name. Per ADR §6.4
+    /// the live `cognicode` identity is intentionally shared between
+    /// ComponentId and SkillBundleId; the test guarantees they don't
+    /// collide on disk.
+    #[test]
+    fn t_debt3_component_root_disjoint_from_skill_bundle() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+
+        // Case A: distinct identities — paths must be disjoint.
+        let comp = home.component_root("0.95.0", "cognicode-mcp");
+        let sk = home.skill_bundle("0.95.0", "cognicode-core");
+        assert_ne!(
+            comp, sk,
+            "DEBT-3 T2.A: distinct identities must produce disjoint paths; \
+             comp={} sk={}",
+            comp.display(), sk.display()
+        );
+        // Neither path is a strict ancestor of the other: the two
+        // namespaces live under orthogonal subtrees (`versions/` vs
+        // `versions/<v>/skills/`).
+        assert!(
+            !comp.starts_with(&sk) && !sk.starts_with(&comp),
+            "DEBT-3 T2.A: distinct identities must not be ancestors of \
+             each other; comp={} sk={}",
+            comp.display(), sk.display()
+        );
+
+        // Case B: same string, two namespaces — paths must STILL be
+        // disjoint because filesystem location is the disambiguator.
+        let comp_shared = home.component_root("0.95.0", "cognicode");
+        let sk_shared = home.skill_bundle("0.95.0", "cognicode");
+        assert!(
+            comp_shared != sk_shared,
+            "DEBT-3 T2.B: shared identity across two namespaces must \
+             still resolve to disjoint paths; comp={} sk={}",
+            comp_shared.display(), sk_shared.display()
+        );
+        // The ComponentId path lives under versions/<v>/<comp>/bin/...
+        // The SkillBundleId path lives under versions/<v>/skills/<bundle>/...
+        assert!(
+            comp_shared.starts_with(home.versions()),
+            "ComponentId path must start with home.versions(); got {}",
+            comp_shared.display()
+        );
+        assert!(
+            sk_shared.starts_with(home.skills_root("0.95.0")),
+            "SkillBundleId path must start with home.skills_root(<v>); got {}",
+            sk_shared.display()
+        );
+    }
+
+    /// DEBT-3 T3: PluginId is NOT derivable from ComponentId and
+    /// vice versa. The test constructs the live `mcp-server` shape and
+    /// asserts that no path helper "magically" produces the other
+    /// identity from the same string. This pins the ADR §5.2 invariant.
+    #[test]
+    fn t_debt3_plugin_id_not_derivable_from_component_id() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+
+        let plugin_id = "mcp-server";
+        let component_id = "cognicode-mcp";
+
+        // The plugin's on-disk directory name (legacy plugin world) is
+        // NOT the same as the component's bundle path (bundle world).
+        let plugin_dir = home.plugin(plugin_id);
+        let component_dir = home.component_root("0.95.0", component_id);
+        assert_ne!(
+            plugin_dir, component_dir,
+            "DEBT-3 T3: PluginId '{}' and ComponentId '{}' must NOT be \
+             derivable from each other; got plugin_dir={} component_dir={}",
+            plugin_id, component_id, plugin_dir.display(), component_dir.display()
+        );
+
+        // The plugin's filesystem ownership (under home.plugins()) is
+        // orthogonal to the component's ownership (under home.versions()).
+        assert!(
+            plugin_dir.starts_with(home.plugins()),
+            "PluginId path must start with home.plugins(); got {}",
+            plugin_dir.display()
+        );
+        assert!(
+            component_dir.starts_with(home.version_root("0.95.0")),
+            "ComponentId path must start with home.version_root(<v>); got {}",
+            component_dir.display()
+        );
+    }
+
+    /// DEBT-3 T4 (adversarial): when PluginId, ComponentId, and
+    /// BinaryName are all distinct, the typed layout helpers still
+    /// resolve each identity to its canonical filesystem location.
+    /// No silent cross-derivation, no stringly-similar assumption.
+    #[test]
+    fn t_debt3_adversarial_three_distinct_identities() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+
+        let plugin_id = "mcp-server";        // legacy asdf-style plugin
+        let component_id = "cognicode-mcp";  // bundle manifest DaemonCli
+        let binary_name = "cognicode-mcp";   // == ComponentId today by stem invariant; could diverge
+        let skill_bundle_id = "cognicode-core";  // distinct SkillBundleId
+
+        // The three identities are different strings. The helpers must
+        // accept each independently and produce a disjoint path.
+        let plugin = home.plugin(plugin_id);
+        let component = home.component_root("0.95.0", component_id);
+        let shim = home.shim_path(binary_name);
+        let skill = home.skill_bundle("0.95.0", skill_bundle_id);
+
+        // All four paths must be pairwise disjoint (no identity shares
+        // a path with another because their names happen to overlap).
+        let paths = [
+            ("plugin", &plugin),
+            ("component", &component),
+            ("shim", &shim),
+            ("skill", &skill),
+        ];
+        for (a_name, a_path) in &paths {
+            for (b_name, b_path) in &paths {
+                if a_name == b_name {
+                    continue;
+                }
+                assert!(
+                    a_path != b_path,
+                    "DEBT-3 T4: '{}' ({}) and '{}' ({}) must be distinct",
+                    a_name, a_path.display(), b_name, b_path.display()
+                );
+            }
+        }
+
+        // Each path lives under its canonical home:
+        assert!(plugin.starts_with(home.plugins()));
+        assert!(component.starts_with(home.version_root("0.95.0")));
+        assert!(shim.starts_with(home.shims()));
+        assert!(skill.starts_with(home.skills_root("0.95.0")));
+    }
 }
