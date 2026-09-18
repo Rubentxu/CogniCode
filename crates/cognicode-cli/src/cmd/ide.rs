@@ -124,24 +124,66 @@ impl Step {
 
 /// Detect whether the IDE is installed.
 pub fn detect_opencode() -> bool {
-    let config = opencode_config_path();
-    config.exists()
+    OpenCodePaths::resolve().config_file.exists()
+}
+
+/// OpenCode ownership root: the directory the `OPENCODE_CONFIG` file lives in
+/// (or would live in by default). Skills are derived from this single root,
+/// never from `$HOME` independently — that drift is what produced the
+/// E86.2.2 real-PC UAT finding.
+///
+/// Default location (when `OPENCODE_CONFIG` is unset) is
+/// `$HOME/.config/opencode/`. The default config file is
+/// `opencode.json` inside that directory.
+#[derive(Debug, Clone)]
+pub struct OpenCodePaths {
+    /// The on-disk path of `opencode.json`. May not exist yet.
+    pub config_file: PathBuf,
+    /// The directory the config file lives in. Skills directory is derived
+    /// from this single root.
+    pub config_dir: PathBuf,
+    /// The skills directory, sibling-derived from `config_dir` per the
+    /// OpenCode on-disk layout.
+    pub skills_dir: PathBuf,
+}
+
+impl OpenCodePaths {
+    /// Resolve the OpenCode ownership root from `OPENCODE_CONFIG` (preferred)
+    /// or `$HOME/.config/opencode/` (default).
+    ///
+    /// Skills are derived from the **same** root the config file lives in,
+    /// never from `$HOME` independently. If `OPENCODE_CONFIG` is set, both
+    /// config and skills live under its parent directory by design.
+    pub fn resolve() -> Self {
+        let (config_file, config_dir) = if let Ok(env) = std::env::var("OPENCODE_CONFIG") {
+            let path = PathBuf::from(env);
+            let dir = path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("."));
+            (path, dir)
+        } else {
+            let home = std::env::var("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("~/.config/opencode"));
+            let dir = home.join(".config/opencode");
+            (dir.join("opencode.json"), dir)
+        };
+        let skills_dir = config_dir.join("skills");
+        Self {
+            config_file,
+            config_dir,
+            skills_dir,
+        }
+    }
 }
 
 pub fn opencode_config_path() -> PathBuf {
-    if let Ok(env) = std::env::var("OPENCODE_CONFIG") {
-        return PathBuf::from(env);
-    }
-    let home = match std::env::var("HOME") {
-        Ok(h) => PathBuf::from(h),
-        Err(_) => return PathBuf::from("~/.config/opencode/opencode.json"),
-    };
-    home.join(".config/opencode/opencode.json")
+    OpenCodePaths::resolve().config_file
 }
 
 pub fn opencode_skills_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".config/opencode/skills")
+    OpenCodePaths::resolve().skills_dir
 }
 
 /// Read the OpenCode config as JSON.
@@ -247,23 +289,50 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
 // ===== ZCode adapter (E32-E) =====
 
 pub fn detect_zcode() -> bool {
-    zcode_config_path().exists()
+    ZCodePaths::resolve().config_file.exists()
+}
+
+/// ZCode ownership root. Single source of truth for both the config file
+/// (driven by `ZCODE_CONFIG`) and the skills directory (derived from the
+/// same root). See [`OpenCodePaths`] for the analogous OpenCode struct.
+#[derive(Debug, Clone)]
+pub struct ZCodePaths {
+    pub config_file: PathBuf,
+    pub config_dir: PathBuf,
+    pub skills_dir: PathBuf,
+}
+
+impl ZCodePaths {
+    pub fn resolve() -> Self {
+        let (config_file, config_dir) = if let Ok(env) = std::env::var("ZCODE_CONFIG") {
+            let path = PathBuf::from(env);
+            let dir = path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("."));
+            (path, dir)
+        } else {
+            let home = std::env::var("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("~/.zcode"));
+            let dir = home.join(".zcode");
+            (dir.join("v2/config.json"), dir)
+        };
+        let skills_dir = config_dir.join("skills");
+        Self {
+            config_file,
+            config_dir,
+            skills_dir,
+        }
+    }
 }
 
 pub fn zcode_config_path() -> PathBuf {
-    if let Ok(env) = std::env::var("ZCODE_CONFIG") {
-        return PathBuf::from(env);
-    }
-    let home = match std::env::var("HOME") {
-        Ok(h) => PathBuf::from(h),
-        Err(_) => return PathBuf::from("~/.zcode/v2/config.json"),
-    };
-    home.join(".zcode/v2/config.json")
+    ZCodePaths::resolve().config_file
 }
 
 pub fn zcode_skills_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".zcode/skills")
+    ZCodePaths::resolve().skills_dir
 }
 
 pub fn read_zcode_config() -> Result<Value> {
@@ -450,23 +519,50 @@ pub fn uninstall_claude(version: &str) -> Result<()> {
 // ===== Codex adapter (E32-G) =====
 
 pub fn detect_codex() -> bool {
-    codex_config_path().exists()
+    CodexPaths::resolve().config_file.exists()
+}
+
+/// Codex ownership root. Single source of truth for both the config file
+/// (driven by `CODEX_CONFIG`) and the skills directory (derived from the
+/// same root). See [`OpenCodePaths`] for the analogous OpenCode struct.
+#[derive(Debug, Clone)]
+pub struct CodexPaths {
+    pub config_file: PathBuf,
+    pub config_dir: PathBuf,
+    pub skills_dir: PathBuf,
+}
+
+impl CodexPaths {
+    pub fn resolve() -> Self {
+        let (config_file, config_dir) = if let Ok(env) = std::env::var("CODEX_CONFIG") {
+            let path = PathBuf::from(env);
+            let dir = path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("."));
+            (path, dir)
+        } else {
+            let home = std::env::var("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("~/.codex"));
+            let dir = home.join(".codex");
+            (dir.join("config.toml"), dir)
+        };
+        let skills_dir = config_dir.join("skills");
+        Self {
+            config_file,
+            config_dir,
+            skills_dir,
+        }
+    }
 }
 
 pub fn codex_config_path() -> PathBuf {
-    if let Ok(env) = std::env::var("CODEX_CONFIG") {
-        return PathBuf::from(env);
-    }
-    let home = match std::env::var("HOME") {
-        Ok(h) => PathBuf::from(h),
-        Err(_) => return PathBuf::from("~/.codex/config.toml"),
-    };
-    home.join(".codex/config.toml")
+    CodexPaths::resolve().config_file
 }
 
 pub fn codex_skills_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".codex/skills")
+    CodexPaths::resolve().skills_dir
 }
 
 pub fn read_codex_config() -> Result<toml::Value> {
@@ -1075,5 +1171,218 @@ mcp_servers.existing.args = ['y']
     fn test_uninstall_opencode_steps() {
         let steps = uninstall_opencode("0.94.9").unwrap();
         assert!(!steps.is_empty());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // E86.2.3 — disposable-aware OpenCode integration
+    //
+    // The bug surfaced by the E86.2.2 real-PC UAT: `opencode_skills_dir()`
+    // reads only `$HOME`, ignoring `OPENCODE_CONFIG`. That means setting
+    // `OPENCODE_CONFIG` to a disposable path still results in skills being
+    // symlinked under the developer's real `~/.config/opencode/skills/`.
+    //
+    // These tests pin the bug BEFORE the fix.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // RED: explicit OPENCODE_CONFIG must drive the skills symlink target.
+    #[test]
+    #[serial]
+    fn t_e86_2_3_opencode_skills_follow_opencode_config() {
+        let tmp = std::env::temp_dir().join(format!("cogh-e86-2-3-oc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let disposable = tmp.join("disposable-opencode");
+        std::fs::create_dir_all(&disposable).unwrap();
+
+        // The OPENCODE_CONFIG override points at a file inside `disposable`.
+        let config_path = disposable.join("opencode.json");
+        std::fs::write(&config_path, "{}").unwrap();
+
+        // A pre-existing "real" OpenCode config at the host's HOME is what
+        // the UAT script must NOT touch. We simulate that by setting HOME
+        // to a tempdir containing a sentinel `opencode/skills` we can
+        // check later for absence of pollution.
+        let real_home = tmp.join("real-home");
+        std::fs::create_dir_all(real_home.join(".config/opencode/skills")).unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        let prev_opencode_cfg = std::env::var_os("OPENCODE_CONFIG");
+        unsafe {
+            std::env::set_var("HOME", &real_home);
+            std::env::set_var("OPENCODE_CONFIG", &config_path);
+        }
+
+        let skill_path = tmp.join("skill-src");
+        std::fs::create_dir_all(&skill_path).unwrap();
+        let mcp_cmd = vec!["cognicode-mcp".to_string(), "stdio".to_string()];
+        let steps = integrate_opencode(&skill_path, "0.95.0", &mcp_cmd).unwrap();
+
+        // Collect step targets BEFORE executing — `step.execute()` moves.
+        let symlinks: Vec<_> = steps
+            .iter()
+            .filter_map(|s| match s {
+                Step::Symlink { target, .. } => Some(target.clone()),
+                _ => None,
+            })
+            .collect();
+        for step in steps {
+            step.execute().unwrap();
+        }
+
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+            match prev_opencode_cfg {
+                Some(v) => std::env::set_var("OPENCODE_CONFIG", v),
+                None => std::env::remove_var("OPENCODE_CONFIG"),
+            }
+        }
+
+        // Expected: skills symlink lives under `disposable/skills/...`,
+        // NOT under `real_home/.config/opencode/skills/`.
+        assert_eq!(symlinks.len(), 1, "expected one Symlink step");
+        let target = &symlinks[0];
+        assert!(
+            target.starts_with(&disposable),
+            "skills symlink must live under OPENCODE_CONFIG's parent ({}), got {}",
+            disposable.display(),
+            target.display()
+        );
+        assert!(
+            !target.starts_with(&real_home),
+            "skills symlink must NOT live under real HOME ({}), got {}",
+            real_home.display(),
+            target.display()
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // RED: explicit OPENCODE_CONFIG must drive the skills uninstall target too.
+    #[test]
+    #[serial]
+    fn t_e86_2_3_opencode_uninstall_follows_opencode_config() {
+        let tmp = std::env::temp_dir().join(format!("cogh-e86-2-3-oc-un-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let disposable = tmp.join("disposable-opencode");
+        std::fs::create_dir_all(disposable.join("skills")).unwrap();
+        std::fs::write(disposable.join("opencode.json"), "{}").unwrap();
+
+        // Plant a sentinel symlink under the real HOME that must NOT be
+        // removed by the uninstall step.
+        let real_home = tmp.join("real-home");
+        let real_skills_dir = real_home.join(".config/opencode/skills");
+        std::fs::create_dir_all(&real_skills_dir).unwrap();
+        let real_target = real_skills_dir.join("cognicode-0.95.0");
+        std::os::unix::fs::symlink(&disposable, &real_target).unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        let prev_opencode_cfg = std::env::var_os("OPENCODE_CONFIG");
+        unsafe {
+            std::env::set_var("HOME", &real_home);
+            std::env::set_var("OPENCODE_CONFIG", disposable.join("opencode.json"));
+        }
+
+        let steps = uninstall_opencode("0.95.0").unwrap();
+        let mut targets = Vec::new();
+        for step in steps {
+            match &step {
+                Step::RmRf { target } => targets.push(target.clone()),
+                _ => {}
+            }
+            step.execute().unwrap();
+        }
+
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+            match prev_opencode_cfg {
+                Some(v) => std::env::set_var("OPENCODE_CONFIG", v),
+                None => std::env::remove_var("OPENCODE_CONFIG"),
+            }
+        }
+
+        // The RmRf target must point at the disposable skills, NOT real HOME.
+        let rmtargets: Vec<_> = targets.iter().collect();
+        assert_eq!(rmtargets.len(), 1, "expected one RmRf step");
+        let t = rmtargets[0];
+        assert!(
+            t.starts_with(&disposable),
+            "uninstall target must live under OPENCODE_CONFIG's parent, got {}",
+            t.display()
+        );
+        assert!(
+            !t.starts_with(&real_home),
+            "uninstall target must NOT live under real HOME, got {}",
+            t.display()
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // T1 — explicit OPENCODE_CONFIG controls config + skills end-to-end.
+    #[test]
+    #[serial]
+    fn t_e86_2_3_opencode_resolver_with_explicit_config() {
+        let tmp =
+            std::env::temp_dir().join(format!("cogh-e86-2-3-resolver-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let disposable = tmp.join("oc");
+        std::fs::create_dir_all(&disposable).unwrap();
+        let config_path = disposable.join("opencode.json");
+        std::fs::write(&config_path, r#"{"agent":{"foo":"bar"}}"#).unwrap();
+
+        let prev = std::env::var_os("OPENCODE_CONFIG");
+        unsafe {
+            std::env::set_var("OPENCODE_CONFIG", &config_path);
+        }
+
+        let paths = OpenCodePaths::resolve();
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("OPENCODE_CONFIG", v),
+                None => std::env::remove_var("OPENCODE_CONFIG"),
+            }
+        }
+
+        assert_eq!(paths.config_file, config_path);
+        assert_eq!(paths.config_dir, disposable);
+        assert_eq!(paths.skills_dir, disposable.join("skills"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // T3 — default behaviour: with OPENCODE_CONFIG unset, the resolver
+    // falls back to `$HOME/.config/opencode/`. Pure path resolution test.
+    #[test]
+    #[serial]
+    fn t_e86_2_3_opencode_resolver_default() {
+        let tmp = std::env::temp_dir().join(format!("cogh-e86-2-3-default-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        let prev_cfg = std::env::var_os("OPENCODE_CONFIG");
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+            std::env::remove_var("OPENCODE_CONFIG");
+        }
+
+        let paths = OpenCodePaths::resolve();
+
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+            match prev_cfg {
+                Some(v) => std::env::set_var("OPENCODE_CONFIG", v),
+                None => std::env::remove_var("OPENCODE_CONFIG"),
+            }
+        }
+
+        assert_eq!(
+            paths.config_file,
+            tmp.join(".config/opencode/opencode.json")
+        );
+        assert_eq!(paths.config_dir, tmp.join(".config/opencode"));
+        assert_eq!(paths.skills_dir, tmp.join(".config/opencode/skills"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
