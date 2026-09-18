@@ -147,6 +147,55 @@ impl CognicodeHome {
             .join("manifest.yaml")
     }
 
+    // ===== Canonical layout helpers (L1, ADR-CANONICAL-LAYOUT) =====
+    //
+    // These five helpers describe the canonical install layout promoted by
+    // ADR-034/035 and the cognicode-cli/cognicode-lifecycle/portable-skill-bundle
+    // OpenSpec specs. They are added in L1 with NO behavioural change: no
+    // existing consumer is migrated yet. They become the source of truth in L2
+    // (InstallerTransaction producer) and L3 (lifecycle consumers). L5 retires
+    // the legacy `install_*` helpers that point at `install/<v>/`.
+    //
+    // Characterization tests pin the exact path shape so the L2/L3 retargeting
+    // does not silently break anything.
+
+    /// Canonical root for an installed version: `<root>/versions/<v>/`.
+    ///
+    /// One installed release = one version root.
+    pub fn version_root(&self, version: &str) -> PathBuf {
+        self.root.join("versions").join(version)
+    }
+
+    /// Canonical root for a single bundle component: `<root>/versions/<v>/<component>/`.
+    ///
+    /// One component = one child under the version root.
+    pub fn component_root(&self, version: &str, component: &str) -> PathBuf {
+        self.version_root(version).join(component)
+    }
+
+    /// Canonical manifest path: `<root>/versions/<v>/manifest.yaml`.
+    ///
+    /// The `BundleManifest` snapshot for an installed version lives here.
+    /// Pinned by `t_l1_version_manifest_matches_versions_layout`; will replace
+    /// `install_manifest_path` once L2 retargets the producer (and L5 retires
+    /// the legacy surface).
+    pub fn version_manifest(&self, version: &str) -> PathBuf {
+        self.version_root(version).join("manifest.yaml")
+    }
+
+    /// Canonical skills root for a version: `<root>/versions/<v>/skills/`.
+    ///
+    /// Portable skill bundles live under this directory, one subdir per bundle.
+    pub fn skills_root(&self, version: &str) -> PathBuf {
+        self.version_root(version).join("skills")
+    }
+
+    /// Canonical skills root for a single portable skill bundle:
+    /// `<root>/versions/<v>/skills/<bundle>/`.
+    pub fn skill_bundle(&self, version: &str, bundle: &str) -> PathBuf {
+        self.skills_root(version).join(bundle)
+    }
+
     /// Initialize the home directory (idempotent).
     pub fn init(&self) -> Result<()> {
         for dir in &[
@@ -1722,6 +1771,129 @@ components:
         assert!(
             !install_tree.exists(),
             "install tree must be removed after cmd_uninstall"
+        );
+
+        let _ = std::fs::remove_dir_all(home_dir.path());
+    }
+
+    // ========================================================================
+    // L1 — typed layout ownership helpers
+    //
+    // Pinned by ADR-CANONICAL-LAYOUT (2026-09-18). Five new helpers describe
+    // the canonical install layout (versions/<v>/<component>/). L1 introduces
+    // them with NO behavioural change; L2 retargets the producer to write
+    // here. The characterization tests below pin the path shape so a future
+    // cycle that accidentally adds a stray `.cognicode/` or a version prefix
+    // fails this test.
+    //
+    // The L1 cycle is bounded: ~5-line method bodies + 5 characterization
+    // tests. No consumer is migrated; no test fixture is updated.
+    // ========================================================================
+
+    /// T1: `version_root(v)` returns `<root>/versions/<v>/`.
+    ///
+    /// The simplest helper — pinned because every other helper is
+    /// expressed in terms of it.
+    #[test]
+    fn t_l1_version_root_returns_versions_layout() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+
+        assert_eq!(
+            home.version_root("0.95.0"),
+            home_dir.path().join("versions").join("0.95.0"),
+            "version_root must be <root>/versions/<v>/ per ADR-CANONICAL-LAYOUT"
+        );
+
+        let _ = std::fs::remove_dir_all(home_dir.path());
+    }
+
+    /// T2: `component_root(v, c)` returns `<root>/versions/<v>/<c>/`.
+    #[test]
+    fn t_l1_component_root_returns_versions_layout() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+
+        assert_eq!(
+            home.component_root("0.95.0", "cognicode-mcp"),
+            home_dir
+                .path()
+                .join("versions")
+                .join("0.95.0")
+                .join("cognicode-mcp"),
+            "component_root must be <root>/versions/<v>/<component>/"
+        );
+
+        let _ = std::fs::remove_dir_all(home_dir.path());
+    }
+
+    /// T3: `version_manifest(v)` returns `<root>/versions/<v>/manifest.yaml`.
+    ///
+    /// Pinned because this is the path the install transaction WILL write
+    /// to after L2 retargets it. L1 asserts the helper but the writer
+    /// still uses `install_manifest_path` (which is on the legacy
+    /// `install/<v>/` layout). L2 closes the gap.
+    #[test]
+    fn t_l1_version_manifest_matches_versions_layout() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+
+        assert_eq!(
+            home.version_manifest("0.95.0"),
+            home_dir
+                .path()
+                .join("versions")
+                .join("0.95.0")
+                .join("manifest.yaml"),
+            "version_manifest must be <root>/versions/<v>/manifest.yaml per ADR"
+        );
+
+        // Sanity: the helper must NOT match the legacy install path,
+        // otherwise L2's retargeting becomes a no-op.
+        assert_ne!(
+            home.version_manifest("0.95.0"),
+            home.install_manifest_path("0.95.0"),
+            "version_manifest and install_manifest_path must differ; \
+             otherwise ADR-CANONICAL-LAYOUT has not actually moved the layout"
+        );
+
+        let _ = std::fs::remove_dir_all(home_dir.path());
+    }
+
+    /// T4: `skills_root(v)` returns `<root>/versions/<v>/skills/`.
+    #[test]
+    fn t_l1_skills_root_returns_versions_layout() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+
+        assert_eq!(
+            home.skills_root("0.95.0"),
+            home_dir
+                .path()
+                .join("versions")
+                .join("0.95.0")
+                .join("skills"),
+            "skills_root must be <root>/versions/<v>/skills/ per ADR and portable-skill-bundle/spec.md"
+        );
+
+        let _ = std::fs::remove_dir_all(home_dir.path());
+    }
+
+    /// T5: `skill_bundle(v, b)` returns `<root>/versions/<v>/skills/<b>/`.
+    #[test]
+    fn t_l1_skill_bundle_returns_versions_layout() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+
+        assert_eq!(
+            home.skill_bundle("0.95.0", "cognicode-core"),
+            home_dir
+                .path()
+                .join("versions")
+                .join("0.95.0")
+                .join("skills")
+                .join("cognicode-core"),
+            "skill_bundle must be <root>/versions/<v>/skills/<bundle>/ per portable-skill-bundle/spec.md"
         );
 
         let _ = std::fs::remove_dir_all(home_dir.path());
