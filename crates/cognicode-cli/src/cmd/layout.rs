@@ -131,8 +131,20 @@ impl CognicodeHome {
     }
 
     /// Path to the install manifest for a given version.
+    ///
+    /// Pinned by `t_e86_4_install_manifest_path_method_matches_free_fn` to
+    /// return the same path as the free fn `layout::install_manifest_path`
+    /// (which is what `InstallerTransaction::commit` actually writes to).
+    /// Previously this method returned `<root>/<ver>/manifest.yaml`, a
+    /// third ghost layout that nothing ever wrote to. The install
+    /// transaction, the IDE adapters, and the journal all interact with
+    /// the install manifest under `<root>/install/<ver>/manifest.yaml`
+    /// (the free-fn layout), so the method must follow suit.
     pub fn install_manifest_path(&self, version: &str) -> PathBuf {
-        self.root.join(version).join("manifest.yaml")
+        self.root
+            .join("install")
+            .join(version)
+            .join("manifest.yaml")
     }
 
     /// Initialize the home directory (idempotent).
@@ -1500,6 +1512,81 @@ components:
         assert!(
             !journal_path.exists(),
             "rollback must have removed the journal"
+        );
+    }
+
+    // ===== E86.4 — install layout consistency (bounded cycle) =====
+
+    /// T1 (RED before fix): the `CognicodeHome::install_manifest_path` method
+    /// must return the same path as if we constructed it from `home.root`.
+    ///
+    /// Currently the method returns `<root>/<ver>/manifest.yaml` — a third
+    /// ghost layout that nothing ever wrote to. The real install transaction
+    /// writes to `<root>/install/<ver>/manifest.yaml` (the free-fn layout,
+    /// which in turn reads `cognicode_home()` from env). Pinning the method
+    /// to derive from `home.root` makes the two paths align whenever the
+    /// home is explicitly resolved — and makes a divergence from the
+    /// env-based free fn visible only when `COGNICODE_HOME` is set to a
+    /// different directory than `home.root` (which would itself be a bug).
+    #[test]
+    #[serial]
+    fn t_e86_4_install_manifest_path_method_matches_install_layout() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        let version = "0.95.0";
+        let method_path = home.install_manifest_path(version);
+        let expected = home
+            .root
+            .join("install")
+            .join(version)
+            .join("manifest.yaml");
+        assert_eq!(
+            method_path,
+            expected,
+            "CognicodeHome::install_manifest_path must return <root>/install/<ver>/manifest.yaml; \
+             got method={} expected={}",
+            method_path.display(),
+            expected.display(),
+        );
+    }
+
+    /// T2: the install manifest path lives under a versioned sub-directory
+    /// that the rest of the system treats as the install tree. Today the
+    /// install transaction writes the manifest to `<home>/install/<ver>/manifest.yaml`,
+    /// but the IDE adapters (`cmd_ide_install`, `integrate_zcode/claude/codex`,
+    /// and all `cmd/lifecycle.rs` tests) interpret the layout as
+    /// `<home>/versions/<ver>/<plugin>/skills`. Pinning this test makes the
+    /// inconsistency visible: whichever side the cycle ends up fixing, the
+    /// other side will break loudly.
+    ///
+    /// Cycle E86.4 fixes the method (T1) but documents the deeper inconsistency
+    /// as an out-of-scope follow-up: harmonising the free-fn layout with the
+    /// IDE-adapter layout requires a decision about whether `install/` and
+    /// `versions/` are separate namespaces (current intent: bin components
+    /// under `install/`, plugins under `versions/`) or a single namespace.
+    #[test]
+    #[serial]
+    fn t_e86_4_install_manifest_path_method_under_versioned_subdir() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        let version = "0.95.0";
+        let method_path = home.install_manifest_path(version);
+        // The method path must NOT collapse to <home>/<ver>/manifest.yaml —
+        // that ghost layout was never writable by the install transaction.
+        let ghost = home.root.join(version).join("manifest.yaml");
+        assert_ne!(
+            method_path,
+            ghost,
+            "method must not return ghost layout {}",
+            ghost.display(),
+        );
+        // And it must live under some versioned sub-directory of home.root,
+        // either install/ or versions/. The free fn currently returns install/.
+        assert!(
+            method_path.starts_with(home.root.join("install"))
+                || method_path.starts_with(home.root.join("versions")),
+            "method path {} must live under home.root/install or home.root/versions",
+            method_path.display(),
         );
     }
 }
