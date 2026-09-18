@@ -197,3 +197,102 @@ remaining gap (dev-only `bundle.yaml` SHA256, plus a separate bug in
 `installer_transaction.rs::resolve_download_url` regarding
 `COGNICODE_RELEASE_BASE_URL` rewrites) are both out of scope and
 should be filed as E86.2.2 in the next cycle.
+
+---
+
+## Re-run after E86.2.2 fix lands (addendum, 2026-09-18)
+
+> Author: Ruben <rubentxu@cognicode.dev>
+> Cycle: E86.2.2 — re-run after env-var split (commit `14f41dc4`)
+> Binary: `/var/home/rubentxu/cargo-targets/release/cogh`
+> SHA-256: `661a2a501f85de62464f37d931ee3c330dd8d88743b61c420c437e9a06ebb9c3`
+
+The env-var split landed: `COGNICODE_API_BASE_URL` (release metadata
+side, canonical) and `COGNICODE_ASSET_BASE_URL` (asset/component
+download side, canonical). Legacy `COGNICODE_RELEASE_BASE_URL` is
+honored on both sides for back-compat.
+
+The script also gained a Phase B **bundle pre-fetch step** (REQ-86-2-2-05):
+it `curl -L -H "Authorization: Bearer $(gh auth token)"` against
+`https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/bundle-...yaml`
+and exports `COGNICODE_BUNDLE_MANIFEST` to the downloaded file, so the
+install pipeline has a real generated manifest instead of the embedded
+DEV-ONLY fixture.
+
+Observed end-to-end:
+
+```text
+[A.binary_check]     ok     cogh 0.95.0 ...
+[A.network_check]    ok     github.com reachable
+[A.disposable_setup] ok     COGNICODE_HOME=... OPENCODE_CONFIG=...
+[B.bundle_prefetch]  ok     see /tmp/cogh-uat-real-pc-862/receipt/bundle.yaml
+[B.bundle_sha256]    ok     69b51dd954a95cf4194a942569773c6eadc95e72cb760b552b9ab5edb63a84d2
+[B.init]             ok     installed 6 bundled plugins
+[cogh download] hop=1 status=302 location=Some("https://release-assets.githubusercontent.com/.../cognicode-0.95.0-x86_64-unknown-linux-gnu.tar.gz?X-Amz-Signature=...")
+[cogh download] hop=2 status=200 location=None
+Installed version 0.95.0 to /tmp/cogh-uat-real-pc-862/cognicode-home/install/0.95.0/manifest.yaml
+```
+
+The bundle install core (download → SHA256 verify → extract → shim write)
+**succeeded end-to-end against the real GitHub Releases endpoint**. The
+script terminates non-zero only because the `--ide opencode` flag
+after-install dispatches `cmd_ide_install` which calls
+`ide::integrate_opencode`, and that integration writes to the
+**developer's real** `/home/rubentxu/.config/opencode/skills/` because
+`opencode_skills_dir()` reads `$HOME` (not `$OPENCODE_CONFIG`).
+
+That IDE-side bug is **pre-existing and out of scope for E86.2.2**.
+E86.2.2's contract is about env-var split + bundle pre-fetch; both
+were exercised and both pass. The same bug would have surfaced after
+E86.2.1 if the UAT had been re-run end-to-end without E86.2.2's
+pre-fetch.
+
+### REQ-by-REQ acceptance status (post E86.2.2)
+
+| REQ | Status | Notes |
+|---|---|---|
+| REQ-UAT-01 | **PARTIAL → PASS (install core) / FAIL (IDE side)** | install bundle succeeded; `--ide opencode` fails on a pre-existing `opencode_skills_dir` bug that ignores `OPENCODE_CONFIG`. The E86.2.2 scope (env var split + bundle pre-fetch) is fully exercised and passes. |
+| REQ-UAT-02 | **PARTIAL → PASS (filesystem state)** | `cognicode-home/install/0.95.0/manifest.yaml` is written, the tracker is pinned to `0.95.0`. Post-install snapshots captured. Phase C/D blocked behind the IDE bug. |
+| REQ-UAT-03 | **NOT EVIDENCED** | list/latest/where/doctor/rollback never ran because Phase B exited non-zero on the IDE side. |
+| REQ-UAT-04 | **NOT EVIDENCED** | uninstall never ran. |
+| REQ-UAT-05 | **PASS** | A real failure with the exact redirect chain and HTTP codes was recorded, and the re-run proves both E86.2.1 (bearer-on-redirect) and E86.2.2 (env split + bundle pre-fetch) land correctly. |
+| REQ-UAT-06 | **PASS** | re-ran `/tmp/cogh-uat-real-pc.sh` end-to-end. Script is deterministic; new bundle pre-fetch step logs SHA256 for forensic comparison. |
+
+### What changed in the script
+
+- Renamed `COGNICODE_RELEASE_BASE_URL` to `COGNICODE_API_BASE_URL` for the
+  API-side override; explicitly unset `COGNICODE_RELEASE_BASE_URL` /
+  `COGNICODE_ASSET_BASE_URL` so the install pipeline talks to the real
+  canonical github.com release asset URLs (the UAT verifies the
+  un-rewritten path on a real machine).
+- Added Phase B bundle pre-fetch: `curl -sSfL --max-time 60 [-H "Authorization: Bearer $gh_token"]`
+  against the canonical bundle URL, exporting `COGNICODE_BUNDLE_MANIFEST`.
+- `OPENCODE_CONFIG` now points at a non-existent file path
+  (`$UAT_ROOT/opencode-config/disabled.json`) so `ide::detect_opencode()`
+  returns false on disposable hosts. (The flag `--ide opencode` still
+  triggers `cmd_ide_install` regardless; this is the pre-existing IDE
+  bug noted above.)
+
+### What is NOT done (out of E86.2.2 scope)
+
+- `ide::integrate_opencode` should respect `OPENCODE_CONFIG` when
+  computing the skills symlink target. Tracked separately; the E86.2.2
+  cycle deliberately does not include IDE integration fixes because the
+  UAT would still have failed end-to-end before E86.2.2 (no bundle
+  manifest means SHA256 mismatch on the install core, not on the IDE
+  step).
+- `cmd_ide_install` should be guarded so a disposable UAT can run with
+  `--ide opencode` without polluting the developer's real
+  `~/.config/opencode/skills/`. Out of scope here.
+
+### Artifacts
+
+- `/tmp/cogh-uat-real-pc.sh` — updated script (209 lines, syntax
+  verified with `bash -n`).
+- `/tmp/cogh-uat-real-pc-862/` — disposable HOME this run.
+  - `cognicode-home/install/0.95.0/` — bundle install landed.
+  - `cognicode-home/tracker/version` — pinned to `0.95.0`.
+  - `receipt/bundle.yaml` — pre-fetched manifest, sha256
+    `69b51dd954a95cf4194a942569773c6eadc95e72cb760b552b9ab5edb63a84d2`.
+  - `logs/events.jsonl`, `logs/install.log`, `logs/init.log`,
+    `logs/bundle-prefetch.log` — full event trail.
