@@ -9,6 +9,7 @@
 
 use std::path::PathBuf;
 
+use super::lifecycle_resolver::{bearer_from_env, gh_trust_set};
 use crate::bundle_manifest::{BundleManifest, Platform};
 use crate::error::{BundleManifestError, InstallerError};
 use crate::layout;
@@ -16,6 +17,13 @@ use crate::platform_adapter;
 use crate::registry;
 use crate::rollback_journal::{RollbackJournal, SideEffect};
 use sha2::Digest;
+
+/// Maximum number of redirect hops allowed during a download.
+///
+/// GitHub's release-asset redirect chain is at most 2 hops
+/// (api.github.com → objects.githubusercontent.com). 5 provides
+/// defensive slack while still protecting against redirect loops.
+const MAX_DOWNLOAD_REDIRECTS: u8 = 5;
 
 /// Environment variable naming an explicit `bundle.yaml` to install from.
 ///
@@ -44,6 +52,120 @@ pub fn resolve_download_url(canonical: &str) -> String {
     match canonical.strip_prefix(crate::release_contract::RELEASE_DOWNLOAD_BASE) {
         Some(rest) => format!("{base}{rest}"),
         None => canonical.to_string(),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Download helpers (E86.2.1 — bearer token preservation through redirects)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Check whether `host` is within the allowed GitHub trust set.
+///
+/// Supports exact matches and wildcard suffixes (e.g. `*.githubusercontent.com`).
+fn is_in_trust_set(host: &str) -> bool {
+    let trust = gh_trust_set();
+    trust.iter().any(|&trusted| {
+        if trusted.starts_with("*.") {
+            host.ends_with(&trusted[1..])
+        } else {
+            host == trusted
+        }
+    })
+}
+
+/// Download a URL with manual redirect following that re-attaches the Bearer
+/// token on every hop.
+///
+/// reqwest 0.12.28's redirect policy **strips** the `Authorization` header
+/// on cross-origin redirects (github.com → objects.githubusercontent.com),
+/// regardless of `Policy::custom`. This helper works around that limitation
+/// by handling redirects manually and re-attaching the bearer on each hop.
+///
+/// Returns the final response. Callers must check `response.status()` and
+/// consume the body.
+fn download_with_bearer(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    bearer: Option<&str>,
+) -> Result<reqwest::blocking::Response, InstallerError> {
+    let mut hop: u8 = 0;
+    let mut current_url = url.to_string();
+    let token = bearer;
+
+    loop {
+        hop += 1;
+        if hop > MAX_DOWNLOAD_REDIRECTS {
+            return Err(InstallerError::Network(
+                url.to_string(),
+                format!("TooManyRedirects (>{})", MAX_DOWNLOAD_REDIRECTS),
+            ));
+        }
+
+        // Build and send the request
+        let mut req_builder = client.get(&current_url);
+        if let Some(t) = token {
+            req_builder = req_builder.bearer_auth(t);
+        }
+
+        let response = req_builder
+            .send()
+            .map_err(|e| InstallerError::Network(current_url.clone(), e.to_string()))?;
+
+        let status = response.status();
+        let location = response
+            .headers()
+            .get("Location")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from);
+
+        println!(
+            "[cogh download] hop={} status={} location={:?}",
+            hop,
+            status.as_u16(),
+            location
+        );
+
+        // Check if we need to follow a redirect
+        match status {
+            reqwest::StatusCode::MOVED_PERMANENTLY
+            | reqwest::StatusCode::FOUND
+            | reqwest::StatusCode::SEE_OTHER
+            | reqwest::StatusCode::TEMPORARY_REDIRECT
+            | reqwest::StatusCode::PERMANENT_REDIRECT => {
+                let next_url = location.ok_or_else(|| {
+                    InstallerError::Network(
+                        current_url.clone(),
+                        "redirect status with no Location header".to_string(),
+                    )
+                })?;
+
+                // Validate the next host is in the trust set. Split off scheme, then
+                // strip any `:port` suffix and any path so we compare only the
+                // bare hostname against `gh_trust_set()`.
+                let next_host = next_url
+                    .strip_prefix("http://")
+                    .or_else(|| next_url.strip_prefix("https://"))
+                    .unwrap_or(next_url.as_str())
+                    .split('/')
+                    .next()
+                    .unwrap_or("")
+                    .split(':')
+                    .next()
+                    .unwrap_or("");
+
+                if !is_in_trust_set(next_host) {
+                    return Err(InstallerError::Network(
+                        current_url.clone(),
+                        format!("DisallowedRedirectHost {}", next_host),
+                    ));
+                }
+
+                current_url = next_url;
+                // Continue the loop — bearer will be re-attached on next iteration
+            }
+            // Non-redirect status — return to caller
+            _ => return Ok(response),
+        }
     }
 }
 
@@ -132,14 +254,26 @@ fn advance_stage(
             // Download each component
             for comp in &manifest.components {
                 let dest = cache_dir.join(format!("{}.tar.gz", comp.name));
+                // The client intentionally disables auto-redirect handling
+                // (`Policy::none()`) because reqwest 0.12.28 strips
+                // `Authorization` on cross-origin redirects, even under
+                // `Policy::custom(|a| a.follow())`. The manual redirect loop
+                // in `download_with_bearer` re-attaches the bearer on every
+                // hop and enforces the GH trust set, so it owns the redirect
+                // handling end-to-end. See E86.2.1 design and the
+                // DEFECT-DOC tests in `lifecycle_resolver::tests`.
                 let client = reqwest::blocking::Client::builder()
                     .timeout(std::time::Duration::from_secs(60))
+                    .redirect(reqwest::redirect::Policy::none())
                     .build()
                     .map_err(|e| InstallerError::Network("reqwest".into(), e.to_string()))?;
-                let mut response = client
-                    .get(resolve_download_url(&comp.url))
-                    .send()
-                    .map_err(|e| InstallerError::Network(comp.url.clone(), e.to_string()))?;
+                let bearer = bearer_from_env();
+                let response = download_with_bearer(
+                    &client,
+                    &resolve_download_url(&comp.url),
+                    bearer.as_deref(),
+                )
+                .map_err(|e| InstallerError::Network(comp.url.clone(), e.to_string()))?;
                 if !response.status().is_success() {
                     return Err(InstallerError::Network(
                         comp.url.clone(),
@@ -718,6 +852,223 @@ components:
         assert!(
             msg.contains(&format!("{:?}", manifest.platform)),
             "error must mention the bundle platform: {msg}"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // E86.2.1 — Bearer token preservation through redirects (GREEN tests)
+    //
+    // These tests verify that `download_with_bearer()` correctly re-attaches
+    // the Authorization header on each redirect hop, and enforces the trust set.
+    //
+    // The test helpers (bind_one_shot_*, header_value) are duplicated from
+    // `crate::lifecycle_resolver::tests` to keep the test module self-contained.
+    // See: // SHARED-WITH crate::lifecycle_resolver::tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // SHARED-WITH crate::lifecycle_resolver::tests
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::thread;
+
+    /// One-shot HTTP/1.1 server: replies with `status` and `location` if 302.
+    fn bind_one_shot_302(location: &str) -> (u16, mpsc::Receiver<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let port = listener.local_addr().expect("local_addr").port();
+        let (tx, rx) = mpsc::channel();
+        let location = location.to_string();
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let raw = String::from_utf8_lossy(&buf[..n]).to_string();
+                let _ = tx.send(raw);
+                let resp = format!(
+                    "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+        (port, rx)
+    }
+
+    /// One-shot HTTP/1.1 server: replies 200 OK with no body and forwards
+    /// the received request headers via the channel.
+    fn bind_one_shot_ok() -> (u16, mpsc::Receiver<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let port = listener.local_addr().expect("local_addr").port();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let raw = String::from_utf8_lossy(&buf[..n]).to_string();
+                let _ = tx.send(raw);
+                let resp = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                let _ = stream.write_all(resp);
+            }
+        });
+        (port, rx)
+    }
+
+    fn header_value(headers: &str, name: &str) -> Option<String> {
+        headers.split("\r\n").find_map(|line| {
+            line.split_once(':').and_then(|(k, v)| {
+                if k.trim().eq_ignore_ascii_case(name) {
+                    Some(v.trim().to_string())
+                } else {
+                    None
+                }
+            })
+        })
+    }
+
+    /// Bind a blocking reqwest client with **no** auto-redirect handling.
+    ///
+    /// The manual redirect loop in `download_with_bearer` needs to inspect
+    /// each `Location` header itself to re-attach the bearer; if reqwest's
+    /// built-in policy follows redirects automatically, it strips
+    /// `Authorization` on cross-origin hops and the helper never gets the
+    /// chance to re-attach. The client therefore has `.redirect(Policy::none())`
+    /// and the helper owns every hop.
+    fn build_test_client() -> reqwest::blocking::Client {
+        reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("build test client with no auto-redirect")
+    }
+
+    /// REQ-FIX-01 GREEN — Bearer propagates across a cross-origin redirect.
+    ///
+    /// Sets up: server A (127.0.0.1:portA) → 302 → server B (127.0.0.1:portB).
+    /// Verifies that the second request to server B carries the Bearer token.
+    /// This was the defect: reqwest 0.12.28's redirect policy stripped it.
+    #[test]
+    fn e86_2_1_fix_01_bearer_propagates_across_redirect() {
+        // Server B: terminal destination
+        let (port_b, rx_b) = bind_one_shot_ok();
+        // Server A: redirects to server B
+        let location = format!("http://127.0.0.1:{port_b}/asset");
+        let (port_a, rx_a) = bind_one_shot_302(&location);
+
+        let client = build_test_client();
+
+        let result = super::download_with_bearer(
+            &client,
+            &format!("http://127.0.0.1:{port_a}/some/path"),
+            Some("test-token-abc"),
+        );
+
+        // The helper should follow the redirect and return 200
+        let response = result.expect("download_with_bearer should succeed");
+        assert_eq!(response.status().as_u16(), 200, "server B should reply 200");
+
+        // First hop: server A received the bearer (soundness check)
+        let req_a = rx_a.recv().expect("recv from A");
+        assert_eq!(
+            header_value(&req_a, "authorization").as_deref(),
+            Some("Bearer test-token-abc"),
+            "first hop must carry the bearer"
+        );
+
+        // Second hop: server B also receives the bearer (THE FIX)
+        let req_b = rx_b.recv().expect("recv from B");
+        assert_eq!(
+            header_value(&req_b, "authorization").as_deref(),
+            Some("Bearer test-token-abc"),
+            "GREEN: bearer must propagate to the redirect target"
+        );
+    }
+
+    /// REQ-FIX-02 GREEN — Redirect to a host outside the trust set returns
+    /// `DisallowedRedirectHost` error instead of blindly following.
+    #[test]
+    fn e86_2_1_fix_02_untrusted_redirect_host_returns_disallowed_error() {
+        // Server A: redirects to attacker.example.com (NOT in gh_trust_set)
+        let (port_a, _rx_a) = bind_one_shot_302("http://attacker.example.com/asset");
+
+        let client = build_test_client();
+
+        let result = super::download_with_bearer(
+            &client,
+            &format!("http://127.0.0.1:{port_a}/some/path"),
+            Some("test-token-abc"),
+        );
+
+        let err = result.expect_err("should fail for untrusted redirect host");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("DisallowedRedirectHost"),
+            "error must contain 'DisallowedRedirectHost', got: {msg}"
+        );
+        assert!(
+            msg.contains("attacker.example.com"),
+            "error must name the untrusted host, got: {msg}"
+        );
+    }
+
+    /// REQ-FIX-03 GREEN — More than 5 redirect hops returns `TooManyRedirects`.
+    ///
+    /// Builds a 6-listener redirect loop. Each listener must answer many
+    /// connections (we send up to 7 requests round-trip in the worst case
+    /// because the helper may count hops before terminating); therefore
+    /// each thread loops over `listener.incoming()` instead of using a
+    /// one-shot pattern.
+    #[test]
+    fn e86_2_1_fix_03_too_many_hops_returns_error() {
+        let n_hops: usize = 6;
+        let mut ports: Vec<u16> = Vec::with_capacity(n_hops);
+
+        // Pre-allocate ports first so each thread can resolve the next port.
+        let mut pre_bound: Vec<TcpListener> = Vec::with_capacity(n_hops);
+        for _ in 0..n_hops {
+            let l = TcpListener::bind("127.0.0.1:0").expect("bind");
+            l.set_nonblocking(false).ok();
+            ports.push(l.local_addr().expect("local_addr").port());
+            pre_bound.push(l);
+        }
+
+        // Spawn persistent redirect handlers. Each one accepts connections
+        // until the test ends and redirects every one of them to the next
+        // port in the cycle, producing an infinite redirect loop. The helper
+        // must detect the loop within `MAX_DOWNLOAD_REDIRECTS` and bail out.
+        for hop in 0..n_hops {
+            let next_port = ports[(hop + 1) % ports.len()];
+            let listener = pre_bound.remove(0);
+            thread::spawn(move || {
+                for stream in listener.incoming().flatten() {
+                    use std::io::{Read, Write};
+                    let mut stream = stream;
+                    let mut buf = [0u8; 4096];
+                    let _ = stream.read(&mut buf);
+                    let location = format!("http://127.0.0.1:{next_port}/hop-{}", hop + 1);
+                    let resp = format!(
+                        "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    );
+                    let _ = stream.write_all(resp.as_bytes());
+                    let _ = stream.flush();
+                }
+            });
+        }
+
+        // Give threads time to start accepting
+        thread::sleep(std::time::Duration::from_millis(50));
+
+        let client = build_test_client();
+
+        let result = super::download_with_bearer(
+            &client,
+            &format!("http://127.0.0.1:{}/start", ports[0]),
+            Some("test-token"),
+        );
+
+        let err = result.expect_err("should fail after 5 hops");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("TooManyRedirects"),
+            "error must contain 'TooManyRedirects', got: {msg}"
         );
     }
 }

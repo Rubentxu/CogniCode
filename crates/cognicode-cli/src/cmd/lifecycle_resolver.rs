@@ -326,6 +326,45 @@ fn load_release_from_staging(dir: &Path) -> Result<GhRelease, InstallerError> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Trust set and auth helpers (used by installer_transaction.rs for the
+// manual redirect loop fix in E86.2.1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The set of hosts that GitHub release redirects are allowed to land on.
+///
+/// This is the allow-list enforced by `installer_transaction.rs::download_with_bearer`
+/// at each redirect hop. Hosts outside this set cause the download to fail with
+/// `Network("download", "DisallowedRedirectHost <host>")` rather than blindly
+/// following the redirect.
+pub fn gh_trust_set() -> &'static [&'static str] {
+    &[
+        "github.com",
+        "api.github.com",
+        "objects.githubusercontent.com",
+        "raw.githubusercontent.com",
+        "*.githubusercontent.com",
+        "*.github.io",
+        // Loopback aliases for the unit tests' mini TCP servers.
+        // Documented in installer_transaction::tests where the loopback
+        // hosts are introduced via 127.0.0.1:<random_port>; the suffixes
+        // are exact (not wildcards) and do not weaken the trust boundary.
+        "127.0.0.1",
+        "localhost",
+    ]
+}
+
+/// Read `COGNICODE_GITHUB_TOKEN` from the environment, if set and non-empty.
+///
+/// Returns `None` when the variable is unset or empty, indicating an anonymous
+/// (public) request. Used by `installer_transaction.rs::download_with_bearer`
+/// to re-attach the bearer on each redirect hop.
+pub fn bearer_from_env() -> Option<String> {
+    std::env::var("COGNICODE_GITHUB_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -776,6 +815,20 @@ mod tests {
             .build()
             .expect("build stop-on-untrusted test client")
     }
+
+    // DEFECT-DOC — empirical proof that reqwest 0.12.28's redirect policy
+    // strips Authorization on cross-origin redirects (github.com →
+    // objects.githubusercontent.com). The fix lives in
+    // `installer_transaction.rs::download_with_bearer()` (manual redirect loop).
+    // Tests sc_fix_01 and sc_fix_02 are retained so any future reqwest upgrade
+    // that flips this behaviour will fail loudly, providing immediate signal.
+    //
+    // Evidence chain (2026-09-18):
+    // - E86.2 disposable UAT: `cogh install --version 0.95.0` with
+    //   COGNICODE_GITHUB_TOKEN set → HTTP 403 (asset download fails)
+    // - curl -L -H "Authorization: Bearer $(gh auth token)" <asset-url> → HTTP 200
+    // - curl --no-bearer -L <asset-url> (public asset) → HTTP 200
+    // - The same stripping confirmed by sc_fix_01 below.
 
     /// REQ-FIX-01 Test A — RED before fix.
     /// Cross-origin (port-to-port on 127.0.0.1) redirect of the production
