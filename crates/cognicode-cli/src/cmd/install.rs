@@ -52,6 +52,14 @@ pub fn run_install(home: &CognicodeHome, profile: &str) -> Result<PathBuf> {
             // `skills_root` if any exists, or skips integration with a
             // warning if the home has no portable skill bundles.
             if ide::detect_opencode() {
+                // DEBT-3.f BLOCKED-BY-DEBT-2: the SkillBundleId is not
+                // modelled in any manifest today, so we cannot pick a
+                // specific bundle by name. The audit (§9.4-11, sites
+                // :55/:56-59) classifies this as "first directory under
+                // `skills_root`" heuristic — DEBT-2 territory. Once
+                // DEBT-2 introduces a portable-skill-bundle manifest
+                // declaring which bundle(s) to integrate, this becomes
+                // `bundle.id` from that manifest, not `read_dir().next()`.
                 let skills_root = home.skills_root(version);
                 let skill_bundle = std::fs::read_dir(&skills_root)
                     .ok()

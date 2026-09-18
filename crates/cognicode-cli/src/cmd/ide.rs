@@ -406,7 +406,17 @@ pub fn integrate_zcode(
     version: &str,
     mcp_command: &[String],
 ) -> Result<()> {
-    // 1. Skill copy
+    // 1. Skill copy.
+    //
+    // DEBT-3.f BLOCKED-BY-DEBT-2: the audit (§9.4-11, sites
+    // :367-374/:477-481/:593-597) flags this `<root>/versions/<v>/<plugin>/skills/`
+    // construction as "first directory under `skills_root`"
+    // territory. Once DEBT-2 introduces a portable-skill-bundle
+    // manifest, this becomes `home.skill_bundle(version, &bundle_id)`
+    // derived from that manifest. The `&Path` argument here is
+    // preserved (instead of taking `&CognicodeHome`) so the
+    // `cognicode-release` binary — which does not link `layout.rs` —
+    // can keep calling this function with a borrowed path.
     let skills_src = home
         .join("versions")
         .join(version)
@@ -525,7 +535,13 @@ pub fn integrate_claude(
     version: &str,
     mcp_command: &[String],
 ) -> Result<()> {
-    // 1. Skill copy
+    // 1. Skill copy.
+    //
+    // DEBT-3.f BLOCKED-BY-DEBT-2: see the comment in `integrate_zcode`
+    // above. This site (:477-481) has the same shape and the same
+    // follow-up: when DEBT-2 introduces a portable-skill-bundle
+    // manifest, replace this construction with
+    // `home.skill_bundle(version, &bundle_id)`.
     let skills_src = home
         .join("versions")
         .join(version)
@@ -647,7 +663,13 @@ pub fn integrate_codex(
     version: &str,
     mcp_command: &[String],
 ) -> Result<()> {
-    // 1. Skill copy
+    // 1. Skill copy.
+    //
+    // DEBT-3.f BLOCKED-BY-DEBT-2: see the comment in `integrate_zcode`
+    // above. This site (:593-597) has the same shape and the same
+    // follow-up: when DEBT-2 introduces a portable-skill-bundle
+    // manifest, replace this construction with
+    // `home.skill_bundle(version, &bundle_id)`.
     let skills_src = home
         .join("versions")
         .join(version)
@@ -804,7 +826,15 @@ pub fn cmd_ide_install(
     ];
     match ide {
         "opencode" => {
-            // skill_path is the plugin's skills directory
+            // DEBT-3.f BLOCKED-BY-DEBT-2: `skill_path` is constructed
+            // manually as `<root>/versions/<v>/<plugin>/skills/` here.
+            // The audit (§9.4-11, site :737) flags this as
+            // "first directory under `skills_root`" territory — once
+            // DEBT-2 introduces a portable-skill-bundle manifest that
+            // declares the bundle id, this construction becomes
+            // `home.skill_bundle(version, &bundle_id)` derived from
+            // that manifest. Until then, we cannot invent a temporary
+            // abstraction.
             let skill_path = home.versions().join(version).join(plugin).join("skills");
             let steps = integrate_opencode(&skill_path, version, &mcp_command)?;
             for step in steps {
