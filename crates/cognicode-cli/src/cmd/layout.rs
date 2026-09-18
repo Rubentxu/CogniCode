@@ -27,16 +27,6 @@ pub fn cognicode_home() -> PathBuf {
     }
 }
 
-/// Path to the install root (under COGNICODE_HOME).
-pub fn install_root() -> PathBuf {
-    cognicode_home().join("install")
-}
-
-/// Path to a specific version's install directory.
-pub fn install_dir(version: &str) -> PathBuf {
-    install_root().join(version)
-}
-
 /// Path to the shims directory.
 pub fn shims_dir() -> PathBuf {
     cognicode_home().join("shims")
@@ -55,11 +45,6 @@ pub fn cache_dir() -> PathBuf {
 /// Path to the bundle.yaml manifest distributed with the installer.
 pub fn bundle_yaml_path() -> PathBuf {
     cognicode_home().join("bundle.yaml")
-}
-
-/// Path to the install manifest for a given version.
-pub fn install_manifest_path(version: &str) -> PathBuf {
-    install_dir(version).join("manifest.yaml")
 }
 
 /// Resolved `~/.cognicode/` (or `COGNICODE_HOME`) layout.
@@ -130,34 +115,18 @@ impl CognicodeHome {
         self.root.join("bundle.yaml")
     }
 
-    /// Path to the install manifest for a given version.
-    ///
-    /// Pinned by `t_e86_4_install_manifest_path_method_matches_free_fn` to
-    /// return the same path as the free fn `layout::install_manifest_path`
-    /// (which is what `InstallerTransaction::commit` actually writes to).
-    /// Previously this method returned `<root>/<ver>/manifest.yaml`, a
-    /// third ghost layout that nothing ever wrote to. The install
-    /// transaction, the IDE adapters, and the journal all interact with
-    /// the install manifest under `<root>/install/<ver>/manifest.yaml`
-    /// (the free-fn layout), so the method must follow suit.
-    pub fn install_manifest_path(&self, version: &str) -> PathBuf {
-        self.root
-            .join("install")
-            .join(version)
-            .join("manifest.yaml")
-    }
-
     // ===== Canonical layout helpers (L1, ADR-CANONICAL-LAYOUT) =====
     //
     // These five helpers describe the canonical install layout promoted by
     // ADR-034/035 and the cognicode-cli/cognicode-lifecycle/portable-skill-bundle
-    // OpenSpec specs. They are added in L1 with NO behavioural change: no
-    // existing consumer is migrated yet. They become the source of truth in L2
-    // (InstallerTransaction producer) and L3 (lifecycle consumers). L5 retires
-    // the legacy `install_*` helpers that point at `install/<v>/`.
+    // OpenSpec specs. L1 added them with NO behavioural change. L2/L3/L4
+    // retargeted consumers and the producer to the canonical surface. L5
+    // retired the legacy `install_*` free fns and `CognicodeHome::install_manifest_path`
+    // method that pointed at `install/<v>/`. After L5, these five helpers are
+    // the only path-derivation surface for the canonical install layout.
     //
-    // Characterization tests pin the exact path shape so the L2/L3 retargeting
-    // does not silently break anything.
+    // Characterization tests pin the exact path shape so any future drift
+    // is caught immediately.
 
     /// Canonical root for an installed version: `<root>/versions/<v>/`.
     ///
@@ -969,8 +938,12 @@ mod tests {
         // Simulate a committed install: write a manifest file and a journal
         // describing the side-effects. The journal's WroteManifest reverses
         // to remove the manifest, so after rollback the manifest is gone.
+        //
+        // L5 (ADR-CANONICAL-LAYOUT): use the canonical version root, not
+        // the legacy install/<v>/ which the producer stopped writing to
+        // after L2.
         let version = "0.95.0";
-        let install_dir = home_dir.path().join("install").join(version);
+        let install_dir = home.version_root(version);
         std::fs::create_dir_all(&install_dir).unwrap();
         let manifest_path = install_dir.join("manifest.yaml");
         std::fs::write(&manifest_path, "apiVersion: v1\nversion: 0.95.0\n").unwrap();
@@ -1242,8 +1215,8 @@ components:
             bundle_path.display()
         );
         assert!(
-            !install_manifest_path("0.95.0").exists(),
-            "dry-run must NOT write install/0.95.0/manifest.yaml"
+            !home.version_manifest("0.95.0").exists(),
+            "dry-run must NOT write versions/0.95.0/manifest.yaml"
         );
         assert!(
             !home.tracker_version().exists(),
@@ -1358,7 +1331,7 @@ components:
             "zero-component install must NOT write a lifecycle journal"
         );
         assert!(
-            !install_manifest_path("0.95.0").exists(),
+            !home.version_manifest("0.95.0").exists(),
             "zero-component install must NOT write an install manifest"
         );
     }
@@ -1577,79 +1550,17 @@ components:
     }
 
     // ===== E86.4 — install layout consistency (bounded cycle) =====
-
-    /// T1 (RED before fix): the `CognicodeHome::install_manifest_path` method
-    /// must return the same path as if we constructed it from `home.root`.
-    ///
-    /// Currently the method returns `<root>/<ver>/manifest.yaml` — a third
-    /// ghost layout that nothing ever wrote to. The real install transaction
-    /// writes to `<root>/install/<ver>/manifest.yaml` (the free-fn layout,
-    /// which in turn reads `cognicode_home()` from env). Pinning the method
-    /// to derive from `home.root` makes the two paths align whenever the
-    /// home is explicitly resolved — and makes a divergence from the
-    /// env-based free fn visible only when `COGNICODE_HOME` is set to a
-    /// different directory than `home.root` (which would itself be a bug).
-    #[test]
-    #[serial]
-    fn t_e86_4_install_manifest_path_method_matches_install_layout() {
-        let home_dir = tempfile::TempDir::new().unwrap();
-        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
-        let version = "0.95.0";
-        let method_path = home.install_manifest_path(version);
-        let expected = home
-            .root
-            .join("install")
-            .join(version)
-            .join("manifest.yaml");
-        assert_eq!(
-            method_path,
-            expected,
-            "CognicodeHome::install_manifest_path must return <root>/install/<ver>/manifest.yaml; \
-             got method={} expected={}",
-            method_path.display(),
-            expected.display(),
-        );
-    }
-
-    /// T2: the install manifest path lives under a versioned sub-directory
-    /// that the rest of the system treats as the install tree. Today the
-    /// install transaction writes the manifest to `<home>/install/<ver>/manifest.yaml`,
-    /// but the IDE adapters (`cmd_ide_install`, `integrate_zcode/claude/codex`,
-    /// and all `cmd/lifecycle.rs` tests) interpret the layout as
-    /// `<home>/versions/<ver>/<plugin>/skills`. Pinning this test makes the
-    /// inconsistency visible: whichever side the cycle ends up fixing, the
-    /// other side will break loudly.
-    ///
-    /// Cycle E86.4 fixes the method (T1) but documents the deeper inconsistency
-    /// as an out-of-scope follow-up: harmonising the free-fn layout with the
-    /// IDE-adapter layout requires a decision about whether `install/` and
-    /// `versions/` are separate namespaces (current intent: bin components
-    /// under `install/`, plugins under `versions/`) or a single namespace.
-    #[test]
-    #[serial]
-    fn t_e86_4_install_manifest_path_method_under_versioned_subdir() {
-        let home_dir = tempfile::TempDir::new().unwrap();
-        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
-        let version = "0.95.0";
-        let method_path = home.install_manifest_path(version);
-        // The method path must NOT collapse to <home>/<ver>/manifest.yaml —
-        // that ghost layout was never writable by the install transaction.
-        let ghost = home.root.join(version).join("manifest.yaml");
-        assert_ne!(
-            method_path,
-            ghost,
-            "method must not return ghost layout {}",
-            ghost.display(),
-        );
-        // And it must live under some versioned sub-directory of home.root,
-        // either install/ or versions/. The free fn currently returns install/.
-        assert!(
-            method_path.starts_with(home.root.join("install"))
-                || method_path.starts_with(home.root.join("versions")),
-            "method path {} must live under home.root/install or home.root/versions",
-            method_path.display(),
-        );
-    }
+    //
+    // L5 (ADR-CANONICAL-LAYOUT): the `CognicodeHome::install_manifest_path`
+    // method (which these tests pin) was retired in L5 because it pointed
+    // at the legacy `install/<v>/` layout. The E86.4 tests asserted the
+    // existence of that legacy path; with the method gone, the assertions
+    // no longer compile. The L5 commit removes them.
+    //
+    // The original E86.4 motivation (pin the producer's actual write
+    // location against a "ghost layout" the method used to return) is
+    // now closed by L2 + L4 — the producer writes to `versions/<v>/`,
+    // and `version_manifest(v)` is the canonical helper.
 
     // ===== E86.7 — cmd_uninstall removes the install tree =====
 
@@ -1814,10 +1725,11 @@ components:
 
     /// T3: `version_manifest(v)` returns `<root>/versions/<v>/manifest.yaml`.
     ///
-    /// Pinned because this is the path the install transaction WILL write
-    /// to after L2 retargets it. L1 asserts the helper but the writer
-    /// still uses `install_manifest_path` (which is on the legacy
-    /// `install/<v>/` layout). L2 closes the gap.
+    /// Pinned because this is the path the install transaction writes to
+    /// (the producer was retargeted from the legacy `install/<v>/` layout
+    /// to `versions/<v>/` in commit ded95fbf / L2). After L5 the legacy
+    /// `install_manifest_path` helper no longer exists; this test pins
+    /// the canonical surface.
     #[test]
     fn t_l1_version_manifest_matches_versions_layout() {
         let home_dir = tempfile::TempDir::new().unwrap();
@@ -1833,13 +1745,14 @@ components:
             "version_manifest must be <root>/versions/<v>/manifest.yaml per ADR"
         );
 
-        // Sanity: the helper must NOT match the legacy install path,
-        // otherwise L2's retargeting becomes a no-op.
-        assert_ne!(
-            home.version_manifest("0.95.0"),
-            home.install_manifest_path("0.95.0"),
-            "version_manifest and install_manifest_path must differ; \
-             otherwise ADR-CANONICAL-LAYOUT has not actually moved the layout"
+        // Sanity: the helper must live under home.root/versions/,
+        // not under home.root/install/. This guards against a future
+        // cycle accidentally retargeting the canonical helper back to
+        // the legacy install/<v>/ layout.
+        assert!(
+            home.version_manifest("0.95.0").starts_with(home.versions()),
+            "L5: version_manifest must live under home.root/versions/, got {}",
+            home.version_manifest("0.95.0").display()
         );
 
         let _ = std::fs::remove_dir_all(home_dir.path());
@@ -1919,10 +1832,15 @@ components:
             "L3: canonical version tree must exist after install; got {}",
             version_root.display()
         );
-        let legacy_install = home.install_manifest_path(env!("CARGO_PKG_VERSION"));
+        // L3 inverse assertion: the legacy install/<v>/ tree must NOT
+        // exist after install — L2 retargeted the producer to versions/.
+        // We assert by joining home.root directly because L5 retired
+        // the install_manifest_path helper.
+        let legacy_install = home.root.join("install").join(env!("CARGO_PKG_VERSION"));
         assert!(
             !legacy_install.exists(),
-            "L3: legacy install/<v>/manifest.yaml must NOT exist post-L2"
+            "L2+L5: legacy install/<v>/ must NOT exist; got {}",
+            legacy_install.display()
         );
 
         // Run uninstall and verify the canonical tree is gone.
@@ -1937,6 +1855,126 @@ components:
             !version_root.exists(),
             "L3: canonical version tree must be removed after cmd_uninstall; got {}",
             version_root.display()
+        );
+    }
+
+    // ========================================================================
+    // L5 — zero install/<v>/ source pollution
+    //
+    // Pinned by ADR-CANONICAL-LAYOUT (2026-09-18). The legacy layout
+    // pointed at by `install/<v>/...` is retired; this test guards
+    // against a future drift reintroducing the path in source.
+    //
+    // Mechanical check: scan every .rs file in the workspace for the
+    // retired SHAPE of the legacy surface:
+    //   - top-level `pub fn install_root` / `install_dir` / `install_manifest_path`
+    //   - `home.install_manifest_path(` qualified call
+    //
+    // Local variables named `install_dir` (which now hold a version_root
+    // path) and string references to the layout (which appear in the
+    // historical ADRs) are intentionally NOT flagged — they are not
+    // structural retargeting to the legacy layout.
+    // ========================================================================
+
+    /// Patterns that, if seen in source, mean L5 has been reversed.
+    const LEGACY_LAYOUT_PATTERNS: &[&str] = &[
+        "pub fn install_root",
+        "pub fn install_dir",
+        "pub fn install_manifest_path",
+        "home.install_manifest_path",
+    ];
+
+    /// Walk every Rust source file in the workspace and fail if the
+    /// legacy `install/<v>/` layout surface reappears in source.
+    /// `cmd/layout.rs` itself (which contains the L1..L5 historical
+    /// markers) is skipped via a path-relative match.
+    fn scan_source_for_legacy_layout() -> Vec<String> {
+        use std::fs;
+        let layout_rs = std::path::Path::new(file!())
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+
+        let mut hits = Vec::new();
+        let root = workspace_root();
+        for entry in fs::read_dir(&root).expect("read workspace root") {
+            let entry = entry.unwrap();
+            if entry.path().join("Cargo.toml").is_file() {
+                scan_crate(&entry.path(), &layout_rs, &mut hits);
+            }
+        }
+        hits
+    }
+
+    fn scan_crate(crate_dir: &std::path::Path, layout_rs_filename: &str, hits: &mut Vec<String>) {
+        use std::fs;
+        let walker = walkdir(crate_dir);
+        for path in walker {
+            if path.extension().and_then(|s| s.to_str()) != Some("rs") {
+                continue;
+            }
+            // Skip the layout.rs file itself — its historical L1..L5
+            // markers legitimately mention the legacy identifiers.
+            if path.file_name().and_then(|s| s.to_str()) == Some(layout_rs_filename) {
+                continue;
+            }
+            let text = match fs::read_to_string(&path) {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            for needle in LEGACY_LAYOUT_PATTERNS {
+                if text.contains(needle) {
+                    hits.push(format!("{}:{}", path.display(), needle));
+                }
+            }
+        }
+    }
+
+    /// Minimal directory walker; the workspace forbids pulling in
+    /// the `walkdir` crate for tests, so we recurse manually.
+    fn walkdir(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        use std::fs;
+        let mut out = Vec::new();
+        for entry in fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let p = entry.path();
+            if p.is_dir() {
+                // Skip target/ and hidden dirs.
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if name == "target" || name.starts_with('.') {
+                    continue;
+                }
+                out.extend(walkdir(&p));
+            } else if p.extension().and_then(|s| s.to_str()) == Some("rs") {
+                out.push(p);
+            }
+        }
+        out
+    }
+
+    fn workspace_root() -> std::path::PathBuf {
+        // CARGO_MANIFEST_DIR at test time is .../crates/cognicode-cli.
+        let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        crate_root
+            .ancestors()
+            .nth(2) // crates/, then the workspace root
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| crate_root.to_path_buf())
+    }
+
+    /// L5: zero `install/<v>/` layout surface in source.
+    ///
+    /// After L5, no production source outside this very file may
+    /// declare `install_root` / `install_dir` / `install_manifest_path`
+    /// as a public function or call `home.install_manifest_path`.
+    /// If a future cycle reintroduces them, this test fails immediately.
+    #[test]
+    fn t_l5_zero_install_layout_source_pollution() {
+        let hits = scan_source_for_legacy_layout();
+        assert!(
+            hits.is_empty(),
+            "L5: legacy install/<v>/ layout surface must NOT appear in source \
+             outside cmd/layout.rs; found: {hits:#?}",
         );
     }
 }

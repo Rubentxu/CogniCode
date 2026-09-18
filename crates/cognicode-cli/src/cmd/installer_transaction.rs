@@ -1097,13 +1097,14 @@ components:
             "L2: manifest file must exist on disk"
         );
 
-        // The legacy install/ tree must NOT exist. This is the inverse
-        // assertion: if it does exist, something is still writing to
-        // the legacy layout and L2 is incomplete.
-        let legacy_install = home.install_manifest_path(env!("CARGO_PKG_VERSION"));
+        // The legacy install/<v>/ tree must NOT exist. We assert
+        // by checking the on-disk directory directly rather than via
+        // `home.install_manifest_path` (which L5 retired). After L5
+        // nothing in the source tree references `install/<v>/`.
+        let legacy_install = home.root.join("install").join(env!("CARGO_PKG_VERSION"));
         assert!(
             !legacy_install.exists(),
-            "L2: legacy install/<v>/manifest.yaml must NOT exist after L2 commit; got {}",
+            "L2+L5: legacy install/<v>/ must NOT exist after the canonical-layout cycle; got {}",
             legacy_install.display()
         );
 
