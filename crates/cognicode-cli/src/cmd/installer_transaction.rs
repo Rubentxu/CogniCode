@@ -318,6 +318,7 @@ fn advance_stage(
     journal: &mut RollbackJournal,
     manifest: &BundleManifest,
     home: &crate::layout::CognicodeHome,
+    profile: &str,
 ) -> Result<(), InstallerError> {
     match stage {
         InstallStage::ResolvingUrl => {
@@ -396,6 +397,33 @@ fn advance_stage(
             for comp in &manifest.components {
                 let src = cache_dir.join(format!("{}.tar.gz", comp.name));
                 let dest = install_dir.join(&comp.name);
+                registry::extract_targz(&src, &dest)
+                    .map_err(|e| InstallerError::Unknown(e.to_string()))?;
+                journal.record(SideEffect::Extracted(dest));
+            }
+
+            // DEBT-2b: extract each manifest-DECLARED skill bundle for the
+            // active profile into the canonical skill namespace
+            // `versions/<v>/skills/<SkillBundleId>/`. The SkillBundleId
+            // comes from the manifest's `skill_bundles[]` section, which
+            // survives the component profile filter — the namespaces are
+            // orthogonal (see ADR-IDENTITY-MAP §3.5/§7). A declared bundle
+            // missing from the cache fails loudly; nothing is derived from
+            // a ComponentId or a directory scan.
+            let skills_root = home.skills_root(&manifest.version);
+            for bundle in manifest.skill_bundles_for_profile(profile) {
+                let src = cache_dir.join(format!("{}.tar.gz", bundle.id));
+                if !src.exists() {
+                    return Err(InstallerError::Unknown(format!(
+                        "bundle manifest declares skill bundle `{}` for profile \
+                         `{profile}`, but {} is missing from the download cache; \
+                         refusing to guess a substitute",
+                        bundle.id,
+                        src.display()
+                    )));
+                }
+                let dest = skills_root.join(&bundle.id);
+                std::fs::create_dir_all(&dest).map_err(|e| InstallerError::Io(dest.clone(), e))?;
                 registry::extract_targz(&src, &dest)
                     .map_err(|e| InstallerError::Unknown(e.to_string()))?;
                 journal.record(SideEffect::Extracted(dest));
@@ -573,19 +601,19 @@ impl InstallerTransaction {
         };
 
         // Stage: ResolvingUrl → Downloading
-        tx = tx.advance(home)?;
+        tx = tx.advance(home, profile)?;
 
         // Stage: Downloading → VerifyingSha256
-        tx = tx.advance(home)?;
+        tx = tx.advance(home, profile)?;
 
         // Stage: VerifyingSha256 → Extracting
-        tx = tx.advance(home)?;
+        tx = tx.advance(home, profile)?;
 
         // Stage: Extracting → InstallingShims
-        tx = tx.advance(home)?;
+        tx = tx.advance(home, profile)?;
 
         // Stage: InstallingShims → WritingManifest
-        tx = tx.advance(home)?;
+        tx = tx.advance(home, profile)?;
 
         // Stage: WritingManifest → Committed
         tx = tx.commit(home)?;
@@ -646,7 +674,14 @@ impl InstallerTransaction {
     }
 
     /// Advance the transaction to the next stage.
-    fn advance(self, home: &crate::layout::CognicodeHome) -> Result<Self, InstallerError> {
+    ///
+    /// `profile` is threaded through so the Extracting stage knows which
+    /// profiles' declared skill bundles to materialise (DEBT-2b).
+    fn advance(
+        self,
+        home: &crate::layout::CognicodeHome,
+        profile: &str,
+    ) -> Result<Self, InstallerError> {
         match self {
             Self::Running {
                 stage,
@@ -654,7 +689,7 @@ impl InstallerTransaction {
                 manifest,
             } => {
                 // Execute stage actions before transitioning
-                if let Err(e) = advance_stage(stage, &mut journal, &manifest, home) {
+                if let Err(e) = advance_stage(stage, &mut journal, &manifest, home, profile) {
                     return Ok(Self::Failed { stage, error: e });
                 }
 
@@ -831,7 +866,7 @@ mod tests {
         };
 
         for _ in 0..5 {
-            tx = tx.advance(&home).unwrap();
+            tx = tx.advance(&home, "core").unwrap();
         }
 
         // Should be at WritingManifest, ready to commit
@@ -854,7 +889,7 @@ mod tests {
         // argument type still requires a CognicodeHome. We pass a dummy that
         // is never dereferenced.
         let home = crate::layout::CognicodeHome::resolve(None).expect("resolve home for dummy arg");
-        let result = committed.advance(&home).unwrap();
+        let result = committed.advance(&home, "core").unwrap();
         assert!(matches!(result, InstallerTransaction::Committed { .. }));
 
         // Failed
@@ -862,7 +897,7 @@ mod tests {
             stage: InstallStage::Downloading,
             error: InstallerError::Unknown("test".into()),
         };
-        let result = failed.advance(&home).unwrap();
+        let result = failed.advance(&home, "core").unwrap();
         assert!(matches!(result, InstallerTransaction::Failed { .. }));
     }
 
@@ -1669,5 +1704,299 @@ components:
             result, "https://new-mirror.example.com/v0.95.0/pkg.tar.gz",
             "ASSET_BASE_URL must beat RELEASE_BASE_URL on the asset side"
         );
+    }
+
+    /// A valid manifest body declaring one skill bundle
+    /// (`skills-for-claude`, pairwise-distinct from the ComponentId
+    /// `cognicode-mcp`) plus a `reviewer`-only DaemonCli component.
+    fn skill_bundle_tx_manifest() -> BundleManifest {
+        BundleManifest::from_str(
+            r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "0.95.0"
+platform: linux-x86-64
+released_at: "2026-01-01T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+  - name: reviewer
+    description: MCP bridge
+skill_bundles:
+  - id: skills-for-claude
+    version: "0.95.0"
+    profiles: [core, reviewer]
+components:
+  - name: cognicode
+    kind: cognicode
+    version: "0.95.0"
+    artifact: cognicode-0.95.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/cognicode-0.95.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core, reviewer]
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "0.95.0"
+    artifact: cognicode-mcp-0.95.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/cognicode-mcp-0.95.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [reviewer]
+"#,
+        )
+        .expect("fixture manifest must be valid")
+    }
+
+    /// DEBT-2b strict T1: the INSTALLED manifest written by commit()
+    /// must preserve the `skill_bundles[]` declarations, even though
+    /// the install filtered components to the active profile. The
+    /// SkillBundleId namespace is orthogonal to component profiles:
+    /// uninstall/integrate time needs the declarations regardless of
+    /// which profile's components were extracted.
+    ///
+    /// Identities planted pairwise-distinct:
+    ///     ComponentId   = "cognicode-mcp" (reviewer-only)
+    ///     SkillBundleId = "skills-for-claude"
+    #[test]
+    #[serial_test::serial]
+    fn t_debt2b_commit_preserves_skill_bundle_declarations() {
+        let _temphome = TempCognicodeHome::new();
+        let home =
+            crate::layout::CognicodeHome::resolve(None).expect("resolve home from COGNICODE_HOME");
+
+        let manifest = skill_bundle_tx_manifest();
+        assert!(
+            manifest.skill_bundles_for_profile("core").len() == 1,
+            "gate validity: manifest declares the skill bundle for core"
+        );
+        // Sanity: the install will filter out the reviewer-only DaemonCli.
+        assert!(manifest.component_by_name("cognicode-mcp").is_some());
+
+        let journal = RollbackJournal::new();
+        let tx = InstallerTransaction::Running {
+            stage: InstallStage::WritingManifest,
+            journal,
+            manifest,
+        };
+
+        let result = tx.commit(&home).expect("commit must succeed");
+        let manifest_path = match result {
+            InstallerTransaction::Committed { manifest_path } => manifest_path,
+            other => panic!("expected Committed, got {other:?}"),
+        };
+
+        let installed =
+            BundleManifest::from_path(&manifest_path).expect("installed manifest must parse");
+        let bundles = installed.skill_bundles_for_profile("core");
+        assert_eq!(
+            bundles.len(),
+            1,
+            "installed manifest must retain skill_bundles declarations"
+        );
+        assert_eq!(bundles[0].id, "skills-for-claude");
+        assert_ne!(
+            bundles[0].id, "cognicode-mcp",
+            "SkillBundleId must not be conflated with ComponentId"
+        );
+
+        let _ = std::fs::remove_file(&manifest_path);
+        let _ = std::fs::remove_file(crate::lifecycle_journal::journal_path("0.95.0"));
+    }
+
+    /// DEBT-2b strict T2: the Extracting stage must materialise each
+    /// declared skill bundle at
+    /// `versions/<v>/skills/<SkillBundleId>/` from
+    /// `cache_dir/<SkillBundleId>.tar.gz`, honouring the profile
+    /// filter. The skill namespace lives under `skills/`, disjoint
+    /// from `versions/<v>/<ComponentId>/` — a bundle id that happens
+    /// to equal a component name must NOT collide with it.
+    ///
+    /// Identities planted:
+    ///     ComponentId   = "cognicode-mcp" (reviewer-only)
+    ///     SkillBundleId = "skills-for-claude"
+    #[test]
+    #[serial_test::serial]
+    fn t_debt2b_extracting_materialises_declared_skill_bundles() {
+        use crate::rollback_journal::SideEffect;
+        let _temphome = TempCognicodeHome::new();
+        let home =
+            crate::layout::CognicodeHome::resolve(None).expect("resolve home from COGNICODE_HOME");
+
+        // Stage the skill bundle tarball in the cache, as Downloading would.
+        let cache_dir = layout::cache_dir();
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        let payload_dir = tempfile::tempdir().unwrap();
+        std::fs::write(payload_dir.path().join("SKILL.md"), "---\nname: x\n---\n").unwrap();
+        let tarball = cache_dir.join("skills-for-claude.tar.gz");
+        {
+            let f = std::fs::File::create(&tarball).unwrap();
+            let enc = flate2::write::GzEncoder::new(f, flate2::Compression::fast());
+            let mut tar = tar::Builder::new(enc);
+            tar.append_path_with_name(payload_dir.path().join("SKILL.md"), "SKILL.md")
+                .unwrap();
+            tar.into_inner().unwrap().finish().unwrap();
+        }
+
+        // Also stage the `cognicode` component tarball (core's only
+        // component) so the component extraction loop succeeds.
+        let comp_tarball = cache_dir.join("cognicode.tar.gz");
+        {
+            let f = std::fs::File::create(&comp_tarball).unwrap();
+            let enc = flate2::write::GzEncoder::new(f, flate2::Compression::fast());
+            let mut tar = tar::Builder::new(enc);
+            tar.append_dir_all("bin", payload_dir.path()).unwrap();
+            tar.into_inner().unwrap().finish().unwrap();
+        }
+
+        let mut manifest = skill_bundle_tx_manifest();
+        // The install filters components to the profile BEFORE extraction
+        // (core install strips the reviewer-only DaemonCli), but the
+        // skill bundle declared for core must still be extracted.
+        let filtered: Vec<_> = manifest.components_for_profile("core");
+        manifest.components = filtered.into_iter().cloned().collect();
+        assert!(
+            manifest.component_by_name("cognicode-mcp").is_none(),
+            "gate validity: core profile strips the DaemonCli"
+        );
+
+        let mut journal = RollbackJournal::new();
+        journal.record(SideEffect::CreatedDir(home.version_root("0.95.0")));
+
+        let tx = InstallerTransaction::Running {
+            stage: InstallStage::Extracting,
+            journal,
+            manifest,
+        };
+
+        let tx = match tx.advance(&home, "core") {
+            Ok(t) => t,
+            other => panic!("advance failed: {other:?}"),
+        };
+        if let InstallerTransaction::Failed { error, .. } = &tx {
+            panic!("advance returned Failed: {error:?}");
+        }
+        // Drain the journal from the Running state we just advanced into.
+        // Instead of poking internals, verify the on-disk outcome.
+        let skills_dir = home.skill_bundle("0.95.0", "skills-for-claude");
+        assert!(
+            skills_dir.join("SKILL.md").exists(),
+            "declared skill bundle must be extracted to {} (id from manifest, \
+             never derived from a ComponentId)",
+            skills_dir.display()
+        );
+
+        // And the disjointness invariant: the skill path is NOT the
+        // component path even for coincident names.
+        let comp_dir = home.version_root("0.95.0").join("skills-for-claude");
+        assert_ne!(
+            skills_dir, comp_dir,
+            "skill namespace lives under skills/, not the component root"
+        );
+
+        match tx {
+            InstallerTransaction::Running { stage, .. } => {
+                assert_eq!(
+                    stage,
+                    InstallStage::InstallingShims,
+                    "advance must move Extracting → InstallingShims"
+                );
+            }
+            other => panic!("expected Running, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(home.version_root("0.95.0"));
+    }
+
+    /// DEBT-2b strict T3 (round-trip): extract-then-integrate with NO
+    /// test-side fixture planting of the skill directory. The install
+    /// transaction materialises the declared bundle; the IDE integrator
+    /// must then resolve it purely from the installed manifest.
+    ///
+    /// Identities planted:
+    ///     ComponentId   = "cognicode-mcp" (reviewer-only, absent)
+    ///     SkillBundleId = "skills-for-claude"
+    #[test]
+    #[serial_test::serial]
+    fn t_debt2b_round_trip_extract_then_integrate() {
+        use crate::rollback_journal::SideEffect;
+        use std::path::Path;
+        use tempfile::TempDir;
+
+        let _temphome = TempCognicodeHome::new();
+        let home =
+            crate::layout::CognicodeHome::resolve(None).expect("resolve home from COGNICODE_HOME");
+
+        // 1. Cache the payloads as Downloading would.
+        let cache_dir = layout::cache_dir();
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        let staging = TempDir::new().unwrap();
+        std::fs::write(
+            staging.path().join("SKILL.md"),
+            "---\nname: roundtrip\n---\nbody",
+        )
+        .unwrap();
+
+        let make_tarball = |name: &str, src: &Path| {
+            let f = std::fs::File::create(cache_dir.join(format!("{name}.tar.gz"))).unwrap();
+            let enc = flate2::write::GzEncoder::new(f, flate2::Compression::fast());
+            let mut tar = tar::Builder::new(enc);
+            for entry in std::fs::read_dir(src).unwrap() {
+                let e = entry.unwrap();
+                let name = e.file_name().to_string_lossy().to_string();
+                tar.append_path_with_name(e.path(), name).unwrap();
+            }
+            tar.into_inner().unwrap().finish().unwrap();
+        };
+        make_tarball("skills-for-claude", staging.path());
+
+        // `cognicode` component payload (bin/ layout) for the shim stage.
+        let bin_dir = staging.path().join("bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        std::fs::write(bin_dir.join("cognicode"), "#!/bin/sh\n").unwrap();
+        let comp_f = std::fs::File::create(cache_dir.join("cognicode.tar.gz")).unwrap();
+        let enc = flate2::write::GzEncoder::new(comp_f, flate2::Compression::fast());
+        let mut tar = tar::Builder::new(enc);
+        tar.append_dir_all(".", &bin_dir).unwrap();
+        tar.into_inner().unwrap().finish().unwrap();
+
+        // 2. Run the transaction's stage actions manually from Extracting
+        // (download/network is not the SUT here); advance through shims.
+        let mut manifest = skill_bundle_tx_manifest();
+        let filtered: Vec<_> = manifest.components_for_profile("core");
+        manifest.components = filtered.into_iter().cloned().collect();
+
+        let mut journal = RollbackJournal::new();
+        journal.record(SideEffect::CreatedDir(home.version_root("0.95.0")));
+        let mut tx = InstallerTransaction::Running {
+            stage: InstallStage::Extracting,
+            journal,
+            manifest,
+        };
+        tx = tx.advance(&home, "core").unwrap(); // Extracting
+        tx = tx.advance(&home, "core").unwrap(); // InstallingShims
+        tx = tx.advance(&home, "core").unwrap(); // WritingManifest
+        let tx = tx.commit(&home).expect("commit must succeed");
+        let manifest_path = match tx {
+            InstallerTransaction::Committed { manifest_path } => manifest_path,
+            other => panic!("expected Committed, got {other:?}"),
+        };
+
+        // 3. Integrate with NO test-side skill fixture: the integrator
+        // must find `versions/<v>/skills/skills-for-claude/` purely via
+        // the installed manifest.
+        let skill_sources = crate::bundle_manifest::declared_skill_bundle_dirs(
+            &home.skills_root("0.95.0"),
+            &manifest_path,
+            "core",
+        )
+        .expect("integration resolution must succeed post-install");
+        assert_eq!(
+            skill_sources.len(),
+            1,
+            "the installed manifest must drive exactly one bundle resolution"
+        );
+        assert!(skill_sources[0].join("SKILL.md").exists());
+
+        let _ = std::fs::remove_dir_all(home.version_root("0.95.0"));
+        let _ = std::fs::remove_file(crate::lifecycle_journal::journal_path("0.95.0"));
     }
 }
