@@ -562,6 +562,35 @@ pub fn cmd_rollback(home: &CognicodeHome, plugin: Option<String>) -> Result<()> 
     safe.rollback()
         .map_err(|e| anyhow!("rollback failed: {e}"))?;
 
+    // e88-F1: restore the tracker pin from the envelope. Newer journals
+    // carry a WroteTracker effect (handled by the reversal above), but
+    // journals persisted by versions where the effect was only recorded
+    // in-memory lack it. Defensively restore from `previous_tracker` when
+    // the tracker still pins this version, so reversal never leaves a
+    // stale pin pointing at a removed version tree.
+    let tracker_path = crate::layout::tracker_dir().join("version");
+    let still_pins = std::fs::read_to_string(&tracker_path)
+        .ok()
+        .map(|v| v.trim() == current_version)
+        .unwrap_or(false);
+    if still_pins {
+        match &envelope.previous_tracker {
+            Some(prev) => {
+                if let Some(parent) = tracker_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&tracker_path, prev)?;
+                println!("restored tracker pin to {prev}");
+            }
+            None => {
+                if tracker_path.exists() {
+                    std::fs::remove_file(&tracker_path)?;
+                    println!("cleared tracker pin (no previous version)");
+                }
+            }
+        }
+    }
+
     // WU2 retention: a successful rollback consumes the capability. The
     // journal file is removed only AFTER the reversal succeeded, so a
     // mid-failure still leaves the journal recoverable.
@@ -1220,9 +1249,19 @@ mod tests {
     #[test]
     #[serial]
     fn cmd_rollback_reverses_a_committed_install() {
+        let version = "0.95.0";
         let home_dir = tempfile::TempDir::new().unwrap();
+        // e88-F1 fix-flake: this test previously relied on the REAL
+        // ~/.cognicode (it never redirected COGNICODE_HOME), so it passed
+        // only when ambient state happened to contain a pin. Redirect so
+        // the module-level tracker/journal resolvers hit the sandbox.
+        redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
+        // The reversal restores the tracker from `previous_tracker`; pin the
+        // installed version (with 0.94.0 as its previous) so the round trip
+        // is observable.
+        crate::tracker::write_version(version).unwrap();
 
         // Simulate a committed install: write a manifest file and a journal
         // describing the side-effects. The journal's WroteManifest reverses
@@ -1231,7 +1270,6 @@ mod tests {
         // L5 (ADR-CANONICAL-LAYOUT): use the canonical version root, not
         // the legacy install/<v>/ which the producer stopped writing to
         // after L2.
-        let version = "0.95.0";
         let install_dir = home.version_root(version);
         std::fs::create_dir_all(&install_dir).unwrap();
         let manifest_path = install_dir.join("manifest.yaml");
@@ -1247,7 +1285,7 @@ mod tests {
         let envelope = crate::lifecycle_journal::PersistedJournal {
             version: version.to_string(),
             committed_at_unix: Some(0),
-            previous_tracker: None,
+            previous_tracker: Some("0.94.0".to_string()),
             effects: j,
         };
         let journal_path = crate::lifecycle_journal::journal_path(version);
@@ -1267,6 +1305,13 @@ mod tests {
         assert!(
             !journal_path.exists(),
             "journal must be removed after rollback"
+        );
+        // e88-F1: reversal must not leave a stale pin for the rolled-back
+        // version; the previous pin is restored.
+        assert_eq!(
+            crate::tracker::read_version_optional().as_deref(),
+            Some("0.94.0"),
+            "tracker must be restored to the previous version after rollback"
         );
     }
 

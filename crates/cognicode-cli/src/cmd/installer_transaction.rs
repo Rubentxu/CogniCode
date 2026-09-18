@@ -758,6 +758,17 @@ impl InstallerTransaction {
                     .map_err(|e| InstallerError::Io(manifest_path.clone(), e))?;
                 journal.record(SideEffect::WroteManifest(manifest_path.clone()));
 
+                // e88-F1: record the tracker write BEFORE persisting the
+                // journal. The on-disk envelope must contain WroteTracker so
+                // `cogh rollback` restores the previous pin (REQ-LJ-02);
+                // a journal persisted without it leaves a stale tracker pin
+                // pointing at a version tree that no longer exists.
+                let tracker_path = crate::layout::tracker_dir().join("version");
+                journal.record(SideEffect::WroteTracker {
+                    path: tracker_path,
+                    previous: previous_tracker.clone(),
+                });
+
                 // Persist the journal BEFORE we mark it committed, so the
                 // on-disk record reflects the side-effects even if the
                 // tracker write below fails. Errors are non-fatal for the
@@ -777,14 +788,6 @@ impl InstallerTransaction {
                         e
                     );
                 }
-
-                // Record the tracker write for the in-memory journal so that
-                // an in-process rollback (e.g. a test that fails after commit)
-                // can still restore it.
-                journal.record(SideEffect::WroteTracker {
-                    path: tracker_path,
-                    previous: previous_tracker,
-                });
 
                 // Commit journal (no-op, but marks as non-rollbackable)
                 journal.commit();
@@ -1018,6 +1021,70 @@ components:
                 .iter()
                 .any(|e| matches!(e, crate::rollback_journal::SideEffect::WroteManifest(_))),
             "persisted journal must include WroteManifest, got {:?}",
+            envelope.effects.effects()
+        );
+
+        let _ = std::fs::remove_file(&manifest_path);
+        let _ = std::fs::remove_file(&journal_path);
+    }
+
+    // ----- e88-F1: the PERSISTED journal must include WroteTracker -----
+    //
+    // Regression: `commit()` used to record the tracker write only in the
+    // in-memory journal AFTER persisting, so the on-disk envelope lacked
+    // WroteTracker. `cogh rollback` then removed the version tree but left
+    // a stale tracker pin (doctor reported UNHEALTHY on a healthy machine).
+
+    #[test]
+    #[serial_test::serial]
+    fn commit_persists_journal_with_tracker_effect() {
+        let _temphome = TempCognicodeHome::new();
+        let home =
+            crate::layout::CognicodeHome::resolve(None).expect("resolve home from COGNICODE_HOME");
+        let yaml = r#"
+apiVersion: cognicode.bundle/v2
+version: "0.94.0"
+platform: linux-x86-64
+profiles:
+  - name: core
+    description: core profile
+components:
+  - name: cognicode
+    kind: cognicode
+    version: "0.94.0"
+    artifact: cognicode-0.94.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.94.0/cognicode-0.94.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#;
+        let manifest = BundleManifest::from_str(yaml).unwrap();
+        // Simulate a previous install so `previous_tracker` is Some.
+        let tracker_path = crate::layout::tracker_dir().join("version");
+        std::fs::create_dir_all(tracker_path.parent().unwrap()).unwrap();
+        std::fs::write(&tracker_path, "0.93.0").unwrap();
+
+        let tx = InstallerTransaction::Running {
+            stage: InstallStage::WritingManifest,
+            journal: RollbackJournal::new(),
+            manifest,
+        };
+        let result = tx.commit(&home).expect("commit must succeed");
+        let manifest_path = match result {
+            InstallerTransaction::Committed { manifest_path } => manifest_path,
+            other => panic!("expected Committed, got {:?}", other),
+        };
+
+        let journal_path = crate::lifecycle_journal::journal_path("0.94.0");
+        let envelope = crate::lifecycle_journal::load_envelope(&journal_path).expect("load");
+        assert_eq!(envelope.previous_tracker.as_deref(), Some("0.93.0"));
+        assert!(
+            envelope
+                .effects
+                .effects()
+                .iter()
+                .any(|e| matches!(e, crate::rollback_journal::SideEffect::WroteTracker { .. })),
+            "e88-F1: persisted journal must include WroteTracker so rollback \
+             restores the previous pin, got {:?}",
             envelope.effects.effects()
         );
 
