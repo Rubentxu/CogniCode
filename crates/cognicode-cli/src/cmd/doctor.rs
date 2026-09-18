@@ -204,25 +204,85 @@ pub fn probe_core_health(home_root: &Path) -> DoctorCheck {
     DoctorCheck::pass("Core health", "home, bin/, shims/ present")
 }
 
-/// Probe 2: MCP health (cognicode-mcp availability).
+/// Probe 2: MCP health (cognicode-mcp availability) — e88-F2.
 ///
-/// We do NOT spawn the daemon here — the probe is "can the binary be
-/// located?", which is what the install contract guarantees. A full
-/// spawn probe belongs in WU6 runtime smoke; doctor stays lightweight.
+/// State-aware: the probe distinguishes ABSENT BY DESIGN from
+/// EXPECTED BUT BROKEN using the installed manifest as evidence
+/// (PRT-004: health of the product != availability of a capability).
+///
+///   - No tracker pin            -> Unavailable (no active runtime).
+///   - Tracker + no version tree -> Unavailable here; probe_core_health
+///     owns that FAIL (missing tree under an active pin).
+///   - Installed manifest declares `daemon-cli` and the shim exists
+///                               -> Pass.
+///   - Installed manifest declares `daemon-cli` but the shim is gone
+///                               -> Fail (expected-but-broken).
+///   - Installed manifest has no `daemon-cli` component
+///                               -> Unavailable (profile does not
+///                                  include the daemon capability).
+///
+/// No profile-name heuristics: the profile-filtered installed manifest
+/// is the single source of what this installation should contain.
 pub fn probe_mcp_health(home_root: &Path) -> DoctorCheck {
-    // L2 (ADR-CANONICAL-LAYOUT): the installer materialises the daemon
-    // under `versions/<v>/<name>/bin/<name>` and exposes it via
-    // `shims/<name>`. The old `bin/cognicode-mcp` probe predated the
-    // versions/ layout switch (ded95fbf) and always failed on a healthy
-    // install. The shim is the stable, version-independent entry point.
-    let mcp_shim = home_root.join("shims").join("cognicode-mcp");
-    if mcp_shim.exists() {
-        DoctorCheck::pass("MCP", "cognicode-mcp shim present")
-    } else {
-        DoctorCheck::fail(
+    let tracker_version = home_root.join("tracker").join("version");
+    let version = match std::fs::read_to_string(&tracker_version) {
+        Ok(v) if !v.trim().is_empty() => v.trim().to_string(),
+        _ => {
+            return DoctorCheck::unavailable(
+                "MCP",
+                "no active runtime (no version pinned in tracker)",
+                "run `cogh install mcp-server --profile reviewer` to install \
+                 a profile that includes the daemon",
+            );
+        }
+    };
+
+    let manifest_path = home_root
+        .join("versions")
+        .join(&version)
+        .join("manifest.yaml");
+    if !manifest_path.exists() {
+        // The version tree/manifest is missing under an active pin.
+        // probe_core_health surfaces this as a Fail; the MCP dimension
+        // cannot evaluate a nonexistent installation and must not
+        // double-claim the failure. Unavailable is honest here.
+        return DoctorCheck::unavailable(
             "MCP",
-            "cognicode-mcp binary not found",
-            "install a profile that includes the Daemon kind (e.g. `reviewer`)",
+            format!("active version {version} has no installed manifest; MCP not evaluated"),
+            "run `cogh install mcp-server --version <v> --profile reviewer` to reinstall",
+        );
+    }
+
+    let declares_daemon = crate::bundle_manifest::BundleManifest::from_path(&manifest_path)
+        .map(|m| {
+            m.components
+                .iter()
+                .any(|c| c.kind == crate::release_contract::ArtifactKind::DaemonCli)
+        })
+        .unwrap_or(false);
+
+    let mcp_shim = home_root.join("shims").join("cognicode-mcp");
+    if declares_daemon {
+        if mcp_shim.exists() {
+            DoctorCheck::pass(
+                "MCP",
+                "cognicode-mcp shim present (declared by active install)",
+            )
+        } else {
+            DoctorCheck::fail(
+                "MCP",
+                format!(
+                    "active install {version} declares a daemon-cli component but the \
+                     cognicode-mcp shim is missing"
+                ),
+                "run `cogh install mcp-server --version <v> --profile reviewer` to repair",
+            )
+        }
+    } else {
+        DoctorCheck::unavailable(
+            "MCP",
+            format!("active installation {version} does not include the daemon capability"),
+            "install a profile that includes the Daemon kind (e.g. `reviewer`) if you need MCP",
         )
     }
 }
@@ -390,8 +450,10 @@ mod tests {
     #[test]
     fn probe_mcp_health_passes_when_daemon_shim_present() {
         let home = tmp_home();
-        // L2 layout: the daemon is exposed via shims/, not bin/.
-        std::fs::create_dir_all(home.join("shims")).unwrap();
+        // e88-F2: presence alone is not enough — the probe uses the
+        // installed manifest as evidence. Plant an active install that
+        // declares the daemon plus the shim.
+        plant_active_install(&home, MANIFEST_WITH_DAEMON);
         std::fs::write(home.join("shims").join("cognicode-mcp"), b"fake").unwrap();
         let check = probe_mcp_health(&home);
         assert_eq!(check.status, CheckStatus::Pass);
@@ -403,7 +465,10 @@ mod tests {
         let home = tmp_home();
         std::fs::create_dir_all(home.join("shims")).unwrap();
         let check = probe_mcp_health(&home);
-        assert_eq!(check.status, CheckStatus::Fail);
+        // e88-F2: with no tracker pin there is no active runtime —
+        // absence of the daemon is ABSENT BY DESIGN (Unavailable),
+        // not a broken install (Fail).
+        assert_eq!(check.status, CheckStatus::Unavailable);
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -525,6 +590,132 @@ mod tests {
         assert_eq!(format!("{}", CheckStatus::Warn), "WARN");
         assert_eq!(format!("{}", CheckStatus::Fail), "FAIL");
         assert_eq!(format!("{}", CheckStatus::Unavailable), "UNAVAILABLE");
+    }
+
+    // ----- e88-F2: state-aware MCP probe matrix -----
+
+    const MANIFEST_WITH_DAEMON: &str = r#"
+apiVersion: cognicode.bundle/v2
+version: "0.97.0"
+platform: linux-x86-64
+profiles:
+  - name: reviewer
+    description: reviewer
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "0.97.0"
+    artifact: cognicode-mcp-0.97.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.97.0/cognicode-mcp-0.97.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [reviewer]
+"#;
+
+    const MANIFEST_WITHOUT_DAEMON: &str = r#"
+apiVersion: cognicode.bundle/v2
+version: "0.97.0"
+platform: linux-x86-64
+profiles:
+  - name: core
+    description: core
+components:
+  - name: cognicode
+    kind: cognicode
+    version: "0.97.0"
+    artifact: cognicode-0.97.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.97.0/cognicode-0.97.0-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#;
+
+    /// Fixture: an active pin plus a profile-filtered installed manifest.
+    fn plant_active_install(home: &Path, manifest_yaml: &str) {
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::fs::create_dir_all(home.join("shims")).unwrap();
+        std::fs::create_dir_all(home.join("tracker")).unwrap();
+        std::fs::write(home.join("tracker").join("version"), b"0.97.0").unwrap();
+        let vdir = home.join("versions").join("0.97.0");
+        std::fs::create_dir_all(&vdir).unwrap();
+        std::fs::write(vdir.join("manifest.yaml"), manifest_yaml).unwrap();
+    }
+
+    /// T1: clean uninstall (no tracker pin, layout intact) must NOT be
+    /// reported as UNHEALTHY — the tool returned the machine to the
+    /// exact state the user requested.
+    #[test]
+    fn t1_clean_uninstall_is_not_unhealthy() {
+        let home = tmp_home();
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::fs::create_dir_all(home.join("shims")).unwrap();
+        let report = run_doctor(&home);
+        assert!(
+            report.is_healthy(),
+            "post-uninstall state must be healthy; got {report}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// T2: active install declares daemon-cli + shim present -> PASS.
+    #[test]
+    fn t2_daemon_declared_and_shim_present_passes() {
+        let home = tmp_home();
+        plant_active_install(&home, MANIFEST_WITH_DAEMON);
+        std::fs::write(home.join("shims").join("cognicode-mcp"), b"fake").unwrap();
+        let check = probe_mcp_health(&home);
+        assert_eq!(check.status, CheckStatus::Pass);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// T3: daemon-cli declared but shim missing -> FAIL (expected-but-broken).
+    #[test]
+    fn t3_daemon_declared_but_shim_missing_fails() {
+        let home = tmp_home();
+        plant_active_install(&home, MANIFEST_WITH_DAEMON);
+        // no shim written
+        let check = probe_mcp_health(&home);
+        assert_eq!(check.status, CheckStatus::Fail);
+        let report = run_doctor(&home);
+        assert!(!report.is_healthy());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// T4: active manifest has NO daemon-cli -> non-failing (Unavailable).
+    #[test]
+    fn t4_no_daemon_declared_is_unavailable_not_fail() {
+        let home = tmp_home();
+        plant_active_install(&home, MANIFEST_WITHOUT_DAEMON);
+        let check = probe_mcp_health(&home);
+        assert_eq!(check.status, CheckStatus::Unavailable);
+        assert!(!check.detail.contains("not found"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// T5: tracker pins a version whose tree/manifest is gone -> Core FAIL.
+    #[test]
+    fn t5_active_pin_with_missing_tree_fails_core() {
+        let home = tmp_home();
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::fs::create_dir_all(home.join("shims")).unwrap();
+        std::fs::create_dir_all(home.join("tracker")).unwrap();
+        std::fs::write(home.join("tracker").join("version"), b"0.97.0").unwrap();
+        // no versions/0.97.0 at all
+        let core = probe_core_health(&home);
+        // Layout (bin/shims) is intact, so core itself stays Warn-level;
+        // the MCP probe must NOT fail — it defers to the missing-tree
+        // condition and reports Unavailable (not evaluated).
+        let mcp = probe_mcp_health(&home);
+        assert_eq!(mcp.status, CheckStatus::Unavailable);
+        assert_eq!(core.status, CheckStatus::Pass);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// T6: completely uninitialised home keeps existing semantics (FAIL
+    /// on Core health because the home does not exist).
+    #[test]
+    fn t6_uninitialised_home_unchanged() {
+        let home = tmp_home().join("nonexistent");
+        let report = run_doctor(&home);
+        assert!(!report.is_healthy());
     }
 
     #[test]
