@@ -243,6 +243,37 @@ under `skills_root`" (`read_dir().next()`) and
 - THEN the integration is skipped with an explicit notice
 - AND no on-disk directory is picked up as a fallback
 
+### Requirement: The install transaction materialises declared skill bundles
+
+The install transaction MUST extract each manifest-declared skill
+bundle for the active install profile from the download cache into
+`versions/<v>/skills/<SkillBundleId>/`. The `skill_bundles[]`
+declarations MUST survive the component profile filter (the
+SkillBundleId namespace is orthogonal to component profiles), so
+uninstall/integrate time sees the declarations of a release regardless
+of which components the chosen profile shipped.
+
+#### Scenario: Declared bundle is materialised at install time
+
+- GIVEN a manifest declaring skill bundle `skills-for-claude` for `core`
+- AND the cache holds `skills-for-claude.tar.gz`
+- WHEN the install transaction runs with profile `core`
+- THEN `versions/<v>/skills/skills-for-claude/` contains the bundle
+
+#### Scenario: Declarations survive the profile filter
+
+- GIVEN a manifest whose DaemonCli component is reviewer-only
+- AND the install ran with profile `core`
+- WHEN the installed `versions/<v>/manifest.yaml` is read
+- THEN its `skill_bundles[]` section is intact
+
+#### Scenario: Missing cache artifact fails loudly
+
+- GIVEN a declared skill bundle with no tarball in the download cache
+- WHEN the install transaction reaches extraction
+- THEN the install fails naming the id
+- AND no substitute directory is guessed
+
 ## Cross-references
 
 - ADR-036 — `IDE-abstraction-portable-skills-per-ide-adapters`
