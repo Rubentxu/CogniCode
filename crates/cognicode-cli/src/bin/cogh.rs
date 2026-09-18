@@ -84,7 +84,8 @@ pub enum Command {
     Install {
         /// Plugin name (e.g. mcp-server, opencode)
         plugin: String,
-        /// Version ref (e.g. 0.92.0, latest)
+        /// Version ref ("latest" or e.g. 0.96.0). Governs the core bundle:
+        /// the release is resolved remotely and its BundleManifest installed.
         #[arg(long, default_value = "latest")]
         version: String,
         /// Configure one or more IDEs (opencode, zcode, claude, codex, all)
@@ -93,6 +94,15 @@ pub enum Command {
         /// Installation profile (core, reviewer, full)
         #[arg(long, default_value = "core")]
         profile: String,
+        /// Channel selector (stable by default; preview not yet published)
+        #[arg(long, default_value = "stable")]
+        channel: String,
+        /// Override the GitHub base URL (for air-gapped installs and tests)
+        #[arg(long)]
+        base_url: Option<String>,
+        /// Read releases.json from this directory instead of hitting the API
+        #[arg(long)]
+        staging: Option<PathBuf>,
     },
     /// Uninstall a plugin version
     Uninstall {
@@ -255,10 +265,18 @@ fn main() -> anyhow::Result<()> {
             version,
             ide,
             profile,
+            channel,
+            base_url,
+            staging,
         } => {
-            // Always run the atomic bundle install first (per spec: "When
-            // `--profile` is also set, the atomic bundle install MUST run first")
-            install::run_install(&home, &profile)?;
+            // e87.1: the requested version governs the core bundle. Resolve
+            // the published release remotely (or from --staging), stage its
+            // BundleManifest, then run the atomic install. A remote failure
+            // is a hard error — never a DEV-fixture fallback.
+            let channel = channel
+                .parse::<lifecycle_resolver::Channel>()
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            layout::cmd_install(&home, &version, channel, base_url, staging, &profile)?;
 
             // Then dispatch to IDE adapters if --ide was provided
             if !ide.is_empty() {

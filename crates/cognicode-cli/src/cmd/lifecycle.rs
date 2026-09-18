@@ -19,7 +19,7 @@ use serde_json::Value;
 use super::ide::cmd_ide_install;
 use super::ide::detect_opencode;
 use super::install_lock;
-use super::layout::{CognicodeHome, cmd_init, cmd_install};
+use super::layout::{CognicodeHome, cmd_init, cmd_install_plugin_stub};
 use super::profile;
 use super::tracker;
 
@@ -97,6 +97,21 @@ fn setup_temp_home(tmp: &Path) -> Result<()> {
         std::env::remove_var("COGNICODE_HOME");
     }
     Ok(())
+}
+
+/// Plant a minimal `versions/<v>/` tree so `cmd_uninstall`'s "tree is the
+/// source of truth" gate (DEBT-4 WU3 / ded95fbf) treats the version as
+/// installed. The manifest content is not validated by the uninstall path.
+fn plant_version_tree(tmp: &Path, version: &str) {
+    let vdir = tmp.join(".cognicode/versions").join(version);
+    std::fs::create_dir_all(&vdir).unwrap();
+    std::fs::write(
+        vdir.join("manifest.yaml"),
+        format!(
+            "apiVersion: cognicode.bundle/v2\nkind: Bundle\nversion: \"{version}\"\nplatform: linux-x86-64\nprofiles:\n  - name: core\n    description: core\ncomponents:\n  - name: cognicode-mcp\n    kind: daemon-cli\n    version: \"{version}\"\n    artifact: cognicode-mcp-{version}-x86_64-unknown-linux-gnu.tar.gz\n    sha256: \"9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e\"\n    url: \"https://github.com/Rubentxu/CogniCode/releases/download/v{version}/cognicode-mcp-{version}-x86_64-unknown-linux-gnu.tar.gz\"\n    profiles: [core]\n"
+        ),
+    )
+    .unwrap();
 }
 
 /// Create an empty `~/.codex/config.toml` (for codex tests).
@@ -201,10 +216,9 @@ mod tests {
         // Initialize home directory (replaces setup_temp_home + cogh init subprocess)
         cmd_init(&home).unwrap();
 
-        // Call cmd_install directly instead of spawning cogh subprocess.
-        // cmd_install is a placeholder that parses + resolves manifest + prints args.
+        // Call the legacy stub directly (e87.1: the product `cogh install` path no longer routes here).
         // Note: version directory creation is not implemented in the placeholder.
-        cmd_install(&home, "mcp-server", "v0.93.0", &[]).unwrap();
+        cmd_install_plugin_stub(&home, "mcp-server", "v0.93.0", &[]).unwrap();
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -316,6 +330,7 @@ components:
         )
         .unwrap();
         let skill_dir = tmp.join(".config/opencode/skills/cognicode-0.92.0");
+        plant_version_tree(&tmp, "0.92.0");
         std::fs::create_dir_all(&skill_dir).unwrap();
         std::fs::write(skill_dir.join("SKILL.md"), "x").unwrap();
 
@@ -1122,26 +1137,40 @@ components:
         }
         create_opencode_config(&tmp).unwrap();
 
-        // The bundle install must succeed from a real generated release; the
-        // subprocess inherits this from the parent environment.
-        let release = crate::release_test_support::local_release(env!("CARGO_PKG_VERSION"))
-            .expect("stage a local release");
-        crate::release_test_support::point_at(&release);
+        // e87.1: `cogh install` resolves the release remotely before
+        // installing, so the subprocess needs a resolver seam. `--staging`
+        // with a ResolverFixture points the resolver at a loopback release;
+        // `COGNICODE_ASSET_BASE_URL` (set by TempBaseUrl) rewrites the
+        // component asset URLs onto the same loopback. The legacy
+        // `point_at` seam no longer drives the product install path.
+        let fx = crate::release_test_support::ResolverFixture::build("0.95.0")
+            .expect("build resolver fixture");
+        let _base = crate::layout::test_support::TempBaseUrl::set(&fx.release.base_url);
 
-        // Run `cogh install --ide opencode --profile core` via subprocess
+        // Run `cogh install --staging <dir> --ide opencode --profile core`
         let result = run_cogh(
             &tmp,
             &[
                 "install",
                 "mcp-server",
+                "--staging",
+                fx.staging_dir.to_str().unwrap(),
                 "--ide",
                 "opencode",
+                // reviewer includes the DaemonCli component, so the IDE
+                // integration gets a real shim command to patch in.
                 "--profile",
-                "core",
+                "reviewer",
             ],
         );
-        crate::release_test_support::unpoint();
-        assert!(result.is_ok(), "cogh install failed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "cogh install failed: {:?}",
+            result.as_ref().map(|o| (
+                String::from_utf8_lossy(&o.stdout).to_string(),
+                String::from_utf8_lossy(&o.stderr).to_string()
+            ))
+        );
 
         // Verify bundle install ran: tracker should be updated
         let tracker_path = tmp.join(".cognicode/tracker/version");
@@ -1282,6 +1311,7 @@ components:
         create_opencode_config(&tmp).unwrap();
 
         let cfg_path = tmp.join(".config/opencode/opencode.json");
+        plant_version_tree(&tmp, "0.95.0");
         let skill_dir = tmp.join(".config/opencode/skills/cognicode-0.95.0");
         std::fs::create_dir_all(&skill_dir).unwrap();
         std::fs::write(skill_dir.join("SKILL.md"), "x").unwrap();
@@ -1400,6 +1430,7 @@ components:
     fn t_e86_3_uninstall_unknown_ide_errors_cleanly() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-e863-unkide-{}", std::process::id()));
         setup_temp_home(&tmp).unwrap();
+        plant_version_tree(&tmp, "0.95.0");
 
         let out = run_cogh(
             &tmp,

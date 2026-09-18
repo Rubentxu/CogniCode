@@ -206,9 +206,9 @@ pub fn cmd_init(home: &CognicodeHome) -> Result<()> {
     Ok(())
 }
 
-// ===== cmd_install (full implementation, E32-B) =====
+// ===== legacy plugin-install stub (E32-B, superseded by e87.1 cmd_install) =====
 
-pub fn cmd_install(
+pub fn cmd_install_plugin_stub(
     home: &CognicodeHome,
     plugin: &str,
     version: &str,
@@ -396,32 +396,49 @@ pub fn cmd_latest(
     Ok(())
 }
 
-pub fn cmd_update(
+/// Resolve a published release for `requested_version` and stage its
+/// BundleManifest at `home.bundle_yaml_path()`.
+///
+/// e87.1 WU1: extracted verbatim from the pre-e87.1 body of `cmd_update` so
+/// that `cmd_install` and `cmd_update` share ONE resolve-and-stage path and
+/// cannot drift. `run_install` remains a primitive that consumes an already
+/// staged manifest — no networking moves inside `InstallerTransaction`.
+///
+/// Version consistency (e87.1 invariant): when an explicit version is
+/// requested, `requested == resolved.version` is enforced here — fail closed
+/// rather than let the user ask for A and install B. For `latest` the
+/// resolver's answer is authoritative by definition.
+///
+/// Testability: `staging_dir` (the e86 `releases.json` freeze seam) and
+/// `base_url` mirror `Command::Update`'s flags; `None`/`None` hits the real
+/// GitHub API. This seam is the Layer-1 resolver seam and is deliberately
+/// independent of install.sh's `COGNICODE_RELEASE_BASE_URL` bootstrap seam.
+fn resolve_and_stage_manifest(
     home: &CognicodeHome,
-    plugin: Option<String>,
+    requested_version: &str,
     channel: crate::lifecycle_resolver::Channel,
     base_url: Option<String>,
     staging: Option<PathBuf>,
-    profile: String,
-    dry_run: bool,
-) -> Result<()> {
-    let _ = plugin;
+) -> Result<crate::lifecycle_resolver::ResolvedRelease> {
     let req = crate::lifecycle_resolver::ResolveRequest {
         host_platform: platform_adapter::detect_host_platform(),
         channel,
-        requested_version: "latest".to_string(),
+        requested_version: requested_version.to_string(),
         base_url,
         staging_dir: staging,
     };
     let resolved = crate::lifecycle_resolver::resolve_release(&req)
-        .map_err(|e| anyhow!("failed to resolve latest release: {e}"))?;
+        .map_err(|e| anyhow!("failed to resolve release {requested_version:?}: {e}"))?;
 
-    if dry_run {
-        println!(
-            "would install {} from {}",
-            resolved.version, resolved.manifest_url
-        );
-        return Ok(());
+    if requested_version != "latest" {
+        let requested = requested_version.trim_start_matches('v');
+        if resolved.version != requested {
+            return Err(anyhow!(
+                "version mismatch: requested {requested}, release {} publishes manifest {}",
+                resolved.tag,
+                resolved.version
+            ));
+        }
     }
 
     // Download the manifest to ~/.cognicode/bundle.yaml.
@@ -438,6 +455,63 @@ pub fn cmd_update(
     }
     std::fs::write(&bundle_yaml_path, &manifest_yaml)
         .with_context(|| format!("write bundle manifest {}", bundle_yaml_path.display()))?;
+    Ok(resolved)
+}
+
+/// e87.1 WU2: product-facing install. The requested `version` governs the
+/// core bundle: it is resolved remotely (or from `--staging` in tests),
+/// staged at `~/.cognicode/bundle.yaml`, and only then handed to
+/// [`crate::install::run_install`].
+///
+/// DEV-fixture policy: unlike `InstallerTransaction::load_bundle_manifest`
+/// (which falls back to the dev fixture for low-level tests), a resolution
+/// failure here is a hard ERROR — a GitHub outage must never silently
+/// produce a dev-fixture install in the product path.
+pub fn cmd_install(
+    home: &CognicodeHome,
+    version: &str,
+    channel: crate::lifecycle_resolver::Channel,
+    base_url: Option<String>,
+    staging: Option<PathBuf>,
+    profile: &str,
+) -> Result<crate::lifecycle_resolver::ResolvedRelease> {
+    let resolved = resolve_and_stage_manifest(home, version, channel, base_url, staging)?;
+    println!(
+        "resolved {} (tag {}) for host platform",
+        resolved.version, resolved.tag
+    );
+    let _manifest_path = crate::install::run_install(home, profile)?;
+    Ok(resolved)
+}
+
+pub fn cmd_update(
+    home: &CognicodeHome,
+    plugin: Option<String>,
+    channel: crate::lifecycle_resolver::Channel,
+    base_url: Option<String>,
+    staging: Option<PathBuf>,
+    profile: String,
+    dry_run: bool,
+) -> Result<()> {
+    let _ = plugin;
+    if dry_run {
+        let req = crate::lifecycle_resolver::ResolveRequest {
+            host_platform: platform_adapter::detect_host_platform(),
+            channel,
+            requested_version: "latest".to_string(),
+            base_url,
+            staging_dir: staging,
+        };
+        let resolved = crate::lifecycle_resolver::resolve_release(&req)
+            .map_err(|e| anyhow!("failed to resolve latest release: {e}"))?;
+        println!(
+            "would install {} from {}",
+            resolved.version, resolved.manifest_url
+        );
+        return Ok(());
+    }
+
+    resolve_and_stage_manifest(home, "latest", channel, base_url, staging)?;
 
     // Delegate to the existing single install pipeline.
     let _manifest_path = crate::install::run_install(home, &profile)?;
@@ -775,6 +849,179 @@ mod tests {
     use crate::lifecycle_resolver::Channel;
     use crate::release_contract::bundle_manifest_filename;
     use serial_test::serial;
+
+    // ===== e87.1 — install/resolver bridge =====
+    //
+    // WU0 characterization + strict tests T1/T2/T4. These exercise the
+    // PRODUCT install path (`cmd_install`), driven through the e86
+    // `lifecycle_resolver` (via `--staging`), with NO
+    // `COGNICODE_BUNDLE_MANIFEST` seam and NO DEV fixture involvement.
+
+    #[test]
+    #[serial]
+    fn e871_t1_requested_version_governs_install() {
+        use crate::release_test_support::ResolverFixture;
+
+        let _home = test_support::TempCognicodeHome::new();
+        let fx = ResolverFixture::build("0.95.0").expect("build resolver fixture");
+        let _base = test_support::TempBaseUrl::set(&fx.release.base_url);
+        let _opencode = test_support::TempOpenCodeConfig::disable();
+        let home = CognicodeHome::resolve(Some(_home.path())).expect("resolve home");
+        home.init().expect("home.init");
+
+        let resolved = cmd_install(
+            &home,
+            "0.95.0",
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "core",
+        )
+        .expect("cmd_install must honor the requested version");
+
+        // requested == resolved == installed == tracker
+        assert_eq!(resolved.version, "0.95.0");
+        let bundle = std::fs::read_to_string(home.bundle_yaml_path()).unwrap();
+        assert!(bundle.contains("0.95.0"), "bundle.yaml must be 0.95.0");
+        assert_eq!(
+            std::fs::read_to_string(home.tracker_version())
+                .unwrap()
+                .trim(),
+            "0.95.0",
+            "tracker must equal the requested version"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn e871_t2_pairwise_requested_987_installs_987_not_dev_fixture() {
+        use crate::release_test_support::ResolverFixture;
+
+        // The adversarial pin: requested 9.8.7, published fixture 9.8.7.
+        // The DEV fixture (0.95.x-era) represents a different version, so if
+        // the product path fell back to it, the tracker could never read
+        // 9.8.7. Before e87.1 this test failed: `--version` was parsed but
+        // never governed the core bundle.
+        let _home = test_support::TempCognicodeHome::new();
+        let fx = ResolverFixture::build("9.8.7").expect("build resolver fixture 9.8.7");
+        let _base = test_support::TempBaseUrl::set(&fx.release.base_url);
+        let _opencode = test_support::TempOpenCodeConfig::disable();
+        let home = CognicodeHome::resolve(Some(_home.path())).expect("resolve home");
+        home.init().expect("home.init");
+
+        let resolved = cmd_install(
+            &home,
+            "9.8.7",
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "core",
+        )
+        .expect("product install must consume the resolver, not the DEV fixture");
+
+        assert_eq!(resolved.version, "9.8.7");
+        assert_eq!(
+            std::fs::read_to_string(home.tracker_version())
+                .unwrap()
+                .trim(),
+            "9.8.7",
+            "installed version must be the requested 9.8.7 (DEV fixture never consumed)"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn e871_t3_latest_stages_resolved_manifest() {
+        use crate::release_test_support::ResolverFixture;
+
+        let _home = test_support::TempCognicodeHome::new();
+        let fx = ResolverFixture::build("0.95.0").expect("build resolver fixture");
+        let _base = test_support::TempBaseUrl::set(&fx.release.base_url);
+        let _opencode = test_support::TempOpenCodeConfig::disable();
+        let home = CognicodeHome::resolve(Some(_home.path())).expect("resolve home");
+        home.init().expect("home.init");
+
+        let resolved = cmd_install(
+            &home,
+            "latest",
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "core",
+        )
+        .expect("latest must resolve through the staging fixture");
+
+        assert_eq!(resolved.version, "0.95.0");
+        assert_eq!(
+            std::fs::read_to_string(home.tracker_version())
+                .unwrap()
+                .trim(),
+            "0.95.0"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn e871_t4_remote_resolution_failure_is_error_not_dev_fallback() {
+        // No COGNICODE_BUNDLE_MANIFEST, no bundle.yaml, no staging: the
+        // resolver must fail and the product path must ERROR — never fall
+        // back to the DEV fixture.
+        let _home = test_support::TempCognicodeHome::new();
+        let _opencode = test_support::TempOpenCodeConfig::disable();
+        let home = CognicodeHome::resolve(Some(_home.path())).expect("resolve home");
+        home.init().expect("home.init");
+        assert!(!home.bundle_yaml_path().exists());
+
+        let result = cmd_install(&home, "9.8.7", Channel::Stable, None, None, "core");
+        let err = result.expect_err("unresolvable version must be a hard error");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("failed to resolve") || msg.contains("resolve"),
+            "error must come from the resolver, got: {msg}"
+        );
+        // Dev fixture was never consumed: nothing got installed, tracker
+        // absent or unchanged, no versions/<anything>/ written.
+        let versions_dir = home.root.join("versions");
+        let n = std::fs::read_dir(&versions_dir)
+            .map(|d| d.count())
+            .unwrap_or(0);
+        assert_eq!(n, 0, "no version dir may exist after a failed resolve");
+    }
+
+    #[test]
+    #[serial]
+    fn e871_version_mismatch_fails_closed() {
+        // requested 1.2.3 but the staging publishes 0.95.0 -> hard error,
+        // never an install of B when the user asked for A.
+        use crate::release_test_support::ResolverFixture;
+
+        let _home = test_support::TempCognicodeHome::new();
+        let fx = ResolverFixture::build("0.95.0").expect("build resolver fixture");
+        let _base = test_support::TempBaseUrl::set(&fx.release.base_url);
+        let _opencode = test_support::TempOpenCodeConfig::disable();
+        let home = CognicodeHome::resolve(Some(_home.path())).expect("resolve home");
+        home.init().expect("home.init");
+
+        let err = cmd_install(
+            &home,
+            "1.2.3",
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "core",
+        )
+        .expect_err("requested 1.2.3 against a 0.95.0 release must fail closed");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("version mismatch"),
+            "must report the pairwise mismatch, got: {msg}"
+        );
+        // bundle.yaml must NOT have been staged from the wrong release.
+        assert!(
+            !home.bundle_yaml_path().exists(),
+            "mismatched manifest must never reach bundle.yaml"
+        );
+    }
 
     #[test]
     fn resolve_from_explicit_path() {
