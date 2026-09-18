@@ -591,4 +591,56 @@ mod tests {
         std::fs::create_dir_all(&p).unwrap();
         p
     }
+
+    /// DEBT-2 closeout tripwire: a stale symlink at the IDE destination
+    /// (e.g. from a prior install pointing at a wiped temp home) is
+    /// replaced, not an error. Reinstall must be idempotent.
+    #[test]
+    fn link_or_copy_replaces_stale_symlink() {
+        let tmp = tempdir();
+        let src = tmp.join("src.txt");
+        std::fs::write(&src, b"new").unwrap();
+        let dst = tmp.join("dst.txt");
+        std::os::unix::fs::symlink(tmp.join("vanished-target"), &dst).unwrap();
+        assert!(dst.is_symlink());
+
+        LinuxAdapter
+            .link_or_copy(&src, &dst)
+            .expect("stale symlink must be replaced, not fail");
+
+        assert!(dst.is_symlink());
+        assert_eq!(std::fs::read(&dst).unwrap(), b"new");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// DEBT-2 closeout tripwire: a real regular file at the destination
+    /// is a user artifact — link_or_copy must not clobber it silently
+    /// nor corrupt it; it fails loudly instead.
+    #[test]
+    fn link_or_copy_never_overwrites_regular_file() {
+        let tmp = tempdir();
+        let src = tmp.join("src.txt");
+        std::fs::write(&src, b"new").unwrap();
+        let dst = tmp.join("dst.txt");
+        std::fs::write(&dst, b"user data").unwrap();
+
+        let result = LinuxAdapter.link_or_copy(&src, &dst);
+        if result.is_ok() {
+            // If the implementation chooses to succeed, the user file
+            // must be intact — never replaced by the link.
+            assert_eq!(
+                std::fs::read(&dst).unwrap(),
+                b"user data",
+                "a real regular file at the destination must never be clobbered"
+            );
+        } else {
+            assert_eq!(
+                std::fs::read(&dst).unwrap(),
+                b"user data",
+                "a failed link_or_copy must leave the user file intact"
+            );
+        }
+        assert!(!dst.is_symlink(), "user file must not become a symlink");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }
