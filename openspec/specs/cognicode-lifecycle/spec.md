@@ -197,3 +197,91 @@ installed version and the available versions.
 
 - **2026-08-10 (E32-C plan)**: Spec drafted. Lifecycle semantics
   documented (idempotent install, atomic rollback, lock pin).
+
+### Requirement: Rollback journal is a one-shot capability (DEBT-4)
+
+The rollback journal (`~/.cognicode/journal/<version>.json`) is a
+one-shot operational capability to undo ONE committed lifecycle
+transition. It is NOT an audit log, NOT an install registry, and NOT
+history. History/audit belongs to a future separate concept.
+
+#### Scenario: applicability is explicit
+
+- GIVEN version B is pinned in the tracker
+- AND a journal for B exists
+- WHEN `cogh rollback` runs
+- THEN the journal for B is executed
+- AND on success the journal is consumed (removed)
+- AND a second `cogh rollback` reports "nothing applicable" without
+  mutating any state
+
+#### Scenario: no tracker means no implicit rollback
+
+- GIVEN no version is pinned in the tracker
+- AND journals exist on disk for several versions
+- WHEN `cogh rollback` runs
+- THEN it reports "nothing to roll back"
+- AND no journal is selected by semver, lexicographic, or any other
+  heuristic order
+- AND no journal is executed or consumed
+
+#### Scenario: stale journal fails closed
+
+- GIVEN the tracker pins version B
+- AND the journal file for B describes version C
+- WHEN `cogh rollback` runs
+- THEN the command fails with an explicit "stale journal" error
+- AND no journal side-effect is executed
+
+#### Scenario: uninstall invalidates the journal
+
+- GIVEN version B is installed with a journal for B
+- WHEN `cogh uninstall ... 0.95.0` (B) completes
+- THEN the journal for B is removed
+- AND journals of other versions are untouched
+- AND if B was the active pin, the tracker is cleared (post-state is
+  explicitly "no current version"; no automatic restore of a previous
+  version)
+- AND uninstalling a non-active version leaves the tracker untouched
+
+#### Scenario: uninstall is idempotent
+
+- GIVEN version B was already uninstalled
+- WHEN `cogh uninstall ... 0.95.0` (B) runs again
+- THEN it reports "not installed; nothing to do" and succeeds
+- AND tracker/journal state is unchanged
+
+#### Scenario: journal removal only after success
+
+- GIVEN a rollback whose reversal fails partway
+- WHEN the rollback errors
+- THEN the journal file still exists (crash-safety ordering: consume
+  the capability only AFTER the invalidating operation succeeded)
+
+#### Scenario: deserialized journals are Drop-neutralized
+
+- GIVEN a journal is loaded from disk (`lifecycle_journal::load` or
+  `RollbackJournal::from_json`)
+- WHEN the loaded journal is dropped without an explicit `rollback()`
+  call
+- THEN no side-effect is reversed
+- (Architectural rule: a deserialized RollbackJournal MUST NOT retain
+  armed Drop rollback behaviour; pinning is enforced by the tripwire
+  `t_debt4_loaded_journal_is_drop_neutralized`.)
+
+### Requirement: multiple journals may exist but at most one applies
+
+Stale or historical journal files may accumulate (one per past
+transition target), but exactly zero or one journal is operationally
+applicable at any moment: the one whose version equals the tracker
+pin.
+
+#### Scenario: journal disagreement is never resolved by guessing
+
+- GIVEN the tracker pin and any journal on disk disagree
+- WHEN a rollback is attempted
+- THEN the answer is deterministic: refuse (fail closed) if the
+  journal file for the pinned version describes a different version,
+  report "nothing applicable" if it is absent
+- AND the disagreement is never resolved by picking a highest-version
+  or most-recent journal
