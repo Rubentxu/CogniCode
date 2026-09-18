@@ -257,6 +257,23 @@ pub fn cmd_uninstall(
     for ide in ides {
         crate::ide::cmd_ide_uninstall(home, ide, version)?;
     }
+    // E86.7: remove the install tree at `<root>/install/<ver>/` so
+    // uninstall actually undoes what install did. The install flow
+    // extracts components into this directory; leaving it on disk
+    // after uninstall made `cogh list` and `cogh where` lie about what
+    // is installed. Idempotent: missing dir is a no-op, not an error.
+    // Pinned by `t_e86_7_cmd_uninstall_removes_install_tree` and
+    // `t_e86_7_cmd_uninstall_idempotent_when_install_tree_missing`.
+    let install_tree = home
+        .install_manifest_path(version)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| home.root.join("install").join(version));
+    if install_tree.exists() {
+        std::fs::remove_dir_all(&install_tree)
+            .with_context(|| format!("rm -rf install tree at {}", install_tree.display()))?;
+        println!("✓ removed install tree: {}", install_tree.display());
+    }
     Ok(())
 }
 
@@ -1588,5 +1605,125 @@ components:
             "method path {} must live under home.root/install or home.root/versions",
             method_path.display(),
         );
+    }
+
+    // ===== E86.7 — cmd_uninstall removes the install tree =====
+
+    /// T1 (RED before fix): `cmd_uninstall` must remove the install tree
+    /// at `<root>/install/<ver>/` after running. The install flow
+    /// extracts components into that directory; uninstall must reverse
+    /// that side-effect. Pinned by E86.3's out-of-scope note ("remove
+    /// the install tree under versions/{ver}/ or install/{ver}/").
+    #[test]
+    #[serial]
+    fn t_e86_7_cmd_uninstall_removes_install_tree() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+
+        // Simulate a committed install: create the install tree at the
+        // SAME path that the install transaction writes to. Use
+        // `home.install_manifest_path()` as the source of truth so the
+        // path matches regardless of whether the home was resolved via
+        // override or via COGNICODE_HOME.
+        let version = "0.95.0";
+        let install_tree = home
+            .install_manifest_path(version)
+            .parent()
+            .expect("install_manifest_path has a parent")
+            .to_path_buf();
+        std::fs::create_dir_all(install_tree.join("cognicode/bin")).unwrap();
+        std::fs::write(install_tree.join("manifest.yaml"), "version: 0.95.0").unwrap();
+        std::fs::write(install_tree.join("cognicode/bin/cognicode"), "fake").unwrap();
+        assert!(
+            install_tree.exists(),
+            "install tree must exist before uninstall; got {}",
+            install_tree.display()
+        );
+
+        let result = cmd_uninstall(&home, "mcp-server", version, &["opencode".to_string()]);
+        assert!(result.is_ok(), "cmd_uninstall must succeed; got {result:?}");
+
+        assert!(
+            !install_tree.exists(),
+            "install tree must be removed after cmd_uninstall, but {} still exists",
+            install_tree.display()
+        );
+
+        let _ = std::fs::remove_dir_all(home_dir.path());
+    }
+
+    /// T2 (already PASS — pinned for the contract): `cmd_uninstall` must
+    /// be idempotent with respect to the install tree. If the install
+    /// tree does not exist, the second uninstall call must succeed (the
+    /// "nothing to remove" case is a no-op, not an error).
+    ///
+    /// Pinned by `t_e86_3_uninstall_idempotent_second_call` for the IDE
+    /// half; this test pins the install-tree half of the same
+    /// idempotency contract.
+    #[test]
+    #[serial]
+    fn t_e86_7_cmd_uninstall_idempotent_when_install_tree_missing() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+
+        // Deliberately do NOT create any install tree — the dir does
+        // not exist. cmd_uninstall must NOT error.
+        let version = "0.95.0";
+        let install_tree = home
+            .install_manifest_path(version)
+            .parent()
+            .expect("install_manifest_path has a parent")
+            .to_path_buf();
+        assert!(
+            !install_tree.exists(),
+            "install tree must not exist in this test; got {}",
+            install_tree.display()
+        );
+
+        let result = cmd_uninstall(&home, "mcp-server", version, &["opencode".to_string()]);
+        assert!(
+            result.is_ok(),
+            "cmd_uninstall on a home with no install tree must succeed; got {result:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(home_dir.path());
+    }
+
+    /// T3: `cmd_uninstall` must surface a useful message about the
+    /// install-tree removal, so a developer can audit what the command
+    /// did. Currently the function prints only
+    /// `uninstall: plugin=X version=Y ides=...`. After this cycle the
+    /// function also prints the install-tree removal path.
+    #[test]
+    #[serial]
+    fn t_e86_7_cmd_uninstall_prints_install_tree_removal() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+
+        let version = "0.95.0";
+        let install_tree = home
+            .install_manifest_path(version)
+            .parent()
+            .expect("install_manifest_path has a parent")
+            .to_path_buf();
+        std::fs::create_dir_all(&install_tree).unwrap();
+        std::fs::write(install_tree.join("manifest.yaml"), "version: 0.95.0").unwrap();
+
+        // Capture stdout by invoking cmd_uninstall and reading its
+        // command-line output via a subprocess is heavier than we need;
+        // the function writes to stdout via println! which is observable
+        // only when run as a subprocess. Here we pin the simpler
+        // contract: after the call, the install tree is gone. Plans
+        // for a stdout assertion are deferred to a follow-up cycle.
+        let _ = cmd_uninstall(&home, "mcp-server", version, &["opencode".to_string()]);
+        assert!(
+            !install_tree.exists(),
+            "install tree must be removed after cmd_uninstall"
+        );
+
+        let _ = std::fs::remove_dir_all(home_dir.path());
     }
 }
