@@ -29,10 +29,7 @@ impl InMemoryPatchArtifactSink {
 
     /// Number of stored artifacts.
     pub fn len(&self) -> usize {
-        self.entries
-            .lock()
-            .map(|m| m.len())
-            .unwrap_or_default()
+        self.entries.lock().map(|m| m.len()).unwrap_or_default()
     }
 
     /// Whether the store is empty.
@@ -109,7 +106,10 @@ mod tests {
         let patch = validate(&candidate("src/a.rs", "fn a() {}\n"));
         let r1 = sink.store(patch.clone()).unwrap();
         let r2 = sink.store(patch).unwrap();
-        assert_eq!(r1, r2, "identical patches must collapse to one content address");
+        assert_eq!(
+            r1, r2,
+            "identical patches must collapse to one content address"
+        );
         assert_eq!(sink.len(), 1);
         assert!(sink.contains(&r1));
         assert!(r1.as_str().starts_with("sha256:"));
@@ -118,10 +118,17 @@ mod tests {
     #[test]
     fn different_content_yields_different_refs() {
         let sink = InMemoryPatchArtifactSink::new();
-        let a = sink.store(validate(&candidate("src/a.rs", "fn a() {}\n"))).unwrap();
-        let b = sink.store(validate(&candidate("src/b.rs", "fn b() {}\n"))).unwrap();
+        let a = sink
+            .store(validate(&candidate("src/a.rs", "fn a() {}\n")))
+            .unwrap();
+        let b = sink
+            .store(validate(&candidate("src/b.rs", "fn b() {}\n")))
+            .unwrap();
         assert_ne!(a, b);
         assert_eq!(sink.len(), 2);
-        assert_eq!(sink.get(&a).unwrap(), validate(&candidate("src/a.rs", "fn a() {}\n")).canonical_bytes());
+        assert_eq!(
+            sink.get(&a).unwrap(),
+            validate(&candidate("src/a.rs", "fn a() {}\n")).canonical_bytes()
+        );
     }
 }

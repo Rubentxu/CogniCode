@@ -695,7 +695,11 @@ async fn e82_1_budget_exhausted_event_shape_is_unchanged() {
         .caused_by
         .expect("budget_exhausted is caused by behavior.started");
     assert_eq!(cause, outcome.started_event);
-    let started = log.by_id(&ws(), cause).await.unwrap().expect("started event");
+    let started = log
+        .by_id(&ws(), cause)
+        .await
+        .unwrap()
+        .expect("started event");
     assert_eq!(started.kind.as_str(), "behavior.started");
 
     // Scope carried verbatim.
@@ -730,8 +734,14 @@ async fn e82_1_budget_exhausted_event_shape_is_unchanged() {
         fields.get("kind").map(String::as_str),
         Some(exhaustion.kind.name())
     );
-    assert_eq!(fields.get("remaining").map(String::as_str), Some(remaining.as_str()));
-    assert_eq!(fields.get("attempted").map(String::as_str), Some(attempted.as_str()));
+    assert_eq!(
+        fields.get("remaining").map(String::as_str),
+        Some(remaining.as_str())
+    );
+    assert_eq!(
+        fields.get("attempted").map(String::as_str),
+        Some(attempted.as_str())
+    );
     assert_eq!(
         fields.get("execution_id").map(String::as_str),
         Some(context.execution_id.to_string().as_str())

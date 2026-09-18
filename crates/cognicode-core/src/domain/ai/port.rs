@@ -49,8 +49,15 @@ pub enum LlmPortError {
 impl fmt::Display for LlmPortError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::BudgetExceeded { kind, observed, limit } => {
-                write!(f, "budget exceeded for {kind}: observed={observed}, limit={limit}")
+            Self::BudgetExceeded {
+                kind,
+                observed,
+                limit,
+            } => {
+                write!(
+                    f,
+                    "budget exceeded for {kind}: observed={observed}, limit={limit}"
+                )
             }
             Self::InvalidToolSurface(s) => write!(f, "invalid tool surface: {s}"),
             Self::NoResponseForFrame => f.write_str("no scripted response for this frame"),
@@ -70,5 +77,9 @@ pub trait LlmPort {
     ///    the response.
     /// 2. Honour the frame's budget.
     /// 3. Produce a response whose `observed_read_set` is auditable.
-    fn complete(&self, request: &InvestigationRequest, frame: &InvestigationFrame) -> Result<LlmResponse, LlmPortError>;
+    fn complete(
+        &self,
+        request: &InvestigationRequest,
+        frame: &InvestigationFrame,
+    ) -> Result<LlmResponse, LlmPortError>;
 }

@@ -176,7 +176,9 @@ mod tests {
             .expect("one admitted constraint")
             .clone();
         // The clean source has zero `use` statements → zero violations.
-        let report = registry.evaluate(&constraint, &ArchitectureSource::default()).unwrap();
+        let report = registry
+            .evaluate(&constraint, &ArchitectureSource::default())
+            .unwrap();
         assert!(report.violations.is_empty());
     }
 
@@ -214,6 +216,9 @@ mod tests {
         };
         let report = registry.evaluate(&constraint, &source).unwrap();
         assert_eq!(report.violations.len(), 1);
-        assert_eq!(report.violations[0].finding_kind.as_str(), "architecture.forbidden_dependency");
+        assert_eq!(
+            report.violations[0].finding_kind.as_str(),
+            "architecture.forbidden_dependency"
+        );
     }
 }

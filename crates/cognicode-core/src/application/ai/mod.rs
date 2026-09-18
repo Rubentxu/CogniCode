@@ -28,6 +28,7 @@
 //! Real provider adapters (OpenAI, Anthropic, Ollama, …) are future
 //! work gated by DEBT-SDDK-003.
 
+#[cfg(test)]
 pub mod boundary_tests;
 pub mod critic;
 pub mod fake;
@@ -51,6 +52,6 @@ pub use fix_agent::{
 };
 pub use patch_sink::InMemoryPatchArtifactSink;
 pub use semantic_miner::{
-    build_request, candidate_for_layer_dependency, convert_response, MinerError, MinerOutput,
-    SemanticMiner,
+    MinerError, MinerOutput, SemanticMiner, build_request, candidate_for_layer_dependency,
+    convert_response,
 };

@@ -415,23 +415,27 @@ mod tests {
         )
         .unwrap();
         assert!(f.id().get() != 0);
-        assert_eq!(f.question(), "what architectural constraints should this snapshot have?");
+        assert_eq!(
+            f.question(),
+            "what architectural constraints should this snapshot have?"
+        );
         assert_eq!(f.scope().workspace.as_str(), "ws");
         assert_eq!(f.scope().snapshot.get(), 7);
     }
 
     #[test]
     fn an_empty_question_is_rejected() {
-        let err = InvestigationFrame::try_new(ctx(), "   ", scope(), InvestigationBudget::default())
-            .unwrap_err();
+        let err =
+            InvestigationFrame::try_new(ctx(), "   ", scope(), InvestigationBudget::default())
+                .unwrap_err();
         assert_eq!(err, InvestigationFrameError::EmptyQuestion);
     }
 
     #[test]
     fn an_invalid_snapshot_is_rejected() {
         let s = InvestigationScope::empty(WorkspaceId::try_new("ws").unwrap(), SnapshotId::NONE);
-        let err = InvestigationFrame::try_new(ctx(), "q", s, InvestigationBudget::default())
-            .unwrap_err();
+        let err =
+            InvestigationFrame::try_new(ctx(), "q", s, InvestigationBudget::default()).unwrap_err();
         assert_eq!(err, InvestigationFrameError::InvalidSnapshot);
     }
 

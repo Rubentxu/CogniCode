@@ -100,11 +100,7 @@ impl ControlledMutation {
     /// mutating `expected_oracle_ids` or `forbidden_oracle_ids`
     /// after construction — once declared, the expectations are
     /// sealed.
-    pub fn new(
-        id: impl Into<String>,
-        kind: MutationKind,
-        description: impl Into<String>,
-    ) -> Self {
+    pub fn new(id: impl Into<String>, kind: MutationKind, description: impl Into<String>) -> Self {
         Self {
             id: id.into(),
             kind,
@@ -253,8 +249,7 @@ mod tests {
     #[test]
     fn canonical_corpus_covers_all_four_kinds() {
         let corpus = MutationCorpus::canonical();
-        let kinds: std::collections::HashSet<_> =
-            corpus.mutations.iter().map(|m| m.kind).collect();
+        let kinds: std::collections::HashSet<_> = corpus.mutations.iter().map(|m| m.kind).collect();
         assert!(kinds.contains(&MutationKind::GroundingMismatch));
         assert!(kinds.contains(&MutationKind::SemanticCallChange));
         assert!(kinds.contains(&MutationKind::ArchitectureBoundaryViolation));
@@ -326,20 +321,32 @@ mod tests {
         observed.remove("grounding.fact.unsourced");
         let report = FalseNegativeReport::from_observations(&corpus, &observed);
         assert_eq!(report.count, 1);
-        assert_eq!(report.offending_mutations, vec!["m1.grounding_mismatch".to_string()]);
+        assert_eq!(
+            report.offending_mutations,
+            vec!["m1.grounding_mismatch".to_string()]
+        );
     }
 
     #[test]
     fn mutation_kind_label_is_stable() {
         // The labels are part of the audit-log contract; a test
         // pins them so accidental renames are caught.
-        assert_eq!(MutationKind::GroundingMismatch.label(), "grounding_mismatch");
-        assert_eq!(MutationKind::SemanticCallChange.label(), "semantic_call_change");
+        assert_eq!(
+            MutationKind::GroundingMismatch.label(),
+            "grounding_mismatch"
+        );
+        assert_eq!(
+            MutationKind::SemanticCallChange.label(),
+            "semantic_call_change"
+        );
         assert_eq!(
             MutationKind::ArchitectureBoundaryViolation.label(),
             "architecture_boundary_violation"
         );
-        assert_eq!(MutationKind::ReadSetRegression.label(), "read_set_regression");
+        assert_eq!(
+            MutationKind::ReadSetRegression.label(),
+            "read_set_regression"
+        );
     }
 
     #[test]
@@ -351,8 +358,8 @@ mod tests {
         let stripped = crate::application::portable_execution::strip_doc_comments_and_tests(full);
         let lower = stripped.to_lowercase();
         for forbidden in [
-            "podman", "systemd", "quadlet", "wsl", "hyper-v", "docker",
-            "rustc", "cargo ", "cargo.", "clippy",
+            "podman", "systemd", "quadlet", "wsl", "hyper-v", "docker", "rustc", "cargo ",
+            "cargo.", "clippy",
         ] {
             assert!(
                 !lower.contains(forbidden),

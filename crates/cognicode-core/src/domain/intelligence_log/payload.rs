@@ -134,7 +134,7 @@ impl BoundedEventPayload {
 
     /// Add or replace a field, enforcing the budget.
     pub fn with_field(
-        mut self,
+        self,
         key: impl Into<String>,
         value: impl Into<String>,
     ) -> Result<Self, PayloadError> {

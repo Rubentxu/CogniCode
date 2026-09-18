@@ -30,7 +30,7 @@ use crate::domain::analytics::descriptor::RunOutput;
 #[cfg(feature = "program-analysis-server")]
 use crate::domain::analytics::program_analysis::DFG;
 use crate::domain::analytics::program_analysis::{
-    CFG_PER_FUNCTION, DOMINATORS_CFG, INTERPROC_SUMMARY, SLICE_BACKWARD, SLICE_FORWARD, TAINT_FLOW,
+    CFG_PER_FUNCTION, DOMINATORS_CFG, SLICE_BACKWARD, SLICE_FORWARD, TAINT_FLOW,
 };
 use crate::domain::plan::limits::PlanLimits;
 

@@ -36,8 +36,8 @@ pub mod violation;
 pub use constraint::{
     Admitter, AdmitterRole, ArchitectureConstraint, ArchitectureConstraintId,
     ArchitectureConstraintKind, ArchitectureEvidence, ConstraintAdmission,
-    ConstraintAdmissionDisposition, ConstraintCandidate, ConstraintError,
-    ForbiddenDependencyRule, LayerDependencyRule, LayerId, NamespaceBoundaryRule,
+    ConstraintAdmissionDisposition, ConstraintCandidate, ConstraintError, ForbiddenDependencyRule,
+    LayerDependencyRule, LayerId, NamespaceBoundaryRule,
 };
-pub use use_parser::{parse_use_lines, UseStatement, UseStatementError};
+pub use use_parser::{UseStatement, UseStatementError, parse_use_lines};
 pub use violation::{ArchitectureViolation, ViolationId};

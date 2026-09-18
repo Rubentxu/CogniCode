@@ -65,9 +65,7 @@ pub mod report;
 #[path = "shadow_evaluation_tests.rs"]
 mod shadow_evaluation_tests;
 
-pub use analyzer::{
-    AnalyzerDescriptor, AnalyzerError, AnalyzerSide, AnalyzerUnderTest,
-};
+pub use analyzer::{AnalyzerDescriptor, AnalyzerError, AnalyzerSide, AnalyzerUnderTest};
 pub use classifiers::BuiltinFailureRegimeClassifier;
 pub use compare::{
     ScoreDelta, ShadowAggregateDelta, ShadowCaseComparison, ShadowError, aggregate_delta,

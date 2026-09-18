@@ -32,9 +32,9 @@ use cognicode_core::application::architecture::{
 };
 use cognicode_core::domain::architecture::{
     Admitter, AdmitterRole, ArchitectureConstraintId, ArchitectureConstraintKind,
-    LayerDependencyRule, NamespaceBoundaryRule, LayerId,
+    LayerDependencyRule, LayerId, NamespaceBoundaryRule,
 };
-use cognicode_core::domain::findings::{FindingGate, EvidenceClass, RiskLevel};
+use cognicode_core::domain::findings::{EvidenceClass, FindingGate, RiskLevel};
 
 const CORE_SRC_ROOT: &str = "src";
 
@@ -296,7 +296,10 @@ fn self_host_evaluator_finds_real_drift_in_synthetic_fixture() {
         1,
         "evaluator must find the synthetic drift"
     );
-    assert_eq!(report.violations[0].finding_kind.as_str(), "architecture.layer_dependency");
+    assert_eq!(
+        report.violations[0].finding_kind.as_str(),
+        "architecture.layer_dependency"
+    );
 }
 
 #[test]

@@ -74,8 +74,7 @@ use std::time::{Duration, Instant};
 use crate::application::evidence_bundle::EvidenceBundleId;
 use crate::application::portable_execution::backend::{BackendCapabilities, ExecutionBackend};
 use crate::application::portable_execution::native::{
-    bounded_capture, wait_with_timeout, WaitOutcome,
-    NATIVE_BUNDLE_ID,
+    NATIVE_BUNDLE_ID, WaitOutcome, bounded_capture, wait_with_timeout,
 };
 use crate::application::portable_execution::outcome::{
     BoundedViolation, ExecutionOutcome, Failure, Missing, MissingCapability, SuccessDetail,
@@ -264,7 +263,10 @@ impl ExecutionBackend for PodmanBackend {
         // through the label so the host-side log can join with the
         // application log.
         cmd.arg("--label");
-        cmd.arg(format!("cognicode.correlation={}", spec.correlation.as_str()));
+        cmd.arg(format!(
+            "cognicode.correlation={}",
+            spec.correlation.as_str()
+        ));
         cmd.arg("--label");
         cmd.arg(format!("cognicode.work={}", spec.work_id));
         cmd.arg("--label");
@@ -280,9 +282,19 @@ impl ExecutionBackend for PodmanBackend {
             let host = mount.host_path.to_string_lossy();
             let cont = mount.container_path.to_string_lossy();
             if mount.read_only {
-                cmd.arg(format!("--volume={}:{}:ro,{}", host, cont, propagation_arg(mount.propagation)));
+                cmd.arg(format!(
+                    "--volume={}:{}:ro,{}",
+                    host,
+                    cont,
+                    propagation_arg(mount.propagation)
+                ));
             } else {
-                cmd.arg(format!("--volume={}:{},{}", host, cont, propagation_arg(mount.propagation)));
+                cmd.arg(format!(
+                    "--volume={}:{},{}",
+                    host,
+                    cont,
+                    propagation_arg(mount.propagation)
+                ));
             }
         }
         // Working directory inside the container. We use the
@@ -306,7 +318,15 @@ impl ExecutionBackend for PodmanBackend {
         cmd.arg("docker.io/library/alpine:latest");
         cmd.arg("/bin/sh");
         cmd.arg("-c");
-        cmd.arg(format!("exec {} {}", spec.program, spec.argv.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" ")));
+        cmd.arg(format!(
+            "exec {} {}",
+            spec.program,
+            spec.argv
+                .iter()
+                .map(|a| shell_quote(a))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
 
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
@@ -418,7 +438,9 @@ fn bounded_violation(elapsed: Duration, limit: Duration) -> ExecutionOutcome {
     }
 }
 
-fn propagation_arg(p: crate::application::portable_execution::spec::MountPropagation) -> &'static str {
+fn propagation_arg(
+    p: crate::application::portable_execution::spec::MountPropagation,
+) -> &'static str {
     use crate::application::portable_execution::spec::MountPropagation as MP;
     match p {
         MP::Private => "private",
@@ -496,8 +518,8 @@ pub fn host_podman_endpoint() -> Result<PodmanEndpoint, DiscoveryError> {
 /// does not match. The Linux path is the production path.
 #[cfg(target_os = "linux")]
 pub mod linux {
-    use super::{DiscoveryError, PodmanEndpoint};
     use super::super::{PodmanDiscovery, ProbePodmanDiscovery};
+    use super::{DiscoveryError, PodmanEndpoint};
 
     /// Probe the local podman. Returns the direct endpoint if
     /// `podman info` succeeds, otherwise a `DiscoveryError`.
@@ -523,9 +545,7 @@ pub mod macos {
         match probe {
             Ok(out) if out.status.success() => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
-                let running = stdout
-                    .lines()
-                    .any(|line| line.ends_with("\ttrue"));
+                let running = stdout.lines().any(|line| line.ends_with("\ttrue"));
                 if running {
                     Ok(PodmanEndpoint {
                         argv_prefix: vec!["podman".into()],
@@ -562,7 +582,12 @@ pub mod windows {
         let (ok, argv_prefix, label) = match probe {
             Ok(out) if out.status.success() => (
                 true,
-                vec!["wsl".to_string(), "-d".to_string(), "podman".to_string(), "podman".to_string()],
+                vec![
+                    "wsl".to_string(),
+                    "-d".to_string(),
+                    "podman".to_string(),
+                    "podman".to_string(),
+                ],
                 "wsl-podman",
             ),
             _ => {

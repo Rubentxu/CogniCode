@@ -142,14 +142,19 @@ pub fn pair_case_results(
 
     let mut comparisons = Vec::with_capacity(current.cases().len());
     for case in current.cases() {
-        let other = candidate_index.get(&case.case_id).ok_or_else(|| {
-            ShadowError::MissingCase {
+        let other = candidate_index
+            .get(&case.case_id)
+            .ok_or_else(|| ShadowError::MissingCase {
                 role,
                 side: AnalyzerSide::Candidate,
                 case_id: case.case_id.clone(),
-            }
-        })?;
-        comparisons.push(build_comparison(case.case_id.clone(), role, &case.outcome, &other.outcome));
+            })?;
+        comparisons.push(build_comparison(
+            case.case_id.clone(),
+            role,
+            &case.outcome,
+            &other.outcome,
+        ));
     }
     for case in candidate.cases() {
         if !current_index.contains_key(&case.case_id) {

@@ -61,8 +61,6 @@ pub use case::{
 };
 pub use corpus::{CorpusError, HistoricalCorpus};
 pub use plan::{HistoricalReplayPlan, PlanError};
-pub use replay::{
-    HistoricalPredictor, ReplayCaseOutcome, ReplayCaseResult, ReplayIncomplete,
-};
+pub use replay::{HistoricalPredictor, ReplayCaseOutcome, ReplayCaseResult, ReplayIncomplete};
 pub use report::{ReplayReport, ReplayReports};
 pub use split::{DatasetRole, DatasetSplit, SplitError};

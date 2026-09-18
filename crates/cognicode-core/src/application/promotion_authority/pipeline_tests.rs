@@ -261,7 +261,10 @@ fn pipeline_trial_with_passing_evidence_yields_clean_promotion_and_permit() {
     }
 
     assert_eq!(permit.dry_run().lineage.base_snapshot, SnapshotId::new(10));
-    assert_eq!(permit.dry_run().lineage.current_snapshot, SnapshotId::new(10));
+    assert_eq!(
+        permit.dry_run().lineage.current_snapshot,
+        SnapshotId::new(10)
+    );
     assert!(permit.dry_run().lineage.base_matches_current);
 }
 

@@ -78,10 +78,10 @@ impl FindingAssembler {
             let binding = bindings
                 .get(index)
                 .ok_or(AssemblyError::EvidenceIndexOutOfRange { match_index, index })?;
-            if let Some(id) = binding.id() {
-                if !evidence.contains(&id) {
-                    evidence.push(id);
-                }
+            if let Some(id) = binding.id()
+                && !evidence.contains(&id)
+            {
+                evidence.push(id);
             }
         }
 

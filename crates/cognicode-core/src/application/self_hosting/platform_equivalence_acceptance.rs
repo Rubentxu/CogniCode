@@ -14,8 +14,8 @@
 #![cfg(feature = "evidence-kernel")]
 
 use crate::application::self_hosting::platform_equivalence::{
-    compare_platforms, DefaultNormaliser, Equivalence, HistoricalReplay, PlatformKind,
-    PlatformObservation,
+    DefaultNormaliser, Equivalence, HistoricalReplay, PlatformKind, PlatformObservation,
+    compare_platforms,
 };
 
 #[test]
@@ -94,15 +94,11 @@ fn acceptance_historical_replay_equivalence_binds_snapshot() {
     ];
     let replay = HistoricalReplay::observation_only("snapshot-digest-acceptance-v1", observations);
     assert_eq!(
-        replay.snapshot_digest,
-        "snapshot-digest-acceptance-v1",
+        replay.snapshot_digest, "snapshot-digest-acceptance-v1",
         "snapshot digest binding must be preserved"
     );
     let verdicts = replay.equivalence(&DefaultNormaliser);
-    assert_eq!(
-        verdicts.get("replay.line"),
-        Some(&Equivalence::Equivalent)
-    );
+    assert_eq!(verdicts.get("replay.line"), Some(&Equivalence::Equivalent));
     assert!(
         replay.score().is_none(),
         "observation-only replay has no associated sealed prediction"

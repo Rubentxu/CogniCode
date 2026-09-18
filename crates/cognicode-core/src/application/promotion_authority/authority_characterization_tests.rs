@@ -10,11 +10,11 @@
 //! seam map and `authority_tests.rs` for the exhaustive WU7 suite.
 
 use crate::application::change_proposal::proposal::RequestedBy;
-use crate::application::promotion_authority::authorization::{
-    PromotionAuthorizationError, PromotionAuthorizationPolicy, VerifiedExternalApproval,
-};
 use crate::application::promotion_authority::authority_test_support::{
     clean_dry_run, human, llm_agent, plugin, proposal, proposal_id,
+};
+use crate::application::promotion_authority::authorization::{
+    PromotionAuthorizationError, PromotionAuthorizationPolicy, VerifiedExternalApproval,
 };
 use crate::application::promotion_authority::permit::{
     PromotionApplyOutcome, PromotionPermitId, apply_with_permit, issue_promotion_permit,
@@ -26,7 +26,8 @@ use crate::domain::execution::actor::ActorRef;
 #[test]
 fn characterization_llmagent_author_is_refused_without_approval() {
     let p = proposal("p-1", llm_agent());
-    let trial = crate::application::promotion_authority::authority_test_support::passing_trial_for(&p);
+    let trial =
+        crate::application::promotion_authority::authority_test_support::passing_trial_for(&p);
     let run = clean_dry_run("p-1", &trial);
 
     let err = PromotionAuthorizationPolicy::authorize(&p, run, None)
@@ -41,7 +42,8 @@ fn characterization_llmagent_author_is_refused_without_approval() {
 #[test]
 fn characterization_plugin_author_is_refused_without_approval() {
     let p = proposal("p-1", plugin());
-    let trial = crate::application::promotion_authority::authority_test_support::passing_trial_for(&p);
+    let trial =
+        crate::application::promotion_authority::authority_test_support::passing_trial_for(&p);
     let run = clean_dry_run("p-1", &trial);
 
     let err = PromotionAuthorizationPolicy::authorize(&p, run, None)
@@ -57,7 +59,8 @@ fn characterization_plugin_author_is_refused_without_approval() {
 #[test]
 fn characterization_human_author_path_is_preserved() {
     let p = proposal("p-1", human());
-    let trial = crate::application::promotion_authority::authority_test_support::passing_trial_for(&p);
+    let trial =
+        crate::application::promotion_authority::authority_test_support::passing_trial_for(&p);
     let run = clean_dry_run("p-1", &trial);
 
     let authorization = PromotionAuthorizationPolicy::authorize(&p, run, None)
@@ -76,12 +79,16 @@ fn characterization_human_author_path_is_preserved() {
 #[test]
 fn characterization_actorref_human_is_still_only_a_claim() {
     let forged = ActorRef::human("alice");
-    assert_eq!(forged.kind, crate::domain::execution::actor::ActorKind::Human);
+    assert_eq!(
+        forged.kind,
+        crate::domain::execution::actor::ActorKind::Human
+    );
 
     // The claim does not produce authority. The only path from a claim to
     // `VerifiedExternalApproval` runs through a verifier.
     let p = proposal("p-1", llm_agent());
-    let trial = crate::application::promotion_authority::authority_test_support::passing_trial_for(&p);
+    let trial =
+        crate::application::promotion_authority::authority_test_support::passing_trial_for(&p);
     let run = clean_dry_run("p-1", &trial);
     let authorization = PromotionAuthorizationPolicy::authorize(&p, run, None);
     assert!(

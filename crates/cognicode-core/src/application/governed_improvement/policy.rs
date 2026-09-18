@@ -126,7 +126,11 @@ fn policy_digest(
     canonical.push('\n');
     canonical.push_str(&max_unknown.to_string());
     canonical.push('\n');
-    canonical.push_str(if require_complete { "require_complete" } else { "allow_incomplete" });
+    canonical.push_str(if require_complete {
+        "require_complete"
+    } else {
+        "allow_incomplete"
+    });
     canonical.push('\n');
     for regime in blocked {
         canonical.push_str(regime.name());
@@ -283,7 +287,9 @@ impl HeldOutPromotionGate {
         let candidate_incomplete = confirm.candidate_report().incomplete_cases();
         let incomplete_signal = current_incomplete > 0
             || candidate_incomplete > 0
-            || !confirm.regimes_of(FailureRegime::EvidenceIncomplete).is_empty();
+            || !confirm
+                .regimes_of(FailureRegime::EvidenceIncomplete)
+                .is_empty();
         let divergent = confirm
             .regimes_of(FailureRegime::PlatformDivergence)
             .iter()
@@ -369,7 +375,8 @@ impl HeldOutPromotionGate {
         confirm: &ShadowRoleReport,
         policy: &HeldOutPolicySpec,
     ) -> Result<HeldOutGatePass, HeldOutRejection> {
-        let decision = Self::evaluate(freeze, confirm, policy).map_err(HeldOutRejection::Identity)?;
+        let decision =
+            Self::evaluate(freeze, confirm, policy).map_err(HeldOutRejection::Identity)?;
         if decision.outcome != PolicyOutcome::Pass {
             return Err(HeldOutRejection::Decision(decision));
         }
@@ -454,9 +461,7 @@ impl HeldOutGatePass {
     }
 
     /// The candidate world the pass is about.
-    pub fn candidate_world(
-        &self,
-    ) -> &crate::application::software_world::world::SoftwareWorldId {
+    pub fn candidate_world(&self) -> &crate::application::software_world::world::SoftwareWorldId {
         &self.candidate_world
     }
 

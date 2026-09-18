@@ -37,9 +37,7 @@ use super::detector_ir::{
     DetectorAuthority, DetectorExecutionRef, DetectorId, DetectorIr, DetectorIrError,
 };
 use super::digest::DetectorDigest;
-use super::scope::AnalysisScope;
 use crate::domain::execution::ExecutionContext;
-use crate::domain::kernel_ids::ExecutionId;
 
 /// A non-empty detector version.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

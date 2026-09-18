@@ -200,9 +200,7 @@ fn collapse_dot_segments(s: &str) -> String {
 
     let mut out = String::new();
     out.push_str(&prefix);
-    let mut first = prefix.is_empty()
-        || prefix.ends_with('/')
-        || prefix.ends_with(':');
+    let mut first = prefix.is_empty() || prefix.ends_with('/') || prefix.ends_with(':');
     if stack.is_empty() {
         if prefix.is_empty() {
             out.push('.');
@@ -224,10 +222,7 @@ fn collapse_dot_segments(s: &str) -> String {
 fn split_prefix(s: &str) -> (String, &str) {
     if let Some(rest) = s.strip_prefix('/') {
         ("/".to_string(), rest)
-    } else if s.len() >= 2
-        && s.as_bytes()[1] == b':'
-        && s.as_bytes()[0].is_ascii_alphabetic()
-    {
+    } else if s.len() >= 2 && s.as_bytes()[1] == b':' && s.as_bytes()[0].is_ascii_alphabetic() {
         let prefix_len = if s.len() >= 3 && s.as_bytes()[2] == b'/' {
             3
         } else {
@@ -380,7 +375,10 @@ mod tests {
     fn wu4_dot_segments_are_collapsed_lexically() {
         assert_eq!(canon_posix("/tmp/./foo").as_str(), "/tmp/foo");
         assert_eq!(canon_posix("/tmp/foo/../bar").as_str(), "/tmp/bar");
-        assert_eq!(canon_posix("/tmp/foo/./bar/../baz").as_str(), "/tmp/foo/baz");
+        assert_eq!(
+            canon_posix("/tmp/foo/./bar/../baz").as_str(),
+            "/tmp/foo/baz"
+        );
     }
 
     #[test]
@@ -403,7 +401,10 @@ mod tests {
     #[test]
     fn wu4_temp_directories_canonicalise_to_a_stable_form() {
         // /tmp/foo and /tmp/./foo must collapse.
-        assert_eq!(canon_posix("/tmp/foo").as_str(), canon_posix("/tmp/./foo").as_str());
+        assert_eq!(
+            canon_posix("/tmp/foo").as_str(),
+            canon_posix("/tmp/./foo").as_str()
+        );
     }
 
     #[test]

@@ -19,12 +19,12 @@ use crate::application::change_proposal::proposal::{
     ChangeProposal, ChangeProposalId, ProposalKind, RequestedBy,
 };
 use crate::application::policy_gate::PolicyOutcome;
+use crate::application::promotion_authority::authorization::{
+    PromotionAuthorization, PromotionAuthorizationError, PromotionAuthorizationPolicy,
+};
 use crate::application::promotion_authority::evaluation::{
     PromotionBlockReason, PromotionDryRun, PromotionEvaluationInput, PromotionStatus,
     evaluate_promotion,
-};
-use crate::application::promotion_authority::authorization::{
-    PromotionAuthorization, PromotionAuthorizationError, PromotionAuthorizationPolicy,
 };
 use crate::application::promotion_authority::permit::{
     PromotionApplyError, PromotionApplyOutcome, PromotionPermitId, apply_with_permit,
@@ -311,7 +311,10 @@ fn assert_world_matches_permit_returns_error_on_drift() {
 fn permit_carries_full_dry_run_lineage() {
     let run = clean_dry_run();
     let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), authorized(run));
-    assert_eq!(permit.dry_run().status, PromotionStatus::CleanPromotionReady);
+    assert_eq!(
+        permit.dry_run().status,
+        PromotionStatus::CleanPromotionReady
+    );
     assert_eq!(permit.dry_run().lineage.proposal, proposal_id("p-1"));
     assert_eq!(
         permit.dry_run().lineage.base_world,

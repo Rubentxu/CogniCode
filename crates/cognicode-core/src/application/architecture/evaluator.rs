@@ -47,8 +47,8 @@
 use std::fmt;
 
 use crate::domain::architecture::{
-    ArchitectureConstraint, ArchitectureConstraintKind, ArchitectureViolation, ForbiddenDependencyRule,
-    LayerDependencyRule, NamespaceBoundaryRule, ViolationId,
+    ArchitectureConstraint, ArchitectureConstraintKind, ArchitectureViolation,
+    ForbiddenDependencyRule, LayerDependencyRule, NamespaceBoundaryRule, ViolationId,
 };
 use crate::domain::architecture::{LayerId, UseStatement};
 use crate::domain::findings::FindingKind;
@@ -135,8 +135,9 @@ impl ArchitectureEvaluator {
     ) -> Result<EvaluationReport, ArchitectureEvaluatorError> {
         let mut statements: Vec<UseStatement> = Vec::new();
         for file in &source.files {
-            let mut parsed = crate::domain::architecture::parse_use_lines(&file.source, &file.file_path)
-                .map_err(|e| ArchitectureEvaluatorError::ParseFailed(format!("{e:?}")))?;
+            let mut parsed =
+                crate::domain::architecture::parse_use_lines(&file.source, &file.file_path)
+                    .map_err(|e| ArchitectureEvaluatorError::ParseFailed(format!("{e:?}")))?;
             for stmt in &mut parsed {
                 stmt.module_path = file.module_path.clone();
             }
@@ -197,7 +198,9 @@ impl ArchitectureEvaluator {
                 if from_layer != rule.from_layer {
                     return false;
                 }
-                rule.forbidden_paths.iter().any(|p| stmt.path.starts_with(p))
+                rule.forbidden_paths
+                    .iter()
+                    .any(|p| stmt.path.starts_with(p))
             })
             .cloned()
             .collect()
@@ -243,12 +246,7 @@ impl ArchitectureEvaluator {
         let finding_kind = FindingKind::new(constraint.kind.finding_kind())
             .map_err(|_| ArchitectureEvaluatorError::BadConstraintId)?;
         let from_layer = layer_of(stmt);
-        let id = ViolationId::compute(
-            &constraint.id,
-            &stmt.file_path,
-            stmt.line,
-            &stmt.path,
-        );
+        let id = ViolationId::compute(&constraint.id, &stmt.file_path, stmt.line, &stmt.path);
         Ok(ArchitectureViolation {
             id,
             constraint_id: constraint.id.clone(),
@@ -374,8 +372,12 @@ mod tests {
                 source: "use crate::infrastructure::db;\n".into(),
             }],
         };
-        let a = ArchitectureEvaluator::new().evaluate(&constraint, &source).unwrap();
-        let b = ArchitectureEvaluator::new().evaluate(&constraint, &source).unwrap();
+        let a = ArchitectureEvaluator::new()
+            .evaluate(&constraint, &source)
+            .unwrap();
+        let b = ArchitectureEvaluator::new()
+            .evaluate(&constraint, &source)
+            .unwrap();
         assert_eq!(a.violations.len(), b.violations.len());
         assert_eq!(a.violations[0].id, b.violations[0].id);
     }
@@ -400,7 +402,10 @@ mod tests {
             .evaluate(&constraint, &source)
             .unwrap();
         assert_eq!(report.violations.len(), 1);
-        assert_eq!(report.violations[0].finding_kind.as_str(), "architecture.forbidden_dependency");
+        assert_eq!(
+            report.violations[0].finding_kind.as_str(),
+            "architecture.forbidden_dependency"
+        );
     }
 
     #[test]
@@ -423,7 +428,10 @@ mod tests {
             .evaluate(&constraint, &source)
             .unwrap();
         assert_eq!(report.violations.len(), 1);
-        assert_eq!(report.violations[0].finding_kind.as_str(), "architecture.namespace_boundary");
+        assert_eq!(
+            report.violations[0].finding_kind.as_str(),
+            "architecture.namespace_boundary"
+        );
     }
 
     /// The e77 first slice exposed a `Finding` with `Gated` authority
@@ -449,7 +457,10 @@ mod tests {
             .evaluate(&constraint, &source)
             .unwrap();
         let dbg = format!("{report:?}");
-        assert!(!dbg.contains("Gated"), "report must not contain Gated: {dbg}");
+        assert!(
+            !dbg.contains("Gated"),
+            "report must not contain Gated: {dbg}"
+        );
         // The primary output type is `EvaluationReport`, not a finding
         // shape. We assert the absence of the `findings` field by
         // checking the field name explicitly.

@@ -93,9 +93,10 @@ impl SealedPrediction {
             .map(|e| format!("{}|{}", e.id, e.expected_present))
             .collect::<Vec<_>>()
             .join("\n");
-        let seal_digest = crate::application::portable_execution::content_digest(canonical.as_bytes())
-            .as_str()
-            .to_string();
+        let seal_digest =
+            crate::application::portable_execution::content_digest(canonical.as_bytes())
+                .as_str()
+                .to_string();
         Self {
             label: label.into(),
             expected: sorted,
@@ -216,8 +217,10 @@ impl ScoreMatrix {
 /// invented unknown count.
 pub fn score(prediction: &SealedPrediction, observations: &[Observation]) -> ScoreMatrix {
     use std::collections::HashMap;
-    let obs_index: HashMap<&str, bool> =
-        observations.iter().map(|o| (o.id.as_str(), o.present)).collect();
+    let obs_index: HashMap<&str, bool> = observations
+        .iter()
+        .map(|o| (o.id.as_str(), o.present))
+        .collect();
     let mut matrix = ScoreMatrix::default();
     let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
     for exp in &prediction.expected {
@@ -271,14 +274,8 @@ mod tests {
 
     #[test]
     fn seal_is_invariant_to_input_order() {
-        let a = SealedPrediction::seal(
-            "t",
-            vec![exp("x", true), exp("y", false), exp("z", true)],
-        );
-        let b = SealedPrediction::seal(
-            "t",
-            vec![exp("z", true), exp("x", true), exp("y", false)],
-        );
+        let a = SealedPrediction::seal("t", vec![exp("x", true), exp("y", false), exp("z", true)]);
+        let b = SealedPrediction::seal("t", vec![exp("z", true), exp("x", true), exp("y", false)]);
         assert_eq!(a.seal_digest, b.seal_digest);
         assert_eq!(a.expected, b.expected);
     }
@@ -292,10 +289,7 @@ mod tests {
 
     #[test]
     fn score_perfect_match_yields_only_tp_and_tn() {
-        let p = SealedPrediction::seal(
-            "t",
-            vec![exp("a", true), exp("b", false), exp("c", true)],
-        );
+        let p = SealedPrediction::seal("t", vec![exp("a", true), exp("b", false), exp("c", true)]);
         let observations = vec![obs("a", true), obs("b", false), obs("c", true)];
         let m = score(&p, &observations);
         assert_eq!(m.true_positive, 2);
@@ -375,8 +369,8 @@ mod tests {
         let stripped = crate::application::portable_execution::strip_doc_comments_and_tests(full);
         let lower = stripped.to_lowercase();
         for forbidden in [
-            "podman", "systemd", "quadlet", "wsl", "hyper-v", "docker",
-            "rustc", "cargo ", "cargo.", "clippy",
+            "podman", "systemd", "quadlet", "wsl", "hyper-v", "docker", "rustc", "cargo ",
+            "cargo.", "clippy",
         ] {
             assert!(
                 !lower.contains(forbidden),

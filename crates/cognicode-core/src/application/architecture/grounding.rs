@@ -87,8 +87,8 @@ mod tests {
         Admitter, AdmitterRole, ArchitectureConstraintId, ArchitectureConstraintKind,
         LayerDependencyRule, LayerId, ViolationId,
     };
-    use crate::domain::findings::GroundingRef;
     use crate::domain::findings::FindingKind;
+    use crate::domain::findings::GroundingRef;
     use crate::domain::kernel_ids::FactId;
 
     fn violation(grounding: Option<GroundingRef>) -> ArchitectureViolation {
@@ -114,8 +114,7 @@ mod tests {
     #[test]
     fn ungrounded_violation_becomes_ungrounded_produced_evidence() {
         let v = violation(None);
-        let items = ArchitectureGroundingBridge::new()
-            .to_produced_evidence(&[v]);
+        let items = ArchitectureGroundingBridge::new().to_produced_evidence(&[v]);
         assert_eq!(items.len(), 1);
         assert!(items[0].grounding.is_none());
         assert_eq!(items[0].kind, EvidenceKind::ArchitectureSource);
@@ -125,8 +124,7 @@ mod tests {
     fn grounded_violation_becomes_grounded_produced_evidence() {
         let g = GroundingRef::fact(FactId::new(42));
         let v = violation(Some(g));
-        let items = ArchitectureGroundingBridge::new()
-            .to_produced_evidence(&[v]);
+        let items = ArchitectureGroundingBridge::new().to_produced_evidence(&[v]);
         assert_eq!(items.len(), 1);
         assert!(items[0].grounding.is_some());
         assert_eq!(items[0].grounding.unwrap().fact, FactId::new(42));
@@ -134,8 +132,7 @@ mod tests {
 
     #[test]
     fn empty_violations_yield_empty_produced_evidence() {
-        let items = ArchitectureGroundingBridge::new()
-            .to_produced_evidence(&[]);
+        let items = ArchitectureGroundingBridge::new().to_produced_evidence(&[]);
         assert!(items.is_empty());
     }
 }

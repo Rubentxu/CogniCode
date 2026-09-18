@@ -13,10 +13,12 @@
 //! an ADR string in the candidate field is **not enough** to produce
 //! findings. Only an admitted constraint can.
 
+use cognicode_core::application::architecture::admission::{
+    ArchitectureClock, SystemArchitectureClock,
+};
 use cognicode_core::application::architecture::{
     ArchitectureRegistry, ArchitectureSource, SourceFile,
 };
-use cognicode_core::application::architecture::admission::{ArchitectureClock, SystemArchitectureClock};
 use cognicode_core::domain::architecture::{
     Admitter, AdmitterRole, ArchitectureConstraintId, ArchitectureConstraintKind,
     ConstraintCandidate, ForbiddenDependencyRule, LayerDependencyRule, LayerId,
@@ -123,16 +125,21 @@ fn adr_text_alone_produces_zero_findings() {
         }],
     };
     let report = registry.evaluate_candidate(&candidate, &source);
-    assert!(report.is_err(), "registry must reject non-admitted candidates");
+    assert!(
+        report.is_err(),
+        "registry must reject non-admitted candidates"
+    );
 }
 
 /// **Row 2.** Once admitted, the constraint produces findings.
 #[test]
 fn admitted_constraint_produces_findings() {
     let mut registry = ArchitectureRegistry::new();
-    let out = registry
-        .admission
-        .admit(layer_candidate("architecture.admitted_emits"), &promoted_human(), &FixedClock("t0"));
+    let out = registry.admission.admit(
+        layer_candidate("architecture.admitted_emits"),
+        &promoted_human(),
+        &FixedClock("t0"),
+    );
     assert!(out.result.is_ok());
     let constraint = registry.admission.admitted().first().unwrap().clone();
 
@@ -166,9 +173,11 @@ fn non_promoted_admitter_cannot_admit() {
 #[test]
 fn ci_promoter_can_admit() {
     let mut registry = ArchitectureRegistry::new();
-    let out = registry
-        .admission
-        .admit(layer_candidate("architecture.ci_admit"), &ci_promoter(), &FixedClock("t0"));
+    let out = registry.admission.admit(
+        layer_candidate("architecture.ci_admit"),
+        &ci_promoter(),
+        &FixedClock("t0"),
+    );
     assert!(out.result.is_ok());
 }
 
@@ -177,13 +186,17 @@ fn ci_promoter_can_admit() {
 #[test]
 fn double_admission_is_rejected() {
     let mut registry = ArchitectureRegistry::new();
-    let out = registry
-        .admission
-        .admit(layer_candidate("architecture.double"), &promoted_human(), &FixedClock("t0"));
+    let out = registry.admission.admit(
+        layer_candidate("architecture.double"),
+        &promoted_human(),
+        &FixedClock("t0"),
+    );
     assert!(out.result.is_ok());
-    let out2 = registry
-        .admission
-        .admit(layer_candidate("architecture.double"), &promoted_human(), &FixedClock("t1"));
+    let out2 = registry.admission.admit(
+        layer_candidate("architecture.double"),
+        &promoted_human(),
+        &FixedClock("t1"),
+    );
     assert!(out2.result.is_err());
     assert_eq!(registry.admission.admitted().len(), 1);
 }
@@ -233,9 +246,11 @@ fn rule_kinds_are_independent() {
 #[test]
 fn empty_source_yields_zero_findings() {
     let mut registry = ArchitectureRegistry::new();
-    registry
-        .admission
-        .admit(layer_candidate("architecture.empty_source"), &promoted_human(), &FixedClock("t0"));
+    registry.admission.admit(
+        layer_candidate("architecture.empty_source"),
+        &promoted_human(),
+        &FixedClock("t0"),
+    );
     let constraint = registry.admission.admitted().first().unwrap().clone();
     let report = registry
         .evaluate(&constraint, &ArchitectureSource::default())
@@ -257,9 +272,11 @@ fn system_clock_produces_non_empty_string() {
 #[test]
 fn evaluation_is_deterministic() {
     let mut registry = ArchitectureRegistry::new();
-    registry
-        .admission
-        .admit(layer_candidate("architecture.deterministic"), &promoted_human(), &FixedClock("t0"));
+    registry.admission.admit(
+        layer_candidate("architecture.deterministic"),
+        &promoted_human(),
+        &FixedClock("t0"),
+    );
     let constraint = registry.admission.admitted().first().unwrap().clone();
     let source = ArchitectureSource {
         files: vec![SourceFile {
@@ -272,7 +289,10 @@ fn evaluation_is_deterministic() {
     let b = registry.evaluate(&constraint, &source).unwrap();
     assert_eq!(a.violations.len(), b.violations.len());
     assert_eq!(a.violations[0].id, b.violations[0].id);
-    assert_eq!(a.violations[0].dependency_path, b.violations[0].dependency_path);
+    assert_eq!(
+        a.violations[0].dependency_path,
+        b.violations[0].dependency_path
+    );
 }
 
 /// **Row 10.** An empty rule body is rejected (admission-level

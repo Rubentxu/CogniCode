@@ -39,8 +39,8 @@ pub use frame::{
     InvestigationScope,
 };
 pub use hypothesis::{
-    Critique, CritiqueDisposition, CritiqueError, Hypothesis, HypothesisConfidence, HypothesisError,
-    HypothesisId, HypothesisRef, HypothesisStatement,
+    Critique, CritiqueDisposition, CritiqueError, Hypothesis, HypothesisConfidence,
+    HypothesisError, HypothesisId, HypothesisRef, HypothesisStatement,
 };
 pub use patch::{
     PatchArtifactError, PatchArtifactSink, PatchBaseScope, PatchBudget, PatchRef,

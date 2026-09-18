@@ -23,10 +23,8 @@
 //! (no `Admitter`, no `admitted_at`, no `DetectorAuthority`).
 
 use crate::domain::ai::frame::InvestigationFrame;
-use crate::domain::ai::hypothesis::{
-    Critique, CritiqueDisposition, HypothesisRef,
-};
 pub use crate::domain::ai::hypothesis::CritiqueError;
+use crate::domain::ai::hypothesis::{Critique, CritiqueDisposition, HypothesisRef};
 use crate::domain::ai::port::LlmPort;
 use crate::domain::ai::request::{InvestigationRequest, RequestProvenance, ToolCall};
 use crate::domain::ai::response::{LlmResponse, ResponseOutput};
@@ -113,7 +111,10 @@ impl<'a> FindingCritic<'a> {
 
 /// Build the critique request. The instruction embeds the target
 /// list as bounded text. The tool surface is fixed (read-only).
-pub fn build_critique_request(frame: &InvestigationFrame, targets: &[CritiqueTarget]) -> InvestigationRequest {
+pub fn build_critique_request(
+    frame: &InvestigationFrame,
+    targets: &[CritiqueTarget],
+) -> InvestigationRequest {
     let mut instruction = String::from("critique the following findings: ");
     for (i, t) in targets.iter().enumerate() {
         if i > 0 {

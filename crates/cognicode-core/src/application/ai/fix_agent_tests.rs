@@ -13,16 +13,12 @@
 use std::path::{Path, PathBuf};
 
 use crate::application::ai::fake::{FakeLlmPort, ScriptKey};
-use crate::application::ai::fix_agent::{
-    FixAgent, FixAgentError, FixOutcome, build_fix_request,
-};
+use crate::application::ai::fix_agent::{FixAgent, FixAgentError, FixOutcome, build_fix_request};
 use crate::application::ai::fix_agent_test_support::{
     frame, frame_with_declared, response_for, response_with, scripted_port, snapshot, workspace,
 };
 use crate::application::ai::patch_sink::InMemoryPatchArtifactSink;
-use crate::application::change_proposal::proposal::{
-    ChangeProposalId, ProposalKind, RequestedBy,
-};
+use crate::application::change_proposal::proposal::{ChangeProposalId, ProposalKind, RequestedBy};
 use crate::application::promotion_authority::authorization::{
     ExternalApprovalAuthority, ExternalApprovalRequest, ExternalApprovalVerifier,
     PromotionApprovalTarget, PromotionAuthorizationError, PromotionAuthorizationPolicy,
@@ -31,14 +27,13 @@ use crate::application::promotion_authority::authorization::{
 use crate::application::promotion_authority::evaluation::{
     PromotionDryRun, PromotionLineage, PromotionStatus,
 };
-use crate::application::promotion_authority::permit::{
-    PromotionPermitId, issue_promotion_permit,
-};
+use crate::application::promotion_authority::permit::{PromotionPermitId, issue_promotion_permit};
 use crate::application::software_world::world::SoftwareWorldId;
 use crate::domain::ai::frame::InvestigationFrame;
 use crate::domain::ai::patch::{
-    PatchArtifactError, PatchArtifactSink, PatchBaseScope, PatchBudget, PatchRef, PatchValidationError,
-    SourceEdit, SourcePatchCandidate, ValidatedSourcePatch, validate_relative_path,
+    PatchArtifactError, PatchArtifactSink, PatchBaseScope, PatchBudget, PatchRef,
+    PatchValidationError, SourceEdit, SourcePatchCandidate, ValidatedSourcePatch,
+    validate_relative_path,
 };
 use crate::domain::ai::response::LlmResponse;
 use crate::domain::execution::actor::ActorRef;
@@ -58,10 +53,7 @@ fn candidate(path: &str, content: &str) -> SourcePatchCandidate {
     candidate_edits(vec![(path, content)], Some("fix the failing test"))
 }
 
-fn candidate_edits(
-    edits: Vec<(&str, &str)>,
-    rationale: Option<&str>,
-) -> SourcePatchCandidate {
+fn candidate_edits(edits: Vec<(&str, &str)>, rationale: Option<&str>) -> SourcePatchCandidate {
     SourcePatchCandidate {
         base_scope: PatchBaseScope::new(workspace(), snapshot()),
         edits: edits
@@ -151,7 +143,9 @@ fn c_absolute_paths_are_rejected() {
     let (outcome, sink) = propose(&frame, response);
     assert!(matches!(
         outcome,
-        Err(FixAgentError::Validation(PatchValidationError::AbsolutePath { .. }))
+        Err(FixAgentError::Validation(
+            PatchValidationError::AbsolutePath { .. }
+        ))
     ));
     assert!(sink.is_empty(), "a rejected patch must not be stored");
 }
@@ -171,7 +165,9 @@ fn d_path_traversal_is_rejected() {
     let (outcome, sink) = propose(&frame, response);
     assert!(matches!(
         outcome,
-        Err(FixAgentError::Validation(PatchValidationError::PathTraversal { .. }))
+        Err(FixAgentError::Validation(
+            PatchValidationError::PathTraversal { .. }
+        ))
     ));
     assert!(sink.is_empty());
 }
@@ -191,7 +187,9 @@ fn e_patch_outside_the_frame_scope_is_rejected() {
     let (outcome, sink) = propose(&frame, response);
     assert!(matches!(
         outcome,
-        Err(FixAgentError::Validation(PatchValidationError::BaseScopeMismatch { .. }))
+        Err(FixAgentError::Validation(
+            PatchValidationError::BaseScopeMismatch { .. }
+        ))
     ));
     assert!(sink.is_empty());
 
@@ -202,7 +200,9 @@ fn e_patch_outside_the_frame_scope_is_rejected() {
     let (outcome2, _sink2) = propose(&frame, response2);
     assert!(matches!(
         outcome2,
-        Err(FixAgentError::Validation(PatchValidationError::BaseScopeMismatch { .. }))
+        Err(FixAgentError::Validation(
+            PatchValidationError::BaseScopeMismatch { .. }
+        ))
     ));
 }
 
@@ -226,7 +226,9 @@ fn f_response_for_a_different_frame_is_rejected() {
     let (outcome, sink) = propose(&frame, response);
     assert!(matches!(
         outcome,
-        Err(FixAgentError::Validation(PatchValidationError::FrameMismatch { .. }))
+        Err(FixAgentError::Validation(
+            PatchValidationError::FrameMismatch { .. }
+        ))
     ));
     assert!(sink.is_empty());
     let _ = other;
@@ -248,7 +250,9 @@ fn g_wrong_request_digest_is_rejected() {
     let (outcome, sink) = propose(&frame, response);
     assert!(matches!(
         outcome,
-        Err(FixAgentError::Validation(PatchValidationError::RequestDigestMismatch { .. }))
+        Err(FixAgentError::Validation(
+            PatchValidationError::RequestDigestMismatch { .. }
+        ))
     ));
     assert!(sink.is_empty());
 }
@@ -307,15 +311,14 @@ fn i_empty_patch_is_rejected() {
 #[test]
 fn j_oversized_patch_is_rejected() {
     let f = frame();
-    let many = candidate_edits(
-        (0..40).map(|_| ("src/a.rs", "x")).collect(),
-        None,
-    );
+    let many = candidate_edits((0..40).map(|_| ("src/a.rs", "x")).collect(), None);
     let response = response_for(&f, many);
     let (outcome, _sink) = propose(&f, response);
     assert!(matches!(
         outcome,
-        Err(FixAgentError::Validation(PatchValidationError::TooManyEdits { .. }))
+        Err(FixAgentError::Validation(
+            PatchValidationError::TooManyEdits { .. }
+        ))
     ));
 
     // Payload budget: a tiny budget rejects a small patch.
@@ -327,12 +330,15 @@ fn j_oversized_patch_is_rejected() {
         max_edits: 32,
         max_payload_bytes: 8,
     };
-    let outcome2 = agent(&port, &sink)
-        .with_budget(small)
-        .propose(proposal_id("p-1"), base_world(), &f2);
+    let outcome2 =
+        agent(&port, &sink)
+            .with_budget(small)
+            .propose(proposal_id("p-1"), base_world(), &f2);
     assert!(matches!(
         outcome2,
-        Err(FixAgentError::Validation(PatchValidationError::PayloadTooLarge { .. }))
+        Err(FixAgentError::Validation(
+            PatchValidationError::PayloadTooLarge { .. }
+        ))
     ));
     assert!(sink.is_empty());
 }
@@ -347,7 +353,9 @@ fn k_duplicate_paths_are_rejected() {
     let (outcome, sink) = propose(&frame, response);
     assert!(matches!(
         outcome,
-        Err(FixAgentError::Validation(PatchValidationError::DuplicatePath { .. }))
+        Err(FixAgentError::Validation(
+            PatchValidationError::DuplicatePath { .. }
+        ))
     ));
     assert!(sink.is_empty());
 }
@@ -375,7 +383,12 @@ fn l_response_output_offers_no_authority_bearing_variant() {
     // Source audit: the response module's *code* must not mention authority
     // types (the doc comments legitimately discuss them).
     let src = strip_line_comments(&read_src("domain/ai/response.rs"));
-    for forbidden in ["PromotionPermit", "PromotionAuthorization", "Finding", "FactStore"] {
+    for forbidden in [
+        "PromotionPermit",
+        "PromotionAuthorization",
+        "Finding",
+        "FactStore",
+    ] {
         assert!(
             !src.contains(forbidden),
             "domain/ai/response.rs must not reference `{forbidden}` in code"
@@ -389,7 +402,9 @@ struct FailingSink;
 
 impl PatchArtifactSink for FailingSink {
     fn store(&self, _patch: ValidatedSourcePatch) -> Result<PatchRef, PatchArtifactError> {
-        Err(PatchArtifactError::Rejected("simulated sink failure".to_string()))
+        Err(PatchArtifactError::Rejected(
+            "simulated sink failure".to_string(),
+        ))
     }
 }
 
@@ -423,8 +438,14 @@ fn n_same_frame_and_response_yield_the_same_ref_and_proposal() {
     let (second, sink_b) = propose(&frame, mk());
     let first = first.expect("first run");
     let second = second.expect("second run");
-    assert_eq!(first.patch_ref, second.patch_ref, "content address must be stable");
-    assert_eq!(first.proposal, second.proposal, "proposal must be deterministic");
+    assert_eq!(
+        first.patch_ref, second.patch_ref,
+        "content address must be stable"
+    );
+    assert_eq!(
+        first.proposal, second.proposal,
+        "proposal must be deterministic"
+    );
     assert!(sink_a.contains(&first.patch_ref));
     assert!(sink_b.contains(&second.patch_ref));
     assert_eq!(first.lineage, second.lineage);
@@ -438,9 +459,11 @@ fn o_failed_sink_yields_no_proposal() {
     let response = response_for(&frame, candidate("src/a.rs", "fn a() {}\n"));
     let port = scripted_port(&frame, response);
     let sink = FailingSink;
-    let outcome = FixAgent::new(&port, &sink, "claude")
-        .unwrap()
-        .propose(proposal_id("p-1"), base_world(), &frame);
+    let outcome = FixAgent::new(&port, &sink, "claude").unwrap().propose(
+        proposal_id("p-1"),
+        base_world(),
+        &frame,
+    );
     assert!(matches!(outcome, Err(FixAgentError::Artifact(_))));
 }
 
@@ -450,7 +473,10 @@ fn p_malformed_candidate_stores_no_artifact() {
     let response = response_for(&frame, candidate("src/../escape.rs", "x"));
     let (outcome, sink) = propose(&frame, response);
     assert!(outcome.is_err());
-    assert!(sink.is_empty(), "malformed candidate must not reach the sink");
+    assert!(
+        sink.is_empty(),
+        "malformed candidate must not reach the sink"
+    );
 }
 
 // --- non-patch output ------------------------------------------------
@@ -472,7 +498,10 @@ fn a_non_patch_response_is_reported_not_coerced() {
         Err(FixAgentError::ResponseNotAPatchCandidate { actual }) => assert_eq!(actual, "advisory"),
         other => panic!("free-form text must not become a proposal, got {other:?}"),
     }
-    assert!(sink.is_empty(), "a non-patch response must not produce an artifact");
+    assert!(
+        sink.is_empty(),
+        "a non-patch response must not produce an artifact"
+    );
 }
 
 // --- WU9: e80a integration proof ------------------------------------
@@ -481,12 +510,15 @@ struct ApproveTarget(PromotionApprovalTarget);
 
 impl ExternalApprovalVerifier for ApproveTarget {
     fn verify(&self, request: &ExternalApprovalRequest) -> bool {
-        request.target == self.0 && request.claimed_approver.kind == crate::domain::execution::actor::ActorKind::Human
+        request.target == self.0
+            && request.claimed_approver.kind == crate::domain::execution::actor::ActorKind::Human
     }
 }
 
 /// Build a clean dry-run for `proposal` at base world `w-A` / snapshot 7.
-fn clean_dry_run(proposal: &crate::application::change_proposal::proposal::ChangeProposal) -> PromotionDryRun {
+fn clean_dry_run(
+    proposal: &crate::application::change_proposal::proposal::ChangeProposal,
+) -> PromotionDryRun {
     PromotionDryRun {
         status: PromotionStatus::CleanPromotionReady,
         lineage: PromotionLineage {
@@ -538,7 +570,10 @@ fn wu9_verified_external_approval_lets_the_existing_e80a_path_authorise() {
     let authorization = PromotionAuthorizationPolicy::authorize(&proposal, dry_run, Some(approval))
         .expect("verified approval authorises the automated proposal");
     let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), authorization);
-    assert_eq!(permit.external_approver().map(|a| a.id.as_str()), Some("alice"));
+    assert_eq!(
+        permit.external_approver().map(|a| a.id.as_str()),
+        Some("alice")
+    );
 }
 
 // --- source-audit helpers -------------------------------------------
@@ -576,7 +611,10 @@ fn no_ai_module_reaches_the_canonical_write_or_promotion_surface() {
             // Test modules legitimately exercise the boundary (WU9), so only
             // production modules are audited.
             let name = entry.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.ends_with("_tests.rs") || name.contains("test_support") || name == "boundary_tests.rs" {
+            if name.ends_with("_tests.rs")
+                || name.contains("test_support")
+                || name == "boundary_tests.rs"
+            {
                 continue;
             }
             let text = std::fs::read_to_string(&entry).unwrap_or_default();

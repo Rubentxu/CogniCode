@@ -69,8 +69,8 @@ use std::collections::BTreeMap;
 use crate::application::change_proposal::executor::TrialExecutor;
 use crate::application::change_proposal::trial::{TrialEvidence, TrialId, TrialInput};
 use crate::application::change_tracking::planner::WorkId as CiWorkId;
-use crate::application::evidence_bundle::{ProducerSlot, ProducerSource};
 use crate::application::evidence_bundle::BundleEntry;
+use crate::application::evidence_bundle::{ProducerSlot, ProducerSource};
 use crate::application::local_ci::WorkExecutor;
 use crate::application::policy_gate::{PolicyOutcome, PolicySpec};
 use crate::application::portable_execution::backend::ExecutionBackend;
@@ -150,7 +150,10 @@ impl BackendSelection {
     }
 
     /// Resolve the spec for a given `WorkId`.
-    pub fn spec_for(&self, work: &CiWorkId) -> Option<crate::application::portable_execution::spec::ExecutionSpec> {
+    pub fn spec_for(
+        &self,
+        work: &CiWorkId,
+    ) -> Option<crate::application::portable_execution::spec::ExecutionSpec> {
         self.specs.get(work).cloned()
     }
 }
@@ -213,10 +216,7 @@ pub fn drive_trial(
                     source: ProducerSource::Other,
                     slot_id: format!("portable_exec::{}", work),
                 },
-                why_unreachable: format!(
-                    "unavailable_capability: {} (work={})",
-                    capability, work
-                ),
+                why_unreachable: format!("unavailable_capability: {} (work={})", capability, work),
             },
             TrialDriverWorkOutcome::NoSpec => {
                 // No slot entry for un-registered work; the planner
@@ -243,10 +243,8 @@ fn run_affected_work(
     selection: &BackendSelection,
 ) -> Vec<(CiWorkId, TrialDriverWorkOutcome)> {
     let mut out = Vec::with_capacity(affected_work.len());
-    let facade = BackendFacadeWorkExecutor::new(
-        selection.backend(),
-        move |w| selection.spec_for(w),
-    );
+    let facade =
+        BackendFacadeWorkExecutor::new(selection.backend(), move |w| selection.spec_for(w));
     for work in affected_work {
         let Some(_spec) = selection.spec_for(work) else {
             out.push((work.clone(), TrialDriverWorkOutcome::NoSpec));
@@ -257,10 +255,12 @@ fn run_affected_work(
         //    and backend non-isolation;
         //  - call the backend otherwise and translate.
         let outputs = facade.execute(work);
-        let outcome = if outputs.iter().any(|o| matches!(
-            o.outcome,
-            crate::application::evidence_bundle::Outcome::Missing { .. }
-        )) {
+        let outcome = if outputs.iter().any(|o| {
+            matches!(
+                o.outcome,
+                crate::application::evidence_bundle::Outcome::Missing { .. }
+            )
+        }) {
             TrialDriverWorkOutcome::Unavailable {
                 capability: MissingCapability::IsolationBackend,
             }
@@ -296,8 +296,10 @@ mod tests {
         ChangeProposal, ChangeProposalId, ProposalKind, RequestedBy,
     };
     use crate::application::change_proposal::trial::TrialId;
-    use crate::application::evidence_bundle::{EvidenceBundle, EvidenceBundleId, ProducerSlot, ProducerSource};
     use crate::application::evidence_bundle::BundleEntry;
+    use crate::application::evidence_bundle::{
+        EvidenceBundle, EvidenceBundleId, ProducerSlot, ProducerSource,
+    };
     use crate::application::policy_gate::{GateRule, PolicyOutcome, PolicySpec};
     use crate::application::portable_execution::backend::{BackendCapabilities, ExecutionBackend};
     use crate::application::portable_execution::outcome::{
@@ -337,8 +339,12 @@ mod tests {
             proposal: ChangeProposal::new(
                 ChangeProposalId::from_string("prop-wu5"),
                 SoftwareWorldId::from_string("wu5.world"),
-                ProposalKind::SourcePatch { patch_ref: "wu5-test".into() },
-                RequestedBy::Human { user_ref: "test".into() },
+                ProposalKind::SourcePatch {
+                    patch_ref: "wu5-test".into(),
+                },
+                RequestedBy::Human {
+                    user_ref: "test".into(),
+                },
             ),
             world: SoftwareWorld::new_base(
                 SoftwareWorldId::from_string("wu5.world"),
@@ -436,13 +442,11 @@ mod tests {
         // gate may evaluate to whatever the policy says; the key
         // assertion: the gate ran and the verdict is one of the
         // four outcomes — never silently Pass.
-        let backend = ScriptedBackend::new(
-            BackendCapabilities::isolation_capable(),
-            success_outcome(),
-        );
+        let backend =
+            ScriptedBackend::new(BackendCapabilities::isolation_capable(), success_outcome());
         let (work, spec) = spec_for_work("ci.demo", RequiresIsolation::Yes);
-        let selection = BackendSelection::new(Box::new(backend), policy_strict())
-            .with_spec(work.clone(), spec);
+        let selection =
+            BackendSelection::new(Box::new(backend), policy_strict()).with_spec(work.clone(), spec);
         let affected = vec![work];
         let executor = DefaultTrialExecutor::new(policy_strict());
         let trial_id = TrialId::from_string("trial-wu5-pos");
@@ -465,20 +469,21 @@ mod tests {
         // Isolation required, but backend is NOT isolation-capable.
         // The trial MUST NOT manufacture required evidence; the
         // gate MUST receive InsufficientEvidence.
-        let backend = ScriptedBackend::new(
-            BackendCapabilities::native_capable(),
-            success_outcome(),
-        );
+        let backend =
+            ScriptedBackend::new(BackendCapabilities::native_capable(), success_outcome());
         let (work, spec) = spec_for_work("ci.demo", RequiresIsolation::Yes);
-        let selection = BackendSelection::new(Box::new(backend), policy_strict())
-            .with_spec(work.clone(), spec);
+        let selection =
+            BackendSelection::new(Box::new(backend), policy_strict()).with_spec(work.clone(), spec);
         let affected = vec![work];
         let executor = DefaultTrialExecutor::new(policy_strict());
         let trial_id = TrialId::from_string("trial-wu5-neg");
         let input = trial_input_for(empty_bundle());
         let (ev, outcomes) = drive_trial(trial_id, input, &affected, &selection, &executor);
 
-        assert!(matches!(outcomes[0].1, TrialDriverWorkOutcome::Unavailable { .. }));
+        assert!(matches!(
+            outcomes[0].1,
+            TrialDriverWorkOutcome::Unavailable { .. }
+        ));
         assert!(
             is_insufficient(&ev),
             "isolation-unavailable trial MUST produce InsufficientEvidence; got {:?}",
@@ -488,29 +493,28 @@ mod tests {
 
     #[test]
     fn wu5_backend_unavailable_returns_unavailable_work_outcome() {
-        let backend = ScriptedBackend::new(
-            BackendCapabilities::isolation_capable(),
-            unavail_outcome(),
-        );
+        let backend =
+            ScriptedBackend::new(BackendCapabilities::isolation_capable(), unavail_outcome());
         let (work, spec) = spec_for_work("ci.demo", RequiresIsolation::No);
-        let selection = BackendSelection::new(Box::new(backend), policy_strict())
-            .with_spec(work.clone(), spec);
+        let selection =
+            BackendSelection::new(Box::new(backend), policy_strict()).with_spec(work.clone(), spec);
         let affected = vec![work];
         let executor = DefaultTrialExecutor::new(policy_strict());
         let trial_id = TrialId::from_string("trial-wu5-be-unavail");
         let input = trial_input_for(empty_bundle());
         let (ev, outcomes) = drive_trial(trial_id, input, &affected, &selection, &executor);
 
-        assert!(matches!(outcomes[0].1, TrialDriverWorkOutcome::Unavailable { .. }));
+        assert!(matches!(
+            outcomes[0].1,
+            TrialDriverWorkOutcome::Unavailable { .. }
+        ));
         assert!(is_insufficient(&ev));
     }
 
     #[test]
     fn wu5_no_spec_for_work_yields_no_spec_and_trial_continues() {
-        let backend = ScriptedBackend::new(
-            BackendCapabilities::native_capable(),
-            success_outcome(),
-        );
+        let backend =
+            ScriptedBackend::new(BackendCapabilities::native_capable(), success_outcome());
         let selection = BackendSelection::new(Box::new(backend), policy_strict());
         let work = work_id("ci.unregistered");
         let affected = vec![work.clone()];
@@ -531,14 +535,17 @@ mod tests {
         // produces InsufficientEvidence.
         let backend = PodmanBackend::new(Box::new(DisabledPodmanDiscovery));
         let (work, spec) = spec_for_work("ci.demo", RequiresIsolation::Yes);
-        let selection = BackendSelection::new(Box::new(backend), policy_strict())
-            .with_spec(work.clone(), spec);
+        let selection =
+            BackendSelection::new(Box::new(backend), policy_strict()).with_spec(work.clone(), spec);
         let affected = vec![work];
         let executor = DefaultTrialExecutor::new(policy_strict());
         let trial_id = TrialId::from_string("trial-wu5-disabled-podman");
         let input = trial_input_for(empty_bundle());
         let (ev, outcomes) = drive_trial(trial_id, input, &affected, &selection, &executor);
-        assert!(matches!(outcomes[0].1, TrialDriverWorkOutcome::Unavailable { .. }));
+        assert!(matches!(
+            outcomes[0].1,
+            TrialDriverWorkOutcome::Unavailable { .. }
+        ));
         assert!(is_insufficient(&ev));
     }
 
@@ -558,13 +565,11 @@ mod tests {
         // The full adversarial matrix: with a native backend and
         // an isolation-required spec, the trial MUST NOT produce
         // anything other than Unavailable.
-        let backend = ScriptedBackend::new(
-            BackendCapabilities::native_capable(),
-            success_outcome(),
-        );
+        let backend =
+            ScriptedBackend::new(BackendCapabilities::native_capable(), success_outcome());
         let (work, spec) = spec_for_work("ci.demo", RequiresIsolation::Yes);
-        let selection = BackendSelection::new(Box::new(backend), policy_strict())
-            .with_spec(work.clone(), spec);
+        let selection =
+            BackendSelection::new(Box::new(backend), policy_strict()).with_spec(work.clone(), spec);
         let affected = vec![work];
         let executor = DefaultTrialExecutor::new(policy_strict());
         let trial_id = TrialId::from_string("trial-wu5-no-fallback");
@@ -587,13 +592,11 @@ mod tests {
         // After `drive_trial`, the bundle should contain a
         // `BundleEntry::ProducerMissing` whose `reason` mentions
         // the missing capability. This is the gate's input.
-        let backend = ScriptedBackend::new(
-            BackendCapabilities::native_capable(),
-            success_outcome(),
-        );
+        let backend =
+            ScriptedBackend::new(BackendCapabilities::native_capable(), success_outcome());
         let (work, spec) = spec_for_work("ci.demo", RequiresIsolation::Yes);
-        let selection = BackendSelection::new(Box::new(backend), policy_strict())
-            .with_spec(work.clone(), spec);
+        let selection =
+            BackendSelection::new(Box::new(backend), policy_strict()).with_spec(work.clone(), spec);
         let affected = vec![work.clone()];
         let executor = DefaultTrialExecutor::new(policy_strict());
         let trial_id = TrialId::from_string("trial-wu5-bundle-shape");
@@ -608,7 +611,9 @@ mod tests {
             .find(|e| e.slot().slot_id == slot_id);
         assert!(found.is_some(), "expected an entry for {}", slot_id);
         match found.unwrap() {
-            BundleEntry::ProducerMissing { why_unreachable, .. } => {
+            BundleEntry::ProducerMissing {
+                why_unreachable, ..
+            } => {
                 assert!(why_unreachable.contains("unavailable_capability"));
                 assert!(why_unreachable.contains("isolation_backend"));
             }
@@ -621,13 +626,11 @@ mod tests {
         // After `drive_trial`, when the work ran successfully, the
         // bundle contains an Evidence entry whose fact is Dangling.
         // The gate is the only authority that may upgrade a slot.
-        let backend = ScriptedBackend::new(
-            BackendCapabilities::native_capable(),
-            success_outcome(),
-        );
+        let backend =
+            ScriptedBackend::new(BackendCapabilities::native_capable(), success_outcome());
         let (work, spec) = spec_for_work("ci.demo", RequiresIsolation::No);
-        let selection = BackendSelection::new(Box::new(backend), policy_strict())
-            .with_spec(work.clone(), spec);
+        let selection =
+            BackendSelection::new(Box::new(backend), policy_strict()).with_spec(work.clone(), spec);
         let affected = vec![work.clone()];
         let executor = DefaultTrialExecutor::new(policy_strict());
         let trial_id = TrialId::from_string("trial-wu5-bundle-evidence");
@@ -707,8 +710,7 @@ mod tests {
         let work = work_id("ci.wu6-linux-oracle");
         let spec = wu6_spec(work.clone(), RequiresIsolation::No);
         let selection =
-            BackendSelection::new(Box::new(backend), policy_strict())
-                .with_spec(work.clone(), spec);
+            BackendSelection::new(Box::new(backend), policy_strict()).with_spec(work.clone(), spec);
         let affected = vec![work.clone()];
         let executor = DefaultTrialExecutor::new(policy_strict());
         let trial_id = TrialId::from_string("trial-wu6-linux-oracle");
@@ -758,14 +760,12 @@ mod tests {
         // backend. The seam must refuse; the gate must not Pass.
         let spec = wu6_spec(work.clone(), RequiresIsolation::Yes);
         let selection =
-            BackendSelection::new(Box::new(backend), policy_strict())
-                .with_spec(work.clone(), spec);
+            BackendSelection::new(Box::new(backend), policy_strict()).with_spec(work.clone(), spec);
         let affected = vec![work];
         let executor = DefaultTrialExecutor::new(policy_strict());
         let trial_id = TrialId::from_string("trial-wu6-linux-iso");
         let input = trial_input_for(empty_bundle());
-        let (ev, outcomes) =
-            drive_trial(trial_id, input, &affected, &selection, &executor);
+        let (ev, outcomes) = drive_trial(trial_id, input, &affected, &selection, &executor);
 
         assert!(matches!(
             outcomes[0].1,

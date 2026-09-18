@@ -146,10 +146,8 @@ impl HistoricalReplayPlan {
             let outcome = if observations.is_empty() {
                 ReplayCaseOutcome::Incomplete(ReplayIncomplete::NoRecordedObservation)
             } else {
-                let scoring: Vec<Observation> = observations
-                    .iter()
-                    .map(observation_from_platform)
-                    .collect();
+                let scoring: Vec<Observation> =
+                    observations.iter().map(observation_from_platform).collect();
                 ReplayCaseOutcome::Scored(score(&prediction, &scoring))
             };
 

@@ -5,9 +5,7 @@
 
 use crate::application::ai::fake::FakeLlmPort;
 use crate::application::ai::fix_agent::build_fix_request;
-use crate::domain::ai::frame::{
-    InvestigationBudget, InvestigationFrame, InvestigationScope,
-};
+use crate::domain::ai::frame::{InvestigationBudget, InvestigationFrame, InvestigationScope};
 use crate::domain::ai::patch::SourcePatchCandidate;
 use crate::domain::ai::request::InvestigationRequest;
 use crate::domain::ai::response::{LlmResponse, ResponseProvenance};
@@ -47,8 +45,13 @@ pub fn frame_with_declared(declared: &[FactId]) -> InvestigationFrame {
     .expect("valid execution context");
     let mut scope = InvestigationScope::empty(workspace(), snapshot());
     scope.declared_read_set = read_set(declared);
-    InvestigationFrame::try_new(execution, "fix the failed test", scope, InvestigationBudget::default())
-        .expect("valid frame")
+    InvestigationFrame::try_new(
+        execution,
+        "fix the failed test",
+        scope,
+        InvestigationBudget::default(),
+    )
+    .expect("valid frame")
 }
 
 /// A plain frame (empty declared read set).

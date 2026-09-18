@@ -382,6 +382,7 @@ impl ProgramAnalysisService {
     }
 
     /// WU3 DFG: intra-procedural def→use edges from a flat statement list.
+    #[cfg(feature = "program-analysis-server")]
     fn run_dfg(
         &self,
         params: &serde_json::Value,
@@ -424,6 +425,7 @@ impl ProgramAnalysisService {
     /// - `sources`: list of statement ids that are source sites
     /// - `sinks`: list of statement ids that are sink sites
     /// - `untaints`: list of statement ids that contain an untaint call
+    ///
     /// Typed forward-taint entry point.
     ///
     /// `dispatch(TAINT_FLOW)` delegates here; M6 backends call it directly.
@@ -463,21 +465,21 @@ impl ProgramAnalysisService {
             })
             .collect();
 
-        if let Some(max) = limits.max_visited_nodes {
-            if statements.len() as u64 > max {
-                return Err(AnalyticsError::LimitExceeded(
-                    PlanLimitKind::MaxVisitedNodes,
-                ));
-            }
+        if let Some(max) = limits.max_visited_nodes
+            && statements.len() as u64 > max
+        {
+            return Err(AnalyticsError::LimitExceeded(
+                PlanLimitKind::MaxVisitedNodes,
+            ));
         }
 
         let edges = dfg_edges(&statements);
-        if let Some(max) = limits.max_visited_edges {
-            if edges.len() as u64 > max {
-                return Err(AnalyticsError::LimitExceeded(
-                    PlanLimitKind::MaxVisitedEdges,
-                ));
-            }
+        if let Some(max) = limits.max_visited_edges
+            && edges.len() as u64 > max
+        {
+            return Err(AnalyticsError::LimitExceeded(
+                PlanLimitKind::MaxVisitedEdges,
+            ));
         }
 
         let result = taint_forward(&edges, &request.sources, &request.sinks, &request.untaints);
@@ -487,10 +489,10 @@ impl ProgramAnalysisService {
             if result.paths.len() as u64 > max {
                 return Err(AnalyticsError::LimitExceeded(PlanLimitKind::MaxPathCount));
             }
-        } else if let Some(max) = limits.max_result_rows {
-            if result.paths.len() as u64 > max {
-                return Err(AnalyticsError::LimitExceeded(PlanLimitKind::MaxResultRows));
-            }
+        } else if let Some(max) = limits.max_result_rows
+            && result.paths.len() as u64 > max
+        {
+            return Err(AnalyticsError::LimitExceeded(PlanLimitKind::MaxResultRows));
         }
 
         Ok(TaintFlowResult {

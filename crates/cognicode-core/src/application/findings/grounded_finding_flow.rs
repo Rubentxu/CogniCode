@@ -134,6 +134,7 @@ pub enum GroundedFindingFlowError {
 /// stops at the first hard failure. It does not introduce any verification,
 /// any authority, any store. The gate decision it reports is the gate
 /// decision the existing `FindingVerifier` returned — for better or worse.
+#[allow(clippy::too_many_arguments)] // single entry point; params are distinct evidence inputs
 pub async fn run_grounded_finding_flow(
     fact_store: Arc<dyn FactStore>,
     evidence_store: Arc<dyn EvidenceStore>,
@@ -983,7 +984,6 @@ mod tests {
                 .await
                 .expect("read model");
 
-        
         use crate::domain::findings::finding::{
             CausalStep, CausalStepKind, Finding, FindingId, FindingOrigin, FindingSeverity,
             RiskLevel,
@@ -1088,7 +1088,6 @@ mod tests {
                 .await
                 .expect("read model");
 
-        
         use crate::domain::findings::finding::{
             CausalStep, CausalStepKind, Finding, FindingId, FindingOrigin, FindingSeverity,
             RiskLevel,
@@ -1138,7 +1137,6 @@ mod tests {
     /// so `verify_for_gate` rejects with `NotExplainable`.
     #[tokio::test]
     async fn wu3_adversarial_ungrounded_finding_cannot_block() {
-        
         use crate::domain::findings::finding::{
             Finding, FindingId, FindingOrigin, FindingSeverity, RiskLevel,
         };

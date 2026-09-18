@@ -194,12 +194,8 @@ impl ArchitectureAdmissionService {
 fn rule_body_valid(candidate: &ConstraintCandidate) -> bool {
     use crate::domain::architecture::ArchitectureConstraintKind;
     match &candidate.kind {
-        ArchitectureConstraintKind::LayerDependency(rule) => {
-            !rule.forbidden_targets.is_empty()
-        }
-        ArchitectureConstraintKind::ForbiddenDependency(rule) => {
-            !rule.forbidden_paths.is_empty()
-        }
+        ArchitectureConstraintKind::LayerDependency(rule) => !rule.forbidden_targets.is_empty(),
+        ArchitectureConstraintKind::ForbiddenDependency(rule) => !rule.forbidden_paths.is_empty(),
         ArchitectureConstraintKind::NamespaceBoundary(rule) => {
             !rule.caller_namespace.is_empty() && !rule.forbidden_targets.is_empty()
         }
@@ -210,8 +206,8 @@ fn rule_body_valid(candidate: &ConstraintCandidate) -> bool {
 mod tests {
     use super::*;
     use crate::domain::architecture::{
-        AdmitterRole, ArchitectureConstraintId, ArchitectureConstraintKind, ForbiddenDependencyRule,
-        LayerDependencyRule, LayerId,
+        AdmitterRole, ArchitectureConstraintId, ArchitectureConstraintKind,
+        ForbiddenDependencyRule, LayerDependencyRule, LayerId,
     };
 
     fn candidate_layer(id: &str) -> ConstraintCandidate {

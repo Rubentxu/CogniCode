@@ -350,12 +350,10 @@ pub fn evaluate_promotion_lineage(
     // 3. The candidate must have been measured against the same canonical base.
     if input.candidate.base_snapshot != input.base.base_snapshot {
         return PromotionDryRun {
-            status: PromotionStatus::Blocked(
-                PromotionBlockReason::CandidateBaseSnapshotMismatch {
-                    candidate_snapshot: input.candidate.base_snapshot,
-                    base_snapshot: input.base.base_snapshot,
-                },
-            ),
+            status: PromotionStatus::Blocked(PromotionBlockReason::CandidateBaseSnapshotMismatch {
+                candidate_snapshot: input.candidate.base_snapshot,
+                base_snapshot: input.base.base_snapshot,
+            }),
             lineage,
         };
     }

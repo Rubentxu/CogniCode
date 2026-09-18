@@ -40,7 +40,7 @@
 use crate::application::ai::critic::{CritiqueTarget, FindingCritic};
 use crate::application::ai::fake::{FakeLlmPort, ScriptKey};
 use crate::application::ai::semantic_miner::{
-    build_request as build_miner_request, MinerOutput, SemanticMiner,
+    MinerOutput, SemanticMiner, build_request as build_miner_request,
 };
 use crate::domain::ai::frame::{
     InvestigationBudget, InvestigationFrame, InvestigationFrameId, InvestigationScope,
@@ -151,16 +151,18 @@ fn the_critic_has_no_write_surface() {
         RequestProvenance::new(f.id(), "finding-critic-v1", None).unwrap(),
         ResponseProvenance::new("fake-local", "fake-deterministic-v1", None, None).unwrap(),
         empty_read_set(),
-        vec![Critique::try_new(
-            fid.clone(),
-            CritiqueDisposition::Supported,
-            "grounded",
-            vec![],
-        )
-        .unwrap()],
+        vec![
+            Critique::try_new(
+                fid.clone(),
+                CritiqueDisposition::Supported,
+                "grounded",
+                vec![],
+            )
+            .unwrap(),
+        ],
     );
-    let fake = FakeLlmPort::new()
-        .with_scripted(ScriptKey::new(f.id(), req.content_digest()), scripted);
+    let fake =
+        FakeLlmPort::new().with_scripted(ScriptKey::new(f.id(), req.content_digest()), scripted);
     let critic = FindingCritic::new(&fake);
     let out = critic
         .critique(
@@ -242,7 +244,9 @@ fn tool_surface_is_bounded_by_the_request() {
     // The response must NOT carry a tool_calls field. We assert by
     // enumeration of the `ResponseOutput` variants.
     let _ = ResponseOutput::Hypotheses(Vec::new());
-    let _ = ResponseOutput::Advisory { summary: String::new() };
+    let _ = ResponseOutput::Advisory {
+        summary: String::new(),
+    };
     let _ = ResponseOutput::Critiques(Vec::new());
     // If a 4th variant is added, the type system forces this file to
     // change. The check is structural, not runtime.
@@ -258,12 +262,7 @@ fn no_provider_is_referenced_by_name_from_application_ai() {
     // `semantic_miner`, `boundary_tests`, and the helper reexports
     // below. A future contributor adding `pub use openai::Client;`
     // would breach this — review-time check.
-    let _allowed: [&str; 4] = [
-        "FakeLlmPort",
-        "ScriptKey",
-        "FindingCritic",
-        "SemanticMiner",
-    ];
+    let _allowed: [&str; 4] = ["FakeLlmPort", "ScriptKey", "FindingCritic", "SemanticMiner"];
 }
 
 #[test]
@@ -296,7 +295,11 @@ fn fake_port_response_keys_match_request_keys_exactly() {
 
     // The miner for f1 must pick up its own script.
     let out1 = miner.mine(&f1).unwrap();
-    assert_eq!(out1.len(), 1, "miner for f1 must pick up the script keyed to f1");
+    assert_eq!(
+        out1.len(),
+        1,
+        "miner for f1 must pick up the script keyed to f1"
+    );
 }
 
 #[test]
@@ -330,13 +333,14 @@ fn response_frame_id_must_match_request_frame_id() {
         empty_read_set(),
         "ok",
     );
-    let fake = FakeLlmPort::new().with_scripted(
-        ScriptKey::new(wrong_id, req.content_digest()),
-        scripted,
-    );
+    let fake =
+        FakeLlmPort::new().with_scripted(ScriptKey::new(wrong_id, req.content_digest()), scripted);
     let critic = FindingCritic::new(&fake);
     let res = critic.critique(&f, &[]);
-    assert!(res.is_err(), "critic must reject responses whose frame_id does not match");
+    assert!(
+        res.is_err(),
+        "critic must reject responses whose frame_id does not match"
+    );
 }
 
 // =====================================================================
@@ -380,8 +384,7 @@ fn wu7_end_to_end_mining_and_critique() {
             crate::domain::ai::hypothesis::Hypothesis::try_new(
                 crate::domain::ai::hypothesis::HypothesisId::new(1),
                 crate::domain::ai::hypothesis::HypothesisStatement::Suggestion(
-                    "domain::facts may depend on domain::architecture; reverse is forbidden"
-                        .into(),
+                    "domain::facts may depend on domain::architecture; reverse is forbidden".into(),
                 ),
                 vec![],
                 vec![],
@@ -406,13 +409,15 @@ fn wu7_end_to_end_mining_and_critique() {
         RequestProvenance::new(f.id(), "finding-critic-v1", None).unwrap(),
         ResponseProvenance::new("fake-local", "fake-deterministic-v1", None, None).unwrap(),
         empty_read_set(),
-        vec![Critique::try_new(
-            fid.clone(),
-            CritiqueDisposition::Supported,
-            "grounded in canonical evidence",
-            vec![],
-        )
-        .unwrap()],
+        vec![
+            Critique::try_new(
+                fid.clone(),
+                CritiqueDisposition::Supported,
+                "grounded in canonical evidence",
+                vec![],
+            )
+            .unwrap(),
+        ],
     );
 
     let fake = FakeLlmPort::new()

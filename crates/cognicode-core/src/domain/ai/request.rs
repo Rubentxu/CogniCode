@@ -172,7 +172,9 @@ mod tests {
 
     #[test]
     fn request_rejects_empty_instruction() {
-        let prov = RequestProvenance::new(InvestigationFrameId::from_content_digest(1), "test", None).unwrap();
+        let prov =
+            RequestProvenance::new(InvestigationFrameId::from_content_digest(1), "test", None)
+                .unwrap();
         let err = InvestigationRequest::try_new(
             InvestigationFrameId::from_content_digest(1),
             "   ",

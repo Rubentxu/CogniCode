@@ -56,23 +56,23 @@ pub mod trial_runtime;
 pub use backend::{BackendCapabilities, ExecutionBackend};
 pub use comp::{BackendFacadeWorkExecutor, StaticBackendFacade};
 pub use evidence_translate as evidence_translation;
-pub use native::{NativeProcessBackend, MAX_CAPTURED_BYTES, NATIVE_BUNDLE_ID};
+pub use native::{MAX_CAPTURED_BYTES, NATIVE_BUNDLE_ID, NativeProcessBackend};
 pub use outcome::{
     BoundedViolation, Captured, ExecutionOutcome, Failure, Missing, MissingCapability,
     SuccessDetail, ViolatedBound,
 };
 pub use paths::{
-    canonicalize, content_digest, host_path_for_spawn, CanonicalPath, ContentDigest, HostKind,
+    CanonicalPath, ContentDigest, HostKind, canonicalize, content_digest, host_path_for_spawn,
 };
 pub use podman::{
-    default_discovery, host_podman_endpoint, DiscoveryError, PodmanBackend, PodmanDiscovery,
-    PodmanEndpoint, ProbePodmanDiscovery, DisabledPodmanDiscovery,
+    DisabledPodmanDiscovery, DiscoveryError, PodmanBackend, PodmanDiscovery, PodmanEndpoint,
+    ProbePodmanDiscovery, default_discovery, host_podman_endpoint,
 };
 pub use spec::{
     ExecutionBounds, ExecutionSpec, MountPropagation, RequiresIsolation, SpecError, WorkspaceMount,
 };
 pub use trial_runtime::{
-    drive_trial, gate_outcome, is_insufficient, BackendSelection, TrialDriverWorkOutcome,
+    BackendSelection, TrialDriverWorkOutcome, drive_trial, gate_outcome, is_insufficient,
 };
 
 /// Strip Rust line and block comments from source text. Used by the

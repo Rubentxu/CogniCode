@@ -98,8 +98,7 @@ fn property_1_violation_without_grounding_cannot_gate() {
     assert_eq!(report.violations.len(), 1);
     assert!(report.violations[0].grounding.is_none());
 
-    let items = ArchitectureGroundingBridge::new()
-        .to_produced_evidence(&report.violations);
+    let items = ArchitectureGroundingBridge::new().to_produced_evidence(&report.violations);
     assert_eq!(items.len(), 1);
     assert!(items[0].grounding.is_none());
     // The kind is the new architectural kind, distinct from the
@@ -192,12 +191,7 @@ fn property_5_grounded_violation_routes_through_bridge() {
     let constraint = admitted_layer_constraint("architecture.prop5");
     // Synthesise a violation that already carries a grounding.
     let mut violation = cognicode_core::domain::architecture::ArchitectureViolation {
-        id: ViolationId::compute(
-            &constraint.id,
-            "src/domain/foo.rs",
-            1,
-            "infrastructure::db",
-        ),
+        id: ViolationId::compute(&constraint.id, "src/domain/foo.rs", 1, "infrastructure::db"),
         constraint_id: constraint.id.clone(),
         finding_kind: cognicode_core::domain::findings::FindingKind::new(
             "architecture.layer_dependency",
@@ -211,16 +205,14 @@ fn property_5_grounded_violation_routes_through_bridge() {
         grounding: Some(GroundingRef::fact(FactId::new(42))),
         rationale: "test".into(),
     };
-    let items = ArchitectureGroundingBridge::new()
-        .to_produced_evidence(&[violation.clone()]);
+    let items = ArchitectureGroundingBridge::new().to_produced_evidence(&[violation.clone()]);
     assert_eq!(items.len(), 1);
     let g = items[0].grounding.expect("grounding must be present");
     assert_eq!(g.fact, FactId::new(42));
 
     // Without grounding, the same violation becomes ungrounded.
     violation.grounding = None;
-    let items = ArchitectureGroundingBridge::new()
-        .to_produced_evidence(&[violation]);
+    let items = ArchitectureGroundingBridge::new().to_produced_evidence(&[violation]);
     assert!(items[0].grounding.is_none());
 }
 
@@ -259,7 +251,8 @@ fn property_6_adr_text_alone_yields_zero_violations() {
 
 #[test]
 fn property_7_non_admitted_constraint_yields_zero_violations() {
-    let mut registry = cognicode_core::application::architecture::registry::ArchitectureRegistry::new();
+    let mut registry =
+        cognicode_core::application::architecture::registry::ArchitectureRegistry::new();
     let candidate = cognicode_core::domain::architecture::ConstraintCandidate {
         id: ArchitectureConstraintId::new("architecture.non_admitted").unwrap(),
         kind: ArchitectureConstraintKind::LayerDependency(LayerDependencyRule {
@@ -299,8 +292,14 @@ fn property_8_evaluator_cannot_produce_gateable_finding_by_itself() {
         .evaluate(&constraint, &synthetic_source())
         .unwrap();
     let dbg = format!("{report:?}");
-    assert!(!dbg.contains("findings:"), "EvaluationReport must not have a `findings` field");
-    assert!(dbg.contains("violations:"), "EvaluationReport must have a `violations` field");
+    assert!(
+        !dbg.contains("findings:"),
+        "EvaluationReport must not have a `findings` field"
+    );
+    assert!(
+        dbg.contains("violations:"),
+        "EvaluationReport must have a `violations` field"
+    );
     assert!(report.violations.len() == 1);
 }
 
@@ -319,7 +318,10 @@ fn property_9_deterministic_violation_identity() {
         .unwrap();
     assert_eq!(a.violations.len(), b.violations.len());
     assert_eq!(a.violations[0].id, b.violations[0].id);
-    assert_eq!(a.violations[0].dependency_path, b.violations[0].dependency_path);
+    assert_eq!(
+        a.violations[0].dependency_path,
+        b.violations[0].dependency_path
+    );
     assert_eq!(a.violations[0].from_layer, b.violations[0].from_layer);
 }
 

@@ -22,7 +22,9 @@
 //!
 //! It proves only that a candidate identity was fixed after OPTIMIZE ran.
 
-use crate::application::change_proposal::proposal::{ChangeProposal, ChangeProposalId, ProposalKind};
+use crate::application::change_proposal::proposal::{
+    ChangeProposal, ChangeProposalId, ProposalKind,
+};
 use crate::application::historical_replay::split::DatasetRole;
 use crate::application::portable_execution::content_digest;
 use crate::application::shadow_evaluation::analyzer::AnalyzerDescriptor;

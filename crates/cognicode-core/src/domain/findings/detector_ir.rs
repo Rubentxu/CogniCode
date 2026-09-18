@@ -504,10 +504,10 @@ impl DetectorIr {
                 })
                 .collect();
             for (i, step) in self.steps.iter().enumerate() {
-                if let DetectorStep::Flow { source, .. } = step {
-                    if !declared.contains(source) {
-                        return Err(DetectorIrError::UndeclaredFlowSource { index: i });
-                    }
+                if let DetectorStep::Flow { source, .. } = step
+                    && !declared.contains(source)
+                {
+                    return Err(DetectorIrError::UndeclaredFlowSource { index: i });
                 }
             }
             let _ = index;

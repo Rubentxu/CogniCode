@@ -168,8 +168,10 @@ pub fn compare_platforms<N: PlatformNormaliser>(
         } else {
             // Include the first platform so the divergent set is
             // self-describing.
-            let mut all: Vec<PlatformKind> =
-                divergent.into_iter().chain(std::iter::once(canonicals[0].0)).collect();
+            let mut all: Vec<PlatformKind> = divergent
+                .into_iter()
+                .chain(std::iter::once(canonicals[0].0))
+                .collect();
             all.sort();
             out.insert(id, Equivalence::Divergent { platforms: all });
         }
@@ -198,9 +200,7 @@ pub struct HistoricalReplay {
     /// Optional sealed prediction associated with the historical
     /// trial. When present, the WU2 scorer can compare the
     /// replay's observations to the sealed predictions.
-    pub sealed_prediction: Option<
-        crate::application::self_hosting::prediction::SealedPrediction,
-    >,
+    pub sealed_prediction: Option<crate::application::self_hosting::prediction::SealedPrediction>,
 }
 
 impl HistoricalReplay {
@@ -243,19 +243,22 @@ impl HistoricalReplay {
 
     /// Score the replay against its sealed prediction (if any).
     /// Returns None when no sealed prediction is associated.
-    pub fn score(
-        &self,
-    ) -> Option<crate::application::self_hosting::prediction::ScoreMatrix> {
+    pub fn score(&self) -> Option<crate::application::self_hosting::prediction::ScoreMatrix> {
         let pred = self.sealed_prediction.clone()?;
         let observations: Vec<_> = self
             .observations
             .iter()
-            .map(|o| crate::application::self_hosting::prediction::Observation {
-                id: o.id.clone(),
-                present: !o.raw.is_empty(),
-            })
+            .map(
+                |o| crate::application::self_hosting::prediction::Observation {
+                    id: o.id.clone(),
+                    present: !o.raw.is_empty(),
+                },
+            )
             .collect();
-        Some(crate::application::self_hosting::prediction::score(&pred, &observations))
+        Some(crate::application::self_hosting::prediction::score(
+            &pred,
+            &observations,
+        ))
     }
 }
 
@@ -339,11 +342,7 @@ mod tests {
             ],
         );
         let observations = vec![obs(PlatformKind::Linux, "fact.a", b"hello")];
-        let replay = HistoricalReplay::with_sealed_prediction(
-            "snap-digest-v1",
-            observations,
-            pred,
-        );
+        let replay = HistoricalReplay::with_sealed_prediction("snap-digest-v1", observations, pred);
         let score = replay.score().expect("score present");
         assert_eq!(score.true_positive, 1);
         assert_eq!(score.false_negative, 0);
@@ -373,8 +372,8 @@ mod tests {
         let stripped = crate::application::portable_execution::strip_doc_comments_and_tests(full);
         let lower = stripped.to_lowercase();
         for forbidden in [
-            "podman", "systemd", "quadlet", "wsl", "hyper-v", "docker",
-            "rustc", "cargo ", "cargo.", "clippy",
+            "podman", "systemd", "quadlet", "wsl", "hyper-v", "docker", "rustc", "cargo ",
+            "cargo.", "clippy",
         ] {
             assert!(
                 !lower.contains(forbidden),

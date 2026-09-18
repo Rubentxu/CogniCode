@@ -29,9 +29,7 @@ use crate::application::shadow_evaluation::analyzer::{
     AnalyzerDescriptor, AnalyzerSide, AnalyzerUnderTest,
 };
 use crate::application::shadow_evaluation::classifiers::BuiltinFailureRegimeClassifier;
-use crate::application::shadow_evaluation::compare::{
-    ShadowError, pair_case_results,
-};
+use crate::application::shadow_evaluation::compare::{ShadowError, pair_case_results};
 use crate::application::shadow_evaluation::plan::ShadowEvaluationPlan;
 use crate::application::shadow_evaluation::regime::{
     FailureRegime, FailureRegimeClassifier, FailureRegimeContext, FailureRegimeEvidence,
@@ -46,7 +44,11 @@ fn case_id(s: &str) -> HistoricalCaseId {
 }
 
 fn obs(id: &str, fired: bool) -> PlatformObservation {
-    obs_raw(PlatformKind::Linux, id, if fired { b"present" } else { b"" })
+    obs_raw(
+        PlatformKind::Linux,
+        id,
+        if fired { b"present" } else { b"" },
+    )
 }
 
 fn obs_raw(platform: PlatformKind, id: &str, raw: &[u8]) -> PlatformObservation {
@@ -116,7 +118,10 @@ impl HistoricalPredictor for ScriptedAnalyzer {
                 expected_present: *present,
             })
             .collect();
-        SealedPrediction::seal(format!("{}-{}", self.label, input.case_id.as_str()), expectations)
+        SealedPrediction::seal(
+            format!("{}-{}", self.label, input.case_id.as_str()),
+            expectations,
+        )
     }
 }
 
@@ -124,7 +129,11 @@ fn descriptor(label: &str, revision: &str) -> AnalyzerDescriptor {
     AnalyzerDescriptor::try_new(label, revision).expect("valid descriptor")
 }
 
-fn plan_for(cases: Vec<HistoricalCase>, optimize: &[&str], confirm: &[&str]) -> ShadowEvaluationPlan {
+fn plan_for(
+    cases: Vec<HistoricalCase>,
+    optimize: &[&str],
+    confirm: &[&str],
+) -> ShadowEvaluationPlan {
     let corpus = HistoricalCorpus::try_new(cases).expect("valid corpus");
     let split = DatasetSplit::try_new(
         optimize.iter().map(|id| case_id(id)).collect(),
@@ -139,7 +148,9 @@ fn plan_for(cases: Vec<HistoricalCase>, optimize: &[&str], confirm: &[&str]) -> 
     )
 }
 
-fn builtin(normaliser: &DefaultNormaliser) -> BuiltinFailureRegimeClassifier<'_, DefaultNormaliser> {
+fn builtin(
+    normaliser: &DefaultNormaliser,
+) -> BuiltinFailureRegimeClassifier<'_, DefaultNormaliser> {
     BuiltinFailureRegimeClassifier::new(normaliser)
 }
 
@@ -186,17 +197,24 @@ fn a_same_analyzer_against_itself_yields_zero_deltas() {
         &["a"],
         &["b"],
     );
-    let script = vec![("a", vec![("oracle.a", true)]), ("b", vec![("oracle.b", true)])];
+    let script = vec![
+        ("a", vec![("oracle.a", true)]),
+        ("b", vec![("oracle.b", true)]),
+    ];
     let left = ScriptedAnalyzer::new("same", script.clone());
     let right = ScriptedAnalyzer::new("same", script);
 
     let current = AnalyzerUnderTest::new(plan.current(), &left);
     let candidate = AnalyzerUnderTest::new(plan.candidate(), &right);
-    let evaluation = ShadowEvaluator::evaluate_all(&plan, current, candidate, &builtin(&normaliser))
-        .expect("shadow evaluation");
+    let evaluation =
+        ShadowEvaluator::evaluate_all(&plan, current, candidate, &builtin(&normaliser))
+            .expect("shadow evaluation");
 
     for report in [evaluation.optimize(), evaluation.confirm()] {
-        assert!(report.aggregate_delta().score.is_zero(), "control must yield zero deltas");
+        assert!(
+            report.aggregate_delta().score.is_zero(),
+            "control must yield zero deltas"
+        );
         assert_eq!(report.aggregate_delta().scored_cases, 0);
         assert_eq!(report.aggregate_delta().incomplete_cases, 0);
         assert!(report.failure_regimes().is_empty());
@@ -225,7 +243,10 @@ fn b_candidate_gaining_a_true_positive_shows_a_raw_delta_only() {
     .expect("shadow evaluation");
 
     let delta = report.aggregate_delta().score;
-    assert_eq!(delta.true_positive, 1, "raw TP delta must reflect the change");
+    assert_eq!(
+        delta.true_positive, 1,
+        "raw TP delta must reflect the change"
+    );
     assert_eq!(delta.false_positive, -1);
     assert!(!delta.is_zero());
 }
@@ -287,9 +308,15 @@ fn d_favourable_optimize_and_adverse_confirm_are_both_preserved() {
     .expect("shadow evaluation");
 
     // OPTIMIZE looks favourable ...
-    assert_eq!(evaluation.optimize().aggregate_delta().score.true_positive, 1);
+    assert_eq!(
+        evaluation.optimize().aggregate_delta().score.true_positive,
+        1
+    );
     // ... while CONFIRM shows an adverse delta. Both survive, unblended.
-    assert_eq!(evaluation.confirm().aggregate_delta().score.false_negative, 1);
+    assert_eq!(
+        evaluation.confirm().aggregate_delta().score.false_negative,
+        1
+    );
     assert_ne!(
         evaluation.optimize().aggregate_delta(),
         evaluation.confirm().aggregate_delta()
@@ -374,17 +401,20 @@ fn h_reordered_case_results_still_pair_by_case_id() {
         vec![("b", scored(1, 0, 0, 0)), ("a", scored(0, 1, 0, 0))],
     );
 
-    let ordered =
-        pair_case_results(&current, &candidate_ordered, DatasetRole::Optimize).unwrap();
-    let reversed =
-        pair_case_results(&current, &candidate_reversed, DatasetRole::Optimize).unwrap();
+    let ordered = pair_case_results(&current, &candidate_ordered, DatasetRole::Optimize).unwrap();
+    let reversed = pair_case_results(&current, &candidate_reversed, DatasetRole::Optimize).unwrap();
 
-    let project = |cs: &[crate::application::shadow_evaluation::compare::ShadowCaseComparison]| {
-        cs.iter()
-            .map(|c| (c.case_id.clone(), c.score_delta))
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(project(&ordered), project(&reversed), "pairing must be order-independent");
+    let project =
+        |cs: &[crate::application::shadow_evaluation::compare::ShadowCaseComparison]| {
+            cs.iter()
+                .map(|c| (c.case_id.clone(), c.score_delta))
+                .collect::<Vec<_>>()
+        };
+    assert_eq!(
+        project(&ordered),
+        project(&reversed),
+        "pairing must be order-independent"
+    );
 }
 
 #[test]
@@ -495,7 +525,11 @@ fn m_n_both_sides_receive_independently_constructed_identical_base_input() {
 fn o_observation_strings_cannot_forge_an_architecture_miss() {
     let case = case(
         "a",
-        vec![obs_raw(PlatformKind::Linux, "architecture.boundary.violated", b"x")],
+        vec![obs_raw(
+            PlatformKind::Linux,
+            "architecture.boundary.violated",
+            b"x",
+        )],
     );
     let normaliser = DefaultNormaliser;
     let context = FailureRegimeContext {
@@ -506,7 +540,9 @@ fn o_observation_strings_cannot_forge_an_architecture_miss() {
     };
     let regimes = builtin(&normaliser).classify(&context);
     assert!(
-        regimes.iter().all(|r| r.regime != FailureRegime::ArchitectureMiss),
+        regimes
+            .iter()
+            .all(|r| r.regime != FailureRegime::ArchitectureMiss),
         "an observation id must never be parsed into a regime"
     );
 }
@@ -532,9 +568,11 @@ fn p_typed_incomplete_source_is_classified() {
         2,
         "both sides are incomplete and each must be reported"
     );
-    assert!(regimes
-        .iter()
-        .all(|r| r.evidence == FailureRegimeEvidence::IncompleteObservation));
+    assert!(
+        regimes
+            .iter()
+            .all(|r| r.evidence == FailureRegimeEvidence::IncompleteObservation)
+    );
 }
 
 // --- Q: real platform divergence ------------------------------------
@@ -571,9 +609,11 @@ fn q_real_platform_divergence_is_classified() {
         candidate: &scored(1, 0, 0, 0),
     };
     let regimes_single = builtin(&normaliser).classify(&context_single);
-    assert!(regimes_single
-        .iter()
-        .all(|r| r.regime != FailureRegime::PlatformDivergence));
+    assert!(
+        regimes_single
+            .iter()
+            .all(|r| r.regime != FailureRegime::PlatformDivergence)
+    );
 }
 
 // --- classifier seam for the four non-built-in regimes --------------
@@ -620,7 +660,11 @@ fn classifier_adapter_can_supply_domain_regimes_with_typed_evidence() {
     };
     let regimes = adapter.classify(&context);
     assert_eq!(regimes.len(), 2);
-    assert!(regimes.iter().all(|r| matches!(r.evidence, FailureRegimeEvidence::Adapter { .. })));
+    assert!(
+        regimes
+            .iter()
+            .all(|r| matches!(r.evidence, FailureRegimeEvidence::Adapter { .. }))
+    );
 }
 
 // --- R / S / T: authority audits ------------------------------------

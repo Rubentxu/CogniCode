@@ -190,13 +190,14 @@ impl ExecutionBackend for NativeProcessBackend {
                 if let Some(code) = exit_code {
                     if status.success() {
                         ExecutionOutcome::Success {
-                            detail: crate::application::portable_execution::outcome::SuccessDetail {
-                                bundle_id: NATIVE_BUNDLE_ID,
-                                exit_code: 0,
-                                stdout: Some(stdout),
-                                stderr: Some(stderr),
-                                duration,
-                            },
+                            detail:
+                                crate::application::portable_execution::outcome::SuccessDetail {
+                                    bundle_id: NATIVE_BUNDLE_ID,
+                                    exit_code: 0,
+                                    stdout: Some(stdout),
+                                    stderr: Some(stderr),
+                                    duration,
+                                },
                         }
                     } else {
                         ExecutionOutcome::CommandFailure {
@@ -225,9 +226,7 @@ impl ExecutionBackend for NativeProcessBackend {
                             bundle_id: NATIVE_BUNDLE_ID,
                             reason: format!(
                                 "program terminated by signal{}",
-                                signal
-                                    .map(|s| format!(" {}", s))
-                                    .unwrap_or_default()
+                                signal.map(|s| format!(" {}", s)).unwrap_or_default()
                             ),
                             exit_code: None,
                             stdout: Some(stdout),
@@ -260,10 +259,7 @@ pub(super) enum WaitOutcome {
 
 /// Wait for the child up to `limit`. If the timeout fires, returns
 /// `TimedOut` and lets the caller decide what to do (kill, etc.).
-pub(super) fn wait_with_timeout(
-    child: &mut std::process::Child,
-    limit: Duration,
-) -> WaitOutcome {
+pub(super) fn wait_with_timeout(child: &mut std::process::Child, limit: Duration) -> WaitOutcome {
     // The library exposes `Child::wait()` only as a blocking call.
     // To honour a wall-clock bound without spawning a helper thread
     // per call, we use `try_wait()` in a small busy-poll loop. The
@@ -312,10 +308,7 @@ fn signal_number(status: &std::process::ExitStatus) -> Option<i32> {
     }
 }
 
-fn bounded_violation(
-    elapsed: Duration,
-    limit: Duration,
-) -> ExecutionOutcome {
+fn bounded_violation(elapsed: Duration, limit: Duration) -> ExecutionOutcome {
     ExecutionOutcome::BoundedPolicyViolation {
         detail: crate::application::portable_execution::outcome::BoundedViolation {
             bundle_id: NATIVE_BUNDLE_ID,
@@ -354,7 +347,8 @@ impl BoundedCapture {
             return Captured::inlined("");
         }
         if self.truncated {
-            self.bytes.extend_from_slice(b"\n[truncated by native backend]\n");
+            self.bytes
+                .extend_from_slice(b"\n[truncated by native backend]\n");
         }
         let text = String::from_utf8_lossy(&self.bytes).into_owned();
         Captured::inlined(text)
@@ -369,9 +363,7 @@ impl BoundedCapture {
     }
 }
 
-pub(super) fn bounded_capture<R: Read + Send + 'static>(
-    pipe: Option<R>,
-) -> BoundedCapture {
+pub(super) fn bounded_capture<R: Read + Send + 'static>(pipe: Option<R>) -> BoundedCapture {
     let mut cap = BoundedCapture::new();
     if let Some(mut pipe) = pipe {
         let mut buf = [0u8; 4096];
@@ -437,12 +429,12 @@ fn with_bundle(outcome: ExecutionOutcome, bundle_id: EvidenceBundleId) -> Execut
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::change_tracking::planner::WorkId;
     use crate::application::portable_execution::outcome::{
         ExecutionOutcome, MissingCapability, ViolatedBound,
     };
     use crate::application::portable_execution::spec::{ExecutionBounds, RequiresIsolation};
     use crate::domain::naming::NamespacedName;
-    use crate::application::change_tracking::planner::WorkId;
     use std::path::PathBuf;
 
     fn spec_for(program: &str, argv: Vec<String>, iso: RequiresIsolation) -> ExecutionSpec {
@@ -532,11 +524,7 @@ mod tests {
         // "program exited non-zero" (CommandFailure, exit_code=Some).
         let be = NativeProcessBackend::new();
         // Use a clearly-absent program. `/this/binary/does/not/exist`.
-        let spec = spec_for(
-            "/this/binary/does/not/exist",
-            vec![],
-            RequiresIsolation::No,
-        );
+        let spec = spec_for("/this/binary/does/not/exist", vec![], RequiresIsolation::No);
         let outcome = be.execute(&spec);
         match outcome {
             ExecutionOutcome::InfrastructureFailure { detail } => {
@@ -587,7 +575,11 @@ mod tests {
         // into a single token. We pass argv as `["hello world"]`
         // and expect the program to print it verbatim.
         let be = NativeProcessBackend::new();
-        let spec = spec_for("/bin/echo", vec!["hello world".into()], RequiresIsolation::No);
+        let spec = spec_for(
+            "/bin/echo",
+            vec!["hello world".into()],
+            RequiresIsolation::No,
+        );
         let outcome = be.execute(&spec);
         match outcome {
             ExecutionOutcome::Success { detail } => {

@@ -11,8 +11,8 @@
 #![cfg(feature = "evidence-kernel")]
 
 use crate::application::self_hosting::platform_equivalence::{
-    compare_platforms, default_canonicalize, DefaultNormaliser, Equivalence, PlatformKind,
-    PlatformObservation,
+    DefaultNormaliser, Equivalence, PlatformKind, PlatformObservation, compare_platforms,
+    default_canonicalize,
 };
 
 #[test]
@@ -52,10 +52,7 @@ fn acceptance_compare_platforms_with_empty_payload_is_equivalent() {
         },
     ];
     let verdicts = compare_platforms(&n, &observations);
-    assert_eq!(
-        verdicts.get("empty.fact"),
-        Some(&Equivalence::Equivalent)
-    );
+    assert_eq!(verdicts.get("empty.fact"), Some(&Equivalence::Equivalent));
 }
 
 #[test]

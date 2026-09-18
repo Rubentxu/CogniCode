@@ -119,7 +119,7 @@ impl DetectorBackend for AstBackend {
 
         for unit in &ast.units {
             for construct in &unit.constructs {
-                if !subjects.iter().any(|s| *s == &construct.subject) {
+                if !subjects.contains(&&construct.subject) {
                     continue;
                 }
 

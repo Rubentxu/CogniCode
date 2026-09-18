@@ -112,14 +112,14 @@ impl<'a> FindingVerifier<'a> {
             // A step that names a subject makes a checkable claim about the
             // fact: the fact must agree, and a fact that cannot attest its
             // subject cannot back the claim.
-            if let Some(subject) = cs.subject {
-                if fact.subject != Some(subject) {
-                    return Err(VerificationError::SubjectMismatch {
-                        step,
-                        step_subject: subject,
-                        fact_subject: fact.subject,
-                    });
-                }
+            if let Some(subject) = cs.subject
+                && fact.subject != Some(subject)
+            {
+                return Err(VerificationError::SubjectMismatch {
+                    step,
+                    step_subject: subject,
+                    fact_subject: fact.subject,
+                });
             }
         }
 
@@ -130,12 +130,12 @@ impl<'a> FindingVerifier<'a> {
     ///
     /// `step` is the causal step index when the atom is being checked in a
     /// causal position, and `None` when it is checked as claimed evidence.
-    fn check_coherence<'d>(
+    fn check_coherence(
         id: EvidenceId,
-        descriptor: &'d EvidenceDescriptor,
+        descriptor: &EvidenceDescriptor,
         scope_snapshot: Option<SnapshotId>,
         step: Option<usize>,
-    ) -> Result<&'d FactDescriptor, VerificationError> {
+    ) -> Result<&FactDescriptor, VerificationError> {
         if !descriptor.grade.supports_a_claim() {
             return Err(VerificationError::RefutingEvidence {
                 evidence: id,
@@ -152,15 +152,15 @@ impl<'a> FindingVerifier<'a> {
                 });
             }
         };
-        if let Some(snapshot) = scope_snapshot {
-            if fact.snapshot != snapshot {
-                return Err(VerificationError::SnapshotMismatch {
-                    evidence: id_of(descriptor),
-                    fact: fact.id,
-                    fact_snapshot: fact.snapshot,
-                    scope_snapshot: snapshot,
-                });
-            }
+        if let Some(snapshot) = scope_snapshot
+            && fact.snapshot != snapshot
+        {
+            return Err(VerificationError::SnapshotMismatch {
+                evidence: id_of(descriptor),
+                fact: fact.id,
+                fact_snapshot: fact.snapshot,
+                scope_snapshot: snapshot,
+            });
         }
         Ok(fact)
     }

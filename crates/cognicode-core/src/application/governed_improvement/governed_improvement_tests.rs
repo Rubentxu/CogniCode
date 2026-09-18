@@ -47,16 +47,12 @@ use crate::application::self_hosting::platform_equivalence::{
     DefaultNormaliser, HistoricalReplay, PlatformKind, PlatformObservation,
 };
 use crate::application::self_hosting::prediction::{ExpectedObservation, SealedPrediction};
-use crate::application::shadow_evaluation::analyzer::{
-    AnalyzerDescriptor, AnalyzerUnderTest,
-};
+use crate::application::shadow_evaluation::analyzer::{AnalyzerDescriptor, AnalyzerUnderTest};
 use crate::application::shadow_evaluation::classifiers::BuiltinFailureRegimeClassifier;
 use crate::application::shadow_evaluation::plan::ShadowEvaluationPlan;
 use crate::application::shadow_evaluation::report::{ShadowEvaluator, ShadowRoleReport};
 use crate::application::software_world::fork::{SourceMutation, fork};
-use crate::application::software_world::world::{
-    ContentHash, SoftwareWorld, SoftwareWorldId,
-};
+use crate::application::software_world::world::{ContentHash, SoftwareWorld, SoftwareWorldId};
 use crate::domain::evidence_kernel::ids::SnapshotId;
 use crate::domain::execution::actor::ActorRef;
 use crate::domain::kernel_ids::ExecutionId;
@@ -76,7 +72,11 @@ fn obs(id: &str, fired: bool) -> PlatformObservation {
     PlatformObservation {
         platform: PlatformKind::Linux,
         id: id.to_string(),
-        raw: if fired { b"present".to_vec() } else { Vec::new() },
+        raw: if fired {
+            b"present".to_vec()
+        } else {
+            Vec::new()
+        },
     }
 }
 
@@ -131,7 +131,10 @@ impl HistoricalPredictor for Scripted {
                 expected_present: *present,
             })
             .collect();
-        SealedPrediction::seal(format!("{}-{}", self.label, input.case_id.as_str()), expectations)
+        SealedPrediction::seal(
+            format!("{}-{}", self.label, input.case_id.as_str()),
+            expectations,
+        )
     }
 }
 
@@ -181,11 +184,7 @@ fn harness() -> Harness {
 
     let current_desc = AnalyzerDescriptor::try_new("analyzer", "rev-current").unwrap();
     let candidate_desc = AnalyzerDescriptor::try_new("analyzer", "rev-candidate").unwrap();
-    let plan = ShadowEvaluationPlan::prepare(
-        replay,
-        current_desc.clone(),
-        candidate_desc.clone(),
-    );
+    let plan = ShadowEvaluationPlan::prepare(replay, current_desc.clone(), candidate_desc.clone());
 
     Harness {
         proposal,
@@ -243,7 +242,10 @@ fn optimize_win_confirm_clean() -> (Harness, ShadowRoleReport, ShadowRoleReport)
     );
     let candidate = Scripted::new(
         "candidate",
-        vec![("a", vec![("oracle.a", true)]), ("b", vec![("oracle.b", true)])],
+        vec![
+            ("a", vec![("oracle.a", true)]),
+            ("b", vec![("oracle.b", true)]),
+        ],
     );
     let optimize = shadow(&h, DatasetRole::Optimize, &current, &candidate);
     let confirm = shadow(&h, DatasetRole::Confirm, &current, &candidate);
@@ -289,7 +291,9 @@ fn trial_for(h: &Harness, world: &SoftwareWorld, base_snapshot: SnapshotId) -> T
 
 /// Build a real `PromotionPermit` for the harness, going through the full e80a
 /// external-approval path.
-fn promotion_permit(h: &Harness) -> crate::application::promotion_authority::permit::PromotionPermit {
+fn promotion_permit(
+    h: &Harness,
+) -> crate::application::promotion_authority::permit::PromotionPermit {
     let dry_run = evaluate_promotion_lineage(
         GovernedPromotionInput {
             proposal: &h.proposal,
@@ -342,10 +346,13 @@ fn wu12_optimize_win_confirm_loss_blocks_the_governed_path() {
 
     // ... and BLOCKS: CONFIRM regressed by one FN.
     assert_eq!(decision.outcome, PolicyOutcome::Block);
-    assert!(decision
-        .reasons
-        .iter()
-        .any(|r| matches!(r, crate::application::governed_improvement::policy::HeldOutReason::FalseNegativeRegression { observed: 1, allowed: 0 })));
+    assert!(decision.reasons.iter().any(|r| matches!(
+        r,
+        crate::application::governed_improvement::policy::HeldOutReason::FalseNegativeRegression {
+            observed: 1,
+            allowed: 0
+        }
+    )));
 
     // No held-out pass ⇒ no governed permit, despite everything else being green.
     let rejected = HeldOutPromotionGate::require_pass(&freeze, &confirm, &policy);
@@ -359,10 +366,12 @@ fn wu12_optimize_win_confirm_loss_blocks_the_governed_path() {
     // ... but the only constructor of a governed permit requires a sealed
     // HeldOutGatePass. Since no pass can be minted here, the governed apply is
     // structurally impossible: OPTIMIZE cannot pay for CONFIRM regression.
-    assert!(HeldOutPromotionGate::require_pass(&freeze, &confirm, &policy)
-        .unwrap_err()
-        .to_string()
-        .contains("did not pass"));
+    assert!(
+        HeldOutPromotionGate::require_pass(&freeze, &confirm, &policy)
+            .unwrap_err()
+            .to_string()
+            .contains("did not pass")
+    );
 }
 
 // ── WU13: incomplete CONFIRM ⇒ InsufficientEvidence ─────────────────
@@ -377,11 +386,8 @@ fn wu13_incomplete_confirm_is_insufficient_evidence() {
     .unwrap();
     let split = DatasetSplit::try_new(vec![case_id("a")], vec![case_id("b")]).unwrap();
     let replay = HistoricalReplayPlan::prepare(&corpus, &split).unwrap();
-    let plan = ShadowEvaluationPlan::prepare(
-        replay,
-        h.current_desc.clone(),
-        h.candidate_desc.clone(),
-    );
+    let plan =
+        ShadowEvaluationPlan::prepare(replay, h.current_desc.clone(), h.candidate_desc.clone());
     let current = Scripted::new("current", vec![]);
     let candidate = Scripted::new("candidate", vec![("a", vec![("oracle.a", true)])]);
     let normaliser = DefaultNormaliser;
@@ -450,7 +456,11 @@ fn wu14_a_confirm_for_a_different_revision_is_rejected_not_blocked() {
     )
     .unwrap();
 
-    let err = HeldOutPromotionGate::evaluate(&freeze, &swapped, &HeldOutPolicySpec::strict_no_regression());
+    let err = HeldOutPromotionGate::evaluate(
+        &freeze,
+        &swapped,
+        &HeldOutPolicySpec::strict_no_regression(),
+    );
     assert!(
         matches!(err, Err(HeldOutGateError::EvaluationDigestMismatch { .. })),
         "a different candidate revision changes the evaluation digest"
@@ -486,8 +496,11 @@ fn wu14_c_same_descriptor_different_evaluation_digest_is_rejected() {
     )
     .unwrap();
 
-    let err =
-        HeldOutPromotionGate::evaluate(&freeze, &other_report, &HeldOutPolicySpec::strict_no_regression());
+    let err = HeldOutPromotionGate::evaluate(
+        &freeze,
+        &other_report,
+        &HeldOutPolicySpec::strict_no_regression(),
+    );
     assert!(matches!(
         err,
         Err(HeldOutGateError::EvaluationDigestMismatch { .. })
@@ -722,7 +735,11 @@ fn wu20_i_j_determinism_and_policy_digest_sensitivity() {
     assert_eq!(d1, d2, "same inputs => identical decision");
 
     let b = HeldOutPolicySpec::new(1, 0, 0, true, Vec::new());
-    assert_ne!(a.digest(), b.digest(), "changed tolerance => changed digest");
+    assert_ne!(
+        a.digest(),
+        b.digest(),
+        "changed tolerance => changed digest"
+    );
     let d3 = HeldOutPromotionGate::evaluate(&freeze, &confirm, &b).unwrap();
     assert_ne!(d1.policy_digest, d3.policy_digest);
 }
@@ -872,7 +889,10 @@ fn binding_rejects_a_proposal_for_another_base_world() {
         h.plan.evaluation_digest(),
     )
     .unwrap_err();
-    assert!(matches!(err, GovernedBindingError::ProposalBaseWorldMismatch { .. }));
+    assert!(matches!(
+        err,
+        GovernedBindingError::ProposalBaseWorldMismatch { .. }
+    ));
 }
 
 #[test]

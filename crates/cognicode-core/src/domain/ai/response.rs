@@ -22,7 +22,7 @@ use crate::domain::ai::hypothesis::{Critique, Hypothesis};
 use crate::domain::ai::patch::SourcePatchCandidate;
 use crate::domain::ai::request::RequestProvenance;
 use crate::domain::kernel_ids::FactId;
-use crate::domain::readset::{InMemoryReadSetRecorder, ReadSet, ReadSetConfig};
+use crate::domain::readset::ReadSet;
 
 /// What the port observed during inference — provenance for the
 /// lineage trail.
@@ -250,19 +250,14 @@ impl LlmResponse {
 mod tests {
     use super::*;
     use crate::domain::ai::InvestigationFrameId;
-    use crate::domain::readset::{ReadSet, ReadSetConfig};
+    use crate::domain::readset::{InMemoryReadSetRecorder, ReadSet, ReadSetConfig};
 
     fn prov() -> ResponseProvenance {
         ResponseProvenance::new("fake-local", "fake-deterministic-v1", None, None).unwrap()
     }
 
     fn req_prov() -> RequestProvenance {
-        RequestProvenance::new(
-            InvestigationFrameId::from_content_digest(1),
-            "test",
-            None,
-        )
-        .unwrap()
+        RequestProvenance::new(InvestigationFrameId::from_content_digest(1), "test", None).unwrap()
     }
 
     fn empty_read_set() -> ReadSet {
@@ -287,7 +282,14 @@ mod tests {
     #[test]
     fn an_advisory_response_carries_its_summary() {
         let id = InvestigationFrameId::from_content_digest(1);
-        let r = LlmResponse::new_advisory(id, 1, req_prov(), prov(), empty_read_set(), "look at line 17");
+        let r = LlmResponse::new_advisory(
+            id,
+            1,
+            req_prov(),
+            prov(),
+            empty_read_set(),
+            "look at line 17",
+        );
         match r.output() {
             ResponseOutput::Advisory { summary } => assert_eq!(summary, "look at line 17"),
             _ => panic!("expected Advisory output"),

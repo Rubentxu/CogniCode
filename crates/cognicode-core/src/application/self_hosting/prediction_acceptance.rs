@@ -7,7 +7,7 @@
 #![cfg(feature = "evidence-kernel")]
 
 use crate::application::self_hosting::prediction::{
-    score, ExpectedObservation, Observation, SealedPrediction,
+    ExpectedObservation, Observation, SealedPrediction, score,
 };
 
 #[test]

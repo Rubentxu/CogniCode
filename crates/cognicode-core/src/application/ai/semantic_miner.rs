@@ -26,7 +26,9 @@
 //! even if it tried to.
 
 use crate::domain::ai::frame::InvestigationFrame;
-use crate::domain::ai::hypothesis::{Hypothesis, HypothesisConfidence, HypothesisId, HypothesisStatement};
+use crate::domain::ai::hypothesis::{
+    Hypothesis, HypothesisConfidence, HypothesisId, HypothesisStatement,
+};
 use crate::domain::ai::port::LlmPort;
 use crate::domain::ai::request::{InvestigationRequest, RequestProvenance, ToolCall};
 use crate::domain::ai::response::{LlmResponse, ResponseOutput};
@@ -99,10 +101,7 @@ impl<'a> SemanticMiner<'a> {
     /// 3. Validates that the response's frame_id matches the request's.
     /// 4. Returns the bounded output, converted into [`MinerOutput`]
     ///    variants where appropriate.
-    pub fn mine(
-        &self,
-        frame: &InvestigationFrame,
-    ) -> Result<Vec<MinerOutput>, MinerError> {
+    pub fn mine(&self, frame: &InvestigationFrame) -> Result<Vec<MinerOutput>, MinerError> {
         let req = build_request(frame);
         let resp = self.port.complete(&req, frame)?;
         if resp.frame_id() != frame.id() {
@@ -169,8 +168,14 @@ pub fn convert_response(response: &LlmResponse, _frame: &InvestigationFrame) -> 
                     // never happen because Critique::try_new guards
                     // it), fall back to a non-empty stub.
                     let stub = HypothesisStatement::Suggestion("critique fallback".into());
-                    Hypothesis::try_new(HypothesisId::new(0), stub, vec![], vec![], HypothesisConfidence::default())
-                        .unwrap()
+                    Hypothesis::try_new(
+                        HypothesisId::new(0),
+                        stub,
+                        vec![],
+                        vec![],
+                        HypothesisConfidence::default(),
+                    )
+                    .unwrap()
                 });
                 MinerOutput::Suggestion(hyp)
             })
@@ -186,8 +191,14 @@ pub fn convert_response(response: &LlmResponse, _frame: &InvestigationFrame) -> 
             )
             .unwrap_or_else(|_| {
                 let stub = HypothesisStatement::Suggestion("advisory fallback".into());
-                Hypothesis::try_new(HypothesisId::new(0), stub, vec![], vec![], HypothesisConfidence::default())
-                    .unwrap()
+                Hypothesis::try_new(
+                    HypothesisId::new(0),
+                    stub,
+                    vec![],
+                    vec![],
+                    HypothesisConfidence::default(),
+                )
+                .unwrap()
             });
             vec![MinerOutput::Suggestion(hyp)]
         }
@@ -267,7 +278,8 @@ mod tests {
 
     fn make_response_for(frame: &InvestigationFrame, output: ResponseOutput) -> LlmResponse {
         let req_prov = RequestProvenance::new(frame.id(), "semantic-miner-v1", None).unwrap();
-        let resp_prov = ResponseProvenance::new("fake-local", "fake-deterministic-v1", None, None).unwrap();
+        let resp_prov =
+            ResponseProvenance::new("fake-local", "fake-deterministic-v1", None, None).unwrap();
         // Build the request so we can capture its digest.
         let req = build_request(frame);
         match output {
@@ -336,7 +348,10 @@ mod tests {
     #[test]
     fn miner_returns_hypotheses_from_response() {
         let f = frame_with("q");
-        let resp = make_response_for(&f, ResponseOutput::Hypotheses(vec![well_formed_hypothesis()]));
+        let resp = make_response_for(
+            &f,
+            ResponseOutput::Hypotheses(vec![well_formed_hypothesis()]),
+        );
         let fake = FakeLlmPort::new().with_scripted(
             ScriptKey::new(f.id(), build_request(&f).content_digest()),
             resp,
@@ -356,7 +371,12 @@ mod tests {
     #[test]
     fn miner_returns_advisory_from_response() {
         let f = frame_with("q");
-        let resp = make_response_for(&f, ResponseOutput::Advisory { summary: "look at line 17".into() });
+        let resp = make_response_for(
+            &f,
+            ResponseOutput::Advisory {
+                summary: "look at line 17".into(),
+            },
+        );
         let fake = FakeLlmPort::new().with_scripted(
             ScriptKey::new(f.id(), build_request(&f).content_digest()),
             resp,
@@ -377,7 +397,12 @@ mod tests {
     fn a_frame_mismatch_is_an_error() {
         let f = frame_with("q");
         let other_frame_id = InvestigationFrameId::from_content_digest(999);
-        let resp = make_response_for(&f, ResponseOutput::Advisory { summary: "s".into() });
+        let resp = make_response_for(
+            &f,
+            ResponseOutput::Advisory {
+                summary: "s".into(),
+            },
+        );
         let mut bad = resp;
         // Force a frame_id mismatch via a new LlmResponse with a different frame_id.
         let bad_resp = LlmResponse::new_advisory(
@@ -421,7 +446,12 @@ mod tests {
         // The MinerOutput enum has no CommitCanonicalFact variant and
         // no authority field. Compile-time check via `matches!`.
         let f = frame_with("q");
-        let resp = make_response_for(&f, ResponseOutput::Advisory { summary: "x".into() });
+        let resp = make_response_for(
+            &f,
+            ResponseOutput::Advisory {
+                summary: "x".into(),
+            },
+        );
         let fake = FakeLlmPort::new().with_scripted(
             ScriptKey::new(f.id(), build_request(&f).content_digest()),
             resp,
@@ -432,9 +462,12 @@ mod tests {
             // The miner never emits CommitCanonicalFact (no such
             // variant in MinerOutput) and never carries authority
             // (no Admitter, no admitted_at).
-            assert!(matches!(o, MinerOutput::Suggestion(_)
-                | MinerOutput::ConstraintCandidate(_)
-                | MinerOutput::DetectorCandidate { .. }));
+            assert!(matches!(
+                o,
+                MinerOutput::Suggestion(_)
+                    | MinerOutput::ConstraintCandidate(_)
+                    | MinerOutput::DetectorCandidate { .. }
+            ));
             if let MinerOutput::ConstraintCandidate(cc) = o {
                 // ConstraintCandidate has no admitted_at / admitted_by fields —
                 // it's structurally unadmitted. (Field-level test would

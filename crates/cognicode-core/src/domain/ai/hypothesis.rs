@@ -275,7 +275,10 @@ impl std::fmt::Display for HypothesisError {
         match self {
             Self::EmptyStatement => f.write_str("hypothesis statement is empty"),
             Self::ConflictingRefs(s) => {
-                write!(f, "hypothesis references {s} as both supporting and contradicting")
+                write!(
+                    f,
+                    "hypothesis references {s} as both supporting and contradicting"
+                )
             }
         }
     }
@@ -388,7 +391,13 @@ mod tests {
     #[test]
     fn hypothesis_rejects_empty_statement() {
         let stmt = HypothesisStatement::Suggestion("   ".into());
-        let h = Hypothesis::try_new(HypothesisId::new(1), stmt, vec![], vec![], HypothesisConfidence::default());
+        let h = Hypothesis::try_new(
+            HypothesisId::new(1),
+            stmt,
+            vec![],
+            vec![],
+            HypothesisConfidence::default(),
+        );
         assert!(matches!(h.unwrap_err(), HypothesisError::EmptyStatement));
     }
 
@@ -398,8 +407,17 @@ mod tests {
         let f = crate::domain::kernel_ids::FactId::new(42);
         let supporting = vec![HypothesisRef::Fact(f)];
         let contradicting = vec![HypothesisRef::Fact(f)];
-        let h = Hypothesis::try_new(HypothesisId::new(1), stmt, supporting, contradicting, HypothesisConfidence::default());
-        assert!(matches!(h.unwrap_err(), HypothesisError::ConflictingRefs(_)));
+        let h = Hypothesis::try_new(
+            HypothesisId::new(1),
+            stmt,
+            supporting,
+            contradicting,
+            HypothesisConfidence::default(),
+        );
+        assert!(matches!(
+            h.unwrap_err(),
+            HypothesisError::ConflictingRefs(_)
+        ));
     }
 
     #[test]
@@ -432,8 +450,13 @@ mod tests {
     #[test]
     fn a_well_formed_critique_is_accepted() {
         let fid = FindingId::new("f-1").unwrap();
-        let c = Critique::try_new(fid, CritiqueDisposition::WeaklySupported, "two of three claims are grounded", vec![])
-            .unwrap();
+        let c = Critique::try_new(
+            fid,
+            CritiqueDisposition::WeaklySupported,
+            "two of three claims are grounded",
+            vec![],
+        )
+        .unwrap();
         assert_eq!(c.disposition, CritiqueDisposition::WeaklySupported);
         assert_eq!(c.finding_id.as_str(), "f-1");
     }
@@ -442,9 +465,18 @@ mod tests {
     fn critique_disposition_names_are_stable() {
         assert_eq!(CritiqueDisposition::Supported.name(), "supported");
         assert_eq!(CritiqueDisposition::Contradicted.name(), "contradicted");
-        assert_eq!(CritiqueDisposition::MissingEvidence.name(), "missing_evidence");
-        assert_eq!(CritiqueDisposition::NeedsInvestigation.name(), "needs_investigation");
-        assert_eq!(CritiqueDisposition::WeaklySupported.name(), "weakly_supported");
+        assert_eq!(
+            CritiqueDisposition::MissingEvidence.name(),
+            "missing_evidence"
+        );
+        assert_eq!(
+            CritiqueDisposition::NeedsInvestigation.name(),
+            "needs_investigation"
+        );
+        assert_eq!(
+            CritiqueDisposition::WeaklySupported.name(),
+            "weakly_supported"
+        );
     }
 
     #[test]

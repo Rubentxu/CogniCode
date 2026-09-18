@@ -113,7 +113,7 @@ impl GraphBackend {
         let is_excluded = |id: u64| -> bool {
             nodes
                 .get(&id)
-                .map(|n| excluded.iter().any(|e| *e == &n.subject))
+                .map(|n| excluded.contains(&&n.subject))
                 .unwrap_or(false)
         };
 
@@ -131,10 +131,10 @@ impl GraphBackend {
             queue.push_back(source_id);
             while let Some(current) = queue.pop_front() {
                 let d = distance[&current];
-                if let Some(limit) = max_hops {
-                    if d >= limit {
-                        continue;
-                    }
+                if let Some(limit) = max_hops
+                    && d >= limit
+                {
+                    continue;
                 }
                 if let Some(neighbours) = adjacency.get(&current) {
                     for &next in neighbours {

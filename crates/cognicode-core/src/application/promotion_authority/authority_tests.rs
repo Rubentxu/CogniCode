@@ -18,14 +18,14 @@
 //! harness.
 
 use crate::application::change_proposal::proposal::RequestedBy;
+use crate::application::promotion_authority::authority_test_support::{
+    clean_dry_run, drifted_dry_run, dry_run_for_candidate, human, llm_agent, passing_trial_for,
+    plugin, proposal, world,
+};
 use crate::application::promotion_authority::authorization::{
     ExternalApprovalAuthority, ExternalApprovalError, ExternalApprovalRequest,
     ExternalApprovalVerifier, PromotionApprovalTarget, PromotionAuthorizationError,
     PromotionAuthorizationPolicy, RejectAllExternalApprovals, VerifiedExternalApproval,
-};
-use crate::application::promotion_authority::authority_test_support::{
-    clean_dry_run, drifted_dry_run, dry_run_for_candidate, human, llm_agent, plugin, proposal,
-    passing_trial_for, world,
 };
 use crate::application::promotion_authority::permit::{
     PromotionApplyError, PromotionApplyOutcome, PromotionPermitId, apply_with_permit,
@@ -46,11 +46,16 @@ impl ExternalApprovalVerifier for ApproveExact {
     }
 }
 
-fn target_of(run: &crate::application::promotion_authority::evaluation::PromotionDryRun) -> PromotionApprovalTarget {
+fn target_of(
+    run: &crate::application::promotion_authority::evaluation::PromotionDryRun,
+) -> PromotionApprovalTarget {
     PromotionApprovalTarget::from_dry_run(run)
 }
 
-fn approved(approver: &str, run: &crate::application::promotion_authority::evaluation::PromotionDryRun) -> VerifiedExternalApproval {
+fn approved(
+    approver: &str,
+    run: &crate::application::promotion_authority::evaluation::PromotionDryRun,
+) -> VerifiedExternalApproval {
     let target = target_of(run);
     ExternalApprovalAuthority::verify(
         &ApproveExact {
@@ -99,7 +104,10 @@ fn c_forged_human_actorref_with_rejecting_verifier_yields_no_approval() {
 
     // The caller can name a human...
     let request = ExternalApprovalRequest::new(target, ActorRef::human("alice"));
-    assert_eq!(request.claimed_approver.kind, crate::domain::execution::actor::ActorKind::Human);
+    assert_eq!(
+        request.claimed_approver.kind,
+        crate::domain::execution::actor::ActorKind::Human
+    );
 
     // ...but the trusted verifier refuses, so no approval is minted.
     let err = ExternalApprovalAuthority::verify(&RejectAllExternalApprovals, request).unwrap_err();
@@ -160,7 +168,8 @@ fn f_stale_current_snapshot_is_refused() {
     // The world has since moved (current snapshot 12). The dry-run is no longer
     // clean, so it is refused before the approval is even consulted.
     let drifted = drifted_dry_run("p-1", &trial);
-    let err = PromotionAuthorizationPolicy::authorize(&p, drifted, Some(stale_approval)).unwrap_err();
+    let err =
+        PromotionAuthorizationPolicy::authorize(&p, drifted, Some(stale_approval)).unwrap_err();
     assert!(
         matches!(err, PromotionAuthorizationError::DryRunNotClean { .. }),
         "a stale world must fail closed at the cleanliness gate, got {err:?}"
@@ -216,14 +225,22 @@ fn i_automated_author_with_verified_approval_can_be_authorised() {
 
     let authorization = PromotionAuthorizationPolicy::authorize(&p, run, Some(approval))
         .expect("verified external approval must authorise an automated author");
-    assert!(matches!(authorization.author(), RequestedBy::LlmAgent { .. }));
+    assert!(matches!(
+        authorization.author(),
+        RequestedBy::LlmAgent { .. }
+    ));
     assert_eq!(
-        authorization.external_approval().map(|a| a.approver().id.as_str()),
+        authorization
+            .external_approval()
+            .map(|a| a.approver().id.as_str()),
         Some("alice")
     );
 
     let permit = issue_promotion_permit(PromotionPermitId::from_string("pm-1"), authorization);
-    assert_eq!(permit.external_approver().map(|a| a.id.as_str()), Some("alice"));
+    assert_eq!(
+        permit.external_approver().map(|a| a.id.as_str()),
+        Some("alice")
+    );
     assert!(matches!(
         apply_with_permit(&world("w-C", 10), &permit),
         PromotionApplyOutcome::Applied { .. }
@@ -238,7 +255,10 @@ fn perfect_evidence_is_not_authority() {
     // there is, and it still confers no authority on an automated author.
     let p = proposal("p-1", plugin());
     let trial = passing_trial_for(&p);
-    assert_eq!(trial.gate.outcome, crate::application::policy_gate::PolicyOutcome::Pass);
+    assert_eq!(
+        trial.gate.outcome,
+        crate::application::policy_gate::PolicyOutcome::Pass
+    );
     let run = clean_dry_run("p-1", &trial);
 
     assert!(PromotionAuthorizationPolicy::authorize(&p, run, None).is_err());
@@ -302,7 +322,9 @@ fn k_sealed_authority_types_have_no_public_constructor() {
 /// Extract the `{ ... }` body of a struct definition by name.
 fn struct_body(src: &str, name: &str) -> String {
     let marker = format!("pub struct {name} ");
-    let start = src.find(&marker).unwrap_or_else(|| panic!("{name} not found"));
+    let start = src
+        .find(&marker)
+        .unwrap_or_else(|| panic!("{name} not found"));
     let brace = src[start..].find('{').expect("struct body") + start;
     let mut depth = 0usize;
     for (i, ch) in src[brace..].char_indices() {
@@ -341,7 +363,10 @@ fn l_no_ai_module_imports_a_permit_minting_constructor() {
         }
         for entry in walk_rs(&root) {
             let name = entry.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.ends_with("_tests.rs") || name.contains("test_support") || name == "boundary_tests.rs" {
+            if name.ends_with("_tests.rs")
+                || name.contains("test_support")
+                || name == "boundary_tests.rs"
+            {
                 continue;
             }
             let text = std::fs::read_to_string(&entry).unwrap_or_default();

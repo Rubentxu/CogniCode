@@ -218,8 +218,14 @@ impl GovernedImprovementReceipt {
     }
 }
 
-fn describe(descriptor: &crate::application::shadow_evaluation::analyzer::AnalyzerDescriptor) -> String {
-    format!("{}@{}", descriptor.analyzer_id(), descriptor.revision_digest())
+fn describe(
+    descriptor: &crate::application::shadow_evaluation::analyzer::AnalyzerDescriptor,
+) -> String {
+    format!(
+        "{}@{}",
+        descriptor.analyzer_id(),
+        descriptor.revision_digest()
+    )
 }
 
 /// Re-export for callers that need the snapshot type in the receipt's shape.

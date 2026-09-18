@@ -119,6 +119,7 @@ impl<'a> CausalRecorder<'a> {
     /// rather than decomposing it into `(scope, actor, correlation)`.
     ///
     /// Event chain: `trigger_event → behavior.started → behavior.budget_exhausted`.
+    #[allow(clippy::too_many_arguments)] // event-chain shape is positional by design
     pub async fn record_behavior_budget_exhausted(
         &mut self,
         context: &ExecutionContext,

@@ -213,10 +213,10 @@ impl EvidenceBindings {
     pub fn grounded_ids(&self) -> Vec<EvidenceId> {
         let mut ids: Vec<EvidenceId> = Vec::new();
         for entry in &self.entries {
-            if let Some(id) = entry.id() {
-                if !ids.contains(&id) {
-                    ids.push(id);
-                }
+            if let Some(id) = entry.id()
+                && !ids.contains(&id)
+            {
+                ids.push(id);
             }
         }
         ids

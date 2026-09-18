@@ -374,11 +374,10 @@ impl<'a> BehaviorRuntime<'a> {
             }
 
             // Check EffectCount budget (each effect is one count).
-            if budget_exhausted.is_none() {
-                if let Err(e) = authorizer.check(&budget_state, budgets::BudgetKind::EffectCount, 1)
-                {
-                    budget_exhausted = Some(e);
-                }
+            if budget_exhausted.is_none()
+                && let Err(e) = authorizer.check(&budget_state, budgets::BudgetKind::EffectCount, 1)
+            {
+                budget_exhausted = Some(e);
             }
 
             // Step 2b: refusal path — budget exceeded.

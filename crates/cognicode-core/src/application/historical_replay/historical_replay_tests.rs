@@ -41,7 +41,11 @@ fn obs(id: &str, fired: bool) -> PlatformObservation {
         platform: PlatformKind::Linux,
         id: id.to_string(),
         // e76 convention: an empty raw payload means "did not fire".
-        raw: if fired { b"present".to_vec() } else { Vec::new() },
+        raw: if fired {
+            b"present".to_vec()
+        } else {
+            Vec::new()
+        },
     }
 }
 
@@ -65,8 +69,12 @@ fn case(id: &str, observations: Vec<PlatformObservation>) -> HistoricalCase {
 }
 
 fn corpus(ids: &[&str]) -> HistoricalCorpus {
-    HistoricalCorpus::try_new(ids.iter().map(|id| case(id, vec![obs("oracle.a", true)])).collect())
-        .expect("valid corpus")
+    HistoricalCorpus::try_new(
+        ids.iter()
+            .map(|id| case(id, vec![obs("oracle.a", true)]))
+            .collect(),
+    )
+    .expect("valid corpus")
 }
 
 /// A deterministic predictor that records its invocations and inputs.
@@ -119,7 +127,11 @@ fn a_overlap_is_a_configuration_error_and_runs_nothing() {
         Err(e) => Err(e.to_string()),
     };
     assert!(plan.is_err(), "overlapping split must not yield a plan");
-    assert_eq!(predictor.calls(), 0, "configuration error must run zero predictors");
+    assert_eq!(
+        predictor.calls(),
+        0,
+        "configuration error must run zero predictors"
+    );
 }
 
 #[test]
@@ -153,8 +165,7 @@ fn d_unknown_case_id_is_a_configuration_error_and_runs_nothing() {
 fn e_mutating_caller_vectors_after_split_creation_does_not_change_the_split() {
     let mut optimize = vec![case_id("a")];
     let mut confirm = vec![case_id("b")];
-    let split =
-        DatasetSplit::try_new(optimize.clone(), confirm.clone()).expect("disjoint split");
+    let split = DatasetSplit::try_new(optimize.clone(), confirm.clone()).expect("disjoint split");
     let digest_before = split.digest().to_string();
 
     optimize.push(case_id("c"));
@@ -259,7 +270,8 @@ fn i_changing_observations_after_the_fact_does_not_change_the_seal() {
 #[test]
 fn j_identical_inputs_yield_identical_reports() {
     let corpus = corpus(&["a", "b", "c"]);
-    let split = DatasetSplit::try_new(vec![case_id("a"), case_id("b")], vec![case_id("c")]).unwrap();
+    let split =
+        DatasetSplit::try_new(vec![case_id("a"), case_id("b")], vec![case_id("c")]).unwrap();
     let predictor = FixturePredictor::calling_with(&["oracle.a"]);
 
     let plan = HistoricalReplayPlan::prepare(&corpus, &split).unwrap();
@@ -274,7 +286,8 @@ fn j_identical_inputs_yield_identical_reports() {
 #[test]
 fn k_optimize_and_confirm_reports_remain_distinct() {
     let corpus = corpus(&["a", "b", "c"]);
-    let split = DatasetSplit::try_new(vec![case_id("a"), case_id("b")], vec![case_id("c")]).unwrap();
+    let split =
+        DatasetSplit::try_new(vec![case_id("a"), case_id("b")], vec![case_id("c")]).unwrap();
     let predictor = FixturePredictor::calling_with(&["oracle.a"]);
     let plan = HistoricalReplayPlan::prepare(&corpus, &split).unwrap();
     let reports = plan.run(&predictor);
@@ -283,7 +296,10 @@ fn k_optimize_and_confirm_reports_remain_distinct() {
     assert_eq!(reports.confirm().role(), DatasetRole::Confirm);
     assert_eq!(reports.optimize().cases().len(), 2);
     assert_eq!(reports.confirm().cases().len(), 1);
-    assert_eq!(reports.report_for(DatasetRole::Confirm).cases()[0].case_id, case_id("c"));
+    assert_eq!(
+        reports.report_for(DatasetRole::Confirm).cases()[0].case_id,
+        case_id("c")
+    );
     // No blended total is exposed: each side is measured on its own.
     assert_ne!(reports.optimize().cases(), reports.confirm().cases());
 }
@@ -293,7 +309,12 @@ fn k_optimize_and_confirm_reports_remain_distinct() {
 #[test]
 fn l_replay_does_not_mint_a_policy_decision() {
     let src = module_source();
-    for forbidden in ["PolicyDecision", "PolicyOutcome", "PolicyGate", "PolicySpec"] {
+    for forbidden in [
+        "PolicyDecision",
+        "PolicyOutcome",
+        "PolicyGate",
+        "PolicySpec",
+    ] {
         assert!(!src.contains(forbidden), "e81 must not mint `{forbidden}`");
     }
 }
@@ -369,7 +390,10 @@ fn o_missing_observation_is_incomplete_never_safe() {
 fn corpus_rejects_duplicates_and_canonicalises_order() {
     let dup = HistoricalCorpus::try_new(vec![case("a", vec![]), case("a", vec![])]);
     assert!(matches!(dup, Err(CorpusError::DuplicateCaseId(_))));
-    assert!(matches!(HistoricalCorpus::try_new(vec![]), Err(CorpusError::EmptyCorpus)));
+    assert!(matches!(
+        HistoricalCorpus::try_new(vec![]),
+        Err(CorpusError::EmptyCorpus)
+    ));
 
     let unordered = HistoricalCorpus::try_new(vec![case("b", vec![]), case("a", vec![])]).unwrap();
     let ordered = HistoricalCorpus::try_new(vec![case("a", vec![]), case("b", vec![])]).unwrap();
@@ -398,7 +422,10 @@ fn wu11_e76_replay_flows_into_optimize_and_confirm_reports() {
         ),
         (
             "case-2",
-            HistoricalReplay::observation_only("snap-2", vec![obs("oracle.b", true), obs("oracle.a", false)]),
+            HistoricalReplay::observation_only(
+                "snap-2",
+                vec![obs("oracle.b", true), obs("oracle.a", false)],
+            ),
         ),
         (
             "case-3",
@@ -479,7 +506,14 @@ fn wu11_case_rejects_empty_inputs() {
 #[test]
 fn wu12_module_contains_no_random_splitting() {
     let src = module_source().to_lowercase();
-    for forbidden in ["rand::", "thread_rng", "shuffle", "splitmix", "getrandom", "seed"] {
+    for forbidden in [
+        "rand::",
+        "thread_rng",
+        "shuffle",
+        "splitmix",
+        "getrandom",
+        "seed",
+    ] {
         assert!(
             !src.contains(forbidden),
             "e81 must not randomise dataset assignment (`{forbidden}`)"
@@ -535,7 +569,9 @@ fn walk_rs(root: &Path) -> Vec<PathBuf> {
 /// Extract the `{ ... }` body of a struct definition by name.
 fn struct_body(src: &str, name: &str) -> String {
     let marker = format!("pub struct {name} ");
-    let start = src.find(&marker).unwrap_or_else(|| panic!("{name} not found"));
+    let start = src
+        .find(&marker)
+        .unwrap_or_else(|| panic!("{name} not found"));
     let brace = src[start..].find('{').expect("struct body") + start;
     let mut depth = 0usize;
     for (i, ch) in src[brace..].char_indices() {

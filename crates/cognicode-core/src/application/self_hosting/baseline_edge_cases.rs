@@ -15,14 +15,17 @@
 
 #![cfg(feature = "evidence-kernel")]
 
-use crate::application::self_hosting::baseline::{compute_baseline, BaselineFile};
+use crate::application::self_hosting::baseline::{BaselineFile, compute_baseline};
 
 #[test]
 fn acceptance_baseline_with_empty_directory_produces_empty_input() {
     // The walker itself isn't exposed publicly; we exercise the
     // compute_baseline contract directly with an empty file list.
     let result = compute_baseline(&[]);
-    assert!(result.is_err(), "empty input must surface BaselineError::Empty");
+    assert!(
+        result.is_err(),
+        "empty input must surface BaselineError::Empty"
+    );
 }
 
 #[test]

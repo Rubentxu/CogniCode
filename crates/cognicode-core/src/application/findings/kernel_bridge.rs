@@ -96,16 +96,16 @@ impl<'a> CanonicalEvidenceWriter<'a> {
 
             // The fact is the authority: a projection may *hint* at an entity,
             // but a hint that contradicts the canonical subject is refused.
-            if let Some(hint) = grounding.entity {
-                if hint != fact.subject {
-                    entries[index] = Some(EvidenceBinding::ungrounded(
-                        GroundingFailure::EntityFactMismatch {
-                            entity: hint,
-                            subject: Some(fact.subject),
-                        },
-                    ));
-                    continue;
-                }
+            if let Some(hint) = grounding.entity
+                && hint != fact.subject
+            {
+                entries[index] = Some(EvidenceBinding::ungrounded(
+                    GroundingFailure::EntityFactMismatch {
+                        entity: hint,
+                        subject: Some(fact.subject),
+                    },
+                ));
+                continue;
             }
 
             pending.push((index, fact.id));

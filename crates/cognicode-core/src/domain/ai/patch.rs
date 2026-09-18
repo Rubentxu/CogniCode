@@ -265,17 +265,26 @@ impl std::fmt::Display for PatchValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::FrameMismatch { expected, actual } => {
-                write!(f, "response frame {actual} does not match request frame {expected}")
+                write!(
+                    f,
+                    "response frame {actual} does not match request frame {expected}"
+                )
             }
             Self::ProvenanceFrameMismatch { expected, actual } => write!(
                 f,
                 "response provenance frame {actual} does not match request frame {expected}"
             ),
             Self::RequestDigestMismatch { expected, actual } => {
-                write!(f, "response request digest {actual} does not match request {expected}")
+                write!(
+                    f,
+                    "response request digest {actual} does not match request {expected}"
+                )
             }
             Self::ReadSetOutOfScope { fact } => {
-                write!(f, "observed read set contains fact {fact:?} outside the declared scope")
+                write!(
+                    f,
+                    "observed read set contains fact {fact:?} outside the declared scope"
+                )
             }
             Self::BaseScopeMismatch { expected, actual } => write!(
                 f,
@@ -355,10 +364,8 @@ pub fn validate_source_patch(
     }
 
     // 4. Base scope must match the frame.
-    let expected_scope = PatchBaseScope::new(
-        frame.scope().workspace.clone(),
-        frame.scope().snapshot,
-    );
+    let expected_scope =
+        PatchBaseScope::new(frame.scope().workspace.clone(), frame.scope().snapshot);
     if candidate.base_scope != expected_scope {
         return Err(PatchValidationError::BaseScopeMismatch {
             expected: expected_scope,

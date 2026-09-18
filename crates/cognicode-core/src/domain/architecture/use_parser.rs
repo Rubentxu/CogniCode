@@ -98,7 +98,7 @@ pub fn parse_use_lines(
         if line.is_empty() {
             continue;
         }
-        if let Some(path) = parse_use_line(&line) {
+        if let Some(path) = parse_use_line(line) {
             out.push(UseStatement {
                 path,
                 file_path: file_path.clone(),

@@ -21,7 +21,7 @@
 
 #![cfg(feature = "evidence-kernel")]
 
-use crate::application::self_hosting::baseline::{compute_baseline, BaselineDigest, BaselineFile};
+use crate::application::self_hosting::baseline::{BaselineDigest, BaselineFile, compute_baseline};
 
 /// Walk a directory recursively, returning `(canonical_path, bytes)`
 /// pairs for every regular file found. Symlinks are NOT followed

@@ -93,7 +93,7 @@ impl NamespacedName {
 
     /// The local name (everything after the first `.`).
     pub fn name(&self) -> &str {
-        self.0.splitn(2, '.').nth(1).unwrap_or("")
+        self.0.split_once('.').map(|x| x.1).unwrap_or("")
     }
 }
 

@@ -28,15 +28,12 @@
 mod closure_gate {
     use std::collections::BTreeSet;
 
-    use crate::application::self_hosting::baseline::{compute_baseline, BaselineFile};
-    use crate::application::self_hosting::mutation_corpus::{
-        FalseNegativeReport, MutationCorpus,
-    };
+    use crate::application::self_hosting::baseline::{BaselineFile, compute_baseline};
+    use crate::application::self_hosting::mutation_corpus::{FalseNegativeReport, MutationCorpus};
     use crate::application::self_hosting::platform_equivalence::{
-        compare_platforms, DefaultNormaliser, HistoricalReplay, PlatformKind,
-        PlatformObservation,
+        DefaultNormaliser, HistoricalReplay, PlatformKind, PlatformObservation, compare_platforms,
     };
-    use crate::application::self_hosting::prediction::{score, SealedPrediction};
+    use crate::application::self_hosting::prediction::{SealedPrediction, score};
 
     #[test]
     fn closure_pipeline_wires_baseline_prediction_and_corpus() {
@@ -79,12 +76,10 @@ mod closure_gate {
             Vec::new();
         for exp in &prediction.expected {
             let present = observed_oracle_ids.contains(&exp.id) && exp.expected_present;
-            observations.push(
-                crate::application::self_hosting::prediction::Observation {
-                    id: exp.id.clone(),
-                    present,
-                },
-            );
+            observations.push(crate::application::self_hosting::prediction::Observation {
+                id: exp.id.clone(),
+                present,
+            });
         }
 
         // (5) Score the prediction against the observations.
@@ -124,10 +119,12 @@ mod closure_gate {
         let observations: Vec<_> = prediction
             .expected
             .iter()
-            .map(|exp| crate::application::self_hosting::prediction::Observation {
-                id: exp.id.clone(),
-                present: observed_oracle_ids.contains(&exp.id) && exp.expected_present,
-            })
+            .map(
+                |exp| crate::application::self_hosting::prediction::Observation {
+                    id: exp.id.clone(),
+                    present: observed_oracle_ids.contains(&exp.id) && exp.expected_present,
+                },
+            )
             .collect();
         let matrix = score(&prediction, &observations);
         assert_eq!(
@@ -195,9 +192,11 @@ mod closure_gate {
         ];
         let verdicts = compare_platforms(&n, &observations);
         match verdicts.get("closure.fact.b") {
-            Some(crate::application::self_hosting::platform_equivalence::Equivalence::Divergent {
-                platforms,
-            }) => {
+            Some(
+                crate::application::self_hosting::platform_equivalence::Equivalence::Divergent {
+                    platforms,
+                },
+            ) => {
                 assert!(platforms.contains(&PlatformKind::Linux));
                 assert!(platforms.contains(&PlatformKind::MacOs));
             }
@@ -265,10 +264,12 @@ mod closure_gate {
         );
         let non_empty = SealedPrediction::seal(
             "non-empty",
-            vec![crate::application::self_hosting::prediction::ExpectedObservation {
-                id: "x".into(),
-                expected_present: true,
-            }],
+            vec![
+                crate::application::self_hosting::prediction::ExpectedObservation {
+                    id: "x".into(),
+                    expected_present: true,
+                },
+            ],
         );
         assert_ne!(
             empty.seal_digest, non_empty.seal_digest,

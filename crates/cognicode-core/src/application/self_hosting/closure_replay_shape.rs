@@ -22,17 +22,17 @@
 use crate::application::self_hosting::platform_equivalence::{
     HistoricalReplay, PlatformKind, PlatformObservation,
 };
-use crate::application::self_hosting::prediction::{
-    ExpectedObservation, SealedPrediction,
-};
+use crate::application::self_hosting::prediction::{ExpectedObservation, SealedPrediction};
 
 #[test]
 fn closure_replay_observation_only_carries_no_sealed_prediction() {
-    let replay =
-        HistoricalReplay::observation_only("a".repeat(128), Vec::new());
+    let replay = HistoricalReplay::observation_only("a".repeat(128), Vec::new());
     assert_eq!(replay.snapshot_digest.len(), 128);
     assert!(
-        replay.snapshot_digest.chars().all(|c| c.is_ascii_hexdigit()),
+        replay
+            .snapshot_digest
+            .chars()
+            .all(|c| c.is_ascii_hexdigit()),
         "snapshot_digest must be hex"
     );
     assert!(
@@ -44,8 +44,7 @@ fn closure_replay_observation_only_carries_no_sealed_prediction() {
 
 #[test]
 fn closure_replay_with_sealed_prediction_distinguishes_from_observation_only() {
-    let only_obs =
-        HistoricalReplay::observation_only("b".repeat(128), Vec::new());
+    let only_obs = HistoricalReplay::observation_only("b".repeat(128), Vec::new());
     let pred = SealedPrediction::seal(
         "e76-replay-smoke",
         vec![ExpectedObservation {
@@ -53,8 +52,7 @@ fn closure_replay_with_sealed_prediction_distinguishes_from_observation_only() {
             expected_present: true,
         }],
     );
-    let with_pred =
-        HistoricalReplay::with_sealed_prediction("c".repeat(128), Vec::new(), pred);
+    let with_pred = HistoricalReplay::with_sealed_prediction("c".repeat(128), Vec::new(), pred);
 
     assert!(only_obs.sealed_prediction.is_none());
     assert!(with_pred.sealed_prediction.is_some());
@@ -69,11 +67,7 @@ fn closure_replay_preserves_sealed_label_after_round_trip() {
             expected_present: true,
         }],
     );
-    let replay = HistoricalReplay::with_sealed_prediction(
-        "d".repeat(128),
-        Vec::new(),
-        pred,
-    );
+    let replay = HistoricalReplay::with_sealed_prediction("d".repeat(128), Vec::new(), pred);
     let carried = replay
         .sealed_prediction
         .as_ref()
@@ -110,15 +104,8 @@ fn closure_replay_holds_observations_for_later_replay() {
         id: "round.trip".into(),
         raw: b"observed".to_vec(),
     };
-    let replay = HistoricalReplay::with_sealed_prediction(
-        "e".repeat(128),
-        vec![obs],
-        pred,
-    );
+    let replay = HistoricalReplay::with_sealed_prediction("e".repeat(128), vec![obs], pred);
     assert_eq!(replay.observations.len(), 1);
     assert_eq!(replay.observations[0].id, "round.trip");
-    assert_eq!(
-        replay.observations[0].platform,
-        PlatformKind::Linux
-    );
+    assert_eq!(replay.observations[0].platform, PlatformKind::Linux);
 }

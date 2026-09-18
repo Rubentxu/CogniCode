@@ -121,7 +121,13 @@ mod tests {
 
     fn req(frame_id: InvestigationFrameId, digest_seed: u64) -> InvestigationRequest {
         let prov = RequestProvenance::new(frame_id, "test", None).unwrap();
-        InvestigationRequest::try_new(frame_id, "q", vec![ToolCall::new("noop", Vec::<String>::new()).unwrap()], prov).unwrap()
+        InvestigationRequest::try_new(
+            frame_id,
+            "q",
+            vec![ToolCall::new("noop", Vec::<String>::new()).unwrap()],
+            prov,
+        )
+        .unwrap()
     }
 
     fn frame_id(n: u64) -> InvestigationFrameId {
@@ -138,25 +144,29 @@ mod tests {
         let id = frame_id(1);
         let r = req(id, 1);
         let err = f
-            .complete(&r, &crate::domain::ai::InvestigationFrame::try_new(
-                crate::domain::execution::ExecutionContext::try_new(
-                    crate::domain::kernel_ids::ExecutionId::new(1),
-                    crate::domain::execution::AnalysisScope::new(
+            .complete(
+                &r,
+                &crate::domain::ai::InvestigationFrame::try_new(
+                    crate::domain::execution::ExecutionContext::try_new(
+                        crate::domain::kernel_ids::ExecutionId::new(1),
+                        crate::domain::execution::AnalysisScope::new(
+                            crate::domain::value_objects::WorkspaceId::try_new("ws").unwrap(),
+                            crate::domain::kernel_ids::SnapshotId::new(1),
+                        ),
+                        crate::domain::execution::ActorRef::agent("test"),
+                        crate::domain::execution::CorrelationId::new("c").unwrap(),
+                        None,
+                    )
+                    .unwrap(),
+                    "q",
+                    crate::domain::ai::InvestigationScope::empty(
                         crate::domain::value_objects::WorkspaceId::try_new("ws").unwrap(),
                         crate::domain::kernel_ids::SnapshotId::new(1),
                     ),
-                    crate::domain::execution::ActorRef::agent("test"),
-                    crate::domain::execution::CorrelationId::new("c").unwrap(),
-                    None,
+                    crate::domain::ai::InvestigationBudget::default(),
                 )
                 .unwrap(),
-                "q",
-                crate::domain::ai::InvestigationScope::empty(
-                    crate::domain::value_objects::WorkspaceId::try_new("ws").unwrap(),
-                    crate::domain::kernel_ids::SnapshotId::new(1),
-                ),
-                crate::domain::ai::InvestigationBudget::default(),
-            ).unwrap())
+            )
             .unwrap_err();
         assert!(matches!(err, LlmPortError::NoResponseForFrame));
     }
@@ -172,11 +182,13 @@ mod tests {
             req_prov.clone(),
             prov(),
             crate::domain::readset::InMemoryReadSetRecorder::new(
-                crate::domain::readset::ReadSetConfig { max_records: None }
-            ).finalize(),
+                crate::domain::readset::ReadSetConfig { max_records: None },
+            )
+            .finalize(),
             "scripted",
         );
-        let f = FakeLlmPort::new().with_scripted(ScriptKey::new(id, r.content_digest()), scripted.clone());
+        let f = FakeLlmPort::new()
+            .with_scripted(ScriptKey::new(id, r.content_digest()), scripted.clone());
         assert_eq!(f.script_len(), 1);
 
         // We can't easily build a real frame here without a context; use
@@ -199,7 +211,8 @@ mod tests {
                 crate::domain::kernel_ids::SnapshotId::new(1),
             ),
             crate::domain::ai::InvestigationBudget::default(),
-        ).unwrap();
+        )
+        .unwrap();
         let got = f.complete(&r, &frame).unwrap();
         assert_eq!(got, scripted);
     }
@@ -214,8 +227,9 @@ mod tests {
             RequestProvenance::new(id, "fb", None).unwrap(),
             prov(),
             crate::domain::readset::InMemoryReadSetRecorder::new(
-                crate::domain::readset::ReadSetConfig { max_records: None }
-            ).finalize(),
+                crate::domain::readset::ReadSetConfig { max_records: None },
+            )
+            .finalize(),
             "fallback",
         );
         let f = FakeLlmPort::new().with_fallback(fb.clone());
@@ -238,7 +252,8 @@ mod tests {
                 crate::domain::kernel_ids::SnapshotId::new(1),
             ),
             crate::domain::ai::InvestigationBudget::default(),
-        ).unwrap();
+        )
+        .unwrap();
         let got = f.complete(&r, &frame).unwrap();
         match got.output() {
             ResponseOutput::Advisory { summary } => assert_eq!(summary, "fallback"),

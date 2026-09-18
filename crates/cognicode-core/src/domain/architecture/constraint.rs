@@ -73,17 +73,10 @@ impl LayerId {
         // resolved by their parent folder.
         let normalised = module_path.replace('\\', "/");
         // Strip a leading `crate::` if any.
-        let normalised = normalised
-            .strip_prefix("crate::")
-            .unwrap_or(&normalised);
+        let normalised = normalised.strip_prefix("crate::").unwrap_or(&normalised);
         // Drop everything past the first occurrence of these top-level
         // segments.
-        for top in [
-            "domain",
-            "application",
-            "infrastructure",
-            "bin",
-        ] {
+        for top in ["domain", "application", "infrastructure", "bin"] {
             if let Some(rest) = normalised.strip_prefix(top) {
                 // We have matched. The next character must be `::`,
                 // `/`, or the end of string.
@@ -266,7 +259,10 @@ impl Admitter {
     /// constraint. `Other` is rejected by the admission flow
     /// ([`ConstraintAdmission::admit`]) and produces ZERO findings.
     pub fn may_admit(&self) -> bool {
-        matches!(self.role, AdmitterRole::HumanPromoter | AdmitterRole::CiPromoter)
+        matches!(
+            self.role,
+            AdmitterRole::HumanPromoter | AdmitterRole::CiPromoter
+        )
     }
 }
 

@@ -31,8 +31,7 @@ use crate::application::self_hosting::mutation_corpus::{
 #[test]
 fn acceptance_mutation_corpus_canonical_covers_all_four_kinds() {
     let corpus = MutationCorpus::canonical();
-    let kinds: std::collections::HashSet<_> =
-        corpus.mutations.iter().map(|m| m.kind).collect();
+    let kinds: std::collections::HashSet<_> = corpus.mutations.iter().map(|m| m.kind).collect();
     // The e76 directive explicitly names four mutation kinds.
     // The corpus MUST cover all four (this is the closure gate).
     assert!(
