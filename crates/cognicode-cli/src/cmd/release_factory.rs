@@ -114,6 +114,7 @@ pub fn generate_bundle_manifest(
                 description: (*description).to_string(),
             })
             .collect(),
+        skill_bundles: Vec::new(),
         components,
     };
 

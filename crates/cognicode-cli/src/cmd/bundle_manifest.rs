@@ -57,6 +57,17 @@ pub struct BundleManifest {
     #[serde(default)]
     pub profiles: Vec<ProfileDef>,
 
+    /// Portable skill bundles shipped by this release (DEBT-2).
+    ///
+    /// Optional and additive: a manifest without this field keeps its
+    /// exact pre-DEBT-2 meaning. Each entry declares the SkillBundleId
+    /// the release ships; the id is an explicit declaration, never
+    /// derived from a component name, a binary name or a directory
+    /// scan (`install.rs`'s retired "first directory under
+    /// `skills_root`" heuristic).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skill_bundles: Vec<SkillBundleDecl>,
+
     pub components: Vec<BundleComponent>,
 }
 
@@ -116,6 +127,25 @@ pub struct ProfileDef {
     pub name: String,
     #[serde(default)]
     pub description: String,
+}
+
+/// A portable skill bundle declaration (DEBT-2).
+///
+/// `SkillBundleId` is an explicit manifest declaration. It lives in its
+/// own namespace: a `SkillBundleId` is NOT a `ComponentId`, NOT a
+/// `BinaryName` and NOT a `PluginId`, even when the strings happen to
+/// coincide (see DEBT-3 WU5 disjointness invariants and
+/// `openspec/specs/portable-skill-bundle/spec.md`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillBundleDecl {
+    /// SkillBundleId. Must be non-empty and unique within the manifest.
+    pub id: String,
+    /// Skill bundle version. Must equal the bundle version (skills are
+    /// versioned with the release, per the portable-skill-bundle spec).
+    pub version: String,
+    /// Profiles that ship this bundle.
+    #[serde(default)]
+    pub profiles: Vec<String>,
 }
 
 impl BundleManifest {
@@ -259,6 +289,32 @@ impl BundleManifest {
             }
         }
 
+        // 6. Skill bundles (DEBT-2): unique ids, version lockstep,
+        //    declared profiles only.
+        let mut seen_bundles: HashSet<&str> = HashSet::new();
+        for (i, b) in self.skill_bundles.iter().enumerate() {
+            if b.id.trim().is_empty() {
+                bail!("skill_bundles[{i}] id must not be empty");
+            }
+            if !seen_bundles.insert(b.id.as_str()) {
+                bail!("duplicate skill bundle id: {}", b.id);
+            }
+            if b.version != self.version {
+                bail!(
+                    "skill bundle `{}` version `{}` != bundle version `{}`",
+                    b.id, b.version, self.version
+                );
+            }
+            for p in &b.profiles {
+                if !profile_names.contains(p.as_str()) {
+                    bail!(
+                        "skill bundle `{}` references unknown profile `{}`",
+                        b.id, p
+                    );
+                }
+            }
+        }
+
         // 6. The platform token must be a known one (guards against a future
         //    variant added to the enum without a mapping).
         if platform_token(self.platform).is_empty() {
@@ -304,6 +360,18 @@ impl BundleManifest {
     /// Find all components of a given kind.
     pub fn components_by_kind(&self, kind: ArtifactKind) -> Vec<&BundleComponent> {
         self.components.iter().filter(|c| c.kind == kind).collect()
+    }
+
+    /// Skill bundles shipped for a given profile (DEBT-2).
+    ///
+    /// The authoritative source for "which portable skill bundles does
+    /// this release ship for this profile". Consumers must use this —
+    /// never a directory scan — to resolve SkillBundleIds.
+    pub fn skill_bundles_for_profile(&self, profile: &str) -> Vec<&SkillBundleDecl> {
+        self.skill_bundles
+            .iter()
+            .filter(|b| b.profiles.iter().any(|p| p == profile))
+            .collect()
     }
 
     /// The profile names, in declaration order.
@@ -390,6 +458,116 @@ mod tests {
 
     /// A realistic-looking, non-placeholder digest.
     const DIGEST: &str = "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e";
+
+    /// A valid manifest body with the given `skill_bundles:` section
+    /// ("" for none). ComponentId (`cognicode-mcp`) deliberately differs
+    /// from the SkillBundleId used in the gates (`cognicode-skills`).
+    fn skill_bundle_yaml(skill_bundles: &str) -> String {
+        format!(
+            r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "0.95.0"
+platform: linux-x86-64
+released_at: "2026-09-17T00:00:00Z"
+profiles:
+  - name: core
+    description: Daily CLI
+{skill_bundles}components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "0.95.0"
+    artifact: cognicode-mcp-0.95.0-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "{DIGEST}"
+    url: https://github.com/Rubentxu/CogniCode/releases/download/v0.95.0/cognicode-mcp-0.95.0-x86_64-unknown-linux-gnu.tar.gz
+    profiles: [core]
+"#
+        )
+    }
+
+    /// T_debt2_field_optional_backcompat: a manifest with no
+    /// `skill_bundles` field parses exactly as before - the field is
+    /// additive and defaults to empty. No public format break.
+    #[test]
+    fn t_debt2_skill_bundles_field_is_optional() {
+        let m = BundleManifest::from_str(&skill_bundle_yaml(""))
+            .expect("manifest without skill_bundles must parse");
+        assert!(
+            m.skill_bundles.is_empty(),
+            "skill_bundles must default to empty"
+        );
+        assert!(m.skill_bundles_for_profile("core").is_empty());
+    }
+
+    /// T_debt2_strict_bundle_id_is_explicit: a declared SkillBundleId is
+    /// returned verbatim by the profile helper. The id deliberately
+    /// differs from every ComponentId in the manifest.
+    #[test]
+    fn t_debt2_strict_bundle_id_is_explicit_declaration() {
+        let yaml = skill_bundle_yaml(
+            "skill_bundles:\n  - id: cognicode-skills\n    version: \"0.95.0\"\n    \
+             profiles: [core]\n",
+        );
+        let m = BundleManifest::from_str(&yaml).expect("valid manifest");
+        let bundles = m.skill_bundles_for_profile("core");
+        assert_eq!(bundles.len(), 1);
+        assert_eq!(bundles[0].id, "cognicode-skills");
+        assert_ne!(
+            bundles[0].id, "cognicode-mcp",
+            "SkillBundleId must NOT be inferred from ComponentId; it is an \
+             explicit declaration and may diverge"
+        );
+        // And for a profile with no bundles: empty, not a fallback.
+        assert!(m.skill_bundles_for_profile("reviewer").is_empty());
+    }
+
+    /// T_debt2_strict_duplicate_ids_rejected.
+    #[test]
+    fn t_debt2_strict_duplicate_bundle_ids_rejected() {
+        let yaml = skill_bundle_yaml(
+            "skill_bundles:\n  - id: cognicode-skills\n    version: \"0.95.0\"\n    \
+             profiles: [core]\n  - id: cognicode-skills\n    version: \"0.95.0\"\n    \
+             profiles: [core]\n",
+        );
+        let err = BundleManifest::from_str(&yaml).expect_err("duplicate ids must fail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("duplicate skill bundle id"),
+            "error must mention duplicate skill bundle id; got: {msg}"
+        );
+    }
+
+    /// T_debt2_strict_version_lockstep: a skill bundle whose version
+    /// diverges from the bundle version is rejected (skills are
+    /// versioned with the release, per the portable-skill-bundle spec).
+    #[test]
+    fn t_debt2_strict_bundle_version_lockstep() {
+        let yaml = skill_bundle_yaml(
+            "skill_bundles:\n  - id: cognicode-skills\n    version: \"1.2.3\"\n    \
+             profiles: [core]\n",
+        );
+        let err = BundleManifest::from_str(&yaml).expect_err("version drift must fail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("version") && msg.contains("cognicode-skills"),
+            "error must name the bundle and mention version; got: {msg}"
+        );
+    }
+
+    /// T_debt2_strict_unknown_profile_rejected.
+    #[test]
+    fn t_debt2_strict_bundle_unknown_profile_rejected() {
+        let yaml = skill_bundle_yaml(
+            "skill_bundles:\n  - id: cognicode-skills\n    version: \"0.95.0\"\n    \
+             profiles: [reviewer]\n",
+        );
+        let err = BundleManifest::from_str(&yaml).expect_err("unknown profile must fail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("unknown profile"),
+            "error must mention unknown profile; got: {msg}"
+        );
+    }
 
     fn bundle_with(components: &str, profiles: &str) -> String {
         format!(
