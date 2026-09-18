@@ -1763,3 +1763,9 @@ Next: umbrella closeout of DEBT chain; NO further DEBT-x; return to roadmap.
 - `just lint` was broken pre-F3 on clean HEAD (25 clippy warnings in cognicode-core, incl. cfg(test)-stripped unused imports in `boundary_tests.rs`). Fixed in `7ddd3251`. Rule: imports used only inside `#[test]` fns break clippy lib builds when the module is compiled without `cfg(test)`.
 - `check_known_failures.py` target `cargo test -p cognicode-core` (default features): 39 entries, matches. The `--features evidence-kernel` lib test run shows 39 env-dependent failures (file_operations symlink/HOME checks) — pre-existing, not in the baseline target.
 - cogh bin suite had one transient failure right after `cargo fmt --all` (fingerprint/stale-artifact race); two consecutive reruns green (286 passed). Re-run before believing a single failure after formatting.
+
+### CP1.0 WU4 — 2026-09-18 (session clover)
+Changed: explorer/api.rs (endpoint GET /control-plane/workspaces/:id/architecture, ApiState.control_query+control_source_root, with_control_query), core/control_query.rs (source_from_source_root helper), tests/cp1_control_plane_endpoint.rs (C1–C5).
+Tested: core control_query 5/5 GREEN; explorer cp1 endpoint 5/5 GREEN; just lint GREEN; fmt GREEN. Commits fed57b95..HEAD pushed.
+Gotchas: parser normalizes leading crate:: in dependency_path; module_path must resolve via LayerId::from_module_path (strip leading src/); source root scans must be bounded (never std::env::temp_dir() whole).
+Unknown: e78 checkpoint pending (consumer count); cadence full_run v1 still running.

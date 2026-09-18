@@ -259,7 +259,8 @@ mod tests {
         ArchitectureClock, ArchitectureEvaluator, SystemArchitectureClock,
     };
     use crate::domain::architecture::{
-        Admitter, AdmitterRole, ArchitectureConstraintId, LayerDependencyRule, LayerId,
+        Admitter, AdmitterRole, ArchitectureConstraintId, ConstraintCandidate,
+        LayerDependencyRule, LayerId,
     };
 
     fn promoted_admitter() -> Admitter {
