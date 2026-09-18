@@ -221,6 +221,22 @@ pub fn cmd_uninstall(
     version: &str,
     ides: &[String],
 ) -> Result<()> {
+    // Symmetric with cmd_install: refuse to act against an uninitialized
+    // home. Prevents silent no-op on a typo'd COGNICODE_HOME or a tmp dir
+    // that was wiped between install and uninstall. Pinned by
+    // `t_e86_3_uninstall_errors_on_uninitialized_home`.
+    if !home.is_initialized() {
+        return Err(anyhow!(
+            "home not initialized at {}; run `cogh init` first",
+            home.root.display()
+        ));
+    }
+    if ides.is_empty() {
+        return Err(anyhow!(
+            "uninstall requires at least one --ide flag (e.g. --ide opencode); \
+             supported: opencode, zcode, claude, codex"
+        ));
+    }
     println!(
         "uninstall: plugin={} version={} ides={:?}",
         plugin, version, ides

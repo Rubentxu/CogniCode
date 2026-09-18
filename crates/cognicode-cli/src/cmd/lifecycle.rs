@@ -1040,4 +1040,203 @@ components:
 
         assert!(profile::filter_by_profile(&manifest, "nonexistent").is_empty());
     }
+
+    // ===== E86.3 — uninstall coverage (bounded cycle) =====
+
+    /// T1 (RED before fix): `cogh uninstall` against an UNINITIALIZED home
+    /// must error, not silently no-op. `cmd_install` already has this guard
+    /// (see `cmd/layout.rs::cmd_install`); `cmd_uninstall` does not. The
+    /// asymmetry was uncovered by the E86.2.2 + E86.2.3 UAT scripts which
+    /// occasionally re-run uninstall on a fresh tmp home that was rolled back.
+    #[test]
+    #[serial]
+    fn t_e86_3_uninstall_errors_on_uninitialized_home() {
+        let tmp = std::env::temp_dir().join(format!("cogh-lc-e863-uninit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        // Deliberately do NOT call setup_temp_home — .cognicode/bin/ is missing.
+
+        let out = run_cogh(
+            &tmp,
+            &[
+                "uninstall",
+                "mcp-server",
+                "--ide",
+                "opencode",
+                "--version",
+                "0.95.0",
+            ],
+        )
+        .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let combined = format!("{stdout}{stderr}");
+        assert!(
+            !out.status.success(),
+            "uninstall on uninitialized home should fail; got success. stdout={stdout} stderr={stderr}"
+        );
+        assert!(
+            combined.contains("not initialized") || combined.contains("init"),
+            "error message should mention init; got: {combined}"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// T2: uninstall is idempotent. Calling it twice on the same version must
+    /// not error — the second call should be a no-op (skills dir already gone,
+    /// config key already removed).
+    #[test]
+    #[serial]
+    fn t_e86_3_uninstall_idempotent_second_call() {
+        let tmp = std::env::temp_dir().join(format!("cogh-lc-e863-idem-{}", std::process::id()));
+        setup_temp_home(&tmp).unwrap();
+        create_opencode_config(&tmp).unwrap();
+
+        let cfg_path = tmp.join(".config/opencode/opencode.json");
+        let skill_dir = tmp.join(".config/opencode/skills/cognicode-0.95.0");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "x").unwrap();
+
+        let cfg_text_pre = std::fs::read_to_string(&cfg_path).unwrap();
+        std::fs::write(
+            &cfg_path,
+            format!(
+                r#"{{"mcp": {{"cognicode-mcp": {{"type": "stdio"}}}}, "_pre": {cfg_text_pre}}}"#
+            ),
+        )
+        .unwrap();
+
+        let out1 = run_cogh(
+            &tmp,
+            &[
+                "uninstall",
+                "mcp-server",
+                "--ide",
+                "opencode",
+                "--version",
+                "0.95.0",
+            ],
+        )
+        .unwrap();
+        assert!(
+            out1.status.success(),
+            "first uninstall must succeed; got: stdout={} stderr={}",
+            String::from_utf8_lossy(&out1.stdout),
+            String::from_utf8_lossy(&out1.stderr),
+        );
+        assert!(
+            !skill_dir.exists(),
+            "skills dir must be gone after first uninstall"
+        );
+
+        let out2 = run_cogh(
+            &tmp,
+            &[
+                "uninstall",
+                "mcp-server",
+                "--ide",
+                "opencode",
+                "--version",
+                "0.95.0",
+            ],
+        )
+        .unwrap();
+        assert!(
+            out2.status.success(),
+            "second uninstall must succeed (idempotent); got: stdout={} stderr={}",
+            String::from_utf8_lossy(&out2.stdout),
+            String::from_utf8_lossy(&out2.stderr),
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// T3: uninstall must handle a missing opencode config file cleanly.
+    /// (Step::RemoveFromJson is already idempotent; this pins the contract.)
+    #[test]
+    #[serial]
+    fn t_e86_3_uninstall_opencode_handles_missing_config_file() {
+        let tmp = std::env::temp_dir().join(format!("cogh-lc-e863-nocfg-{}", std::process::id()));
+        setup_temp_home(&tmp).unwrap();
+        // Deliberately do NOT call create_opencode_config — the config file
+        // does not exist; HOME resolves to a non-existent ~/.config/opencode path.
+
+        let out = run_cogh(
+            &tmp,
+            &[
+                "uninstall",
+                "mcp-server",
+                "--ide",
+                "opencode",
+                "--version",
+                "0.95.0",
+            ],
+        )
+        .unwrap();
+        assert!(
+            out.status.success(),
+            "uninstall with missing config file must succeed; got: stdout={} stderr={}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// T4 (RED before fix): when no `--ide` is passed, uninstall must print a
+    /// helpful diagnostic instead of silently doing nothing. Currently it
+    /// prints `uninstall: plugin=X version=Y ides=[]` and exits 0.
+    #[test]
+    #[serial]
+    fn t_e86_3_uninstall_without_ide_prints_helpful_message() {
+        let tmp = std::env::temp_dir().join(format!("cogh-lc-e863-noide-{}", std::process::id()));
+        setup_temp_home(&tmp).unwrap();
+
+        let out = run_cogh(&tmp, &["uninstall", "mcp-server", "--version", "0.95.0"]).unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let combined = format!("{stdout}{stderr}");
+        assert!(
+            combined.contains("--ide") || combined.contains("no IDE"),
+            "missing --ide must produce a diagnostic mentioning --ide or 'no IDE'; got: {combined}"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// T5: unknown `--ide` is a clean error (exit non-zero) with a message
+    /// that names the supported set, not a panic.
+    #[test]
+    #[serial]
+    fn t_e86_3_uninstall_unknown_ide_errors_cleanly() {
+        let tmp = std::env::temp_dir().join(format!("cogh-lc-e863-unkide-{}", std::process::id()));
+        setup_temp_home(&tmp).unwrap();
+
+        let out = run_cogh(
+            &tmp,
+            &[
+                "uninstall",
+                "mcp-server",
+                "--ide",
+                "vscode",
+                "--version",
+                "0.95.0",
+            ],
+        )
+        .unwrap();
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let combined = format!("{stdout}{stderr}");
+        assert!(
+            !out.status.success(),
+            "unknown --ide must fail; got success. stdout={stdout} stderr={stderr}"
+        );
+        assert!(
+            combined.contains("opencode") || combined.contains("not supported"),
+            "error message must name supported IDEs or say 'not supported'; got: {combined}"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }
