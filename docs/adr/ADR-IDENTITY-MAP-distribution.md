@@ -433,13 +433,134 @@ slice of DEBT-3 work.
 - `crates/cognicode-cli/src/cmd/bundled/*.yaml` (the 6 bundled plugin
   manifests that exercise every identity combination).
 
-## 9. Provenance
+## 9. Inference audit (WU3)
 
-- Cycle initiative: `arch-identity-taxonomy` (DEBT-3).
-- Investigation date: 2026-09-18.
-- Reference commit: HEAD = `e4985597` (post-arch-canonical-layout L5
-  archive).
-- Real-PC UAT observable that originally motivated DEBT-3: Phase D
-  reinstall `link_or_copy failed` (closed by L4 in commit `ab16e492`,
-  but the underlying *naming* issue — why `mcp-server` was assumed to
-  be a skill bundle's name — is what DEBT-3 addresses).
+This section classifies every site in `crates/cognicode-cli/src/` that
+references a plugin / component / binary / skill / versioned-branded
+string. The classification drives the elimination plan in §10.
+
+### 9.1 Inventory method
+
+* Searched `crates/cognicode-cli/src/**/*.rs` for the literal strings
+  `cognicode-mcp`, `cognicode-core`, `cognicode-mcp-driven`, `cognicode`,
+  `mcp-server`, `skills-cognicode-core`, and for the patterns
+  `join("cognicode-...")`, `join(plugin)`, `first directory under`,
+  `comp.name`, `bin/<comp>/<comp>`.
+* Cross-referenced every hit against the five identity sources of truth
+  in §3.
+* Each row classifies the site as one of: **legitimate constant**,
+  **manifest-derived identity**, **heuristic**, or **legacy alias**.
+* Heuristics and legacy aliases get an explicit elimination plan.
+
+### 9.2 Production source — `installer_transaction.rs`
+
+| Site | Symbol | Identity in play | Classification |
+|---|---|---|---|
+| `:391` | `home.version_root(&manifest.version)` | Version + ComponentId | **legitimate constant** — `version_root` is in the layout helpers set. |
+| `:398` | `install_dir.join(&comp.name)` | ComponentId | **legitimate constant** — `comp.name` is the ComponentId from `BundleManifest`. |
+| `:423` | `install_dir.join(&comp.name).join("bin").join(&comp.name)` | ComponentId + hidden `bin/<comp>/<comp>` shape assumption | **heuristic** — assumes each bundle is Cargo-style (one `bin/<comp>/<comp>` file). L1-L5 kept the shape for back-compat; should be relaxed to find any `bin/<binary>` file in the bundle. |
+| `:425` | `layout::shims_dir().join(&comp.name)` | ComponentId | **manifest-derived identity** — the shim name equals the ComponentId today because `comp.name == kind.stem() == BinaryName`. If a future component ships multiple binaries per the planned `binaries[]` field, this breaks. |
+| `:628` | `home.version_manifest(&manifest.version)` | Version | **legitimate constant**. |
+
+### 9.3 Production source — `install.rs`
+
+| Site | Symbol | Identity in play | Classification |
+|---|---|---|---|
+| `:55` | `home.skills_root(version)` | Version + SkillBundle namespace | **legitimate constant** (post-L4). |
+| `:56-59` | `read_dir(skills_root).next()` "first directory" | SkillBundleId (heuristic) | **heuristic** — DEBT-2 territory; allowed today because no bundle manifest models skill bundles yet. |
+| `:67-69` | `home.shim_path("cognicode-mcp")` | BinaryName (literal) | **heuristic** — `cognicode-mcp` is hardcoded; should be derived from `manifest.components_by_kind(ArtifactKind::DaemonCli)`. |
+
+### 9.4 Production source — `ide.rs`
+
+| Site | Symbol | Identity in play | Classification |
+|---|---|---|---|
+| `:245` | `vec!["mcp", "cognicode-mcp"]` (opencode merge) | BinaryName (literal) | **heuristic** — JSON merge path hardcoded. |
+| `:266` | `vec!["mcp", "cognicode-mcp"]` (opencode uninstall) | BinaryName (literal) | **heuristic** — same. |
+| `:367, :406` (zcode) | `format!("cognicode-{version}")` for skills target | RuntimeBrand literal | **legitimate constant** — IDE-side *target* name, scoped per-IDE, intentional brand. |
+| `:367-374` (zcode) | `home.join("versions").join(version).join(plugin).join("skills")` | PluginId-as-skills-dir | **heuristic** — wrong for the mcp-server plugin (no skill dir under plugin root). L4 retargeted opencode to `skills_root`; zcode/claude/codex still use this shape. |
+| `:397, :422` (zcode) | `insert("cognicode-mcp", ...)` / `mcp_obj.remove("cognicode-mcp")` | BinaryName (literal) | **heuristic** — should be derived from the manifest's DaemonCli component name. |
+| `:477-481` (claude) | `home.join("versions").join(version).join(plugin).join("skills")` | same | **heuristic** |
+| `:482, :507` (claude) | `format!("cognicode-{version}")` | RuntimeBrand | **legitimate constant**. |
+| `:494, :515` (claude) | `mcp_dir.join("cognicode-mcp.json")` filename | BinaryName (literal) | **heuristic** — claude uses one JSON file per server, filename = BinaryName. |
+| `:593-597` (codex) | `home.join("versions").join(version).join(plugin).join("skills")` | same | **heuristic** |
+| `:598, :651` (codex) | `format!("cognicode-{version}")` | RuntimeBrand | **legitimate constant**. |
+| `:631, :665` (codex) | `mcp_table.insert("cognicode-mcp", ...)` / `.remove("cognicode-mcp")` | BinaryName (literal) | **heuristic**. |
+| `:730` | `home.shims().join("cognicode-mcp")` | BinaryName (literal) | **heuristic** — same as `install.rs:67`. |
+| `:737` | `home.versions().join(version).join(plugin).join("skills")` | PluginId-as-skills-dir | **heuristic** — L4 explicitly stopped short of fixing this for opencode because L4 was scoped to install.rs; this opencode `cmd_ide_install` site is still on the heuristic. (L4 fixed `install.rs::run_install`'s `run_install`-driven integration; direct `cmd_ide_install` calls still use the heuristic.) |
+
+### 9.5 Production source — `bundled/*.yaml`
+
+These are bundled plugin manifests. The literals here are *plugin
+author intent*, not source code. But they encode a constraint that the
+runtime must honour.
+
+| Site | Identity | Classification |
+|---|---|---|
+| `mcp-server.yaml:10` (artifact filename stem) | ArtifactKind::DaemonCli stem = ComponentId | **legitimate constant** — derived from the bundle world. |
+| `mcp-server.yaml:16` (binaries[].name) | BinaryName | **legitimate constant** — author declaration. |
+| `zcode.yaml:22, :37, :25` (merge_path, command) | BinaryName | **legitimate constant** for the `mcp.cognicode-mcp` key (this IDE adapter hardcodes it against the BinaryName, exactly because the answer to "which MCP server does CogniCode provide" is fixed by the plugin authoring). |
+| `claude.yaml:21, :24, :34` | BinaryName | **legitimate constant**. |
+| `codex.yaml:22, :24, :34` | BinaryName | **legitimate constant**. |
+| `claude.yaml:18`, `zcode.yaml:18`, `codex.yaml:18` (`cognicode-$VERSION/`) | RuntimeBrand (IDE-side target) | **legitimate constant** — IDE skills-dir name. |
+
+### 9.6 Production source — `release_contract.rs`
+
+| Site | Symbol | Classification |
+|---|---|---|
+| `:150` (`DaemonCli.stem() == "cognicode-mcp"`) | stem defines ComponentId | **legitimate constant** — the `stem()` function is the canonical derivation for a ComponentId from `ArtifactKind`. |
+| `:410-413` (longest-stem-first dispatch) | matches artifact filenames against known ComponentId stems | **legitimate constant** — this is the inverse mapping (stem → ComponentId). |
+
+### 9.7 Test fixtures — `tests:` blocks
+
+Test fixtures use string literals to set up scenarios. By
+convention these are acceptable; the WU5 invariant tests guard against
+the production code re-introducing literals.
+
+**Fixtures observed:** 55 occurrences of `"mcp-server"` across
+`layout.rs`, `ide.rs`, `lifecycle.rs`, `lockfile.rs`, `skill.rs`.
+The breakdown is mostly test fixtures (pre-L1-L5 the plugin-side
+`cmd_uninstall` took `mcp-server` as a positional argument). After
+L1-L5 the lifecycle side uses `home.version_root(version)` which
+doesn't read the plugin name.
+
+**Acceptance:** test fixtures may use `"mcp-server"` as a fixture name.
+The WU5 invariant test will scan **non-test production code** for the
+literal and assert absence. Test code stays as-is.
+
+### 9.8 Sites explicitly NOT in scope (already resolved or deferred)
+
+* `install.rs:46-49` (pre-L4 `link_or_copy failed` heuristic) —
+  already resolved by L4 (commit `ab16e492`). Keep historical comment.
+* `home.install_manifest_path(...)` — already retired by L5 (commit
+  `f86037c1`); not regression.
+* `portable-skill-bundle manifest modelling` — DEBT-2; not DEBT-3.
+
+## 10. Elimination plan for heuristics
+
+Ordered by ease / risk. Each step is bounded and test-pinned.
+
+| Heuristic (from §10) | Plan | Risk | Bounded? |
+|---|---|---|---|
+| `:67, :730` (`cognicode-mcp` literal in install + ide) | Replace with `manifest.components_by_kind(ArtifactKind::DaemonCli).first()` derivation; fall back to the literal if a future bundle has no DaemonCli. Pinned by WU5 T1. | Low — same package; same return type. | Yes (1-2 small touches, no manifest migration). |
+| `:245, :266, :422, :461 (ide.rs)` (`mcp.cognicode-mcp` literal) | Same derivation. Helper `mcpmc_merge_key(bundle: &BundleManifest) -> &'static str` lives in `bundle_manifest.rs` (or an `ide/identity.rs` shim if introduced later). Pinned by WU5 T2. | Low. | Yes. |
+| `:737` (opencode `cmd_ide_install` `home.versions().join(plugin).skills`) | Mirror L4's `install.rs:55` pattern: read `home.skills_root(version)` directly. Pinned by WU5 T4 (adversarial). | Low. | Yes (1-line change in `cmd_ide_install`). |
+| `:367-374 (zcode), :477-481 (claude), :593-597 (codex)` (`home.join(versions).join(plugin).skills`) | Same shape — same fix. The `plugin` parameter to `integrate_zcode/claude/codex` can stay (because the *target* IDE-side path may still be plugin-scoped) but the *source* should be `home.skills_root(version)`. This is a future small cycle (not blocking DEBT-3 closure). | Low. | Yes. |
+| `:423` (Cargo-style `bin/<comp>/<comp>` shape) | Relax: try `<root>/<comp>/bin/<comp>`, then `<root>/<comp>/<comp>` (bin at root), then scan `<root>/<comp>/bin/` for any executable. Pin by WU5 T3. | Medium — interacts with bundle publishing. | Yes but **requires deprecation window** for bundles built before the relaxation. Land as DEBT-3.f or DEBT-2.f. |
+| `install.rs:56-59` ("first directory under skills_root") | DEBT-2. Park here; not blocking DEBT-3. | — | — |
+| Test fixtures (`"mcp-server"` literal in test code, ~55 sites) | Leave. The WU5 invariant test guards production code only. | — | — |
+
+## 11. Provenance (post-WU3)
+
+- WU3 audit conducted at HEAD = `e4985597`. Subsequent commits
+  (L1-L5 archive) up to and including `c7fb5cb9` (DEBT-3 WU0+WU1+WU2+WU4
+  ADR) do not alter the audit's findings.
+- Heuristic classification uses the cycle's own taxonomy: legitimate
+  / manifest-derived / heuristic / legacy alias. A "heuristic" is any
+  derivation that depends on names being similar without an explicit
+  declaration.
+- "Risk: low" means the change is a same-shape rename with no public
+  surface change. "Risk: medium" means the change touches the
+  install pipeline and needs a deprecation window.
+- `Cargo.toml` package boundaries: every heuristic elimination
+  targets `crates/cognicode-cli/src/cmd/{installer_transaction,install,ide}.rs`
+  (same package). No cross-crate changes required.
