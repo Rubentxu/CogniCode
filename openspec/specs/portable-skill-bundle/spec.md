@@ -168,6 +168,81 @@ subdirectory structure is preserved.
   - `references/scripts/helpers/validate.sh`
   - `assets/schema.json`
 
+### Requirement: Release manifest declares shipped skill bundles (DEBT-2)
+
+The release `bundle.yaml` (`cognicode.bundle/v2`) MUST carry an
+optional, additive `skill_bundles[]` section declaring every portable
+skill bundle the release ships:
+
+```yaml
+skill_bundles:
+  - id: skills-for-claude      # SkillBundleId (unique within the manifest)
+    version: "0.95.0"          # must equal the bundle version
+    profiles: [core]           # profiles that ship the bundle
+```
+
+The `SkillBundleId` is an **explicit declaration**. It MUST NOT be
+derived from a `ComponentId`, a `BinaryName`, a `PluginId`, or a
+directory scan. Manifests without the field keep their exact
+pre-DEBT-2 meaning (the field defaults to empty).
+
+Validation invariants:
+- ids are non-empty and unique within the manifest;
+- each bundle's `version` equals the bundle version (lockstep);
+- every referenced profile is declared in `profiles[]`.
+
+#### Scenario: Manifest without skill_bundles parses unchanged
+
+- GIVEN a valid `cognicode.bundle/v2` manifest with no `skill_bundles`
+- WHEN the manifest is parsed
+- THEN parsing succeeds and `skill_bundles` is empty
+
+#### Scenario: Declared SkillBundleId is resolved verbatim
+
+- GIVEN a manifest declaring `skill_bundles: [{id: skills-for-claude, ...}]`
+- AND `skills-for-claude` differs from every `components[].name`
+- WHEN the skill bundles for a profile are resolved
+- THEN the id `skills-for-claude` is returned verbatim
+- AND no id is ever inferred from a component or binary name
+
+#### Scenario: Duplicate ids or version drift are rejected
+
+- GIVEN a manifest with two skill bundles sharing an id
+- OR a skill bundle whose version differs from the bundle version
+- WHEN the manifest is parsed
+- THEN validation fails loudly
+
+### Requirement: Consumers resolve skill bundles from the manifest, never from a directory scan
+
+Install-time and IDE-integration code paths MUST resolve skill
+bundle sources through the canonical helper
+(`bundle_manifest::declared_skill_bundle_dirs`) against the version's
+canonical `skills/` root. The retired heuristics — "first directory
+under `skills_root`" (`read_dir().next()`) and
+`<root>/versions/<v>/<plugin>/skills/` — MUST NOT be reintroduced.
+
+#### Scenario: Declared-and-present bundle is integrated
+
+- GIVEN a manifest declaring skill bundle `skills-for-claude` for `core`
+- AND `versions/<v>/skills/skills-for-claude/` exists
+- WHEN an IDE integration runs for profile `core`
+- THEN the bundle at that manifest-derived path is copied/linked
+
+#### Scenario: Declared-but-missing bundle fails loudly
+
+- GIVEN a manifest declaring skill bundle `skills-for-claude`
+- AND `versions/<v>/skills/skills-for-claude/` does not exist
+- WHEN an IDE integration or install runs
+- THEN the operation fails naming the id
+- AND no substitute directory is guessed
+
+#### Scenario: Non-declaring manifest skips integration
+
+- GIVEN a manifest with no skill bundles for the active profile
+- WHEN an IDE integration runs
+- THEN the integration is skipped with an explicit notice
+- AND no on-disk directory is picked up as a fallback
+
 ## Cross-references
 
 - ADR-036 — `IDE-abstraction-portable-skills-per-ide-adapters`
