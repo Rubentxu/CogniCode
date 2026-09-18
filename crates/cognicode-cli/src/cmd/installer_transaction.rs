@@ -420,8 +420,16 @@ fn advance_stage(
             let install_dir = home.version_root(&manifest.version);
             let adapter = platform_adapter::current_adapter();
             for comp in &manifest.components {
-                let bin_path = install_dir.join(&comp.name).join("bin").join(&comp.name);
-                if bin_path.exists() {
+                // DEBT-3.f: bin-path resolution used to assume the legacy
+                // Cargo-style `bin/<comp>/<comp>` shape, which silently
+                // couples BinaryName to ComponentId by way of the
+                // `comp.name == kind.stem()` invariant. The
+                // `locate_component_binary` helper makes the coupling
+                // explicit and is the single point that will be relaxed
+                // in the next bounded commit (see strict T1 in this
+                // module's tests).
+                let bin_path = locate_component_binary(home, &manifest.version, &comp.name);
+                if let Some(bin_path) = bin_path {
                     let shim_path = layout::shims_dir().join(&comp.name);
                     let effect = adapter
                         .install_shim(&bin_path, &shim_path)
@@ -443,6 +451,56 @@ fn advance_stage(
         }
         InstallStage::Committed | InstallStage::Failed => Ok(()),
     }
+}
+
+/// Locate the on-disk binary for a component under
+/// `<root>/versions/<v>/<comp>/`. Returns the path to the first
+/// candidate that exists.
+///
+/// DEBT-3.f: this helper centralises the bin-path resolution that
+/// the install pipeline used to inline as
+/// `install_dir.join(comp).join("bin").join(comp)`. The inline form
+/// silently couples BinaryName to ComponentId by way of the
+/// `comp.name == kind.stem()` invariant (BundleManifest enforces
+/// `name == kind.stem()`). If a future component shipped multiple
+/// binaries OR a binary whose filename diverged from the component
+/// name, the inline form would silently miss it.
+///
+/// The strict T1 in this module's `tests` block asserts the
+/// relaxed contract that the next commit will land:
+/// `locate_component_binary` must find any executable in
+/// `<root>/versions/<v>/<comp>/bin/`, not just `<comp>` literally.
+///
+/// Order of attempts (legacy first, then relaxed):
+/// 1. `<root>/versions/<v>/<comp>/bin/<comp>` — Cargo-style legacy.
+/// 2. `<root>/versions/<v>/<comp>/<comp>` — root-level legacy alt.
+/// 3. Scan `<root>/versions/<v>/<comp>/bin/` for any file.
+///
+/// Returns `None` if no candidate exists. Callers must decide
+/// whether to fail loudly or skip.
+pub(crate) fn locate_component_binary(
+    home: &crate::layout::CognicodeHome,
+    version: &str,
+    component_id: &str,
+) -> Option<PathBuf> {
+    let comp_root = home.component_root(version, component_id);
+    let bin_dir = comp_root.join("bin");
+
+    // 1. Legacy Cargo-style: bin/<comp>/<comp>.
+    let legacy = bin_dir.join(component_id);
+    if legacy.exists() {
+        return Some(legacy);
+    }
+
+    // 2. Legacy root-level alt: <comp>/<comp>.
+    let root_level = comp_root.join(component_id);
+    if root_level.exists() {
+        return Some(root_level);
+    }
+
+    // 3. (Strict T1's target.) Relaxed: scan bin/ for any file.
+    //    Intentionally NOT implemented yet — that is the next commit.
+    None
 }
 
 impl InstallerTransaction {
@@ -1114,6 +1172,125 @@ components:
         let _ = std::fs::remove_dir_all(&version_root);
         let journal_path = crate::lifecycle_journal::journal_path(env!("CARGO_PKG_VERSION"));
         let _ = std::fs::remove_file(&journal_path);
+    }
+
+    // ========================================================================
+    // DEBT-3.f — strict T1 (gate for :423 heuristic elimination)
+    //
+    // Adversarial contract: the runtime must locate a component's
+    // binary even when the binary's filename deliberately diverges
+    // from the ComponentId. The legacy inline heuristic
+    // `install_dir.join(comp).join("bin").join(comp)` looks for a
+    // file named exactly `<comp>` and silently misses anything
+    // else. The strict T1 below plants a binary named
+    // `<comp>-v2` (clearly NOT `<comp>`) inside
+    // `<root>/versions/<v>/<comp>/bin/` and asserts the runtime
+    // still finds it.
+    //
+    // Pre-fix behaviour (RED today): the helper's third leg is
+    // intentionally unimplemented; the test asserts the planted
+    // file IS found, so the assertion fails.
+    //
+    // Post-fix behaviour (GREEN after the next commit): the helper
+    // scans `bin/` for any file and returns the planted
+    // `<comp>-v2`; the assertion holds.
+    //
+    // The test deliberately does NOT place a `<comp>` file alongside
+    // the `<comp>-v2` file. If both were present, the legacy
+    // helper would coincidentally return the `<comp>` file and T1
+    // would green for the wrong reason. The single-planted-file
+    // shape forces the runtime to choose: find it, or fail.
+    // ========================================================================
+
+    /// DEBT-3.f strict T1 (gate): the binary for a component can be
+    /// located by name that is NOT equal to the ComponentId, as long
+    /// as it lives in the canonical `<comp>/bin/` directory.
+    ///
+    /// This pins the invariant that "install / extract / shim
+    /// resolution / component lookup" work even when BinaryName ≠
+    /// ComponentId (the case the legacy `bin/<comp>/<comp>`
+    /// heuristic silently broke).
+    #[test]
+    #[serial_test::serial]
+    fn t_debt3f_strict_locate_binary_with_divergent_filename() {
+        let _temphome = TempCognicodeHome::new();
+        let home =
+            crate::layout::CognicodeHome::resolve(None).expect("resolve home from COGNICODE_HOME");
+
+        // Three deliberately distinct identity strings. None of
+        // these match each other:
+        //   - PluginId      = "mcp-server"        (legacy plugin world)
+        //   - ComponentId   = "alpha-daemon"      (the bundle component)
+        //   - BinaryName    = "alpha-daemon-v2"   (the actual on-disk binary)
+        //
+        // The runtime must derive the shim target from the
+        // ComponentId (alpha-daemon) but locate the binary by
+        // BinaryName (alpha-daemon-v2). It must NOT silently fall
+        // back to a heuristic like `comp.name == binary.name` or
+        // a hardcoded `cognicode-mcp` literal.
+        let plugin_id = "mcp-server";
+        let component_id = "alpha-daemon";
+        let binary_name = "alpha-daemon-v2";
+        assert_ne!(plugin_id, component_id);
+        assert_ne!(component_id, binary_name);
+        assert_ne!(plugin_id, binary_name);
+
+        // Plant the synthetic on-disk shape.
+        let version = "0.95.0";
+        let comp_root = home.component_root(version, component_id);
+        let bin_dir = comp_root.join("bin");
+        std::fs::create_dir_all(&bin_dir).expect("create <comp>/bin/");
+        let planted = bin_dir.join(binary_name);
+        std::fs::write(&planted, b"#!/bin/sh\necho alpha-daemon-v2 dev-fixture\n")
+            .expect("plant binary file");
+
+        // The strict gate: the helper must find the planted file.
+        let located =
+            locate_component_binary(&home, version, component_id)
+                .expect("DEBT-3.f strict T1: locate_component_binary must find \
+                         a binary even when its filename diverges from the \
+                         ComponentId; legacy heuristic hardcodes `bin/<comp>/<comp>` \
+                         and silently misses everything else");
+        assert_eq!(
+            located, planted,
+            "DEBT-3.f strict T1: located path must equal the planted file"
+        );
+
+        // Clean up.
+        let _ = std::fs::remove_dir_all(home.version_root(version));
+    }
+
+    /// DEBT-3.f strict T1b (gate, legacy still works): the helper
+    /// also finds the legacy `bin/<comp>/<comp>` shape so existing
+    /// bundles continue to install correctly after the relaxation.
+    /// This is the "back-compat" half of the relaxation contract:
+    /// the helper's first leg still prefers `<comp>` literally if
+    /// present, falling back to the relaxed scan only when the
+    /// legacy shape is absent.
+    #[test]
+    #[serial_test::serial]
+    fn t_debt3f_strict_locate_binary_legacy_shape_still_works() {
+        let _temphome = TempCognicodeHome::new();
+        let home =
+            crate::layout::CognicodeHome::resolve(None).expect("resolve home from COGNICODE_HOME");
+
+        let component_id = "alpha-daemon";
+        let version = "0.95.0";
+        let legacy_path = home
+            .component_root(version, component_id)
+            .join("bin")
+            .join(component_id);
+
+        // Plant the legacy shape (binary named exactly `<comp>`).
+        std::fs::create_dir_all(legacy_path.parent().unwrap()).expect("create bin/");
+        std::fs::write(&legacy_path, b"#!/bin/sh\necho legacy\n").expect("plant legacy binary");
+
+        let located = locate_component_binary(&home, version, component_id)
+            .expect("legacy `bin/<comp>/<comp>` shape must still resolve");
+        assert_eq!(located, legacy_path);
+
+        // Clean up.
+        let _ = std::fs::remove_dir_all(home.version_root(version));
     }
 
     /// L2 T2: the journal's `WroteManifest` SideEffect points at the
