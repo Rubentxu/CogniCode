@@ -490,7 +490,8 @@ async fn c4_violation_projected_with_reference_not_truth() {
     assert_eq!(violations.len(), 1, "body: {body}");
     let v = &violations[0];
     assert_eq!(v["constraint_id"], "arch.no_infra_in_domain");
-    assert_eq!(v["dependency_path"], "crate::infrastructure::db::Pool");
+    // parser normalizes leading crate:: away in dependency_path
+    assert_eq!(v["dependency_path"], "infrastructure::db::Pool");
     assert_eq!(v["line"], 1);
     let constraints = body["constraints"].as_array().unwrap();
     assert_eq!(constraints[0]["id"], "arch.no_infra_in_domain");
