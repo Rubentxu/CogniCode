@@ -1841,6 +1841,128 @@ components:
     // now closed by L2 + L4 — the producer writes to `versions/<v>/`,
     // and `version_manifest(v)` is the canonical helper.
 
+    // ===== DEBT-4 UAT — disposable-home round-trips =====
+
+    /// UAT scenario 1: install A → install B → capture → rollback →
+    /// asserts, → rollback again → harmless no-op. Real install pipeline
+    /// (resolver + download + extract + journal), fully disposable home.
+    #[test]
+    #[serial]
+    fn t_debt4_uat_install_rollback_roundtrip() {
+        use crate::release_test_support::ResolverFixture;
+
+        let _home = test_support::TempCognicodeHome::new();
+        let fx = ResolverFixture::build("0.95.0").expect("build resolver fixture");
+        let _base = test_support::TempBaseUrl::set(&fx.release.base_url);
+        let _opencode = test_support::TempOpenCodeConfig::disable();
+        let home = CognicodeHome::resolve(Some(_home.path())).expect("resolve home");
+        home.init().expect("home.init");
+
+        // install A
+        cmd_update(
+            &home,
+            None,
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "core".to_string(),
+            false,
+        )
+        .expect("install A must succeed");
+        assert_eq!(
+            crate::tracker::read_version_optional().as_deref(),
+            Some("0.95.0"),
+            "UAT: tracker pins A"
+        );
+
+        // update/install B (same fixture version, same real pipeline; the
+        // second transition rewrites the tracker and refreshes journal(B)).
+        cmd_update(
+            &home,
+            None,
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "core".to_string(),
+            false,
+        )
+        .expect("install B must succeed");
+
+        // capture state after B
+        assert_eq!(
+            crate::tracker::read_version_optional().as_deref(),
+            Some("0.95.0"),
+            "UAT: tracker pins B"
+        );
+        let journal_b = crate::lifecycle_journal::journal_path("0.95.0");
+        assert!(journal_b.exists(), "UAT: journal(B) present");
+        assert!(home.version_manifest("0.95.0").exists(), "UAT: B installed");
+
+        // rollback
+        cmd_rollback(&home, None).expect("UAT: rollback must succeed");
+
+        // assert post-rollback contract
+        assert!(!journal_b.exists(), "UAT: journal(B) consumed");
+        assert!(
+            !home.version_manifest("0.95.0").exists(),
+            "UAT: B install tree reverted"
+        );
+
+        // rollback again: harmless, no state mutation
+        cmd_rollback(&home, None).expect("UAT: second rollback must be harmless");
+    }
+
+    /// UAT scenario 2: install B → uninstall B → uninstall B again.
+    #[test]
+    #[serial]
+    fn t_debt4_uat_install_uninstall_roundtrip() {
+        use crate::release_test_support::ResolverFixture;
+
+        let _home = test_support::TempCognicodeHome::new();
+        let fx = ResolverFixture::build("0.95.0").expect("build resolver fixture");
+        let _base = test_support::TempBaseUrl::set(&fx.release.base_url);
+        let _opencode = test_support::TempOpenCodeConfig::disable();
+        let home = CognicodeHome::resolve(Some(_home.path())).expect("resolve home");
+        home.init().expect("home.init");
+
+        // install B (real pipeline). The `reviewer` profile includes the
+        // DaemonCli component, which cmd_ide_uninstall requires to derive
+        // the MCP binary name.
+        cmd_update(
+            &home,
+            None,
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "reviewer".to_string(),
+            false,
+        )
+        .expect("install B must succeed");
+        assert!(home.version_root("0.95.0").exists());
+        assert_eq!(
+            crate::tracker::read_version_optional().as_deref(),
+            Some("0.95.0"),
+            "UAT2: tracker pins B"
+        );
+
+        // uninstall B.
+        cmd_uninstall(&home, "cognicode", "0.95.0", &["opencode".to_string()])
+            .expect("UAT2: uninstall must succeed");
+        assert!(!home.version_root("0.95.0").exists(), "UAT2: no version B");
+        assert!(
+            !crate::lifecycle_journal::journal_path("0.95.0").exists(),
+            "UAT2: no journal B"
+        );
+        assert!(
+            crate::tracker::read_version_optional().is_none(),
+            "UAT2: tracker not B (cleared)"
+        );
+
+        // uninstall B again: idempotent.
+        cmd_uninstall(&home, "cognicode", "0.95.0", &["opencode".to_string()])
+            .expect("UAT2: second uninstall must be idempotent");
+    }
+
     // ===== E86.7 — cmd_uninstall removes the install tree =====
 
     /// T1 (RED before fix): `cmd_uninstall` must remove the install tree

@@ -1033,12 +1033,23 @@ components:
     /// any install work happens, and the error message must be loud.
     ///
     /// This is the "no Windows-fallback-to-Linux" guarantee.
+    ///
+    /// DEBT-4: `#[serial]` — this test READS process env
+    /// (`load_bundle_manifest` consults `COGNICODE_BUNDLE_MANIFEST`),
+    /// so it must not run concurrently with env-mutating tests.
     #[test]
+    #[serial_test::serial]
     fn installer_rejects_wrong_platform_bundle_with_loud_error() {
         // Simulate the wrong-platform scenario: parse the embedded
         // bundle, then point assert_host_platform at a non-matching
         // platform. The call must fail loudly with both the bundle
         // platform and the requested host platform in the error.
+        //
+        // DEBT-4: make the test hermetic against env leaks from earlier
+        // serial tests (`point_at` leaves `COGNICODE_BUNDLE_MANIFEST`
+        // pointing at a dropped tempdir). Clear the overrides so the
+        // embedded dev fixture is the deterministic input.
+        crate::release_test_support::unpoint();
         let yaml = InstallerTransaction::load_bundle_manifest()
             .expect("embedded bundle manifest must be readable");
         let manifest =
