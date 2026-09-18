@@ -209,6 +209,51 @@ pub fn source_from_files(files: Vec<(String, Option<String>, String)>) -> Archit
     }
 }
 
+
+/// Build an [`ArchitectureSource`] by scanning the Rust source files of
+/// a workspace source root. `module_path` is derived from the path
+/// relative to the root (`src/domain/service.rs` -> `domain::service`),
+/// which is what `LayerId::from_module_path` resolves against. Files
+/// that cannot be read are skipped; the query fail-closed status
+/// handles reduced coverage.
+pub fn source_from_source_root(root: &std::path::Path) -> ArchitectureSource {
+    let mut files = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if path
+                    .file_name()
+                    .is_some_and(|n| n == "target" || n == "node_modules")
+                {
+                    continue;
+                }
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let Ok(source) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                let rel = path.strip_prefix(root).unwrap_or(&path).with_extension("");
+                let segments: Vec<String> = rel
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy().to_string())
+                    .filter(|seg| seg != "mod" && seg != "lib" && seg != "main")
+                    .collect();
+                files.push(SourceFile {
+                    file_path: path.display().to_string(),
+                    module_path: (!segments.is_empty()).then(|| segments.join("::")),
+                    source,
+                });
+            }
+        }
+    }
+    ArchitectureSource { files }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

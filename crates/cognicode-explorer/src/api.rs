@@ -505,6 +505,11 @@ pub struct ApiState {
     /// Used as a fallback `revision_id` for `MoldQLService::execute_query_pinned`
     /// when the caller doesn't supply one.
     pub revision_tracker: Arc<AtomicU64>,
+    /// Optional Control Plane query boundary (CP1.0 WU3).
+    /// `None` means the endpoint reads as fail-closed `Incomplete`.
+    pub control_query: Option<Arc<cognicode_core::application::architecture::ControlQueryService>>,
+    /// Source root the Control Plane query evaluates against.
+    pub control_source_root: std::path::PathBuf,
     /// Optional analytics algorithm registry (E28.4).
     /// Wired when a lineage store is available.
     pub analytics_registry:
@@ -536,6 +541,8 @@ impl ApiState {
             graph_repo: None,
             snapshot: None,
             revision_tracker: Arc::new(AtomicU64::new(1)),
+            control_query: None,
+            control_source_root: std::env::current_dir().unwrap_or_default(),
             analytics_registry: None,
             analytics_lineage_store: None,
         }
@@ -588,6 +595,20 @@ impl ApiState {
         }
     }
 
+    /// Wire a Control Plane query boundary (CP1.0 WU4). Read-only,
+    /// authority-free. Pass `None` to leave the endpoint fail-closed.
+    pub fn with_control_query(
+        self,
+        cq: Option<Arc<cognicode_core::application::architecture::ControlQueryService>>,
+        source_root: std::path::PathBuf,
+    ) -> Self {
+        Self {
+            control_query: cq,
+            control_source_root: source_root,
+            ..self
+        }
+    }
+
     /// Returns the current workspace_id (from WorkspaceService) and the latest revision_id.
     /// Falls back to `("default", 1)` if workspace service has no current workspace.
     pub fn current_pin(&self) -> (String, u64) {
@@ -610,6 +631,10 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/api/health", get(health))
         // CP0 Backstage fit spike: read-only, non-authoritative probe.
         .route("/control-plane/probe", get(control_plane_probe))
+        .route(
+            "/control-plane/workspaces/:workspace_id/architecture",
+            get(control_plane_architecture),
+        )
         .route("/api/workspaces/open", post(open_workspace))
         .route("/api/workspaces/:workspace_id/spotter", get(spotter))
         .route(
@@ -734,6 +759,10 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/health", get(health))
         // CP0 Backstage fit spike: read-only, non-authoritative probe.
         .route("/control-plane/probe", get(control_plane_probe))
+        .route(
+            "/control-plane/workspaces/:workspace_id/architecture",
+            get(control_plane_architecture),
+        )
         .route("/api/workspaces/open", post(open_workspace))
         .route("/api/workspaces/:workspace_id/spotter", get(spotter))
         .route(
@@ -1178,6 +1207,55 @@ async fn open_workspace(
     let summary = state.workspace.open_workspace(request).await?;
 
     Ok(Json(summary).into_response())
+}
+
+/// Handler for `GET /control-plane/workspaces/:workspace_id/architecture`.
+///
+/// CP1.0 WU4 — the single Control Plane read question:
+/// "What is the architecture state of workspace W at snapshot S?"
+///
+/// Fail-closed contract (mirrors `ControlQueryService`):
+/// * no wired `ControlQueryService` → `status: "incomplete"` with a
+///   reason; never a clean verdict from missing wiring;
+/// * read-only, authority-free: nothing here admits, mints, or persists.
+async fn control_plane_architecture(
+    State(state): State<ApiState>,
+    Path(workspace_id): Path<String>,
+) -> Json<serde_json::Value> {
+    use cognicode_core::application::architecture::control_query;
+
+    let snapshot = state.workspace.current_workspace().ok();
+    let snapshot_ref = snapshot.as_ref().and_then(|w| w.indexed_at.clone());
+
+    let Some(cq) = state.control_query.as_ref() else {
+        return Json(serde_json::json!({
+            "workspace_ref": workspace_id,
+            "snapshot_ref": snapshot_ref,
+            "status": "incomplete",
+            "reason": "control_query_service_not_wired",
+            "constraints": [],
+            "violations": [],
+            "statements_examined": 0,
+            "unevaluated_constraints": [],
+        }));
+    };
+
+    let source =
+        control_query::source_from_source_root(&state.control_source_root);
+    let model = cq.query_architecture(&workspace_id, snapshot_ref.as_deref(), &source);
+    let status = match model.status {
+        control_query::EvaluationStatus::Evaluated => "evaluated",
+        control_query::EvaluationStatus::Incomplete => "incomplete",
+    };
+    Json(serde_json::json!({
+        "workspace_ref": model.workspace_ref,
+        "snapshot_ref": model.snapshot_ref,
+        "status": status,
+        "constraints": model.constraints,
+        "violations": model.violations,
+        "statements_examined": model.statements_examined,
+        "unevaluated_constraints": model.unevaluated_constraints,
+    }))
 }
 
 /// Handler for `GET /api/workspaces/:workspace_id/landing`.

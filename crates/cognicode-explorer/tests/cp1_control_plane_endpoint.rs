@@ -1,0 +1,518 @@
+//! CP1.0 WU4 — `GET /control-plane/workspaces/:workspace_id/architecture`.
+//!
+//! Fail-closed HTTP contract tests (C1–C5 semantics carried from
+//! `ControlQueryService`). Mocks mirror `e28_3_runtime_wiring.rs`.
+// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+#![allow(deprecated, unused_imports, dead_code)]
+
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+
+use async_trait::async_trait;
+use axum::body::Body;
+use axum::extract::State;
+use axum::http::{Request, StatusCode};
+use axum::routing::post;
+use tower::ServiceExt;
+
+use cognicode_explorer::api::{router, ApiState};
+use axum::Router as AxumRouter;
+use tower::ServiceExt;
+use cognicode_core::application::architecture::{
+    ArchitectureAdmissionService, ArchitectureRegistry, ControlQueryService,
+    SystemArchitectureClock,
+};
+use cognicode_core::domain::architecture::{
+    Admitter, AdmitterRole, ArchitectureConstraintId, ArchitectureConstraintKind,
+    ConstraintCandidate, LayerDependencyRule, LayerId,
+};
+use cognicode_explorer::dto::WorkspaceSummary;
+use cognicode_explorer::error::ExplorerError;
+use cognicode_explorer::facades::{
+    GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
+};
+use cognicode_explorer::moldql::MoldQLResult;
+
+// ============================================================================
+// Mock implementations
+// ============================================================================
+
+/// A MoldQLService mock that records the pin passed to `execute_query_pinned`.
+struct RecordingMoldQLService {
+    recorded_pin: Mutex<Option<(String, u64)>>,
+}
+
+impl RecordingMoldQLService {
+    fn new() -> Self {
+        Self {
+            recorded_pin: Mutex::new(None),
+        }
+    }
+
+    fn take_recorded_pin(&self) -> Option<(String, u64)> {
+        self.recorded_pin.lock().unwrap().take()
+    }
+}
+
+#[async_trait]
+impl MoldQLService for RecordingMoldQLService {
+    async fn execute_query(&self, query: &str) -> cognicode_explorer::ExplorerResult<MoldQLResult> {
+        Ok(MoldQLResult {
+            query: query.to_string(),
+            items: vec![],
+            total: 0,
+        })
+    }
+
+    async fn execute_query_with_target(
+        &self,
+        query: &str,
+        _target: cognicode_explorer::moldql::compile::CompileTarget,
+    ) -> cognicode_explorer::ExplorerResult<MoldQLResult> {
+        self.execute_query(query).await
+    }
+
+    async fn execute_query_pinned(
+        &self,
+        query: &str,
+        workspace_id: String,
+        revision_id: u64,
+    ) -> cognicode_explorer::ExplorerResult<MoldQLResult> {
+        *self.recorded_pin.lock().unwrap() = Some((workspace_id, revision_id));
+        self.execute_query(query).await
+    }
+}
+
+/// A WorkspaceService mock that returns a known current workspace.
+struct MockWorkspaceForPin {
+    workspace_id: String,
+}
+
+impl MockWorkspaceForPin {
+    fn new(workspace_id: &str) -> Self {
+        Self {
+            workspace_id: workspace_id.to_string(),
+        }
+    }
+}
+
+#[async_trait]
+impl WorkspaceService for MockWorkspaceForPin {
+    async fn open_workspace(
+        &self,
+        _request: cognicode_explorer::dto::OpenWorkspaceRequest,
+    ) -> cognicode_explorer::ExplorerResult<WorkspaceSummary> {
+        Ok(WorkspaceSummary {
+            id: self.workspace_id.clone(),
+            root_path: "/fake/path".to_string(),
+            graph_status: cognicode_explorer::dto::GraphStatus::Ready,
+            indexed_at: None,
+            symbol_count: 0,
+            relation_count: 0,
+        })
+    }
+
+    fn current_workspace(&self) -> cognicode_explorer::ExplorerResult<WorkspaceSummary> {
+        Ok(WorkspaceSummary {
+            id: self.workspace_id.clone(),
+            root_path: "/fake/path".to_string(),
+            graph_status: cognicode_explorer::dto::GraphStatus::Ready,
+            indexed_at: None,
+            symbol_count: 0,
+            relation_count: 0,
+        })
+    }
+}
+
+// Blanket mock impls for the remaining facade traits needed by ApiState::new.
+
+struct MockSearchService;
+
+#[async_trait]
+impl SearchService for MockSearchService {
+    async fn spotter_search(
+        &self,
+        _: &str,
+        _: Option<&str>,
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::SpotterResult>> {
+        Ok(vec![])
+    }
+    async fn spotter_search_with_viewspecs(
+        &self,
+        _: &str,
+        _: Option<&str>,
+        _: Option<&str>,
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::SpotterSearchResult>> {
+        Ok(vec![])
+    }
+    async fn inspect_object(
+        &self,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::InspectableObjectSummary> {
+        Err(ExplorerError::ObjectNotFound("mock".into()))
+    }
+}
+
+struct MockViewService;
+
+#[async_trait]
+impl ViewService for MockViewService {
+    async fn available_views(
+        &self,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::ViewDescriptorDto>> {
+        Ok(vec![])
+    }
+    async fn contextual_view(
+        &self,
+        _: &str,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::ContextualView> {
+        Err(ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn build_contextual_graph(
+        &self,
+        _: &str,
+        _: &str,
+        _: u8,
+        _: usize,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::ContextualGraphResponse> {
+        Err(ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn available_lenses(
+        &self,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::LensDescriptor>> {
+        Ok(vec![])
+    }
+    async fn apply_lens(
+        &self,
+        _: &str,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::LensResult> {
+        Err(ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn execute_view_spec(
+        &self,
+        _: &cognicode_explorer::dto::ViewSpec,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::ContextualView> {
+        Err(ExplorerError::FeatureDisabled("mock".into()))
+    }
+}
+
+struct MockPersistenceService;
+
+#[async_trait]
+impl PersistenceService for MockPersistenceService {
+    async fn save_exploration_session(
+        &self,
+        _: cognicode_explorer::dto::SaveExplorationSessionRequest,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::ExplorationSession> {
+        Err(ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn load_exploration_session(
+        &self,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<Option<cognicode_explorer::dto::ExplorationSession>>
+    {
+        Ok(None)
+    }
+    async fn list_explorations(
+        &self,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::ExplorationSession>> {
+        Ok(vec![])
+    }
+    async fn generate_artifact(
+        &self,
+        _: &str,
+        _: cognicode_explorer::dto::GenerateArtifactRequest,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::DecisionArtifactSummary> {
+        Err(ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn save_view_spec(
+        &self,
+        _: &cognicode_explorer::dto::ViewSpec,
+        _: &str,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<()> {
+        Err(ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn load_view_spec(
+        &self,
+        _: &str,
+        _: &str,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<Option<cognicode_explorer::dto::ViewSpec>> {
+        Ok(None)
+    }
+    async fn list_view_specs(
+        &self,
+        _: &str,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::ViewSpec>> {
+        Ok(vec![])
+    }
+    async fn delete_view_spec(
+        &self,
+        _: &str,
+        _: &str,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<bool> {
+        Ok(false)
+    }
+}
+
+struct MockGraphService;
+
+#[async_trait]
+impl GraphService for MockGraphService {
+    async fn resolve_symbol(
+        &self,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<
+        Option<cognicode_explorer::ports::symbol_repository::ResolvedSymbol>,
+    > {
+        Ok(None)
+    }
+    fn graph_query(&self) -> Option<Arc<dyn cognicode_core::domain::traits::GraphQueryPort>> {
+        None
+    }
+    async fn build_subgraph(
+        &self,
+        _: &str,
+        _: u8,
+        _: cognicode_explorer::facades::SubgraphDirection,
+        _: u32,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::SubgraphResponse> {
+        Err(ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn build_architecture(
+        &self,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::SubgraphResponse> {
+        Err(ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn compare_architecture(
+        &self,
+        _: &str,
+    ) -> cognicode_explorer::ExplorerResult<cognicode_explorer::dto::DriftReport> {
+        Err(ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn landing_entry_points(
+        &self,
+        _: usize,
+    ) -> cognicode_explorer::ExplorerResult<(
+        Vec<cognicode_explorer::ports::symbol_repository::ResolvedSymbol>,
+        usize,
+    )> {
+        Ok((vec![], 0))
+    }
+    async fn landing_hot_paths(
+        &self,
+        _: usize,
+        _: usize,
+    ) -> cognicode_explorer::ExplorerResult<
+        Vec<cognicode_explorer::ports::symbol_repository::ResolvedSymbol>,
+    > {
+        Ok(vec![])
+    }
+    async fn landing_god_nodes(
+        &self,
+        _: usize,
+    ) -> cognicode_explorer::ExplorerResult<Vec<cognicode_explorer::dto::GodNodeEntry>> {
+        Ok(vec![])
+    }
+}
+
+
+// ============================================================================
+// CP1.0 WU4 — control-plane architecture endpoint
+// ============================================================================
+
+fn layer_candidate(id: &str) -> ConstraintCandidate {
+    ConstraintCandidate {
+        id: ArchitectureConstraintId::new(id).unwrap(),
+        kind: ArchitectureConstraintKind::LayerDependency(LayerDependencyRule {
+            from_layer: LayerId::Domain,
+            forbidden_targets: vec![LayerId::Infrastructure],
+            rationale: "test".into(),
+        }),
+        adr_ref: Some("ADR-007".into()),
+        proposed_by: "human:test".into(),
+    }
+}
+
+fn admitted_registry(id: &str) -> ArchitectureRegistry {
+    let mut registry = ArchitectureRegistry::new();
+    let admitter = Admitter {
+        id: "human:test".into(),
+        role: AdmitterRole::HumanPromoter,
+    };
+    let out = registry
+        .admission
+        .admit(layer_candidate(id), &admitter, &SystemArchitectureClock);
+    assert!(out.result.is_ok(), "fixture admission failed");
+    registry
+}
+
+async fn get(state: ApiState, path: &str) -> (axum::http::StatusCode, serde_json::Value) {
+    let app: AxumRouter = router(state);
+    let resp = app
+        .oneshot(
+            axum::http::Request::builder()
+                .uri(path)
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = resp.status();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::json!({}));
+    (status, json)
+}
+
+/// Small, bounded source root (never scan the whole temp dir).
+fn empty_source_root(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("cp1-wu4-empty-{}-{}", tag, std::process::id()));
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    dir
+}
+
+fn temp_source_root(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("cp1-wu4-{}-{}", tag, std::process::id()));
+    let src = dir.join("src/domain");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        src.join("service.rs"),
+        "use crate::infrastructure::db::Pool;\npub struct S;\n",
+    )
+    .unwrap();
+    dir
+}
+
+fn base_ws(ws: &str) -> ApiState {
+    ApiState::new(
+        Arc::new(MockWorkspaceForPin::new(ws)),
+        Arc::new(MockSearchService),
+        Arc::new(MockViewService),
+        Arc::new(MockPersistenceService),
+        Arc::new(RecordingMoldQLService::new()),
+        Arc::new(MockGraphService),
+    )
+}
+
+trait CloneState {
+    fn clone_state(&self) -> ApiState;
+}
+
+impl CloneState for ApiState {
+    fn clone_state(&self) -> ApiState {
+        ApiState {
+            workspace: self.workspace.clone(),
+            search: self.search.clone(),
+            view: self.view.clone(),
+            persistence: self.persistence.clone(),
+            moldql: self.moldql.clone(),
+            graph: self.graph.clone(),
+            investigation: self.investigation.clone(),
+            #[cfg(feature = "multimodal")]
+            graph_repo: self.graph_repo.clone(),
+            snapshot: self.snapshot.clone(),
+            revision_tracker: self.revision_tracker.clone(),
+            control_query: self.control_query.clone(),
+            control_source_root: self.control_source_root.clone(),
+            analytics_registry: self.analytics_registry.clone(),
+            analytics_lineage_store: self.analytics_lineage_store.clone(),
+        }
+    }
+}
+
+/// C1 — no ControlQueryService wired → fail-closed incomplete, never clean.
+#[tokio::test]
+async fn c1_not_wired_reads_incomplete_never_clean() {
+    let (status, body) = get(
+        base_ws("ws-1"),
+        "/control-plane/workspaces/ws-1/architecture",
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    assert_eq!(body["status"], "incomplete");
+    assert_eq!(body["reason"], "control_query_service_not_wired");
+    assert_eq!(body["violations"], serde_json::json!([]));
+}
+
+/// C2 — wired but empty admitted set → incomplete, NOT a clean verdict.
+#[tokio::test]
+async fn c2_empty_admission_reads_incomplete() {
+    let state = base_ws("ws-1").with_control_query(
+        Some(Arc::new(ControlQueryService::new(ArchitectureRegistry::new()))),
+        empty_source_root("c2"),
+    );
+    let (status, body) = get(state, "/control-plane/workspaces/ws-1/architecture").await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    assert_eq!(body["status"], "incomplete");
+    assert_eq!(body["constraints"], serde_json::json!([]));
+}
+
+/// C3 — real evaluation over the workspace source root → evaluated.
+#[tokio::test]
+async fn c3_real_evaluation_is_evaluated() {
+    let dir = temp_source_root("c3");
+    let state = base_ws("ws-1").with_control_query(
+        Some(Arc::new(ControlQueryService::new(admitted_registry(
+            "arch.no_infra_in_domain",
+        )))),
+        dir.clone(),
+    );
+    let (status, body) = get(state, "/control-plane/workspaces/ws-1/architecture").await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    assert_eq!(body["status"], "evaluated", "body: {body}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// C4 — the violation is projected with references and coordinates,
+/// never a copy of canonical truth.
+#[tokio::test]
+async fn c4_violation_projected_with_reference_not_truth() {
+    let dir = temp_source_root("c4");
+    let state = base_ws("ws-1").with_control_query(
+        Some(Arc::new(ControlQueryService::new(admitted_registry(
+            "arch.no_infra_in_domain",
+        )))),
+        dir.clone(),
+    );
+    let (_, body) = get(state, "/control-plane/workspaces/ws-1/architecture").await;
+    let violations = body["violations"].as_array().unwrap();
+    assert_eq!(violations.len(), 1, "body: {body}");
+    let v = &violations[0];
+    assert_eq!(v["constraint_id"], "arch.no_infra_in_domain");
+    assert_eq!(v["dependency_path"], "crate::infrastructure::db::Pool");
+    assert_eq!(v["line"], 1);
+    let constraints = body["constraints"].as_array().unwrap();
+    assert_eq!(constraints[0]["id"], "arch.no_infra_in_domain");
+    assert_eq!(constraints[0]["kind"], "layer_dependency");
+    assert_eq!(constraints[0]["adr_ref"], "ADR-007");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// C5 — repeated queries: the endpoint never grows the admission set and
+/// never persists anything; the query path is stateless and read-only.
+#[tokio::test]
+async fn c5_endpoint_path_is_read_only() {
+    let registry = admitted_registry("arch.readonly");
+    let admitted_before = registry.admission.admitted().len();
+    let state = base_ws("ws").with_control_query(
+        Some(Arc::new(ControlQueryService::new(registry))),
+        empty_source_root("c5"),
+    );
+    for _ in 0..3 {
+        let (_, body) = get(state.clone_state(), "/control-plane/workspaces/ws/architecture").await;
+        assert_eq!(body["status"], "evaluated");
+        assert_eq!(body["constraints"].as_array().unwrap().len(), admitted_before);
+    }
+}
