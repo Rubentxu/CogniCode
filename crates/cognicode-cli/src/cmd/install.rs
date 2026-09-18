@@ -137,6 +137,7 @@ pub fn run_install(home: &CognicodeHome, profile: &str) -> Result<PathBuf> {
 mod tests {
     use super::*;
     use crate::layout::test_support::TempCognicodeHome;
+    use serial_test::serial;
 
     /// L4 T1: `run_install` must not crash when the canonical
     /// `versions/<v>/skills/` directory is empty or missing. Pre-L4
@@ -257,6 +258,64 @@ components:
             .expect("no declarations for profile")
             .is_empty(),
             "profiles with no declarations must get no skill bundles"
+        );
+    }
+
+    /// DEBT-1 UAT: run the same integration twice against a disposable
+    /// IDE config. First run is allowed to write; the second run must be
+    /// zero-touch: identical content sha and unchanged mtime.
+    #[test]
+    #[serial]
+    fn t_debt1_uat_second_run_is_zero_touch() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let target = tmp.path().join("opencode.json");
+        let prev = std::env::var("OPENCODE_CONFIG").ok();
+        unsafe {
+            std::env::set_var("OPENCODE_CONFIG", &target);
+        }
+
+        let steps = || -> Vec<crate::ide::Step> {
+            // First run may create the file; build the same steps the
+            // integrator builds (symlink + MCP merge).
+            crate::ide::integrate_opencode(
+                &tmp.path().join("skills-source"),
+                "0.95.0",
+                &["/shims/cognicode-mcp".to_string()],
+            )
+            .expect("build steps")
+        };
+
+        // Run 1: allowed change (file created).
+        for step in steps() {
+            step.execute().expect("first run must succeed");
+        }
+        assert!(target.is_file(), "first run must create the config");
+
+        // Freeze the state and record post-first-run identity.
+        filetime::set_file_mtime(&target, filetime::FileTime::from_unix_time(1, 0)).unwrap();
+        let sha1 = crate::release_contract::sha256_file(&target).unwrap();
+        let mtime1 = std::fs::metadata(&target).unwrap().modified().unwrap();
+
+        // Run 2: identical semantic integration — must be zero-touch.
+        for step in steps() {
+            step.execute().expect("second run must succeed");
+        }
+
+        match prev {
+            Some(v) => unsafe {
+                std::env::set_var("OPENCODE_CONFIG", v);
+            },
+            None => unsafe {
+                std::env::remove_var("OPENCODE_CONFIG");
+            },
+        }
+
+        let sha2 = crate::release_contract::sha256_file(&target).unwrap();
+        let mtime2 = std::fs::metadata(&target).unwrap().modified().unwrap();
+        assert_eq!(sha1, sha2, "DEBT-1 UAT: second run must not change content");
+        assert_eq!(
+            mtime1, mtime2,
+            "DEBT-1 UAT: second run must not touch mtime"
         );
     }
 }
