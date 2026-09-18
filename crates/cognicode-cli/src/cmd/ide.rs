@@ -123,8 +123,13 @@ impl Step {
 }
 
 /// Detect whether the IDE is installed.
+///
+/// Uses `Path::is_file()` (not `Path::exists()`) so a directory at the
+/// config path is NOT mistakenly detected as a configured IDE. Pinned by
+/// `t_e86_5_detect_opencode_returns_false_when_config_is_directory`
+/// (RED before E86.5).
 pub fn detect_opencode() -> bool {
-    OpenCodePaths::resolve().config_file.exists()
+    OpenCodePaths::resolve().config_file.is_file()
 }
 
 /// OpenCode ownership root: the directory the `OPENCODE_CONFIG` file lives in
@@ -1382,6 +1387,127 @@ mcp_servers.existing.args = ['y']
         );
         assert_eq!(paths.config_dir, tmp.join(".config/opencode"));
         assert_eq!(paths.skills_dir, tmp.join(".config/opencode/skills"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // ===== E86.5 — detect_* uses is_file, not exists =====
+
+    /// T1 (RED before fix): `detect_opencode()` must return FALSE when the
+    /// resolved `config_file` is a directory, not a regular file.
+    ///
+    /// Currently `detect_opencode` uses `Path::exists()`, which returns
+    /// true for both files AND directories. The UAT script
+    /// (`/tmp/cogh-uat-real-pc.sh`) works around this by pointing
+    /// `OPENCODE_CONFIG` at a NON-EXISTENT file path inside a fresh temp
+    /// dir; but if a developer's `$HOME/.config/opencode/` exists as a
+    /// directory and the config file inside it is missing (e.g. the user
+    /// ran opencode once, deleted `opencode.json`, and never recreated
+    /// it), `detect_opencode()` would falsely return true and the
+    /// install pipeline would try to integrate against a non-existent
+    /// config — `Step::MergeJson` would then create a fresh empty config
+    /// and `Step::Symlink` would fail with `link_or_copy failed` against
+    /// a missing skills source.
+    ///
+    /// We exhibit the bug by creating a *directory* at the resolved
+    /// `config_file` path. `Path::exists()` returns true (the dir
+    /// exists) but `Path::is_file()` returns false (it is not a regular
+    /// file). With the buggy `exists()` check, `detect_opencode()`
+    /// returns true; with the correct `is_file()` check, it returns
+    /// false.
+    #[test]
+    #[serial]
+    fn t_e86_5_detect_opencode_returns_false_when_config_is_directory() {
+        let tmp =
+            std::env::temp_dir().join(format!("cogh-e86-5-detect-oc-dir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let fake_home = tmp.join("fake-home");
+        // IMPORTANT: create a DIRECTORY at the path config_file will
+        // resolve to. This models the bug: the path exists, but it is
+        // not a file. With `Path::exists()` the function returns true
+        // even though there is no config to integrate.
+        let fake_config_path = fake_home.join(".config/opencode/opencode.json");
+        std::fs::create_dir_all(&fake_config_path).unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        let prev_cfg = std::env::var_os("OPENCODE_CONFIG");
+        unsafe {
+            std::env::set_var("HOME", &fake_home);
+            std::env::remove_var("OPENCODE_CONFIG");
+        }
+
+        // Sanity: the resolved config_file path EXISTS (it is a
+        // directory) but is_file() returns false.
+        let paths = OpenCodePaths::resolve();
+        assert!(
+            paths.config_file.exists(),
+            "config_file (as dir) should exist for this test; got {}",
+            paths.config_file.display()
+        );
+        assert!(
+            !paths.config_file.is_file(),
+            "config_file should NOT be a regular file in this test; got {}",
+            paths.config_file.display()
+        );
+        assert!(
+            paths.config_file.is_dir(),
+            "config_file should be a directory in this test; got {}",
+            paths.config_file.display()
+        );
+
+        let detected = detect_opencode();
+
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+            match prev_cfg {
+                Some(v) => std::env::set_var("OPENCODE_CONFIG", v),
+                None => std::env::remove_var("OPENCODE_CONFIG"),
+            }
+        }
+
+        assert!(
+            !detected,
+            "detect_opencode must return false when config_file is a directory; got true"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// T2: `detect_opencode()` must return TRUE when the resolved
+    /// `config_file` is a regular file. This is the happy path and pins
+    /// the contract that a real config file is detected.
+    #[test]
+    #[serial]
+    fn t_e86_5_detect_opencode_returns_true_when_config_is_file() {
+        let tmp =
+            std::env::temp_dir().join(format!("cogh-e86-5-detect-oc-file-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let fake_home = tmp.join("fake-home");
+        let oc_dir = fake_home.join(".config/opencode");
+        std::fs::create_dir_all(&oc_dir).unwrap();
+        std::fs::write(oc_dir.join("opencode.json"), "{}").unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        let prev_cfg = std::env::var_os("OPENCODE_CONFIG");
+        unsafe {
+            std::env::set_var("HOME", &fake_home);
+            std::env::remove_var("OPENCODE_CONFIG");
+        }
+
+        let detected = detect_opencode();
+
+        unsafe {
+            std::env::set_var("HOME", &prev_home);
+            match prev_cfg {
+                Some(v) => std::env::set_var("OPENCODE_CONFIG", v),
+                None => std::env::remove_var("OPENCODE_CONFIG"),
+            }
+        }
+
+        assert!(
+            detected,
+            "detect_opencode must return true when opencode.json exists; got false"
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
