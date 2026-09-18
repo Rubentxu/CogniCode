@@ -274,6 +274,51 @@ of which components the chosen profile shipped.
 - THEN the install fails naming the id
 - AND no substitute directory is guessed
 
+### Requirement: The release producer publishes skill bundle payloads (DEBT-2c)
+
+The release producer (`release_factory` / `release_contract`) MUST
+treat portable skill bundles as a first-class published class, parallel
+to components, without widening the closed `ArtifactKind` set:
+
+- `SKILL_BUNDLES` in `release_contract.rs` is the single source of
+  truth for the published skill bundle surface (id, profiles,
+  published flag). Ids come from this table — never from component
+  stems or binary names.
+- Payload filenames are platform-less:
+  `{SkillBundleId}-{version}.tar.gz` (matching `just bundle-skills`).
+- `generate_release` requires every published bundle payload in
+  staging (declared-but-missing fails loudly naming the id) and copies
+  it into the release directory; the generated manifests of every
+  platform declare the published bundles in `skill_bundles[]`.
+- `verify_release` cross-checks: table membership, non-published
+  rejection, version lockstep, declared-profile subset, payload
+  presence (via SHA256SUMS coverage and digest), and rejects
+  undeclared bundle payloads.
+
+#### Scenario: Generated manifest declares the published bundles
+
+- GIVEN a staged release containing the published skill payloads
+- WHEN the release is generated
+- THEN every platform manifest's `skill_bundles[]` equals the
+  published rows of the `SKILL_BUNDLES` table
+- AND each id is distinct from every component name or is
+  table-derived (never component-derived)
+
+#### Scenario: Declared-but-missing payload fails generation
+
+- GIVEN a published skill bundle with no tarball in staging
+- WHEN `generate_release` runs
+- THEN generation fails naming the missing id
+- AND the message points at `just bundle-skills`
+
+#### Scenario: Verify catches tampered and undeclared payloads
+
+- GIVEN a generated release
+- WHEN a skill payload's bytes change after generation
+- THEN `verify_release` fails on the SHA256SUMS digest
+- AND when a bundle-shaped payload is present without any manifest
+  declaring it, verify fails as an orphan
+
 ## Cross-references
 
 - ADR-036 — `IDE-abstraction-portable-skills-per-ide-adapters`

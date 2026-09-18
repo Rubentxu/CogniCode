@@ -140,6 +140,16 @@ impl PlatformAdapter for LinuxAdapter {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("create target parent {}", parent.display()))?;
         }
+        // Idempotent: an existing symlink at `target` (e.g. from a prior
+        // install pointing at a stale temp home) is replaced, never an
+        // error. Real files/dirs are left untouched -- that is a user
+        // artifact, not ours to clobber.
+        if let Ok(meta) = std::fs::symlink_metadata(target) {
+            if meta.file_type().is_symlink() {
+                std::fs::remove_file(target)
+                    .with_context(|| format!("rm stale symlink {}", target.display()))?;
+            }
+        }
         std::os::unix::fs::symlink(source, target)
             .with_context(|| format!("symlink {} -> {}", target.display(), source.display()))
     }
@@ -224,6 +234,16 @@ impl PlatformAdapter for MacOsAdapter {
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("create target parent {}", parent.display()))?;
+        }
+        // Idempotent: an existing symlink at `target` (e.g. from a prior
+        // install pointing at a stale temp home) is replaced, never an
+        // error. Real files/dirs are left untouched -- that is a user
+        // artifact, not ours to clobber.
+        if let Ok(meta) = std::fs::symlink_metadata(target) {
+            if meta.file_type().is_symlink() {
+                std::fs::remove_file(target)
+                    .with_context(|| format!("rm stale symlink {}", target.display()))?;
+            }
         }
         std::os::unix::fs::symlink(source, target)
             .with_context(|| format!("symlink {} -> {}", target.display(), source.display()))

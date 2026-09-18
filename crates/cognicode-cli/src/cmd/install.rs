@@ -12,6 +12,7 @@ use super::ide;
 use super::install_lock;
 use super::installer_transaction::InstallerTransaction;
 use super::layout::CognicodeHome;
+use super::release_contract::ArtifactKind;
 use super::tracker;
 
 /// Run the atomic install transaction with lock and tracker.
@@ -70,14 +71,36 @@ pub fn run_install(home: &CognicodeHome, profile: &str) -> Result<PathBuf> {
                     // hardcoded `"cognicode-mcp"` literal. The
                     // manifest is the source of truth; if the
                     // bundle declares no DaemonCli, fail loudly.
-                    let mcp_binary_name = crate::bundle_manifest::daemon_cli_binary_name(
-                        &home.version_manifest(version),
-                    )?;
-                    let mcp_command = vec![
-                        home.shim_path(&mcp_binary_name)
-                            .to_string_lossy()
-                            .to_string(),
-                    ];
+                    //
+                    // DEBT-2c: a profile may legitimately declare skill
+                    // bundles without a DaemonCli component (e.g. `core`
+                    // ships the `cognicode` skills but no MCP daemon). In
+                    // that case the shim resolution is simply skipped —
+                    // the skills are plain files, they do not invoke the
+                    // daemon.
+                    let manifest = home.version_manifest(version);
+                    // DEBT-2c: a profile may declare skill bundles without a
+                    // DaemonCli component (e.g. `core` ships the `cognicode`
+                    // skills but no MCP daemon). The skills are plain files
+                    // that do not invoke the daemon, so shim resolution is
+                    // simply skipped. `daemon_cli_binary_name` keeps its
+                    // strict fail-loud contract; the *caller* decides whether
+                    // a missing DaemonCli is legitimate for this profile.
+                    let has_daemon_cli =
+                        !crate::bundle_manifest::BundleManifest::from_path(&manifest)?
+                            .components_by_kind(ArtifactKind::DaemonCli)
+                            .is_empty();
+                    let mcp_command = if has_daemon_cli {
+                        let mcp_binary_name =
+                            crate::bundle_manifest::daemon_cli_binary_name(&manifest)?;
+                        vec![
+                            home.shim_path(&mcp_binary_name)
+                                .to_string_lossy()
+                                .to_string(),
+                        ]
+                    } else {
+                        Vec::new()
+                    };
                     for skill_path in declared {
                         println!(
                             "OpenCode detected, integrating skill bundle at {}",
@@ -129,23 +152,27 @@ mod tests {
         let home = CognicodeHome::resolve(None).expect("resolve home");
         home.init().expect("init home");
 
-        // Drive a real install. The dev-bundle fixture has no skill
-        // bundle in the manifest, so `versions/<v>/skills/` will be
-        // empty after install. detect_opencode() may or may not be
-        // true on this host — both branches are tested by the
-        // install succeeding without error.
+        // Drive a real install. Since DEBT-2c the release contract
+        // publishes the `cognicode` skill bundle for the `core`
+        // profile, so the manifest declares it and the installer
+        // extracts it into `versions/<v>/skills/cognicode/`. The
+        // install must succeed end-to-end with the declared bundle
+        // present (the original L4 regression — a hardcoded
+        // `install/<v>/mcp-server/skills` path — stays covered:
+        // the path is now derived from the manifest declaration).
         let release = crate::release_test_support::local_release(env!("CARGO_PKG_VERSION"))
             .expect("stage a local release");
         crate::release_test_support::point_at(&release);
 
-        // The install must succeed even when the skill bundle is
-        // absent. Pre-L4 this would FAIL with `link_or_copy failed`
-        // because the hardcoded `install/<v>/mcp-server/skills`
-        // path doesn't exist.
         let result = run_install(&home, "core");
+        assert!(result.is_ok(), "L4: install must succeed; got {result:?}");
+        let skills_dir = home
+            .skills_root(env!("CARGO_PKG_VERSION"))
+            .join("cognicode");
         assert!(
-            result.is_ok(),
-            "L4: install must succeed without a skill bundle; got {result:?}"
+            skills_dir.is_dir(),
+            "DEBT-2c: the declared `cognicode` skill bundle must be extracted at {}",
+            skills_dir.display()
         );
     }
 

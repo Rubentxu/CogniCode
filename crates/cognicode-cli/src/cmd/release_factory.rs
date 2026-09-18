@@ -21,11 +21,14 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 
 use crate::bundle_manifest::Platform;
-use crate::bundle_manifest::{BUNDLE_API_VERSION, BundleComponent, BundleManifest, ProfileDef};
+use crate::bundle_manifest::{
+    BUNDLE_API_VERSION, BundleComponent, BundleManifest, ProfileDef, SkillBundleDecl,
+};
 use crate::release_contract::{
-    ArtifactKind, PUBLISHED_PROFILES, ProducedArtifact, ReleaseInventory, artifact_filename,
-    artifact_url, build_inventory, bundle_manifest_filename, platform_token, published_components,
-    release_inventory_filename, sha256_file,
+    ArtifactKind, PUBLISHED_PROFILES, ProducedArtifact, ReleaseInventory, SKILL_BUNDLES,
+    SkillBundleSpec, artifact_filename, artifact_url, build_inventory, bundle_manifest_filename,
+    platform_token, published_components, published_skill_bundles, release_inventory_filename,
+    sha256_file, skill_bundle_by_id, skill_bundle_filename,
 };
 
 /// Outcome of a successful generation.
@@ -101,6 +104,19 @@ pub fn generate_bundle_manifest(
     }
     components.sort_by(|a, b| a.name.cmp(&b.name));
 
+    // DEBT-2c: declare the published skill bundles. Ids come from the
+    // SKILL_BUNDLES contract table — never from component names. The
+    // declarations are platform-independent, so every platform manifest
+    // of the release carries the same section.
+    let mut skill_bundles: Vec<SkillBundleDecl> = Vec::new();
+    for spec in published_skill_bundles() {
+        skill_bundles.push(SkillBundleDecl {
+            id: spec.id.to_string(),
+            version: inventory.version.clone(),
+            profiles: spec.profiles.iter().map(|p| p.to_string()).collect(),
+        });
+    }
+
     let manifest = BundleManifest {
         api_version: BUNDLE_API_VERSION.to_string(),
         kind: "Bundle".to_string(),
@@ -114,7 +130,7 @@ pub fn generate_bundle_manifest(
                 description: (*description).to_string(),
             })
             .collect(),
-        skill_bundles: Vec::new(),
+        skill_bundles,
         components,
     };
 
@@ -159,6 +175,29 @@ pub fn generate_release(
         }
     }
 
+    // 1c. DEBT-2c: skill bundle payloads. The generator requires them in
+    //     staging (they are part of the release contract); they are copied
+    //     to the out dir like every other payload.
+    let mut skill_payloads: Vec<String> = Vec::new();
+    for spec in published_skill_bundles() {
+        let name = skill_bundle_filename(spec.id, version);
+        let src = staging.join(&name);
+        anyhow::ensure!(
+            src.is_file(),
+            "published skill bundle `{}` has no payload at {}; stage it via \
+             `just bundle-skills` — a release must not declare bundles it \
+             does not ship",
+            spec.id,
+            src.display()
+        );
+        let dest = out_dir.join(&name);
+        if src != dest {
+            std::fs::copy(&src, &dest)
+                .with_context(|| format!("copy {} -> {}", src.display(), dest.display()))?;
+        }
+        skill_payloads.push(name);
+    }
+
     // 2. Project each platform's Layer 1 subset into a v2 manifest.
     let mut manifest_names: Vec<String> = Vec::new();
     for platform in expected_platforms {
@@ -184,6 +223,7 @@ pub fn generate_release(
         .iter()
         .map(|a| a.filename.clone())
         .collect();
+    covered.extend(skill_payloads.iter().cloned());
     covered.extend(manifest_names.iter().cloned());
     covered.push(inventory_name.clone());
 
@@ -194,7 +234,7 @@ pub fn generate_release(
     Ok(GenerationReport {
         version: version.to_string(),
         tag: tag.to_string(),
-        payload_count: inventory.artifacts.len(),
+        payload_count: inventory.artifacts.len() + skill_payloads.len(),
         manifest_count: manifest_names.len(),
         sha256sums_entries: covered.len(),
     })
@@ -408,6 +448,87 @@ pub fn verify_release(
     }
     checks.push("ReleaseInventory matches the staged payload set".to_string());
 
+    // DEBT-2c: skill bundle payload cross-check. Every manifest-declared
+    // bundle must exist as a payload with a matching digest, must be
+    // version-locked to the release, and must carry only profiles the
+    // contract table publishes. No undeclared bundle payload may ride along.
+    let mut skill_payload_names: std::collections::BTreeSet<String> = Default::default();
+    for platform in expected_platforms {
+        let name = bundle_manifest_filename(version, *platform);
+        let manifest = BundleManifest::from_path(&staging.join(&name))?;
+        for bundle in &manifest.skill_bundles {
+            let spec = skill_bundle_by_id(&bundle.id).with_context(|| {
+                format!(
+                    "manifest `{name}` declares skill bundle `{}` which is not in \
+                     the published SKILL_BUNDLES contract table",
+                    bundle.id
+                )
+            })?;
+            if !spec.published {
+                bail!(
+                    "manifest `{name}` declares skill bundle `{}` which is not published",
+                    bundle.id
+                );
+            }
+            if bundle.version != version {
+                bail!(
+                    "skill bundle `{}` in manifest `{name}` has version `{}` != `{version}` (lockstep required)",
+                    bundle.id,
+                    bundle.version
+                );
+            }
+            for profile in &bundle.profiles {
+                if !spec.profiles.contains(&profile.as_str()) {
+                    bail!(
+                        "skill bundle `{}` in manifest `{name}` declares profile `{profile}` \
+                         which the contract table does not publish for it",
+                        bundle.id
+                    );
+                }
+            }
+            let payload_name = skill_bundle_filename(&bundle.id, version);
+            let payload_path = staging.join(&payload_name);
+            // Binding check: payload must exist and its digest must equal
+            // what SHA256SUMS records (verified below), so presence here is
+            // the loud failure point for declared-but-missing.
+            sha256_file(&payload_path).with_context(|| {
+                format!(
+                    "declared skill bundle `{}` has no payload `{payload_name}` in the release",
+                    bundle.id
+                )
+            })?;
+            skill_payload_names.insert(payload_name);
+        }
+    }
+    {
+        // Undeclared payload: any published-bundle-shaped file on disk that
+        // no manifest declares is an orphan.
+        let declared: std::collections::BTreeSet<String> = expected_platforms
+            .iter()
+            .flat_map(|p| {
+                BundleManifest::from_path(&staging.join(bundle_manifest_filename(version, *p))).map(
+                    |m| {
+                        m.skill_bundles
+                            .into_iter()
+                            .map(|b| skill_bundle_filename(&b.id, &b.version))
+                            .collect::<Vec<_>>()
+                    },
+                )
+            })
+            .flatten()
+            .collect();
+        for spec in published_skill_bundles() {
+            let name = skill_bundle_filename(spec.id, version);
+            if staging.join(&name).is_file() && !declared.contains(&name) {
+                bail!("undeclared skill bundle payload `{name}` is not in any manifest");
+            }
+        }
+    }
+    checks.push(format!(
+        "skill bundle payloads declared, version-locked and present ({})",
+        skill_payload_names.len()
+    ));
+
     // SHA256SUMS must exist, cover everything, and agree with the manifests.
     let sums_text = std::fs::read_to_string(staging.join("SHA256SUMS"))
         .with_context(|| "missing `SHA256SUMS`")?;
@@ -418,6 +539,9 @@ pub fn verify_release(
         .iter()
         .map(|a| a.filename.clone())
         .collect();
+    for spec in published_skill_bundles() {
+        expected.push(skill_bundle_filename(spec.id, version));
+    }
     for platform in expected_platforms {
         expected.push(bundle_manifest_filename(version, *platform));
     }
@@ -486,7 +610,7 @@ pub fn verify_release(
             .iter()
             .map(|p| platform_token(*p).to_string())
             .collect(),
-        payloads: inventory.artifacts.len(),
+        payloads: inventory.artifacts.len() + skill_payload_names.len(),
         manifests: manifest_count,
         checks,
     })
@@ -511,6 +635,11 @@ mod tests {
                 let body = format!("payload for {name}");
                 fs::write(staging.path().join(&name), body).unwrap();
             }
+        }
+        // DEBT-2c: stage the published skill bundle payloads too.
+        for spec in published_skill_bundles() {
+            let name = skill_bundle_filename(spec.id, VERSION);
+            fs::write(staging.path().join(&name), format!("skills for {name}")).unwrap();
         }
         staging
     }
@@ -554,11 +683,91 @@ mod tests {
         .unwrap();
     }
 
+    /// DEBT-2c strict T: the generated release manifest must declare the
+    /// published skill bundles in its `skill_bundles[]` section, with
+    /// ids taken from the SKILL_BUNDLES contract table — never inferred
+    /// from a ComponentId. Pairwise-distinct identities planted:
+    ///     ComponentId   = "cognicode-mcp"
+    ///     SkillBundleId = "cognicode" (real bundle; deliberately ≠
+    ///                     any test assumption that it mirrors a component)
+    #[test]
+    fn t_debt2c_generated_manifest_declares_skill_bundles() {
+        let (_staging, out) = build();
+        let manifest = manifest_of(out.path(), Platform::LinuxX86_64);
+        assert!(
+            !manifest.skill_bundles.is_empty(),
+            "generated manifest must declare the published skill bundles"
+        );
+        let ids: Vec<&str> = manifest
+            .skill_bundles
+            .iter()
+            .map(|b| b.id.as_str())
+            .collect();
+        assert!(
+            ids.contains(&"cognicode"),
+            "skill bundle ids must come from the SKILL_BUNDLES contract table; got {ids:?}"
+        );
+        // Version lockstep with the release.
+        for b in &manifest.skill_bundles {
+            assert_eq!(
+                b.version, VERSION,
+                "skill bundle `{}` version lockstep",
+                b.id
+            );
+        }
+        // A component named like a bundle must not be its source: the
+        // declared ids must equal the contract table, not the components.
+        let component_names: Vec<&str> = manifest
+            .components
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
+        for b in &manifest.skill_bundles {
+            assert!(
+                !component_names.contains(&b.id.as_str())
+                    || ids.iter().all(|i| SKILL_BUNDLES.iter().any(|s| s.id == *i)),
+                "skill bundle id `{}` must originate from SKILL_BUNDLES, not a component name",
+                b.id
+            );
+        }
+    }
+
+    /// DEBT-2c strict T: verify_release must cross-check the declared
+    /// skill bundles against the staged payloads (digest + presence).
+    #[test]
+    fn t_debt2c_verify_covers_skill_bundle_payloads() {
+        let (_staging, out) = build();
+        // Coherent release with skill bundles verifies cleanly.
+        let report = verify_release(out.path(), VERSION, TAG, &TIER1).unwrap();
+        let manifest = manifest_of(out.path(), Platform::LinuxX86_64);
+        let expected_payloads = 3 * 2 /* components */ + manifest.skill_bundles.len();
+        assert_eq!(
+            report.payloads, expected_payloads,
+            "payload count must include skill bundle tarballs"
+        );
+
+        // Adversarial: a declared skill bundle whose payload digest does
+        // not match must fail verification.
+        let tampered = out.path().join(format!("cognicode-{VERSION}.tar.gz"));
+        let original = fs::read(&tampered).unwrap();
+        fs::write(&tampered, b"tampered").unwrap();
+        let result = verify_release(out.path(), VERSION, TAG, &TIER1);
+        fs::write(&tampered, original).unwrap();
+        assert!(
+            result.is_err(),
+            "a tampered skill bundle payload must fail verification"
+        );
+    }
+
     #[test]
     fn generates_and_verifies_a_coherent_release() {
         let (_staging, out) = build();
         let report = verify_release(out.path(), VERSION, TAG, &TIER1).unwrap();
-        assert_eq!(report.payloads, 6, "3 components x 2 platforms");
+        assert_eq!(
+            report.payloads,
+            6 + 2,
+            "3 components x 2 platforms + 2 published skill bundles"
+        );
         assert_eq!(report.manifests, 2);
         assert!(report.render().contains("release-verify: OK"));
     }

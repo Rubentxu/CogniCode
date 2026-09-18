@@ -216,6 +216,74 @@ pub fn published_components() -> impl Iterator<Item = &'static ComponentSpec> {
 }
 
 // ---------------------------------------------------------------------------
+// Portable skill bundles (DEBT-2c)
+//
+// Skill bundles are deliberately NOT `ArtifactKind`s (the ADR forbids
+// widening that closed set without a new ADR). They are a parallel
+// concept owned by `SkillBundleId` (ADR-IDENTITY-MAP §3.5). This table
+// is the single source of truth for which portable skill bundles a
+// release ships; the generated manifests declare them by id in
+// `skill_bundles[]` and the payloads are named
+// `{SkillBundleId}-{version}.tar.gz` (platform-less by design — the
+// bundle content is IDE-agnostic and platform-neutral).
+// ---------------------------------------------------------------------------
+
+/// One published portable skill bundle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SkillBundleSpec {
+    /// SkillBundleId. Also the payload filename stem and the directory
+    /// under `versions/<v>/skills/` at install time.
+    pub id: &'static str,
+    /// Profiles that ship this bundle.
+    pub profiles: &'static [&'static str],
+    /// Whether the release actually publishes it.
+    pub published: bool,
+}
+
+/// The published skill bundle surface.
+pub const SKILL_BUNDLES: &[SkillBundleSpec] = &[
+    SkillBundleSpec {
+        id: "cognicode",
+        profiles: &["core", "reviewer"],
+        published: true,
+    },
+    SkillBundleSpec {
+        id: "cognicode-mcp",
+        profiles: &["reviewer"],
+        published: true,
+    },
+    SkillBundleSpec {
+        id: "cognicode-developer",
+        profiles: &[],
+        published: false,
+    },
+];
+
+/// Look up a skill bundle by id.
+pub fn skill_bundle_by_id(id: &str) -> Option<&'static SkillBundleSpec> {
+    SKILL_BUNDLES.iter().find(|s| s.id == id)
+}
+
+/// The published skill bundles, in stable order.
+pub fn published_skill_bundles() -> impl Iterator<Item = &'static SkillBundleSpec> {
+    SKILL_BUNDLES.iter().filter(|s| s.published)
+}
+
+/// Canonical payload filename for a skill bundle at a version.
+///
+/// Platform-less: portable skill bundles are IDE-agnostic and
+/// platform-neutral (`just bundle-skills` produces exactly this shape).
+pub fn skill_bundle_filename(id: &str, version: &str) -> String {
+    format!("{id}-{version}.tar.gz")
+}
+
+/// Whether a filename is a skill bundle payload for `version` (exact,
+/// table-derived match — no inference from component stems).
+pub fn is_skill_bundle_payload(name: &str, version: &str) -> bool {
+    published_skill_bundles().any(|spec| skill_bundle_filename(spec.id, version) == name)
+}
+
+// ---------------------------------------------------------------------------
 // Derived names and URLs (e84 R1)
 // ---------------------------------------------------------------------------
 
@@ -507,8 +575,13 @@ pub fn build_inventory(
             continue;
         };
         // Only payload archives participate in the scan; manifest/inventory
-        // files are generated, not scanned.
+        // files are generated, not scanned. Platform-less skill bundle
+        // payloads are their own class (DEBT-2c): recognized by the
+        // SKILL_BUNDLES table, not treated as component artifacts.
         if !name.ends_with(".tar.gz") {
+            continue;
+        }
+        if is_skill_bundle_payload(name, version) {
             continue;
         }
         if let Some(previous) = seen.insert(name.to_string(), path.clone()) {

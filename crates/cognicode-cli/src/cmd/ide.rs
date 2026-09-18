@@ -274,21 +274,25 @@ pub fn integrate_opencode(
         target: skills_target,
     });
 
-    // 2. MCP config merge
-    let config_path = opencode_config_path();
-    let mcp_entry = json!({
-        "command": mcp_command,
-        "enabled": true,
-        "type": "stdio",
-    });
-    // DEBT-3.f: derive the merge key from `mcp_command[0]` (the
-    // shim path), not from a hardcoded `"cognicode-mcp"` literal.
-    let binary_name = mcp_merge_key_from_command(mcp_command)?;
-    steps.push(Step::MergeJson {
-        target: config_path,
-        path: vec!["mcp".to_string(), binary_name],
-        value: mcp_entry,
-    });
+    // 2. MCP config merge. DEBT-2c: a profile may ship skill bundles
+    //    without a DaemonCli component; in that case `mcp_command` is
+    //    empty and only the skills symlink is installed — no MCP entry.
+    if !mcp_command.is_empty() {
+        let config_path = opencode_config_path();
+        let mcp_entry = json!({
+            "command": mcp_command,
+            "enabled": true,
+            "type": "stdio",
+        });
+        // DEBT-3.f: derive the merge key from `mcp_command[0]` (the
+        // shim path), not from a hardcoded `"cognicode-mcp"` literal.
+        let binary_name = mcp_merge_key_from_command(mcp_command)?;
+        steps.push(Step::MergeJson {
+            target: config_path,
+            path: vec!["mcp".to_string(), binary_name],
+            value: mcp_entry,
+        });
+    }
 
     Ok(steps)
 }

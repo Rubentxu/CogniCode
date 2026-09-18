@@ -21,7 +21,10 @@ use anyhow::{Context, Result};
 
 use crate::bundle_manifest::Platform;
 use crate::installer_transaction::{ENV_ASSET_BASE_URL, ENV_BUNDLE_MANIFEST};
-use crate::release_contract::{artifact_filename, platform_token, published_components};
+use crate::release_contract::{
+    artifact_filename, platform_token, published_components, published_skill_bundles,
+    skill_bundle_filename,
+};
 use crate::release_factory::generate_release;
 
 /// A generated, locally served release.
@@ -134,6 +137,12 @@ pub fn local_release(version: &str) -> Result<LocalRelease> {
     for spec in published_components() {
         let name = artifact_filename(spec.kind.stem(), version, Platform::LinuxX86_64);
         write_payload(&staging.join(&name), spec.kind.stem())?;
+    }
+
+    // 1b. DEBT-2c: the release contract also publishes skill bundles.
+    for spec in published_skill_bundles() {
+        let name = skill_bundle_filename(spec.id, version);
+        std::fs::write(&staging.join(&name), format!("skills for {name}"))?;
     }
 
     // 2. The real generator produces the manifest from those bytes, and
