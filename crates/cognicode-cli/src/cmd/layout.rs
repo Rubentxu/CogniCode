@@ -271,6 +271,18 @@ pub fn cmd_uninstall(
         "uninstall: plugin={} version={} ides={:?}",
         plugin, version, ides
     );
+    // DEBT-4 WU3 idempotence: if the version tree is already gone, the
+    // installation does not exist — report honestly and stop. Requiring
+    // the manifest (via cmd_ide_uninstall) to decide IDE post-state would
+    // make a repeated uninstall an error, which contradicts "the tree is
+    // the source of truth for whether this version is installed".
+    if !home.version_root(version).exists() {
+        println!(
+            "uninstall: version {version} is not installed (no tree at {}); nothing to do",
+            home.version_root(version).display()
+        );
+        return Ok(());
+    }
     // Wire --ide <name> to the IDE adapter uninstall.
     for ide in ides {
         crate::ide::cmd_ide_uninstall(home, ide, version)?;
@@ -283,11 +295,38 @@ pub fn cmd_uninstall(
     // Pinned by `t_l3_cmd_uninstall_removes_versions_tree` and
     // `t_l3_cmd_uninstall_idempotent_when_versions_tree_missing`.
     let install_tree = home.version_root(version);
-    if install_tree.exists() {
+    let removed_tree = install_tree.exists();
+    if removed_tree {
         std::fs::remove_dir_all(&install_tree)
             .with_context(|| format!("rm -rf install tree at {}", install_tree.display()))?;
         println!("✓ removed install tree: {}", install_tree.display());
     }
+
+    // DEBT-4 WU3 — lifecycle coherence. A successful uninstall is an
+    // explicit intent to retire that installation, so it must not leave
+    // a rollback capability for it, nor a tracker pinning a version that
+    // no longer exists on disk.
+    //
+    // Journal: remove the journal FOR THIS VERSION only (whatever its
+    // state). Journals of other versions are other transitions; they are
+    // not ours to delete here.
+    let journal_path = crate::lifecycle_journal::journal_path(version);
+    if journal_path.exists() {
+        crate::lifecycle_journal::remove(&journal_path);
+        println!("✓ removed rollback journal: {}", journal_path.display());
+    }
+    //
+    // Tracker: if the uninstalled version is the actively pinned one,
+    // clear the pin — "no current version" is the honest post-state.
+    // Uninstalling a NON-active version must leave the tracker untouched.
+    let was_active = crate::tracker::read_version_optional().as_deref() == Some(version);
+    if was_active {
+        let tracker = home.tracker_version();
+        std::fs::remove_file(&tracker)
+            .with_context(|| format!("clear tracker pin at {}", tracker.display()))?;
+        println!("✓ cleared tracker pin (was {version})");
+    }
+    let _ = removed_tree;
     Ok(())
 }
 
@@ -407,48 +446,51 @@ pub fn cmd_update(
 
 pub fn cmd_rollback(home: &CognicodeHome, plugin: Option<String>) -> Result<()> {
     let _ = (home, plugin);
-    // 1. Resolve which journal to roll back: prefer the journal that matches
-    //    the currently pinned tracker (so `cogh rollback` is "undo the active
-    //    install"). If there is no tracker, take the highest-version journal
-    //    on disk.
-    let target = crate::lifecycle_journal::journal_path_for_current().or_else(|| {
-        crate::lifecycle_journal::list_committed()
-            .ok()
-            .and_then(|vs| {
-                vs.last()
-                    .map(|v| crate::lifecycle_journal::journal_path(&v))
-            })
-    });
-    let path = match target {
-        Some(p) if p.exists() => p,
-        Some(p) => {
-            // The journal we expected is missing — the install either never
-            // happened (no tracker) or the journal was wiped. Either way,
-            // the honest answer is "nothing to roll back".
-            println!("nothing to roll back (no journal at {})", p.display());
-            return Ok(());
-        }
-        None => {
-            println!("nothing to roll back (no journal directory)");
-            return Ok(());
-        }
+    // DEBT-4: the journal is a one-shot rollback capability for ONE
+    // committed transition, not a history. Applicability is explicit and
+    // deterministic: the journal applies only if its version equals the
+    // currently pinned tracker version. No tracker, no applicable journal:
+    // "unknown" is never resolved by picking the highest-version file on
+    // disk (the retired heuristic — a bigger semver is not "the most
+    // recent valid transition").
+    let current = crate::tracker::read_version_optional();
+    let Some(current_version) = current else {
+        println!("nothing to roll back (no version pinned in tracker)");
+        return Ok(());
     };
+    let path = crate::lifecycle_journal::journal_path(&current_version);
+    if !path.exists() {
+        println!("nothing to roll back (no journal for active version {current_version})");
+        return Ok(());
+    }
 
-    println!("rolling back from {}", path.display());
-
-    // 2. Load the journal and roll back. We MUST clone the loaded journal
-    //    and commit the clone — the same Drop-reversal hazard we found in
-    //    lifecycle_journal::write applies to the in-memory deserialised
-    //    journal too if its Drop runs without a commit.
-    let journal = crate::lifecycle_journal::load(&path)
+    // Applicability proof: the on-disk envelope must describe the same
+    // transition the tracker says is active. A stale journal (written for
+    // a different version) is never executed — fail closed.
+    let envelope = crate::lifecycle_journal::load_envelope(&path)
         .map_err(|e| anyhow!("load journal {}: {e}", path.display()))?;
-    let mut safe = journal;
+    // Drop-reversal hazard (same as in lifecycle_journal::write): a loaded
+    // journal must be pinned committed immediately, or dropping it in any
+    // early-return path would silently replay the reversal.
+    let mut safe = envelope.effects;
     safe.commit();
+    if envelope.version != current_version {
+        let _ = safe;
+        return Err(anyhow!(
+            "journal at {} describes version `{}` but the tracker pins `{current_version}`; \
+             refusing to execute a stale journal (fail closed)",
+            path.display(),
+            envelope.version
+        ));
+    }
+
+    println!("rolling back version {current_version}");
     safe.rollback()
         .map_err(|e| anyhow!("rollback failed: {e}"))?;
 
-    // 3. Best-effort: remove the journal file so a second `cogh rollback`
-    //    reports "nothing to roll back" instead of running again.
+    // WU2 retention: a successful rollback consumes the capability. The
+    // journal file is removed only AFTER the reversal succeeded, so a
+    // mid-failure still leaves the journal recoverable.
     crate::lifecycle_journal::remove(&path);
     Ok(())
 }
@@ -992,6 +1034,243 @@ mod tests {
     //
     // This test is intentionally conservative: it pins the contract end
     // to end without depending on a live network.
+
+    // ----- DEBT-4: transition matrix -----
+
+    /// Fixture helper: point COGNICODE_HOME at the per-test temp dir so the
+    /// tracker/lifecycle_journal module-level resolvers hit the sandbox.
+    fn redirect_home(dir: &std::path::Path) {
+        unsafe {
+            std::env::set_var("COGNICODE_HOME", dir);
+        }
+    }
+
+    /// Fixture helper: persist a journal for `version` describing an
+    /// install of that version, so executing it is observable.
+    fn plant_journal(
+        home: &CognicodeHome,
+        version: &str,
+        previous_tracker: Option<&str>,
+    ) -> std::path::PathBuf {
+        use crate::rollback_journal::{RollbackJournal, SideEffect};
+        let install_dir = home.version_root(version);
+        std::fs::create_dir_all(&install_dir).unwrap();
+        let manifest_path = install_dir.join("manifest.yaml");
+        std::fs::write(&manifest_path, format!("version: {version}\n")).unwrap();
+        let mut j = RollbackJournal::new();
+        j.record(SideEffect::CreatedDir(install_dir.clone()));
+        j.record(SideEffect::WroteManifest(manifest_path.clone()));
+        j.record(SideEffect::WroteTracker {
+            path: home.tracker_version(),
+            previous: previous_tracker.map(|s| s.to_string()),
+        });
+        let mut envelope = crate::lifecycle_journal::PersistedJournal {
+            version: version.to_string(),
+            committed_at_unix: Some(0),
+            previous_tracker: previous_tracker.map(|s| s.to_string()),
+            effects: j,
+        };
+        let jp = crate::lifecycle_journal::journal_path(version);
+        std::fs::create_dir_all(jp.parent().unwrap()).unwrap();
+        std::fs::write(&jp, serde_json::to_string_pretty(&envelope).unwrap()).unwrap();
+        // The journal's Drop would otherwise replay the reversal; pin it
+        // as committed so the planted file is durable for the test.
+        envelope.effects.commit();
+        jp
+    }
+
+    /// Manifest fixture declaring a DaemonCli, required by cmd_ide_uninstall.
+    fn write_daemoncli_manifest(home: &CognicodeHome, version: &str) {
+        let manifest = format!(
+            r#"
+apiVersion: cognicode.bundle/v2
+version: "{version}"
+platform: linux-x86-64
+profiles:
+  - name: core
+    description: core
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "{version}"
+    artifact: cognicode-mcp-{version}-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v{version}/cognicode-mcp-{version}-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#
+        );
+        let tree = home.version_root(version);
+        std::fs::create_dir_all(&tree).unwrap();
+        std::fs::write(tree.join("manifest.yaml"), manifest).unwrap();
+    }
+
+    /// T1 — install A -> B -> rollback: tracker restored to A, journal(B)
+    /// consumed, second rollback is a harmless no-op.
+    #[test]
+    #[serial]
+    fn t_debt4_t1_rollback_consumes_journal_and_second_is_noop() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        redirect_home(home_dir.path());
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+        crate::tracker::write_version("0.94.0").unwrap(); // A active
+        let jp = plant_journal(&home, "0.95.0", Some("0.94.0")); // B journal
+        // The active transition is A->B, so the tracker pins B.
+        crate::tracker::write_version("0.95.0").unwrap();
+        assert!(jp.exists());
+
+        cmd_rollback(&home, None).expect("rollback must succeed");
+        assert!(!jp.exists(), "T1: journal(B) must be consumed");
+        assert!(
+            !home.version_root("0.95.0").join("manifest.yaml").exists(),
+            "T1: B install tree effects must be reversed"
+        );
+
+        // Second rollback: nothing applicable (journal consumed).
+        cmd_rollback(&home, None).expect("second rollback must be harmless");
+        assert_eq!(
+            crate::tracker::read_version_optional().as_deref(),
+            Some("0.94.0"),
+            "T1: tracker restored to A"
+        );
+    }
+
+    /// T2 — uninstall active B: tree gone, journal gone, tracker cleared
+    /// (explicit semantics: uninstall active => "no current version").
+    #[test]
+    #[serial]
+    fn t_debt4_t2_uninstall_active_clears_tracker_and_journal() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        redirect_home(home_dir.path());
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+        crate::tracker::write_version("0.95.0").unwrap();
+        plant_journal(&home, "0.95.0", Some("0.94.0"));
+        write_daemoncli_manifest(&home, "0.95.0");
+        let tree = home.version_root("0.95.0");
+        assert!(tree.exists());
+
+        cmd_uninstall(&home, "cognicode", "0.95.0", &["opencode".to_string()])
+            .expect("uninstall of active version must succeed");
+
+        assert!(!tree.exists(), "T2: version tree must be gone");
+        assert!(
+            !crate::lifecycle_journal::journal_path("0.95.0").exists(),
+            "T2: journal(B) must be invalidated"
+        );
+        assert!(
+            crate::tracker::read_version_optional().is_none(),
+            "T2: tracker must not falsely claim B (explicit: no current version)"
+        );
+    }
+
+    /// T3 — uninstall inactive A while B active: tracker stays B, B
+    /// untouched, journal(A) invalidated, journal(B) retained.
+    #[test]
+    #[serial]
+    fn t_debt4_t3_uninstall_inactive_preserves_current() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        redirect_home(home_dir.path());
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+        crate::tracker::write_version("0.95.0").unwrap(); // B active
+        plant_journal(&home, "0.94.0", Some("0.93.0")); // A journal
+        plant_journal(&home, "0.95.0", Some("0.94.0")); // B journal
+        write_daemoncli_manifest(&home, "0.94.0");
+
+        cmd_uninstall(&home, "cognicode", "0.94.0", &["opencode".to_string()])
+            .expect("uninstall of inactive version must succeed");
+
+        assert!(!home.version_root("0.94.0").exists(), "T3: A tree removed");
+        assert_eq!(
+            crate::tracker::read_version_optional().as_deref(),
+            Some("0.95.0"),
+            "T3: tracker must still pin B"
+        );
+        assert!(
+            !crate::lifecycle_journal::journal_path("0.94.0").exists(),
+            "T3: journal(A) invalidated"
+        );
+        assert!(
+            crate::lifecycle_journal::journal_path("0.95.0").exists(),
+            "T3: journal(B) must be retained — not ours to delete"
+        );
+    }
+
+    /// T4 — stale journal: tracker pins B but the journal file for B
+    /// describes C. Rollback must NOT execute it (fail closed).
+    #[test]
+    #[serial]
+    fn t_debt4_t4_stale_journal_is_never_executed() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        redirect_home(home_dir.path());
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+        crate::tracker::write_version("0.95.0").unwrap(); // B active
+        let jp = plant_journal(&home, "0.96.0", Some("0.95.0"));
+        let mismatched = crate::lifecycle_journal::journal_path("0.95.0");
+        std::fs::copy(&jp, &mismatched).unwrap();
+
+        let err = cmd_rollback(&home, None)
+            .expect_err("T4: a stale journal must be refused, never executed");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("stale") && msg.contains("fail closed"),
+            "T4: refusal must be explicit: {msg}"
+        );
+        assert!(
+            home.version_root("0.96.0").join("manifest.yaml").exists(),
+            "T4: no journal side-effect may run"
+        );
+    }
+
+    /// T5 — missing tracker: journals exist but nothing is pinned.
+    /// No heuristic selection (the retired "highest semver wins" fallback).
+    #[test]
+    #[serial]
+    fn t_debt4_t5_no_tracker_means_no_implicit_rollback() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        redirect_home(home_dir.path());
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+        plant_journal(&home, "0.94.0", None);
+        plant_journal(&home, "9.9.9", None);
+
+        cmd_rollback(&home, None).expect("must be a harmless no-op, not an error");
+        assert!(
+            home.version_root("9.9.9").join("manifest.yaml").exists(),
+            "T5: heuristic journal selection is retired; nothing may execute"
+        );
+        assert!(
+            crate::lifecycle_journal::journal_path("9.9.9").exists(),
+            "T5: journals must not be consumed by a heuristic"
+        );
+    }
+
+    /// T6 — idempotence: uninstalling B twice is stable (Ok both times).
+    #[test]
+    #[serial]
+    fn t_debt4_t6_uninstall_is_idempotent() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        redirect_home(home_dir.path());
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+        crate::tracker::write_version("0.95.0").unwrap();
+        plant_journal(&home, "0.95.0", None);
+        write_daemoncli_manifest(&home, "0.95.0");
+        let tree = home.version_root("0.95.0");
+
+        cmd_uninstall(&home, "cognicode", "0.95.0", &["opencode".to_string()])
+            .expect("first uninstall");
+        cmd_uninstall(&home, "cognicode", "0.95.0", &["opencode".to_string()])
+            .expect("second uninstall must be idempotent (Ok)");
+
+        assert!(!tree.exists(), "T6: tree stays gone");
+        assert!(
+            crate::tracker::read_version_optional().is_none(),
+            "T6: tracker stays cleared"
+        );
+    }
 
     #[test]
     #[serial]
@@ -2134,10 +2413,12 @@ components:
         let comp = home.component_root("0.95.0", "cognicode-mcp");
         let sk = home.skill_bundle("0.95.0", "cognicode-core");
         assert_ne!(
-            comp, sk,
+            comp,
+            sk,
             "DEBT-3 T2.A: distinct identities must produce disjoint paths; \
              comp={} sk={}",
-            comp.display(), sk.display()
+            comp.display(),
+            sk.display()
         );
         // Neither path is a strict ancestor of the other: the two
         // namespaces live under orthogonal subtrees (`versions/` vs
@@ -2146,7 +2427,8 @@ components:
             !comp.starts_with(&sk) && !sk.starts_with(&comp),
             "DEBT-3 T2.A: distinct identities must not be ancestors of \
              each other; comp={} sk={}",
-            comp.display(), sk.display()
+            comp.display(),
+            sk.display()
         );
 
         // Case B: same string, two namespaces — paths must STILL be
@@ -2157,7 +2439,8 @@ components:
             comp_shared != sk_shared,
             "DEBT-3 T2.B: shared identity across two namespaces must \
              still resolve to disjoint paths; comp={} sk={}",
-            comp_shared.display(), sk_shared.display()
+            comp_shared.display(),
+            sk_shared.display()
         );
         // The ComponentId path lives under versions/<v>/<comp>/bin/...
         // The SkillBundleId path lives under versions/<v>/skills/<bundle>/...
@@ -2190,10 +2473,14 @@ components:
         let plugin_dir = home.plugin(plugin_id);
         let component_dir = home.component_root("0.95.0", component_id);
         assert_ne!(
-            plugin_dir, component_dir,
+            plugin_dir,
+            component_dir,
             "DEBT-3 T3: PluginId '{}' and ComponentId '{}' must NOT be \
              derivable from each other; got plugin_dir={} component_dir={}",
-            plugin_id, component_id, plugin_dir.display(), component_dir.display()
+            plugin_id,
+            component_id,
+            plugin_dir.display(),
+            component_dir.display()
         );
 
         // The plugin's filesystem ownership (under home.plugins()) is
@@ -2219,10 +2506,10 @@ components:
         let home_dir = tempfile::TempDir::new().unwrap();
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
 
-        let plugin_id = "mcp-server";        // legacy asdf-style plugin
-        let component_id = "cognicode-mcp";  // bundle manifest DaemonCli
-        let binary_name = "cognicode-mcp";   // == ComponentId today by stem invariant; could diverge
-        let skill_bundle_id = "cognicode-core";  // distinct SkillBundleId
+        let plugin_id = "mcp-server"; // legacy asdf-style plugin
+        let component_id = "cognicode-mcp"; // bundle manifest DaemonCli
+        let binary_name = "cognicode-mcp"; // == ComponentId today by stem invariant; could diverge
+        let skill_bundle_id = "cognicode-core"; // distinct SkillBundleId
 
         // The three identities are different strings. The helpers must
         // accept each independently and produce a disjoint path.
@@ -2247,7 +2534,10 @@ components:
                 assert!(
                     a_path != b_path,
                     "DEBT-3 T4: '{}' ({}) and '{}' ({}) must be distinct",
-                    a_name, a_path.display(), b_name, b_path.display()
+                    a_name,
+                    a_path.display(),
+                    b_name,
+                    b_path.display()
                 );
             }
         }
