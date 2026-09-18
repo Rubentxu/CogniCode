@@ -210,9 +210,14 @@ pub fn probe_core_health(home_root: &Path) -> DoctorCheck {
 /// located?", which is what the install contract guarantees. A full
 /// spawn probe belongs in WU6 runtime smoke; doctor stays lightweight.
 pub fn probe_mcp_health(home_root: &Path) -> DoctorCheck {
-    let mcp = home_root.join("bin").join("cognicode-mcp");
-    if mcp.exists() {
-        DoctorCheck::pass("MCP", "cognicode-mcp binary present")
+    // L2 (ADR-CANONICAL-LAYOUT): the installer materialises the daemon
+    // under `versions/<v>/<name>/bin/<name>` and exposes it via
+    // `shims/<name>`. The old `bin/cognicode-mcp` probe predated the
+    // versions/ layout switch (ded95fbf) and always failed on a healthy
+    // install. The shim is the stable, version-independent entry point.
+    let mcp_shim = home_root.join("shims").join("cognicode-mcp");
+    if mcp_shim.exists() {
+        DoctorCheck::pass("MCP", "cognicode-mcp shim present")
     } else {
         DoctorCheck::fail(
             "MCP",
@@ -383,19 +388,20 @@ mod tests {
     }
 
     #[test]
-    fn probe_mcp_health_passes_when_daemon_binary_present() {
+    fn probe_mcp_health_passes_when_daemon_shim_present() {
         let home = tmp_home();
-        std::fs::create_dir_all(home.join("bin")).unwrap();
-        std::fs::write(home.join("bin").join("cognicode-mcp"), b"fake").unwrap();
+        // L2 layout: the daemon is exposed via shims/, not bin/.
+        std::fs::create_dir_all(home.join("shims")).unwrap();
+        std::fs::write(home.join("shims").join("cognicode-mcp"), b"fake").unwrap();
         let check = probe_mcp_health(&home);
         assert_eq!(check.status, CheckStatus::Pass);
         let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
-    fn probe_mcp_health_fails_when_binary_missing() {
+    fn probe_mcp_health_fails_when_shim_missing() {
         let home = tmp_home();
-        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::fs::create_dir_all(home.join("shims")).unwrap();
         let check = probe_mcp_health(&home);
         assert_eq!(check.status, CheckStatus::Fail);
         let _ = std::fs::remove_dir_all(&home);
@@ -442,7 +448,8 @@ mod tests {
         let home = tmp_home();
         std::fs::create_dir_all(home.join("bin")).unwrap();
         std::fs::create_dir_all(home.join("shims")).unwrap();
-        std::fs::write(home.join("bin").join("cognicode-mcp"), b"fake").unwrap();
+        // L2 layout: MCP health probes the shim, not bin/.
+        std::fs::write(home.join("shims").join("cognicode-mcp"), b"fake").unwrap();
         let report = run_doctor(&home);
         assert!(report.is_healthy());
         let _ = std::fs::remove_dir_all(&home);
