@@ -16,8 +16,8 @@
 //! * DTOs carry **references** (ids, paths, grounding facts), never
 //!   copies of canonical truth.
 
-use crate::application::architecture::evaluator::{ArchitectureSource, SourceFile};
 use crate::application::architecture::ArchitectureRegistry;
+use crate::application::architecture::evaluator::{ArchitectureSource, SourceFile};
 use crate::domain::architecture::{
     ArchitectureConstraint, ArchitectureConstraintKind, ConstraintCandidate,
 };
@@ -213,7 +213,9 @@ pub fn source_from_files(files: Vec<(String, Option<String>, String)>) -> Archit
 mod tests {
     use super::*;
     use crate::application::architecture::admission::ArchitectureAdmissionService;
-    use crate::application::architecture::{ArchitectureClock, ArchitectureEvaluator, SystemArchitectureClock};
+    use crate::application::architecture::{
+        ArchitectureClock, ArchitectureEvaluator, SystemArchitectureClock,
+    };
     use crate::domain::architecture::{
         Admitter, AdmitterRole, ArchitectureConstraintId, LayerDependencyRule, LayerId,
     };
@@ -253,7 +255,8 @@ mod tests {
     fn source_with(use_line: &str) -> ArchitectureSource {
         source_from_files(vec![(
             "src/domain/service.rs".into(),
-            Some("src/domain/service.rs".into()),
+            // module_path must resolve via LayerId::from_module_path ("domain::...")
+            Some("domain::service".into()),
             use_line.to_string(),
         )])
     }
@@ -261,7 +264,7 @@ mod tests {
     fn empty_source() -> ArchitectureSource {
         source_from_files(vec![(
             "src/domain/empty.rs".into(),
-            Some("src/domain/empty.rs".into()),
+            Some("domain::empty".into()),
             String::new(),
         )])
     }

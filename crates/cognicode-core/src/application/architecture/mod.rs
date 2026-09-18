@@ -10,21 +10,21 @@
 //! map.
 
 pub mod admission;
+pub mod control_query;
 pub mod evaluator;
 pub mod grounding;
-pub mod control_query;
 pub mod registry;
 
 pub use admission::{
     AdmissionError, AdmissionOutcome, ArchitectureAdmissionService, ArchitectureClock,
     SystemArchitectureClock,
 };
+pub use control_query::{
+    ArchitectureReadModel, ConstraintRef, ControlQueryService, EvaluationStatus, ViolationRef,
+};
 pub use evaluator::{
     ArchitectureEvaluator, ArchitectureEvaluatorError, ArchitectureSource, EvaluationReport,
     SourceFile,
 };
 pub use grounding::ArchitectureGroundingBridge;
-pub use control_query::{
-    ArchitectureReadModel, ConstraintRef, ControlQueryService, EvaluationStatus, ViolationRef,
-};
 pub use registry::{ArchitectureRegistry, ArchitectureRegistryError};
