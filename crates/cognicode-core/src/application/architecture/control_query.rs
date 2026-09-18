@@ -241,7 +241,9 @@ pub fn source_from_source_root(root: &std::path::Path) -> ArchitectureSource {
                 let segments: Vec<String> = rel
                     .components()
                     .map(|c| c.as_os_str().to_string_lossy().to_string())
-                    .filter(|seg| seg != "mod" && seg != "lib" && seg != "main")
+                    .filter(
+                        |seg| seg != "mod" && seg != "lib" && seg != "main" && seg != "src",
+                    )
                     .collect();
                 files.push(SourceFile {
                     file_path: path.display().to_string(),
