@@ -12,6 +12,7 @@
 pub mod admission;
 pub mod evaluator;
 pub mod grounding;
+pub mod control_query;
 pub mod registry;
 
 pub use admission::{
@@ -23,4 +24,7 @@ pub use evaluator::{
     SourceFile,
 };
 pub use grounding::ArchitectureGroundingBridge;
+pub use control_query::{
+    ArchitectureReadModel, ConstraintRef, ControlQueryService, EvaluationStatus, ViolationRef,
+};
 pub use registry::{ArchitectureRegistry, ArchitectureRegistryError};
