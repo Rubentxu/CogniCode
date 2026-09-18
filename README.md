@@ -31,6 +31,20 @@ Built with **Domain-Driven Design** and **Clean Architecture**, it supports six 
 
 ## Installation
 
+### One-line bootstrap (Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
+```
+
+Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.96.0`. Then run `cogh install` to configure the runtime (Layer 1).
+
+### mise
+
+```bash
+mise install "github:Rubentxu/CogniCode[matching=cogh-]"
+```
+
 ### Pre-built binary
 
 Download the latest release from [GitHub Releases](https://github.com/Rubentxu/CogniCode/releases):
