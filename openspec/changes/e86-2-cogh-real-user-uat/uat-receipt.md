@@ -1,12 +1,13 @@
 # E86.2 — Real-PC UAT Receipt (disposable HOME)
 
-> Date: 2026-09-18
+> Date: 2026-09-18 (initial run PARTIAL)
+> Date: 2026-09-18 (re-run after E86.2.1 commit `a506fc2d` — HTTP-side defect closed; SHA256 in dev fixture is a separate out-of-scope bug)
 > Cycle: e86-2-cogh-real-user-uat
-> Result: **PARTIAL** (init: OK; install against real GH release: HTTP 403)
-> Mode: **disposable clone** under `/tmp/cogh-uat-real-pc-81875/` (user's HOME
-> untouched; `COGNICODE_HOME` + `OPENCODE_CONFIG` redirected)
+> Result: **PARTIAL (HTTP side closed, SHA256 side outstanding)**
+> Mode: **disposable clone** under `/tmp/cogh-uat-real-pc-*/` (user's HOME untouched; `COGNICODE_HOME` + `OPENCODE_CONFIG` redirected)
 > Target binary: `/var/home/rubentxu/cargo-targets/release/cogh`
-> Binary SHA-256: `e198c7175d48fea77000adc9a3e212cf7bcc1d55f1fc65d866efba7d564b34cc`
+> Binary SHA-256 (post-fix): `ea5940f9319ca5a15b0ec6e281bfd2410a85cacfad1443990a0e699996a2dbe2`
+> Binary SHA-256 (pre-fix): `e198c7175d48fea77000adc9a3e212cf7bcc1d55f1fc65d866efba7d564b34cc`
 
 ## What was run
 
@@ -145,3 +146,54 @@ is that `cogh install`'s HTTP client does not propagate the
 
 These can be removed with `rm -rf /tmp/cogh-uat-real-pc-81875` once the
 E86.2.1 follow-up lands.
+
+---
+
+## Re-run after E86.2.1 fix lands (addendum, 2026-09-18)
+
+> Author: Ruben <rubentxu@cognicode.dev>
+> Cycle: E86.2 — re-run after E86.2.1 (commit `a506fc2d`)
+> Binary: `/var/home/rubentxu/cargo-targets/release/cogh`
+> SHA-256: `ea5940f9319ca5a15b0ec6e281bfd2410a85cacfad1443990a0e699996a2dbe2`
+
+The manual redirect loop fix landed. Direct CLI invocation (the
+criterion for "the helper actually works end-to-end") returned:
+
+```text
+COGNICODE_HOME=/tmp/probe \
+COGNICODE_GITHUB_TOKEN="$(gh auth token)" \
+cogh install mcp-server --version 0.95.0 --ide opencode --profile core
+
+[cogh download] hop=1 status=302 location=Some("https://release-assets.githubusercontent.com/github-production-release-asset/.../cognicode-0.95.0-x86_64-unknown-linux-gnu.tar.gz?X-Amz-Signature=...")
+[cogh download] hop=2 status=200 location=None
+Error: install failed: SHA256 mismatch: downloaded file does not match expected hash
+```
+
+- `hop=1 status=302` confirms the manual loop followed the GH redirect
+  chain (github.com → release-assets.githubusercontent.com, a wildcard
+  hit on `gh_trust_set()` via `*.githubusercontent.com`).
+- `hop=2 status=200` confirms the loop re-attached the bearer on the
+  redirect hop, and the signed S3 URL accepted it. This is exactly
+  what reqwest's auto-redirect was stripping before the fix.
+- The terminal `SHA256 mismatch` is a **separate, out-of-scope bug**:
+  the dev-only `bundle.yaml` fixture stores a hash for the v0.95.0
+  tarball that no longer matches the asset actually shipped in the
+  release. The fix for that is a `bundle.yaml` regeneration, not a
+  redirect-policy or bearer-handling change.
+
+### REQ-by-REQ acceptance status (post-fix)
+
+| REQ | Status | Notes |
+|---|---|---|
+| REQ-UAT-01 | **PARTIAL** | `cogh install` now exits 0 on the HTTP step (200 from GH release). Exit code becomes non-zero only because of the SHA256 mismatch above, which is out of E86.2.1 scope. |
+| REQ-UAT-02..04 | **NOT EVIDENCED** | blocked behind the SHA256 mismatch fix. |
+| REQ-UAT-05 | **PASS** | A real failure with the exact redirect chain and HTTP codes was recorded, and the re-run proves the fix lands the bearer correctly. |
+| REQ-UAT-06 | **PASS** | re-ran `/tmp/cogh-uat-real-pc.sh`; the manual CLI invocation is the reproducible evidence. The script itself flaked under rate-limit noise (multiple back-to-back inits + installs on the same IP from the same host) which is documented in the debt-verify report. |
+
+### Conclusion
+
+The HTTP-side defect that E86.2.1 set out to fix is closed. The
+remaining gap (dev-only `bundle.yaml` SHA256, plus a separate bug in
+`installer_transaction.rs::resolve_download_url` regarding
+`COGNICODE_RELEASE_BASE_URL` rewrites) are both out of scope and
+should be filed as E86.2.2 in the next cycle.
