@@ -420,14 +420,12 @@ fn advance_stage(
             let install_dir = home.version_root(&manifest.version);
             let adapter = platform_adapter::current_adapter();
             for comp in &manifest.components {
-                // DEBT-3.f: bin-path resolution used to assume the legacy
-                // Cargo-style `bin/<comp>/<comp>` shape, which silently
-                // couples BinaryName to ComponentId by way of the
-                // `comp.name == kind.stem()` invariant. The
-                // `locate_component_binary` helper makes the coupling
-                // explicit and is the single point that will be relaxed
-                // in the next bounded commit (see strict T1 in this
-                // module's tests).
+                // DEBT-3.f: bin-path resolution is delegated to
+                // `locate_component_binary`, which tries the legacy
+                // Cargo-style `bin/<comp>/<comp>` first and falls
+                // back to scanning `<comp>/bin/` for any file. The
+                // helper removes the inline `comp.name` coupling
+                // that the legacy `bin/<comp>/<comp>` shape assumed.
                 let bin_path = locate_component_binary(home, &manifest.version, &comp.name);
                 if let Some(bin_path) = bin_path {
                     let shim_path = layout::shims_dir().join(&comp.name);
@@ -466,15 +464,15 @@ fn advance_stage(
 /// binaries OR a binary whose filename diverged from the component
 /// name, the inline form would silently miss it.
 ///
-/// The strict T1 in this module's `tests` block asserts the
-/// relaxed contract that the next commit will land:
+/// The strict T1 in this module's `tests` block pins the relaxed
+/// contract that the relaxation now honours:
 /// `locate_component_binary` must find any executable in
 /// `<root>/versions/<v>/<comp>/bin/`, not just `<comp>` literally.
 ///
 /// Order of attempts (legacy first, then relaxed):
 /// 1. `<root>/versions/<v>/<comp>/bin/<comp>` — Cargo-style legacy.
 /// 2. `<root>/versions/<v>/<comp>/<comp>` — root-level legacy alt.
-/// 3. Scan `<root>/versions/<v>/<comp>/bin/` for any file.
+/// 3. Scan `<root>/versions/<v>/<comp>/bin/` for any file (relaxed).
 ///
 /// Returns `None` if no candidate exists. Callers must decide
 /// whether to fail loudly or skip.
@@ -488,18 +486,37 @@ pub(crate) fn locate_component_binary(
 
     // 1. Legacy Cargo-style: bin/<comp>/<comp>.
     let legacy = bin_dir.join(component_id);
-    if legacy.exists() {
+    if legacy.is_file() {
         return Some(legacy);
     }
 
     // 2. Legacy root-level alt: <comp>/<comp>.
     let root_level = comp_root.join(component_id);
-    if root_level.exists() {
+    if root_level.is_file() {
         return Some(root_level);
     }
 
-    // 3. (Strict T1's target.) Relaxed: scan bin/ for any file.
-    //    Intentionally NOT implemented yet — that is the next commit.
+    // 3. Relaxed: scan bin/ for any file.
+    //
+    // DEBT-3.f strict T1: this leg makes the runtime resilient to
+    // BinaryName ≠ ComponentId. A bundle that ships a binary
+    // whose filename diverges from the component name (the case
+    // the legacy `bin/<comp>/<comp>` heuristic silently broke)
+    // is now found. The first regular file in `bin/` is returned;
+    // deterministic ordering is not guaranteed by `read_dir` but
+    // is sufficient as a last-resort fallback.
+    //
+    // If the directory does not exist or is empty, the helper
+    // returns `None` and the caller decides whether to fail
+    // loudly or skip the shim stage.
+    let entries = std::fs::read_dir(&bin_dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+
     None
 }
 
@@ -1180,20 +1197,17 @@ components:
     // Adversarial contract: the runtime must locate a component's
     // binary even when the binary's filename deliberately diverges
     // from the ComponentId. The legacy inline heuristic
-    // `install_dir.join(comp).join("bin").join(comp)` looks for a
-    // file named exactly `<comp>` and silently misses anything
+    // `install_dir.join(comp).join("bin").join(comp)` looked for a
+    // file named exactly `<comp>` and silently missed anything
     // else. The strict T1 below plants a binary named
     // `<comp>-v2` (clearly NOT `<comp>`) inside
     // `<root>/versions/<v>/<comp>/bin/` and asserts the runtime
     // still finds it.
     //
-    // Pre-fix behaviour (RED today): the helper's third leg is
-    // intentionally unimplemented; the test asserts the planted
-    // file IS found, so the assertion fails.
-    //
-    // Post-fix behaviour (GREEN after the next commit): the helper
-    // scans `bin/` for any file and returns the planted
-    // `<comp>-v2`; the assertion holds.
+    // The helper's third leg (`scan bin/ for any file`) is what
+    // makes T1 green. The first two legs (legacy `bin/<comp>/<comp>`
+    // and legacy `<comp>/<comp>`) are preserved for back-compat
+    // and pinned by T1b.
     //
     // The test deliberately does NOT place a `<comp>` file alongside
     // the `<comp>-v2` file. If both were present, the legacy
@@ -1245,12 +1259,12 @@ components:
             .expect("plant binary file");
 
         // The strict gate: the helper must find the planted file.
-        let located =
-            locate_component_binary(&home, version, component_id)
-                .expect("DEBT-3.f strict T1: locate_component_binary must find \
+        let located = locate_component_binary(&home, version, component_id).expect(
+            "DEBT-3.f strict T1: locate_component_binary must find \
                          a binary even when its filename diverges from the \
                          ComponentId; legacy heuristic hardcodes `bin/<comp>/<comp>` \
-                         and silently misses everything else");
+                         and silently misses everything else",
+        );
         assert_eq!(
             located, planted,
             "DEBT-3.f strict T1: located path must equal the planted file"
