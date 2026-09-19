@@ -2616,3 +2616,140 @@ PASS for first-vertical scope:
   - Reader defect noted (carry-forward, non-blocking)
 
 Next: 3-repeat Tier-1 campaign to complete G6 evidence + drive streak increment.
+
+## Active Cycle: TRACK A · H1 Tier-1 Three-Repeat Campaign (closed 2026-09-19T14:35Z)
+
+Closed in this cycle: H1.0..H1.6.
+
+### Goal
+
+Run a CAMPAIGN_COMPLETE Tier-1 exercise: 5 repos, 2 tools (read_file
++ search_content), 3 repeats. Fix the G4 reader defect that was
+inflating `missing_or_unverified`. Diagnose the tokio/clap correctitud
+RED. Hold the streak.
+
+### Setup (H1.0)
+
+- Source HEAD: `bd67be65278976a91c704096e004e79e8e69df56` (local).
+- Orchestrator binary md5: `755dac56bff092f365ef12b9d1a43b9b` (both
+  target/debug and /var/home/rubentxu/cargo-targets/debug match).
+- MCP binary md5: `999bdf5d5c98340201dd989e53cca1e5` (fresh after
+  latest server.rs change on sep 18).
+- Five pinned SHAs match clone_repos.sh pins.
+- Reused prior commits (5782efc0, a0500204, 75669a0b, bd67be65); no
+  rebuild of corpus or manifests.
+
+### Reader defect fix (H1.1)
+
+`sandbox/scripts/release_scorecard.py` had a logic error: any
+scenario with positive provenance but `correctitud: null` (read_file
+with `exists: true` smoke matcher) called
+`unverified_repos.add(actual_short)` unconditionally, even when the
+repo had other measured scenarios. This produced:
+  `acredited=5/5 unverified=0 missing_or_unverified: anyhow, clap,
+   ripgrep, serde, tokio`
+
+**Fix**: deferred the unverified marking via a new
+`provisional_unverified` set; only promote to `unverified_repos`
+after the loop if the repo has no measured scenario.
+
+**Tests**: `sandbox/scripts/tests/test_h1_1_g4_unverified.py` adds
+4 regression tests (1 reproduces the defect, 2 are RED→GREEN, 1 is a
+sanity guard). Total reader test surface: 72/72 PASS.
+
+### Coverage audit (H1.2)
+
+The Tier-1 pilot manifest covers 5 repos × 2 tools = 10 scenarios.
+G4 contract requires ≥1 measured correctitud per repo: satisfied
+(5/5). G2 coverage matrix (68 tools) is independent of Tier-1 and
+covers the broader tool surface in Tier-2/3 manifests. No G4 coverage
+gap.
+
+### Campaign (H1.3)
+
+- Command: `bash sandbox/scripts/run_campaign.sh --repeat 3
+  sandbox/manifests-tier1/tier1_pilot_5repo.yaml`
+- Run dir: `sandbox/results-runs/20260919T143212/`
+- 30 scenarios across 3 repeats; all outcome=pass.
+- stability.json: max warm-cache CV 4.3% (under 10%); 0 flaky.
+- 5/5 Tier-1 repos emitted verified provenance.
+
+### Correctness diagnosis (H1.4)
+
+| Repo    | Avg correctitud | Diagnosis |
+|---------|------------------|-----------|
+| serde   | 100.0            | PASS |
+| ripgrep | 100.0            | PASS |
+| anyhow  | 100.0            | PASS |
+| tokio   | 50.0             | **search engine 50-result truncation**: GT expects `src/lib.rs` + `src/runtime/mod.rs`; only `src/runtime/mod.rs` is in the top 50 (matches 50/81 files truncated). GT verified empirically (`grep -c`). |
+| clap    | 0.0              | **search engine 50-result truncation**: GT expects `src/lib.rs` (1 match) + `src/builder/command.rs` (30 matches); `src/parser/matches/arg_matches.rs` (71 matches) fills all 50 top slots. GT verified empirically. |
+
+Root cause: `file_operations.rs:1078`
+`let max_results = input.max_results.unwrap_or(50);` — the default
+cap is 50; the Tier-1 manifest doesn't pass `max_results`, so the
+default applies. Both GT files actually contain the patterns at the
+pinned SHAs.
+
+**Per H1.4 directive: no search engine change within H1.** Mitigation
+is out of scope.
+
+### Scorecard verdict (H1.5)
+
+**CAMPAIGN_COMPLETE × RELEASE_GATES_RED.**
+
+| Gate | Status | Note |
+|------|--------|------|
+| G1 Git Hygiene | GREEN | 10 e13-wave2 commits |
+| G2 Coverage | AMBER | coverage_matrix.yaml absent at the path the scorecard reads |
+| G3 Health Score | RED 64.2/85 | worst clap_search 64.2; 5/10 complete 5-dim |
+| G4 Corpus Quality | RED 70/90 | acredited=5/5; failing clap (0), tokio (50); serde/ripgrep/anyhow 100 |
+| G5 Latency | AMBER | no call-graph/analytics (out of Tier-1 scope) |
+| G6 Stability | GREEN | max CV 4.3% < 10% |
+| G7 Robustness | GREEN | 0 crashes |
+| G8 Scalability | AMBER | no Tier-3 probe (out of Tier-1 scope) |
+| G9 No Regressions | GREEN | empty baseline |
+| G10 Openspec | GREEN | 100% verified |
+| G11 Docs | GREEN | MCP-TOOLS+ADR-031+ADR-032+ROADMAP |
+| G12 Tags | GREEN | v0.97.1, 6 stale branches |
+| G13 LSI Bench | GREEN | 24/24 within 25% |
+
+H1.1 fix verified in scorecard: `acredited=5/5 unverified=0` with
+NO `missing_or_unverified` line. The defect is gone; the RED is real
+(driven by clap/tokio failing the per-repo threshold).
+
+### Streak state
+
+UNCHANGED: 1/3 HELD, MD5 6b2121fe8e1134a6bed84faba138e5ff.
+
+H1 explicitly does NOT increment the streak. H1.5 directive:
+"tres repeticiones dentro de H1 NO equivalen automáticamente a tres
+scorecards ALL-GREEN independientes ni a cinco días consecutivos de
+estabilidad. No incrementar el streak de release por ejecutar tres
+veces el mismo piloto." The next independent campaign is the unit
+that may increment the streak, and only if it's GREEN-eligible.
+
+### Carry-forward (after H1)
+
+- **PRODUCT_DEFECT (deferred)**: search engine 50-result default cap
+  (`file_operations.rs:1078`). Out of H1 scope per directive. Mitigation
+  options (for a future cycle, NOT H2):
+  - Manifest passes `max_results: 1000` per call (changes test).
+  - Matcher learns to handle truncated responses (changes product).
+  - Per-call limit raised (changes product).
+- **READER_DEFECT (FIXED in H1.1)**: G4 `unverified_repos`
+  over-counting. Fixed + 4 regression tests. Reader tests 72/72 PASS.
+- **TRACK B**: independent (B2.0 storage map). No changes from H1.
+- **e78**: DEFERRED. No re-attempt.
+
+### Result
+
+CAMPAIGN_COMPLETE × RELEASE_GATES_RED.
+- CAMPAIGN_COMPLETE: 30/30 expected runs terminated with result.json;
+  no interrupted runs; stability.json, scorecard.json, scorecard.md,
+  campaign_manifest.json all present and consistent.
+- RELEASE_GATES_RED: 8 GREEN / 3 AMBER / 2 RED. RED is HONEST (driven
+  by documented search engine 50-result truncation against tokio/clap,
+  with GT verified empirically at the pinned SHAs).
+- Reader defect FIXED (no regressions across 72 reader tests).
+- Tier-1 corpus, provenance emission, and reader are READY for an
+  independent H2 cycle. H2 is not authorized by H1.6.
