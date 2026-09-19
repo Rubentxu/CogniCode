@@ -524,3 +524,41 @@ async fn c5_endpoint_path_is_read_only() {
         );
     }
 }
+
+/// T12 regression guard — `workspace_id` may contain URL-encoded path
+/// traversal characters (`../../etc/passwd`). The handler must NOT
+/// resolve it as a filesystem path; it must echo the URL-decoded input
+/// verbatim in the `workspace_ref` field and otherwise behave like any
+/// other workspace (fail-closed if not wired, evaluated if wired).
+///
+/// Currently safe because `ControlQueryService` does not use the
+/// workspace_ref as a path. If a future consumer introduces filesystem
+/// resolution, this test fails loudly (workspace_ref starts with "../").
+#[tokio::test]
+async fn c6_path_traversal_in_workspace_id_is_echoed_not_resolved() {
+    let registry = admitted_registry("arch.path_safety");
+    let state = base_ws("ws").with_control_query(
+        Some(Arc::new(ControlQueryService::new(registry))),
+        empty_source_root("c6"),
+    );
+    // The path is URL-encoded by the test client; axum decodes it to
+    // "../../etc/passwd" before our handler sees it.
+    let (_, body) = get(
+        state.clone_state(),
+        "/control-plane/workspaces/..%2F..%2Fetc%2Fpasswd/architecture",
+    )
+    .await;
+    let workspace_ref = body["workspace_ref"]
+        .as_str()
+        .expect("workspace_ref must be a string");
+    assert!(
+        workspace_ref.starts_with("../"),
+        "T12 watch: workspace_ref echoes the URL-decoded input verbatim; \
+         it must NOT be resolved as a filesystem path. Got: {workspace_ref:?}"
+    );
+    // Status is still evaluated (the handler does not check the workspace_ref).
+    assert_eq!(
+        body["status"], "evaluated",
+        "T12 handler must not change status based on workspace_ref content"
+    );
+}
