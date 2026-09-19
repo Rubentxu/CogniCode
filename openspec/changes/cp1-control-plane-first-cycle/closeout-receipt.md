@@ -272,6 +272,32 @@ real need emerges (e.g. a Backstage proxy that wants to consume the
 architecture state, or a CI runner that wants to compare two revisions),
 the checklist above should be revisited.
 
+### Runtime wiring status (deferred observation)
+
+The `with_control_query` builder is **defined** (api.rs:600) but **only
+called from tests**. No production runtime (neither `explorer-api` nor
+`explorer-mcp`) currently wires a `ControlQueryService` instance:
+
+```text
+$ git grep -rn "with_control_query" --include="*.rs" \
+    crates/cognicode-runtime crates/cognicode-explorer/src
+crates/cognicode-explorer/src/api.rs:600:    pub fn with_control_query(...)
+```
+
+This means the HTTP endpoint is **plumbed and ready**, but every live HTTP
+call returns `status:incomplete` with `reason:control_query_service_not_wired`
+(by design — the explorer runtime does not own the architecture registry;
+a host that wants the data must inject the service). The C2/C3/C4 tests
+exercise the wired path internally and confirm the read-model contract
+(evaluated + violation projection) when a real service is injected.
+
+The **runtime wiring** is therefore the obvious next concrete step if/when
+a real host (Backstage backend plugin, IDE, MCP, CI runner) wants to consume
+CP1.0. Until then, the endpoint exists as a fail-closed seam. **This is
+NOT a CP1.0 defect** — it is the intended split between inner-loop (Explorer
+runtime) and outer-loop (Control Plane host). It is recorded here so a
+future CP1.1 author can pick it up cleanly.
+
 ## 12. What CP1.0 does NOT deliver
 
 - no investigation UI
