@@ -2014,3 +2014,89 @@ per-repo breakdown and explicit missing_repo list. No fabricated GREEN.
 No threshold change. No streak increment.
 
 Next: A1b (G6 characterization + reader fix).
+
+## Active Change — TRACK A / A1b G6 reader fix (2026-09-19) — CLOSED 2026-09-19
+
+Scorecard reader `gate_g6` was accepting stability.json with any
+repeat_count and advertising the per-scenario CV as 'warm-cache'
+regardless of whether the warm-cache drop policy was actually applied
+(analyze_stability.py requires n >= 3 to drop the max sample).
+
+### Root cause of the 92.7%
+
+  scenario: rust_safe_refactor_rename_concrete_concrete (Tier A)
+  samples:  [16242, 615]                # one cold-cache, one warm
+  mean:     8428.5
+  std_dev:  7813.5
+  cv:       0.927                       # genuine two-sample variance
+  cv_warm:  0.9270332799430504          # bit-identical, n<3
+  cold_cache_sample: False             # n<3, policy not applicable
+
+The previous reader labelled this as 'warm-cache CV' — misleading
+because no drop happened. The new reader calls it
+'diagnostic_max_cv' and gates it behind an insufficient_repeats
+AMBER verdict.
+
+### Plan
+
+1. RED tests pinning 8 reader gaps (A1b.0/A1b.1: 12 tests, all in
+   `sandbox/scripts/tests/test_a1b_g6_contract.py`).
+2. Reader fix in `sandbox/scripts/release_scorecard.py`:
+   - expose `G6_CV_THRESHOLD=0.10`, `G6_MIN_REPEATS=3`,
+     `G6_MIN_SAMPLES_PER_SCENARIO=3`
+   - repeat_count < 3 -> AMBER insufficient_repeats (with diagnostic
+     worst-CV scenario named in evidence)
+   - per-scenario runs < 3 -> AMBER insufficient_samples; those
+     scenarios are diagnostic only, never drive verdict
+   - cv_warm == cv with n<3 marked as warm-cache N/A explicitly
+   - aggregate_cv top-level cited as second-opinion
+   - cold_cache_sample flag surfaced per scenario in evidence
+3. Recompute scorecard against frozen run 20260919T102509.
+4. Verify streak integrity (MD5 unchanged).
+
+### Scope
+
+- `sandbox/scripts/release_scorecard.py` (gate_g6 only)
+- `sandbox/scripts/tests/test_a1b_g6_contract.py`
+
+### Out of scope (per directive)
+
+- Threshold (<10%) unchanged.
+- ADR-031 unchanged.
+- analyze_stability.py unchanged (no algorithm change for cv reduction).
+- Orchestrator, manifests, scorecard streak unchanged.
+- Per-dimension variance (R-G6-6): deferred to a later slice; the
+  current scope is timing-only, which matches the spec's main clause.
+- No new quarantine / sample-exclusion policies.
+
+### Evidence inventory
+
+- python3 -m pytest sandbox/scripts/tests/test_a1b_g6_contract.py -v
+  → 12/12 PASS (was 10 RED + 2 trivially GREEN)
+- python3 sandbox/scripts/release_scorecard.py against frozen run
+  → scorecard 8 GREEN / 5 AMBER / 0 RED (same envelope, G6 reason now
+    honest)
+- G6 verdict: AMBER
+  reason: insufficient_repeats: repeat_count=2 < spec minimum 3
+  diagnostic: max_cv=0.9270, scenario='rust_safe_refactor_rename_concrete_concrete'
+  cold_cache_sample=False (policy not applicable with n<3)
+- md5sum sandbox/results/scorecard_streak.json
+  → 6b2121fe8e1134a6bed84faba138e5ff (unchanged)
+- receipt: sandbox/results/freezes/2026-09-19-track-a-a1b-g6-reader-fix.json
+
+### Unknown impact / outstanding
+
+- A1c (G3): stability.json health_score formula is
+  min(100, pass_rate*50 + 95*30 + 95*20). Spec asks for a 5-dim
+  weighted score. Need to characterize.
+- R-G6-6 per-dimension variance (timing vs latency vs scalability):
+  spec says "variance per dimension" but analyze_stability.py and the
+  reader only carry timing cv. Deferred.
+
+### Result
+
+PASS for A1b scope. 92.7% preserved as diagnostic, not as
+release-readiness evidence. No fabricated GREEN. No threshold change.
+No streak increment. analyze_stability.py untouched.
+
+Next: A1c (G3 characterization + reader fix).

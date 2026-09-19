@@ -27,6 +27,14 @@ FAMILY_BUDGETS: dict[str, tuple[float, str]] = {
     "navigation": (45000.0, "ms"),
 }
 
+# G6 contract — Run-to-Run Stability per the release-readiness spec.
+# Source: openspec/specs/release-readiness-gate/spec.md
+#   Run-to-run variance (via stability.json from --repeat >= 3) MUST
+#   be < 10% per dimension.
+G6_CV_THRESHOLD: float = 0.10
+G6_MIN_REPEATS: int = 3
+G6_MIN_SAMPLES_PER_SCENARIO: int = 3
+
 # G4 contract — Tier-1 repositories per the release-readiness spec.
 # Source: openspec/specs/release-readiness-gate/spec.md
 #   Correctness (ground-truth comparison via the scoring engine's
@@ -712,69 +720,283 @@ def gate_g5(run_dirs: list[str]) -> GateResult:
 
 
 def gate_g6(stability_path: str) -> GateResult:
-    """G6: Run-to-run stability (timing_cv < 10%).
+    """G6: Run-to-run stability (per-scenario timing CV < 10%).
 
-    Reads per-scenario timing CVs from stability.json/scenario_stats[].timing.cv
-    (post-D1 canonical source — emitted by analyze_stability.py across
-    all repeats). Falls back to families_runtorun / families if the
-    older key is present (pre-D1 compatibility).
+    Contract (openspec/specs/release-readiness-gate/spec.md):
+      Run-to-run variance (via stability.json from --repeat >= 3)
+      MUST be < 10% per dimension.
+
+    Provenance / sufficiency policy (A1b.2):
+      A stability measurement is a release-readiness signal only when
+      BOTH preconditions hold:
+        (a) campaign-level repeat_count >= G6_MIN_REPEATS (3 per spec);
+        (b) per-scenario runs >= G6_MIN_SAMPLES_PER_SCENARIO (3).
+      If either fails, the gate is AMBER with explicit reason.
+      The per-scenario number is the smallest unit that supports a
+      run-to-run variance claim.
+
+    Warm-cache vs full CV (R-G6-3 / R-G6-8):
+      analyze_stability.py emits cv_warm by dropping the max sample
+      whenever n >= 3, and marks cold_cache_sample=true only when
+      the dropped sample is >= 1.5x the warm mean and > 100ms.
+      When n < 3, cv_warm is bit-identical to cv because the
+      drop cannot be applied. The reader must NOT advertise such a
+      value as a warm-cache measurement: the evidence must mark it
+      as "warm-cache N/A (n<3)" so the user knows the policy was
+      not applied.
+
+    Aggregate CV (R-G6-7):
+      stability.json carries a top-level timing_cv across all
+      scenarios. When it disagrees materially with the per-scenario
+      max, the reader cites it as a second opinion in the evidence
+      text. It does NOT drive the verdict by itself (the spec is
+      per-scenario), but it is preserved as diagnostic data.
+
+    Pre-D1 compatibility:
+      stability.json files from pre-D1 campaigns may not carry
+      scenario_stats. The reader falls back to families_runtorun /
+      families for the per-family cv mean. The verdict precedence
+      above applies the same way.
     """
     stab = load_stability(stability_path)
     if not stab:
         return GateResult(
             id="G6", name="Run-to-Run Stability",
-            status="AMBER", evidence_text="stability.json not found",
+            status="AMBER",
+            evidence_text=(
+                "stability.json not found or unreadable; "
+                "no run-to-run variance measurement available"
+            ),
             evidence_path=stability_path or "stability.json",
         )
 
-    # Source 1 (post-D1): per-scenario CVs in scenario_stats
+    # Precondition (a): campaign-level repeat_count >= G6_MIN_REPEATS.
+    repeat_count = stab.get("repeat_count")
+    campaign_id = stab.get("campaign_id") or ""
+    measured_source_head = stab.get("measured_source_head") or ""
+    parent_dir = stab.get("parent_dir") or ""
     scenario_stats = stab.get("scenario_stats") or []
-    cvs: list[float] = []
-    source_label = ""
-    if scenario_stats:
-        for s in scenario_stats:
-            timing = s.get("timing") or {}
-            # Prefer cv_warm (E31-E) when present; fall back to cv otherwise.
-            v = timing.get("cv_warm") if timing.get("cv_warm") is not None else timing.get("cv")
-            if v is not None:
-                cvs.append(float(v))
-        if cvs:
-            source_label = "scenario_stats"
 
-    # Source 2 (pre-D1 fallback): families_runtorun / families
-    if not cvs:
-        fams = stab.get("families_runtorun") or stab.get("families") or {}
-        for f in fams.values():
+    if repeat_count is None or repeat_count < G6_MIN_REPEATS:
+        observed = repeat_count if repeat_count is not None else "unknown"
+        # Even when the campaign is insufficient, surface the worst
+        # observed per-scenario CV as diagnostic data so the operator
+        # can see which scenario would have driven the verdict if
+        # the campaign had met the precondition.
+        diag_max = ""
+        diag_scenario = ""
+        if scenario_stats:
+            best = max(
+                (
+                    (float((s.get("timing") or {}).get("cv_warm") or
+                           (s.get("timing") or {}).get("cv") or 0),
+                     s.get("scenario_id") or "<unknown>",
+                     (s.get("timing") or {}).get("cold_cache_sample"))
+                    for s in scenario_stats
+                    if ((s.get("timing") or {}).get("cv_warm") is not None
+                        or (s.get("timing") or {}).get("cv") is not None)
+                ),
+                default=(0.0, "", False),
+                key=lambda t: t[0],
+            )
+            if best[1]:
+                diag_max = f"diagnostic_max_cv={best[0]:.4f}"
+                diag_scenario = (
+                    f"diagnostic_scenario={best[1]!r} "
+                    f"(cold_cache_sample={best[2]})"
+                )
+        return GateResult(
+            id="G6", name="Run-to-Run Stability",
+            status="AMBER",
+            evidence_text=(
+                f"insufficient_repeats: repeat_count={observed} < "
+                f"spec minimum {G6_MIN_REPEATS} (--repeat >= "
+                f"{G6_MIN_REPEATS} required for release-stability "
+                f"measurement per openspec/specs/release-readiness-gate/spec.md); "
+                f"campaign_id={campaign_id or 'unknown'}, "
+                f"measured_source_head={measured_source_head or 'unknown'}, "
+                f"parent_dir={parent_dir or 'unknown'}; "
+                f"{diag_max}; {diag_scenario}"
+            ),
+            evidence_path=stability_path,
+        )
+    rows: list[dict] = []  # one entry per scenario that has runs
+    insufficient_sample_scenarios: list[str] = []
+    empty_timing_scenarios: list[str] = []
+    warm_applied_count = 0
+    warm_na_count = 0
+
+    for s in scenario_stats:
+        sid = s.get("scenario_id") or "<unknown>"
+        timing = s.get("timing") or {}
+        runs = s.get("runs") or 0
+        cv = timing.get("cv")
+        cv_warm = timing.get("cv_warm")
+        cold_detected = bool(timing.get("cold_cache_sample"))
+
+        if runs == 0:
+            empty_timing_scenarios.append(sid)
+            continue
+        if runs < G6_MIN_SAMPLES_PER_SCENARIO:
+            insufficient_sample_scenarios.append(sid)
+            # Still record the cv for diagnostic, but it cannot drive
+            # a release verdict. Mark it as warm-cache N/A explicitly.
+            if cv is not None:
+                rows.append({
+                    "scenario_id": sid,
+                    "runs": runs,
+                    "cv": float(cv),
+                    "cv_warm": float(cv_warm) if cv_warm is not None else float(cv),
+                    "cold_detected": cold_detected,
+                    "warm_cache_applicable": False,
+                    "warm_cache_na_reason": f"n={runs}<{G6_MIN_SAMPLES_PER_SCENARIO}",
+                })
+                warm_na_count += 1
+            continue
+
+        # n >= 3: warm-cache policy applies.
+        warm_applied_count += 1
+        rows.append({
+            "scenario_id": sid,
+            "runs": runs,
+            "cv": float(cv) if cv is not None else None,
+            "cv_warm": float(cv_warm) if cv_warm is not None else float(cv) if cv is not None else 0.0,
+            "cold_detected": cold_detected,
+            "warm_cache_applicable": True,
+            "warm_cache_na_reason": None,
+        })
+
+    # Source 2 (pre-D1 fallback): families_runtorun / families.
+    fams = stab.get("families_runtorun") or stab.get("families") or {}
+    used_pre_d1_families = False
+    if not rows and fams:
+        used_pre_d1_families = True
+        for fam_name, f in fams.items():
             v = f.get("mean_cv_warm") if f.get("mean_cv_warm") is not None else f.get("mean_cv")
             if v is not None:
-                cvs.append(float(v))
-        if cvs:
-            source_label = "families (pre-D1)"
+                # Pre-D1 family-level mean: treat as per-scenario-like.
+                rows.append({
+                    "scenario_id": f"family:{fam_name}",
+                    "runs": f.get("samples") or G6_MIN_SAMPLES_PER_SCENARIO,
+                    "cv": float(v),
+                    "cv_warm": float(v),
+                    "cold_detected": False,
+                    "warm_cache_applicable": False,
+                    "warm_cache_na_reason": "pre-D1 family-level mean",
+                })
 
-    if not cvs:
+    # Verdict precedence.
+    eligible = [r for r in rows if r["warm_cache_applicable"]]
+    diagnostic_only = [r for r in rows if not r["warm_cache_applicable"]]
+
+    # If NO eligible scenario has warm-cache applied, the gate cannot
+    # produce a release verdict. AMBER.
+    if not eligible and (insufficient_sample_scenarios or empty_timing_scenarios or diagnostic_only):
+        reasons: list[str] = []
+        if insufficient_sample_scenarios:
+            reasons.append(
+                f"insufficient_samples: {len(insufficient_sample_scenarios)} "
+                f"scenarios with runs<{G6_MIN_SAMPLES_PER_SCENARIO}"
+            )
+        if empty_timing_scenarios:
+            reasons.append(
+                f"no_evidence: {len(empty_timing_scenarios)} "
+                f"scenarios with 0 samples"
+            )
+        # Note: the diagnostic-only rows (n<3 with non-zero cv) are
+        # reported as diagnostic. They do NOT drive the verdict.
+        diag_cv_max = (
+            max(r["cv"] for r in diagnostic_only if r["cv"] is not None)
+            if diagnostic_only else 0.0
+        )
+        if diag_cv_max > 0:
+            reasons.append(
+                f"diagnostic_max_cv={diag_cv_max:.4f} "
+                f"(warm-cache N/A, cannot drive verdict)"
+            )
+        return GateResult(
+            id="G6", name="Run-to-Run Stability",
+            status="AMBER",
+            evidence_text="; ".join(reasons),
+            evidence_path=stability_path,
+        )
+
+    if not eligible:
+        # Truly no measurements at all.
         return GateResult(
             id="G6", name="Run-to-Run Stability",
             status="AMBER",
             evidence_text=(
                 "no per-scenario timing CVs in stability.json "
-                "(need scenario_stats[].timing.cv or families_runtorun)"
+                "(need scenario_stats[].timing.cv_warm with "
+                f"runs>={G6_MIN_SAMPLES_PER_SCENARIO} per scenario)"
             ),
             evidence_path=stability_path,
         )
 
-    max_cv = max(cvs)
-    status = "GREEN" if max_cv < 0.10 else "RED"
-    cv_label = "warm-cache" if any(
-        (s.get("timing") or {}).get("cv_warm") is not None for s in scenario_stats
-    ) else "full"
+    # Eligible scenarios exist: per-scenario verdict.
+    failing: list[dict] = []
+    passing: list[dict] = []
+    for r in eligible:
+        cv_eff = r["cv_warm"]
+        if cv_eff is None:
+            continue
+        if cv_eff >= G6_CV_THRESHOLD:
+            failing.append(r)
+        else:
+            passing.append(r)
+
+    # Aggregate CV second-opinion.
+    agg_cv = stab.get("timing_cv")
+    agg_cv_str = ""
+    if agg_cv is not None and float(agg_cv) >= G6_CV_THRESHOLD:
+        agg_cv_str = (
+            f"; aggregate_cv={float(agg_cv):.4f} "
+            f"(second-opinion: aggregate across all scenarios above "
+            f"threshold)"
+        )
+    elif agg_cv is not None:
+        agg_cv_str = f"; aggregate_cv={float(agg_cv):.4f}"
+
+    if failing:
+        max_row = max(failing, key=lambda r: r["cv_warm"] or 0.0)
+        max_cv = max_row["cv_warm"]
+        return GateResult(
+            id="G6", name="Run-to-Run Stability",
+            status="RED",
+            measured=f"{max_cv*100:.1f}%",
+            budget=f"<{G6_CV_THRESHOLD*100:.0f}%",
+            evidence_text=(
+                f"per-scenario warm-cache CV >= {G6_CV_THRESHOLD:.2f}; "
+                f"max={max_cv:.4f} on scenario "
+                f"{max_row['scenario_id']!r} (n={max_row['runs']}, "
+                f"cold_cache_sample={max_row['cold_detected']}); "
+                f"failing_scenarios={len(failing)}/{len(eligible)}; "
+                f"campaign_id={campaign_id or 'unknown'}, "
+                f"measured_source_head={measured_source_head or 'unknown'}, "
+                f"repeat_count={repeat_count}"
+                f"{agg_cv_str}"
+            ),
+            evidence_path=stability_path,
+        )
+
+    # All passing.
     return GateResult(
         id="G6", name="Run-to-Run Stability",
-        status=status,
-        measured=f"{max_cv*100:.1f}%",
-        budget="<10%",
+        status="GREEN",
+        measured=f"max {max((r['cv_warm'] or 0) for r in eligible)*100:.1f}%",
+        budget=f"<{G6_CV_THRESHOLD*100:.0f}%",
         evidence_text=(
-            f"max per-scenario run-to-run CV={max_cv:.4f} ({cv_label}) "
-            f"across {len(cvs)} scenarios ({source_label})"
+            f"all {len(eligible)} scenarios with sufficient samples "
+            f"(n>={G6_MIN_SAMPLES_PER_SCENARIO}) have warm-cache "
+            f"CV < {G6_CV_THRESHOLD:.2f}; max="
+            f"{max((r['cv_warm'] or 0) for r in eligible):.4f}; "
+            f"cold_cache_drops_applied={warm_applied_count}; "
+            f"warm_cache_na_count={warm_na_count}; "
+            f"campaign_id={campaign_id or 'unknown'}, "
+            f"measured_source_head={measured_source_head or 'unknown'}, "
+            f"repeat_count={repeat_count}"
+            f"{agg_cv_str}"
         ),
         evidence_path=stability_path,
     )
