@@ -93,6 +93,20 @@ pub struct ScenarioDef {
     /// Validates that debug_analyze returns the expected root_cause.kind and summary_contains.
     #[serde(default)]
     pub root_cause_validation: Option<RootCauseValidation>,
+    /// H4.3 — When `true` AND `tool == "read_file"`, the orchestrator follows
+    /// the `next_token` continuation chain until the file is fully read, then
+    /// computes the `correctitud` over the reconstructed content instead of
+    /// the first page. Default: `false`. Off by default preserves the existing
+    /// behaviour of every other scenario in the corpus.
+    ///
+    /// Safety: the orchestrator enforces explicit limits (max pages, max
+    /// bytes, max wall time, no-progress abort) and writes a separate
+    /// `reconstructed.json` artifact. If the reconstruction fails any limit,
+    /// or detects a concurrent mutation against the file on disk, the
+    /// response used for scoring falls back to the first page — i.e. the
+    /// scenario is NOT silently turned into a pass.
+    #[serde(default)]
+    pub read_source_full: bool,
 }
 
 /// Root cause validation for debug_analyze scenarios.
@@ -209,6 +223,7 @@ impl Manifest {
                 ground_truth: def.ground_truth.clone(),
                 metrics: def.metrics.clone(),
                 root_cause_validation: def.root_cause_validation.clone(),
+                read_source_full: def.read_source_full,
                 repo,         // Inherits from manifest top-level if not set in scenario
                 commit: None, // Set by orchestrator
                 container_image: None,
@@ -246,6 +261,11 @@ pub struct ExpandedScenario {
     /// Root cause validation for debug analysis scenarios.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub root_cause_validation: Option<RootCauseValidation>,
+    /// H4.3 — Opt-in flag: orchestrator follows `next_token` until EOF for
+    /// `read_file` scenarios. See `ScenarioDef::read_source_full` for the
+    /// safety contract.
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub read_source_full: bool,
     /// Set by orchestrator from manifest metadata
     pub repo: Option<String>,
     pub commit: Option<String>,

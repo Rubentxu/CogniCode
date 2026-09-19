@@ -1,256 +1,220 @@
-version: '1.0'
+# Tier-1 H4.3 read_source manifest — H4.3 reconstruction opt-in.
+#
+# Identical structure to tier1_h2_search.yaml but with two changes:
+#   1) Each read_source scenario carries `read_source_full: true` so the
+#      orchestrator will follow the continuation_token chain to reconstruct
+#      the full file content and score against the reconstructed content
+#      (with byte-exact SHA-256 + mutation detection).
+#   2) The scenario format is the H1/H2 root-mapping format
+#      `{ version, language, tier, scenarios: [...] }` (NOT a top-level
+#      sequence — that was a pre-existing H4.0 bug).
+#
+# Scenarios 1-5: read_file with read_source_full: true (5 repos).
+# Scenarios 6-10: search_content with max_results: 1000 (control).
+#
+# Pinned SHAs (unchanged from H2/H4.0):
+#   - serde    @ 03eec42c3313b36da416be1486e9ecac345784d5
+#   - ripgrep  @ 4b3f8b00c093788a787f73d5079d8b86c0d77e3c
+#   - anyhow   @ 1.0.85
+#   - tokio    @ 1.36.0
+#   - clap     @ 4.5.4
+#
+# Schema (read-only scenarios — H4 contract preserved):
+#   * `read_source_full: true` opts into the H4.3 reconstructor.
+#   * `ground_truth.code` pins a specific line/col+content of the file
+#     that MUST appear in the reconstructed content for G4 green.
+version: "1.0"
 language: rust
-tier: 1
-description: "Tier-1 H2 \u2014 search with explicit max_results per scenario"
-timeout_seconds: 120
+tier: A
+timeout_seconds: 300
+
 scenarios:
-- name: tier1_serde_read_source
-  description: Read serde crate src/lib.rs
-  tool: read_file
-  action: read
-  repo: serde
-  workspace: serde
-  scenario_class: read_only
-  expected_outcome: pass
-  arguments:
-    path: src/lib.rs
-    mode: raw
-  ground_truth:
-    code:
-      file: sandbox/repos/serde/serde/src/lib.rs
-      line: 1
-      col: 1
-      content: "//! # Serde\n//!\n//! Serde is a framework for ***ser***ializing and ***de***serializing Rust data\n//! structures efficiently and generically.\n//!\n//! The Serde ecosystem consists of data structures that know how to serialize\n//! and deserialize themselves along with data formats that know how to\n//! serialize and deserialize other things. Serde provides the layer by which\n//! these two groups interact with each other, allowing any supported data\n//! structure to be serialized and deserialized using any supported data format.\n//!\n//! See the Serde website <https://serde.rs/> for additional documentation and\n//! usage examples.\n//!\n//! ## Design\n//!\n//! Where many other languages rely on runtime reflection for serializing data,\n//! Serde is instead built on Rust's powerful trait system. A data structure\n//! that knows how to serialize and deserialize itself is one that implements\n//! Serde's `Serialize` and `Deserialize` traits (or uses Serde's derive\n//!\
-        \ attribute to automatically generate implementations at compile time). This\n//! avoids any overhead of reflection or runtime type information. In fact in\n//! many situations the interaction between data structure and data format can\n//! be completely optimized away by the Rust compiler, leaving Serde\n//! serialization to perform the same speed as a handwritten serializer for the\n//! specific selection of data structure and data format.\n//!\n//! ## Data formats\n//!\n//! The following is a partial list of data formats that have been implemented\n//! for Serde by the community.\n//!\n//! - [JSON], the ubiquitous JavaScript Object Notation used by many HTTP APIs.\n//! - [Postcard], a no\\_std and embedded-systems friendly compact binary format.\n//! - [CBOR], a Concise Binary Object Representation designed for small message\n//!   size without the need for version negotiation.\n//! - [YAML], a self-proclaimed human-friendly configuration language that ain't\n//!   markup language.\n\
-        //! - [MessagePack], an efficient binary format that resembles a compact JSON.\n//! - [TOML], a minimal configuration format used by [Cargo].\n//! - [Pickle], a format common in the Python world.\n//! - [RON], a Rusty Object Notation.\n//! - [BSON], the data storage and network transfer format used by MongoDB.\n//! - [Avro], a binary format used within Apache Hadoop, with support for schema\n//!   definition.\n//! - [JSON5], a superset of JSON including some productions from ES5.\n//! - [URL] query strings, in the x-www-form-urlencoded format.\n//! - [Starlark], the format used for describing build targets by the Bazel and\n//!   Buck build systems. *(serialization only)*\n//! - [Envy], a way to deserialize environment variables into Rust structs.\n//!   *(deserialization only)*\n//! - [Envy Store], a way to deserialize [AWS Parameter Store] parameters into\n//!   Rust structs. *(deserialization only)*\n//! - [S-expressions], the textual representation of code and data used by the\n\
-        //!   Lisp language family.\n//! - [D-Bus]'s binary wire format.\n//! - [FlexBuffers], the schemaless cousin of Google's FlatBuffers zero-copy\n//!   serialization format.\n//! - [Bencode], a simple binary format used in the BitTorrent protocol.\n//! - [Token streams], for processing Rust procedural macro input.\n//!   *(deserialization only)*\n//! - [DynamoDB Items], the format used by [rusoto_dynamodb] to transfer data to\n//!   and from DynamoDB.\n//! - [Hjson], a syntax extension to JSON designed around human reading and\n//!   editing. *(deserialization only)*\n//! - [CSV], Comma-separated values is a tabular text file format.\n//!\n//! [JSON]: https://github.com/serde-rs/json\n//! [Postcard]: https://github.com/jamesmunns/postcard\n//! [CBOR]: https://github.com/enarx/ciborium\n//! [YAML]: https://github.com/dtolnay/serde-yaml\n//! [MessagePack]: https://github.com/3Hren/msgpack-rust\n//! [TOML]: https://docs.rs/toml\n//! [Pickle]: https://github.com/birkenfeld/serde-pickle\n\
-        //! [RON]: https://github.com/ron-rs/ron\n//! [BSON]: https://github.com/mongodb/bson-rust\n//! [Avro]: https://docs.rs/apache-avro\n//! [JSON5]: https://github.com/callum-oakley/json5-rs\n//! [URL]: https://docs.rs/serde_qs\n//! [Starlark]: https://github.com/dtolnay/serde-starlark\n//! [Envy]: https://github.com/softprops/envy\n//! [Envy Store]: https://github.com/softprops/envy-store\n//! [Cargo]: https://doc.rust-lang.org/cargo/reference/manifest.html\n//! [AWS Parameter Store]: https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html\n//! [S-expressions]: https://github.com/rotty/lexpr-rs\n//! [D-Bus]: https://docs.rs/zvariant\n//! [FlexBuffers]: https://github.com/google/flatbuffers/tree/master/rust/flexbuffers\n//! [Bencode]: https://github.com/P3KI/bendy\n//! [Token streams]: https://github.com/oxidecomputer/serde_tokenstream\n//! [DynamoDB Items]: https://docs.rs/serde_dynamo\n//! [rusoto_dynamodb]: https://docs.rs/rusoto_dynamodb\n\
-        //! [Hjson]: https://github.com/Canop/deser-hjson\n//! [CSV]: https://docs.rs/csv\n\n////////////////////////////////////////////////////////////////////////////////\n\n// Serde types in rustdoc of other crates get linked to here.\n#![doc(html_root_url = \"https://docs.rs/serde/1.0.195\")]\n// Support using Serde without the standard library!\n#![cfg_attr(not(feature = \"std\"), no_std)]\n// Show which crate feature enables conditionally compiled APIs in documentation.\n#![cfg_attr(doc_cfg, feature(doc_cfg))]\n// Unstable functionality only if the user asks for it. For tracking and\n// discussion of these features please refer to this issue:\n//\n//    https://github.com/serde-rs/serde/issues/812\n#![cfg_attr(feature = \"unstable\", feature(error_in_core, never_type))]\n#![allow(unknown_lints, bare_trait_objects, deprecated)]\n// Ignored clippy and clippy_pedantic lints\n#![allow(\n    // clippy bug: https://github.com/rust-lang/rust-clippy/issues/5704\n    clippy::unnested_or_patterns,\n\
-        \    // clippy bug: https://github.com/rust-lang/rust-clippy/issues/7768\n    clippy::semicolon_if_nothing_returned,\n    // not available in our oldest supported compiler\n    clippy::empty_enum,\n    clippy::type_repetition_in_bounds, // https://github.com/rust-lang/rust-clippy/issues/8772\n    // integer and float ser/de requires these sorts of casts\n    clippy::cast_possible_truncation,\n    clippy::cast_possible_wrap,\n    clippy::cast_sign_loss,\n    // things are often more readable this way\n    clippy::cast_lossless,\n    clippy::module_name_repetitions,\n    clippy::single_match_else,\n    clippy::type_complexity,\n    clippy::use_self,\n    clippy::zero_prefixed_literal,\n    // correctly used\n    clippy::derive_partial_eq_without_eq,\n    clippy::enum_glob_use,\n    clippy::explicit_auto_deref,\n    clippy::let_underscore_untyped,\n    clippy::map_err_ignore,\n    clippy::new_without_default,\n    clippy::result_unit_err,\n    clippy::wildcard_imports,\n    // not\
-        \ practical\n    clippy::needless_pass_by_value,\n    clippy::similar_names,\n    clippy::too_many_lines,\n    // preference\n    clippy::doc_markdown,\n    clippy::unseparated_literal_suffix,\n    // false positive\n    clippy::needless_doctest_main,\n    // noisy\n    clippy::missing_errors_doc,\n    clippy::must_use_candidate,\n)]\n// Restrictions\n#![deny(clippy::question_mark_used)]\n// Rustc lints.\n#![deny(missing_docs, unused_imports)]\n\n////////////////////////////////////////////////////////////////////////////////\n\n#[cfg(feature = \"alloc\")]\nextern crate alloc;\n\n/// A facade around all the types we need from the `std`, `core`, and `alloc`\n/// crates. This avoids elaborate import wrangling having to happen in every\n/// module.\nmod lib {\n    mod core {\n        #[cfg(not(feature = \"std\"))]\n        pub use core::*;\n        #[cfg(feature = \"std\")]\n        pub use std::*;\n    }\n\n    pub use self::core::{f32, f64};\n    pub use self::core::{i16, i32, i64,\
-        \ i8, isize};\n    pub use self::core::{iter, num, ptr, str};\n    pub use self::core::{u16, u32, u64, u8, usize};\n\n    #[cfg(any(feature = \"std\", feature = \"alloc\"))]\n    pub use self::core::{cmp, mem, slice};\n\n    pub use self::core::cell::{Cell, RefCell};\n    pub use self::core::clone::{self, Clone};\n    pub use self::core::cmp::Reverse;\n    pub use self::core::convert::{self, From, Into};\n    pub use self::core::default::{self, Default};\n    pub use self::core::fmt::{self, Debug, Display};\n    pub use self::core::marker::{self, PhantomData};\n    pub use self::core::num::Wrapping;\n    pub use self::core::ops::{Bound, Range, RangeFrom, RangeInclusive, RangeTo};\n    pub use self::core::option::{self, Option};\n    pub use self::core::result::{self, Result};\n    pub use self::core::time::Duration;\n\n    #[cfg(all(feature = \"alloc\", not(feature = \"std\")))]\n    pub use alloc::borrow::{Cow, ToOwned};\n    #[cfg(feature = \"std\")]\n    pub use std::borrow::{Cow,\
-        \ ToOwned};\n\n    #[cfg(all(feature = \"alloc\", not(feature = \"std\")))]\n    pub use alloc::string::{String, ToString};\n    #[cfg(feature = \"std\")]\n    pub use std::string::{String, ToString};\n\n    #[cfg(all(feature = \"alloc\", not(feature = \"std\")))]\n    pub use alloc::vec::Vec;\n    #[cfg(feature = \"std\")]\n    pub use std::vec::Vec;\n\n    #[cfg(all(feature = \"alloc\", not(feature = \"std\")))]\n    pub use alloc::boxed::Box;\n    #[cfg(feature = \"std\")]\n    pub use std::boxed::Box;\n\n    #[cfg(all(feature = \"rc\", feature = \"alloc\", not(feature = \"std\")))]\n    pub use alloc::rc::{Rc, Weak as RcWeak};\n    #[cfg(all(feature = \"rc\", feature = \"std\"))]\n    pub use std::rc::{Rc, Weak as RcWeak};\n\n    #[cfg(all(feature = \"rc\", feature = \"alloc\", not(feature = \"std\")))]\n    pub use alloc::sync::{Arc, Weak as ArcWeak};\n    #[cfg(all(feature = \"rc\", feature = \"std\"))]\n    pub use std::sync::{Arc, Weak as ArcWeak};\n\n    #[cfg(all(feature\
-        \ = \"alloc\", not(feature = \"std\")))]\n    pub use alloc::collections::{BTreeMap, BTreeSet, BinaryHeap, LinkedList, VecDeque};\n    #[cfg(feature = \"std\")]\n    pub use std::collections::{BTreeMap, BTreeSet, BinaryHeap, LinkedList, VecDeque};\n\n    #[cfg(all(not(no_core_cstr), not(feature = \"std\")))]\n    pub use self::core::ffi::CStr;\n    #[cfg(feature = \"std\")]\n    pub use std::ffi::CStr;\n\n    #[cfg(all(not(no_core_cstr), feature = \"alloc\", not(feature = \"std\")))]\n    pub use alloc::ffi::CString;\n    #[cfg(feature = \"std\")]\n    pub use std::ffi::CString;\n\n    #[cfg(feature = \"std\")]\n    pub use std::{error, net};\n\n    #[cfg(feature = \"std\")]\n    pub use std::collections::{HashMap, HashSet};\n    #[cfg(feature = \"std\")]\n    pub use std::ffi::{OsStr, OsString};\n    #[cfg(feature = \"std\")]\n    pub use std::hash::{BuildHasher, Hash};\n    #[cfg(feature = \"std\")]\n    pub use std::io::Write;\n    #[cfg(feature = \"std\")]\n    pub use std::path::{Path,\
-        \ PathBuf};\n    #[cfg(feature = \"std\")]\n    pub use std::sync::{Mutex, RwLock};\n    #[cfg(feature = \"std\")]\n    pub use std::time::{SystemTime, UNIX_EPOCH};\n\n    #[cfg(all(feature = \"std\", no_target_has_atomic, not(no_std_atomic)))]\n    pub use std::sync::atomic::{\n        AtomicBool, AtomicI16, AtomicI32, AtomicI8, AtomicIsize, AtomicU16, AtomicU32, AtomicU8,\n        AtomicUsize, Ordering,\n    };\n    #[cfg(all(feature = \"std\", no_target_has_atomic, not(no_std_atomic64)))]\n    pub use std::sync::atomic::{AtomicI64, AtomicU64};\n\n    #[cfg(all(feature = \"std\", not(no_target_has_atomic)))]\n    pub use std::sync::atomic::Ordering;\n    #[cfg(all(feature = \"std\", not(no_target_has_atomic), target_has_atomic = \"8\"))]\n    pub use std::sync::atomic::{AtomicBool, AtomicI8, AtomicU8};\n    #[cfg(all(feature = \"std\", not(no_target_has_atomic), target_has_atomic = \"16\"))]\n    pub use std::sync::atomic::{AtomicI16, AtomicU16};\n    #[cfg(all(feature = \"std\"\
-        , not(no_target_has_atomic), target_has_atomic = \"32\"))]\n    pub use std::sync::atomic::{AtomicI32, AtomicU32};\n    #[cfg(all(feature = \"std\", not(no_target_has_atomic), target_has_atomic = \"64\"))]\n    pub use std::sync::atomic::{AtomicI64, AtomicU64};\n    #[cfg(all(feature = \"std\", not(no_target_has_atomic), target_has_atomic = \"ptr\"))]\n    pub use std::sync::atomic::{AtomicIsize, AtomicUsize};\n}\n\n// None of this crate's error handling needs the `From::from` error conversion\n// performed implicitly by the `?` operator or the standard library's `try!`\n// macro. This simplified macro gives a 5.5% improvement in compile time\n// compared to standard `try!`, and 9% improvement compared to `?`.\nmacro_rules! tri {\n    ($expr:expr) => {\n        match $expr {\n            Ok(val) => val,\n            Err(err) => return Err(err),\n        }\n    };\n}\n\n////////////////////////////////////////////////////////////////////////////////\n\n#[macro_use]\nmod macros;\n\
-        \n#[macro_use]\nmod integer128;\n\npub mod de;\npub mod ser;\n\n#[doc(inline)]\npub use crate::de::{Deserialize, Deserializer};\n#[doc(inline)]\npub use crate::ser::{Serialize, Serializer};\n\n// Used by generated code and doc tests. Not public API.\n#[doc(hidden)]\n#[path = \"private/mod.rs\"]\npub mod __private;\n\n#[path = \"de/seed.rs\"]\nmod seed;\n\n#[cfg(not(any(feature = \"std\", feature = \"unstable\")))]\nmod std_error;\n\n// Re-export #[derive(Serialize, Deserialize)].\n//\n// The reason re-exporting is not enabled by default is that disabling it would\n// be annoying for crates that provide handwritten impls or data formats. They\n// would need to disable default features and then explicitly re-enable std.\n#[cfg(feature = \"serde_derive\")]\nextern crate serde_derive;\n\n/// Derive macro available if serde is built with `features = [\"derive\"]`.\n#[cfg(feature = \"serde_derive\")]\n#[cfg_attr(doc_cfg, doc(cfg(feature = \"derive\")))]\npub use serde_derive::{Deserialize,\
-        \ Serialize};\n\n#[cfg(all(not(no_serde_derive), any(feature = \"std\", feature = \"alloc\")))]\nmod actually_private {\n    pub struct T;\n}\n"
-      _source_pinned_head: $(git -C sandbox/repos/serde rev-parse HEAD)
-- name: tier1_serde_search_deserialize
-  description: Search 'fn deserialize' in serde crate
-  tool: search_content
-  action: search
-  repo: serde
-  workspace: serde
-  scenario_class: read_only
-  expected_outcome: pass
-  arguments:
-    pattern: fn deserialize
-    path: src
-    case_sensitive: true
-    max_results: 1000
-  ground_truth:
-    matches:
-    - path: src/macros.rs
-    - path: src/private/de.rs
-- name: tier1_ripgrep_read_source
-  description: Read ripgrep cli crate src/lib.rs
-  tool: read_file
-  action: read
-  repo: ripgrep
-  workspace: crates/cli
-  scenario_class: read_only
-  expected_outcome: pass
-  arguments:
-    path: src/lib.rs
-    mode: raw
-  ground_truth:
-    code:
-      file: sandbox/repos/ripgrep/crates/cli/src/lib.rs
-      line: 1
-      col: 1
-      content: "/*!\nThis crate provides common routines used in command line applications, with a\nfocus on routines useful for search oriented applications. As a utility\nlibrary, there is no central type or function. However, a key focus of this\ncrate is to improve failure modes and provide user friendly error messages\nwhen things go wrong.\n\nTo the best extent possible, everything in this crate works on Windows, macOS\nand Linux.\n\n\n# Standard I/O\n\n[`is_readable_stdin`] determines whether stdin can be usefully read from. It\nis useful when writing an application that changes behavior based on whether\nthe application was invoked with data on stdin. For example, `rg foo` might\nrecursively search the current working directory for occurrences of `foo`, but\n`rg foo < file` might only search the contents of `file`.\n\n\n# Coloring and buffering\n\nThe [`stdout`], [`stdout_buffered_block`] and [`stdout_buffered_line`] routines\nare alternative constructors for [`StandardStream`].\
-        \ A `StandardStream`\nimplements `termcolor::WriteColor`, which provides a way to emit colors to\nterminals. Its key use is the encapsulation of buffering style. Namely,\n`stdout` will return a line buffered `StandardStream` if and only if\nstdout is connected to a tty, and will otherwise return a block buffered\n`StandardStream`. Line buffering is important for use with a tty because it\ntypically decreases the latency at which the end user sees output. Block\nbuffering is used otherwise because it is faster, and redirecting stdout to a\nfile typically doesn't benefit from the decreased latency that line buffering\nprovides.\n\nThe `stdout_buffered_block` and `stdout_buffered_line` can be used to\nexplicitly set the buffering strategy regardless of whether stdout is connected\nto a tty or not.\n\n\n# Escaping\n\nThe [`escape`](crate::escape()), [`escape_os`], [`unescape`] and\n[`unescape_os`] routines provide a user friendly way of dealing with UTF-8\nencoded strings that can express\
-        \ arbitrary bytes. For example, you might want\nto accept a string containing arbitrary bytes as a command line argument, but\nmost interactive shells make such strings difficult to type. Instead, we can\nask users to use escape sequences.\n\nFor example, `a\\xFFz` is itself a valid UTF-8 string corresponding to the\nfollowing bytes:\n\n```ignore\n[b'a', b'\\\\', b'x', b'F', b'F', b'z']\n```\n\nHowever, we can\ninterpret `\\xFF` as an escape sequence with the `unescape`/`unescape_os`\nroutines, which will yield\n\n```ignore\n[b'a', b'\\xFF', b'z']\n```\n\ninstead. For example:\n\n```\nuse grep_cli::unescape;\n\n// Note the use of a raw string!\nassert_eq!(vec![b'a', b'\\xFF', b'z'], unescape(r\"a\\xFFz\"));\n```\n\nThe `escape`/`escape_os` routines provide the reverse transformation, which\nmakes it easy to show user friendly error messages involving arbitrary bytes.\n\n\n# Building patterns\n\nTypically, regular expression patterns must be valid UTF-8. However, command\nline arguments\
-        \ aren't guaranteed to be valid UTF-8. Unfortunately, the standard\nlibrary's UTF-8 conversion functions from `OsStr`s do not provide good error\nmessages. However, the [`pattern_from_bytes`] and [`pattern_from_os`] do,\nincluding reporting exactly where the first invalid UTF-8 byte is seen.\n\nAdditionally, it can be useful to read patterns from a file while reporting\ngood error messages that include line numbers. The [`patterns_from_path`],\n[`patterns_from_reader`] and [`patterns_from_stdin`] routines do just that. If\nany pattern is found that is invalid UTF-8, then the error includes the file\npath (if available) along with the line number and the byte offset at which the\nfirst invalid UTF-8 byte was observed.\n\n\n# Read process output\n\nSometimes a command line application needs to execute other processes and\nread its stdout in a streaming fashion. The [`CommandReader`] provides this\nfunctionality with an explicit goal of improving failure modes. In particular,\nif the\
-        \ process exits with an error code, then stderr is read and converted into\na normal Rust error to show to end users. This makes the underlying failure\nmodes explicit and gives more information to end users for debugging the\nproblem.\n\nAs a special case, [`DecompressionReader`] provides a way to decompress\narbitrary files by matching their file extensions up with corresponding\ndecompression programs (such as `gzip` and `xz`). This is useful as a means of\nperforming simplistic decompression in a portable manner without binding to\nspecific compression libraries. This does come with some overhead though, so\nif you need to decompress lots of small files, this may not be an appropriate\nconvenience to use.\n\nEach reader has a corresponding builder for additional configuration, such as\nwhether to read stderr asynchronously in order to avoid deadlock (which is\nenabled by default).\n\n\n# Miscellaneous parsing\n\nThe [`parse_human_readable_size`] routine parses strings like `2M`\
-        \ and converts\nthem to the corresponding number of bytes (`2 * 1<<20` in this case). If an\ninvalid size is found, then a good error message is crafted that typically\ntells the user how to fix the problem.\n*/\n\n#![deny(missing_docs)]\n\nmod decompress;\nmod escape;\nmod hostname;\nmod human;\nmod pattern;\nmod process;\nmod wtr;\n\npub use crate::{\n    decompress::{\n        resolve_binary, DecompressionMatcher, DecompressionMatcherBuilder,\n        DecompressionReader, DecompressionReaderBuilder,\n    },\n    escape::{escape, escape_os, unescape, unescape_os},\n    hostname::hostname,\n    human::{parse_human_readable_size, ParseSizeError},\n    pattern::{\n        pattern_from_bytes, pattern_from_os, patterns_from_path,\n        patterns_from_reader, patterns_from_stdin, InvalidPatternError,\n    },\n    process::{CommandError, CommandReader, CommandReaderBuilder},\n    wtr::{\n        stdout, stdout_buffered_block, stdout_buffered_line, StandardStream,\n    },\n};\n\n///\
-        \ Returns true if and only if stdin is believed to be readable.\n///\n/// When stdin is readable, command line programs may choose to behave\n/// differently than when stdin is not readable. For example, `command foo`\n/// might search the current directory for occurrences of `foo` where as\n/// `command foo < some-file` or `cat some-file | command foo` might instead\n/// only search stdin for occurrences of `foo`.\n///\n/// Note that this isn't perfect and essentially corresponds to a heuristic.\n/// When things are unclear (such as if an error occurs during introspection to\n/// determine whether stdin is readable), this prefers to return `false`. That\n/// means it's possible for an end user to pipe something into your program and\n/// have this return `false` and thus potentially lead to ignoring the user's\n/// stdin data. While not ideal, this is perhaps better than falsely assuming\n/// stdin is readable, which would result in blocking forever on reading stdin.\n/// Regardless,\
-        \ commands should always provide explicit fallbacks to override\n/// behavior. For example, `rg foo -` will explicitly search stdin and `rg foo\n/// ./` will explicitly search the current working directory.\npub fn is_readable_stdin() -> bool {\n    use std::io::IsTerminal;\n\n    #[cfg(unix)]\n    fn imp() -> bool {\n        use std::{\n            fs::File,\n            os::{fd::AsFd, unix::fs::FileTypeExt},\n        };\n\n        let stdin = std::io::stdin();\n        let fd = match stdin.as_fd().try_clone_to_owned() {\n            Ok(fd) => fd,\n            Err(err) => {\n                log::debug!(\n                    \"for heuristic stdin detection on Unix, \\\n                     could not clone stdin file descriptor \\\n                     (thus assuming stdin is not readable): {err}\",\n                );\n                return false;\n            }\n        };\n        let file = File::from(fd);\n        let md = match file.metadata() {\n            Ok(md) => md,\n\
-        \            Err(err) => {\n                log::debug!(\n                    \"for heuristic stdin detection on Unix, \\\n                     could not get file metadata for stdin \\\n                     (thus assuming stdin is not readable): {err}\",\n                );\n                return false;\n            }\n        };\n        let ft = md.file_type();\n        let is_file = ft.is_file();\n        let is_fifo = ft.is_fifo();\n        let is_socket = ft.is_socket();\n        let is_readable = is_file || is_fifo || is_socket;\n        log::debug!(\n            \"for heuristic stdin detection on Unix, \\\n             found that \\\n             is_file={is_file}, is_fifo={is_fifo} and is_socket={is_socket}, \\\n             and thus concluded that is_stdin_readable={is_readable}\",\n        );\n        is_readable\n    }\n\n    #[cfg(windows)]\n    fn imp() -> bool {\n        let stdin = winapi_util::HandleRef::stdin();\n        let typ = match winapi_util::file::typ(stdin)\
-        \ {\n            Ok(typ) => typ,\n            Err(err) => {\n                log::debug!(\n                    \"for heuristic stdin detection on Windows, \\\n                     could not get file type of stdin \\\n                     (thus assuming stdin is not readable): {err}\",\n                );\n                return false;\n            }\n        };\n        let is_disk = typ.is_disk();\n        let is_pipe = typ.is_pipe();\n        let is_readable = is_disk || is_pipe;\n        log::debug!(\n            \"for heuristic stdin detection on Windows, \\\n             found that is_disk={is_disk} and is_pipe={is_pipe}, \\\n             and thus concluded that is_stdin_readable={is_readable}\",\n        );\n        is_readable\n    }\n\n    #[cfg(not(any(unix, windows)))]\n    fn imp() -> bool {\n        log::debug!(\"on non-{{Unix,Windows}}, assuming stdin is not readable\");\n        false\n    }\n\n    !std::io::stdin().is_terminal() && imp()\n}\n\n/// Returns true if\
-        \ and only if stdin is believed to be connected to a tty\n/// or a console.\n///\n/// Note that this is now just a wrapper around\n/// [`std::io::IsTerminal`](https://doc.rust-lang.org/std/io/trait.IsTerminal.html).\n/// Callers should prefer using the `IsTerminal` trait directly. This routine\n/// is deprecated and will be removed in the next semver incompatible release.\n#[deprecated(since = \"0.1.10\", note = \"use std::io::IsTerminal instead\")]\npub fn is_tty_stdin() -> bool {\n    use std::io::IsTerminal;\n    std::io::stdin().is_terminal()\n}\n\n/// Returns true if and only if stdout is believed to be connected to a tty\n/// or a console.\n///\n/// This is useful for when you want your command line program to produce\n/// different output depending on whether it's printing directly to a user's\n/// terminal or whether it's being redirected somewhere else. For example,\n/// implementations of `ls` will often show one item per line when stdout is\n/// redirected, but will condensed\
-        \ output when printing to a tty.\n///\n/// Note that this is now just a wrapper around\n/// [`std::io::IsTerminal`](https://doc.rust-lang.org/std/io/trait.IsTerminal.html).\n/// Callers should prefer using the `IsTerminal` trait directly. This routine\n/// is deprecated and will be removed in the next semver incompatible release.\n#[deprecated(since = \"0.1.10\", note = \"use std::io::IsTerminal instead\")]\npub fn is_tty_stdout() -> bool {\n    use std::io::IsTerminal;\n    std::io::stdout().is_terminal()\n}\n\n/// Returns true if and only if stderr is believed to be connected to a tty\n/// or a console.\n///\n/// Note that this is now just a wrapper around\n/// [`std::io::IsTerminal`](https://doc.rust-lang.org/std/io/trait.IsTerminal.html).\n/// Callers should prefer using the `IsTerminal` trait directly. This routine\n/// is deprecated and will be removed in the next semver incompatible release.\n#[deprecated(since = \"0.1.10\", note = \"use std::io::IsTerminal instead\")]\n\
-        pub fn is_tty_stderr() -> bool {\n    use std::io::IsTerminal;\n    std::io::stderr().is_terminal()\n}\n"
-      _source_pinned_head: $(git -C sandbox/repos/ripgrep rev-parse HEAD)
-- name: tier1_ripgrep_search_regex_matcher
-  description: Search 'RegexMatcher' across ripgrep crates
-  tool: search_content
-  action: search
-  repo: ripgrep
-  workspace: crates
-  scenario_class: read_only
-  expected_outcome: pass
-  arguments:
-    pattern: RegexMatcher
-    path: .
-    case_sensitive: true
-    max_results: 1000
-  ground_truth:
-    matches:
-    - path: crates/pcre2/src/matcher.rs
-    - path: crates/searcher/src/lib.rs
-- name: tier1_anyhow_read_source
-  description: Read anyhow src/lib.rs
-  tool: read_file
-  action: read
-  repo: anyhow
-  workspace: .
-  scenario_class: read_only
-  expected_outcome: pass
-  arguments:
-    path: src/lib.rs
-    mode: raw
-  ground_truth:
-    code:
-      file: sandbox/repos/anyhow/src/lib.rs
-      line: 1
-      col: 1
-      content: "//! [![github]](https://github.com/dtolnay/anyhow)&ensp;[![crates-io]](https://crates.io/crates/anyhow)&ensp;[![docs-rs]](https://docs.rs/anyhow)\n//!\n//! [github]: https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github\n//! [crates-io]: https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust\n//! [docs-rs]: https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs\n//!\n//! <br>\n//!\n//! This library provides [`anyhow::Error`][Error], a trait object based error\n//! type for easy idiomatic error handling in Rust applications.\n//!\n//! <br>\n//!\n//! # Details\n//!\n//! - Use `Result<T, anyhow::Error>`, or equivalently `anyhow::Result<T>`, as\n//!   the return type of any fallible function.\n//!\n//!   Within the function, use `?` to easily propagate any error that implements\n//!   the [`std::error::Error`] trait.\n//!\n//!   ```\n//!   # pub trait Deserialize\
-        \ {}\n//!   #\n//!   # mod serde_json {\n//!   #     use super::Deserialize;\n//!   #     use std::io;\n//!   #\n//!   #     pub fn from_str<T: Deserialize>(json: &str) -> io::Result<T> {\n//!   #         unimplemented!()\n//!   #     }\n//!   # }\n//!   #\n//!   # struct ClusterMap;\n//!   #\n//!   # impl Deserialize for ClusterMap {}\n//!   #\n//!   use anyhow::Result;\n//!\n//!   fn get_cluster_info() -> Result<ClusterMap> {\n//!       let config = std::fs::read_to_string(\"cluster.json\")?;\n//!       let map: ClusterMap = serde_json::from_str(&config)?;\n//!       Ok(map)\n//!   }\n//!   #\n//!   # fn main() {}\n//!   ```\n//!\n//! - Attach context to help the person troubleshooting the error understand\n//!   where things went wrong. A low-level error like \"No such file or\n//!   directory\" can be annoying to debug without more context about what higher\n//!   level step the application was in the middle of.\n//!\n//!   ```\n//!   # struct It;\n//!   #\n//!   # impl It {\n\
-        //!   #     fn detach(&self) -> Result<()> {\n//!   #         unimplemented!()\n//!   #     }\n//!   # }\n//!   #\n//!   use anyhow::{Context, Result};\n//!\n//!   fn main() -> Result<()> {\n//!       # return Ok(());\n//!       #\n//!       # const _: &str = stringify! {\n//!       ...\n//!       # };\n//!       #\n//!       # let it = It;\n//!       # let path = \"./path/to/instrs.json\";\n//!       #\n//!       it.detach().context(\"Failed to detach the important thing\")?;\n//!\n//!       let content = std::fs::read(path)\n//!           .with_context(|| format!(\"Failed to read instrs from {}\", path))?;\n//!       #\n//!       # const _: &str = stringify! {\n//!       ...\n//!       # };\n//!       #\n//!       # Ok(())\n//!   }\n//!   ```\n//!\n//!   ```console\n//!   Error: Failed to read instrs from ./path/to/instrs.json\n//!\n//!   Caused by:\n//!       No such file or directory (os error 2)\n//!   ```\n//!\n//! - Downcasting is supported and can be by value, by shared\
-        \ reference, or by\n//!   mutable reference as needed.\n//!\n//!   ```\n//!   # use anyhow::anyhow;\n//!   # use std::fmt::{self, Display};\n//!   # use std::task::Poll;\n//!   #\n//!   # #[derive(Debug)]\n//!   # enum DataStoreError {\n//!   #     Censored(()),\n//!   # }\n//!   #\n//!   # impl Display for DataStoreError {\n//!   #     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {\n//!   #         unimplemented!()\n//!   #     }\n//!   # }\n//!   #\n//!   # impl std::error::Error for DataStoreError {}\n//!   #\n//!   # const REDACTED_CONTENT: () = ();\n//!   #\n//!   # let error = anyhow!(\"...\");\n//!   # let root_cause = &error;\n//!   #\n//!   # let ret =\n//!   // If the error was caused by redaction, then return a\n//!   // tombstone instead of the content.\n//!   match root_cause.downcast_ref::<DataStoreError>() {\n//!       Some(DataStoreError::Censored(_)) => Ok(Poll::Ready(REDACTED_CONTENT)),\n//!       None => Err(error),\n//!   }\n//!   # ;\n//!   ```\n\
-        //!\n//! - If using Rust &ge; 1.65, a backtrace is captured and printed with the\n//!   error if the underlying error type does not already provide its own. In\n//!   order to see backtraces, they must be enabled through the environment\n//!   variables described in [`std::backtrace`]:\n//!\n//!   - If you want panics and errors to both have backtraces, set\n//!     `RUST_BACKTRACE=1`;\n//!   - If you want only errors to have backtraces, set `RUST_LIB_BACKTRACE=1`;\n//!   - If you want only panics to have backtraces, set `RUST_BACKTRACE=1` and\n//!     `RUST_LIB_BACKTRACE=0`.\n//!\n//!   [`std::backtrace`]: https://doc.rust-lang.org/std/backtrace/index.html#environment-variables\n//!\n//! - Anyhow works with any error type that has an impl of `std::error::Error`,\n//!   including ones defined in your crate. We do not bundle a `derive(Error)`\n//!   macro but you can write the impls yourself or use a standalone macro like\n//!   [thiserror].\n//!\n//!   [thiserror]: https://github.com/dtolnay/thiserror\n\
-        //!\n//!   ```\n//!   use thiserror::Error;\n//!\n//!   #[derive(Error, Debug)]\n//!   pub enum FormatError {\n//!       #[error(\"Invalid header (expected {expected:?}, got {found:?})\")]\n//!       InvalidHeader {\n//!           expected: String,\n//!           found: String,\n//!       },\n//!       #[error(\"Missing attribute: {0}\")]\n//!       MissingAttribute(String),\n//!   }\n//!   ```\n//!\n//! - One-off error messages can be constructed using the `anyhow!` macro, which\n//!   supports string interpolation and produces an `anyhow::Error`.\n//!\n//!   ```\n//!   # use anyhow::{anyhow, Result};\n//!   #\n//!   # fn demo() -> Result<()> {\n//!   #     let missing = \"...\";\n//!   return Err(anyhow!(\"Missing attribute: {}\", missing));\n//!   #     Ok(())\n//!   # }\n//!   ```\n//!\n//!   A `bail!` macro is provided as a shorthand for the same early return.\n//!\n//!   ```\n//!   # use anyhow::{bail, Result};\n//!   #\n//!   # fn demo() -> Result<()> {\n//!   #     let missing\
-        \ = \"...\";\n//!   bail!(\"Missing attribute: {}\", missing);\n//!   #     Ok(())\n//!   # }\n//!   ```\n//!\n//! <br>\n//!\n//! # No-std support\n//!\n//! In no_std mode, almost all of the same API is available and works the same\n//! way. To depend on Anyhow in no_std mode, disable our default enabled \"std\"\n//! feature in Cargo.toml. A global allocator is required.\n//!\n//! ```toml\n//! [dependencies]\n//! anyhow = { version = \"1.0\", default-features = false }\n//! ```\n//!\n//! Since the `?`-based error conversions would normally rely on the\n//! `std::error::Error` trait which is only available through std, no_std mode\n//! will require an explicit `.map_err(Error::msg)` when working with a\n//! non-Anyhow error type inside a function that returns Anyhow's error type.\n\n#![doc(html_root_url = \"https://docs.rs/anyhow/1.0.85\")]\n#![cfg_attr(error_generic_member_access, feature(error_generic_member_access))]\n#![cfg_attr(doc_cfg, feature(doc_cfg))]\n#![no_std]\n#![deny(dead_code,\
-        \ unused_imports, unused_mut)]\n#![cfg_attr(\n    not(anyhow_no_unsafe_op_in_unsafe_fn_lint),\n    deny(unsafe_op_in_unsafe_fn)\n)]\n#![cfg_attr(anyhow_no_unsafe_op_in_unsafe_fn_lint, allow(unused_unsafe))]\n#![allow(\n    clippy::doc_markdown,\n    clippy::enum_glob_use,\n    clippy::explicit_auto_deref,\n    clippy::extra_unused_type_parameters,\n    clippy::incompatible_msrv,\n    clippy::let_underscore_untyped,\n    clippy::missing_errors_doc,\n    clippy::missing_panics_doc,\n    clippy::module_name_repetitions,\n    clippy::must_use_candidate,\n    clippy::needless_doctest_main,\n    clippy::new_ret_no_self,\n    clippy::redundant_else,\n    clippy::return_self_not_must_use,\n    clippy::struct_field_names,\n    clippy::unused_self,\n    clippy::used_underscore_binding,\n    clippy::wildcard_imports,\n    clippy::wrong_self_convention\n)]\n\n#[cfg(all(\n    anyhow_nightly_testing,\n    feature = \"std\",\n    not(error_generic_member_access)\n))]\ncompile_error!(\"Build script\
-        \ probe failed to compile.\");\n\nextern crate alloc;\n\n#[cfg(feature = \"std\")]\nextern crate std;\n\n#[macro_use]\nmod backtrace;\nmod chain;\nmod context;\nmod ensure;\nmod error;\nmod fmt;\nmod kind;\nmod macros;\nmod ptr;\nmod wrapper;\n\nuse crate::error::ErrorImpl;\nuse crate::ptr::Own;\nuse core::fmt::Display;\n\n#[cfg(not(feature = \"std\"))]\nuse core::fmt::Debug;\n\n#[cfg(feature = \"std\")]\nuse std::error::Error as StdError;\n\n#[cfg(not(feature = \"std\"))]\ntrait StdError: Debug + Display {\n    fn source(&self) -> Option<&(dyn StdError + 'static)> {\n        None\n    }\n}\n\n#[doc(no_inline)]\npub use anyhow as format_err;\n\n/// The `Error` type, a wrapper around a dynamic error type.\n///\n/// `Error` works a lot like `Box<dyn std::error::Error>`, but with these\n/// differences:\n///\n/// - `Error` requires that the error is `Send`, `Sync`, and `'static`.\n/// - `Error` guarantees that a backtrace is available, even if the underlying\n///   error type does\
-        \ not provide one.\n/// - `Error` is represented as a narrow pointer &mdash; exactly one word in\n///   size instead of two.\n///\n/// <br>\n///\n/// # Display representations\n///\n/// When you print an error object using \"{}\" or to_string(), only the outermost\n/// underlying error or context is printed, not any of the lower level causes.\n/// This is exactly as if you had called the Display impl of the error from\n/// which you constructed your anyhow::Error.\n///\n/// ```console\n/// Failed to read instrs from ./path/to/instrs.json\n/// ```\n///\n/// To print causes as well using anyhow's default formatting of causes, use the\n/// alternate selector \"{:#}\".\n///\n/// ```console\n/// Failed to read instrs from ./path/to/instrs.json: No such file or directory (os error 2)\n/// ```\n///\n/// The Debug format \"{:?}\" includes your backtrace if one was captured. Note\n/// that this is the representation you get by default if you return an error\n/// from `fn main` instead of\
-        \ printing it explicitly yourself.\n///\n/// ```console\n/// Error: Failed to read instrs from ./path/to/instrs.json\n///\n/// Caused by:\n///     No such file or directory (os error 2)\n/// ```\n///\n/// and if there is a backtrace available:\n///\n/// ```console\n/// Error: Failed to read instrs from ./path/to/instrs.json\n///\n/// Caused by:\n///     No such file or directory (os error 2)\n///\n/// Stack backtrace:\n///    0: <E as anyhow::context::ext::StdError>::ext_context\n///              at /git/anyhow/src/backtrace.rs:26\n///    1: core::result::Result<T,E>::map_err\n///              at /git/rustc/src/libcore/result.rs:596\n///    2: anyhow::context::<impl anyhow::Context<T,E> for core::result::Result<T,E>>::with_context\n///              at /git/anyhow/src/context.rs:58\n///    3: testing::main\n///              at src/main.rs:5\n///    4: std::rt::lang_start\n///              at /git/rustc/src/libstd/rt.rs:61\n///    5: main\n///    6: __libc_start_main\n///    7: _start\n\
-        /// ```\n///\n/// To see a conventional struct-style Debug representation, use \"{:#?}\".\n///\n/// ```console\n/// Error {\n///     context: \"Failed to read instrs from ./path/to/instrs.json\",\n///     source: Os {\n///         code: 2,\n///         kind: NotFound,\n///         message: \"No such file or directory\",\n///     },\n/// }\n/// ```\n///\n/// If none of the built-in representations are appropriate and you would prefer\n/// to render the error and its cause chain yourself, it can be done something\n/// like this:\n///\n/// ```\n/// use anyhow::{Context, Result};\n///\n/// fn main() {\n///     if let Err(err) = try_main() {\n///         eprintln!(\"ERROR: {}\", err);\n///         err.chain().skip(1).for_each(|cause| eprintln!(\"because: {}\", cause));\n///         std::process::exit(1);\n///     }\n/// }\n///\n/// fn try_main() -> Result<()> {\n///     # const IGNORE: &str = stringify! {\n///     ...\n///     # };\n///     # Ok(())\n/// }\n/// ```\n#[repr(transparent)]\n\
-        pub struct Error {\n    inner: Own<ErrorImpl>,\n}\n\n/// Iterator of a chain of source errors.\n///\n/// This type is the iterator returned by [`Error::chain`].\n///\n/// # Example\n///\n/// ```\n/// use anyhow::Error;\n/// use std::io;\n///\n/// pub fn underlying_io_error_kind(error: &Error) -> Option<io::ErrorKind> {\n///     for cause in error.chain() {\n///         if let Some(io_error) = cause.downcast_ref::<io::Error>() {\n///             return Some(io_error.kind());\n///         }\n///     }\n///     None\n/// }\n/// ```\n#[cfg(feature = \"std\")]\n#[cfg_attr(doc_cfg, doc(cfg(feature = \"std\")))]\n#[derive(Clone)]\npub struct Chain<'a> {\n    state: crate::chain::ChainState<'a>,\n}\n\n/// `Result<T, Error>`\n///\n/// This is a reasonable return type to use throughout your application but also\n/// for `fn main`; if you do, failures will be printed along with any\n/// [context][Context] and a backtrace if one was captured.\n///\n/// `anyhow::Result` may be used with one\
-        \ *or* two type parameters.\n///\n/// ```rust\n/// use anyhow::Result;\n///\n/// # const IGNORE: &str = stringify! {\n/// fn demo1() -> Result<T> {...}\n///            // ^ equivalent to std::result::Result<T, anyhow::Error>\n///\n/// fn demo2() -> Result<T, OtherError> {...}\n///            // ^ equivalent to std::result::Result<T, OtherError>\n/// # };\n/// ```\n///\n/// # Example\n///\n/// ```\n/// # pub trait Deserialize {}\n/// #\n/// # mod serde_json {\n/// #     use super::Deserialize;\n/// #     use std::io;\n/// #\n/// #     pub fn from_str<T: Deserialize>(json: &str) -> io::Result<T> {\n/// #         unimplemented!()\n/// #     }\n/// # }\n/// #\n/// # #[derive(Debug)]\n/// # struct ClusterMap;\n/// #\n/// # impl Deserialize for ClusterMap {}\n/// #\n/// use anyhow::Result;\n///\n/// fn main() -> Result<()> {\n///     # return Ok(());\n///     let config = std::fs::read_to_string(\"cluster.json\")?;\n///     let map: ClusterMap = serde_json::from_str(&config)?;\n///  \
-        \   println!(\"cluster info: {:#?}\", map);\n///     Ok(())\n/// }\n/// ```\npub type Result<T, E = Error> = core::result::Result<T, E>;\n\n/// Provides the `context` method for `Result`.\n///\n/// This trait is sealed and cannot be implemented for types outside of\n/// `anyhow`.\n///\n/// <br>\n///\n/// # Example\n///\n/// ```\n/// use anyhow::{Context, Result};\n/// use std::fs;\n/// use std::path::PathBuf;\n///\n/// pub struct ImportantThing {\n///     path: PathBuf,\n/// }\n///\n/// impl ImportantThing {\n///     # const IGNORE: &'static str = stringify! {\n///     pub fn detach(&mut self) -> Result<()> {...}\n///     # };\n///     # fn detach(&mut self) -> Result<()> {\n///     #     unimplemented!()\n///     # }\n/// }\n///\n/// pub fn do_it(mut it: ImportantThing) -> Result<Vec<u8>> {\n///     it.detach().context(\"Failed to detach the important thing\")?;\n///\n///     let path = &it.path;\n///     let content = fs::read(path)\n///         .with_context(|| format!(\"Failed\
-        \ to read instrs from {}\", path.display()))?;\n///\n///     Ok(content)\n/// }\n/// ```\n///\n/// When printed, the outermost context would be printed first and the lower\n/// level underlying causes would be enumerated below.\n///\n/// ```console\n/// Error: Failed to read instrs from ./path/to/instrs.json\n///\n/// Caused by:\n///     No such file or directory (os error 2)\n/// ```\n///\n/// Refer to the [Display representations] documentation for other forms in\n/// which this context chain can be rendered.\n///\n/// [Display representations]: Error#display-representations\n///\n/// <br>\n///\n/// # Effect on downcasting\n///\n/// After attaching context of type `C` onto an error of type `E`, the resulting\n/// `anyhow::Error` may be downcast to `C` **or** to `E`.\n///\n/// That is, in codebases that rely on downcasting, Anyhow's context supports\n/// both of the following use cases:\n///\n///   - **Attaching context whose type is insignificant onto errors whose type\n///  \
-        \   is used in downcasts.**\n///\n///     In other error libraries whose context is not designed this way, it can\n///     be risky to introduce context to existing code because new context might\n///     break existing working downcasts. In Anyhow, any downcast that worked\n///     before adding context will continue to work after you add a context, so\n///     you should freely add human-readable context to errors wherever it would\n///     be helpful.\n///\n///     ```\n///     # use anyhow::bail;\n///     # use thiserror::Error;\n///     #\n///     # #[derive(Error, Debug)]\n///     # #[error(\"???\")]\n///     # struct SuspiciousError;\n///     #\n///     # fn helper() -> Result<()> {\n///     #     bail!(SuspiciousError);\n///     # }\n///     #\n///     use anyhow::{Context, Result};\n///\n///     fn do_it() -> Result<()> {\n///         helper().context(\"Failed to complete the work\")?;\n///         # const IGNORE: &str = stringify! {\n///         ...\n///         # };\n\
-        ///         # unreachable!()\n///     }\n///\n///     fn main() {\n///         let err = do_it().unwrap_err();\n///         if let Some(e) = err.downcast_ref::<SuspiciousError>() {\n///             // If helper() returned SuspiciousError, this downcast will\n///             // correctly succeed even with the context in between.\n///             # return;\n///         }\n///         # panic!(\"expected downcast to succeed\");\n///     }\n///     ```\n///\n///   - **Attaching context whose type is used in downcasts onto errors whose\n///     type is insignificant.**\n///\n///     Some codebases prefer to use machine-readable context to categorize\n///     lower level errors in a way that will be actionable to higher levels of\n///     the application.\n///\n///     ```\n///     # use anyhow::bail;\n///     # use thiserror::Error;\n///     #\n///     # #[derive(Error, Debug)]\n///     # #[error(\"???\")]\n///     # struct HelperFailed;\n///     #\n///     # fn helper() -> Result<()>\
-        \ {\n///     #     bail!(\"no such file or directory\");\n///     # }\n///     #\n///     use anyhow::{Context, Result};\n///\n///     fn do_it() -> Result<()> {\n///         helper().context(HelperFailed)?;\n///         # const IGNORE: &str = stringify! {\n///         ...\n///         # };\n///         # unreachable!()\n///     }\n///\n///     fn main() {\n///         let err = do_it().unwrap_err();\n///         if let Some(e) = err.downcast_ref::<HelperFailed>() {\n///             // If helper failed, this downcast will succeed because\n///             // HelperFailed is the context that has been attached to\n///             // that error.\n///             # return;\n///         }\n///         # panic!(\"expected downcast to succeed\");\n///     }\n///     ```\npub trait Context<T, E>: context::private::Sealed {\n    /// Wrap the error value with additional context.\n    fn context<C>(self, context: C) -> Result<T, Error>\n    where\n        C: Display + Send + Sync + 'static;\n\
-        \n    /// Wrap the error value with additional context that is evaluated lazily\n    /// only once an error does occur.\n    fn with_context<C, F>(self, f: F) -> Result<T, Error>\n    where\n        C: Display + Send + Sync + 'static,\n        F: FnOnce() -> C;\n}\n\n/// Equivalent to Ok::<_, anyhow::Error>(value).\n///\n/// This simplifies creation of an anyhow::Result in places where type inference\n/// cannot deduce the `E` type of the result &mdash; without needing to write\n/// `Ok::<_, anyhow::Error>(value)`.\n///\n/// One might think that `anyhow::Result::Ok(value)` would work in such cases\n/// but it does not.\n///\n/// ```console\n/// error[E0282]: type annotations needed for `std::result::Result<i32, E>`\n///   --> src/main.rs:11:13\n///    |\n/// 11 |     let _ = anyhow::Result::Ok(1);\n///    |         -   ^^^^^^^^^^^^^^^^^^ cannot infer type for type parameter `E` declared on the enum `Result`\n///    |         |\n///    |         consider giving this pattern the explicit\
-        \ type `std::result::Result<i32, E>`, where the type parameter `E` is specified\n/// ```\n#[allow(non_snake_case)]\npub fn Ok<T>(t: T) -> Result<T> {\n    Result::Ok(t)\n}\n\n// Not public API. Referenced by macro-generated code.\n#[doc(hidden)]\npub mod __private {\n    use self::not::Bool;\n    use crate::Error;\n    use alloc::fmt;\n    use core::fmt::Arguments;\n\n    #[doc(hidden)]\n    pub use crate::ensure::{BothDebug, NotBothDebug};\n    #[doc(hidden)]\n    pub use alloc::format;\n    #[doc(hidden)]\n    pub use core::result::Result::Err;\n    #[doc(hidden)]\n    pub use core::{concat, format_args, stringify};\n\n    #[doc(hidden)]\n    pub mod kind {\n        #[doc(hidden)]\n        pub use crate::kind::{AdhocKind, TraitKind};\n\n        #[cfg(feature = \"std\")]\n        #[doc(hidden)]\n        pub use crate::kind::BoxedKind;\n    }\n\n    #[doc(hidden)]\n    #[inline]\n    #[cold]\n    pub fn format_err(args: Arguments) -> Error {\n        #[cfg(anyhow_no_fmt_arguments_as_str)]\n\
-        \        let fmt_arguments_as_str = None::<&str>;\n        #[cfg(not(anyhow_no_fmt_arguments_as_str))]\n        let fmt_arguments_as_str = args.as_str();\n\n        if let Some(message) = fmt_arguments_as_str {\n            // anyhow!(\"literal\"), can downcast to &'static str\n            Error::msg(message)\n        } else {\n            // anyhow!(\"interpolate {var}\"), can downcast to String\n            Error::msg(fmt::format(args))\n        }\n    }\n\n    #[doc(hidden)]\n    #[inline]\n    #[cold]\n    #[must_use]\n    pub fn must_use(error: Error) -> Error {\n        error\n    }\n\n    #[doc(hidden)]\n    #[inline]\n    pub fn not(cond: impl Bool) -> bool {\n        cond.not()\n    }\n\n    mod not {\n        #[doc(hidden)]\n        pub trait Bool {\n            fn not(self) -> bool;\n        }\n\n        impl Bool for bool {\n            #[inline]\n            fn not(self) -> bool {\n                !self\n            }\n        }\n\n        impl Bool for &bool {\n  \
-        \          #[inline]\n            fn not(self) -> bool {\n                !*self\n            }\n        }\n    }\n}\n"
-      _source_pinned_head: $(git -C sandbox/repos/anyhow rev-parse HEAD)
-- name: tier1_anyhow_search_anyhow_macro
-  description: Search 'anyhow!' macro in anyhow src
-  tool: search_content
-  action: search
-  repo: anyhow
-  workspace: .
-  scenario_class: read_only
-  expected_outcome: pass
-  arguments:
-    pattern: anyhow!
-    path: src
-    case_sensitive: true
-    max_results: 1000
-  ground_truth:
-    matches:
-    - path: src/lib.rs
-    - path: src/error.rs
-- name: tier1_tokio_read_source
-  description: Read tokio crate src/lib.rs
-  tool: read_file
-  action: read
-  repo: tokio
-  workspace: tokio
-  scenario_class: read_only
-  expected_outcome: pass
-  arguments:
-    path: src/lib.rs
-    mode: raw
-  ground_truth:
-    code:
-      file: sandbox/repos/tokio/tokio/src/lib.rs
-      line: 1
-      col: 1
-      content: "#![allow(\n    clippy::cognitive_complexity,\n    clippy::large_enum_variant,\n    clippy::module_inception,\n    clippy::needless_doctest_main\n)]\n#![warn(\n    missing_debug_implementations,\n    missing_docs,\n    rust_2018_idioms,\n    unreachable_pub\n)]\n#![deny(unused_must_use, unsafe_op_in_unsafe_fn)]\n#![doc(test(\n    no_crate_inject,\n    attr(deny(warnings, rust_2018_idioms), allow(dead_code, unused_variables))\n))]\n// loom is an internal implementation detail.\n// Do not show \"Available on non-loom only\" label\n#![cfg_attr(docsrs, doc(auto_cfg(hide(loom))))]\n#![cfg_attr(docsrs, feature(doc_cfg))]\n#![cfg_attr(docsrs, allow(unused_attributes))]\n#![cfg_attr(loom, allow(dead_code, unreachable_pub))]\n#![cfg_attr(windows, allow(rustdoc::broken_intra_doc_links))]\n\n//! A runtime for writing reliable network applications without compromising speed.\n//!\n//! Tokio is an event-driven, non-blocking I/O platform for writing asynchronous\n//! applications with\
-        \ the Rust programming language. At a high level, it\n//! provides a few major components:\n//!\n//! * Tools for [working with asynchronous tasks][tasks], including\n//!   [synchronization primitives and channels][sync] and [timeouts, sleeps, and\n//!   intervals][time].\n//! * APIs for [performing asynchronous I/O][io], including [TCP and UDP][net] sockets,\n//!   [filesystem][fs] operations, and [process] and [signal] management.\n//! * A [runtime] for executing asynchronous code, including a task scheduler,\n//!   an I/O driver backed by the operating system's event queue (`epoll`, `kqueue`,\n//!   `IOCP`, etc...), and a high performance timer.\n//!\n//! Guide level documentation is found on the [website].\n//!\n//! [tasks]: #working-with-tasks\n//! [sync]: crate::sync\n//! [time]: crate::time\n//! [io]: #asynchronous-io\n//! [net]: crate::net\n//! [fs]: crate::fs\n//! [process]: crate::process\n//! [signal]: crate::signal\n//! [fs]: crate::fs\n//! [runtime]: crate::runtime\n\
-        //! [website]: https://tokio.rs/tokio/tutorial\n//!\n//! # A Tour of Tokio\n//!\n//! Tokio consists of a number of modules that provide a range of functionality\n//! essential for implementing asynchronous applications in Rust. In this\n//! section, we will take a brief tour of Tokio, summarizing the major APIs and\n//! their uses.\n//!\n//! The easiest way to get started is to enable all features. Do this by\n//! enabling the `full` feature flag:\n//!\n//! ```toml\n//! tokio = { version = \"1\", features = [\"full\"] }\n//! ```\n//!\n//! ### Authoring applications\n//!\n//! Tokio is great for writing applications and most users in this case shouldn't\n//! worry too much about what features they should pick. If you're unsure, we suggest\n//! going with `full` to ensure that you don't run into any road blocks while you're\n//! building your application.\n//!\n//! #### Example\n//!\n//! This example shows the quickest way to get started with Tokio.\n//!\n//! ```toml\n//! tokio = {\
-        \ version = \"1\", features = [\"full\"] }\n//! ```\n//!\n//! ### Authoring libraries\n//!\n//! As a library author your goal should be to provide the lightest weight crate\n//! that is based on Tokio. To achieve this you should ensure that you only enable\n//! the features you need. This allows users to pick up your crate without having\n//! to enable unnecessary features.\n//!\n//! #### Example\n//!\n//! This example shows how you may want to import features for a library that just\n//! needs to `tokio::spawn` and use a `TcpStream`.\n//!\n//! ```toml\n//! tokio = { version = \"1\", features = [\"rt\", \"net\"] }\n//! ```\n//!\n//! ## Working With Tasks\n//!\n//! Asynchronous programs in Rust are based around lightweight, non-blocking\n//! units of execution called [_tasks_][tasks]. The [`tokio::task`] module provides\n//! important tools for working with tasks:\n//!\n//! * The [`spawn`] function and [`JoinHandle`] type, for scheduling a new task\n//!   on the Tokio runtime and\
-        \ awaiting the output of a spawned task, respectively,\n//! * Functions for [running blocking operations][blocking] in an asynchronous\n//!   task context.\n//!\n//! The [`tokio::task`] module is present only when the \"rt\" feature flag\n//! is enabled.\n//!\n//! [tasks]: task/index.html#what-are-tasks\n//! [`tokio::task`]: crate::task\n//! [`spawn`]: crate::task::spawn()\n//! [`JoinHandle`]: crate::task::JoinHandle\n//! [blocking]: task/index.html#blocking-and-yielding\n//!\n//! The [`tokio::sync`] module contains synchronization primitives to use when\n//! needing to communicate or share data. These include:\n//!\n//! * channels ([`oneshot`], [`mpsc`], [`watch`], and [`broadcast`]), for sending values\n//!   between tasks,\n//! * a non-blocking [`Mutex`], for controlling access to a shared, mutable\n//!   value,\n//! * an asynchronous [`Barrier`] type, for multiple tasks to synchronize before\n//!   beginning a computation.\n//!\n//! The `tokio::sync` module is present only when\
-        \ the \"sync\" feature flag is\n//! enabled.\n//!\n//! [`tokio::sync`]: crate::sync\n//! [`Mutex`]: crate::sync::Mutex\n//! [`Barrier`]: crate::sync::Barrier\n//! [`oneshot`]: crate::sync::oneshot\n//! [`mpsc`]: crate::sync::mpsc\n//! [`watch`]: crate::sync::watch\n//! [`broadcast`]: crate::sync::broadcast\n//!\n//! The [`tokio::time`] module provides utilities for tracking time and\n//! scheduling work. This includes functions for setting [timeouts][timeout] for\n//! tasks, [sleeping][sleep] work to run in the future, or [repeating an operation at an\n//! interval][interval].\n//!\n//! In order to use `tokio::time`, the \"time\" feature flag must be enabled.\n//!\n//! [`tokio::time`]: crate::time\n//! [sleep]: crate::time::sleep()\n//! [interval]: crate::time::interval()\n//! [timeout]: crate::time::timeout()\n//!\n//! Finally, Tokio provides a _runtime_ for executing asynchronous tasks. Most\n//! applications can use the [`#[tokio::main]`][main] macro to run their code on the\n\
-        //! Tokio runtime. However, this macro provides only basic configuration options. As\n//! an alternative, the [`tokio::runtime`] module provides more powerful APIs for configuring\n//! and managing runtimes. You should use that module if the `#[tokio::main]` macro doesn't\n//! provide the functionality you need.\n//!\n//! Using the runtime requires the \"rt\" or \"rt-multi-thread\" feature flags, to\n//! enable the current-thread [single-threaded scheduler][rt] and the [multi-thread\n//! scheduler][rt-multi-thread], respectively. See the [`runtime` module\n//! documentation][rt-features] for details. In addition, the \"macros\" feature\n//! flag enables the `#[tokio::main]` and `#[tokio::test]` attributes.\n//!\n//! [main]: attr.main.html\n//! [`tokio::runtime`]: crate::runtime\n//! [`Builder`]: crate::runtime::Builder\n//! [`Runtime`]: crate::runtime::Runtime\n//! [rt]: runtime/index.html#current-thread-scheduler\n//! [rt-multi-thread]: runtime/index.html#multi-thread-scheduler\n\
-        //! [rt-features]: runtime/index.html#runtime-scheduler\n//!\n//! ## CPU-bound tasks and blocking code\n//!\n//! Tokio is able to concurrently run many tasks on a few threads by repeatedly\n//! swapping the currently running task on each thread. However, this kind of\n//! swapping can only happen at `.await` points, so code that spends a long time\n//! without reaching an `.await` will prevent other tasks from running. To\n//! combat this, Tokio provides two kinds of threads: Core threads and blocking threads.\n//!\n//! The core threads are where all asynchronous code runs, and Tokio will by default\n//! spawn one for each CPU core. You can use the environment variable `TOKIO_WORKER_THREADS`\n//! to override the default value.\n//!\n//! The blocking threads are spawned on demand, can be used to run blocking code\n//! that would otherwise block other tasks from running and are kept alive when\n//! not used for a certain amount of time which can be configured with [`thread_keep_alive`].\n\
-        //! Since it is not possible for Tokio to swap out blocking tasks, like it\n//! can do with asynchronous code, the upper limit on the number of blocking\n//! threads is very large. These limits can be configured on the [`Builder`].\n//!\n//! To spawn a blocking task, you should use the [`spawn_blocking`] function.\n//!\n//! [`Builder`]: crate::runtime::Builder\n//! [`spawn_blocking`]: crate::task::spawn_blocking()\n//! [`thread_keep_alive`]: crate::runtime::Builder::thread_keep_alive()\n//!\n//! ```\n//! # #[cfg(not(target_family = \"wasm\"))]\n//! # {\n//! #[tokio::main]\n//! async fn main() {\n//!     // This is running on a core thread.\n//!\n//!     let blocking_task = tokio::task::spawn_blocking(|| {\n//!         // This is running on a blocking thread.\n//!         // Blocking here is ok.\n//!     });\n//!\n//!     // We can wait for the blocking task like this:\n//!     // If the blocking task panics, the unwrap below will propagate the\n//!     // panic.\n//!     blocking_task.await.unwrap();\n\
-        //! }\n//! # }\n//! ```\n//!\n//! If your code is CPU-bound and you wish to limit the number of threads used\n//! to run it, you should use a separate thread pool dedicated to CPU bound tasks.\n//! For example, you could consider using the [rayon] library for CPU-bound\n//! tasks. It is also possible to create an extra Tokio runtime dedicated to\n//! CPU-bound tasks, but if you do this, you should be careful that the extra\n//! runtime runs _only_ CPU-bound tasks, as IO-bound tasks on that runtime\n//! will behave poorly.\n//!\n//! Hint: If using rayon, you can use a [`oneshot`] channel to send the result back\n//! to Tokio when the rayon task finishes.\n//!\n//! [rayon]: https://docs.rs/rayon\n//! [`oneshot`]: crate::sync::oneshot\n//!\n//! ## Asynchronous IO\n//!\n//! As well as scheduling and running tasks, Tokio provides everything you need\n//! to perform input and output asynchronously.\n//!\n//! The [`tokio::io`] module provides Tokio's asynchronous core I/O primitives,\n\
-        //! the [`AsyncRead`], [`AsyncWrite`], and [`AsyncBufRead`] traits. In addition,\n//! when the \"io-util\" feature flag is enabled, it also provides combinators and\n//! functions for working with these traits, forming as an asynchronous\n//! counterpart to [`std::io`].\n//!\n//! Tokio also includes APIs for performing various kinds of I/O and interacting\n//! with the operating system asynchronously. These include:\n//!\n//! * [`tokio::net`], which contains non-blocking versions of [TCP], [UDP], and\n//!   [Unix Domain Sockets][UDS] (enabled by the \"net\" feature flag),\n//! * [`tokio::fs`], similar to [`std::fs`] but for performing filesystem I/O\n//!   asynchronously (enabled by the \"fs\" feature flag),\n//! * [`tokio::signal`], for asynchronously handling Unix and Windows OS signals\n//!   (enabled by the \"signal\" feature flag),\n//! * [`tokio::process`], for spawning and managing child processes (enabled by\n//!   the \"process\" feature flag).\n//!\n//! [`tokio::io`]:\
-        \ crate::io\n//! [`AsyncRead`]: crate::io::AsyncRead\n//! [`AsyncWrite`]: crate::io::AsyncWrite\n//! [`AsyncBufRead`]: crate::io::AsyncBufRead\n//! [`std::io`]: std::io\n//! [`tokio::net`]: crate::net\n//! [TCP]: crate::net::tcp\n//! [UDP]: crate::net::UdpSocket\n//! [UDS]: crate::net::unix\n//! [`tokio::fs`]: crate::fs\n//! [`std::fs`]: std::fs\n//! [`tokio::signal`]: crate::signal\n//! [`tokio::process`]: crate::process\n//!\n//! # Examples\n//!\n//! A simple TCP echo server:\n//!\n//! ```no_run\n//! # #[cfg(not(target_family = \"wasm\"))]\n//! # {\n//! use tokio::net::TcpListener;\n//! use tokio::io::{AsyncReadExt, AsyncWriteExt};\n//!\n//! #[tokio::main]\n//! async fn main() -> Result<(), Box<dyn std::error::Error>> {\n//!     let listener = TcpListener::bind(\"127.0.0.1:8080\").await?;\n//!\n//!     loop {\n//!         let (mut socket, _) = listener.accept().await?;\n//!\n//!         tokio::spawn(async move {\n//!             let mut buf = [0; 1024];\n//!\n//!             //\
-        \ In a loop, read data from the socket and write the data back.\n//!             loop {\n//!                 let n = match socket.read(&mut buf).await {\n//!                     // socket closed\n//!                     Ok(0) => return,\n//!                     Ok(n) => n,\n//!                     Err(e) => {\n//!                         eprintln!(\"failed to read from socket; err = {:?}\", e);\n//!                         return;\n//!                     }\n//!                 };\n//!\n//!                 // Write the data back\n//!                 if let Err(e) = socket.write_all(&buf[0..n]).await {\n//!                     eprintln!(\"failed to write to socket; err = {:?}\", e);\n//!                     return;\n//!                 }\n//!             }\n//!         });\n//!     }\n//! }\n//! # }\n//! ```\n//!\n//! # Feature flags\n//!\n//! Tokio uses a set of [feature flags] to reduce the amount of compiled code. It\n//! is possible to just enable certain features over others.\
-        \ By default, Tokio\n//! does not enable any features but allows one to enable a subset for their use\n//! case. Below is a list of the available feature flags. You may also notice\n//! above each function, struct and trait there is listed one or more feature flags\n//! that are required for that item to be used. If you are new to Tokio it is\n//! recommended that you use the `full` feature flag which will enable all public APIs.\n//! Beware though that this will pull in many extra dependencies that you may not\n//! need.\n//!\n//! - `full`: Enables all features listed below except `test-util` and unstable features.\n//! - `rt`: Enables `tokio::spawn`, the current-thread scheduler,\n//!   and non-scheduler utilities.\n//! - `rt-multi-thread`: Enables the heavier, multi-threaded, work-stealing scheduler.\n//! - `io-util`: Enables the IO based `Ext` traits.\n//! - `io-std`: Enable `Stdout`, `Stdin` and `Stderr` types.\n//! - `net`: Enables `tokio::net` types such as `TcpStream`, `UnixStream`\
-        \ and\n//!   `UdpSocket`, as well as (on Unix-like systems) `AsyncFd` and (on\n//!   FreeBSD) `PollAio`.\n//! - `time`: Enables `tokio::time` types and allows the schedulers to enable\n//!   the built-in timer.\n//! - `process`: Enables `tokio::process` types.\n//! - `macros`: Enables `#[tokio::main]` and `#[tokio::test]` macros.\n//! - `sync`: Enables all `tokio::sync` types.\n//! - `signal`: Enables all `tokio::signal` types.\n//! - `fs`: Enables `tokio::fs` types.\n//! - `test-util`: Enables testing based infrastructure for the Tokio runtime.\n//! - `parking_lot`: As a potential optimization, use the [`parking_lot`] crate's\n//!   synchronization primitives internally. Also, this\n//!   dependency is necessary to construct some of our primitives\n//!   in a `const` context. `MSRV` may increase according to the\n//!   [`parking_lot`] release in use.\n//!\n//! _Note: `AsyncRead` and `AsyncWrite` traits do not require any features and are\n//! always available._\n//!\n//! ## Unstable\
-        \ features\n//!\n//! Some feature flags are only available when specifying the `tokio_unstable` flag:\n//!\n//! - `tracing`: Enables tracing events.\n//! - `schedule-latency`: Allows measurement of task scheduling latencies.\n//! - `io-uring`: Enables `io-uring` (Linux only).\n//! - `taskdump`: Enables `taskdump` (Linux only).\n//!\n//! Likewise, this flag enables access to unstable APIs.\n//!\n//! This flag enables **unstable** features. The public API of these features\n//! may break in 1.x releases. To enable these features, the `--cfg\n//! tokio_unstable` argument must be passed to `rustc` when compiling. This\n//! serves to explicitly opt-in to features which may break semver conventions,\n//! since Cargo [does not yet directly support such opt-ins][unstable features].\n//!\n//! You can specify it in your project's `.cargo/config.toml` file:\n//!\n//! ```toml\n//! [build]\n//! rustflags = [\"--cfg\", \"tokio_unstable\"]\n//! ```\n//!\n//! <div class=\"warning\">\n//! The <code>[build]</code>\
-        \ section does <strong>not</strong> go in a\n//! <code>Cargo.toml</code> file. Instead it must be placed in the Cargo config\n//! file <code>.cargo/config.toml</code>.\n//! </div>\n//!\n//! Alternatively, you can specify it with an environment variable:\n//!\n//! ```sh\n//! ## Many *nix shells:\n//! export RUSTFLAGS=\"--cfg tokio_unstable\"\n//! cargo build\n//! ```\n//!\n//! ```powershell\n//! ## Windows PowerShell:\n//! $Env:RUSTFLAGS=\"--cfg tokio_unstable\"\n//! cargo build\n//! ```\n//!\n//! [unstable features]: https://internals.rust-lang.org/t/feature-request-unstable-opt-in-non-transitive-crate-features/16193#why-not-a-crate-feature-2\n//! [feature flags]: https://doc.rust-lang.org/cargo/reference/manifest.html#the-features-section\n//!\n//! # Supported platforms\n//!\n//! Tokio currently guarantees support for the following platforms:\n//!\n//!  * Linux\n//!  * Windows\n//!  * Android (API level 21)\n//!  * macOS\n//!  * iOS\n//!  * FreeBSD\n//!\n//! Tokio will continue\
-        \ to support these platforms in the future. However,\n//! future releases may change requirements such as the minimum required libc\n//! version on Linux, the API level on Android, or the supported FreeBSD\n//! release.\n//!\n//! Beyond the above platforms, Tokio is intended to work on all platforms\n//! supported by the mio crate. You can find a longer list [in mio's\n//! documentation][mio-supported]. However, these additional platforms may\n//! become unsupported in the future.\n//!\n//! Note that Wine is considered to be a different platform from Windows. See\n//! mio's documentation for more information on Wine support.\n//!\n//! [mio-supported]: https://crates.io/crates/mio#platforms\n//!\n//! ## `WASM` support\n//!\n//! Tokio has some limited support for the `WASM` platform. Without the\n//! `tokio_unstable` flag, the following features are supported:\n//!\n//!  * `sync`\n//!  * `macros`\n//!  * `io-util`\n//!  * `rt`\n//!  * `time`\n//!\n//! Enabling any other feature (including\
-        \ `full`) will cause a compilation\n//! failure.\n//!\n//! The `time` module will only work on `WASM` platforms that have support for\n//! timers (e.g. wasm32-wasi). The timing functions will panic if used on a `WASM`\n//! platform that does not support timers.\n//!\n//! Note also that if the runtime becomes indefinitely idle, it will panic\n//! immediately instead of blocking forever. On platforms that don't support\n//! time, this means that the runtime can never be idle in any way.\n//!\n//! ## Unstable `WASM` support\n//!\n//! Tokio also has unstable support for some additional `WASM` features. This\n//! requires the use of the `tokio_unstable` flag.\n//!\n//! Using this flag enables the use of `tokio::net` on the wasm32-wasi target.\n//! However, not all methods are available on the networking types as `WASI`\n//! currently does not support the creation of new sockets from within `WASM`.\n//! Because of this, sockets must currently be created via the `FromRawFd`\n//! trait.\n\
-        \n// Test that pointer width is compatible. This asserts that e.g. usize is at\n// least 32 bits, which a lot of components in Tokio currently assumes.\n//\n// TODO: improve once we have MSRV access to const eval to make more flexible.\n#[cfg(not(any(target_pointer_width = \"32\", target_pointer_width = \"64\")))]\ncompile_error! {\n    \"Tokio requires the platform pointer width to be at least 32 bits\"\n}\n\n#[cfg(all(\n    not(tokio_unstable),\n    target_family = \"wasm\",\n    any(\n        feature = \"fs\",\n        feature = \"io-std\",\n        feature = \"net\",\n        feature = \"process\",\n        feature = \"rt-multi-thread\",\n        feature = \"signal\"\n    )\n))]\ncompile_error!(\"Only features sync,macros,io-util,rt,time are supported on wasm.\");\n\n#[cfg(all(not(tokio_unstable), feature = \"io-uring\"))]\ncompile_error!(\"The `io-uring` feature requires `--cfg tokio_unstable`.\");\n\n#[cfg(all(not(tokio_unstable), feature = \"taskdump\"))]\ncompile_error!(\"\
-        The `taskdump` feature requires `--cfg tokio_unstable`.\");\n\n#[cfg(all(\n    feature = \"taskdump\",\n    not(doc),\n    not(all(\n        target_os = \"linux\",\n        any(\n            target_arch = \"aarch64\",\n            target_arch = \"x86\",\n            target_arch = \"x86_64\",\n            target_arch = \"s390x\"\n        )\n    ))\n))]\ncompile_error!(\n    \"The `taskdump` feature is only currently supported on \\\nlinux, on `aarch64`, `x86`, `x86_64` and `s390x`.\"\n);\n\n#[cfg(all(not(tokio_unstable), feature = \"schedule-latency\"))]\ncompile_error!(\"The `schedule-latency` feature requires `--cfg tokio_unstable`.\");\n\n#[cfg(all(\n    feature = \"schedule-latency\",\n    not(all(target_pointer_width = \"64\", target_has_atomic = \"64\"))\n))]\ncompile_error!(\"The `schedule-latency` feature is only currently supported on 64-bit targets.\");\n\n// Includes re-exports used by macros.\n//\n// This module is not intended to be part of the public API. In general,\
-        \ any\n// `doc(hidden)` code is not part of Tokio's public and stable API.\n#[macro_use]\n#[doc(hidden)]\npub mod macros;\n\ncfg_fs! {\n    pub mod fs;\n}\n\nmod future;\n\npub mod io;\npub mod net;\n\nmod loom;\n\ncfg_process! {\n    pub mod process;\n}\n\n#[cfg(any(\n    feature = \"fs\",\n    feature = \"io-std\",\n    feature = \"net\",\n    all(windows, feature = \"process\"),\n))]\nmod blocking;\n\ncfg_rt! {\n    pub mod runtime;\n}\ncfg_not_rt! {\n    pub(crate) mod runtime;\n}\n\ncfg_signal! {\n    pub mod signal;\n}\n\ncfg_signal_internal! {\n    #[cfg(not(feature = \"signal\"))]\n    #[allow(dead_code)]\n    #[allow(unreachable_pub)]\n    pub(crate) mod signal;\n}\n\ncfg_sync! {\n    pub mod sync;\n}\ncfg_not_sync! {\n    mod sync;\n}\n\n// Currently, task module does not expose any public API outside `rt`\n// feature, so we mark it in the docs. This happens only to docs to\n// avoid introducing breaking changes by restricting the visibility\n// of the task module.\n#[cfg_attr(docsrs,\
-        \ doc(cfg(feature = \"rt\")))]\npub mod task;\ncfg_rt! {\n    pub use task::spawn;\n}\n\ncfg_time! {\n    pub mod time;\n}\n\nmod trace {\n    cfg_taskdump! {\n        pub(crate) use crate::runtime::task::trace::trace_leaf;\n    }\n\n    cfg_not_taskdump! {\n        #[inline(always)]\n        #[allow(dead_code)]\n        pub(crate) fn trace_leaf() -> std::task::Poll<()> {\n            std::task::Poll::Ready(())\n        }\n    }\n\n    #[cfg_attr(not(feature = \"sync\"), allow(dead_code))]\n    pub(crate) async fn async_trace_leaf() {\n        std::future::poll_fn(|_cx| trace_leaf()).await\n    }\n}\n\nmod util;\n\n/// Due to the `Stream` trait's inclusion in `std` landing later than Tokio's 1.0\n/// release, most of the Tokio stream utilities have been moved into the [`tokio-stream`]\n/// crate.\n///\n/// # Why was `Stream` not included in Tokio 1.0?\n///\n/// Originally, we had planned to ship Tokio 1.0 with a stable `Stream` type\n/// but unfortunately the [RFC] had not been\
-        \ merged in time for `Stream` to\n/// reach `std` on a stable compiler in time for the 1.0 release of Tokio. For\n/// this reason, the team has decided to move all `Stream` based utilities to\n/// the [`tokio-stream`] crate. While this is not ideal, once `Stream` has made\n/// it into the standard library and the `MSRV` period has passed, we will implement\n/// stream for our different types.\n///\n/// While this may seem unfortunate, not all is lost as you can get much of the\n/// `Stream` support with `async/await` and `while let` loops. It is also possible\n/// to create a `impl Stream` from `async fn` using the [`async-stream`] crate.\n///\n/// [`tokio-stream`]: https://docs.rs/tokio-stream\n/// [`async-stream`]: https://docs.rs/async-stream\n/// [RFC]: https://github.com/rust-lang/rfcs/pull/2996\n///\n/// # Example\n///\n/// Convert a [`sync::mpsc::Receiver`] to an `impl Stream`.\n///\n/// ```rust,no_run\n/// use tokio::sync::mpsc;\n///\n/// let (tx, mut rx) = mpsc::channel::<usize>(16);\n\
-        ///\n/// let stream = async_stream::stream! {\n///     while let Some(item) = rx.recv().await {\n///         yield item;\n///     }\n/// };\n/// ```\npub mod stream {}\n\n// local re-exports of platform specific things, allowing for decent\n// documentation to be shimmed in on docs.rs\n\n#[cfg(all(docsrs, unix))]\npub mod doc;\n\n#[cfg(any(feature = \"net\", feature = \"fs\"))]\n#[cfg(all(docsrs, unix))]\n#[allow(unused)]\npub(crate) use self::doc::os;\n\n#[cfg(not(all(docsrs, unix)))]\n#[allow(unused)]\npub(crate) use std::os;\n\ncfg_macros! {\n    /// Implementation detail of the `select!` macro. This macro is **not**\n    /// intended to be used as part of the public API and is permitted to\n    /// change.\n    #[doc(hidden)]\n    pub use tokio_macros::select_priv_declare_output_enum;\n\n    /// Implementation detail of the `select!` macro. This macro is **not**\n    /// intended to be used as part of the public API and is permitted to\n    /// change.\n    #[doc(hidden)]\n\
-        \    pub use tokio_macros::select_priv_clean_pattern;\n\n    cfg_rt! {\n        #[cfg(feature = \"rt-multi-thread\")]\n        #[cfg_attr(docsrs, doc(cfg(feature = \"macros\")))]\n        #[doc(inline)]\n        pub use tokio_macros::main;\n\n        #[cfg(feature = \"rt-multi-thread\")]\n        #[cfg_attr(docsrs, doc(cfg(feature = \"macros\")))]\n        #[doc(inline)]\n        pub use tokio_macros::test;\n\n        cfg_not_rt_multi_thread! {\n            #[doc(inline)]\n            pub use tokio_macros::main_rt as main;\n\n            #[doc(inline)]\n            pub use tokio_macros::test_rt as test;\n        }\n    }\n\n    // Always fail if rt is not enabled.\n    cfg_not_rt! {\n        #[doc(inline)]\n        pub use tokio_macros::main_fail as main;\n\n        #[doc(inline)]\n        pub use tokio_macros::test_fail as test;\n    }\n}\n\n// TODO: rm\n#[cfg(feature = \"io-util\")]\n#[cfg(test)]\nfn is_unpin<T: Unpin>() {}\n\n/// fuzz test (`fuzz_linked_list`)\n#[cfg(fuzzing)]\n\
-        pub mod fuzz;\n"
-      _source_pinned_head: $(git -C sandbox/repos/tokio rev-parse HEAD)
-- name: tier1_tokio_search_tokio_main
-  description: Search 'tokio::main' in tokio crate
-  tool: search_content
-  action: search
-  repo: tokio
-  workspace: tokio
-  scenario_class: read_only
-  expected_outcome: pass
-  arguments:
-    pattern: tokio::main
-    path: src
-    case_sensitive: true
-    max_results: 1000
-  ground_truth:
-    matches:
-    - path: src/lib.rs
-    - path: src/runtime/mod.rs
-- name: tier1_clap_read_source
-  description: Read clap_builder src/lib.rs
-  tool: read_file
-  action: read
-  repo: clap
-  workspace: clap_builder
-  scenario_class: read_only
-  expected_outcome: pass
-  arguments:
-    path: src/lib.rs
-    mode: raw
-  ground_truth:
-    code:
-      file: sandbox/repos/clap/clap_builder/src/lib.rs
-      line: 1
-      col: 1
-      content: "// Copyright \u24D2 2015-2016 Kevin B. Knapp and [`clap-rs` contributors](https://github.com/clap-rs/clap/graphs/contributors).\n// Licensed under the MIT license\n// (see LICENSE or <http://opensource.org/licenses/MIT>) All files in the project carrying such\n// notice may not be copied, modified, or distributed except according to those terms.\n\n#![doc = include_str!(\"../README.md\")]\n#![doc(html_logo_url = \"https://raw.githubusercontent.com/clap-rs/clap/master/assets/clap.png\")]\n#![cfg_attr(docsrs, feature(doc_cfg))]\n#![forbid(unsafe_code)]\n#![warn(missing_docs)]\n#![warn(clippy::print_stderr)]\n#![warn(clippy::print_stdout)]\n\n#[cfg(not(feature = \"std\"))]\ncompile_error!(\"`std` feature is currently required to build `clap`\");\n\npub use crate::builder::ArgAction;\npub use crate::builder::Command;\npub use crate::builder::ValueHint;\npub use crate::builder::{Arg, ArgGroup};\npub use crate::parser::ArgMatches;\npub use crate::util::Id;\npub use crate::util::color::ColorChoice;\n\
-        \n/// Command Line Argument Parser Error\n///\n/// See [`Command::error`] to create an error.\n///\n/// [`Command::error`]: crate::Command::error\npub type Error = error::Error<error::DefaultFormatter>;\n\npub use crate::derive::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};\n\n#[macro_use]\n#[allow(missing_docs)]\nmod macros;\n\nmod derive;\n\npub mod builder;\npub mod error;\npub mod parser;\n\nmod mkeymap;\nmod output;\nmod util;\n\nconst INTERNAL_ERROR_MSG: &str = \"Fatal internal error. Please consider filing a bug \\\n                                  report at https://github.com/clap-rs/clap/issues\";\n\n#[doc = include_str!(\"../README.md\")]\n#[cfg(doctest)]\npub struct ReadmeDoctests;\n"
-      _source_pinned_head: $(git -C sandbox/repos/clap rev-parse HEAD)
-- name: tier1_clap_search_arg_action
-  description: Search 'ArgAction' in clap_builder src
-  tool: search_content
-  action: search
-  repo: clap
-  workspace: clap_builder
-  scenario_class: read_only
-  expected_outcome: pass
-  arguments:
-    pattern: ArgAction
-    path: src
-    case_sensitive: true
-    max_results: 1000
-  ground_truth:
-    matches:
-    - path: src/lib.rs
-    - path: src/builder/command.rs
+  # ─── serde (03eec42c) ────────────────────────────────────────────────────
+  - name: tier1_serde_read_source
+    description: "Read serde crate src/lib.rs (H4.3 full reconstruction)"
+    tool: read_file
+    read_source_full: true
+    action: read
+    repo: serde
+    workspace: serde
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/lib.rs
+      mode: raw
+    ground_truth:
+      code:
+        file: sandbox/repos/serde/serde/src/lib.rs
+        line: 1
+        col: 1
+        content: "//! # Serde"
+
+  - name: tier1_serde_search_deserialize
+    description: "Search 'fn deserialize' in serde crate"
+    tool: search_content
+    action: search
+    repo: serde
+    workspace: serde
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: fn deserialize
+      path: src
+      case_sensitive: true
+      max_results: 1000
+    ground_truth:
+      matches:
+        - path: src/macros.rs
+        - path: src/private/de.rs
+
+  # ─── ripgrep ─────────────────────────────────────────────────────────────
+  - name: tier1_ripgrep_read_source
+    description: "Read ripgrep cli crate src/lib.rs (H4.3 full reconstruction)"
+    tool: read_file
+    read_source_full: true
+    action: read
+    repo: ripgrep
+    workspace: crates/cli
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/lib.rs
+      mode: raw
+    ground_truth:
+      code:
+        file: sandbox/repos/ripgrep/crates/cli/src/lib.rs
+        line: 1
+        col: 1
+        content: "/*!"
+
+  - name: tier1_ripgrep_search_regex_matcher
+    description: "Search 'RegexMatcher' across ripgrep crates"
+    tool: search_content
+    action: search
+    repo: ripgrep
+    workspace: crates
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: RegexMatcher
+      path: .
+      case_sensitive: true
+      max_results: 1000
+    ground_truth:
+      matches:
+        - path: crates/pcre2/src/matcher.rs
+        - path: crates/searcher/src/lib.rs
+
+  # ─── anyhow (1.0.85) ─────────────────────────────────────────────────────
+  - name: tier1_anyhow_read_source
+    description: "Read anyhow src/lib.rs (H4.3 full reconstruction)"
+    tool: read_file
+    read_source_full: true
+    action: read
+    repo: anyhow
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/lib.rs
+      mode: raw
+    ground_truth:
+      code:
+        file: sandbox/repos/anyhow/src/lib.rs
+        line: 1
+        col: 1
+        content: "//! [![github]]"
+
+  - name: tier1_anyhow_search_anyhow_macro
+    description: "Search 'anyhow!' macro in anyhow src"
+    tool: search_content
+    action: search
+    repo: anyhow
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: anyhow!
+      path: src
+      case_sensitive: true
+      max_results: 1000
+    ground_truth:
+      matches:
+        - path: src/lib.rs
+        - path: src/error.rs
+
+  # ─── tokio (1.36.0) ──────────────────────────────────────────────────────
+  - name: tier1_tokio_read_source
+    description: "Read tokio crate src/lib.rs (H4.3 full reconstruction)"
+    tool: read_file
+    read_source_full: true
+    action: read
+    repo: tokio
+    workspace: tokio
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/lib.rs
+      mode: raw
+    ground_truth:
+      code:
+        file: sandbox/repos/tokio/tokio/src/lib.rs
+        line: 1
+        col: 1
+        content: "#![allow("
+
+  - name: tier1_tokio_search_tokio_main
+    description: "Search 'tokio::main' in tokio crate"
+    tool: search_content
+    action: search
+    repo: tokio
+    workspace: tokio
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: tokio::main
+      path: src
+      case_sensitive: true
+      max_results: 1000
+    ground_truth:
+      matches:
+        - path: src/lib.rs
+        - path: src/runtime/mod.rs
+
+  # ─── clap (4.5.4) ────────────────────────────────────────────────────────
+  - name: tier1_clap_read_source
+    description: "Read clap_builder src/lib.rs (H4.3 full reconstruction)"
+    tool: read_file
+    read_source_full: true
+    action: read
+    repo: clap
+    workspace: clap_builder
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/lib.rs
+      mode: raw
+    ground_truth:
+      code:
+        file: sandbox/repos/clap/clap_builder/src/lib.rs
+        line: 1
+        col: 1
+        content: "// Copyright"
+
+  - name: tier1_clap_search_arg_action
+    description: "Search 'ArgAction' in clap_builder src"
+    tool: search_content
+    action: search
+    repo: clap
+    workspace: clap_builder
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: ArgAction
+      path: src
+      case_sensitive: true
+      max_results: 1000
+    ground_truth:
+      matches:
+        - path: src/lib.rs
+        - path: src/builder/command.rs

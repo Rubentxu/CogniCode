@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use super::failure::FailureClass;
 use super::history::DimensionAverages;
+use super::read_source_reconstructor::ReconstructedContent;
 use super::scoring::DimensionScores;
 
 /// Timing information for a scenario, broken down by phase (in milliseconds).
@@ -176,6 +177,13 @@ pub struct ScenarioResult {
     /// SHA of the REPOSITORY BEING ANALYZED.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub measured_source_head: Option<String>,
+    /// H4.3 — Opt-in `read_source_full` reconstruction summary. Only present
+    /// when the manifest opts in and the orchestrator runs reconstruction.
+    /// The full reconstructed content lives in `reconstructed.json` in the
+    /// scenario results dir; this struct carries the status and hashes for
+    /// quick inspection.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reconstructed: Option<ReconstructedContent>,
 }
 
 impl ScenarioResult {
@@ -461,6 +469,7 @@ mod tests {
             completed_at: "2026-01-01T00:00:01Z".into(),
             measured_source_head: None,
             repo_provenance: None,
+            reconstructed: None,
         }
     }
 

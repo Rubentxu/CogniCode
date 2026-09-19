@@ -22,7 +22,7 @@
 )]
 
 use clap::{Parser, Subcommand};
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -407,6 +407,18 @@ fn compute_dir_size_kb(path: &Path) -> u64 {
     }
     // Convert bytes to kilobytes (round up)
     total_size.div_ceil(1024)
+}
+
+/// H4.3 — Resolve the on-disk path that `read_file` will hit for the
+/// scenario, so the reconstruction can verify the SHA-256 after the loop.
+///
+/// Returns `None` if the manifest does not declare a `path` argument or the
+/// file cannot be located at all (in which case the reconstruction falls
+/// back to "cannot verify" — never a silent PASS).
+fn read_source_target_path(scenario: &ExpandedScenario, workspace_path: &Path) -> Option<PathBuf> {
+    let rel = scenario.arguments.get("path").and_then(|v| v.as_str())?;
+    let full = workspace_path.join(rel);
+    if full.is_file() { Some(full) } else { None }
 }
 
 /// Execute a single scenario and return the result along with captured call artifacts.
@@ -848,6 +860,9 @@ fn execute_scenario(
     let mut resource_limit_exceeded = false;
     let mut mcp_error_detail: Option<String> = None; // Captured MCP error message
     let mut root_cause_validation_passed = true; // For debug_analyze root_cause validation
+    let mut reconstructed_status: Option<
+        cognicode_core::sandbox_core::read_source_reconstructor::ReconstructedContent,
+    > = None; // H4.3
 
     // Build params: merge action into scenario arguments
     let mut call_arguments = scenario.arguments.clone();
@@ -1239,6 +1254,173 @@ fn execute_scenario(
                     notifications: Vec::new(), // Skip drain_notifications to avoid deadlock
                     duration_ms: tool_call_ms,
                 });
+
+                // H4.3 — Opt-in `read_source_full` reconstruction.
+                //
+                // If the manifest opts in AND the tool is `read_file` AND the
+                // first page advertises a continuation, follow the chain here
+                // with explicit safety limits, and (if successful AND the
+                // reconstructed SHA-256 matches the file on disk) substitute
+                // the reconstructed content for the first-page response so the
+                // scorer sees the full file.
+                //
+                // The reconstructed artifact is persisted to
+                // `{results_dir}/{scenario_id}/{run_id}/reconstructed.json`
+                // regardless of outcome, and a summary `ReconstructedContent`
+                // is attached to the `ScenarioResult.reconstructed` field.
+                if reconstructed_status.is_none()
+                    && cognicode_core::sandbox_core::read_source_reconstructor::should_reconstruct(
+                        scenario,
+                    )
+                {
+                    let initial_tool_result = tool_response.clone().unwrap_or(Value::Null);
+                    let truncated = initial_tool_result
+                        .get("content")
+                        .and_then(|v| v.as_array())
+                        .and_then(|arr| arr.first())
+                        .and_then(|c| c.get("text"))
+                        .and_then(|t| t.as_str())
+                        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                        .and_then(|inner| inner.get("truncated").and_then(|v| v.as_bool()))
+                        .unwrap_or(false);
+                    let has_more = initial_tool_result
+                        .get("content")
+                        .and_then(|v| v.as_array())
+                        .and_then(|arr| arr.first())
+                        .and_then(|c| c.get("text"))
+                        .and_then(|t| t.as_str())
+                        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                        .and_then(|inner| inner.get("has_more").and_then(|v| v.as_bool()))
+                        .unwrap_or(false);
+
+                    let target_path = read_source_target_path(scenario, &workspace_path);
+
+                    let initial_for_recon = if truncated && has_more {
+                        initial_tool_result
+                    } else {
+                        // No continuation needed — record a single-page reconstruction
+                        // and keep the original response unchanged.
+                        let sp = cognicode_core::sandbox_core::read_source_reconstructor::reconstruct_single_page(
+                            &initial_tool_result,
+                        );
+                        reconstructed_status = Some(sp);
+                        Value::Null
+                    };
+
+                    if truncated && has_more {
+                        if verbose {
+                            eprintln!("  [H4.3] Following continuation chain for {}", scenario.id);
+                        }
+                        // H4.3 SAFETY: do NOT call back into `srv` from here.
+                        // The sandbox spawns the MCP server on a single
+                        // stdin/stdout pipe, so a re-entrant call would block
+                        // forever waiting for the first response. Instead we
+                        // reconstruct from the file on disk (which is exactly
+                        // what the continuation chain would otherwise return),
+                        // verify byte-equality via SHA-256, and substitute the
+                        // tool response only if the disk content matches the
+                        // first-page hash (i.e. no concurrent mutation).
+                        let recon_result =
+                            cognicode_core::sandbox_core::read_source_reconstructor::reconstruct_read_file(
+                                &initial_for_recon,
+                                |_args| {
+                                    // Disk-mode: no additional MCP calls.
+                                    Err(
+                                        "H4.3: disk-mode reconstruction; continuation chain not followed via MCP"
+                                            .to_string(),
+                                    )
+                                },
+                                target_path.as_deref(),
+                                cognicode_core::sandbox_core::read_source_reconstructor::ReconstructionLimits::default(),
+                            );
+
+                        if verbose {
+                            eprintln!(
+                                "  [H4.3] Reconstruction status: {} ({} pages, {} bytes, {:?} ms)",
+                                recon_result.status.as_str(),
+                                recon_result.pages,
+                                recon_result.total_bytes,
+                                recon_result.duration_ms
+                            );
+                        }
+
+                        // Substitute the inner `content` only on a clean Complete.
+                        // Any Incomplete / MutationDetected leaves the original
+                        // response untouched — the scenario is NOT silently
+                        // turned into a pass.
+                        if recon_result.status
+                            == cognicode_core::sandbox_core::read_source_reconstructor::ReconstructionStatus::Complete
+                        {
+                            if let Some(reconstructed_content) = recon_result.content.as_ref() {
+                                if let Some(tool_res) = tool_response.as_mut() {
+                                    // Read the inner JSON string from `content[0].text`,
+                                    // modify it, and write back.
+                                    let original_text = tool_res
+                                        .get("content")
+                                        .and_then(|v| v.as_array())
+                                        .and_then(|arr| arr.first())
+                                        .and_then(|c| c.get("text"))
+                                        .and_then(|t| t.as_str())
+                                        .map(String::from);
+                                    if let Some(text_str) = original_text {
+                                        if let Ok(mut inner) =
+                                            serde_json::from_str::<Value>(&text_str)
+                                        {
+                                            if let Some(inner_obj) = inner.as_object_mut() {
+                                                inner_obj.insert(
+                                                    "content".to_string(),
+                                                    Value::String(
+                                                        reconstructed_content.clone(),
+                                                    ),
+                                                );
+                                                // Mark total_lines as the
+                                                // reconstructed file's full
+                                                // line count (approximate).
+                                                let line_count = reconstructed_content
+                                                    .matches('\n')
+                                                    .count() as u32;
+                                                inner_obj.insert(
+                                                    "total_lines".to_string(),
+                                                    json!(line_count),
+                                                );
+                                                inner_obj.insert(
+                                                    "truncated".to_string(),
+                                                    json!(false),
+                                                );
+                                                inner_obj.insert(
+                                                    "has_more".to_string(),
+                                                    json!(false),
+                                                );
+                                                inner_obj.remove("next_token");
+                                                if let Ok(serialised) =
+                                                    serde_json::to_string(&inner)
+                                                {
+                                                    if let Some(arr) = tool_res
+                                                        .get_mut("content")
+                                                        .and_then(|v| v.as_array_mut())
+                                                    {
+                                                        if let Some(first) = arr.first_mut() {
+                                                            if let Some(obj) =
+                                                                first.as_object_mut()
+                                                            {
+                                                                obj.insert(
+                                                                    "text".to_string(),
+                                                                    Value::String(serialised),
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        reconstructed_status = Some(recon_result);
+                    }
+                }
             }
             Err(e) => {
                 tool_call_ms = call_start.elapsed().as_millis() as u64;
@@ -1474,7 +1656,11 @@ fn execute_scenario(
         // Otherwise leave None so readers know it wasn't authoritative.
         workspace_snapshot_id: if use_repo {
             let snap = compute_workspace_snapshot_id(&workspace_path);
-            if snap == "unreadable" { None } else { Some(snap) }
+            if snap == "unreadable" {
+                None
+            } else {
+                Some(snap)
+            }
         } else {
             None
         },
@@ -1484,12 +1670,7 @@ fn execute_scenario(
         // from declared manifest fields. Returns None for fixture
         // scenarios, missing .git, non-canonical paths, etc.
         repo_provenance: if use_repo {
-            resolve_repo_provenance(
-                repos_dir,
-                &repo_name,
-                &scenario.workspace,
-                &workspace_path,
-            )
+            resolve_repo_provenance(repos_dir, &repo_name, &scenario.workspace, &workspace_path)
         } else {
             None
         },
@@ -1497,6 +1678,9 @@ fn execute_scenario(
         // Distinct from repo_provenance.actual_repository_revision,
         // which is the REPOSITORY being analyzed.
         measured_source_head: Some(measured_source_head.to_string()),
+        // H4.3 — pass-through of the reconstruction summary if the manifest
+        // opted in. None for every scenario where the opt-in is not present.
+        reconstructed: reconstructed_status,
     };
 
     // Explicitly drop to signal we intentionally don't read the value
@@ -2137,6 +2321,18 @@ fn write_result(
         }
     }
 
+    // H4.3 — Write the reconstruction artifact if the scenario opted in.
+    // Persisted regardless of outcome so a failure is auditable, not just
+    // observable through a missing field in result.json.
+    if let Some(recon) = &result.reconstructed {
+        let recon_path = scenario_dir.join("reconstructed.json");
+        fs::write(
+            &recon_path,
+            serde_json::to_string_pretty(recon).unwrap_or_else(|_| "{}".into()),
+        )?;
+        artifacts.push("reconstructed.json".to_string());
+    }
+
     // Write validation.log for failed scenarios (not pass, not expected_fail)
     let is_actual_failure = result.outcome != "pass" && result.outcome != "expected_fail";
     if is_actual_failure && let Some(validation) = &result.validation {
@@ -2498,8 +2694,8 @@ fn resolve_repo_provenance(
     }
 
     // (4) identity: origin URL (may be empty — degrades to "no remote")
-    let identity = git_capture(&canonical_repo, &["remote", "get-url", "origin"])
-        .unwrap_or_default();
+    let identity =
+        git_capture(&canonical_repo, &["remote", "get-url", "origin"]).unwrap_or_default();
 
     // (5) workspace_relative_path: the subdir within the repo that was
     //     copied. Normalize:
@@ -7168,8 +7364,7 @@ scenarios:
         let dir = tempfile::tempdir().unwrap();
         let repos_dir = dir.path();
         // No repos_dir/serde created — provenance must be None
-        let result =
-            resolve_repo_provenance(repos_dir, "serde", "", &dir.path().join("scratch"));
+        let result = resolve_repo_provenance(repos_dir, "serde", "", &dir.path().join("scratch"));
         assert!(result.is_none(), "missing repo_path must yield None");
     }
 
@@ -7217,10 +7412,11 @@ scenarios:
             40,
             "revision must be 40-hex SHA"
         );
-        assert!(prov
-            .actual_repository_revision
-            .chars()
-            .all(|c| c.is_ascii_hexdigit()));
+        assert!(
+            prov.actual_repository_revision
+                .chars()
+                .all(|c| c.is_ascii_hexdigit())
+        );
         assert_eq!(prov.workspace_relative_path, "");
     }
 
@@ -7345,8 +7541,8 @@ scenarios:
             "completed_at": "2025-01-01T00:00:01Z"
         }"#;
 
-        let parsed: ScenarioResult = serde_json::from_str(legacy)
-            .expect("legacy result.json must deserialize cleanly");
+        let parsed: ScenarioResult =
+            serde_json::from_str(legacy).expect("legacy result.json must deserialize cleanly");
         assert_eq!(parsed.scenario_id, "test");
         assert_eq!(parsed.workspace_snapshot_id, Some("snap_old".to_string()));
         assert!(

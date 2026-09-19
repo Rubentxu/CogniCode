@@ -59,17 +59,12 @@ struct ContinuationToken {
     mode: ContinuationMode,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Default)]
 #[serde(rename_all = "snake_case")]
 enum ContinuationMode {
+    #[default]
     Chunked,
     Paginated,
-}
-
-impl Default for ContinuationMode {
-    fn default() -> Self {
-        ContinuationMode::Chunked
-    }
 }
 
 /// Encodes a continuation token to base64
