@@ -227,7 +227,7 @@ git grep -l "control_query\.|cq\.query_architecture" \
 → crates/cognicode-explorer/src/api.rs (1 file, 2 lines: 1230, 1244)
 ```
 
-### Live HTTP boundary probes (this session, `explorer-api` on 127.0.0.1:8013)
+### Live HTTP boundary probes (this session, `explorer-api` on 127.0.0.1:8013/8014/8015)
 
 | test | request | observed | verdict |
 |---|---|---|---|
@@ -238,6 +238,30 @@ git grep -l "control_query\.|cq\.query_architecture" \
 | T5b PATCH | same path | 405 | C5 read-only confirmed |
 | T6 extra path | `/.../architecture/extra` | 404 | route does not exist |
 | T7 empty ws_id | `/control-plane/workspaces//architecture` | 200 | **NOTED — Axum routing allows empty segments; not a CP1.0 defect but worth tracking for the next cycle** |
+| T8 never-opened ws | `/control-plane/workspaces/nonexistent/architecture` | 200, status:incomplete | service-not-wired path; cannot distinguish from open workspace |
+| T9 valid query | `?source=from-source-root` | 200, status:incomplete | query param parsed, ignored (service not wired) |
+| T10 invalid query | `?source=invalid` | 200, status:incomplete | **NOTED — invalid source is silently accepted as 200, not 400. Could be tightened in a future cycle.** |
+| T11 10000-char ws_id | very long path | 200 | Axum handles without 414 |
+| T12 path traversal | `..%2F..%2Fetc%2Fpasswd` | 200 | **WATCH — workspace_ref echoes the raw input. Currently safe because the service does not use it as a filesystem path, but if a future consumer does, this becomes a vector. NOT a CP1.0 vulnerability, but a documented risk.** |
+
+### Backstage plugin integration boundary
+
+The `integrations/backstage/` plugin (CP0 outcome `FIT_WITH_CONSTRAINTS`) only
+calls `GET /control-plane/probe` (CP0 WU3), NOT the CP1.0 architecture endpoint.
+The probe handler returns workspace metadata + capabilities, **does not invoke
+ControlQueryService**, and does not import anything from
+`application::architecture::*`. Therefore, Backstage is **not** counted as a
+second consumer of e77.
+
+```text
+$ git grep -n "architecture\|control_query" integrations/backstage/
+integrations/backstage/README.md:17         HTTP GET /control-plane/probe
+integrations/backstage/src/cognicode-probe-client.ts:12   PROBE_PATH = '/control-plane/probe'
+```
+
+The Backstage plugin would need to explicitly add a client for
+`/control-plane/workspaces/:id/architecture` to count as e77 consumer #2.
+This is a future, not a present.
 
 ### Conclusion
 
