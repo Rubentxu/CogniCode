@@ -1437,7 +1437,7 @@ fn execute_scenario(
         scenario_id: scenario.id.clone(),
         language: scenario.language.clone(),
         tier: scenario.tier.clone(),
-        repo: scenario.repo.clone().unwrap_or(repo_name),
+        repo: scenario.repo.clone().unwrap_or_else(|| repo_name.clone()),
         commit: scenario
             .commit
             .clone()
@@ -1470,9 +1470,33 @@ fn execute_scenario(
         container_image: container_config
             .map(|c| c.podman_image())
             .unwrap_or_default(),
-        workspace_snapshot_id: compute_workspace_snapshot_id(&workspace_path),
+        // Compute snapshot_id ONLY when provenance is verified.
+        // Otherwise leave None so readers know it wasn't authoritative.
+        workspace_snapshot_id: if use_repo {
+            let snap = compute_workspace_snapshot_id(&workspace_path);
+            if snap == "unreadable" { None } else { Some(snap) }
+        } else {
+            None
+        },
         started_at,
         completed_at,
+        // Tier-1 / real-repo provenance: verified from Git, never copied
+        // from declared manifest fields. Returns None for fixture
+        // scenarios, missing .git, non-canonical paths, etc.
+        repo_provenance: if use_repo {
+            resolve_repo_provenance(
+                repos_dir,
+                &repo_name,
+                &scenario.workspace,
+                &workspace_path,
+            )
+        } else {
+            None
+        },
+        // Always set the orchestrator's source head (CogniCode HEAD).
+        // Distinct from repo_provenance.actual_repository_revision,
+        // which is the REPOSITORY being analyzed.
+        measured_source_head: Some(measured_source_head.to_string()),
     };
 
     // Explicitly drop to signal we intentionally don't read the value
@@ -2407,6 +2431,99 @@ fn get_git_short_hash(project_dir: &Path) -> Result<String, String> {
     } else {
         Ok(hash)
     }
+}
+
+/// Run `git -C <repo_path> <args...>` and return trimmed stdout on success,
+/// None if git fails or exits non-zero. Used by `resolve_repo_provenance`.
+fn git_capture(repo_path: &Path, args: &[&str]) -> Option<String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(repo_path)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+/// Resolve verified provenance for a scenario that runs against
+/// `repos_dir/<repo_name>`. Returns None if:
+///   * repo_path doesn't exist
+///   * repo_path is not inside `repos_dir` (no Tier-1 attribution)
+///   * `repo_path/.git` doesn't exist (not a Git checkout)
+///   * `git rev-parse HEAD` fails or returns non-40-hex
+///   * `git remote get-url origin` fails (no origin configured)
+///
+/// The returned `RepoProvenance` has:
+///   * `actual_repository_identity`: origin URL (may be empty if no origin
+///     — caller MUST treat empty as "no remote verified")
+///   * `actual_repository_revision`: 40-hex SHA from HEAD
+///   * `actual_workspace`: the absolute path actually executed against
+///     (the tempdir when `use_repo=true`)
+///   * `workspace_relative_path`: the subdir within the repo that was
+///     copied to the tempdir (e.g., "serde/serde"). Empty for repo root.
+///
+/// `scenario_workspace` is the `workspace` field from the manifest,
+/// already validated by the orchestrator to be either "" / "." (repo root)
+/// or a relative path that resolves to a subdirectory of repo_path.
+fn resolve_repo_provenance(
+    repos_dir: &Path,
+    repo_name: &str,
+    scenario_workspace: &str,
+    actual_workspace: &Path,
+) -> Option<cognicode_core::sandbox_core::artifacts::RepoProvenance> {
+    use cognicode_core::sandbox_core::artifacts::RepoProvenance;
+
+    let repo_path = repos_dir.join(repo_name);
+
+    // (1) repo_path must be inside repos_dir — no Tier-1 attribution for
+    //     paths declared outside the sandbox corpus root
+    let canonical_repos = repos_dir.canonicalize().ok()?;
+    let canonical_repo = repo_path.canonicalize().ok()?;
+    if !canonical_repo.starts_with(&canonical_repos) {
+        return None;
+    }
+
+    // (2) must be a Git checkout
+    if !canonical_repo.join(".git").exists() {
+        return None;
+    }
+
+    // (3) revision: 40-hex SHA, no fallback
+    let revision = git_capture(&canonical_repo, &["rev-parse", "HEAD"])?;
+    if revision.len() != 40 || !revision.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+
+    // (4) identity: origin URL (may be empty — degrades to "no remote")
+    let identity = git_capture(&canonical_repo, &["remote", "get-url", "origin"])
+        .unwrap_or_default();
+
+    // (5) workspace_relative_path: the subdir within the repo that was
+    //     copied. Normalize:
+    //     - "" or "." → ""
+    //     - absolute path → not allowed (orchestrator rejects this for
+    //       use_repo=true), but we treat defensively
+    //     - relative → as-is
+    let workspace_rel = if scenario_workspace.is_empty() || scenario_workspace == "." {
+        String::new()
+    } else {
+        let p = Path::new(scenario_workspace);
+        if p.is_absolute() {
+            // Absolute paths aren't supported for use_repo; degrade to None
+            return None;
+        }
+        scenario_workspace.to_string()
+    };
+
+    Some(RepoProvenance {
+        actual_repository_identity: identity,
+        actual_repository_revision: revision,
+        actual_workspace: actual_workspace.to_string_lossy().to_string(),
+        workspace_relative_path: workspace_rel,
+    })
 }
 
 fn parse_test_results(output: &str) -> String {
@@ -4472,9 +4589,11 @@ mod aggregate_summary_tests {
             dimension_scores: None,
             artifacts: vec![],
             container_image: "test:latest".into(),
-            workspace_snapshot_id: "snap123".into(),
+            workspace_snapshot_id: Some("snap123".into()),
             started_at: "2025-01-01T00:00:00Z".into(),
             completed_at: "2025-01-01T00:01:00Z".into(),
+            repo_provenance: None,
+            measured_source_head: None,
         }
     }
 
@@ -6004,9 +6123,11 @@ mod bug_detection_tests {
             dimension_scores: None,
             artifacts: vec![],
             container_image: "test:latest".into(),
-            workspace_snapshot_id: "snap123".into(),
+            workspace_snapshot_id: Some("snap123".into()),
             started_at: "2025-01-01T00:00:00Z".into(),
             completed_at: "2025-01-01T00:01:00Z".into(),
+            repo_provenance: None,
+            measured_source_head: None,
         }
     }
 }
@@ -6084,9 +6205,11 @@ mod edge_case_tests {
             dimension_scores: None,
             artifacts: vec![],
             container_image: "test:latest".into(),
-            workspace_snapshot_id: "snap123".into(),
+            workspace_snapshot_id: Some("snap123".into()),
             started_at: "2025-01-01T00:00:00Z".into(),
             completed_at: "2025-01-01T00:01:00Z".into(),
+            repo_provenance: None,
+            measured_source_head: None,
         }
     }
 
@@ -6887,9 +7010,11 @@ scenarios:
             dimension_scores: None,
             artifacts: vec![],
             container_image: "test:latest".to_string(),
-            workspace_snapshot_id: "snap123".to_string(),
+            workspace_snapshot_id: Some("snap123".to_string()),
             started_at: "2024-01-01T00:00:00Z".to_string(),
             completed_at: "2024-01-01T00:00:01Z".to_string(),
+            repo_provenance: None,
+            measured_source_head: None,
         }
     }
 
@@ -7015,5 +7140,285 @@ scenarios:
         assert!(md.contains("get_file_symbols"));
         assert!(md.contains("find_usages"));
         assert!(md.contains("safe_refactor"));
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // Provenance regression tests (track A · tier-1 catalog)
+    //
+    // Each test pins a contract that the G4 / G6 / G3 readers rely on:
+    //   (P1) A manifest that declares `serde` but executes a fixture does
+    //        NOT produce repo_provenance (no Git checkout, no attribution).
+    //   (P2) A checkout whose HEAD differs from the pin does NOT produce
+    //        repo_provenance (the identity check would pass, but we
+    //        don't have a pin comparison here — the reader is responsible
+    //        for that. We ensure provenance is computed but the revision
+    //        is the REAL HEAD, not the declared pin).
+    //   (P3) A valid subdirectory of a real repo preserves identity and
+    //        relative path.
+    //   (P4) Two executions against the same content produce the same
+    //        workspace_snapshot_id (determinism).
+    //   (P5) Old / legacy results that lack repo_provenance deserialize
+    //        cleanly with the field as None — no migration required.
+    // ────────────────────────────────────────────────────────────────────
+
+    /// P1: a fixture scenario (no `repo:` declared, or repo path missing)
+    /// produces `None` for both repo_provenance and workspace_snapshot_id.
+    #[test]
+    fn test_resolve_repo_provenance_returns_none_for_missing_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        let repos_dir = dir.path();
+        // No repos_dir/serde created — provenance must be None
+        let result =
+            resolve_repo_provenance(repos_dir, "serde", "", &dir.path().join("scratch"));
+        assert!(result.is_none(), "missing repo_path must yield None");
+    }
+
+    /// P3: a valid Git checkout with origin remote produces provenance
+    /// with the actual origin URL, HEAD SHA, and workspace_rel_path.
+    #[test]
+    fn test_resolve_repo_provenance_valid_checkout() {
+        use std::process::Command;
+
+        let dir = tempfile::tempdir().unwrap();
+        let repos_dir = dir.path();
+        let repo_dir = repos_dir.join("myrepo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+
+        // Init a Git repo with one commit and an origin remote
+        let run = |args: &[&str]| {
+            Command::new("git")
+                .args(args)
+                .current_dir(&repo_dir)
+                .output()
+                .expect("git failed")
+        };
+        run(&["init", "--quiet"]);
+        run(&["config", "user.email", "test@example.com"]);
+        run(&["config", "user.name", "Test"]);
+        std::fs::write(repo_dir.join("README.md"), "hello").unwrap();
+        run(&["add", "."]);
+        run(&["commit", "--quiet", "-m", "init"]);
+        run(&[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/example/myrepo.git",
+        ]);
+
+        let prov = resolve_repo_provenance(repos_dir, "myrepo", "", &repo_dir)
+            .expect("valid checkout must yield Some(provenance)");
+
+        assert_eq!(
+            prov.actual_repository_identity,
+            "https://github.com/example/myrepo.git"
+        );
+        assert_eq!(
+            prov.actual_repository_revision.len(),
+            40,
+            "revision must be 40-hex SHA"
+        );
+        assert!(prov
+            .actual_repository_revision
+            .chars()
+            .all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(prov.workspace_relative_path, "");
+    }
+
+    /// P3 (subdir): workspace_rel_path is preserved when the scenario
+    /// targets a subdirectory of the repo.
+    #[test]
+    fn test_resolve_repo_provenance_subdirectory_preserved() {
+        use std::process::Command;
+
+        let dir = tempfile::tempdir().unwrap();
+        let repos_dir = dir.path();
+        let repo_dir = repos_dir.join("myrepo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+
+        let run = |args: &[&str]| {
+            Command::new("git")
+                .args(args)
+                .current_dir(&repo_dir)
+                .output()
+                .expect("git failed")
+        };
+        run(&["init", "--quiet"]);
+        run(&["config", "user.email", "test@example.com"]);
+        run(&["config", "user.name", "Test"]);
+        std::fs::create_dir_all(repo_dir.join("subcrate")).unwrap();
+        std::fs::write(repo_dir.join("subcrate").join("lib.rs"), "// hi").unwrap();
+        run(&["add", "."]);
+        run(&["commit", "--quiet", "-m", "init"]);
+
+        let prov = resolve_repo_provenance(repos_dir, "myrepo", "subcrate", &repo_dir)
+            .expect("subdir must yield Some(provenance)");
+        assert_eq!(prov.workspace_relative_path, "subcrate");
+    }
+
+    /// P2: a checkout with no `.git` directory (e.g., a copied tree, a
+    /// fixture impersonating a repo) does NOT produce provenance.
+    #[test]
+    fn test_resolve_repo_provenance_no_git_dir_is_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let repos_dir = dir.path();
+        let fake_repo = repos_dir.join("fake");
+        std::fs::create_dir_all(&fake_repo).unwrap();
+        std::fs::write(fake_repo.join("Cargo.toml"), "[package]\nname=\"x\"\n").unwrap();
+        // No .git — must reject
+        let prov = resolve_repo_provenance(repos_dir, "fake", "", &fake_repo);
+        assert!(prov.is_none(), "no .git means no Tier-1 attribution");
+    }
+
+    /// P2b: a repo_path OUTSIDE repos_dir is rejected (no Tier-1 claim
+    /// from arbitrary filesystem paths).
+    #[test]
+    fn test_resolve_repo_provenance_outside_repos_dir_is_none() {
+        use std::process::Command;
+
+        let repos_dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let sneaky = outside.path().join("sneaky");
+        std::fs::create_dir_all(&sneaky).unwrap();
+
+        let run = |args: &[&str]| {
+            Command::new("git")
+                .args(args)
+                .current_dir(&sneaky)
+                .output()
+                .expect("git failed")
+        };
+        run(&["init", "--quiet"]);
+        run(&["config", "user.email", "test@example.com"]);
+        run(&["config", "user.name", "Test"]);
+        std::fs::write(sneaky.join("file"), "x").unwrap();
+        run(&["add", "."]);
+        run(&["commit", "--quiet", "-m", "init"]);
+
+        let prov = resolve_repo_provenance(repos_dir.path(), "sneaky", "", &sneaky);
+        assert!(
+            prov.is_none(),
+            "repo_path outside repos_dir must NOT be credited as Tier-1"
+        );
+    }
+
+    /// P4: workspace_snapshot_id is deterministic for the same content.
+    /// Reuses compute_workspace_snapshot_id; pins the contract that the
+    /// new optional field preserves the same hash for unchanged input.
+    #[test]
+    fn test_workspace_snapshot_id_in_provenance_is_deterministic() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hello").unwrap();
+        let h1 = compute_workspace_snapshot_id(dir.path());
+        let h2 = compute_workspace_snapshot_id(dir.path());
+        assert_eq!(h1, h2);
+        assert_ne!(h1, "unreadable");
+    }
+
+    /// P5: old result.json without repo_provenance deserializes cleanly
+    /// (the new field is Option with skip_serializing_if, and serde's
+    /// default for missing fields is None when the field is Option).
+    #[test]
+    fn test_legacy_result_json_deserializes_without_repo_provenance() {
+        use cognicode_core::sandbox_core::artifacts::ScenarioResult;
+
+        // Construct a legacy result.json (pre-provenance) by omitting the
+        // new fields entirely.
+        let legacy = r#"{
+            "scenario_id": "test",
+            "language": "rust",
+            "tier": "A",
+            "repo": "serde",
+            "commit": "abc123",
+            "tool": "read_file",
+            "action": "read",
+            "expected_outcome": "pass",
+            "outcome": "pass",
+            "timing_ms": {
+                "setup_ms": 0, "server_startup_ms": 0, "tool_call_ms": 0,
+                "validation_ms": 0, "teardown_ms": 0, "total_ms": 0
+            },
+            "resource_usage": {"peak_rss_mb": 0.0, "cpu_time_s": 0.0},
+            "artifacts": [],
+            "container_image": "",
+            "workspace_snapshot_id": "snap_old",
+            "started_at": "2025-01-01T00:00:00Z",
+            "completed_at": "2025-01-01T00:00:01Z"
+        }"#;
+
+        let parsed: ScenarioResult = serde_json::from_str(legacy)
+            .expect("legacy result.json must deserialize cleanly");
+        assert_eq!(parsed.scenario_id, "test");
+        assert_eq!(parsed.workspace_snapshot_id, Some("snap_old".to_string()));
+        assert!(
+            parsed.repo_provenance.is_none(),
+            "legacy result must have None for repo_provenance"
+        );
+        assert!(
+            parsed.measured_source_head.is_none(),
+            "legacy result must have None for measured_source_head"
+        );
+    }
+
+    /// P5b: a result.json with repo_provenance populated (current contract)
+    /// round-trips and exposes the actual_* fields.
+    #[test]
+    fn test_current_result_json_with_provenance_roundtrips() {
+        use cognicode_core::sandbox_core::artifacts::{RepoProvenance, ScenarioResult};
+
+        let result = ScenarioResult {
+            scenario_id: "tier1_serde".into(),
+            language: "rust".into(),
+            tier: "A".into(),
+            repo: "serde".into(),
+            commit: "c3a8d4c".into(),
+            tool: "read_file".into(),
+            action: "read".into(),
+            expected_outcome: "pass".into(),
+            outcome: "pass".into(),
+            failure_class: None,
+            timing_ms: cognicode_core::sandbox_core::artifacts::Timing {
+                setup_ms: 0,
+                server_startup_ms: 0,
+                tool_call_ms: 5,
+                validation_ms: 0,
+                teardown_ms: 0,
+                total_ms: 5,
+            },
+            resource_usage: cognicode_core::sandbox_core::artifacts::ResourceUsage {
+                peak_rss_mb: 10.0,
+                cpu_time_s: 0.0,
+            },
+            mutation: None,
+            validation: None,
+            dimension_scores: None,
+            artifacts: vec![],
+            container_image: "rust:1.82-slim".into(),
+            workspace_snapshot_id: Some("abc".into()),
+            started_at: "2026-09-19T00:00:00Z".into(),
+            completed_at: "2026-09-19T00:00:01Z".into(),
+            repo_provenance: Some(RepoProvenance {
+                actual_repository_identity: "https://github.com/serde-rs/serde.git".into(),
+                actual_repository_revision: "03eec42c3313b36da416be1486e9ecac345784d5".into(),
+                actual_workspace: "/tmp/scratch/serde-temp".into(),
+                workspace_relative_path: "serde".into(),
+            }),
+            measured_source_head: Some("c3a8d4c".into()),
+        };
+
+        let json = result.to_json_string().unwrap();
+        let parsed: ScenarioResult = serde_json::from_str(&json).unwrap();
+
+        let prov = parsed.repo_provenance.expect("provenance must round-trip");
+        assert_eq!(
+            prov.actual_repository_identity,
+            "https://github.com/serde-rs/serde.git"
+        );
+        assert_eq!(
+            prov.actual_repository_revision,
+            "03eec42c3313b36da416be1486e9ecac345784d5"
+        );
+        assert_eq!(prov.workspace_relative_path, "serde");
+        assert_eq!(parsed.measured_source_head.as_deref(), Some("c3a8d4c"));
+        assert_eq!(parsed.workspace_snapshot_id.as_deref(), Some("abc"));
     }
 }

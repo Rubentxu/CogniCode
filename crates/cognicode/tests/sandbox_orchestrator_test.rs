@@ -180,9 +180,11 @@ fn test_scenario_result_roundtrip_serde() {
         dimension_scores: None,
         artifacts: vec![],
         container_image: "docker.io/library/rust@sha256:abc".into(),
-        workspace_snapshot_id: "snap123".into(),
+        workspace_snapshot_id: Some("snap123".into()),
         started_at: "2026-01-01T00:00:00Z".into(),
         completed_at: "2026-01-01T00:00:01Z".into(),
+        repo_provenance: None,
+        measured_source_head: None,
     };
 
     // Roundtrip: JSON string -> parse -> compare
@@ -242,9 +244,11 @@ fn make_pass_result(scenario_id: &str) -> ScenarioResult {
         dimension_scores: None,
         artifacts: vec![],
         container_image: "rust:latest".into(),
-        workspace_snapshot_id: "snap".into(),
+        workspace_snapshot_id: Some("snap".into()),
         started_at: "2026-01-01T00:00:00Z".into(),
         completed_at: "2026-01-01T00:00:01Z".into(),
+        repo_provenance: None,
+        measured_source_head: None,
     }
 }
 

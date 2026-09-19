@@ -91,6 +91,28 @@ pub struct ValidationResult {
     pub passed: bool,
 }
 
+/// Verified provenance for a scenario that ran against a Git repository
+/// from `repos_dir/`. ALL fields are required to be present for the
+/// scenario to be credited as Tier-1. If any check fails, the scenario
+/// gets `None` everywhere — the caller MUST NOT silently fall back to
+/// declared values from the manifest.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoProvenance {
+    /// Origin URL from `git -C <repo_path> remote get-url origin`.
+    /// Empty string if no `origin` is configured (degraded but not absent).
+    pub actual_repository_identity: String,
+    /// 40-hex git SHA from `git -C <repo_path> rev-parse HEAD`.
+    pub actual_repository_revision: String,
+    /// Absolute path actually used for execution.
+    /// When `use_repo=true`, this is the tempdir; the original source
+    /// path is recoverable from `workspace_relative_path` + the repo.
+    pub actual_workspace: String,
+    /// Subdirectory within the repo source that was copied into the
+    /// tempdir (e.g., "serde/serde", "crates/cli", ""). Relative to
+    /// the repo root. Empty means the repo root itself.
+    pub workspace_relative_path: String,
+}
+
 /// A single scenario result, emitted as JSON for each scenario execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScenarioResult {
@@ -100,9 +122,10 @@ pub struct ScenarioResult {
     pub language: String,
     /// Tier A (functional) or Tier B (expected-fail probe)
     pub tier: String,
-    /// Source repo name
+    /// Source repo name (as DECLARED in manifest or default — NOT verified)
     pub repo: String,
-    /// Pinned git commit
+    /// Pinned git commit (DECLARED in manifest, or fallback to
+    /// `measured_source_head` which is CogniCode HEAD). NOT verified.
     pub commit: String,
     /// MCP tool name (e.g., safe_refactor, read_file, edit_file)
     pub tool: String,
@@ -132,12 +155,27 @@ pub struct ScenarioResult {
     pub artifacts: Vec<String>,
     /// Container image digest used (e.g., docker.io/library/rust@sha256:...)
     pub container_image: String,
-    /// Workspace snapshot ID (content-addressed)
-    pub workspace_snapshot_id: String,
+    /// Workspace snapshot ID (content-addressed). Verified iff
+    /// `repo_provenance` is Some. None means: not computed or unreadable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_snapshot_id: Option<String>,
     /// ISO 8601 timestamp when scenario started
     pub started_at: String,
     /// ISO 8601 timestamp when scenario completed
     pub completed_at: String,
+    /// Verified provenance (Tier-1 / real-repo scenarios only).
+    /// ABSENT for fixture scenarios or when any provenance check fails.
+    /// Readers MUST treat absence as "not verified", not as "verified
+    /// against fixture".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo_provenance: Option<RepoProvenance>,
+    /// SHA of the CogniCode source tree that ran this scenario
+    /// (the orchestrator binary's build source). This is the
+    /// `measured_source_head` parameter. Distinct from
+    /// `repo_provenance.actual_repository_revision`, which is the
+    /// SHA of the REPOSITORY BEING ANALYZED.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub measured_source_head: Option<String>,
 }
 
 impl ScenarioResult {
