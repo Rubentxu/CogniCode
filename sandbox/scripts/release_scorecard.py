@@ -728,6 +728,10 @@ def gate_g4(run_dirs: list[str]) -> GateResult:
     measurements: dict[str, dict[str, list[float]]] = {}  # repo -> scenario_id -> [scores]
     coverage: dict[str, set[str]] = {}                    # repo -> set of scenario_ids
     unverified_repos: set[str] = set()
+    # H1.1: defer the unverified marking until the loop ends, so a
+    # read_file scenario (correctitud=null) on a repo with a later
+    # measured scenario does NOT also flag the repo as unverified.
+    provisional_unverified: set[str] = set()
     scored_pre_d1_fixtures: list[float] = []              # diagnostic only, never drives verdict
     total_candidates = 0
     total_unverified = 0
@@ -782,15 +786,26 @@ def gate_g4(run_dirs: list[str]) -> GateResult:
                 continue
 
             # Positive Tier-1 credit.
+            #
+            # H1.1 fix: defer the unverified flag for this repo. If a
+            # later scenario on the same repo produces a measured
+            # correctitud, the provisional flag is dropped (see below).
             if measured is None:
-                # GT was declared as present but no score came back. Treat
-                # as unverified for this Tier-1 repo.
-                unverified_repos.add(actual_short)
+                provisional_unverified.add(actual_short)
                 continue
 
             score = float(measured)
             measurements.setdefault(actual_short, {}).setdefault(sid, []).append(score)
             coverage.setdefault(actual_short, set()).add(sid)
+
+    # H1.1: a repo is "unverified" only if it had positive provenance
+    # in at least one scenario but no scenario produced a measured
+    # correctitud. This avoids the prior contradiction where a single
+    # read_file scenario (correctitud=null) on a repo with a measured
+    # search scenario would both credit AND unverify the repo.
+    for actual_short in provisional_unverified:
+        if actual_short not in measurements:
+            unverified_repos.add(actual_short)
 
     acredited = sorted(measurements.keys())
     missing_or_unverified = sorted(
