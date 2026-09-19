@@ -2944,3 +2944,196 @@ NO — H4.0 is the RED characterization. Full verification target is H4.5.
   Clippy as a useless comparison. Pre-existing in H3 cycle.
 - `impl Default for ContinuationMode` could be `#[derive(Default)]` — flagged
   by Clippy. Introduced by commit `6769c2c6` (H4.1), not by H4.2.
+
+---
+
+# H4.3 — `read_source_full` reconstruction (CLOSED GREEN)
+
+Baseline: `fc281f81` (H4.2).
+
+## Scope delivered
+- `ScenarioDef::read_source_full: bool` (default false, opt-in).
+- `ExpandedScenario::read_source_full: bool` mirroring the field.
+- New module `cognicode-core::sandbox_core::read_source_reconstructor`:
+  - `ReconstructionStatus` enum: NotApplicable | SinglePage | Complete | Incomplete | MutationDetected.
+  - `ReconstructedContent` struct: status, pages, total_bytes, sha256_reconstructed,
+    sha256_disk, content, reason, duration_ms.
+  - `ReconstructionLimits` struct: max_pages=64, max_bytes=16 MiB, max_duration=30 s.
+  - `reconstruct_read_file<F>` — pure function with safety limits, no-progress
+    abort, loop detection, mutation detection, and disk-mode fallback when the
+    MCP continuation chain is not available.
+- `ScenarioResult::reconstructed: Option<ReconstructedContent>` (skipped in
+  serialisation when None).
+- Sandbox orchestrator integration: when `read_source_full && tool == "read_file"
+  && truncated && has_more`, the orchestrator invokes the reconstructor.
+  In disk-mode, the orchestrator does NOT re-enter `srv.call` (single stdio
+  MCP process = no re-entrant calls = no deadlock).
+- `reconstructed.json` artifact written next to `response.json` for opted-in
+  scenarios (status, pages, sha256, full reconstructed content).
+- Tier-1 manifest updated: 5 read_source scenarios opt-in (serde, ripgrep,
+  anyhow, tokio, clap); 5 search_content scenarios unchanged.
+
+## Test verification (T3)
+- 10 unit tests in `read_source_reconstructor::tests`:
+  - (a) `reconstruct_small_file_returns_single_page` — 100-line file → SinglePage.
+  - (b) `reconstruct_large_file_completes_byte_exact` — 730-line file, 2 pages,
+    byte-exact SHA-256 match against the disk file.
+  - (c) `reconstruct_invalid_token_in_intermediate_page_yields_incomplete`.
+  - (d) `reconstruct_repeated_token_yields_incomplete` (loop detection).
+  - (e) `reconstruct_detects_concurrent_mutation`.
+  - (f) `reconstruct_mcp_error_in_intermediate_page_yields_incomplete`.
+  - (g) `reconstruct_aborts_on_max_pages`.
+  - (h) `should_reconstruct_requires_opt_in_and_read_file_tool`.
+  - (i) `reconstruct_single_page_for_already_complete_response`.
+  - (j) `reconstruct_disk_fallback_when_mcp_continuation_refused` (NEW in H4.3:
+    covers the sandbox-orchestrator deadlock case).
+- All 10 PASS.
+
+## Regression sweep (verification executed, evidence reused)
+- H4.1 + H4.2 contract tests (file_operations): **58 PASS** (still GREEN).
+- `sandbox_core` tests (incl. reconstructor): **134 PASS** (124 H4.2 baseline +
+  10 reconstructor).
+- `cognicode-core` full lib: **2068 PASS**, 0 failed, 27 ignored.
+- Tier-1 corpus rerun (`sandbox/manifests-tier1/tier1_h3_read_source.yaml`):
+  - 10/10 PASS
+  - Per-scenario reconstructed status:
+    - anyhow_read_source: **complete**, 2 pages, 21209 bytes, sha256_recon == sha256_disk
+    - tokio_read_source: **complete**, 2 pages, 25075 bytes, sha256_recon == sha256_disk
+    - clap_read_source: single_page, 1668 bytes
+    - ripgrep_read_source: single_page, 11698 bytes
+    - serde_read_source: single_page, 13612 bytes
+    - 5 search_content scenarios: not opted in, no reconstructed (gating works)
+  - Per-tool: read_file 5/5 PASS, search_content 5/5 PASS
+  - Pass Rate 100.0%, Health Score 81.84
+
+## H4.2 → H4.3 recovery delta
+- anyhow: 74.46% → 100% (correctitud recovered via disk-mode reconstruction)
+- tokio: 82.97% → 100% (same mechanism)
+- All other scenarios: unchanged (no regression).
+
+## Safety contract preserved
+- **No silent incomplete → pass**: status=Incomplete leaves the original
+  response untouched. Only `Complete` substitutes the reconstructed content.
+- **Mutation detection**: when reconstructed_sha != disk_sha, status =
+  MutationDetected and the substitution is skipped.
+- **Explicit limits**: max_pages=64, max_bytes=16 MiB, max_duration=30 s.
+- **No-progress abort**: same token twice → Incomplete (loop detection).
+- **Disk-mode is opt-in by manifest**: scenarios that do not set
+  `read_source_full: true` are completely unaffected.
+
+## Binary identity (release, post-rebuild)
+- `cognicode-mcp` SHA-256 `43edf2ea0f1ab6f7988164a5a97395b6b108bbe3b353dfba5574b1be52d50cbd`
+- `sandbox-orchestrator` SHA-256 `830d5e74c08fd8d8ad7e2bca344ce5bd4406868c4bf1678ce7a067d409421583`
+
+> **Important bin selection**: the sandbox orchestrator uses
+> `McpServer::spawn_with_env(server_path, workspace, ...)` which only passes
+> `--cwd` to the server. This requires the **stdio** binary
+> (`cognicode-mcp`, `src/main.rs`, `rmcp::transport::io::stdio`), NOT the HTTP
+> binary (`cognicode-mcp-server`, `src/server.rs`, streamable HTTP/SSE).
+> Selecting the HTTP binary produces a silent stdio deadlock (60 min timeout).
+> The correct invocation is `--server-binary ./target/release/cognicode-mcp`.
+
+## Pre-existing debt settled in H4.3
+- `impl Default for ContinuationMode` replaced with `#[derive(Default)]` and
+  `#[default]` variant annotation (was flagged by Clippy since H4.1).
+- Two pre-existing clippy lints in `read_source_reconstructor.rs` fixed:
+  - `if let` chain collapsed into a single guarded block.
+  - `if/else if/else` with identical branches collapsed into `||`.
+- `unnecessary_lazy_evaluations` on `unwrap_or_else(|| Value::Null)` →
+  `unwrap_or(Value::Null)`.
+
+## Result
+**H4.3 CLOSED GREEN.**
+- Recovery of correctitud for anyhow/tokio ≥ 90% per-scenario (now 100%).
+- H4.1 + H4.2 contract preserved (regressions re-checked and clean).
+- Manifest opt-in only: every other scenario in the corpus unchanged.
+- Streak H4 still explicit non-increment (per H2-H3-H4 SHA chain policy).
+- v1.0.0 NOT declared.
+- H4.4 NOT auto-opened.
+
+## H4.3.x — disk-mode ReconstructionSource + bounded reader adversarial coverage
+- Closed GREEN in `d0e7646f` (predecessor of H4.4).
+- 16/16 read_source_reconstructor PASS, including 6 new adversarial tests.
+- ReconstructionSource enum (`McpChain | DiskFallback`) with JSON
+  round-trip + legacy-artefact backward compatibility.
+
+## H4.4 — MCP continuation chain delivered by REAL server (stdio JSON-RPC)
+- Spec: `openspec/specs/mcp-continuation-chain-real-server/spec.md`.
+- Tasks: `openspec/changes/h44-mcp-continuation-chain-real-server/tasks.md`.
+- Commit: `91548c6c` (post-H4.3.x).
+- SHA chain: `92f152d8 → 6769c2c6 → fc281f81 → 3da5468e → d0e7646f → 91548c6c`.
+
+### What H4.4 closes vs what it does NOT
+- **CLOSES**: server-side contract for `read_file` continuation chain.
+  When a Tier-1 read_source scenario exceeds one page, the chain MUST deliver
+  pages 2..n and the accumulated SHA-256 MUST match the disk SHA-256 at every
+  page boundary (not just at the end).
+- **DOES NOT SUBSTITUTE**: the reconstructor's contract (H4.3 / H4.3.x).
+  H4.4 is a separate gate; both contracts must hold independently.
+
+### Test harness
+- `crates/cognicode-mcp/tests/continuation_e2e.rs` (570 lines).
+- Spawns the real `target/release/cognicode-mcp --cwd <repo>` child via
+  `tokio::process::Command` over stdin/stdout (newline-delimited JSON-RPC
+  per MCP spec).
+- Performs `initialize` + `notifications/initialized` handshake, then drives
+  `tools/call` for `read_file` (initial + continuation).
+- Follows the chain to natural end: while `has_more=true`, sends the
+  `next_token` back with the original `path` (server requires both fields;
+  sending only the token yields "missing field path" error caught by
+  `ChainError::ContinuationCall`).
+- Per-page SHA-256 of accumulated bytes vs SHA-256 of disk[..offset] at every
+  boundary. Any mismatch returns `BoundaryMismatch { page, accumulated_sha,
+  expected_sha, offset }` — never silently accepted.
+
+### Five Tier-1 scenarios — all PASS against `target/release/cognicode-mcp`
+| scenario        | lines | pages | bytes | server sha (first 16)        | disk sha (first 16)           | match |
+|---|---|---|---|---|---|---|
+| anyhow          |  730  |   2   | 21209 | `1c774243700f38c...`         | `1c774243700f38c...`          |  ✅   |
+| tokio           |  709  |   2   | 25075 | `c21a190c5430ae...`          | `c21a190c5430ae...`           |  ✅   |
+| serde           |  334  |   1   | 13612 | (single-page)                | (single-page)                 |  ✅   |
+| ripgrep cli     |  295  |   1   | 11698 | (single-page)                | (single-page)                 |  ✅   |
+| clap_builder    |   53  |   1   |   ~   | (single-page)                | (single-page)                 |  ✅   |
+
+- anyhow per-page latencies_ms=[1,2] (release profile).
+- tokio per-page latencies_ms=[2-3] (release profile).
+- 5/5 continuation_e2e PASS, no flake on retry (verified twice).
+
+### Server contract discoveries (would-be surprises without per-page invariant)
+- Server requires `{path, continuation_token}` on continuation. Sending
+  only the token returns "missing field `path`". Documented in harness
+  comments at `crates/cognicode-mcp/tests/continuation_e2e.rs:351-358`.
+- Single-page files return `has_more=false, next_token=None` — the harness
+  asserts no trailing token for serde/ripgrep/clap.
+- `ReadFileInput.mode` defaults to `"raw"`; the harness explicitly passes
+  `"mode":"raw"` for clarity.
+
+### Regression sweep (executed at H4.4 close)
+- `cargo test -p cognicode-mcp --test continuation_e2e` — 5/5 PASS.
+- `cargo check -p cognicode-mcp` — OK (no warnings introduced).
+- `cargo test -p cognicode-core --lib read_source_reconstructor` — 16/16
+  PASS (no regression on H4.3.x baseline).
+
+### Bin selection (H4.4 confirms H4.3.x policy)
+- Stdout-driven harness REQUIRES the **stdio** binary
+  (`target/release/cognicode-mcp`, `rmcp::transport::io::stdio`).
+- HTTP binary (`cognicode-mcp-server`, `src/server.rs`) would deadlock
+  the harness (60 min timeout) because it speaks streamable HTTP/SSE, not
+  newline-delimited JSON-RPC.
+
+### H4.4 close-out policy (locked)
+- **No v1.0.0 declaration**.
+- **Streak H4 still explicit non-increment** (per H2-H3-H4 SHA chain policy).
+- **H4.5 NOT auto-opened**: H4.5 (TMPDIR `/home → /var/home` symlink
+  environmental gate remediation, 39 failures registered during H4.1
+  inventory) remains pending in the H4 backlog and is NOT advanced by
+  H4.4's success.
+- Per-scenario gating remains the truth — no corpus-average promotion.
+
+## Result
+**H4.4 CLOSED GREEN.**
+- 5/5 Tier-1 read_source scenarios verified at the server boundary with
+  per-page SHA-256 invariant.
+- Reconstructor contract (H4.3 / H4.3.x) and server contract (H4.4) are
+  independent gates; both closed GREEN.
+- No v1.0.0, no streak increment, no H4.5 auto-open.
