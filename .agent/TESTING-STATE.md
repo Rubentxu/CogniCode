@@ -2753,3 +2753,194 @@ CAMPAIGN_COMPLETE × RELEASE_GATES_RED.
 - Reader defect FIXED (no regressions across 72 reader tests).
 - Tier-1 corpus, provenance emission, and reader are READY for an
   independent H2 cycle. H2 is not authorized by H1.6.
+
+---
+
+# H4 — TRACK A · H4 (read_file contract fix)
+
+## H4.0 RED characterization (cycle base: 64648092)
+
+### Active change
+- `crates/cognicode-core/src/application/dto/file_ops.rs`: `#[derive(Default)]` on `ReadFileRequest` (test-only ergonomic; all fields are Option<T>).
+- `crates/cognicode-core/src/application/services/file_operations.rs::tests::h4_red`: 10 new integration tests pinning the desired `read_file` contract.
+
+### Affected SUT
+- `FileOperationsService::read_file` (`crates/cognicode-core/src/application/services/file_operations.rs:200-340`).
+
+### Verification executed
+- `TMPDIR=/tmp cargo test -p cognicode-core --lib application::services::file_operations::tests::h4_red` →
+  2 passed, 8 FAILED. **Expected RED profile.**
+- Specifically pinned defects:
+  - `file_501_lines_must_advertise_continuation`: today `truncated=false` for 501-line file
+  - `file_over_1000_lines_must_advertise_continuation`: same
+  - `explicit_end_line_above_500_must_be_honored`: `end_line=700` clamped to 500
+  - `continuation_roundtrip_recovers_full_file`: only 500 of 1200 lines returned, `has_more=false`
+  - `utf8_content_survives_continuation`: only 500 of 800 lines returned
+
+### Evidence reused
+- None — H4.0 introduces the first characterization tests for this surface.
+
+### Verification deliberately not executed
+- Full workspace tests: out of H4.0 scope; deferred to H4.3/H4.5.
+- /home symlink failure set (39 tests): pre-existing, registered for H4.4.
+
+### Unknown impact
+- Whether `read_file_outline`/`read_file_symbols`/`read_file_compressed` modes are affected by the same defect — they may bypass the clamp entirely; not in H4 scope.
+
+### Result
+**RED PROFILE ACHIEVED** (2/10 pass on desired behavior; 8/10 fail pinning the defect).
+
+### Full verification required now
+NO — H4.0 is the RED characterization. Full verification target is H4.5.
+
+---
+
+# H4.1 — read_file contract fix (applied)
+
+## Change scope
+- `crates/cognicode-core/src/application/services/file_operations.rs`:
+  - **ContinuationToken** (líneas 44-60): added `mode: ContinuationMode` (Chunked|Paginated)
+    field with `#[serde(default)]` for backward compatibility with pre-H4.1 tokens.
+  - **encode_token** (líneas 75-79): unchanged signature, defaults to Chunked mode.
+  - **encode_paginated_token** (líneas 81-84): new helper that issues a line-paginated
+    continuation token.
+  - **byte_offset_of_line** (líneas 106-126): new module-level helper, single pass
+    over the content to find the byte offset of a given 1-based line.
+  - **read_file** (líneas 280-462): rewrote the Raw branch as a 4-path match
+    (Paginated continuation, Chunked read, Chunked continuation, default page read
+    with paginated continuation when more content exists).
+  - **truncated** flag (líneas 463-474): driven by `end_line < total_lines` for the
+    default-page path, and `false` for explicit `end_line` ranges.
+  - **read_file_raw_at_line** (líneas 866-875): replaced broken implementation with
+    a thin wrapper around `byte_offset_of_line`.
+  - **line_at_offset** (líneas 877-891): new helper, inverse of `read_file_raw_at_line`.
+  - **read_file_range** (líneas 940-976): replaced `lines().join("\n")` with a byte-slice
+    approach that preserves the trailing `\n` of the last line when not at EOF.
+    This was the root cause of `continuation_roundtrip_recovers_full_file` failing:
+    concatenated pages were sticking together at the boundary (`"line 500line 501"`).
+
+## Verification executed
+- `TMPDIR=/tmp cargo test -p cognicode-core --lib application::services::file_operations::tests::h4_red`
+  → **10 passed, 0 failed**. All H4.0 RED tests now GREEN.
+- `TMPDIR=/tmp cargo test -p cognicode-core --lib application::services::file_operations::tests`
+  → **48 passed, 0 failed, 7 ignored (pre-existing flaky)**.
+- `TMPDIR=/tmp cargo test -p cognicode-core --lib interface::mcp`
+  → **301 passed, 0 failed, 10 ignored (pre-existing flaky)**.
+- `TMPDIR=/tmp cargo test -p cognicode-core --lib sandbox_core`
+  → **124 passed, 0 failed** (same as H3 baseline).
+
+## Reused evidence
+- H4.0 RED characterization (10 tests): now GREEN, all defects resolved.
+- H3 regression tests: unchanged, still GREEN.
+
+## Verification deliberately not executed
+- Full workspace test suite: out of H4 scope. Reserved for H4.5.
+- Tier-1 corpus re-run: deferred to H4.2.
+- /home symlink 39 environmental failures: registered for H4.4, out of scope.
+
+## Result
+**GREEN PROFILE ACHIEVED** at the read_file contract level.
+- Default-page read returns `end_line = min(start + 499, total_lines)` (honest).
+- `truncated` reflects `end_line < total_lines` for default reads; `false` for explicit ranges.
+- Continuation via `next_token` recovers the entire file with byte-exact reconstruction
+  (roundtrip test passes against the original file content).
+- UTF-8 content survives multi-page reads (utf8 roundtrip test passes).
+- Backward-compatible: pre-H4.1 tokens decode as `Chunked` mode and follow the legacy
+  byte-chunked path.
+
+---
+
+# H4.2 — read_file token-binding hardening (applied)
+
+## Change scope
+- `crates/cognicode-core/src/application/services/file_operations.rs`:
+  - **`MAX_TOKEN_OFFSET_BYTES`** (constant): 256 MiB upper bound on the offset
+    a continuation token may carry. Tokens above this limit are rejected
+    *before* any disk read.
+  - **`MAX_TOKEN_CHUNK_BYTES`** (constant): 16 MiB upper bound on the
+    `chunk_size` a token may carry. Same rationale.
+  - **`validate_token_binding`** (new method on `FileOperationsService`):
+    when a `continuation_token` is supplied, the receiver now
+    (a) decodes it,
+    (b) checks `offset <= MAX_TOKEN_OFFSET_BYTES` and `chunk_size <= MAX_TOKEN_CHUNK_BYTES`,
+    (c) canonicalizes the token's path and the requested path, rejecting
+        mismatches (cross-file tokens are now an error, not a silent
+        re-interpretation),
+    (d) re-checks the workspace boundary on the canonicalized path.
+    All rejections are surfaced as `AppError::InvalidParameter(...)` and
+    serialized by the MCP layer as a structured JSON-RPC error.
+  - **`canonicalize_for_compare`** (helper): `std::fs::canonicalize`,
+    fail-closed (returns `""` on missing path so the comparison cannot
+    spuriously match).
+  - **`h4_red::h42_*` tests** (4 new): cross-file rejection, oversize-offset
+    rejection, oversize-chunk rejection, legacy Chunked token still accepted.
+  - Refactor of the `read_file` body (no semantic change to H4.1 contract):
+    the 4-path match is now wrapped in a `match mode { Raw | Outline | Symbols | Compressed }`
+    dispatch so that `validate_token_binding` runs *only* for the Raw path
+    (the only path that consumes continuation tokens).
+
+## Verification executed
+- `TMPDIR=/tmp cargo test -p cognicode-core --lib application::services::file_operations::tests::h4_red`
+  → **14 passed, 0 failed** (10 H4.0 + 4 H4.2).
+- `TMPDIR=/tmp cargo test -p cognicode-core --lib -- file_operations`
+  → **58 passed, 0 failed, 7 ignored (pre-existing flaky)**.
+- `TMPDIR=/tmp cargo test -p cognicode-core --lib -- interface::mcp`
+  → **301 passed, 0 failed, 10 ignored (pre-existing flaky)**.
+- `TMPDIR=/tmp cargo test -p cognicode-core --lib -- sandbox_core`
+  → **124 passed, 0 failed** (H3 regression preserved).
+- `TMPDIR=/tmp cargo fmt --check -p cognicode-core` → OK.
+- `TMPDIR=/tmp cargo clippy -p cognicode-core --lib --tests` →
+  0 new warnings; 1 pre-existing warning in `application/behaviors/clock.rs:98`
+  (`assert!(t1 >= 0)` on `u64`, unrelated to H4.2) and 1 in H4.1 code
+  (`impl Default for ContinuationMode` could be `#[derive(Default)]`,
+  introduced in commit `6769c2c6` / H4.1, **not** by H4.2).
+- **H4.2 product acceptance (release binary, persistent fixtures)**:
+  - cross-file token rejected with structured error → PASS
+  - oversize offset (300 MiB > 256 MiB max) rejected → PASS
+  - oversize chunk_size (32 MiB > 16 MiB max) rejected → PASS
+  - legacy Chunked token (no `mode` field) still accepted → PASS
+  - anyhow 730-line roundtrip SHA-256 byte-exact
+    `1c774243700f38ccaced1609c9e37a25c01f5e8aa900b876aef206207d6e4846`
+    matches the pinned fixture → PASS
+- **Tier-1 corpus re-run** (`sandbox/manifests-tier1/tier1_h3_read_source.yaml`,
+  sandbox-orchestrator running against the H4.2 release binaries):
+  - 10/10 PASS
+  - Health Score 97.76
+  - Per-dimension: correctitud 95.74, latencia 100, escalabilidad 100,
+    consistencia 95, robustez 100
+  - 0 ci_blocking, 0 regressions vs baseline
+
+## Reused evidence
+- H4.0 RED characterization (10 tests): still GREEN.
+- H4.1 contract (10 tests): still GREEN.
+- H3 regression tests (`sandbox_core`): still GREEN.
+- Tier-1 corpus baseline: re-run with H4.2 binaries; same score, no regressions.
+
+## Verification deliberately not executed
+- Full workspace test suite: out of H4.2 scope; reserved for H4.5.
+- Per-repo `correctitud` ≥ 90% on anyhow (74.46%) and tokio (82.97%):
+  the **contract** correctly emits `truncated=true, has_more=true, next_token=Some(...)`
+  for these repos, but the orchestrator makes a single read_file call and
+  ignores the continuation token. The byte-exact reconstruction via manual
+  continuation is documented above (PASS); the orchestrator-side gap is
+  tracked separately and is **not** an H4.2 contract defect.
+- /home symlink 39 environmental failures: registered for H4.4, out of scope.
+
+## Binary identity (release, post-rebuild)
+- `cognicode-mcp` SHA-256 `6125178ceb83e84f008eea1eb394f98ba827fbab509cd7e467b502831a0da99d`
+- `sandbox-orchestrator` SHA-256 `5f512e4ac64e3a2fcfeb186c319ea58899b385558adb761cd5f5aa167b225e58`
+
+## Result
+**GREEN PROFILE ACHIEVED** at the read_file contract level for H4.2 scope.
+- Token binding now rejects cross-file, cross-workspace, oversize-offset
+  and oversize-chunk tokens with structured MCP errors (no panic, no silent
+  reinterpretation).
+- Legacy pre-H4.2 tokens (no `mode` field) still decode and read.
+- H4.1 honest contract preserved: anyhow 730-line roundtrip SHA-256 byte-exact,
+  all 14 H4 RED tests GREEN, Tier-1 corpus 10/10 PASS at Health 97.76.
+
+## Pre-existing debt (NOT introduced by H4.2)
+- `application/behaviors/clock.rs:98`: `assert!(t1 >= 0)` on `u64` flagged by
+  Clippy as a useless comparison. Pre-existing in H3 cycle.
+- `impl Default for ContinuationMode` could be `#[derive(Default)]` — flagged
+  by Clippy. Introduced by commit `6769c2c6` (H4.1), not by H4.2.

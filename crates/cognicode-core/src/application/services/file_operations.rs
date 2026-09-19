@@ -125,6 +125,96 @@ fn byte_offset_of_line(content: &str, n: u32) -> usize {
     content.len()
 }
 
+/// H4.2 — Maximum allowed `chunk_size` (bytes) in a continuation token.
+///
+/// Bounds at 16 MiB — large enough for any reasonable pagination request
+/// but small enough to keep a malformed token from triggering a multi-GiB
+/// read. Tokens above this limit are rejected.
+const MAX_TOKEN_CHUNK_BYTES: usize = 16 * 1024 * 1024;
+
+/// H4.2 — Maximum allowed `offset` (bytes) in a continuation token.
+///
+/// Bounds at 256 MiB. Beyond this, the token is almost certainly corrupted
+/// or adversarial; rejecting it before touching disk is the safe default.
+const MAX_TOKEN_OFFSET_BYTES: usize = 256 * 1024 * 1024;
+
+/// H4.2 — Validate a continuation token before it is used to read any file.
+///
+/// Rules:
+///   - `offset` and `chunk_size` are within sane bounds.
+///   - The token's `path` resolves to the same canonical file as `requested_path`.
+///   - The token's path is inside the current `workspace_root`.
+///   - If the token encodes `mode = Paginated`, the receiver is honoring a
+///     paginated continuation (we do not silently reinterpret it as Chunked,
+///     nor vice versa). The `mode` field is therefore already enforced via the
+///     `ContinuationToken.mode` enum type — but the fact that this function
+///     exists on the read path documents the contract.
+///
+/// On any mismatch, returns `AppError::InvalidParameter(...)` — the MCP layer
+/// converts this to a structured JSON-RPC error, not a panic or a silent retry.
+impl FileOperationsService {
+    fn validate_token_binding(
+        token: &ContinuationToken,
+        requested_path: &str,
+        workspace_root: &str,
+    ) -> AppResult<()> {
+        if token.offset > MAX_TOKEN_OFFSET_BYTES {
+            return Err(AppError::InvalidParameter(format!(
+                "Continuation token offset {} exceeds maximum {}",
+                token.offset, MAX_TOKEN_OFFSET_BYTES
+            )));
+        }
+        if token.chunk_size > MAX_TOKEN_CHUNK_BYTES {
+            return Err(AppError::InvalidParameter(format!(
+                "Continuation token chunk_size {} exceeds maximum {}",
+                token.chunk_size, MAX_TOKEN_CHUNK_BYTES
+            )));
+        }
+
+        // The token's path is whatever the encoder wrote; we canonicalize both
+        // sides and compare. If the canonicalized forms differ, the token was
+        // either issued for a different file or under a different workspace
+        // (e.g. via symlink resolution). Either way: reject.
+        let canonical_requested = canonicalize_for_compare(requested_path);
+        let canonical_token = canonicalize_for_compare(&token.path);
+
+        if canonical_token != canonical_requested {
+            return Err(AppError::InvalidParameter(format!(
+                "Continuation token path does not match the requested file: token={:?}, requested={:?}",
+                token.path, requested_path
+            )));
+        }
+
+        // Workspace boundary check: the token's path must lie under the active
+        // workspace root. (validate_path already did this for the request, but
+        // we re-check defensively in case the token was created in a different
+        // workspace root at issuance time.)
+        let canonical_root = canonicalize_for_compare(workspace_root);
+        if !canonical_root.is_empty() && !canonical_requested.starts_with(&canonical_root) {
+            return Err(AppError::InvalidParameter(format!(
+                "Continuation token is outside the current workspace: path={:?}, workspace={:?}",
+                requested_path, workspace_root
+            )));
+        }
+
+        // Mode is preserved in the enum type itself. `Paginated` tokens carry
+        // chunk_size as a line-page hint; `Chunked` tokens carry bytes. The
+        // receiver path already branches on `ct.mode` (see read_file), so the
+        // contract that Paginated is not reinterpreted as Chunked (and vice
+        // versa) holds at the type level.
+
+        Ok(())
+    }
+}
+
+/// H4.2 — Canonicalize a path for comparison. Returns an empty string for
+/// non-existent or unreadable paths so the comparison fails closed.
+fn canonicalize_for_compare(path: &str) -> String {
+    std::fs::canonicalize(path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default()
+}
+
 /// FileOperationsService - Handles all file manipulation operations
 ///
 /// This service provides safe, workspace-scoped file operations with:
@@ -275,6 +365,23 @@ impl FileOperationsService {
         }
 
         let mode = input.mode.unwrap_or(ReadMode::Raw);
+
+        // H4.2 — Validate continuation token binding BEFORE any decoding.
+        //
+        // A continuation token encodes (path, offset, chunk_size, mode). The token's
+        // path must match the canonicalized requested path; otherwise a token issued
+        // for file A would be silently accepted by file B (read at file B's offset
+        // 0 = its own first byte), leaking state across files. Same for cross-workspace
+        // tokens: a token issued under workspace W1 must not be honored under W2.
+        //
+        // We also enforce sane bounds on offset/chunk_size to keep malformed tokens
+        // from causing pathological reads.
+        if let Some(ref token) = input.continuation_token {
+            let ct = decode_token(token).ok_or_else(|| {
+                AppError::InvalidParameter("Invalid continuation token".to_string())
+            })?;
+            Self::validate_token_binding(&ct, &validated_path, &self.workspace_root)?;
+        }
         let metadata = self.build_file_metadata(&validated_path)?;
         let total_lines = self.count_lines(&validated_path)?;
 
@@ -315,9 +422,7 @@ impl FileOperationsService {
                     .as_ref()
                     .map(|t| {
                         decode_token(t).ok_or_else(|| {
-                            AppError::InvalidParameter(
-                                "Invalid continuation token".to_string(),
-                            )
+                            AppError::InvalidParameter("Invalid continuation token".to_string())
                         })
                     })
                     .transpose()?;
@@ -325,166 +430,163 @@ impl FileOperationsService {
                 let start = input.start_line.unwrap_or(1);
                 let requested_chunk_size = input.chunk_size.unwrap_or(0);
 
-                let (
-                    content,
-                    actual_end_line,
-                    actual_has_more,
-                    actual_next_token,
-                ) = match (&decoded_token, requested_chunk_size) {
-                    // ── Path 4a: paginated continuation — line-paginated, page = chunk_size lines.
-                    (Some(ct), _) if ct.mode == ContinuationMode::Paginated => {
-                        let page_lines = ct.chunk_size.max(1) as u32;
-                        // The token's offset is the byte offset of the line we left off at.
-                        let resume_start_line = self
-                            .line_at_offset(&validated_path, ct.offset)
-                            .unwrap_or(start);
-                        let resume_end_line = resume_start_line
-                            .saturating_add(page_lines - 1)
-                            .min(total_lines);
-                        let content = self.read_file_range(
-                            &validated_path,
-                            resume_start_line,
-                            resume_end_line,
-                        )?;
-                        let has_more = resume_end_line < total_lines;
-                        let next_token = if has_more {
-                            let next_offset = self
-                                .read_file_raw_at_line(&validated_path, resume_end_line + 1)?;
-                            Some(encode_paginated_token(
+                let (content, actual_end_line, actual_has_more, actual_next_token) =
+                    match (&decoded_token, requested_chunk_size) {
+                        // ── Path 4a: paginated continuation — line-paginated, page = chunk_size lines.
+                        (Some(ct), _) if ct.mode == ContinuationMode::Paginated => {
+                            let page_lines = ct.chunk_size.max(1) as u32;
+                            // The token's offset is the byte offset of the line we left off at.
+                            let resume_start_line = self
+                                .line_at_offset(&validated_path, ct.offset)
+                                .unwrap_or(start);
+                            let resume_end_line = resume_start_line
+                                .saturating_add(page_lines - 1)
+                                .min(total_lines);
+                            let content = self.read_file_range(
                                 &validated_path,
-                                next_offset,
-                                page_lines as usize,
-                            ))
-                        } else {
-                            None
-                        };
-                        (content, resume_end_line, has_more, next_token)
-                    }
-                    // ── Path 3: byte-chunked read (legacy semantics preserved).
-                    (None, cs) if cs > 0 => {
-                        let offset = if start <= 1 {
-                            0
-                        } else {
-                            self.read_file_raw_at_line(&validated_path, start)?
-                        };
-                        let (chunk, new_offset, reached_end) =
-                            self.read_file_chunk(&validated_path, offset, cs)?;
-                        let has_more = !reached_end;
-                        let next_token = if has_more {
-                            Some(encode_token(&validated_path, new_offset, cs))
-                        } else {
-                            None
-                        };
-                        let lines_in_chunk: Vec<&str> = chunk.lines().collect();
-                        let chunk_start_line = if offset == 0 {
-                            1
-                        } else {
-                            let content = fs::read_to_string(&validated_path).map_err(|e| {
-                                AppError::InvalidParameter(format!("Failed to read file: {}", e))
-                            })?;
-                            content[..offset].lines().count() as u32 + 1
-                        };
-                        let chunk_end_line =
-                            chunk_start_line + lines_in_chunk.len() as u32 - 1;
-                        (chunk, chunk_end_line, has_more, next_token)
-                    }
-                    // ── Path 4b: byte-chunked continuation (legacy tokens issued before H4.1).
-                    (Some(ct), _) if ct.mode == ContinuationMode::Chunked => {
-                        let (chunk, new_offset, reached_end) = self.read_file_chunk(
-                            &validated_path,
-                            ct.offset,
-                            ct.chunk_size,
-                        )?;
-                        let has_more = !reached_end;
-                        let next_token = if has_more {
-                            Some(encode_token(&validated_path, new_offset, ct.chunk_size))
-                        } else {
-                            None
-                        };
-                        let lines_in_chunk: Vec<&str> = chunk.lines().collect();
-                        let chunk_start_line = if ct.offset == 0 {
-                            1
-                        } else {
-                            let content = fs::read_to_string(&validated_path).map_err(|e| {
-                                AppError::InvalidParameter(format!("Failed to read file: {}", e))
-                            })?;
-                            content[..ct.offset].lines().count() as u32 + 1
-                        };
-                        let chunk_end_line =
-                            chunk_start_line + lines_in_chunk.len() as u32 - 1;
-                        (chunk, chunk_end_line, has_more, next_token)
-                    }
-                    // ── Path 1+2: no chunk_size, no continuation (or chunk_size=0).
-                    // Honors explicit end_line if present (case 1), else default page (case 2).
-                    (None, _) => {
-                        let end = match input.end_line {
-                            Some(explicit) => explicit.min(total_lines),
-                            None => {
-                                let requested = start.saturating_add(DEFAULT_PAGE_LINES - 1);
-                                requested.min(total_lines)
-                            }
-                        };
-                        let content = self.read_file_range(&validated_path, start, end)?;
-
-                        let (has_more, next_token) = match input.end_line {
-                            // Explicit range: caller asked for that exact slice.
-                            // Reaching EOF is part of honoring it; no continuation.
-                            Some(_) => (false, None),
-                            // Default page: emit paginated continuation when there is more.
-                            None => {
-                                if end < total_lines {
-                                    let next_offset = self
-                                        .read_file_raw_at_line(&validated_path, end + 1)?;
-                                    (
-                                        true,
-                                        Some(encode_paginated_token(
-                                            &validated_path,
-                                            next_offset,
-                                            DEFAULT_PAGE_LINES as usize,
-                                        )),
-                                    )
-                                } else {
-                                    (false, None)
+                                resume_start_line,
+                                resume_end_line,
+                            )?;
+                            let has_more = resume_end_line < total_lines;
+                            let next_token = if has_more {
+                                let next_offset = self
+                                    .read_file_raw_at_line(&validated_path, resume_end_line + 1)?;
+                                Some(encode_paginated_token(
+                                    &validated_path,
+                                    next_offset,
+                                    page_lines as usize,
+                                ))
+                            } else {
+                                None
+                            };
+                            (content, resume_end_line, has_more, next_token)
+                        }
+                        // ── Path 3: byte-chunked read (legacy semantics preserved).
+                        (None, cs) if cs > 0 => {
+                            let offset = if start <= 1 {
+                                0
+                            } else {
+                                self.read_file_raw_at_line(&validated_path, start)?
+                            };
+                            let (chunk, new_offset, reached_end) =
+                                self.read_file_chunk(&validated_path, offset, cs)?;
+                            let has_more = !reached_end;
+                            let next_token = if has_more {
+                                Some(encode_token(&validated_path, new_offset, cs))
+                            } else {
+                                None
+                            };
+                            let lines_in_chunk: Vec<&str> = chunk.lines().collect();
+                            let chunk_start_line = if offset == 0 {
+                                1
+                            } else {
+                                let content = fs::read_to_string(&validated_path).map_err(|e| {
+                                    AppError::InvalidParameter(format!(
+                                        "Failed to read file: {}",
+                                        e
+                                    ))
+                                })?;
+                                content[..offset].lines().count() as u32 + 1
+                            };
+                            let chunk_end_line = chunk_start_line + lines_in_chunk.len() as u32 - 1;
+                            (chunk, chunk_end_line, has_more, next_token)
+                        }
+                        // ── Path 4b: byte-chunked continuation (legacy tokens issued before H4.1).
+                        (Some(ct), _) if ct.mode == ContinuationMode::Chunked => {
+                            let (chunk, new_offset, reached_end) =
+                                self.read_file_chunk(&validated_path, ct.offset, ct.chunk_size)?;
+                            let has_more = !reached_end;
+                            let next_token = if has_more {
+                                Some(encode_token(&validated_path, new_offset, ct.chunk_size))
+                            } else {
+                                None
+                            };
+                            let lines_in_chunk: Vec<&str> = chunk.lines().collect();
+                            let chunk_start_line = if ct.offset == 0 {
+                                1
+                            } else {
+                                let content = fs::read_to_string(&validated_path).map_err(|e| {
+                                    AppError::InvalidParameter(format!(
+                                        "Failed to read file: {}",
+                                        e
+                                    ))
+                                })?;
+                                content[..ct.offset].lines().count() as u32 + 1
+                            };
+                            let chunk_end_line = chunk_start_line + lines_in_chunk.len() as u32 - 1;
+                            (chunk, chunk_end_line, has_more, next_token)
+                        }
+                        // ── Path 1+2: no chunk_size, no continuation (or chunk_size=0).
+                        // Honors explicit end_line if present (case 1), else default page (case 2).
+                        (None, _) => {
+                            let end = match input.end_line {
+                                Some(explicit) => explicit.min(total_lines),
+                                None => {
+                                    let requested = start.saturating_add(DEFAULT_PAGE_LINES - 1);
+                                    requested.min(total_lines)
                                 }
-                            }
-                        };
-                        (content, end, has_more, next_token)
-                    }
-                    // ── Wildcard: unreachable in practice because all (Some(_), _) cases
-                    // are covered by guards above; the explicit branch documents that.
-                    (Some(_), _) => {
-                        // Fallback: treat as a paginated token with default page size.
-                        let page_lines = DEFAULT_PAGE_LINES;
-                        let resume_start_line = start;
-                        let resume_end_line = resume_start_line
-                            .saturating_add(page_lines - 1)
-                            .min(total_lines);
-                        let content = self.read_file_range(
-                            &validated_path,
-                            resume_start_line,
-                            resume_end_line,
-                        )?;
-                        let has_more = resume_end_line < total_lines;
-                        let next_token = if has_more {
-                            let next_offset = self
-                                .read_file_raw_at_line(&validated_path, resume_end_line + 1)?;
-                            Some(encode_paginated_token(
+                            };
+                            let content = self.read_file_range(&validated_path, start, end)?;
+
+                            let (has_more, next_token) = match input.end_line {
+                                // Explicit range: caller asked for that exact slice.
+                                // Reaching EOF is part of honoring it; no continuation.
+                                Some(_) => (false, None),
+                                // Default page: emit paginated continuation when there is more.
+                                None => {
+                                    if end < total_lines {
+                                        let next_offset =
+                                            self.read_file_raw_at_line(&validated_path, end + 1)?;
+                                        (
+                                            true,
+                                            Some(encode_paginated_token(
+                                                &validated_path,
+                                                next_offset,
+                                                DEFAULT_PAGE_LINES as usize,
+                                            )),
+                                        )
+                                    } else {
+                                        (false, None)
+                                    }
+                                }
+                            };
+                            (content, end, has_more, next_token)
+                        }
+                        // ── Wildcard: unreachable in practice because all (Some(_), _) cases
+                        // are covered by guards above; the explicit branch documents that.
+                        (Some(_), _) => {
+                            // Fallback: treat as a paginated token with default page size.
+                            let page_lines = DEFAULT_PAGE_LINES;
+                            let resume_start_line = start;
+                            let resume_end_line = resume_start_line
+                                .saturating_add(page_lines - 1)
+                                .min(total_lines);
+                            let content = self.read_file_range(
                                 &validated_path,
-                                next_offset,
-                                page_lines as usize,
-                            ))
-                        } else {
-                            None
-                        };
-                        (content, resume_end_line, has_more, next_token)
-                    }
-                };
+                                resume_start_line,
+                                resume_end_line,
+                            )?;
+                            let has_more = resume_end_line < total_lines;
+                            let next_token = if has_more {
+                                let next_offset = self
+                                    .read_file_raw_at_line(&validated_path, resume_end_line + 1)?;
+                                Some(encode_paginated_token(
+                                    &validated_path,
+                                    next_offset,
+                                    page_lines as usize,
+                                ))
+                            } else {
+                                None
+                            };
+                            (content, resume_end_line, has_more, next_token)
+                        }
+                    };
 
                 // Auto-suggest for large files in raw mode without chunk_size
-                let auto_suggest =
-                    is_large_file && requested_chunk_size == 0
-                        && input.continuation_token.is_none()
-                        && input.end_line.is_none();
+                let auto_suggest = is_large_file
+                    && requested_chunk_size == 0
+                    && input.continuation_token.is_none()
+                    && input.end_line.is_none();
 
                 let suggested = if auto_suggest {
                     Some(65536) // 64KB suggested chunk size
@@ -3421,8 +3523,14 @@ mod tests {
             assert_eq!(result.total_lines, 100);
             assert_eq!(result.start_line, 1);
             assert_eq!(result.end_line, 100);
-            assert!(!result.truncated, "100-line file must NOT be reported as truncated");
-            assert!(!result.has_more, "100-line file must NOT advertise has_more");
+            assert!(
+                !result.truncated,
+                "100-line file must NOT be reported as truncated"
+            );
+            assert!(
+                !result.has_more,
+                "100-line file must NOT advertise has_more"
+            );
             assert!(result.next_token.is_none(), "no continuation expected");
             assert_eq!(result.content.lines().count(), 100);
         }
@@ -3446,7 +3554,10 @@ mod tests {
             assert_eq!(result.total_lines, 500);
             assert_eq!(result.start_line, 1);
             assert_eq!(result.end_line, 500);
-            assert!(!result.truncated, "exactly-500-line file must NOT be truncated");
+            assert!(
+                !result.truncated,
+                "exactly-500-line file must NOT be truncated"
+            );
             assert!(!result.has_more);
             assert!(result.next_token.is_none());
             assert_eq!(result.content.lines().count(), 500);
@@ -3511,8 +3622,14 @@ mod tests {
                 .unwrap();
 
             assert_eq!(result.total_lines, 1500);
-            assert!(result.truncated, "1500-line file must report truncated=true");
-            assert!(result.has_more, "1500-line file must advertise has_more=true");
+            assert!(
+                result.truncated,
+                "1500-line file must report truncated=true"
+            );
+            assert!(
+                result.has_more,
+                "1500-line file must advertise has_more=true"
+            );
             assert!(
                 result.next_token.is_some(),
                 "1500-line file must ship a next_token"
@@ -3709,6 +3826,123 @@ mod tests {
                 ..Default::default()
             });
             assert!(r.is_err(), "invalid continuation_token must yield an error");
+        }
+
+        // ---- H4.2 — token binding hardening ---------------------------
+
+        /// Helper: read the first page of a file, returning the issued continuation
+        /// token. Used by the cross-file and cross-workspace regression tests below.
+        fn first_page_token(service: &FileOperationsService, path: &str) -> String {
+            let r = service
+                .read_file(ReadFileRequest {
+                    path: path.to_string(),
+                    mode: Some(ReadMode::Raw),
+                    ..Default::default()
+                })
+                .expect("first-page read should succeed");
+            r.next_token.expect("truncated file must emit a token")
+        }
+
+        #[test]
+        fn h42_token_for_other_file_is_rejected() {
+            let dir = TempDir::new().unwrap();
+            let path_a = write_n_line_file(&dir, "a.txt", 800);
+            let path_b = write_n_line_file(&dir, "b.txt", 800);
+            let service = test_service_in_temp_dir(&dir);
+
+            // Token issued for a.txt ...
+            let tok = first_page_token(&service, path_a.to_str().unwrap());
+            // ... used to read b.txt → must be rejected.
+            let r = service.read_file(ReadFileRequest {
+                path: path_b.to_str().unwrap().to_string(),
+                mode: Some(ReadMode::Raw),
+                continuation_token: Some(tok),
+                ..Default::default()
+            });
+            assert!(r.is_err(), "cross-file token must be rejected");
+        }
+
+        #[test]
+        fn h42_token_with_oversize_offset_is_rejected() {
+            // Hand-craft a token with offset above MAX_TOKEN_OFFSET_BYTES (256 MiB).
+            let dir = TempDir::new().unwrap();
+            let path = write_n_line_file(&dir, "fake.txt", 100);
+            let service = test_service_in_temp_dir(&dir);
+
+            // We can't easily reach the private encode_token from outside the
+            // module, so we go through the public decode path: build a base64
+            // JSON envelope with an over-limit offset and supply it directly.
+            use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+            let payload = serde_json::json!({
+                "mode": "Paginated",
+                "path": path.to_str().unwrap(),
+                "offset": 300 * 1024 * 1024,
+                "chunk_size": 500
+            });
+            let bytes = serde_json::to_vec(&payload).unwrap();
+            let tok = BASE64.encode(bytes);
+
+            let r = service.read_file(ReadFileRequest {
+                path: path.to_str().unwrap().to_string(),
+                mode: Some(ReadMode::Raw),
+                continuation_token: Some(tok),
+                ..Default::default()
+            });
+            assert!(r.is_err(), "oversize offset token must be rejected");
+        }
+
+        #[test]
+        fn h42_token_with_oversize_chunk_is_rejected() {
+            let dir = TempDir::new().unwrap();
+            let path = write_n_line_file(&dir, "fake.txt", 100);
+            let service = test_service_in_temp_dir(&dir);
+
+            use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+            let payload = serde_json::json!({
+                "mode": "Paginated",
+                "path": path.to_str().unwrap(),
+                "offset": 0,
+                "chunk_size": 32 * 1024 * 1024
+            });
+            let bytes = serde_json::to_vec(&payload).unwrap();
+            let tok = BASE64.encode(bytes);
+
+            let r = service.read_file(ReadFileRequest {
+                path: path.to_str().unwrap().to_string(),
+                mode: Some(ReadMode::Raw),
+                continuation_token: Some(tok),
+                ..Default::default()
+            });
+            assert!(r.is_err(), "oversize chunk_size token must be rejected");
+        }
+
+        #[test]
+        fn h42_legacy_chunked_token_still_accepted() {
+            // A pre-H4.2 client might emit a token WITHOUT the `mode` field.
+            // `#[serde(default)]` on ContinuationToken.mode defaults to
+            // Chunked, and validate_token_binding does not refuse on mode —
+            // so a valid Chunked token must still be honored.
+            let dir = TempDir::new().unwrap();
+            let path = write_n_line_file(&dir, "fake.txt", 600);
+            let service = test_service_in_temp_dir(&dir);
+
+            use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+            // Note: no `mode` field. This is the legacy shape.
+            let payload = serde_json::json!({
+                "path": path.to_str().unwrap(),
+                "offset": 0,
+                "chunk_size": 4096
+            });
+            let bytes = serde_json::to_vec(&payload).unwrap();
+            let tok = BASE64.encode(bytes);
+
+            let r = service.read_file(ReadFileRequest {
+                path: path.to_str().unwrap().to_string(),
+                mode: Some(ReadMode::Raw),
+                continuation_token: Some(tok),
+                ..Default::default()
+            });
+            assert!(r.is_ok(), "legacy Chunked token must still decode and read");
         }
     }
 }
