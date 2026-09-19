@@ -62,3 +62,6 @@ http-body-util = "0.1"
 tokio-util = "0.7"
 # M3.5: constant-time comparison for Bearer-token auth middleware.
 subtle.workspace = true
+
+# H4.4: dev-deps for the continuation chain e2e harness.
+sha2.workspace = true
