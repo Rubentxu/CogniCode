@@ -3153,4 +3153,340 @@ mod tests {
             new_pids
         );
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // H4.0 — RED characterization tests for read_file contract.
+    //
+    // Each test pins ONE expected behavior. After H4.1 fixes the contract,
+    // these tests must STILL pass (they characterize the desired behavior,
+    // not the broken behavior). Tests that currently pass reflect the
+    // accidentally-correct path; tests that currently fail pin the defect.
+    //
+    // Run with:
+    //   cargo test -p cognicode-core --lib \
+    //       application::services::file_operations::tests::h4_red
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Helper: write a file with exactly `n` lines (each line is its 1-based index).
+    fn write_n_line_file(dir: &TempDir, name: &str, n: usize) -> std::path::PathBuf {
+        let path = dir.path().join(name);
+        let mut f = std::fs::File::create(&path).unwrap();
+        for i in 1..=n {
+            writeln!(f, "line {:06}", i).unwrap();
+        }
+        path
+    }
+
+    mod h4_red {
+        use super::*;
+
+        /// File < 500 lines: full content returned, no truncation, no continuation.
+        #[test]
+        fn small_file_full_content_no_truncation() {
+            let dir = TempDir::new().unwrap();
+            let path = write_n_line_file(&dir, "small.txt", 100);
+            let service = test_service_in_temp_dir(&dir);
+
+            let result = service
+                .read_file(ReadFileRequest {
+                    path: path.to_str().unwrap().to_string(),
+                    mode: Some(ReadMode::Raw),
+
+                    ..Default::default()
+                })
+                .unwrap();
+
+            assert_eq!(result.total_lines, 100);
+            assert_eq!(result.start_line, 1);
+            assert_eq!(result.end_line, 100);
+            assert!(!result.truncated, "100-line file must NOT be reported as truncated");
+            assert!(!result.has_more, "100-line file must NOT advertise has_more");
+            assert!(result.next_token.is_none(), "no continuation expected");
+            assert_eq!(result.content.lines().count(), 100);
+        }
+
+        /// File of exactly 500 lines: full content, NOT clamped (file fits the cap).
+        #[test]
+        fn file_exactly_500_lines_complete() {
+            let dir = TempDir::new().unwrap();
+            let path = write_n_line_file(&dir, "exactly500.txt", 500);
+            let service = test_service_in_temp_dir(&dir);
+
+            let result = service
+                .read_file(ReadFileRequest {
+                    path: path.to_str().unwrap().to_string(),
+                    mode: Some(ReadMode::Raw),
+
+                    ..Default::default()
+                })
+                .unwrap();
+
+            assert_eq!(result.total_lines, 500);
+            assert_eq!(result.start_line, 1);
+            assert_eq!(result.end_line, 500);
+            assert!(!result.truncated, "exactly-500-line file must NOT be truncated");
+            assert!(!result.has_more);
+            assert!(result.next_token.is_none());
+            assert_eq!(result.content.lines().count(), 500);
+        }
+
+        /// File of 501 lines: PIN. The current implementation silently clamps
+        /// to end_line=500, returns only 500 lines, sets truncated=false (because
+        /// content < 100k bytes) and does NOT advertise has_more/next_token.
+        /// After H4.1: truncated=true AND has_more=true AND next_token=Some(...)
+        /// so the caller can recover the remaining 1 line.
+        #[test]
+        fn file_501_lines_must_advertise_continuation() {
+            let dir = TempDir::new().unwrap();
+            let path = write_n_line_file(&dir, "five_hundred_one.txt", 501);
+            let service = test_service_in_temp_dir(&dir);
+
+            let result = service
+                .read_file(ReadFileRequest {
+                    path: path.to_str().unwrap().to_string(),
+                    mode: Some(ReadMode::Raw),
+
+                    ..Default::default()
+                })
+                .unwrap();
+
+            assert_eq!(result.total_lines, 501);
+            assert!(result.end_line <= 501);
+            // PIN: after fix, truncated must be true because we did NOT return
+            // everything the file contains (501 > 500 in a default read).
+            assert!(
+                result.truncated,
+                "501-line file read without explicit chunk_size must report truncated=true"
+            );
+            // PIN: after fix, has_more must be true so the caller knows there
+            // is more content recoverable via the continuation token.
+            assert!(
+                result.has_more,
+                "501-line file must advertise has_more=true (caller needs the missing line 501)"
+            );
+            // PIN: after fix, next_token must be Some so the caller can fetch it.
+            assert!(
+                result.next_token.is_some(),
+                "501-line file must ship a next_token when has_more=true"
+            );
+        }
+
+        /// File > 1000 lines: same contract — truncated=true, has_more=true, next_token=Some.
+        /// The 500-line silent clamp must be replaced by an honest continuation contract.
+        #[test]
+        fn file_over_1000_lines_must_advertise_continuation() {
+            let dir = TempDir::new().unwrap();
+            let path = write_n_line_file(&dir, "big.txt", 1500);
+            let service = test_service_in_temp_dir(&dir);
+
+            let result = service
+                .read_file(ReadFileRequest {
+                    path: path.to_str().unwrap().to_string(),
+                    mode: Some(ReadMode::Raw),
+
+                    ..Default::default()
+                })
+                .unwrap();
+
+            assert_eq!(result.total_lines, 1500);
+            assert!(result.truncated, "1500-line file must report truncated=true");
+            assert!(result.has_more, "1500-line file must advertise has_more=true");
+            assert!(
+                result.next_token.is_some(),
+                "1500-line file must ship a next_token"
+            );
+        }
+
+        /// Explicit end_line > 500: PIN. Today this is silently clamped to 500.
+        /// After H4.1: the explicit range is honored end-to-end (the contract
+        /// says: explicit end_line is the user's intent — don't second-guess).
+        #[test]
+        fn explicit_end_line_above_500_must_be_honored() {
+            let dir = TempDir::new().unwrap();
+            let path = write_n_line_file(&dir, "rng.txt", 800);
+            let service = test_service_in_temp_dir(&dir);
+
+            let result = service
+                .read_file(ReadFileRequest {
+                    path: path.to_str().unwrap().to_string(),
+                    start_line: Some(1),
+                    end_line: Some(700),
+                    mode: Some(ReadMode::Raw),
+
+                    ..Default::default()
+                })
+                .unwrap();
+
+            assert_eq!(result.total_lines, 800);
+            assert_eq!(
+                result.end_line, 700,
+                "explicit end_line=700 must be honored, not silently clamped to 500"
+            );
+            assert!(
+                !result.truncated,
+                "explicit end_line=700 < total=800 must NOT be reported as truncated"
+            );
+            assert!(!result.has_more);
+            assert_eq!(result.content.lines().count(), 700);
+        }
+
+        /// Range starting after line 500: must succeed and return only that slice.
+        #[test]
+        fn range_starting_after_500_returns_that_slice() {
+            let dir = TempDir::new().unwrap();
+            let path = write_n_line_file(&dir, "rng.txt", 800);
+            let service = test_service_in_temp_dir(&dir);
+
+            let result = service
+                .read_file(ReadFileRequest {
+                    path: path.to_str().unwrap().to_string(),
+                    start_line: Some(600),
+                    end_line: Some(700),
+                    mode: Some(ReadMode::Raw),
+
+                    ..Default::default()
+                })
+                .unwrap();
+
+            assert_eq!(result.start_line, 600);
+            assert_eq!(result.end_line, 700);
+            assert!(!result.truncated);
+            assert_eq!(result.content.lines().count(), 101);
+            assert!(result.content.starts_with("line 000600"));
+            assert!(result.content.contains("line 000700"));
+            assert!(!result.content.contains("line 000599"));
+            assert!(!result.content.contains("line 000701"));
+        }
+
+        /// Last fragment and real end of file: caller asks for end_line > total_lines.
+        /// The response must report end_line=total_lines and NOT mark truncated.
+        #[test]
+        fn range_past_eof_returns_eof_not_truncated() {
+            let dir = TempDir::new().unwrap();
+            let path = write_n_line_file(&dir, "rng.txt", 100);
+            let service = test_service_in_temp_dir(&dir);
+
+            let result = service
+                .read_file(ReadFileRequest {
+                    path: path.to_str().unwrap().to_string(),
+                    start_line: Some(50),
+                    end_line: Some(700),
+                    mode: Some(ReadMode::Raw),
+
+                    ..Default::default()
+                })
+                .unwrap();
+
+            assert_eq!(result.total_lines, 100);
+            assert_eq!(result.end_line, 100, "response must stop at the real EOF");
+            assert!(
+                !result.truncated,
+                "EOF reached on an explicit range must NOT be reported as truncated"
+            );
+            assert!(!result.has_more);
+            assert_eq!(result.content.lines().count(), 51);
+        }
+
+        /// Continuation round-trip: read chunk, follow token, recover full file.
+        /// After H4.1: this must reconstruct exactly the original bytes.
+        #[test]
+        fn continuation_roundtrip_recovers_full_file() {
+            let dir = TempDir::new().unwrap();
+            let path = write_n_line_file(&dir, "cont.txt", 1200);
+            let service = test_service_in_temp_dir(&dir);
+            let expected = std::fs::read_to_string(&path).unwrap();
+
+            let mut acc = String::new();
+            let mut token: Option<String> = None;
+            let mut pages = 0;
+            loop {
+                pages += 1;
+                let r = service
+                    .read_file(ReadFileRequest {
+                        path: path.to_str().unwrap().to_string(),
+                        mode: Some(ReadMode::Raw),
+                        continuation_token: token.clone(),
+
+                        ..Default::default()
+                    })
+                    .unwrap();
+                acc.push_str(&r.content);
+                if !r.has_more {
+                    assert!(
+                        r.next_token.is_none(),
+                        "has_more=false → next_token must be None"
+                    );
+                    break;
+                }
+                assert!(
+                    r.next_token.is_some(),
+                    "has_more=true requires a next_token (cannot advertise continuation we cannot serve)"
+                );
+                token = r.next_token.clone();
+                if pages > 50 {
+                    panic!("runaway pagination (>50 pages)");
+                }
+            }
+
+            assert_eq!(
+                acc, expected,
+                "after {} pages the reconstructed content must equal the original file",
+                pages
+            );
+        }
+
+        /// UTF-8 content: characters must survive the read unmodified, even when
+        /// the file exceeds 500 lines and requires continuation.
+        #[test]
+        fn utf8_content_survives_continuation() {
+            let dir = TempDir::new().unwrap();
+            let path = dir.path().join("utf8.txt");
+            {
+                let mut f = std::fs::File::create(&path).unwrap();
+                for i in 1..=800 {
+                    writeln!(f, "café — línea {}", i).unwrap();
+                }
+            }
+            let service = test_service_in_temp_dir(&dir);
+            let expected = std::fs::read_to_string(&path).unwrap();
+
+            let mut acc = String::new();
+            let mut token: Option<String> = None;
+            loop {
+                let r = service
+                    .read_file(ReadFileRequest {
+                        path: path.to_str().unwrap().to_string(),
+                        mode: Some(ReadMode::Raw),
+                        continuation_token: token.clone(),
+
+                        ..Default::default()
+                    })
+                    .unwrap();
+                acc.push_str(&r.content);
+                if !r.has_more {
+                    break;
+                }
+                token = r.next_token.clone();
+            }
+            assert_eq!(acc, expected, "UTF-8 must survive multi-page reads");
+        }
+
+        /// Stale or fake continuation token must be rejected, not silently
+        /// misread. The current decoder path already does this; H4.1 keeps it.
+        #[test]
+        fn invalid_continuation_token_is_rejected() {
+            let dir = TempDir::new().unwrap();
+            let path = write_n_line_file(&dir, "fake.txt", 100);
+            let service = test_service_in_temp_dir(&dir);
+
+            let r = service.read_file(ReadFileRequest {
+                path: path.to_str().unwrap().to_string(),
+                mode: Some(ReadMode::Raw),
+                continuation_token: Some("not-a-real-token".to_string()),
+
+                ..Default::default()
+            });
+            assert!(r.is_err(), "invalid continuation_token must yield an error");
+        }
+    }
 }

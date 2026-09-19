@@ -48,7 +48,7 @@ impl FromStr for ReadMode {
 }
 
 /// Request for reading a file
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReadFileRequest {
     pub path: String,
     #[serde(default)]
