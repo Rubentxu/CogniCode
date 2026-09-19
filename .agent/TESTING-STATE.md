@@ -2218,3 +2218,81 @@ but the reader fabricated GREEN using the analyze_stability placeholder.
 
   Next: close reader phase; prepare real acceptance campaign.
   Do not renegotiate ADR-031 yet.
+
+## Active Change — TRACK A / preflight v1 (2026-09-19) — CLOSED 2026-09-19
+
+Four preflight criteria from the GO directive (acceptance-campaign v1)
+were verified before consuming resources on a real Tier-1 campaign.
+Three of the four found real reader defects; all were fixed with
+minimal corrections.
+
+### P1 — three repeats contribute to G3 per-scenario aggregation
+
+  Initial: RED. The reader counted each result.json as a separate
+  scenario. With 3 repeats of one scenario, the verdict was computed
+  over 3 entries instead of 1.
+  Fix: per_scenario aggregation. Per distinct scenario_id, compute
+  the mean of the 5-dim health across repeats that have all 5 dims
+  populated. Mixed-coverage scenarios are marked incomplete_5dim
+  (cannot drive verdict).
+
+### P2 — G3 criterion documented and coherent with the spec
+
+  Initial: RED. Docstring lacked an explicit aggregation policy.
+  Fix: extended docstring with the Aggregation policy (P1) section;
+  G3_HEALTH_WEIGHTS mirror scoring.rs:1400 with attribution.
+
+### P3 — G6 cannot return GREEN with missing mandatory repeats
+
+  Initial: RED. Insufficient scenarios were named as a count only,
+  not by name. Mixed-repeats paths (some eligible, some not) silently
+  dropped the insufficient ones from the evidence.
+  Fix: insufficient scenarios listed by name (up to 10, +N more) in
+  AMBER/RED/GREEN paths. They cannot be hidden.
+
+### P4 — no-GT scenarios must not fabricate scores
+
+  Initial: GREEN (already covered by A1a+1 and A1c contract tests).
+  No reader change needed.
+
+### Regression tests
+
+  sandbox/scripts/tests/test_preflight_v1.py: 14 tests
+  before fixes: 4 failed, 10 passed
+  after fixes:  14 passed
+  full suite:   60 passed (16 A1a+1 + 12 A1b + 18 A1c + 14 preflight)
+
+### Scope
+
+  - sandbox/scripts/release_scorecard.py (gate_g3 per_scenario
+    aggregation; gate_g6 insufficient-scenario naming)
+  - sandbox/scripts/tests/test_preflight_v1.py (new)
+
+### Out of scope
+
+  - Thresholds unchanged.
+  - ADR-031 unchanged.
+  - Scoring engine, analyze_stability.py, scorecard streak unchanged.
+  - No campaign executed (preflight is regression-only).
+  - No fabricated GREEN.
+
+### Evidence inventory
+
+  - python3 -m pytest sandbox/scripts/tests/test_preflight_v1.py -v
+    -> 14/14 PASS
+  - python3 -m pytest sandbox/scripts/tests/ (full)
+    -> 60/60 PASS
+  - scorecard on frozen run: 7 GREEN / 5 AMBER / 1 RED (unchanged)
+  - md5 sandbox/results/scorecard_streak.json
+    -> 6b2121fe8e1134a6bed84faba138e5ff (unchanged)
+  - receipt: sandbox/results/freezes/2026-09-19-track-a-preflight-v1.json
+
+### Result
+
+  PASS for preflight v1 scope. Four criteria verified; three reader
+  defects fixed with minimal corrections. No fabricated GREEN. No
+  streak increment. No campaign executed yet.
+
+  Next: prepare Tier-1 corpus (ripgrep, serde, anyhow, tokio, clap)
+  with pinned commits, manifests, and ground truth. Then a small
+  run against one Tier-1 checkout to validate producer fields.

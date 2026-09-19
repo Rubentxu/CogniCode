@@ -425,9 +425,17 @@ def gate_g3(run_dirs: list[str], stability_path: str = "") -> GateResult:
 
     Provenance policy:
       A scenario contributes to G3 only when ALL FIVE dimensions are
-      present and non-None. If correctitud is None (typical: scenario
-      has no ground truth), that scenario is excluded from the
-      verdict-driving set but counted as incomplete coverage.
+      present and non-None in EVERY repeat (across run_dirs). If even
+      one repeat has correctitud=None (typical: scenario has no
+      ground truth), the scenario is excluded from the verdict-driving
+      set but counted as incomplete_5dim.
+
+    Aggregation policy (P1):
+      Each result.json file is one repeat of one scenario. Aggregation
+      is per distinct scenario_id (de-duplicated across run_dirs);
+      per-scenario health is the mean of the 5-dim health values
+      computed across the repeats that have all 5 dims populated.
+      The reader does NOT silently use only the first repeat.
 
     Verdict precedence:
       no result.json with any dimension_scores           -> AMBER no_evidence
@@ -441,16 +449,22 @@ def gate_g3(run_dirs: list[str], stability_path: str = "") -> GateResult:
       diagnostic_only with its formula cited. It is never used as
       release-readiness evidence.
     """
-    rows: list[dict] = []              # per-scenario 5-dim health
-    incomplete_scenarios: list[str] = []
-    no_evidence_scenarios: list[str] = []
+    # Aggregation policy (P1):
+    #   - Each result.json is one repeat of one scenario.
+    #   - Aggregation is per distinct scenario_id; per-scenario health
+    #     is the mean of the 5-dim health values across repeats that
+    #     have ALL FIVE dimensions populated.
+    #   - If a scenario_id has at least one repeat with all 5 dims and
+    #     one repeat missing at least one dim, the scenario is
+    #     incomplete_5dim (cannot drive a verdict, but its repeats
+    #     are counted for coverage).
+    #   - The reader does NOT silently use only the first repeat.
+    #   - Cross-run_dir: the same scenario_id is aggregated once even
+    #     if it appears in multiple run_dirs (e.g. run-1, run-2).
+    per_scenario: dict[str, dict] = {}    # scenario_id -> aggregation
+    seen_scenario: set[str] = set()        # distinct scenario_ids
     total_candidates = 0
 
-    # Source: result.json files in each run_dir. We do NOT mix this
-    # with stability.json::health_score, summary.json::health_score,
-    # or aggregate() output. The spec requires the scoring-engine
-    # formula applied to the actual dimension measurements.
-    seen: set[str] = set()             # de-dup across run_dirs
     for d in run_dirs:
         for rj_path in _discover_result_jsons(d):
             try:
@@ -459,14 +473,19 @@ def gate_g3(run_dirs: list[str], stability_path: str = "") -> GateResult:
             except Exception:
                 continue
             sid = r.get("scenario_id") or ""
-            if sid in seen:
+            if not sid:
                 continue
-            seen.add(sid)
             total_candidates += 1
+            seen_scenario.add(sid)
 
             ds = r.get("dimension_scores") or {}
             if not ds:
-                no_evidence_scenarios.append(sid)
+                per_scenario.setdefault(sid, {
+                    "complete_healths": [],
+                    "has_no_evidence": True,
+                    "has_incomplete": False,
+                })
+                per_scenario[sid]["has_no_evidence"] = True
                 continue
 
             values: list[float] = []
@@ -476,14 +495,38 @@ def gate_g3(run_dirs: list[str], stability_path: str = "") -> GateResult:
                     break
                 values.append(float(v))
             else:
-                # All 5 dims present.
                 h = sum(v * w for v, w in zip(values, G3_HEALTH_WEIGHTS))
-                rows.append({
-                    "scenario_id": sid,
-                    "health": h,
-                    "dims": ds,
+                per_scenario.setdefault(sid, {
+                    "complete_healths": [],
+                    "has_no_evidence": False,
+                    "has_incomplete": False,
                 })
+                per_scenario[sid]["complete_healths"].append(h)
                 continue
+            # This repeat has some dims but not all 5.
+            per_scenario.setdefault(sid, {
+                "complete_healths": [],
+                "has_no_evidence": False,
+                "has_incomplete": False,
+            })
+            per_scenario[sid]["has_incomplete"] = True
+
+    # Build the rows (per-scenario) and the incomplete_scenarios list
+    # from the per_scenario aggregation.
+    rows: list[dict] = []
+    incomplete_scenarios: list[str] = []
+    no_evidence_scenarios: list[str] = []
+    for sid, agg in per_scenario.items():
+        if agg["complete_healths"] and not agg["has_incomplete"] and not agg["has_no_evidence"]:
+            # Clean: all repeats have full 5 dims.
+            avg = sum(agg["complete_healths"]) / len(agg["complete_healths"])
+            rows.append({"scenario_id": sid, "health": avg, "n_repeats": len(agg["complete_healths"])})
+        elif agg["complete_healths"] and (agg["has_incomplete"] or agg["has_no_evidence"]):
+            # Mixed: some repeats complete, others incomplete.
+            # Mark as incomplete_5dim; do NOT compute a partial health.
+            incomplete_scenarios.append(sid)
+        else:
+            # No complete repeats at all.
             incomplete_scenarios.append(sid)
 
     # Diagnostic: load stability.json::health_score to preserve the
@@ -1058,9 +1101,15 @@ def gate_g6(stability_path: str) -> GateResult:
     if not eligible and (insufficient_sample_scenarios or empty_timing_scenarios or diagnostic_only):
         reasons: list[str] = []
         if insufficient_sample_scenarios:
+            # P3: name the insufficient scenarios so the operator sees
+            # which ones cannot drive the verdict.
+            named = insufficient_sample_scenarios[:10]
+            more = "" if len(insufficient_sample_scenarios) <= 10 else \
+                f" (+{len(insufficient_sample_scenarios) - 10} more)"
             reasons.append(
                 f"insufficient_samples: {len(insufficient_sample_scenarios)} "
-                f"scenarios with runs<{G6_MIN_SAMPLES_PER_SCENARIO}"
+                f"scenarios with runs<{G6_MIN_SAMPLES_PER_SCENARIO}: "
+                f"{', '.join(repr(n) for n in named)}{more}"
             )
         if empty_timing_scenarios:
             reasons.append(
@@ -1125,6 +1174,17 @@ def gate_g6(stability_path: str) -> GateResult:
     if failing:
         max_row = max(failing, key=lambda r: r["cv_warm"] or 0.0)
         max_cv = max_row["cv_warm"]
+        # P3: name the insufficient scenarios even when RED — they
+        # are part of the campaign and the operator must see them.
+        insufficient_str = ""
+        if insufficient_sample_scenarios:
+            named = insufficient_sample_scenarios[:10]
+            more = "" if len(insufficient_sample_scenarios) <= 10 else \
+                f" (+{len(insufficient_sample_scenarios) - 10} more)"
+            insufficient_str = (
+                f"; insufficient_samples={len(insufficient_sample_scenarios)} "
+                f"({', '.join(repr(n) for n in named)}{more})"
+            )
         return GateResult(
             id="G6", name="Run-to-Run Stability",
             status="RED",
@@ -1139,12 +1199,23 @@ def gate_g6(stability_path: str) -> GateResult:
                 f"campaign_id={campaign_id or 'unknown'}, "
                 f"measured_source_head={measured_source_head or 'unknown'}, "
                 f"repeat_count={repeat_count}"
-                f"{agg_cv_str}"
+                f"{agg_cv_str}{insufficient_str}"
             ),
             evidence_path=stability_path,
         )
 
     # All passing.
+    # P3: even when all eligible scenarios pass, surface the
+    # insufficient ones so they are not silently ignored.
+    insufficient_str = ""
+    if insufficient_sample_scenarios:
+        named = insufficient_sample_scenarios[:10]
+        more = "" if len(insufficient_sample_scenarios) <= 10 else \
+            f" (+{len(insufficient_sample_scenarios) - 10} more)"
+        insufficient_str = (
+            f"; insufficient_samples={len(insufficient_sample_scenarios)} "
+            f"({', '.join(repr(n) for n in named)}{more})"
+        )
     return GateResult(
         id="G6", name="Run-to-Run Stability",
         status="GREEN",
@@ -1160,7 +1231,7 @@ def gate_g6(stability_path: str) -> GateResult:
             f"campaign_id={campaign_id or 'unknown'}, "
             f"measured_source_head={measured_source_head or 'unknown'}, "
             f"repeat_count={repeat_count}"
-            f"{agg_cv_str}"
+            f"{agg_cv_str}{insufficient_str}"
         ),
         evidence_path=stability_path,
     )
