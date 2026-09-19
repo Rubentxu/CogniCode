@@ -1,10 +1,26 @@
 # CP1.0 — Consolidated closeout receipt
 
 > Change: `cp1-control-plane-first-cycle`
-> Verdict: **CLOSED**
+> Verdict: **IMPLEMENTED / RUNTIME ACCEPTANCE PENDING**
+> Status table:
+>
+> ```
+> CP1.0 application/HTTP implementation: GREEN
+> CP1.0 production runtime wiring:       PENDING
+> CP1.0 final product acceptance:        PENDING
+> ```
+>
 > Receipt head: `949cae62a7a35171863df0b471f8932f7f436a98`
 > Public release baseline: `v0.97.1` (`735388d1`)
-> Generated: 2026-09-19T09:02:30Z (session clover)
+> Generated: 2026-09-19T09:30:00Z (session clover, post `674c3795` correction)
+>
+> **Correction 2026-09-19**: prior version of this receipt (commit `674c3795`)
+> described CP1.0 as "CLOSED" in the abstract, but the wired path is exercised
+> **only** by tests via `with_control_query(...)`. No production runtime
+> (neither `explorer-api` nor `explorer-mcp`) wires a `ControlQueryService`
+> instance, so every live HTTP GET returns `status:incomplete` with
+> `reason:control_query_service_not_wired`. CP1.0 closes only after a real
+> HTTP UAT from the configured product binary.
 
 ## 1. WU sequence — verified under HEAD
 
@@ -186,14 +202,21 @@ This holds across the e77 corrigendum (canonical grounding restored
 
 ## 10. e78 checkpoint — re-applied (DEFERRED)
 
-| step | result |
+Distinct accounting per user directive 2026-09-19:
+
+| concept | status |
 |---|---|
-| inventory of `application::architecture` consumers | see `openspec/changes/cp1-control-plane-first-cycle/e78-inventory.md` |
-| exclude tests/proxies/legacy endpoints | `/api/...architecture` legacy uses `graph.build_architecture`, not ControlQuery — does NOT count |
-| genuine product consumers at HEAD | **1** (CP1.0 WU4: `GET /control-plane/workspaces/:id/architecture`) |
-| threshold (carried unchanged from previous checkpoint) | **≥ 2** |
-| outcome | **1 / 2 — e78 remains DEFERRED** |
-| historic archive touched | **NO** (`.agent/TESTING-STATE.md` checkpoint only) |
+| first consumer implemented in code | 1 candidate (CP1.0 WU4 endpoint + tests) |
+| first consumer accessible in runtime real | **NOT accredited** (no composition root injects the service) |
+| second independent consumer | **not identified** |
+| threshold | **≥ 2** (unchanged) |
+| verdict | **DEFERRED** |
+
+Once the service is wired to the real server AND startup UAT passes, CP1.0
+may count as 1/2. Tests, endpoint, service, and any future Backstage proxy
+count as ONE operational consumer — not multiple.
+
+Detailed inventory: `openspec/changes/cp1-control-plane-first-cycle/e78-inventory.md`.
 
 ## 11. CP1 backlog — first problem MUST come from vertical evidence
 
@@ -298,6 +321,41 @@ NOT a CP1.0 defect** — it is the intended split between inner-loop (Explorer
 runtime) and outer-loop (Control Plane host). It is recorded here so a
 future CP1.1 author can pick it up cleanly.
 
+## 13. CP1.0 status (corrected)
+
+The original closeout (commits `c09441fd` + `cf736ead`) asserted CP1.0 was
+**CLOSED**. After the discovery in commit `674c3795` — that
+`with_control_query` is called only from tests, never from any product
+binary — the verdict is corrected to **IMPLEMENTED / RUNTIME ACCEPTANCE
+PENDING**.
+
+```text
+CP1.0 application/HTTP implementation: GREEN  (cargo build OK, fmt OK, clippy OK,
+                                              955 unit + 5 integration + 5
+                                              domain unit tests PASS)
+CP1.0 production runtime wiring:       PENDING  (no composition root injects
+                                                    ControlQueryService today)
+CP1.0 final product acceptance:        PENDING  (no real-server UAT performed
+                                                    for the wired path)
+```
+
+Closing condition (must all be GREEN):
+
+```text
+Core tests              GREEN
+HTTP endpoint tests     GREEN
+Real server startup     GREEN
+Real HTTP UAT           GREEN  ← still missing
+Canonical evidence      VERIFIED
+Fail-closed semantics   VERIFIED
+Authority boundary      PRESERVED
+Lint / fmt              GREEN
+```
+
+Until the real HTTP UAT is observed, CP1.0 must NOT be marked CLOSED.
+WU5 (runtime wiring + acceptance) is the next concrete step and is tracked
+under this change folder.
+
 ## 12. What CP1.0 does NOT deliver
 
 - no investigation UI
@@ -305,16 +363,4 @@ future CP1.1 author can pick it up cleanly.
 - no policy/approval flow
 - no second Control Plane consumer (e78 stays DEFERRED)
 - no cadence green scorecard (separate cadence receipt INCOMPLETE)
-
-## 13. CP1.0 close
-
-CP1.0 outcome: **CLOSED**.
-
-```text
-CP1.0 = DONE
-CP1   = OPEN  (next problem TBD from vertical evidence)
-CP0   = DONE  (FIT_WITH_CONSTRAINTS, archive untouched)
-e78   = DEFERRED (1/2)
-```
-
-No release receipt emitted. No `RELEASE` step. CP1.0 is a local-only close.
+- no real-server HTTP UAT of the wired path (this receipt)

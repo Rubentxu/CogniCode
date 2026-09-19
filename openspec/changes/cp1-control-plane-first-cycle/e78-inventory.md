@@ -4,6 +4,13 @@
 > genuine product consumers) is unchanged. This inventory re-applies the gate
 > at HEAD `949cae62`. It does **not** reinterpret the threshold and does
 > **not** alter the historic archive closure (e78 = DEFERRED).
+>
+> **Updated accounting 2026-09-19T09:30Z**: the distinction between
+> *implemented candidate* and *accredited operational consumer* is now
+> explicit. CP1.0 WU4 provides one **implemented candidate** (the endpoint
+> and its tests), but **zero accredited operational consumers** because
+> no production runtime wires `ControlQueryService` (see closeout §13 and
+> commit `674c3795`). e78 stays DEFERRED.
 
 ## Scope
 
