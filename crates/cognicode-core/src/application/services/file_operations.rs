@@ -46,15 +46,53 @@ use std::time::SystemTime;
 struct ContinuationToken {
     path: String,
     offset: usize,
+    /// Bytes-per-chunk (legacy) OR page size in lines (H4.1 paginated mode).
+    /// The semantics depend on `mode`.
     chunk_size: usize,
+    /// H4.1 — discriminates between byte-chunked and line-paginated tokens.
+    /// `Chunked`  (legacy): chunk_size is bytes; read_file_chunk consumes it.
+    /// `Paginated` (H4.1+): chunk_size is the *line page size* (e.g. 500); the
+    ///   receiver uses it to compute the next page's end_line on top of `offset`.
+    /// Missing in JSON → `Chunked` (backward-compatible with any token issued
+    /// before H4.1).
+    #[serde(default, rename = "mode")]
+    mode: ContinuationMode,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+enum ContinuationMode {
+    Chunked,
+    Paginated,
+}
+
+impl Default for ContinuationMode {
+    fn default() -> Self {
+        ContinuationMode::Chunked
+    }
 }
 
 /// Encodes a continuation token to base64
 fn encode_token(path: &str, offset: usize, chunk_size: usize) -> String {
+    encode_token_with_mode(path, offset, chunk_size, ContinuationMode::Chunked)
+}
+
+/// H4.1 — same as `encode_token` but tags the token as paginated (line-based).
+fn encode_paginated_token(path: &str, offset: usize, page_lines: usize) -> String {
+    encode_token_with_mode(path, offset, page_lines, ContinuationMode::Paginated)
+}
+
+fn encode_token_with_mode(
+    path: &str,
+    offset: usize,
+    chunk_size: usize,
+    mode: ContinuationMode,
+) -> String {
     let token = ContinuationToken {
         path: path.to_string(),
         offset,
         chunk_size,
+        mode,
     };
     BASE64.encode(serde_json::to_vec(&token).unwrap_or_default())
 }
@@ -63,6 +101,28 @@ fn encode_token(path: &str, offset: usize, chunk_size: usize) -> String {
 fn decode_token(token: &str) -> Option<ContinuationToken> {
     let bytes = BASE64.decode(token).ok()?;
     serde_json::from_slice(&bytes).ok()
+}
+
+/// H4.1 — returns the byte offset where 1-based line `n` begins.
+///
+/// If `n <= 1`, returns 0. If `n > total_lines`, returns `content.len()`.
+/// The result points to the FIRST byte of the line (i.e. the byte right after
+/// the `\n` that terminated line `n-1`, or 0 if `n == 1`).
+fn byte_offset_of_line(content: &str, n: u32) -> usize {
+    if n <= 1 {
+        return 0;
+    }
+    let target = n;
+    let mut current: u32 = 1;
+    for (offset, ch) in content.char_indices() {
+        if ch == '\n' {
+            current += 1;
+            if current == target {
+                return offset + 1;
+            }
+        }
+    }
+    content.len()
 }
 
 /// FileOperationsService - Handles all file manipulation operations
@@ -238,74 +298,193 @@ impl FileOperationsService {
                 let file_size = metadata.size as usize;
                 let is_large_file = file_size > 1_000_000; // 1MB threshold
 
-                // Determine offset from continuation_token or start_line
-                let (offset, chunk_size): (usize, usize) =
-                    if let Some(ref token) = input.continuation_token {
-                        if let Some(ct) = decode_token(token) {
-                            (ct.offset, ct.chunk_size)
-                        } else {
-                            return Err(AppError::InvalidParameter(
+                // H4.1 — Maximum lines per default page (only applies when the caller
+                // did NOT pass an explicit end_line). The old code used `.min(500)` and
+                // reported end_line=500 even for files shorter than 500 lines, breaking
+                // the contract on `end_line`. The fix distinguishes four cases:
+                //   1. explicit `end_line`                       → honor it.
+                //   2. no `end_line`, no `chunk_size`            → default page = DEFAULT_PAGE_LINES,
+                //                                                  truncated if the file is larger.
+                //   3. `chunk_size > 0`                          → byte-chunked read.
+                //   4. `continuation_token` present              → resume (Paginated or Chunked).
+                const DEFAULT_PAGE_LINES: u32 = 500;
+
+                // Decode continuation token (if any) and route to the right path.
+                let decoded_token: Option<ContinuationToken> = input
+                    .continuation_token
+                    .as_ref()
+                    .map(|t| {
+                        decode_token(t).ok_or_else(|| {
+                            AppError::InvalidParameter(
                                 "Invalid continuation token".to_string(),
-                            ));
-                        }
-                    } else {
-                        let start = input.start_line.unwrap_or(1);
-                        // Convert start_line to byte offset (approximate)
-                        let offset = if start <= 1 {
-                            0
-                        } else {
-                            // Read up to start_line to compute approximate offset
-                            self.read_file_raw_at_line(&validated_path, start)?
-                        };
-                        (offset, input.chunk_size.unwrap_or(0))
-                    };
+                            )
+                        })
+                    })
+                    .transpose()?;
 
-                // Read chunk or full content
-                let chunk_mode = chunk_size > 0 || input.continuation_token.is_some();
-                let effective_chunk_size = chunk_size;
+                let start = input.start_line.unwrap_or(1);
+                let requested_chunk_size = input.chunk_size.unwrap_or(0);
 
-                let (content, actual_end_line, actual_has_more, actual_next_token) =
-                    if chunk_mode && effective_chunk_size > 0 {
-                        // Chunked reading
-                        let (chunk, new_offset, reached_end) =
-                            self.read_file_chunk(&validated_path, offset, effective_chunk_size)?;
-
-                        let has_more = !reached_end;
+                let (
+                    content,
+                    actual_end_line,
+                    actual_has_more,
+                    actual_next_token,
+                ) = match (&decoded_token, requested_chunk_size) {
+                    // ── Path 4a: paginated continuation — line-paginated, page = chunk_size lines.
+                    (Some(ct), _) if ct.mode == ContinuationMode::Paginated => {
+                        let page_lines = ct.chunk_size.max(1) as u32;
+                        // The token's offset is the byte offset of the line we left off at.
+                        let resume_start_line = self
+                            .line_at_offset(&validated_path, ct.offset)
+                            .unwrap_or(start);
+                        let resume_end_line = resume_start_line
+                            .saturating_add(page_lines - 1)
+                            .min(total_lines);
+                        let content = self.read_file_range(
+                            &validated_path,
+                            resume_start_line,
+                            resume_end_line,
+                        )?;
+                        let has_more = resume_end_line < total_lines;
                         let next_token = if has_more {
-                            Some(encode_token(
+                            let next_offset = self
+                                .read_file_raw_at_line(&validated_path, resume_end_line + 1)?;
+                            Some(encode_paginated_token(
                                 &validated_path,
-                                new_offset,
-                                effective_chunk_size,
+                                next_offset,
+                                page_lines as usize,
                             ))
                         } else {
                             None
                         };
-
-                        // Count lines in chunk to determine line numbers
+                        (content, resume_end_line, has_more, next_token)
+                    }
+                    // ── Path 3: byte-chunked read (legacy semantics preserved).
+                    (None, cs) if cs > 0 => {
+                        let offset = if start <= 1 {
+                            0
+                        } else {
+                            self.read_file_raw_at_line(&validated_path, start)?
+                        };
+                        let (chunk, new_offset, reached_end) =
+                            self.read_file_chunk(&validated_path, offset, cs)?;
+                        let has_more = !reached_end;
+                        let next_token = if has_more {
+                            Some(encode_token(&validated_path, new_offset, cs))
+                        } else {
+                            None
+                        };
                         let lines_in_chunk: Vec<&str> = chunk.lines().collect();
                         let chunk_start_line = if offset == 0 {
                             1
                         } else {
-                            // Count newlines before offset to determine line number
                             let content = fs::read_to_string(&validated_path).map_err(|e| {
                                 AppError::InvalidParameter(format!("Failed to read file: {}", e))
                             })?;
                             content[..offset].lines().count() as u32 + 1
                         };
-                        let chunk_end_line = chunk_start_line + lines_in_chunk.len() as u32 - 1;
-
+                        let chunk_end_line =
+                            chunk_start_line + lines_in_chunk.len() as u32 - 1;
                         (chunk, chunk_end_line, has_more, next_token)
-                    } else {
-                        // Non-chunked reading (original behavior)
-                        let start = input.start_line.unwrap_or(1);
-                        let end = input.end_line.unwrap_or(500).min(500);
+                    }
+                    // ── Path 4b: byte-chunked continuation (legacy tokens issued before H4.1).
+                    (Some(ct), _) if ct.mode == ContinuationMode::Chunked => {
+                        let (chunk, new_offset, reached_end) = self.read_file_chunk(
+                            &validated_path,
+                            ct.offset,
+                            ct.chunk_size,
+                        )?;
+                        let has_more = !reached_end;
+                        let next_token = if has_more {
+                            Some(encode_token(&validated_path, new_offset, ct.chunk_size))
+                        } else {
+                            None
+                        };
+                        let lines_in_chunk: Vec<&str> = chunk.lines().collect();
+                        let chunk_start_line = if ct.offset == 0 {
+                            1
+                        } else {
+                            let content = fs::read_to_string(&validated_path).map_err(|e| {
+                                AppError::InvalidParameter(format!("Failed to read file: {}", e))
+                            })?;
+                            content[..ct.offset].lines().count() as u32 + 1
+                        };
+                        let chunk_end_line =
+                            chunk_start_line + lines_in_chunk.len() as u32 - 1;
+                        (chunk, chunk_end_line, has_more, next_token)
+                    }
+                    // ── Path 1+2: no chunk_size, no continuation (or chunk_size=0).
+                    // Honors explicit end_line if present (case 1), else default page (case 2).
+                    (None, _) => {
+                        let end = match input.end_line {
+                            Some(explicit) => explicit.min(total_lines),
+                            None => {
+                                let requested = start.saturating_add(DEFAULT_PAGE_LINES - 1);
+                                requested.min(total_lines)
+                            }
+                        };
                         let content = self.read_file_range(&validated_path, start, end)?;
-                        (content, end, false, None)
-                    };
+
+                        let (has_more, next_token) = match input.end_line {
+                            // Explicit range: caller asked for that exact slice.
+                            // Reaching EOF is part of honoring it; no continuation.
+                            Some(_) => (false, None),
+                            // Default page: emit paginated continuation when there is more.
+                            None => {
+                                if end < total_lines {
+                                    let next_offset = self
+                                        .read_file_raw_at_line(&validated_path, end + 1)?;
+                                    (
+                                        true,
+                                        Some(encode_paginated_token(
+                                            &validated_path,
+                                            next_offset,
+                                            DEFAULT_PAGE_LINES as usize,
+                                        )),
+                                    )
+                                } else {
+                                    (false, None)
+                                }
+                            }
+                        };
+                        (content, end, has_more, next_token)
+                    }
+                    // ── Wildcard: unreachable in practice because all (Some(_), _) cases
+                    // are covered by guards above; the explicit branch documents that.
+                    (Some(_), _) => {
+                        // Fallback: treat as a paginated token with default page size.
+                        let page_lines = DEFAULT_PAGE_LINES;
+                        let resume_start_line = start;
+                        let resume_end_line = resume_start_line
+                            .saturating_add(page_lines - 1)
+                            .min(total_lines);
+                        let content = self.read_file_range(
+                            &validated_path,
+                            resume_start_line,
+                            resume_end_line,
+                        )?;
+                        let has_more = resume_end_line < total_lines;
+                        let next_token = if has_more {
+                            let next_offset = self
+                                .read_file_raw_at_line(&validated_path, resume_end_line + 1)?;
+                            Some(encode_paginated_token(
+                                &validated_path,
+                                next_offset,
+                                page_lines as usize,
+                            ))
+                        } else {
+                            None
+                        };
+                        (content, resume_end_line, has_more, next_token)
+                    }
+                };
 
                 // Auto-suggest for large files in raw mode without chunk_size
                 let auto_suggest =
-                    is_large_file && chunk_size == 0 && input.continuation_token.is_none();
+                    is_large_file && requested_chunk_size == 0
+                        && input.continuation_token.is_none()
+                        && input.end_line.is_none();
 
                 let suggested = if auto_suggest {
                     Some(65536) // 64KB suggested chunk size
@@ -313,7 +492,6 @@ impl FileOperationsService {
                     None
                 };
 
-                let start = input.start_line.unwrap_or(1);
                 (
                     content,
                     start,
@@ -325,8 +503,20 @@ impl FileOperationsService {
             }
         };
 
-        // Handle large file truncation warning
-        let truncated = content.len() > 100_000;
+        // H4.1 — Truncation is now driven by whether the response reached the file's
+        // last line (range-vs-total). The old byte-based flag (`content.len() > 100_000`)
+        // conflated "large file" with "incomplete read" — a 200KB file in the middle of
+        // a 1MB file is not truncated, it's just a partial page.
+        //
+        // Rule:
+        //   - If the caller asked for an explicit `end_line`, that range was the request;
+        //     truncated = false (we honored it; if end_line > total_lines the response
+        //     just stops at EOF and that's the contract).
+        //   - Otherwise (default page read), truncated = (end_line < total_lines).
+        let truncated = match input.end_line {
+            Some(_) => false,
+            None => end_line < total_lines,
+        };
 
         Ok(ReadFileResult {
             content,
@@ -673,21 +863,31 @@ impl FileOperationsService {
         )
     }
 
-    /// Estimates byte offset for a given line number
+    /// Returns the byte offset where line `target_line` begins.
+    ///
+    /// H4.1 — replaced by an implementation built on `byte_offset_of_line`.
+    /// The previous version had two bugs (returned before counting newlines;
+    /// evaluated `starts_with('\n')` against the file head, not the cursor).
     fn read_file_raw_at_line(&self, path: &str, target_line: u32) -> AppResult<usize> {
         let content = fs::read_to_string(path)
             .map_err(|e| AppError::InvalidParameter(format!("Failed to read file: {}", e)))?;
+        Ok(byte_offset_of_line(&content, target_line))
+    }
 
-        let mut current_line = 1u32;
-        for (offset, _) in content.char_indices() {
-            if current_line >= target_line {
-                return Ok(offset);
-            }
-            if content[content.char_indices().nth(0).unwrap().0..].starts_with('\n') {
-                current_line += 1;
+    /// Inverse of `read_file_raw_at_line`: returns the 1-based line number that
+    /// starts at the given byte offset. If the offset lies inside a line, returns
+    /// the line that *contains* the offset.
+    fn line_at_offset(&self, path: &str, byte_offset: usize) -> AppResult<u32> {
+        let content = fs::read_to_string(path)
+            .map_err(|e| AppError::InvalidParameter(format!("Failed to read file: {}", e)))?;
+        let cap = byte_offset.min(content.len());
+        let mut line: u32 = 1;
+        for ch in content[..cap].chars() {
+            if ch == '\n' {
+                line += 1;
             }
         }
-        Ok(content.len())
+        Ok(line)
     }
 
     /// Reads a chunk of bytes from a file, extending to the next line boundary
@@ -738,20 +938,42 @@ impl FileOperationsService {
         Ok((chunk, end_offset, reached_end))
     }
 
-    /// Reads a range of lines from a file
+    /// Reads a range of lines from a file, preserving the trailing `\n` of the
+    /// last line in the slice when the slice does not extend to EOF.
+    ///
+    /// H4.1 — the previous implementation joined `lines()` with `\n`, dropping
+    /// the original trailing newline. That made concatenated continuation pages
+    /// stick together at the boundary (`"line 500line 501"`) when reconstructed.
+    /// The new implementation returns the original byte slice, so callers can
+    /// concatenate pages without losing content.
     fn read_file_range(&self, path: &str, start_line: u32, end_line: u32) -> AppResult<String> {
         let content = fs::read_to_string(path)
             .map_err(|e| AppError::InvalidParameter(format!("Failed to read file: {}", e)))?;
 
-        let lines: Vec<&str> = content.lines().collect();
-        let start_idx = (start_line as usize).saturating_sub(1).min(lines.len());
-        let end_idx = (end_line as usize).min(lines.len());
+        let total = content.lines().count() as u32;
+        if start_line > total || start_line > end_line {
+            return Ok(String::new());
+        }
+        let last_line = end_line.min(total);
 
-        if start_idx >= end_idx {
+        // Compute the byte offset where line `start_line` begins.
+        let start_byte = byte_offset_of_line(&content, start_line);
+
+        // Compute the byte offset just past the `\n` terminating line `last_line`.
+        // If `last_line == total`, the line is the last in the file and has no
+        // trailing `\n` (or has one only if the file ends with `\n`); in either
+        // case we go to EOF.
+        let end_byte = if last_line >= total {
+            content.len()
+        } else {
+            byte_offset_of_line(&content, last_line + 1)
+        };
+
+        if end_byte <= start_byte {
             return Ok(String::new());
         }
 
-        Ok(lines[start_idx..end_idx].join("\n"))
+        Ok(String::from(&content[start_byte..end_byte]))
     }
 
     /// Counts total lines in a file
