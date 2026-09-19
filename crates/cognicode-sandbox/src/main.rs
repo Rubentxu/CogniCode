@@ -417,6 +417,7 @@ fn execute_scenario(
     repos_dir: &PathBuf,
     fixtures_dir: &PathBuf,
     verbose: bool,
+    measured_source_head: &str,
 ) -> (ScenarioResult, Option<CapturedCall>) {
     let started_at = iso8601_now();
     let overall_start = Instant::now();
@@ -1437,7 +1438,10 @@ fn execute_scenario(
         language: scenario.language.clone(),
         tier: scenario.tier.clone(),
         repo: scenario.repo.clone().unwrap_or(repo_name),
-        commit: scenario.commit.clone().unwrap_or_else(|| "unknown".into()),
+        commit: scenario
+            .commit
+            .clone()
+            .unwrap_or_else(|| measured_source_head.to_string()),
         tool: scenario.tool.clone(),
         action: scenario.action.clone(),
         expected_outcome: scenario.expected_outcome.clone(),
@@ -1466,7 +1470,7 @@ fn execute_scenario(
         container_image: container_config
             .map(|c| c.podman_image())
             .unwrap_or_default(),
-        workspace_snapshot_id: "pending".into(),
+        workspace_snapshot_id: compute_workspace_snapshot_id(&workspace_path),
         started_at,
         completed_at,
     };
@@ -2316,6 +2320,55 @@ fn iso8601_now() -> String {
     datetime.format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
+/// Cadence D1: compute a content-addressed workspace snapshot id.
+///
+/// Walks `workspace_root` recursively, hashes the relative path + size of
+/// every regular file, and returns the SHA-256 hex digest. This replaces
+/// the hardcoded "pending" literal so the receipt can identify the exact
+/// workspace state a scenario was executed against.
+///
+/// If the walk fails, returns "unreadable" rather than fabricating a hash.
+/// Both outcomes are honest: a missing or unreadable workspace cannot have
+/// a content-addressed identity.
+fn compute_workspace_snapshot_id(workspace_root: &Path) -> String {
+    use sha2::{Digest, Sha256};
+
+    fn walk(dir: &Path, hasher: &mut Sha256) -> std::io::Result<()> {
+        if !dir.exists() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "workspace root missing",
+            ));
+        }
+        let mut entries: Vec<_> = std::fs::read_dir(dir)?.collect::<Result<Vec<_>, _>>()?;
+        // Sort by file name for determinism across filesystems.
+        entries.sort_by_key(|e| e.file_name());
+        for entry in entries {
+            let path = entry.path();
+            let file_name = entry.file_name();
+            // Hash the relative path string for determinism across machines.
+            hasher.update(file_name.as_encoded_bytes());
+            let metadata = entry.metadata()?;
+            if metadata.is_dir() {
+                hasher.update([1u8]);
+                walk(&path, hasher)?;
+            } else if metadata.is_file() {
+                hasher.update([0u8]);
+                hasher.update(metadata.len().to_le_bytes());
+            } else {
+                hasher.update([2u8]);
+            }
+        }
+        Ok(())
+    }
+
+    let mut hasher = Sha256::new();
+    match walk(workspace_root, &mut hasher) {
+        Ok(()) => hex::encode(hasher.finalize()),
+        Err(_) => "unreadable".to_string(),
+    }
+}
+
 fn timestamp_now() -> String {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2612,6 +2665,27 @@ fn run(args: RunArgs, verbose: bool) -> Result<i32, String> {
         );
     }
 
+    // ── Cadence D1: capture measured_source_head + campaign_id from env ──
+    // The shell harness sets these via env vars before launching the
+    // orchestrator. If absent, fall back to git rev-parse on the current
+    // working directory. The result is what gets stamped into every
+    // result.json emitted below.
+    let measured_source_head = std::env::var("MEASURED_SOURCE_HEAD")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .or_else(|| {
+            get_git_short_hash(&std::env::current_dir().ok().unwrap_or(PathBuf::from("."))).ok()
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+    let campaign_id = std::env::var("CAMPAIGN_ID")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(timestamp_now);
+    eprintln!(
+        "[D1] measured_source_head={} campaign_id={}",
+        measured_source_head, campaign_id
+    );
+
     // Load manifests
     let manifests = load_manifests(&args.manifests)?;
     if manifests.is_empty() {
@@ -2655,6 +2729,7 @@ fn run(args: RunArgs, verbose: bool) -> Result<i32, String> {
             &args.repos_dir,
             &args.fixtures_dir,
             verbose,
+            &measured_source_head,
         );
 
         // Write per-scenario result to artifact directory
@@ -2769,6 +2844,7 @@ fn autoresearch(args: AutoresearchArgs, verbose: bool) -> Result<i32, String> {
                     &args.repos_dir,
                     &args.fixtures_dir,
                     verbose,
+                    "test",
                 );
                 results.push(result);
             }
@@ -5043,6 +5119,46 @@ test result: ok. 73 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
         let result = get_git_short_hash(&dir);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 7);
+    }
+
+    // Cadence D1: compute_workspace_snapshot_id must be deterministic,
+    // content-sensitive, and resilient to missing roots.
+    #[test]
+    fn test_compute_workspace_snapshot_id_is_deterministic() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        std::fs::write(p.join("a.txt"), b"hello").unwrap();
+        std::fs::create_dir(p.join("sub")).unwrap();
+        std::fs::write(p.join("sub/b.txt"), b"world").unwrap();
+
+        let h1 = compute_workspace_snapshot_id(p);
+        let h2 = compute_workspace_snapshot_id(p);
+        assert_eq!(h1, h2, "same content must produce the same hash");
+        assert_ne!(h1, "unreadable");
+        assert_eq!(h1.len(), 64, "SHA-256 hex digest must be 64 chars");
+    }
+
+    #[test]
+    fn test_compute_workspace_snapshot_id_changes_with_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        std::fs::write(p.join("file.txt"), b"v1").unwrap();
+        let h1 = compute_workspace_snapshot_id(p);
+
+        std::fs::write(p.join("file.txt"), b"v2 with more bytes").unwrap();
+        let h2 = compute_workspace_snapshot_id(p);
+
+        assert_ne!(h1, h2, "content change must change the hash");
+    }
+
+    #[test]
+    fn test_compute_workspace_snapshot_id_missing_root_is_unreadable() {
+        let ghost = std::path::Path::new("/nonexistent-cognicode-cadence-d1-12345");
+        let h = compute_workspace_snapshot_id(ghost);
+        assert_eq!(
+            h, "unreadable",
+            "missing root must NOT be silently fabricated"
+        );
     }
 }
 

@@ -19,6 +19,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SANDBOX="$ROOT/sandbox"
 
+# Resolve the orchestrator binary. Prefer release; fall back to debug.
+# Cadence D1: the same binary must be used to build and to run a campaign,
+# otherwise measured_source_head from the manifest is bound to a different
+# binary than the one actually executed. We hard-pin whichever exists at
+# campaign start so a follow-up rebuild cannot retroactively invalidate the
+# receipt.
+SANDBOX_ORCH_BIN="$ROOT/target/release/sandbox-orchestrator"
+if [ ! -x "$SANDBOX_ORCH_BIN" ]; then
+    SANDBOX_ORCH_BIN="$ROOT/target/debug/sandbox-orchestrator"
+fi
+if [ ! -x "$SANDBOX_ORCH_BIN" ]; then
+    echo "ERROR: sandbox-orchestrator not found at $ROOT/target/{release,debug}/"
+    exit 127
+fi
+echo "  → orchestrator binary: $SANDBOX_ORCH_BIN ($(stat -c%s "$SANDBOX_ORCH_BIN" 2>/dev/null || stat -f%z "$SANDBOX_ORCH_BIN") bytes)"
+
 # ── Setup: ensure Tier C synthetic fixtures exist ──
 # These are small test files per language, not tracked in git
 TIERC_DIR="$SANDBOX/fixtures/tierc"
@@ -198,6 +214,15 @@ fi
 # Run ID = timestamp UTC
 RUN_ID="$(date -u +%Y%m%dT%H%M%S)"
 RUN_DIR="$SANDBOX/results-runs/$RUN_ID"
+STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# ── Cadence D1: capture measured_source_head at campaign start ──
+# The CogniCode HEAD at the moment the campaign was launched. Every
+# result.json emitted by the orchestrator will inherit this if the
+# manifest does not pin a per-scenario commit. This restores
+# measured_source_head, which the prior harness hardcoded to "unknown".
+MEASURED_SOURCE_HEAD="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+MEASURED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 echo "════════════════════════════════════════════════════════════"
 echo "  Sandbox run: $RUN_ID"
@@ -205,7 +230,33 @@ echo "  Output dir:  $RUN_DIR"
 echo "  Manifests:   ${#MANIFESTS[@]} files"
 echo "  Parallel:    $JOBS workers"
 echo "  Repeat:      $REPEAT"
+echo "  CogniCode HEAD (measured): $MEASURED_SOURCE_HEAD"
 echo "════════════════════════════════════════════════════════════"
+
+mkdir -p "$RUN_DIR"
+# Mark the campaign as running so a follow-up inspection can detect
+# abnormal termination (no .complete marker, only .running).
+echo "$STARTED_AT" > "$RUN_DIR/.running"
+
+# ── Campaign manifest (cadence D1 requirement) ──
+# Written before any scenario starts so a crashed run still has
+# recoverable identity.
+cat > "$RUN_DIR/campaign_manifest.json" <<EOF
+{
+  "campaign_id": "$RUN_ID",
+  "started_at": "$STARTED_AT",
+  "measured_source_head": "$MEASURED_SOURCE_HEAD",
+  "measured_at": "$MEASURED_AT",
+  "orchestrator_binary": "$SANDBOX_ORCH_BIN",
+  "public_release_baseline": "v0.97.1",
+  "public_release_commit": "735388d1",
+  "manifests": $(python3 -c "import json,sys; print(json.dumps(sys.argv[1:]))" "${MANIFESTS[@]}"),
+  "jobs": $JOBS,
+  "repeat": $REPEAT,
+  "status": "running"
+}
+EOF
+echo "  → campaign_manifest.json written ($MEASURED_SOURCE_HEAD)"
 
 # ─────────────────────────────────────────────────────────────────
 # Internal: run one campaign iteration
@@ -244,8 +295,10 @@ _run_campaign() {
 
             DATABASE_URL="${DATABASE_URL:-postgres://cognicode:cognicode@localhost:5432/cognicode}" \
             RUST_LOG="${RUST_LOG:-error}" \
+            MEASURED_SOURCE_HEAD="$MEASURED_SOURCE_HEAD" \
+            CAMPAIGN_ID="$RUN_ID" \
             nice -n 19 \
-            "$ROOT/target/release/sandbox-orchestrator" run \
+            "$SANDBOX_ORCH_BIN" run \
                 --results-dir "$WORKER_RUN_DIR" \
                 "${WORKER_MANIFESTS[@]}" \
                 2>&1 | sed "s/^/[worker $w] /"
@@ -363,10 +416,63 @@ PYEOF
 
 cd "$ROOT"
 
+# ── Cadence D1: trap abnormal termination ──
+# On any exit (success or failure), update the campaign manifest's status
+# and write either .complete or .incomplete so a follow-up inspection can
+# tell whether the campaign reached the end. This is the recovery handle
+# for processes that get SIGKILLed mid-scenario.
+_mark_campaign_terminal() {
+    local status="$1"
+    local exit_code="$2"
+    local completed_at
+    completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    if [ -f "$RUN_DIR/campaign_manifest.json" ]; then
+        # Patch status + completed_at in-place using python so we don't
+        # need to know the full JSON shape.
+        MEASURED_SOURCE_HEAD="$MEASURED_SOURCE_HEAD" \
+        python3 - "$RUN_DIR" "$status" "$completed_at" "$exit_code" <<'PYEOF'
+import json, os, sys
+run_dir, status, completed_at, exit_code = sys.argv[1:5]
+manifest_path = os.path.join(run_dir, "campaign_manifest.json")
+try:
+    with open(manifest_path) as f:
+        m = json.load(f)
+except Exception:
+    sys.exit(0)
+m["status"] = status
+m["completed_at"] = completed_at
+m["worker_exit_code"] = int(exit_code)
+with open(manifest_path, "w") as f:
+    json.dump(m, f, indent=2)
+PYEOF
+    fi
+    if [ "$status" = "complete" ]; then
+        rm -f "$RUN_DIR/.running" 2>/dev/null || true
+        echo "$completed_at" > "$RUN_DIR/.complete"
+    else
+        echo "$completed_at" > "$RUN_DIR/.incomplete"
+        echo "  ⚠️  campaign marked INCOMPLETE — see $RUN_DIR/.incomplete"
+    fi
+}
+
+_on_exit() {
+    local code=$?
+    if [ $code -eq 0 ]; then
+        _mark_campaign_terminal complete "$code"
+    else
+        _mark_campaign_terminal incomplete "$code"
+    fi
+}
+trap _on_exit EXIT
+# Also catch SIGTERM/SIGINT to mark incomplete before the EXIT trap runs.
+trap '_mark_campaign_terminal interrupted 130; trap - EXIT; exit 130' INT TERM
+
 # ── Single-repeat path (backward compatible) ──
 if [ "$REPEAT" -eq 1 ]; then
     mkdir -p "$RUN_DIR"
     _run_campaign "$RUN_DIR" "$RUN_DIR"
+    # Mark complete explicitly here; the EXIT trap will also fire.
+    _mark_campaign_terminal complete $?
     exit 0
 fi
 
@@ -414,4 +520,8 @@ echo "  Campaign complete ($([ $FAILURES -eq 0 ] && echo 'ALL PASS' || echo "$FA
 echo "  Report: $RUN_DIR/report.html"
 echo "  Stability: $RUN_DIR/stability.json"
 echo "  Total:  $(find "$RUN_DIR" -name 'result.json' | wc -l) scenarios across $REPEAT repeats"
+echo "  Measured HEAD: $MEASURED_SOURCE_HEAD"
 echo "════════════════════════════════════════════════════════════"
+
+# Mark complete explicitly; EXIT trap also fires.
+_mark_campaign_terminal complete 0
