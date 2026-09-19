@@ -1,0 +1,270 @@
+# CP1.0 — Consolidated closeout receipt
+
+> Change: `cp1-control-plane-first-cycle`
+> Verdict: **CLOSED**
+> Receipt head: `949cae62a7a35171863df0b471f8932f7f436a98`
+> Public release baseline: `v0.97.1` (`735388d1`)
+> Generated: 2026-09-19T09:02:30Z (session clover)
+
+## 1. WU sequence — verified under HEAD
+
+| WU | commit | role | files | +LOC |
+|---|---|---|---|---|
+| WU2/WU3 | `6169d454` | introduce `ControlQueryService` + read-model DTOs | `crates/cognicode-core/src/application/architecture/{control_query.rs,mod.rs}` | +336 |
+| WU4 | `fed57b95` | HTTP vertical `GET /control-plane/...` + C1–C5 tests | `crates/cognicode-explorer/src/api.rs`, `crates/cognicode-explorer/tests/cp1_control_plane_endpoint.rs` | (counted at WU4 squash) |
+
+**No separate WU1 commit** — preparatory work on the read-model contract was
+consolidated into `6169d454`. The `proposal.md` declares this honestly; the
+absence is not a gap.
+
+The working tree confirms WU2/WU3 + WU4 + the post-clippy follow-ups are all
+on `main` and the diff between current HEAD and `6169d454` is the WU4 wiring
+plus the unrelated fmt/clippy follow-ups (`50e99b82`, `e33f65e1`, `81fc4f08`,
+`dff2d9de`, `641029a0`, `97ee5d58`, `9aaf91d2`).
+
+## 2. Canonical source inventory
+
+The vertical lives in **3 files** under HEAD:
+
+- `crates/cognicode-core/src/application/architecture/control_query.rs` (378 LOC)
+- `crates/cognicode-core/src/application/architecture/mod.rs` (30 LOC, +4 from WU2/WU3)
+- `crates/cognicode-explorer/src/api.rs` (control_query wiring: lines 510, 544,
+  600–602, 635, 1212–1221)
+
+Tests:
+
+- `crates/cognicode-explorer/tests/cp1_control_plane_endpoint.rs` (526 LOC)
+
+## 3. ControlQueryService boundary
+
+The service surface (under HEAD `949cae62`):
+
+```text
+pub enum EvaluationStatus { Incomplete | Evaluated | ... }
+pub struct ConstraintRef   { id: ConstraintId, .. }
+pub struct ViolationRef    { id: ViolationId, .. }
+pub struct ArchitectureReadModel { evaluation_status, constraints, violations, source }
+pub struct ControlQueryService  { registry: ArchitectureRegistry }
+impl ControlQueryService {
+    pub fn new(registry: ArchitectureRegistry) -> Self;
+    pub fn registry(&self) -> &ArchitectureRegistry;
+    pub fn query_architecture(&self, source: &ArchitectureSource) -> ArchitectureReadModel;
+}
+pub fn source_from_files(files: Vec<(String, Option<String>, String)>) -> ArchitectureSource;
+pub fn source_from_source_root(root: &std::path::Path) -> ArchitectureSource;
+```
+
+## 4. Read-model contract (fail-closed)
+
+- No wired service → `status: "incomplete"` (never `"clean"` or `"evaluated"`).
+- Empty admission → `status: "incomplete"`.
+- Evaluation error → `status: "incomplete"` with failure class attached.
+- Valid evaluation → `status: "evaluated"` with reference projections.
+
+DTOs carry references only: `ConstraintRef.id`, `ViolationRef.id`, plus
+grounding fact ids. **No truth payload.** The vertical never crosses the
+authority boundary; it only projects what the e77 evaluator already admitted.
+
+## 5. HTTP vertical
+
+`GET /control-plane/workspaces/:workspace_id/architecture`
+
+- Mounted only when `with_control_query(Some(...))` is called (line 635).
+- The non-CP variant `/api/workspaces/:workspace_id/architecture` is **legacy**
+  (E12) and uses `state.graph.build_architecture`, **not** `ControlQueryService`.
+- Mutating verbs return 405/404 (verified by C5).
+
+## 6. C1–C5 evidence
+
+From `crates/cognicode-explorer/tests/cp1_control_plane_endpoint.rs`:
+
+| test | line | what it asserts |
+|---|---|---|
+| `c1_not_wired_reads_incomplete_never_clean` | 435 | without service: incomplete, never clean |
+| `c2_empty_admission_reads_incomplete` | 449 | empty admission: incomplete |
+| `c3_real_evaluation_is_evaluated` | 464 | real eval: evaluated + projection |
+| `c4_violation_projected_with_reference_not_truth` | 481 | violations are refs only |
+| `c5_endpoint_path_is_read_only` | 507 | mutating verbs blocked |
+
+These are **black-box HTTP tests** wired through `ApiState`. To re-verify:
+
+```bash
+cargo test -p cognicode-explorer --test cp1_control_plane_endpoint
+```
+
+## 7. Known failures baseline
+
+At HEAD `949cae62`:
+
+- **`Ownership Feature Test`** — historically RED in CI per
+  `cp1_control_plane_endpoint.rs` surroundings. Pre-existing, out of scope.
+- **e77.1 corrigendum carried** — DetectorAuthority gating is canonical; the
+  WU4 endpoint reads through the corrected evaluator.
+
+## 8. lint / fmt / test status at HEAD — RE-RUN IN THIS SESSION
+
+Real public-interface executions, not inspection:
+
+| gate | command | observed result |
+|---|---|---|
+| fmt | `cargo fmt --check` | **exit 0** (re-run this session, 2026-09-19T09:14Z) |
+| build (explorer) | `cargo build -p cognicode-explorer` | **exit 0** — `Finished dev profile [unoptimized + debuginfo] target(s) in 3m 13s` (2026-09-19T09:08Z) |
+| build (binary) | `cargo build --bin explorer-api` | **exit 0** — `Finished dev profile [unoptimized + debuginfo] target(s) in 1m 40s` (2026-09-19T09:18Z) |
+| build (mcp) | `cargo build --bin explorer-mcp` | **exit 0** (2026-09-19T09:20Z) |
+| clippy | `cargo clippy -p cognicode-explorer --all-targets -- -D warnings` | **exit 0** — Finished dev profile in 1m 23s (2026-09-19T09:15Z) |
+| cp1 endpoint (acceptance) | `cargo test -p cognicode-explorer --test cp1_control_plane_endpoint` | **5/5 PASS** (C1..C5, 0.01s) — `c1_not_wired_reads_incomplete_never_clean`, `c2_empty_admission_reads_incomplete`, `c3_real_evaluation_is_evaluated`, `c4_violation_projected_with_reference_not_truth`, `c5_endpoint_path_is_read_only` |
+| unit (ControlQueryService) | `cargo test -p cognicode-core --lib control_query` | **5/5 PASS** — `no_admitted_constraints_is_incomplete_not_clean`, `parse_failure_is_incomplete_even_with_partial_violations`, `service_is_read_only_no_admission_leak`, `admitted_and_clean_source_evaluates_with_zero_violations`, `violation_is_projected_with_reference_not_truth` |
+| explorer lib (broader) | `cargo test -p cognicode-explorer --lib` | **955/955 PASS** (1.24s) — no regression introduced by CP1.0 |
+
+### Live HTTP probes (`explorer-api` on 127.0.0.1:8013/8014, this session)
+
+```text
+GET    /control-plane/workspaces/my-ws/architecture  200  + JSON status:incomplete (C1 in vivo)
+POST   /control-plane/workspaces/my-ws/architecture  405  (C5 read-only in vivo)
+PUT    /control-plane/workspaces/my-ws/architecture  405
+DELETE /control-plane/workspaces/my-ws/architecture  405
+PATCH  /control-plane/workspaces/my-ws/architecture  405
+GET    /control-plane/workspaces/my-ws/architecture/extra  404  (route semantics)
+/control-plane/workspaces//architecture              200  (Axum routing allows empty segments — NOTED)
+```
+
+### Authority boundary verification (response payload inspection)
+
+```text
+all_keys = ['constraints', 'reason', 'snapshot_ref', 'statements_examined',
+            'status', 'unevaluated_constraints', 'violations', 'workspace_ref']
+authority_suspicion_fields = []   # no verdict, valid, trust, truth, admit, approve
+```
+
+Confirms the proposal.md invariant ("DTOs carry references only — ids,
+coordinates, grounding fact ids"). Authority boundary holds end-to-end.
+
+### Cross-crate integration boundaries
+
+| surface | consumes ControlQueryService? | reason |
+|---|---|---|
+| `cognicode-explorer` HTTP | **YES** (api.rs:1244) | CP1.0 WU4 — sole product consumer |
+| `cognicode-explorer` tests | n/a | test fixtures |
+| `cognicode-mcp` | **NO** | MCP server exposes its own tools; no `architecture` or `control_query` namespace tool exists |
+| `cognicode-cli` (`cogh`) | **NO** | CLI is lifecycle/install, not data-plane |
+| `cognicode-graph-algos` | **NO** | algorithm library, no architecture integration |
+
+**Conclusion**: e77 executable architecture has exactly **1** product consumer
+(verified by both `git grep` AND by absence of any MCP/CLI wire-up). The
+e78 gate result **1 / 2** is doubly confirmed.
+
+### Cadence failure-mode coverage (this session)
+
+| failure mode | observed behavior |
+|---|---|
+| PID dead, log missing | `full_run` artifacts readable from disk; no campaign manifest — correctly classified INCOMPLETE |
+| Single-run campaign (no repeats) | `analyze_stability.py full_run` → "Fewer than 2 repeat subdirs, skipped" (cannot compute CV from one shot) |
+| RED scorecard input to streak script | `scorecard_streak.py` resets streak to 0, exit 0 (validated with synthetic input, then restored) |
+| `scorecard_run.json` regeneration | Only happens via explicit `release_scorecard.py` invocation; `scorecard-nightly` does NOT touch it |
+
+> Note on cadence dependency: at the time of this receipt the sandbox results
+> from `full_run` were classified as INCOMPLETE per cadence receipt
+> `sandbox/results/nightly_receipts/2026-09-19-cadence-INCOMPLETE.json`. CP1.0
+> closeout does **not** depend on the cadence; it stands on the evidence above.
+>
+> `just scorecard-nightly` re-executed in this session: exit 0, G6 max CV
+> 4.74% (< 10% budget), but `scorecard_run.json` (the streak input) was NOT
+> regenerated and `scorecard_streak.json` was NOT touched — consistent with
+> the INCOMPLETE verdict.
+
+## 9. Authority boundary — preserved
+
+The endpoint does not expose:
+
+- evaluation verdict as truth
+- constraint payload (only ConstraintId + grounding facts)
+- anything mutating
+- any external authority mechanism
+
+This holds across the e77 corrigendum (canonical grounding restored
+`304cb6be`) and the ControlQueryService definition (`6169d454`).
+
+## 10. e78 checkpoint — re-applied (DEFERRED)
+
+| step | result |
+|---|---|
+| inventory of `application::architecture` consumers | see `openspec/changes/cp1-control-plane-first-cycle/e78-inventory.md` |
+| exclude tests/proxies/legacy endpoints | `/api/...architecture` legacy uses `graph.build_architecture`, not ControlQuery — does NOT count |
+| genuine product consumers at HEAD | **1** (CP1.0 WU4: `GET /control-plane/workspaces/:id/architecture`) |
+| threshold (carried unchanged from previous checkpoint) | **≥ 2** |
+| outcome | **1 / 2 — e78 remains DEFERRED** |
+| historic archive touched | **NO** (`.agent/TESTING-STATE.md` checkpoint only) |
+
+## 11. CP1 backlog — first problem MUST come from vertical evidence
+
+The CP1 next problem must be derived from what this vertical surfaces — **not**
+from the CP0 backlog. Pre-fabricating `AttentionItem`, `CaseView`, or a second
+endpoint without evidence is **explicitly prohibited** per the user directive
+(2026-09-19 session clover).
+
+Identification checklist (open, to be answered by the next CP1 bounded cycle):
+
+```text
+1. user question         — what does a real user (developer / lead) ask next?
+2. canonical source      — which existing module produces the answer?
+3. missing capability    — what is the minimum useful read or write?
+4. minimum vertical      — one HTTP endpoint + one test contract + one DTO
+5. acceptance / UAT      — how do we know it's used?
+```
+
+### Search for concrete next need (real code grep, this session)
+
+```text
+git grep -nE "TODO|FIXME|XXX" -- crates/cognicode-explorer/src/api.rs \
+                                  crates/cognicode-core/src/application/architecture/ \
+  | grep -iE "control.?plane|cp1|control_query|attention|case.?view|investigation"
+→ 0 matches
+```
+
+```text
+git grep -l "control_query\.|cq\.query_architecture" \
+  -- crates/cognicode-explorer/src crates/cognicode-mcp/src crates/cognicode-cli/src
+→ crates/cognicode-explorer/src/api.rs (1 file, 2 lines: 1230, 1244)
+```
+
+### Live HTTP boundary probes (this session, `explorer-api` on 127.0.0.1:8013)
+
+| test | request | observed | verdict |
+|---|---|---|---|
+| T2 GET | `/control-plane/workspaces/my-ws/architecture` | 200, JSON `status:"incomplete"` reason=`control_query_service_not_wired` | C1 fail-closed confirmed in vivo |
+| T3 POST | same path | 405 | C5 read-only confirmed |
+| T4 PUT | same path | 405 | C5 read-only confirmed |
+| T5 DELETE | same path | 405 | C5 read-only confirmed |
+| T5b PATCH | same path | 405 | C5 read-only confirmed |
+| T6 extra path | `/.../architecture/extra` | 404 | route does not exist |
+| T7 empty ws_id | `/control-plane/workspaces//architecture` | 200 | **NOTED — Axum routing allows empty segments; not a CP1.0 defect but worth tracking for the next cycle** |
+
+### Conclusion
+
+No concrete next need surfaces from the vertical evidence in this session:
+0 TODO markers in the CP1.0 surface, 1 production consumer (the endpoint
+itself), no client currently invokes it. **CP1.1 is NOT opened.** When a
+real need emerges (e.g. a Backstage proxy that wants to consume the
+architecture state, or a CI runner that wants to compare two revisions),
+the checklist above should be revisited.
+
+## 12. What CP1.0 does NOT deliver
+
+- no investigation UI
+- no case/attention model
+- no policy/approval flow
+- no second Control Plane consumer (e78 stays DEFERRED)
+- no cadence green scorecard (separate cadence receipt INCOMPLETE)
+
+## 13. CP1.0 close
+
+CP1.0 outcome: **CLOSED**.
+
+```text
+CP1.0 = DONE
+CP1   = OPEN  (next problem TBD from vertical evidence)
+CP0   = DONE  (FIT_WITH_CONSTRAINTS, archive untouched)
+e78   = DEFERRED (1/2)
+```
+
+No release receipt emitted. No `RELEASE` step. CP1.0 is a local-only close.
