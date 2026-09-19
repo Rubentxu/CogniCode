@@ -456,9 +456,11 @@ mod tests {
             dimension_scores: None,
             artifacts: vec![],
             container_image: "docker.io/library/rust@sha256:abc".into(),
-            workspace_snapshot_id: "snap123".into(),
+            workspace_snapshot_id: Some("snap123".into()),
             started_at: "2026-01-01T00:00:00Z".into(),
             completed_at: "2026-01-01T00:00:01Z".into(),
+            measured_source_head: None,
+            repo_provenance: None,
         }
     }
 
