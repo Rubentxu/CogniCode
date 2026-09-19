@@ -1946,3 +1946,71 @@ Streak counter `scorecard_streak.json` NOT MODIFIED.
 PASS for CP1.0 WU5+T12 scope (3 commits, all pushed, HEAD == origin/main).
 FAIL/INCOMPLETE for cadence (separate harness prerequisite, not CP1.0
 scope). No full verification required.
+
+## Active Change — TRACK A / A1a+1 G4 reader fix (2026-09-19) — CLOSED 2026-09-19
+
+Scorecard reader `gate_g4` was averaging correctitud without positive
+provenance. The `result.repo` field is declarative metadata; it does
+not prove the executed repository. The 58.1 average was the mean of
+4 Tier-A fixture scenarios (with `repo='serde'` label but `workspace='.'`),
+NOT a Tier-1 corpus measurement.
+
+### Plan
+
+1. RED tests pinning the per-repo contract (A1a: 7 tests, A1a+1: +9
+   adversarial tests, total 16 tests, all in
+   `sandbox/scripts/tests/test_a1a_g4_contract.py`).
+2. Reader fix in `sandbox/scripts/release_scorecard.py`:
+   - expose `TIER1_REPOS_PER_SPEC` and `G4_THRESHOLD`
+   - per-candidate positive-provenance extraction
+   - per-repo aggregation over distinct scenario_ids (no repeat inflation)
+   - verdict precedence: GREEN (all 5 acredited + per-repo>=90),
+     RED (any acredited<90, failing repo named), AMBER (missing)
+   - pre-D1 results without provenance classified UNVERIFIED,
+     correctitud preserved as `fixture_diagnostic_only`
+3. Recompute scorecard against frozen run 20260919T102509.
+4. Verify streak integrity (MD5 unchanged, no increment).
+
+### Scope
+
+- `sandbox/scripts/release_scorecard.py` (gate_g4 only)
+- `sandbox/scripts/tests/test_a1a_g4_contract.py`
+
+### Out of scope
+
+- Threshold >=90 unchanged.
+- ADR-031 unchanged.
+- Scoring engine, orchestrator, manifests, scorecard streak unchanged.
+- G6 and other gates unchanged (next slice: A1b).
+
+### Evidence inventory
+
+- python3 -m pytest sandbox/scripts/tests/test_a1a_g4_contract.py -v
+  → 16/16 PASS (was 14 RED + 2 trivially GREEN)
+- python3 sandbox/scripts/release_scorecard.py against frozen run
+  → scorecard 8 GREEN / 5 AMBER / 0 RED
+- G4 verdict: AMBER (was RED 58.1) with explicit
+  `missing_or_unverified: anyhow, clap, ripgrep, serde, tokio`
+- fixture 58.1 preserved as `fixture_diagnostic_only: avg=58.1 across 4
+  pre-D1/no-provenance scenarios`, NOT counted toward G4
+- md5sum sandbox/results/scorecard_streak.json
+  → 6b2121fe8e1134a6bed84faba138e5ff (unchanged)
+- receipt: sandbox/results/freezes/2026-09-19-track-a-a1a+1-g4-reader-fix.json
+
+### Unknown impact / outstanding
+
+- A1b (G6): current verdict AMBER; reader to be characterized against
+  the `cv_warm` contract (cv eliminates slowest sample whenever >=3
+  exist, even without cold-cache detection).
+- A1c (G3): stability.json `health_score` formula is not the 5-dim
+  weighted score the spec requires.
+- Tier-1 corpus execution deferred to a later cycle: requires manifests
+  + verified revisions + actual_repository_identity field in result.json.
+
+### Result
+
+PASS for A1a+1 scope. Verdict change RED->AMBER for G4 with full
+per-repo breakdown and explicit missing_repo list. No fabricated GREEN.
+No threshold change. No streak increment.
+
+Next: A1b (G6 characterization + reader fix).

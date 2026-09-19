@@ -27,6 +27,16 @@ FAMILY_BUDGETS: dict[str, tuple[float, str]] = {
     "navigation": (45000.0, "ms"),
 }
 
+# G4 contract — Tier-1 repositories per the release-readiness spec.
+# Source: openspec/specs/release-readiness-gate/spec.md
+#   Correctness (ground-truth comparison via the scoring engine's
+#   matchers) MUST be >= 90% on every Tier-1 repository
+#   (ripgrep, serde, anyhow, tokio, clap).
+TIER1_REPOS_PER_SPEC: frozenset[str] = frozenset({
+    "ripgrep", "serde", "anyhow", "tokio", "clap",
+})
+G4_THRESHOLD: float = 90.0
+
 SEARCH_TOOLS = {"search_content", "semantic_search", "query_symbol_index"}
 CALL_GRAPH_TOOLS = {
     "build_graph", "build_call_subgraph", "get_call_hierarchy",
@@ -425,45 +435,223 @@ def gate_g3(run_dirs: list[str], stability_path: str = "") -> GateResult:
 
 
 def gate_g4(run_dirs: list[str]) -> GateResult:
-    """G4: Correctitud dimension score ≥ 90.
+    """G4: Correctitud dimension score >= 90 on every Tier-1 repository.
 
-    Reads dimension_scores.correctitud from summary.json (pre-D1) or
-    aggregates from result.json files (post-D1). Many scenarios do not
-    emit a correctitud score (e.g. simple tools); we average only the
-    non-null values so the gate reflects actual measured correctitud.
+    Contract (openspec/specs/release-readiness-gate/spec.md):
+      Correctness (ground-truth comparison via the scoring engine's
+      matchers) MUST be >= 90% on every Tier-1 repository
+      (ripgrep, serde, anyhow, tokio, clap).
+
+    Provenance policy (A1a+1):
+      Every result candidate carries eight provenance fields:
+        declared_repo, resolved_workspace, actual_repository_identity,
+        actual_repository_revision, ground_truth_present,
+        correctness_measured, scenario_id, repeat_identity.
+      The reader does NOT trust the declared `repo` field. It only
+      accredits a result when positive provenance is present:
+        actual_repository_identity in TIER1_REPOS_PER_SPEC
+        AND actual_repository_revision is not None
+        AND ground_truth_present is True
+        AND correctness_measured is not None
+      Results without positive provenance are classified UNVERIFIED
+      and contribute neither to coverage nor to the average.
+
+    Aggregation policy:
+      The per-repo average is computed over distinct scenario_ids
+      (one value per scenario_id, even across repeats). Repeat counts
+      do NOT fabricate coverage. A repo with one scenario and three
+      repeats has coverage of one scenario, not three.
+
+    Pre-D1 compatibility:
+      Legacy result.json / summary.json files do not carry
+      actual_repository_identity or actual_repository_revision. They
+      are classified UNVERIFIED honestly, not silently re-tagged as
+      Tier-1.
+
+    Verdict precedence:
+      1. All Tier-1 repos acredited with coverage >= 1 scenario each
+         AND every per-repo average >= G4_THRESHOLD
+             -> GREEN
+      2. Some Tier-1 repo acredited with coverage >= 1 scenario
+         AND any per-repo average < G4_THRESHOLD
+             -> RED (failing repo named)
+      3. No Tier-1 repo acredited, OR some repo missing coverage
+             -> AMBER / INCOMPLETE (missing/unverified repos named)
+      Missing data NEVER produces GREEN.
     """
-    scores: list[float] = []
+    measurements: dict[str, dict[str, list[float]]] = {}  # repo -> scenario_id -> [scores]
+    coverage: dict[str, set[str]] = {}                    # repo -> set of scenario_ids
+    unverified_repos: set[str] = set()
+    scored_pre_d1_fixtures: list[float] = []              # diagnostic only, never drives verdict
+    total_candidates = 0
+    total_unverified = 0
 
     for d in run_dirs:
-        s = load_summary(d)
-        if not s:
-            s = _aggregate_results([d])
-        corr = (s.get("dimension_scores") or {}).get("correctitud")
-        if corr is not None:
-            scores.append(float(corr))
+        for rj_path in _discover_result_jsons(d):
+            try:
+                with open(rj_path) as f:
+                    r = json.load(f)
+            except Exception:
+                continue
+            total_candidates += 1
 
-    if not scores:
-        return GateResult(
-            id="G4", name="Corpus Quality / Correctitud",
-            status="AMBER",
-            evidence_text=(
-                "no measured correctitud dimension in any scenario "
-                "(expected for read-only / no-validation scenarios; "
-                "weighted by validator availability)"
-            ),
-            evidence_path=",".join(run_dirs),
+            ds = r.get("dimension_scores") or {}
+            measured = ds.get("correctitud")
+
+            provenance = _g4_extract_provenance(r)
+            declared = provenance["declared_repo"]
+            actual = provenance["actual_repository_identity"]
+            revision = provenance["actual_repository_revision"]
+            gt_present = provenance["ground_truth_present"]
+            sid = provenance["scenario_id"]
+
+            # No positive provenance -> UNVERIFIED. If declared_repo is
+            # Tier-1, that repo is named as unverified for the evidence
+            # text, but it does NOT count toward coverage or the average.
+            if actual is None or revision is None or not gt_present:
+                total_unverified += 1
+                # If the declared label names a Tier-1 repo, surface it
+                # as an unverified Tier-1 candidate. Otherwise it stays
+                # out of the verdict entirely.
+                if declared in TIER1_REPOS_PER_SPEC:
+                    unverified_repos.add(declared)
+                # Pre-D1 fixtures carry a correctitud score but no
+                # positive provenance. Preserve the score as a diagnostic
+                # signal so we can report it as "fixture correctitud"
+                # separately — never as Tier-1 evidence.
+                if measured is not None:
+                    scored_pre_d1_fixtures.append(float(measured))
+                continue
+
+            if actual not in TIER1_REPOS_PER_SPEC:
+                # Credited to a non-Tier-1 repo. Does not affect G4.
+                if measured is not None:
+                    scored_pre_d1_fixtures.append(float(measured))
+                continue
+
+            # Positive Tier-1 credit.
+            if measured is None:
+                # GT was declared as present but no score came back. Treat
+                # as unverified for this Tier-1 repo.
+                unverified_repos.add(actual)
+                continue
+
+            score = float(measured)
+            measurements.setdefault(actual, {}).setdefault(sid, []).append(score)
+            coverage.setdefault(actual, set()).add(sid)
+
+    acredited = sorted(measurements.keys())
+    missing_or_unverified = sorted(
+        (TIER1_REPOS_PER_SPEC - set(acredited)) | unverified_repos
+    )
+
+    # Compute per-repo averages over distinct scenario_ids. Each
+    # scenario_id contributes the mean of its repeats (matches the
+    # scoring engine's aggregation policy).
+    per_repo_avg: dict[str, float] = {}
+    per_repo_scenarios: dict[str, int] = {}
+    for repo, scenarios in measurements.items():
+        per_scenario_means = [sum(vals) / len(vals) for vals in scenarios.values()]
+        per_repo_avg[repo] = sum(per_scenario_means) / len(per_scenario_means)
+        per_repo_scenarios[repo] = len(scenarios)
+
+    # Verdict precedence.
+    failing_repos: list[str] = []
+    sufficient = {r for r in acredited if per_repo_scenarios.get(r, 0) >= 1}
+
+    if acredited and not missing_or_unverified:
+        # Every Tier-1 repo is acredited.
+        for repo in acredited:
+            if per_repo_avg[repo] < G4_THRESHOLD:
+                failing_repos.append(repo)
+        if failing_repos:
+            status = "RED"
+        else:
+            status = "GREEN"
+    elif acredited and missing_or_unverified:
+        # Some repos acredited, some missing. If any acredited repo is
+        # below threshold, RED wins (per directive: do not hide RED
+        # behind missing evidence).
+        for repo in acredited:
+            if per_repo_avg[repo] < G4_THRESHOLD:
+                failing_repos.append(repo)
+        if failing_repos:
+            status = "RED"
+        else:
+            status = "AMBER"
+    else:
+        # No repo acredited.
+        status = "AMBER"
+
+    # Build evidence text.
+    lines: list[str] = []
+    if per_repo_avg:
+        for repo in sorted(per_repo_avg.keys()):
+            n = per_repo_scenarios.get(repo, 0)
+            lines.append(
+                f"{repo}: avg={per_repo_avg[repo]:.1f} "
+                f"(n_scenarios={n}, threshold={G4_THRESHOLD:.0f})"
+            )
+    if missing_or_unverified:
+        lines.append(
+            "missing_or_unverified: " + ", ".join(missing_or_unverified)
         )
+    if scored_pre_d1_fixtures:
+        avg_fixture = sum(scored_pre_d1_fixtures) / len(scored_pre_d1_fixtures)
+        lines.append(
+            f"fixture_diagnostic_only: avg={avg_fixture:.1f} "
+            f"across {len(scored_pre_d1_fixtures)} pre-D1/no-provenance "
+            f"scenarios (does not count toward G4)"
+        )
+    lines.insert(
+        0,
+        f"acredited={len(acredited)}/{len(TIER1_REPOS_PER_SPEC)} "
+        f"tier1_repos; candidates={total_candidates}; "
+        f"unverified={total_unverified}",
+    )
+    if failing_repos:
+        lines.insert(1, "failing: " + ", ".join(sorted(failing_repos)))
 
-    avg = sum(scores) / len(scores)
-    status = "GREEN" if avg >= 90 else "RED"
+    evidence_text = "; ".join(lines)
+    measured_value = (
+        sum(per_repo_avg.values()) / len(per_repo_avg) if per_repo_avg else None
+    )
+
     return GateResult(
         id="G4", name="Corpus Quality / Correctitud",
         status=status,
-        measured=round(avg, 1),
-        budget=90.0,
-        evidence_text=f"avg correctitud {avg:.1f} across {len(scores)} run-scores",
+        measured=(
+            f"{measured_value:.1f} avg across "
+            f"{len(per_repo_avg)}/{len(TIER1_REPOS_PER_SPEC)} tier1 repos"
+            if measured_value is not None
+            else None
+        ),
+        budget=G4_THRESHOLD,
+        evidence_text=evidence_text,
         evidence_path=",".join(run_dirs),
     )
+
+
+def _g4_extract_provenance(r: dict) -> dict:
+    """Extract provenance fields from a result.json dict.
+
+    The orchestrator's current schema predates actual_repository_identity
+    and actual_repository_revision, so they may be missing entirely.
+    In that case the reader treats the result as UNVERIFIED rather than
+    silently inferring identity from declared_repo.
+    """
+    return {
+        "declared_repo": r.get("repo"),
+        "resolved_workspace": r.get("workspace"),
+        "actual_repository_identity": r.get("actual_repository_identity"),
+        "actual_repository_revision": r.get("actual_repository_revision"),
+        "ground_truth_present": bool(r.get("ground_truth_present", True)),
+        "correctness_measured": (
+            (r.get("dimension_scores") or {}).get("correctitud")
+        ),
+        "scenario_id": r.get("scenario_id") or "",
+        "repeat_identity": r.get("repeat_index"),
+    }
 
 
 def gate_g5(run_dirs: list[str]) -> GateResult:

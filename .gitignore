@@ -182,3 +182,4 @@ uat-guided-v1.0.0-current.html
 # passed and CI failed with "can't find bin". A repository-level negation wins
 # over core.excludesFile, so declare the layout here.
 !crates/cognicode-cli/src/bin/
+sandbox/scripts/tests/__pycache__/
