@@ -1,0 +1,177 @@
+# Tier-1 Pilot: 5 Rust Repos (TRACK A preflight)
+# Each repo: read_file (no measurement) + search_content (with verified GT).
+# Ground truths verified against pinned SHAs. Patterns chosen to fit
+# within the MCP search engine's 50-result limit per query.
+# Single repeat per scenario (pilot only — full campaign later).
+version: "1.0"
+language: rust
+tier: A
+timeout_seconds: 120
+
+scenarios:
+  # ─── serde (03eec42c) ────────────────────────────────────────────────────
+  - name: tier1_serde_read_source
+    description: "Read serde crate src/lib.rs"
+    tool: read_file
+    action: read
+    repo: serde
+    workspace: serde
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/lib.rs
+      mode: raw
+    ground_truth:
+      exists: true
+
+  - name: tier1_serde_search_deserialize
+    description: "Search 'fn deserialize' in serde crate"
+    tool: search_content
+    action: search
+    repo: serde
+    workspace: serde
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "fn deserialize"
+      path: src
+      case_sensitive: true
+    ground_truth:
+      matches:
+        - path: src/macros.rs
+        - path: src/private/de.rs
+
+  # ─── ripgrep (4649aa9700) ────────────────────────────────────────────────
+  - name: tier1_ripgrep_read_source
+    description: "Read ripgrep cli crate src/lib.rs"
+    tool: read_file
+    action: read
+    repo: ripgrep
+    workspace: crates/cli
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/lib.rs
+      mode: raw
+    ground_truth:
+      exists: true
+
+  - name: tier1_ripgrep_search_regex_matcher
+    description: "Search 'RegexMatcher' across ripgrep crates"
+    tool: search_content
+    action: search
+    repo: ripgrep
+    workspace: crates
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "RegexMatcher"
+      path: .
+      case_sensitive: true
+    ground_truth:
+      matches:
+        - path: crates/pcre2/src/matcher.rs
+        - path: crates/searcher/src/lib.rs
+
+  # ─── anyhow (8ea1819c4c) ─────────────────────────────────────────────────
+  - name: tier1_anyhow_read_source
+    description: "Read anyhow src/lib.rs"
+    tool: read_file
+    action: read
+    repo: anyhow
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/lib.rs
+      mode: raw
+    ground_truth:
+      exists: true
+
+  - name: tier1_anyhow_search_anyhow_macro
+    description: "Search 'anyhow!' macro in anyhow src"
+    tool: search_content
+    action: search
+    repo: anyhow
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "anyhow!"
+      path: src
+      case_sensitive: true
+    ground_truth:
+      matches:
+        - path: src/lib.rs
+        - path: src/error.rs
+
+  # ─── tokio (dd344a550c) ──────────────────────────────────────────────────
+  # Pattern "tokio::main" appears in both lib.rs and runtime/mod.rs (doc
+  # comments). Verified at SHA dd344a550c.
+  - name: tier1_tokio_read_source
+    description: "Read tokio crate src/lib.rs"
+    tool: read_file
+    action: read
+    repo: tokio
+    workspace: tokio
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/lib.rs
+      mode: raw
+    ground_truth:
+      exists: true
+
+  - name: tier1_tokio_search_tokio_main
+    description: "Search 'tokio::main' in tokio crate"
+    tool: search_content
+    action: search
+    repo: tokio
+    workspace: tokio
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "tokio::main"
+      path: src
+      case_sensitive: true
+    ground_truth:
+      matches:
+        - path: src/lib.rs
+        - path: src/runtime/mod.rs
+
+  # ─── clap (4684d7abc5) ───────────────────────────────────────────────────
+  # clap is a workspace; clap_builder is the main library crate.
+  # The cognicode.lbug artifact at sandbox/repos/clap/ is OUTSIDE clap_builder,
+  # so workspace=clap_builder excludes it from the snapshot.
+  # Pattern "ArgAction" appears in lib.rs (1x) and command.rs (30x) — fits
+  # in 50-result limit.
+  - name: tier1_clap_read_source
+    description: "Read clap_builder src/lib.rs"
+    tool: read_file
+    action: read
+    repo: clap
+    workspace: clap_builder
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/lib.rs
+      mode: raw
+    ground_truth:
+      exists: true
+
+  - name: tier1_clap_search_arg_action
+    description: "Search 'ArgAction' in clap_builder src"
+    tool: search_content
+    action: search
+    repo: clap
+    workspace: clap_builder
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "ArgAction"
+      path: src
+      case_sensitive: true
+    ground_truth:
+      matches:
+        - path: src/lib.rs
+        - path: src/builder/command.rs

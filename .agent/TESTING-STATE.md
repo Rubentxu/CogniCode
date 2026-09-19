@@ -2296,3 +2296,212 @@ minimal corrections.
   Next: prepare Tier-1 corpus (ripgrep, serde, anyhow, tokio, clap)
   with pinned commits, manifests, and ground truth. Then a small
   run against one Tier-1 checkout to validate producer fields.
+
+---
+
+## Active Cycle: TRACK A · Tier-1 Catalog (2026-09-19T13:34Z)
+
+### Scope
+
+Inventory existing Tier-1 corpus, verify SHAs and tree state, run a
+minimal catalog probe against each Tier-1 repo to capture a canonical
+workspace_snapshot_id (cryptographic fingerprint of the executed source
+tree). First vertical: serde single scenario.
+
+### Changed surfaces
+
+  - sandbox/manifests-tier1/serde_tier1_pilot.yaml (new)
+  - sandbox/manifests-tier1/_catalog_all.yaml (new, internal)
+  - sandbox/manifests-tier1/_catalog_clap.yaml (new, internal)
+  - sandbox/results-tier1-pilot*/ (new, receipts)
+  - sandbox/results-tier1-catalog/ (new, receipts)
+  - sandbox/results/freezes/20260919T133246_tier1_pilot/receipt.md (new)
+  - sandbox/results/freezes/tier1_catalog_v1.json (new)
+
+### Direct tests (Level 1)
+
+  - target/debug/sandbox-orchestrator run --dry-run <manifest>
+    -> expands scenarios correctly for all 5 Tier-1 repos
+  - Pilot (serde read_file + search_content): both PASS
+  - Catalog probe (5 repos): 5/5 PASS, 5 distinct snapshot_ids
+  - Reproducibility (serde pilot x2): same snapshot_id
+    -> 893d34c0f21835bd7c8b7ea211528822a97a14bec2ee553364db5093a0d56fdf
+
+### Evidence inventory (Tier-1 catalog)
+
+  Repo        workspace              snapshot_id (full)
+  ----------  ---------------------  ----------------------------------------
+  serde       serde/                 893d34c0f21835bd7c8b7ea211528822
+                                     a97a14bec2ee553364db5093a0d56fdf
+  ripgrep     crates/cli/            0ca04c4d3a35ed04d2ad2a8d72d9e3cb
+                                     78c84e166fb1442e7ef9b99cee3ecf32
+  anyhow      .                      c0e7914ff47400520d45b51396007dd7
+                                     7d8c9353bfd5df5eadbee4cd2afa02eb
+  tokio       tokio/                 680a4ee490d8b22807329f88340f83d0
+                                     af904011f3a65bba942f09848557a081
+  clap        clap_builder/          4565efda84b3c3a993a104df02846d8d
+                                     bc29a4b549816dbe3c17227057d4c95c
+
+  All 5 SHAs match clone_repos.sh pins. All 5 URLs match.
+
+  Receipts: sandbox/results/freezes/tier1_catalog_v1.json
+
+### Classification (Tier-1 pilot defects)
+
+  PRODUCT_DEFECT: result.json lacks actual_repository_identity,
+                  actual_repository_revision (A1a+1 reader fields)
+  HARNESS_DEFECT: result.json commit field is CogniCode HEAD,
+                  not the executed repo SHA
+  HARNESS_DEFECT: ground_truth.exists not evaluated by orchestrator
+                  (correctitud=None for read_file)
+  ENVIRONMENT:    none — all 5 repos accessible, all reads succeeded
+  MISSING_EVIDENCE: orchestrator cannot prove "executed against repo X"
+                  without snapshot_id cross-check (now mitigated)
+
+### Mitigation
+
+  workspace_snapshot_id is deterministic (verified x2 on serde pilot)
+  and unique per repo tree (5 distinct IDs across 5 repos). Catalog
+  in sandbox/results/freezes/tier1_catalog_v1.json is the
+  cryptographic fingerprint table.
+
+  LIMITATION: catalog is per-CWD; cannot be compared across machines
+  without shared filesystem semantics. Sufficient for this single-host
+  pipeline.
+
+### Streak integrity
+
+  UNCHANGED. This is instrumentation, not an independent campaign.
+  Streak remains 1/3 HELD, MD5 6b2121fe8e1134a6bed84faba138e5ff.
+
+### Out of scope (this cycle)
+
+  - Orchestrator source modifications (TRACK runtime ownership)
+  - Multi-repeat per scenario (3 repeats per spec, not yet run)
+  - Tier-1 campaign across all 5 repos with full ground truth
+  - Scorecard gate evaluation (G3/G4/G6) on Tier-1 results
+  - TRACK B (continues independently per prior agreement)
+
+### Result
+
+  PASS for catalog scope. Tier-1 corpus verified, 5 canonical
+  snapshot_ids captured, end-to-end execution path validated.
+
+  Next: define a Tier-1 campaign manifest (e.g., 4 scenarios × 5 repos
+  × 3 repeats = 60 executions) with correct ground truth, then ask user
+  for explicit go-ahead before running. Each repeat must produce a
+  snapshot_id matching the catalog entry.
+
+  BLOCKER for full Tier-1 GREEN: reader requires actual_repository_*
+  fields that orchestrator does not emit. Two paths forward:
+    (a) TRACK runtime extends orchestrator (out of scope here)
+    (b) Reader accepts catalog-matched snapshot_id as a proxy
+        provenance field (proposed: needs ADR-like agreement)
+
+---
+
+## Active Cycle: TRACK A · Tier-1 Provenance + 5-Repo Pilot (commits 5782efc0, a0500204)
+
+### Scope
+
+Extend orchestrator with verified provenance fields. Extend G4 reader
+to recognize new schema. Verify all 5 Tier-1 repos produce honest
+provenance in result.json.
+
+### Commits
+
+- 5782efc0: feat(sandbox): emit verified Tier-1 provenance in result.json
+- a0500204: feat(scorecard): G4 reader accepts new repo_provenance schema
+
+### Changed surfaces
+
+- crates/cognicode-core/src/sandbox_core/artifacts.rs: RepoProvenance struct
+- crates/cognicode-sandbox/src/main.rs: resolve_repo_provenance + 8 tests
+- crates/cognicode/tests/sandbox_orchestrator_test.rs: test fixtures
+- sandbox/scripts/release_scorecard.py: G4 reader + URL normalizer
+- sandbox/scripts/tests/test_a1a_g4_contract.py: 8 new tests
+- sandbox/manifests-tier1/serde_tier1_pilot.yaml: tier1 pilot
+- sandbox/manifests-tier1/tier1_pilot_5repo.yaml: 5-repo manifest
+
+### Direct tests (Level 1)
+
+- cargo test -p cognicode-sandbox --bin sandbox-orchestrator
+  -> 172/172 PASS (164 prior + 8 new provenance tests)
+- cargo test -p cognicode --test sandbox_orchestrator_test
+  -> 25/25 PASS (test fixtures updated)
+- python3 -m pytest sandbox/scripts/tests/
+  -> 68/68 PASS (60 prior + 8 new G4 + normalizer tests)
+
+### Evidence inventory (5-repo pilot run)
+
+Results dir: sandbox/results-tier1-5repo-final
+10 scenarios, all outcome=pass:
+
+  serde_read_source         correctitud=None (no measurement, by design)
+  serde_search_deserialize  correctitud=100.0
+  ripgrep_read_source       correctitud=None
+  ripgrep_search_regex_matcher correctitud=100.0
+  anyhow_read_source        correctitud=None
+  anyhow_search_anyhow_macro correctitud=100.0
+  tokio_read_source         correctitud=None
+  tokio_search_tokio_main   correctitud=50.0 (search limit issue)
+  clap_read_source          correctitud=None
+  clap_search_arg_action    correctitud=0.0 (search limit issue)
+
+All 5 repos emit real provenance:
+  actual_repository_identity: <GitHub URL>
+  actual_repository_revision: <40-hex SHA matching clone_repos.sh pin>
+  workspace_relative_path: <correct subdir>
+
+### G4 verdict on 5-repo pilot (using new reader)
+
+  acredited=5/5 tier1_repos (was 0/5 before normalization)
+  anyhow: avg=100.0 (PASS)
+  clap:   avg=0.0   (RED — search limit excludes expected files)
+  ripgrep: avg=100.0 (PASS)
+  serde:  avg=100.0 (PASS)
+  tokio:  avg=50.0  (RED — same search limit issue as clap)
+  Status: RED (2 repos below 90% threshold)
+
+### Investigation of search_content 50%/0% (clap, tokio)
+
+Root cause: MCP search engine returns max 50 matches per query, ranked
+by score (which favors files with highest match density). The
+expected ground-truth files in clap and tokio have FEWER matches than
+the dominating file (arg_matches.rs / builder.rs), so they get
+excluded from the top 50.
+
+This is SEARCH ENGINE BEHAVIOR, not a Tier-1 defect, not a matcher
+defect, not a product defect. It is documented as TRACK runtime scope:
+increase search limit in the MCP server (option (a) from the user
+directive).
+
+### Receipt
+
+sandbox/results/freezes/20260919T134945_tier1_5repo_pilot/receipt.md
+
+### Streak integrity
+
+UNCHANGED. Streak remains 1/3 HELD, MD5 6b2121fe8e1134a6bed84faba138e5ff.
+This is provenance calibration + reader update, not an independent
+campaign.
+
+### Out of scope (this cycle)
+
+- 3-repeat campaign execution (full Tier-1 evidence collection)
+- G6 stability measurement (needs repeats)
+- Search engine limit increase (TRACK runtime, optional)
+- TRACK B (continues independently)
+- e78 (DEFERRED)
+
+### Result
+
+PASS for provenance scope:
+  - All 5 Tier-1 repos produce verified provenance fields
+  - Reader recognizes all 5 (5/5 acredited)
+  - 3/5 above G4 threshold, 2/5 RED due to search limit
+  - No fabrication: search-limit failures correctly attributed
+
+Next (requires user authorization):
+  - 3-repeat campaign for full Tier-1 coverage
+  - Optionally: increase MCP search limit to resolve clap/tokio RED

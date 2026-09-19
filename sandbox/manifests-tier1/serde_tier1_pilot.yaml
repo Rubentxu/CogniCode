@@ -1,0 +1,51 @@
+# Tier-1 Pilot: Serde Two Scenarios (TRACK A preflight)
+# repo="serde" + workspace="serde" → use_repo branch copies
+#   sandbox/repos/serde/serde (the crate) → tempdir
+# tempdir contains crate root, so paths are relative to it
+# Pinned at 03eec42c3313b36da416be1486e9ecac345784d5
+#
+# search_content ground truth verified empirically against SHA 03eec42c:
+#   - macros.rs has multiple "fn deserialize" (in macro-generated code)
+#   - private/de.rs has multiple "fn deserialize" (visitor impls)
+#   - private/ser.rs does NOT have "fn deserialize" (Serialize side)
+#   - src/de.rs and src/ser.rs don't exist as files; src/de/ and src/ser/
+#     are directories
+# The matcher compares basenames, so paths use the actual file basenames
+# the user can find in the crate.
+version: "1.0"
+language: rust
+tier: A
+description: "Tier-1 pilot: read + search scenarios against real serde"
+repo: "serde"
+timeout_seconds: 120
+scenarios:
+  - name: tier1_serde_read_source
+    description: "Read real serde crate src/lib.rs as raw text"
+    tool: read_file
+    action: read
+    repo: serde
+    workspace: serde
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/lib.rs
+      mode: raw
+    ground_truth:
+      exists: true
+
+  - name: tier1_serde_search_content
+    description: "Search for 'fn deserialize' in real serde crate source"
+    tool: search_content
+    action: search
+    repo: serde
+    workspace: serde
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "fn deserialize"
+      path: src
+      case_sensitive: true
+    ground_truth:
+      matches:
+        - path: src/macros.rs
+        - path: src/private/de.rs
