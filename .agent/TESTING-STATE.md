@@ -2100,3 +2100,121 @@ release-readiness evidence. No fabricated GREEN. No threshold change.
 No streak increment. analyze_stability.py untouched.
 
 Next: A1c (G3 characterization + reader fix).
+
+## Active Change — TRACK A / A1c G3 reader fix (2026-09-19) — CLOSED 2026-09-19
+
+Scorecard reader `gate_g3` was consuming `stability.json::health_score`
+which is the `analyze_stability.py` formula
+`min(100, pass_rate*100*0.5 + 95*0.3 + 95*0.2)` with two 95s as
+placeholder constants. The spec requires
+`sandbox_core::scoring::compute_health_score` with weights
+`(0.35, 0.20, 0.15, 0.15, 0.15)`.
+
+Frozen run 20260919T102509 evidence (not modified):
+
+  total_result_jsons             : 58
+  with_all_5_dims_non_None       : 8
+  real_5dim_health_distribution  : [94.45, 98.92, 71.25, ...]
+  scenarios_below_85_threshold   : 2 (incl. 71.25 case)
+  stability_health_score         : 97.5 (analyze_stability formula)
+  previous_verdict               : GREEN 97.5 (placeholder, hiding 71.25)
+
+The 71.25 was a Tier-A fixture scenario. Real product verdict was RED,
+but the reader fabricated GREEN using the analyze_stability placeholder.
+
+### Six reader gaps documented and pinned
+
+  R-G3-1 wrong source: stability.json::health_score is the analyze_stability
+                       formula, not the scoring-engine formula.
+  R-G3-2 double counting: averaged stability+summary+aggregate health_score.
+  R-G3-3 missing correctitud inflated health (97.5 hides None correctitud).
+  R-G3-4 per-scenario variance hidden behind a 97.5 average.
+  R-G3-5 71.25 below threshold but GREEN reported.
+  R-G3-6 GREEN with 8/58 complete-5-dim scenarios.
+
+### Reader fix (A1c.2)
+
+  - exposes G3_THRESHOLD=85.0, G3_HEALTH_WEIGHTS, G3_DIM_NAMES
+    (mirrors crates/cognicode-core/src/sandbox_core/scoring.rs:1400)
+  - single source of truth: result.json dimension_scores per scenario
+  - 5-dim health formula: CORR*0.35 + LAT*0.20 + ESC*0.15 + CON*0.15 + ROB*0.15
+  - scenarios missing any of the 5 dims -> incomplete_5dim
+  - stability.json::health_score preserved as diagnostic_only with formula
+    and placeholder warning
+  - threshold unchanged (>=85)
+  - scoring engine unchanged
+  - analyze_stability.py unchanged
+
+### Verdict precedence
+
+  no dimension_scores             -> AMBER no_evidence
+  any complete < 85               -> RED, failing scenario named
+  no complete scenarios           -> AMBER insufficient_5dim
+  some complete, some incomplete  -> AMBER insufficient_5dim
+  all complete and >= 85          -> GREEN
+
+### Re-verdict on the frozen campaign
+
+  before: G3 GREEN 97.5 (analyze_stability placeholder; 71.25 hidden)
+  after : G3 RED
+          worst: rust_search_content_default at 68.6
+          below_threshold_count: 2
+          complete_5dim=4/29, incomplete_5dim=25
+          min=68.6, max=98.9, avg=83.3
+          diagnostic_only: stability.json::health_score=97.5
+            (formula cited, placeholder constants warning)
+
+### Scorecard overall
+
+  before A1c: 8 GREEN, 5 AMBER, 0 RED (G3 fabricated GREEN)
+  after  A1c: 7 GREEN, 5 AMBER, 1 RED (G3 honest RED)
+
+### Scope
+
+  - sandbox/scripts/release_scorecard.py (gate_g3 only)
+  - sandbox/scripts/tests/test_a1c_g3_contract.py
+
+### Out of scope
+
+  - Threshold (>=85) unchanged.
+  - ADR-031 unchanged.
+  - compute_health_score in scoring.rs unchanged (mirrored, not duplicated).
+  - analyze_stability.py unchanged.
+  - Scorecard streak unchanged.
+  - No fabricated GREEN.
+
+### Evidence inventory
+
+  - python3 -m pytest sandbox/scripts/tests/test_a1c_g3_contract.py -v
+    -> 18/18 PASS (was 10 RED + 8 trivially GREEN)
+  - python3 sandbox/scripts/release_scorecard.py against frozen run
+    -> 7 GREEN, 5 AMBER, 1 RED
+  - G3 verdict: RED with worst scenario named
+  - md5sum sandbox/results/scorecard_streak.json
+    -> 6b2121fe8e1134a6bed84faba138e5ff (unchanged)
+  - receipts:
+    - sandbox/results/freezes/2026-09-19-track-a-a1c.0-g3-health-score-trace.json
+    - sandbox/results/freezes/2026-09-19-track-a-a1c-g3-reader-fix.json
+
+### Carry-forward (debt)
+
+  - G6: per-scenario runs >= 3 still required; max CV of complete
+    scenarios does NOT represent stability of all scenarios.
+    No new gate for aggregate_cv. No threshold relaxation.
+  - G4: Tier-1 corpus execution deferred to a later cycle (needs
+    manifests + verified revisions + actual_repository_identity field).
+
+### Unknown impact / outstanding
+
+  - Real acceptance campaign (Tier-1 corpus + verified revisions +
+    >= 3 repeats + ground truth) is the next milestone. The reader
+    phase is closed.
+
+### Result
+
+  PASS for A1c scope. Reader phase closed. G3 verdict changed GREEN->RED
+  honestly; no fabricated GREEN; no threshold change; no streak
+  increment.
+
+  Next: close reader phase; prepare real acceptance campaign.
+  Do not renegotiate ADR-031 yet.

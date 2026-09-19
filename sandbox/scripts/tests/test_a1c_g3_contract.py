@@ -452,7 +452,20 @@ def test_insufficient_complete_5dim_scenarios_is_amber(tmp_path):
 
 
 def test_frozen_run_g3_evidence():
-    """Frozen run G3 must reflect the real 5-dim picture, not the 97.5 placeholder."""
+    """Frozen run G3 must reflect the real 5-dim picture, not the 97.5 placeholder.
+
+    The frozen run 20260919T102509 has correctitud in only 8/58
+    result.jsons (across run-1 and run-2). Of those, the 5-dim health
+    computed by the scoring-engine formula reveals 2 scenarios below
+    the 85 threshold (worst=68.6). The previous reader hid this
+    behind a 97.5 placeholder; the new reader reports it as RED with
+    the failing scenario named.
+
+    This test pins: the verdict comes from real 5-dim evidence, not
+    from the analyze_stability placeholder. RED is the honest verdict
+    for this campaign; AMBER only if there were zero complete-5-dim
+    scenarios at all.
+    """
     p = REPO / "sandbox/results-runs/20260919T102509/run-1"
     if not p.exists():
         return
@@ -460,19 +473,21 @@ def test_frozen_run_g3_evidence():
     if not sp.exists():
         return
     g = rs.gate_g3([str(p)], stability_path=str(sp))
-    # The frozen run has correctitud in only 8/58 result.jsons. With
-    # the current reader, this comes out GREEN with 97.5 (analyze_stability
-    # formula). With the fix, it must be AMBER for insufficient_5dim_evidence.
-    assert g.status in ("AMBER", "INCOMPLETE"), (
-        f"frozen run has insufficient 5-dim evidence; "
-        f"G3 must be AMBER/INCOMPLETE, got {g.status} ({g.evidence_text})"
+    # Some scenarios have all 5 dims; some are below threshold. RED
+    # is the honest verdict (not GREEN, not AMBER). AMBER is reserved
+    # for "no complete 5-dim scenarios at all" — that is not this case.
+    assert g.status == "RED", (
+        f"frozen run has 2 scenarios below threshold (5-dim formula); "
+        f"G3 must be RED, got {g.status} ({g.evidence_text})"
     )
-    # The 97.5 from analyze_stability must be preserved as diagnostic_only,
-    # not as G3 release evidence.
-    assert "diagnostic" in g.evidence_text.lower() or "placeholder" in g.evidence_text.lower() or \
-           "analyze_stability" in g.evidence_text.lower() or \
-           "5-dim" in g.evidence_text.lower() or "5dim" in g.evidence_text.lower(), \
-        f"the source of the 97.5 must be cited; got: {g.evidence_text}"
+    # The 97.5 placeholder must be preserved as diagnostic, not as evidence.
+    assert "diagnostic_only" in g.evidence_text, \
+        f"the 97.5 placeholder must be cited as diagnostic_only; got: {g.evidence_text}"
+    assert "placeholder constants" in g.evidence_text.lower(), \
+        f"the placeholder nature of the 95s must be cited; got: {g.evidence_text}"
+    # The worst failing scenario must be named.
+    assert "rust_search_content_default" in g.evidence_text, \
+        f"the worst failing scenario must be named; got: {g.evidence_text}"
 
 
 # ── Verdict precedence ──────────────────────────────────────────────────────

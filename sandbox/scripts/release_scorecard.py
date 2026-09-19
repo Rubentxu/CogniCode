@@ -27,6 +27,19 @@ FAMILY_BUDGETS: dict[str, tuple[float, str]] = {
     "navigation": (45000.0, "ms"),
 }
 
+# G3 contract — Sandbox Health Score per the release-readiness spec.
+# Source: openspec/specs/release-readiness-gate/spec.md
+#   The MCP Health Score (weighted average of correctness, latency,
+#   scalability, consistency, robustness dimensions, computed by
+#   sandbox_core::scoring) MUST be >= 85/100 for the candidate release.
+# Authoritative source of weights: crates/cognicode-core/src/sandbox_core/
+# scoring.rs:1400 (HEALTH_WEIGHTS). Update both together.
+G3_THRESHOLD: float = 85.0
+G3_HEALTH_WEIGHTS: tuple[float, ...] = (0.35, 0.20, 0.15, 0.15, 0.15)
+G3_DIM_NAMES: tuple[str, ...] = (
+    "correctitud", "latencia", "escalabilidad", "consistencia", "robustez",
+)
+
 # G6 contract — Run-to-Run Stability per the release-readiness spec.
 # Source: openspec/specs/release-readiness-gate/spec.md
 #   Run-to-run variance (via stability.json from --repeat >= 3) MUST
@@ -388,56 +401,207 @@ def gate_g2(coverage_path: str) -> GateResult:
 
 
 def gate_g3(run_dirs: list[str], stability_path: str = "") -> GateResult:
-    """G3: Health score ≥85. GREEN if avg ≥85; AMBER if single run <85; RED if avg <85 with ≥2 runs.
+    """G3: Sandbox Health Score (5-dim weighted average) >= 85.
 
-    Reads health_score from (in order):
-      1. stability.json (post-D1 canonical source — spans all repeats)
-      2. summary.json in each run_dir (pre-D1)
-      3. Aggregated from result.json files (fallback when both above missing)
+    Contract (openspec/specs/release-readiness-gate/spec.md):
+      The MCP Health Score (weighted average of correctness, latency,
+      scalability, consistency, robustness dimensions, computed by
+      sandbox_core::scoring) MUST be >= 85/100 for the candidate release.
+
+    Authoritative source of the formula:
+      crates/cognicode-core/src/sandbox_core/scoring.rs:1400
+        HEALTH_WEIGHTS = (0.35, 0.20, 0.15, 0.15, 0.15)
+        compute_health_score(scores) =
+            CORR*0.35 + LAT*0.20 + ESC*0.15 + CON*0.15 + ROB*0.15
+
+    Single source of truth (A1c.2):
+      The spec requires the scoring-engine formula. The reader computes
+      the health score DIRECTLY from result.json files in each run_dir
+      using G3_HEALTH_WEIGHTS. It does NOT consume stability.json::
+      health_score (which is the analyze_stability.py formula:
+      `min(100, pass_rate*50 + 95*30 + 95*20)` — two 95s are
+      placeholder constants, not measurements) and does NOT mix
+      per-run summary.json::health_score or aggregate values.
+
+    Provenance policy:
+      A scenario contributes to G3 only when ALL FIVE dimensions are
+      present and non-None. If correctitud is None (typical: scenario
+      has no ground truth), that scenario is excluded from the
+      verdict-driving set but counted as incomplete coverage.
+
+    Verdict precedence:
+      no result.json with any dimension_scores           -> AMBER no_evidence
+      any complete scenario with health < G3_THRESHOLD   -> RED, scenario named
+      no complete scenario (correctitud=None everywhere) -> AMBER insufficient_5dim
+      some complete, some incomplete                     -> AMBER insufficient_5dim
+      all complete and >= G3_THRESHOLD                   -> GREEN
+
+    Diagnostic preserved:
+      stability.json::health_score (if present) is reported as
+      diagnostic_only with its formula cited. It is never used as
+      release-readiness evidence.
     """
-    scores: list[float] = []
-    sources: list[str] = []
+    rows: list[dict] = []              # per-scenario 5-dim health
+    incomplete_scenarios: list[str] = []
+    no_evidence_scenarios: list[str] = []
+    total_candidates = 0
 
-    # Source 1: stability.json (highest precedence)
+    # Source: result.json files in each run_dir. We do NOT mix this
+    # with stability.json::health_score, summary.json::health_score,
+    # or aggregate() output. The spec requires the scoring-engine
+    # formula applied to the actual dimension measurements.
+    seen: set[str] = set()             # de-dup across run_dirs
+    for d in run_dirs:
+        for rj_path in _discover_result_jsons(d):
+            try:
+                with open(rj_path) as f:
+                    r = json.load(f)
+            except Exception:
+                continue
+            sid = r.get("scenario_id") or ""
+            if sid in seen:
+                continue
+            seen.add(sid)
+            total_candidates += 1
+
+            ds = r.get("dimension_scores") or {}
+            if not ds:
+                no_evidence_scenarios.append(sid)
+                continue
+
+            values: list[float] = []
+            for k in G3_DIM_NAMES:
+                v = ds.get(k)
+                if v is None:
+                    break
+                values.append(float(v))
+            else:
+                # All 5 dims present.
+                h = sum(v * w for v, w in zip(values, G3_HEALTH_WEIGHTS))
+                rows.append({
+                    "scenario_id": sid,
+                    "health": h,
+                    "dims": ds,
+                })
+                continue
+            incomplete_scenarios.append(sid)
+
+    # Diagnostic: load stability.json::health_score to preserve the
+    # analyze_stability formula's value as diagnostic_only.
+    diag_value: float | None = None
+    diag_formula = ""
     if stability_path:
         stab = load_stability(stability_path)
         if stab.get("health_score") is not None:
-            scores.append(float(stab["health_score"]))
-            sources.append("stability.json")
+            diag_value = float(stab["health_score"])
+            diag_formula = (
+                "min(100, pass_rate*100*0.5 + 95*0.3 + 95*0.2); "
+                "the two 95s are placeholder constants, not measurements"
+            )
 
-    # Source 2 + 3: per-run summary.json, fall back to result.json aggregation
-    for d in run_dirs:
-        s = load_summary(d)
-        if not s:
-            s = _aggregate_results([d])
-            sources.append(f"aggregate({Path(d).name})")
-        else:
-            sources.append(f"summary({Path(d).name})")
-        hs = s.get("health_score")
-        if hs is not None:
-            scores.append(float(hs))
-
-    if not scores:
+    # Verdict precedence.
+    if total_candidates == 0 or (not rows and not incomplete_scenarios and not no_evidence_scenarios):
         return GateResult(
             id="G3", name="Sandbox Health Score",
-            status="AMBER", evidence_text="no health_score data in any source",
+            status="AMBER",
+            evidence_text=(
+                "no_evidence: no result.json files with dimension_scores "
+                "in any run_dir; cannot compute 5-dim health "
+                "(spec: sandbox_core::scoring::compute_health_score)"
+            ),
             evidence_path=",".join(run_dirs + ([stability_path] if stability_path else [])),
         )
 
-    avg = sum(scores) / len(scores)
-    if len(scores) == 1:
-        status = "GREEN" if scores[0] >= 85 else "AMBER"
-        detail = f"single run: {scores[0]:.1f}"
-    else:
-        status = "GREEN" if avg >= 85 else "RED"
-        detail = f"avg {avg:.1f} across {len(scores)} runs"
+    if not rows:
+        # No scenario has all 5 dims. Verdict is AMBER.
+        reasons = []
+        if incomplete_scenarios:
+            reasons.append(
+                f"insufficient_5dim: {len(incomplete_scenarios)} scenarios "
+                f"missing one or more of {list(G3_DIM_NAMES)} (typically "
+                f"correctitud=None when no ground truth)"
+            )
+        if no_evidence_scenarios:
+            reasons.append(
+                f"no_evidence: {len(no_evidence_scenarios)} scenarios "
+                f"with no dimension_scores at all"
+            )
+        if diag_value is not None:
+            reasons.append(
+                f"diagnostic_only: stability.json::health_score={diag_value:.1f} "
+                f"({diag_formula}); not counted toward G3"
+            )
+        return GateResult(
+            id="G3", name="Sandbox Health Score",
+            status="AMBER",
+            evidence_text="; ".join(reasons),
+            evidence_path=",".join(run_dirs + ([stability_path] if stability_path else [])),
+        )
 
+    # Some scenarios have all 5 dims.
+    failing = [r for r in rows if r["health"] < G3_THRESHOLD]
+    passing = [r for r in rows if r["health"] >= G3_THRESHOLD]
+    avg_health = sum(r["health"] for r in rows) / len(rows)
+    min_health = min(r["health"] for r in rows)
+    max_health = max(r["health"] for r in rows)
+
+    if failing:
+        worst = min(failing, key=lambda r: r["health"])
+        return GateResult(
+            id="G3", name="Sandbox Health Score",
+            status="RED",
+            measured=round(worst["health"], 1),
+            budget=G3_THRESHOLD,
+            evidence_text=(
+                f"5-dim health (sandbox_core::scoring formula, weights={list(G3_HEALTH_WEIGHTS)}) "
+                f"below threshold on {len(failing)} scenario(s); "
+                f"worst: {worst['scenario_id']!r} at {worst['health']:.1f}; "
+                f"complete_5dim={len(rows)}/{len(rows)+len(incomplete_scenarios)}, "
+                f"incomplete_5dim={len(incomplete_scenarios)}, "
+                f"min={min_health:.1f}, max={max_health:.1f}, avg={avg_health:.1f}"
+                + (f"; diagnostic_only: stability.json::health_score={diag_value:.1f}"
+                   + (f" ({diag_formula})" if diag_formula else "")
+                   if diag_value is not None else "")
+            ),
+            evidence_path=",".join(run_dirs + ([stability_path] if stability_path else [])),
+        )
+
+    if incomplete_scenarios:
+        # All complete scenarios are >= 85, but some scenarios are
+        # incomplete. Spec requires per-scenario 5-dim health across
+        # the corpus — incomplete coverage means the verdict cannot
+        # be GREEN.
+        return GateResult(
+            id="G3", name="Sandbox Health Score",
+            status="AMBER",
+            measured=round(avg_health, 1),
+            budget=G3_THRESHOLD,
+            evidence_text=(
+                f"all {len(rows)} complete 5-dim scenarios >= {G3_THRESHOLD:.0f}, "
+                f"avg={avg_health:.1f}; but {len(incomplete_scenarios)} scenarios "
+                f"have insufficient 5-dim coverage (correctitud=None or other "
+                f"dims missing); insufficient_5dim prevents GREEN"
+                + (f"; diagnostic_only: stability.json::health_score={diag_value:.1f}"
+                   if diag_value is not None else "")
+            ),
+            evidence_path=",".join(run_dirs + ([stability_path] if stability_path else [])),
+        )
+
+    # All complete and all >= 85.
     return GateResult(
         id="G3", name="Sandbox Health Score",
-        status=status,
-        measured=round(avg, 1),
-        budget=85.0,
-        evidence_text=f"{detail}; sources: {', '.join(sources)}",
+        status="GREEN",
+        measured=round(avg_health, 1),
+        budget=G3_THRESHOLD,
+        evidence_text=(
+            f"all {len(rows)} scenarios with complete 5-dim coverage have "
+            f"health (sandbox_core::scoring formula, weights={list(G3_HEALTH_WEIGHTS)}) "
+            f">= {G3_THRESHOLD:.0f}; min={min_health:.1f}, max={max_health:.1f}, "
+            f"avg={avg_health:.1f}"
+            + (f"; diagnostic_only: stability.json::health_score={diag_value:.1f}"
+               + (f" ({diag_formula})" if diag_formula else "")
+               if diag_value is not None else "")
+        ),
         evidence_path=",".join(run_dirs + ([stability_path] if stability_path else [])),
     )
 
