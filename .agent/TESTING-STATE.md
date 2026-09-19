@@ -2505,3 +2505,114 @@ PASS for provenance scope:
 Next (requires user authorization):
   - 3-repeat campaign for full Tier-1 coverage
   - Optionally: increase MCP search limit to resolve clap/tokio RED
+
+## Active Cycle: TRACK A · Tier-1 First Vertical at HEAD 75669a0b (2026-09-19T14:11Z)
+
+Closed in this micro-cycle: E1 (single Serde pilot), then F1 (5-repo pilot).
+
+### Goal
+
+Run the Tier-1 5-repo pilot with the orchestrator at HEAD 75669a0b (which
+includes the A1c G3 reader fix and the prior session's provenance
+emission). Validate every result.json emits
+`actual_repository_identity` + `actual_repository_revision` +
+`measured_source_head` + `repo_provenance`. Run the scorecard on the
+new evidence and capture the honest verdict.
+
+### Setup verification (PASS, with notes)
+
+| Item | Status | Note |
+|------|--------|------|
+| Tier-1 checkouts | PASS | All 5 SHAs match clone_repos.sh pins |
+| Podman rust:1.82-slim | PASS | Pulled (was missing from local cache) |
+| Networks (rust/python/node/go) | PASS | Created `cognicode-*-net` |
+| Orchestrator binary | PASS | Discovered stale-binary trap; cp'd fresh binary from `/var/home/rubentxu/cargo-targets/debug/` |
+| Manifest path | PASS | Reused `sandbox/manifests-tier1/tier1_pilot_5repo.yaml` |
+
+**Stale-binary trap**: the local `target/debug/sandbox-orchestrator`
+was a hardlink to a Cargo-stale inode on a different filesystem device.
+Cargo writes the fresh binary to `/var/home/rubentxu/cargo-targets/`
+(not the project's `target/`). Discovered by `md5sum` mismatch between
+the two locations. **Fix**: `cp /var/home/rubentxu/cargo-targets/debug/sandbox-orchestrator target/debug/sandbox-orchestrator`
+before invoking the harness. Receipt: target/debug/sandbox-orchestrator
+md5 = `755dac56bff092f365ef12b9d1a43b9b`.
+
+### Run evidence
+
+- Run dir: `sandbox/results-runs/20260919T141051/`
+- Command: `bash sandbox/scripts/run_campaign.sh sandbox/manifests-tier1/tier1_pilot_5repo.yaml`
+- measured_source_head: `75669a0b759e64701625b7f00b71e4691f918c7e`
+- Status: complete (worker_exit_code=0), 10/10 scenarios ran
+
+### Provenance verification (all 10 scenarios)
+
+| Repo    | revision (short) | ws_rel      | outcome | correctitud | snapshot_id match |
+|---------|------------------|-------------|---------|-------------|---------------------|
+| serde   | 03eec42c33       | serde       | pass    | null (read) | OK (catalog)        |
+| serde   | 03eec42c33       | serde       | pass    | 100         | —                   |
+| ripgrep | 4649aa9700       | crates/cli  | pass    | null (read) | OK (catalog)        |
+| ripgrep | 4649aa9700       | crates      | pass    | 100         | new (different ws)  |
+| anyhow  | 8ea1819c4c       | .           | pass    | null (read) | OK (catalog)        |
+| anyhow  | 8ea1819c4c       | .           | pass    | 100         | —                   |
+| tokio   | dd344a550c       | tokio       | pass    | null (read) | OK (catalog)        |
+| tokio   | dd344a550c       | tokio       | pass    | 50          | —                   |
+| clap    | 4684d7abc5       | clap_builder| pass    | null (read) | OK (catalog)        |
+| clap    | 4684d7abc5       | clap_builder| pass    | 0           | —                   |
+
+**Provenance pass rate: 10/10.** All scenarios emit
+`actual_repository_identity` + `actual_repository_revision` +
+`measured_source_head`. No fabrication.
+
+### Scorecard verdict
+
+| Gate | Status | Note |
+|------|--------|------|
+| G3 Sandbox Health | RED 64.2/85 | worst: clap_search at 64.2; complete_5dim=5/10 |
+| G4 Corpus Quality | RED 70.0/90 | acredited=5/5; failing: clap (0), tokio (50); serde/ripgrep/anyhow=100 |
+| G6 Stability | AMBER | 1 repeat only (needs 3 for stability.json) |
+| Others | GREEN/AMBER | G1/G7/G9/G10/G11/G12/G13 GREEN; G2/G5/G8 AMBER (no probe data) |
+
+G3 + G4 both RED due to **same root cause** as prior session: search
+engine ranking × 50-result limit makes clap/tokio search match fall
+below threshold. Not a Tier-1 defect.
+
+### Defects found in this cycle (NOT blocking, carry-forward)
+
+1. **G4 reader over-counts `missing_or_unverified`** at
+   `sandbox/scripts/release_scorecard.py:785-789`: any scenario with
+   positive provenance but `correctitud: null` (read_file with `exists:
+   true` smoke matcher) adds to `unverified_repos`, even when the repo
+   has other scenarios with measured correctitud. **Verdict is
+   unaffected** (the `RED` from clap/tokio is real). Fix: skip the
+   unverified marking if `actual_short in measurements`.
+
+2. **G3 reader**: when read_file has `correctitud: null`, the 5-dim
+   health is incomplete (only 4 of 5 dims contribute). Currently
+   classified as `incomplete_5dim`. Not blocking; the 5-dim weight
+   already mirrors `scoring.rs:1400`.
+
+### Streak integrity
+
+UNCHANGED. Streak remains 1/3 HELD, MD5 6b2121fe8e1134a6bed84faba138e5ff.
+This run is single-repeat (not a full campaign) and is provenance
+calibration + first-vertical evidence. Next cycle should run
+`--repeat 3` to generate stability.json and complete G6.
+
+### Carry-forward
+
+- G6: still needs `repeat ≥ 3` for full Tier-1 evidence (in flight, next cycle).
+- G4 reader over-counting (carry-forward microcycle).
+- Search engine 50-result limit (TRACK runtime, optional).
+- TRACK B continues; e78 DEFERRED.
+
+### Result
+
+PASS for first-vertical scope:
+  - All 10 scenarios execute with verified Tier-1 provenance
+  - Scorecard runs end-to-end (no crash; all 13 gates report a status)
+  - 5/5 Tier-1 repos credited, 3/5 ≥90 threshold (serde/ripgrep/anyhow),
+    2/5 RED due to documented search-engine limit (clap/tokio)
+  - No fabrication: low scores are real measurements, not placeholder formulas
+  - Reader defect noted (carry-forward, non-blocking)
+
+Next: 3-repeat Tier-1 campaign to complete G6 evidence + drive streak increment.
