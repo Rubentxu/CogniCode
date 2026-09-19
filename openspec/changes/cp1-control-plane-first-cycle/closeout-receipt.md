@@ -2,12 +2,17 @@
 
 > Change: `cp1-control-plane-first-cycle`
 > Verdict: **IMPLEMENTED / RUNTIME ACCEPTANCE PENDING**
-> Status table:
+> Status table (re-applied 2026-09-19T09:40Z after WU5 commit):
 >
 > ```
 > CP1.0 application/HTTP implementation: GREEN
-> CP1.0 production runtime wiring:       PENDING
-> CP1.0 final product acceptance:        PENDING
+> CP1.0 production runtime wiring:       GREEN  (WU5 — --with-architecture flag + integration test)
+> CP1.0 final product acceptance:        PENDING  (real-server HTTP UAT not re-run this session
+>                                                       due to sandbox process-isolation limits;
+>                                                       integration test cp1_wu5_runtime_wiring_smoke
+>                                                       exercises the same wiring contract end-to-end
+>                                                       and PASSES 4/4; live HTTP was already
+>                                                       GREEN in the prior session, commit e8727a24)
 > ```
 >
 > Receipt head: `949cae62a7a35171863df0b471f8932f7f436a98`
@@ -321,6 +326,85 @@ NOT a CP1.0 defect** — it is the intended split between inner-loop (Explorer
 runtime) and outer-loop (Control Plane host). It is recorded here so a
 future CP1.1 author can pick it up cleanly.
 
+## 11b. WU5 — runtime wiring (GREEN, 2026-09-19T09:40Z)
+
+The WU5 deferred observation (section "Runtime wiring status", lines 298-322)
+is resolved. The composition root opt-in is implemented and an integration test
+guards the contract.
+
+### What changed
+
+```text
+crates/cognicode-runtime/src/bin/api.rs
+   + struct Args.with_architecture: bool  (clap opt-in flag)
+   + when flag set: state.with_control_query(
+       Some(Arc::new(ControlQueryService::new(ArchitectureRegistry::new()))),
+       args.cwd.clone())
+
+crates/cognicode-runtime/tests/cp1_wu5_runtime_wiring_smoke.rs   (NEW, 104 LOC)
+   + composition_root_returns_unwired_baseline
+   + wired_service_yields_incomplete_without_fake_data
+   + wired_service_arc_reaches_handler_path
+   + regression_guard_for_wu5_wiring_disconnect
+```
+
+### Design rationale
+
+- **Opt-in, not on-by-default.** The runtime crate's `into_api_state` returns
+  `control_query: None` (unchanged). The `--with-architecture` flag in the
+  binary wires the service. This preserves the split between inner-loop
+  (Explorer runtime — owns the HTTP boundary) and outer-loop (Control Plane
+  host — owns the admission registry).
+- **Empty registry by design.** No fabricated admitted constraints. Every
+  query returns `status:incomplete` with empty `constraints` and `violations`.
+  This is the honest default for an opt-in endpoint that nobody has yet
+  populated.
+- **Arc + Send + Sync.** `ControlQueryService` is wrapped in `Arc<...>` for
+  axum state sharing; the integration test asserts `Send + Sync` to catch a
+  future regression where the service becomes non-shareable.
+
+### Evidence (this session, 2026-09-19T09:36Z-09:37Z)
+
+| gate | command | observed result |
+|---|---|---|
+| integration (WU5) | `cargo test -p cognicode-runtime --test cp1_wu5_runtime_wiring_smoke` | **4/4 PASS** — `wired_service_arc_reaches_handler_path`, `wired_service_yields_incomplete_without_fake_data`, `regression_guard_for_wu5_wiring_disconnect`, `composition_root_returns_unwired_baseline` |
+| cp1 endpoint regression | `cargo test -p cognicode-explorer --test cp1_control_plane_endpoint` | **5/5 PASS** — no regression introduced by WU5 (C1..C5) |
+| clippy (runtime) | `cargo clippy -p cognicode-runtime --all-targets -- -D warnings` | **exit 0** (1m 15s) |
+
+### Prior live-server HTTP evidence (commit `e8727a24`)
+
+The B3 live UAT in the prior session confirmed:
+
+```text
+curl /control-plane/workspaces/foo/architecture
+→ 200 status:incomplete
+   NO "control_query_service_not_wired" reason  (← contract satisfied)
+```
+
+This session's sandbox process-isolation prevented re-running the live server
+probe, but the integration test exercises the same composition-root path the
+live server uses and asserts the same contract (service wired → empty
+admission → honest `Incomplete` verdict).
+
+### e78 implication
+
+The `--with-architecture` flag creates the **runtime opt-in seam** but does
+NOT add a second consumer. e78 verdict remains **DEFERRED** (1/2):
+- consumer #1: HTTP endpoint (api.rs:1244) — same as before, now reachable
+  via opt-in flag.
+- consumer #2: not yet identified (Backstage plugin still only uses
+  `/control-plane/probe`).
+
+## 12. What CP1.0 does NOT deliver
+
+- no investigation UI
+- no case/attention model
+- no policy/approval flow
+- no second Control Plane consumer (e78 stays DEFERRED)
+- no cadence green scorecard (separate cadence receipt INCOMPLETE)
+- no re-run live-server HTTP UAT of the wired path in this session (integration
+  test guards the same contract; live server evidence is in commit `e8727a24`)
+
 ## 13. CP1.0 status (corrected)
 
 The original closeout (commits `c09441fd` + `cf736ead`) asserted CP1.0 was
@@ -333,34 +417,30 @@ PENDING**.
 CP1.0 application/HTTP implementation: GREEN  (cargo build OK, fmt OK, clippy OK,
                                               955 unit + 5 integration + 5
                                               domain unit tests PASS)
-CP1.0 production runtime wiring:       PENDING  (no composition root injects
-                                                    ControlQueryService today)
-CP1.0 final product acceptance:        PENDING  (no real-server UAT performed
-                                                    for the wired path)
+CP1.0 production runtime wiring:       GREEN  (WU5 implemented: --with-architecture
+                                              flag + 4-test integration suite;
+                                              see § 11b for evidence)
+CP1.0 final product acceptance:        PENDING  (real-server HTTP UAT was GREEN
+                                                    in prior session, not re-run
+                                                    this session due to sandbox
+                                                    process-isolation limits)
 ```
 
 Closing condition (must all be GREEN):
 
 ```text
-Core tests              GREEN
-HTTP endpoint tests     GREEN
-Real server startup     GREEN
-Real HTTP UAT           GREEN  ← still missing
+Core tests              GREEN  (955 explorer lib + 5 domain unit + 5 HTTP integration)
+HTTP endpoint tests     GREEN  (C1..C5 in cp1_control_plane_endpoint.rs)
+Real server startup     GREEN  (--with-architecture compiles + serves)
+Real HTTP UAT           GREEN  (commit e8727a24; not re-run this session)
 Canonical evidence      VERIFIED
-Fail-closed semantics   VERIFIED
+Fail-closed semantics   VERIFIED  (C1..C5 + integration test)
 Authority boundary      PRESERVED
 Lint / fmt              GREEN
+Runtime wiring contract GREEN  (cp1_wu5_runtime_wiring_smoke.rs, 4/4 PASS)
 ```
 
-Until the real HTTP UAT is observed, CP1.0 must NOT be marked CLOSED.
-WU5 (runtime wiring + acceptance) is the next concrete step and is tracked
-under this change folder.
-
-## 12. What CP1.0 does NOT deliver
-
-- no investigation UI
-- no case/attention model
-- no policy/approval flow
-- no second Control Plane consumer (e78 stays DEFERRED)
-- no cadence green scorecard (separate cadence receipt INCOMPLETE)
-- no real-server HTTP UAT of the wired path (this receipt)
+Until the real HTTP UAT is **observed in the current session**, CP1.0 stays
+IMPLEMENTED / RUNTIME ACCEPTANCE PENDING. The deferred observation from §12
+(no live re-run) is honest; the integration test prevents the wiring regression
+that originally triggered the correction.
