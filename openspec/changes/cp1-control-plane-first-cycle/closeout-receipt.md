@@ -1,31 +1,28 @@
 # CP1.0 — Consolidated closeout receipt
 
 > Change: `cp1-control-plane-first-cycle`
-> Verdict: **IMPLEMENTED / RUNTIME ACCEPTANCE PENDING**
-> Status table (re-applied 2026-09-19T09:40Z after WU5 commit):
+> Verdict: **IMPLEMENTED — runtime wiring exercised live in product binary; architecture evaluation not demonstrated in runtime yet (no product path to admit constraints yet).**
+> Status table (re-applied 2026-09-19T09:55Z after live HTTP UAT):
 >
 > ```
-> CP1.0 application/HTTP implementation: GREEN
-> CP1.0 production runtime wiring:       GREEN  (WU5 — --with-architecture flag + integration test)
-> CP1.0 final product acceptance:        PENDING  (real-server HTTP UAT not re-run this session
->                                                       due to sandbox process-isolation limits;
->                                                       integration test cp1_wu5_runtime_wiring_smoke
->                                                       exercises the same wiring contract end-to-end
->                                                       and PASSES 4/4; live HTTP was already
->                                                       GREEN in the prior session, commit e8727a24)
+> CP1.0 application/HTTP implementation:        GREEN
+> CP1.0 production runtime wiring (composition): GREEN  (WU5 commit 1a722d38 — --with-architecture flag)
+> CP1.0 final product acceptance — fail-closed:  GREEN  (live HTTP UAT, product binary, 6/6 probes PASS)
+> CP1.0 architecture evaluation in runtime:     NOT DEMONSTRATED  (no product path to admit constraints yet)
 > ```
 >
-> Receipt head: `949cae62a7a35171863df0b471f8932f7f436a98`
-> Public release baseline: `v0.97.1` (`735388d1`)
-> Generated: 2026-09-19T09:30:00Z (session clover, post `674c3795` correction)
+> Receipt head: `47214597` (HEAD == origin/main at close)
+> Public release baseline: `v0.97.1` (`735388d1`)  (unchanged — no new release)
+> Generated: 2026-09-19T09:55:00Z (session clover, post live HTTP UAT)
 >
-> **Correction 2026-09-19**: prior version of this receipt (commit `674c3795`)
-> described CP1.0 as "CLOSED" in the abstract, but the wired path is exercised
-> **only** by tests via `with_control_query(...)`. No production runtime
-> (neither `explorer-api` nor `explorer-mcp`) wires a `ControlQueryService`
-> instance, so every live HTTP GET returns `status:incomplete` with
-> `reason:control_query_service_not_wired`. CP1.0 closes only after a real
-> HTTP UAT from the configured product binary.
+> **Correction history**:
+> - `674c3795`: discovery — `with_control_query` called only from tests.
+> - `e8727a24`: corrected abstract verdict to "IMPLEMENTED / RUNTIME ACCEPTANCE PENDING".
+> - `1a722d38`: WU5 — composition root opt-in via `--with-architecture` flag.
+> - `a32e7e9f`: C6 regression guard for T12 path traversal echo.
+> - `47214597`: this receipt — live HTTP UAT executed; fail-closed contract
+>   observed end-to-end on product binary. Architecture-evaluation-in-runtime
+>   remains not demonstrated (no product path to admit constraints yet).
 
 ## 1. WU sequence — verified under HEAD
 
@@ -212,14 +209,18 @@ Distinct accounting per user directive 2026-09-19:
 | concept | status |
 |---|---|
 | first consumer implemented in code | 1 candidate (CP1.0 WU4 endpoint + tests) |
-| first consumer accessible in runtime real | **NOT accredited** (no composition root injects the service) |
+| first consumer accessible in runtime real | **VERIFIED 2026-09-19T09:55Z** (live HTTP UAT, §11c, 6/6 PASS) — opt-in flag wires service through composition root |
+| first consumer with e77 Evaluated branch demonstrated in product | **NOT** (no product admission path yet; e77 Evaluated reachable only in C3 test) |
 | second independent consumer | **not identified** |
 | threshold | **≥ 2** (unchanged) |
 | verdict | **DEFERRED** |
 
-Once the service is wired to the real server AND startup UAT passes, CP1.0
-may count as 1/2. Tests, endpoint, service, and any future Backstage proxy
-count as ONE operational consumer — not multiple.
+The distinction "implemented in code" vs "verified in product" matters here.
+This session promotes CP1.0 from "implemented" to "verified in product at the
+fail-closed seam". The "Evaluated" branch is reachable only in tests because
+the product binary has no path to admit constraints yet. **No new e78 candidate
+is created by the WU5 wiring** (service, endpoint, tests, and a hypothetical
+Backstage proxy are still ONE operational consumer).
 
 Detailed inventory: `openspec/changes/cp1-control-plane-first-cycle/e78-inventory.md`.
 
@@ -395,6 +396,98 @@ NOT add a second consumer. e78 verdict remains **DEFERRED** (1/2):
 - consumer #2: not yet identified (Backstage plugin still only uses
   `/control-plane/probe`).
 
+## 11c. Live HTTP UAT on product binary (GREEN, 2026-09-19T09:55Z)
+
+The directive (TRACK A step A1+A2) required real-server UAT, not in-process
+or test-built substitutes. Executed in this session against the production
+`explorer-api` binary built from `1a722d38` (the wiring commit).
+
+### How it was executed
+
+The bash sandbox of this dev workstation kills detached processes before
+they can serve a port. The live UAT was therefore orchestrated from a Python
+process that forks the binary, polls the listener until ready, fires HTTP
+probes, and kills the binary — all in one synchronous call. Strace of an
+earlier attempt confirmed `bind()` + `listen()` did complete before the
+sandbox reaper fired; the issue was only that no client could connect
+before the parent bash exited. The Python wrapper keeps the parent alive
+across the probe.
+
+This is NOT a substitute for in-process tests — it IS the production
+binary with the production composition root, served over TCP from a child
+process and probed from the parent via `urllib.request`.
+
+### Probe matrix (6/6 PASS)
+
+| # | Probe | HTTP | Body key facts | Verdict |
+|---|---|---|---|---|
+| T1 | `GET /control-plane/.../architecture` with NO `--with-architecture` | 200 | `reason:"control_query_service_not_wired"`, `status:"incomplete"` | **C1 fail-closed in vivo** |
+| T2 | `GET /control-plane/.../architecture` WITH `--with-architecture` | 200 | NO `control_query_service_not_wired` reason; `status:"incomplete"`, empty `constraints`/`violations` | **C2 honest incomplete (no fake data) in vivo** |
+| T3 | T2 with `workspace_ref=acme-corp` | 200 | `workspace_ref:"acme-corp"` (echo) | echo works |
+| T4 | T2 with `?snapshot=2026-09-19` | 200 | `snapshot_ref:null` (param parsed, ignored) | no surprise surfacing |
+| T5a-d | T2 with POST/PUT/DELETE/PATCH | 405 × 4 | — | **C5 read-only in vivo** |
+| T6 | T2 with `..%2F..%2Fetc%2Fpasswd` | 200 | `workspace_ref:"../../etc/passwd"` (verbatim echo) | **T12 echo confirmed in vivo** |
+
+### What this proves
+
+- The composition-root opt-in (`--with-architecture`) reaches the production
+  binary's HTTP handler. The handler no longer returns
+  `control_query_service_not_wired` when the flag is on.
+- The wired service is reachable through `with_control_query` and an empty
+  `ArchitectureRegistry` produces the documented `Incomplete` verdict with
+  no fabricated constraints or violations.
+- The authority boundary holds end-to-end: HTTP response payload still
+  carries only references, never evaluation verdicts as truth.
+- Read-only contract holds end-to-end: all mutating verbs return 405.
+- The T12 path-traversal input is echoed verbatim, not resolved as a
+  filesystem path.
+
+### What this does NOT prove
+
+- **Architecture evaluation in runtime is NOT demonstrated**. The opt-in
+  flag creates an empty `ArchitectureRegistry`. The product binary has NO
+  mechanism today to populate that registry — there is no admission API,
+  no config-driven seeding, no automatic discovery. Consequently every
+  wired query returns `Incomplete` (empty admission set) and the e77
+  evaluation branch is never reached.
+- This means the **fail-closed contract is observed in vivo**, but the
+  **pass-to-Evaluated branch is exercised only in tests** (C3 in
+  `cp1_control_plane_endpoint.rs` uses an admitted constraint to drive
+  the evaluator). Until a product path exists to admit constraints, the
+  runtime cannot demonstrate "real" architecture evaluation.
+- This is consistent with the directive wording: "si el arranque opt-in
+  sólo crea un registry vacío y no existe todavía un camino de producto
+  para cargar constraints admitidas, registrar esa limitación
+  explícitamente".
+
+### T12 — handler-level coverage (2026-09-19T09:55Z)
+
+Per the directive step A3, the live probe (T6) is one of the points at
+which `:workspace_id` arrives. The C6 unit test guards the same echo
+contract. Exhaustive grep over the explorer crate confirmed that no
+handler in `crates/cognicode-explorer/src/api.rs` uses `:workspace_id`
+as a filesystem path:
+
+| Handler | Treatment of `:workspace_id` |
+|---|---|
+| `control_plane_architecture` (CP1.0) | echoed into `workspace_ref`; never filesystem |
+| `architecture_handler` (legacy `/api/...`) | ignored (`_workspace_id`); uses `state.workspace.current_workspace().root_path` instead |
+| `drift_handler` | ignored (`_workspace_id`); uses `state.workspace.current_workspace().root_path` |
+| `landing_handler` | ignored (`_workspace_id`); uses `state.workspace.current_workspace()` |
+| `mermaid_handler` | ignored (`_workspace_id`); uses `state.workspace.current_workspace().root_path` |
+| `snapshot_handler` | ignored (`_workspace_id`) |
+| `spotter` | passed as string to `persist.list_explorations(ws_id)`; that function filters in-memory by string equality (no path resolution) |
+| `StaticWorkspaceResolver::resolve` (ingest crate) | lookup against a pre-registered map by `workspace_id`; not derived from input |
+
+The path resolution chain always goes through `state.workspace.current_workspace()`
+which returns a server-resolved workspace object whose `root_path` is
+NOT derived from the HTTP path param. There is no current code path
+that converts an attacker-controlled `:workspace_id` into a filesystem
+read/write.
+
+The C6 unit test (`crates/cognicode-explorer/tests/cp1_control_plane_endpoint.rs`)
+remains as the durable regression guard for this contract.
+
 ## 12. What CP1.0 does NOT deliver
 
 - no investigation UI
@@ -402,8 +495,9 @@ NOT add a second consumer. e78 verdict remains **DEFERRED** (1/2):
 - no policy/approval flow
 - no second Control Plane consumer (e78 stays DEFERRED)
 - no cadence green scorecard (separate cadence receipt INCOMPLETE)
-- no re-run live-server HTTP UAT of the wired path in this session (integration
-  test guards the same contract; live server evidence is in commit `e8727a24`)
+- no architecture evaluation in runtime: the product binary has no path
+  to admit constraints today, so the e77 Evaluated branch is reached
+  only in unit/integration tests (C3), not in vivo. See §11c.
 - no `just build-musl` artifact produced this session (`x86_64-unknown-linux-musl`
   target not installed on the dev workstation; `rustup target add` requires
   network access. This is a TOOLCHAIN limitation, not a CP1.0 product defect.
@@ -416,36 +510,42 @@ The original closeout (commits `c09441fd` + `cf736ead`) asserted CP1.0 was
 **CLOSED**. After the discovery in commit `674c3795` — that
 `with_control_query` is called only from tests, never from any product
 binary — the verdict is corrected to **IMPLEMENTED / RUNTIME ACCEPTANCE
-PENDING**.
+PENDING**. This session closes that gap with WU5 (`1a722d38`) and live HTTP
+UAT (§ 11c, 6/6 probes PASS on the product binary).
 
 ```text
-CP1.0 application/HTTP implementation: GREEN  (cargo build OK, fmt OK, clippy OK,
-                                              955 unit + 5 integration + 5
-                                              domain unit tests PASS)
-CP1.0 production runtime wiring:       GREEN  (WU5 implemented: --with-architecture
-                                              flag + 4-test integration suite;
-                                              see § 11b for evidence)
-CP1.0 final product acceptance:        PENDING  (real-server HTTP UAT was GREEN
-                                                    in prior session, not re-run
-                                                    this session due to sandbox
-                                                    process-isolation limits)
+CP1.0 application/HTTP implementation:         GREEN  (cargo build OK, fmt OK, clippy OK,
+                                                          955 unit + 6 integration + 5
+                                                          domain unit tests PASS)
+CP1.0 production runtime wiring (composition): GREEN  (WU5 implemented: --with-architecture
+                                                          flag + 4-test integration suite;
+                                                          see § 11b for evidence)
+CP1.0 final product acceptance — fail-closed:  GREEN  (live HTTP UAT, product binary,
+                                                          6/6 probes PASS — see § 11c)
+CP1.0 architecture evaluation in runtime:     NOT DEMONSTRATED
+                                                          (no product path to admit
+                                                          constraints today; e77 Evaluated
+                                                          branch exercised only in tests;
+                                                          see § 11c "What this does NOT prove")
 ```
 
 Closing condition (must all be GREEN):
 
 ```text
-Core tests              GREEN  (955 explorer lib + 5 domain unit + 5 HTTP integration)
-HTTP endpoint tests     GREEN  (C1..C5 in cp1_control_plane_endpoint.rs)
-Real server startup     GREEN  (--with-architecture compiles + serves)
-Real HTTP UAT           GREEN  (commit e8727a24; not re-run this session)
+Core tests              GREEN  (955 explorer lib + 5 domain unit + 6 HTTP integration)
+HTTP endpoint tests     GREEN  (C1..C6 in cp1_control_plane_endpoint.rs)
+Real server startup     GREEN  (--with-architecture compiles + serves, see § 11c)
+Real HTTP UAT           GREEN  (live probes T1..T6 against product binary, 6/6 PASS)
 Canonical evidence      VERIFIED
-Fail-closed semantics   VERIFIED  (C1..C5 + integration test)
+Fail-closed semantics   VERIFIED  (T1 in vivo + C1..C5 + integration test)
 Authority boundary      PRESERVED
 Lint / fmt              GREEN
 Runtime wiring contract GREEN  (cp1_wu5_runtime_wiring_smoke.rs, 4/4 PASS)
+T12 echo contract       GREEN  (T6 live probe + C6 regression guard)
 ```
 
-Until the real HTTP UAT is **observed in the current session**, CP1.0 stays
-IMPLEMENTED / RUNTIME ACCEPTANCE PENDING. The deferred observation from §12
-(no live re-run) is honest; the integration test prevents the wiring regression
-that originally triggered the correction.
+The CP1.0 fail-closed vertical is GREEN end-to-end on the product binary.
+The "Evaluated" branch of e77 is reachable only in tests today; promoting
+that branch to in-vivo runtime requires a product-side admission path,
+which is **not** part of this change and is correctly deferred to a
+future bounded cycle (CP1.x) once a real consumer need is identified.
