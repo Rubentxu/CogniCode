@@ -1769,3 +1769,180 @@ Changed: explorer/api.rs (endpoint GET /control-plane/workspaces/:id/architectur
 Tested: core control_query 5/5 GREEN; explorer cp1 endpoint 5/5 GREEN; just lint GREEN; fmt GREEN. Commits fed57b95..HEAD pushed.
 Gotchas: parser normalizes leading crate:: in dependency_path; module_path must resolve via LayerId::from_module_path (strip leading src/); source root scans must be bounded (never std::env::temp_dir() whole).
 Unknown: e78 checkpoint pending (consumer count); cadence full_run v1 still running.
+
+### SESSION HANDOFF — 2026-09-18 fin de sesión
+State: CP1.0 WU4 COMPLETE and pushed (HEAD 949cae62, origin/main parity).
+- Endpoint GET /control-plane/workspaces/:id/architecture GREEN (C1–C5, 5/5).
+- core control_query unit tests 5/5 GREEN. just lint GREEN, fmt GREEN.
+- KNOWN FAILURES baseline 39 unchanged; self-host not re-run this session.
+Cadence v1 (run 1):
+- ci_smoke 3 pass / quality 13 pass+5 expected_fail DONE (sandbox/results/).
+- full_run v1 STILL RUNNING detached (nohup PID 3429073, log /tmp/full_run.log),
+  60/80 result.json at 23:30 local; scenario 61 (multi_realrepo_hover_commander)
+  has been running ~45 min — suspect per-scenario timeout missing; if stuck,
+  kill and rerun remaining manifests with --results-dir sandbox/results/full_run.
+- NEXT cadence steps: tally outcomes → analyze_stability.py / build_flaky_log.py
+  → just scorecard-nightly → just scorecard-streak → write nightly receipt
+  (date, source_head=949cae62+, public_release_baseline=v0.97.1, verdict, gates,
+  CV, flaky count, known-failures=39, streak before/after).
+CP1.0 NEXT:
+- Checkpoint e78: count genuine consumers of ControlQueryService/e77 (exclude
+  unit tests, self-host, docs, Backstage proxy). < threshold → DEFERRED packs.
+Gotchas (learned today):
+- Parser normalizes leading crate:: in violation dependency_path.
+- module_path must resolve via LayerId::from_module_path; strip leading "src".
+- Never scan std::env::temp_dir() whole as source root (test hang, 50 min).
+- CONCURRENT AGENT wiped uncommitted work 3x today (api.rs, test file, helper).
+  Protocol: commit immediately after every verified edit.
+
+---
+
+## Session notes — 2026-09-19 (session clover, continuation)
+
+### Cadence v1 — re-examination of full_run artifacts
+
+The PID 3429073 detached run is dead; `/tmp/full_run.log` no longer exists.
+Reconstruction of `sandbox/results/full_run/` per-scenario verdicts:
+
+```text
+scenarios_with_terminal_result  = 60
+scenarios_pass                  = 17
+scenarios_fail_or_mcp_error     = 43
+scenarios_without_terminal      = 0
+range                           = 2026-09-18T21:30Z → 22:30Z (~1h)
+campaign_manifest               = NONE FOUND
+measured_source_head declared   = "unknown" (all 60 result.json)
+workspace_snapshot_id           = "pending" (all 60)
+```
+
+The prior session note recorded `60/80` (progress position, not PASS) and
+suspected scenario 61 (`multi_realrepo_hover_commander`) was stuck. After
+inspection that scenario **does have a terminal result** (`mcp_error`); the
+"stuck" perception came from the harness progress display, not from the
+artifact. The full 60-scenario set is terminal.
+
+**Cadence verdict: INCOMPLETE.** Per the user directive (2026-09-19): an
+incomplete campaign cannot be used to accredit any HEAD. Receipt emitted at
+`sandbox/results/nightly_receipts/2026-09-19-cadence-INCOMPLETE.json`. The
+streak record (`sandbox/results/scorecard_streak.json`) was **not modified**
+in this session — the 2026-08-11 entry remains the last valid streak record
+(current_streak=1, 39 days ago).
+
+`measured_source_head` was inferred from git history (last commit before
+22:30Z on 2026-09-18 = `9aaf91d2`) but is **not** declared in artifacts. The
+inferred value is recorded in the receipt with `trust_level: inferred-not-declared`.
+
+### e78 checkpoint — re-applied at HEAD 949cae62
+
+Full inventory in `openspec/changes/cp1-control-plane-first-cycle/e78-inventory.md`.
+
+```text
+genuine product consumers of application::architecture  = 1
+  #1  GET /control-plane/workspaces/:id/architecture  (CP1.0 WU4, fed57b95)
+excluded:
+  /api/workspaces/:id/architecture      legacy, uses graph.build_architecture
+  /api/.../architecture/mermaid         E20 export, no ControlQuery
+  semantic_miner + domain/ai            import domain::architecture only
+  boundary_tests                        tests only
+  internal modules of architecture crate submodule, not consumer
+
+threshold (carried unchanged)          = 2
+gate status                            = 1 / 2 — UNMET
+historic archive                        = NOT MODIFIED
+e78 outcome                             = DEFERRED
+```
+
+CP1.0 WU4 contributes ONE consumer (the Control Plane endpoint), not two.
+Per the user's explicit clarification 2026-09-19, the endpoint, the service,
+and any future client of the same service represent the SAME operational
+need and must not be split into multiple consumers. e78 stays DEFERRED.
+
+### CP1.0 — CLOSED
+
+Per cycle receipt at `openspec/changes/cp1-control-plane-first-cycle/`:
+
+```text
+WU2/WU3 commit 6169d454  ControlQueryService + read-model DTOs
+WU4    commit fed57b95   HTTP vertical + C1–C5 tests
+(no separate WU1 commit; preparatory work consolidated into 6169d454)
+HEAD at close            949cae62 = origin/main
+lint / fmt               GREEN (per WU4 cycle clippy fixes)
+known-failures baseline  unchanged (39)
+e78 checkpoint           1 / 2 — DEFERRED
+cp0 archive              NOT MODIFIED (cp0-backstage-fit-spike = FIT_WITH_CONSTRAINTS)
+
+CP1.0 = CLOSED
+CP1   = OPEN  (next problem TBD from vertical evidence)
+e78   = DEFERRED
+```
+
+### CP1 next problem — checklist (NOT pre-allocated)
+
+The next CP1 bounded cycle is **not** opened in this session. It will be
+opened only if a real need surfaces from the CP1.0 vertical, per:
+
+```text
+1. user question         — what does a real user ask next after architecture read?
+2. canonical source      — which existing module produces the answer?
+3. missing capability    — what is the minimum useful read or write?
+4. minimum vertical      — one endpoint + one test contract + one DTO
+5. acceptance / UAT      — how do we know it's used?
+```
+
+Pre-fabricating `AttentionItem`, `CaseView`, or a second endpoint without
+evidence is **explicitly prohibited** by the user directive (2026-09-19).
+
+---
+
+## Session "clover" — 2026-09-19 (resumed)
+
+### Active change at resume
+
+CP1.0 closeout had been left IMPLEMENTED / RUNTIME ACCEPTANCE PENDING
+after `674c3795` discovered that `with_control_query` is defined but
+only called from tests. 4 commits already on main (`c09441fd`,
+`cf736ead`, `674c3795`, `e8727a24`), working tree had:
+- `crates/cognicode-runtime/src/bin/api.rs` (B2 wiring, uncommitted)
+- `crates/cognicode-runtime/tests/cp1_wu5_runtime_wiring_smoke.rs` (B3 test, uncommitted, had compile error)
+
+### What changed this session
+
+| commit | what | evidence type | evidence captured |
+|---|---|---|---|
+| `1a722d38` | feat(cp1.0): WU5 runtime wiring + 4-test integration smoke | direct test + clippy + fmt | cargo test 4/4 PASS, C1-C5 5/5 PASS, clippy 0, fmt 0 |
+| `a32e7e9f` | test(cp1.0): C6 path-traversal echo regression guard (T12) | direct test | cargo test 6/6 PASS, clippy 0, fmt 0 |
+| `47214597` | docs(cp1.0): §12 musl toolchain limitation | direct inspection | rustup target list — musl not installed |
+
+### Cadence receipt
+
+`2026-09-19-cadence-INCOMPLETE-r2.json` emitted honestly with
+`measured_source_head=unknown`, harness_gap_inventory, and three
+next_required_actions (D1 harness upgrade, D2 re-run, D3 re-evaluate).
+Streak counter `scorecard_streak.json` NOT MODIFIED.
+
+### Evidence inventory (this session)
+
+- cargo test -p cognicode-runtime --test cp1_wu5_runtime_wiring_smoke
+  → 4/4 PASS (multi-thread tokio for bootstrap-using tests)
+- cargo test -p cognicode-explorer --test cp1_control_plane_endpoint
+  → 6/6 PASS (C1..C5 + new C6 path-traversal)
+- cargo clippy -p cognicode-runtime --all-targets -- -D warnings → 0
+- cargo clippy -p cognicode-explorer --all-targets -- -D warnings → 0
+- cargo fmt --check → exit 0
+- LIVE HTTP UAT not re-run this session (sandbox kills detached
+  processes); integration test guards the same contract that the live
+  probe verified in commit `e8727a24`
+
+### Unknown impact / outstanding
+
+- Cadence Recovery directive (D) preconditions NOT met this session:
+  harness upgrade + re-run would require hours of orchestration
+- e78 (second consumer): still 1/2 DEFERRED, no new candidate
+- musl bundle: requires `rustup target add x86_64-unknown-linux-musl`
+  on a workstation with network access
+
+### Result
+
+PASS for CP1.0 WU5+T12 scope (3 commits, all pushed, HEAD == origin/main).
+FAIL/INCOMPLETE for cadence (separate harness prerequisite, not CP1.0
+scope). No full verification required.
