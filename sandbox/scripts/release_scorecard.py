@@ -58,6 +58,37 @@ TIER1_REPOS_PER_SPEC: frozenset[str] = frozenset({
 })
 G4_THRESHOLD: float = 90.0
 
+
+def _normalize_repo_identity(identity: str | None) -> str | None:
+    """Normalize an `actual_repository_identity` to a short repo name.
+
+    The orchestrator emits the origin URL from `git remote get-url origin`,
+    e.g. "https://github.com/serde-rs/serde.git". The Tier-1 set is defined
+    by short names ("serde"). This helper maps:
+      - "https://github.com/serde-rs/serde.git" -> "serde"
+      - "git@github.com:serde-rs/serde.git"     -> "serde"
+      - "serde"                                 -> "serde"  (passthrough)
+      - None / ""                               -> None
+    """
+    if identity is None or identity == "":
+        return None
+    s = identity.strip()
+    # Strip trailing .git
+    if s.endswith(".git"):
+        s = s[:-4]
+    # Extract last path segment from URL
+    for prefix in (
+        "https://github.com/",
+        "http://github.com/",
+        "git@github.com:",
+        "ssh://git@github.com/",
+    ):
+        if s.startswith(prefix):
+            tail = s[len(prefix):]
+            # tail = "owner/repo" -> "repo"
+            return tail.rsplit("/", 1)[-1]
+    return s
+
 SEARCH_TOOLS = {"search_content", "semantic_search", "query_symbol_index"}
 CALL_GRAPH_TOOLS = {
     "build_graph", "build_call_subgraph", "get_call_hierarchy",
@@ -715,15 +746,21 @@ def gate_g4(run_dirs: list[str]) -> GateResult:
 
             provenance = _g4_extract_provenance(r)
             declared = provenance["declared_repo"]
-            actual = provenance["actual_repository_identity"]
+            # Normalize URL -> short name; fall back to declared_repo if
+            # neither identity nor revision is set (legacy compat).
+            actual_raw = provenance["actual_repository_identity"]
             revision = provenance["actual_repository_revision"]
             gt_present = provenance["ground_truth_present"]
             sid = provenance["scenario_id"]
 
+            # Map URL -> short name (the orchestrator emits the origin
+            # URL; the Tier-1 set is defined by short names).
+            actual_short = _normalize_repo_identity(actual_raw)
+
             # No positive provenance -> UNVERIFIED. If declared_repo is
             # Tier-1, that repo is named as unverified for the evidence
             # text, but it does NOT count toward coverage or the average.
-            if actual is None or revision is None or not gt_present:
+            if actual_short is None or revision is None or not gt_present:
                 total_unverified += 1
                 # If the declared label names a Tier-1 repo, surface it
                 # as an unverified Tier-1 candidate. Otherwise it stays
@@ -738,7 +775,7 @@ def gate_g4(run_dirs: list[str]) -> GateResult:
                     scored_pre_d1_fixtures.append(float(measured))
                 continue
 
-            if actual not in TIER1_REPOS_PER_SPEC:
+            if actual_short not in TIER1_REPOS_PER_SPEC:
                 # Credited to a non-Tier-1 repo. Does not affect G4.
                 if measured is not None:
                     scored_pre_d1_fixtures.append(float(measured))
@@ -748,12 +785,12 @@ def gate_g4(run_dirs: list[str]) -> GateResult:
             if measured is None:
                 # GT was declared as present but no score came back. Treat
                 # as unverified for this Tier-1 repo.
-                unverified_repos.add(actual)
+                unverified_repos.add(actual_short)
                 continue
 
             score = float(measured)
-            measurements.setdefault(actual, {}).setdefault(sid, []).append(score)
-            coverage.setdefault(actual, set()).add(sid)
+            measurements.setdefault(actual_short, {}).setdefault(sid, []).append(score)
+            coverage.setdefault(actual_short, set()).add(sid)
 
     acredited = sorted(measurements.keys())
     missing_or_unverified = sorted(
@@ -850,16 +887,41 @@ def gate_g4(run_dirs: list[str]) -> GateResult:
 def _g4_extract_provenance(r: dict) -> dict:
     """Extract provenance fields from a result.json dict.
 
-    The orchestrator's current schema predates actual_repository_identity
-    and actual_repository_revision, so they may be missing entirely.
-    In that case the reader treats the result as UNVERIFIED rather than
-    silently inferring identity from declared_repo.
+    Schema evolution (track A · 2026-09-19):
+      Prior schema (pre-provenance): result.json had no
+      `actual_repository_identity` / `actual_repository_revision`. The
+      reader had to treat every result as UNVERIFIED.
+
+      Current schema (provenance-aware): the orchestrator emits a
+      `repo_provenance` object with those fields, computed via
+      `git -C repo_path rev-parse HEAD` and `remote get-url origin`.
+      The reader prefers `repo_provenance` when present; falls back to
+      top-level `actual_repository_identity` / `actual_repository_revision`
+      for legacy compatibility; returns None otherwise.
+
+    Either way: if actual_* are missing, the result is UNVERIFIED.
+    The reader MUST NOT infer identity from `declared_repo` (the
+    manifest name is not evidence).
     """
+    # Preferred path: nested repo_provenance (current schema)
+    rp = r.get("repo_provenance")
+    if isinstance(rp, dict):
+        actual_identity = rp.get("actual_repository_identity") or None
+        actual_revision = rp.get("actual_repository_revision") or None
+    else:
+        # Legacy path: top-level fields (pre-provenance schema)
+        actual_identity = r.get("actual_repository_identity") or None
+        actual_revision = r.get("actual_repository_revision") or None
+
+    # Empty string is not a verified identity (no `origin` remote)
+    if actual_identity == "":
+        actual_identity = None
+
     return {
         "declared_repo": r.get("repo"),
         "resolved_workspace": r.get("workspace"),
-        "actual_repository_identity": r.get("actual_repository_identity"),
-        "actual_repository_revision": r.get("actual_repository_revision"),
+        "actual_repository_identity": actual_identity,
+        "actual_repository_revision": actual_revision,
         "ground_truth_present": bool(r.get("ground_truth_present", True)),
         "correctness_measured": (
             (r.get("dimension_scores") or {}).get("correctitud")

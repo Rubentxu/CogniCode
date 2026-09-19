@@ -497,3 +497,163 @@ def test_correctitud_none_is_not_a_zero_score(tmp_path):
     for r in TIER1_REPOS - {"serde"}:
         assert r in g.evidence_text.lower(), \
             f"missing {r} must be named; got: {g.evidence_text}"
+
+
+# ── A1a+1 — provenance-aware schema (current) tests ──────────────────────────
+#
+# These tests pin the contract that the reader correctly accepts
+# results with the new `repo_provenance` nested schema, and that
+# legacy results with top-level actual_* fields still work.
+
+
+def _acredit_with_repo_provenance(repo: str, correctitud, scenario_id=None,
+                                   repeat_index=0, actual_revision=None,
+                                   actual_identity=None):
+    """Build an acredited Tier-1 result using the current schema:
+    `repo_provenance` nested object with actual_repository_identity
+    and actual_repository_revision inside.
+    """
+    r = _make_result(
+        scenario_id=scenario_id or f"{repo}_search_{repeat_index}",
+        repo=repo,
+        correctitud=correctitud,
+        workspace=f"repos/{repo}",
+        workspace_snapshot_id=f"snap_{repo}_v1",
+        # NOTE: top-level fields are absent in current schema
+        actual_repository_identity=None,
+        actual_repository_revision=None,
+        repeat_index=repeat_index,
+    )
+    # Replace top-level actual_* with nested repo_provenance
+    if "actual_repository_identity" in r:
+        del r["actual_repository_identity"]
+    if "actual_repository_revision" in r:
+        del r["actual_repository_revision"]
+    r["repo_provenance"] = {
+        "actual_repository_identity": actual_identity if actual_identity is not None else repo,
+        "actual_repository_revision": actual_revision if actual_revision is not None else "abc1234",
+        "actual_workspace": f"/tmp/scratch/{repo}",
+        "workspace_relative_path": repo,
+    }
+    return r
+
+
+def test_repo_provenance_schema_recognizes_tier1_evidence(tmp_path):
+    """Current schema (repo_provenance nested): the reader must recognize
+    acredited Tier-1 evidence from the new nested fields."""
+    from release_scorecard import _g4_extract_provenance
+
+    r = _acredit_with_repo_provenance(
+        "serde", 95.0, actual_revision="03eec42c3313b36da416be1486e9ecac345784d5"
+    )
+    p = _g4_extract_provenance(r)
+    assert p["actual_repository_identity"] == "serde"
+    assert p["actual_repository_revision"] == "03eec42c3313b36da416be1486e9ecac345784d5"
+
+
+def test_repo_provenance_schema_empty_origin_is_unverified(tmp_path):
+    """Current schema: an empty actual_repository_identity (no `origin`
+    remote configured) must be treated as UNVERIFIED, not as a valid
+    Tier-1 attribution."""
+    from release_scorecard import _g4_extract_provenance
+
+    r = _acredit_with_repo_provenance(
+        "serde", 95.0, actual_identity="", actual_revision="abc1234"
+    )
+    p = _g4_extract_provenance(r)
+    assert p["actual_repository_identity"] is None
+    # The result must NOT be treated as acredited Tier-1
+
+
+def test_repo_provenance_schema_full_5_repos_green(tmp_path):
+    """End-to-end: with the new schema, all 5 Tier-1 repos above the
+    threshold produce GREEN."""
+    from release_scorecard import gate_g4
+
+    runs = []
+    for repo in TIER1_REPOS:
+        results = [
+            _acredit_with_repo_provenance(repo, 95.0, repeat_index=0),
+            _acredit_with_repo_provenance(repo, 95.0, repeat_index=1),
+        ]
+        runs.append(_write_run(tmp_path, f"run_{repo}", results))
+
+    g4 = gate_g4([str(r) for r in runs])
+    assert g4.status == "GREEN", (
+        f"Expected GREEN with all 5 Tier-1 repos at 95% (new schema); got {g4.status}: "
+        f"{g4.evidence_text}"
+    )
+
+
+def test_repo_provenance_schema_unverified_when_provenance_missing(tmp_path):
+    """If repo_provenance is absent (e.g., a fixture scenario), the
+    result is UNVERIFIED — even if the declared repo name is Tier-1."""
+    from release_scorecard import _g4_extract_provenance
+
+    r = _make_result(
+        scenario_id="fixture_impostor",
+        repo="serde",                  # declared Tier-1
+        correctitud=100.0,             # perfect score
+        workspace="sandbox/fixtures/rust-hello",  # fixture, not real
+        actual_repository_identity=None,
+        actual_repository_revision=None,
+    )
+    # Remove any top-level actual_* to simulate fixture-only result
+    r.pop("actual_repository_identity", None)
+    r.pop("actual_repository_revision", None)
+    p = _g4_extract_provenance(r)
+    assert p["actual_repository_identity"] is None
+    assert p["actual_repository_revision"] is None
+
+
+def test_legacy_schema_with_top_level_actual_still_works(tmp_path):
+    """Backward compat: legacy results with top-level actual_* fields
+    still get acredited. The reader must accept BOTH schemas."""
+    from release_scorecard import _g4_extract_provenance
+
+    r = _make_result(
+        scenario_id="legacy_serde",
+        repo="serde",
+        correctitud=90.0,
+        workspace="repos/serde",
+        actual_repository_identity="serde",
+        actual_repository_revision="abc1234",
+    )
+    # No repo_provenance key — pure legacy
+    assert "repo_provenance" not in r
+    p = _g4_extract_provenance(r)
+    assert p["actual_repository_identity"] == "serde"
+    assert p["actual_repository_revision"] == "abc1234"
+
+
+# ── A1a+1 — URL normalization tests ────────────────────────────────────────
+
+
+def test_normalize_repo_identity_https_url():
+    """The orchestrator emits origin URLs; reader must map to short name."""
+    from release_scorecard import _normalize_repo_identity
+
+    assert _normalize_repo_identity("https://github.com/serde-rs/serde.git") == "serde"
+    assert _normalize_repo_identity("https://github.com/BurntSushi/ripgrep.git") == "ripgrep"
+    assert _normalize_repo_identity("https://github.com/clap-rs/clap.git") == "clap"
+    assert _normalize_repo_identity("https://github.com/tokio-rs/tokio.git") == "tokio"
+    assert _normalize_repo_identity("https://github.com/dtolnay/anyhow.git") == "anyhow"
+
+
+def test_normalize_repo_identity_alternative_formats():
+    """SSH, plain name, None, empty."""
+    from release_scorecard import _normalize_repo_identity
+
+    assert _normalize_repo_identity("git@github.com:serde-rs/serde.git") == "serde"
+    assert _normalize_repo_identity("serde") == "serde"  # passthrough
+    assert _normalize_repo_identity(None) is None
+    assert _normalize_repo_identity("") is None
+    assert _normalize_repo_identity("  ") == ""  # stripped to empty after trim
+
+
+def test_normalize_repo_identity_handles_non_github_urls():
+    """Non-GitHub URLs: take last path segment."""
+    from release_scorecard import _normalize_repo_identity
+
+    # No recognized prefix -> return as-is (last segment)
+    assert _normalize_repo_identity("https://gitlab.com/foo/bar.git") == "https://gitlab.com/foo/bar"  # .git stripped, no prefix recognized
