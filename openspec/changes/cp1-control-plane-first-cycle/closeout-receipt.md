@@ -404,6 +404,11 @@ NOT add a second consumer. e78 verdict remains **DEFERRED** (1/2):
 - no cadence green scorecard (separate cadence receipt INCOMPLETE)
 - no re-run live-server HTTP UAT of the wired path in this session (integration
   test guards the same contract; live server evidence is in commit `e8727a24`)
+- no `just build-musl` artifact produced this session (`x86_64-unknown-linux-musl`
+  target not installed on the dev workstation; `rustup target add` requires
+  network access. This is a TOOLCHAIN limitation, not a CP1.0 product defect.
+  The musl bundle is only needed for distribution, not for the runtime contract
+  exercised by this change.)
 
 ## 13. CP1.0 status (corrected)
 
