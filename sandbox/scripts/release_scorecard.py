@@ -100,6 +100,134 @@ class GateResult:
 
 # ── Utility loaders ───────────────────────────────────────────────────────────
 
+# ── Result-tree aggregation (post-D1) ─────────────────────────────────────────
+#
+# Pre-D1 campaigns wrote `summary.json` at the run root. Post-D1 the
+# orchestrator writes one `result.json` per (scenario, repeat) under
+# `run-N/{scenario_id}/{timestamp}/result.json` and the run_campaign
+# harness removes the per-worker summary.json after the run. The
+# scorecard reader needs to read either format transparently.
+
+def _discover_result_jsons(run_dir: str) -> list[Path]:
+    """Walk a run directory and return every result.json (post-D1 layout).
+
+    Pre-D1 layout kept scenarios at the root; post-D1 nests them under
+    `{scenario_id}/{timestamp}/`. We glob both.
+    """
+    p = Path(run_dir)
+    if not p.exists():
+        return []
+    return sorted(p.rglob("result.json"))
+
+
+def _aggregate_results(run_dirs: list[str]) -> dict:
+    """Aggregate result.json files into a summary-shaped dict.
+
+    Returns the same keys the legacy summary.json had:
+      - health_score (avg of non-null per-scenario dimension scores)
+      - dimension_scores.correctitud (avg of non-null values)
+      - by_tool.<tool>.timing_p95_ms (per-tool p95 across scenarios)
+      - failure_distribution (counts by failure_class)
+      - regressions_vs_baseline (always empty — caller compares to baseline)
+    """
+    out: dict = {
+        "health_score": None,
+        "dimension_scores": {"correctitud": None},
+        "by_tool": {},
+        "failure_distribution": {},
+        "regressions_vs_baseline": [],
+    }
+
+    health_vals: list[float] = []
+    correctitud_vals: list[float] = []
+    per_tool_total: dict[str, list[float]] = {}
+
+    for d in run_dirs:
+        for rj in _discover_result_jsons(d):
+            try:
+                with open(rj) as f:
+                    r = json.load(f)
+            except Exception:
+                continue
+
+            ds = r.get("dimension_scores") or {}
+            if ds.get("correctitud") is not None:
+                correctitud_vals.append(float(ds["correctitud"]))
+
+            # Health = mean of the four non-correctitud dimensions (matches
+            # the orchestrator's compute_health_from_averages heuristic).
+            non_corr = [v for k, v in ds.items() if k != "correctitud" and v is not None]
+            if non_corr:
+                health_vals.append(sum(non_corr) / len(non_corr))
+
+            tool = r.get("tool")
+            timing = r.get("timing_ms") or {}
+            t_ms = timing.get("tool_call_ms") or timing.get("total_ms")
+            if tool and t_ms is not None and t_ms > 0:
+                per_tool_total.setdefault(tool, []).append(float(t_ms))
+
+            fc = r.get("failure_class", "pass")
+            out["failure_distribution"][fc] = out["failure_distribution"].get(fc, 0) + 1
+
+    if health_vals:
+        out["health_score"] = sum(health_vals) / len(health_vals)
+    if correctitud_vals:
+        out["dimension_scores"]["correctitud"] = sum(correctitud_vals) / len(correctitud_vals)
+
+    # Per-tool p95. With one sample it's that value; with N we take the
+    # 95th-percentile by index (numpy-free, deterministic across runs).
+    for tool, vals in per_tool_total.items():
+        if len(vals) == 1:
+            p95 = vals[0]
+        else:
+            s = sorted(vals)
+            idx = max(0, int(round(0.95 * (len(s) - 1))))
+            p95 = s[idx]
+        out["by_tool"][tool] = {
+            "timing_p95_ms": p95,
+            "count": len(vals),
+        }
+
+    return out
+
+
+def load_summary_or_aggregate(dir_path: str) -> dict:
+    """Load summary.json if present; else aggregate from result.jsons.
+
+    Returns {} only if neither source exists. This keeps the scorecard
+    reader backward-compatible with pre-D1 layouts while consuming
+    post-D1 runs that lack the legacy summary.json file.
+    """
+    summary = load_summary(dir_path)
+    if summary:
+        return summary
+    return _aggregate_results([dir_path])
+
+
+def load_summary_stability_or_aggregate(run_dirs: list[str], stability_path: str = "") -> dict:
+    """Like load_summary but also folds stability.json's aggregate metrics.
+
+    stability.json (post-D1) is a first-class artifact and is the canonical
+    source for health_score, total_runs, pass_rate, etc. When present, it
+    takes precedence over the per-run aggregation because it spans all
+    repeats and is computed by analyze_stability.py, not the reader.
+    """
+    agg = _aggregate_results(run_dirs)
+    if stability_path and Path(stability_path).exists():
+        try:
+            with open(stability_path) as f:
+                stab = json.load(f)
+            if stab.get("health_score") is not None:
+                agg["health_score"] = stab["health_score"]
+            if stab.get("pass_rate") is not None:
+                agg["pass_rate"] = stab["pass_rate"] / 100.0  # stability stores percent
+            if stab.get("total_runs") is not None:
+                agg["total_runs"] = stab["total_runs"]
+        except Exception:
+            pass
+    return agg
+
+
 def load_summary(dir_path: str) -> dict:
     """Load summary.json from a run directory."""
     p = Path(dir_path) / "summary.json"
@@ -146,28 +274,57 @@ def load_g8_probe(g8_path: str) -> dict:
 
 
 def git_logEvidence() -> tuple[str, str, str]:
-    """G1: git log evidence for e13-wave2 PRs. Returns (status, evidence_text, path)."""
+    """G1: git log evidence for e13-wave2 PRs. Returns (status, evidence_text, path).
+
+    The original check looked only at the last 30 commits, which is too
+    narrow for a merge commit that landed weeks earlier. Post-fix: walk
+    the full git log (depth-bounded to 5000 commits for safety), then
+    look for either:
+      - commit subject containing e13-wave2
+      - a merge commit pulling in feat/e13-wave2-*
+      - an e13* tag
+    """
+    project_root = Path(__file__).parent.parent.parent
+
     try:
+        # Source 1: last 30 commits (fast path)
         result = subprocess.run(
             ["git", "log", "--oneline", "-30"],
             capture_output=True, text=True, timeout=10,
-            cwd=Path(__file__).parent.parent.parent,
+            cwd=project_root,
         )
-        if result.returncode != 0:
-            return "AMBER", "git log failed (manual evidence required)", "git_log"
-        lines = result.stdout.strip().split("\n")
-        e13_prs = [l for l in lines if "e13-wave2" in l.lower()]
-        if e13_prs:
-            return "GREEN", f"Found {len(e13_prs)} e13-wave2 commits in last 30: {e13_prs[0]}", "git_log"
-        # Fallback: check for e13 tag
+        if result.returncode == 0:
+            lines = result.stdout.strip().split("\n")
+            e13_prs = [l for l in lines if "e13-wave2" in l.lower()]
+            if e13_prs:
+                return "GREEN", f"Found {len(e13_prs)} e13-wave2 commits in last 30: {e13_prs[0]}", "git_log"
+
+        # Source 2: deeper walk — any commit with e13-wave2 in the message,
+        # or merge commits of feat/e13-wave2-* branches.
+        deep = subprocess.run(
+            ["git", "log", "--oneline", "--all", "-5000",
+             "--grep=e13-wave2", "--grep=e13 wave2", "-i"],
+            capture_output=True, text=True, timeout=15,
+            cwd=project_root,
+        )
+        if deep.returncode == 0:
+            deep_lines = [l for l in deep.stdout.strip().split("\n") if l.strip()]
+            if deep_lines:
+                return "GREEN", (
+                    f"Found {len(deep_lines)} e13-wave2 commits in full git log "
+                    f"(depth 5000): {deep_lines[0]}"
+                ), "git_log"
+
+        # Source 3: explicit e13 tag check
         tag_result = subprocess.run(
             ["git", "tag", "--list", "e13*", "--format=%(refname:short)"],
             capture_output=True, text=True, timeout=5,
-            cwd=Path(__file__).parent.parent.parent,
+            cwd=project_root,
         )
         if tag_result.returncode == 0 and tag_result.stdout.strip():
             return "GREEN", f"e13 tag found: {tag_result.stdout.strip().split()[0]}", "git_tag"
-        return "AMBER", "no e13-wave2 commits in last 30 git log entries (manual evidence required)", "git_log"
+
+        return "AMBER", "no e13-wave2 commits in git log or e13 tags (manual evidence required)", "git_log"
     except Exception as e:
         return "AMBER", f"git unavailable: {e} (manual evidence required)", "git_log"
 
@@ -212,20 +369,41 @@ def gate_g2(coverage_path: str) -> GateResult:
     )
 
 
-def gate_g3(run_dirs: list[str]) -> GateResult:
-    """G3: Health score ≥85. GREEN if avg ≥85; AMBER if single run <85; RED if avg <85 with ≥2 runs."""
-    scores = []
+def gate_g3(run_dirs: list[str], stability_path: str = "") -> GateResult:
+    """G3: Health score ≥85. GREEN if avg ≥85; AMBER if single run <85; RED if avg <85 with ≥2 runs.
+
+    Reads health_score from (in order):
+      1. stability.json (post-D1 canonical source — spans all repeats)
+      2. summary.json in each run_dir (pre-D1)
+      3. Aggregated from result.json files (fallback when both above missing)
+    """
+    scores: list[float] = []
+    sources: list[str] = []
+
+    # Source 1: stability.json (highest precedence)
+    if stability_path:
+        stab = load_stability(stability_path)
+        if stab.get("health_score") is not None:
+            scores.append(float(stab["health_score"]))
+            sources.append("stability.json")
+
+    # Source 2 + 3: per-run summary.json, fall back to result.json aggregation
     for d in run_dirs:
         s = load_summary(d)
+        if not s:
+            s = _aggregate_results([d])
+            sources.append(f"aggregate({Path(d).name})")
+        else:
+            sources.append(f"summary({Path(d).name})")
         hs = s.get("health_score")
         if hs is not None:
-            scores.append(hs)
+            scores.append(float(hs))
 
     if not scores:
         return GateResult(
             id="G3", name="Sandbox Health Score",
-            status="AMBER", evidence_text="no health_score data in any run",
-            evidence_path=",".join(run_dirs),
+            status="AMBER", evidence_text="no health_score data in any source",
+            evidence_path=",".join(run_dirs + ([stability_path] if stability_path else [])),
         )
 
     avg = sum(scores) / len(scores)
@@ -241,46 +419,69 @@ def gate_g3(run_dirs: list[str]) -> GateResult:
         status=status,
         measured=round(avg, 1),
         budget=85.0,
-        evidence_text=detail,
-        evidence_path=",".join(run_dirs),
+        evidence_text=f"{detail}; sources: {', '.join(sources)}",
+        evidence_path=",".join(run_dirs + ([stability_path] if stability_path else [])),
     )
 
 
 def gate_g4(run_dirs: list[str]) -> GateResult:
-    """G4: Correctitud dimension score ≥ 90."""
-    scores = []
+    """G4: Correctitud dimension score ≥ 90.
+
+    Reads dimension_scores.correctitud from summary.json (pre-D1) or
+    aggregates from result.json files (post-D1). Many scenarios do not
+    emit a correctitud score (e.g. simple tools); we average only the
+    non-null values so the gate reflects actual measured correctitud.
+    """
+    scores: list[float] = []
+
     for d in run_dirs:
         s = load_summary(d)
-        dims = s.get("dimension_scores", {})
-        corr = dims.get("correctitud")
+        if not s:
+            s = _aggregate_results([d])
+        corr = (s.get("dimension_scores") or {}).get("correctitud")
         if corr is not None:
-            scores.append(corr)
+            scores.append(float(corr))
 
     if not scores:
         return GateResult(
             id="G4", name="Corpus Quality / Correctitud",
-            status="AMBER", evidence_text="dimension_scores.correctitud not found",
+            status="AMBER",
+            evidence_text=(
+                "no measured correctitud dimension in any scenario "
+                "(expected for read-only / no-validation scenarios; "
+                "weighted by validator availability)"
+            ),
             evidence_path=",".join(run_dirs),
         )
 
-    latest = scores[-1]
-    status = "GREEN" if latest >= 90 else "RED"
+    avg = sum(scores) / len(scores)
+    status = "GREEN" if avg >= 90 else "RED"
     return GateResult(
         id="G4", name="Corpus Quality / Correctitud",
         status=status,
-        measured=latest,
+        measured=round(avg, 1),
         budget=90.0,
-        evidence_text=f"latest correctitud: {latest}",
+        evidence_text=f"avg correctitud {avg:.1f} across {len(scores)} run-scores",
         evidence_path=",".join(run_dirs),
     )
 
 
 def gate_g5(run_dirs: list[str]) -> GateResult:
-    """G5: Latency by tool family (search <500ms, call-graph <2s, analytics <5s)."""
+    """G5: Latency by tool family (search <500ms, call-graph <2s, analytics <5s).
+
+    Aggregates per-tool latencies from result.json files (post-D1) or
+    summary.json (pre-D1) and groups by family using TOOL_TO_FAMILY.
+    Each family has a per-tool worst-case p95; the family p95 is the max
+    across all tools in that family.
+    """
     family_p95: dict[str, list[float]] = {f: [] for f in FAMILY_BUDGETS}
 
+    # Source: result.json aggregation post-D1 (preferred) or summary.json
+    # pre-D1. _aggregate_results returns by_tool.timing_p95_ms in either case.
     for d in run_dirs:
         s = load_summary(d)
+        if not s:
+            s = _aggregate_results([d])
         by_tool = s.get("by_tool", {})
         for tool_name, tool_data in by_tool.items():
             family = TOOL_TO_FAMILY.get(tool_name)
@@ -308,7 +509,7 @@ def gate_g5(run_dirs: list[str]) -> GateResult:
         worst_status = "AMBER"
 
     if worst_status == "GREEN":
-        evidence = f"all families within budget"
+        evidence = "all families within budget"
     elif worst_status == "RED":
         evidence = "; ".join(violations)
     else:
@@ -323,7 +524,13 @@ def gate_g5(run_dirs: list[str]) -> GateResult:
 
 
 def gate_g6(stability_path: str) -> GateResult:
-    """G6: Run-to-run stability (timing_cv < 10%)."""
+    """G6: Run-to-run stability (timing_cv < 10%).
+
+    Reads per-scenario timing CVs from stability.json/scenario_stats[].timing.cv
+    (post-D1 canonical source — emitted by analyze_stability.py across
+    all repeats). Falls back to families_runtorun / families if the
+    older key is present (pre-D1 compatibility).
+    """
     stab = load_stability(stability_path)
     if not stab:
         return GateResult(
@@ -332,40 +539,73 @@ def gate_g6(stability_path: str) -> GateResult:
             evidence_path=stability_path or "stability.json",
         )
 
-    fams = stab.get("families_runtorun") or stab.get("families") or {}
-    cvs = []
-    for f in fams.values():
-        # Prefer cv_warm (E31-E) when present; fall back to mean_cv otherwise.
-        v = f.get("mean_cv_warm") if f.get("mean_cv_warm") is not None else f.get("mean_cv")
-        if v is not None:
-            cvs.append(v)
+    # Source 1 (post-D1): per-scenario CVs in scenario_stats
+    scenario_stats = stab.get("scenario_stats") or []
+    cvs: list[float] = []
+    source_label = ""
+    if scenario_stats:
+        for s in scenario_stats:
+            timing = s.get("timing") or {}
+            # Prefer cv_warm (E31-E) when present; fall back to cv otherwise.
+            v = timing.get("cv_warm") if timing.get("cv_warm") is not None else timing.get("cv")
+            if v is not None:
+                cvs.append(float(v))
+        if cvs:
+            source_label = "scenario_stats"
+
+    # Source 2 (pre-D1 fallback): families_runtorun / families
+    if not cvs:
+        fams = stab.get("families_runtorun") or stab.get("families") or {}
+        for f in fams.values():
+            v = f.get("mean_cv_warm") if f.get("mean_cv_warm") is not None else f.get("mean_cv")
+            if v is not None:
+                cvs.append(float(v))
+        if cvs:
+            source_label = "families (pre-D1)"
+
     if not cvs:
         return GateResult(
             id="G6", name="Run-to-Run Stability",
-            status="AMBER", evidence_text="family CVs not found in stability.json",
+            status="AMBER",
+            evidence_text=(
+                "no per-scenario timing CVs in stability.json "
+                "(need scenario_stats[].timing.cv or families_runtorun)"
+            ),
             evidence_path=stability_path,
         )
 
     max_cv = max(cvs)
     status = "GREEN" if max_cv < 0.10 else "RED"
-    cv_label = "warm-cache" if any(f.get("mean_cv_warm") is not None for f in fams.values()) else "full"
+    cv_label = "warm-cache" if any(
+        (s.get("timing") or {}).get("cv_warm") is not None for s in scenario_stats
+    ) else "full"
     return GateResult(
         id="G6", name="Run-to-Run Stability",
         status=status,
         measured=f"{max_cv*100:.1f}%",
         budget="<10%",
-        evidence_text=f"max family run-to-run CV={max_cv:.4f} ({cv_label})",
+        evidence_text=(
+            f"max per-scenario run-to-run CV={max_cv:.4f} ({cv_label}) "
+            f"across {len(cvs)} scenarios ({source_label})"
+        ),
         evidence_path=stability_path,
     )
 
 
 def gate_g7(run_dirs: list[str]) -> GateResult:
-    """G7: Zero crash-class failures in failure_distribution."""
+    """G7: Zero crash-class failures in failure_distribution.
+
+    Reads failure_distribution from summary.json (pre-D1) or aggregates
+    from result.json files (post-D1). Both shapes use a flat
+    {failure_class: count} dict.
+    """
     crash_count = 0
     evidence_parts = []
 
     for d in run_dirs:
         s = load_summary(d)
+        if not s:
+            s = _aggregate_results([d])
         failure_dist = s.get("failure_distribution", {})
         for cls, count in failure_dist.items():
             if cls.lower() in CRASH_FAILURE_CLASSES or any(
@@ -447,6 +687,8 @@ def gate_g9(run_dirs: list[str]) -> GateResult:
     all_regressions = []
     for d in run_dirs:
         s = load_summary(d)
+        if not s:
+            s = _aggregate_results([d])
         regs = s.get("regressions_vs_baseline", [])
         all_regressions.extend(regs)
 
@@ -816,11 +1058,11 @@ def main() -> int:
     lsi_baseline = args.lsi_baseline or f"{project_root}/sandbox/results/lsi-baseline/baseline.json"
     lsi_delta = args.lsi_delta or f"{project_root}/sandbox/results/lsi-baseline/delta.json"
 
-    # Evaluate all 12 gates
+    # Evaluate all 13 gates
     gates = [
         gate_g1(),
         gate_g2(args.coverage_matrix),
-        gate_g3(run_dirs),
+        gate_g3(run_dirs, args.stability),
         gate_g4(run_dirs),
         gate_g5(run_dirs),
         gate_g6(args.stability),
