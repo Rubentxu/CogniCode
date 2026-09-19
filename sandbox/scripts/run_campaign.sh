@@ -339,10 +339,15 @@ _run_campaign() {
     done
 
     # Generate merged summary (reads from REPORT_SOURCE_DIR)
+    # Cadence D1: report failure must NOT mark the campaign incomplete.
+    # The result.json files are the canonical evidence; the HTML report
+    # is a convenience layer. If the report script fails (e.g., empty
+    # results dir during a dry-run or pre-scenario cleanup), the
+    # campaign is still terminal.
     cd "$ROOT"
     python3 "$SANDBOX/scripts/generate_html_report.py" \
         --results-dir "$REPORT_SOURCE_DIR" \
-        --output "$RESULTS_DIR/report.html"
+        --output "$RESULTS_DIR/report.html" || true
 
     # Cleanup worker dirs
     for w in "${WORKER_IDS[@]}"; do
@@ -505,7 +510,7 @@ if [ -f "$RUN_DIR/stability.json" ]; then
     cd "$ROOT"
     python3 "$SANDBOX/scripts/generate_html_report.py" \
         --results-dir "$RUN_DIR" \
-        --output "$RUN_DIR/report.html"
+        --output "$RUN_DIR/report.html" || true
     echo "  ✅ combined report: $RUN_DIR/report.html"
 fi
 
