@@ -33,6 +33,8 @@
 //! stub instead of spawning a real server.
 
 use std::collections::HashSet;
+use std::fs::File;
+use std::io::{BufReader, Read};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -40,6 +42,42 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::sandbox_core::manifest::Manifest;
+
+/// Sentinel emitted by the sandbox orchestrator when it refuses to issue
+/// further MCP continuation calls (because the single stdio MCP process
+/// cannot serve re-entrant requests without deadlocking). The reconstructor
+/// uses this string to distinguish "the orchestrator chose disk-mode" from
+/// "the MCP server returned an arbitrary error" — only the former triggers
+/// the disk fallback (B1). Any other error string keeps `status=Incomplete`
+/// and never touches the disk.
+pub const ORCHESTRATOR_DISK_MODE_SENTINEL: &str = "H4.3: disk-mode reconstruction";
+
+/// Provenance of the `content` returned by the reconstructor. This is the
+/// load-bearing distinction H4.3.x introduced: `McpChain` means every byte
+/// was delivered by the MCP continuation chain; `DiskFallback` means the
+/// loop bailed (orchestrator refused more calls) and the reconstructor
+/// substituted a direct read of the file on disk. The scorecard MUST NOT
+/// count a `DiskFallback` as proof that the MCP server paginates correctly
+/// — H4.4 is the campaign that exercises the real chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReconstructionSource {
+    /// Every page came from the MCP continuation chain (or there was only
+    /// one page and it came from the orchestrator's first call).
+    McpChain,
+    /// The MCP chain was abandoned (orchestrator-sentinel error); content
+    /// came from a bounded read of `target_file` on disk.
+    DiskFallback,
+}
+
+impl ReconstructionSource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::McpChain => "mcp_chain",
+            Self::DiskFallback => "disk_fallback",
+        }
+    }
+}
 
 /// Status of a reconstruction attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,7 +91,8 @@ pub enum ReconstructionStatus {
     SinglePage,
     /// All pages were consumed and the reconstructed SHA-256 matches the
     /// file on disk. The reconstructed content may be substituted for the
-    /// first-page response.
+    /// first-page response. The `source` field tells you whether this came
+    /// from the MCP chain or from the disk fallback.
     Complete,
     /// Reconstruction stopped early: limit hit, no-progress loop detected,
     /// token-binding rejection, MCP error, or timeout. The reconstructed
@@ -82,9 +121,19 @@ impl ReconstructionStatus {
 /// the scenario's results dir. The `content` field is only populated when
 /// `status ∈ {SinglePage, Complete, Incomplete, MutationDetected}` — never
 /// for `NotApplicable`.
+///
+/// The `source` field (H4.3.x) tells you whether `content` came from the
+/// MCP continuation chain (`McpChain`) or from the bounded disk fallback
+/// (`DiskFallback`). A `Complete` with `DiskFallback` is **not** proof that
+/// the MCP server paginates correctly — that proof belongs to H4.4.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReconstructedContent {
     pub status: ReconstructionStatus,
+    /// Provenance of `content`. Always `McpChain` for `SinglePage` (the first
+    /// page already covered the file). May be `DiskFallback` for `Complete`
+    /// when the orchestrator refused further calls.
+    #[serde(default = "default_source_mcp_chain")]
+    pub source: ReconstructionSource,
     /// Number of pages consumed (1 = only the first page, 2+ = at least one
     /// continuation round-trip).
     pub pages: u32,
@@ -106,6 +155,10 @@ pub struct ReconstructedContent {
     pub reason: Option<String>,
     /// Wall-clock duration of the reconstruction.
     pub duration_ms: u64,
+}
+
+fn default_source_mcp_chain() -> ReconstructionSource {
+    ReconstructionSource::McpChain
 }
 
 /// Tunable limits. Defaults match the contract documented at module level.
@@ -157,6 +210,7 @@ where
     let mut seen_tokens: HashSet<String> = HashSet::new();
     let mut current = initial_response.clone();
     let mut abort_reason: Option<String> = None;
+    let mut source: ReconstructionSource = ReconstructionSource::McpChain;
 
     loop {
         // Stop conditions: budget exhausted?
@@ -250,39 +304,68 @@ where
         };
     }
 
-    // H4.3 disk-mode fallback: if the loop aborted because the caller
-    // refused to issue more MCP calls (e.g. the sandbox orchestrator
-    // runs a single stdio MCP process and re-entrancy would deadlock),
-    // and we have a `target_file`, we still produce a complete
-    // reconstruction by reading the file from disk directly. The
-    // continuation chain is then a *hint* of "this file was truncated"
-    // rather than an obligation to round-trip every byte through the
-    // MCP server.
+    // H4.3.x disk-mode fallback (B1 + B2 + B3):
     //
-    // This branch only fires when:
-    //   * `target_file` is Some AND
-    //   * the loop aborted (abort_reason is Some) AND
-    //   * we still have pages < max_pages AND
-    //   * we have at least 1 page of accumulated content AND
-    //   * the abort was because the MCP continuation failed (NOT a
-    //     budget limit — those are still hard stops).
-    if let (Some(p), Some(reason), true) =
-        (target_file, abort_reason.as_ref(), pages < limits.max_pages)
+    // We ONLY fall back to reading `target_file` from disk when ALL of the
+    // following hold. This makes the fallback behaviour non-surprising and
+    // audit-friendly:
+    //
+    //   (B1) The MCP continuation failure was caused by the orchestrator's
+    //        refusal to issue more calls, signalled by the well-known
+    //        sentinel `ORCHESTRATOR_DISK_MODE_SENTINEL`. Any other error
+    //        string — a real MCP timeout, an invalid token, a server 5xx —
+    //        keeps `status=Incomplete` and we never touch the disk.
+    //   (B2) The file metadata reports a size ≤ `max_bytes`. If the file is
+    //        larger than the limit, we abort with `Incomplete(reason =
+    //        "disk content exceeds max_bytes")` BEFORE opening it. This
+    //        converts the byte limit from a soft promise into a hard cap.
+    //   (B3) The actual read uses `BufReader::take(max_bytes + 1)` and is
+    //        allowed to consume at most `max_duration - elapsed_so_far`.
+    //        The `take` makes the read *bounded by construction*; the
+    //        remaining-deadline check makes the duration limit an actual
+    //        cap, not a post-hoc measurement. If either trips, we abort
+    //        with `Incomplete` and never expose partial content.
+    //
+    // On success, `content` is marked with `source = DiskFallback` so the
+    // scorecard can filter it. The orchestrator and any downstream
+    // consumer must NOT count a `DiskFallback` reconstruction as proof
+    // that the MCP server paginates correctly.
+    if let (Some(p), Some(reason)) = (target_file, abort_reason.as_ref())
         && pages >= 1
-        && reason.starts_with("page #")
-        && reason.contains("call failed")
+        && pages < limits.max_pages
+        && reason.contains(ORCHESTRATOR_DISK_MODE_SENTINEL)
     {
-        match std::fs::read_to_string(p) {
-            Ok(disk_content) => {
-                // Replace the accumulated content with the disk
-                // content (which is the full file).
-                accumulated = disk_content;
-                pages = pages.saturating_add(1); // count the disk read
+        let remaining_bytes = limits.max_bytes.saturating_sub(accumulated.len() as u64);
+        let remaining_time = limits
+            .max_duration
+            .checked_sub(start.elapsed())
+            .unwrap_or(Duration::ZERO);
+
+        match read_target_file_bounded(p, remaining_bytes, remaining_time) {
+            BoundedDiskRead::Ok(content) => {
+                accumulated = content;
+                pages = pages.saturating_add(1);
+                source = ReconstructionSource::DiskFallback;
                 abort_reason = None;
             }
-            Err(e) => {
+            BoundedDiskRead::TooLarge { size } => {
                 abort_reason = Some(format!(
-                    "page #{} call failed and disk fallback failed: {}",
+                    "page #{} call refused; disk content size={} > remaining budget={}",
+                    pages + 1,
+                    size,
+                    remaining_bytes
+                ));
+            }
+            BoundedDiskRead::Timeout => {
+                abort_reason = Some(format!(
+                    "page #{} call refused; disk read exceeded remaining time={:?}",
+                    pages + 1,
+                    remaining_time
+                ));
+            }
+            BoundedDiskRead::IoError(e) => {
+                abort_reason = Some(format!(
+                    "page #{} call refused; disk fallback failed: {}",
                     pages + 1,
                     e
                 ));
@@ -369,6 +452,7 @@ where
 
     ReconstructedContent {
         status,
+        source,
         pages,
         total_bytes: content.as_ref().map(|s| s.len() as u64).unwrap_or(0),
         sha256_reconstructed,
@@ -376,6 +460,81 @@ where
         content,
         reason: final_reason,
         duration_ms,
+    }
+}
+
+/// Outcome of `read_target_file_bounded`.
+enum BoundedDiskRead {
+    /// Read completed within `max_bytes` and within the time budget;
+    /// `String` is the file content as UTF-8 (lossy decoding rejected).
+    Ok(String),
+    /// The file's `metadata().len()` exceeded `max_bytes`. We never opened
+    /// it for reading — the byte cap is enforced before any I/O.
+    TooLarge {
+        /// Size reported by `metadata().len()` in bytes.
+        size: u64,
+    },
+    /// The read did not finish within the supplied deadline. We return
+    /// `Timeout` instead of partial content so callers can never expose
+    /// a truncated file.
+    Timeout,
+    /// Any other I/O error from opening or reading the file.
+    IoError(String),
+}
+
+/// Bounded read of `target_file` from disk.
+///
+/// This is the only code path in the reconstructor that may touch the file
+/// system outside of the post-loop SHA-256 verification. It enforces:
+///
+///   * **B2 — byte cap before open**: `metadata().len()` is compared to
+///     `max_bytes` BEFORE any read. If the file is bigger, we return
+///     `TooLarge` without opening it. The reconstructor's loop already
+///     accounted for accumulated content, so the budget passed here is the
+///     *remaining* budget.
+///
+///   * **B3 — bounded read by construction**: the actual read uses
+///     `BufReader::take(max_bytes)`. The reader physically cannot deliver
+///     more than `max_bytes` bytes, regardless of the file's real size or
+///     of any I/O error further down.
+///
+///   * **B3 — bounded read by deadline**: the read happens in 64 KiB
+///     chunks. Between chunks we check `start.elapsed() > deadline`. If
+///     the deadline trips mid-read, we abort the read and return
+///     `Timeout`. The deadline is enforced *during* the read, not after.
+///
+/// Lossy UTF-8 decoding is rejected (`from_utf8`); a non-UTF-8 file is
+/// reported as `IoError`.
+fn read_target_file_bounded(path: &Path, max_bytes: u64, deadline: Duration) -> BoundedDiskRead {
+    let start = Instant::now();
+    let meta = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(e) => return BoundedDiskRead::IoError(e.to_string()),
+    };
+    let size = meta.len();
+    if size > max_bytes {
+        return BoundedDiskRead::TooLarge { size };
+    }
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(e) => return BoundedDiskRead::IoError(e.to_string()),
+    };
+    let mut reader = BufReader::new(file).take(max_bytes);
+    let mut buf = Vec::with_capacity(size as usize);
+    let mut chunk = [0u8; 64 * 1024];
+    loop {
+        if start.elapsed() > deadline {
+            return BoundedDiskRead::Timeout;
+        }
+        match reader.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            Err(e) => return BoundedDiskRead::IoError(e.to_string()),
+        }
+    }
+    match String::from_utf8(buf) {
+        Ok(s) => BoundedDiskRead::Ok(s),
+        Err(e) => BoundedDiskRead::IoError(format!("non-UTF-8 content: {e}")),
     }
 }
 
@@ -394,6 +553,7 @@ pub fn reconstruct_single_page(initial_response: &Value) -> ReconstructedContent
     let sha256_reconstructed = content.as_ref().map(|s| sha256_hex(s.as_bytes()));
     ReconstructedContent {
         status: ReconstructionStatus::SinglePage,
+        source: ReconstructionSource::McpChain,
         pages: 1,
         total_bytes: content.as_ref().map(|s| s.len() as u64).unwrap_or(0),
         sha256_reconstructed,
@@ -910,5 +1070,275 @@ mod tests {
                 .unwrap_or("")
                 .contains(&format!("line {}", content.matches('\n').count()))
         );
+        // H4.3.x B4 — provenance must be DiskFallback, never McpChain,
+        // so the scorecard can filter it out of any MCP-pagination
+        // attestation.
+        assert_eq!(result.source, ReconstructionSource::DiskFallback);
+    }
+
+    // ---- H4.3.x B1 — sentinel gating ----
+    //
+    // Adversarial: the closure returns an arbitrary MCP error (NOT the
+    // orchestrator sentinel). The reconstructor MUST treat this as a real
+    // protocol error and return `Incomplete` WITHOUT touching the disk.
+    // Before H4.3.x the disk-fallback triggered on any "page #N call
+    // failed" string, which would have masked e.g. an `Invalid continuation
+    // token` error from the server.
+    #[test]
+    fn reconstruct_does_not_fall_back_on_arbitrary_mcp_error() {
+        let content = synth_file_content(900);
+        let path = temp_file_with(&content);
+        let page1 = make_page(&content[..content.len() / 2], 1, 450, 900, Some("tok2"));
+
+        // NOT the sentinel — this looks like a real protocol failure.
+        let result = reconstruct_read_file(
+            &page1,
+            |_args| Err("Invalid continuation token".to_string()),
+            Some(&path),
+            ReconstructionLimits::default(),
+        );
+
+        assert_eq!(
+            result.status,
+            ReconstructionStatus::Incomplete,
+            "expected Incomplete for arbitrary MCP error"
+        );
+        assert!(
+            result
+                .reason
+                .as_deref()
+                .unwrap_or("")
+                .contains("Invalid continuation token"),
+            "reason must propagate the original MCP error: got {:?}",
+            result.reason
+        );
+        // Source stays McpChain — the disk was never consulted.
+        assert_eq!(result.source, ReconstructionSource::McpChain);
+        // Content is only the truncated first page; we did NOT silently
+        // substitute the disk content.
+        assert!(
+            result.content.as_deref().unwrap_or("").contains("line 1"),
+            "expected truncated first-page content only"
+        );
+        assert!(
+            !result
+                .content
+                .as_deref()
+                .unwrap_or("")
+                .contains(&format!("line {}", content.matches('\n').count())),
+            "must NOT leak disk content under arbitrary MCP error"
+        );
+    }
+
+    // ---- H4.3.x B2 — byte cap enforced BEFORE open ----
+    //
+    // Adversarial: the disk file is larger than `max_bytes`. The
+    // reconstructor MUST abort to `Incomplete` without ever reading the
+    // file. Before H4.3.x the disk-fallback used `read_to_string` with no
+    // size check, so a giant file would have been slurped into memory and
+    // counted as a successful reconstruction.
+    #[test]
+    fn reconstruct_disk_fallback_rejects_file_larger_than_max_bytes() {
+        let content = synth_file_content(900);
+        let path = temp_file_with(&content);
+        let page1 = make_page(&content[..content.len() / 2], 1, 450, 900, Some("tok2"));
+
+        // Set max_bytes to 100 — strictly less than the file size.
+        let limits = ReconstructionLimits {
+            max_pages: 64,
+            max_bytes: 100,
+            max_duration: std::time::Duration::from_secs(30),
+        };
+
+        let result = reconstruct_read_file(
+            &page1,
+            |_args| Err(ORCHESTRATOR_DISK_MODE_SENTINEL.to_string()),
+            Some(&path),
+            limits,
+        );
+
+        assert_eq!(
+            result.status,
+            ReconstructionStatus::Incomplete,
+            "file larger than max_bytes must yield Incomplete"
+        );
+        assert_eq!(result.source, ReconstructionSource::McpChain);
+        let reason = result.reason.as_deref().unwrap_or("");
+        assert!(
+            reason.contains("disk content size") && reason.contains("remaining budget"),
+            "reason must cite the size cap; got {:?}",
+            reason
+        );
+        // The content must NOT be the full file.
+        assert!(
+            !result
+                .content
+                .as_deref()
+                .unwrap_or("")
+                .contains(&format!("line {}", content.matches('\n').count())),
+            "must NOT return full file when over max_bytes"
+        );
+    }
+
+    // ---- H4.3.x B3 — duration cap enforced DURING read ----
+    //
+    // Adversarial: the disk file is small but the deadline is set to a
+    // value that the read cannot satisfy (here: 0 nanoseconds — the
+    // deadline check trips on the first chunk). The reconstructor MUST
+    // abort to `Incomplete(Timeout)` instead of returning partial content.
+    // Before H4.3.x the duration check was post-hoc, so a long read would
+    // have been allowed to finish.
+    //
+    // We use a tiny file (well under `max_bytes`) and a zero deadline to
+    // make the test deterministic without relying on sleep. The bounded
+    // reader checks `start.elapsed() > deadline` before every chunk; with
+    // deadline = 0 the first check trips immediately.
+    #[test]
+    fn reconstruct_disk_fallback_aborts_on_zero_deadline() {
+        let content = synth_file_content(50);
+        let path = temp_file_with(&content);
+        let page1 = make_page(&content[..content.len() / 2], 1, 25, 50, Some("tok2"));
+
+        let limits = ReconstructionLimits {
+            max_pages: 64,
+            max_bytes: 16 * 1024 * 1024,
+            max_duration: std::time::Duration::ZERO,
+        };
+
+        let result = reconstruct_read_file(
+            &page1,
+            |_args| Err(ORCHESTRATOR_DISK_MODE_SENTINEL.to_string()),
+            Some(&path),
+            limits,
+        );
+
+        assert_eq!(result.status, ReconstructionStatus::Incomplete);
+        assert_eq!(result.source, ReconstructionSource::McpChain);
+        let reason = result.reason.as_deref().unwrap_or("");
+        assert!(
+            reason.contains("remaining time") || reason.contains("exceeded"),
+            "reason must cite the deadline; got {:?}",
+            reason
+        );
+    }
+
+    // ---- H4.3.x B4 — provenance serialization round-trip ----
+    //
+    // The `source` field must round-trip through serde so consumers
+    // reading `reconstructed.json` can filter on it. This guards against
+    // a serde refactor silently dropping the discriminator.
+    #[test]
+    fn reconstruct_source_round_trips_through_json() {
+        let original = ReconstructedContent {
+            status: ReconstructionStatus::Complete,
+            source: ReconstructionSource::DiskFallback,
+            pages: 2,
+            total_bytes: 100,
+            sha256_reconstructed: Some("a".repeat(64)),
+            sha256_disk: Some("a".repeat(64)),
+            content: Some("hello".into()),
+            reason: None,
+            duration_ms: 1,
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let parsed: ReconstructedContent = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed.source, ReconstructionSource::DiskFallback);
+        assert_eq!(parsed.status, ReconstructionStatus::Complete);
+        assert_eq!(parsed.total_bytes, 100);
+
+        // McpChain must also round-trip (the default for new content).
+        let mcp = ReconstructedContent {
+            status: ReconstructionStatus::SinglePage,
+            source: ReconstructionSource::McpChain,
+            pages: 1,
+            total_bytes: 0,
+            sha256_reconstructed: None,
+            sha256_disk: None,
+            content: None,
+            reason: None,
+            duration_ms: 0,
+        };
+        let json2 = serde_json::to_string(&mcp).expect("serialize");
+        let parsed2: ReconstructedContent = serde_json::from_str(&json2).expect("deserialize");
+        assert_eq!(parsed2.source, ReconstructionSource::McpChain);
+
+        // Backward-compat: a JSON without `source` (e.g. an old artifact
+        // written before H4.3.x) must default to McpChain. This is the
+        // contract for the `#[serde(default = ...)]` we added.
+        let legacy = r#"{
+            "status": "single_page",
+            "pages": 1,
+            "total_bytes": 0,
+            "duration_ms": 0
+        }"#;
+        let parsed_legacy: ReconstructedContent =
+            serde_json::from_str(legacy).expect("deserialize legacy");
+        assert_eq!(parsed_legacy.source, ReconstructionSource::McpChain);
+    }
+
+    // ---- H4.3.x regression: existing disk-fallback test now reports source ----
+    //
+    // `reconstruct_disk_fallback_when_mcp_continuation_refused` already
+    // covers the happy path. This test repeats the shape but explicitly
+    // asserts the source discriminator. Kept separate so a future refactor
+    // that drops the source field fails this test loudly.
+    #[test]
+    fn reconstruct_disk_fallback_marks_source_as_disk_fallback() {
+        let content = synth_file_content(120);
+        let path = temp_file_with(&content);
+        let page1 = make_page(&content[..content.len() / 2], 1, 60, 120, Some("tok2"));
+
+        let result = reconstruct_read_file(
+            &page1,
+            |_args| Err(ORCHESTRATOR_DISK_MODE_SENTINEL.to_string()),
+            Some(&path),
+            ReconstructionLimits::default(),
+        );
+
+        assert_eq!(result.status, ReconstructionStatus::Complete);
+        assert_eq!(result.source, ReconstructionSource::DiskFallback);
+        assert!(result.sha256_reconstructed.is_some());
+        assert!(result.sha256_disk.is_some());
+        assert!(result.content.is_some());
+    }
+
+    // ---- H4.3.x regression: MCP chain success keeps source = McpChain ----
+    //
+    // When the continuation chain terminates naturally (no disk fallback),
+    // the source MUST remain McpChain. This is the whole point: a Complete
+    // with McpChain is the only outcome that proves the MCP server
+    // paginates correctly.
+    #[test]
+    fn reconstruct_mcp_chain_success_keeps_source_as_mcp_chain() {
+        let content = synth_file_content(730);
+        let path = temp_file_with(&content);
+
+        let page1 = make_page(
+            &content[..content.len() - 230 * 8],
+            1,
+            500,
+            730,
+            Some("tok2"),
+        );
+        let page2 = make_page(&content[content.len() - 230 * 8..], 501, 730, 730, None);
+
+        let calls = std::cell::RefCell::new(0);
+        let result = reconstruct_read_file(
+            &page1,
+            |_args| {
+                *calls.borrow_mut() += 1;
+                Ok(page2.clone())
+            },
+            Some(&path),
+            ReconstructionLimits::default(),
+        );
+
+        assert_eq!(result.status, ReconstructionStatus::Complete);
+        assert_eq!(
+            result.source,
+            ReconstructionSource::McpChain,
+            "natural MCP termination must not be mislabelled as DiskFallback"
+        );
+        assert_eq!(*calls.borrow(), 1);
     }
 }
