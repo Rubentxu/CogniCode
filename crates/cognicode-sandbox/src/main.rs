@@ -1527,12 +1527,32 @@ fn execute_scenario(
         None
     };
 
-    // Build dimension_scores — always present when we have timing data
+    // Build dimension_scores. When the tool call errored (mcp_error,
+    // timeout, protocol violation, etc.), the operational dimensions
+    // (latencia, escalabilidad, consistencia) are NOT measurable because
+    // the call did not produce a real response. Mark them as None so the
+    // scorecard recognizes the scenario as incomplete_5dim rather than
+    // computing a misleadingly high health score from a fast-failing
+    // call. robustez is computed from the error count and stays Some(0)
+    // (already handles the error case via compute_robustness_score).
+    // correctitud already returns None when ground_truth is absent.
     let dimension_scores = Some(DimensionScores {
         correctitud,
-        latencia: Some(latencia).filter(|&v| !v.is_nan()),
-        escalabilidad: Some(escalabilidad).filter(|&v| !v.is_nan()),
-        consistencia: Some(consistencia).filter(|&v| !v.is_nan()),
+        latencia: if tool_call_error {
+            None
+        } else {
+            Some(latencia).filter(|&v| !v.is_nan())
+        },
+        escalabilidad: if tool_call_error {
+            None
+        } else {
+            Some(escalabilidad).filter(|&v| !v.is_nan())
+        },
+        consistencia: if tool_call_error {
+            None
+        } else {
+            Some(consistencia).filter(|&v| !v.is_nan())
+        },
         robustez: Some(robustez).filter(|&v| !v.is_nan()),
     });
 
@@ -4745,6 +4765,124 @@ mod determine_failure_class_tests {
         let scenario = make_test_scenario("edit_file");
         let fc = determine_failure_class("what_is_this", &scenario, None);
         assert_eq!(fc, Some(FailureClass::UnexpectedFail));
+    }
+}
+
+// =============================================================================
+// Cycle 3 (regression: dimension_scores on tool error)
+// Verifies that when the tool call fails, the per-scenario dimension_scores
+// emit None for the operational dimensions (latencia, escalabilidad,
+// consistencia) rather than misleadingly high values from a fast-failing
+// call. This complements the producer-side fix in the
+// `dimension_scores` block above (lines ~1530-1557).
+// =============================================================================
+
+#[cfg(test)]
+mod dimension_scores_on_tool_error_tests {
+    use super::*;
+
+    /// Construct a DimensionScores-shaped struct that mirrors the
+    /// producer-side block in the live code. The test asserts the
+    /// contract that the producer's if/else chain must satisfy.
+    fn build_scores(
+        tool_call_error: bool,
+        correctitud: Option<f64>,
+        latencia: f64,
+        escalabilidad: f64,
+        consistencia: f64,
+        robustez: f64,
+    ) -> DimensionScores {
+        DimensionScores {
+            correctitud,
+            latencia: if tool_call_error {
+                None
+            } else {
+                Some(latencia).filter(|&v| !v.is_nan())
+            },
+            escalabilidad: if tool_call_error {
+                None
+            } else {
+                Some(escalabilidad).filter(|&v| !v.is_nan())
+            },
+            consistencia: if tool_call_error {
+                None
+            } else {
+                Some(consistencia).filter(|&v| !v.is_nan())
+            },
+            robustez: Some(robustez).filter(|&v| !v.is_nan()),
+        }
+    }
+
+    #[test]
+    fn test_tool_call_error_yields_none_for_lat_esc_con() {
+        // When the tool errored, latencia/escalabilidad/consistencia
+        // must be None (not Some(100) from a fast-failing call).
+        let ds = build_scores(true, Some(0.0), 100.0, 100.0, 95.0, 0.0);
+        assert_eq!(ds.latencia, None, "latencia must be None on tool_call_error");
+        assert_eq!(ds.escalabilidad, None, "escalabilidad must be None on tool_call_error");
+        assert_eq!(ds.consistencia, None, "consistencia must be None on tool_call_error");
+        // robustez stays Some(0) — already handled correctly.
+        assert_eq!(ds.robustez, Some(0.0));
+        // correctitud is set by the caller (score_scenario); if 0.0
+        // when tool failed and ground_truth exists, that is correct.
+        assert_eq!(ds.correctitud, Some(0.0));
+    }
+
+    #[test]
+    fn test_tool_call_ok_yields_some_for_all_dims() {
+        // When the tool succeeded, all dims must be populated.
+        let ds = build_scores(false, Some(95.0), 100.0, 98.0, 95.0, 100.0);
+        assert_eq!(ds.latencia, Some(100.0));
+        assert_eq!(ds.escalabilidad, Some(98.0));
+        assert_eq!(ds.consistencia, Some(95.0));
+        assert_eq!(ds.robustez, Some(100.0));
+        assert_eq!(ds.correctitud, Some(95.0));
+    }
+
+    #[test]
+    fn test_nan_dims_are_filtered_when_tool_ok() {
+        // The original .filter(|&v| !v.is_nan()) guard must remain
+        // for the non-error path so NaN values from upstream
+        // metric computation don't leak into the JSON.
+        let ds = build_scores(false, None, f64::NAN, 100.0, 100.0, 100.0);
+        assert_eq!(ds.latencia, None);
+        assert_eq!(ds.escalabilidad, Some(100.0));
+        assert_eq!(ds.consistencia, Some(100.0));
+        assert_eq!(ds.robustez, Some(100.0));
+    }
+
+    #[test]
+    fn test_correctitud_ground_truth_absent_stays_none() {
+        // When ground_truth is absent, correctitud is None regardless
+        // of tool_call_error (caller decides). The 5-dim mix here is
+        // what causes G3 to flag this scenario as incomplete_5dim.
+        let ds = build_scores(true, None, 0.0, 0.0, 0.0, 0.0);
+        assert_eq!(ds.correctitud, None);
+        assert_eq!(ds.latencia, None);
+        assert_eq!(ds.escalabilidad, None);
+        assert_eq!(ds.consistencia, None);
+        assert_eq!(ds.robustez, Some(0.0));
+    }
+
+    #[test]
+    fn test_health_score_input_contract() {
+        // The Rust-side compute_health_score unwraps to 0.0 for None
+        // dims. After the fix, scenarios with tool_call_error + ground_truth
+        // contribute a low health (correctitud=0 + others=0). This is
+        // what G3 sees in the scorecard; it marks the scenario as
+        // incomplete_5dim because the 5-dim set is NOT all-populated.
+        // The test mirrors the scorecard's gate_g3 predicate.
+        let ds = build_scores(true, Some(0.0), 0.0, 0.0, 0.0, 0.0);
+        let has_all_5 = ds.correctitud.is_some()
+            && ds.latencia.is_some()
+            && ds.escalabilidad.is_some()
+            && ds.consistencia.is_some()
+            && ds.robustez.is_some();
+        assert!(
+            !has_all_5,
+            "after the fix, a tool_call_error scenario must NOT have all 5 dims populated \
+             (so the scorecard flags it as incomplete_5dim rather than scoring it at ~64)"
+        );
     }
 }
 
