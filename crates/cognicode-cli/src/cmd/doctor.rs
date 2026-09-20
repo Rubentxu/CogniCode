@@ -138,10 +138,10 @@ impl fmt::Display for DoctorReport {
         )?;
         for c in &self.checks {
             writeln!(f, "  {:<8} {:<20} {}", c.status, c.name, c.detail)?;
-            if let Some(r) = &c.remediation {
-                if !matches!(c.status, CheckStatus::Pass) {
-                    writeln!(f, "    -> {r}")?;
-                }
+            if let Some(r) = &c.remediation
+                && !matches!(c.status, CheckStatus::Pass)
+            {
+                writeln!(f, "    -> {r}")?;
             }
         }
         writeln!(

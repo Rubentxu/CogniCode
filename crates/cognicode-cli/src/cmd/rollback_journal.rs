@@ -325,21 +325,21 @@ impl RollbackJournal {
                 old_value,
             } => {
                 // Restore the old value by re-patching in reverse
-                if let Some(old) = old_value {
-                    if let Ok(content) = std::fs::read_to_string(path) {
-                        let mut json: serde_json::Value = serde_json::from_str(&content)
-                            .unwrap_or(serde_json::Value::Object(Default::default()));
-                        // Navigate using key path (dot notation)
-                        let parts: Vec<&str> = key.split('.').collect();
-                        if parts.len() == 1 {
-                            if let Some(obj) = json.as_object_mut() {
-                                obj.insert(parts[0].to_string(), old.clone());
-                            }
-                        }
-                        let new_content = serde_json::to_string_pretty(&json).ok();
-                        if let Some(c) = new_content {
-                            std::fs::write(path, c).ok();
-                        }
+                if let Some(old) = old_value
+                    && let Ok(content) = std::fs::read_to_string(path)
+                {
+                    let mut json: serde_json::Value = serde_json::from_str(&content)
+                        .unwrap_or(serde_json::Value::Object(Default::default()));
+                    // Navigate using key path (dot notation)
+                    let parts: Vec<&str> = key.split('.').collect();
+                    if parts.len() == 1
+                        && let Some(obj) = json.as_object_mut()
+                    {
+                        obj.insert(parts[0].to_string(), old.clone());
+                    }
+                    let new_content = serde_json::to_string_pretty(&json).ok();
+                    if let Some(c) = new_content {
+                        std::fs::write(path, c).ok();
                     }
                 }
             }

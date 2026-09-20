@@ -214,14 +214,12 @@ pub fn read_opencode_config() -> Result<Value> {
 /// differences do not count as changes. A real semantic change still
 /// goes through the atomic tmp+rename path.
 fn write_json_atomic(path: &Path, value: &Value) -> Result<()> {
-    if path.exists() {
-        if let Ok(text) = std::fs::read_to_string(path) {
-            if let Ok(current) = serde_json::from_str::<Value>(&text) {
-                if current == *value {
-                    return Ok(());
-                }
-            }
-        }
+    if path.exists()
+        && let Ok(text) = std::fs::read_to_string(path)
+        && let Ok(current) = serde_json::from_str::<Value>(&text)
+        && current == *value
+    {
+        return Ok(());
     }
     let tmp = path.with_extension("json.tmp");
     if let Some(parent) = tmp.parent() {
@@ -508,10 +506,10 @@ pub fn uninstall_zcode(version: &str, binary_name: &str) -> Result<()> {
         let cfg = config
             .as_object_mut()
             .ok_or_else(|| anyhow!("zcode config.json is not an object"))?;
-        if let Some(mcp) = cfg.get_mut("mcp") {
-            if let Some(mcp_obj) = mcp.as_object_mut() {
-                mcp_obj.remove(binary_name);
-            }
+        if let Some(mcp) = cfg.get_mut("mcp")
+            && let Some(mcp_obj) = mcp.as_object_mut()
+        {
+            mcp_obj.remove(binary_name);
         }
         write_json_atomic(&config_path, &config)?;
         println!("✓ unpached: {}", config_path.display());
@@ -776,12 +774,11 @@ pub fn uninstall_codex(version: &str, binary_name: &str) -> Result<()> {
     let config_path = codex_config_path();
     if config_path.exists() {
         let mut config = read_codex_config()?;
-        if let Some(t) = config.as_table_mut() {
-            if let Some(mcp_servers) = t.get_mut("mcp_servers") {
-                if let Some(mcp_table) = mcp_servers.as_table_mut() {
-                    mcp_table.remove(binary_name);
-                }
-            }
+        if let Some(t) = config.as_table_mut()
+            && let Some(mcp_servers) = t.get_mut("mcp_servers")
+            && let Some(mcp_table) = mcp_servers.as_table_mut()
+        {
+            mcp_table.remove(binary_name);
         }
         let tmp = config_path.with_extension("toml.tmp");
         if let Some(parent) = tmp.parent() {
@@ -1376,10 +1373,10 @@ components:
                 "chronos": {"type": "local"}
             }
         });
-        if let Some(mcp) = v.get_mut("mcp") {
-            if let Some(mcp_obj) = mcp.as_object_mut() {
-                mcp_obj.remove("cognicode-mcp");
-            }
+        if let Some(mcp) = v.get_mut("mcp")
+            && let Some(mcp_obj) = mcp.as_object_mut()
+        {
+            mcp_obj.remove("cognicode-mcp");
         }
         assert!(v["mcp"].get("cognicode-mcp").is_none());
         assert_eq!(v["mcp"]["chronos"]["type"], "local");

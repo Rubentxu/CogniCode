@@ -88,52 +88,49 @@ pub fn resolve_download_url_into(canonical: &str, mut warn_sink: Option<&mut Vec
     if let Some(base) = asset_base {
         let base = base.to_string_lossy();
         let base = base.trim_end_matches('/');
-        if !base.is_empty() {
-            if let Some(rest) =
+        if !base.is_empty()
+            && let Some(rest) =
                 canonical.strip_prefix(crate::release_contract::RELEASE_DOWNLOAD_BASE)
-            {
-                return format!("{base}{rest}");
-            }
+        {
+            return format!("{base}{rest}");
         }
     }
 
     // Case 2: ASSET_BASE_URL is unset/empty — fall back to the deprecated
     // old name COGNICODE_RELEASE_BASE_URL for back-compat with air-gapped
     // installs and mirrors predating E86.2.2.
-    if let Ok(old) = std::env::var("COGNICODE_RELEASE_BASE_URL") {
-        if !old.is_empty() {
-            let trimmed = old.trim_end_matches('/');
-            if trimmed == DEFAULT_API_BASE {
-                // api.github.com does NOT serve release assets. The legacy
-                // var being set to that value is the exact pattern that
-                // caused the E86.2 403 bug — emit a warning and treat as
-                // unset (return canonical).
-                let msg = "warning: COGNICODE_RELEASE_BASE_URL is set to \
-                           https://api.github.com, which does not serve release assets; \
-                           use COGNICODE_ASSET_BASE_URL for asset mirrors \
-                           or COGNICODE_API_BASE_URL for the API base.\n";
-                if let Some(sink) = warn_sink.as_deref_mut() {
-                    let _ = sink.write(msg.as_bytes());
-                } else {
-                    eprint!("{msg}");
-                }
-                return canonical.to_string();
+    if let Ok(old) = std::env::var("COGNICODE_RELEASE_BASE_URL")
+        && !old.is_empty()
+    {
+        let trimmed = old.trim_end_matches('/');
+        if trimmed == DEFAULT_API_BASE {
+            // api.github.com does NOT serve release assets. The legacy
+            // var being set to that value is the exact pattern that
+            // caused the E86.2 403 bug — emit a warning and treat as
+            // unset (return canonical).
+            let msg = "warning: COGNICODE_RELEASE_BASE_URL is set to \
+                       https://api.github.com, which does not serve release assets; \
+                       use COGNICODE_ASSET_BASE_URL for asset mirrors \
+                       or COGNICODE_API_BASE_URL for the API base.\n";
+            if let Some(sink) = warn_sink.as_deref_mut() {
+                let _ = sink.write(msg.as_bytes());
+            } else {
+                eprint!("{msg}");
             }
-            // Any other non-empty value: rewrite (back-compat) but emit
-            // a one-shot deprecation warning so users can migrate to
-            // COGNICODE_ASSET_BASE_URL.
-            if let Some(rest) =
-                canonical.strip_prefix(crate::release_contract::RELEASE_DOWNLOAD_BASE)
-            {
-                let msg = "warning: COGNICODE_RELEASE_BASE_URL is deprecated; \
-                           use COGNICODE_ASSET_BASE_URL for asset mirrors.\n";
-                if let Some(sink) = warn_sink.as_deref_mut() {
-                    let _ = sink.write(msg.as_bytes());
-                } else {
-                    eprint!("{msg}");
-                }
-                return format!("{trimmed}{rest}");
+            return canonical.to_string();
+        }
+        // Any other non-empty value: rewrite (back-compat) but emit
+        // a one-shot deprecation warning so users can migrate to
+        // COGNICODE_ASSET_BASE_URL.
+        if let Some(rest) = canonical.strip_prefix(crate::release_contract::RELEASE_DOWNLOAD_BASE) {
+            let msg = "warning: COGNICODE_RELEASE_BASE_URL is deprecated; \
+                       use COGNICODE_ASSET_BASE_URL for asset mirrors.\n";
+            if let Some(sink) = warn_sink.as_deref_mut() {
+                let _ = sink.write(msg.as_bytes());
+            } else {
+                eprint!("{msg}");
             }
+            return format!("{trimmed}{rest}");
         }
     }
 

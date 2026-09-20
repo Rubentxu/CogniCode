@@ -271,15 +271,15 @@ pub fn resolve_release(req: &ResolveRequest) -> Result<ResolvedRelease, Installe
 /// `installer_transaction::resolve_download_url` reading
 /// `COGNICODE_ASSET_BASE_URL`. The two variables are deliberately distinct.
 fn resolve_api_base(req: &ResolveRequest) -> String {
-    if let Ok(v) = std::env::var(ENV_API_BASE_URL) {
-        if !v.is_empty() {
-            return v.trim_end_matches('/').to_string();
-        }
+    if let Ok(v) = std::env::var(ENV_API_BASE_URL)
+        && !v.is_empty()
+    {
+        return v.trim_end_matches('/').to_string();
     }
-    if let Ok(v) = std::env::var("COGNICODE_RELEASE_BASE_URL") {
-        if !v.is_empty() {
-            return v.trim_end_matches('/').to_string();
-        }
+    if let Ok(v) = std::env::var("COGNICODE_RELEASE_BASE_URL")
+        && !v.is_empty()
+    {
+        return v.trim_end_matches('/').to_string();
     }
     if let Some(b) = &req.base_url {
         return b.clone();
@@ -312,10 +312,10 @@ fn http_get(url: &str) -> Result<String, InstallerError> {
         .build()
         .map_err(|e| InstallerError::ResolveFailed(format!("build http client: {e}")))?;
     let mut req = client.get(url);
-    if let Ok(token) = std::env::var("COGNICODE_GITHUB_TOKEN") {
-        if !token.is_empty() {
-            req = req.bearer_auth(token);
-        }
+    if let Ok(token) = std::env::var("COGNICODE_GITHUB_TOKEN")
+        && !token.is_empty()
+    {
+        req = req.bearer_auth(token);
     }
     let resp = req
         .send()

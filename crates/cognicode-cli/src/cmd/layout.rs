@@ -894,10 +894,10 @@ fn download_to_string(url: &str) -> std::result::Result<String, String> {
         .build()
         .map_err(|e| format!("build http client: {e}"))?;
     let mut req = client.get(url);
-    if let Ok(token) = std::env::var("COGNICODE_GITHUB_TOKEN") {
-        if !token.is_empty() {
-            req = req.bearer_auth(token);
-        }
+    if let Ok(token) = std::env::var("COGNICODE_GITHUB_TOKEN")
+        && !token.is_empty()
+    {
+        req = req.bearer_auth(token);
     }
     let resp = req.send().map_err(|e| format!("GET {url}: {e}"))?;
     let status = resp.status();
