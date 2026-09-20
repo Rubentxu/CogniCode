@@ -598,7 +598,7 @@ async fn a_missing_fact_is_reported_ungrounded_and_never_gates() {
             }
         )]
     );
-    assert!(matches!(record.findings[0].evidence.is_empty(), true));
+    assert!(record.findings[0].evidence.is_empty());
     assert!(
         record.findings[0].causal_chain[0].detail.contains("md5"),
         "the route is still explained"

@@ -59,6 +59,6 @@ mod tests {
         let k = BudgetKind::Time;
         let debug = format!("{k:?}");
         assert!(debug.contains("Time"));
-        let _cloned = k.clone();
+        let _cloned = k;
     }
 }

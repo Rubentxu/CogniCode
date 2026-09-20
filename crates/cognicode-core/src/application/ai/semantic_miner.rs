@@ -397,15 +397,7 @@ mod tests {
     fn a_frame_mismatch_is_an_error() {
         let f = frame_with("q");
         let other_frame_id = InvestigationFrameId::from_content_digest(999);
-        let resp = make_response_for(
-            &f,
-            ResponseOutput::Advisory {
-                summary: "s".into(),
-            },
-        );
-        let mut bad = resp;
-        // Force a frame_id mismatch via a new LlmResponse with a different frame_id.
-        let bad_resp = LlmResponse::new_advisory(
+        let bad = LlmResponse::new_advisory(
             other_frame_id,
             42,
             RequestProvenance::new(other_frame_id, "semantic-miner-v1", None).unwrap(),
@@ -413,8 +405,6 @@ mod tests {
             empty_read_set(),
             "s",
         );
-        bad = bad_resp;
-        let _ = bad; // suppress unused
         let fake = FakeLlmPort::new().with_fallback(bad);
         let miner = SemanticMiner::new(&fake);
         let err = miner.mine(&f).unwrap_err();

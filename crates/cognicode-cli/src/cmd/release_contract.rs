@@ -462,7 +462,7 @@ impl ReleaseInventory {
     }
 
     pub fn from_json(s: &str) -> Result<Self> {
-        Ok(serde_json::from_str(s).context("parse release inventory JSON")?)
+        serde_json::from_str(s).context("parse release inventory JSON")
     }
 }
 

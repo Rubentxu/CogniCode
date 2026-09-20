@@ -48,19 +48,19 @@ fn walk_dir_for_acceptance(root: &std::path::Path) -> Vec<BaselineFile> {
             };
             if file_type.is_dir() {
                 stack.push(path);
-            } else if file_type.is_file() {
-                if let Ok(bytes) = std::fs::read(&path) {
-                    // Canonical path string (POSIX form on Linux).
-                    let canonical = path
-                        .strip_prefix(root)
-                        .unwrap_or(&path)
-                        .to_string_lossy()
-                        .replace('\\', "/");
-                    out.push(BaselineFile {
-                        canonical_path: canonical,
-                        bytes,
-                    });
-                }
+            } else if file_type.is_file()
+                && let Ok(bytes) = std::fs::read(&path)
+            {
+                // Canonical path string (POSIX form on Linux).
+                let canonical = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                out.push(BaselineFile {
+                    canonical_path: canonical,
+                    bytes,
+                });
             }
         }
     }

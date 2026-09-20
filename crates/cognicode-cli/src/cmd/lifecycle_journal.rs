@@ -215,7 +215,7 @@ mod tests {
         );
 
         unsafe {
-            if let Some(v) = std::env::var("COGNICODE_HOME_PREV").ok() {
+            if let Ok(v) = std::env::var("COGNICODE_HOME_PREV") {
                 std::env::set_var("COGNICODE_HOME", v);
             } else {
                 std::env::remove_var("COGNICODE_HOME");
