@@ -442,7 +442,7 @@ fn advance_stage(
             // component bundle places the binary). If the archive has no
             // `bin/` (e.g. portable skill bundles), the `if bin_path.exists()`
             // guard below makes the shim stage a no-op for that component.
-            let install_dir = home.version_root(&manifest.version);
+            let _install_dir = home.version_root(&manifest.version);
             let adapter = platform_adapter::current_adapter();
             for comp in &manifest.components {
                 // DEBT-3.f: bin-path resolution is delegated to
@@ -741,7 +741,7 @@ impl InstallerTransaction {
                 // Capture the tracker value BEFORE the install overwrites it,
                 // so a future rollback can restore it (e86 REQ-LJ-02).
                 let previous_tracker = crate::tracker::read_version_optional();
-                let tracker_path = crate::layout::tracker_dir().join("version");
+                let _tracker_path = crate::layout::tracker_dir().join("version");
 
                 // Ensure parent directory exists (record for rollback)
                 if let Some(parent) = manifest_path.parent() {

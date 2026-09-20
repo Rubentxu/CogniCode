@@ -1405,7 +1405,7 @@ components:
         let tmp = std::env::temp_dir().join(format!("cogh-oc-{}", std::process::id()));
         std::fs::create_dir_all(tmp.join(".config/opencode")).unwrap();
         let config = tmp.join(".config/opencode/opencode.json");
-        let original = json!({
+        let _original = json!({
             "agent": {"foo": {"description": "test"}},
             "mcp": {"chronos": {"type": "local"}}
         });

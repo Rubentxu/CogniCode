@@ -330,7 +330,7 @@ pub fn verify_release(
     for platform in expected_platforms {
         let name = bundle_manifest_filename(version, *platform);
         let path = staging.join(&name);
-        let text = std::fs::read_to_string(&path).with_context(|| {
+        let _text = std::fs::read_to_string(&path).with_context(|| {
             format!("missing generated manifest `{name}`; the release is incomplete (e84 R6)")
         })?;
         let manifest = BundleManifest::from_path(&path)

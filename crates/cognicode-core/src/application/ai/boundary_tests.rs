@@ -118,7 +118,7 @@ fn the_miner_has_no_write_surface() {
     // surface is added, the next compile error after a refactor is
     // the canary, not a silent expansion.
     let fake = FakeLlmPort::new();
-    let miner = SemanticMiner::new(&fake);
+    let _miner = SemanticMiner::new(&fake);
     let f = frame("list dependencies");
     let scripted = miner_script_for(&f, "ok");
     let fake = fake.with_scripted(

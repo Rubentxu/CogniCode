@@ -151,7 +151,7 @@ fn conflict_dry_run() -> PromotionDryRun {
         candidate: &candidate,
         current: &current,
     };
-    let run = evaluate_promotion(input, None); // NoTrialEvidence
+    let _run = evaluate_promotion(input, None); // NoTrialEvidence
     // We need at least a passing trial to hit the conflict check, but
     // we want the dry-run to be ConflictRequiresReevaluation. Easiest
     // path: skip the trial entirely — but that yields NoTrialEvidence

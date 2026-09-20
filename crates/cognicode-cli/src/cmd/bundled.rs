@@ -30,7 +30,7 @@ pub fn install_bundled_plugins(home: &std::path::Path) -> anyhow::Result<usize> 
     use anyhow::Context;
     let mut count = 0;
     for (name, yaml) in PLUGIN_MANIFESTS {
-        let manifest = crate::manifest::PluginManifest::from_str(yaml)
+        let _ = crate::manifest::PluginManifest::from_str(yaml)
             .with_context(|| format!("built-in manifest for {name}"))?;
         let plugin_dir = home.join("plugins").join(name);
         std::fs::create_dir_all(&plugin_dir)

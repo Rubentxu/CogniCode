@@ -1791,7 +1791,7 @@ components:
             state.insert("manifest".into(), sha256_hex(&std::fs::read(mp).unwrap()));
         }
         let vroot = home.version_root(version);
-        if let Ok(entries) = std::fs::read_dir(home.versions()) {
+        if let Ok(_entries) = std::fs::read_dir(home.versions()) {
             let mut names = Vec::new();
             fn walk(dir: &Path, names: &mut Vec<String>) {
                 if let Ok(rd) = std::fs::read_dir(dir) {
