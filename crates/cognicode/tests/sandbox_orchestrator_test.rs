@@ -185,6 +185,7 @@ fn test_scenario_result_roundtrip_serde() {
         completed_at: "2026-01-01T00:00:01Z".into(),
         repo_provenance: None,
         measured_source_head: None,
+        reconstructed: None,
     };
 
     // Roundtrip: JSON string -> parse -> compare
@@ -249,6 +250,7 @@ fn make_pass_result(scenario_id: &str) -> ScenarioResult {
         completed_at: "2026-01-01T00:00:01Z".into(),
         repo_provenance: None,
         measured_source_head: None,
+        reconstructed: None,
     }
 }
 

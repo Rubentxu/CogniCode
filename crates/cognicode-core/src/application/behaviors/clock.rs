@@ -95,7 +95,6 @@ mod tests {
     fn system_clock_does_not_panic() {
         let clock = SystemClock::new();
         let t1 = clock.now_millis();
-        assert!(t1 >= 0);
         let t2 = clock.now_millis();
         assert!(t2 >= t1);
     }

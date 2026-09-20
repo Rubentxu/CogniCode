@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Instant;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
@@ -109,17 +109,9 @@ impl McpChild {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| format!("spawn failed: {e}"))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "no stdin".to_string())?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "no stdout".to_string())?;
+        let mut child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
+        let stdin = child.stdin.take().ok_or_else(|| "no stdin".to_string())?;
+        let stdout = child.stdout.take().ok_or_else(|| "no stdout".to_string())?;
         let stdout = BufReader::new(stdout);
         let mut me = Self {
             child,
@@ -161,7 +153,10 @@ impl McpChild {
             .write_all(line.as_bytes())
             .await
             .map_err(|e| e.to_string())?;
-        self.stdin.write_all(b"\n").await.map_err(|e| e.to_string())?;
+        self.stdin
+            .write_all(b"\n")
+            .await
+            .map_err(|e| e.to_string())?;
         self.stdin.flush().await.map_err(|e| e.to_string())?;
         Ok(())
     }
@@ -194,11 +189,7 @@ impl McpChild {
         }
     }
 
-    async fn call_tool(
-        &mut self,
-        name: &str,
-        arguments: Value,
-    ) -> Result<Value, String> {
+    async fn call_tool(&mut self, name: &str, arguments: Value) -> Result<Value, String> {
         let id = self.next_id;
         self.next_id += 1;
         let req = json!({
@@ -250,8 +241,8 @@ fn decode_page_text(result: &Value) -> Result<(String, bool, Option<String>), St
         .get("text")
         .and_then(|v| v.as_str())
         .ok_or_else(|| "no text in content[0]".to_string())?;
-    let inner: Value = serde_json::from_str(text)
-        .map_err(|e| format!("inner text is not JSON: {e}"))?;
+    let inner: Value =
+        serde_json::from_str(text).map_err(|e| format!("inner text is not JSON: {e}"))?;
     let has_more = inner
         .get("has_more")
         .and_then(|v| v.as_bool())
@@ -288,8 +279,8 @@ async fn follow_chain(
     disk_path: &Path,
     rel_path: &str,
 ) -> Result<ChainResult, ChainError> {
-    let disk_bytes = std::fs::read(disk_path)
-        .map_err(|e| ChainError::InitialCall(format!("read disk: {e}")))?;
+    let disk_bytes =
+        std::fs::read(disk_path).map_err(|e| ChainError::InitialCall(format!("read disk: {e}")))?;
     let disk_sha = sha256_hex(&disk_bytes);
 
     let (mut page_content, mut has_more, mut next_token) =
@@ -342,10 +333,7 @@ async fn follow_chain(
             _ => return Err(ChainError::MissingNextToken { page: pages }),
         };
         if !seen_tokens.insert(token.clone()) {
-            return Err(ChainError::RepeatedToken {
-                page: pages,
-                token,
-            });
+            return Err(ChainError::RepeatedToken { page: pages, token });
         }
 
         let response = client
@@ -420,31 +408,15 @@ fn workspace_root() -> PathBuf {
 fn scenario_paths(name: &str) -> Option<(PathBuf, &'static str, &'static str)> {
     let root = workspace_root().join("sandbox/repos");
     let paths: &[(&str, &str, &str)] = &[
-        (
-            "tier1_serde_read_source",
-            "serde/serde",
-            "src/lib.rs",
-        ),
+        ("tier1_serde_read_source", "serde/serde", "src/lib.rs"),
         (
             "tier1_ripgrep_read_source",
             "ripgrep/crates/cli",
             "src/lib.rs",
         ),
-        (
-            "tier1_anyhow_read_source",
-            "anyhow",
-            "src/lib.rs",
-        ),
-        (
-            "tier1_tokio_read_source",
-            "tokio/tokio",
-            "src/lib.rs",
-        ),
-        (
-            "tier1_clap_read_source",
-            "clap/clap_builder",
-            "src/lib.rs",
-        ),
+        ("tier1_anyhow_read_source", "anyhow", "src/lib.rs"),
+        ("tier1_tokio_read_source", "tokio/tokio", "src/lib.rs"),
+        ("tier1_clap_read_source", "clap/clap_builder", "src/lib.rs"),
     ];
     for (n, ws, rel) in paths {
         if *n == name {
@@ -510,7 +482,7 @@ async fn h44_anyhow_read_source_chain_is_byte_exact() {
         "anyhow (730 lines) MUST paginate; got {} pages",
         r.pages
     );
-    assert!(r.final_has_more == false, "final page must end the chain");
+    assert!(!r.final_has_more, "final page must end the chain");
     assert!(
         r.accumulated_sha == r.disk_sha,
         "anyhow SHA mismatch: accumulated={} disk={}",
@@ -519,7 +491,10 @@ async fn h44_anyhow_read_source_chain_is_byte_exact() {
     );
     eprintln!(
         "[h44] anyhow: {} pages, {} bytes, sha={}, latencies_ms={:?}",
-        r.pages, r.accumulated.len(), r.accumulated_sha, r.per_page_latency_ms
+        r.pages,
+        r.accumulated.len(),
+        r.accumulated_sha,
+        r.per_page_latency_ms
     );
 }
 
@@ -537,7 +512,7 @@ async fn h44_tokio_read_source_chain_is_byte_exact() {
         "tokio (709 lines) MUST paginate; got {} pages",
         r.pages
     );
-    assert!(r.final_has_more == false, "final page must end the chain");
+    assert!(!r.final_has_more, "final page must end the chain");
     assert!(
         r.accumulated_sha == r.disk_sha,
         "tokio SHA mismatch: accumulated={} disk={}",
@@ -546,7 +521,10 @@ async fn h44_tokio_read_source_chain_is_byte_exact() {
     );
     eprintln!(
         "[h44] tokio: {} pages, {} bytes, sha={}, latencies_ms={:?}",
-        r.pages, r.accumulated.len(), r.accumulated_sha, r.per_page_latency_ms
+        r.pages,
+        r.accumulated.len(),
+        r.accumulated_sha,
+        r.per_page_latency_ms
     );
 }
 
@@ -560,7 +538,7 @@ async fn h44_serde_read_source_is_single_page() {
         .await
         .expect("serde chain failed");
     assert_eq!(r.pages, 1, "serde (334 lines) MUST be single-page");
-    assert!(r.final_has_more == false);
+    assert!(!r.final_has_more);
     assert!(r.final_next_token.is_none());
     assert_eq!(r.accumulated_sha, r.disk_sha);
 }

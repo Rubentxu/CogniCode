@@ -3821,6 +3821,7 @@ mod validation_pipeline_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         }
     }
@@ -3903,6 +3904,7 @@ mod validation_pipeline_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         };
 
@@ -3946,6 +3948,7 @@ mod validation_pipeline_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         };
 
@@ -3991,6 +3994,7 @@ mod protocol_violation_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         }
     }
@@ -4272,6 +4276,7 @@ mod classify_outcome_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         }
     }
@@ -4573,6 +4578,7 @@ mod determine_failure_class_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         }
     }
@@ -4789,6 +4795,7 @@ mod aggregate_summary_tests {
             started_at: "2025-01-01T00:00:00Z".into(),
             completed_at: "2025-01-01T00:01:00Z".into(),
             repo_provenance: None,
+            reconstructed: None,
             measured_source_head: None,
         }
     }
@@ -5887,6 +5894,7 @@ mod bug_detection_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         }
     }
@@ -6062,6 +6070,7 @@ mod bug_detection_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         };
 
@@ -6116,6 +6125,7 @@ mod bug_detection_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         };
 
@@ -6166,6 +6176,7 @@ mod bug_detection_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         };
 
@@ -6323,6 +6334,7 @@ mod bug_detection_tests {
             started_at: "2025-01-01T00:00:00Z".into(),
             completed_at: "2025-01-01T00:01:00Z".into(),
             repo_provenance: None,
+            reconstructed: None,
             measured_source_head: None,
         }
     }
@@ -6356,6 +6368,7 @@ mod edge_case_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         }
     }
@@ -6405,6 +6418,7 @@ mod edge_case_tests {
             started_at: "2025-01-01T00:00:00Z".into(),
             completed_at: "2025-01-01T00:01:00Z".into(),
             repo_provenance: None,
+            reconstructed: None,
             measured_source_head: None,
         }
     }
@@ -6705,6 +6719,7 @@ mod edge_case_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         };
 
@@ -6745,6 +6760,7 @@ mod edge_case_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         };
 
@@ -6793,6 +6809,7 @@ mod edge_case_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         };
 
@@ -6833,6 +6850,7 @@ mod edge_case_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         };
 
@@ -6878,6 +6896,7 @@ mod edge_case_tests {
             pre_steps: None,
             repo: None,
             commit: None,
+            read_source_full: false,
             container_image: None,
         };
 
@@ -7210,6 +7229,7 @@ scenarios:
             started_at: "2024-01-01T00:00:00Z".to_string(),
             completed_at: "2024-01-01T00:00:01Z".to_string(),
             repo_provenance: None,
+            reconstructed: None,
             measured_source_head: None,
         }
     }
@@ -7599,6 +7619,7 @@ scenarios:
                 workspace_relative_path: "serde".into(),
             }),
             measured_source_head: Some("c3a8d4c".into()),
+            reconstructed: None,
         };
 
         let json = result.to_json_string().unwrap();
