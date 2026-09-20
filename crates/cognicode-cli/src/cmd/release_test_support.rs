@@ -22,7 +22,7 @@ use anyhow::{Context, Result};
 use crate::bundle_manifest::Platform;
 use crate::installer_transaction::{ENV_ASSET_BASE_URL, ENV_BUNDLE_MANIFEST};
 use crate::release_contract::{
-    artifact_filename, platform_token, published_components, published_skill_bundles,
+    artifact_filename, published_components, published_skill_bundles,
     skill_bundle_filename,
 };
 use crate::release_factory::generate_release;

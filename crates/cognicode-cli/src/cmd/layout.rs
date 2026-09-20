@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 
-use crate::Cli;
 use crate::platform_adapter;
 
 // ===== Install root resolution =====

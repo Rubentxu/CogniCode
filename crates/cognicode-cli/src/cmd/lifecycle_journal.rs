@@ -155,7 +155,7 @@ pub fn list_committed() -> Result<Vec<String>, InstallerError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bundle_manifest::{BundleManifest, Platform};
+    use crate::bundle_manifest::BundleManifest;
     use serial_test::serial;
     use tempfile::TempDir;
 

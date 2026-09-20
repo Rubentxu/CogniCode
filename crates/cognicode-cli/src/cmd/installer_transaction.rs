@@ -803,7 +803,6 @@ impl InstallerTransaction {
 mod tests {
     use super::*;
     use crate::layout::test_support::TempCognicodeHome;
-    use serial_test::serial;
 
     /// The dev-only fixture must be a well-formed v2 manifest.
     ///
@@ -829,7 +828,6 @@ mod tests {
 
     #[test]
     fn install_stage_ordering() {
-        use std::fmt::Display;
         let stages = [
             InstallStage::ResolvingUrl,
             InstallStage::Downloading,

@@ -48,7 +48,6 @@ pub fn read_version_optional() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serial_test::serial;
     use std::env;
 

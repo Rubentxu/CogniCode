@@ -41,7 +41,7 @@ use cognicode_core::domain::execution::{ActorRef, CorrelationId};
 use cognicode_core::domain::findings::{
     AdmissionSource, AnalysisCapability, AnalysisInput, AnalysisScope, AstBackend, AstConstruct,
     AstInput, AstUnit, BackendRegistry, DataflowFunction, DataflowInput, DataflowLocation,
-    DataflowStatement, DetectorAdmission, DetectorAuthority, DetectorBackend, DetectorExecutor,
+    DataflowStatement, DetectorAdmission, DetectorAuthority, DetectorExecutor,
     DetectorFindingPolicy, DetectorId, DetectorIr, DetectorStep, EvidenceBinding, EvidenceClass,
     ExecutionRequest, FindingGate, FindingKind, FindingVerifier, GraphBackend, GraphEdge,
     GraphInput, GraphNode, GroundingRef, PromotionAuthority, PromotionRequest, RiskLevel,

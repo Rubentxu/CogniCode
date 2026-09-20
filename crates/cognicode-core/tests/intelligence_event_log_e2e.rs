@@ -33,7 +33,7 @@ use cognicode_core::domain::evidence_kernel::bootstrap::bootstrap_registry;
 use cognicode_core::domain::evidence_kernel::fact::{
     Fact, FactValue, ProducerKind, ProvenanceRecord,
 };
-use cognicode_core::domain::evidence_kernel::ports::{EvidenceStore, FactStore};
+use cognicode_core::domain::evidence_kernel::ports::FactStore;
 use cognicode_core::domain::evidence_kernel::relation::RelationKind;
 use cognicode_core::domain::findings::{
     AdmissionSource, AnalysisCapability, AnalysisInput, AnalysisScope, AstBackend, AstConstruct,

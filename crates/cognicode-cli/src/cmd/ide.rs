@@ -926,7 +926,6 @@ pub type CognicodeHomeSup = crate::layout::CognicodeHome;
 mod tests {
     use super::*;
     use serial_test::serial;
-    use std::io::Write;
 
     /// DEBT-1: semantic equality, not byte equality. A file with the same
     /// JSON under different formatting/key order must not be rewritten.

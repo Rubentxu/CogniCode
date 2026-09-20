@@ -19,8 +19,6 @@ pub fn download_with_rollback(
     dest: &Path,
     journal: &mut RollbackJournal,
 ) -> Result<(), InstallerError> {
-    use std::io::Write;
-
     let part_path = dest.with_extension("part");
 
     // Download to .part staging file using reqwest blocking client
@@ -62,7 +60,6 @@ pub fn partial_download_cleanup(cache_dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use tempfile::TempDir;
 
     #[test]

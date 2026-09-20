@@ -256,7 +256,7 @@ mod tests {
     use super::*;
     use crate::application::architecture::admission::ArchitectureAdmissionService;
     use crate::application::architecture::{
-        ArchitectureClock, ArchitectureEvaluator, SystemArchitectureClock,
+        ArchitectureEvaluator, SystemArchitectureClock,
     };
     use crate::domain::architecture::{
         Admitter, AdmitterRole, ArchitectureConstraintId, ConstraintCandidate, LayerDependencyRule,

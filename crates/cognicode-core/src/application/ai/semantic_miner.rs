@@ -241,7 +241,7 @@ mod tests {
     use crate::application::ai::fake::{FakeLlmPort, ScriptKey};
     use crate::domain::ai::InvestigationFrame;
     use crate::domain::ai::InvestigationFrameId;
-    use crate::domain::ai::request::{RequestProvenance, ToolCall};
+    use crate::domain::ai::request::RequestProvenance;
     use crate::domain::ai::response::{LlmResponse, ResponseOutput, ResponseProvenance};
     use crate::domain::execution::{AnalysisScope, CorrelationId, ExecutionContext};
     use crate::domain::kernel_ids::{ExecutionId, SnapshotId};
