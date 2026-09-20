@@ -182,6 +182,43 @@ def _discover_result_jsons(run_dir: str) -> list[Path]:
     return sorted(p.rglob("result.json"))
 
 
+def _normalize_failure_class(fc: object) -> str:
+    """Coerce a failure_class field to a flat string key.
+
+    Accepts: str, dict, None, or any object convertible to str.
+    Returns: a non-empty string suitable for use as a dict key.
+
+    Dict shapes observed in the sandbox (produced by
+    cognicode-sandbox::determine_failure_class when outcome == "mcp_error"):
+      {"mcp_tool_error": {"tool_name": <str>, "error_message": <str>}}
+      → "mcp_tool_error:<tool_name>"
+
+    Generic dict → "<outer_key>" (first key found).
+    None or missing → "pass" (the historical default).
+    Non-string/non-dict → str(fc) (graceful fallback).
+
+    INVARIANT: failure_class MUST be hashable string-equivalent for the
+    scorecard to function. The producer side should ideally flatten this
+    in serialization (tracked as `sandbox-failure-class-flatten-bd`), but
+    this read-site fix is sufficient to unblock the E31-G scorecard streak.
+    """
+    if fc is None:
+        return "pass"
+    if isinstance(fc, str):
+        return fc
+    if isinstance(fc, dict):
+        if not fc:
+            return "pass"
+        outer_key = next(iter(fc.keys()))
+        inner = fc[outer_key]
+        if isinstance(inner, dict):
+            tool = inner.get("tool_name")
+            if isinstance(tool, str) and tool:
+                return f"{outer_key}:{tool}"
+        return str(outer_key)
+    return str(fc)
+
+
 def _aggregate_results(run_dirs: list[str]) -> dict:
     """Aggregate result.json files into a summary-shaped dict.
 
@@ -228,7 +265,7 @@ def _aggregate_results(run_dirs: list[str]) -> dict:
             if tool and t_ms is not None and t_ms > 0:
                 per_tool_total.setdefault(tool, []).append(float(t_ms))
 
-            fc = r.get("failure_class", "pass")
+            fc = _normalize_failure_class(r.get("failure_class", "pass"))
             out["failure_distribution"][fc] = out["failure_distribution"].get(fc, 0) + 1
 
     if health_vals:
@@ -1369,7 +1406,7 @@ def gate_g8(g8_probe_dir: str) -> GateResult:
     pass_tools = []
     for sid, res in results.items():
         outcome = res.get("outcome", "")
-        failure_class = res.get("failure_class", "")
+        failure_class = _normalize_failure_class(res.get("failure_class", ""))
         tool = res.get("tool", sid)
         if outcome in ("pass", "expected_fail"):
             pass_tools.append(tool)
