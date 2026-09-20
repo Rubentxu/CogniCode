@@ -270,13 +270,36 @@ pub struct ExpectedHotFunction {
 }
 
 /// Expected code content for get_symbol_code tool.
+///
+/// Two modalities:
+///   * `content` (legacy): compare the returned source against an expected
+///     snippet with Jaccard-style similarity. Suitable for short snippets
+///     where exact-match makes sense.
+///   * `contains` (R4.x INC-007): assert that the returned source contains
+///     a literal fragment. Suitable for full-file reads where the ground
+///     truth is a known header line that must appear somewhere in the
+///     reconstructed content (e.g. `read_source_full: true` scenarios).
+///
+/// The two modalities are mutually exclusive: setting both is treated as an
+/// ambiguous ground truth and rejected by `match_code` (the result carries
+/// an `error` field).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExpectedCode {
     pub file: String,
     pub line: u32,
     pub col: u32,
-    /// The expected source code content (may include docstrings).
+    /// Legacy modality: expected source snippet to compare with Jaccard similarity.
+    /// Empty string is treated as "no content modality" so that callers can
+    /// build `ExpectedCode` literals without remembering which field to set.
+    /// `#[serde(default)]` so manifests using only `contains` deserialise
+    /// without an explicit empty string.
+    #[serde(default)]
     pub content: String,
+    /// R4.x INC-007 modality: fragment that MUST appear literally in the
+    /// returned content. `Some("")` is invalid (rejected by `match_code`).
+    /// `None` means the `content` modality is in effect (default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contains: Option<String>,
 }
 
 /// Expected complexity metrics.
@@ -393,6 +416,12 @@ pub enum OutlineMismatchType {
 }
 
 /// Result of comparing returned code against ground truth.
+///
+/// `error` is `Some(_)` when the ground truth contract was invalid
+/// (R4.x INC-007 — empty `contains`, or both `content` and `contains`
+/// set simultaneously). When `error` is `Some(_)`, callers MUST treat
+/// `exact_match = false` and `content_similarity = 0.0` as the verdict;
+/// the score is not 100 regardless of what the returned payload says.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeMatchResult {
     pub exact_match: bool,
@@ -400,6 +429,10 @@ pub struct CodeMatchResult {
     pub returned_content: Option<String>,
     pub expected_content: Option<String>,
     pub has_docstring: bool,
+    /// Set when the matcher rejected the ground truth as invalid or
+    /// ambiguous. None in the happy path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// Result of comparing complexity values.
@@ -1208,6 +1241,113 @@ fn compare_outline_nodes(
 
 /// Match returned code against expected code.
 pub fn match_code(returned: &Value, expected: &ExpectedCode) -> CodeMatchResult {
+    // ── R4.x INC-007: ground truth modality selection ────────────────────
+    // Three branches, evaluated in order:
+    //   1. Ambiguous: both `content` and `contains` are populated → reject
+    //      the contract explicitly with an error, return 0.0 score.
+    //   2. `contains` modality: substring presence over the returned content.
+    //      Reject empty fragments. Require evidence of complete response
+    //      (`truncated == false`) so a partial page can't satisfy the check.
+    //   3. `content` modality (legacy): exact/partial match with Jaccard.
+    let content_modality = !expected.content.is_empty();
+    let contains_modality = expected.contains.is_some();
+
+    if content_modality && contains_modality {
+        return CodeMatchResult {
+            exact_match: false,
+            content_similarity: 0.0,
+            returned_content: None,
+            expected_content: None,
+            has_docstring: false,
+            error: Some(
+                "ambiguous ground_truth.code: `content` and `contains` are mutually exclusive"
+                    .to_string(),
+            ),
+        };
+    }
+
+    if let Some(fragment) = &expected.contains {
+        // Empty fragment is an invalid ground truth (matches everything trivially).
+        if fragment.is_empty() {
+            return CodeMatchResult {
+                exact_match: false,
+                content_similarity: 0.0,
+                returned_content: None,
+                expected_content: None,
+                has_docstring: false,
+                error: Some(
+                    "invalid ground_truth.code: `contains` is empty".to_string(),
+                ),
+            };
+        }
+
+        // Resolve the target content for the file we are accrediting.
+        // Two response shapes are supported:
+        //   (a) Single-file response: top-level `content` field.
+        //   (b) Multi-file response: `files: [{ path, content }, ...]`.
+        //       We must verify the fragment is in the file whose path
+        //       matches `expected.file` (substring in another file does
+        //       not credit the target).
+        let target_content: Option<String> = if let Some(files) =
+            returned.get("files").and_then(|v| v.as_array())
+        {
+            files
+                .iter()
+                .find(|f| {
+                    f.get("path")
+                        .and_then(|p| p.as_str())
+                        .map(|p| p == expected.file)
+                        .unwrap_or(false)
+                })
+                .and_then(|f| f.get("content").and_then(|c| c.as_str()))
+                .map(String::from)
+        } else {
+            returned
+                .get("content")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        };
+
+        let returned_content = target_content;
+
+        // Require evidence of complete response. A truncated response
+        // without a continuation cannot satisfy the check — it would be
+        // a false positive when the fragment happens to be on the first
+        // page. (See R4.2.4 test for the rationale.)
+        let truncated = returned
+            .get("truncated")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if truncated {
+            return CodeMatchResult {
+                exact_match: false,
+                content_similarity: 0.0,
+                returned_content,
+                expected_content: Some(fragment.clone()),
+                has_docstring: false,
+                error: Some(
+                    "truncated response without continuation: cannot verify `contains` over partial content"
+                        .to_string(),
+                ),
+            };
+        }
+
+        let has_fragment = returned_content
+            .as_ref()
+            .map(|c| c.contains(fragment.as_str()))
+            .unwrap_or(false);
+
+        return CodeMatchResult {
+            exact_match: has_fragment,
+            content_similarity: if has_fragment { 1.0 } else { 0.0 },
+            returned_content,
+            expected_content: Some(fragment.clone()),
+            has_docstring: false,
+            error: None,
+        };
+    }
+
+    // ── Legacy `content` modality (unchanged) ────────────────────────────
     let returned_content = returned
         .get("code")
         .or_else(|| returned.get("content"))
@@ -1234,6 +1374,7 @@ pub fn match_code(returned: &Value, expected: &ExpectedCode) -> CodeMatchResult 
         returned_content,
         expected_content: Some(expected.content.clone()),
         has_docstring,
+        error: None,
     }
 }
 
@@ -2112,6 +2253,7 @@ mod tests {
             line: 1,
             col: 0,
             content: "/// A simple greeting function.\npub fn greet(name: &str) -> String {\n    format!(\"Hello, {}!\", name)\n}".to_string(),
+            contains: None,
         };
         let returned = serde_json::json!({
             "content": "/// A simple greeting function.\npub fn greet(name: &str) -> String {\n    format!(\"Hello, {}!\", name)\n}"
@@ -2131,6 +2273,7 @@ mod tests {
             line: 1,
             col: 0,
             content: "/// A simple greeting function.\npub fn greet(name: &str) -> String {\n    format!(\"Hello, {}!\", name)\n}".to_string(),
+            contains: None,
         };
         let returned = serde_json::json!({
             "content": "/// A greeting function.\npub fn greet(name: &str) -> String {\n    format!(\"Hello!\", name)\n}"
@@ -2194,5 +2337,303 @@ mod tests {
         assert_eq!(result.total_expected, 4); // 2 top-level + 2 children
         assert!(result.structure_score > 0.9);
         assert!(result.details.is_empty());
+    }
+
+    // ─── R4.x INC-007: ground_truth.code.contains substring presence ───────────
+
+    /// The actual anyhow/src/lib.rs first line (the original snippet from
+    /// the manifest ground_truth.code.content). Used to reproduce the real
+    /// INC-007 scenario in tests, not an artificial string.
+    const ANYHOW_FIRST_LINE: &str = "//! [![github]](https://github.com/dtolnay/anyhow)";
+
+    /// R4.2.1: 21 KB reconstructed file containing the expected 17-byte
+    /// fragment → correctitud 100.
+    #[test]
+    fn test_match_code_contains_21kb_file_with_fragment() {
+        // Reconstruct the real anyhow/src/lib.rs shape: 730 lines.
+        let mut reconstructed = String::new();
+        reconstructed.push_str(ANYHOW_FIRST_LINE);
+        reconstructed.push('\n');
+        for i in 2..=730 {
+            reconstructed.push_str(&format!("// line {i}\n"));
+        }
+        assert!(
+            reconstructed.lines().count() == 730,
+            "reconstructed should have 730 lines, got {}",
+            reconstructed.lines().count()
+        );
+
+        let expected = ExpectedCode {
+            file: "src/lib.rs".to_string(),
+            line: 1,
+            col: 0,
+            content: String::new(),
+            contains: Some(ANYHOW_FIRST_LINE.to_string()),
+        };
+        let returned = serde_json::json!({
+            "content": reconstructed,
+            "truncated": false,
+            "has_more": false,
+        });
+
+        let result = match_code(&returned, &expected);
+
+        assert!(result.error.is_none(), "no error expected: {:?}", result.error);
+        assert!(result.exact_match, "exact_match must be true on substring hit");
+        assert!(
+            (result.content_similarity - 1.0).abs() < 1e-9,
+            "content_similarity must be 1.0 on substring hit, got {}",
+            result.content_similarity
+        );
+    }
+
+    /// R4.2.2: Same file without the fragment → correctitud 0.
+    #[test]
+    fn test_match_code_contains_21kb_file_without_fragment() {
+        let mut reconstructed = String::new();
+        for i in 1..=730 {
+            reconstructed.push_str(&format!("// line {i}\n"));
+        }
+        assert!(
+            reconstructed.lines().count() == 730,
+            "reconstructed should have 730 lines"
+        );
+
+        let expected = ExpectedCode {
+            file: "src/lib.rs".to_string(),
+            line: 1,
+            col: 0,
+            content: String::new(),
+            contains: Some("//! [![github]](https://github.com/dtolnay/anyhow)".to_string()),
+        };
+        let returned = serde_json::json!({
+            "content": reconstructed,
+        });
+
+        let result = match_code(&returned, &expected);
+
+        assert!(result.error.is_none());
+        assert!(!result.exact_match);
+        assert!(
+            result.content_similarity.abs() < 1e-9,
+            "content_similarity must be 0.0 on substring miss, got {}",
+            result.content_similarity
+        );
+    }
+
+    /// R4.2.3: Fragment located ONLY in the second page → 100 after full
+    /// reconstruction. This is the real INC-007 case: read_file returns
+    /// 500 lines (page 1), the fragment is at line 600 (page 2); after
+    /// H4.3 disk-mode reconstruction the response contains the full file
+    /// and the fragment is present.
+    #[test]
+    fn test_match_code_contains_fragment_only_in_second_page() {
+        let mut reconstructed = String::new();
+        // Page 1: lines 1..=500 (no fragment).
+        for i in 1..=500 {
+            reconstructed.push_str(&format!("// page1 line {i}\n"));
+        }
+        // Page 2: lines 501..=730, with the fragment at line 600.
+        for i in 501..=730 {
+            if i == 600 {
+                reconstructed.push_str(ANYHOW_FIRST_LINE);
+                reconstructed.push('\n');
+            } else {
+                reconstructed.push_str(&format!("// page2 line {i}\n"));
+            }
+        }
+        assert!(
+            reconstructed.lines().count() == 730,
+            "reconstructed should have 730 lines"
+        );
+
+        let expected = ExpectedCode {
+            file: "src/lib.rs".to_string(),
+            line: 600,
+            col: 0,
+            content: String::new(),
+            contains: Some(ANYHOW_FIRST_LINE.to_string()),
+        };
+        let returned = serde_json::json!({
+            "content": reconstructed,
+            "truncated": false,
+            "has_more": false,
+        });
+
+        let result = match_code(&returned, &expected);
+
+        assert!(result.error.is_none());
+        assert!(result.exact_match, "fragment on page 2 must hit");
+        assert!((result.content_similarity - 1.0).abs() < 1e-9);
+    }
+
+    /// R4.2.4: First page correct, continuation truncated/missing → NOT
+    /// declared a complete match. Truncated content without continuation
+    /// token must NOT score 100 even if the fragment happens to be on
+    /// page 1.
+    ///
+    /// (The fragment IS present in the truncated content here; the contract
+    /// is that an incomplete reconstruction never scores 100 — the matcher
+    /// must require evidence of completion, e.g. `truncated == false`.)
+    #[test]
+    fn test_match_code_contains_truncated_response_does_not_count_as_complete() {
+        let mut page1 = String::new();
+        page1.push_str(ANYHOW_FIRST_LINE);
+        page1.push('\n');
+        for i in 2..=500 {
+            page1.push_str(&format!("// line {i}\n"));
+        }
+
+        let expected = ExpectedCode {
+            file: "src/lib.rs".to_string(),
+            line: 1,
+            col: 0,
+            content: String::new(),
+            contains: Some(ANYHOW_FIRST_LINE.to_string()),
+        };
+        // Truncated response without `has_more`/`next_token` declared.
+        let returned = serde_json::json!({
+            "content": page1,
+            "truncated": true,
+            // has_more deliberately absent → ambiguous reconstruction status.
+        });
+
+        let result = match_code(&returned, &expected);
+
+        assert!(
+            !result.exact_match,
+            "truncated response without continuation must NOT score 100"
+        );
+        assert!(
+            result.content_similarity.abs() < 1e-9,
+            "truncated/uncertain response must score 0, got {}",
+            result.content_similarity
+        );
+    }
+
+    /// R4.2.5: Empty fragment → ground truth is invalid. Matcher must reject
+    /// it explicitly with an error (not silently match everything).
+    #[test]
+    fn test_match_code_contains_empty_fragment_is_invalid_ground_truth() {
+        let expected = ExpectedCode {
+            file: "src/lib.rs".to_string(),
+            line: 1,
+            col: 0,
+            content: String::new(),
+            contains: Some(String::new()),
+        };
+        let returned = serde_json::json!({
+            "content": "anything goes here",
+        });
+
+        let result = match_code(&returned, &expected);
+
+        assert!(
+            result.error.is_some(),
+            "empty `contains` must produce an explicit error"
+        );
+        assert!(
+            !result.exact_match,
+            "empty `contains` must NOT credit a match"
+        );
+    }
+
+    /// R4.2.6: Existing `content` modality preserved. Snippet = full
+    /// returned.content → exact_match.
+    #[test]
+    fn test_match_code_content_modality_preserved() {
+        let expected = ExpectedCode {
+            file: "src/lib.rs".to_string(),
+            line: 1,
+            col: 0,
+            content: "/// A simple greeting function.\npub fn greet(name: &str) -> String {\n    format!(\"Hello, {}!\", name)\n}".to_string(),
+            contains: None,
+        };
+        let returned = serde_json::json!({
+            "content": "/// A simple greeting function.\npub fn greet(name: &str) -> String {\n    format!(\"Hello, {}!\", name)\n}"
+        });
+
+        let result = match_code(&returned, &expected);
+
+        assert!(result.error.is_none());
+        assert!(result.exact_match);
+        assert!((result.content_similarity - 1.0).abs() < 0.01);
+    }
+
+    /// R4.2.7: `content` and `contains` simultaneously → ambiguous, rejected
+    /// explicitly. The matcher must NOT silently pick whichever scores higher.
+    #[test]
+    fn test_match_code_content_and_contains_simultaneously_is_ambiguous() {
+        let expected = ExpectedCode {
+            file: "src/lib.rs".to_string(),
+            line: 1,
+            col: 0,
+            content: "irrelevant legacy content".to_string(),
+            contains: Some(ANYHOW_FIRST_LINE.to_string()),
+        };
+        let returned = serde_json::json!({
+            "content": ANYHOW_FIRST_LINE,
+        });
+
+        let result = match_code(&returned, &expected);
+
+        assert!(
+            result.error.is_some(),
+            "ambiguous contract must produce an explicit error, got: {:?}",
+            result
+        );
+        assert!(
+            !result.exact_match,
+            "ambiguous contract must NOT credit a match"
+        );
+        assert!(
+            result.content_similarity.abs() < 1e-9,
+            "ambiguous contract must score 0, got {}",
+            result.content_similarity
+        );
+    }
+
+    /// R4.2.8: Fragment present in a DIFFERENT file than the expected one →
+    /// the target file is not credited. This guards against false positives
+    /// when the response contains multiple files.
+    ///
+    /// Multi-file responses use the convention `{ files: [{ path, content }, ...] }`.
+    /// The matcher must verify the fragment is in the file whose path matches
+    /// `expected.file`.
+    #[test]
+    fn test_match_code_contains_fragment_in_wrong_file_does_not_credit() {
+        let expected = ExpectedCode {
+            file: "src/lib.rs".to_string(),
+            line: 1,
+            col: 0,
+            content: String::new(),
+            contains: Some(ANYHOW_FIRST_LINE.to_string()),
+        };
+        // Fragment is in src/other.rs, NOT in src/lib.rs.
+        let returned = serde_json::json!({
+            "files": [
+                {
+                    "path": "src/lib.rs",
+                    "content": "// lib.rs without the fragment\n// many lines...\n",
+                },
+                {
+                    "path": "src/other.rs",
+                    "content": format!("// other.rs\n{}\n// rest\n", ANYHOW_FIRST_LINE),
+                },
+            ],
+        });
+
+        let result = match_code(&returned, &expected);
+
+        assert!(result.error.is_none());
+        assert!(
+            !result.exact_match,
+            "fragment in wrong file must NOT credit the target"
+        );
+        assert!(
+            result.content_similarity.abs() < 1e-9,
+            "fragment in wrong file must score 0, got {}",
+            result.content_similarity
+        );
     }
 }

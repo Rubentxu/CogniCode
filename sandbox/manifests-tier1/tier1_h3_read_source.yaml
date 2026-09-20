@@ -9,6 +9,14 @@
 #      `{ version, language, tier, scenarios: [...] }` (NOT a top-level
 #      sequence — that was a pre-existing H4.0 bug).
 #
+# R4.x INC-007 (2026-09-20): scenarios 1-5 use `ground_truth.code.contains`
+# (substring presence) instead of `content` (Jaccard similarity). The Jaccard
+# modality produced scores ~0.11 against full-file reconstructions (~21 KB),
+# which masked real H4.3 success (sha256_reconstructed == sha256_disk) and
+# blocked the G4 gate. Substring presence semantics are the correct contract
+# for full-file reads: the ground truth is a known line that MUST appear in
+# the reconstructed file.
+#
 # Scenarios 1-5: read_file with read_source_full: true (5 repos).
 # Scenarios 6-10: search_content with max_results: 1000 (control).
 #
@@ -21,8 +29,10 @@
 #
 # Schema (read-only scenarios — H4 contract preserved):
 #   * `read_source_full: true` opts into the H4.3 reconstructor.
-#   * `ground_truth.code` pins a specific line/col+content of the file
-#     that MUST appear in the reconstructed content for G4 green.
+#   * `ground_truth.code.contains` pins a literal fragment that MUST appear
+#     in the reconstructed content for G4 green (substring presence; Jaccard
+#     is forbidden in `contains` mode — see INC-007). Empty `contains` is an
+#     invalid ground truth and is rejected by `match_code`.
 version: "1.0"
 language: rust
 tier: A
@@ -47,7 +57,7 @@ scenarios:
         file: sandbox/repos/serde/serde/src/lib.rs
         line: 1
         col: 1
-        content: "//! # Serde"
+        contains: "//! # Serde"
 
   - name: tier1_serde_search_deserialize
     description: "Search 'fn deserialize' in serde crate"
@@ -85,7 +95,7 @@ scenarios:
         file: sandbox/repos/ripgrep/crates/cli/src/lib.rs
         line: 1
         col: 1
-        content: "/*!"
+        contains: "/*!"
 
   - name: tier1_ripgrep_search_regex_matcher
     description: "Search 'RegexMatcher' across ripgrep crates"
@@ -123,7 +133,7 @@ scenarios:
         file: sandbox/repos/anyhow/src/lib.rs
         line: 1
         col: 1
-        content: "//! [![github]]"
+        contains: "//! [![github]]"
 
   - name: tier1_anyhow_search_anyhow_macro
     description: "Search 'anyhow!' macro in anyhow src"
@@ -161,7 +171,7 @@ scenarios:
         file: sandbox/repos/tokio/tokio/src/lib.rs
         line: 1
         col: 1
-        content: "#![allow("
+        contains: "#![allow("
 
   - name: tier1_tokio_search_tokio_main
     description: "Search 'tokio::main' in tokio crate"
@@ -199,7 +209,7 @@ scenarios:
         file: sandbox/repos/clap/clap_builder/src/lib.rs
         line: 1
         col: 1
-        content: "// Copyright"
+        contains: "// Copyright"
 
   - name: tier1_clap_search_arg_action
     description: "Search 'ArgAction' in clap_builder src"
