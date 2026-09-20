@@ -345,7 +345,7 @@ pub fn cmd_list(home: &CognicodeHome, installed_only: bool) -> Result<()> {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                println!("{:<15} {}", name, "(installed)");
+                println!("{:<15} (installed)", name);
             }
         }
     }
