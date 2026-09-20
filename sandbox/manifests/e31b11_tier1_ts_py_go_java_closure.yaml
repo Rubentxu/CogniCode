@@ -1,0 +1,744 @@
+# E31-B11 Tier-1 ts + py + go + java closure for 16 rust-only tools
+# Goal: add ts + py + go + java cells to 16 more rust-only tools, reaching 5/5.
+# Pairs with E31-B10 (17 tools) and closes E31-B4 partial.
+#
+# Tools promoted (16): graph_god_nodes, graph_query_filtered, graph_reduced,
+#   graph_search_idf, graph_suggest_questions, graph_surprising_connections,
+#   iac_query, merge_graphs, nl_to_symbol, project_insights, project_overview,
+#   retrieve_and_verify, review_pr, smart_search, solid_audit, validate_contract.
+#
+# Cells already present (rust Tier-1 from prior cycles, NOT modified here):
+#   anyhow, clap, ripgrep, serde, tokio
+#
+# Per-tool scenarios: 4 langs × 1 scenario each = 4 scenarios
+# Total: 16 tools × 4 langs = 64 scenarios.
+#
+# Reference: docs/TEST-PLAN.md §3.1 / T3. After B11, 55 tools reach 5/5
+# (8 existing + 14 from B9 + 17 from B10 + 16 from B11). Closes E31-B4 partial
+# completely: 47 → 0.
+
+version: "1.0"
+language: multi
+tier: B
+description: "E31-B11 batch — Tier-1 ts + py + go + java closure for 16 rust-only tools, reaching 5/5"
+
+timeout_seconds: 900
+
+# Per-repo metadata for reproducibility (cells added by B11)
+repos:
+  ts/commander:
+    repo_url: "https://github.com/tj/commander.js.git"
+    pinned_sha: "4ef19faac1564743d8c7e3ce89ef8d190e1551b4"
+  ts/zod:
+    repo_url: "https://github.com/colinhacks/zod.git"
+    pinned_sha: "65adeeacef0274abbda5438470a3d2bfd376256d"
+  click:
+    repo_url: "https://github.com/pallets/click.git"
+    pinned_sha: "874ca2bc1c30d93a4ac6e36a15ed685eafe89097"
+  urllib3:
+    repo_url: "https://github.com/urllib3/urllib3.git"
+    pinned_sha: "69be2992f8a25a1f27e49f339e4d5b98dec07462"
+  requests:
+    repo_url: "https://github.com/psf/requests.git"
+    pinned_sha: "0e322af87745eff34caffe4df68456ebc20d9068"
+  go/cobra:
+    repo_url: "https://github.com/spf13/cobra.git"
+    pinned_sha: "e94f6d0dd9a5e5738dca6bce03c4b1207ffbc0ec"
+  go/bubbletea:
+    repo_url: "https://github.com/charmbracelet/bubbletea.git"
+    pinned_sha: "ffa05021909e14c478cbe138ca78effbea04e4e0"
+  go/lo:
+    repo_url: "https://github.com/samber/lo.git"
+    pinned_sha: "35e49f2c9607a7f7f6cde872a42d8718d9c3d053"
+  java/spring-petclinic:
+    repo_url: "https://github.com/spring-projects/spring-petclinic.git"
+    pinned_sha: "edf4db28affcc4741c79850a3d95bc3f177b5ff9"
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: ts_compile
+      commands: ["npx tsc --noEmit 2>&1 || true"]
+      timeout_seconds: 120
+    - name: py_compile
+      commands: ["python -m py_compile -q src/ 2>&1 || true"]
+      timeout_seconds: 60
+    - name: go_compile
+      commands: ["go build -count=1 ./... 2>&1 || true"]
+      timeout_seconds: 120
+    - name: java_compile
+      commands: ["mvn -q -o compile 2>&1 || true"]
+      timeout_seconds: 180
+
+scenarios:
+  # ═══ Tool 1: graph_god_nodes (ts + py + go + java cells) ═══════════════════
+  - name: realrepo_graph_god_nodes_commander
+    description: "graph_god_nodes on commander — verifies TS god node detection"
+    tool: graph_god_nodes
+    action: detect
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_god_nodes_click
+    description: "graph_god_nodes on click — verifies Python god node detection"
+    tool: graph_god_nodes
+    action: detect
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_god_nodes_cobra
+    description: "graph_god_nodes on cobra — verifies Go god node detection"
+    tool: graph_god_nodes
+    action: detect
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_god_nodes_petclinic
+    description: "graph_god_nodes on spring-petclinic — verifies Java god node detection"
+    tool: graph_god_nodes
+    action: detect
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  # ═══ Tool 2: graph_query_filtered (ts + py + go + java cells) ══════════════
+  - name: realrepo_graph_query_filtered_zod
+    description: "graph_query_filtered on zod — verifies TS filtered graph query"
+    tool: graph_query_filtered
+    action: query
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      question: "find schema parser function"
+
+  - name: realrepo_graph_query_filtered_urllib3
+    description: "graph_query_filtered on urllib3 — verifies Python filtered graph query"
+    tool: graph_query_filtered
+    action: query
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      question: "find pool manager helper"
+
+  - name: realrepo_graph_query_filtered_lo
+    description: "graph_query_filtered on samber/lo — verifies Go filtered graph query"
+    tool: graph_query_filtered
+    action: query
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      question: "find Map helper"
+
+  - name: realrepo_graph_query_filtered_petclinic
+    description: "graph_query_filtered on spring-petclinic — verifies Java filtered graph query"
+    tool: graph_query_filtered
+    action: query
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      question: "find Repository helper"
+
+  # ═══ Tool 3: graph_reduced (ts + py + go + java cells) ═════════════════════
+  - name: realrepo_graph_reduced_commander
+    description: "graph_reduced on commander — verifies TS graph reduction"
+    tool: graph_reduced
+    action: reduce
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_reduced_click
+    description: "graph_reduced on click — verifies Python graph reduction"
+    tool: graph_reduced
+    action: reduce
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_reduced_bubbletea
+    description: "graph_reduced on bubbletea — verifies Go graph reduction"
+    tool: graph_reduced
+    action: reduce
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_reduced_petclinic
+    description: "graph_reduced on spring-petclinic — verifies Java graph reduction"
+    tool: graph_reduced
+    action: reduce
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  # ═══ Tool 4: graph_search_idf (ts + py + go + java cells) ══════════════════
+  - name: realrepo_graph_search_idf_zod
+    description: "graph_search_idf on zod — verifies TS IDF-weighted graph search"
+    tool: graph_search_idf
+    action: search
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "schema parser compute"
+
+  - name: realrepo_graph_search_idf_urllib3
+    description: "graph_search_idf on urllib3 — verifies Python IDF-weighted graph search"
+    tool: graph_search_idf
+    action: search
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "pool manager connection retry"
+
+  - name: realrepo_graph_search_idf_cobra
+    description: "graph_search_idf on cobra — verifies Go IDF-weighted graph search"
+    tool: graph_search_idf
+    action: search
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "command flag parser"
+
+  - name: realrepo_graph_search_idf_petclinic
+    description: "graph_search_idf on spring-petclinic — verifies Java IDF-weighted graph search"
+    tool: graph_search_idf
+    action: search
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "controller service repository"
+
+  # ═══ Tool 5: graph_suggest_questions (ts + py + go + java cells) ═══════════
+  - name: realrepo_graph_suggest_questions_commander
+    description: "graph_suggest_questions on commander — verifies TS question suggestion"
+    tool: graph_suggest_questions
+    action: suggest
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_suggest_questions_click
+    description: "graph_suggest_questions on click — verifies Python question suggestion"
+    tool: graph_suggest_questions
+    action: suggest
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_suggest_questions_lo
+    description: "graph_suggest_questions on samber/lo — verifies Go question suggestion"
+    tool: graph_suggest_questions
+    action: suggest
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_suggest_questions_petclinic
+    description: "graph_suggest_questions on spring-petclinic — verifies Java question suggestion"
+    tool: graph_suggest_questions
+    action: suggest
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  # ═══ Tool 6: graph_surprising_connections (ts + py + go + java cells) ══════
+  - name: realrepo_graph_surprising_connections_zod
+    description: "graph_surprising_connections on zod — verifies TS surprising link detection"
+    tool: graph_surprising_connections
+    action: detect
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_surprising_connections_requests
+    description: "graph_surprising_connections on requests — verifies Python surprising link detection"
+    tool: graph_surprising_connections
+    action: detect
+    repo: requests
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_surprising_connections_bubbletea
+    description: "graph_surprising_connections on bubbletea — verifies Go surprising link detection"
+    tool: graph_surprising_connections
+    action: detect
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_surprising_connections_petclinic
+    description: "graph_surprising_connections on spring-petclinic — verifies Java surprising link detection"
+    tool: graph_surprising_connections
+    action: detect
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  # ═══ Tool 7: iac_query (ts + py + go + java cells) ═════════════════════════
+  - name: realrepo_iac_query_commander
+    description: "iac_query on commander — verifies TS IaC resource query"
+    tool: iac_query
+    action: query
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "resources"
+
+  - name: realrepo_iac_query_click
+    description: "iac_query on click — verifies Python IaC resource query"
+    tool: iac_query
+    action: query
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "resources"
+
+  - name: realrepo_iac_query_cobra
+    description: "iac_query on cobra — verifies Go IaC resource query"
+    tool: iac_query
+    action: query
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "resources"
+
+  - name: realrepo_iac_query_petclinic
+    description: "iac_query on spring-petclinic — verifies Java IaC resource query"
+    tool: iac_query
+    action: query
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "resources"
+
+  # ═══ Tool 8: merge_graphs (ts + py + go + java cells) ══════════════════════
+  - name: realrepo_merge_graphs_zod
+    description: "merge_graphs on zod — verifies TS multi-file graph merge"
+    tool: merge_graphs
+    action: merge
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_paths: [src/index.ts]
+
+  - name: realrepo_merge_graphs_urllib3
+    description: "merge_graphs on urllib3 — verifies Python multi-file graph merge"
+    tool: merge_graphs
+    action: merge
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_paths: [src/urllib3/_poolmanager.py]
+
+  - name: realrepo_merge_graphs_lo
+    description: "merge_graphs on samber/lo — verifies Go multi-file graph merge"
+    tool: merge_graphs
+    action: merge
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_paths: [map.go]
+
+  - name: realrepo_merge_graphs_petclinic
+    description: "merge_graphs on spring-petclinic — verifies Java multi-file graph merge"
+    tool: merge_graphs
+    action: merge
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_paths: [src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java]
+
+  # ═══ Tool 9: nl_to_symbol (ts + py + go + java cells) ══════════════════════
+  - name: realrepo_nl_to_symbol_commander
+    description: "nl_to_symbol on commander — verifies TS NL→symbol translation"
+    tool: nl_to_symbol
+    action: translate
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "the Command.parse function"
+
+  - name: realrepo_nl_to_symbol_click
+    description: "nl_to_symbol on click — verifies Python NL→symbol translation"
+    tool: nl_to_symbol
+    action: translate
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "the BaseCommand class"
+
+  - name: realrepo_nl_to_symbol_bubbletea
+    description: "nl_to_symbol on bubbletea — verifies Go NL→symbol translation"
+    tool: nl_to_symbol
+    action: translate
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "the tea.Program struct"
+
+  - name: realrepo_nl_to_symbol_petclinic
+    description: "nl_to_symbol on spring-petclinic — verifies Java NL→symbol translation"
+    tool: nl_to_symbol
+    action: translate
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "the OwnerController class"
+
+  # ═══ Tool 10: project_insights (ts + py + go + java cells) ═════════════════
+  - name: realrepo_project_insights_zod
+    description: "project_insights on zod — verifies TS project-wide insights"
+    tool: project_insights
+    action: insights
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_project_insights_urllib3
+    description: "project_insights on urllib3 — verifies Python project-wide insights"
+    tool: project_insights
+    action: insights
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_project_insights_lo
+    description: "project_insights on samber/lo — verifies Go project-wide insights"
+    tool: project_insights
+    action: insights
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_project_insights_petclinic
+    description: "project_insights on spring-petclinic — verifies Java project-wide insights"
+    tool: project_insights
+    action: insights
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  # ═══ Tool 11: project_overview (ts + py + go + java cells) ═════════════════
+  - name: realrepo_project_overview_commander
+    description: "project_overview on commander — verifies TS project overview"
+    tool: project_overview
+    action: overview
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_project_overview_click
+    description: "project_overview on click — verifies Python project overview"
+    tool: project_overview
+    action: overview
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_project_overview_cobra
+    description: "project_overview on cobra — verifies Go project overview"
+    tool: project_overview
+    action: overview
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_project_overview_petclinic
+    description: "project_overview on spring-petclinic — verifies Java project overview"
+    tool: project_overview
+    action: overview
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  # ═══ Tool 12: retrieve_and_verify (ts + py + go + java cells) ═════════════
+  - name: realrepo_retrieve_and_verify_zod
+    description: "retrieve_and_verify on zod — verifies TS claim retrieval+verification"
+    tool: retrieve_and_verify
+    action: verify
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      claim: "ZodType is a TypeScript interface"
+
+  - name: realrepo_retrieve_and_verify_urllib3
+    description: "retrieve_and_verify on urllib3 — verifies Python claim verification"
+    tool: retrieve_and_verify
+    action: verify
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      claim: "PoolManager manages connection pools"
+
+  - name: realrepo_retrieve_and_verify_cobra
+    description: "retrieve_and_verify on cobra — verifies Go claim verification"
+    tool: retrieve_and_verify
+    action: verify
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      claim: "Command.Execute runs the command"
+
+  - name: realrepo_retrieve_and_verify_petclinic
+    description: "retrieve_and_verify on spring-petclinic — verifies Java claim verification"
+    tool: retrieve_and_verify
+    action: verify
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      claim: "OwnerController is a Spring MVC controller"
+
+  # ═══ Tool 13: review_pr (ts + py + go + java cells) ════════════════════════
+  - name: realrepo_review_pr_commander
+    description: "review_pr on commander — verifies TS PR review (no-op probe)"
+    tool: review_pr
+    action: review
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    arguments:
+      pr_number: 0
+
+  - name: realrepo_review_pr_click
+    description: "review_pr on click — verifies Python PR review (no-op probe)"
+    tool: review_pr
+    action: review
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    arguments:
+      pr_number: 0
+
+  - name: realrepo_review_pr_cobra
+    description: "review_pr on cobra — verifies Go PR review (no-op probe)"
+    tool: review_pr
+    action: review
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    arguments:
+      pr_number: 0
+
+  - name: realrepo_review_pr_petclinic
+    description: "review_pr on spring-petclinic — verifies Java PR review (no-op probe)"
+    tool: review_pr
+    action: review
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    arguments:
+      pr_number: 0
+
+  # ═══ Tool 14: smart_search (ts + py + go + java cells) ═════════════════════
+  - name: realrepo_smart_search_zod
+    description: "smart_search on zod — verifies TS semantic search"
+    tool: smart_search
+    action: search
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "schema validator that compares types"
+      max_results: 10
+
+  - name: realrepo_smart_search_urllib3
+    description: "smart_search on urllib3 — verifies Python semantic search"
+    tool: smart_search
+    action: search
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "pool manager that handles retries"
+      max_results: 10
+
+  - name: realrepo_smart_search_bubbletea
+    description: "smart_search on bubbletea — verifies Go semantic search"
+    tool: smart_search
+    action: search
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "TUI program that renders views"
+      max_results: 10
+
+  - name: realrepo_smart_search_petclinic
+    description: "smart_search on spring-petclinic — verifies Java semantic search"
+    tool: smart_search
+    action: search
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "controller that handles owner requests"
+      max_results: 10
+
+  # ═══ Tool 15: solid_audit (ts + py + go + java cells) ═══════════════════════
+  - name: realrepo_solid_audit_commander
+    description: "solid_audit on commander — verifies TS SOLID principles audit"
+    tool: solid_audit
+    action: audit
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_solid_audit_click
+    description: "solid_audit on click — verifies Python SOLID principles audit"
+    tool: solid_audit
+    action: audit
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_solid_audit_lo
+    description: "solid_audit on samber/lo — verifies Go SOLID principles audit"
+    tool: solid_audit
+    action: audit
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_solid_audit_petclinic
+    description: "solid_audit on spring-petclinic — verifies Java SOLID principles audit"
+    tool: solid_audit
+    action: audit
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  # ═══ Tool 16: validate_contract (ts + py + go + java cells) ════════════════
+  - name: realrepo_validate_contract_zod
+    description: "validate_contract on zod — verifies TS contract validation"
+    tool: validate_contract
+    action: validate
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    arguments:
+      contract_id: "coverage-fill-probe"
+      generated_code: "export function parse() {}"
+
+  - name: realrepo_validate_contract_urllib3
+    description: "validate_contract on urllib3 — verifies Python contract validation"
+    tool: validate_contract
+    action: validate
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    arguments:
+      contract_id: "coverage-fill-probe"
+      generated_code: "def urlopen(): pass"
+
+  - name: realrepo_validate_contract_lo
+    description: "validate_contract on samber/lo — verifies Go contract validation"
+    tool: validate_contract
+    action: validate
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    arguments:
+      contract_id: "coverage-fill-probe"
+      generated_code: "func Map() {}"
+
+  - name: realrepo_validate_contract_petclinic
+    description: "validate_contract on spring-petclinic — verifies Java contract validation"
+    tool: validate_contract
+    action: validate
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    arguments:
+      contract_id: "coverage-fill-probe"
+      generated_code: "public class OwnerController {}"

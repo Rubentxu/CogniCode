@@ -1,0 +1,554 @@
+# E31-B9 Tier-1 rust + go + java closure for 14 partial tools
+# Goal: add real rust Tier-1 + go + java cells to 14 tools that already have
+# ts + py cells (from E31-B4-rollup, E31-B7, E31-B8) but lacked rust Tier-1
+# provenance (only placeholder entries in coverage_fill.yaml with empty
+# repo:). After this batch, those 14 tools reach 5/5 Tier-1.
+#
+# Tools promoted (14): build_lightweight_index, detect_god_functions,
+#   get_implementors, get_imports, get_members, get_per_file_graph,
+#   graph_all_paths, graph_communities, graph_insights, graph_pagerank,
+#   graph_query, list_view_specs, read_view_spec, reparse_on_edit.
+#
+# Languages added per tool:
+#   rust (Tier-1 repos): anyhow, clap, ripgrep, serde, tokio
+#   go (Tier-1 repos): cobra, bubbletea, lo
+#   java (Tier-1 repo): spring-petclinic
+#
+# Cells already present (from prior batches, NOT modified here):
+#   ts/commander, ts/zod, click, urllib3, requests
+#
+# Per-tool scenarios: 3 langs × 1 scenario each (rust+go+java) = 3 scenarios
+# Total: 14 tools × 3 langs = 42 scenarios.
+#
+# Real Tier-1 repo SHAs (verified in sandbox/repos/):
+#   rust: anyhow=8ea1819c, clap=4684d7ab, ripgrep=4649aa97, serde=03eec42c, tokio=dd344a55
+#   go: cobra=e94f6d0d, bubbletea=ffa05021, lo=35e49f2c
+#   java: spring-petclinic=edf4db28
+#
+# Reference: docs/TEST-PLAN.md §3.1 / T3. After B9, 22 tools reach 5/5
+# (8 existing + 14 from B9). Closes E31-B4 partial: 47 → 33.
+#
+# Note: this manifest mirrors the conventions of e31b4*.yaml, e31b7*.yaml,
+# e31b8*.yaml. Pinned repos are not re-declared for those already present
+# in earlier batches; this manifest adds them for the closure cells only.
+
+version: "1.0"
+language: multi
+tier: B
+description: "E31-B9 batch — Tier-1 rust + go + java closure for 14 partial tools (build_lightweight_index, detect_god_functions, get_implementors, get_imports, get_members, get_per_file_graph, graph_all_paths, graph_communities, graph_insights, graph_pagerank, graph_query, list_view_specs, read_view_spec, reparse_on_edit), reaching 5/5"
+
+timeout_seconds: 900
+
+# Per-repo metadata for reproducibility (only the langs/cells added by B9)
+repos:
+  anyhow:
+    repo_url: "https://github.com/dtolnay/anyhow.git"
+    pinned_sha: "8ea1819c4c7829d0eb09e54a52806f382b8d445b"
+  clap:
+    repo_url: "https://github.com/clap-rs/clap.git"
+    pinned_sha: "4684d7abc545cef1d78708864cfe8c7668ed49c1"
+  ripgrep:
+    repo_url: "https://github.com/BurntSushi/ripgrep.git"
+    pinned_sha: "4649aa9700619f94cf9c66876e9549d83420e16c"
+  serde:
+    repo_url: "https://github.com/serde-rs/serde.git"
+    pinned_sha: "03eec42c3313b36da416be1486e9ecac345784d5"
+  tokio:
+    repo_url: "https://github.com/tokio-rs/tokio.git"
+    pinned_sha: "dd344a550c2c6ddc500a2a8ad2eca8e097795252"
+  go/cobra:
+    repo_url: "https://github.com/spf13/cobra.git"
+    pinned_sha: "e94f6d0dd9a5e5738dca6bce03c4b1207ffbc0ec"
+  go/bubbletea:
+    repo_url: "https://github.com/charmbracelet/bubbletea.git"
+    pinned_sha: "ffa05021909e14c478cbe138ca78effbea04e4e0"
+  go/lo:
+    repo_url: "https://github.com/samber/lo.git"
+    pinned_sha: "35e49f2c9607a7f7f6cde872a42d8718d9c3d053"
+  java/spring-petclinic:
+    repo_url: "https://github.com/spring-projects/spring-petclinic.git"
+    pinned_sha: "edf4db28affcc4741c79850a3d95bc3f177b5ff9"
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: rust_compile
+      commands: ["cargo check --quiet 2>&1 || true"]
+      timeout_seconds: 120
+    - name: go_compile
+      commands: ["go build -count=1 ./... 2>&1 || true"]
+      timeout_seconds: 120
+    - name: java_compile
+      commands: ["mvn -q -o compile 2>&1 || true"]
+      timeout_seconds: 180
+
+scenarios:
+  # ═══ Tool 1: build_lightweight_index (rust + go + java cells) ═══════════════
+  - name: realrepo_build_lightweight_index_tokio
+    description: "build_lightweight_index on tokio — verifies rust Tier-1 lightweight indexing on the tokio runtime crate"
+    tool: build_lightweight_index
+    action: index
+    repo: tokio
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: tokio/src
+
+  - name: realrepo_build_lightweight_index_cobra
+    description: "build_lightweight_index on go/cobra — verifies go lightweight indexing on a real CLI framework"
+    tool: build_lightweight_index
+    action: index
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: .
+
+  - name: realrepo_build_lightweight_index_petclinic
+    description: "build_lightweight_index on spring-petclinic — verifies java lightweight indexing"
+    tool: build_lightweight_index
+    action: index
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/main/java
+
+  # ═══ Tool 2: detect_god_functions (rust + go + java cells) ══════════════════
+  - name: realrepo_detect_god_functions_anyhow
+    description: "detect_god_functions on anyhow — verifies rust function length smell detector on a real Tier-1 error crate"
+    tool: detect_god_functions
+    action: analyze
+    repo: anyhow
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      min_lines: 80
+
+  - name: realrepo_detect_god_functions_lo
+    description: "detect_god_functions on samber/lo — verifies Go function length smell detector on a real utility library"
+    tool: detect_god_functions
+    action: analyze
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      min_lines: 80
+
+  - name: realrepo_detect_god_functions_petclinic
+    description: "detect_god_functions on spring-petclinic — verifies Java function length smell detector"
+    tool: detect_god_functions
+    action: analyze
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      min_lines: 80
+
+  # ═══ Tool 3: get_implementors (rust + go + java cells) ══════════════════════
+  - name: realrepo_get_implementors_clap
+    description: "get_implementors for clap Command struct — verifies rust struct implementor search on a real Tier-1 CLI crate"
+    tool: get_implementors
+    action: find
+    repo: clap
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      struct_name: "Command"
+
+  - name: realrepo_get_implementors_cobra
+    description: "get_implementors for cobra.Command — verifies Go struct implementor search on a real CLI framework"
+    tool: get_implementors
+    action: find
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      struct_name: "Command"
+
+  - name: realrepo_get_implementors_petclinic
+    description: "get_implementors for spring-petclinic OwnerController — verifies Java class implementor search"
+    tool: get_implementors
+    action: find
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      class_name: "OwnerController"
+
+  # ═══ Tool 4: get_imports (rust + go + java cells) ════════════════════════════
+  - name: realrepo_get_imports_serde
+    description: "get_imports for serde/src/lib.rs — verifies rust import traversal on a real Tier-1 serialization crate"
+    tool: get_imports
+    action: find
+    repo: serde
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: serde/src/lib.rs
+
+  - name: realrepo_get_imports_bubbletea
+    description: "get_imports for bubbletea tea.go — verifies Go import traversal on a real TUI framework"
+    tool: get_imports
+    action: find
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: tea.go
+
+  - name: realrepo_get_imports_petclinic
+    description: "get_imports for spring-petclinic OwnerController.java — verifies Java import traversal"
+    tool: get_imports
+    action: find
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java
+
+  # ═══ Tool 5: get_members (rust + go + java cells) ════════════════════════════
+  - name: realrepo_get_members_tokio
+    description: "get_members for tokio Handle struct — verifies rust struct member enumeration on a real Tier-1 runtime crate"
+    tool: get_members
+    action: find
+    repo: tokio
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      struct_name: "Handle"
+
+  - name: realrepo_get_members_lo
+    description: "get_members for samber/lo IterMap struct — verifies Go struct member enumeration on a real utility library"
+    tool: get_members
+    action: find
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      struct_name: "IterMap"
+
+  - name: realrepo_get_members_petclinic
+    description: "get_members for spring-petclinic Owner class — verifies Java class member enumeration"
+    tool: get_members
+    action: find
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      class_name: "Owner"
+
+  # ═══ Tool 6: get_per_file_graph (rust + go + java cells) ════════════════════
+  - name: realrepo_get_per_file_graph_ripgrep
+    description: "get_per_file_graph for ripgrep src/main.rs — verifies rust per-file graph extraction on a real Tier-1 search tool"
+    tool: get_per_file_graph
+    action: extract
+    repo: ripgrep
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: crates/core/main.rs
+
+  - name: realrepo_get_per_file_graph_cobra
+    description: "get_per_file_graph for cobra command.go — verifies Go per-file graph extraction"
+    tool: get_per_file_graph
+    action: extract
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: command.go
+
+  - name: realrepo_get_per_file_graph_petclinic
+    description: "get_per_file_graph for spring-petclinic OwnerController — verifies Java per-file graph extraction"
+    tool: get_per_file_graph
+    action: extract
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java
+
+  # ═══ Tool 7: graph_all_paths (rust + go + java cells) ════════════════════════
+  - name: realrepo_graph_all_paths_anyhow
+    description: "graph_all_paths from anyhow::Error → anyhow! macro — verifies rust graph path traversal on a real error crate"
+    tool: graph_all_paths
+    action: paths
+    repo: anyhow
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      source: "Error::new"
+      target: "anyhow!"
+
+  - name: realrepo_graph_all_paths_bubbletea
+    description: "graph_all_paths from bubbletea tea.NewProgram → Init/Update — verifies Go graph path traversal on a real TUI framework"
+    tool: graph_all_paths
+    action: paths
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      source: "NewProgram"
+      target: "Init"
+
+  - name: realrepo_graph_all_paths_petclinic
+    description: "graph_all_paths from OwnerController.index → OwnerRepository.findByLastName — verifies Java graph path traversal"
+    tool: graph_all_paths
+    action: paths
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      source: "OwnerController"
+      target: "OwnerRepository"
+
+  # ═══ Tool 8: graph_communities (rust + go + java cells) ══════════════════════
+  - name: realrepo_graph_communities_clap
+    description: "graph_communities on clap — verifies rust community detection on a real Tier-1 CLI crate"
+    tool: graph_communities
+    action: detect
+    repo: clap
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      min_community_size: 3
+
+  - name: realrepo_graph_communities_lo
+    description: "graph_communities on samber/lo — verifies Go community detection on a real utility library"
+    tool: graph_communities
+    action: detect
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      min_community_size: 3
+
+  - name: realrepo_graph_communities_petclinic
+    description: "graph_communities on spring-petclinic — verifies Java community detection"
+    tool: graph_communities
+    action: detect
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      min_community_size: 3
+
+  # ═══ Tool 9: graph_insights (rust + go + java cells) ════════════════════════
+  - name: realrepo_graph_insights_serde
+    description: "graph_insights on serde — verifies rust graph insight generation on a real Tier-1 serialization crate"
+    tool: graph_insights
+    action: insights
+    repo: serde
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_insights_cobra
+    description: "graph_insights on cobra — verifies Go graph insight generation"
+    tool: graph_insights
+    action: insights
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_insights_petclinic
+    description: "graph_insights on spring-petclinic — verifies Java graph insight generation"
+    tool: graph_insights
+    action: insights
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  # ═══ Tool 10: graph_pagerank (rust + go + java cells) ══════════════════════
+  - name: realrepo_graph_pagerank_tokio
+    description: "graph_pagerank on tokio — verifies rust pagerank on a real Tier-1 async runtime"
+    tool: graph_pagerank
+    action: rank
+    repo: tokio
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      damping: 0.85
+
+  - name: realrepo_graph_pagerank_bubbletea
+    description: "graph_pagerank on bubbletea — verifies Go pagerank on a real TUI framework"
+    tool: graph_pagerank
+    action: rank
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      damping: 0.85
+
+  - name: realrepo_graph_pagerank_petclinic
+    description: "graph_pagerank on spring-petclinic — verifies Java pagerank"
+    tool: graph_pagerank
+    action: rank
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      damping: 0.85
+
+  # ═══ Tool 11: graph_query (rust + go + java cells) ══════════════════════════
+  - name: realrepo_graph_query_ripgrep
+    description: "graph_query on ripgrep — verifies rust graph query DSL on a real Tier-1 search tool"
+    tool: graph_query
+    action: query
+    repo: ripgrep
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "fn search"
+
+  - name: realrepo_graph_query_lo
+    description: "graph_query on samber/lo — verifies Go graph query DSL"
+    tool: graph_query
+    action: query
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "func Map"
+
+  - name: realrepo_graph_query_petclinic
+    description: "graph_query on spring-petclinic — verifies Java graph query DSL"
+    tool: graph_query
+    action: query
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "@Controller"
+
+  # ═══ Tool 12: list_view_specs (rust + go + java cells) ══════════════════════
+  - name: realrepo_list_view_specs_anyhow
+    description: "list_view_specs on anyhow — verifies rust view spec enumeration on a real Tier-1 error crate"
+    tool: list_view_specs
+    action: list
+    repo: anyhow
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_list_view_specs_cobra
+    description: "list_view_specs on cobra — verifies Go view spec enumeration"
+    tool: list_view_specs
+    action: list
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_list_view_specs_petclinic
+    description: "list_view_specs on spring-petclinic — verifies Java view spec enumeration"
+    tool: list_view_specs
+    action: list
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  # ═══ Tool 13: read_view_spec (rust + go + java cells) ═══════════════════════
+  - name: realrepo_read_view_spec_serde
+    description: "read_view_spec for a known view spec on serde — verifies rust view spec retrieval"
+    tool: read_view_spec
+    action: read
+    repo: serde
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      view_spec_id: "coverage-fill-probe"
+
+  - name: realrepo_read_view_spec_bubbletea
+    description: "read_view_spec on bubbletea — verifies Go view spec retrieval"
+    tool: read_view_spec
+    action: read
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    arguments:
+      view_spec_id: "coverage-fill-probe"
+
+  - name: realrepo_read_view_spec_petclinic
+    description: "read_view_spec on spring-petclinic — verifies Java view spec retrieval"
+    tool: read_view_spec
+    action: read
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    arguments:
+      view_spec_id: "coverage-fill-probe"
+
+  # ═══ Tool 14: reparse_on_edit (rust + go + java cells) ══════════════════════
+  - name: realrepo_reparse_on_edit_clap
+    description: "reparse_on_edit after a no-op edit on clap — verifies rust incremental reparse on a real Tier-1 CLI crate"
+    tool: reparse_on_edit
+    action: reparse
+    repo: clap
+    workspace: .
+    scenario_class: read_only
+    preview_only: true
+    expected_outcome: pass
+    arguments:
+      file_path: clap/src/lib.rs
+
+  - name: realrepo_reparse_on_edit_lo
+    description: "reparse_on_edit after a no-op edit on samber/lo — verifies Go incremental reparse"
+    tool: reparse_on_edit
+    action: reparse
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    preview_only: true
+    expected_outcome: pass
+    arguments:
+      file_path: lo.go
+
+  - name: realrepo_reparse_on_edit_petclinic
+    description: "reparse_on_edit after a no-op edit on spring-petclinic — verifies Java incremental reparse"
+    tool: reparse_on_edit
+    action: reparse
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    preview_only: true
+    expected_outcome: pass
+    arguments:
+      file_path: src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java

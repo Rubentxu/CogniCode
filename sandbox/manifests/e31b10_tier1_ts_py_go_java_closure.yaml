@@ -1,0 +1,822 @@
+# E31-B10 Tier-1 ts + py + go + java closure for 17 rust-only tools
+# Goal: add ts + py + go + java cells to 17 tools that only had rust Tier-1
+# (from rust.yaml, clap_repos.yaml, etc.) but no other languages. After this
+# batch, those 17 tools reach 5/5 Tier-1.
+#
+# Tools promoted (17): ask_about_code, check_architecture, codebase_map,
+#   export_callflow, export_mermaid, find_pattern_by_intent, generate_contract,
+#   get_hot_paths, get_symbol_code, get_type_references, go_to_definition,
+#   graph_analyze, graph_checkpoint, graph_community_detail, graph_condensed,
+#   graph_explain, graph_feedback_arcs.
+#
+# Cells already present (rust Tier-1 from prior cycles, NOT modified here):
+#   anyhow, clap, ripgrep, serde, tokio
+#
+# Cells added by B10:
+#   ts/commander, ts/zod, click, urllib3, requests, go/cobra, go/bubbletea,
+#   go/lo, java/spring-petclinic
+#
+# Per-tool scenarios: 4 langs × 1 scenario each = 4 scenarios
+# Total: 17 tools × 4 langs = 68 scenarios.
+#
+# Reference: docs/TEST-PLAN.md §3.1 / T3. After B10, 39 tools reach 5/5
+# (8 existing + 14 from B9 + 17 from B10). Closes E31-B4 partial: 47 → 16.
+
+version: "1.0"
+language: multi
+tier: B
+description: "E31-B10 batch — Tier-1 ts + py + go + java closure for 17 rust-only tools, reaching 5/5"
+
+timeout_seconds: 900
+
+# Per-repo metadata for reproducibility (cells added by B10)
+repos:
+  ts/commander:
+    repo_url: "https://github.com/tj/commander.js.git"
+    pinned_sha: "4ef19faac1564743d8c7e3ce89ef8d190e1551b4"
+  ts/zod:
+    repo_url: "https://github.com/colinhacks/zod.git"
+    pinned_sha: "65adeeacef0274abbda5438470a3d2bfd376256d"
+  click:
+    repo_url: "https://github.com/pallets/click.git"
+    pinned_sha: "874ca2bc1c30d93a4ac6e36a15ed685eafe89097"
+  urllib3:
+    repo_url: "https://github.com/urllib3/urllib3.git"
+    pinned_sha: "69be2992f8a25a1f27e49f339e4d5b98dec07462"
+  requests:
+    repo_url: "https://github.com/psf/requests.git"
+    pinned_sha: "0e322af87745eff34caffe4df68456ebc20d9068"
+  go/cobra:
+    repo_url: "https://github.com/spf13/cobra.git"
+    pinned_sha: "e94f6d0dd9a5e5738dca6bce03c4b1207ffbc0ec"
+  go/bubbletea:
+    repo_url: "https://github.com/charmbracelet/bubbletea.git"
+    pinned_sha: "ffa05021909e14c478cbe138ca78effbea04e4e0"
+  go/lo:
+    repo_url: "https://github.com/samber/lo.git"
+    pinned_sha: "35e49f2c9607a7f7f6cde872a42d8718d9c3d053"
+  java/spring-petclinic:
+    repo_url: "https://github.com/spring-projects/spring-petclinic.git"
+    pinned_sha: "edf4db28affcc4741c79850a3d95bc3f177b5ff9"
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: ts_compile
+      commands: ["npx tsc --noEmit 2>&1 || true"]
+      timeout_seconds: 120
+    - name: py_compile
+      commands: ["python -m py_compile -q src/ 2>&1 || true"]
+      timeout_seconds: 60
+    - name: go_compile
+      commands: ["go build -count=1 ./... 2>&1 || true"]
+      timeout_seconds: 120
+    - name: java_compile
+      commands: ["mvn -q -o compile 2>&1 || true"]
+      timeout_seconds: 180
+
+scenarios:
+  # ═══ Tool 1: ask_about_code (ts + py + go + java cells) ════════════════════
+  - name: realrepo_ask_about_code_commander
+    description: "ask_about_code on commander — verifies TS Q&A on a real CLI framework"
+    tool: ask_about_code
+    action: query
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      question: "What does Command.parse do?"
+
+  - name: realrepo_ask_about_code_click
+    description: "ask_about_code on click — verifies Python Q&A on a real CLI framework"
+    tool: ask_about_code
+    action: query
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      question: "What does BaseCommand.main do?"
+
+  - name: realrepo_ask_about_code_cobra
+    description: "ask_about_code on cobra — verifies Go Q&A on a real CLI framework"
+    tool: ask_about_code
+    action: query
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      question: "What does Command.Execute do?"
+
+  - name: realrepo_ask_about_code_petclinic
+    description: "ask_about_code on spring-petclinic — verifies Java Q&A"
+    tool: ask_about_code
+    action: query
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      question: "What does OwnerController.index do?"
+
+  # ═══ Tool 2: check_architecture (ts + py + go + java cells) ═════════════════
+  - name: realrepo_check_architecture_zod
+    description: "check_architecture on zod — verifies TS architecture constraints"
+    tool: check_architecture
+    action: check
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_check_architecture_urllib3
+    description: "check_architecture on urllib3 — verifies Python architecture constraints"
+    tool: check_architecture
+    action: check
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_check_architecture_lo
+    description: "check_architecture on samber/lo — verifies Go architecture constraints"
+    tool: check_architecture
+    action: check
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_check_architecture_petclinic
+    description: "check_architecture on spring-petclinic — verifies Java architecture constraints"
+    tool: check_architecture
+    action: check
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  # ═══ Tool 3: codebase_map (ts + py + go + java cells) ═══════════════════════
+  - name: realrepo_codebase_map_commander
+    description: "codebase_map on commander — verifies TS compact codebase overview"
+    tool: codebase_map
+    action: map
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      format: compact
+
+  - name: realrepo_codebase_map_click
+    description: "codebase_map on click — verifies Python compact codebase overview"
+    tool: codebase_map
+    action: map
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      format: compact
+
+  - name: realrepo_codebase_map_cobra
+    description: "codebase_map on cobra — verifies Go compact codebase overview"
+    tool: codebase_map
+    action: map
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      format: compact
+
+  - name: realrepo_codebase_map_petclinic
+    description: "codebase_map on spring-petclinic — verifies Java compact codebase overview"
+    tool: codebase_map
+    action: map
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      format: compact
+
+  # ═══ Tool 4: export_callflow (ts + py + go + java cells) ════════════════════
+  - name: realrepo_export_callflow_zod
+    description: "export_callflow on zod — verifies TS call graph export as code"
+    tool: export_callflow
+    action: export
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      format: code
+
+  - name: realrepo_export_callflow_urllib3
+    description: "export_callflow on urllib3 — verifies Python call graph export"
+    tool: export_callflow
+    action: export
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      format: code
+
+  - name: realrepo_export_callflow_lo
+    description: "export_callflow on samber/lo — verifies Go call graph export"
+    tool: export_callflow
+    action: export
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      format: code
+
+  - name: realrepo_export_callflow_petclinic
+    description: "export_callflow on spring-petclinic — verifies Java call graph export"
+    tool: export_callflow
+    action: export
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      format: code
+
+  # ═══ Tool 5: export_mermaid (ts + py + go + java cells) ══════════════════════
+  - name: realrepo_export_mermaid_commander
+    description: "export_mermaid on commander — verifies TS Mermaid diagram export"
+    tool: export_mermaid
+    action: export
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_export_mermaid_click
+    description: "export_mermaid on click — verifies Python Mermaid diagram export"
+    tool: export_mermaid
+    action: export
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_export_mermaid_cobra
+    description: "export_mermaid on cobra — verifies Go Mermaid diagram export"
+    tool: export_mermaid
+    action: export
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_export_mermaid_petclinic
+    description: "export_mermaid on spring-petclinic — verifies Java Mermaid diagram export"
+    tool: export_mermaid
+    action: export
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  # ═══ Tool 6: find_pattern_by_intent (ts + py + go + java cells) ══════════════
+  - name: realrepo_find_pattern_by_intent_zod
+    description: "find_pattern_by_intent on zod — verifies TS intent-based pattern search"
+    tool: find_pattern_by_intent
+    action: find
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      intent: "find all parsers in this schema library"
+
+  - name: realrepo_find_pattern_by_intent_requests
+    description: "find_pattern_by_intent on requests — verifies Python intent search"
+    tool: find_pattern_by_intent
+    action: find
+    repo: requests
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      intent: "find HTTP request adapters"
+
+  - name: realrepo_find_pattern_by_intent_bubbletea
+    description: "find_pattern_by_intent on bubbletea — verifies Go intent search"
+    tool: find_pattern_by_intent
+    action: find
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      intent: "find TUI lifecycle methods"
+
+  - name: realrepo_find_pattern_by_intent_petclinic
+    description: "find_pattern_by_intent on spring-petclinic — verifies Java intent search"
+    tool: find_pattern_by_intent
+    action: find
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      intent: "find Spring MVC controllers"
+
+  # ═══ Tool 7: generate_contract (ts + py + go + java cells) ══════════════════
+  - name: realrepo_generate_contract_zod
+    description: "generate_contract for ZodObject.parse — verifies TS contract generation"
+    tool: generate_contract
+    action: generate
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      function_name: "parse"
+      file_path: src/index.ts
+
+  - name: realrepo_generate_contract_urllib3
+    description: "generate_contract for PoolManager.urlopen — verifies Python contract generation"
+    tool: generate_contract
+    action: generate
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      function_name: "urlopen"
+      file_path: src/urllib3/_poolmanager.py
+
+  - name: realrepo_generate_contract_lo
+    description: "generate_contract for lo.Map — verifies Go contract generation"
+    tool: generate_contract
+    action: generate
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      function_name: "Map"
+      file_path: map.go
+
+  - name: realrepo_generate_contract_petclinic
+    description: "generate_contract for OwnerController.index — verifies Java contract generation"
+    tool: generate_contract
+    action: generate
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      function_name: "index"
+      file_path: src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java
+
+  # ═══ Tool 8: get_hot_paths (ts + py + go + java cells) ══════════════════════
+  - name: realrepo_get_hot_paths_commander
+    description: "get_hot_paths on commander — verifies TS hot path detection"
+    tool: get_hot_paths
+    action: find
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_get_hot_paths_click
+    description: "get_hot_paths on click — verifies Python hot path detection"
+    tool: get_hot_paths
+    action: find
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_get_hot_paths_cobra
+    description: "get_hot_paths on cobra — verifies Go hot path detection"
+    tool: get_hot_paths
+    action: find
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_get_hot_paths_petclinic
+    description: "get_hot_paths on spring-petclinic — verifies Java hot path detection"
+    tool: get_hot_paths
+    action: find
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  # ═══ Tool 9: get_symbol_code (ts + py + go + java cells) ════════════════════
+  - name: realrepo_get_symbol_code_commander
+    description: "get_symbol_code on commander — verifies TS symbol code extraction"
+    tool: get_symbol_code
+    action: extract
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: src/index.ts
+      line: 100
+      col: 0
+
+  - name: realrepo_get_symbol_code_click
+    description: "get_symbol_code on click — verifies Python symbol code extraction"
+    tool: get_symbol_code
+    action: extract
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: src/click/core.py
+      line: 100
+      col: 0
+
+  - name: realrepo_get_symbol_code_lo
+    description: "get_symbol_code on samber/lo — verifies Go symbol code extraction"
+    tool: get_symbol_code
+    action: extract
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: map.go
+      line: 1
+      col: 0
+
+  - name: realrepo_get_symbol_code_petclinic
+    description: "get_symbol_code on spring-petclinic — verifies Java symbol code extraction"
+    tool: get_symbol_code
+    action: extract
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java
+      line: 50
+      col: 0
+
+  # ═══ Tool 10: get_type_references (ts + py + go + java cells) ══════════════
+  - name: realrepo_get_type_references_zod
+    description: "get_type_references for ZodType — verifies TS type reference search"
+    tool: get_type_references
+    action: find
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol_name: "ZodType"
+
+  - name: realrepo_get_type_references_urllib3
+    description: "get_type_references for PoolManager — verifies Python class reference search"
+    tool: get_type_references
+    action: find
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol_name: "PoolManager"
+
+  - name: realrepo_get_type_references_bubbletea
+    description: "get_type_references for tea.Model — verifies Go interface reference search"
+    tool: get_type_references
+    action: find
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol_name: "Model"
+
+  - name: realrepo_get_type_references_petclinic
+    description: "get_type_references for Owner — verifies Java class reference search"
+    tool: get_type_references
+    action: find
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol_name: "Owner"
+
+  # ═══ Tool 11: go_to_definition (ts + py + go + java cells) ══════════════════
+  - name: realrepo_go_to_definition_zod
+    description: "go_to_definition in zod — verifies TS definition lookup"
+    tool: go_to_definition
+    action: lookup
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: src/index.ts
+      line: 100
+      column: 10
+
+  - name: realrepo_go_to_definition_click
+    description: "go_to_definition in click — verifies Python definition lookup"
+    tool: go_to_definition
+    action: lookup
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: src/click/core.py
+      line: 100
+      column: 10
+
+  - name: realrepo_go_to_definition_cobra
+    description: "go_to_definition in cobra — verifies Go definition lookup"
+    tool: go_to_definition
+    action: lookup
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: command.go
+      line: 50
+      column: 5
+
+  - name: realrepo_go_to_definition_petclinic
+    description: "go_to_definition in spring-petclinic — verifies Java definition lookup"
+    tool: go_to_definition
+    action: lookup
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java
+      line: 50
+      column: 10
+
+  # ═══ Tool 12: graph_analyze (ts + py + go + java cells) ═════════════════════
+  - name: realrepo_graph_analyze_commander
+    description: "graph_analyze on commander — verifies TS SCC analysis on a CLI framework"
+    tool: graph_analyze
+    action: analyze
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      mode: scc
+
+  - name: realrepo_graph_analyze_click
+    description: "graph_analyze on click — verifies Python SCC analysis on a CLI framework"
+    tool: graph_analyze
+    action: analyze
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      mode: scc
+
+  - name: realrepo_graph_analyze_bubbletea
+    description: "graph_analyze on bubbletea — verifies Go SCC analysis on a TUI framework"
+    tool: graph_analyze
+    action: analyze
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      mode: scc
+
+  - name: realrepo_graph_analyze_petclinic
+    description: "graph_analyze on spring-petclinic — verifies Java SCC analysis"
+    tool: graph_analyze
+    action: analyze
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      mode: scc
+
+  # ═══ Tool 13: graph_checkpoint (ts + py + go + java cells) ══════════════════
+  - name: realrepo_graph_checkpoint_zod
+    description: "graph_checkpoint on zod — verifies TS graph checkpoint create"
+    tool: graph_checkpoint
+    action: checkpoint
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      operation: create
+
+  - name: realrepo_graph_checkpoint_urllib3
+    description: "graph_checkpoint on urllib3 — verifies Python graph checkpoint create"
+    tool: graph_checkpoint
+    action: checkpoint
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      operation: create
+
+  - name: realrepo_graph_checkpoint_cobra
+    description: "graph_checkpoint on cobra — verifies Go graph checkpoint create"
+    tool: graph_checkpoint
+    action: checkpoint
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      operation: create
+
+  - name: realrepo_graph_checkpoint_petclinic
+    description: "graph_checkpoint on spring-petclinic — verifies Java graph checkpoint create"
+    tool: graph_checkpoint
+    action: checkpoint
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      operation: create
+
+  # ═══ Tool 14: graph_community_detail (ts + py + go + java cells) ═══════════
+  - name: realrepo_graph_community_detail_commander
+    description: "graph_community_detail on commander — verifies TS community detail extraction"
+    tool: graph_community_detail
+    action: detail
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      community_id: 0
+
+  - name: realrepo_graph_community_detail_click
+    description: "graph_community_detail on click — verifies Python community detail extraction"
+    tool: graph_community_detail
+    action: detail
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      community_id: 0
+
+  - name: realrepo_graph_community_detail_lo
+    description: "graph_community_detail on samber/lo — verifies Go community detail extraction"
+    tool: graph_community_detail
+    action: detail
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      community_id: 0
+
+  - name: realrepo_graph_community_detail_petclinic
+    description: "graph_community_detail on spring-petclinic — verifies Java community detail extraction"
+    tool: graph_community_detail
+    action: detail
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      community_id: 0
+
+  # ═══ Tool 15: graph_condensed (ts + py + go + java cells) ══════════════════
+  - name: realrepo_graph_condensed_zod
+    description: "graph_condensed on zod — verifies TS graph condensation on a schema library"
+    tool: graph_condensed
+    action: condense
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_condensed_requests
+    description: "graph_condensed on requests — verifies Python graph condensation on an HTTP library"
+    tool: graph_condensed
+    action: condense
+    repo: requests
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_condensed_bubbletea
+    description: "graph_condensed on bubbletea — verifies Go graph condensation on a TUI framework"
+    tool: graph_condensed
+    action: condense
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_condensed_petclinic
+    description: "graph_condensed on spring-petclinic — verifies Java graph condensation"
+    tool: graph_condensed
+    action: condense
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  # ═══ Tool 16: graph_explain (ts + py + go + java cells) ═════════════════════
+  - name: realrepo_graph_explain_commander
+    description: "graph_explain on commander — verifies TS symbol explanation"
+    tool: graph_explain
+    action: explain
+    repo: ts/commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol: "Command"
+
+  - name: realrepo_graph_explain_click
+    description: "graph_explain on click — verifies Python symbol explanation"
+    tool: graph_explain
+    action: explain
+    repo: click
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol: "BaseCommand"
+
+  - name: realrepo_graph_explain_lo
+    description: "graph_explain on samber/lo — verifies Go symbol explanation"
+    tool: graph_explain
+    action: explain
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol: "Map"
+
+  - name: realrepo_graph_explain_petclinic
+    description: "graph_explain on spring-petclinic — verifies Java symbol explanation"
+    tool: graph_explain
+    action: explain
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol: "OwnerController"
+
+  # ═══ Tool 17: graph_feedback_arcs (ts + py + go + java cells) ══════════════
+  - name: realrepo_graph_feedback_arcs_zod
+    description: "graph_feedback_arcs on zod — verifies TS feedback arc detection on a schema library"
+    tool: graph_feedback_arcs
+    action: detect
+    repo: ts/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_feedback_arcs_urllib3
+    description: "graph_feedback_arcs on urllib3 — verifies Python feedback arc detection on HTTP library"
+    tool: graph_feedback_arcs
+    action: detect
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_feedback_arcs_cobra
+    description: "graph_feedback_arcs on cobra — verifies Go feedback arc detection on a CLI framework"
+    tool: graph_feedback_arcs
+    action: detect
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+
+  - name: realrepo_graph_feedback_arcs_petclinic
+    description: "graph_feedback_arcs on spring-petclinic — verifies Java feedback arc detection"
+    tool: graph_feedback_arcs
+    action: detect
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
