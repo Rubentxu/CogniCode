@@ -25,9 +25,12 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -35,7 +38,11 @@ DEFAULT_BASELINE = REPO_ROOT / "scripts" / "known_failures.yaml"
 FAILED_RE = re.compile(r"^test (\S+) \.\.\. FAILED$", re.MULTILINE)
 
 
-def run_tests(package: str, target: str) -> tuple[int, str]:
+def run_tests(
+    package: str,
+    target: str,
+    env: dict[str, str] | None = None,
+) -> tuple[int, str]:
     cmd = ["cargo", "test", "-p", package]
     if target == "lib":
         cmd.append("--lib")
@@ -46,9 +53,61 @@ def run_tests(package: str, target: str) -> tuple[int, str]:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        env=env,
     )
     # cargo writes test results to stdout; keep both to be safe.
     return proc.returncode, proc.stdout + "\n" + proc.stderr
+
+
+def _path_has_ancestor_symlink(path: Path) -> bool:
+    """True if any ancestor of ``path`` is (or resolves through) a symlink.
+
+    The CogniCode security guard refuses to read files under a symlinked
+    ancestor, so a TempDir placed under such a root makes tests fail with
+    `Symlink detected in path: <root>` instead of exercising the behaviour
+    under test. This helper lets the harness redirect TMPDIR to a root that
+    does not cross a symlink.
+    """
+    # Compare realpath vs. lexical form. Any divergence means at least one
+    # ancestor is a symlink (e.g. /home -> /var/home). This catches the case
+    # where `tempfile.gettempdir()` already returns a canonicalised path
+    # whose realpath differs from its lexical form.
+    try:
+        lexical = Path(os.path.abspath(str(path)))
+        real = lexical.resolve(strict=False)
+    except OSError:
+        return True
+    return real != lexical
+
+
+def prepare_tmpdir(tmpdir_root: str | None) -> tuple[str | None, str | None]:
+    """Return ``(tmpdir_root_used, scratch_subdir)`` suitable for ``TMPDIR``.
+
+    * If ``tmpdir_root`` is None: falls back to ``tempfile.gettempdir()``.
+    * The chosen root MUST exist, be writable, and not have any symlinked
+      ancestor. If those conditions fail, returns ``(None, reason)`` and the
+      caller must surface the failure to the user.
+    * The scratch subdir is created with ``tempfile.mkdtemp``, owned by us,
+      and the caller is responsible for cleaning it up.
+    """
+    root = Path(tmpdir_root) if tmpdir_root else Path(tempfile.gettempdir())
+    if not root.exists():
+        return None, f"--tmpdir-root does not exist: {root}"
+    if not root.is_dir():
+        return None, f"--tmpdir-root is not a directory: {root}"
+    try:
+        probe = root / ".cognicode-probe"
+        probe.write_text("ok")
+        probe.unlink()
+    except OSError as exc:
+        return None, f"--tmpdir-root is not writable ({root}): {exc}"
+    if _path_has_ancestor_symlink(root):
+        return None, (
+            f"temp root {root} crosses a symlinked ancestor; pass "
+            f"--tmpdir-root <real-dir> to override"
+        )
+    scratch = Path(tempfile.mkdtemp(prefix="cognicode-ckf-", dir=str(root)))
+    return str(root), str(scratch)
 
 
 def is_harness_failure(output: str) -> bool:
@@ -150,6 +209,21 @@ def main() -> int:
     parser.add_argument("--package", default=None)
     parser.add_argument("--target", default=None)
     parser.add_argument("--baseline", default=str(DEFAULT_BASELINE))
+    parser.add_argument(
+        "--tmpdir-root",
+        default=None,
+        help=(
+            "Root under which to create a private TMPDIR for the cargo test "
+            "subprocess. Default: tempfile.gettempdir(). Must exist, be "
+            "writable, and not have any symlinked ancestor (the CogniCode "
+            "security guard refuses to read such paths)."
+        ),
+    )
+    parser.add_argument(
+        "--keep-tmpdir",
+        action="store_true",
+        help="Do not remove the scratch TMPDIR after the run (debugging).",
+    )
     parser.add_argument("--update", action="store_true")
     args = parser.parse_args()
 
@@ -158,8 +232,23 @@ def main() -> int:
     package = args.package or baseline.get("package") or "cognicode-core"
     target = args.target or baseline.get("target") or "lib"
 
-    print(f"[known-failures] running `cargo test -p {package}` (target={target}) …")
-    returncode, output = run_tests(package, target)
+    root_used, scratch = prepare_tmpdir(args.tmpdir_root)
+    if scratch is None:
+        print(f"[known-failures] TMPDIR setup failed: {root_used}", file=sys.stderr)
+        return 2
+
+    child_env = {**os.environ, "TMPDIR": scratch}
+    print(
+        f"[known-failures] running `cargo test -p {package}` "
+        f"(target={target}, TMPDIR={scratch}) …"
+    )
+    try:
+        returncode, output = run_tests(package, target, env=child_env)
+    finally:
+        if not args.keep_tmpdir:
+            shutil.rmtree(scratch, ignore_errors=True)
+        else:
+            print(f"[known-failures] TMPDIR kept at {scratch}", file=sys.stderr)
 
     if is_harness_failure(output):
         print(
