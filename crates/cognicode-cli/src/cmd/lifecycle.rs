@@ -155,7 +155,7 @@ fn create_zcode_config(tmp: &Path) -> Result<()> {
 fn create_claude_config(tmp: &Path) -> Result<()> {
     let claude_dir = tmp.join(".claude");
     std::fs::create_dir_all(&claude_dir)?;
-    std::fs::create_dir_all(&claude_dir.join("mcp"))?;
+    std::fs::create_dir_all(claude_dir.join("mcp"))?;
     Ok(())
 }
 

@@ -534,7 +534,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let manifest_name = bundle_manifest_filename("0.95.0", Platform::LinuxX86_64);
         write_staging_release(
-            &tmp.path(),
+            tmp.path(),
             &sample_release_with_assets("0.95.0", false, &[&manifest_name]),
         );
         let r = resolve_release(&req_with_staging(tmp.path(), Platform::LinuxX86_64)).unwrap();
@@ -554,7 +554,7 @@ mod tests {
     fn sc_lr_02_non_tier1_platform_returns_error() {
         let tmp = TempDir::new().unwrap();
         write_staging_release(
-            &tmp.path(),
+            tmp.path(),
             &sample_release_with_assets(
                 "0.95.0",
                 false,
@@ -577,7 +577,7 @@ mod tests {
     fn sc_lr_03_draft_release_returns_error() {
         let tmp = TempDir::new().unwrap();
         write_staging_release(
-            &tmp.path(),
+            tmp.path(),
             &sample_release_with_assets(
                 "0.96.0-rc1",
                 true,
@@ -600,7 +600,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         // Release exists but only has aarch64 manifest; resolver is on x86_64.
         write_staging_release(
-            &tmp.path(),
+            tmp.path(),
             &sample_release_with_assets(
                 "0.95.0",
                 false,
@@ -644,7 +644,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let manifest_name = bundle_manifest_filename("0.95.0", Platform::LinuxX86_64);
         write_staging_release(
-            &tmp.path(),
+            tmp.path(),
             &sample_release_with_assets("0.95.0", false, &[&manifest_name]),
         );
         let mut req = req_with_staging(tmp.path(), Platform::LinuxX86_64);
@@ -672,7 +672,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let manifest_name = bundle_manifest_filename("0.95.0", Platform::LinuxX86_64);
         write_staging_release(
-            &tmp.path(),
+            tmp.path(),
             &sample_release_with_assets("0.95.0", false, &[&manifest_name]),
         );
         let r = resolve_release(&req_with_staging(tmp.path(), Platform::LinuxX86_64)).unwrap();
@@ -715,7 +715,7 @@ mod tests {
   }}
 ]"#
         );
-        write_staging_release(&tmp.path(), &json);
+        write_staging_release(tmp.path(), &json);
         let r = resolve_release(&req_with_staging(tmp.path(), Platform::LinuxX86_64)).unwrap();
         assert_eq!(r.version, "0.95.0");
     }

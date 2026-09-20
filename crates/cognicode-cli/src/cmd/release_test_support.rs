@@ -141,7 +141,7 @@ pub fn local_release(version: &str) -> Result<LocalRelease> {
     // 1b. DEBT-2c: the release contract also publishes skill bundles.
     for spec in published_skill_bundles() {
         let name = skill_bundle_filename(spec.id, version);
-        std::fs::write(&staging.join(&name), format!("skills for {name}"))?;
+        std::fs::write(staging.join(&name), format!("skills for {name}"))?;
     }
 
     // 2. The real generator produces the manifest from those bytes, and
