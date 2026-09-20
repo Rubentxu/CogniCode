@@ -7,40 +7,6 @@
 use std::path::Path;
 
 use crate::error::InstallerError;
-use crate::rollback_journal::{RollbackJournal, SideEffect};
-
-/// Download a file with rollback support.
-///
-/// // Uses a `.part` staging file + atomic rename so that a interrupted
-/// download never leaves a partial file at the destination path.
-/// The `.part` path is recorded in the journal for automatic cleanup.
-pub fn download_with_rollback(
-    url: &str,
-    dest: &Path,
-    journal: &mut RollbackJournal,
-) -> Result<(), InstallerError> {
-    let part_path = dest.with_extension("part");
-
-    // Download to .part staging file using reqwest blocking client
-    let mut response = reqwest::blocking::get(url)
-        .map_err(|e| InstallerError::Network(url.into(), e.to_string()))?;
-
-    let mut file =
-        std::fs::File::create(&part_path).map_err(|e| InstallerError::Io(part_path.clone(), e))?;
-
-    let _bytes_copied = response
-        .copy_to(&mut file)
-        .map_err(|e| InstallerError::Network("copying response".into(), e.to_string()))?;
-
-    // Record for rollback cleanup
-    journal.record(SideEffect::Downloaded(part_path.clone()));
-
-    // Atomic rename: .part → dest
-    // On Unix this is atomic if dest's directory is on the same filesystem.
-    std::fs::rename(&part_path, dest).map_err(|e| InstallerError::Io(dest.into(), e))?;
-
-    Ok(())
-}
 
 /// Clean up any stale `.part` partial downloads in the cache directory.
 ///

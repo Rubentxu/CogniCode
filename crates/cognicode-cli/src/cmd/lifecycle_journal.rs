@@ -47,21 +47,6 @@ pub fn journal_path(version: &str) -> PathBuf {
         .join(format!("{version}.json"))
 }
 
-/// Path to the journal for the currently installed version. Returns
-/// `None` if there is no tracker (i.e. no install yet).
-pub fn journal_path_for_current() -> Option<PathBuf> {
-    let tracker_path = cognicode_home().join("tracker").join("version");
-    let version = std::fs::read_to_string(&tracker_path)
-        .ok()?
-        .trim()
-        .to_string();
-    if version.is_empty() {
-        None
-    } else {
-        Some(journal_path(&version))
-    }
-}
-
 /// Persist the journal of a committed install.
 ///
 /// `journal` carries the side-effects in commit order. The on-disk form
@@ -128,28 +113,6 @@ pub fn load_envelope(path: &Path) -> Result<PersistedJournal, InstallerError> {
 /// no useful recovery to do here.
 pub fn remove(path: &Path) {
     let _ = std::fs::remove_file(path);
-}
-
-/// List versions in `~/.cognicode/journal/`. Used by `cogh rollback` to
-/// discover what can be rolled back, and by tests.
-pub fn list_committed() -> Result<Vec<String>, InstallerError> {
-    let dir = cognicode_home().join("journal");
-    if !dir.exists() {
-        return Ok(Vec::new());
-    }
-    let mut out: Vec<String> = Vec::new();
-    for entry in std::fs::read_dir(&dir).map_err(|e| InstallerError::Io(dir.clone(), e))? {
-        let entry = entry.map_err(|e| InstallerError::Io(dir.clone(), e))?;
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("json") {
-            continue;
-        }
-        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-            out.push(stem.to_string());
-        }
-    }
-    out.sort();
-    Ok(out)
 }
 
 #[cfg(test)]

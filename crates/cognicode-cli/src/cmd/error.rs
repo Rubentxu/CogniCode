@@ -19,9 +19,6 @@ pub enum InstallerError {
     #[error("manifest parse error: {0}")]
     ManifestParse(#[source] BundleManifestError),
 
-    #[error("version mismatch: {0}")]
-    VersionMismatch(#[source] BundleManifestError),
-
     #[error("network error fetching {0}: {1}")]
     Network(String, String),
 

@@ -86,14 +86,6 @@ pub fn parse_platform(raw: &str) -> Option<Platform> {
     ALL_PLATFORMS.iter().copied().find(|p| p.to_string() == raw)
 }
 
-/// The shared library suffix for a platform's executables, if any.
-pub fn exe_suffix(platform: Platform) -> &'static str {
-    match platform {
-        Platform::WindowsX86_64 => ".exe",
-        _ => "",
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Layers and kinds (e84 WU3: Layer 0 vs Layer 1, and product surface)
 // ---------------------------------------------------------------------------
@@ -381,14 +373,6 @@ pub fn is_placeholder_digest(hex: &str) -> bool {
         // Longer than 32 hex chars: cannot parse as u128, so not tiny.
         Err(_) => false,
     }
-}
-
-/// SHA256 of a byte slice, lowercase hex.
-pub fn sha256_bytes(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
 }
 
 /// SHA256 of a file, streamed, lowercase hex.

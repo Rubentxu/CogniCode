@@ -191,19 +191,6 @@ pub fn opencode_skills_dir() -> PathBuf {
     OpenCodePaths::resolve().skills_dir
 }
 
-/// Read the OpenCode config as JSON.
-pub fn read_opencode_config() -> Result<Value> {
-    let path = opencode_config_path();
-    if !path.exists() {
-        return Ok(json!({}));
-    }
-    let text =
-        std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    let v: Value =
-        serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
-    Ok(v)
-}
-
 /// Atomic JSON write (tmp + rename).
 ///
 /// DEBT-1: if the file already exists and parses to a JSON value that is
@@ -520,11 +507,6 @@ pub fn uninstall_zcode(version: &str, binary_name: &str) -> Result<()> {
 
 // ===== Claude Code adapter (E32-F) =====
 
-pub fn detect_claude() -> bool {
-    let mcp_dir = claude_mcp_dir();
-    mcp_dir.exists()
-}
-
 pub fn claude_config_path() -> PathBuf {
     if let Ok(env) = std::env::var("CLAUDE_CONFIG") {
         return PathBuf::from(env);
@@ -542,18 +524,6 @@ pub fn claude_mcp_dir() -> PathBuf {
 
 pub fn claude_skills_dir() -> PathBuf {
     claude_config_path().join("skills")
-}
-
-pub fn read_claude_mcp_entry(name: &str) -> Result<Option<Value>> {
-    let path = claude_mcp_dir().join(format!("{name}.json"));
-    if !path.exists() {
-        return Ok(None);
-    }
-    let text =
-        std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    let v: Value =
-        serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
-    Ok(Some(v))
 }
 
 pub fn integrate_claude(

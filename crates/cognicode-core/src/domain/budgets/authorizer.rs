@@ -136,11 +136,6 @@ impl BudgetAuthorizer {
 mod tests {
     use super::*;
 
-    fn time_decl(ms: u64) -> BudgetDeclaration {
-        use std::num::NonZeroU64;
-        BudgetDeclaration::time(NonZeroU64::new(ms).unwrap())
-    }
-
     fn effects_decl(n: u64) -> BudgetDeclaration {
         use std::num::NonZeroU64;
         BudgetDeclaration::effects(NonZeroU64::new(n).unwrap())

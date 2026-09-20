@@ -59,35 +59,6 @@ pub fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
     Ok(())
 }
 
-/// Download a URL to a local path. Streams to disk.
-pub fn download_to(url: &str, dest: &Path, cfg: &RegistryConfig) -> Result<()> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .context("build reqwest client")?;
-    let mut req = client.get(url);
-    if let Some(t) = &cfg.token {
-        req = req.bearer_auth(t);
-    }
-    let mut resp = req.send().with_context(|| format!("GET {url}"))?;
-    if !resp.status().is_success() {
-        return Err(anyhow!(
-            "download failed: HTTP {} for {}",
-            resp.status(),
-            url
-        ));
-    }
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("create_dir {}", parent.display()))?;
-    }
-    let mut out =
-        std::fs::File::create(dest).with_context(|| format!("create {}", dest.display()))?;
-    resp.copy_to(&mut out)
-        .with_context(|| format!("write {}", dest.display()))?;
-    Ok(())
-}
-
 /// Resolve a plugin name + version against a manifest into a download URL.
 pub fn resolve_url(manifest: &PluginManifest, version: &str) -> Result<(String, String)> {
     // 1. If version is "latest", pick the last entry (cogh registry convention).
@@ -121,18 +92,6 @@ pub fn extract_targz(archive: &Path, dest: &Path) -> Result<()> {
     tar.unpack(dest)
         .with_context(|| format!("unpack {} into {}", archive.display(), dest.display()))?;
     Ok(())
-}
-
-/// Write a plugin manifest to disk (the registry copy).
-pub fn write_manifest(manifest: &PluginManifest, home: &Path) -> Result<PathBuf> {
-    let plugin_dir = home.join("plugins").join(&manifest.name);
-    std::fs::create_dir_all(&plugin_dir)
-        .with_context(|| format!("create {}", plugin_dir.display()))?;
-    let yaml = serde_yaml::to_string(manifest).context("serialize manifest")?;
-    let target = plugin_dir.join("plugin.yaml");
-    std::fs::write(&target, yaml)
-        .with_context(|| format!("write manifest {}", target.display()))?;
-    Ok(target)
 }
 
 #[cfg(test)]

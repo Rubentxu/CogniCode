@@ -62,9 +62,6 @@ pub const DEFAULT_API_BASE: &str = "https://api.github.com";
 /// can still talk to the real GitHub API for release metadata.
 pub const ENV_API_BASE_URL: &str = "COGNICODE_API_BASE_URL";
 
-/// Default download base URL for release assets.
-pub const DEFAULT_DOWNLOAD_BASE: &str = RELEASE_DOWNLOAD_BASE;
-
 /// Network timeout for resolver HTTP calls.
 const HTTP_TIMEOUT: Duration = Duration::from_secs(60);
 

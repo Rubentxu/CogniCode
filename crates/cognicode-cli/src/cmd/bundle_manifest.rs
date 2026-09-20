@@ -377,20 +377,6 @@ impl BundleManifest {
     pub fn profile_names(&self) -> Vec<&str> {
         self.profiles.iter().map(|p| p.name.as_str()).collect()
     }
-
-    /// Convert into an install plan, defaulting to the first declared profile.
-    pub fn into_install_plan(self) -> InstallPlan {
-        let profile = self
-            .profiles
-            .first()
-            .map(|p| p.name.clone())
-            .unwrap_or_else(|| "core".to_string());
-        InstallPlan {
-            version: self.version,
-            profile,
-            components: self.components,
-        }
-    }
 }
 
 /// Install plan derived from a [`BundleManifest`].
