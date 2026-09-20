@@ -81,7 +81,7 @@ fn cogh_version_reports_semver_token() {
         .next()
         .unwrap_or("");
     assert!(
-        head.chars().next().map_or(false, |c| c.is_ascii_digit()) && head.contains('.'),
+        head.chars().next().is_some_and(|c| c.is_ascii_digit()) && head.contains('.'),
         "expected cogh <semver> on stdout, got: {line:?}"
     );
 }

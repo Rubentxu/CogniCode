@@ -213,13 +213,11 @@ pub fn probe_core_health(home_root: &Path) -> DoctorCheck {
 ///   - No tracker pin            -> Unavailable (no active runtime).
 ///   - Tracker + no version tree -> Unavailable here; probe_core_health
 ///     owns that FAIL (missing tree under an active pin).
-///   - Installed manifest declares `daemon-cli` and the shim exists
-///                               -> Pass.
+///   - Installed manifest declares `daemon-cli` and the shim exists -> Pass.
 ///   - Installed manifest declares `daemon-cli` but the shim is gone
-///                               -> Fail (expected-but-broken).
+///     -> Fail (expected-but-broken).
 ///   - Installed manifest has no `daemon-cli` component
-///                               -> Unavailable (profile does not
-///                                  include the daemon capability).
+///     -> Unavailable (profile does not include the daemon capability).
 ///
 /// No profile-name heuristics: the profile-filtered installed manifest
 /// is the single source of what this installation should contain.

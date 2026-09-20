@@ -1329,7 +1329,6 @@ components:
     #[test]
     fn merge_path_adds_nested_value() {
         let mut v = json!({});
-        let path = vec!["mcp".to_string(), "cognicode-mcp".to_string()];
         let entry = json!({"command": ["x"], "enabled": true, "type": "stdio"});
 
         // Mirror the merge logic
@@ -1532,7 +1531,10 @@ components:
         result.unwrap();
 
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
-        assert_eq!(v["provider"]["minimax"].is_object(), true);
+        assert!(
+            v["provider"]["minimax"].is_object(),
+            "expected provider.minimax to be an object: {v:?}"
+        );
         assert_eq!(v["mcp"]["cognicode-mcp"]["type"], "stdio");
         assert_eq!(v["mcp"]["cognicode-mcp"]["enabled"], true);
 
@@ -1840,9 +1842,8 @@ mcp_servers.existing.args = ['y']
         let steps = uninstall_opencode("0.95.0", "cognicode-mcp").unwrap();
         let mut targets = Vec::new();
         for step in steps {
-            match &step {
-                Step::RmRf { target } => targets.push(target.clone()),
-                _ => {}
+            if let Step::RmRf { target } = &step {
+                targets.push(target.clone());
             }
             step.execute().unwrap();
         }

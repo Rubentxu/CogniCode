@@ -172,12 +172,11 @@ mod tests {
 
     #[test]
     fn only_a_pure_derivation_may_commit_canonical_truth() {
-        for class in [BehaviorClass::PureDerivation] {
-            assert!(BehaviorAuthorityPolicy::allows(
-                class,
-                BehaviorEffectKind::CommitCanonicalFact
-            ));
-        }
+        let class = BehaviorClass::PureDerivation;
+        assert!(BehaviorAuthorityPolicy::allows(
+            class,
+            BehaviorEffectKind::CommitCanonicalFact
+        ));
         for class in [
             BehaviorClass::ReactiveAnalysis,
             BehaviorClass::AgentBehavior,

@@ -184,7 +184,7 @@ mod tests {
             // recorded, but not the subject of the fact.
             self.descriptors
                 .get(raw as usize - 1)
-                .map(|d| EvidenceResolution::Known(d))
+                .map(EvidenceResolution::Known)
                 .unwrap_or(EvidenceResolution::Unknown)
         }
 
