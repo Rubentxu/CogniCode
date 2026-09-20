@@ -83,9 +83,7 @@ impl ArchitectureGroundingBridge {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::architecture::{
-        ArchitectureConstraintId, LayerId, ViolationId,
-    };
+    use crate::domain::architecture::{ArchitectureConstraintId, LayerId, ViolationId};
     use crate::domain::findings::FindingKind;
     use crate::domain::findings::GroundingRef;
     use crate::domain::kernel_ids::FactId;

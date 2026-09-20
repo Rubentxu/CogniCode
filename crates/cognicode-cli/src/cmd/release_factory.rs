@@ -25,10 +25,10 @@ use crate::bundle_manifest::{
     BUNDLE_API_VERSION, BundleComponent, BundleManifest, ProfileDef, SkillBundleDecl,
 };
 use crate::release_contract::{
-    ArtifactKind, PUBLISHED_PROFILES, ProducedArtifact, ReleaseInventory,
-    artifact_filename, artifact_url, build_inventory, bundle_manifest_filename,
-    platform_token, published_components, published_skill_bundles, release_inventory_filename,
-    sha256_file, skill_bundle_by_id, skill_bundle_filename,
+    ArtifactKind, PUBLISHED_PROFILES, ProducedArtifact, ReleaseInventory, artifact_filename,
+    artifact_url, build_inventory, bundle_manifest_filename, platform_token, published_components,
+    published_skill_bundles, release_inventory_filename, sha256_file, skill_bundle_by_id,
+    skill_bundle_filename,
 };
 
 /// Outcome of a successful generation.
