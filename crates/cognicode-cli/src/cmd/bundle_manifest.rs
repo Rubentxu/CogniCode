@@ -379,17 +379,6 @@ impl BundleManifest {
     }
 }
 
-/// Install plan derived from a [`BundleManifest`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InstallPlan {
-    /// Bundle version (semver).
-    pub version: String,
-    /// Selected install profile name.
-    pub profile: String,
-    /// Components to install.
-    pub components: Vec<BundleComponent>,
-}
-
 /// Resolve the BinaryName of the DaemonCli component from the
 /// bundle manifest at the given path.
 ///

@@ -28,16 +28,10 @@ use crate::release_factory::generate_release;
 
 /// A generated, locally served release.
 pub struct LocalRelease {
-    /// Directory holding the payloads AND the generated manifest/inventory/sums.
-    pub dir: PathBuf,
     /// Path of the generated per-platform bundle manifest.
     pub manifest_path: PathBuf,
     /// Loopback base URL for the asset mirror (`COGNICODE_ASSET_BASE_URL`).
     pub base_url: String,
-    /// Directory holding the `releases.json` fixture the e86 `lifecycle_resolver`
-    /// reads when `--staging` is set. `None` until [`ResolverFixture::build`] is
-    /// called; legacy callers (`point_at`) never need it.
-    pub staging_dir: Option<PathBuf>,
     /// Root directory served by the loopback HTTP server. Exposed so test
     /// fixtures can place extra files (manifests, additional payloads) under
     /// the canonical `/v{version}/` URL prefix.
@@ -176,10 +170,8 @@ pub fn local_release(version: &str) -> Result<LocalRelease> {
     ));
 
     Ok(LocalRelease {
-        dir,
         manifest_path,
         base_url,
-        staging_dir: None,
         serve_root,
         _server: server,
         _tmp: tmp,

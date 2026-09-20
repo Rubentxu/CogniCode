@@ -17,23 +17,6 @@ use sha2::{Digest, Sha256};
 
 use crate::manifest::PluginManifest;
 
-pub const DEFAULT_REGISTRY: &str = "https://api.github.com";
-
-#[derive(Debug, Clone)]
-pub struct RegistryConfig {
-    pub base_url: String,
-    pub token: Option<String>,
-}
-
-impl Default for RegistryConfig {
-    fn default() -> Self {
-        Self {
-            base_url: DEFAULT_REGISTRY.to_string(),
-            token: std::env::var("GITHUB_TOKEN").ok(),
-        }
-    }
-}
-
 /// Verify the sha256 of a file against the expected hex string.
 pub fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
     let mut hasher = Sha256::new();

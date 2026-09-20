@@ -22,8 +22,6 @@ use crate::platform_adapter;
 /// A step in an integrate / uninstall recipe.
 #[derive(Debug, Clone)]
 pub enum Step {
-    /// Copy a file or directory tree to a target.
-    Copy { source: PathBuf, target: PathBuf },
     /// Recursively remove a directory.
     RmRf { target: PathBuf },
     /// Merge a JSON value into a config at a dot-path key.
@@ -42,17 +40,6 @@ impl Step {
     /// Execute a single integration step.
     pub fn execute(&self) -> Result<()> {
         match self {
-            Step::Copy { source, target } => {
-                if source.is_dir() {
-                    copy_dir_recursive(source, target)?;
-                } else {
-                    if let Some(parent) = target.parent() {
-                        std::fs::create_dir_all(parent)?;
-                    }
-                    std::fs::copy(source, target)?;
-                }
-                Ok(())
-            }
             Step::RmRf { target } => {
                 if target.exists() {
                     std::fs::remove_dir_all(target)?;

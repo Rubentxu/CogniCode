@@ -302,9 +302,8 @@ pub enum InstallerTransaction {
     },
     /// Transaction committed successfully; holds the manifest path.
     Committed { manifest_path: PathBuf },
-    /// Transaction failed at a given stage with an error.
+    /// Transaction failed with an error.
     Failed {
-        stage: InstallStage,
         error: InstallerError,
     },
 }
@@ -687,7 +686,7 @@ impl InstallerTransaction {
             } => {
                 // Execute stage actions before transitioning
                 if let Err(e) = advance_stage(stage, &mut journal, &manifest, home, profile) {
-                    return Ok(Self::Failed { stage, error: e });
+                    return Ok(Self::Failed { error: e });
                 }
 
                 let next_stage = match stage {
@@ -707,7 +706,6 @@ impl InstallerTransaction {
                     }
                     InstallStage::Failed => {
                         return Ok(Self::Failed {
-                            stage,
                             error: InstallerError::Unknown("Already failed".into()),
                         });
                     }
@@ -892,7 +890,6 @@ mod tests {
 
         // Failed
         let failed = InstallerTransaction::Failed {
-            stage: InstallStage::Downloading,
             error: InstallerError::Unknown("test".into()),
         };
         let result = failed.advance(&home, "core").unwrap();
