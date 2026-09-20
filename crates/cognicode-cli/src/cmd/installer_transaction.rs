@@ -288,7 +288,6 @@ pub enum InstallStage {
     InstallingShims,
     WritingManifest,
     Committed,
-    Failed,
 }
 
 /// Atomic install transaction.
@@ -471,7 +470,7 @@ fn advance_stage(
             // Manifest writing is handled by commit()
             Ok(())
         }
-        InstallStage::Committed | InstallStage::Failed => Ok(()),
+        InstallStage::Committed => Ok(()),
     }
 }
 
@@ -704,11 +703,6 @@ impl InstallerTransaction {
                             manifest,
                         });
                     }
-                    InstallStage::Failed => {
-                        return Ok(Self::Failed {
-                            error: InstallerError::Unknown("Already failed".into()),
-                        });
-                    }
                 };
                 Ok(Self::Running {
                     stage: next_stage,
@@ -836,7 +830,7 @@ mod tests {
             assert_eq!(s as i32, i as i32);
         }
         // Failed should be last
-        assert_eq!(InstallStage::Failed as i32, 7);
+        assert_eq!(InstallStage::Committed as i32, 6);
     }
 
     #[test]
