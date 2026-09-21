@@ -8,13 +8,13 @@
 ## Snapshot
 
 | Hito activo | **F2 — Correctitud reproducible (EN CURSO)** |
-| Última unidad cerrada | **F2.W8 — Errores silenciosos en `build_project_graph` (R3, capa `analysis_service`)** (commit próximo) |
-| Unidad activa siguiente | **F2.W9 — mtime preservado** (cambio de bytes con mtime conservado debe invalidar cache; prueba el camino real del binario, no el wrapper) |
+| Última unidad cerrada | **F2.W9 — mtime preservado** (commit `2a121aec`) |
+| Unidad activa siguiente | **F2.W10 — equivalencia y reproducibilidad** |
 | Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. **F2 (W1-W8) = IMPLEMENTED** (W7-W8 GREEN end-to-end con UAT real; sin UAT de C2 formal). **C0, C1 = NO CERTIFICADO** formalmente. **C2 = NO CERTIFICADO**. Pendiente RELEASED para todos los hitos. |
-| HEAD | pre-commit (último publicado `40308fc5`; HEAD con W8 sin publicar) |
-| Working tree | W8 staged para commit: `analysis_service.rs` + `handlers/mod.rs` + fixtures + docs |
+| HEAD | `2a121aec` (F2.W9) |
+| Working tree | limpio tras commit W9 + docs |
 | Bloqueos conocidos | **No hay bloqueos activos**. Los 6 fallos preexistentes del workspace (`cogh_uninstall`, `docs_extractor_corpus_regression`, 4× `manifest_upsert`) están catalogados en JOURNAL §15 con responsable y trigger; no bloquean gates de F2/C2. H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa, no bloqueante). |
-| Siguiente unidad ejecutable | **F2.W9** — mtime preservado. Plan en JOURNAL §16. |
+| Siguiente unidad ejecutable | **F2.W10** — equivalencia y reproducibilidad. Plan en JOURNAL §17. |
 | Política git | `docs/prf/` se versiona para **documentos del programa** (.md, fixtures) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
 | Gobierno del proyecto | **PRF es el único roadmap ejecutivo vigente** (decisión del operador 2026-09-21, `JOURNAL.md` entrada 13, `TRACEABILITY.md` §Correspondencia E31→PRF). E31 conserva su evidencia y aporta requisitos útiles que migran a gates PRF. |
 
@@ -652,9 +652,9 @@ archivos omitidos, y documentar el comportamiento en UAT.
 | F2.W6 — Desbloqueo binario | **CERRADO-SIN-ACCION** (verificación: `cargo install --path crates/cognicode-cli --bin cognicode` + `cargo run --bin cognicode` + `cognicode-mcp --cwd <dir>` funcionan; el conflicto de `crates/cognicode/` no bloquea operativamente) |
 | F2.W7 — Integrar F2.W5 en el camino real del binario | **IMPLEMENTED** (commit `5ce8eb1e`); `analysis_service::build_project_graph` ahora usa `GlobalSymbolIndex` con caller_file context; UAT real con `cognicode-mcp` muestra `relationships_found: 4` correcto |
 | **F2.W8 — Errores silenciosos en `build_project_graph` (R3, capa `analysis_service`)** | **IMPLEMENTED** (commit próximo); 4 fuentes de error silencioso corregidas; `AnalysisService::get_last_build_report()` enumera archivos omitidos con razón clasificada; handler MCP `build_graph` los surface como `skipped_files[]`; UAT real con `chmod 000` + UTF-8 inválido confirma enumeración |
-| F2.W9 — mtime preservado (cambio de bytes con mtime conservado invalida cache) | Pendiente |
+| F2.W9 — mtime preservado (cambio de bytes con mtime conservado invalida cache) | IMPLEMENTED (commit `2a121aec`, UAT real GREEN) |
 | F2.W10 — Equivalencia y reproducibilidad (full ↔ per_file con misma entrada determinista) | Pendiente |
-| **F2 (hito)** | EN CURSO. W1-W8 IMPLEMENTED. W9-W10 pendientes. **C2 = NO CERTIFICADO**. |
+| **F2 (hito)** | EN CURSO. W1-W9 IMPLEMENTED. W10 pendiente. **C2 = NO CERTIFICADO**. |
 
 ## Hito F1 (Estabilización) → CERRADO (referencia histórica)
 
@@ -777,6 +777,33 @@ mecanismos existentes pueden satisfacer el requisito") +
 reutilización de `BuildReport`/`SkippedFile`/`SkipReason` que
 ya existían en `infrastructure/graph/per_file_graph.rs` desde
 F2.W2.
+
+## Última unidad cerrada: F2.W9 (mtime preservado — invalidación de cache)
+
+**Defecto**: `file_cache` de `AnalysisService` claveaba entradas solo por
+mtime. Un editor que reescribe bytes preservando el mtime (común en
+refactors) obtenía símbolos obsoletos del cache.
+
+**Cambio**: la entrada de cache pasa a `(mtime, size, symbols,
+relationships)`; el cache-hit exige coincidencia de mtime Y size. Se
+actualizaron los tres caminos de construcción (`build_project_graph`,
+`build_graph_per_file` y el async), emitiendo `size` desde el walk.
+
+**Limitación documentada**: una reescritura con mismo tamaño Y mismo
+mtime sigue sin detectarse. Detectarla requeriría hash de contenido;
+queda como deuda explícita, no como silencio.
+
+**Tests**: `w9_mtime_tests::w9_content_change_with_preserved_mtime_
+invalidates_cache` RED→GREEN. Suite completa `2119 passed; 0 failed;
+27 ignored`. Clippy: solo los errores preexistentes catalogados (D34),
+0 nuevos.
+
+**UAT real** (binario `/var/home/rubentxu/cargo-targets/release/
+cognicode-mcp` rebuilt tras el cambio, corpus `/tmp/prf-uat-w9`):
+build #1 ve `original_function`; se reescribe `lib.rs` renombrando a
+`renamed_function` y restaurando el mtime vía `os.utime` (verificado:
+mtime preservado True); build #2 (proceso nuevo) muestra
+`renamed_function` y ya no muestra `original_function`.
 
 ## Notas sobre la bootstrap de PRF
 

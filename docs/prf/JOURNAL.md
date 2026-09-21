@@ -1556,3 +1556,37 @@ archivo conserva su mtime pero sus bytes cambian (escenario
 real de muchos editores). Plan completo en STATE.md
 "Próxima unidad a abrir".
 
+
+## Entrada 17 — 2026-09-21 — F2.W9 (mtime preservado — invalidación de cache)
+
+**Defecto caracterizado**: `file_cache` de `AnalysisService` claveaba
+entradas por `(mtime, symbols, relationships)` y el cache-hit solo
+comparaba mtime. Un editor que reescribe bytes preservando el mtime
+servía símbolos obsoletos. Confirmado con test RED antes de tocar
+producción (`w9_content_change_with_preserved_mtime_invalidates_cache`).
+
+**Cambio (commit `2a121aec`)**: la entrada de cache es ahora
+`(mtime, size, symbols, relationships)` y el cache-hit exige
+coincidencia de mtime Y size. Actualizados los tres caminos de
+construcción (`build_project_graph`, `build_graph_per_file`, async):
+el walk emite `size` junto a mtime y todos los destructure/insert
+usan la aridad de 5. Limitación documentada: misma talla + mismo
+mtime sigue indetectada (requeriría hash de contenido); queda como
+deuda explícita.
+
+**Evidencia**:
+- `cargo test -p cognicode-core --lib w9_mtime_tests` → GREEN (0.01s).
+- Suite completa: `2119 passed; 0 failed; 27 ignored` (sin regresiones).
+- Clippy: solo los errores preexistentes del workspace (D34), 0 nuevos.
+- UAT real (binario release rebuilt, corpus `/tmp/prf-uat-w9`):
+  build #1 ve `original_function`; reescritura de bytes con mtime
+  restaurado (`os.utime`, verificado True); build #2 en proceso nuevo
+  muestra `renamed_function` y ya no muestra `original_function`.
+
+**Lección de proceso reiterada**: `cargo fmt -p cognicode-core`
+reformateó 6 archivos ajenos (lección de W8); revertidos con
+`git checkout --` antes del commit. El diff final toca solo
+`analysis_service.rs`.
+
+**Próxima unidad**: F2.W10 — equivalencia y reproducibilidad
+(última de F2 antes del gate C2).
