@@ -1619,3 +1619,30 @@ real.
 
 **Estado del hito**: F2 W1-W10 = IMPLEMENTED. Siguiente paso:
 gate de certificación C2.
+
+## Entrada 19 — 2026-09-21 — C2: certificación consolidada del hito F2
+
+**Campaña ejecutada** contra el criterio de salida de ROADMAP §F2:
+
+1. **Corpus determinista + oráculo**: existe y está pineado
+   (`equivalence_full_vs_perfile` + inventario W3).
+2. **Defectos cerrados con tests de regresión**: R2 (W1),
+   H-R4-1 (W4), H-R4-2 (W5/W7), R3 (W8), mtime (W9), equivalencia
+   de aristas + reproducibilidad (W10). Todos RED→GREEN.
+3. **UAT con binario real**: UAT-F2-W7, UAT-F2-W8-001,
+   UAT-F2-W9-001, todas con `cognicode-mcp` release.
+
+**Evidencia de suite**: `cargo test -p cognicode-core --lib` →
+`2122 passed; 0 failed; 27 ignored`. Workspace completo: 6 fallos,
+todos preexistentes y catalogados en §15 (`cogh_uninstall`,
+4× `manifest_upsert`, `cogh update` rate-limit H10). Ninguno en
+crates tocados por F2.
+
+**Certificado producido**: `PRF-C2` en
+`evidence/CERTIFICATES.md`, con estados por unidad, deuda honesta
+documentada y RELEASED marcado explícitamente como pendiente del
+gate del operador (push + tag).
+
+**F2 = ACCEPTED.** El programa PRF queda sin unidades activas en
+F2; la siguiente fase (F3 o RELEASED) requiere directiva del
+operador.
