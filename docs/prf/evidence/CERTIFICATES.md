@@ -804,3 +804,39 @@ equivalencia de aristas y reproducibilidad (W10).
 - [x] **INTEGRATED**: binario real `cognicode-mcp` ejecuta los caminos corregidos (UAT W7/W8/W9).
 - [x] **ACCEPTED**: UAT reales ejecutadas y registradas en `UAT.md`.
 - [ ] **RELEASED**: pendiente de consolidación con roadmap principal y tag. Requiere decisión del operador (gate de push/tag).
+
+---
+
+## PRF-F3 — Certificación del hito F3 (Vertical de análisis compartida CLI + MCP)
+
+| Campo | Valor |
+|---|---|
+| ID | `PRF-F3` |
+| Hito | F3 — Vertical de análisis compartida |
+| HEAD al cierre | `67363bfc` (código) + docs |
+| Operador | jcode-orchestrator |
+| Fecha | 2026-09-21 |
+
+### Criterio de salida
+
+Para cada vertical de F2 (`graph per-file`, `graph full`,
+`graph hierarchy`): un UAT en CLI y un UAT en MCP con el mismo
+resultado observable sobre el mismo corpus; tools MCP delegan al
+puerto de análisis sin lógica de cálculo propia.
+
+### Evidencia
+
+| Evidencia | Ubicación / comando |
+|---|---|
+| UAT de equivalencia | `UAT.md` §UAT-F3-001 (binarios reales, corpus `/tmp/prf-uat-f3`) |
+| Puerto compartido per-file | `PerFileStrategy::build_local_graph` en ambos lados (inspección `interface/cli/commands.rs` + `handlers/mod.rs`) |
+| Puerto compartido full | `FullGraphStrategy` (CLI) / `AnalysisService::build_project_graph` + `GlobalSymbolIndex` (MCP), mismo resolver F2.W5/W7 |
+| Deuda registrada | H-F3-1 (`find_usages` con walk+parser inline) en TRACEABILITY |
+
+### Estados
+
+- [x] **SPECIFIED**: ROADMAP §F3.
+- [x] **IMPLEMENTED**: ambos lados ya consumen los puertos (sin código nuevo necesario; verificado por inspección + UAT).
+- [x] **INTEGRATED**: binarios reales `cognicode` + `cognicode-mcp`; JSON-RPC capturado y stdout comparado.
+- [x] **ACCEPTED**: UAT-F3-001 PASS en las 3 verticals.
+- [ ] **RELEASED**: pendiente (gate del operador).
