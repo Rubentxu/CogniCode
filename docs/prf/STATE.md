@@ -8,13 +8,13 @@
 ## Snapshot
 
 | Hito activo | **F2 — Correctitud reproducible (EN CURSO)** |
-| Última unidad cerrada | **F2.W9 — mtime preservado** (commit `2a121aec`) |
-| Unidad activa siguiente | **F2.W10 — equivalencia y reproducibilidad** |
+| Última unidad cerrada | **F2.W10 — equivalencia y reproducibilidad** (commit `dc189d54`) |
+| Unidad activa siguiente | **Gate C2** (todas las unidades de F2 IMPLEMENTED) |
 | Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. **F2 (W1-W8) = IMPLEMENTED** (W7-W8 GREEN end-to-end con UAT real; sin UAT de C2 formal). **C0, C1 = NO CERTIFICADO** formalmente. **C2 = NO CERTIFICADO**. Pendiente RELEASED para todos los hitos. |
 | HEAD | `2a121aec` (F2.W9) |
 | Working tree | limpio tras commit W9 + docs |
 | Bloqueos conocidos | **No hay bloqueos activos**. Los 6 fallos preexistentes del workspace (`cogh_uninstall`, `docs_extractor_corpus_regression`, 4× `manifest_upsert`) están catalogados en JOURNAL §15 con responsable y trigger; no bloquean gates de F2/C2. H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa, no bloqueante). |
-| Siguiente unidad ejecutable | **F2.W10** — equivalencia y reproducibilidad. Plan en JOURNAL §17. |
+| Siguiente unidad ejecutable | **C2** — certificación de F2. Ver `CERTIFICATION.md`. |
 | Política git | `docs/prf/` se versiona para **documentos del programa** (.md, fixtures) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
 | Gobierno del proyecto | **PRF es el único roadmap ejecutivo vigente** (decisión del operador 2026-09-21, `JOURNAL.md` entrada 13, `TRACEABILITY.md` §Correspondencia E31→PRF). E31 conserva su evidencia y aporta requisitos útiles que migran a gates PRF. |
 
@@ -653,8 +653,8 @@ archivos omitidos, y documentar el comportamiento en UAT.
 | F2.W7 — Integrar F2.W5 en el camino real del binario | **IMPLEMENTED** (commit `5ce8eb1e`); `analysis_service::build_project_graph` ahora usa `GlobalSymbolIndex` con caller_file context; UAT real con `cognicode-mcp` muestra `relationships_found: 4` correcto |
 | **F2.W8 — Errores silenciosos en `build_project_graph` (R3, capa `analysis_service`)** | **IMPLEMENTED** (commit próximo); 4 fuentes de error silencioso corregidas; `AnalysisService::get_last_build_report()` enumera archivos omitidos con razón clasificada; handler MCP `build_graph` los surface como `skipped_files[]`; UAT real con `chmod 000` + UTF-8 inválido confirma enumeración |
 | F2.W9 — mtime preservado (cambio de bytes con mtime conservado invalida cache) | IMPLEMENTED (commit `2a121aec`, UAT real GREEN) |
-| F2.W10 — Equivalencia y reproducibilidad (full ↔ per_file con misma entrada determinista) | Pendiente |
-| **F2 (hito)** | EN CURSO. W1-W9 IMPLEMENTED. W10 pendiente. **C2 = NO CERTIFICADO**. |
+| F2.W10 — Equivalencia y reproducibilidad (full ↔ per_file con misma entrada determinista) | IMPLEMENTED (commit `dc189d54`; 3 tests de pineo, sin cambio de producción) |
+| **F2 (hito)** | EN CURSO. W1-W10 IMPLEMENTED. Pendiente: gate C2. **C2 = NO CERTIFICADO**. |
 
 ## Hito F1 (Estabilización) → CERRADO (referencia histórica)
 
@@ -778,7 +778,31 @@ reutilización de `BuildReport`/`SkippedFile`/`SkipReason` que
 ya existían en `infrastructure/graph/per_file_graph.rs` desde
 F2.W2.
 
-## Última unidad cerrada: F2.W9 (mtime preservado — invalidación de cache)
+## Última unidad cerrada: F2.W10 (equivalencia de aristas y reproducibilidad)
+
+F2.W3 pineó equivalencia de símbolos cuando ambas estrategias
+devolvían 0 aristas (0=0 trivial). Desde F2.W5/W7 las aristas
+cross-file existen y había que pinear el nuevo estado.
+
+**Tests (3, commit `dc189d54`)** sobre el corpus determinista de
+F2.W3 (`docs/prf/fixtures/equivalence_full_vs_perfile/`):
+1. `w10_full_and_per_file_agree_on_edge_set` — full y per_file
+   producen el mismo conjunto (caller fqn, callee fqn). Verificado
+   con probe que el conjunto NO es vacío ni el test trivial: hay
+   exactamente 1 arista (`lib.rs:caller:16 → nested/mod.rs:callee:11`)
+   idéntica en ambas estrategias.
+2. `w10_edge_set_is_non_empty_on_cross_file_corpus` — una regresión
+   a 0 aristas reabriría H-R4-1.
+3. `w10_repeated_builds_are_reproducible` — dos builds consecutivos
+   por estrategia producen símbolos y aristas idénticas.
+
+**Sin cambio de código de producción**: es caracterización pineada
+(comportamiento actual correcto tras W5/W7).
+
+**Evidencia**: `cargo test -p cognicode-core --lib` →
+`2122 passed; 0 failed; 27 ignored`. Clippy sin errores nuevos.
+
+## Cierre previo: F2.W9 (mtime preservado — invalidación de cache)
 
 **Defecto**: `file_cache` de `AnalysisService` claveaba entradas solo por
 mtime. Un editor que reescribe bytes preservando el mtime (común en

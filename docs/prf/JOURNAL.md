@@ -1590,3 +1590,32 @@ reformateó 6 archivos ajenos (lección de W8); revertidos con
 
 **Próxima unidad**: F2.W10 — equivalencia y reproducibilidad
 (última de F2 antes del gate C2).
+
+## Entrada 18 — 2026-09-21 — F2.W10 (equivalencia de aristas y reproducibilidad)
+
+**Contexto**: F2.W3 pineó la equivalencia `full` ↔ `per_file` de
+símbolos cuando ambas devolvían 0 aristas. Tras W5/W7 las aristas
+cross-file existen; W10 pinea el estado actual sobre el corpus
+determinista de F2.W3.
+
+**Tests (commit `dc189d54`)**: `w10_equivalence_tests` en
+`strategy.rs`:
+- `w10_full_and_per_file_agree_on_edge_set`: mismo conjunto de
+  aristas (caller fqn → callee fqn). Probe de sanidad confirmó que
+  el conjunto tiene exactamente 1 arista resuelta
+  (`lib.rs:caller:16 → nested/mod.rs:callee:11`) en ambas: el test
+  no pasa trivialmente.
+- `w10_edge_set_is_non_empty_on_cross_file_corpus`: pin anti
+  regresión de H-R4-1.
+- `w10_repeated_builds_are_reproducible`: dos builds consecutivos
+  por estrategia → símbolos y aristas idénticas.
+
+**Política respetada**: sin cambio de código de producción;
+caracterización pineada. Sin mock: estrategias reales sobre corpus
+real.
+
+**Evidencia**: suite completa `2122 passed; 0 failed; 27 ignored`
+(+3, sin regresiones). Clippy sin errores nuevos.
+
+**Estado del hito**: F2 W1-W10 = IMPLEMENTED. Siguiente paso:
+gate de certificación C2.
