@@ -1,0 +1,49 @@
+# SDDK agent permission registry — default-deny.
+# Agents absent from this file are denied all phases and capabilities.
+# SDDK011 requires every agents/*.md file to be declared here.
+#
+# Minimal registry for the v0.97.2 clippy-hygiene PATCH release.
+# Generated from /home/rubentxu/.local/share/sddk/framework/agents/ enumerated
+# under the framework currently resolved by `sddk version` (1.169.93).
+# Only agents whose `permission: allow` is required by the release path are
+# granted any capability; all others are listed explicitly with empty grants
+# so the policy remains closed-by-default.
+
+agents:
+  # ─── release path ──────────────────────────────────────────────
+  sddk-release:
+    phases: [release]
+    capabilities: [release, git.inspect, git.push, git.tag]
+  # ─── closed defaults (explicit deny) ───────────────────────────
+  sddk-archive:
+    phases: []
+    capabilities: []
+  sddk-cycle-resume:
+    phases: []
+    capabilities: []
+  sddk-debt-verify:
+    phases: []
+    capabilities: []
+  sddk-design:
+    phases: []
+    capabilities: []
+  sddk-explore:
+    phases: []
+    capabilities: []
+  sddk-propose:
+    phases: []
+    capabilities: []
+  sddk-spec:
+    phases: []
+    capabilities: []
+  sddk-tasks:
+    phases: []
+    capabilities: []
+  sddk-verify:
+    phases: []
+    capabilities: []
+
+phases: {}
+capabilities: {}
+skills: {}
+prompts: {}
