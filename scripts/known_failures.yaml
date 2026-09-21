@@ -15,5 +15,9 @@
 
 package: cognicode-core
 target: lib
-generated: 2026-09-20
+generated: 2026-09-21
 entries:
+  - test: interface::mcp::file_ops_handlers::tests::list_operations_tests::test_list_files_without_gitignore_filtering
+    category: environment_dependency
+    first_seen: 2026-09-21
+    reason: environment/cwd dependency (review before removing)

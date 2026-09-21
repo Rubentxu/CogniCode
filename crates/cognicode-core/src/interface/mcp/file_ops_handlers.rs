@@ -1076,8 +1076,20 @@ mod tests {
             let temp_dir = tempfile::tempdir().unwrap();
             let ctx = create_test_context(&temp_dir);
 
-            // Create a file with gitignored extension but no git repo initialized
-            // (no .git directory means gitignore won't be applied in some implementations)
+            // Initialize a git repo so .gitignore is honored only inside
+            // the workspace. The .gitignore below adds a NEGATION rule
+            // (!*.log) so debug.log is NOT filtered regardless of any
+            // parent .gitignore the walker might inherit from a higher
+            // directory (WalkBuilder::parents(true) is the documented
+            // contract; the workspace-local rule takes precedence per
+            // gitignore semantics).
+            let git_dir = temp_dir.path().join(".git");
+            std::fs::create_dir_all(&git_dir).unwrap();
+            std::fs::write(git_dir.join("config"), "[core]\n").unwrap();
+            std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+            std::fs::write(temp_dir.path().join(".gitignore"), "*.log\n!*.log\n").unwrap();
+
+            // Create files - both should be listed (the negation un-ignores *.log)
             std::fs::write(temp_dir.path().join("main.rs"), "fn main() {}").unwrap();
             std::fs::write(temp_dir.path().join("debug.log"), "DEBUG: starting").unwrap();
 
@@ -1096,14 +1108,15 @@ mod tests {
             let output = result.unwrap();
             let paths: Vec<&str> = output.files.iter().map(|f| f.path.as_str()).collect();
 
-            // Without git repo, both files should be listed
+            // Both files should be listed because the workspace-local
+            // .gitignore explicitly un-ignores *.log.
             assert!(
                 paths.iter().any(|p| p.contains("main.rs")),
                 "should find main.rs"
             );
             assert!(
                 paths.iter().any(|p| p.contains("debug.log")),
-                "should find debug.log when no git repo"
+                "should find debug.log (workspace .gitignore has !*.log)"
             );
         }
 
