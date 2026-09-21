@@ -353,16 +353,13 @@ impl PerFileStrategy {
         &self,
         project_dir: &Path,
     ) -> crate::infrastructure::graph::per_file_graph::BuildReport {
-        use crate::infrastructure::graph::per_file_graph::{SkippedFile, SkipReason};
+        use crate::infrastructure::graph::per_file_graph::{SkipReason, SkippedFile};
         use walkdir::WalkDir;
 
         let mut paths: Vec<std::path::PathBuf> = Vec::new();
         let mut walk_skipped: Vec<SkippedFile> = Vec::new();
 
-        for entry in WalkDir::new(project_dir)
-            .follow_links(true)
-            .into_iter()
-        {
+        for entry in WalkDir::new(project_dir).follow_links(true).into_iter() {
             let entry = match entry {
                 Ok(e) => e,
                 Err(err) => {
@@ -590,12 +587,11 @@ impl GraphStrategy for FullGraphStrategy {
         // NOT invent an edge against a random homonym; we drop it.
         for (path_buf, _file_path, _symbols, relationships) in &per_file_data {
             for (caller, callee_name) in relationships {
-                let caller_id =
-                    crate::domain::aggregates::call_graph::SymbolId::new(
-                        caller.fully_qualified_name(),
-                    );
-                let callee_id = global_index
-                    .resolve(&callee_name.to_lowercase(), Some(path_buf.as_path()));
+                let caller_id = crate::domain::aggregates::call_graph::SymbolId::new(
+                    caller.fully_qualified_name(),
+                );
+                let callee_id =
+                    global_index.resolve(&callee_name.to_lowercase(), Some(path_buf.as_path()));
                 if let Some(callee_id) = callee_id {
                     store
                         .add_dependency(
@@ -846,9 +842,7 @@ mod w3_equivalence_tests {
 
         match &report.status {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped } => {
-                let broken = skipped.iter().find(|s| {
-                    s.path.ends_with("broken.rs")
-                });
+                let broken = skipped.iter().find(|s| s.path.ends_with("broken.rs"));
                 assert!(
                     broken.is_some(),
                     "expected broken.rs in SkippedFile list, got: {:?}",
@@ -856,7 +850,10 @@ mod w3_equivalence_tests {
                 );
                 let reason = &broken.unwrap().reason;
                 assert!(
-                    matches!(reason, crate::infrastructure::graph::per_file_graph::SkipReason::Parse(_)),
+                    matches!(
+                        reason,
+                        crate::infrastructure::graph::per_file_graph::SkipReason::Parse(_)
+                    ),
                     "expected SkipReason::Parse for broken.rs, got: {:?}",
                     reason
                 );
@@ -1050,10 +1047,7 @@ mod w3_equivalence_tests {
             // No call site references `compute` in the corpus, so
             // there must be NO edges whose callee is any compute_id.
             for c in &compute_ids {
-                let spurious = g
-                    .all_dependencies()
-                    .filter(|(_, t, _)| *t == c)
-                    .count();
+                let spurious = g.all_dependencies().filter(|(_, t, _)| *t == c).count();
                 assert_eq!(
                     spurious, 0,
                     "[{}] spurious edges to compute_id={:?}",
@@ -1061,5 +1055,128 @@ mod w3_equivalence_tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod w10_equivalence_tests {
+    //! PRF F2.W10 — Equivalencia de aristas y reproducibilidad.
+    //!
+    //! F2.W3 pineo equivalencia de símbolos cuando edges eran 0=0.
+    //! Desde F2.W5/W7 las aristas cross-file existen; aquí se pinea
+    //! que `FullGraphStrategy` y `PerFileStrategy` producen el mismo
+    //! conjunto de aristas (caller FQN → callee FQN) sobre el corpus,
+    //! y que dos builds consecutivos son reproducibles.
+
+    use super::*;
+    use crate::domain::aggregates::call_graph::CallGraph;
+    use crate::infrastructure::graph::GraphStrategy;
+    use std::collections::HashSet;
+    use std::path::PathBuf;
+
+    fn corpus() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("docs/prf/fixtures/equivalence_full_vs_perfile")
+    }
+
+    fn symbol_fqns(graph: &CallGraph) -> HashSet<String> {
+        graph
+            .symbols()
+            .map(|s| s.fully_qualified_name().to_string())
+            .collect()
+    }
+
+    /// Edge set as (caller_fqn, callee_fqn) pairs. Callee SymbolIds
+    /// only appear in the set if resolvable to a symbol in the graph;
+    /// otherwise the edge maps to "<unresolved>".
+    fn edge_set(graph: &CallGraph) -> HashSet<(String, String)> {
+        let id_to_fqn: std::collections::HashMap<&str, &str> = graph
+            .symbols()
+            .map(|s| (s.fully_qualified_name(), s.fully_qualified_name()))
+            .collect();
+        let id_lookup = |id: &crate::domain::aggregates::call_graph::SymbolId| -> String {
+            let f = id.as_str();
+            if id_to_fqn.contains_key(f) {
+                f.to_string()
+            } else {
+                format!("<unresolved:{f}>")
+            }
+        };
+        graph
+            .edges_with_metadata()
+            .map(|(src, dst, _, _, _)| (id_lookup(&src), id_lookup(&dst)))
+            .collect()
+    }
+
+    /// W10.1: full y per_file producen el MISMO conjunto de aristas
+    /// (caller fqn, callee fqn) sobre el corpus determinista.
+    #[test]
+    fn w10_full_and_per_file_agree_on_edge_set() {
+        let p = corpus();
+        let full = FullGraphStrategy::new().build_full_graph(&p).unwrap();
+        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
+
+        let full_edges = edge_set(&full);
+        let per_edges = edge_set(&per);
+
+        let only_full: Vec<_> = full_edges.difference(&per_edges).collect();
+        let only_per: Vec<_> = per_edges.difference(&full_edges).collect();
+        assert!(
+            only_full.is_empty() && only_per.is_empty(),
+            "edge sets diverge. full-only: {only_full:?}\nper-only: {only_per:?}"
+        );
+    }
+
+    /// W10.2: el conjunto de aristas es NO vacío. El corpus tiene
+    /// `caller → crate::nested::callee()`; desde F2.W5/W7 debe haber
+    /// al menos una arista resuelta. Si esto vuelve a 0, H-R4-1
+    /// habría regresado.
+    #[test]
+    fn w10_edge_set_is_non_empty_on_cross_file_corpus() {
+        let p = corpus();
+        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
+        let per_edges = edge_set(&per);
+        assert!(
+            !per_edges.is_empty(),
+            "expected at least one resolved call edge on the corpus; got 0 (H-R4-1 regression?)"
+        );
+    }
+
+    /// W10.3: reproducibilidad — dos builds consecutivos con la
+    /// misma entrada producen exactamente el mismo grafo (símbolos
+    /// y aristas), sin importar orden del walk ni estado de cache.
+    #[test]
+    fn w10_repeated_builds_are_reproducible() {
+        let p = corpus();
+
+        let a = FullGraphStrategy::new().build_full_graph(&p).unwrap();
+        let b = FullGraphStrategy::new().build_full_graph(&p).unwrap();
+        assert_eq!(
+            symbol_fqns(&a),
+            symbol_fqns(&b),
+            "full: symbol sets differ across runs"
+        );
+        assert_eq!(
+            edge_set(&a),
+            edge_set(&b),
+            "full: edge sets differ across runs"
+        );
+
+        let c = PerFileStrategy::new().build_full_graph(&p).unwrap();
+        let d = PerFileStrategy::new().build_full_graph(&p).unwrap();
+        assert_eq!(
+            symbol_fqns(&c),
+            symbol_fqns(&d),
+            "per_file: symbol sets differ across runs"
+        );
+        assert_eq!(
+            edge_set(&c),
+            edge_set(&d),
+            "per_file: edge sets differ across runs"
+        );
     }
 }
