@@ -10,7 +10,7 @@ use crate::infrastructure::graph::lightweight_index::LightweightIndex;
 use crate::infrastructure::graph::on_demand_graph::{
     CallHierarchyResult, OnDemandGraphBuilder, TraversalDirection,
 };
-use crate::infrastructure::graph::per_file_graph::PerFileGraphCache;
+use crate::infrastructure::graph::per_file_graph::{GlobalSymbolIndex, PerFileGraphCache};
 use crate::infrastructure::graph::symbol_index::SymbolIndex;
 use crate::infrastructure::parser::TreeSitterParser;
 use std::path::Path;
@@ -510,12 +510,23 @@ impl GraphStrategy for FullGraphStrategy {
 
     fn build_full_graph(&self, project_dir: &Path) -> std::io::Result<CallGraph> {
         let mut store = crate::infrastructure::graph::PetGraphStore::new();
-        let mut name_to_symbol_id: std::collections::HashMap<
-            String,
-            crate::domain::aggregates::call_graph::SymbolId,
-        > = std::collections::HashMap::new();
 
         use walkdir::WalkDir;
+
+        // PRF F2.W5 — H-R4-2: pre-walk to build the global symbol
+        // index. We parse each source file once just for its symbols;
+        // edges are resolved in a second pass using `GlobalSymbolIndex`
+        // so cross-file calls reach the right `SymbolId`. The legacy
+        // implementation had a per-file `name → SymbolId` map and
+        // dropped every cross-file edge.
+        let mut files: Vec<std::path::PathBuf> = Vec::new();
+        let mut global_index = GlobalSymbolIndex::new();
+        let mut per_file_data: Vec<(
+            std::path::PathBuf,
+            String,
+            Vec<crate::domain::aggregates::symbol::Symbol>,
+            Vec<(crate::domain::aggregates::symbol::Symbol, String)>,
+        )> = Vec::new();
 
         for entry in WalkDir::new(project_dir)
             .follow_links(true)
@@ -526,50 +537,66 @@ impl GraphStrategy for FullGraphStrategy {
             if !path.is_file() {
                 continue;
             }
-
             let language =
                 match crate::infrastructure::parser::Language::from_extension(path.extension()) {
                     Some(lang) => lang,
                     None => continue,
                 };
-
             let source = match std::fs::read_to_string(path) {
                 Ok(s) => s,
                 Err(_) => continue,
             };
-
             let file_path = path.to_string_lossy().to_string();
-
             let parser = match TreeSitterParser::new(language) {
                 Ok(p) => p,
                 Err(_) => continue,
             };
-
             let symbols = match parser.find_all_symbols_with_path(&source, &file_path) {
                 Ok(syms) => syms,
                 Err(_) => continue,
             };
-
-            let relationships = match parser.find_call_relationships(&source, &file_path) {
-                Ok(rel) => rel,
+            for symbol in &symbols {
+                let sid = crate::domain::aggregates::call_graph::SymbolId::new(
+                    symbol.fully_qualified_name(),
+                );
+                global_index.insert(sid, path.to_path_buf(), symbol.name());
+            }
+            files.push(path.to_path_buf());
+            let rels = match parser.find_call_relationships(&source, &file_path) {
+                Ok(r) => r,
                 Err(_) => continue,
             };
+            per_file_data.push((path.to_path_buf(), file_path, symbols, rels));
+        }
 
+        // Add every symbol to the petgraph store and remember the
+        // mapping `SymbolId → NodeIndex` for edge insertion below.
+        let mut id_to_node: std::collections::HashMap<
+            crate::domain::aggregates::call_graph::SymbolId,
+            petgraph::graph::NodeIndex,
+        > = std::collections::HashMap::new();
+        for (_, _, symbols, _) in &per_file_data {
             for symbol in symbols {
                 let symbol_id = crate::domain::aggregates::call_graph::SymbolId::new(
                     symbol.fully_qualified_name(),
                 );
-                store.add_symbol_with_location(&symbol_id, symbol.clone());
-                name_to_symbol_id.insert(symbol.name().to_lowercase(), symbol_id);
+                let n = store.add_symbol_with_location(&symbol_id, symbol.clone());
+                id_to_node.insert(symbol_id, n);
             }
+        }
 
+        // Resolve edges through `GlobalSymbolIndex`. When the global
+        // lookup returns `None` (no candidate, or ambiguous), we DO
+        // NOT invent an edge against a random homonym; we drop it.
+        for (path_buf, _file_path, _symbols, relationships) in &per_file_data {
             for (caller, callee_name) in relationships {
-                let caller_id = crate::domain::aggregates::call_graph::SymbolId::new(
-                    caller.fully_qualified_name(),
-                );
-
-                if let Some(callee_id) = name_to_symbol_id.get(&callee_name.to_lowercase()).cloned()
-                {
+                let caller_id =
+                    crate::domain::aggregates::call_graph::SymbolId::new(
+                        caller.fully_qualified_name(),
+                    );
+                let callee_id = global_index
+                    .resolve(&callee_name.to_lowercase(), Some(path_buf.as_path()));
+                if let Some(callee_id) = callee_id {
                     store
                         .add_dependency(
                             &caller_id,
@@ -865,5 +892,174 @@ mod w3_equivalence_tests {
             !has_oops,
             "FullGraphStrategy must NOT surface symbols from broken.rs              (it silently ignores parse errors today).              If this assertion fires, decide whether full now has R3              coverage — if yes, update this test and the F2.W4 plan."
         );
+    }
+
+    // =========================================================================
+    // PRF F2.W5 — H-R4-2 (lookup global `name → SymbolId`).
+    //
+    // These tests characterise the behaviour that the resolver MUST honour
+    // for cross-file call edges (and MUST NOT invent edges when the callee
+    // is ambiguous):
+    //
+    //   1. Cross-file call (S6 of F2.W3 corpus) reaches the right SymbolId
+    //      even when the callee name appears in multiple files.
+    //   2. Intra-file duplicate name (S3 — `dup.rs::same_name` x2) does
+    //      NOT produce cross-file edges when the caller is in a different
+    //      file.
+    //   3. When the callee name is genuinely ambiguous (homonym across
+    //      files with no desambiguation rule that applies), the resolver
+    //      drops the edge instead of inventing one.
+    //   4. Both `full` and `per_file` agree on the resulting edge set.
+    //
+    // These tests are RED today (the lookup in `FullGraphStrategy::build_full_graph`
+    // and `PerFileStrategy::build_file_graph` is per-file and the per-file
+    // map silently drops cross-file edges or, when the same name appears
+    // in multiple files, picks the LAST inserted — which can be wrong).
+    // =========================================================================
+
+    use crate::domain::aggregates::call_graph::SymbolId;
+    use crate::domain::value_objects::DependencyType;
+
+    fn count_edges(
+        graph: &crate::domain::aggregates::call_graph::CallGraph,
+        caller: &SymbolId,
+        callee: &SymbolId,
+        kind: DependencyType,
+    ) -> usize {
+        graph
+            .all_dependencies()
+            .filter(|(c, t, k)| *c == caller && *t == callee && **k == kind)
+            .count()
+    }
+
+    /// S6 (PRF F2.W5): the cross-file call `caller → callee` reaches
+    /// the nested `callee` (NOT any other homonym). This is the basic
+    /// guarantee that the global lookup must satisfy.
+    #[test]
+    fn w5_cross_file_call_edge_resolves_to_correct_symbol() {
+        let p = corpus();
+        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
+
+        let caller_id = per
+            .symbols()
+            .find(|s| s.name() == "caller")
+            .map(|s| SymbolId::new(s.fully_qualified_name()))
+            .expect("caller must be in the graph");
+        let callee_id = per
+            .symbols()
+            .find(|s| s.name() == "callee")
+            .map(|s| SymbolId::new(s.fully_qualified_name()))
+            .expect("callee must be in the graph");
+
+        let n = count_edges(&per, &caller_id, &callee_id, DependencyType::Calls);
+        assert!(
+            n >= 1,
+            "expected at least one `caller -> callee` edge in the per_file graph; got {} total edges",
+            per.edge_count()
+        );
+    }
+
+    #[test]
+    fn w5_cross_file_call_edge_also_present_in_full() {
+        let p = corpus();
+        let full = FullGraphStrategy::new().build_full_graph(&p).unwrap();
+
+        let caller_id = full
+            .symbols()
+            .find(|s| s.name() == "caller")
+            .map(|s| SymbolId::new(s.fully_qualified_name()))
+            .expect("caller must be in the graph");
+        let callee_id = full
+            .symbols()
+            .find(|s| s.name() == "callee")
+            .map(|s| SymbolId::new(s.fully_qualified_name()))
+            .expect("callee must be in the graph");
+
+        let n = count_edges(&full, &caller_id, &callee_id, DependencyType::Calls);
+        assert!(
+            n >= 1,
+            "expected at least one `caller -> callee` edge in the full graph; got {} total edges",
+            full.edge_count()
+        );
+    }
+
+    /// S3 (PRF F2.W5): intra-file duplicate (`dup.rs::same_name` x2)
+    /// does NOT spawn cross-file edges. The resolver MUST treat the
+    /// two `same_name` instances as distinct (different FQN / different
+    /// module path) and not invent edges to them from `caller` (which
+    /// is in `lib.rs`).
+    #[test]
+    fn w5_intra_file_duplicate_does_not_invent_cross_file_edges() {
+        let p = corpus();
+        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
+
+        let caller_id = per
+            .symbols()
+            .find(|s| s.name() == "caller" && s.location().file().ends_with("lib.rs"))
+            .map(|s| SymbolId::new(s.fully_qualified_name()))
+            .expect("caller in lib.rs must be in the graph");
+
+        let same_name_ids: Vec<_> = per
+            .symbols()
+            .filter(|s| s.name() == "same_name")
+            .map(|s| SymbolId::new(s.fully_qualified_name()))
+            .collect();
+        assert_eq!(
+            same_name_ids.len(),
+            2,
+            "expected exactly 2 `same_name` instances (dup.rs top + inner); got {}",
+            same_name_ids.len()
+        );
+
+        for sn in &same_name_ids {
+            let fake = count_edges(&per, &caller_id, sn, DependencyType::Calls);
+            assert!(
+                fake == 0,
+                "resolver must NOT invent edge caller -> {:?} (homonym in another file); got {} edges",
+                sn,
+                fake
+            );
+        }
+    }
+
+    /// S9 (PRF F2.W5): same name across files (overload semantics).
+    /// `compute` exists in `lib.rs` and in `nested/mod.rs` with
+    /// different signatures. Neither strategy should pretend it
+    /// resolved the call; the corpus does NOT include a call to
+    /// `compute`, so no edges are expected.
+    #[test]
+    fn w5_compute_overload_no_call_site_yields_no_invented_edges() {
+        let p = corpus();
+        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
+        let full = FullGraphStrategy::new().build_full_graph(&p).unwrap();
+
+        for (label, g) in [("per_file", &per), ("full", &full)] {
+            let compute_ids: Vec<_> = g
+                .symbols()
+                .filter(|s| s.name() == "compute")
+                .map(|s| SymbolId::new(s.fully_qualified_name()))
+                .collect();
+            assert_eq!(
+                compute_ids.len(),
+                2,
+                "[{}] expected exactly 2 `compute` instances (lib + nested); got {}",
+                label,
+                compute_ids.len()
+            );
+
+            // No call site references `compute` in the corpus, so
+            // there must be NO edges whose callee is any compute_id.
+            for c in &compute_ids {
+                let spurious = g
+                    .all_dependencies()
+                    .filter(|(_, t, _)| *t == c)
+                    .count();
+                assert_eq!(
+                    spurious, 0,
+                    "[{}] spurious edges to compute_id={:?}",
+                    label, c
+                );
+            }
+        }
     }
 }

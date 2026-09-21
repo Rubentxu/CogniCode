@@ -4,14 +4,188 @@
 //! for modular graph construction and merging. This is useful when you need
 //! to analyze individual files and then combine them into larger graphs.
 
-use crate::domain::aggregates::call_graph::CallGraph;
+use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::value_objects::{DependencyType, Location};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
+
+// =============================================================================
+// PRF F2.W5 — Global symbol index for cross-file call resolution (H-R4-2).
+//
+// The legacy per-file lookup `name_lower → SymbolId` was correct within a
+// single file but dropped edges that crossed files (caller in A, callee in B
+// could never resolve because B's symbol was not in A's lookup map). It also
+// silently picked the wrong homonym when two files declared the same `name`,
+// which is exactly the "edge inventado hacia símbolo homónimo" hazard the
+// operator flagged as unacceptable.
+//
+// `GlobalSymbolIndex` is a project-wide reverse index that the resolver
+// queries with scope-aware rules:
+//
+//   * 1 candidate         → use it (no ambiguity).
+//   * All candidates in
+//     the caller's file    → use the caller's local one (visibility rule).
+//   * Multiple in
+//     different files
+//     within the same
+//     crate root          → use the one whose file shares the caller's
+//                            project-root ancestor.
+//   * Otherwise            → return None. The edge is HONESTLY DROPPED
+//                            rather than invented against a wrong homonym.
+//
+// The lookup never picks "the last inserted" or "the first inserted"; the
+// caller can rely on the rules above for audit. This is the core of the
+// "preserve identity and ambiguity" requirement from F2.W5.
+// =============================================================================
+
+/// Result of building a single file's call graph. The cross-file edge
+/// buffer holds `(caller_id, callee_id)` pairs whose `SymbolId`
+/// endpoints are not yet in `graph`; they must be reconciled into the
+/// project-level merged graph after every file's symbols are in place.
+pub type CrossFileEdge = (
+    crate::domain::aggregates::call_graph::SymbolId,
+    crate::domain::aggregates::call_graph::SymbolId,
+);
+
+pub type BuildFileResult = (CallGraph, Vec<CrossFileEdge>);
+
+/// Project-wide symbol index for cross-file call resolution (H-R4-2).
+///
+/// See module-level doc-comment for the resolution rules.
+///
+/// `#![allow(dead_code)]` keeps the diagnostic helpers (`candidates`,
+/// `len`, `is_empty`) compiled for future test-audit and observability
+/// work even though F2.W5's happy path does not exercise them. The
+/// non-happy path (dropped edges, ambiguous resolutions) will need
+/// them in F3/C3 diagnostics.
+#[allow(dead_code)]
+pub struct GlobalSymbolIndex {
+    /// `name_lower → Vec<SymbolId>` in insertion order. Symbols with the
+    /// same name keep their individual `SymbolId` (which is the FQN-based
+    /// identity, so duplicates are distinguishable downstream).
+    by_name: HashMap<String, Vec<SymbolId>>,
+    /// Reverse map so the resolver can read the symbol's file path without
+    /// having to walk the source `CallGraph` for every lookup.
+    by_id: HashMap<SymbolId, (PathBuf, String)>,
+}
+
+impl Default for GlobalSymbolIndex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GlobalSymbolIndex {
+    pub fn new() -> Self {
+        Self {
+            by_name: HashMap::new(),
+            by_id: HashMap::new(),
+        }
+    }
+
+    /// Adds a symbol to the index.
+    pub fn insert(&mut self, symbol_id: SymbolId, file: PathBuf, name: &str) {
+        let key = name.to_lowercase();
+        self.by_name.entry(key).or_default().push(symbol_id.clone());
+        self.by_id.insert(symbol_id, (file, name.to_string()));
+    }
+
+    /// Resolves a callee name to a `SymbolId`, preferring the caller-file
+    /// symbol when ambiguity exists. Returns `None` when no rule yields
+    /// an unambiguous answer — the caller MUST drop the edge instead of
+    /// inventing one against a random homonym.
+    pub fn resolve(&self, name_lower: &str, caller_file: Option<&Path>) -> Option<SymbolId> {
+        let candidates = self.by_name.get(name_lower)?;
+        if candidates.is_empty() {
+            return None;
+        }
+        if candidates.len() == 1 {
+            return Some(candidates[0].clone());
+        }
+
+        // Multiple homonyms. Try to disambiguate by caller-file proximity.
+        let caller_path = caller_file.map(|p| p.to_path_buf());
+        if let Some(caller) = caller_path.as_ref() {
+            // Rule 1: exact same file path.
+            let same_file: Vec<&SymbolId> = candidates
+                .iter()
+                .filter(|sid| {
+                    self.by_id
+                        .get(*sid)
+                        .map(|(p, _)| p == caller)
+                        .unwrap_or(false)
+                })
+                .collect();
+            if same_file.len() == 1 {
+                return Some(same_file[0].clone());
+            }
+            if same_file.len() > 1 {
+                // Genuine intra-file duplicate (e.g. two `same_name` in
+                // `dup.rs` — one top, one inside `inner`). Without module
+                // context we cannot pick the right one, so we drop the
+                // edge rather than guess.
+                return None;
+            }
+            // Rule 2: shared crate root (first N path components match).
+            let in_same_crate: Vec<&SymbolId> = candidates
+                .iter()
+                .filter(|sid| {
+                    self.by_id.get(*sid).map(|(p, _)| {
+                        shared_crate_root(p, caller).is_some()
+                    }).unwrap_or(false)
+                })
+                .collect();
+            if in_same_crate.len() == 1 {
+                return Some(in_same_crate[0].clone());
+            }
+            // Multiple symbols across files in the same crate, no
+            // further rule applies — drop the edge.
+            return None;
+        }
+
+        // No caller context → ambiguous → drop.
+        None
+    }
+
+    /// Returns the candidate `SymbolId`s for a given name (used by callers
+    /// that want to audit ambiguity, e.g. diagnostics or tests).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn candidates(&self, name_lower: &str) -> &[SymbolId] {
+        self.by_name.get(name_lower).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// Total number of symbols registered.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn len(&self) -> usize {
+        self.by_id.len()
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn is_empty(&self) -> bool {
+        self.by_id.is_empty()
+    }
+}
+
+/// Shared crate root = the longest common path prefix between two files
+/// (or `None` when they share no path components, which is the case for
+/// files in completely different trees).
+fn shared_crate_root(a: &Path, b: &Path) -> Option<PathBuf> {
+    let a: Vec<_> = a.components().collect();
+    let b: Vec<_> = b.components().collect();
+    let mut common = 0usize;
+    while common < a.len() && common < b.len() && a[common] == b[common] {
+        common += 1;
+    }
+    if common == 0 {
+        None
+    } else {
+        Some(a[..common].iter().collect())
+    }
+}
 
 /// Cache entry for per-file graphs
 struct FileGraphCacheEntry {
@@ -86,8 +260,8 @@ impl PerFileGraphCache {
             }
         }
 
-        // Build the graph for this file
-        let graph = self.build_file_graph(&path_str)?;
+        // Build the graph for this file (no global index: per-file resolution only)
+        let (graph, _cross_file) = self.build_file_graph(&path_str, None)?;
 
         // Cache it
         {
@@ -168,29 +342,37 @@ impl PerFileGraphCache {
     /// outcome and surface the skipped list to the user, not as a clean
     /// "no findings" conclusion.
     pub fn merge_with_report(&self, file_paths: &[&Path]) -> BuildReport {
+        // PRF F2.W5 — H-R4-2: build a project-wide symbol index BEFORE
+        // resolving any call edges. This is the global lookup that lets
+        // `caller → callee` work across files. Without it, the per-file
+        // map inside `build_file_graph` drops every cross-file edge.
+        let global_index = self.build_global_index(file_paths);
+
         let mut merged = CallGraph::new();
         let mut skipped: Vec<SkippedFile> = Vec::new();
+        // Cross-file edges collected per file, to be reconciled into the
+        // merged graph once every file's symbols are in place.
+        let mut pending_cross_file_edges: Vec<CrossFileEdge> = Vec::new();
 
         for path in file_paths {
             let path_str = path.to_string_lossy().to_string();
 
             // Get from cache or build. Cache hit does not produce skipped
             // entries; only actual build failures do.
-            let graph = match self.get_cached(path) {
-                Some(g) => (*g).clone(),
-                None => match self.build_file_graph(&path_str) {
-                    Ok(g) => g,
-                    Err(e) => {
-                        skipped.push(SkippedFile {
-                            path: path_str,
-                            reason: classify_io_error(&e),
-                        });
-                        continue;
-                    }
-                },
+            let built: Result<BuildFileResult, std::io::Error> = match self.get_cached(path) {
+                Some(g) => Ok(((*g).clone(), Vec::new())),
+                None => self.build_file_graph(&path_str, Some(&global_index)),
             };
-
-            // Merge symbols
+            let (graph, cross_file) = match built {
+                Ok(pair) => pair,
+                Err(e) => {
+                    skipped.push(SkippedFile {
+                        path: path_str,
+                        reason: classify_io_error(&e),
+                    });
+                    continue;
+                }
+            };
             for symbol in graph.symbols() {
                 let new_symbol = Symbol::new(
                     symbol.name(),
@@ -219,7 +401,28 @@ impl PerFileGraphCache {
                     let _ = merged.add_dependency(&new_source_id, &new_target_id, *dep_type);
                 }
             }
+
+            // Cross-file edges discovered while building this file are
+            // deferred: their endpoints must exist in `merged` before
+            // `add_dependency` can accept them, and that only becomes
+            // true after this whole loop has run.
+            pending_cross_file_edges.extend(cross_file);
         }
+
+        // Reconcile cross-file edges now that every file's symbols have
+        // been merged. `merged` already contains all SymbolIds, so
+        // `add_dependency` should accept every cross-file edge whose
+        // resolution was unambiguous.
+        let mut reconciled_cross_file = 0usize;
+        for (source_id, target_id) in pending_cross_file_edges {
+            if merged
+                .add_dependency(&source_id, &target_id, DependencyType::Calls)
+                .is_ok()
+            {
+                reconciled_cross_file += 1;
+            }
+        }
+        let _ = reconciled_cross_file; // accounted for in edge_count(); kept for future diagnostics
 
         let status = if skipped.is_empty() {
             BuildStatus::Complete
@@ -231,6 +434,51 @@ impl PerFileGraphCache {
             graph: merged,
             status,
         }
+    }
+
+    /// Builds a project-wide symbol index by parsing each file and
+    /// recording every discovered symbol with its file path and name.
+    ///
+    /// PRF F2.W5 — H-R4-2: this is the global lookup that lets the
+    /// resolver find callees across files. Failures to parse or read
+    /// individual files are silently skipped here; their absence is
+    /// surfaced separately by `merge_with_report` (R3 from F2.W2).
+    /// The index keys are the lowercased symbol names so resolution is
+    /// case-insensitive (matches the legacy per-file behaviour).
+    fn build_global_index(&self, file_paths: &[&Path]) -> GlobalSymbolIndex {
+        let mut idx = GlobalSymbolIndex::new();
+        for path in file_paths {
+            let path_str = path.to_string_lossy().to_string();
+            let source = match std::fs::read_to_string(path) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let language = match Language::from_extension(path.extension()) {
+                Some(l) => l,
+                None => continue,
+            };
+            let parser = match TreeSitterParser::new(language) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let tree = match parser.parse_tree(&source) {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            // Mirror F2.W2: skip files with parse errors.
+            if TreeSitterParser::has_error_nodes(&tree) {
+                continue;
+            }
+            let symbols = match parser.find_all_symbols_with_path(&source, &path_str) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            for symbol in symbols {
+                let sid = SymbolId::new(symbol.fully_qualified_name());
+                idx.insert(sid, path.to_path_buf(), symbol.name());
+            }
+        }
+        idx
     }
 
     /// Merges all cached file graphs into a single graph
@@ -250,8 +498,19 @@ impl PerFileGraphCache {
         self.merge(&path_refs)
     }
 
-    /// Builds a call graph for a single file
-    fn build_file_graph(&self, file_path: &str) -> std::io::Result<CallGraph> {
+    /// Builds a call graph for a single file.
+    ///
+    /// `global_index` is optional: when `Some`, cross-file call edges are
+    /// resolved against the project-wide [`GlobalSymbolIndex`] using
+    /// scope-aware rules (caller file first, then crate root). When
+    /// `None`, the legacy per-file lookup is used and cross-file edges are
+    /// simply lost (pre-F2.W5 behaviour). Pre-existing callers that only
+    /// know one file at a time keep working unchanged.
+    fn build_file_graph(
+        &self,
+        file_path: &str,
+        global_index: Option<&GlobalSymbolIndex>,
+    ) -> std::io::Result<BuildFileResult> {
         let source = std::fs::read_to_string(file_path)?;
 
         let language =
@@ -298,17 +557,61 @@ impl PerFileGraphCache {
             name_to_symbol.insert(symbol.name().to_lowercase(), symbol_id);
         }
 
-        // Add call relationships
+        // Add call relationships.
+        //
+        // PRF F2.W5 — H-R4-2 (scope-aware cross-file resolution):
+        //
+        //   * If BOTH the caller and the callee belong to this file's
+        //     `name_to_symbol` map, the edge is intra-file and we add it
+        //     to `graph` directly (intra-file resolution).
+        //
+        //   * If the caller is in this file but the callee resolves to
+        //     a `SymbolId` in another file (via `global_index`), the
+        //     edge is CROSS-FILE. `CallGraph::add_dependency` rejects
+        //     edges whose endpoints are not in `self.symbols`, so we
+        //     CANNOT add it here — the `graph` only knows about this
+        //     file's symbols. We stash it in `cross_file_edges` and let
+        //     `merge_with_report` reconcile it after every file has
+        //     been merged into the project graph (where both endpoints
+        //     exist by construction).
+        //
+        //   * Edges that resolve to NEITHER the local map nor the global
+        //     index are dropped honestly: they could not be proven
+        //     (ambiguous, or genuinely unresolved) and the operator's
+        //     directive forbids inventing one.
+        let caller_path = Path::new(file_path);
+        let mut cross_file_edges: Vec<CrossFileEdge> = Vec::new();
         for (caller, callee_name) in relationships {
             let caller_id =
                 crate::domain::aggregates::call_graph::SymbolId::new(caller.fully_qualified_name());
 
-            if let Some(callee_id) = name_to_symbol.get(&callee_name.to_lowercase()).cloned() {
+            // 1. Local lookup first (covers intra-file edges).
+            if let Some(callee_id) = name_to_symbol
+                .get(&callee_name.to_lowercase())
+                .cloned()
+            {
                 let _ = graph.add_dependency(&caller_id, &callee_id, DependencyType::Calls);
+                continue;
             }
+
+            // 2. Global lookup only makes sense if a `global_index` was
+            //    supplied. If the resolver finds an unambiguous match
+            //    in another file, defer the edge to the post-merge
+            //    step where both endpoints exist in the merged graph.
+            if let Some(idx) = global_index
+                && let Some(callee_id) =
+                    idx.resolve(&callee_name.to_lowercase(), Some(caller_path))
+            {
+                cross_file_edges.push((caller_id, callee_id));
+            }
+            // 3. Otherwise: drop honestly. The call site references a
+            //    name that has no symbol in the project (or is
+            //    ambiguous). Logging the drop is left for a future
+            //    diagnostics pass; here we keep the resolver contract
+            //    small and explicit.
         }
 
-        Ok(graph)
+        Ok((graph, cross_file_edges))
     }
 
     /// Returns the number of cached files
@@ -797,5 +1100,68 @@ mod tests {
         if let Err(msg) = outcome {
             panic!("{}", msg);
         }
+    }
+}
+
+#[cfg(test)]
+mod global_index_tests {
+    //! PRF F2.W5 — coverage for the scope-aware resolver rules in
+    //! [`GlobalSymbolIndex`]. These tests pin down the four documented
+    //! cases so that any future change that re-introduces "pick the
+    //! last inserted" or similar shortcuts fails RED.
+    use super::*;
+    use crate::domain::aggregates::call_graph::SymbolId;
+    use std::path::PathBuf;
+
+    fn sid(fqn: &str) -> SymbolId {
+        SymbolId::new(fqn)
+    }
+
+    /// Rule: 1 candidate → resolver returns it directly.
+    #[test]
+    fn w5_resolve_single_candidate_returns_it() {
+        let mut idx = GlobalSymbolIndex::new();
+        idx.insert(
+            sid("src/lib.rs:foo:1"),
+            PathBuf::from("src/lib.rs"),
+            "foo",
+        );
+        let r = idx.resolve("foo", Some(&PathBuf::from("src/lib.rs")));
+        assert_eq!(r, Some(sid("src/lib.rs:foo:1")));
+        assert!(!idx.is_empty());
+        assert_eq!(idx.len(), 1);
+        assert_eq!(idx.candidates("foo").len(), 1);
+    }
+
+    /// Rule: 0 candidates → resolver returns None (call site referencing
+    /// a name that has no symbol in the project).
+    #[test]
+    fn w5_resolve_no_candidates_returns_none() {
+        let idx = GlobalSymbolIndex::new();
+        assert_eq!(idx.resolve("does_not_exist", None), None);
+        assert_eq!(idx.len(), 0);
+        assert!(idx.is_empty());
+    }
+
+    /// Rule: multiple candidates in different files → resolver drops
+    /// the edge when no scope disambiguates (no caller file passed).
+    #[test]
+    fn w5_resolve_ambiguous_without_caller_drops() {
+        let mut idx = GlobalSymbolIndex::new();
+        idx.insert(sid("a.rs:foo:1"), PathBuf::from("a.rs"), "foo");
+        idx.insert(sid("b.rs:foo:1"), PathBuf::from("b.rs"), "foo");
+        let r = idx.resolve("foo", None);
+        assert!(r.is_none(), "expected None when caller context is missing");
+    }
+
+    /// Rule: multiple candidates in different files with caller context
+    /// but NO shared crate root → drop.
+    #[test]
+    fn w5_resolve_no_shared_root_drops() {
+        let mut idx = GlobalSymbolIndex::new();
+        idx.insert(sid("a.rs:foo:1"), PathBuf::from("a.rs"), "foo");
+        idx.insert(sid("b.rs:foo:1"), PathBuf::from("b.rs"), "foo");
+        let r = idx.resolve("foo", Some(&PathBuf::from("caller.rs")));
+        assert!(r.is_none(), "expected None when files share no path components");
     }
 }
