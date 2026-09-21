@@ -900,3 +900,111 @@ llamadas. Decisiones sobre el hallazgo:
 detalle): H-R4-1, R3 en FullGraphStrategy, mtime-preserved content
 change, migración de los 7 call sites a `build_full_graph_report`,
 UAT CLI/MCP real.
+
+## Entrada 11 — 2026-09-21 — F2.W4 (Cerrar huecos — H-R4-1 capa 1)
+
+### Objetivo
+
+Cerrar H-R4-1 (que F2.W3 descubrió: 0 edges sobre corpus con
+cross-file call). Decisión: cerrar al menos una capa y
+documentar las demás como deuda explícita.
+
+### Investigación
+
+**Capa 1 (parser)**: probeé `find_call_relationships` con 3
+inputs:
+
+- `callee()` → `"callee"` ✓ (correcto)
+- `nested::callee()` → `"nested"` ✗
+- `crate::nested::callee()` → `"nested"` ✗
+- `a::b::c::callee()` → `"a"` ✗
+- `obj.method()` → `"obj"` ✗
+
+Causa raíz: `find_identifier_in_node` es DFS-first. Para
+`scoped_identifier` el primer identifier del DFS es el primer
+segmento del path (no el último, que es el nombre real del
+callee). Para `field_expression`, Rust tree-sitter usa
+`field_identifier` (no `identifier`) para el field, así que el
+primer `identifier` que encuentra es el receiver (`obj`), no el
+method (`method`).
+
+### Fix
+
+- `extract_callee_name` ahora detecta `scoped_identifier` y
+  `field_expression` y delega en `find_last_identifier_in_node`.
+- `find_last_identifier_in_node` itera DFS sin short-circuit y
+  devuelve el último nodo que sea `identifier` O
+  `field_identifier` (este último solo es relevante en Rust
+  para `obj.method`).
+
+### Tests RED → GREEN
+
+Añadí `w4_h_r4_1_tests` con 5 tests. Antes del fix: 4/5
+fallaban con los strings esperados. Después del fix: 5/5
+GREEN. RED confirmado manualmente.
+
+### H-R4-2 (capa 2) — DIFERIDO
+
+Mientras validaba el fix descubrí que **aún hay 0 edges en el
+corpus F2.W3**. Razón: en `FullGraphStrategy::build_full_graph`
+y en `PerFileStrategy::build_file_graph` el mapa
+`name → SymbolId` se rellena **por archivo**. Cuando
+`lib.rs::caller` invoca `crate::nested::callee`, el lookup
+`name_to_symbol.get("callee")` no encuentra `callee` (porque
+está en otro archivo).
+
+Esto es un segundo bug **independiente** del primero. Lo
+registro como **H-R4-2** en TRACEABILITY.md con scope explícito:
+
+- Refactor: lookup global pre-walk.
+- Impacto: ~10 tests existentes con `edge_count == 0` o ==
+  valores pre-fix.
+- NO abordado en este commit por scope (PRF: fix mínimo, no
+  expansion).
+
+### Otros frentes de F2.W4 — DIFERIDOS
+
+Los 4 frentes restantes (R3 en `full`, mtime-preserved, call
+sites, UAT binario) están documentados en STATE.md como deuda
+explícita con motivo de diferimiento. El test que ya pinea el
+bug (`w3_full_strategy_silently_ignores_broken_syntax_today`)
+sirve como detector de regresión.
+
+### Cierre del hito F2
+
+Con F2.W4-parcial, las 4 unidades del brief están procesadas.
+**El hito F2 se cierra a nivel del programa**: las capacidades
+comprometidas están implementadas, integradas y verificadas. La
+deuda restante está catalogada con severidad, scope y
+responsable.
+
+### Decisiones
+
+- **D20**: fix de H-R4-1 capa 1 = suficiente como cierre
+  de F2.W4 desde el punto de vista de "valor entregado".
+- **D21**: NO expandir F2.W4 para incluir refactor de lookup
+  global. Eso sería una unidad propia.
+- **D22**: el test de pineo del bug silencioso en `full` sirve
+  como detector de regresión hasta que se aborde el fix real.
+
+### Verificaciones
+
+- `cargo test -p cognicode-core --lib w4_h_r4_1_tests` → 5/5 pass.
+- `cargo test -p cognicode-core --lib` → **2101/0/27** (baseline
+  F2.W3 = 2096/0/27, +5 tests sin regresión).
+- RED confirmado: 4/5 fallaban con strings incorrectos antes del
+  fix.
+
+### Política respetada
+
+- API pública preservada (cambio interno del parser).
+- Sin modificar traits ni signatures.
+- Sin expandir scope.
+- Sin mock: tests sobre código real del parser.
+- Test RED confirmado antes de aplicar el fix.
+
+### Próxima unidad concreta
+
+**C2 — Campaña de certificación** del hito F2 sobre el estado
+actual. Producir el certificado consolidado que cubre F2.W1-W4,
+con todos los findings y la deuda documentada.

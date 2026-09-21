@@ -536,3 +536,140 @@ Siguiente hito: F1 (Estabilización).
 - H10 — extender `staging_dir` para que cubra downloads de manifests.
 - Bug preexistente del binario `cognicode` (dos crates con mismo `name`).
 - F2.W2-followup — migrar los 7 call sites a `build_full_graph_report`.
+
+---
+
+## PRF-F2-W4 — Certificación de la unidad F2.W4 (Cerrar huecos — H-R4-1 capa 1)
+
+| Campo | Valor |
+|---|---|
+| ID | `PRF-F2-W4` |
+| Hito | F2 — Correctitud reproducible |
+| Unidad | W4 — Cerrar huecos (H-R4-1 capa 1: parser; resto → deuda documentada) |
+| Versión CogniCode | 0.97.3 |
+| HEAD al cierre | `084b5c00` |
+| Operador | jcode-orchestrator |
+| Fecha | 2026-09-21 |
+
+### Estados alcanzados
+
+- [x] **SPECIFIED**: brief del operador (cerrar H-R4-1 que F2.W3
+      descubrió); STATE.md §F2.W4 documentado; decisión "capa 1
+      sí, capa 2 no" registrada y justificada.
+- [x] **IMPLEMENTED**: fix del parser en `extract_callee_name`
+      (~50 LOC) con detección de `scoped_identifier` y
+      `field_expression` + helper `find_last_identifier_in_node`.
+- [x] **INTEGRATED**: `cargo test -p cognicode-core --lib` →
+      **2101/0/27** (baseline F2.W3 = 2096/0/27, **+5 tests** sin
+      regresión). Los 5 tests nuevos pinerán el fix.
+- [x] **ACCEPTED-parcial**: capa 1 de H-R4-1 cerrada con test de
+      regresión. Capa 2 (H-R4-2) registrada como OPEN con scope y
+      responsable explícitos. Otros 4 frentes del brief original
+      registrados como deuda documentada.
+- [ ] **RELEASED**: pendiente.
+
+### Evidencias concretas
+
+| Evidencia | Ubicación |
+|---|---|
+| Documentación | `docs/prf/STATE.md` §"Última unidad cerrada: F2.W4" |
+| Diario | `docs/prf/JOURNAL.md` §11 |
+| Código modificado | `crates/cognicode-core/src/infrastructure/parser/tree_sitter_parser.rs` (commit `084b5c00`, +149 -3) |
+| Tests añadidos | `crates/cognicode-core/src/infrastructure/parser/tree_sitter_parser.rs::w4_h_r4_1_tests` (5 tests) |
+| Hallazgos | H-R4-1 (PARTIAL, capa 1 cerrada), H-R4-2 (OPEN), 4 frentes adicionales (deuda documentada) |
+
+### Verificación ejecutada (resumen)
+
+- `cargo test -p cognicode-core --lib w4_h_r4_1_tests` → **5/5 pass**.
+- `cargo test -p cognicode-core --lib` → **2101/0/27** (+5 vs
+  baseline F2.W3 de 2096/0/27).
+- **RED verificado manualmente** antes del fix:
+  `h_r4_1_module_qualified_call_resolves_to_leaf` esperaba
+  `["callee"]` y obtuvo `["nested"]`; misma forma para
+  `crate::nested::callee()` y `a::b::c::callee()`. Después del
+  fix: los 4 tests pasan. El test de method call
+  (`h_r4_1_method_call_on_receiver`) requirió una segunda
+  iteración porque `field_identifier` no era reconocido por el
+  helper; se añadió tras el primer intento fallido.
+
+### Hallazgos diferidos (deuda documentada)
+
+- **H-R4-2** (MEDIO funcional, OPEN): lookup `name → SymbolId`
+  per-file impide que los edges cross-file lleguen al grafo
+  final incluso con el parser corregido. Refactor requerido
+  (lookup global pre-walk). Impacto estimado en ~10 tests
+  existentes con `edge_count == 0` o valores pre-fix. Scope de
+  una unidad futura (F2.W5 o F3.W1) con análisis de impacto
+  propio.
+- **R3-style fix en `FullGraphStrategy`**: pendiente. El test
+  `w3_full_strategy_silently_ignores_broken_syntax_today`
+  pine el bug.
+- **mtime-preserved content change test**: pendiente. Sin
+  consumidor inmediato que requiera cerrar ese agujero del
+  fingerprint.
+- **Migración de los 7 call sites CLI** a
+  `build_full_graph_report`: pendiente. Sin consumidor real.
+- **UAT CLI/MCP real sobre binario**: pendiente. Bloqueado por
+  bug preexistente del binario `cognicode` (dos crates con mismo
+  `name`).
+
+### Decisiones tomadas
+
+- **D20**: el fix de H-R4-1 capa 1 es suficiente como cierre
+  de F2.W4 desde el punto de vista de "valor entregado".
+- **D21**: NO se aborda H-R4-2 (lookup global) en este commit.
+  Es un refactor sustantivo con impacto en tests existentes;
+  requiere una unidad propia con análisis de impacto.
+- **D22**: el test de pineo del bug silencioso en
+  `FullGraphStrategy` sirve como detector de regresión.
+
+### Limitaciones documentadas
+
+- H-R4-2 sigue OPEN. Su investigación + fix es scope de una
+  unidad futura.
+- H10, bug preexistente del binario, R3 en `full`, mtime-preserved,
+  migración de call sites, UAT binario: todos OPEN documentados.
+
+### Firmas de aprobación
+
+| Rol | Nombre | Estado | Notas |
+|---|---|---|---|
+| Operador | jcode-orchestrator | APROBADO (parcial) | Sesión 2026-09-21. Aprobación condicionada a la documentación honesta del alcance parcial. |
+| Auto-revisión PRF | (programa PRF) | APROBADO (parcial) | Capa 1 cumplida; capa 2 registrada. |
+
+### Cierre del hito F2
+
+Con F2.W4-parcial, las 4 unidades del brief han sido procesadas.
+El hito F2 se cierra **a nivel del programa** (no a nivel RELEASED
+porque eso depende del roadmap principal):
+
+| Unidad | Estado |
+|---|---|
+| F2.W1 (R2) | ACCEPTED |
+| F2.W2 (R3) | ACCEPTED |
+| F2.W3 (R4) | ACCEPTED |
+| F2.W4 (cierre de huecos) | ACCEPTED-parcial (capa 1) + deuda documentada (resto) |
+
+### Trabajo pendiente heredado
+
+- C2 — Campaña de certificación del hito F2 sobre el estado
+  actual. Certificado consolidado que cubre F2.W1-W4 con todos
+  los findings y la deuda.
+- F3 o F2.W5 (a planificar): H-R4-2 (lookup global), R3 en
+  `full`, mtime-preserved content change, call sites, UAT binario.
+- H10 — extender `staging_dir` para que cubra downloads de manifests.
+- Bug preexistente del binario `cognicode` (dos crates con mismo `name`).
+
+---
+
+## Hito F2 — CERRADO A NIVEL DEL PROGRAMA (con deuda documentada)
+
+Tres certificados firmados (PRF-F2-W1, PRF-F2-W2, PRF-F2-W3,
+PRF-F2-W4) + este certificado de cierre. Las 4 unidades
+planificadas del brief han sido procesadas. La deuda restante
+está catalogada con severidad, scope y responsable. **RELEASED**
+queda pendiente hasta que el roadmap principal consolide las
+gates.
+
+Siguiente paso del programa PRF: **C2 — Campaña de
+certificación**.

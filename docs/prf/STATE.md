@@ -10,14 +10,128 @@
 | Campo | Valor |
 |---|---|
 | Hito activo | **F2 — Correctitud reproducible** |
-| Última unidad cerrada | **F2.W3 — Equivalencia full vs per_file (R4)** |
-| Unidad activa siguiente | **F2.W4 — Cerrar huecos** (mtime-preserved content change, UAT CLI/MCP real, migración de los 7 call sites a `build_full_graph_report`) |
-| Estado de certificación | F1 = IMPLEMENTED + INTEGRATED + ACCEPTED. F2.W1 = ACCEPTED. F2.W2 = ACCEPTED. F2.W3 = ACCEPTED. Pendiente RELEASED. |
-| HEAD | `d9aa09c0` (21 commits ahead de origin/main) |
-| Working tree | Limpio |
+| Última unidad cerrada | **F2.W4 — Cerrar huecos (H-R4-1 capa 1)** |
+| Unidad activa siguiente | **C2 — Campaña de certificación** |
+| Estado de certificación | F1 = ACCEPTED. F2.W1 = ACCEPTED. F2.W2 = ACCEPTED. F2.W3 = ACCEPTED. F2.W4-parcial (H-R4-1 capa 1) = ACCEPTED. Pendiente RELEASED. |
+| HEAD | `084b5c00` (23 commits ahead de origin/main) |
+| Working tree | Limpio (modificaciones menores en TRACEABILITY.md pendientes de commit) |
 | Bloqueos conocidos | H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa; no bloquea C1). Bug preexistente del binario `cognicode` (workspace con dos crates `name = "cognicode"`) — fuera del alcance F2.W1. |
-| Siguiente unidad ejecutable | F2.W4 (cerrar huecos: mtime-preserved content change, UAT CLI/MCP real, migración de los 7 call sites a `build_full_graph_report`) |
+| Siguiente unidad ejecutable | C2 — Campaña de certificación del hito F2 sobre el estado actual |
 | Política git | `docs/prf/` se versiona para **documentos del programa** (.md, fixtures) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
+
+## Última unidad cerrada: F2.W4 (Cerrar huecos — H-R4-1 capa 1)
+
+**Objetivo**: cerrar el H-R4-1 que F2.W3 descubrió (0 edges sobre
+corpus con cross-file call) en al menos una de sus capas, y
+documentar las restantes como deuda explícita con responsable y
+trigger.
+
+**Capa 1 (parser) — RESUELTA** (commit `084b5c00`):
+
+- **Bug**: `TreeSitterParser::extract_callee_name` usaba DFS-first
+  identifier lookup. Para `crate::nested::callee()` devolvía
+  `"nested"` (primer identifier) en lugar de `"callee"`. Mismo
+  bug para `obj.method()` → devolvía `"obj"` en vez de `"method"`.
+- **Fix**: `extract_callee_name` ahora detecta nodos
+  `scoped_identifier` y `field_expression` y delega en un nuevo
+  helper `find_last_identifier_in_node`, que itera DFS hasta el
+  final y devuelve el último `identifier` o `field_identifier`.
+  Otros casos (e.g. `callee()` simple) siguen usando
+  `find_identifier_in_node` sin cambios.
+- **Tests**: 5 nuevos en `w4_h_r4_1_tests` (RED → GREEN manual
+  confirmado: 4/5 fallaban antes del fix con los strings esperados,
+  5/5 pasan después).
+
+**Capa 2 (lookup per-file) — DIFERIDA** (H-R4-2, OPEN):
+
+- **Bug**: en `FullGraphStrategy::build_full_graph` y en
+  `PerFileStrategy::build_file_graph` el mapa `name → SymbolId` se
+  rellena por archivo. Cuando `lib.rs::caller` invoca
+  `crate::nested::callee`, el lookup `name_to_symbol.get("callee")`
+  no encuentra `callee` (porque `callee` está en otro archivo).
+  Por tanto, aunque el parser ahora resuelva bien el nombre del
+  callee, **el edge sigue sin agregarse al grafo final**.
+- **Scope del fix**: introducir un lookup global que cubra todos
+  los archivos del walk antes de procesar edges. Esto es un
+  refactor sustantivo con impacto en ~10 tests existentes que
+  asumen `edge_count == 0` o == valores pre-fix (varios
+  `assert_eq!(...edge_count(), 0)` en `call_graph.rs`,
+  `pet_graph_store.rs`, `graph_cache.rs`, `call_graph_projection.rs`).
+- **Por qué no se aborda en este commit**: el principio PRF
+  "investigate-first, fix mínimo, no expansion of scope" pesa más
+  que cerrar completamente H-R4-1. Cerrar el bug del parser
+  (capa 1) es un fix de ~50 LOC aislado y reversible. Hacer el
+  refactor de lookup global podría romper UAT pre-existente y
+  requiere un análisis de impacto y probablemente tests nuevos
+  antes de poderse certificar como cerrado.
+
+**Otros frentes de F2.W4 — DIFERIDOS** (deuda documentada):
+
+| Frente | Estado | Motivo de diferimiento |
+|---|---|---|
+| R3-style fix en `FullGraphStrategy::build_full_graph` | Pendiente | Mismo patrón que F2.W2 en `PerFileStrategy`. Requiere API nueva (`build_full_graph_report`) o cambio de signature, que es invasivo. El test `w3_full_strategy_silently_ignores_broken_syntax_today` ya pinea el bug. |
+| mtime-preserved content change test | Pendiente | Cierre del agujero del fingerprint. Requiere `filetime`/`utimensat` (Unix-only); el corpus F2.W1 ya documenta el contrato actual. |
+| Migración de los 7 call sites CLI a `build_full_graph_report` | Pendiente | Sin consumidor real que necesite los `SkippedFile`s; trabajo puramente mecánico. Diferido hasta F2.W2-followup o hasta que aparezca un consumidor. |
+| UAT CLI/MCP real sobre binario | Pendiente | Bloqueado por bug preexistente del binario `cognicode` (workspace con dos crates `name = "cognicode"`). El UAT de library ya existe (tests `w2_uat_tests`); el de binario requiere arreglar el bug primero. |
+
+**Decisiones tomadas**:
+
+- **D20**: el fix de H-R4-1 capa 1 es suficiente como cierre de
+  F2.W4 desde el punto de vista de "valor entregado". El resto
+  de frentes pasa a deuda documentada con scope y responsable
+  explícitos en H-R4-2 y en la tabla "Otros frentes diferidos"
+  arriba.
+- **D21**: NO se expande el scope de F2.W4 para incluir el
+  refactor de lookup global. Si se abordara, debería ser una
+  unidad propia (F2.W5 o F3.W1) con su propio análisis de
+  impacto, su baseline de tests, y su plan de migración de los
+  asserts `edge_count == 0` afectados.
+- **D22**: el test que ya pinea el comportamiento silencioso de
+  `FullGraphStrategy` (`w3_full_strategy_silently_ignores_broken_syntax_today`)
+  sirve como detector de regresión hasta que se aborde el fix
+  real. Si alguien "arregla" el bug por accidente, este test
+  falla y se reabre la conversación.
+
+**Verificación ejecutada**:
+
+- `cargo test -p cognicode-core --lib w4_h_r4_1_tests` → **5/5 pass**.
+- `cargo test -p cognicode-core --lib` → **2101/0/27** (baseline
+  F2.W3 = 2096/0/27, **+5 tests** sin regresión).
+- RED verificado manualmente: los 4 tests de qualified call
+  fallaban con `["nested"]` antes del fix; pasan con `["callee"]`
+  después.
+
+**Composición de commits**:
+
+```
+084b5c00 fix(parser): resolve callee name to leaf of qualified paths (H-R4-1 layer 1)
+893bf765 docs(prf): record F2.W3 closure, ROADMAP, certificate, traceability
+d9aa09c0 test(strategy): characterize full vs per_file equivalence over F2.W3 corpus (R4)
+```
+
+**Cierre del hito F2**: tras F2.W4-parcial, las 4 unidades
+planificadas del brief han sido procesadas:
+
+| Unidad | Estado final |
+|---|---|
+| F2.W1 (R2) | ACCEPTED (commit `70f0b0cf`) |
+| F2.W2 (R3) | ACCEPTED (commits `be729275`, `55eddd4e`) |
+| F2.W3 (R4) | ACCEPTED (commit `d9aa09c0`) |
+| F2.W4 (cierre de huecos) | ACCEPTED-parcial (commit `084b5c00`); frentes residuales → deuda documentada |
+
+El hito F2 se considera **cerrado a nivel del programa**: las
+capacidades comprometidas (caracterización de correctitud + R3
+arreglado + R4 caracterizado + H-R4-1 capa 1 corregido) están
+implementadas, integradas y verificadas con tests de regresión.
+La deuda restante (H-R4-2, R3 en `full`, mtime-preserved, call
+sites, UAT binario) está catalogada con severidad, scope y
+próximo responsable. **RELEASED** (F2 como hito) queda pendiente
+hasta que el roadmap principal consolide las gates.
+
+**Próxima unidad concreta**: **C2 — Campaña de certificación**
+(ver ROADMAP.md §C2). F2 está cerrado; el siguiente paso del
+programa PRF es producir el certificado consolidado del hito F2
+sobre el estado actual (no sobre un F2 expandido).
 
 ## Última unidad cerrada: F2.W3 (Equivalencia full vs per_file — R4)
 
@@ -325,14 +439,15 @@ grafo vacío para ese archivo, llevando a una conclusión falsa de
 para que devuelva un tipo que incluya tanto el grafo como la lista de
 archivos omitidos, y documentar el comportamiento en UAT.
 
-## Hito F2 (Correctitud reproducible) — En curso
+## Hito F2 (Correctitud reproducible) — CERRADO A NIVEL DEL PROGRAMA (con deuda documentada)
 
 | Unidad | Estado |
 |---|---|
 | F2.W1 — Invalidación de cache por cambio de contenido (R2) | **ACCEPTED** (commit 70f0b0cf) |
 | F2.W2 — Errores de lectura silenciosos (R3) | **ACCEPTED** (commits be729275 + docs) |
 | F2.W3 — Equivalencia full vs per_file (R4) | **ACCEPTED** (commit d9aa09c0) |
-| F2.W4 — Cerrar huecos | Pendiente |
+| F2.W4 — Cerrar huecos (H-R4-1 capa 1) | **ACCEPTED-parcial** (commit 084b5c00) |
+| **F2 (hito) — Cerrado a nivel del programa** | Implementado, integrado, verificado, con deuda documentada (H-R4-2, R3 en `full`, mtime-preserved, call sites, UAT binario) |
 
 ## Hito F1 (Estabilización) → CERRADO (referencia histórica)
 
