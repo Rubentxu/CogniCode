@@ -37,13 +37,14 @@ pub struct AnalysisService {
     graph_cache: Arc<GraphCache>,
     symbol_index: Mutex<Option<LightweightIndex>>,
     on_demand_builder: Mutex<Option<OnDemandGraphBuilder>>,
-    /// File cache: maps file path to (mtime, symbols, relationships)
+    /// File cache: maps file path to (mtime, size, symbols, relationships) — F2.W9
     /// Uses Arc<Mutex<...>> to support Send across thread boundaries for async operations
     file_cache: Arc<
         Mutex<
             std::collections::HashMap<
                 String,
                 (
+                    u64,
                     u64,
                     Vec<crate::domain::aggregates::Symbol>,
                     Vec<(crate::domain::aggregates::Symbol, String)>,
@@ -259,8 +260,9 @@ impl AnalysisService {
                 let path = e.path().to_path_buf();
                 let language = Language::from_extension(path.extension());
                 let file_path = path.to_string_lossy().into_owned();
-                let mtime = std::fs::metadata(&path)
-                    .ok()
+                let meta = std::fs::metadata(&path).ok();
+                let mtime = meta
+                    .as_ref()
                     .and_then(|m| m.modified().ok())
                     .map(|t| {
                         t.duration_since(std::time::UNIX_EPOCH)
@@ -268,14 +270,15 @@ impl AnalysisService {
                             .as_secs()
                     })
                     .unwrap_or(0);
-                (path, language, file_path, mtime)
+                let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+                (path, language, file_path, mtime, size)
             })
             .collect();
 
         let total_files = files.len();
         let files_with_lang: usize = files
             .iter()
-            .filter(|(_, lang, _, _)| lang.is_some())
+            .filter(|(_, lang, _, _, _)| lang.is_some())
             .count();
 
         info!(
@@ -292,7 +295,7 @@ impl AnalysisService {
         }
 
         // Log first few files for debugging
-        for (path, lang, _, _) in files.iter().take(5) {
+        for (path, lang, _, _, _) in files.iter().take(5) {
             debug!(
                 "  Found file: {:?} with language: {:?}",
                 path.file_name(),
@@ -302,25 +305,28 @@ impl AnalysisService {
 
         let files: Vec<_> = files
             .into_iter()
-            .filter(|(_, lang, _, _)| lang.is_some())
+            .filter(|(_, lang, _, _, _)| lang.is_some())
             .collect();
 
         let results: Vec<_> = files
             .into_par_iter()
-            .filter_map(|(path, language, file_path, mtime)| {
+            .filter_map(|(path, language, file_path, mtime, size)| {
                 let language = language.unwrap();
                 let path_for_skip = file_path.clone();
                 let skipped = skipped_files.clone();
 
                 {
+                    // F2.W9: invalidate on mtime OR size mismatch.
                     let cache = self.file_cache.lock().unwrap();
-                    if let Some((cached_mtime, cached_symbols, cached_relationships)) =
+                    if let Some((cached_mtime, cached_size, cached_symbols, cached_relationships)) =
                         cache.get(&file_path)
                         && *cached_mtime == mtime
+                        && *cached_size == size
                     {
                         return Some((
                             file_path,
                             mtime,
+                            size,
                             cached_symbols.clone(),
                             cached_relationships.clone(),
                             false, // from_cache = true
@@ -362,22 +368,22 @@ impl AnalysisService {
                     .find_call_relationships(&source, &file_path)
                     .unwrap_or_default();
 
-                Some((file_path, mtime, symbols, relationships, true)) // from_cache = false (parsed)
+                Some((file_path, mtime, size, symbols, relationships, true)) // from_cache = false (parsed)
             })
             .collect();
 
         // Stage: parse — count what we got from the parallel extraction
         let files_cached = results
             .iter()
-            .filter(|(_, _, _, _, was_parsed)| !was_parsed)
+            .filter(|(_, _, _, _, _, was_parsed)| !was_parsed)
             .count();
         let files_parsed = results.len() - files_cached;
         let total_symbols_extracted: usize = results
             .iter()
-            .map(|(_, _, symbols, _, _)| symbols.len())
+            .map(|(_, _, _, symbols, _, _)| symbols.len())
             .sum();
         let total_relationships_found: usize =
-            results.iter().map(|(_, _, _, rels, _)| rels.len()).sum();
+            results.iter().map(|(_, _, _, _, rels, _)| rels.len()).sum();
 
         info!(
             "build_project_graph: stage=parse — {} files ({} parsed, {} cached), {} symbols, {} relationships",
@@ -410,13 +416,17 @@ impl AnalysisService {
         let mut results = results;
         results.sort_by(|a, b| a.0.cmp(&b.0));
 
-        for (file_path, mtime, symbols, relationships, was_parsed) in results {
+        for (file_path, mtime, size, symbols, relationships, was_parsed) in results {
             if was_parsed {
                 parsed_files += 1;
             }
+            // F2.W9: cache entries keyed by (mtime, size). Cached
+            // hits keep their original size (computed at walk time of
+            // the build that produced them); re-parsed entries carry
+            // the fresh size.
             cache.insert(
                 file_path.clone(),
-                (mtime, symbols.clone(), relationships.clone()),
+                (mtime, size, symbols.clone(), relationships.clone()),
             );
 
             for symbol in symbols {
@@ -663,8 +673,9 @@ impl AnalysisService {
                 let path = e.path().to_path_buf();
                 let language = Language::from_extension(path.extension());
                 let file_path = path.to_string_lossy().into_owned();
-                let mtime = std::fs::metadata(&path)
-                    .ok()
+                let meta = std::fs::metadata(&path).ok();
+                let mtime = meta
+                    .as_ref()
                     .and_then(|m| m.modified().ok())
                     .map(|t| {
                         t.duration_since(std::time::UNIX_EPOCH)
@@ -672,27 +683,32 @@ impl AnalysisService {
                             .as_secs()
                     })
                     .unwrap_or(0);
-                (path, language, file_path, mtime)
+                // F2.W9: emit size alongside mtime for cache invalidation
+                let size = meta.map(|m| m.len()).unwrap_or(0);
+                (path, language, file_path, mtime, size)
             })
-            .filter(|(_, lang, _, _)| lang.is_some())
+            .filter(|(_, lang, _, _, _)| lang.is_some())
             .collect();
 
         let total_files = files.len();
 
         let results: Vec<_> = files
             .into_par_iter()
-            .filter_map(|(path, language, file_path, mtime)| {
+            .filter_map(|(path, language, file_path, mtime, size)| {
                 let language = language.unwrap();
 
                 {
+                    // F2.W9: invalidate on mtime OR size mismatch.
                     let cache = self.file_cache.lock().unwrap();
-                    if let Some((cached_mtime, cached_symbols, cached_relationships)) =
+                    if let Some((cached_mtime, cached_size, cached_symbols, cached_relationships)) =
                         cache.get(&file_path)
                         && *cached_mtime == mtime
+                        && *cached_size == size
                     {
                         return Some((
                             file_path,
                             mtime,
+                            size,
                             cached_symbols.clone(),
                             cached_relationships.clone(),
                             false, // from_cache = true
@@ -710,20 +726,20 @@ impl AnalysisService {
                     .find_call_relationships(&source, &file_path)
                     .unwrap_or_default();
 
-                Some((file_path, mtime, symbols, relationships, true)) // from_cache = false (parsed)
+                Some((file_path, mtime, size, symbols, relationships, true)) // from_cache = false (parsed)
             })
             .collect();
 
         let mut cache = self.file_cache.lock().unwrap();
         let mut all_relationships = Vec::new();
 
-        for (file_path, mtime, symbols, relationships, was_parsed) in results {
+        for (file_path, mtime, size, symbols, relationships, was_parsed) in results {
             if was_parsed {
                 parsed_files += 1;
             }
             cache.insert(
                 file_path.clone(),
-                (mtime, symbols.clone(), relationships.clone()),
+                (mtime, size, symbols.clone(), relationships.clone()),
             );
 
             for symbol in symbols {
@@ -822,27 +838,36 @@ impl AnalysisService {
                                     .as_secs()
                             })
                             .unwrap_or(0);
-                        (path, language, file_path, mtime)
+                        // F2.W9: emit size alongside mtime for cache invalidation
+                        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                        (path, language, file_path, mtime, size)
                     })
-                    .filter(|(_, lang, _, _)| lang.is_some())
+                    .filter(|(_, lang, _, _, _)| lang.is_some())
                     .collect();
 
                 let total_files = files.len();
 
                 let results: Vec<_> = files
                     .into_par_iter()
-                    .filter_map(|(path, language, file_path, mtime)| {
+                    .filter_map(|(path, language, file_path, mtime, size)| {
                         let language = language.unwrap();
 
                         {
+                            // F2.W9: invalidate on mtime OR size mismatch.
                             let cache = file_cache.lock().unwrap();
-                            if let Some((cached_mtime, cached_symbols, cached_relationships)) =
-                                cache.get(&file_path)
+                            if let Some((
+                                cached_mtime,
+                                cached_size,
+                                cached_symbols,
+                                cached_relationships,
+                            )) = cache.get(&file_path)
                                 && *cached_mtime == mtime
+                                && *cached_size == size
                             {
                                 return Some((
                                     file_path,
                                     mtime,
+                                    size,
                                     cached_symbols.clone(),
                                     cached_relationships.clone(),
                                     false, // from_cache = true
@@ -860,20 +885,20 @@ impl AnalysisService {
                             .find_call_relationships(&source, &file_path)
                             .unwrap_or_default();
 
-                        Some((file_path, mtime, symbols, relationships, true)) // from_cache = false (parsed)
+                        Some((file_path, mtime, size, symbols, relationships, true)) // from_cache = false (parsed)
                     })
                     .collect();
 
                 let mut cache = file_cache.lock().unwrap();
                 let mut all_relationships = Vec::new();
 
-                for (file_path, mtime, symbols, relationships, was_parsed) in results {
+                for (file_path, mtime, size, symbols, relationships, was_parsed) in results {
                     if was_parsed {
                         parsed_files += 1;
                     }
                     cache.insert(
                         file_path.clone(),
-                        (mtime, symbols.clone(), relationships.clone()),
+                        (mtime, size, symbols.clone(), relationships.clone()),
                     );
 
                     for symbol in symbols {
@@ -2817,6 +2842,100 @@ def b():
                     );
                 }
             }
+        }
+    }
+
+    /// F2.W9 — mtime preserved: a file whose BYTES change but whose
+    /// mtime stays the same must NOT be served stale from file_cache.
+    mod w9_mtime_tests {
+        use super::*;
+
+        fn corpus_path() -> std::path::PathBuf {
+            let manifest = std::env::var("CARGO_MANIFEST_DIR")
+                .expect("CARGO_MANIFEST_DIR must be set during cargo test");
+            let crate_root = std::path::PathBuf::from(manifest);
+            let workspace_root = crate_root
+                .ancestors()
+                .nth(2)
+                .expect("workspace root has at least 2 ancestors")
+                .to_path_buf();
+            workspace_root.join("docs/prf/fixtures/silent_errors_corpus")
+        }
+
+        fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+            std::fs::create_dir_all(dst)?;
+            for entry in std::fs::read_dir(src)? {
+                let entry = entry?;
+                let from = entry.path();
+                let to = dst.join(entry.file_name());
+                let file_type = entry.file_type()?;
+                if file_type.is_dir() {
+                    copy_dir_recursive(&from, &to)?;
+                } else if file_type.is_file() {
+                    std::fs::copy(&from, &to)?;
+                }
+            }
+            Ok(())
+        }
+
+        #[test]
+        fn w9_content_change_with_preserved_mtime_invalidates_cache() {
+            let src_corpus = corpus_path();
+            let tmp = tempfile::tempdir().expect("tempdir");
+            let dst = tmp.path().join("corpus");
+            copy_dir_recursive(&src_corpus, &dst).expect("copy fixture");
+
+            let target = dst.join("src").join("ok.rs");
+            let original_mtime = std::fs::metadata(&target)
+                .expect("stat ok.rs")
+                .modified()
+                .expect("mtime");
+
+            let service = AnalysisService::new();
+
+            // Build #1: parse the pristine corpus. normal_function
+            // returns 42.
+            service.build_project_graph(&dst).expect("first build");
+            let graph1 = service.get_project_graph();
+            assert!(
+                graph1.symbols().any(|s| s.name() == "normal_function"),
+                "build #1 must contain normal_function"
+            );
+
+            // Mutate bytes but RESTORE the original mtime. Many
+            // editors and refactoring tools write this way.
+            std::fs::write(&target, "pub fn renamed_function() -> i32 { 43 }\n")
+                .expect("rewrite ok.rs");
+            let f = std::fs::File::options()
+                .write(true)
+                .open(&target)
+                .expect("open for mtime restore");
+            f.set_modified(original_mtime).expect("set_modified");
+            drop(f);
+
+            // Sanity: mtime really is preserved.
+            let restored_mtime = std::fs::metadata(&target)
+                .expect("stat ok.rs after rewrite")
+                .modified()
+                .expect("mtime");
+            assert_eq!(
+                original_mtime, restored_mtime,
+                "test setup must preserve mtime"
+            );
+
+            // Build #2: the cache must NOT serve the stale entry —
+            // content changed, so renamed_function must appear.
+            service.build_project_graph(&dst).expect("second build");
+            let graph2 = service.get_project_graph();
+            assert!(
+                graph2.symbols().any(|s| s.name() == "renamed_function"),
+                "build #2 must see renamed_function: content changed even \
+                 though mtime was preserved; stale cache entry was served"
+            );
+            assert!(
+                !graph2.symbols().any(|s| s.name() == "normal_function"),
+                "build #2 must NOT contain normal_function (it was renamed)"
+            );
         }
     }
 }
