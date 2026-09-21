@@ -168,3 +168,39 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 **PASS**
 
 **Motivo**: el camino real del binario (`AnalysisService::build_project_graph` invocado desde `handle_build_graph`) ahora surface los archivos omitidos con su `path`, su clasificación (`read`/`parse`) y el mensaje exacto del error. Los errores de lectura/parseo son datos del build, no excepciones — la cobertura `coverage_metrics` y el `BuildReport` reflejan fielmente qué se procesó y qué se omitió y por qué.
+
+### UAT-F2-W9-001 — Invalidación de cache con mtime preservado
+
+**Fecha**: 2026-09-21
+**Binario**: `cognicode-mcp` (release, `/var/home/rubentxu/cargo-targets/release/cognicode-mcp`, rebuilt tras el cambio)
+**Commit**: `2a121aec`
+**Entorno**: corpus UAT efímero `/tmp/prf-uat-w9/`
+**Operador**: jcode-orchestrator
+
+## Escenario (Given/When/Then)
+
+**Given**: `src/lib.rs` con `original_function` y `caller_one`.
+
+**When**:
+1. Build #1: `build_graph` sobre corpus inicial → contiene `original_function`.
+2. Se reescribe `lib.rs` renombrando a `renamed_function` y se restaura el
+   mtime original con `os.utime(ns=...)` (verificado: `mtime preserved: True`).
+3. Build #2: `build_graph` en un proceso nuevo del binario.
+
+**Then**: build #2 ve `renamed_function` y ya no ve `original_function`
+(el cache (mtime, size) no sirve la entrada obsoleta).
+
+## Verificación contra contrato
+
+| Esperado | Observado | Pasa |
+|---|---|---|
+| Build #1 contiene `original_function` | presente (grep sobre salida JSON-RPC) | ✅ |
+| mtime restaurado tras reescritura | `mtime preserved: True` | ✅ |
+| Build #2 contiene `renamed_function` | presente | ✅ |
+| Build #2 ya no contiene `original_function` | ausente | ✅ |
+
+## Limitación probada (honestidad de cobertura)
+
+Una reescritura con el mismo tamaño Y el mismo mtime sigue sin
+invalidar la cache. Queda documentada como deuda explícita
+(requeriría hash de contenido). No se ha disfrazado de pass.
