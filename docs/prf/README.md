@@ -10,8 +10,8 @@
 2. [Estado/puntero](STATE.md): único marcador de hito y unidad de trabajo activa; no confundir planes con hechos.
 3. [Diario](JOURNAL.md): eventos append-only, evidencias, SHA, riesgos y siguiente acción.
 4. [Roadmap secuencial](ROADMAP.md) y [certificaciones](CERTIFICATION.md): prioridades y criterios de salida innegociables.
-5. [Especificaciones](specs/README.md), [UAT](UAT.md), [arquitectura](ARCHITECTURE.md), [decisiones propuestas](DECISIONS.md).
-6. [Trazabilidad y legado](TRACEABILITY.md), [histórico](../historico/README.md).
+5. [Especificaciones](specs/README.md), [UAT](UAT.md), [arquitectura](ARCHITECTURE.md), [decisiones propuestas](DECISIONS.md), [ADRs](adr/README.md).
+6. [Trazabilidad y legado](TRACEABILITY.md), [histórico](../historico/README.md), [evolución después de C7](POST-PRF-EVOLUTION.md).
 
 **Regla:** `IMPLEMENTED` ≠ `INTEGRATED` ≠ `ACCEPTED` ≠ `RELEASED`. Un ciclo archivado no demuestra funcionamiento de producto. Cada requisito debe enlazar prueba real y SHA.
 
