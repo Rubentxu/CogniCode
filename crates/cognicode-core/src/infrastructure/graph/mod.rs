@@ -24,7 +24,12 @@ pub mod generic_graph_projection;
 pub mod graph_cache;
 mod lightweight_index;
 mod on_demand_graph;
-mod per_file_graph;
+// F2.W7: promoted from private so `AnalysisService::build_project_graph`
+// (the path the real `cognicode-mcp` binary exercises) can use
+// `GlobalSymbolIndex` for scope-aware resolution. The public surface
+// is the `GlobalSymbolIndex` type only; the rest of the module stays
+// crate-internal.
+pub mod per_file_graph;
 mod pet_graph_store;
 pub mod snapshot_graph_executor;
 pub mod snapshot_provider;

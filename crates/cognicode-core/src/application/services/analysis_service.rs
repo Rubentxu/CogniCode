@@ -200,8 +200,12 @@ impl AnalysisService {
         info!("Building project graph for directory: {:?}", project_dir);
 
         let mut store = PetGraphStore::new();
-        let mut name_to_symbol_id: std::collections::HashMap<String, SymbolId> =
-            std::collections::HashMap::new();
+        // F2.W7: replace the legacy `name_lower → SymbolId` map with a
+        // `GlobalSymbolIndex` that supports scope-aware resolution
+        // (see `infrastructure/graph/per_file_graph.rs::GlobalSymbolIndex`
+        // — F2.W5 introduced it but never wired it into the real
+        // binary path, which goes through `build_project_graph`).
+        let mut global_index = crate::infrastructure::graph::per_file_graph::GlobalSymbolIndex::new();
 
         // Coverage tracking
         let mut parsed_files: usize = 0;
@@ -332,11 +336,16 @@ impl AnalysisService {
         }
 
         let mut cache = self.file_cache.lock().unwrap();
-        let mut all_relationships = Vec::new();
+        // F2.W7: collect (caller_fqn, caller_file, callee_name) per
+        // relationship so the resolver has both the caller SymbolId
+        // AND the caller-side path context to apply scope-aware rules.
+        // Before F2.W7 this was just `(caller_symbol, callee_name)` and
+        // the resolution lost the file path of the caller.
+        let mut all_relationships: Vec<(String, String, String)> = Vec::new();
 
         // ENGINE-DET (e38.2): rayon's parallel collection order is
         // nondeterministic, so the results are folded in deterministic
-        // `file_path` order — the name index below must never depend on
+        // `file_path` order — the index below must never depend on
         // directory-walk order.
         let mut results = results;
         results.sort_by(|a, b| a.0.cmp(&b.0));
@@ -353,34 +362,34 @@ impl AnalysisService {
             for symbol in symbols {
                 let symbol_id = SymbolId::new(symbol.fully_qualified_name());
                 store.add_symbol_with_location(&symbol_id, symbol.clone());
-                // Deterministic duplicate rule (e38.2 ENGINE-DET, aligned
-                // with the shared `resolve_callee_identity` tie-break —
-                // call_graph_projection.rs): when several symbols share a
-                // lowercase name, the lexicographically smallest FQN wins —
-                // never walk order (no first-file-wins collapse). The
-                // exact-identity stage of the shared rule is inapplicable
-                // here: legacy call relationships carry bare callee names,
-                // never identity strings.
-                let name_key = symbol.name().to_lowercase();
-                let wins = name_to_symbol_id
-                    .get(&name_key)
-                    .is_none_or(|existing| symbol_id.as_str() < existing.as_str());
-                if wins {
-                    name_to_symbol_id.insert(name_key, symbol_id);
-                }
+                // F2.W7: feed every symbol into the GlobalSymbolIndex
+                // regardless of how many homonyms exist. Resolution
+                // happens later, with caller-file context.
+                global_index.insert(
+                    symbol_id,
+                    std::path::PathBuf::from(&file_path),
+                    symbol.name(),
+                );
             }
 
             for (caller, callee_name) in relationships {
-                all_relationships.push((caller, callee_name));
+                // Preserve the caller's file AND FQN so the resolver can
+                // apply the "same file" / "same crate root"
+                // disambiguation AND recover the caller SymbolId.
+                let caller_fqn = caller.fully_qualified_name().to_string();
+                let caller_file = caller.location().file().to_string();
+                all_relationships.push((caller_fqn, caller_file, callee_name));
             }
         }
 
         let total_relationships = all_relationships.len();
-        for (caller, callee_name) in all_relationships {
-            let caller_id = SymbolId::new(caller.fully_qualified_name());
-            if let Some(callee_id) = name_to_symbol_id.get(&callee_name.to_lowercase()) {
+        for (caller_fqn, caller_file, callee_name) in all_relationships {
+            let caller_id = SymbolId::new(&caller_fqn);
+            let name_lower = callee_name.to_lowercase();
+            let caller_path = std::path::Path::new(&caller_file);
+            if let Some(callee_id) = global_index.resolve(&name_lower, Some(caller_path)) {
                 store
-                    .add_dependency(&caller_id, callee_id, DependencyType::Calls)
+                    .add_dependency(&caller_id, &callee_id, DependencyType::Calls)
                     .ok();
             } else {
                 unresolved_edges += 1;
@@ -2386,5 +2395,186 @@ def b():
             cached_count,
             "Cached graph should not be modified by build_project_graph_filtered"
         );
+    }
+
+    /// F2.W7 — RED → GREEN tests.
+    ///
+    /// The bug that motivated F2.W7: the legacy resolver inside
+    /// `AnalysisService::build_project_graph` (the path used by the
+    /// real `cognicode-mcp` binary) used a flat `name_lower → SymbolId`
+    /// map with a lexicographic-FQN tie-break. F2.W5 fixed the same
+    /// bug in `FullGraphStrategy` / `PerFileStrategy`, but those
+    /// strategies are NOT what the binary invokes. The binary goes
+    /// through `analysis_service::build_project_graph` and so the
+    /// bug was still live for the end user.
+    ///
+    /// The corpus `docs/prf/fixtures/cross_file_scope_aware/`
+    /// exercises five resolution rules on a small Rust crate; see
+    /// `cross_file_scope_aware/CORPUS.md` for the per-call expected
+    /// destination.
+    ///
+    /// **FQN convention**: in CogniCode, `Symbol::fully_qualified_name()`
+    /// is the string `<file_path>:<symbol_name>:<line>`. So the
+    /// `caller_in_lib` symbol registered by the parser has FQN
+    /// `<corpus>/src/lib.rs:caller_in_lib:5`, not just `caller_in_lib`.
+    /// The tests assert on the trailing segments to stay readable.
+    mod w7_scope_aware_resolution_tests {
+        use super::*;
+        use crate::domain::aggregates::call_graph::SymbolId;
+
+        fn corpus_path() -> std::path::PathBuf {
+            let manifest = std::env::var("CARGO_MANIFEST_DIR")
+                .expect("CARGO_MANIFEST_DIR must be set during cargo test");
+            let crate_root = std::path::PathBuf::from(manifest);
+            let workspace_root = crate_root
+                .ancestors()
+                .nth(2)
+                .expect("workspace root has at least 2 ancestors")
+                .to_path_buf();
+            workspace_root.join("docs/prf/fixtures/cross_file_scope_aware")
+        }
+
+        /// Build the project graph and return the FQN of the unique
+        /// outgoing target whose name == `callee_leaf`. Returns `None`
+        /// when no such target exists — the resolver dropped the edge
+        /// honestly, which is the right behaviour per D33.
+        fn unique_target_fqn_for(callee_leaf: &str) -> Option<String> {
+            let service = AnalysisService::new();
+            let path = corpus_path();
+            service
+                .build_project_graph(&path)
+                .expect("build_project_graph should succeed on the fixture");
+            let graph = service.get_project_graph();
+            let caller_id = graph
+                .symbols()
+                .find(|s| s.name() == "caller_in_lib")
+                .map(|s| SymbolId::new(s.fully_qualified_name()))
+                .expect("caller_in_lib must exist in the fixture graph");
+            let mut targets: Vec<String> = graph
+                .dependencies(&caller_id)
+                .filter_map(|(tid, _)| {
+                    let sym = graph.get_symbol(tid)?;
+                    if sym.name() == callee_leaf {
+                        Some(sym.fully_qualified_name().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            targets.sort();
+            targets.dedup();
+            targets.first().cloned()
+        }
+
+        fn outgoing_target_names_for_caller_in_lib() -> Vec<String> {
+            let service = AnalysisService::new();
+            let path = corpus_path();
+            service
+                .build_project_graph(&path)
+                .expect("build_project_graph should succeed on the fixture");
+            let graph = service.get_project_graph();
+            let caller_id = graph
+                .symbols()
+                .find(|s| s.name() == "caller_in_lib")
+                .map(|s| SymbolId::new(s.fully_qualified_name()))
+                .expect("caller_in_lib must exist in the fixture graph");
+            graph
+                .dependencies(&caller_id)
+                .filter_map(|(tid, _)| {
+                    graph.get_symbol(tid).map(|s| s.name().to_string())
+                })
+                .collect()
+        }
+
+        #[test]
+        fn w7_single_candidate_cross_file_resolves_to_nested_callee() {
+            // Rule 1: 1 candidate globally → use it.
+            let target = unique_target_fqn_for("callee_in_nested");
+            let fqn = target.expect("callee_in_nested should resolve");
+            assert!(
+                fqn.contains("nested/mod.rs:callee_in_nested"),
+                "expected target to live in nested/mod.rs, got {:?}",
+                fqn
+            );
+        }
+
+        #[test]
+        fn w7_homonym_in_callers_file_resolves_locally() {
+            // Rule 2: multiple candidates, one lives in caller's file
+            // → use the local one.
+            let target = unique_target_fqn_for("local_helper");
+            let fqn = target.expect("local_helper should resolve to the local one");
+            assert!(
+                fqn.contains("src/lib.rs:local_helper:"),
+                "expected caller-in-file rule to pick local lib.rs::local_helper, got {:?}",
+                fqn
+            );
+        }
+
+        #[test]
+        fn w7_single_candidate_cross_file_resolves_to_ambig_compute() {
+            // Rule 3: 1 candidate globally → use it.
+            let target = unique_target_fqn_for("compute");
+            let fqn = target.expect("compute should resolve");
+            assert!(
+                fqn.contains("ambig/mod.rs:compute"),
+                "expected target to live in ambig/mod.rs, got {:?}",
+                fqn
+            );
+        }
+
+        #[test]
+        fn w7_homonym_three_way_resolves_to_callers_file_local() {
+            // Rule 4: the case the old FQN-lexicographic rule got
+            // wrong (it picked `ambig::shared_name`).
+            let target = unique_target_fqn_for("shared_name");
+            let fqn = target.expect("shared_name should resolve to the local one");
+            assert!(
+                fqn.contains("src/lib.rs:shared_name:"),
+                "expected caller-in-file rule to pick local lib.rs::shared_name, got {:?}",
+                fqn
+            );
+        }
+
+        #[test]
+        fn w7_two_way_homonym_no_caller_file_honest_drop() {
+            // Rule: caller is in src/lib.rs; callee name lives in
+            // BOTH src/nested/mod.rs and src/ambig/mod.rs. Neither is
+            // the caller's file, so the "same file" rule does not
+            // apply. Both candidates share the crate root, so the
+            // "same crate root" rule applies — but with 2 candidates
+            // it is genuinely ambiguous, so per D33 the resolver
+            // MUST drop the edge rather than picking one.
+            let target = unique_target_fqn_for("two_way_ambig");
+            assert!(
+                target.is_none(),
+                "expected two_way_ambig to be dropped (genuine ambiguity, no caller-file anchor), got {:?}",
+                target
+            );
+        }
+
+        #[test]
+        fn w7_no_invented_edges_outside_crate_root() {
+            // Sanity: caller_in_lib has exactly 4 outgoing edges
+            // after F2.W7 — one per resolved call site
+            // (two_way_ambig is dropped per D33).
+            let names = outgoing_target_names_for_caller_in_lib();
+            assert_eq!(
+                names.len(),
+                4,
+                "expected exactly 4 outgoing edges from caller_in_lib (5 call sites minus the 1 ambiguous drop), got {:?}",
+                names
+            );
+            for n in &names {
+                assert!(
+                    matches!(
+                        n.as_str(),
+                        "callee_in_nested" | "local_helper" | "compute" | "shared_name"
+                    ),
+                    "unexpected outgoing target: {}",
+                    n
+                );
+            }
+        }
     }
 }
