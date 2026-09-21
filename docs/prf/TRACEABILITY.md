@@ -67,7 +67,7 @@
 | H5: LSPs `pyright`/`typescript-language-server` faltantes en el entorno | (no es defecto del producto) | LOW | Setup de UAT | Sin acción de código |
 | H10: `cogh update` falla por GitHub API rate limit | (F2 deuda) | LOW (externo) | Mock GitHub API para tests; documentado en `evidence/H10-correction.md` | OPEN (no bloquea C1) |
 | H-F3-1: `find_symbol_usages` (tool MCP `find_usages`) implementa walk+parser inline en el handler en vez de delegar en un puerto de análisis; sin correspondiente CLI | (F3 deuda) | LOW | Refactor de delegación cuando se amplíe la vertical de usages | OPEN (no bloquea F3) |
-| H-F6-1: doble resolución de home — `tracker::read_version_optional()` usa `cognicode_home()` (env-only) mientras `CognicodeHome` respeta `--home`; uninstall con `--home` sin env aborta tras completar rollback; install contamina tracker del home real | (F6) | MEDIO | Unificar resolución en `CognicodeHome`; deprecar `cognicode_home()` en `cmd/tracker.rs`; test con `--home` sin env | OPEN (bloquea C6 pleno) |
+| H-F6-1: doble resolución de home — tracker y journal resolvían vía env ignorando `--home`; install contaminaba el home real y uninstall abortaba tras el rollback | (F6) | MEDIO | FIX en commit `0764fb81`: variantes `*_at` + `CognicodeHome::journal_version`; call sites de producción migrados; 2 tests de regresión; batería cogh 293/0. Cierre verificado con ciclo install→uninstall `--home` sin env (home real intacto) | RESUELTO |
 | H-R4-1: ambas estrategias devuelven 0 edges sobre corpus con cross-file call (`lib.rs::caller → nested::callee`) | (F2.W4 a definir) | MEDIO (funcional) | Investigar `TreeSitterParser::find_call_relationships` sobre el corpus de F2.W3. Decidir si es bug o limitación del parser. | PARTIAL — capa 1 (parser) corregida en `084b5c00`. Capa 2 (lookup name→symbol per-file) abierta como H-R4-2. |
 | H-R4-2: `name_to_symbol` lookup es per-file en `FullGraphStrategy::build_full_graph` y en `PerFileStrategy::build_file_graph`; por tanto edges cross-file no se agregan al grafo final aunque el parser ya los resuelva correctamente | (F2.W4-subsecuente a definir) | MEDIO (funcional) | Refactor: introducir un lookup global de `name → SymbolId` que abarque todos los archivos del walk antes de procesar edges. Requiere análisis de impacto en ~10 tests existentes que asumen `edge_count == 0` o == valores pre-fix. NO abordado en `084b5c00` por scope. | OPEN |
 
@@ -96,7 +96,7 @@
 | F2.W9 (mtime preservado — invalidación de cache) | PRF-F2-W9-001 | **IMPLEMENTED** |
 | F2.W10 (equivalencia de aristas y reproducibilidad) | PRF-F2-W10-001 | **IMPLEMENTED** |
 | F3 (vertical compartida CLI↔MCP) | PRF-F3-001 (UAT-F3-001) | **ACCEPTED** |
-| F6 (distribución/instalación/rollback) | PRF-F6-001 (UAT-F6-001) | **ACCEPTED-PARCIAL** (H-F6-1 OPEN bloquea C6 pleno) |
+| F6 (distribución/instalación/rollback) | PRF-F6-001 (UAT-F6-001) + fix H-F6-1 (`0764fb81`) | **ACCEPTED** |
 
 ## Matriz de trazabilidad (consolidada F0.W1 + F0.W2)
 

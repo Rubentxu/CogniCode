@@ -1760,3 +1760,32 @@ generados (e86): registrado como condición del canal.
 canal real con un solo artefacto publicado; H-F6-1 OPEN). C6:
 evidencia ejecutable existente, certificado condicionado al cierre
 de H-F6-1 o a su aceptación explícita como deuda.
+
+
+## Entrada 24 — 2026-09-21 — F6 cierre: H-F6-1 resuelto
+
+**Causa raíz confirmada y corregida** (commit `0764fb81`): el pin del
+tracker y el journal del lifecycle resolvían vía
+`COGNICODE_HOME`/`HOME` ignorando `--home`. Reproducción RED:
+install con `--home` escribió pin+journal en el home real; uninstall
+abortaba ("clear tracker pin ... No such file or directory") tras
+completar el rollback. La reproducción también descubrió que el
+**journal** (no solo el pin) usaba la resolución env-only.
+
+**Fix**: `write_version_at`/`read_version_at`/`read_version_optional_at`
+en tracker; `CognicodeHome::journal_version`; call sites de producción
+(layout, install, installer_transaction) migrados; wrappers env-only
+DEPRECATED. Dos tests de regresión pinzan que las variantes `_at`
+ignoran el env.
+
+**Verificación GREEN** (binario release real, home aislado,
+`--home` sin env): install → pin y journal SOLO en el home UAT;
+uninstall EXIT=0, pin y journal limpiados; home real sin
+`tracker/` ni `journal/` en ningún momento. Batería cogh bin:
+293 passed, 0 failed.
+
+**Contaminación del operador**: restaurada (pin y journal de prueba
+eliminados de `~/.cognicode`; no existían antes de la UAT).
+
+**Estado**: F6 = ACCEPTED (UAT-F6-001 + H-F6-1 RESUELTO). Siguiente:
+F7 (definir alcance de aceptación de release).
