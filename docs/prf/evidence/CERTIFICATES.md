@@ -731,3 +731,76 @@ Los hechos canónicos son los commits y los tests; la inferencia
 emita nueva directiva, el modelo de certificación la respeta.
 
 Detalle completo en `JOURNAL.md` §12 y `STATE.md` §Snapshot.
+
+---
+
+## PRF-C2 — Certificación consolidada del hito F2 (Correctitud reproducible)
+
+| Campo | Valor |
+|---|---|
+| ID | `PRF-C2` |
+| Hito | F2 — Correctitud reproducible (unidades W1-W10) |
+| Versión CogniCode | 0.97.3 |
+| HEAD al cierre | `dc189d54` (W10) + docs; último commit de código `dc189d54` |
+| Operador | jcode-orchestrator |
+| Fecha | 2026-09-21 |
+
+### Alcance certificado
+
+Unidades F2.W1-W10: R2 (invalidación de cache por contenido), R4
+(equivalencia full ↔ per_file), H-R4-1 (parser de qualified calls),
+H-R4-2 (lookup global scope-aware), integración en el binario (W7),
+R3 (errores silenciosos, W8), mtime preservado (W9), pineado de
+equivalencia de aristas y reproducibilidad (W10).
+
+### Criterio de salida del hito (ROADMAP §F2)
+
+> Cada vertical de análisis dispone de un corpus determinista con un
+> oráculo independiente, los defectos descubiertos están cerrados con
+> tests de regresión y un UAT que ejecute el binario real.
+
+| Criterio | Evidencia | Cumple |
+|---|---|---|
+| Corpus determinista + oráculo | `docs/prf/fixtures/equivalence_full_vs_perfile/` (7 archivos + CORPUS.md); inventario pineado por `w3_corpus_has_expected_symbol_inventory` | Sí |
+| Defectos cerrados con tests de regresión | R2: `test_per_file_graph_cache_detects_content_change` (`70f0b0cf`). H-R4-1 capa 1: tests parser (`084b5c00`). H-R4-2: `w5_*` + `global_index_tests` (`3f27a31d`, `5ce8eb1e`). R3: `w8_silent_errors_tests` ×3. mtime: `w9_mtime_tests` (`2a121aec`). Equivalencia/reproducibilidad: `w10_equivalence_tests` ×3 (`dc189d54`) | Sí |
+| UAT con binario real | UAT-F2-W7 (`relationships_found: 4`, get_call_hierarchy consistente), UAT-F2-W8-001 (`skipped_files[]` con chmod 000 + UTF-8 inválido), UAT-F2-W9-001 (mtime restaurado, cache invalidado) — todas en `docs/prf/UAT.md` con binario release real | Sí |
+
+### Estados por unidad
+
+| Unidad | IMPLEMENTED | INTEGRATED | ACCEPTED | Evidencia |
+|---|---|---|---|---|
+| F2.W1 (R2 cache) | Sí | Sí | Sí | cert PRF-F2-W1, commit `70f0b0cf` |
+| F2.W3 (equivalencia) | Sí | Sí | Sí | cert PRF-F2-W3, commit `d9aa09c0` |
+| F2.W4 (H-R4-1 capa 1) | Sí | Sí | Sí-parcial | cert PRF-F2-W4, commit `084b5c00` |
+| F2.W5 (H-R4-2) | Sí | Sí (UAT W7) | Sí | commit `3f27a31d` |
+| F2.W7 (binario) | Sí | Sí | Sí | commit `5ce8eb1e` + UAT-F2-W7 |
+| F2.W8 (R3 errores) | Sí | Sí | Sí | commit (W8) + UAT-F2-W8-001 |
+| F2.W9 (mtime) | Sí | Sí | Sí | commit `2a121aec` + UAT-F2-W9-001 |
+| F2.W10 (equivalencia edges + reproducibilidad) | Sí | Sí | Sí | commit `dc189d54` (tests de pineo sobre corpus; sin superficie de binario que integrar) |
+
+### Evidencia de suite al cierre
+
+- `cargo test -p cognicode-core --lib` → `2122 passed; 0 failed; 27 ignored`.
+- `cargo test --workspace --no-fail-fast` → 6 fallos, todos
+  preexistentes y catalogados en JOURNAL §15 con responsable y
+  trigger (`cogh_uninstall`, 4× `manifest_upsert` ladybug,
+  `test_cogh_update_respects_lockfile`/rate-limit GitHub H10,
+  `docs_extractor_corpus_regression`). Ninguno en crates tocados
+  por F2; ninguno bloquea este gate.
+
+### Deuda documentada (no bloqueante, honesta)
+
+- Reescritura con mismo tamaño Y mismo mtime no invalida cache
+  (requeriría hash de contenido). Documentada en W9 y UAT-F2-W9-001.
+- H-R4-2 residual: call sites CLI legacy aún en
+  `build_full_graph` legacy (7 consumidores, migración a
+  `build_full_graph_report` registrada como follow-up).
+- H10 (GitHub API rate limit): deuda externa, mock pendiente.
+
+### Estados finales
+
+- [x] **SPECIFIED**: ROADMAP §F2 con criterio de salida.
+- [x] **IMPLEMENTED**: suite 2122/0/27, todos los defectos con RED→GREEN.
+- [x] **INTEGRATED**: binario real `cognicode-mcp` ejecuta los caminos corregidos (UAT W7/W8/W9).
+- [x] **ACCEPTED**: UAT reales ejecutadas y registradas en `UAT.md`.
+- [ ] **RELEASED**: pendiente de consolidación con roadmap principal y tag. Requiere decisión del operador (gate de push/tag).
