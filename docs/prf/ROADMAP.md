@@ -56,7 +56,7 @@ real.
 |---|---|---|
 | **F2.W1** | Caracterización de la correctitud de `PerFileStrategy` (CLI `cognicode graph per-file`, MCP `get_per_file_graph`). Cerrar la invalidación del cache por cambio de contenido (R2 del brief). | **ACCEPTED** (commit `70f0b0cf`) |
 | F2.W2 | Errores de lectura silenciosos en `PerFileStrategy::build_full_graph` (R3). Cambiar el contrato para reportar archivos omitidos. | **ACCEPTED** (commits `be729275` código+corpus, +docs; cert PRF-F2-W2 en `evidence/CERTIFICATES.md`) |
-| F2.W3 | Caracterización de equivalencia `full` vs `per_file` (R4). Las dos estrategias tienen propósitos distintos; documentar. | Pendiente |
+| F2.W3 | Caracterización de equivalencia `full` vs `per_file` (R4). Las dos estrategias tienen propósitos distintos; documentar. | **ACCEPTED** (commit `d9aa09c0`; cert PRF-F2-W3 en `evidence/CERTIFICATES.md`). H-R4-1 (0 edges sobre corpus con cross-file call) registrado para F2.W4. |
 
 Las unidades de F2 siguientes dependerán de los defectos que surjan
 durante la ejecución de F2.W1-W3.

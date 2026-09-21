@@ -10,14 +10,110 @@
 | Campo | Valor |
 |---|---|
 | Hito activo | **F2 — Correctitud reproducible** |
-| Última unidad cerrada | **F2.W2 — Errores de lectura silenciosos en PerFileStrategy (R3)** |
-| Unidad activa siguiente | **F2.W3 — Equivalencia full vs per_file (R4)** |
-| Estado de certificación | F1 = IMPLEMENTED + INTEGRATED + ACCEPTED. F2.W1 = IMPLEMENTED + INTEGRATED + ACCEPTED. F2.W2 = IMPLEMENTED + INTEGRATED + ACCEPTED. Pendiente RELEASED. |
-| HEAD | `be729275` (19 commits ahead de origin/main) |
-| Working tree | sucio (cambios pendientes: `commands.rs` con UAT tests + fix de CLI swallow, `be729275` solo cubría código + corpus sin UAT) |
+| Última unidad cerrada | **F2.W3 — Equivalencia full vs per_file (R4)** |
+| Unidad activa siguiente | **F2.W4 — Cerrar huecos** (mtime-preserved content change, UAT CLI/MCP real, migración de los 7 call sites a `build_full_graph_report`) |
+| Estado de certificación | F1 = IMPLEMENTED + INTEGRATED + ACCEPTED. F2.W1 = ACCEPTED. F2.W2 = ACCEPTED. F2.W3 = ACCEPTED. Pendiente RELEASED. |
+| HEAD | `d9aa09c0` (21 commits ahead de origin/main) |
+| Working tree | Limpio |
 | Bloqueos conocidos | H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa; no bloquea C1). Bug preexistente del binario `cognicode` (workspace con dos crates `name = "cognicode"`) — fuera del alcance F2.W1. |
-| Siguiente unidad ejecutable | F2.W3 (caracterización de equivalencia entre `FullGraphStrategy` y `PerFileStrategy`) |
+| Siguiente unidad ejecutable | F2.W4 (cerrar huecos: mtime-preserved content change, UAT CLI/MCP real, migración de los 7 call sites a `build_full_graph_report`) |
 | Política git | `docs/prf/` se versiona para **documentos del programa** (.md, fixtures) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
+
+## Última unidad cerrada: F2.W3 (Equivalencia full vs per_file — R4)
+
+**Objetivo**: caracterizar — sin forzar equivalencia — las
+divergencias legítimas y los bugs reales entre
+`FullGraphStrategy::build_full_graph` y
+`PerFileStrategy::build_full_graph` / `build_full_graph_report`,
+sobre un corpus que cubre 9 escenarios representativos.
+
+**Decisión de diseño**: las dos estrategias tienen propósitos
+distintos. Forzar equivalencia bit-a-bit (p. ej. mismo orden de
+inserción) no aporta valor y obligaría a reescribir una de las dos.
+F2.W3 marca el **estado actual** con tests de regresión que fallarían
+si ese estado cambia silenciosamente.
+
+**Corpus nuevo** (`docs/prf/fixtures/equivalence_full_vs_perfile/`,
+versionado):
+
+- `CORPUS.md` — declara el oráculo por escenario.
+- `src/lib.rs` — `hello`, `shared`, `caller → crate::nested::callee()`, `compute(x: u32)`.
+- `src/dup.rs` — `pub fn same_name` en root y dentro de `pub mod inner`.
+- `src/empty.rs` — archivo vacío.
+- `src/comments_only.rs` — solo comentarios, ningún símbolo.
+- `src/broken.rs` — `pub fn oops(` sin cierre (sintaxis rota).
+- `src/nested/mod.rs` — `shared`, `callee`, `compute(s: &str)`.
+- `src/nested/deeply/deep.rs` — `deep_symbol` (2 niveles de profundidad).
+
+**Tests** (5 nuevos, todos GREEN, RED confirmado):
+
+| Test | Verifica |
+|---|---|
+| `w3_full_and_per_file_discover_same_symbol_set` | Mismo `HashSet` de `fully_qualified_name` en ambas estrategias |
+| `w3_corpus_has_expected_symbol_inventory` | Conteos exactos por nombre + total = 10. **RED verificado**: añadir un símbolo sneaky → count=11 → falla → restaurar → GREEN |
+| `w3_full_and_per_file_agree_on_per_name_counts` | Multiplicidad por nombre (e.g. `shared=2`, `compute=2`) coincide |
+| `w3_per_file_report_marks_broken_syntax_as_skipped` | `broken.rs` aparece en `SkippedFile` con `SkipReason::Parse` |
+| `w3_full_strategy_silently_ignores_broken_syntax_today` | Pinear el bug equivalente a R3 en `FullGraphStrategy` (scope F2.W4) |
+
+**Hallazgo emergente** (no es bug a corregir aquí, queda en bitácora
+como **H-R4-1**): ambas estrategias devuelven **0 edges** sobre el
+corpus, pese a tener `caller → callee` y relaciones implícitas.
+Esto sugiere que `find_call_relationships` (vía tree-sitter) no
+está capturando las llamadas cross-file en este corpus concreto.
+**No es scope de F2.W3** (que es caracterización de equivalencia,
+no feature work); queda registrado para investigarse en una unidad
+posterior. **No se documenta como bug certificado** sin UAT previo;
+los 5 tests de caracterización pasan en el estado actual.
+
+**Verificación ejecutada**:
+
+- `cargo test -p cognicode-core --lib w3_equivalence_tests` → **5/5 pass**.
+- `cargo test -p cognicode-core --lib` → **2096/0/27** (baseline F2.W2
+  era 2091/0/27, **+5 tests** sin regresión).
+- RED confirmado: el assert de total=10 falla con 11 símbolos; pasa
+  con 10. Test real, no tautología.
+
+**Composición de commits**:
+
+```
+d9aa09c0 test(strategy): characterize full vs per_file equivalence over F2.W3 corpus (R4)
+55eddd4e test(cli): add UAT coverage for per-file-graph R3 fix and stop swallowing Graph errors
+be729275 fix(per-file-graph): report skipped files instead of silent failures (R3)
+```
+
+**Certificación**: F2.W3 = **ACCEPTED** (caracterización; sin fix).
+
+**Política respetada**:
+
+- Sin cambio de código de producción (solo se añadieron tests + corpus).
+- Sin modificar APIs públicas ni traits.
+- Sin expandir scope: el H-R4-1 queda registrado, no se corrige aquí.
+
+**Próxima unidad concreta**: **F2.W4 — Cerrar huecos**, que
+abordará:
+
+1. **H-R4-1**: investigar por qué `find_call_relationships` no
+   captura edges cross-file sobre el corpus. Decidir si es bug o
+   limitación del parser; si bug, arreglarlo con test de regresión.
+2. **R3-style bug en `FullGraphStrategy`**: aplicar el mismo patrón
+   de F2.W2 a `FullGraphStrategy::build_full_graph` (los `_ =>
+   continue` en cada `match` tragan errores; tras F2.W4 deben
+   reportarse).
+3. **mtime-preserved content change test**: ampliar el corpus F2.W1
+   con un test que reescribe un archivo preservando mtime (vía
+   `utimensat`/`filetime`); verificar que el cache invalida
+   igualmente. Sin esto, el fingerprint tiene un agujero: si una
+   herramienta externa restaura mtime al contenido viejo, el cache
+   devuelve stale.
+4. **Migración de los 7 call sites CLI** de
+   `build_full_graph` a `build_full_graph_report` (registrado en
+   F2.W2 como followup). Pospuesto hasta tener un consumidor real
+   que necesite los `SkippedFile`s, o hasta F2.W4 si el UAT CLI lo
+   demanda.
+5. **UAT CLI/MCP real**: ejecutar `cognicode graph per-file` y la
+   tool `get_per_file_graph` sobre el corpus, capturar stderr y
+   exit code. Trabajar alrededor del bug preexistente del binario
+   `cognicode` (dos crates con mismo `name`).
 
 ## Última unidad cerrada: F2.W2 (Errores de lectura silenciosos en PerFileStrategy)
 
@@ -235,7 +331,8 @@ archivos omitidos, y documentar el comportamiento en UAT.
 |---|---|
 | F2.W1 — Invalidación de cache por cambio de contenido (R2) | **ACCEPTED** (commit 70f0b0cf) |
 | F2.W2 — Errores de lectura silenciosos (R3) | **ACCEPTED** (commits be729275 + docs) |
-| F2.W3 — Equivalencia full vs per_file (R4) | Pendiente |
+| F2.W3 — Equivalencia full vs per_file (R4) | **ACCEPTED** (commit d9aa09c0) |
+| F2.W4 — Cerrar huecos | Pendiente |
 
 ## Hito F1 (Estabilización) → CERRADO (referencia histórica)
 

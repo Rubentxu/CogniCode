@@ -806,3 +806,97 @@ cross-file). NO forzaré equivalencia bit-a-bit — el objetivo es
 documentar divergencias legítimas como comportamiento esperado y
 descubrir bugs reales donde sí deberían coincidir.
 
+
+## Entrada 10 — 2026-09-21 — F2.W3 (Equivalencia full vs per_file — R4)
+
+### Objetivo
+
+Caracterizar — sin forzar equivalencia — las divergencias entre
+`FullGraphStrategy` y `PerFileStrategy` sobre un corpus extendido.
+A diferencia de F2.W1 y F2.W2, esta unidad NO arregla nada; solo
+establece el estado actual con tests de regresión.
+
+### Investigación previa (probe)
+
+Antes de escribir los tests hice una sonda rápida (no committeada)
+ejecutando `build_full_graph` de ambas estrategias sobre el corpus:
+
+- FULL: 10 símbolos, 0 edges.
+- PER_FILE: 10 símbolos, 0 edges.
+- PER_FILE_REPORT: `BuildStatus::Partial { skipped: [broken.rs (Parse)] }`.
+
+**Mismo conjunto de símbolos, distinto orden de inserción.** Esto
+significa que la equivalencia "qué símbolos encuentra cada uno" es
+total. La equivalencia "edges" es 0=0 — pero el corpus sí tiene
+`caller → callee`, así que **0 edges no es equivalencia sino bug
+compartido o limitación del parser**. Lo registro como H-R4-1.
+
+### Decisiones
+
+- **NO forzar equivalencia bit-a-bit**: las dos estrategias
+  indexan de forma distinta (full construye sobre la marcha;
+  per_file tiene un cache). Hacerlas idénticas obligaría a
+  reescribir la mitad del código y no aportaría valor.
+- **SÍ pinear el estado actual**: si alguien introduce un cambio
+  que rompa la simetría de manera inesperada (e.g. `full` deja de
+  visitar subdirectorios), uno de los 5 tests falla.
+- **SÍ marcar el bug latente (H-R4-1)** sin certificarlo: los 5
+  tests pasan; H-R4-1 queda en bitácora para una unidad posterior.
+
+### Corpus
+
+`docs/prf/fixtures/equivalence_full_vs_perfile/` (7 archivos .rs + CORPUS.md):
+
+- `src/lib.rs` — `hello`, `shared`, `caller` (que llama a `crate::nested::callee()`), `compute(x: u32)`.
+- `src/dup.rs` — `same_name` en root y dentro de `mod inner { same_name }`.
+- `src/empty.rs` — archivo vacío.
+- `src/comments_only.rs` — solo comentarios.
+- `src/broken.rs` — `pub fn oops(` sin cierre.
+- `src/nested/mod.rs` — `shared`, `callee`, `compute(s: &str)`.
+- `src/nested/deeply/deep.rs` — `deep_symbol`.
+
+### Tests añadidos (5 nuevos, todos GREEN, RED verificado)
+
+| Test | Cubre |
+|---|---|
+| `w3_full_and_per_file_discover_same_symbol_set` | Equivalencia: misma `HashSet` de fully-qualified names |
+| `w3_corpus_has_expected_symbol_inventory` | Conteos por nombre + total = 10. RED verificado con sneaky symbol |
+| `w3_full_and_per_file_agree_on_per_name_counts` | Multiplicidad por nombre coincide |
+| `w3_per_file_report_marks_broken_syntax_as_skipped` | `broken.rs` aparece como `SkipReason::Parse` |
+| `w3_full_strategy_silently_ignores_broken_syntax_today` | Pin del comportamiento actual de `full` (scope F2.W4) |
+
+### Hallazgo emergente — H-R4-1
+
+Ambas estrategias devuelven **0 edges** sobre el corpus, pese a que
+`lib.rs::caller` invoca `crate::nested::callee()`. Esto sugiere que
+`TreeSitterParser::find_call_relationships` no está capturando las
+llamadas. Decisiones sobre el hallazgo:
+
+- **NO es bug certificado**: podría ser limitación del parser
+  tree-sitter (no captura llamadas via `crate::path::foo`?) o bug
+  real. Sin UAT adicional no se sabe.
+- **NO se corrige en F2.W3**: queda como "deuda de F2.W4+" en
+  STATE.md, en la lista de pendientes de F2.W4.
+- **NO se documenta como bug en CERTIFICATES.md**: solo en bitácora.
+
+### Verificaciones
+
+- `cargo test -p cognicode-core --lib w3_equivalence_tests` → 5/5 pass.
+- `cargo test -p cognicode-core --lib` → **2096/0/27** (baseline F2.W2
+  era 2091/0/27, +5 tests sin regresión).
+- RED verificado manualmente para `w3_corpus_has_expected_symbol_inventory`:
+  añadir `sneaky_extra_symbol_for_test` → count=11 → falla → restaurar → GREEN.
+
+### Política respetada
+
+- Sin cambio de código de producción.
+- Sin modificar APIs públicas, traits, ni signatures.
+- Sin expandir scope: H-R4-1 queda en bitácora.
+- Sin mock: los tests ejercitan código real sobre corpus real.
+
+### Próxima unidad concreta
+
+**F2.W4 — Cerrar huecos** (5 frentes, ver STATE.md §F2.W3 para
+detalle): H-R4-1, R3 en FullGraphStrategy, mtime-preserved content
+change, migración de los 7 call sites a `build_full_graph_report`,
+UAT CLI/MCP real.

@@ -48,7 +48,7 @@
 | PRF-F2-W2-001 | Reporte explícito de archivos omitidos por error de I/O/parseo/sintaxis en `PerFileStrategy` | `crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs` — tipos `SkipReason`, `SkippedFile`, `BuildStatus`, `BuildReport`; helper `classify_io_error`; métodos `merge_with_report` (nuevo) y `merge` (preservado) | `test_merge_with_report_surfaces_parse_error`, `test_classify_io_error_read_vs_parse`, `test_merge_with_report_surfaces_unreadable_file` (RED→GREEN los tres) | `docs/prf/fixtures/per_file_partial_corpus/CORPUS.md`; `evidence/CERTIFICATES.md` (PRF-F2-W2) | `be729275` |
 | PRF-F2-W2-002 | Detección explícita de errores de sintaxis en `build_file_graph` vía `TreeSitterParser::has_error_nodes` | `crates/cognicode-core/src/infrastructure/parser/tree_sitter_parser.rs` (uso de `has_error_nodes`) + `crates/cognicode-core/src/infrastructure/graph/strategy.rs` (rechazo con `InvalidData`) | cubierto por PRF-F2-W2-001 (el corpus `broken_syntax.rs` ejercita este path) | id. | `be729275` |
 | PRF-F2-W2-003 | Propagación del error del subcomando Graph al exit code del binario CLI | `crates/cognicode-core/src/interface/cli/commands.rs` — `CommandExecutor::execute` retorna `Err(e)` en el brazo `Graph` | `uat_cli_graph_per_file_broken_syntax_returns_error`, `uat_cli_graph_per_file_missing_file_returns_error` (RED→GREEN) | id. | (commit actual de docs) |
-| PRF-F2-W3-001 | Caracterización de equivalencia `full` vs `per_file` | (caracterización sin corrección) | (por definir) | — | — |
+| PRF-F2-W3-001 | Caracterización de equivalencia entre `FullGraphStrategy::build_full_graph` y `PerFileStrategy::build_full_graph` | `crates/cognicode-core/src/infrastructure/graph/strategy.rs::w3_equivalence_tests` (5 tests) sobre `docs/prf/fixtures/equivalence_full_vs_perfile/` (9 escenarios) | `w3_full_and_per_file_discover_same_symbol_set`, `w3_corpus_has_expected_symbol_inventory`, `w3_full_and_per_file_agree_on_per_name_counts`, `w3_per_file_report_marks_broken_syntax_as_skipped`, `w3_full_strategy_silently_ignores_broken_syntax_today` | `docs/prf/fixtures/equivalence_full_vs_perfile/CORPUS.md`; `evidence/CERTIFICATES.md` (PRF-F2-W3); H-R4-1 en `docs/prf/JOURNAL.md` §10 | `d9aa09c0` |
 
 ## Hallazgos con trazabilidad
 
@@ -59,6 +59,8 @@
 | H3: `cognicode-mcp-server` declarado pero no usado | (PRF-W4 a definir) | LOW | KEEP — es la variante HTTP/SSE para deployment containerizado; `cognicode-mcp` es la variante stdio para instalación local. No es duplicación. | CLOSED (F1.W5 — KEEP+DOCUMENT) |
 | H4: `docs-ingest`/`issues-ingest` visibles en `--help` solo con feature `multimodal` | (PRF-W4 a definir) | LOW | KEEP+MARK — el comportamiento actual (marcado con nota "Compiled in ONLY when the `multimodal` Cargo feature is active") es honesto y útil. No se debe ocultar. | CLOSED (F1.W5 — KEEP) |
 | H5: LSPs `pyright`/`typescript-language-server` faltantes en el entorno | (no es defecto del producto) | LOW | Setup de UAT | Sin acción de código |
+| H10: `cogh update` falla por GitHub API rate limit | (F2 deuda) | LOW (externo) | Mock GitHub API para tests; documentado en `evidence/H10-correction.md` | OPEN (no bloquea C1) |
+| H-R4-1: ambas estrategias devuelven 0 edges sobre corpus con cross-file call (`lib.rs::caller → nested::callee`) | (F2.W4 a definir) | MEDIO (funcional) | Investigar `TreeSitterParser::find_call_relationships` sobre el corpus de F2.W3. Decidir si es bug o limitación del parser. | OPEN — registrado en F2.W3, scope F2.W4 |
 
 ## Contradicciones con trazabilidad
 

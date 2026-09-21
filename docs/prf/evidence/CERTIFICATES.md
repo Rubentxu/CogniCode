@@ -422,3 +422,117 @@ Siguiente hito: F1 (Estabilización).
 - F2.W2-followup — migrar los 7 call sites de `build_full_graph` a
   `build_full_graph_report` cuando haya un consumidor real que
   necesite los `SkippedFile`s.
+
+---
+
+## PRF-F2-W3 — Certificación de la unidad F2.W3 (Equivalencia full vs per_file — R4)
+
+| Campo | Valor |
+|---|---|
+| ID | `PRF-F2-W3` |
+| Hito | F2 — Correctitud reproducible |
+| Unidad | W3 — Caracterización de equivalencia entre `FullGraphStrategy` y `PerFileStrategy` (R4 del brief) |
+| Versión CogniCode | 0.97.3 |
+| HEAD al cierre | `d9aa09c0` |
+| Operador | jcode-orchestrator |
+| Fecha | 2026-09-21 |
+
+### Estados alcanzados
+
+- [x] **SPECIFIED**: brief del operador (R4 — caracterización sin
+      corrección); STATE.md y ROADMAP.md F2.W3 documentados;
+      decisión de diseño "no forzar equivalencia" registrada en
+      STATE.md y en este certificado.
+- [x] **IMPLEMENTED**: 5 tests de caracterización en
+      `strategy.rs::w3_equivalence_tests`; corpus de 9 escenarios
+      versionado en `docs/prf/fixtures/equivalence_full_vs_perfile/`.
+- [x] **INTEGRATED**: `cargo test -p cognicode-core --lib` →
+      **2096/0/27** (baseline F2.W2 era 2091/0/27, **+5 tests** sin
+      regresión). Los tests ejercitan el código real de ambas
+      estrategias sobre el corpus real.
+- [x] **ACCEPTED**: criterios de salida cumplidos — corpus y
+      oráculo versionados, RED verificado (sneaky symbol → falla →
+      restaurar → GREEN), divergencias legítimas documentadas,
+      hallazgo emergente H-R4-1 registrado para F2.W4.
+- [ ] **RELEASED**: pendiente.
+
+### Evidencias concretas
+
+| Evidencia | Ubicación |
+|---|---|
+| Documentación | `docs/prf/STATE.md` §"Última unidad cerrada: F2.W3" |
+| Diario | `docs/prf/JOURNAL.md` §10 |
+| Corpus versionado | `docs/prf/fixtures/equivalence_full_vs_perfile/CORPUS.md` + 7 archivos `.rs` |
+| Tests añadidos | `crates/cognicode-core/src/infrastructure/graph/strategy.rs::w3_equivalence_tests` (5 tests, 199 LOC) |
+| Hallazgo H-R4-1 | `docs/prf/TRACEABILITY.md` (tabla "Hallazgos con trazabilidad") |
+
+### Verificación ejecutada (resumen)
+
+- `cargo test -p cognicode-core --lib w3_equivalence_tests` → **5/5 pass**.
+- `cargo test -p cognicode-core --lib` → **2096/0/27** (+5 vs
+  baseline F2.W2 de 2091/0/27).
+- **RED verificado manualmente**:
+  `w3_corpus_has_expected_symbol_inventory` falla cuando se añade
+  un símbolo extra (`sneaky_extra_symbol_for_test`); pasa cuando se
+  restaura. El test es un detector de regresión real, no una
+  tautología.
+
+### Hallazgos emergentes
+
+- **H-R4-1** (severidad MEDIO funcional, estado OPEN): ambas
+  estrategias devuelven **0 edges** sobre el corpus de
+  caracterización pese a que `lib.rs::caller` invoca
+  `crate::nested::callee()`. Sugiere que
+  `TreeSitterParser::find_call_relationships` no captura esa
+  relación. **No es bug certificado** (sin UAT adicional); queda
+  registrado en TRACEABILITY.md y en JOURNAL.md §10 como scope de
+  **F2.W4**. Antes de corregirlo se requiere:
+  1. Reproducir con un UAT manual sobre el corpus (no test).
+  2. Decidir si es bug del parser (necesita fix) o limitación
+     documentada (cross-file via `crate::` no es soportado).
+  3. Si es bug, escribir un test RED que lo demuestre antes de
+     tocar el parser.
+
+### Decisiones tomadas
+
+- **D17**: no forzar equivalencia bit-a-bit entre las dos
+  estrategias. Las dos indexan de forma distinta; forzar igualdad
+  obligaría a reescribir código sin beneficio para el producto.
+  Los tests pinerán el estado actual.
+- **D18**: el assert de inventario usa **un assert de total** además
+  de los asserts por nombre. Esto convierte el test en un detector
+  de regresión real (no basta con que `hello=1`, `shared=2`, etc.
+  individualmente; el total debe ser exactamente 10). RED
+  verificado.
+- **D19**: H-R4-1 se documenta en bitácora y TRACEABILITY pero NO
+  en CERTIFICATES como bug certificado. La política de PRF es
+  certificar solo lo verificado; H-R4-1 requiere UAT adicional
+  antes de poder hablar de "bug".
+
+### Limitaciones documentadas
+
+- **H-R4-1** sigue OPEN; su investigación es scope de F2.W4.
+- **Bug R3-style en `FullGraphStrategy`** (los `_ => continue`
+  tragan errores) sigue sin arreglar; pinerado en
+  `w3_full_strategy_silently_ignores_broken_syntax_today` para que
+  no se introduzca una regresión silenciosa. Scope de F2.W4.
+- **Migración de los 7 call sites CLI** a `build_full_graph_report`
+  sigue pendiente. Scope de F2.W4 (sin consumidor real no es
+  trabajo ceremonial).
+- **Bug preexistente del binario `cognicode`** y **H10** siguen
+  sin arreglar (no scope de F2.W3).
+
+### Firmas de aprobación
+
+| Rol | Nombre | Estado | Notas |
+|---|---|---|---|
+| Operador | jcode-orchestrator | APROBADO | Sesión 2026-09-21 |
+| Auto-revisión PRF | (programa PRF) | APROBADO | Criterios de salida cumplidos |
+
+### Trabajo pendiente heredado
+
+- F2.W4 — Cerrar huecos (5 frentes: H-R4-1, R3 en `full`, mtime-preserved
+  content change, migración de call sites, UAT CLI/MCP real).
+- H10 — extender `staging_dir` para que cubra downloads de manifests.
+- Bug preexistente del binario `cognicode` (dos crates con mismo `name`).
+- F2.W2-followup — migrar los 7 call sites a `build_full_graph_report`.
