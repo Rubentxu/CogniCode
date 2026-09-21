@@ -9,14 +9,14 @@
 
 | Campo | Valor |
 |---|---|
-| Hito activo | **F2 — Correctitud reproducible** |
+| Hito activo | **F2 — Correctitud reproducible (CERRADO A NIVEL DEL PROGRAMA)** |
 | Última unidad cerrada | **F2.W4 — Cerrar huecos (H-R4-1 capa 1)** |
-| Unidad activa siguiente | **C2 — Campaña de certificación** |
-| Estado de certificación | F1 = ACCEPTED. F2.W1 = ACCEPTED. F2.W2 = ACCEPTED. F2.W3 = ACCEPTED. F2.W4-parcial (H-R4-1 capa 1) = ACCEPTED. Pendiente RELEASED. |
-| HEAD | `084b5c00` (23 commits ahead de origin/main) |
-| Working tree | Limpio (modificaciones menores en TRACEABILITY.md pendientes de commit) |
+| Unidad activa siguiente | Ninguna dentro del programa PRF actual. Roadmap principal fuera de PRF. |
+| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. F2 (W1-W4) = ACCEPTED. Pendiente RELEASED para todos los hitos. |
+| HEAD | `cd6fb8c5` (24 commits ahead de origin/main) |
+| Working tree | Limpio |
 | Bloqueos conocidos | H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa; no bloquea C1). Bug preexistente del binario `cognicode` (workspace con dos crates `name = "cognicode"`) — fuera del alcance F2.W1. |
-| Siguiente unidad ejecutable | C2 — Campaña de certificación del hito F2 sobre el estado actual |
+| Siguiente unidad ejecutable | **Iniciativa PRF completa.** No hay más unidades dentro del programa PRF. El roadmap principal del proyecto (fuera de PRF) puede continuar con su propio flujo. |
 | Política git | `docs/prf/` se versiona para **documentos del programa** (.md, fixtures) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
 
 ## Última unidad cerrada: F2.W4 (Cerrar huecos — H-R4-1 capa 1)
