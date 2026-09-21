@@ -53,6 +53,11 @@ pub struct AnalysisService {
     >,
     /// Coverage metrics from the last graph build
     coverage_metrics: Mutex<Option<GraphCoverageMetrics>>,
+    /// F2.W8: skipped-file report from the last graph build. None
+    /// until the first successful `build_project_graph` /
+    /// `build_project_graph_filtered` / `build_graph_per_file` /
+    /// `build_graph_with_strategy` call.
+    last_build_report: Mutex<Option<crate::infrastructure::graph::per_file_graph::BuildReport>>,
 }
 
 impl AnalysisService {
@@ -67,6 +72,7 @@ impl AnalysisService {
             on_demand_builder: Mutex::new(None),
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
             coverage_metrics: Mutex::new(None),
+            last_build_report: Mutex::new(None),
         }
     }
 
@@ -90,6 +96,7 @@ impl AnalysisService {
             on_demand_builder: Mutex::new(None),
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
             coverage_metrics: Mutex::new(None),
+            last_build_report: Mutex::new(None),
         }
     }
 
@@ -205,11 +212,38 @@ impl AnalysisService {
         // (see `infrastructure/graph/per_file_graph.rs::GlobalSymbolIndex`
         // — F2.W5 introduced it but never wired it into the real
         // binary path, which goes through `build_project_graph`).
-        let mut global_index = crate::infrastructure::graph::per_file_graph::GlobalSymbolIndex::new();
+        let mut global_index =
+            crate::infrastructure::graph::per_file_graph::GlobalSymbolIndex::new();
 
         // Coverage tracking
         let mut parsed_files: usize = 0;
         let mut unresolved_edges: usize = 0;
+
+        // F2.W8: collect skipped files instead of dropping them
+        // silently. The closure inside `filter_map` would otherwise
+        // use `?` to short-circuit on read/parse errors, leaving no
+        // trace of the file. We accumulate the SkippedFile records
+        // in an Arc<Mutex<...>> because the iterator runs in
+        // parallel and the closure captures it by reference.
+        let skipped_files: std::sync::Arc<
+            std::sync::Mutex<Vec<crate::infrastructure::graph::per_file_graph::SkippedFile>>,
+        > = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let classify_io = |e: &std::io::Error| {
+            use std::io::ErrorKind;
+            match e.kind() {
+                ErrorKind::PermissionDenied | ErrorKind::NotFound => {
+                    crate::infrastructure::graph::per_file_graph::SkipReason::Read(e.to_string())
+                }
+                ErrorKind::InvalidData | ErrorKind::InvalidInput => {
+                    crate::infrastructure::graph::per_file_graph::SkipReason::Parse(e.to_string())
+                }
+                _ => crate::infrastructure::graph::per_file_graph::SkipReason::Other(e.to_string()),
+            }
+        };
+        let classify_parse =
+            |e: &crate::domain::traits::ParseError| -> crate::infrastructure::graph::per_file_graph::SkipReason {
+                crate::infrastructure::graph::per_file_graph::SkipReason::Parse(e.to_string())
+            };
 
         let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
@@ -275,6 +309,8 @@ impl AnalysisService {
             .into_par_iter()
             .filter_map(|(path, language, file_path, mtime)| {
                 let language = language.unwrap();
+                let path_for_skip = file_path.clone();
+                let skipped = skipped_files.clone();
 
                 {
                     let cache = self.file_cache.lock().unwrap();
@@ -292,8 +328,32 @@ impl AnalysisService {
                     }
                 }
 
-                let source = std::fs::read_to_string(&path).ok()?;
-                let parser = TreeSitterParser::with_cache(language).ok()?;
+                // F2.W8: every error path now records a SkippedFile
+                // with a SkipReason that classifies the failure.
+                let source = match std::fs::read_to_string(&path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        skipped.lock().unwrap().push(
+                            crate::infrastructure::graph::per_file_graph::SkippedFile {
+                                path: path_for_skip.clone(),
+                                reason: classify_io(&e),
+                            },
+                        );
+                        return None;
+                    }
+                };
+                let parser = match TreeSitterParser::with_cache(language) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        skipped.lock().unwrap().push(
+                            crate::infrastructure::graph::per_file_graph::SkippedFile {
+                                path: path_for_skip.clone(),
+                                reason: classify_parse(&e),
+                            },
+                        );
+                        return None;
+                    }
+                };
 
                 let symbols = parser
                     .find_all_symbols_with_path(&source, &file_path)
@@ -404,7 +464,26 @@ impl AnalysisService {
             unresolved_edges
         );
 
+        // F2.W8: drain skipped files before building the call graph.
+        let skipped_vec = {
+            let guard = skipped_files.lock().unwrap();
+            guard.clone()
+        };
         let call_graph = store.to_call_graph();
+        // F2.W8: attach the call graph to the BuildReport and store
+        // it. Empty skipped list → Complete; otherwise Partial.
+        let status = if skipped_vec.is_empty() {
+            crate::infrastructure::graph::per_file_graph::BuildStatus::Complete
+        } else {
+            crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                skipped: skipped_vec,
+            }
+        };
+        let report = crate::infrastructure::graph::per_file_graph::BuildReport {
+            graph: call_graph.clone(),
+            status,
+        };
+        *self.last_build_report.lock().unwrap() = Some(report);
         let symbol_count = call_graph.symbol_count();
         let edge_count = call_graph.edge_count();
 
@@ -905,6 +984,24 @@ impl AnalysisService {
     /// Returns coverage metrics from the last graph build.
     pub fn get_coverage_metrics(&self) -> Option<GraphCoverageMetrics> {
         self.coverage_metrics.lock().unwrap().clone()
+    }
+
+    /// F2.W8: returns the [`BuildReport`] from the last graph build,
+    /// or `None` if no build has run yet on this service instance.
+    ///
+    /// The report carries a [`BuildStatus`] that is either `Complete`
+    /// (every file in the walk was processed) or `Partial { skipped }`
+    /// (one or more files were dropped — see [`SkippedFile`] for the
+    /// per-file reason and the [`SkipReason`] variants).
+    ///
+    /// [`BuildReport`]: crate::infrastructure::graph::per_file_graph::BuildReport
+    /// [`BuildStatus`]: crate::infrastructure::graph::per_file_graph::BuildStatus
+    /// [`SkippedFile`]: crate::infrastructure::graph::per_file_graph::SkippedFile
+    /// [`SkipReason`]: crate::infrastructure::graph::per_file_graph::SkipReason
+    pub fn get_last_build_report(
+        &self,
+    ) -> Option<crate::infrastructure::graph::per_file_graph::BuildReport> {
+        self.last_build_report.lock().unwrap().clone()
     }
 
     /// Extracts symbols from a file
@@ -2480,9 +2577,7 @@ def b():
                 .expect("caller_in_lib must exist in the fixture graph");
             graph
                 .dependencies(&caller_id)
-                .filter_map(|(tid, _)| {
-                    graph.get_symbol(tid).map(|s| s.name().to_string())
-                })
+                .filter_map(|(tid, _)| graph.get_symbol(tid).map(|s| s.name().to_string()))
                 .collect()
         }
 
@@ -2574,6 +2669,153 @@ def b():
                     "unexpected outgoing target: {}",
                     n
                 );
+            }
+        }
+    }
+
+    /// F2.W8 — RED tests for silent errors in `build_project_graph`.
+    ///
+    /// The bug F2.W8 addresses: `AnalysisService::build_project_graph`
+    /// (the path the real `cognicode-mcp` binary uses) silently drops
+    /// files that fail to read, fail to initialize the parser, or fail
+    /// during AST extraction. The only externally observable signal of
+    /// the omission today is `GraphCoverageMetrics::coverage_percent`,
+    /// which is a derived ratio and gives the user no list of which
+    /// files were dropped or why.
+    ///
+    /// F2.W2 introduced `BuildReport` / `SkippedFile` / `SkipReason`
+    /// for `PerFileStrategy::merge_with_report` — but that API lives
+    /// in `infrastructure/graph/` and is NOT used by `analysis_service`.
+    /// The corpus `docs/prf/fixtures/silent_errors_corpus/` is created
+    /// alongside this test so the failure modes are reproducible.
+    mod w8_silent_errors_tests {
+        use super::*;
+        use crate::application::dto::GraphCoverageMetrics;
+
+        fn corpus_path() -> std::path::PathBuf {
+            let manifest = std::env::var("CARGO_MANIFEST_DIR")
+                .expect("CARGO_MANIFEST_DIR must be set during cargo test");
+            let crate_root = std::path::PathBuf::from(manifest);
+            let workspace_root = crate_root
+                .ancestors()
+                .nth(2)
+                .expect("workspace root has at least 2 ancestors")
+                .to_path_buf();
+            workspace_root.join("docs/prf/fixtures/silent_errors_corpus")
+        }
+
+        fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+            std::fs::create_dir_all(dst)?;
+            for entry in std::fs::read_dir(src)? {
+                let entry = entry?;
+                let from = entry.path();
+                let to = dst.join(entry.file_name());
+                let file_type = entry.file_type()?;
+                if file_type.is_dir() {
+                    copy_dir_recursive(&from, &to)?;
+                } else if file_type.is_file() {
+                    std::fs::copy(&from, &to)?;
+                }
+            }
+            Ok(())
+        }
+
+        /// Build the corpus into a private temp directory, mutate
+        /// permissions / contents so that one file becomes unreadable
+        /// and another becomes UTF-8-invalid, then build the graph
+        /// and return (coverage_metrics, parsed_symbol_names).
+        fn build_graph_with_corruption(
+            unreadable_filename: &str,
+            invalid_utf8_filename: &str,
+        ) -> (GraphCoverageMetrics, Vec<String>) {
+            use std::os::unix::fs::PermissionsExt;
+
+            let src_corpus = corpus_path();
+            let tmp = tempfile::tempdir().expect("tempdir");
+            let dst = tmp.path().join("corpus");
+            copy_dir_recursive(&src_corpus, &dst).expect("copy fixture");
+
+            let unreadable = dst.join("src").join(unreadable_filename);
+            std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000))
+                .expect("set_permissions 000");
+
+            let invalid = dst.join("src").join(invalid_utf8_filename);
+            std::fs::write(&invalid, [0xFFu8, 0xFE, 0xFD, 0xFC]).expect("write invalid bytes");
+
+            let service = AnalysisService::new();
+            service
+                .build_project_graph(&dst)
+                .expect("build_project_graph should return Ok even with skipped files");
+
+            let coverage = service
+                .get_coverage_metrics()
+                .expect("coverage metrics should be populated after a successful build");
+            let graph = service.get_project_graph();
+            let mut names: Vec<String> = graph.symbols().map(|s| s.name().to_string()).collect();
+            names.sort();
+            names.dedup();
+            (coverage, names)
+        }
+
+        #[test]
+        fn w8_unreadable_file_is_silently_dropped() {
+            let (coverage, names) = build_graph_with_corruption("unreadable.rs", "invalid_utf8.rs");
+            assert!(
+                coverage.parsed_files >= 1,
+                "expected at least 1 file parsed (ok.rs), got {} (coverage={}%)",
+                coverage.parsed_files,
+                coverage.coverage_percent
+            );
+            // The corpus contains 3 .rs files. After corruption 2
+            // should be dropped, leaving exactly 1 parsed (ok.rs).
+            assert_eq!(
+                coverage.parsed_files, 1,
+                "expected exactly 1 file parsed after corruption, got {} (coverage={}%)",
+                coverage.parsed_files, coverage.coverage_percent
+            );
+            assert!(
+                names.contains(&"normal_function".to_string()),
+                "expected ok.rs::normal_function in the graph"
+            );
+        }
+
+        #[test]
+        fn w8_invalid_utf8_file_is_silently_dropped() {
+            let (coverage, _names) =
+                build_graph_with_corruption("unreadable.rs", "invalid_utf8.rs");
+            assert!(
+                coverage.coverage_percent < 100.0,
+                "expected coverage below 100% when 2 of 3 source files are corrupted, got {}",
+                coverage.coverage_percent
+            );
+        }
+
+        #[test]
+        fn w8_build_report_enumerates_skipped_files() {
+            // Today `AnalysisService` exposes no way to obtain the
+            // list of skipped files + reasons. After F2.W8 it must.
+            // This test pins the public surface. The RED is that
+            // this won't compile until we add `get_last_build_report`.
+            let service = AnalysisService::new();
+            let dst = corpus_path();
+            service
+                .build_project_graph(&dst)
+                .expect("build_project_graph should succeed on unmodified corpus");
+            let report = service
+                .get_last_build_report()
+                .expect("get_last_build_report must return Some after a build");
+            use crate::infrastructure::graph::per_file_graph::BuildStatus;
+            match report.status {
+                BuildStatus::Complete => {
+                    // ok.rs is the only source file — every build
+                    // should land on Complete.
+                }
+                BuildStatus::Partial { skipped } => {
+                    panic!(
+                        "expected Complete status with 1 valid source file, got Partial with {} skipped",
+                        skipped.len()
+                    );
+                }
             }
         }
     }

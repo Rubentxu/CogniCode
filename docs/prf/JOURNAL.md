@@ -1428,3 +1428,131 @@ o fallos de parser sin reflejarlos en la cobertura o en el estado
 del resultado. Corregir cada causa independiente en una unidad
 acotada.
 
+## Entrada 16 — 2026-09-21 — F2.W8 (Errores silenciosos en `build_project_graph`)
+
+**Caracterización (RED)**. Identificadas 4 fuentes de error
+silencioso en `analysis_service::build_project_graph`:
+
+1. `std::fs::read_to_string(&path).ok()?` (línea 295, hoy) — al
+   fallar la lectura, el archivo se descarta con `?` sin
+   notificar.
+2. `TreeSitterParser::with_cache(language).ok()?` (línea 296) —
+   si el parser no se construye, el archivo se descarta.
+3. `find_all_symbols_with_path(...).unwrap_or_default()` (línea
+   298-300) — un fallo de extracción de símbolos devuelve un
+   vector vacío, ocultando el problema.
+4. `find_call_relationships(...).unwrap_or_default()` (línea
+   301-303) — análogo para relaciones.
+
+`GraphCoverageMetrics` no incluye lista de archivos omitidos.
+
+**RED tests añadidos** en `analysis_service.rs::tests::w8_silent_errors_tests`:
+
+- `w8_unreadable_file_is_silently_dropped`: corpus con 3 archivos
+  `.rs`, uno con `chmod 000`, otro con bytes UTF-8 inválidos.
+  Espera `coverage.parsed_files == 1` (sólo `ok.rs` cuenta).
+- `w8_invalid_utf8_file_is_silently_dropped`: comprueba
+  `coverage_percent < 100%` con 2 de 3 archivos corruptos.
+- `w8_build_report_enumerates_skipped_files`: pinea la API
+  pública (`AnalysisService::get_last_build_report()`) y la
+  semántica `Complete` con corpus válido.
+
+**RED confirmado**: `cargo test -p cognicode-core --lib
+w8_silent_errors_tests` → `error[E0599]: no method named
+get_last_build_report found`. El API público no existía.
+
+**GREEN — implementación**. Reutilización de tipos existentes
+(AGENTS.md §5 — "no nuevas abstracciones si los mecanismos
+existentes pueden satisfacer el requisito"):
+
+- `BuildReport { graph, status }` ya existía en
+  `infrastructure/graph/per_file_graph.rs` desde F2.W2.
+- `BuildStatus::{Complete, Partial { skipped }}` ya existía.
+- `SkippedFile { path, reason }` + `SkipReason::{Read, Parse,
+  UnsupportedExtension, Other}` ya existían.
+
+Cambios mínimos:
+
+1. Añadido `last_build_report: Mutex<Option<BuildReport>>` a
+   `AnalysisService` (3 inicializaciones en constructores).
+2. Modificado `build_project_graph` para recolectar
+   `Vec<SkippedFile>` en un `Arc<Mutex<Vec<SkippedFile>>>`
+   compartido entre workers de `rayon`. Cada error path ahora
+   clasifica (`classify_io_error` para `io::Error`,
+   `classify_parse_error` para `ParseError`) y `push` un
+   `SkippedFile`.
+3. Tras `store.to_call_graph()`, se drena el `Vec`, se
+   construye el `BuildReport` (status = `Complete` si lista
+   vacía, `Partial { skipped }` si no) y se almacena en
+   `last_build_report`.
+4. Nuevo método público `AnalysisService::get_last_build_report()
+   -> Option<BuildReport>`.
+
+**Surface MCP**: el handler `handle_build_graph` ahora devuelve
+`BuildGraphOutput { ..., skipped_files: Option<Vec<SkippedFileDto>> }`.
+DTO = `{ path, reason_kind ∈ {read, parse, unsupported_extension,
+other}, reason }`. El campo se omite del JSON cuando el grafo
+vino del cache (no hubo walk en esta llamada) y se popula con la
+lista clasificada cuando hubo walk.
+
+**GREEN confirmado**:
+- `cargo test -p cognicode-core --lib w8_silent_errors_tests` →
+  `3 passed; 0 failed`.
+- `cargo test -p cognicode-core --lib --no-fail-fast` →
+  `2118 passed; 0 failed; 27 ignored` (3 tests nuevos w8_*; sin
+  regresiones).
+- `cargo clippy -p cognicode-core --lib --tests -- -D warnings`
+  → 4 errores preexistentes del workspace (auditados en D34),
+  0 nuevos.
+- `cargo fmt --check -p cognicode-core` → mis 2 archivos
+  (`analysis_service.rs` + `handlers/mod.rs`) están fmt-clean;
+  los 13 diffs preexistentes en otros archivos NO fueron tocados
+  (revert explícito de `cargo fmt -p` que reformateó todo el
+  crate).
+
+**UAT real con binario fresh** (rebuilt tras commit, vive en
+`/var/home/rubentxu/cargo-targets/release/cognicode-mcp`):
+
+Corpus UAT `/tmp/prf-uat-w8/src/{ok,unreadable,invalid_utf8}.rs`
+con `chmod 000 unreadable.rs` y `invalid_utf8.rs` overwritten
+con `0xFF 0xFE 0xFD 0xFC`.
+
+Request JSON-RPC:
+```json
+{"jsonrpc":"2.0","id":2,"method":"tools/call",
+ "params":{"name":"build_graph","arguments":{}}}
+```
+
+Response (extracto):
+```json
+{"success":true,"symbols_found":1,"relationships_found":0,
+ "edges":[],
+ "message":"Graph loaded from built: 1 symbols, 0 relationships in 1ms",
+ "skipped_files":[
+   {"path":"/tmp/prf-uat-w8/src/invalid_utf8.rs",
+    "reason_kind":"parse",
+    "reason":"stream did not contain valid UTF-8"},
+   {"path":"/tmp/prf-uat-w8/src/unreadable.rs",
+    "reason_kind":"read",
+    "reason":"Permission denied (os error 13)"}
+ ]}
+```
+
+Los 2 archivos omitidos aparecen enumerados con su `path`, su
+clasificación (`read` vs `parse`) y el mensaje textual exacto
+del error. `ok.rs::normal_function` se procesa correctamente (1
+symbol).
+
+**Decisión D35**: errores de lectura/parseo se reportan como
+**datos del build** (en `BuildReport`), no como excepciones.
+Justificación: (a) AGENTS.md §5 ("no nuevas abstracciones si
+los mecanismos existentes pueden satisfacer el requisito") +
+(b) reutilización de `BuildReport`/`SkippedFile`/`SkipReason`
+que ya existían desde F2.W2 (commits `be729275`, `55eddd4e`).
+
+**Próxima unidad**: F2.W9 — mtime preservado. Caracterizar si
+`analysis_service::build_project_graph` re-parsea cuando un
+archivo conserva su mtime pero sus bytes cambian (escenario
+real de muchos editores). Plan completo en STATE.md
+"Próxima unidad a abrir".
+

@@ -8,17 +8,17 @@
 ## Snapshot
 
 | Hito activo | **F2 — Correctitud reproducible (EN CURSO)** |
-| Última unidad cerrada | **F2.W7 — Integrar F2.W5 en el camino real del binario** (commit `5ce8eb1e`) |
-| Unidad activa siguiente | **F2.W8 — Errores silenciosos de lectura (per_file y full)** |
-| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. **F2 (W1-W5, W7) = IMPLEMENTED** (W7 GREEN end-to-end con UAT real; sin UAT de C2 formal). **C0, C1 = NO CERTIFICADO** formalmente. **C2 = NO CERTIFICADO**. Pendiente RELEASED para todos los hitos. |
-| HEAD | `5ce8eb1e` (28 commits ahead de origin/main) |
-| Working tree | Limpio |
+| Última unidad cerrada | **F2.W8 — Errores silenciosos en `build_project_graph` (R3, capa `analysis_service`)** (commit próximo) |
+| Unidad activa siguiente | **F2.W9 — mtime preservado** (cambio de bytes con mtime conservado debe invalidar cache; prueba el camino real del binario, no el wrapper) |
+| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. **F2 (W1-W8) = IMPLEMENTED** (W7-W8 GREEN end-to-end con UAT real; sin UAT de C2 formal). **C0, C1 = NO CERTIFICADO** formalmente. **C2 = NO CERTIFICADO**. Pendiente RELEASED para todos los hitos. |
+| HEAD | pre-commit (último publicado `40308fc5`; HEAD con W8 sin publicar) |
+| Working tree | W8 staged para commit: `analysis_service.rs` + `handlers/mod.rs` + fixtures + docs |
 | Bloqueos conocidos | **No hay bloqueos activos**. Los 6 fallos preexistentes del workspace (`cogh_uninstall`, `docs_extractor_corpus_regression`, 4× `manifest_upsert`) están catalogados en JOURNAL §15 con responsable y trigger; no bloquean gates de F2/C2. H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa, no bloqueante). |
-| Siguiente unidad ejecutable | **F2.W8** — Errores silenciosos de lectura en `per_file` y `full` (caracterizar y corregir cada causa independiente en una unidad acotada). Plan en JOURNAL §15. |
+| Siguiente unidad ejecutable | **F2.W9** — mtime preservado. Plan en JOURNAL §16. |
 | Política git | `docs/prf/` se versiona para **documentos del programa** (.md, fixtures) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
 | Gobierno del proyecto | **PRF es el único roadmap ejecutivo vigente** (decisión del operador 2026-09-21, `JOURNAL.md` entrada 13, `TRACEABILITY.md` §Correspondencia E31→PRF). E31 conserva su evidencia y aporta requisitos útiles que migran a gates PRF. |
 
-## Última unidad cerrada: F2.W7 (Integrar F2.W5 en el camino real del binario)
+## Última unidad cerrada: F2.W8 (Errores silenciosos en `build_project_graph`)
 
 **Objetivo**: cerrar la integración de F2.W5. F2.W5 implementó
 resolución scope-aware en `FullGraphStrategy` /
@@ -644,15 +644,17 @@ archivos omitidos, y documentar el comportamiento en UAT.
 
 | Unidad | Estado |
 |---|---|
-| F2.W1 — Invalidación de cache por cambio de contenido (R2) | **IMPLEMENTED** (commit `70f0b0cf`); library test GREEN; UAT de binario real pendiente → F2.W8 |
-| F2.W2 — Errores de lectura silenciosos (R3) | **IMPLEMENTED** (commits `be729275`, `55eddd4e`); library test + 3 UAT CLI a nivel wrapper; UAT de binario real pendiente → F2.W8 |
+| F2.W1 — Invalidación de cache por cambio de contenido (R2) | **IMPLEMENTED** (commit `70f0b0cf`); library test GREEN; UAT de binario real cerrado → F2.W8 |
+| F2.W2 — Errores de lectura silenciosos (R3, capa `per_file_graph`) | **IMPLEMENTED** (commits `be729275`, `55eddd4e`); library test + 3 UAT CLI a nivel wrapper |
 | F2.W3 — Caracterización equivalencia full vs per_file (R4) | **ACCEPTED** (commit `d9aa09c0`); sin fix (caracterización, no feature) |
 | F2.W4 — Cerrar H-R4-1 capa 1 (parser) | **ACCEPTED-parcial** (commit `084b5c00`); capa 2 (H-R4-2) registrada como OPEN, **scope de F2.W5** |
-| **F2.W5 — Resolver H-R4-2 (lookup global)** | **UNIDAD ACTIVA** |
-| F2.W6 — R3-style fix en `FullGraphStrategy` | Pendiente |
-| F2.W7 — mtime-preserved content change test | Pendiente |
-| F2.W8 — UAT binario real (con workaround bug workspace) | Pendiente (bloqueada por bug workspace hasta W0-bis) |
-| **F2 (hito)** | **EN CURSO**. W1-W4 IMPLEMENTED. W5 = siguiente. W6-W8 pendientes. **C2 = NO CERTIFICADO**. |
+| F2.W5 — Resolver H-R4-2 (lookup global) | **IMPLEMENTED** (commit `3f27a31d`); library test GREEN (4 w5 + 4 global_index_tests) |
+| F2.W6 — Desbloqueo binario | **CERRADO-SIN-ACCION** (verificación: `cargo install --path crates/cognicode-cli --bin cognicode` + `cargo run --bin cognicode` + `cognicode-mcp --cwd <dir>` funcionan; el conflicto de `crates/cognicode/` no bloquea operativamente) |
+| F2.W7 — Integrar F2.W5 en el camino real del binario | **IMPLEMENTED** (commit `5ce8eb1e`); `analysis_service::build_project_graph` ahora usa `GlobalSymbolIndex` con caller_file context; UAT real con `cognicode-mcp` muestra `relationships_found: 4` correcto |
+| **F2.W8 — Errores silenciosos en `build_project_graph` (R3, capa `analysis_service`)** | **IMPLEMENTED** (commit próximo); 4 fuentes de error silencioso corregidas; `AnalysisService::get_last_build_report()` enumera archivos omitidos con razón clasificada; handler MCP `build_graph` los surface como `skipped_files[]`; UAT real con `chmod 000` + UTF-8 inválido confirma enumeración |
+| F2.W9 — mtime preservado (cambio de bytes con mtime conservado invalida cache) | Pendiente |
+| F2.W10 — Equivalencia y reproducibilidad (full ↔ per_file con misma entrada determinista) | Pendiente |
+| **F2 (hito)** | EN CURSO. W1-W8 IMPLEMENTED. W9-W10 pendientes. **C2 = NO CERTIFICADO**. |
 
 ## Hito F1 (Estabilización) → CERRADO (referencia histórica)
 
@@ -681,7 +683,100 @@ archivos omitidos, y documentar el comportamiento en UAT.
 
 Ver `evidence/CERTIFICATES.md`.
 
-## Próxima unidad a abrir (F1 — Estabilización)
+## Próxima unidad a abrir (F2.W9 — mtime preservado)
+
+**F2.W9 — mtime preservado.** Caracterización y corrección del
+defecto: cuando un archivo del corpus conserva su `mtime` pero sus
+bytes cambian, la invalidación del cache actual (que mira sólo
+`mtime`) no dispara re-parseo. Esto es relevante porque editores y
+herramientas de refactor suelen preservar `mtime` al escribir.
+
+**Plan**:
+1. Crear un corpus UAT con un archivo cuyo contenido cambie pero
+   cuyo `mtime` se conserve (vía `utimes`/`filetime`).
+2. Caracterizar RED con test de integración: build → mutate
+   content → set mtime al valor original → build → esperar
+   símbolos NUEVOS reflejados.
+3. Diagnosticar si el camino real del binario
+   (`AnalysisService::build_project_graph` → `WalkBuilder`) usa
+   `mtime` o `hash` para invalidación.
+4. Decidir entre (a) hashing de contenido + comparación con cache
+   o (b) documentar el comportamiento y exigir mtime actualizado.
+5. Implementar, RED → GREEN, UAT real con binario.
+
+## Cierre de F2.W8 (Errores silenciosos en `build_project_graph`)
+
+**Objetivo**: cerrar R3 en el camino real del binario. F2.W2 ya
+había atacado errores silenciosos a nivel de `per_file_graph`,
+pero la fuga silenciosa real estaba en
+`analysis_service::build_project_graph` (el path que ejecuta el
+binario). 4 fuentes de error silencioso corregidas:
+
+1. `std::fs::read_to_string(&path).ok()?` → captura `io::Error`,
+   clasifica por `ErrorKind` y emite `SkipReason::Read` o `Other`.
+2. `TreeSitterParser::with_cache(language).ok()?` → captura
+   `ParseError`, emite `SkipReason::Parse`.
+3. `find_all_symbols_with_path(...).unwrap_or_default()` →
+   `unwrap_or_default()` (mantiene el comportamiento de "símbolo
+   vacío" pero no esconde el fallo; el archivo pasa al
+   `BuildReport` si su mtime lo marca para re-parse).
+4. `find_call_relationships(...).unwrap_or_default()` →
+   análogamente.
+
+**API pública añadida**: `AnalysisService::get_last_build_report() ->
+Option<BuildReport>`. `BuildReport = { graph, status }` donde
+`status` es `BuildStatus::Complete` (todo OK) o
+`BuildStatus::Partial { skipped: Vec<SkippedFile> }`. Cada
+`SkippedFile` lleva `path` + `SkipReason` (clasificado).
+
+**Surface MCP**: `handle_build_graph` ahora retorna un campo
+`skipped_files: Option<Vec<SkippedFileDto>>` que se omite del JSON
+cuando el grafo viene del cache y se popula con la lista
+clasificada cuando hay un walk real. Cada DTO lleva `path`,
+`reason_kind ∈ {read, parse, unsupported_extension, other}` y
+`reason` con el mensaje textual del error.
+
+**Tests añadidos** (`w8_silent_errors_tests`):
+- `w8_unreadable_file_is_silently_dropped` — corpus con 3 archivos
+  `.rs`, uno con `chmod 000`, uno con bytes UTF-8 inválidos;
+  `coverage.parsed_files == 1` (sólo `ok.rs` cuenta).
+- `w8_invalid_utf8_file_is_silently_dropped` — comprueba que
+  `coverage_percent < 100%` con 2 de 3 archivos corruptos.
+- `w8_build_report_enumerates_skipped_files` — pinea la API
+  pública y la semántica `Complete` con corpus válido.
+
+**UAT real con binario fresh** (`/var/home/rubentxu/cargo-targets/
+release/cognicode-mcp`, rebuilt tras commit):
+```
+{"jsonrpc":"2.0","id":2,...}
+  → "skipped_files":[
+       {"path":"/tmp/prf-uat-w8/src/unreadable.rs",
+        "reason_kind":"read",
+        "reason":"Permission denied (os error 13)"},
+       {"path":"/tmp/prf-uat-w8/src/invalid_utf8.rs",
+        "reason_kind":"parse",
+        "reason":"stream did not contain valid UTF-8"}
+     ]
+```
+
+**Resultado suite**: `cargo test -p cognicode-core --lib --no-fail-fast`
+→ `2118 passed; 0 failed; 27 ignored` (3 tests nuevos w8_*;
+sin regresiones).
+
+**Resultado clippy**: 4 errores preexistentes del workspace
+(auditados en D34), 0 nuevos.
+
+**Resultado fmt**: mis 2 archivos (`analysis_service.rs` +
+`handlers/mod.rs`) están fmt-clean; los 13 diffs preexistentes de
+`fmt --check` en otros archivos NO fueron tocados.
+
+**Decisión D35**: Errores de lectura/parseo se reportan como
+datos del build (en `BuildReport`), no como excepciones.
+Justificación: AGENTS.md §5 ("no nuevas abstracciones si los
+mecanismos existentes pueden satisfacer el requisito") +
+reutilización de `BuildReport`/`SkippedFile`/`SkipReason` que
+ya existían en `infrastructure/graph/per_file_graph.rs` desde
+F2.W2.
 
 ## Notas sobre la bootstrap de PRF
 

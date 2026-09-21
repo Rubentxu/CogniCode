@@ -984,6 +984,21 @@ pub struct BuildGraphOutput {
     pub relationships_found: usize,
     pub edges: Vec<EdgeInfo>,
     pub message: String,
+    /// F2.W8: files that could not be processed during the walk.
+    /// `None` when the graph was served from cache (no walk happened
+    /// on this call); `Some([])` when the walk finished with no
+    /// omissions; `Some([..])` when one or more files were dropped
+    /// because of I/O / parsing failures.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skipped_files: Option<Vec<SkippedFileDto>>,
+}
+
+/// F2.W8: per-file skipped-file record surfaced through `build_graph`.
+#[derive(Debug, serde::Serialize)]
+pub struct SkippedFileDto {
+    pub path: String,
+    pub reason_kind: &'static str,
+    pub reason: String,
 }
 
 /// Handler for build_graph tool
@@ -1059,6 +1074,44 @@ pub async fn handle_build_graph(
     let edges_count = graph.edge_count();
     let elapsed = start.elapsed().as_millis() as u64;
 
+    // F2.W8: surface the BuildReport through build_graph so that
+    // silent file drops are visible to clients. Cache hits report
+    // `None` (no walk happened in this call) — re-running build_graph
+    // after a source change will reflect the new walk's outcome.
+    let skipped_files = if loaded_from_cache {
+        None
+    } else {
+        Some(
+            ctx.analysis_service
+                .get_last_build_report()
+                .as_ref()
+                .map(|r| match &r.status {
+                    crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => Vec::new(),
+                    crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped } => {
+                        skipped
+                            .iter()
+                            .map(|sf| SkippedFileDto {
+                                path: sf.path.clone(),
+                                reason_kind: match &sf.reason {
+                                    crate::infrastructure::graph::per_file_graph::SkipReason::Read(_) => "read",
+                                    crate::infrastructure::graph::per_file_graph::SkipReason::Parse(_) => "parse",
+                                    crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(_) => "unsupported_extension",
+                                    crate::infrastructure::graph::per_file_graph::SkipReason::Other(_) => "other",
+                                },
+                                reason: match &sf.reason {
+                                    crate::infrastructure::graph::per_file_graph::SkipReason::Read(s)
+                                    | crate::infrastructure::graph::per_file_graph::SkipReason::Parse(s)
+                                    | crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(s)
+                                    | crate::infrastructure::graph::per_file_graph::SkipReason::Other(s) => s.clone(),
+                                },
+                            })
+                            .collect()
+                    }
+                })
+                .unwrap_or_default(),
+        )
+    };
+
     info!(
         "handle_build_graph: {} symbols, {} edges in {}ms (source: {})",
         symbols,
@@ -1097,6 +1150,7 @@ pub async fn handle_build_graph(
             "Graph loaded from {}: {} symbols, {} relationships in {}ms",
             source, symbols, edges_count, elapsed
         ),
+        skipped_files,
     })
 }
 
