@@ -1,11 +1,20 @@
 # Production-Ready Foundation (PRF) — README
 
-> **Working-tree-only**: este directorio está cubierto por `.gitignore`
-> (`docs/`). Sus archivos NO se commitean al repositorio ni se empujan
-> al remoto. Ver `JOURNAL.md` §"Política git de `docs/prf/`" para la
-> justificación completa (PRF es documentación estructurada de un
-> programa interno de trabajo, análoga a ADRs/ROADMAP/CONTEXT — vive
-> solo en el working tree local).
+> **Política git vigente**: `docs/prf/` se versiona con `git add -f` para
+> los **documentos del programa** (.md, fixtures, certificates). Las
+> evidencias crudas (strace, JSON-RPC de binarios, logs de cargo test)
+> siguen siendo local-only y se registran en `evidence/MANIFEST.md`. La
+> regla `.gitignore` excluye `docs/` por defecto; la excepción por
+> programa se justifica en `JOURNAL.md` §"Política git de `docs/prf/`"
+> (entrada 1, decisión 8) y se reitera en `STATE.md`.
+
+> **Supersesión de programas (decisión del operador 2026-09-21)**:
+> PRF es la **única agenda ejecutiva vigente** del proyecto. E31
+> (`docs/ROADMAP.md`) conserva sus commits, ADRs, scorecards y
+> requisitos útiles, pero **no** dirige la ejecución; los requisitos
+> de E31 se incorporan a gates PRF (rendimiento, CI, distribución,
+> aceptación de release) o se difieren con trazabilidad. Ver
+> `JOURNAL.md` entrada 13 y `TRACEABILITY.md` §"Correspondencia E31→PRF".
 
 ## ¿Qué es PRF?
 
@@ -65,13 +74,18 @@ Ver `STATE.md`.
 
 ## Relación con otros programas del repositorio
 
-PRF se apoya en el trabajo previo pero **NO** duplica roadmaps. Estos
-documentos siguen siendo la fuente de verdad para su respectivo programa:
+PRF se apoya en el trabajo previo pero **NO** duplica roadmaps. Desde
+2026-09-21 PRF es el roadmap ejecutivo único; los siguientes documentos
+son referencias históricas o redirecciones de compatibilidad, **no**
+colas de tareas paralelas:
 
-- `docs/ROADMAP.md` — roadmap general del proyecto
+- `docs/ROADMAP.md` — roadmap general del proyecto (E31 histórico). Conserva sus ciclos, ADRs y scorecards pero no dirige la ejecución.
 - `~/.sddk-knowledge/CogniCode/milestones/PROG-productization.md` — programa Productization E33-E38 (cerrado E33; E34-E38 planificados)
-- `docs/V1.0.0-PRE-CUT-CHECKLIST.md` — gates operacionales del tag v1.0.0
+- `docs/V1.0.0-PRE-CUT-CHECKLIST.md` — gates operacionales del tag v1.0.0 (mantenedor-only)
 - ADR-031 — definición de "production-ready"
 
-PRF **no reemplaza** ninguno de estos. Los complementa con foco en la
-estabilización de CLI y MCP, sin abrir nuevos evolutivos.
+PRF **no reemplaza** ninguno de estos en cuanto a evidencia
+(commits, ADRs, scorecards, requisitos). Sí los **superse como
+directores de ejecución**: las nuevas unidades se planifican y
+cierran contra las fases F2..F7/C2..C7 de PRF, incorporando los
+requisitos útiles de E31 en los gates PRF correspondientes.

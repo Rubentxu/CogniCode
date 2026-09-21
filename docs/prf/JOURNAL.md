@@ -1098,3 +1098,90 @@ para ocultar el cierre anterior".
 
 **F2.W5 — resolver H-R4-2 de extremo a extremo** (lookup global
 `name → SymbolId`). Plan en `docs/prf/STATE.md` §Unidad activa.
+
+## Entrada 13 — 2026-09-21 — Supersesión: PRF es la única agenda ejecutiva
+
+### Contexto
+
+El operador emite una directiva que zanja la convivencia de programas en el
+repositorio: PRF pasa a ser **la única agenda ejecutiva**. E31
+(`docs/ROADMAP.md`) deja de dirigir la ejecución y se conserva como
+evidencia histórica + redirección de compatibilidad.
+
+La directiva incluye reglas operativas explícitas:
+
+- **No se reactiva e91** ni se inician nuevos ciclos E31 por separado.
+- **No se corta v1.0.0** ni se publica release sin autorización
+  expresa del mantenedor.
+- **No se reescriben** documentos históricos para hacer desaparecer
+  el trabajo anterior: se añade una decisión de supersesión y una
+  tabla de correspondencia.
+- **No** se invierte una sesión entera reorganizando documentos: tras
+  el registro, se vuelve al trabajo de ingeniería activo.
+- **Push sigue bloqueado por la frontera humana** (mismo límite que
+  E31).
+
+### Estado real verificado al abrir esta sesión
+
+| Dato | Valor | Fuente |
+|---|---|---|
+| HEAD local | `ccc196d5ec9193c4173873a67b6c82f204bfc718` | `git rev-parse HEAD` |
+| origin/main | `0903108fc372766a69a89a76ed7f79ffff90502d` | `git rev-parse origin/main` |
+| Commits ahead | **26** (reporte previo decía 25) | `git rev-list --count origin/main..HEAD` |
+| Worktree | Limpio | `git status --short` |
+| `docs/prf/` tracked | 28 paths bajo `docs/prf/` con `git add -f` | `git ls-files docs/prf` |
+| Modo SDDK | `on` (`declared:project`) | `~/.jcode/bin/sddk-mode` |
+
+La divergencia entre el reporte previo (25) y la realidad (26) se
+debe a un commit no contado en la sesión anterior; se acepta la cifra
+observada, no la declarada.
+
+### Decisiones tomadas
+
+- **D27** — PRF es la única agenda ejecutiva. E31 queda como
+  referencia histórica y como fuente de requisitos útiles que
+  migran a gates PRF.
+- **D28** — E31 e91 (G5 scorecard RED, `graph_insights` performance)
+  se registra en `TRACEABILITY.md` §"Correspondencia E31→PRF" como
+  candidato para F6/C6 (rendimiento y regresión) o, si bloquea una
+  UAT anterior, se adelanta una corrección acotada. **No** se ejecuta
+  e91 por sí solo.
+- **D29** — Los antecedentes de "3 scorecards consecutivos + 5 noches
+  de estabilidad" del pre-cut E31 se conservan como entrada para F7/C7,
+  sin reutilizar resultados hasta comprobar que se ejecutan sobre el
+  mismo candidato, corpus, plataforma y contrato.
+- **D30** — La política git de `docs/prf/` se corrige en `README.md`
+  para reflejar la realidad (versionado con `git add -f`) en lugar
+  de la regla obsoleta (`docs/` en gitignore → no commiteado).
+- **D31** — Las pruebas de UAT de F2.W8 (binarios reales
+  `cognicode`/`cognicode-mcp`) requieren desbloquear el bug
+  preexistente del workspace (dos crates con `name = "cognicode"`).
+  El workaround se aborda como trabajo previo a W8 (`F2.W0-bis` o
+  dentro de W8).
+
+### Cambios documentales registrados en este slice
+
+- `docs/prf/README.md` — aviso de supersesión + corrección de
+  política git + nota de que `docs/ROADMAP.md` y `V1.0.0-PRE-CUT-CHECKLIST.md`
+  son referencias históricas.
+- `docs/prf/STATE.md` — fila "Gobierno del proyecto" añadida en
+  Snapshot.
+- `docs/prf/TRACEABILITY.md` — nueva sección "Correspondencia E31→PRF"
+  con tabla REQ-E31 ↔ destino PRF.
+- `docs/prf/JOURNAL.md` — esta entrada.
+
+### Política git respetada
+
+Cambios aditivos sobre los documentos del programa (commit único con
+`docs(prf):` prefix). Sin reescritura de entradas anteriores.
+
+### Próxima unidad concreta
+
+**F2.W5 — resolver H-R4-2** (lookup global `name → SymbolId`)
+preservando ámbito, módulo, fichero, identidad y ambigüedad. El
+criterio de aceptación es que las relaciones correctas lleguen al
+resultado final del producto y las ambiguas o no resueltas no
+aparezcan como relaciones confirmadas.
+
+Aplica RED → GREEN, comprueba la regresión y registra el resultado
+real de la operación CLI/MCP pertinente.

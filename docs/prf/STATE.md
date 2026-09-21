@@ -18,6 +18,7 @@
 | Bloqueos conocidos | H-R4-2 OPEN (lookup global — alcance F2.W5). Bug preexistente del binario `cognicode` (workspace con dos crates `name = "cognicode"`) — bloquea F2.W8 hasta workaround. H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa). |
 | Siguiente unidad ejecutable | **F2.W5** — lookup global pre-walk en `FullGraphStrategy::build_full_graph` y `PerFileStrategy::build_file_graph`. Plan en JOURNAL §12. |
 | Política git | `docs/prf/` se versiona para **documentos del programa** (.md, fixtures) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
+| Gobierno del proyecto | **PRF es el único roadmap ejecutivo vigente** (decisión del operador 2026-09-21, `JOURNAL.md` entrada 13, `TRACEABILITY.md` §Correspondencia E31→PRF). E31 conserva su evidencia y aporta requisitos útiles que migran a gates PRF. |
 
 ## Última unidad cerrada: F2.W4 (Cerrar huecos — H-R4-1 capa 1)
 

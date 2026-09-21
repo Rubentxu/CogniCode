@@ -112,3 +112,24 @@
 | H8: 5/6 plugin manifests sha256 placeholder | F0-008 | MEDIUM | Calcular sha256 reales | CLOSED (F1.W3) |
 | H9: `explorer-api` SIGTERM silencioso | F0-011 | LOW | Hook de shutdown con log | CLOSED (F1.W1) |
 | H10: Test failure por GitHub API rate limit | F0-003 | LOW | Ninguna (dependencia externa; esperar reset o usar token) | OPEN (WIP) |
+
+## Correspondencia E31 → PRF (supersesión 2026-09-21)
+
+PRF es el único roadmap ejecutivo desde 2026-09-21. Esta tabla
+documenta qué pasa con cada requisito útil de E31:
+
+| Origen E31 | Tipo | Disposición PRF | Referencia |
+|---|---|---|---|
+| E31-G5 RED (`graph_insights` p95=367s, `CommunityDetector::detect` 100 iter + `surprising_connections` O(n²)) | Capacidad (rendimiento) | **Incorporado** a F6/C6 (rendimiento y regresión). Adelanto de corrección acotada solo si bloquea UAT de F2/F3/F4/F5. | e90 archivado `openspec/changes/2026-09-21-e90-g5-cold-cache-or-perf-fix/` |
+| E31 Pre-cut: 3 scorecards consecutivos (streak) | Gate operacional | **Incorporado** a F7/C7 (aceptación de release). Reutilizar resultado solo si candidato/corpus/plataforma/contrato coinciden con el candidato PRF a certificar. | `sandbox/scripts/scorecard_streak.py` (E31-G); `docs/V1.0.0-PRE-CUT-CHECKLIST.md` Gate 2 |
+| E31 Pre-cut: 5 noches T7 (stability cadence) | Gate operacional | **Incorporado** a F7/C7. Misma condición de reuso. | `sandbox/scripts/build_flaky_log.py` (E31-B6); `docs/V1.0.0-PRE-CUT-CHECKLIST.md` Gate 1 |
+| E31 T1–T7 (Test Plan comprehensivo, G13 scorecard) | Capacidad (testing) | **Satisfecho con evidencia**. Plan en `docs/TEST-PLAN.md` (E31-B, PR #239). Se reutiliza como capa de pruebas PRF donde aplique; si PRF descubre regresión, se reabre. | `docs/TEST-PLAN.md` (PR #239) |
+| E31-B5..B12 (Tier-1 closure sandbox) | Evidencia (cobertura) | **Satisfecho con evidencia**. Sandbox + scorecard se mantienen en `sandbox/` y `sandbox/scripts/`. Se referencian desde F3/C3 (CLI/MCP parity) y F6/C6 (rendimiento) sin duplicar manifests. | `sandbox/manifests/e31b*_*.yaml` |
+| E31-C (14 ADRs PROPOSED → ACCEPTED/SUPERSEDED) | Evidencia (decisiones) | **Satisfecho con evidencia**. 11 ACCEPTED + 3 SUPERSEDED. Las nuevas decisiones PRF se registran como ADRs adicionales; las obsoletas mantienen su trazabilidad. | PR #247 |
+| E31-F (conformance matrix 100% triaged) | Capacidad (gates) | **Incorporado** a F5/C5 (seguridad y límites) y F7/C7 (aceptación). `pct_verified=100.0%` queda como floor de aceptación. | PR #249; `openspec_conformance.py` |
+| E31-G (scorecard streak counter) | Herramienta | **Incorporado** a F7/C7. No se reactiva hasta que PRF defina candidato a certificar. | `sandbox/scripts/scorecard_streak.py` (PR #250) |
+| E31 Z/pre-cut checklist | Proceso (release) | **Incorporado** a F7/C7. `docs/V1.0.0-PRE-CUT-CHECKLIST.md` se conserva como entrada; la aceptación final PRF emite un `docs/prf/RELEASE-CANDIDATE.md`. | `docs/V1.0.0-PRE-CUT-CHECKLIST.md` (PR #251) |
+| E31-B5-rollup, B6-rollup (CHANGELOG v0.50-v0.86, INC-001..004 closure) | Evidencia (historial) | **Satisfecho con evidencia**. Sin acción PRF. | commits `4d5f8bb6`, INC-001..004 ACCEPT |
+| E31 e90 (G5 scorecard investigation) | Investigación | **Incorporado** a F6/C6 (no se ejecuta e91 por sí solo; el árbol de decisión vive ahora en PRF). | `openspec/changes/2026-09-21-e90-g5-cold-cache-or-perf-fix/` |
+| E31 deferrals: 178 Tier-3 quarantined, 47 partial Tier-1, remote CI workflows | Pendientes | **Diferido con trazabilidad**. Se re-evalúan cuando la fase PRF que los necesite los mencione explícitamente. | `V1.0.0-PRE-CUT-CHECKLIST.md` §"Deferred items (open after E31)" |
+
