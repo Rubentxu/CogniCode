@@ -1037,7 +1037,7 @@ mod tests {
             other => panic!("NotFound must classify as Read, got {:?}", other),
         }
 
-        let other_err = std::io::Error::new(std::io::ErrorKind::Other, "weird");
+        let other_err = std::io::Error::other("weird");
         match classify_io_error(&other_err) {
             SkipReason::Other(_) => {}
             other => panic!("Other must classify as Other, got {:?}", other),
@@ -1068,7 +1068,7 @@ mod tests {
 
         // Run the assertion; capture the outcome so we always restore
         // permissions before propagating any failure.
-        let outcome: Result<(), String> = (|| {
+        let outcome: Result<(), String> = {
             let cache = PerFileGraphCache::new();
             let report = cache.merge_with_report(&[path.as_path()]);
 
@@ -1094,7 +1094,7 @@ mod tests {
                     Err("unreadable.rs was silently dropped (R3 defect)".to_string())
                 }
             }
-        })();
+        };
 
         let _ = std::fs::set_permissions(&path, original_perms);
         if let Err(msg) = outcome {

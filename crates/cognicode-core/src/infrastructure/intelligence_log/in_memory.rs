@@ -248,6 +248,7 @@ mod tests {
         AnalysisScope::new(ws(name), SnapshotId::new(snapshot))
     }
 
+    #[expect(dead_code)]
     fn scope(snapshot: u64) -> AnalysisScope {
         scope_of("ws-a", snapshot)
     }

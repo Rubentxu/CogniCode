@@ -119,7 +119,7 @@ mod tests {
     use crate::domain::ai::request::{RequestProvenance, ToolCall};
     use crate::domain::ai::response::{ResponseOutput, ResponseProvenance};
 
-    fn req(frame_id: InvestigationFrameId, digest_seed: u64) -> InvestigationRequest {
+    fn req(frame_id: InvestigationFrameId, _digest_seed: u64) -> InvestigationRequest {
         let prov = RequestProvenance::new(frame_id, "test", None).unwrap();
         InvestigationRequest::try_new(
             frame_id,
