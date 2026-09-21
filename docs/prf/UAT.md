@@ -289,3 +289,39 @@ determinista; persistencia material queda cubierta por la suite
 `manifest_upsert`/`GraphStore` (con 4 fallos preexistentes
 catalogados en ladybug, JOURNAL §15). Registrado como matiz, no
 como defecto nuevo.
+
+### UAT-F5-001 — Seguridad: capacidades, límites y cancelación
+
+**Fecha**: 2026-09-21
+**Binario**: `cognicode-mcp` (release)
+**Commit**: HEAD post-F4
+**Entorno**: `/tmp/prf-uat-f4-ws1` como workspace permitido
+**Operador**: jcode-orchestrator
+
+## Escenarios
+
+**(a) Rechazo fuera de capacidades**: `read_file` sobre
+`/etc/passwd` con `--cwd` en workspace → respuesta
+`isError:true`, `"Path outside workspace"`. Control positivo:
+`read_file src/lib.rs` dentro del workspace → contenido correcto. PASS.
+
+**(b) Límite de tiempo**: timeouts por categoría en el boundary
+del dispatcher (`timeout_for_category`: graph 60s, navigation 45s,
+search 500ms, default 30s) con tests propios
+(`test_timeout_fires_when_handler_takes_longer`,
+`test_timeout_does_not_fire_when_handler_returns_quickly`) —
+17/17 tests del adapter en GREEN. PASS (evidencia de suite +
+inspección del boundary único de ejecución).
+
+**(c) Cancelación cooperativa**: `notifications/cancelled`
+(JSON-RPC) → token puesto a true → la siguiente `build_graph`
+retorna `isError:true, "internal: Cancelled"`. PASS.
+
+## Verificación
+
+| Escenario | Esperado | Observado | Pasa |
+|---|---|---|---|
+| (a) path fuera | error, sin contenido | `Path outside workspace`, isError | ✅ |
+| (a+) path dentro | contenido | contenido de lib.rs | ✅ |
+| (b) timeout | mecanismo activo y testado | 17/17 adapter tests GREEN | ✅ |
+| (c) cancelación | operación posterior rechazada | `internal: Cancelled` | ✅ |

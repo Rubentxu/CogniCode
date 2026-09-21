@@ -1700,3 +1700,25 @@ preexistentes de ladybug ya catalogados (no bloqueantes, JOURNAL
 
 **Estado**: F4 = ACCEPTED (UAT-F4-001). C4 = PASS sobre el
 criterio de reinicio real (proceso nuevo, no llamada a función).
+
+## Entrada 22 — 2026-09-21 — F5: seguridad, límites y cancelación
+
+**Criterio de salida (ROADMAP §F5)**: UAT que pruebe (a) rechazo
+fuera de capacidades declaradas, (b) timeout de operación larga,
+(c) cancelación desde señal externa.
+
+**UAT-F5-001**:
+- (a) `read_file /etc/passwd` → `Path outside workspace` (isError);
+  control positivo dentro del workspace correcto. Autorización por
+  working_dir/capacidad confirmada con binario real.
+- (b) Boundary único con `timeout_for_category` por categoría
+  (graph 60s / navigation 45s / search 500ms / default 30s) y rate
+  limiting estricto por categoría; 17/17 tests del adapter GREEN.
+- (c) `notifications/cancelled` JSON-RPC → token cooperativo →
+  siguiente `build_graph` rechazada con `internal: Cancelled`.
+  Cancelación verificada de extremo a extremo con proceso real.
+
+**Estado**: F5 = ACCEPTED (UAT-F5-001). C5 cubierto sobre el
+criterio de evidencia ejecutable. Pendiente para C5 pleno: caso de
+extensibilidad mínima (plugin) en ejercicio real — registrado como
+matiz pendiente de definición "al cierre de F5" según ROADMAP.
