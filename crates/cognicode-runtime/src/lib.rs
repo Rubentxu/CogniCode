@@ -133,6 +133,9 @@ pub async fn bootstrap_with_backend(
     // double-init.
     let _ = tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
+        // PRF-F1.W1 (H6, H9): write tracing events to stderr so
+        // stdout stays clean for JSON-RPC / response payloads.
+        .with_writer(std::io::stderr)
         .try_init();
 
     let source_reader: Arc<dyn cognicode_explorer::ports::SourceReader> = Arc::new(
@@ -210,6 +213,9 @@ pub async fn bootstrap(cwd: std::path::PathBuf) -> Result<Runtime, anyhow::Error
     // Best-effort tracing init.
     let _ = tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
+        // PRF-F1.W1 (H6, H9): write tracing events to stderr so
+        // stdout stays clean for JSON-RPC / response payloads.
+        .with_writer(std::io::stderr)
         .try_init();
 
     let source_reader: Arc<dyn cognicode_explorer::ports::SourceReader> = Arc::new(

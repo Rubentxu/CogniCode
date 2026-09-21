@@ -25,6 +25,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing::Level::INFO
         })
         .with_target(false)
+        // PRF-F1.W1 (H6): route tracing events to stderr so stdout
+        // stays clean for pipelines (`cognicode analyze | jq`).
+        .with_writer(std::io::stderr)
         .compact()
         .finish();
 

@@ -870,7 +870,45 @@ pub fn router(state: ApiState) -> Router {
 
 pub async fn serve(state: ApiState, addr: SocketAddr) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, router(state)).await?;
+    let shutdown = async {
+        // PRF-F1.W1 (H9): log shutdown signals so SIGTERM/SIGINT are no longer silent.
+        let ctrl_c = async {
+            if let Err(e) = tokio::signal::ctrl_c().await {
+                tracing::error!(error = %e, "failed to install Ctrl-C handler");
+            }
+        };
+
+        #[cfg(unix)]
+        let sigterm = async {
+            match tokio::signal::unix::signal(
+                tokio::signal::unix::SignalKind::terminate(),
+            ) {
+                Ok(mut s) => {
+                    s.recv().await;
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to install SIGTERM handler");
+                }
+            }
+        };
+
+        #[cfg(not(unix))]
+        let sigterm = std::future::pending::<()>();
+
+        tokio::select! {
+            _ = ctrl_c => {
+                tracing::info!("shutdown received: SIGINT — draining connections");
+            }
+            _ = sigterm => {
+                tracing::info!("shutdown received: SIGTERM — draining connections");
+            }
+        }
+    };
+
+    axum::serve(listener, router(state))
+        .with_graceful_shutdown(shutdown)
+        .await?;
+    tracing::info!("cognicode explorer API stopped cleanly");
     Ok(())
 }
 
