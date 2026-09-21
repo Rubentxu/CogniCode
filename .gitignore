@@ -37,7 +37,10 @@ coverage/
 *.wasm
 pkg/
 CLAUDE.md
+# Agent policy is tracked; private local override remains ignored.
 AGENTS.md
+!/AGENTS.md
+AGENTS.local.md
 .agent
 .agents/
 .qwen/
