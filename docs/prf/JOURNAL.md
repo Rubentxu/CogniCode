@@ -1722,3 +1722,41 @@ fuera de capacidades declaradas, (b) timeout de operación larga,
 criterio de evidencia ejecutable. Pendiente para C5 pleno: caso de
 extensibilidad mínima (plugin) en ejercicio real — registrado como
 matiz pendiente de definición "al cierre de F5" según ROADMAP.
+
+## Entrada 23 — 2026-09-21 — F6: distribución, instalación, actualización, rollback
+
+**Criterio de salida (ROADMAP §F6)**: UAT que descarga un release
+taggeado de un canal verificable, valida SHA, instala, ejecuta un
+flujo canónico, actualiza, repite el flujo y revierte; con SHAs y
+logs verificados.
+
+**UAT-F6-001** (home aislado `/tmp/prf-uat-f6-home`, artefacto
+real del tag v0.97.3):
+- Descarga + SHA256 real (`477a2b24...2888`) verificado.
+- Gate anti-manifest-falso verificado: el fixture DEV-ONLY falla
+  en SHA256 by construction (comportamiento de seguridad correcto).
+- Instalación limpia → binario instalado ejecuta el flujo canónico.
+- Update → `already current ... coherent` (no-op correcto).
+- Rollback → árbol, journal y pin eliminados. EXIT=0 con env
+  coherente.
+
+**Defecto descubierto H-F6-1 (MEDIUM, OPEN)**: doble resolución de
+home. `tracker::read_version_optional()` usa `cognicode_home()`
+(env-only) mientras `CognicodeHome` respeta `--home`. Síntoma:
+uninstall con `--home` sin env aborta tras completar el rollback;
+y el install contamina el tracker del home real. Contaminación del
+operador restaurada manualmente durante la UAT. Fix propuesto:
+unificar la resolución en `CognicodeHome` y deprecar
+`cognicode_home()` en cmd/tracker.rs.
+
+**Matiz sobre "actualización a otra versión"**: el canal solo
+tiene publicado el artefacto de la versión instalada (v0.97.3
+último tag); la transición entre dos versiones se ejercitó como
+install → update (no-op coherente) → rollback. El downgrade a
+v0.96/0.95 requeriría artefactos publicados con manifests
+generados (e86): registrado como condición del canal.
+
+**Estado**: F6 = ACCEPTED-PARCIAL (ciclo completo verificado sobre
+canal real con un solo artefacto publicado; H-F6-1 OPEN). C6:
+evidencia ejecutable existente, certificado condicionado al cierre
+de H-F6-1 o a su aceptación explícita como deuda.

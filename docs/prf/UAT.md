@@ -325,3 +325,60 @@ retorna `isError:true, "internal: Cancelled"`. PASS.
 | (a+) path dentro | contenido | contenido de lib.rs | ✅ |
 | (b) timeout | mecanismo activo y testado | 17/17 adapter tests GREEN | ✅ |
 | (c) cancelación | operación posterior rechazada | `internal: Cancelled` | ✅ |
+
+### UAT-F6-001 — Distribución: instalación, actualización y rollback sobre artefactos reales
+
+**Fecha**: 2026-09-21
+**Binarios**: `cogh` (release), artefacto del tag `v0.97.3` (GitHub releases)
+**Entorno**: COGNICODE_HOME aislado `/tmp/prf-uat-f6-home`
+**Operador**: jcode-orchestrator
+
+## Escenario y pasos ejecutados
+
+1. **Descarga del artefacto real del tag v0.97.3** (GitHub,
+   `cognicode-0.97.3.tar.gz`, 14.179.486 bytes).
+2. **SHA256 verificado**: `477a2b248b1c50bb9a8845f3da2619655dadf4930
+   fdceeaae143276672a52888` (calculado sobre los bytes descargados e
+   inyectado en el BundleManifest v2 de la UAT).
+3. **Comprobación anti-manifest-falso**: instalación con el fixture
+   DEV-ONLY falla en la etapa SHA256 "by construction" (correcto:
+   no se instalan bytes sin digerir). Comportamiento de seguridad
+   verificado positivamente.
+4. **Instalación limpia** (`cogh install mcp-server --profile
+   reviewer` en home aislado): instalado en
+   `versions/0.97.3/`, binario instalado ejecuta `graph full`
+   correctamente (flujo canónico). PASS.
+5. **Actualización**: `cogh update` sobre versión ya instalada →
+   `already current: 0.97.3 is installed and coherent (no
+   transition performed)`. PASS.
+6. **Rollback**: `cogh uninstall --version 0.97.3 --ide opencode
+   mcp-server` → árbol `versions/0.97.3/` eliminado, journal
+   eliminado, tracker pin limpiado. PASS.
+
+## Defecto descubierto: H-F6-1 (doble resolución de home)
+
+Síntoma: con `--home <UAT>` sin exportar `COGNICODE_HOME`, el
+uninstall aborta con `clear tracker pin ... No such file or
+directory` DESPUÉS de completar el rollback.
+
+Causa raíz: `tracker::read_version_optional()` resuelve vía
+`cognicode_home()` (env-only), mientras `home.tracker_version()`
+usa `CognicodeHome` (que respeta `--home`). Con `--home` sin env,
+la lectura ve el pin del home real y el borrado apunta al del home
+UAT. Además, el pipeline de instalación escribió el pin de prueba
+en el home real (contaminación de estado del operador, ya
+restaurada manualmente).
+
+Impacto: MEDIUM (correctitud de `--home`/rollback en installs
+no-default; no afecta al flujo con env único). Registrado en
+TRACEABILITY como OPEN para F6-followup.
+
+## Verificación
+
+| Paso | Esperado | Observado | Pasa |
+|---|---|---|---|
+| Descarga tag real | artefacto verificable | 14 MB del release v0.97.3 | ✅ |
+| SHA256 gate | rechaza digests falsos | fixture DEV-ONLY falla en SHA (by design) | ✅ |
+| Instalación limpia | binario usable | `cognicode 0.97.3` ejecuta graph full | ✅ |
+| Update | no-op coherente | `already current ... coherent` | ✅ |
+| Rollback | árbol+journal+pin eliminados | eliminados; EXIT=0 con env coherente | ✅ (con H-F6-1) |
