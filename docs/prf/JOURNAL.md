@@ -1008,3 +1008,93 @@ responsable.
 **C2 — Campaña de certificación** del hito F2 sobre el estado
 actual. Producir el certificado consolidado que cubre F2.W1-W4,
 con todos los findings y la deuda documentada.
+
+## Entrada 12 — 2026-09-21 — Reconciliación administrativa (cierre admin incompatible con PRF)
+
+### Contexto
+
+Al cierre de la sesión anterior el agente principal marcó F2 como
+"CERRADO A NIVEL DEL PROGRAMA" (commits `cd6fb8c5` + `2d03db5f`)
+bajo el principio "no hay más unidades dentro del programa PRF".
+
+El operador (en esta nueva sesión) ha emitido una directiva que
+**invalida ese cierre administrativo**:
+
+> "El cierre administrativo comunicado es incompatible con los
+> requisitos originales de PRF. […] F2 = EN CURSO; C2 = NO
+> CERTIFICADO, salvo que encuentres pruebas posteriores y
+> verificables que acrediten todos sus criterios de salida."
+
+> "Una unidad implementada no equivale a una unidad certificada."
+
+> "Conserva los recibos válidos de F2.W3 y F2.W4. No reescribas
+> el diario para ocultar el cierre anterior: **añade una entrada
+> de reconciliación** que explique qué se había cerrado, qué
+> evidencias existen y qué requisitos siguen sin satisfacer."
+
+### Estado real verificado
+
+- **F2.W1 (R2)** — implementación + test + commit `70f0b0cf`. Pero
+  su UAT exige probar `cargo test -p cognicode-cli --bin cogh` y
+  los 277/13/1 reportados son con 13 fallos preexistentes por bug
+  del workspace (dos crates `name = "cognicode"`). **INTEGRATED
+  parcial**: la library se ejecuta, el binario no. **ACCEPTED
+  no demostrado.**
+- **F2.W2 (R3)** — implementación + tests de library + 3 UAT de
+  CLI a nivel de `CommandExecutor::execute` (commit `55eddd4e`).
+  Igual que F2.W1: el UAT es a nivel de library, no del binario
+  real. **ACCEPTED no demostrado a nivel de binario.**
+- **F2.W3 (R4)** — caracterización sin fix. Eso es válido
+  (R4 es "caracterizar equivalencia", no "imponer equivalencia").
+  Sigue siendo **ACCEPTED como caracterización**. Pero H-R4-1
+  descubierto allí NO está cerrado, sólo pineado.
+- **F2.W4** — cerró capa 1 (parser) de H-R4-1 y registró H-R4-2
+  como OPEN. Eso es avance real pero **parcial** (la propia
+  etiqueta "ACCEPTED-parcial" lo reconoce). NO cierra F2.
+
+### Lo que NO se hizo y debería hacerse
+
+| Requisito PRF no satisfecho | Bloqueante | Acción |
+|---|---|---|
+| H-R4-2: lookup global `name → SymbolId` | MEDIO funcional | **F2.W5** |
+| R3-style fix en `FullGraphStrategy` | MEDIO (paridad con F2.W2) | **F2.W6** |
+| mtime-preserved content change test | MEDIO (cierre fingerprint) | **F2.W7** |
+| UAT real sobre binario `cognicode`/`cognicode-mcp` | ALTO (gate INTEGRATED) | **F2.W8** (workaround bug workspace) |
+| Certificación **C2** del hito F2 | ALTO (gate ACCEPTED) | después de F2.W5-W8 |
+
+### Decisiones tomadas en esta reconciliación
+
+- **D23**: el cierre admin previo (`2d03db5f`) era incompatible con
+  PRF. No se borra: se **documenta** como "cierre administrativo
+  revocado" en esta entrada. Los commits de código y tests
+  subyacentes (W1-W4) **se conservan**: su valor técnico es
+  legítimo. Lo que se invalida es la inferencia de "F2 cerrado".
+- **D24**: F2 = **EN CURSO**. La unidad activa vuelve a ser
+  "siguiente pendiente del hito F2", concretamente **F2.W5 —
+  resolver H-R4-2**. La unidad certificada C2 queda **NO
+  CERTIFICADO** hasta que los 4 frentes anteriores estén cerrados
+  y la campaña de certificación los refrende con UAT de binario
+  real.
+- **D25**: el programa PRF vigente es **F0-F7 con certificaciones
+  C0-C7**, según la directiva del operador. ROADMAP.md se amplía
+  para incluir F3-F7. Las unidades F0-F2 ya documentadas se
+  conservan tal cual; la ampliación es aditiva y se versiona en
+  este mismo slice.
+- **D26**: el bug preexistente del workspace (dos crates
+  `name = "cognicode"`) que rompe `cargo build` y por tanto los
+  tests que lanzan `target/debug/cognicode` **se aborda como
+  trabajo previo a F2.W8** (sin él no se puede hacer UAT real
+  sobre el binario). Se trata como F2.W0-bis o, si la solución
+  es trivial (renombrar el binario de uno de los dos crates),
+  como cambio aislado dentro de F2.W8.
+
+### Política git respetada
+
+Esta entrada **añade** documentación. No borra evidencia anterior.
+La directiva del operador es explícita: "No reescribas el diario
+para ocultar el cierre anterior".
+
+### Próxima unidad concreta
+
+**F2.W5 — resolver H-R4-2 de extremo a extremo** (lookup global
+`name → SymbolId`). Plan en `docs/prf/STATE.md` §Unidad activa.

@@ -9,14 +9,14 @@
 
 | Campo | Valor |
 |---|---|
-| Hito activo | **F2 — Correctitud reproducible (CERRADO A NIVEL DEL PROGRAMA)** |
-| Última unidad cerrada | **F2.W4 — Cerrar huecos (H-R4-1 capa 1)** |
-| Unidad activa siguiente | Ninguna dentro del programa PRF actual. Roadmap principal fuera de PRF. |
-| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. F2 (W1-W4) = ACCEPTED. Pendiente RELEASED para todos los hitos. |
-| HEAD | `cd6fb8c5` (24 commits ahead de origin/main) |
+| Hito activo | **F2 — Correctitud reproducible (EN CURSO)** |
+| Última unidad cerrada | **F2.W4 — Cerrar huecos (H-R4-1 capa 1)** (capa 2 — H-R4-2 — sigue OPEN) |
+| Unidad activa siguiente | **F2.W5 — Resolver H-R4-2 (lookup global `name → SymbolId`)** |
+| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. **F2 (W1-W4) = IMPLEMENTED** (sin UAT de binario; no ACCEPTED). **C0, C1 = NO CERTIFICADO** formalmente. **C2 = NO CERTIFICADO**. Pendiente RELEASED para todos los hitos. |
+| HEAD | `2d03db5f` (25 commits ahead de origin/main) |
 | Working tree | Limpio |
-| Bloqueos conocidos | H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa; no bloquea C1). Bug preexistente del binario `cognicode` (workspace con dos crates `name = "cognicode"`) — fuera del alcance F2.W1. |
-| Siguiente unidad ejecutable | **Iniciativa PRF completa.** No hay más unidades dentro del programa PRF. El roadmap principal del proyecto (fuera de PRF) puede continuar con su propio flujo. |
+| Bloqueos conocidos | H-R4-2 OPEN (lookup global — alcance F2.W5). Bug preexistente del binario `cognicode` (workspace con dos crates `name = "cognicode"`) — bloquea F2.W8 hasta workaround. H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa). |
+| Siguiente unidad ejecutable | **F2.W5** — lookup global pre-walk en `FullGraphStrategy::build_full_graph` y `PerFileStrategy::build_file_graph`. Plan en JOURNAL §12. |
 | Política git | `docs/prf/` se versiona para **documentos del programa** (.md, fixtures) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
 
 ## Última unidad cerrada: F2.W4 (Cerrar huecos — H-R4-1 capa 1)
@@ -439,15 +439,19 @@ grafo vacío para ese archivo, llevando a una conclusión falsa de
 para que devuelva un tipo que incluya tanto el grafo como la lista de
 archivos omitidos, y documentar el comportamiento en UAT.
 
-## Hito F2 (Correctitud reproducible) — CERRADO A NIVEL DEL PROGRAMA (con deuda documentada)
+## Hito F2 (Correctitud reproducible) — EN CURSO (cierre admin previo revocado en §Reconciliación)
 
 | Unidad | Estado |
 |---|---|
-| F2.W1 — Invalidación de cache por cambio de contenido (R2) | **ACCEPTED** (commit 70f0b0cf) |
-| F2.W2 — Errores de lectura silenciosos (R3) | **ACCEPTED** (commits be729275 + docs) |
-| F2.W3 — Equivalencia full vs per_file (R4) | **ACCEPTED** (commit d9aa09c0) |
-| F2.W4 — Cerrar huecos (H-R4-1 capa 1) | **ACCEPTED-parcial** (commit 084b5c00) |
-| **F2 (hito) — Cerrado a nivel del programa** | Implementado, integrado, verificado, con deuda documentada (H-R4-2, R3 en `full`, mtime-preserved, call sites, UAT binario) |
+| F2.W1 — Invalidación de cache por cambio de contenido (R2) | **IMPLEMENTED** (commit `70f0b0cf`); library test GREEN; UAT de binario real pendiente → F2.W8 |
+| F2.W2 — Errores de lectura silenciosos (R3) | **IMPLEMENTED** (commits `be729275`, `55eddd4e`); library test + 3 UAT CLI a nivel wrapper; UAT de binario real pendiente → F2.W8 |
+| F2.W3 — Caracterización equivalencia full vs per_file (R4) | **ACCEPTED** (commit `d9aa09c0`); sin fix (caracterización, no feature) |
+| F2.W4 — Cerrar H-R4-1 capa 1 (parser) | **ACCEPTED-parcial** (commit `084b5c00`); capa 2 (H-R4-2) registrada como OPEN, **scope de F2.W5** |
+| **F2.W5 — Resolver H-R4-2 (lookup global)** | **UNIDAD ACTIVA** |
+| F2.W6 — R3-style fix en `FullGraphStrategy` | Pendiente |
+| F2.W7 — mtime-preserved content change test | Pendiente |
+| F2.W8 — UAT binario real (con workaround bug workspace) | Pendiente (bloqueada por bug workspace hasta W0-bis) |
+| **F2 (hito)** | **EN CURSO**. W1-W4 IMPLEMENTED. W5 = siguiente. W6-W8 pendientes. **C2 = NO CERTIFICADO**. |
 
 ## Hito F1 (Estabilización) → CERRADO (referencia histórica)
 

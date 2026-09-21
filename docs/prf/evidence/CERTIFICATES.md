@@ -673,3 +673,61 @@ gates.
 
 Siguiente paso del programa PRF: **C2 — Campaña de
 certificación**.
+
+---
+
+## ⚠️ Rectificación — 2026-09-21 — Cierre administrativo de F2 revocado
+
+El cierre "Hito F2 — CERRADO A NIVEL DEL PROGRAMA" registrado justo
+arriba (a continuación del cert `PRF-F2-W4`) **no representa la
+aceptación certificada del programa PRF** y queda revocado por
+directiva del operador.
+
+### Por qué se revoca
+
+El modelo de certificación de PRF (`docs/prf/CERTIFICATION.md`)
+define 5 estados: SPECIFIED → IMPLEMENTED → INTEGRATED → ACCEPTED →
+RELEASED. Para que un hito se considere **ACEPTADO** debe tener:
+
+1. Cada requisito con UAT ejecutada **sobre el binario real**
+   (no sobre la library).
+2. Captura de stdout/stderr/exit code.
+3. Comparación contra el contrato esperado.
+
+Las 4 unidades de F2 tienen:
+
+- Implementación verificada en library tests.
+- **NO** tienen UAT ejecutada sobre `cognicode` o `cognicode-mcp`
+  como binarios reales. Los 3 UAT de CLI en F2.W2 son a nivel de
+  `CommandExecutor::execute` (un wrapper sobre la library), no
+  del binario distribuible.
+- H-R4-2 (lookup global) sigue OPEN y la unidad F2.W4 lo
+  reconoció como "ACCEPTED-parcial".
+
+Con esos dos hechos, **F2 no satisface el estado ACCEPTED** y el
+"cierre a nivel del programa" era una inferencia administrativa
+que no se sostenía contra los requisitos del modelo.
+
+### Estado vigente tras esta rectificación
+
+- **F2 (hito)**: **EN CURSO**. Las unidades W1-W4 conservan su
+  valor técnico (sus commits no se reescriben); lo que se invalida
+  es la inferencia de cierre.
+- **C2 (campaña de certificación)**: **NO CERTIFICADO**. No se
+  emite hasta que:
+  - F2.W5 cierre H-R4-2 (lookup global).
+  - F2.W6 aplique R3-style fix a `FullGraphStrategy`.
+  - F2.W7 cierre el agujero de fingerprint mtime-preserved.
+  - F2.W8 produzca UAT real sobre binario (con workaround al bug
+    preexistente de los dos crates `name = "cognicode"`).
+- **Cierre válido de F2** exige que las 4 unidades W5-W8 estén
+  cerradas y C2 firmado.
+
+### Compromiso
+
+Esta rectificación se documenta sin borrar la entrada anterior.
+Los hechos canónicos son los commits y los tests; la inferencia
+"cerrado" era del agente, no del código. Cuando el operador
+emita nueva directiva, el modelo de certificación la respeta.
+
+Detalle completo en `JOURNAL.md` §12 y `STATE.md` §Snapshot.

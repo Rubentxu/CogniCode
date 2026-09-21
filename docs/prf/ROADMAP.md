@@ -1,8 +1,13 @@
 # Production-Ready Foundation (PRF) — ROADMAP
 
+> **Programa vigente**: F0–F7 con certificaciones C0–C7 (directiva
+> del operador 2026-09-21). Las fases F0, F1 y F2 quedaron definidas
+> al inicio del programa; F3–F7 se desarrollan **al cierre de cada
+> fase anterior** para no anticipar infraestructura.
+
 ## Fases
 
-PRF se organiza en fases (F0..FN). Cada fase agrupa unidades de trabajo (W)
+PRF se organiza en fases (F0..F7). Cada fase agrupa unidades de trabajo (W)
 con un objetivo verificable. Las fases avanzan en orden secuencial; las
 unidades dentro de una fase pueden tener dependencias internas pero no se
 consideran completas hasta que todas sus dependencias están satisfechas.
@@ -73,3 +78,120 @@ Ver `STATE.md`.
 2. Documentar el cierre en `JOURNAL.md`.
 3. Actualizar `STATE.md` (hito, unidad, certificación, commit, siguiente).
 4. Iniciar la siguiente unidad siguiendo la disciplina del README.
+
+---
+
+## Programa PRF vigente: F0–F7 / C0–C7
+
+> **Origen**: directiva del operador del 2026-09-21 (ver
+> `JOURNAL.md` §12, "Reconciliación administrativa"). El roadmap
+> local anterior terminaba en F2 con F3..FN "pendientes de
+> definición"; esa sección queda preservada por integridad
+> histórica y se complementa con el desglose siguiente. Las
+> unidades concretas de F3..F7 se definirán **al cierre de cada
+> fase anterior**, no por adelantado.
+
+### F3 — Vertical de análisis compartida (CLI + MCP)
+
+**Objetivo**: demostrar que el análisis de grafo (full, per_file,
+call_relationships, etc.) está disponible con la misma semántica
+y la misma evidencia tanto desde el CLI `cognicode` como desde
+las tools MCP (`cognicode-mcp`, `explorer-mcp`). No duplicar
+lógica: ambas caras consumen el mismo puerto de aplicación.
+
+**Criterio de salida**: para cada vertical cubierta por F2
+(`graph per-file`, `graph full`, etc.), existe un UAT en CLI y un
+UAT en MCP que produzcan el mismo resultado observable sobre el
+mismo corpus. Las herramientas MCP que delegan al puerto de
+análisis no contienen lógica de cálculo propia.
+
+### C3 — Certificación de F3
+
+C3 aplica el modelo `SPECIFIED → IMPLEMENTED → INTEGRATED →
+ACCEPTED → RELEASED` a los requisitos de F3. Particular énfasis
+en INTEGRATED: que la tool MCP funcione con el binario real,
+capturando el intercambio JSON-RPC, y que el binario CLI exhiba
+el mismo resultado en stdout. La evidencia se archiva en
+`docs/prf/evidence/PRF-F3-*.md` y se resume en
+`evidence/CERTIFICATES.md`.
+
+### F4 — Persistencia, fuentes de verdad y aislamiento
+
+**Objetivo**: demostrar que la persistencia (caches, índices,
+grafo materializado, configs por workspace) sobrevive a reinicio,
+no corrompe datos, está aislada por workspace, y que las
+migraciones de esquema se aplican sin pérdida cuando corresponda.
+
+**Criterio de salida**: existe una suite que arranca dos veces el
+binario contra el mismo workspace, ejecuta el mismo flujo, y
+compara el resultado bit-a-bit; existe otra suite que crea dos
+workspaces independientes y demuestra que no comparten estado.
+
+### C4 — Certificación de F4
+
+C4 valida los requisitos de persistencia: tras reinicio, el
+binario recupera su estado sin intervención; ante un esquema
+obsoleto, ejecuta la migración y queda usable; los workspaces
+son independientes. La evidencia incluye prueba de reinicio real
+(kill+restart del proceso, no solo llamada a función) cuando
+aplique.
+
+### F5 — Seguridad, autorización por capacidad, límites
+
+**Objetivo**: demostrar que el binario aplica sandboxing, límites
+de recursos, autorización por capacidad (no por path) y
+cancelación cooperativa de operaciones largas. La extensibilidad
+mínima (plugins) debe ejercitarse en un caso real sin romper los
+límites.
+
+**Criterio de salida**: una UAT que pruebe (a) rechazo de acceso
+fuera de capacidades declaradas, (b) timeout de operación larga,
+(c) cancelación desde señal externa. La evidencia se archiva en
+`docs/prf/evidence/PRF-F5-*.md`.
+
+### C5 — Certificación de F5
+
+C5 valida los requisitos de seguridad y límites con evidencia
+ejecutable. El detalle se definirá al cierre de F5.
+
+### F6 — Distribución, instalación, actualización, rollback
+
+**Objetivo**: gates por SHA sobre los artefactos publicados;
+instalación limpia; actualización desde una versión anterior;
+rollback a una versión anterior. Todo sobre artefactos reales,
+no sobre mocks.
+
+**Criterio de salida**: una UAT que descarga un release taggeado
+de un canal verificable, valida el SHA, lo instala, ejecuta un
+flujo canónico, actualiza a otra versión, ejecuta el mismo flujo,
+y revierte. La evidencia incluye los SHA verificados y los logs
+de cada paso.
+
+### C6 — Certificación de F6
+
+C6 valida los requisitos de distribución e instalación con
+evidencia ejecutable sobre el canal real. El detalle se definirá
+al cierre de F6.
+
+### F7 — Aceptación de release
+
+**Objetivo**: ejecutar la aceptación completa de release para una
+versión candidata, con la documentación, las plataformas
+soportadas, las pruebas repetidas y la decisión formal de
+publicación. F7 NO declara el release publicado por sí misma;
+la publicación efectiva (push, tag firmado, distribución) sigue
+requiriendo autorización explícita del operador.
+
+**Criterio de salida**: existe un `docs/prf/RELEASE-CANDIDATE.md`
+con el SHA candidato, las plataformas probadas, los UAT
+ejecutados, las certificaciones C0-C6 en PASS, y la decisión
+formal registrada (puede ser "READY FOR RELEASE" o "HOLD").
+
+### C7 — Certificación de F7
+
+C7 es el certificado consolidado del programa PRF. Sólo puede
+firmarse cuando **todas** las certificaciones C0–C6 estén en
+PASS, todos los frentes abiertos de F2/F3/F4/F5/F6 estén
+cerrados (no diferidos), y la aceptación de release haya sido
+firmada. Hasta entonces, **C7 = NO CERTIFICADO**.
+
