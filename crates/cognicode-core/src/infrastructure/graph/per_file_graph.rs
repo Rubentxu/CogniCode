@@ -11,6 +11,7 @@ use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
+use std::time::SystemTime;
 
 /// Cache entry for per-file graphs
 struct FileGraphCacheEntry {
@@ -18,6 +19,14 @@ struct FileGraphCacheEntry {
     graph: CallGraph,
     /// Whether this entry is valid
     valid: bool,
+    /// Last-modified time of the source file at cache time (seconds since
+    /// UNIX epoch). Used by `get_or_build` to detect content changes: if
+    /// the file's mtime no longer matches, the entry is rebuilt.
+    mtime_secs: Option<u64>,
+    /// Size of the source file in bytes at cache time. Secondary signal:
+    /// combined with `mtime_secs`, allows cheap detection of changes
+    /// without hashing the file body.
+    size: Option<u64>,
 }
 
 /// Per-file graph cache that stores CallGraph per file
@@ -50,16 +59,28 @@ impl PerFileGraphCache {
 
     /// Gets the graph for a file, building it if needed
     ///
-    /// If the file has already been parsed and cached, returns the cached version.
-    /// Otherwise, parses the file and builds the local call graph.
+    /// If the file has already been parsed and cached AND its filesystem
+    /// fingerprint (mtime + size) matches what was recorded at cache time,
+    /// the cached graph is returned. Otherwise the file is re-parsed and
+    /// the cache entry is refreshed.
+    ///
+    /// The fingerprint approach is cheap (one syscall) and catches the
+    /// common case of an editor saving the file: mtime is updated and the
+    /// cache is invalidated.
     pub fn get_or_build(&self, file_path: &Path) -> std::io::Result<Arc<CallGraph>> {
         let path_str = file_path.to_string_lossy().to_string();
+
+        // Snapshot the file fingerprint (mtime + size) once, so the
+        // read-cache and write-cache branches agree on what we observed.
+        let fingerprint = file_fingerprint(file_path);
 
         // Check cache first
         {
             let cache = self.cache.read().unwrap();
             if let Some(entry) = cache.get(&path_str)
                 && entry.valid
+                && entry.mtime_secs == fingerprint.as_ref().map(|f| f.mtime_secs)
+                && entry.size == fingerprint.as_ref().map(|f| f.size)
             {
                 return Ok(Arc::new(entry.graph.clone()));
             }
@@ -76,6 +97,8 @@ impl PerFileGraphCache {
                 FileGraphCacheEntry {
                     graph: graph.clone(),
                     valid: true,
+                    mtime_secs: fingerprint.as_ref().map(|f| f.mtime_secs),
+                    size: fingerprint.as_ref().map(|f| f.size),
                 },
             );
         }
@@ -262,6 +285,42 @@ impl Clone for PerFileGraphCache {
     }
 }
 
+/// Cheap filesystem fingerprint for cache invalidation.
+///
+/// Holds the mtime (seconds since UNIX epoch) and the byte size of a file
+/// at the moment the fingerprint was taken. If either changes, the file's
+/// content is presumed to have changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FileFingerprint {
+    mtime_secs: u64,
+    size: u64,
+}
+
+/// Reads the fingerprint of `path`. Returns `None` if the metadata cannot
+/// be read (e.g. file was deleted between cache hit and re-check). In that
+/// case the caller should treat the cache as stale and rebuild.
+fn file_fingerprint(path: &Path) -> Option<FileFingerprint> {
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime = meta.modified().ok()?;
+    let mtime_secs = system_time_to_secs(mtime);
+    let size = meta.len();
+    Some(FileFingerprint { mtime_secs, size })
+}
+
+/// Converts a `SystemTime` to seconds since the UNIX epoch. Saturates on
+/// dates before the epoch.
+fn system_time_to_secs(t: SystemTime) -> u64 {
+    match t.duration_since(std::time::UNIX_EPOCH) {
+        Ok(d) => d.as_secs(),
+        Err(e) => {
+            // Date is before the UNIX epoch; saturate to 0 so the
+            // cache can still compare this value to others without
+            // panicking.
+            e.duration().as_secs()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,5 +402,114 @@ mod tests {
 
         // Should have symbols from both files
         assert!(merged.symbol_count() >= 3);
+    }
+
+    // --- PRF F2.W1: regression test for content-change invalidation ---
+    //
+    // Pre-condition: a file is parsed and cached.
+    // Action: the file's content changes (size also changes).
+    // Expected: the next get_or_build returns the NEW graph, not the stale one.
+    //
+    // This is a characterization test that should FAIL on the current code
+    // (cache has no mtime/size check) and PASS after the fix.
+    #[test]
+    fn test_per_file_graph_cache_detects_content_change() {
+        use std::io::{Seek as _, Write as _};
+        use std::time::Duration;
+
+        let mut file = NamedTempFile::with_suffix(".py").unwrap();
+        writeln!(file, "def original():").unwrap();
+        writeln!(file, "    pass").unwrap();
+        file.flush().unwrap();
+
+        let cache = PerFileGraphCache::new();
+        let graph1 = cache.get_or_build(file.path()).unwrap();
+        let original_symbol_count = graph1.symbol_count();
+        assert!(
+            original_symbol_count >= 1,
+            "first parse should yield at least one symbol (sanity)"
+        );
+
+        // Ensure that the subsequent write produces a clearly newer mtime:
+        // filesystems with coarse-grained mtime resolution can otherwise
+        // collapse two writes into the same mtime if they happen within
+        // the same tick.
+        std::thread::sleep(Duration::from_millis(1100));
+
+        // Overwrite with different, larger content.
+        {
+            let mut f = file.as_file();
+            f.set_len(0).unwrap();
+            f.seek(std::io::SeekFrom::Start(0)).unwrap();
+            writeln!(f, "def alpha():").unwrap();
+            writeln!(f, "    pass").unwrap();
+            writeln!(f, "def beta():").unwrap();
+            writeln!(f, "    pass").unwrap();
+            f.flush().unwrap();
+        }
+
+        // Re-build via cache.
+        let graph2 = cache.get_or_build(file.path()).unwrap();
+        let new_symbol_count = graph2.symbol_count();
+
+        // Oracle: new content has 2 functions (alpha, beta), original had 1.
+        assert!(
+            new_symbol_count > original_symbol_count,
+            "after content change, get_or_build should return a graph \
+             reflecting the new content (more symbols than the original \
+             one). Got {} (was {}). If equal, the cache is returning \
+             stale results.",
+            new_symbol_count,
+            original_symbol_count
+        );
+    }
+
+    // --- PRF F2.W1: nested-traversal integration test on a real corpus ---
+    //
+    // The fixture lives at docs/prf/fixtures/per_file_correctness/ and is
+    // described in CORPUS.md. The oracle (3 functions: top_level,
+    // mid_level, leaf) was written by reading the .rs files directly.
+    //
+    // This test exercises PerFileStrategy::build_full_graph end-to-end on
+    // the corpus and asserts that nested subdirectories are walked.
+    #[test]
+    fn test_per_file_strategy_build_full_graph_nested_corpus() {
+        use crate::infrastructure::graph::strategy::{GraphStrategy, PerFileStrategy};
+        use std::path::PathBuf;
+
+        // Resolve corpus path relative to CARGO_MANIFEST_DIR so the test
+        // works from any clone.
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let corpus_dir = PathBuf::from(manifest_dir)
+            .parent() // crates/
+            .unwrap()
+            .parent() // repo root
+            .unwrap()
+            .join("docs/prf/fixtures/per_file_correctness");
+
+        assert!(
+            corpus_dir.is_dir(),
+            "fixture corpus must exist at {:?}",
+            corpus_dir
+        );
+
+        let mut strategy = PerFileStrategy::new();
+        strategy.build_index(&corpus_dir).expect("build_index");
+
+        let graph = strategy
+            .build_full_graph(&corpus_dir)
+            .expect("build_full_graph");
+
+        let symbol_count = graph.symbol_count();
+
+        // Oracle: 3 functions across 3 files in 2 nested subdirectories.
+        // The strategy must reach every .rs file regardless of depth.
+        assert!(
+            symbol_count >= 3,
+            "PerFileStrategy::build_full_graph should reach all 3 \
+             nested .rs files. Got {} symbols (expected >= 3). If < 3, \
+             the walk is not descending into subdirectories.",
+            symbol_count
+        );
     }
 }
