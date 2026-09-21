@@ -867,3 +867,31 @@ puerto de análisis sin lógica de cálculo propia.
 - [x] **INTEGRATED**: binario real, procesos independientes.
 - [x] **ACCEPTED**: UAT-F4-001 PASS (3 escenarios).
 - [ ] **RELEASED**: pendiente (gate del operador).
+
+---
+
+## PRF-F5 — Certificación del hito F5 (Seguridad, autorización por capacidad, límites)
+
+| Campo | Valor |
+|---|---|
+| ID | `PRF-F5` |
+| Hito | F5 — Seguridad y límites |
+| Operador | jcode-orchestrator |
+| Fecha | 2026-09-21 |
+
+### Evidencia
+
+| Evidencia | Ubicación |
+|---|---|
+| Rechazo fuera de capacidades | UAT-F5-001(a): `Path outside workspace` + control positivo |
+| Timeouts por categoría | `rmcp_adapter.rs::timeout_for_category` + 17/17 adapter tests |
+| Cancelación cooperativa | UAT-F5-001(c): `notifications/cancelled` → `internal: Cancelled` con binario real |
+
+### Estados
+
+- [x] **SPECIFIED**: ROADMAP §F5.
+- [x] **IMPLEMENTED**: mecanismos existentes (InputValidator, boundary con timeout, token cooperativo) verificados, sin código nuevo.
+- [x] **INTEGRATED**: binario real, JSON-RPC capturado.
+- [x] **ACCEPTED**: UAT-F5-001 PASS.
+- [ ] Matiz para C5 pleno: ejercicio real de extensibilidad mínima (plugin) — pendiente de definición "al cierre de F5" (ROADMAP).
+- [ ] **RELEASED**: pendiente (gate del operador).
