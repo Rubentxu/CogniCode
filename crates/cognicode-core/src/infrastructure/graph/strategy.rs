@@ -668,3 +668,202 @@ mod tests {
         assert_eq!(s.name(), "OnDemandStrategy"); // Default
     }
 }
+
+#[cfg(test)]
+mod w3_equivalence_tests {
+    //! PRF F2.W3 — Equivalencia `full` vs `per_file` (R4).
+    //!
+    //! These tests **characterize** the divergence between
+    //! [`FullGraphStrategy`] and [`PerFileStrategy`] over the corpus
+    //! `docs/prf/fixtures/equivalence_full_vs_perfile/`. They do NOT
+    //! force equivalence — the two strategies serve different
+    //! purposes — but they pin down the contract so that any future
+    //! regression is detected immediately.
+    //!
+    //! What they assert:
+    //!  1. Both strategies discover the **same set of symbols** (the
+    //!     order may differ, the count must match).
+    //!  2. Both strategies skip empty / comments-only files
+    //!     (no symbols from those files).
+    //!  3. `PerFileStrategy::build_full_graph_report` surfaces the
+    //!     broken-syntax file as a `SkippedFile` with `Parse` reason,
+    //!     while `FullGraphStrategy::build_full_graph` silently
+    //!     ignores it (this is documented as a real R3-equivalent
+    //!     bug in `FullGraphStrategy` and tracked as scope for F2.W4).
+    //!  4. The same `name` appearing in multiple files produces one
+    //!     symbol per file (qualified by the file path) — both
+    //!     strategies must agree on this count.
+    use super::*;
+    use crate::infrastructure::graph::GraphStrategy;
+    use std::collections::HashSet;
+    use std::path::PathBuf;
+
+    fn corpus() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("docs/prf/fixtures/equivalence_full_vs_perfile")
+    }
+
+    fn symbol_set(graph: &crate::domain::aggregates::call_graph::CallGraph) -> HashSet<String> {
+        graph
+            .symbols()
+            .map(|s| s.fully_qualified_name().to_string())
+            .collect()
+    }
+
+    /// S1: both strategies find the same symbol set on a non-trivial
+    /// corpus. Order-independent: HashSet comparison.
+    #[test]
+    fn w3_full_and_per_file_discover_same_symbol_set() {
+        let p = corpus();
+        let full = FullGraphStrategy::new().build_full_graph(&p).unwrap();
+        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
+
+        let full_set = symbol_set(&full);
+        let per_set = symbol_set(&per);
+
+        assert_eq!(
+            full_set.len(),
+            per_set.len(),
+            "full and per_file disagree on symbol count: full={}, per_file={}",
+            full_set.len(),
+            per_set.len()
+        );
+        let only_full: Vec<_> = full_set.difference(&per_set).collect();
+        let only_per: Vec<_> = per_set.difference(&full_set).collect();
+        assert!(
+            only_full.is_empty() && only_per.is_empty(),
+            "full-only: {:?}\nper-only: {:?}",
+            only_full,
+            only_per
+        );
+    }
+
+    /// S2: the corpus contains the named symbols at the expected
+    /// counts (1 unique simple, 2 cross-file `shared`, 2 cross-file
+    /// `compute`, 2 same-file `same_name` inside dup.rs, 1 deeply
+    /// nested, 1 cross-file call edge opportunity).
+    #[test]
+    fn w3_corpus_has_expected_symbol_inventory() {
+        let p = corpus();
+        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
+        let names: Vec<String> = per.symbols().map(|s| s.name().to_string()).collect();
+
+        let count = |n: &str| names.iter().filter(|x| x.as_str() == n).count();
+        assert_eq!(count("hello"), 1, "expected 1 `hello`");
+        assert_eq!(count("shared"), 2, "expected 2 `shared` (lib + nested)");
+        assert_eq!(
+            count("compute"),
+            2,
+            "expected 2 `compute` (one in lib, one in nested)"
+        );
+        assert_eq!(
+            count("same_name"),
+            2,
+            "expected 2 `same_name` (dup.rs top + dup.rs::inner)"
+        );
+        assert_eq!(count("caller"), 1);
+        assert_eq!(count("callee"), 1);
+        assert_eq!(count("deep_symbol"), 1);
+
+        // Total expected: 1 + 2 + 2 + 2 + 1 + 1 + 1 = 10. Pinning the
+        // exact total is what makes this test useful as a regression
+        // detector: a future change that adds a phantom symbol (or
+        // drops one) flips this assertion.
+        assert_eq!(
+            names.len(),
+            10,
+            "expected exactly 10 symbols across the corpus, got {}: {:?}",
+            names.len(),
+            names
+        );
+        // empty.rs and comments_only.rs must produce no symbols.
+        assert_eq!(count("dummy_marker_to_make_file_non_empty"), 0);
+    }
+
+    /// S3: full and per_file agree on the **count** per name (a more
+    /// granular check than S1: same set, same multiplicities).
+    #[test]
+    fn w3_full_and_per_file_agree_on_per_name_counts() {
+        let p = corpus();
+        let full = FullGraphStrategy::new().build_full_graph(&p).unwrap();
+        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
+
+        let count_per_name = |g: &crate::domain::aggregates::call_graph::CallGraph| {
+            let mut m = std::collections::BTreeMap::new();
+            for s in g.symbols() {
+                *m.entry(s.name().to_string()).or_insert(0usize) += 1;
+            }
+            m
+        };
+        let full_counts = count_per_name(&full);
+        let per_counts = count_per_name(&per);
+        assert_eq!(
+            full_counts, per_counts,
+            "per-name counts diverge: full={:?} per={:?}",
+            full_counts, per_counts
+        );
+    }
+
+    /// S4: per_file REPORT surfaces `broken.rs` as a `SkippedFile`
+    /// with reason `Parse`. `full` does not (documented R3-style
+    /// behaviour, scope of F2.W4 to fix).
+    #[test]
+    fn w3_per_file_report_marks_broken_syntax_as_skipped() {
+        let p = corpus();
+        let per = PerFileStrategy::new().build_full_graph_report(&p);
+        let report = per;
+
+        match &report.status {
+            crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped } => {
+                let broken = skipped.iter().find(|s| {
+                    s.path.ends_with("broken.rs")
+                });
+                assert!(
+                    broken.is_some(),
+                    "expected broken.rs in SkippedFile list, got: {:?}",
+                    skipped
+                );
+                let reason = &broken.unwrap().reason;
+                assert!(
+                    matches!(reason, crate::infrastructure::graph::per_file_graph::SkipReason::Parse(_)),
+                    "expected SkipReason::Parse for broken.rs, got: {:?}",
+                    reason
+                );
+            }
+            crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
+                panic!(
+                    "BuildStatus::Complete is wrong: broken.rs has obvious syntax                      errors and MUST be reported as skipped"
+                );
+            }
+        }
+    }
+
+    /// S5 (characterization, NOT a bug we will fix in F2.W3):
+    /// `FullGraphStrategy` silently ignores broken.rs. This is
+    /// documented behaviour today; fixing it is scope of F2.W4.
+    /// This test pins down the current behaviour so that a future
+    /// "silent regression" of `per_file` does not slip in unnoticed.
+    #[test]
+    fn w3_full_strategy_silently_ignores_broken_syntax_today() {
+        let p = corpus();
+        let full = FullGraphStrategy::new().build_full_graph(&p).unwrap();
+
+        // `full` does not have a "skipped" report; instead we assert
+        // that `oops` (the function name inside broken.rs) does NOT
+        // appear among its symbols. If a future change starts
+        // surfacing broken.rs symbols from `full`, this test will
+        // catch the regression even though `full` itself has no
+        // reporting API.
+        let has_oops = full
+            .symbols()
+            .any(|s| s.fully_qualified_name().ends_with(":oops:7"));
+        assert!(
+            !has_oops,
+            "FullGraphStrategy must NOT surface symbols from broken.rs              (it silently ignores parse errors today).              If this assertion fires, decide whether full now has R3              coverage — if yes, update this test and the F2.W4 plan."
+        );
+    }
+}
