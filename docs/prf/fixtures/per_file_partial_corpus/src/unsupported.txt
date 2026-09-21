@@ -1,0 +1,6 @@
+This file has a .txt extension and is therefore not in the supported
+set (rs|py|js|ts). It is intentionally not Rust source. It exists so
+that the strategy's walk can be observed to either silently filter it
+out (acceptable, with no "skipped" entry) or report it as
+`Skipped { reason: UnsupportedExtension }` (also acceptable). What is
+NOT acceptable is treating it as a parse failure.

@@ -145,18 +145,49 @@ impl PerFileGraphCache {
     ///
     /// Takes a list of file paths and returns a merged CallGraph containing
     /// all symbols and dependencies from all the files.
+    ///
+    /// **Note:** Files that cannot be read or parsed are silently dropped;
+    /// the resulting graph may be incomplete without indication. Prefer
+    /// [`PerFileGraphCache::merge_with_report`] when callers need to know
+    /// whether coverage is complete or partial.
     pub fn merge(&self, file_paths: &[&Path]) -> CallGraph {
+        self.merge_with_report(file_paths).graph
+    }
+
+    /// Merges multiple file graphs into a single graph and reports which
+    /// files were skipped (and why).
+    ///
+    /// This is the explicit, non-silent counterpart of [`merge`]. The
+    /// returned [`BuildReport`] tells the caller:
+    ///   - whether the resulting graph represents **Complete**, **Partial**,
+    ///     or **Failed** coverage of `file_paths`;
+    ///   - which specific files were skipped and the reason (read failure,
+    ///     parse failure, unsupported extension, or other I/O error).
+    ///
+    /// Callers should treat a `Partial` result as a valid but incomplete
+    /// outcome and surface the skipped list to the user, not as a clean
+    /// "no findings" conclusion.
+    pub fn merge_with_report(&self, file_paths: &[&Path]) -> BuildReport {
         let mut merged = CallGraph::new();
+        let mut skipped: Vec<SkippedFile> = Vec::new();
 
         for path in file_paths {
             let path_str = path.to_string_lossy().to_string();
 
-            // Get from cache or build
+            // Get from cache or build. Cache hit does not produce skipped
+            // entries; only actual build failures do.
             let graph = match self.get_cached(path) {
                 Some(g) => (*g).clone(),
-                None => self
-                    .build_file_graph(&path_str)
-                    .unwrap_or_else(|_| CallGraph::new()),
+                None => match self.build_file_graph(&path_str) {
+                    Ok(g) => g,
+                    Err(e) => {
+                        skipped.push(SkippedFile {
+                            path: path_str,
+                            reason: classify_io_error(&e),
+                        });
+                        continue;
+                    }
+                },
             };
 
             // Merge symbols
@@ -175,7 +206,6 @@ impl PerFileGraphCache {
 
             // Merge edges
             for (source_id, target_id, dep_type) in graph.all_dependencies() {
-                // Re-create IDs with proper format
                 let source_symbol = graph.get_symbol(source_id);
                 let target_symbol = graph.get_symbol(target_id);
 
@@ -191,7 +221,16 @@ impl PerFileGraphCache {
             }
         }
 
-        merged
+        let status = if skipped.is_empty() {
+            BuildStatus::Complete
+        } else {
+            BuildStatus::Partial { skipped }
+        };
+
+        BuildReport {
+            graph: merged,
+            status,
+        }
     }
 
     /// Merges all cached file graphs into a single graph
@@ -225,6 +264,21 @@ impl PerFileGraphCache {
 
         let parser =
             TreeSitterParser::new(language).map_err(|e| std::io::Error::other(e.to_string()))?;
+
+        // PRF F2.W2 (R3): if the file parses but the tree contains
+        // error nodes, the source is syntactically invalid. Returning
+        // an empty graph here would silently mis-represent coverage,
+        // so we surface this as an I/O error with a message that
+        // `merge_with_report` classifies as `SkipReason::Parse`.
+        let tree = parser
+            .parse_tree(&source)
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        if TreeSitterParser::has_error_nodes(&tree) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Syntax errors in {}", file_path),
+            ));
+        }
 
         let symbols = parser
             .find_all_symbols_with_path(&source, file_path)
@@ -318,6 +372,86 @@ fn system_time_to_secs(t: SystemTime) -> u64 {
             // panicking.
             e.duration().as_secs()
         }
+    }
+}
+
+/// Why a file was skipped when building a graph.
+///
+/// Distinguishing these reasons lets callers (CLI/MCP) surface an
+/// actionable message instead of "the file disappeared". Adding a new
+/// reason is non-breaking: existing consumers pattern-match the
+/// variants they care about and a default arm treats anything new as
+/// `Other`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SkipReason {
+    /// `std::fs::read_to_string` failed (permission denied, broken
+    /// symlink, file vanished between walk and read, …).
+    Read(String),
+    /// The file was read but the parser (tree-sitter) could not extract
+    /// any symbols or relationships from it.
+    Parse(String),
+    /// The file extension is not in the supported set (rs|py|js|ts).
+    UnsupportedExtension(String),
+    /// Any other I/O error not covered above.
+    Other(String),
+}
+
+/// A single file that the per-file strategy could not include in the
+/// merged graph, together with the reason it was skipped.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SkippedFile {
+    pub path: String,
+    pub reason: SkipReason,
+}
+
+/// Overall status of a `merge_with_report` operation.
+///
+/// Three states are distinguished on purpose. A "Complete" result means
+/// every input file was processed. A "Partial" result carries a list of
+/// skipped files the caller must surface. There is intentionally no
+/// "Failed" state at this layer: if the strategy cannot start (e.g.
+/// the project directory does not exist), the surrounding method
+/// returns `Err` and never reaches `merge_with_report`. A "no findings"
+/// outcome is only legitimate when coverage was `Complete`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BuildStatus {
+    Complete,
+    Partial { skipped: Vec<SkippedFile> },
+}
+
+/// The result of `PerFileGraphCache::merge_with_report`.
+///
+/// Carries both the resulting `CallGraph` and a [`BuildStatus`] so the
+/// caller can decide how to present partial coverage.
+#[derive(Clone, Debug)]
+pub struct BuildReport {
+    pub graph: CallGraph,
+    pub status: BuildStatus,
+}
+
+/// Maps a `std::io::Error` to a [`SkipReason`].
+///
+/// - `PermissionDenied` and `NotFound` (file vanished mid-walk) are
+///   classified as `Read`.
+/// - `InvalidData` and `InvalidInput` (with a "Syntax errors" or
+///   "Unsupported file type" message) are classified as `Parse`.
+/// - Any other error keeps the OS-provided message under `Other`.
+fn classify_io_error(e: &std::io::Error) -> SkipReason {
+    use std::io::ErrorKind;
+    match e.kind() {
+        ErrorKind::PermissionDenied | ErrorKind::NotFound => SkipReason::Read(e.to_string()),
+        ErrorKind::InvalidData => SkipReason::Parse(e.to_string()),
+        ErrorKind::InvalidInput => {
+            // TreeSitterParser::new failure is reported as
+            // `Error::other`, but unsupported file types come through
+            // `InvalidInput` from the `Language::from_extension` arm.
+            if e.to_string().contains("Unsupported file type") {
+                SkipReason::UnsupportedExtension(e.to_string())
+            } else {
+                SkipReason::Parse(e.to_string())
+            }
+        }
+        _ => SkipReason::Other(e.to_string()),
     }
 }
 
@@ -511,5 +645,157 @@ mod tests {
              the walk is not descending into subdirectories.",
             symbol_count
         );
+    }
+
+    // --- PRF F2.W2: silent read/parse error reporting (R3) ---
+
+    /// Test fixture for F2.W2: the corpus is at
+    /// docs/prf/fixtures/per_file_partial_corpus/. It contains a clean
+    /// file (`good.rs`) and two files that must be reported as skipped
+    /// (broken_syntax.rs and, on Unix, unreadable.rs after chmod 000).
+    fn w2_corpus() -> std::path::PathBuf {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        std::path::PathBuf::from(manifest_dir)
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("docs/prf/fixtures/per_file_partial_corpus")
+    }
+
+    /// `merge_with_report` must surface a parse failure as a skipped
+    /// entry, NOT silently swallow it.
+    #[test]
+    fn test_merge_with_report_surfaces_parse_error() {
+        let corpus = w2_corpus();
+        assert!(
+            corpus.join("src/good.rs").exists(),
+            "W2 corpus missing good.rs"
+        );
+        assert!(
+            corpus.join("src/broken_syntax.rs").exists(),
+            "W2 corpus missing broken_syntax.rs"
+        );
+
+        let cache = PerFileGraphCache::new();
+        let good = corpus.join("src/good.rs");
+        let broken = corpus.join("src/broken_syntax.rs");
+        let report = cache.merge_with_report(&[good.as_path(), broken.as_path()]);
+
+        // The good file must have produced symbols.
+        assert!(
+            report.graph.symbol_count() >= 1,
+            "good.rs should contribute at least one symbol"
+        );
+
+        // The broken file must have been reported as skipped with
+        // a Parse reason.
+        match &report.status {
+            BuildStatus::Partial { skipped } => {
+                let broken_skipped = skipped
+                    .iter()
+                    .find(|s| s.path.ends_with("broken_syntax.rs"))
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "broken_syntax.rs must appear in skipped list. Got: {:?}",
+                            skipped
+                        )
+                    });
+                assert!(
+                    matches!(broken_skipped.reason, SkipReason::Parse(_)),
+                    "broken_syntax.rs must be classified as Parse, got: {:?}",
+                    broken_skipped.reason
+                );
+            }
+            BuildStatus::Complete => {
+                panic!(
+                    "broken_syntax.rs was silently dropped — the strategy \
+                     claimed Complete coverage but skipped a file. This \
+                     is the R3 defect: coverage was incomplete but the \
+                     caller was not told."
+                );
+            }
+        }
+    }
+
+    /// `merge_with_report` must classify `std::io::ErrorKind::PermissionDenied`
+    /// and `NotFound` as `SkipReason::Read`, not as `Parse`.
+    #[test]
+    fn test_classify_io_error_read_vs_parse() {
+        let perm = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        match classify_io_error(&perm) {
+            SkipReason::Read(_) => {}
+            other => panic!("PermissionDenied must classify as Read, got {:?}", other),
+        }
+
+        let not_found = std::io::Error::new(std::io::ErrorKind::NotFound, "gone");
+        match classify_io_error(&not_found) {
+            SkipReason::Read(_) => {}
+            other => panic!("NotFound must classify as Read, got {:?}", other),
+        }
+
+        let other_err = std::io::Error::new(std::io::ErrorKind::Other, "weird");
+        match classify_io_error(&other_err) {
+            SkipReason::Other(_) => {}
+            other => panic!("Other must classify as Other, got {:?}", other),
+        }
+    }
+
+    /// On Unix, a file chmod'd to 0 must be reported as skipped with a
+    /// Read reason (not silently dropped, not classified as Parse).
+    /// On non-Unix platforms the test gracefully reports as skipped.
+    #[cfg(unix)]
+    #[test]
+    fn test_merge_with_report_surfaces_unreadable_file() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let corpus = w2_corpus();
+
+        // Create the unreadable file in the corpus, restoring perms
+        // unconditionally after the assertion phase.
+        let path = corpus.join("src/unreadable.rs");
+        std::fs::write(
+            &path,
+            "pub fn unreadable_fn() -> u32 { 99 }\n",
+        )
+        .expect("write unreadable.rs");
+
+        let original_perms = std::fs::metadata(&path).unwrap().permissions();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000))
+            .expect("chmod 0o000");
+
+        // Run the assertion; capture the outcome so we always restore
+        // permissions before propagating any failure.
+        let outcome: Result<(), String> = (|| {
+            let cache = PerFileGraphCache::new();
+            let report = cache.merge_with_report(&[path.as_path()]);
+
+            assert_eq!(
+                report.graph.symbol_count(),
+                0,
+                "an unreadable file should contribute 0 symbols"
+            );
+            match &report.status {
+                BuildStatus::Partial { skipped } => {
+                    let s = skipped
+                        .iter()
+                        .find(|s| s.path.ends_with("unreadable.rs"))
+                        .expect("unreadable.rs must appear in skipped list");
+                    assert!(
+                        matches!(s.reason, SkipReason::Read(_)),
+                        "unreadable.rs must be classified as Read, got: {:?}",
+                        s.reason
+                    );
+                    Ok(())
+                }
+                BuildStatus::Complete => {
+                    Err("unreadable.rs was silently dropped (R3 defect)".to_string())
+                }
+            }
+        })();
+
+        let _ = std::fs::set_permissions(&path, original_perms);
+        if let Err(msg) = outcome {
+            panic!("{}", msg);
+        }
     }
 }

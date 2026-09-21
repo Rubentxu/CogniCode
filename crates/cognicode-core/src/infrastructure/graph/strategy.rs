@@ -334,6 +334,81 @@ impl GraphStrategy for PerFileStrategy {
     }
 }
 
+impl PerFileStrategy {
+    /// Builds the full project call graph **with an honest coverage report**.
+    ///
+    /// This is the explicit counterpart of [`GraphStrategy::build_full_graph`].
+    /// Unlike the trait method, walk errors are NOT silently dropped
+    /// (`filter_map(|e| e.ok())` is replaced by a path that collects
+    /// skipped entries), and read/parse failures inside `merge_with_report`
+    /// are surfaced in [`BuildStatus::Partial`].
+    ///
+    /// Use this when the caller needs to know whether the resulting graph
+    /// represents complete coverage of the project directory or whether
+    /// some files were skipped. The legacy `build_full_graph` is kept
+    /// for backward compatibility with the seven CLI consumers in
+    /// `interface/cli/commands.rs` and the `merge_file_graphs` MCP tool,
+    /// which will be migrated to this method in F2.W2-followup commits.
+    pub fn build_full_graph_report(
+        &self,
+        project_dir: &Path,
+    ) -> crate::infrastructure::graph::per_file_graph::BuildReport {
+        use crate::infrastructure::graph::per_file_graph::{SkippedFile, SkipReason};
+        use walkdir::WalkDir;
+
+        let mut paths: Vec<std::path::PathBuf> = Vec::new();
+        let mut walk_skipped: Vec<SkippedFile> = Vec::new();
+
+        for entry in WalkDir::new(project_dir)
+            .follow_links(true)
+            .into_iter()
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(err) => {
+                    walk_skipped.push(SkippedFile {
+                        path: err
+                            .path()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_else(|| project_dir.to_string_lossy().to_string()),
+                        reason: SkipReason::Read(err.to_string()),
+                    });
+                    continue;
+                }
+            };
+            let path = entry.path();
+            if path.is_file()
+                && let Some(ext) = path.extension()
+                && matches!(ext.to_str(), Some("rs" | "py" | "js" | "ts"))
+            {
+                paths.push(path.to_path_buf());
+            }
+        }
+
+        let path_refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
+        let mut report = self.cache.merge_with_report(&path_refs);
+
+        // Merge walk-level skips into the report's status.
+        if !walk_skipped.is_empty() {
+            report.status = match report.status {
+                crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
+                    crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                        skipped: walk_skipped,
+                    }
+                }
+                crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                    mut skipped,
+                } => {
+                    skipped.extend(walk_skipped);
+                    crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped }
+                }
+            };
+        }
+
+        report
+    }
+}
+
 /// Full graph strategy - builds complete project graph
 ///
 /// This strategy builds the complete project graph upfront.
