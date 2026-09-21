@@ -124,10 +124,7 @@ mod h_f6_1_tests {
 
         write_version_at(&path, "0.97.3").unwrap();
         assert_eq!(read_version_at(&path).unwrap(), "0.97.3");
-        assert_eq!(
-            read_version_optional_at(&path).as_deref(),
-            Some("0.97.3")
-        );
+        assert_eq!(read_version_optional_at(&path).as_deref(), Some("0.97.3"));
         // Nothing leaked to the env-resolved home.
         assert!(!other.join("tracker/version").exists());
 

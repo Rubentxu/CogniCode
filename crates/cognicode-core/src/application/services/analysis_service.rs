@@ -1456,10 +1456,7 @@ fn context_data(source: &str, line: usize, context_size: usize) -> ContextData {
 impl AnalysisService {
     /// Finds all textual/AST occurrences of a symbol across the project
     /// source tree, skipping dependency/build/cache directories.
-    pub fn find_symbol_usages(
-        &self,
-        params: UsageSearchParams,
-    ) -> AppResult<Vec<UsageResult>> {
+    pub fn find_symbol_usages(&self, params: UsageSearchParams) -> AppResult<Vec<UsageResult>> {
         let mut usages = Vec::new();
         let mut seen_first_definition = false;
 
@@ -1481,11 +1478,10 @@ impl AnalysisService {
                 continue;
             }
 
-            let language =
-                match Language::from_extension(path.extension()) {
-                    Some(lang) => lang,
-                    None => continue,
-                };
+            let language = match Language::from_extension(path.extension()) {
+                Some(lang) => lang,
+                None => continue,
+            };
 
             let source = match std::fs::read_to_string(path) {
                 Ok(s) => s,
@@ -3152,7 +3148,11 @@ mod find_symbol_usages_tests {
             .unwrap();
         cleanup(&dir);
 
-        assert!(usages.len() >= 3, "expected >= 3 usages, got {}", usages.len());
+        assert!(
+            usages.len() >= 3,
+            "expected >= 3 usages, got {}",
+            usages.len()
+        );
         let defs = usages.iter().filter(|u| u.is_definition).count();
         assert_eq!(defs, 1, "expected exactly one definition, got {}", defs);
     }
@@ -3236,7 +3236,10 @@ mod find_symbol_usages_tests {
         let def = with_ctx.iter().find(|u| u.is_definition).unwrap();
         // Definition line: "fn alpha() -> i32 {" ; before is empty (line 0),
         // after holds line 2.
-        assert_eq!(def.context_lines.as_ref().unwrap().current, "fn alpha() -> i32 {");
+        assert_eq!(
+            def.context_lines.as_ref().unwrap().current,
+            "fn alpha() -> i32 {"
+        );
         assert_eq!(def.context_lines.as_ref().unwrap().after, vec!["    42"]);
         assert!(without_ctx.iter().all(|u| u.context_lines.is_none()));
     }

@@ -4818,9 +4818,18 @@ mod dimension_scores_on_tool_error_tests {
         // When the tool errored, latencia/escalabilidad/consistencia
         // must be None (not Some(100) from a fast-failing call).
         let ds = build_scores(true, Some(0.0), 100.0, 100.0, 95.0, 0.0);
-        assert_eq!(ds.latencia, None, "latencia must be None on tool_call_error");
-        assert_eq!(ds.escalabilidad, None, "escalabilidad must be None on tool_call_error");
-        assert_eq!(ds.consistencia, None, "consistencia must be None on tool_call_error");
+        assert_eq!(
+            ds.latencia, None,
+            "latencia must be None on tool_call_error"
+        );
+        assert_eq!(
+            ds.escalabilidad, None,
+            "escalabilidad must be None on tool_call_error"
+        );
+        assert_eq!(
+            ds.consistencia, None,
+            "consistencia must be None on tool_call_error"
+        );
         // robustez stays Some(0) — already handled correctly.
         assert_eq!(ds.robustez, Some(0.0));
         // correctitud is set by the caller (score_scenario); if 0.0

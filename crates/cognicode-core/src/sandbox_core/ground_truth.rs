@@ -1275,9 +1275,7 @@ pub fn match_code(returned: &Value, expected: &ExpectedCode) -> CodeMatchResult 
                 returned_content: None,
                 expected_content: None,
                 has_docstring: false,
-                error: Some(
-                    "invalid ground_truth.code: `contains` is empty".to_string(),
-                ),
+                error: Some("invalid ground_truth.code: `contains` is empty".to_string()),
             };
         }
 
@@ -1288,25 +1286,24 @@ pub fn match_code(returned: &Value, expected: &ExpectedCode) -> CodeMatchResult 
         //       We must verify the fragment is in the file whose path
         //       matches `expected.file` (substring in another file does
         //       not credit the target).
-        let target_content: Option<String> = if let Some(files) =
-            returned.get("files").and_then(|v| v.as_array())
-        {
-            files
-                .iter()
-                .find(|f| {
-                    f.get("path")
-                        .and_then(|p| p.as_str())
-                        .map(|p| p == expected.file)
-                        .unwrap_or(false)
-                })
-                .and_then(|f| f.get("content").and_then(|c| c.as_str()))
-                .map(String::from)
-        } else {
-            returned
-                .get("content")
-                .and_then(|v| v.as_str())
-                .map(String::from)
-        };
+        let target_content: Option<String> =
+            if let Some(files) = returned.get("files").and_then(|v| v.as_array()) {
+                files
+                    .iter()
+                    .find(|f| {
+                        f.get("path")
+                            .and_then(|p| p.as_str())
+                            .map(|p| p == expected.file)
+                            .unwrap_or(false)
+                    })
+                    .and_then(|f| f.get("content").and_then(|c| c.as_str()))
+                    .map(String::from)
+            } else {
+                returned
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+            };
 
         let returned_content = target_content;
 
@@ -2378,8 +2375,15 @@ mod tests {
 
         let result = match_code(&returned, &expected);
 
-        assert!(result.error.is_none(), "no error expected: {:?}", result.error);
-        assert!(result.exact_match, "exact_match must be true on substring hit");
+        assert!(
+            result.error.is_none(),
+            "no error expected: {:?}",
+            result.error
+        );
+        assert!(
+            result.exact_match,
+            "exact_match must be true on substring hit"
+        );
         assert!(
             (result.content_similarity - 1.0).abs() < 1e-9,
             "content_similarity must be 1.0 on substring hit, got {}",

@@ -1303,11 +1303,8 @@ mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink("/etc/passwd", &escape).unwrap();
         #[cfg(windows)]
-        std::os::windows::fs::symlink_file(
-            r"C:\Windows\System32\drivers\etc\hosts",
-            &escape,
-        )
-        .unwrap();
+        std::os::windows::fs::symlink_file(r"C:\Windows\System32\drivers\etc\hosts", &escape)
+            .unwrap();
 
         let result = validator.validate_file_path(escape.to_str().unwrap());
         assert!(

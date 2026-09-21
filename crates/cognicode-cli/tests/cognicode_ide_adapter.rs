@@ -123,8 +123,11 @@ components:
     let version_root = cogh_home.join("versions").join(version_dir);
     let manifest_dir = version_root.clone();
     fs::create_dir_all(&manifest_dir).expect("mkdir versions/<v>");
-    fs::write(manifest_dir.join("manifest.yaml"), manifest_yaml.trim_start())
-        .expect("write manifest.yaml");
+    fs::write(
+        manifest_dir.join("manifest.yaml"),
+        manifest_yaml.trim_start(),
+    )
+    .expect("write manifest.yaml");
 
     // Create the declared skill bundle directory + a placeholder skill file
     // so OpenCode integration's `declared_skill_bundle_dirs` (which errors

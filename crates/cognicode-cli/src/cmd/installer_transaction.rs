@@ -302,9 +302,7 @@ pub enum InstallerTransaction {
     /// Transaction committed successfully; holds the manifest path.
     Committed { manifest_path: PathBuf },
     /// Transaction failed with an error.
-    Failed {
-        error: InstallerError,
-    },
+    Failed { error: InstallerError },
 }
 
 /// Execute the actions for a given stage.

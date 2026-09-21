@@ -321,8 +321,8 @@ pub fn cmd_uninstall(
     // Tracker: if the uninstalled version is the actively pinned one,
     // clear the pin — "no current version" is the honest post-state.
     // Uninstalling a NON-active version must leave the tracker untouched.
-    let was_active =
-        crate::tracker::read_version_optional_at(&home.tracker_version()).as_deref() == Some(version);
+    let was_active = crate::tracker::read_version_optional_at(&home.tracker_version()).as_deref()
+        == Some(version);
     if was_active {
         let tracker = home.tracker_version();
         std::fs::remove_file(&tracker)
@@ -563,7 +563,11 @@ fn active_install_is_coherent(home: &CognicodeHome, version: &str) -> bool {
         .all(|c| vroot.join(&c.name).is_dir())
 }
 
-pub fn cmd_rollback(home: &CognicodeHome, plugin: Option<String>, to: Option<String>) -> Result<()> {
+pub fn cmd_rollback(
+    home: &CognicodeHome,
+    plugin: Option<String>,
+    to: Option<String>,
+) -> Result<()> {
     let _ = (home, plugin);
     // DEBT-4: the journal is a one-shot rollback capability for ONE
     // committed transition, not a history. Applicability is explicit and
@@ -1663,7 +1667,10 @@ components:
             .expect("--to <current> must be a clean no-op (Ok)");
 
         // Journal untouched (consumed is only for actual rollback execution).
-        assert!(jp.exists(), "REQ-RB-04: journal must NOT be consumed by no-op");
+        assert!(
+            jp.exists(),
+            "REQ-RB-04: journal must NOT be consumed by no-op"
+        );
         assert_eq!(
             crate::tracker::read_version_optional().as_deref(),
             Some("0.95.0"),

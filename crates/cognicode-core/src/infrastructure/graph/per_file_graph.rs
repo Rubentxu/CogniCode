@@ -134,9 +134,10 @@ impl GlobalSymbolIndex {
             let in_same_crate: Vec<&SymbolId> = candidates
                 .iter()
                 .filter(|sid| {
-                    self.by_id.get(*sid).map(|(p, _)| {
-                        shared_crate_root(p, caller).is_some()
-                    }).unwrap_or(false)
+                    self.by_id
+                        .get(*sid)
+                        .map(|(p, _)| shared_crate_root(p, caller).is_some())
+                        .unwrap_or(false)
                 })
                 .collect();
             if in_same_crate.len() == 1 {
@@ -155,7 +156,10 @@ impl GlobalSymbolIndex {
     /// that want to audit ambiguity, e.g. diagnostics or tests).
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn candidates(&self, name_lower: &str) -> &[SymbolId] {
-        self.by_name.get(name_lower).map(Vec::as_slice).unwrap_or(&[])
+        self.by_name
+            .get(name_lower)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// Total number of symbols registered.
@@ -586,10 +590,7 @@ impl PerFileGraphCache {
                 crate::domain::aggregates::call_graph::SymbolId::new(caller.fully_qualified_name());
 
             // 1. Local lookup first (covers intra-file edges).
-            if let Some(callee_id) = name_to_symbol
-                .get(&callee_name.to_lowercase())
-                .cloned()
-            {
+            if let Some(callee_id) = name_to_symbol.get(&callee_name.to_lowercase()).cloned() {
                 let _ = graph.add_dependency(&caller_id, &callee_id, DependencyType::Calls);
                 continue;
             }
@@ -599,8 +600,7 @@ impl PerFileGraphCache {
             //    in another file, defer the edge to the post-merge
             //    step where both endpoints exist in the merged graph.
             if let Some(idx) = global_index
-                && let Some(callee_id) =
-                    idx.resolve(&callee_name.to_lowercase(), Some(caller_path))
+                && let Some(callee_id) = idx.resolve(&callee_name.to_lowercase(), Some(caller_path))
             {
                 cross_file_edges.push((caller_id, callee_id));
             }
@@ -1056,11 +1056,8 @@ mod tests {
         // Create the unreadable file in the corpus, restoring perms
         // unconditionally after the assertion phase.
         let path = corpus.join("src/unreadable.rs");
-        std::fs::write(
-            &path,
-            "pub fn unreadable_fn() -> u32 { 99 }\n",
-        )
-        .expect("write unreadable.rs");
+        std::fs::write(&path, "pub fn unreadable_fn() -> u32 { 99 }\n")
+            .expect("write unreadable.rs");
 
         let original_perms = std::fs::metadata(&path).unwrap().permissions();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000))
@@ -1121,11 +1118,7 @@ mod global_index_tests {
     #[test]
     fn w5_resolve_single_candidate_returns_it() {
         let mut idx = GlobalSymbolIndex::new();
-        idx.insert(
-            sid("src/lib.rs:foo:1"),
-            PathBuf::from("src/lib.rs"),
-            "foo",
-        );
+        idx.insert(sid("src/lib.rs:foo:1"), PathBuf::from("src/lib.rs"), "foo");
         let r = idx.resolve("foo", Some(&PathBuf::from("src/lib.rs")));
         assert_eq!(r, Some(sid("src/lib.rs:foo:1")));
         assert!(!idx.is_empty());
@@ -1162,6 +1155,9 @@ mod global_index_tests {
         idx.insert(sid("a.rs:foo:1"), PathBuf::from("a.rs"), "foo");
         idx.insert(sid("b.rs:foo:1"), PathBuf::from("b.rs"), "foo");
         let r = idx.resolve("foo", Some(&PathBuf::from("caller.rs")));
-        assert!(r.is_none(), "expected None when files share no path components");
+        assert!(
+            r.is_none(),
+            "expected None when files share no path components"
+        );
     }
 }

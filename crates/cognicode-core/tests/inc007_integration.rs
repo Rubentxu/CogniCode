@@ -1,5 +1,5 @@
 use cognicode_core::sandbox_core::ground_truth::GroundTruth;
-use cognicode_core::sandbox_core::scoring::{score_scenario, ExecutionMetadata};
+use cognicode_core::sandbox_core::scoring::{ExecutionMetadata, score_scenario};
 
 /// INC-007 R4.5: Verify that `score_scenario` returns a numeric `correctitud`
 /// (>= G4_THRESHOLD = 90) for a `read_file` response reconstructed by H4.3,
@@ -10,8 +10,8 @@ use cognicode_core::sandbox_core::scoring::{score_scenario, ExecutionMetadata};
 #[test]
 fn integration_score_anyhow_contains_with_reconstructed_response() {
     // CARGO_MANIFEST_DIR is the workspace root for this crate.
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .expect("CARGO_MANIFEST_DIR set by cargo");
+    let manifest_dir =
+        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set by cargo");
     let recon_path = format!(
         "{}/../../sandbox/results-runs/20260920T182612/rust_tier1_anyhow_read_source_default/20260920T182613/reconstructed.json",
         manifest_dir

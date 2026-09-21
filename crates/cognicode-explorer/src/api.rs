@@ -880,9 +880,7 @@ pub async fn serve(state: ApiState, addr: SocketAddr) -> anyhow::Result<()> {
 
         #[cfg(unix)]
         let sigterm = async {
-            match tokio::signal::unix::signal(
-                tokio::signal::unix::SignalKind::terminate(),
-            ) {
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
                 Ok(mut s) => {
                     s.recv().await;
                 }
