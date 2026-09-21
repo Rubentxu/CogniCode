@@ -840,3 +840,30 @@ puerto de análisis sin lógica de cálculo propia.
 - [x] **INTEGRATED**: binarios reales `cognicode` + `cognicode-mcp`; JSON-RPC capturado y stdout comparado.
 - [x] **ACCEPTED**: UAT-F3-001 PASS en las 3 verticals.
 - [ ] **RELEASED**: pendiente (gate del operador).
+
+---
+
+## PRF-F4 — Certificación del hito F4 (Persistencia, fuentes de verdad y aislamiento)
+
+| Campo | Valor |
+|---|---|
+| ID | `PRF-F4` |
+| Hito | F4 — Persistencia y aislamiento |
+| HEAD al cierre | HEAD post-F3 + docs |
+| Operador | jcode-orchestrator |
+| Fecha | 2026-09-21 |
+
+### Evidencia
+
+| Evidencia | Ubicación |
+|---|---|
+| UAT reinicio + aislamiento | `UAT.md` §UAT-F4-001 (proceso nuevo en cada medición, no llamada a función) |
+| Matiz sobre persistencia material | reconstrucción determinista ~1ms; GraphStore/manifest con cobertura propia (4 fallos ladybug preexistentes catalogados) |
+
+### Estados
+
+- [x] **SPECIFIED**: ROADMAP §F4.
+- [x] **IMPLEMENTED**: comportamiento verificado sin código nuevo (reinicio determinista + aislamiento por working_dir).
+- [x] **INTEGRATED**: binario real, procesos independientes.
+- [x] **ACCEPTED**: UAT-F4-001 PASS (3 escenarios).
+- [ ] **RELEASED**: pendiente (gate del operador).
