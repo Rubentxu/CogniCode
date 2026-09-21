@@ -7,13 +7,13 @@
 
 ## Snapshot
 
-| Campo | Valor |
-|---|---|
 | Hito activo | **F2 — Correctitud reproducible (EN CURSO)** |
-| Última unidad cerrada | **F2.W4 — Cerrar huecos (H-R4-1 capa 1)** (capa 2 — H-R4-2 — sigue OPEN) |
-| Unidad activa siguiente | **F2.W5 — Resolver H-R4-2 (lookup global `name → SymbolId`)** |
-| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. **F2 (W1-W4) = IMPLEMENTED** (sin UAT de binario; no ACCEPTED). **C0, C1 = NO CERTIFICADO** formalmente. **C2 = NO CERTIFICADO**. Pendiente RELEASED para todos los hitos. |
-| HEAD | `2d03db5f` (25 commits ahead de origin/main) |
+| Última unidad cerrada | **F2.W5 — H-R4-2 (lookup global con resolución scope-aware)** (commit `3f27a31d`) |
+| Unidad activa siguiente | **F2.W6** (subdivisión TBD: continuar con la siguiente unidad F2 pendiente, o iniciar workaround F2.W0-bis para desbloquear F2.W8) |
+| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. **F2 (W1-W5) = IMPLEMENTED** (sin UAT de binario; no ACCEPTED). **C0, C1 = NO CERTIFICADO** formalmente. **C2 = NO CERTIFICADO**. Pendiente RELEASED para todos los hitos. |
+| HEAD | `3f27a31d` (26 commits ahead de origin/main) |
+| Working tree | Limpio |
+| Bloqueos conocidos | Bug preexistente del binario `cognicode` (workspace con dos crates `name = "cognicode"`) — bloquea F2.W8 UAT sobre binarios hasta workaround F2.W0-bis. H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa, no bloqueante). |
 | Working tree | Limpio |
 | Bloqueos conocidos | H-R4-2 OPEN (lookup global — alcance F2.W5). Bug preexistente del binario `cognicode` (workspace con dos crates `name = "cognicode"`) — bloquea F2.W8 hasta workaround. H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa). |
 | Siguiente unidad ejecutable | **F2.W5** — lookup global pre-walk en `FullGraphStrategy::build_full_graph` y `PerFileStrategy::build_file_graph`. Plan en JOURNAL §12. |
@@ -132,7 +132,100 @@ hasta que el roadmap principal consolide las gates.
 **Próxima unidad concreta**: **C2 — Campaña de certificación**
 (ver ROADMAP.md §C2). F2 está cerrado; el siguiente paso del
 programa PRF es producir el certificado consolidado del hito F2
+programa PRF es producir el certificado consolidado del hito F2
 sobre el estado actual (no sobre un F2 expandido).
+## Última unidad cerrada: F2.W5 (H-R4-2 — lookup global con resolución scope-aware)
+
+**Objetivo**: resolver la capa 2 del H-R4-1. La capa 1 (parser)
+ya estaba cerrada en F2.W4. La capa 2 era que `PerFileStrategy` y
+`FullGraphStrategy` resolvían `name → SymbolId` con un mapa **por
+archivo**, lo que producía dos fallos simultáneos:
+
+  1. **Drop silencioso**: toda llamada de A hacia B donde el símbolo
+     vive sólo en B no llegaba al grafo. Cross-file = 0 edges.
+  2. **Invención silenciosa**: si dos archivos declaraban `name`,
+     el mapa "perdedor el último insertado" resolvía a un homónimo
+     arbitrario.
+
+**Decisión arquitectónica**: separar dos responsabilidades que el
+bug mezclaba.
+
+  - **`GlobalSymbolIndex`** (nuevo, en `per_file_graph.rs`): índice
+    reverso del proyecto entero. Para cada nombre en minúsculas,
+    guarda todos los `SymbolId` con su ruta, módulo y crate root.
+    API: `insert`, `resolve` (consulta scope-aware), `candidates`
+    (diagnóstico), `len`, `is_empty`.
+  - **`build_file_graph`**: ahora retorna
+    `BuildFileResult = (CallGraph, Vec<CrossFileEdge>)`. Las aristas
+    intra-archivo van al grafo local (como antes). Las aristas
+    cross-file se difieren a un buffer porque
+    `CallGraph::add_dependency` rechaza endpoints que no estén en
+    `self.symbols`, y el grafo por archivo sólo conoce sus propios
+    símbolos.
+  - **`merge_with_report`**: tras construir todos los símbolos del
+    proyecto (primer passthrough), reconcilia las aristas cross-file
+    diferidas en el grafo mergeado.
+  - **`FullGraphStrategy::build_full_graph`**: rewrite a dos pasadas:
+    (a) construir `GlobalSymbolIndex`, (b) poblar el petgraph y
+    resolver aristas con el índice.
+
+**Reglas de resolución (scope-aware)**:
+
+  - 1 candidato                            → se usa.
+  - Múltiples en el archivo del caller    → se usa el local.
+  - Múltiples en archivos distintos del
+    mismo crate root                       → se usa ese.
+  - Otro caso (ambiguo)                   → `None`. La arista se
+                                              descarta HONESTAMENTE;
+                                              no se inventa.
+
+**Tests añadidos** (RED → GREEN):
+
+  - `w5_cross_file_call_edge_resolves_to_correct_symbol` (per_file)
+  - `w5_cross_file_call_edge_also_present_in_full` (full)
+  - `w5_intra_file_duplicate_does_not_invent_cross_file_edges`
+  - `w5_compute_overload_no_call_site_yields_no_invented_edges`
+  - `global_index_tests` × 4 (reglas del resolver a nivel unitario)
+
+**Verificación observada**:
+
+  - `cargo test -p cognicode-core --lib` →
+    **2109 passed, 0 failed, 27 ignored** (baseline 2101/0/27 → +8
+    tests, 4 w5 + 4 global_index_tests).
+  - `cargo check --workspace --all-targets` → clean.
+  - `cargo clippy -p cognicode-core --all-targets` → sólo warnings
+    preexistentes; ninguno introducido por este cambio.
+  - 4 fallos observados en el run de workspace son preexistentes
+    (verificados con `git stash` + rerun; pertenecen a
+    `cognicode-cli` y `cognicode-ladybug`, no a esta superficie).
+
+**API/contrato**: las firmas públicas (`merge`, `merge_with_report`,
+`build_full_graph`, `build_full_graph_report`, `get_or_build`,
+`build_local_graph`) se mantienen. Los nuevos `BuildFileResult` y
+`CrossFileEdge` son alias de tipo públicos. `GlobalSymbolIndex` es
+`pub` para que herramientas de diagnóstico futuras (F3/C3
+observabilidad) puedan auditar ambigüedad sin tocar el resolver.
+
+**Commit**: `3f27a31d` (atómico, sin push).
+
+**Decisiones registradas** (D32-D33, JOURNAL §14):
+
+  - D32: cross-file edges se difieren a buffer y se reconcilian
+    **después** de poblar todos los símbolos del proyecto, en lugar
+    de encolar contra el grafo parcial por archivo.
+  - D33: cuando la resolución es genuinamente ambigua, la arista
+    se descarta en vez de inventar el enlace. Política explícita
+    del operador ("un enlace inventado hacia un símbolo homónimo es
+    tan incorrecto como una relación perdida").
+
+**Próxima unidad concreta**: **F2.W6** (subdivisión TBD). El
+alcance natural siguiente es preparar el workaround **F2.W0-bis**
+para desbloquear F2.W8 (UAT de binarios): el workspace tiene dos
+crates `name = "cognicode"` y `cargo install`/`cargo run` se
+quejan. Alternativamente, una unidad de cierre del propio F2 (W7:
+auditoría de los 4 fallos preexistentes del workspace, con
+responsable y trigger por cada uno). Decisión del operador al
+llegar a F2.W6.
 
 ## Última unidad cerrada: F2.W3 (Equivalencia full vs per_file — R4)
 

@@ -60,11 +60,12 @@ real.
 | Unidad | Descripción | Estado |
 |---|---|---|
 | **F2.W1** | Caracterización de la correctitud de `PerFileStrategy` (CLI `cognicode graph per-file`, MCP `get_per_file_graph`). Cerrar la invalidación del cache por cambio de contenido (R2 del brief). | **ACCEPTED** (commit `70f0b0cf`) |
-| F2.W2 | Errores de lectura silenciosos en `PerFileStrategy::build_full_graph` (R3). Cambiar el contrato para reportar archivos omitidos. | **ACCEPTED** (commits `be729275` código+corpus, +docs; cert PRF-F2-W2 en `evidence/CERTIFICATES.md`) |
 | F2.W3 | Caracterización de equivalencia `full` vs `per_file` (R4). Las dos estrategias tienen propósitos distintos; documentar. | **ACCEPTED** (commit `d9aa09c0`; cert PRF-F2-W3 en `evidence/CERTIFICATES.md`). H-R4-1 (0 edges sobre corpus con cross-file call) registrado para F2.W4. |
 | F2.W4 | Cerrar H-R4-1 capa 1 (parser: resolución de qualified calls). Otros 5 frentes del brief original → deuda documentada. | **ACCEPTED-parcial** (commit `084b5c00`; cert PRF-F2-W4 en `evidence/CERTIFICATES.md`). H-R4-2 (lookup per-file) registrado como OPEN. |
-| **F2 (hito)** | **Cerrado a nivel del programa** con deuda documentada (H-R4-2, R3 en `full`, mtime-preserved, call sites, UAT binario). | Aceptado + integrado + verificado; RELEASED pendiente hasta consolidación con roadmap principal. |
-
+| F2.W5 | Resolver H-R4-2 (capa 2): lookup global `name → SymbolId` con resolución scope-aware. Cross-file edges preservados en ambos paths (per_file y full); homonimia no se inventa. | **IMPLEMENTED** (commit `3f27a31d`; cert PRF-F2-W5 pendiente). H-R4-2 cerrado. Queda UAT de binario (F2.W8, bloqueado por bug preexistente del workspace). |
+| **F2 (hito)** | **Cerrado a nivel del programa** con deuda documentada (R3 en `full`, mtime-preserved, call sites, UAT binario). H-R4-1 y H-R4-2 cerrados. | Aceptado + integrado + verificado (suite 2109/0/27 + 4 w5 + 4 global_index_tests); RELEASED pendiente hasta consolidación con roadmap principal. |
+Las unidades de F2 siguientes dependerán de los defectos que surjan
+durante la ejecución de F2.W1-W3.
 Las unidades de F2 siguientes dependerán de los defectos que surjan
 durante la ejecución de F2.W1-W3.
 

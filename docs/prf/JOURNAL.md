@@ -1185,3 +1185,142 @@ aparezcan como relaciones confirmadas.
 
 Aplica RED → GREEN, comprueba la regresión y registra el resultado
 real de la operación CLI/MCP pertinente.
+
+## Entrada 14 — 2026-09-21 — F2.W5 (H-R4-2 — lookup global con resolución scope-aware)
+
+### Contexto
+
+F2.W4 cerró la capa 1 del H-R4-1 (parser: `extract_callee_name`
+sólo devuelve el segmento hoja, lo que rompía el flujo de
+resolución). La capa 2 permanecía OPEN: la resolución
+`name → SymbolId` se hacía con un `HashMap<String, SymbolId>`
+**por archivo**, lo que producía dos fallos simultáneos:
+
+  - drop silencioso de toda arista cross-file (caller en A,
+    callee en B), porque B no estaba en el mapa de A;
+  - invención silenciosa ante homonimia (el último insertado
+    ganaba), en violación de la directiva explícita del operador.
+
+### Caracterización (RED)
+
+Cuatro tests añadidos en
+`crates/cognicode-core/src/infrastructure/graph/strategy.rs`
+bajo `w3_equivalence_tests → w5_equivalence_tests`:
+
+  - `w5_cross_file_call_edge_resolves_to_correct_symbol` —
+    per_file, espera arista `lib.rs::caller → nested/mod.rs::callee`.
+  - `w5_cross_file_call_edge_also_present_in_full` — full,
+    mismo contrato por la estrategia agregada.
+  - `w5_intra_file_duplicate_does_not_invent_cross_file_edges` —
+    `same_name` declarado dos veces en `dup.rs` con un caller
+    que sólo ve la primera: no debe aparecer arista hacia la
+    segunda como si fuera cross-file.
+  - `w5_compute_overload_no_call_site_yields_no_invented_edges` —
+    `compute` declarado en dos ficheros; ningún call site lo
+    referencia: el grafo no debe contener aristas "fantasma".
+
+Confirmación RED observada: los dos primeros tests fallaron con
+`cross-file edges: 0` (esperaban ≥1). Los otros dos pasaron
+trivialmente (no había forma de que el bug original los rompiera).
+
+### Implementación
+
+  1. **`GlobalSymbolIndex`** (nuevo) — índice reverso del
+     proyecto entero. `insert(symbol_id)` clasifica el símbolo
+     por nombre en minúsculas y registra `file_path` y
+     `crate_root`. `resolve(name, caller_file)` aplica las reglas
+     scope-aware descritas en STATE.md §F2.W5.
+  2. **`build_file_graph`** — refactorizado para devolver
+     `(CallGraph, Vec<CrossFileEdge>)` (`BuildFileResult`). Las
+     aristas intra-archivo se mantienen en el grafo local; las
+     cross-file se difieren porque `CallGraph::add_dependency`
+     rechaza endpoints no presentes en `self.symbols`.
+  3. **`merge_with_report`** — construye primero el
+     `GlobalSymbolIndex` y luego, tras poblar todos los símbolos
+     en el grafo mergeado, reconcilia las aristas cross-file
+     diferidas.
+  4. **`FullGraphStrategy::build_full_graph`** — reescrito a dos
+     pasadas: índice, luego grafo. Mismo contrato externo.
+
+### Decisiones registradas
+
+  - **D32**: las aristas cross-file se difieren a un buffer y
+    se reconcilian **después** de poblar todos los símbolos del
+    proyecto, en lugar de encolar contra el grafo parcial por
+    archivo. Esto preserva el invariante "toda arista tiene
+    ambos extremos en `self.symbols`" y, simultáneamente,
+    captura todas las llamadas cross-file sin perdida.
+  - **D33**: cuando la resolución es genuinamente ambigua (no
+    cumple ninguna de las tres reglas anteriores), la arista
+    se descarta HONESTAMENTE en lugar de inventar el enlace.
+    Política explícita del operador. Se expone via
+    `GlobalSymbolIndex::candidates` para diagnóstico futuro.
+
+### Verificación (GREEN)
+
+  - `cargo test -p cognicode-core --lib` → **2109 passed,
+    0 failed, 27 ignored**. Baseline 2101/0/27 → +8 tests:
+    4 w5 + 4 `global_index_tests`.
+  - `cargo check --workspace --all-targets` → clean.
+  - `cargo clippy -p cognicode-core --all-targets` → sólo
+    warnings preexistentes (`digest_seed`, `scope`,
+    `criterion_*`, "complex type"); ninguno introducido por
+    este cambio.
+
+### UAT sobre binarios — pendiente
+
+F2.W8 está pensado para UAT con los binarios `cognicode` y
+`cognicode-mcp` reales. F2.W5 deja la implementación lista,
+pero no es todavía UAT-ejecutable por dos razones
+independientes:
+
+  1. **Bug preexistente del binario `cognicode`**: el workspace
+     contiene dos crates `name = "cognicode"`
+     (`crates/cognicode-core` y `crates/cognicode`), y `cargo
+     install --path`/`cargo run -p cognicode` se quejan de
+     "multiple binaries matching". Confirmado preexistente
+     (visible ya en commits anteriores a F2.W5). Se aborda
+     como trabajo previo a F2.W8 en `F2.W0-bis`.
+  2. **Tres fallos preexistentes del workspace** (verificados
+     con `git stash` + rerun en `03cf44fe^`):
+
+     - `cogh_uninstall` en `cognicode-cli`.
+     - `manifest_upsert` × 3 en `cognicode-ladybug`.
+     - `docs_extractor_corpus_regression` (probablemente en
+       `cognicode-ladybug` o `cognicode-core` tests
+       integration).
+
+     Por directiva del operador, estos fallos se tratan como
+     **defectos del producto**, no como trigger para
+     abandonar PRF.
+
+### Cambios documentales registrados
+
+- `docs/prf/STATE.md` — fila de Snapshot actualizada
+  (última cerrada = F2.W5, siguiente = F2.W6, HEAD = 3f27a31d,
+  bloqueos reescritos sin la línea de H-R4-2) + nueva
+  sección "Última unidad cerrada: F2.W5".
+- `docs/prf/JOURNAL.md` — esta entrada.
+- `docs/prf/TRACEABILITY.md` — pendiente: enlazar el commit
+  `3f27a31d` y el bloque de tests w5 al requisito H-R4-2.
+
+### Política git respetada
+
+Commit atómico `3f27a31d` con prefijo `fix(graph):`, scope
+explicito, mensaje en español, sin reescritura de entradas
+anteriores, sin `Co-Authored-By: AI`. Sin push (human gate
+del operador).
+
+### Próxima unidad concreta
+
+**F2.W6** — decisión pendiente. Dos candidatos naturales:
+
+  - **W0-bis**: workaround del binario `cognicode` (resolver
+    el conflicto de nombres del workspace) para desbloquear
+    F2.W8.
+  - **W7**: auditoría de los 4 fallos preexistentes del
+    workspace con responsable y trigger por cada uno (no es
+    F2 propiamente, pero su cierre limpia el camino al
+    RELEASED de F2).
+
+Decisión del operador al abrir F2.W6.
