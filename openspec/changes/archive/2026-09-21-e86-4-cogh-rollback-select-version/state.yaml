@@ -1,0 +1,28 @@
+# State — e86-4-cogh-rollback-select-version
+
+| Field | Value |
+|-------|-------|
+| Cycle | `p-c1fac1fea05615c6/e86-4-cogh-rollback-select-version` |
+| Path | a-min |
+| Date | 2026-09-21 |
+| Status | **DONE — archived as `archive-with-feature`** |
+
+## Phases
+
+- propose: done (proposal.md, 2026-09-18)
+- apply: done (apply-receipt.md, 2026-09-21)
+- verify: done (verification-report.md, 2026-09-21)
+- archive: done (this file + archive move to `archive/2026-09-21-.../`)
+
+## Acceptance
+
+5/5 REQs met (REQ-RB-01..05). One-step slice delivered (multi-step
+chained rollback explicitly refused with a clear error per the
+proposal §Approach refinement). 291/291 cogh tests pass; no
+regressions. Spec delta filed at
+`openspec/changes/e86-4-cogh-rollback-select-version/specs/rollback-target-version/spec.md`.
+
+## Sequencer
+
+E86.2 (closed) → E86.3 (closed) → **E86.4 (closed here)**. E86
+family complete. Next: e87 (channels), e88 (real-PC UAT) per e84 umbrella.

@@ -163,10 +163,14 @@ pub enum Command {
     },
     /// Regenerate the shims directory
     Reshim,
-    /// Reverse the last install (e86 REQ-LJ-04)
+    /// Reverse the last install, or roll back to a specific version (e86.4 REQ-RB-01..05)
     Rollback {
         /// Plugin name (reserved for future use; today the active install is the only target)
         plugin: Option<String>,
+        /// Roll back to a specific version instead of the previous one (e86.4 REQ-RB-01).
+        /// When omitted, behaves like the legacy `cogh rollback` (undo last transaction).
+        #[arg(long)]
+        to: Option<String>,
     },
     /// Validate the install + diagnose issues
     Doctor,
@@ -337,7 +341,7 @@ fn main() -> anyhow::Result<()> {
             layout::cmd_update(&home, plugin, channel, base_url, staging, profile, dry_run)
         }
         Command::Reshim => layout::cmd_reshim(&home),
-        Command::Rollback { plugin } => layout::cmd_rollback(&home, plugin),
+        Command::Rollback { plugin, to } => layout::cmd_rollback(&home, plugin, to),
         Command::Doctor => layout::cmd_doctor(&home),
         Command::Where { binary } => layout::cmd_where(&home, &binary),
         Command::Version => version::cmd_version(&home),

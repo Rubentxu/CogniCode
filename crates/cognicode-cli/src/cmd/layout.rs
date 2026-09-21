@@ -558,7 +558,7 @@ fn active_install_is_coherent(home: &CognicodeHome, version: &str) -> bool {
         .all(|c| vroot.join(&c.name).is_dir())
 }
 
-pub fn cmd_rollback(home: &CognicodeHome, plugin: Option<String>) -> Result<()> {
+pub fn cmd_rollback(home: &CognicodeHome, plugin: Option<String>, to: Option<String>) -> Result<()> {
     let _ = (home, plugin);
     // DEBT-4: the journal is a one-shot rollback capability for ONE
     // committed transition, not a history. Applicability is explicit and
@@ -572,8 +572,30 @@ pub fn cmd_rollback(home: &CognicodeHome, plugin: Option<String>) -> Result<()> 
         println!("nothing to roll back (no version pinned in tracker)");
         return Ok(());
     };
+
+    // e86.4 REQ-RB-04: `cogh rollback --to <current>` is a clean no-op.
+    // Disambiguate before touching the journal so the "no journal for
+    // current" branch stays reserved for the genuine "nothing to roll
+    // back" case (no --to supplied).
+    if let Some(target) = &to {
+        if target == &current_version {
+            println!("rollback: already at {target}; nothing to do");
+            return Ok(());
+        }
+    }
+
     let path = crate::lifecycle_journal::journal_path(&current_version);
     if !path.exists() {
+        // e86.4 REQ-RB-05: a `--to <target>` that does not appear in the
+        // journal chain is a clear refusal with the known history listed.
+        if let Some(target) = &to {
+            return Err(anyhow!(
+                "rollback --to {target}: no journal for active version {current_version}; \
+                 cannot reach {target} via rollback chain. Known history: \
+                 [{current_version}]. Use `cogh install <plugin> --version {target}` \
+                 to install, or `cogh uninstall mcp-server {current_version}` to remove."
+            ));
+        }
         println!("nothing to roll back (no journal for active version {current_version})");
         return Ok(());
     }
@@ -596,6 +618,42 @@ pub fn cmd_rollback(home: &CognicodeHome, plugin: Option<String>) -> Result<()> 
             path.display(),
             envelope.version
         ));
+    }
+
+    // e86.4 REQ-RB-01/03/05: when `--to` is supplied, the rollback is gated
+    // on the target being reachable in ONE chained step (the current journal
+    // undoes one transition; multi-step rollback chains require the journal
+    // upgrade in e86.4 follow-up, which is intentionally out of scope for
+    // this slice).
+    if let Some(target) = &to {
+        match &envelope.previous_tracker {
+            Some(prev) if prev == target => {
+                // fall through: the standard rollback below will restore the
+                // tracker to `prev` (== `target`).
+            }
+            Some(prev) => {
+                // target is not the immediately previous version. The chain
+                // would need multi-step rollback (not implemented in this
+                // slice). Refuse with a clear message and the known history.
+                return Err(anyhow!(
+                    "rollback --to {target}: target is not reachable in one step. \
+                     The journal for active version {current_version} points at \
+                     previous_tracker=`{prev}`. Multi-step rollback is not \
+                     implemented in this slice; use `cogh install <plugin> \
+                     --version {target}` to install that version instead, or \
+                     `cogh uninstall mcp-server {current_version}` to remove."
+                ));
+            }
+            None => {
+                // e86.4 REQ-RB-03: cannot rollback past the first installation.
+                return Err(anyhow!(
+                    "rollback --to {target}: cannot rollback past first installation \
+                     (journal for active version {current_version} has no \
+                     previous_tracker). Use `cogh uninstall mcp-server {current_version}` \
+                     instead."
+                ));
+            }
+        }
     }
 
     println!("rolling back version {current_version}");
@@ -1283,7 +1341,7 @@ mod tests {
         home.init().unwrap();
         // No journal has been written yet — `cmd_rollback` must not panic,
         // and must report "nothing to roll back" instead of trying to read.
-        cmd_rollback(&home, None).expect("cmd_rollback must succeed (no journal)");
+        cmd_rollback(&home, None, None).expect("cmd_rollback must succeed (no journal)");
     }
 
     #[test]
@@ -1336,7 +1394,7 @@ mod tests {
         )
         .unwrap();
 
-        cmd_rollback(&home, None).expect("rollback must succeed");
+        cmd_rollback(&home, None, None).expect("rollback must succeed");
 
         assert!(
             !manifest_path.exists(),
@@ -1451,7 +1509,7 @@ components:
         crate::tracker::write_version("0.95.0").unwrap();
         assert!(jp.exists());
 
-        cmd_rollback(&home, None).expect("rollback must succeed");
+        cmd_rollback(&home, None, None).expect("rollback must succeed");
         assert!(!jp.exists(), "T1: journal(B) must be consumed");
         assert!(
             !home.version_root("0.95.0").join("manifest.yaml").exists(),
@@ -1459,7 +1517,7 @@ components:
         );
 
         // Second rollback: nothing applicable (journal consumed).
-        cmd_rollback(&home, None).expect("second rollback must be harmless");
+        cmd_rollback(&home, None, None).expect("second rollback must be harmless");
         assert_eq!(
             crate::tracker::read_version_optional().as_deref(),
             Some("0.94.0"),
@@ -1543,7 +1601,7 @@ components:
         let mismatched = crate::lifecycle_journal::journal_path("0.95.0");
         std::fs::copy(&jp, &mismatched).unwrap();
 
-        let err = cmd_rollback(&home, None)
+        let err = cmd_rollback(&home, None, None)
             .expect_err("T4: a stale journal must be refused, never executed");
         let msg = format!("{err:#}");
         assert!(
@@ -1568,7 +1626,7 @@ components:
         plant_journal(&home, "0.94.0", None);
         plant_journal(&home, "9.9.9", None);
 
-        cmd_rollback(&home, None).expect("must be a harmless no-op, not an error");
+        cmd_rollback(&home, None, None).expect("must be a harmless no-op, not an error");
         assert!(
             home.version_root("9.9.9").join("manifest.yaml").exists(),
             "T5: heuristic journal selection is retired; nothing may execute"
@@ -1578,6 +1636,148 @@ components:
             "T5: journals must not be consumed by a heuristic"
         );
     }
+
+    // ===== e86.4 — cogh rollback --to <version> regression coverage =====
+
+    /// e86.4 REQ-RB-04 — `--to <current>` is a clean no-op.
+    /// The tracker pins `0.95.0`; running `cogh rollback --to 0.95.0`
+    /// must exit Ok without touching the journal or filesystem state.
+    #[test]
+    #[serial]
+    fn t_e86_4_rollback_to_current_is_noop() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        redirect_home(home_dir.path());
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+        crate::tracker::write_version("0.95.0").unwrap();
+        plant_journal(&home, "0.95.0", Some("0.94.0"));
+        let jp = crate::lifecycle_journal::journal_path("0.95.0");
+        assert!(jp.exists(), "fixture: journal must be planted");
+
+        cmd_rollback(&home, None, Some("0.95.0".to_string()))
+            .expect("--to <current> must be a clean no-op (Ok)");
+
+        // Journal untouched (consumed is only for actual rollback execution).
+        assert!(jp.exists(), "REQ-RB-04: journal must NOT be consumed by no-op");
+        assert_eq!(
+            crate::tracker::read_version_optional().as_deref(),
+            Some("0.95.0"),
+            "REQ-RB-04: tracker pin must NOT change"
+        );
+    }
+
+    /// e86.4 REQ-RB-01 (one-step slice) — `--to <previous>` works.
+    /// The journal's previous_tracker is `0.94.0`; running
+    /// `cogh rollback --to 0.94.0` must roll back to `0.94.0`.
+    #[test]
+    #[serial]
+    fn t_e86_4_rollback_to_previous_tracker_succeeds() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        redirect_home(home_dir.path());
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+        crate::tracker::write_version("0.95.0").unwrap();
+        plant_journal(&home, "0.95.0", Some("0.94.0"));
+
+        cmd_rollback(&home, None, Some("0.94.0".to_string()))
+            .expect("--to <previous_tracker> must succeed (single-step rollback)");
+
+        assert_eq!(
+            crate::tracker::read_version_optional().as_deref(),
+            Some("0.94.0"),
+            "REQ-RB-01: tracker pin must be restored to target"
+        );
+        assert!(
+            !crate::lifecycle_journal::journal_path("0.95.0").exists(),
+            "REQ-RB-01: journal must be consumed on success"
+        );
+    }
+
+    /// e86.4 REQ-RB-03 — `--to <unknown>` past first install refuses.
+    /// Journal has no previous_tracker; running
+    /// `cogh rollback --to 0.92.0` must error with "cannot rollback
+    /// past first installation" + uninstall hint.
+    #[test]
+    #[serial]
+    fn t_e86_4_rollback_past_first_installation_refuses() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        redirect_home(home_dir.path());
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+        crate::tracker::write_version("0.95.0").unwrap();
+        plant_journal(&home, "0.95.0", None); // no previous_tracker -> first install
+
+        let err = cmd_rollback(&home, None, Some("0.92.0".to_string()))
+            .expect_err("--to <unknown> past first install must fail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("past first installation"),
+            "REQ-RB-03: error must mention 'past first installation'; got: {msg}"
+        );
+        assert!(
+            msg.contains("uninstall"),
+            "REQ-RB-03: error must hint at `cogh uninstall`; got: {msg}"
+        );
+        assert_eq!(
+            crate::tracker::read_version_optional().as_deref(),
+            Some("0.95.0"),
+            "REQ-RB-03: tracker pin must NOT change on refused rollback"
+        );
+    }
+
+    /// e86.4 REQ-RB-03 (multi-step slice) — `--to <far-back>` refuses.
+    /// Journal's previous_tracker is `0.94.0`; target `0.92.0` is not
+    /// reachable in one step. Refuse with a clear message.
+    #[test]
+    #[serial]
+    fn t_e86_4_rollback_to_unreachable_target_refuses() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        redirect_home(home_dir.path());
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+        crate::tracker::write_version("0.95.0").unwrap();
+        plant_journal(&home, "0.95.0", Some("0.94.0"));
+
+        let err = cmd_rollback(&home, None, Some("0.92.0".to_string()))
+            .expect_err("--to <far-back> target must fail (multi-step not implemented)");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("not reachable in one step") || msg.contains("Multi-step"),
+            "REQ-RB-03 (multi-step): error must explain the slice limit; got: {msg}"
+        );
+        assert!(
+            msg.contains("0.94.0"),
+            "REQ-RB-03 (multi-step): error must mention the actual previous_tracker; got: {msg}"
+        );
+    }
+
+    /// e86.4 REQ-RB-05 — `--to <unknown>` with no journal refuses.
+    /// Tracker pins `0.95.0` but no journal exists for it; target `0.92.0`
+    /// is unknown. Refuse with a clear message naming the known history.
+    #[test]
+    #[serial]
+    fn t_e86_4_rollback_to_unknown_with_no_journal_refuses() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        redirect_home(home_dir.path());
+        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
+        home.init().unwrap();
+        crate::tracker::write_version("0.95.0").unwrap();
+        // NO journal planted — the journal path does not exist.
+
+        let err = cmd_rollback(&home, None, Some("0.92.0".to_string()))
+            .expect_err("--to <unknown> with no journal must fail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("no journal for active version") || msg.contains("cannot reach"),
+            "REQ-RB-05: error must explain no-journal barrier; got: {msg}"
+        );
+        assert!(
+            msg.contains("0.92.0"),
+            "REQ-RB-05: error must name the requested target; got: {msg}"
+        );
+    }
+
+    // ===== /e86.4 =====
 
     /// T6 — idempotence: uninstalling B twice is stable (Ok both times).
     #[test]
@@ -1906,7 +2106,7 @@ components:
         )
         .expect("same-version no-op update");
 
-        cmd_rollback(&home, None).expect("rollback must succeed");
+        cmd_rollback(&home, None, None).expect("rollback must succeed");
         assert!(
             !home.version_root("0.95.0").exists(),
             "rollback of the original install must remove the version tree"
@@ -2487,7 +2687,7 @@ components:
         // and uses `remove_dir_all`), the populated install dir is
         // removed successfully even though its contents were not
         // individually journaled.
-        cmd_rollback(&home, None).expect("rollback must succeed after live install");
+        cmd_rollback(&home, None, None).expect("rollback must succeed after live install");
         assert!(
             !install_manifest.exists(),
             "rollback must have removed the install manifest"
@@ -2569,7 +2769,7 @@ components:
         assert!(home.version_manifest("0.95.0").exists(), "UAT: B installed");
 
         // rollback
-        cmd_rollback(&home, None).expect("UAT: rollback must succeed");
+        cmd_rollback(&home, None, None).expect("UAT: rollback must succeed");
 
         // assert post-rollback contract
         assert!(!journal_b.exists(), "UAT: journal(B) consumed");
@@ -2579,7 +2779,7 @@ components:
         );
 
         // rollback again: harmless, no state mutation
-        cmd_rollback(&home, None).expect("UAT: second rollback must be harmless");
+        cmd_rollback(&home, None, None).expect("UAT: second rollback must be harmless");
     }
 
     /// UAT scenario 2: install B → uninstall B → uninstall B again.
