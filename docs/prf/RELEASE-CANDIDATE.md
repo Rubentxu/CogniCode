@@ -46,7 +46,12 @@
 ## Decisión formal
 
 - [x] Evidencias reunidas y verificadas en HEAD.
-- [ ] **READY FOR RELEASE / HOLD** — decisión del operador.
+- [x] **READY FOR RELEASE** — decisión técnica registrada por el orquestador
+      (19:44 UTC, 2026-09-21) con la conformidad del operador ("a tu criterio").
+      Base técnica: C0-C6 en PASS, UATs F3-F6 en binarios reales, baterías GREEN
+      salvo fallos pre-existentes catalogados, sin regresiones.
+- [ ] **Publicación (push + tag)** — PENDIENTE de orden explícita del operador.
+      No se ejecuta con autorización genérica: el push es irreversible y público.
 - La publicación efectiva (push, tag, distribución) requiere
   autorización explícita del operador y NO está cubierta por la
   preautorización de continuidad del programa.
