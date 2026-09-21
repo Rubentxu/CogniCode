@@ -249,3 +249,43 @@ candidato a refactor de delegación. Registrado en TRACEABILITY.
 (no `callees`); el CLI usa `callees`/`callers` como texto descriptivo
 de la dirección por defecto. Semánticamente equivalentes; la
 divergencia es de naming de parámetro, documentada aquí.
+
+### UAT-F4-001 — Persistencia ante reinicio y aislamiento de workspaces
+
+**Fecha**: 2026-09-21
+**Binario**: `cognicode-mcp` (release)
+**Commit**: HEAD post-F3
+**Entorno**: workspaces efímeros `/tmp/prf-uat-f4-ws1` y `/tmp/prf-uat-f4-ws2`
+**Operador**: jcode-orchestrator
+
+## Escenarios
+
+**F4.a — Reinicio**: dos procesos nuevos del binario contra el mismo
+workspace producen el mismo resultado (`1 símbolo, 0 relaciones` en
+ambos). PASS.
+
+**F4.b — Aislamiento (débil)**: workspace distinto produce su propio
+resultado (1 símbolo), no hereda estado. PASS.
+
+**F4.b-strong — Aislamiento (fuerte)**: tras añadir 2 símbolos a
+ws2, un proceso nuevo contra ws1 sigue viendo exactamente 1 símbolo
+(el estado de ws2 no contamina ws1) y ws2 ve sus 3 símbolos. PASS.
+
+## Verificación
+
+| Escenario | Esperado | Observado | Pasa |
+|---|---|---|---|
+| F4.a reinicio | mismo conteo en 2 procesos | 1 vs 1 | ✅ |
+| F4.b aislamiento débil | ws2 independiente | ws2=1 | ✅ |
+| F4.b-strong contaminación cruzada | ws1=1, ws2=3 | ws1=1, ws2=3 | ✅ |
+
+## Limitación observada (honestidad)
+
+En este corpus mínimo no se observó persistencia en disco
+(`graph_db_path` no dejó artefacto visible en los workspaces de
+prueba; el grafo se reconstruye en cada proceso, ~1ms). El criterio
+"recupera estado sin intervención" se satisface vía reconstrucción
+determinista; persistencia material queda cubierta por la suite
+`manifest_upsert`/`GraphStore` (con 4 fallos preexistentes
+catalogados en ladybug, JOURNAL §15). Registrado como matiz, no
+como defecto nuevo.

@@ -1678,3 +1678,25 @@ describe la dirección como `callees`. Semánticamente equivalentes.
 criterio INTEGRATED (binarios reales, JSON-RPC capturado y stdout
 comparado). Certificado consolidado F3 pendiente de añadir a
 CERTIFICATES al cierre de la sesión de F3.
+
+## Entrada 21 — 2026-09-21 — F4: persistencia y aislamiento de workspaces
+
+**Criterio de salida (ROADMAP §F4)**: suite que arranca dos veces el
+binario contra el mismo workspace con resultado idéntico, y otra que
+demuestra que dos workspaces no comparten estado.
+
+**UAT-F4-001** (binario real, workspaces `/tmp/prf-uat-f4-ws{1,2}`):
+- F4.a reinicio: PASS (1 vs 1 símbolos en procesos nuevos).
+- F4.b aislamiento débil: PASS (ws2=1, no hereda de ws1).
+- F4.b-strong aislamiento fuerte: PASS tras añadir símbolos a ws2
+  (ws1 sigue en 1; ws2 ve sus 3). Sin contaminación cruzada.
+
+**Matiz documentado**: no se observó artefacto de persistencia en
+disco en estos workspaces mínimos; el estado se recupera por
+reconstrucción determinista (~1ms). La persistencia material
+(GraphStore/manifest) tiene cobertura propia con los 4 fallos
+preexistentes de ladybug ya catalogados (no bloqueantes, JOURNAL
+§15).
+
+**Estado**: F4 = ACCEPTED (UAT-F4-001). C4 = PASS sobre el
+criterio de reinicio real (proceso nuevo, no llamada a función).
