@@ -204,3 +204,48 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 Una reescritura con el mismo tamaño Y el mismo mtime sigue sin
 invalidar la cache. Queda documentada como deuda explícita
 (requeriría hash de contenido). No se ha disfrazado de pass.
+
+### UAT-F3-001 — Equivalencia CLI ↔ MCP sobre las verticals de análisis de F2
+
+**Fecha**: 2026-09-21
+**Binarios**: `cognicode` + `cognicode-mcp` (release, `/var/home/rubentxu/cargo-targets/release/`)
+**Commit**: `67363bfc` (HEAD al ejecutar la UAT)
+**Entorno**: corpus `/tmp/prf-uat-f3/` (2 archivos: `src/lib.rs` con `caller → crate::nested::callee()`, `src/nested/mod.rs` con `callee`)
+**Operador**: jcode-orchestrator
+
+## Escenario (Given/When/Then)
+
+**Given**: el corpus con 2 símbolos y 1 arista cross-file.
+**When**: se ejecuta cada vertical en ambos lados (CLI stdout vs JSON-RPC del MCP) sobre el mismo corpus.
+**Then**: los resultados observables son equivalentes.
+
+## Resultados observados
+
+| Vertical | CLI | MCP | Equivale |
+|---|---|---|---|
+| full (`graph full` ↔ `build_graph`) | 2 símbolos, 1 dep | `symbols_found:2, relationships_found:1, edges:[{from:caller,to:callee}]` | Sí |
+| per-file (`graph per-file src/lib.rs` ↔ `get_per_file_graph`) | 1 símbolo, 0 deps | `symbol_count:1, dependency_count:0` | Sí |
+| hierarchy (`graph hierarchy caller` ↔ `get_call_hierarchy`) | depth 1: `callee (callees)` | `calls:[{symbol:callee,confidence:1.0}], total_calls:1` | Sí |
+
+## Verificación de arquitectura (sin lógica duplicada)
+
+| Vertical | Puerto compartido |
+|---|---|
+| per-file | `PerFileStrategy::build_local_graph` invocado idénticamente por ambos |
+| full | CLI: `FullGraphStrategy`; MCP: `AnalysisService::build_project_graph` (mismo `GlobalSymbolIndex` de F2.W5/W7) |
+| hierarchy | Ambos consultan el grafo construido vía `CallGraph` |
+
+## Hallazgo H-F3-1 (deuda, no bloqueante)
+
+`find_symbol_usages` (tool MCP `find_usages`) implementa walk + parser
+inline en el handler en lugar de delegar en un puerto de análisis. No
+tiene correspondiente en `cognicode graph`, así que no viola el
+criterio de salida de F3 (que aplica a las verticals de F2), pero es
+candidato a refactor de delegación. Registrado en TRACEABILITY.
+
+## Nota de sintaxis
+
+`get_call_hierarchy` MCP exige `direction ∈ {incoming,outgoing}`
+(no `callees`); el CLI usa `callees`/`callers` como texto descriptivo
+de la dirección por defecto. Semánticamente equivalentes; la
+divergencia es de naming de parámetro, documentada aquí.

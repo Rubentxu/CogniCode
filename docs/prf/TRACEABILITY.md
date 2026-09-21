@@ -66,6 +66,7 @@
 | H4: `docs-ingest`/`issues-ingest` visibles en `--help` solo con feature `multimodal` | (PRF-W4 a definir) | LOW | KEEP+MARK — el comportamiento actual (marcado con nota "Compiled in ONLY when the `multimodal` Cargo feature is active") es honesto y útil. No se debe ocultar. | CLOSED (F1.W5 — KEEP) |
 | H5: LSPs `pyright`/`typescript-language-server` faltantes en el entorno | (no es defecto del producto) | LOW | Setup de UAT | Sin acción de código |
 | H10: `cogh update` falla por GitHub API rate limit | (F2 deuda) | LOW (externo) | Mock GitHub API para tests; documentado en `evidence/H10-correction.md` | OPEN (no bloquea C1) |
+| H-F3-1: `find_symbol_usages` (tool MCP `find_usages`) implementa walk+parser inline en el handler en vez de delegar en un puerto de análisis; sin correspondiente CLI | (F3 deuda) | LOW | Refactor de delegación cuando se amplíe la vertical de usages | OPEN (no bloquea F3) |
 | H-R4-1: ambas estrategias devuelven 0 edges sobre corpus con cross-file call (`lib.rs::caller → nested::callee`) | (F2.W4 a definir) | MEDIO (funcional) | Investigar `TreeSitterParser::find_call_relationships` sobre el corpus de F2.W3. Decidir si es bug o limitación del parser. | PARTIAL — capa 1 (parser) corregida en `084b5c00`. Capa 2 (lookup name→symbol per-file) abierta como H-R4-2. |
 | H-R4-2: `name_to_symbol` lookup es per-file en `FullGraphStrategy::build_full_graph` y en `PerFileStrategy::build_file_graph`; por tanto edges cross-file no se agregan al grafo final aunque el parser ya los resuelva correctamente | (F2.W4-subsecuente a definir) | MEDIO (funcional) | Refactor: introducir un lookup global de `name → SymbolId` que abarque todos los archivos del walk antes de procesar edges. Requiere análisis de impacto en ~10 tests existentes que asumen `edge_count == 0` o == valores pre-fix. NO abordado en `084b5c00` por scope. | OPEN |
 
@@ -93,6 +94,7 @@
 | F2.W8 (errores silenciosos en `build_project_graph`) | PRF-F2-W8-001 | **IMPLEMENTED** |
 | F2.W9 (mtime preservado — invalidación de cache) | PRF-F2-W9-001 | **IMPLEMENTED** |
 | F2.W10 (equivalencia de aristas y reproducibilidad) | PRF-F2-W10-001 | **IMPLEMENTED** |
+| F3 (vertical compartida CLI↔MCP) | PRF-F3-001 (UAT-F3-001) | **ACCEPTED** |
 
 ## Matriz de trazabilidad (consolidada F0.W1 + F0.W2)
 

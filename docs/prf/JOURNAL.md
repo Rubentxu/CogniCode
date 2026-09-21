@@ -1646,3 +1646,35 @@ gate del operador (push + tag).
 **F2 = ACCEPTED.** El programa PRF queda sin unidades activas en
 F2; la siguiente fase (F3 o RELEASED) requiere directiva del
 operador.
+
+## Entrada 20 — 2026-09-21 — F3: vertical de análisis compartida (CLI + MCP)
+
+**Criterio de salida (ROADMAP §F3)**: para cada vertical cubierta
+por F2, un UAT en CLI y un UAT en MCP con el mismo resultado
+observable sobre el mismo corpus; sin lógica de cálculo propia en
+las tools MCP que delegan al puerto de análisis.
+
+**Caracterización arquitectural**:
+- per-file: ambos lados invocan `PerFileStrategy::build_local_graph`.
+- full: CLI usa `FullGraphStrategy`; MCP usa
+  `AnalysisService::build_project_graph` (mismo `GlobalSymbolIndex`
+  de F2.W5/W7).
+- hierarchy: ambos consultan el `CallGraph` construido.
+
+**UAT-F3-001** (corpus `/tmp/prf-uat-f3`, 2 símbolos + 1 arista
+cross-file): las 3 verticals producen resultados equivalentes.
+Detalle en `UAT.md`.
+
+**Hallazgo H-F3-1** (deuda, no bloqueante):
+`find_symbol_usages` (tool `find_usages` MCP) tiene walk+parser
+inline en el handler; sin correspondiente CLI, no viola el criterio
+F3 pero es candidato a refactor. Registrado en TRACEABILITY.
+
+**Nota**: divergencia de naming documentada: MCP
+`get_call_hierarchy` exige `direction ∈ {incoming,outgoing}`; CLI
+describe la dirección como `callees`. Semánticamente equivalentes.
+
+**Estado**: F3 = ACCEPTED (UAT-F3-001). C3 = PASS sobre el
+criterio INTEGRATED (binarios reales, JSON-RPC capturado y stdout
+comparado). Certificado consolidado F3 pendiente de añadir a
+CERTIFICATES al cierre de la sesión de F3.

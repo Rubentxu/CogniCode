@@ -8,13 +8,13 @@
 ## Snapshot
 
 | Hito activo | **F2 — Correctitud reproducible (EN CURSO)** |
-| Última unidad cerrada | **C2 — certificación consolidada del hito F2** (cert `PRF-C2` en `evidence/CERTIFICATES.md`) |
-| Unidad activa siguiente | Ninguna activa. F2 = ACCEPTED. Pendiente: RELEASED (requiere push/tag, gate del operador) |
+| Última unidad cerrada | **F3 — vertical de análisis compartida CLI↔MCP** (UAT-F3-001, ACCEPTED) |
+| Unidad activa siguiente | **F4 — Persistencia, fuentes de verdad y aislamiento** |
 | Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. **F2 (W1-W10) = ACCEPTED via cert C2** (certificado consolidado `PRF-C2`, HEAD `dc189d54`+docs). **RELEASED = pendiente** para todos los hitos (requiere push/tag del operador). |
 | HEAD | `2a121aec` (F2.W9) |
 | Working tree | limpio tras commit W9 + docs |
 | Bloqueos conocidos | **No hay bloqueos activos**. Los 6 fallos preexistentes del workspace (`cogh_uninstall`, `docs_extractor_corpus_regression`, 4× `manifest_upsert`) están catalogados en JOURNAL §15 con responsable y trigger; no bloquean gates de F2/C2. H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa, no bloqueante). |
-| Siguiente unidad ejecutable | Ninguna en F2. RELEASED requiere gate del operador (push + tag). Fase F3 pendiente de definición por el operador. |
+| Siguiente unidad ejecutable | **F4.W1** — suite de reinicio + aislamiento de workspaces (definición en ROADMAP §F4). |
 | Política git | `docs/prf/` se versiona para **documentos del programa** (.md, fixtures) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
 | Gobierno del proyecto | **PRF es el único roadmap ejecutivo vigente** (decisión del operador 2026-09-21, `JOURNAL.md` entrada 13, `TRACEABILITY.md` §Correspondencia E31→PRF). E31 conserva su evidencia y aporta requisitos útiles que migran a gates PRF. |
 
