@@ -1810,3 +1810,9 @@ del operador. C7 se firmará tras publicar.
 - Receipts: 11 gates (exploration-sufficient ... vault-index-current), provenance PASSED, dangling 0.
 - Deuda OPEN: clippy type_complexity strategy.rs:521 [Medium/High, preexistente, requiere ciclo propio] + 2 [Low/Low].
 - Push a origin/main pendiente de orden explícita del operador (56+ commits locales).
+
+## 2026-09-21 — Push a origin/main autorizado y ejecutado
+- Push inicial rechazado: origin/main tenía 5 commits remotos (docs PRF canonical: stubs + .gitignore entrypoints).
+- Merge 3aba1098: conflictos add/add en 10 docs resueltos conservando la versión local (historial real de ejecución F0-F7); se incorporan los stubs canónicos remotos donde no colisionaban.
+- Verificación: HEAD == origin/main == 3aba1098. Batería post-merge: core --lib 2126/0.
+- Pendiente: tag de release (C7) y resolución de deuda clippy strategy.rs:521.
