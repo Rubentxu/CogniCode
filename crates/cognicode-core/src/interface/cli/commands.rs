@@ -350,8 +350,17 @@ impl CommandExecutor {
                 }
             }
             Some(CliCommand::Graph { command }) => {
+                // PRF F2.W2: do NOT swallow the Graph error here.
+                // PerFileStrategy and FullGraphStrategy now surface read /
+                // parse / unsupported-extension failures as `Err`, and the
+                // UAT (see `w2_uat_tests` below) requires those to
+                // propagate so that scripts and CI can detect them.
+                // Other Graph subcommands that still match the legacy
+                // contract (OnDemand, HotPaths, …) return `Ok` and keep
+                // working unchanged.
                 if let Err(e) = Self::execute_graph(command).await {
                     eprintln!("Graph command failed: {}", e);
+                    return Err(e);
                 }
             }
             Some(CliCommand::Navigate { command }) => {
@@ -1468,5 +1477,96 @@ fn print_outline_tree(nodes: &[OutlineNode], indent: usize) {
         if !node.children.is_empty() {
             print_outline_tree(&node.children, indent + 1);
         }
+    }
+}
+
+#[cfg(test)]
+mod w2_uat_tests {
+    //! PRF F2.W2 — UAT of the CLI surface for the per-file-graph path.
+    //!
+    //! These tests do not spawn a subprocess: they invoke
+    //! [`CommandExecutor::execute`] with a parsed [`Cli`] struct, which
+    //! is exactly what the `cognicode` binary does after
+    //! `Cli::parse()`. The behaviour observed here is therefore the
+    //! behaviour a user gets when they type
+    //! `cognicode graph per-file <path>` on the command line.
+    use super::*;
+
+    fn w2_corpus() -> std::path::PathBuf {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        std::path::PathBuf::from(manifest_dir)
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("docs/prf/fixtures/per_file_partial_corpus")
+    }
+
+    /// `cognicode graph per-file <clean.rs>` — UAT for the happy path.
+    /// Must succeed and report at least one symbol.
+    #[tokio::test]
+    async fn uat_cli_graph_per_file_clean_file_succeeds() {
+        let good = w2_corpus().join("src/good.rs");
+        let cli = Cli {
+            verbose: false,
+            command: Some(CliCommand::Graph {
+                command: GraphCommand::PerFile {
+                    file: good.to_string_lossy().to_string(),
+                },
+            }),
+        };
+        CommandExecutor::execute(cli)
+            .await
+            .expect("CLI graph per-file on a clean file must succeed");
+    }
+
+    /// `cognicode graph per-file <broken_syntax.rs>` — UAT for the
+    /// parse-error path. The CLI must propagate the parse error
+    /// instead of silently printing an empty result.
+    ///
+    /// Before the fix the CLI would happily print
+    /// `Symbols: 0 / Dependencies: 0`, pretending that an empty
+    /// parse is a successful analysis. After the fix the CLI
+    /// surfaces a non-zero error to stderr and returns Err.
+    #[tokio::test]
+    async fn uat_cli_graph_per_file_broken_syntax_returns_error() {
+        let broken = w2_corpus().join("src/broken_syntax.rs");
+        let cli = Cli {
+            verbose: false,
+            command: Some(CliCommand::Graph {
+                command: GraphCommand::PerFile {
+                    file: broken.to_string_lossy().to_string(),
+                },
+            }),
+        };
+        let result = CommandExecutor::execute(cli).await;
+        assert!(
+            result.is_err(),
+            "CLI graph per-file on a syntactically broken file must \
+             return an error, not silently report success. Got: {:?}",
+            result
+        );
+    }
+
+    /// `cognicode graph per-file <missing.rs>` — UAT for the
+    /// not-found path. The CLI must propagate the read error.
+    #[tokio::test]
+    async fn uat_cli_graph_per_file_missing_file_returns_error() {
+        let missing = w2_corpus().join("src/does_not_exist.rs");
+        let cli = Cli {
+            verbose: false,
+            command: Some(CliCommand::Graph {
+                command: GraphCommand::PerFile {
+                    file: missing.to_string_lossy().to_string(),
+                },
+            }),
+        };
+        let result = CommandExecutor::execute(cli).await;
+        assert!(
+            result.is_err(),
+            "CLI graph per-file on a missing file must return an error. \
+             Got: {:?}",
+            result
+        );
     }
 }

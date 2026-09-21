@@ -10,14 +10,127 @@
 | Campo | Valor |
 |---|---|
 | Hito activo | **F2 — Correctitud reproducible** |
-| Última unidad cerrada | **F2.W1 — Caracterización de la correctitud del análisis (R2)** |
-| Unidad activa siguiente | **F2.W2 — Errores de lectura silenciosos en PerFileStrategy** (R3) |
-| Estado de certificación | F1 = IMPLEMENTED + INTEGRATED + ACCEPTED. F2.W1 = IMPLEMENTED + INTEGRATED + ACCEPTED. Pendiente RELEASED. |
-| HEAD | `70f0b0cf` (17 commits ahead de origin/main) |
-| Working tree | Limpio |
+| Última unidad cerrada | **F2.W2 — Errores de lectura silenciosos en PerFileStrategy (R3)** |
+| Unidad activa siguiente | **F2.W3 — Equivalencia full vs per_file (R4)** |
+| Estado de certificación | F1 = IMPLEMENTED + INTEGRATED + ACCEPTED. F2.W1 = IMPLEMENTED + INTEGRATED + ACCEPTED. F2.W2 = IMPLEMENTED + INTEGRATED + ACCEPTED. Pendiente RELEASED. |
+| HEAD | `be729275` (19 commits ahead de origin/main) |
+| Working tree | sucio (cambios pendientes: `commands.rs` con UAT tests + fix de CLI swallow, `be729275` solo cubría código + corpus sin UAT) |
 | Bloqueos conocidos | H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa; no bloquea C1). Bug preexistente del binario `cognicode` (workspace con dos crates `name = "cognicode"`) — fuera del alcance F2.W1. |
-| Siguiente unidad ejecutable | F2.W2 (errores de lectura silenciosos en `PerFileStrategy::build_full_graph`) |
+| Siguiente unidad ejecutable | F2.W3 (caracterización de equivalencia entre `FullGraphStrategy` y `PerFileStrategy`) |
 | Política git | `docs/prf/` se versiona para **documentos del programa** (.md, fixtures) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
+
+## Última unidad cerrada: F2.W2 (Errores de lectura silenciosos en PerFileStrategy)
+
+**Objetivo**: cerrar R3 — el `walkdir` silencioso y el `merge` que ignoraba
+errores de parseo en `PerFileStrategy::build_full_graph` y `merge`,
+haciendo que el análisis pareciera completo cuando en realidad había
+fallos no reportados.
+
+**Defectos diagnosticados** (commit `be729275`):
+
+1. `PerFileStrategy::build_full_graph` (en
+   `crates/cognicode-core/src/infrastructure/graph/strategy.rs`):
+   `walkdir` filtraba con `filter_map(|e| e.ok())`, descartando errores
+   de I/O (permisos, ENOENT transitorios).
+2. `PerFileGraphCache::merge` (en
+   `crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs`):
+   `unwrap_or_else(|_| CallGraph::new())` colapsaba fallos de read/parse
+   en un grafo vacío, sumándolos al grafo principal sin advertencia.
+3. El parser tree-sitter es **error-tolerant**: devuelve una lista de
+   símbolos vacía ante sintaxis rota. Sin detección explícita de nodos
+   `ERROR` con `TreeSitterParser::has_error_nodes`, un archivo con `)`
+   faltante o un `pub fn broken_fn(` queda indistinguible de un archivo
+   vacío.
+
+**Cambios mínimos**:
+
+- Tipos nuevos en `per_file_graph.rs`:
+  - `SkipReason::{ Read(String), Parse(String), UnsupportedExtension(String), Other(String) }`
+  - `SkippedFile { path, reason }`
+  - `BuildStatus::{ Complete, Partial { skipped: Vec<SkippedFile> } }`
+  - `BuildReport { graph: CallGraph, status: BuildStatus }`
+- Helper privado `classify_io_error(err) -> SkipReason` mapea
+  `io::ErrorKind::*` a las 4 categorías.
+- `merge_with_report()` (nuevo, preserva `merge()` viejo para no romper
+  consumidores).
+- `PerFileStrategy::build_full_graph_report()` (nuevo, no toca el trait).
+- `build_file_graph` parsea una vez y rechaza con `ErrorKind::InvalidData`
+  si `has_error_nodes(&tree)`; `classify_io_error` lo traduce a
+  `SkipReason::Parse`.
+
+**Bug CLI colateral descubierto y corregido** (en este mismo commit
+F2.W2): el wrapper `CommandExecutor::execute` (en
+`crates/cognicode-core/src/interface/cli/commands.rs`) **tragaba el
+`Err`** de `execute_graph` con `if let Err(e) = … { eprintln!(…) }` y
+retornaba `Ok(())`. Si no se hubiese añadido el UAT de CLI (ver abajo),
+este defecto habría llegado a v1.0: el binario imprimía "Error building
+per-file graph: …" en stderr y exit code 0. Fix: en el brazo `Graph` del
+match top-level, `return Err(e);` para que el código de salida refleje
+el fallo.
+
+**Tests** (6 nuevos, todos GREEN):
+
+| Test | Verifica |
+|---|---|
+| `test_merge_with_report_surfaces_parse_error` | `merge_with_report` clasifica `InvalidData` como `SkipReason::Parse` y lo reporta en `BuildStatus::Partial` |
+| `test_classify_io_error_read_vs_parse` | Helper `classify_io_error` mapea NotFound/InvalidData correctamente |
+| `test_merge_with_report_surfaces_unreadable_file` | chmod 0o000 → `SkipReason::Read` (Unix-only con restore en finally-style manual, sin scopeguard) |
+| `uat_cli_graph_per_file_clean_file_succeeds` | `CommandExecutor::execute(Cli{Graph{PerFile{good.rs}}})` retorna `Ok(())` |
+| `uat_cli_graph_per_file_broken_syntax_returns_error` | mismo flujo con `broken_syntax.rs` retorna `Err` (parse propagado al exit code) |
+| `uat_cli_graph_per_file_missing_file_returns_error` | mismo flujo con archivo inexistente retorna `Err` (ENOENT propagado) |
+
+**Corpus nuevo** (`docs/prf/fixtures/per_file_partial_corpus/`, versionado):
+
+- `CORPUS.md` — describe el oráculo y los 3 escenarios (good / broken_syntax / unsupported).
+- `src/good.rs` — `pub fn good_fn() {}`, oráculo de "análisis completo".
+- `src/broken_syntax.rs` — `pub fn broken_fn(` (falta `)`), oráculo de "debe saltar con Parse".
+- `src/unsupported.txt` — extensión no soportada (no se usa en los tests, se mantiene como documentación del comportamiento).
+
+**Verificaciones ejecutadas**:
+
+- `cargo test -p cognicode-core --lib per_file_graph` → **11/11 pass**.
+- `cargo test -p cognicode-core --lib w2_uat_tests` → **3/3 pass**.
+- `cargo test -p cognicode-core --lib` → **2091/0/27** (baseline F2.W1
+  era 2085/0/27, **+6 tests** sin regresión).
+- Manual: revertidos los tres fixes (skip-reporting, CLI swallow,
+  has_error_nodes), los 6 tests fallan (RED confirmado); re-aplicados,
+  todos pasan (GREEN confirmado).
+- API pública de `PerFileGraphCache` preservada: la firma vieja `merge`
+  sigue existiendo y delega a `merge_with_report`. Los 7 call sites CLI
+  existentes del trait siguen usando `build_full_graph` sin cambios.
+
+**Composición de commits**:
+
+```
+be729275 fix(per-file-graph): report skipped files instead of silent failures (R3)
+1c91fe10 docs(prf): record F2.W1 closure, ROADMAP, certificate, traceability
+70f0b0cf fix(per-file-cache): invalidate entries on content change (R2 from F2.W1)
+```
+
+El commit de código+corpus (`be729275`) precede a este commit de docs.
+Los UAT tests + fix de CLI swallow van en un commit separado a
+continuación para mantener la atomicidad (un commit por concern).
+
+**Certificación**: F2.W2 = **IMPLEMENTED + INTEGRATED + ACCEPTED**.
+Detalle en `evidence/CERTIFICATES.md` (cert PRF-F2-W2).
+
+**Política respetada**:
+
+- API pública de `PerFileGraphCache` y `PerFileStrategy` preservada
+  (`merge_with_report` se añade, `merge` se conserva).
+- Trait `GraphStrategy` no modificado: `build_full_graph_report` es
+  método directo de `PerFileStrategy`.
+- Sin nuevos módulos, ports, event bus, ni representación alternativa.
+- Sin expansión de scope: la corrección del bug CLI es aditiva a R3
+  (mismo patrón "silent failure"), no una refactorización del wrapper.
+
+**Próxima unidad concreta**: **F2.W3 — Equivalencia full vs per_file
+(R4)**. Las dos estrategias tienen propósitos distintos (full = una sola
+pasada sobre todo el árbol; per_file = cache incremental por archivo);
+F2.W3 construirá una matriz de caracterización sin forzar equivalencia
+perfecta. Las divergencias legítimas (por ejemplo, full cuenta
+archivos ignorados que per_file no) se documentarán como
+comportamiento esperado.
 
 ## Última unidad cerrada: F2.W1 (Correctitud del análisis — invalidación de cache)
 
@@ -121,7 +234,7 @@ archivos omitidos, y documentar el comportamiento en UAT.
 | Unidad | Estado |
 |---|---|
 | F2.W1 — Invalidación de cache por cambio de contenido (R2) | **ACCEPTED** (commit 70f0b0cf) |
-| F2.W2 — Errores de lectura silenciosos (R3) | Pendiente |
+| F2.W2 — Errores de lectura silenciosos (R3) | **ACCEPTED** (commits be729275 + docs) |
 | F2.W3 — Equivalencia full vs per_file (R4) | Pendiente |
 
 ## Hito F1 (Estabilización) → CERRADO (referencia histórica)

@@ -675,3 +675,134 @@ entradas cuando el contenido del archivo cambiaba entre llamadas.
    670,701,741,834` para reportar los archivos omitidos al usuario.
 5. Re-correr todos los tests; verificar no-regresión.
 
+## Entrada 9 — 2026-09-21 — F2.W2 (Errores de lectura silenciosos — R3)
+
+### Objetivo
+
+Cerrar el riesgo R3 del análisis de correctitud de
+`PerFileStrategy`: cuando un archivo del proyecto no se podía leer o
+parsear, la estrategia reportaba éxito con un grafo incompleto, sin
+ningún tipo de advertencia al usuario. Esto es exactamente la misma
+familia de bug que ya teníamos en la lista del programa (R2 era
+"cache stale"; R3 es "análisis silenciosamente incompleto").
+
+### Investigación
+
+Releí `PerFileStrategy::build_full_graph` en
+`crates/cognicode-core/src/infrastructure/graph/strategy.rs` y
+`PerFileGraphCache::merge` en `per_file_graph.rs`. Los tres defectos:
+
+1. `walkdir(...).filter_map(|e| e.ok())` — descarta errores de I/O
+   silenciosamente.
+2. `build_local_graph(...).unwrap_or_else(|_| CallGraph::new())` — un
+   fallo de read/parse se convierte en un grafo vacío que se suma al
+   principal.
+3. **Crítico**: tree-sitter es error-tolerant. Sobre `pub fn broken_fn(`
+   sin `)` el parser devuelve una lista de símbolos VACÍA, no un error.
+   Sin chequeo de `has_error_nodes`, un archivo con sintaxis rota es
+   indistinguible de un archivo vacío. Esto lo descubrí al intentar
+   reproducir el primer test RED con `broken_syntax.rs`: el parse
+   "tenía éxito" con 0 símbolos.
+
+### Decisiones de diseño
+
+- Tipos nuevos en `per_file_graph.rs`:
+  - `SkipReason` (4 variantes: Read, Parse, UnsupportedExtension, Other).
+  - `SkippedFile { path, reason }`.
+  - `BuildStatus::{ Complete, Partial { skipped } }`.
+  - `BuildReport { graph, status }`.
+- **Backward compat**: el método público viejo `merge()` se preserva;
+  delega en el nuevo `merge_with_report()`. Esto importa porque
+  `PerFileGraphCache::merge` es invocado por el trait y por la
+  serialización de cache.
+- **No tocar el trait**: `build_full_graph_report()` se añade como
+  método directo de `PerFileStrategy`, no al trait `GraphStrategy`. Los
+  7 call sites CLI existentes siguen usando `build_full_graph` y no
+  cambian.
+- Detección explícita de errores de parseo:
+  `TreeSitterParser::has_error_nodes(&tree)` se chequea tras el
+  `parse()`; si hay errores, `build_file_graph` retorna
+  `Err(io::Error::new(io::ErrorKind::InvalidData, "Syntax errors in …"))`,
+  que `classify_io_error` traduce a `SkipReason::Parse`.
+
+### Tests añadidos (6 nuevos, todos GREEN)
+
+| Test | Tipo |
+|---|---|
+| `test_merge_with_report_surfaces_parse_error` | unit per_file_graph |
+| `test_classify_io_error_read_vs_parse` | unit per_file_graph |
+| `test_merge_with_report_surfaces_unreadable_file` | unit per_file_graph (Unix-only, chmod 0o000 con restore manual) |
+| `uat_cli_graph_per_file_clean_file_succeeds` | UAT CLI integration |
+| `uat_cli_graph_per_file_broken_syntax_returns_error` | UAT CLI integration |
+| `uat_cli_graph_per_file_missing_file_returns_error` | UAT CLI integration |
+
+### Hallazgo colateral (importante)
+
+Cuando añadí los UAT tests de CLI, descubrí que el wrapper
+`CommandExecutor::execute` (en
+`crates/cognicode-core/src/interface/cli/commands.rs`) **tragaba el
+`Err`** del subcomando Graph con `if let Err(e) = … { eprintln!(…) }`
+y retornaba `Ok(())`. Es decir: el binario `cognicode` con
+`graph per-file <broken.rs>` imprimía "Error building per-file graph:
+…" en stderr pero **exit code 0**. Esto es exactamente el mismo
+patrón "silent failure" que R3, pero a nivel CLI.
+
+**Si no se hubiese añadido el UAT a nivel CLI, este defecto habría
+llegado a v1.0.** Es la confirmación práctica de que el UAT no puede
+ser opcional: tests de librería pasan y el usuario igual recibe un
+exit code falso. Lo arreglo en el mismo commit F2.W2 (`return Err(e);`
+en el brazo Graph del wrapper), con scope mínimo (solo el subcommand
+Graph; Analyze/Refactor/Index/Navigate mantienen su contrato actual
+porque no han sido objeto de una unidad PRF).
+
+### Corpus nuevo
+
+`docs/prf/fixtures/per_file_partial_corpus/`:
+
+- `CORPUS.md` — describe el oráculo y los 3 escenarios.
+- `src/good.rs` — `pub fn good_fn() {}`.
+- `src/broken_syntax.rs` — `pub fn broken_fn(` (falta `)`).
+- `src/unsupported.txt` — extensión no soportada (preserved como
+  documentación, no usado en los tests actuales).
+
+Versionado en `git` con `git add -f` (la política `docs/prf/`
+versiona el programa aunque `.gitignore:135` excluya `docs/` general).
+
+### Verificaciones
+
+- `cargo test -p cognicode-core --lib per_file_graph` → 11/11 pass.
+- `cargo test -p cognicode-core --lib w2_uat_tests` → 3/3 pass.
+- `cargo test -p cognicode-core --lib` → **2091/0/27** (baseline F2.W1
+  era 2085/0/27, **+6 tests** sin regresión).
+- Verificación manual RED→GREEN: revertidos los tres fixes
+  (skip-reporting, has_error_nodes en build_file_graph, CLI swallow),
+  los 6 tests fallan; re-aplicados, todos pasan.
+
+### Política respetada
+
+- API pública preservada (`merge` se conserva; `merge_with_report` se
+  añade).
+- Trait `GraphStrategy` no modificado.
+- Sin nuevos módulos, ports, event bus, plugins ni segunda
+  representación canónica.
+- CLI swallow-fix es aditivo (un `return Err` nuevo), no
+  refactorización.
+- Sin mock: los 6 tests ejercitan el código real sobre el corpus real.
+- Sin skip ceremonial: el test exige clasificación específica de
+  cada `SkipReason` y exit code correcto en CLI.
+
+### Próxima unidad concreta
+
+**F2.W3** — Equivalencia `full` vs `per_file` (R4). Las dos
+estrategias tienen propósitos distintos:
+- `FullGraphStrategy`: una sola pasada, ignora archivos no
+  parseables, no cachea.
+- `PerFileStrategy`: cache incremental por archivo, ahora reporta
+  `SkippedFile`s.
+
+F2.W3 construirá una **matriz de caracterización** sobre un corpus
+extendido (símbolos repetidos, archivos vacíos, relaciones
+cross-file). NO forzaré equivalencia bit-a-bit — el objetivo es
+documentar divergencias legítimas como comportamiento esperado y
+descubrir bugs reales donde sí deberían coincidir.
+

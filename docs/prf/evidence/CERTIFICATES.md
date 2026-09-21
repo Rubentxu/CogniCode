@@ -304,3 +304,121 @@ Siguiente hito: F1 (Estabilización).
 - H10 — extender `staging_dir` para que cubra downloads de manifests.
 - Bug preexistente del binario `cognicode` (dos crates con mismo
   `name`).
+
+---
+
+## PRF-F2-W2 — Certificación de la unidad F2.W2 (Errores de lectura silenciosos — R3)
+
+| Campo | Valor |
+|---|---|
+| ID | `PRF-F2-W2` |
+| Hito | F2 — Correctitud reproducible |
+| Unidad | W2 — Errores de lectura silenciosos en `PerFileStrategy` (R3 del brief) |
+| Versión CogniCode | 0.97.3 |
+| HEAD al cierre (commit código+corpus) | `be729275` |
+| HEAD al cierre (commit UAT+CLI fix, este commit) | pendiente |
+| Operador | jcode-orchestrator |
+| Fecha | 2026-09-21 |
+
+### Estados alcanzados
+
+- [x] **SPECIFIED**: brief del operador (R3 — errores de lectura/parseo
+      silenciosos en `PerFileStrategy::build_full_graph` y `merge`);
+      STATE.md y ROADMAP.md F2.W2 documentados.
+- [x] **IMPLEMENTED**: tipos nuevos (`SkipReason`, `SkippedFile`,
+      `BuildStatus`, `BuildReport`) en `per_file_graph.rs`;
+      `merge_with_report()` preserva `merge()`; `build_full_graph_report()`
+      en `PerFileStrategy` (no en el trait); `build_file_graph` rechaza
+      con `InvalidData` cuando `TreeSitterParser::has_error_nodes(&tree)`
+      detecta errores; `classify_io_error` mapea `io::ErrorKind::*` a
+      `SkipReason::*`. **Bug CLI colateral corregido**: el wrapper
+      `CommandExecutor::execute` propagaba `Err(e)` del subcomando Graph
+      con `return Err(e);` (antes lo tragaba y devolvía `Ok(())`).
+- [x] **INTEGRATED**: `cargo test -p cognicode-core --lib` →
+      **2091/0/27** (baseline F2.W1 era 2085/0/27, **+6 tests** sin
+      regresión). Los 3 UAT tests ejercitan el flujo CLI real
+      (`CommandExecutor::execute` con `Cli::Graph::PerFile`), no mocks.
+- [x] **ACCEPTED**: criterios de salida cumplidos — corpus versionado,
+      oráculo explícito por escenario, defecto abordado con tests de
+      regresión (3 unit + 3 UAT), UAT sobre CLI real del producto,
+      bug CLI colateral detectado por el UAT y corregido en el mismo
+      commit. NO certifica F2 entero ni C2.
+- [ ] **RELEASED**: pendiente. PRF es un programa interno.
+
+### Evidencias concretas
+
+| Evidencia | Ubicación |
+|---|---|
+| Documentación de la unidad | `docs/prf/STATE.md` §"Última unidad cerrada: F2.W2" |
+| Diario de la sesión | `docs/prf/JOURNAL.md` §9 |
+| Corpus versionado | `docs/prf/fixtures/per_file_partial_corpus/CORPUS.md` |
+| Archivos del corpus | `docs/prf/fixtures/per_file_partial_corpus/src/{good.rs,broken_syntax.rs,unsupported.txt}` |
+| Test unit RED → GREEN | `crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs::{test_merge_with_report_surfaces_parse_error,test_classify_io_error_read_vs_parse,test_merge_with_report_surfaces_unreadable_file}` |
+| Test UAT CLI | `crates/cognicode-core/src/interface/cli/commands.rs::w2_uat_tests::{uat_cli_graph_per_file_clean_file_succeeds,uat_cli_graph_per_file_broken_syntax_returns_error,uat_cli_graph_per_file_missing_file_returns_error}` |
+| Código modificado (core) | `crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs`, `crates/cognicode-core/src/infrastructure/graph/strategy.rs` (commit `be729275`) |
+| Código modificado (UAT+CLI fix) | `crates/cognicode-core/src/interface/cli/commands.rs` (este commit) |
+
+### Verificación ejecutada (resumen)
+
+- `cargo test -p cognicode-core --lib per_file_graph` → **11/11 pass**.
+- `cargo test -p cognicode-core --lib w2_uat_tests` → **3/3 pass**.
+- `cargo test -p cognicode-core --lib` → **2091/0/27** (+6 vs baseline
+  F2.W1 de 2085/0/27).
+- RED confirmado manualmente: revertidos los 3 fixes (skip-reporting,
+  has_error_nodes en `build_file_graph`, CLI swallow), los 6 tests
+  fallan. Re-aplicados, todos pasan.
+- UAT sobre el CLI real: los tests invocan `CommandExecutor::execute`
+  con un `Cli` parseado, que es exactamente el camino del binario
+  `cognicode` (no subproceso, no mock, código real).
+
+### Limitaciones documentadas (no resueltas en F2.W2)
+
+- **R4 (equivalencia full vs per_file)**: diferido a **F2.W3** como
+  caracterización sin corrección.
+- **Bug preexistente del binario `cognicode`** y **H10** (GitHub API
+  rate limit): siguen abiertos, no resueltos en F2.W2 por scope (no
+  bloquean C1).
+- **Migración de los 7 call sites CLI** del trait
+  `GraphStrategy::build_full_graph` a `build_full_graph_report()`: no
+  realizada. Es trabajo puramente aditivo (los call sites existentes
+  siguen funcionando con `build_full_graph`); queda registrado como
+  "F2.W2-followup" para una iteración posterior. Justificación:
+  ningún consumidor actual depende del campo `skipped`, y modificar
+  7 sitios sin un consumidor real sería trabajo ceremonial.
+
+### Decisiones tomadas
+
+- **D13**: `build_full_graph_report()` se añade como método directo de
+  `PerFileStrategy`, **no al trait `GraphStrategy`**. Esto preserva
+  la firma del trait (los 7 call sites existentes siguen compilando
+  sin cambios) y permite migrar consumidores gradualmente.
+- **D14**: tree-sitter es error-tolerant; `has_error_nodes(&tree)` es
+  el ÚNICO mecanismo fiable para detectar sintaxis rota. Sin este
+  check, un archivo con `pub fn broken_fn(` (sin `)`) es
+  indistinguible de un archivo vacío para el parser.
+- **D15**: el fix del CLI swallow se aplica SOLO al subcommand
+  Graph. Analyze/Refactor/Index/Navigate mantienen su contrato actual
+  (que traga errores) porque no son scope de F2.W2 y cambiarlos sin
+  tests específicos sería expansión de scope.
+- **D16**: el `SkippedFile::reason` se serializa en stderr en formato
+  legible, no como JSON. La razón: el consumidor primario de este
+  output es un humano ejecutando `cognicode graph per-file …`, no un
+  parser automático. La estructura `BuildReport` queda disponible para
+  consumidores que prefieran JSON (vía un wrapper futuro).
+
+### Firmas de aprobación
+
+| Rol | Nombre | Estado | Notas |
+|---|---|---|---|
+| Operador | jcode-orchestrator | APROBADO | Sesión 2026-09-21 |
+| Auto-revisión PRF | (programa PRF) | APROBADO | Criterios de salida cumplidos |
+
+### Trabajo pendiente heredado
+
+- F2.W3 — Equivalencia full vs per_file (R4).
+- H10 — extender `staging_dir` para que cubra downloads de manifests.
+- Bug preexistente del binario `cognicode` (dos crates con mismo
+  `name`).
+- F2.W2-followup — migrar los 7 call sites de `build_full_graph` a
+  `build_full_graph_report` cuando haya un consumidor real que
+  necesite los `SkippedFile`s.
