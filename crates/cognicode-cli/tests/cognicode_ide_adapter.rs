@@ -71,6 +71,79 @@ fn init_home(fake_home: &Path, cogh_home: &Path) -> Output {
     out
 }
 
+/// Plant a minimal v2 bundle manifest at `<cogh_home>/versions/<version>/manifest.yaml`.
+///
+/// The IDE integrators (opencode/zcode/claude/codex) resolve skill bundles
+/// from this manifest per `arch(debt2)` (commit 9752cc52, 2026-09-18). Without
+/// the manifest on disk, `cmd_ide_install` fails with `No such file or
+/// directory (os error 2)` when it tries to look up declared skill bundles.
+///
+/// The fixture is intentionally minimal:
+/// - one profile (`core`) matching what `cogh ide install --plugin mcp-server` expects;
+/// - the `cognicode-mcp` component declared under profile `core` so the
+///   binary-name resolution in `cmd_ide_install` succeeds;
+/// - one declared `skill_bundles[]` entry whose physical directory
+///   (`<root>/versions/<v>/skills/<bundle.id>/`) we also create with a
+///   placeholder file. OpenCode integration REQUIRES ≥1 declared bundle
+///   (it errors out with `cannot integrate OpenCode without a declared
+///   SkillBundleId` otherwise); the other integrators tolerate an empty
+///   list but a single bundle keeps the fixture uniform across plugins.
+///
+/// The bundle version is a fixed semver (NOT the literal `latest`) because
+/// `BundleManifest::from_path` enforces `^\d+\.\d+\.\d+(-.*)?$` per the v2
+/// schema (e87). The directory name under `versions/` still uses the literal
+/// `latest` because that's what `cmd_ide_install` defaults to.
+fn plant_manifest(cogh_home: &Path, version_dir: &str) {
+    let bundle_version = "0.97.3";
+    let bundle_id = "skills-for-test";
+    let manifest_yaml = format!(
+        r#"
+apiVersion: cognicode.bundle/v2
+kind: Bundle
+version: "{bundle_version}"
+platform: linux-x86-64
+released_at: "2026-01-01T00:00:00Z"
+profiles:
+  - name: core
+    description: Test fixture
+skill_bundles:
+  - id: {bundle_id}
+    version: "{bundle_version}"
+    profiles: [core]
+components:
+  - name: cognicode-mcp
+    kind: daemon-cli
+    version: "{bundle_version}"
+    artifact: cognicode-mcp-{bundle_version}-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
+    url: "https://github.com/Rubentxu/CogniCode/releases/download/v{bundle_version}/cognicode-mcp-{bundle_version}-x86_64-unknown-linux-gnu.tar.gz"
+    profiles: [core]
+"#
+    );
+    let version_root = cogh_home.join("versions").join(version_dir);
+    let manifest_dir = version_root.clone();
+    fs::create_dir_all(&manifest_dir).expect("mkdir versions/<v>");
+    fs::write(manifest_dir.join("manifest.yaml"), manifest_yaml.trim_start())
+        .expect("write manifest.yaml");
+
+    // Create the declared skill bundle directory + a placeholder skill file
+    // so OpenCode integration's `declared_skill_bundle_dirs` (which errors
+    // out with `dir.is_dir()` false when the bundle is declared but missing
+    // on disk) succeeds. The integrator copies the dir into the IDE's skill
+    // store; we don't assert on that copy in these tests, only on the MCP
+    // config merge that follows.
+    let bundle_dir = version_root.join("skills").join(bundle_id);
+    fs::create_dir_all(&bundle_dir).expect("mkdir skills/<bundle_id>");
+    fs::write(bundle_dir.join("SKILL.md"), "# test fixture skill\n").expect("write SKILL.md");
+}
+
+/// Helper that performs `init_home` AND plants a manifest for the `latest`
+/// pseudo-version (the default for `cogh ide install --plugin mcp-server`).
+fn init_home_with_manifest(fake_home: &Path, cogh_home: &Path) {
+    init_home(fake_home, cogh_home);
+    plant_manifest(cogh_home, "latest");
+}
+
 /// Sample opencode config that exercises the merge-keep-old behaviour.
 const OPENCODE_WITH_CHRONOS: &str = r#"{
   "agent": {"foo": {"description": "test"}},
@@ -214,7 +287,7 @@ fn cogh_ide_install_opencode_writes_mcp_entry_preserving_existing() {
     let oc_config = oc_dir.join("opencode.json");
     fs::write(&oc_config, OPENCODE_WITH_CHRONOS).expect("write opencode config");
 
-    let _ = init_home(fake_home, cogh_home.path());
+    init_home_with_manifest(fake_home, cogh_home.path());
 
     let out = run_with_home(
         fake_home,
@@ -268,7 +341,11 @@ fn cogh_ide_uninstall_opencode_removes_mcp_entry() {
     )
     .expect("write opencode config");
 
-    let _ = init_home(fake_home, cogh_home.path());
+    init_home_with_manifest(fake_home, cogh_home.path());
+    // The uninstall test passes `--version 0.94.15`, so we also need a
+    // manifest at `<cogh_home>/versions/0.94.15/manifest.yaml`. Without
+    // it `cmd_ide_uninstall` fails with `failed to read bundle manifest`.
+    plant_manifest(cogh_home.path(), "0.94.15");
 
     let out = run_with_home(
         fake_home,
@@ -310,7 +387,7 @@ fn cogh_ide_install_zcode_writes_zcode_specific_path() {
     let zc_config = zc_dir.join("config.json");
     fs::write(&zc_config, "{}").expect("write zcode config");
 
-    let _ = init_home(fake_home, cogh_home.path());
+    init_home_with_manifest(fake_home, cogh_home.path());
 
     let out = run_with_home(
         fake_home,
