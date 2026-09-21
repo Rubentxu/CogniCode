@@ -793,15 +793,29 @@ impl TreeSitterParser {
         }
 
         // For Rust and other languages where we look for identifier in call_expression
-        // Try to find an identifier that's the function being called
+        // Try to find an identifier that's the function being called.
+        //
+        // PRF F2.W4 — H-R4-1: for qualified paths (scoped_identifier like
+        // `crate::nested::callee`) and field expressions (`obj.method`),
+        // the callee is the LAST segment of the path, not the first.
+        // `find_identifier_in_node` is DFS-first, which used to return
+        // the first identifier encountered (e.g. `nested` for
+        // `crate::nested::callee()`). We now detect these node kinds and
+        // pick the last identifier instead.
         for i in 0..call_node.child_count() {
             if let Some(child) = call_node.child(i) {
                 // Skip certain child types that aren't the function
                 if child.kind() == "arguments" || child.kind() == "type_arguments" {
                     continue;
                 }
-                if let Some(name) = self.find_identifier_in_node(child, source) {
-                    return Some(name);
+                let name = match child.kind() {
+                    "scoped_identifier" | "field_expression" => {
+                        self.find_last_identifier_in_node(child, source)
+                    }
+                    _ => self.find_identifier_in_node(child, source),
+                };
+                if let Some(n) = name {
+                    return Some(n);
                 }
             }
         }
@@ -833,6 +847,52 @@ impl TreeSitterParser {
         }
 
         None
+    }
+
+    /// Finds the LAST identifier-like node in a subtree (iterative DFS).
+    ///
+    /// For `scoped_identifier` (e.g. `a::b::callee`) and
+    /// `field_expression` (e.g. `obj.method`) AST nodes, the callee
+    /// name is the last identifier segment of the path. The
+    /// identifier kinds accepted here are:
+    ///  - `identifier`         — ordinary variable/function name.
+    ///  - `field_identifier`   — Rust tree-sitter distinguishes this
+    ///    for `obj.method` field access (the `method` part).
+    ///
+    /// Used by `extract_callee_name` to fix H-R4-1 (qualified call
+    /// resolution).
+    fn find_last_identifier_in_node(
+        &self,
+        node: tree_sitter::Node,
+        source: &str,
+    ) -> Option<String> {
+        let mut stack = Vec::new();
+        stack.push(node);
+        let mut last_identifier: Option<String> = None;
+
+        while let Some(current) = stack.pop() {
+            if current.kind() == "identifier" || current.kind() == "field_identifier" {
+                last_identifier = Some(
+                    current
+                        .utf8_text(source.as_bytes())
+                        .unwrap_or("unknown")
+                        .to_string(),
+                );
+                // Do NOT short-circuit: we want the *last* identifier
+                // in DFS order. Continue scanning children of remaining
+                // nodes.
+                continue;
+            }
+
+            let cc = current.child_count();
+            for i in (0..cc).rev() {
+                if let Some(child) = current.child(i) {
+                    stack.push(child);
+                }
+            }
+        }
+
+        last_identifier
     }
 
     /// Extracts context (line of code) from pre-split lines
@@ -1632,3 +1692,89 @@ function hello() {
         }
     }
 }
+
+#[cfg(test)]
+mod w4_h_r4_1_tests {
+    //! PRF F2.W4 — H-R4-1: `find_call_relationships` debe resolver
+    //! correctamente llamadas a funciones qualified (vía `::`).
+    //!
+    //! Bug diagnosticado durante F2.W3: para una llamada
+    //! `crate::nested::callee()`, el parser devuelve el nombre
+    //! `"nested"` (primer identifier en DFS) en lugar de `"callee"`
+    //! (último identifier, el nombre real del callee).
+    //!
+    //! Estos tests pinerán el contrato correcto:
+    //!  1. `callee()` → "callee"
+    //!  2. `mod::callee()` → "callee"
+    //!  3. `crate::mod::callee()` → "callee"
+    //!  4. `obj.method()` → "method" (field expression)
+    use super::*;
+    use crate::infrastructure::parser::Language;
+
+    fn parser() -> TreeSitterParser {
+        TreeSitterParser::new(Language::Rust).unwrap()
+    }
+
+    fn callees(src: &str) -> Vec<String> {
+        parser()
+            .find_call_relationships(src, "t.rs")
+            .unwrap()
+            .into_iter()
+            .map(|(_, n)| n)
+            .collect()
+    }
+
+    #[test]
+    fn h_r4_1_simple_call_resolves_callee_name() {
+        let r = callees("pub fn caller() { callee(); }");
+        assert_eq!(r, vec!["callee".to_string()]);
+    }
+
+    #[test]
+    fn h_r4_1_module_qualified_call_resolves_to_leaf() {
+        let r = callees("pub fn caller() { nested::callee(); }");
+        assert_eq!(
+            r,
+            vec!["callee".to_string()],
+            "qualified call nested::callee() must report 'callee', not 'nested'"
+        );
+    }
+
+    #[test]
+    fn h_r4_1_crate_qualified_call_resolves_to_leaf() {
+        let r = callees("pub fn caller() { crate::nested::callee(); }");
+        assert_eq!(
+            r,
+            vec!["callee".to_string()],
+            "crate::nested::callee() must report 'callee', not 'crate' or 'nested'"
+        );
+    }
+
+    #[test]
+    fn h_r4_1_multiple_levels_resolves_to_leaf() {
+        let r = callees("pub fn caller() { a::b::c::callee(); }");
+        assert_eq!(
+            r,
+            vec!["callee".to_string()],
+            "deeply qualified call must report the leaf function name"
+        );
+    }
+
+    #[test]
+    fn h_r4_1_method_call_on_receiver() {
+        // `obj.method()` is a `field_expression`, not a `scoped_identifier`.
+        // The callee name is `method`.
+        let r = callees("pub fn caller() { obj.method(); }");
+        // We don't strictly require this case to be solved in this fix; the
+        // previous behaviour may already work or not. We assert what we want
+        // (the leaf identifier) and let the test fail if the fix doesn't cover
+        // it. The bug-reporting test above (crate::nested::callee) is the
+        // primary regression detector.
+        assert!(
+            r.iter().any(|n| n == "method"),
+            "method call should resolve to 'method', got {:?}",
+            r
+        );
+    }
+}
+
