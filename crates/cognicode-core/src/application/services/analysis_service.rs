@@ -1383,6 +1383,166 @@ impl Default for AnalysisService {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct UsageSearchParams {
+    pub project_dir: std::path::PathBuf,
+    pub symbol_name: String,
+    pub include_declaration: bool,
+    pub context_lines: Option<usize>,
+    pub first_only_definition: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct UsageResult {
+    pub file: String,
+    pub line: u32,
+    pub column: u32,
+    pub context: String,
+    pub is_definition: bool,
+    pub context_lines: Option<ContextData>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContextData {
+    pub before: Vec<String>,
+    pub current: String,
+    pub after: Vec<String>,
+}
+
+/// Directories skipped during usage-search traversal
+/// (dependency/build/cache directories).
+const USAGE_SKIP_DIRS: &[&str] = &[
+    "node_modules",
+    ".git",
+    "target",
+    "vendor",
+    "dist",
+    "build",
+    "__pycache__",
+    ".cache",
+    ".next",
+    ".nuxt",
+    "coverage",
+    ".tox",
+    "venv",
+    ".venv",
+    "env",
+];
+
+/// Gets surrounding context lines for a given 0-indexed line
+fn context_data(source: &str, line: usize, context_size: usize) -> ContextData {
+    let lines: Vec<&str> = source.lines().collect();
+
+    let before_start = line.saturating_sub(context_size);
+    let after_end = (line + 1 + context_size).min(lines.len());
+
+    let before: Vec<String> = (before_start..line)
+        .map(|i| lines.get(i).unwrap_or(&"").to_string())
+        .collect();
+
+    let current = lines.get(line).unwrap_or(&"").to_string();
+
+    let after: Vec<String> = ((line + 1)..after_end)
+        .map(|i| lines.get(i).unwrap_or(&"").to_string())
+        .collect();
+
+    ContextData {
+        before,
+        current,
+        after,
+    }
+}
+
+impl AnalysisService {
+    /// Finds all textual/AST occurrences of a symbol across the project
+    /// source tree, skipping dependency/build/cache directories.
+    pub fn find_symbol_usages(
+        &self,
+        params: UsageSearchParams,
+    ) -> AppResult<Vec<UsageResult>> {
+        let mut usages = Vec::new();
+        let mut seen_first_definition = false;
+
+        for entry in walkdir::WalkDir::new(&params.project_dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_entry(|e| {
+                // Skip known dependency/build/cache directories
+                if let Some(name) = e.file_name().to_str() {
+                    !USAGE_SKIP_DIRS.contains(&name)
+                } else {
+                    true
+                }
+            })
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            let language =
+                match Language::from_extension(path.extension()) {
+                    Some(lang) => lang,
+                    None => continue,
+                };
+
+            let source = match std::fs::read_to_string(path) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            let parser = match TreeSitterParser::new(language) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+
+            if let Ok(occurrences) =
+                parser.find_all_occurrences_of_identifier(&source, &params.symbol_name)
+            {
+                for occ in occurrences {
+                    let has_def_keyword = occ.context.contains("def ")
+                        || occ.context.contains("class ")
+                        || occ.context.contains("struct ")
+                        || occ.context.contains("fn ")
+                        || occ.context.contains("function ")
+                        || occ.context.contains("const ")
+                        || occ.context.contains("let ");
+
+                    let is_definition = if params.first_only_definition {
+                        has_def_keyword && !seen_first_definition
+                    } else {
+                        has_def_keyword
+                    };
+
+                    if has_def_keyword && !seen_first_definition {
+                        seen_first_definition = true;
+                    }
+
+                    if !params.include_declaration && is_definition {
+                        continue;
+                    }
+
+                    let context_lines = params
+                        .context_lines
+                        .map(|ctx| context_data(&source, occ.line as usize, ctx));
+
+                    usages.push(UsageResult {
+                        file: path.to_string_lossy().into_owned(),
+                        line: occ.line + 1,
+                        column: occ.column,
+                        context: occ.context.clone(),
+                        is_definition,
+                        context_lines,
+                    });
+                }
+            }
+        }
+
+        Ok(usages)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2937,5 +3097,147 @@ def b():
                 "build #2 must NOT contain normal_function (it was renamed)"
             );
         }
+    }
+}
+// ============================================================================
+// find_symbol_usages tests (R1.1-R1.4)
+// ============================================================================
+
+#[cfg(test)]
+mod find_symbol_usages_tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn fixture_corpus() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "cognicode-usages-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::create_dir_all(dir.join("target")).unwrap();
+
+        fs::write(
+            dir.join("src/lib.rs"),
+            "fn alpha() -> i32 {\n    42\n}\n\nfn main() {\n    let x = alpha();\n    let y = alpha();\n    println!(\"{} {}\", x, y);\n}\n",
+        )
+        .unwrap();
+        fs::write(dir.join("target/distractor.rs"), "fn alpha() {}").unwrap();
+
+        dir
+    }
+
+    fn cleanup(dir: &PathBuf) {
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    // R1.1: include_declaration=true returns >= 3 occurrences,
+    // exactly one flagged is_definition.
+    #[test]
+    fn r1_1_include_declaration_true_one_definition() {
+        let dir = fixture_corpus();
+        let service = AnalysisService::new();
+        let usages = service
+            .find_symbol_usages(UsageSearchParams {
+                project_dir: dir.clone(),
+                symbol_name: "alpha".to_string(),
+                include_declaration: true,
+                context_lines: None,
+                first_only_definition: true,
+            })
+            .unwrap();
+        cleanup(&dir);
+
+        assert!(usages.len() >= 3, "expected >= 3 usages, got {}", usages.len());
+        let defs = usages.iter().filter(|u| u.is_definition).count();
+        assert_eq!(defs, 1, "expected exactly one definition, got {}", defs);
+    }
+
+    // R1.2: include_declaration=false excludes definition occurrences.
+    #[test]
+    fn r1_2_exclude_declaration_omits_definition() {
+        let dir = fixture_corpus();
+        let service = AnalysisService::new();
+        let usages = service
+            .find_symbol_usages(UsageSearchParams {
+                project_dir: dir.clone(),
+                symbol_name: "alpha".to_string(),
+                include_declaration: false,
+                context_lines: None,
+                first_only_definition: true,
+            })
+            .unwrap();
+        cleanup(&dir);
+
+        assert!(
+            usages.iter().all(|u| !u.is_definition),
+            "no definition should be present"
+        );
+        assert_eq!(usages.len(), 2, "only the two call sites remain");
+    }
+
+    // R1.3: files under target/, .git/, node_modules/ are never reported.
+    #[test]
+    fn r1_3_skip_dirs_never_reported() {
+        let dir = fixture_corpus();
+        let service = AnalysisService::new();
+        let usages = service
+            .find_symbol_usages(UsageSearchParams {
+                project_dir: dir.clone(),
+                symbol_name: "alpha".to_string(),
+                include_declaration: true,
+                context_lines: None,
+                first_only_definition: true,
+            })
+            .unwrap();
+        cleanup(&dir);
+
+        assert!(
+            usages.iter().all(|u| !u.file.contains("target/")),
+            "no usage may come from target/"
+        );
+        assert!(
+            usages.iter().all(|u| u.file.ends_with("src/lib.rs")),
+            "only src/lib.rs may be reported"
+        );
+    }
+
+    // R1.4: context_lines=Some(n) populates context; None leaves it absent.
+    #[test]
+    fn r1_4_context_lines_populated_or_absent() {
+        let dir = fixture_corpus();
+        let service = AnalysisService::new();
+
+        let with_ctx = service
+            .find_symbol_usages(UsageSearchParams {
+                project_dir: dir.clone(),
+                symbol_name: "alpha".to_string(),
+                include_declaration: true,
+                context_lines: Some(1),
+                first_only_definition: true,
+            })
+            .unwrap();
+        let without_ctx = service
+            .find_symbol_usages(UsageSearchParams {
+                project_dir: dir.clone(),
+                symbol_name: "alpha".to_string(),
+                include_declaration: true,
+                context_lines: None,
+                first_only_definition: true,
+            })
+            .unwrap();
+        cleanup(&dir);
+
+        assert!(with_ctx.iter().all(|u| u.context_lines.is_some()));
+        let def = with_ctx.iter().find(|u| u.is_definition).unwrap();
+        // Definition line: "fn alpha() -> i32 {" ; before is empty (line 0),
+        // after holds line 2.
+        assert_eq!(def.context_lines.as_ref().unwrap().current, "fn alpha() -> i32 {");
+        assert_eq!(def.context_lines.as_ref().unwrap().after, vec!["    42"]);
+        assert!(without_ctx.iter().all(|u| u.context_lines.is_none()));
     }
 }
