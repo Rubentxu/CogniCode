@@ -1,11 +1,11 @@
 # CogniCode MCP Tools
 
-> **Source of truth: runtime `tools/list`** (68 tools, paginated — see `sandbox/scripts/list_mcp_tools.sh`).
-> Regenerated 2026-08-06 from the live MCP server. Do NOT hand-edit the tool list; re-run the probe.
+> **Source of truth: runtime `tools/list`** (75 tools = 20 `cognicode-mcp` + 55 `explorer-mcp`, paginated — see `sandbox/scripts/list_mcp_tools.sh`).
+> Regenerated 2026-09-21 from the live MCP server. Do NOT hand-edit the tool list; re-run the probe.
 
 ## Overview
 
-- Total runtime tools: **68**
+- Total runtime tools: **75** (20 in `cognicode-mcp` + 55 in `explorer-mcp`)
 - Probe: `bash sandbox/scripts/list_mcp_tools.sh` (paginated, base64 offset cursor, PAGE_SIZE=20)
 - Coverage gate (G2): `just release-scorecard` → generate_tool_coverage.py
 

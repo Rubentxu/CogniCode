@@ -475,7 +475,7 @@ que mide el estado real del corpus de specs OpenSpec.
 - W-2 (WARNING) cerrado: `prune_stale_branches.sh` L66-69 ahora chequea PRs abiertos para ramas locales tóxicas
 
 **Debt**: PASS_WITH_WARNINGS (DQS 6.2/10, 0 CRITICAL, 8 WARN, 6 SUGG).
-- 0 CRITICAL, 8 WARN: S-SM-1 (hidden YAML dep), S-SM-2 ("68 tools" magic), S-SM-3 (CHANGELOG dates uniformes), S-SM-4 (stale on-disk verify-report), S-SM-5 (gh auth bypass), S-DU-1 (double SoT evidence_map/matrix), +2 coupling warnings
+- 0 CRITICAL, 8 WARN: S-SM-1 (hidden YAML dep), S-SM-2 ("75 tools" magic; previously 68), S-SM-3 (CHANGELOG dates uniformes), S-SM-4 (stale on-disk verify-report), S-SM-5 (gh auth bypass), S-DU-1 (double SoT evidence_map/matrix), +2 coupling warnings
 - 6 SUGG: S-SM-6 (hardcoded toxic list), S-DU-2 (YAML-load duplication), S-DU-3 (threshold ladder parallel), S-CP-3/4, S-OE-1 (evidence_map manual front-runs audit)
 - DQS breakdown: Architecture 7.0, Coupling 6.5, Cohesion 7.5, **Testability 3.0** (W-3), Clarity 7.0, Maintainability 6.0
 

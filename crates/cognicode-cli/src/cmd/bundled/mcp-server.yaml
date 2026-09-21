@@ -1,7 +1,7 @@
 apiVersion: cognicode/v1
 kind: Plugin
 name: mcp-server
-description: "CogniCode MCP server — 68 tools, rust binary, stdio transport"
+description: "CogniCode MCP server — 75 tools, rust binary, stdio transport"
 homepage: "https://github.com/Rubentxu/CogniCode/releases"
 repository: "https://github.com/Rubentxu/CogniCode/releases.git"
 

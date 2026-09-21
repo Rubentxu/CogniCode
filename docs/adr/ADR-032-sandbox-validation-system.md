@@ -15,7 +15,7 @@ El sistema de validación para el gate 1.0.0 (ADR-031) se construye sobre la inf
 2. **Corpus de repos pinneados** (22 existentes + 3 nuevos Tier-1 Rust + 3 nuevos Tier-3 stress).
 3. **Scoring 5D wireado al release gate** (ya implementado en `sandbox_core::scoring`).
 4. **Automatización CI** — workflow `sandbox-nightly.yml` + `just release-scorecard`.
-5. **Coverage matrix** — 68 MCP tools (runtime tools/list) × repos.
+5. **Coverage matrix** — 75 MCP tools (runtime `tools/list`: 20 en `cognicode-mcp` + 55 en `explorer-mcp`) × repos.
 
 ---
 
@@ -101,7 +101,7 @@ Lane PR rápida: `sandbox-ci-smoke` (< 5 min) en el workflow PR existente.
 
 ### 5. Coverage matrix MCP tools × repos
 
-Script `generate_tool_coverage.py`: cruza el probe paginado `list_mcp_tools.sh` (68 tools runtime) + `tool:` fields en manifests/scenarios → matriz tool × repo → detecta tools sin scenario → gate G2.
+Script `generate_tool_coverage.py`: cruza el probe paginado `list_mcp_tools.sh` (75 tools runtime: 20 + 55) + `tool:` fields en manifests/scenarios → matriz tool × repo → detecta tools sin scenario → gate G2.
 
 ---
 

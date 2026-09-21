@@ -158,7 +158,7 @@ cogh version                            # shows both cogh + CogniCode version
 
 ```yaml
 name: mcp-server
-description: "CogniCode MCP server — 68 tools, rust binary"
+description: "CogniCode MCP server — 75 tools, rust binary"
 homepage: https://github.com/Rubentxu/CogniCode
 versions:
   - ref: v0.92.0
