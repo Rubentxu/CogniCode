@@ -207,3 +207,100 @@
 
 Tres certificados firmados, hito Inventario y baseline cerrado.
 Siguiente hito: F1 (Estabilización).
+
+---
+
+## PRF-F2-W1 — Certificación de la unidad F2.W1 (Correctitud del análisis — R2)
+
+| Campo | Valor |
+|---|---|
+| ID | `PRF-F2-W1` |
+| Hito | F2 — Correctitud reproducible |
+| Unidad | W1 — Invalidación de cache por cambio de contenido (R2 del brief) |
+| Versión CogniCode | 0.97.3 |
+| HEAD al cierre | `70f0b0cf` |
+| Operador | jcode-orchestrator |
+| Fecha | 2026-09-21 |
+
+### Estados alcanzados
+
+- [x] **SPECIFIED**: brief del operador (riesgos R1-R4); STATE.md
+      actualizado con la unidad activa; ROADMAP.md F2.W1 documentado.
+- [x] **IMPLEMENTED**: fix en `PerFileGraphCache::get_or_build` con
+      fingerprint (mtime + size); 2 tests añadidos (1 RED→GREEN, 1
+      GREEN desde inicio).
+- [x] **INTEGRATED**: `cargo test -p cognicode-core --lib` → 2085/0/27
+      (baseline 2083/0/27, +2 sin regresión). El test
+      `test_per_file_strategy_build_full_graph_nested_corpus` ejercita
+      el código real sobre el corpus real.
+- [x] **ACCEPTED**: criterios de salida cumplidos — corpus y oráculo
+      versionados, defecto abordado con test de regresión, UAT sobre
+      código real del producto. NO certifica F2 entero ni C2.
+- [ ] **RELEASED**: pendiente. PRF es un programa interno; RELEASED se
+      aplicará cuando el roadmap principal consolide las gates.
+
+### Evidencias concretas
+
+| Evidencia | Ubicación |
+|---|---|
+| Documentación de la unidad | `docs/prf/STATE.md` §"Última unidad cerrada: F2.W1" |
+| Diario de la sesión | `docs/prf/JOURNAL.md` §8 |
+| Corpus versionado | `docs/prf/fixtures/per_file_correctness/CORPUS.md` |
+| Archivos del corpus | `docs/prf/fixtures/per_file_correctness/src/{lib.rs,nested/mod.rs,nested/deeply_nested/mod.rs}` |
+| Test RED → GREEN | `crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs::test_per_file_graph_cache_detects_content_change` |
+| Test de integración | `crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs::test_per_file_strategy_build_full_graph_nested_corpus` |
+| Código modificado | `crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs` (commit `70f0b0cf`) |
+
+### Verificación ejecutada (resumen)
+
+- `cargo test -p cognicode-core --lib per_file_graph` → **8/8 pass**.
+- `cargo test -p cognicode-core --lib` → **2085/0/27** (+2 vs baseline
+  F0.W3 de 2083/0/27).
+- RED confirmado manualmente: revertido el fix del cache, el nuevo
+  test falla con mensaje "cache is returning stale results".
+- UAT sobre binario real: el test runner de `cognicode-core` ejecuta
+  `PerFileStrategy::build_full_graph` y `PerFileGraphCache::get_or_build`
+  sobre el corpus `docs/prf/fixtures/per_file_correctness/` (no mocks).
+
+### Limitaciones documentadas (no resueltas en F2.W1)
+
+- **R3 (errores de lectura silenciosos)**: `filter_map(|e| e.ok())` en
+  `PerFileStrategy::build_full_graph` y `unwrap_or_else(|_| CallGraph::new())`
+  en `PerFileGraphCache::merge` descartan errores de parseo sin
+  notificar. Diferido a **F2.W2**.
+- **R4 (equivalencia full vs per_file)**: las dos estrategias tienen
+  propósitos distintos. Diferido a **F2.W3** como caracterización.
+- **H10 (GitHub API rate limit)**: confirmado no bloqueante para C1;
+  migrado como "deuda de F2" sin asignar a una unidad concreta.
+- **Bug preexistente del binario `cognicode`**: el workspace tiene dos
+  crates con `name = "cognicode"` (cargo no produce
+  `target/debug/cognicode`); 13 tests de `cogh` fallan por este motivo.
+  Verificado que es preexistente a F2.W1 con `git stash`. No es
+  regresión del fix.
+
+### Decisiones tomadas
+
+- **D10**: el cache del per-file-graph debe invalidarse por fingerprint
+  del archivo (mtime + size), no por TTL ni por evento externo. Esto es
+  suficiente para el caso normal (editor guarda → mtime cambia) y barato
+  (un syscall).
+- **D11**: si `fs::metadata` falla, se reconstruye conservadoramente
+  (mejor un rebuild falso que un stale indefinido).
+- **D12**: el corpus de la F2.W1 es independiente de la
+  implementación. El oráculo fue escrito leyendo los `.rs` directamente,
+  no ejecutando CogniCode.
+
+### Firmas de aprobación
+
+| Rol | Nombre | Estado | Notas |
+|---|---|---|---|
+| Operador | jcode-orchestrator | APROBADO | Sesión 2026-09-21 |
+| Auto-revisión PRF | (programa PRF) | APROBADO | Criterios de salida cumplidos |
+
+### Trabajo pendiente heredado
+
+- F2.W2 — Errores de lectura silenciosos (R3).
+- F2.W3 — Equivalencia full vs per_file (R4).
+- H10 — extender `staging_dir` para que cubra downloads de manifests.
+- Bug preexistente del binario `cognicode` (dos crates con mismo
+  `name`).

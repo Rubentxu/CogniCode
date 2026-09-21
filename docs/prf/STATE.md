@@ -10,128 +10,142 @@
 | Campo | Valor |
 |---|---|
 | Hito activo | **F2 — Correctitud reproducible** |
-| Última unidad cerrada | **F1 — Estabilización** (hito entero, ACCEPTED — 5 unidades; 8 hallazgos CLOSED, 1 WIP, 1 acción operativa) |
-| Unidad activa siguiente | **F2.W1 — Caracterización de correctitud de análisis** (vertical: recorrido anidado + detección de cambios de contenido) |
-| Estado de certificación | F1 = IMPLEMENTED + INTEGRATED + ACCEPTED. Pendiente RELEASED. |
-| HEAD | `9628b1d3` (3 commits ahead del HEAD de inicio de sesión) |
-| Working tree | Limpio en main; docs/prf/ working-only con `MANIFEST.md` de evidencia cruda |
-| Bloqueos conocidos | H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa; no bloquea C1 porque core sin red funciona) |
-| Siguiente unidad ejecutable | F2.W1 (caracterización de recorrido anidado + cambio de contenido) |
-| Política git | `docs/prf/` se versiona para **documentos del programa** (.md) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
+| Última unidad cerrada | **F2.W1 — Caracterización de la correctitud del análisis (R2)** |
+| Unidad activa siguiente | **F2.W2 — Errores de lectura silenciosos en PerFileStrategy** (R3) |
+| Estado de certificación | F1 = IMPLEMENTED + INTEGRATED + ACCEPTED. F2.W1 = IMPLEMENTED + INTEGRATED + ACCEPTED. Pendiente RELEASED. |
+| HEAD | `70f0b0cf` (17 commits ahead de origin/main) |
+| Working tree | Limpio |
+| Bloqueos conocidos | H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa; no bloquea C1). Bug preexistente del binario `cognicode` (workspace con dos crates `name = "cognicode"`) — fuera del alcance F2.W1. |
+| Siguiente unidad ejecutable | F2.W2 (errores de lectura silenciosos en `PerFileStrategy::build_full_graph`) |
+| Política git | `docs/prf/` se versiona para **documentos del programa** (.md, fixtures) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
 
-## Última unidad cerrada: F1 (Estabilización)
+## Última unidad cerrada: F2.W1 (Correctitud del análisis — invalidación de cache)
 
-**Objetivo**: cerrar los 10 hallazgos identificados durante F0
-(H2, H3, H4, H6, H7, H8, H9, H10 — H1 y H5 ya cerrados en F0.W1) con
-acciones concretas y trazables en el código fuente.
+**Objetivo**: caracterizar la correctitud de la vertical `PerFileStrategy`
+(`cognicode graph per-file <file>`, `get_per_file_graph` MCP tool) y
+cerrar el primer defecto reproducible: el cache no detecta cambios de
+contenido entre llamadas.
 
-**Resultado**: ACCEPTED. 5 unidades ejecutadas, 4 de ellas con
-cambios de código versionado en main, 1 (W5) con decisiones
-documentadas sin tocar código.
+**Vertical elegida**: `PerFileGraphCache::get_or_build` en
+`crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs`.
+Justificación: accesible desde el binario real (CLI y MCP), aislada,
+con test de regresión natural.
 
-**Composición por unidad**:
+**Riesgos catalogados** (de los 4 descritos en el brief):
 
-| Unidad | Hallazgos | Commits | Cambios |
-|---|---|---|---|
-| F1.W1 | H6 + H9 | `834aff67` | tracing→stderr; shutdown signals con log + axum `with_graceful_shutdown` |
-| F1.W2 | H2 + H7 | `4ff514a7` | cifra 68 → 75 en 6 archivos (manifest + 4 docs) |
-| F1.W3 | H8 | `9628b1d3` | sha256 reales (del propio YAML) en 5 manifests bundled |
-| F1.W4 | H10 | (sin commit) | staging cubre /releases/latest; download de manifest YAML queda en red — WIP |
-| F1.W5 | H3 + H4 | (sin commit) | decisión KEEP+DOCUMENT / KEEP+MARK; solo docs |
-
-**Verificaciones ejecutadas (resumen)**:
-
-- F1.W1: build OK; 955 tests cognicode-explorer pasan; smoke SIGTERM
-  "exit 0, log 'shutdown received'"; smoke `cognicode --verbose analyze`
-  con logs a stderr y datos a stdout.
-- F1.W2: cero referencias residuales a "68 tools" en archivos versionados;
-  tests cogh 290/0/1.
-- F1.W3: 5 sha256 reales; bundled_manifests_parse OK; tests cogh 290/0/1.
-- F1.W4: scaffolda test que apuntaba a `--staging` con el nombre canónico
-  del manifest (`bundle-<v>-<p>.yaml`); el download del bundle va a la
-  URL real (no cubierto por el staging actual). Decisión: WIP honesto,
-  no fix para flake externo (Cardinal Sin #5).
-- F1.W5: solo docs (TRACEABILITY.md marca los hallazgos como
-  CLOSED — KEEP+DOCUMENT / KEEP+MARK).
-
-**Estado de hallazgos al cierre**:
-
-| Hallazgo | Estado | Acción |
+| ID | Riesgo | Estado |
 |---|---|---|
-| H1 (50 tests rojos anteriores) | Cerrado (sesión previa) | — |
-| H2 (cifra 68) | CLOSED (F1.W2) | ADR-031 + manifest actualizado |
-| H3 (cognicode-mcp-server no usado) | CLOSED (F1.W5) | Variante HTTP/SSE válida; documentar |
-| H4 (multimodal en --help) | CLOSED (F1.W5) | Marca honesta en el comando; KEEP |
-| H5 (LSPs faltantes) | Sin acción de código | Setup UAT |
-| H6 (logs a stdout) | CLOSED (F1.W1) | tracing → stderr |
-| H7 (manifest 68 → 75) | CLOSED (F1.W2) | Manifest actualizado |
-| H8 (5/6 sha256 placeholder) | CLOSED (F1.W3) | sha256 reales del propio YAML |
-| H9 (SIGTERM silencioso) | CLOSED (F1.W1) | Hook axum graceful shutdown |
-| H10 (rate limit GH) | OPEN (WIP) | Extender staging_dir en F2 |
+| R1 | Recorrido anidado (subdirectorios) | Caracterizado en F2.W1 — test `test_per_file_strategy_build_full_graph_nested_corpus` PASS (≥3 símbolos sobre corpus de 3 archivos anidados) |
+| R2 | Detección de cambios de contenido | **CLOSED en F2.W1** — fix mínimo con fingerprint (mtime+size), 2 tests nuevos GREEN |
+| R3 | Errores de lectura silenciosos | Diferido a **F2.W2** (defecto real: `PerFileStrategy::build_full_graph` usa `filter_map(\|e\| e.ok())` y `merge` usa `unwrap_or_else(\|_\| CallGraph::new())`; cobertura insuficiente se reporta como éxito) |
+| R4 | Equivalencia `full` vs `per_file` | Diferido a **F2.W3** (caracterización sin corrección; las dos estrategias tienen propósitos distintos) |
 
-**Evidencias archivadas** (local-only, working tree):
+**Causa raíz (R2)**: `get_or_build` solo consultaba `entry.valid`; nunca
+preguntó a `fs::metadata` por el estado del archivo. Resultado: después de
+editar un archivo, el cache devolvía el grafo viejo.
 
-- `evidence/F0-W1-inventory.md`, `evidence/F0-W2-runtime.md`,
-  `evidence/F0-W3-baseline.md`, `evidence/H10-correction.md`.
-- `evidence/F0-W2-runs/`, `evidence/F0-W3-runs/` (logs observables).
-- `evidence/CERTIFICATES.md` (certificados PRF-F0-W1, PRF-F0-W2,
-  PRF-F0-W3).
+**Fix mínimo**:
+- `FileGraphCacheEntry` gana dos campos: `mtime_secs: Option<u64>` y
+  `size: Option<u64>`.
+- Helpers privados `file_fingerprint(path)` y `system_time_to_secs(t)`.
+- `get_or_build` ahora comprueba `valid && mtime == fp.mtime && size == fp.size`.
+- Si `fs::metadata` falla (archivo borrado, etc.), se reconstruye
+  conservadoramente.
 
-**Commits nuevos en main** (no push):
+**Tests**:
+- `test_per_file_graph_cache_detects_content_change` (RED → GREEN):
+  escribe 1 función, cachea, reescribe con 2 funciones tras 1.1s (para
+  superar granularidad de mtime), re-pide. Sin fix: 1 símbolo (stale).
+  Con fix: >1 símbolo (nuevo).
+- `test_per_file_strategy_build_full_graph_nested_corpus` (GREEN desde
+  inicio): ejercita `PerFileStrategy::build_full_graph` sobre el corpus
+  `docs/prf/fixtures/per_file_correctness/` y verifica ≥3 símbolos en
+  3 archivos anidados (2 niveles).
+
+**Corpus nuevo** (versionado en este commit):
+
+- `docs/prf/fixtures/per_file_correctness/CORPUS.md` — describe el
+  oráculo (3 funciones, 2 edges) y por qué es independiente de la
+  implementación.
+- `docs/prf/fixtures/per_file_correctness/src/lib.rs` — `top_level`.
+- `docs/prf/fixtures/per_file_correctness/src/nested/mod.rs` — `mid_level`.
+- `docs/prf/fixtures/per_file_correctness/src/nested/deeply_nested/mod.rs` — `leaf`.
+
+**Verificaciones ejecutadas**:
+
+- `cargo test -p cognicode-core --lib per_file_graph` → **8/8 pass**.
+- `cargo test -p cognicode-core --lib` → **2085/0/27** (baseline F0.W3
+  era 2083/0/27, **+2 tests** sin regresión).
+- `cargo test -p cognicode-cli --bin cogh` → 277/13/1 + 1 filtered. Los
+  **13 fallos son preexistentes** (verificado con `git stash`): el
+  workspace tiene dos crates con `name = "cognicode"` y cargo no
+  produce `target/debug/cognicode`, lo que rompe los tests que lanzan
+  ese binario como subproceso. **No es regresión de F2.W1**.
+- Manual: revertido el fix del cache localmente, el nuevo test falla
+  (RED confirmado); re-aplicado, pasa (GREEN confirmado).
+- UAT sobre el código real: el test runner de `cognicode-core` ejecuta
+  el código real de `PerFileStrategy::build_full_graph` y
+  `PerFileGraphCache::get_or_build` sobre el corpus, no un mock.
+
+**Composición del commit**:
 
 ```
+70f0b0cf fix(per-file-cache): invalidate entries on content change (R2 from F2.W1)
+05ba121e docs(prf): reconcile F1 closure and version the PRF program documents
 9628b1d3 fix(prf-f1.w3): replace placeholder sha256 in bundled plugin manifests (H8)
-4ff514a7 fix(prf-f1.w2): update MCP tool count from 68 to 75 (H2 H7)
-834aff67 fix(prf-f1.w1): route tracing to stderr + log shutdown signals (H6 H9)
 ```
 
-## Hito F1 (Estabilización) → CERRADO
+**Certificación**: F2.W1 = **IMPLEMENTED + INTEGRATED + ACCEPTED**.
+Detalle en `evidence/CERTIFICATES.md` (cert PRF-F2-W1).
+
+**Política respetada**:
+
+- No se cambió la API pública de `PerFileGraphCache` (mismas firmas).
+- No se introdujeron nuevos módulos, ports, event bus ni representaciones
+  alternativas.
+- No se rebajó el oráculo: el test exige `new > original` con mensaje de
+  error explícito.
+- El fix es mínimo (~50 líneas de código nuevo) y se aplica solo donde
+  es necesario.
+
+**Próxima unidad concreta**: **F2.W2 — Errores de lectura silenciosos en
+PerFileStrategy::build_full_graph (R3)**. Defecto a corregir: cuando un
+archivo no se puede parsear, el merge continúa silenciosamente con un
+grafo vacío para ese archivo, llevando a una conclusión falsa de
+"análisis completo". Solución: cambiar el contrato de `build_full_graph`
+para que devuelva un tipo que incluya tanto el grafo como la lista de
+archivos omitidos, y documentar el comportamiento en UAT.
+
+## Hito F2 (Correctitud reproducible) — En curso
+
+| Unidad | Estado |
+|---|---|
+| F2.W1 — Invalidación de cache por cambio de contenido (R2) | **ACCEPTED** (commit 70f0b0cf) |
+| F2.W2 — Errores de lectura silenciosos (R3) | Pendiente |
+| F2.W3 — Equivalencia full vs per_file (R4) | Pendiente |
+
+## Hito F1 (Estabilización) → CERRADO (referencia histórica)
 
 | Unidad | Estado |
 |---|---|
 | F1.W1 — Stdout/signals (H6+H9) | ACCEPTED (commit 834aff67) |
 | F1.W2 — Cifra 68 → 75 (H2+H7) | ACCEPTED (commit 4ff514a7) |
 | F1.W3 — sha256 reales (H8) | ACCEPTED (commit 9628b1d3) |
-| F1.W4 — Mock GitHub API (H10) | WIP (sin commit — staging incompleto para downloads) |
+| F1.W4 — Mock GitHub API (H10) | WIP → migrado a deuda de F2 |
 | F1.W5 — Decisiones UX (H3+H4) | ACCEPTED (solo docs) |
 
-**Hito F1 cerrado**.
+**Hito F1 cerrado**. Detalle completo en `JOURNAL.md` §6.
 
-## Hito F0 (Inventario y baseline) → CERRADO
+## Hito F0 (Inventario y baseline) → CERRADO (referencia histórica)
 
 | Unidad | Estado |
 |---|---|
-| F0.W1 — Inventario de binarios | ACCEPTED (sesión previa) |
-| F0.W2 — Caracterización arranque/persistencia/red | ACCEPTED (este turn) |
-| F0.W3 — Baseline de pruebas automatizadas | ACCEPTED (este turn) |
+| F0.W1 — Inventario de binarios | ACCEPTED |
+| F0.W2 — Caracterización arranque/persistencia/red | ACCEPTED |
+| F0.W3 — Baseline de pruebas automatizadas | ACCEPTED |
 
-**Hito F0 cerrado**. Siguiente hito sugerido: **F1 (Estabilización)**.
-
-**Objetivo**: caracterizar el arranque, la inicialización de
-dependencias, la persistencia, el uso de red y la salida por
-stdout/stderr de cada uno de los 5 binarios inventariados en F0.W1.
-
-**Resultado**: ACCEPTED. Detalle en `evidence/F0-W2-runtime.md`.
-
-**Resumen de resultados**:
-
-- 5 binarios caracterizados (arranque ≤10ms, exit 0).
-- 3 strace ejecutados: `cogh`, `cognicode-mcp`, `explorer-api`.
-- `cognicode-mcp`: 130 threads Tokio; 0 sockets; logs a stderr, JSON-RPC
-  a stdout (patrón correcto).
-- `explorer-api`: 193 threads; `bind+listen` en 127.0.0.1 (backlog 128);
-  abre `.lbug.wal` continuamente (52× en 4s).
-- `cogh`: monolítico, 0 red, salida limpia.
-- 0 secretos en logs (positivo).
-- **4 hallazgos nuevos**: H6 (cognicode logs a stdout), H7 (manifest
-  dice "68 tools"), H8 (5/6 sha256 placeholder), H9 (explorer-api
-  SIGTERM silencioso).
-- 6 comprobaciones BLOCKED/NOT_RUN con motivo.
-
-**Evidencias archivadas**:
-- `evidence/F0-W2-runtime.md` (310 líneas, fuente de verdad).
-- `evidence/F0-W2-runs/` (63 archivos, ~5.2 MB: strace, stdout,
-  stderr, time-files, JSON-RPC frames).
+**Hito F0 cerrado**. Detalle completo en `evidence/F0-W2-runtime.md` y
+`evidence/F0-W3-baseline.md`.
 
 ## Estado de certificaciones
 

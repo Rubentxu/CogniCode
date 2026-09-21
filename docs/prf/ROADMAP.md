@@ -41,6 +41,26 @@ Las fases F2 en adelante se definirán al cerrar F1, en función de los
 defectos reales descubiertos y las prioridades que el inventario y la
 estabilización revelen.
 
+### F2 — Correctitud reproducible (definida tras F1)
+
+**Objetivo**: garantizar que los resultados de análisis (CLI y MCP)
+sean reproducibles, tengan cobertura explícita y no oculten cambios o
+errores.
+
+**Criterio de salida**: cada vertical de análisis dispone de un corpus
+determinista con un oráculo independiente, los defectos descubiertos
+están cerrados con tests de regresión y un UAT que ejecute el binario
+real.
+
+| Unidad | Descripción | Estado |
+|---|---|---|
+| **F2.W1** | Caracterización de la correctitud de `PerFileStrategy` (CLI `cognicode graph per-file`, MCP `get_per_file_graph`). Cerrar la invalidación del cache por cambio de contenido (R2 del brief). | **ACCEPTED** (commit `70f0b0cf`) |
+| F2.W2 | Errores de lectura silenciosos en `PerFileStrategy::build_full_graph` (R3). Cambiar el contrato para reportar archivos omitidos. | Pendiente |
+| F2.W3 | Caracterización de equivalencia `full` vs `per_file` (R4). Las dos estrategias tienen propósitos distintos; documentar. | Pendiente |
+
+Las unidades de F2 siguientes dependerán de los defectos que surjan
+durante la ejecución de F2.W1-W3.
+
 ## Unidad activa
 
 Ver `STATE.md`.

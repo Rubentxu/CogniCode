@@ -39,6 +39,15 @@
 | PRF-F0-W2-002 | Captura strace/ltrace de al menos 2 binarios | Pendiente | id. |
 | PRF-F0-W3-001 | Baseline de pruebas automatizadas | Pendiente | F0.W3 |
 
+### PRF-F2 — Correctitud reproducible
+
+| REQ | Descripción | Implementación | Test | Evidencia | Commit |
+|---|---|---|---|---|---|
+| PRF-F2-W1-001 | Invalidación de cache `PerFileGraphCache` por cambio de contenido | `crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs` — `get_or_build` con fingerprint (mtime+size) | `test_per_file_graph_cache_detects_content_change` (RED→GREEN) | `evidence/CERTIFICATES.md` (PRF-F2-W1) | `70f0b0cf` |
+| PRF-F2-W1-002 | Caracterización del recorrido anidado en `PerFileStrategy::build_full_graph` | `PerFileStrategy` con `WalkDir` recursivo | `test_per_file_strategy_build_full_graph_nested_corpus` (GREEN desde inicio) | `docs/prf/fixtures/per_file_correctness/CORPUS.md` | `70f0b0cf` |
+| PRF-F2-W2-001 | Reporte explícito de archivos omitidos por error de parseo | (por implementar) | (por definir) | — | — |
+| PRF-F2-W3-001 | Caracterización de equivalencia `full` vs `per_file` | (caracterización sin corrección) | (por definir) | — | — |
+
 ## Hallazgos con trazabilidad
 
 | Hallazgo | REQ afectado | Severidad | Acción propuesta | Estado |

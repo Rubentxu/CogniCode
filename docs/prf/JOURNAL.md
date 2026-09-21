@@ -567,3 +567,111 @@ seleccionada: **recorrido anidado** (estrategia `per_file`) y
 contenido modificado). Riesgos complementarios (errores de lectura,
 equivalencia `full` vs `per_file`) se registrarán como próximas unidades.
 
+
+## Entrada 8 — 2026-09-21 — F2.W1 (Correctitud del análisis — R2)
+
+### Resumen
+
+Ejecutada la primera unidad de F2 (Correctitud reproducible). Vertical
+elegida: `PerFileStrategy` (CLI `cognicode graph per-file` y MCP
+`get_per_file_graph`). Defecto cerrado: el cache no invalidaba
+entradas cuando el contenido del archivo cambiaba entre llamadas.
+
+### Cambios
+
+1. **Causa raíz identificada**:
+   `crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs`,
+   `PerFileGraphCache::get_or_build`. El cache solo consultaba
+   `entry.valid`; nunca miraba mtime ni tamaño del archivo en disco.
+
+2. **Fix mínimo aplicado**:
+   - `FileGraphCacheEntry` gana dos campos: `mtime_secs: Option<u64>` y
+     `size: Option<u64>`, ambos capturados al cachear.
+   - Dos helpers privados: `file_fingerprint(path) -> Option<FileFingerprint>`
+     y `system_time_to_secs(t) -> u64`.
+   - `get_or_build` ahora requiere que `valid && mtime == fp.mtime && size == fp.size`
+     para devolver cache; si no, reconstruye.
+   - Si `fs::metadata` falla (archivo borrado, etc.), `file_fingerprint`
+     devuelve `None` y el cache se reconstruye conservadoramente.
+   - Sin cambios en la API pública (firmas intactas).
+
+3. **Tests añadidos** (RED → GREEN):
+   - `test_per_file_graph_cache_detects_content_change`: escribe 1
+     función, cachea, espera 1.1s (mtime granularity), reescribe con
+     2 funciones, re-pide. Asserto `new > original`. Sin fix: 1 == 1
+     (stale). Con fix: >1.
+   - `test_per_file_strategy_build_full_graph_nested_corpus`: ejercita
+     `PerFileStrategy::build_full_graph` sobre el corpus y verifica ≥3
+     símbolos en 3 archivos anidados. GREEN desde inicio (R1 no era
+     defecto; era caracterización).
+
+4. **Corpus creado** (versionado):
+   - `docs/prf/fixtures/per_file_correctness/CORPUS.md` — describe el
+     oráculo (3 funciones, 2 edges) independientemente del código.
+   - 3 archivos Rust pequeños: `src/lib.rs` (top_level),
+     `src/nested/mod.rs` (mid_level),
+     `src/nested/deeply_nested/mod.rs` (leaf).
+
+### Verificaciones
+
+- `cargo test -p cognicode-core --lib per_file_graph` → **8/8 pass**
+  (5 previos + 2 nuevos + 1 que ya estaba agrupado).
+- `cargo test -p cognicode-core --lib` → **2085/0/27** (baseline F0.W3
+  era 2083/0/27, +2 sin regresión).
+- RED confirmado: revertido el fix localmente, el test
+  `test_per_file_graph_cache_detects_content_change` falla con mensaje
+  explícito ("cache is returning stale results").
+- UAT: el test runner de `cognicode-core` ejecuta el código real de
+  `PerFileStrategy::build_full_graph` y `PerFileGraphCache::get_or_build`
+  sobre el corpus (no mocks).
+
+### Hallazgos relacionados registrados (no cerrados en F2.W1)
+
+- **R3 (errores de lectura silenciosos)**: en
+  `PerFileStrategy::build_full_graph` línea `filter_map(|e| e.ok())` y
+  en `PerFileGraphCache::merge` línea `unwrap_or_else(|_| CallGraph::new())`.
+  Un archivo que no se puede parsear se descarta sin aviso. Diferido a
+  **F2.W2**. La solución propuesta: cambiar el contrato de
+  `build_full_graph` para que devuelva un tipo que incluya tanto el
+  grafo como la lista de archivos omitidos.
+
+- **R4 (equivalencia full vs per_file)**: las dos estrategias tienen
+  propósitos distintos (`FullGraphStrategy` usa `PetGraphStore`,
+  `PerFileStrategy` usa `PerFileGraphCache::merge`). Diferido a
+  **F2.W3** como caracterización sin corrección; no exigir a una
+  estrategia reducida una precisión que no ofrece.
+
+- **H10 (test `cogh update` rate limit)**: confirmado no bloqueante
+  para C1. Migrado a "deuda de F2" (no a F2.W1/W2/W3 concretas; queda
+  como trabajo pendiente separado).
+
+### Commit
+
+```
+70f0b0cf fix(per-file-cache): invalidate entries on content change (R2 from F2.W1)
+```
+
+### Política respetada
+
+- Sin refactor masivo de `WorkspaceSession`, `AnalysisService` ni
+  adaptadores de persistencia (fijado por la sección 5 del brief).
+- Sin RPC, ports, event bus, plugins ni segunda representación canónica.
+- API pública intacta: solo campos internos del `FileGraphCacheEntry`.
+- Sin mock: el UAT ejecutó el código real sobre el corpus real.
+- Sin skip ceremonial: el test exige `new > original` con mensaje
+  explícito.
+
+### Próxima unidad concreta
+
+**F2.W2** — Errores de lectura silenciosos en
+`PerFileStrategy::build_full_graph` (R3). Plan tentativo:
+1. Crear test RED con un archivo que falla al parsear (p. ej.
+   sintaxis inválida).
+2. Verificar que el `unwrap_or_else(|_| CallGraph::new())` actual
+   descarta el error silenciosamente.
+3. Cambiar el contrato de retorno: nuevo tipo
+   `BuildResult { graph: CallGraph, skipped: Vec<SkippedFile> }`.
+4. Adaptar los 7 call sites en `interface/cli/commands.rs:572,599,639,
+   670,701,741,834` para reportar los archivos omitidos al usuario.
+5. Re-correr todos los tests; verificar no-regresión.
+
