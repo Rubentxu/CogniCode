@@ -779,17 +779,26 @@ fn parse_space_row(row: &[lbug::Value]) -> Result<Space, FederationError> {
 
 #[async_trait]
 impl ManifestStore for LadybugStore {
-    async fn get_manifest(&self, _workspace_id: &str) -> Result<Vec<ScanManifest>, ManifestError> {
+    async fn get_manifest(&self, workspace_id: &str) -> Result<Vec<ScanManifest>, ManifestError> {
         // lbug Cypher: MATCH (s:ScanManifest) WHERE s.workspace_id = $ws
         // RETURN s.*, ordered by file_path for stable reads.
+        // Note: parameter binding requires prepare+execute; conn.query()
+        // takes no parameters and an unbound $ws evaluates to NULL,
+        // matching zero rows (root cause of the T4 manifest failures).
         let conn = self
             .connection()
             .map_err(|e| ManifestError::Store(format!("get_manifest: {e}")))?;
-        let result = conn
-            .query(
-                "MATCH (s:ScanManifest)                  WHERE s.workspace_id = $ws                  RETURN s.workspace_id, s.file_path, s.file_type, s.language,                         s.content_hash, s.mtime, s.symbol_count, s.edge_count,                         s.status, s.error_msg                  ORDER BY s.file_path;",
+        let mut stmt = conn
+            .prepare(
+                "MATCH (s:ScanManifest) WHERE s.workspace_id = $ws RETURN s.workspace_id, s.file_path, s.file_type, s.language, s.content_hash, s.mtime, s.symbol_count, s.edge_count, s.status, s.error_msg ORDER BY s.file_path;",
             )
-            .map_err(|e| ManifestError::Store(format!("get_manifest: query: {e}")))?;
+            .map_err(|e| ManifestError::Store(format!("get_manifest: prepare: {e}")))?;
+        let result = conn
+            .execute(
+                &mut stmt,
+                vec![("ws", lbug::Value::String(workspace_id.to_string()))],
+            )
+            .map_err(|e| ManifestError::Store(format!("get_manifest: execute: {e}")))?;
         let mut rows = Vec::new();
         for row in result {
             rows.push(ScanManifest {
