@@ -41,6 +41,11 @@ pub struct PersistedJournal {
 }
 
 /// Path to the journal for a given version.
+///
+/// DEPRECATED for production use: resolves via `COGNICODE_HOME`/`HOME`
+/// and ignores `--home`. Callers holding a [`crate::layout::CognicodeHome`]
+/// MUST use `home.journal_version(version)` instead (H-F6-1: a single
+/// resolution of home).
 pub fn journal_path(version: &str) -> PathBuf {
     cognicode_home()
         .join("journal")

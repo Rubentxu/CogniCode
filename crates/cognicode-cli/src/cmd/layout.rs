@@ -96,6 +96,9 @@ impl CognicodeHome {
     pub fn tracker_version(&self) -> PathBuf {
         self.tracker().join("version")
     }
+    pub fn journal_version(&self, version: &str) -> PathBuf {
+        self.root.join("journal").join(format!("{version}.json"))
+    }
     pub fn locks(&self) -> PathBuf {
         self.root.join("locks")
     }
@@ -309,7 +312,7 @@ pub fn cmd_uninstall(
     // Journal: remove the journal FOR THIS VERSION only (whatever its
     // state). Journals of other versions are other transitions; they are
     // not ours to delete here.
-    let journal_path = crate::lifecycle_journal::journal_path(version);
+    let journal_path = home.journal_version(version);
     if journal_path.exists() {
         crate::lifecycle_journal::remove(&journal_path);
         println!("✓ removed rollback journal: {}", journal_path.display());
@@ -318,7 +321,8 @@ pub fn cmd_uninstall(
     // Tracker: if the uninstalled version is the actively pinned one,
     // clear the pin — "no current version" is the honest post-state.
     // Uninstalling a NON-active version must leave the tracker untouched.
-    let was_active = crate::tracker::read_version_optional().as_deref() == Some(version);
+    let was_active =
+        crate::tracker::read_version_optional_at(&home.tracker_version()).as_deref() == Some(version);
     if was_active {
         let tracker = home.tracker_version();
         std::fs::remove_file(&tracker)
@@ -520,7 +524,8 @@ pub fn cmd_update(
     // installed manifest, with every declared component materialised.
     // A broken same-version install falls through to the real install
     // pipeline (repair path) instead of being hidden by the equality.
-    if crate::tracker::read_version_optional().as_deref() == Some(resolved.version.as_str())
+    if crate::tracker::read_version_optional_at(&home.tracker_version()).as_deref()
+        == Some(resolved.version.as_str())
         && active_install_is_coherent(home, &resolved.version)
     {
         println!(
@@ -567,7 +572,7 @@ pub fn cmd_rollback(home: &CognicodeHome, plugin: Option<String>, to: Option<Str
     // "unknown" is never resolved by picking the highest-version file on
     // disk (the retired heuristic — a bigger semver is not "the most
     // recent valid transition").
-    let current = crate::tracker::read_version_optional();
+    let current = crate::tracker::read_version_optional_at(&home.tracker_version());
     let Some(current_version) = current else {
         println!("nothing to roll back (no version pinned in tracker)");
         return Ok(());
@@ -584,7 +589,7 @@ pub fn cmd_rollback(home: &CognicodeHome, plugin: Option<String>, to: Option<Str
         }
     }
 
-    let path = crate::lifecycle_journal::journal_path(&current_version);
+    let path = home.journal_version(&current_version);
     if !path.exists() {
         // e86.4 REQ-RB-05: a `--to <target>` that does not appear in the
         // journal chain is a clear refusal with the known history listed.
@@ -666,7 +671,7 @@ pub fn cmd_rollback(home: &CognicodeHome, plugin: Option<String>, to: Option<Str
     // in-memory lack it. Defensively restore from `previous_tracker` when
     // the tracker still pins this version, so reversal never leaves a
     // stale pin pointing at a removed version tree.
-    let tracker_path = crate::layout::tracker_dir().join("version");
+    let tracker_path = home.tracker_version();
     let still_pins = std::fs::read_to_string(&tracker_path)
         .ok()
         .map(|v| v.trim() == current_version)

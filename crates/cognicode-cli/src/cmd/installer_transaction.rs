@@ -732,8 +732,8 @@ impl InstallerTransaction {
 
                 // Capture the tracker value BEFORE the install overwrites it,
                 // so a future rollback can restore it (e86 REQ-LJ-02).
-                let previous_tracker = crate::tracker::read_version_optional();
-                let _tracker_path = crate::layout::tracker_dir().join("version");
+                let tracker_path = home.tracker_version();
+                let previous_tracker = crate::tracker::read_version_optional_at(&tracker_path);
 
                 // Ensure parent directory exists (record for rollback)
                 if let Some(parent) = manifest_path.parent() {
@@ -752,7 +752,7 @@ impl InstallerTransaction {
                 // `cogh rollback` restores the previous pin (REQ-LJ-02);
                 // a journal persisted without it leaves a stale tracker pin
                 // pointing at a version tree that no longer exists.
-                let tracker_path = crate::layout::tracker_dir().join("version");
+                let tracker_path = home.tracker_version();
                 journal.record(SideEffect::WroteTracker {
                     path: tracker_path,
                     previous: previous_tracker.clone(),
@@ -764,7 +764,7 @@ impl InstallerTransaction {
                 // install (the install is correct); we surface them as a
                 // warning on stderr and the next `cogh rollback` will report
                 // "nothing to roll back" (REQ-LJ-01).
-                let journal_path = crate::lifecycle_journal::journal_path(&manifest.version);
+                let journal_path = home.journal_version(&manifest.version);
                 if let Err(e) = crate::lifecycle_journal::write(
                     &journal,
                     &manifest,
@@ -1045,7 +1045,8 @@ components:
 "#;
         let manifest = BundleManifest::from_str(yaml).unwrap();
         // Simulate a previous install so `previous_tracker` is Some.
-        let tracker_path = crate::layout::tracker_dir().join("version");
+        // H-F6-1: commit() resolves the tracker via `home`, not via env.
+        let tracker_path = home.tracker_version();
         std::fs::create_dir_all(tracker_path.parent().unwrap()).unwrap();
         std::fs::write(&tracker_path, "0.93.0").unwrap();
 

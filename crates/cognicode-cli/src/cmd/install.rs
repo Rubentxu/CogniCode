@@ -38,7 +38,7 @@ pub fn run_install(home: &CognicodeHome, profile: &str) -> Result<PathBuf> {
                 .and_then(|p| p.file_name())
                 .and_then(|v| v.to_str())
                 .unwrap_or("unknown");
-            tracker::write_version(version)
+            tracker::write_version_at(&home.tracker_version(), version)
                 .map_err(|e| anyhow!("failed to write tracker: {}", e))?;
 
             // 4. Integrate with IDE adapters if OpenCode is detected.
