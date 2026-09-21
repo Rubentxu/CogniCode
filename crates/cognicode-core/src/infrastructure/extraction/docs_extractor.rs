@@ -89,7 +89,7 @@ use super::docs_confidence_rules::{ConfidenceTier, score_link, sym_short_name};
 pub fn parse_markdown(text: &str, source_path: &Path, file_stem: &str) -> Vec<ExtractedNode> {
     let mut nodes: Vec<ExtractedNode> = Vec::new();
     let mut status_lines: Vec<String> = Vec::new();
-    let is_adr = detect_adr(text);
+    let is_adr = detect_adr(text) || detect_adr_by_filename(source_path);
 
     // First pass: walk all events. For each heading we emit one
     // `ExtractedNode`; links to known code symbols inside the
@@ -563,8 +563,28 @@ fn is_markdown_path(p: &Path) -> bool {
 /// a missed ADR costs the entire decision in the graph.
 #[cfg(feature = "multimodal")]
 fn detect_adr(text: &str) -> bool {
+    // Strip a leading YAML frontmatter block (`---` ... `---`) before
+    // scanning: ADR files with frontmatter push their `# ADR-NNNN`
+    // heading past the 10-line window, so scanning the raw head misses
+    // them (docs_extractor_corpus_regression, PRF follow-up).
     let head = &text[..text.len().min(4096)];
-    head.lines().take(10).any(|line| {
+    let mut lines = head.lines().peekable();
+    if lines.peek().map(|l| l.trim() == "---").unwrap_or(false) {
+        lines.next();
+        let mut closed = false;
+        for l in lines.by_ref() {
+            if l.trim() == "---" {
+                closed = true;
+                break;
+            }
+        }
+        if !closed {
+            // No closing delimiter: treat as ordinary text (scan from
+            // the beginning again).
+            lines = head.lines().peekable();
+        }
+    }
+    lines.take(10).any(|line| {
         let l = line.trim_start_matches('#').trim_start();
         // Match "# ADR-0001: Title", "# ADR- 0001: Title",
         // "# Decision: 0001: Title", etc. The pattern is loose on
@@ -578,6 +598,18 @@ fn detect_adr(text: &str) -> bool {
             || l_lower.starts_with("decision:")
             || l_lower.starts_with("decision record")
     })
+}
+
+/// True if the file name itself declares an ADR (`ADR-*.md`). Companion
+/// maps stored alongside ADRs (e.g. `ADR-IDENTITY-MAP-*.md`) carry
+/// descriptive H1s without the marker in the text, so the filename is
+/// the only reliable signal.
+#[cfg(feature = "multimodal")]
+fn detect_adr_by_filename(source_path: &Path) -> bool {
+    source_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_ascii_uppercase().starts_with("ADR-"))
+        .unwrap_or(false)
 }
 
 /// Build a `GraphNode` for a single heading. The slug is the
@@ -1472,6 +1504,19 @@ mod tests {
         assert!(detect_adr("# Decision: 0007 — Adopt GraphQL\n"));
         assert!(!detect_adr("# Overview\n\nSome text.\n"));
         assert!(!detect_adr("Just a paragraph, no heading.\n"));
+    }
+
+    /// Regression (PRF, docs_extractor_corpus_regression): ADR files
+    /// with YAML frontmatter push the `# ADR-NNNN` heading past the
+    /// 10-line window. Detection must strip the frontmatter first.
+    #[test]
+    fn detect_adr_strips_yaml_frontmatter() {
+        let fm = "---\ntitle: \"ADR-035 — pattern\"\nslug: \"ADR-035\"\nstatus: accepted\ndate: 2026-08-10\ndeciders: Maintainer\nrelated:\n  - \"[[ADR-034]]\"\n---\n\n# ADR-035 — pattern\n\nBody.\n";
+        assert!(detect_adr(fm));
+        // Unclosed frontmatter: scan from the beginning again.
+        assert!(!detect_adr(
+            "---\ntitle: not an adr at all\nbody keeps going\n"
+        ));
     }
 
     /// Files with no headings fall back to a single `Doc` node
