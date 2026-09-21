@@ -8,15 +8,124 @@
 ## Snapshot
 
 | Hito activo | **F2 — Correctitud reproducible (EN CURSO)** |
-| Última unidad cerrada | **F2.W5 — H-R4-2 (lookup global con resolución scope-aware)** (commit `3f27a31d`) |
-| Unidad activa siguiente | **F2.W6** (subdivisión TBD: continuar con la siguiente unidad F2 pendiente, o iniciar workaround F2.W0-bis para desbloquear F2.W8) |
-| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. **F2 (W1-W5) = IMPLEMENTED** (sin UAT de binario; no ACCEPTED). **C0, C1 = NO CERTIFICADO** formalmente. **C2 = NO CERTIFICADO**. Pendiente RELEASED para todos los hitos. |
-| HEAD | `3f27a31d` (26 commits ahead de origin/main) |
+| Última unidad cerrada | **F2.W7 — Integrar F2.W5 en el camino real del binario** (commit `5ce8eb1e`) |
+| Unidad activa siguiente | **F2.W8 — Errores silenciosos de lectura (per_file y full)** |
+| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. **F2 (W1-W5, W7) = IMPLEMENTED** (W7 GREEN end-to-end con UAT real; sin UAT de C2 formal). **C0, C1 = NO CERTIFICADO** formalmente. **C2 = NO CERTIFICADO**. Pendiente RELEASED para todos los hitos. |
+| HEAD | `5ce8eb1e` (28 commits ahead de origin/main) |
 | Working tree | Limpio |
-| Bloqueos conocidos | Bug preexistente del binario `cognicode` (workspace con dos crates `name = "cognicode"`) — bloquea F2.W8 UAT sobre binarios hasta workaround F2.W0-bis. H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa, no bloqueante). |
-| Siguiente unidad ejecutable | **F2.W6 — Desbloquear binario `cognicode`** (workaround del conflicto de nombre en el workspace; precede a F2.W8 UAT de binarios). Plan en JOURNAL §15. |
+| Bloqueos conocidos | **No hay bloqueos activos**. Los 6 fallos preexistentes del workspace (`cogh_uninstall`, `docs_extractor_corpus_regression`, 4× `manifest_upsert`) están catalogados en JOURNAL §15 con responsable y trigger; no bloquean gates de F2/C2. H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa, no bloqueante). |
+| Siguiente unidad ejecutable | **F2.W8** — Errores silenciosos de lectura en `per_file` y `full` (caracterizar y corregir cada causa independiente en una unidad acotada). Plan en JOURNAL §15. |
 | Política git | `docs/prf/` se versiona para **documentos del programa** (.md, fixtures) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
 | Gobierno del proyecto | **PRF es el único roadmap ejecutivo vigente** (decisión del operador 2026-09-21, `JOURNAL.md` entrada 13, `TRACEABILITY.md` §Correspondencia E31→PRF). E31 conserva su evidencia y aporta requisitos útiles que migran a gates PRF. |
+
+## Última unidad cerrada: F2.W7 (Integrar F2.W5 en el camino real del binario)
+
+**Objetivo**: cerrar la integración de F2.W5. F2.W5 implementó
+resolución scope-aware en `FullGraphStrategy` /
+`PerFileStrategy`, pero el binario real (`cognicode-mcp`, `cognicode`
+CLI) NO invoca esas strategies: ejecuta
+`AnalysisService::build_project_graph`, que tenía su propia
+resolución inline con tie-break FQN lexicográfico. Resultado: las
+aristas cross-file del binario apuntaban a homónimos arbitrarios.
+
+**Diagnóstico (UAT sobre corpus independiente)**:
+
+Sobre el corpus `docs/prf/fixtures/cross_file_scope_aware/` (5
+call sites en `src/lib.rs` ejercitando 5 reglas del resolver), el
+binario reportaba:
+
+```
+relationships_found: 2  (esperábamos 5)
+caller_in_lib → local_helper          ✓ por accidente (lex-FQN)
+caller_in_lib → shared_name           ✗ apuntaba a ambig/mod.rs
+caller_in_lib → callee_in_nested      ✗ MISSING (cross-file, 1 candidato)
+caller_in_lib → compute               ✗ MISSING (cross-file, 1 candidato)
+caller_in_lib → two_way_ambig         ✗ MISSING (ambigüedad genuina, drop honesto)
+```
+
+El bug violaba D33: el binario inventaba destinos contra
+homónimos cuando debía resolver al local del caller.
+
+**Implementación**:
+
+  - `analysis_service::build_project_graph` (`crates/cognicode-core/src/application/services/analysis_service.rs`):
+    el mapa `HashMap<String, SymbolId>` se reemplaza por
+    `GlobalSymbolIndex` (la misma estructura que F2.W5 introdujo
+    en `infrastructure/graph/per_file_graph.rs`). Se preserva
+    `caller_fqn` y `caller_file` por arista para que el resolver
+    reciba contexto de archivo del caller y aplique las reglas
+    scope-aware (1 candidato → ese; múltiples en archivo del
+    caller → local; múltiples en distintos archivos del mismo
+    crate root → uno; ambigüedad genuina → drop honesto per D33).
+
+  - `infrastructure/graph/mod.rs`: `per_file_graph` se promueve
+    de `mod` a `pub mod` para que `application/services/` pueda
+    usar `GlobalSymbolIndex`. La superficie pública efectiva
+    sigue siendo `GlobalSymbolIndex` +
+    `BuildFileResult`/`CrossFileEdge`.
+
+  - `docs/prf/fixtures/cross_file_scope_aware/`: corpus nuevo
+    (cinco archivos Rust + `CORPUS.md`) que ejercita las cinco
+    ramas del resolver. No derivado de `cognicode-core`.
+
+**Tests añadidos (RED → GREEN)**:
+
+  - `w7_scope_aware_resolution_tests` (6 tests) en
+    `analysis_service.rs::tests`:
+      * `w7_single_candidate_cross_file_resolves_to_nested_callee`
+      * `w7_homonym_in_callers_file_resolves_locally`
+      * `w7_single_candidate_cross_file_resolves_to_ambig_compute`
+      * `w7_homonym_three_way_resolves_to_callers_file_local`
+      * `w7_two_way_homonym_no_caller_file_honest_drop`
+        (test de la regla D33: ambigüedad genuina → None)
+      * `w7_no_invented_edges_outside_crate_root`
+        (sanity: 4 aristas esperadas, 5 call sites − 1 drop)
+
+**Verificación observada**:
+
+  - `cargo test -p cognicode-core --no-fail-fast` →
+    **2115 passed, 0 failed, 27 ignored** (lib + integration).
+  - Suite completa de `cognicode-core` (lib + 9 integration
+    binaries): **2257 tests, 0 failed**.
+  - UAT real con `cognicode-mcp --cwd /tmp/prf-uat-corpus`:
+    `relationships_found: 4` (antes 2); las 4 aristas son las
+    correctas (`caller_in_lib` → `local_helper`/`shared_name`
+    locales, `callee_in_nested`/`compute` cross-file); el
+    `get_call_hierarchy` es internamente consistente con
+    `build_graph` (antes decía `calls: []` para todo).
+  - UAT con `cognicode analyze .` sobre el corpus: log dice
+    `5 relationships, 4 resolved, 1 unresolved` (exactamente
+    la `two_way_ambig` que D33 descarta honestamente).
+
+**Decisión registrada**:
+
+  - D34: el camino real del binario
+    (`analysis_service::build_project_graph`) usa ahora
+    `GlobalSymbolIndex`. Las strategies `FullGraphStrategy` /
+    `PerFileStrategy` que F2.W5 modificó siguen correctas pero
+    ahora son redundantes para el binario; se conservan para
+    los tests de caracterización (W3) y como API pública.
+    Una futura unidad podría consolidarlas.
+
+**Commit**: `5ce8eb1e` (atómico, sin push).
+
+**Hallazgos colaterales (F2.W7 no los causa, los documenta)**:
+
+Seis fallos preexistentes del workspace verificados con
+`git stash` + rerun sobre baseline `206de307`:
+
+  - `cogh_uninstall_emits_recognisable_message_for_known_plugin`
+    (cognicode-cli). Responsable: fase de distribución / CLI
+    (cogh); no bloquea F2/C2.
+  - `docs_extractor_corpus_regression` (cognicode-core).
+    Responsable: `infrastructure/extraction/docs_extractor.rs`;
+    no bloquea F2/C2 (es test de regresión sobre el corpus de
+    ADRs, no sobre el grafo de llamadas).
+  - 4× `manifest_upsert_*` en `cognicode-ladybug`. Responsable:
+    capa ladybug/manifest; no bloquea F2/C2.
+
+Ninguno bloquea gates de F2/C2; se asignan a sus fases PRF
+respectivas en JOURNAL §15.
 
 ## Última unidad cerrada: F2.W4 (Cerrar huecos — H-R4-1 capa 1)
 

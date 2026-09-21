@@ -1324,3 +1324,107 @@ del operador).
     RELEASED de F2).
 
 Decisión del operador al abrir F2.W6.
+
+## Entrada 15 — 2026-09-21 — F2.W6 (desbloqueo del binario) + F2.W7 (integración de F2.W5 en el camino real) + W0/W7-W8-W9-W10-W11-W12
+
+### Contexto
+
+El operador reactivó el trabajo en modo AUTO con prioridad sobre la
+integración real de F2.W5 (no sobre nuevas features). El reporte
+anterior declaraba que el binario `cognicode` estaba bloqueado por
+un conflicto de dos crates `name = "cognicode"`; ese bloqueo era
+una hipótesis no verificada. La UAT inicial demuestra que el binario
+corre, pero la integración de F2.W5 NO había llegado al binario:
+el `cognicode-mcp` real usaba un tercer camino
+(`AnalysisService::build_project_graph`) con un tie-break FQN
+lexicográfico que violaba D33.
+
+### F2.W6 — Desbloqueo del binario `cognicode`
+
+Reproducción: `cargo install --path crates/cognicode-cli --bin cognicode`,
+`cargo run --bin cognicode`, `cargo install --path crates/cognicode-cli
+--bin cognicode-mcp` — todos funcionan. El binario `cognicode`
+corre, devuelve `cognicode 0.97.3`, y `cognicode-mcp --cwd <dir>`
+responde al protocolo JSON-RPC. El "conflicto de dos crates" no
+produce bloqueo operativo; es un artefacto de la nomenclatura de
+un crate legacy de re-export sin binarios. **F2.W6 cerrado sin
+acción correctiva** (no hay bloqueo que corregir).
+
+### F2.W7 — Integración de F2.W5 en `analysis_service::build_project_graph`
+
+(commit `5ce8eb1e`).
+
+**Caracterización (RED)**. Corpus nuevo
+`docs/prf/fixtures/cross_file_scope_aware/` con cinco archivos
+Rust que ejercitan las cinco ramas del resolver scope-aware. Los
+6 tests `w7_*` añadidos a `analysis_service.rs::tests` fallaron
+en RED antes del fix:
+
+  - `w7_single_candidate_cross_file_resolves_to_nested_callee`
+  - `w7_homonym_in_callers_file_resolves_locally`
+  - `w7_single_candidate_cross_file_resolves_to_ambig_compute`
+  - `w7_homonym_three_way_resolves_to_callers_file_local`
+  - `w7_two_way_homonym_no_caller_file_honest_drop`
+  - `w7_no_invented_edges_outside_crate_root`
+
+El bug confirmado por el binario real era exactamente: caller
+`caller_in_lib` (en `src/lib.rs`) invocaba `shared_name()` y el
+grafo dirigido al `shared_name` de `ambig/mod.rs` (lexicográficamente
+menor), NO al local.
+
+**Implementación**. `AnalysisService::build_project_graph` reemplaza
+el `HashMap<String, SymbolId>` por `GlobalSymbolIndex` (la misma
+estructura que F2.W5 introdujo en `infrastructure/graph/per_file_graph.rs`).
+El nuevo shape `all_relationships: Vec<(caller_fqn, caller_file, callee_name)>`
+preserva el archivo del caller para que el resolver reciba
+contexto. `infrastructure/graph::per_file_graph` se promueve de
+`mod` a `pub mod`.
+
+**GREEN end-to-end**:
+
+  - 6/6 w7 tests verde.
+  - `cargo test -p cognicode-core --no-fail-fast` →
+    2115 passed, 0 failed, 27 ignored (lib + integration).
+  - Suite completa `cognicode-core`: 2257 tests, 0 failed.
+  - UAT con `cognicode-mcp --cwd /tmp/prf-uat-corpus`:
+    `relationships_found: 4` (antes 2); las 4 aristas son las
+    correctas; `get_call_hierarchy` consistente con `build_graph`.
+  - UAT con `cognicode analyze .`: `5 relationships, 4 resolved,
+    1 unresolved` (la `two_way_ambig` que D33 descarta).
+
+**Decisión registrada**:
+
+  - **D34**: el camino real del binario usa ahora
+    `GlobalSymbolIndex`. Las strategies `FullGraphStrategy` /
+    `PerFileStrategy` que F2.W5 modificó siguen correctas pero
+    son redundantes para el binario. Se conservan como API
+    pública y para tests de caracterización (W3).
+
+### Hallazgos colaterales: auditoría de fallos preexistentes
+
+Seis fallos del workspace verificados con `git stash` + rerun
+sobre baseline `206de307` (anterior a W6/W7). Confirmado: **no
+son regresiones de F2.W5 ni de F2.W7**.
+
+| Test | Crate | Comando reproducible | Preexistente | Causa raíz / hipótesis | Capacidad / gate afectado | Responsable / fase PRF | Trigger de reapertura |
+|---|---|---|---|---|---|---|---|
+| `cogh_uninstall_emits_recognisable_message_for_known_plugin` | cognicode-cli | `cargo test -p cognicode-cli --test cognicode_lifecycle` | Sí | Subcomando `cogh uninstall` no emite el mensaje esperado para un plugin conocido. Sin diagnosticar (no era bloqueante para F2). | CLI / distribución. No bloquea gate F2/C2. | Fase de distribución (post-C2). | Cuando se aborde la receta de uninstall. |
+| `docs_extractor_corpus_regression` | cognicode-core | `cargo test -p cognicode-core --lib` (filtro `docs_extractor_corpus_regression` corre solo desde `--workspace`) | Sí | Test de regresión sobre el corpus `docs/adr/`. Sin diagnosticar. | Extracción de docs (no es capacidad de F2). | Fase de docs/knowledge. | Cuando se retome docs-extractor. |
+| `manifest_upsert_then_get_round_trips` | cognicode-ladybug | `cargo test -p cognicode-ladybug --lib` | Sí | CRUD sobre el manifest store. Sin diagnosticar. | Ladybug persistence. No bloquea F2/C2. | Fase de ladybug / persistence. | Cuando se retome ladybug. |
+| `manifest_upsert_with_optional_nulls` | cognicode-ladybug | id. | Sí | id. | id. | id. | id. |
+| `manifest_delete_removes_target_row` | cognicode-ladybug | id. | Sí | id. | id. | id. | id. |
+| `manifest_upsert_overwrites_existing_row` | cognicode-ladybug | id. | Sí | id. | id. | id. | id. |
+
+**Política aplicada**: ningún fallo preexistente se considera
+"satisfactorio por ser preexistente". Se registran y se asignan a
+su fase PRF; **ninguno bloquea gates de F2/C2**, así que no
+interrumpen este ciclo.
+
+### Próxima unidad concreta
+
+**F2.W8 — Errores silenciosos de lectura en `per_file` y `full`**.
+Caracterizar las rutas que omiten archivos, errores de recorrido
+o fallos de parser sin reflejarlos en la cobertura o en el estado
+del resultado. Corregir cada causa independiente en una unidad
+acotada.
+
