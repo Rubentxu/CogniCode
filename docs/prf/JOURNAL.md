@@ -1816,3 +1816,10 @@ del operador. C7 se firmará tras publicar.
 - Merge 3aba1098: conflictos add/add en 10 docs resueltos conservando la versión local (historial real de ejecución F0-F7); se incorporan los stubs canónicos remotos donde no colisionaban.
 - Verificación: HEAD == origin/main == 3aba1098. Batería post-merge: core --lib 2126/0.
 - Pendiente: tag de release (C7) y resolución de deuda clippy strategy.rs:521.
+
+## 2026-09-21 — T4 integración: FAIL → remediación → PASS → push (5513d67e)
+- T4 sobre d681a456: FAIL (4 tests ladybug ManifestStore + 4 warnings clippy core + fmt).
+- Remediación: a00b9fc0 (causa raíz: query() de lbug 0.19.0 no bindea $ws; prepare+execute), f3cfebe8 (4 clippy), 5513d67e (fmt).
+- T4-retry sobre 5513d67e: PASS. Workspace lib 0 failed, clippy solo strategy.rs:521 (deuda, ciclo propio), fmt limpio.
+- Push a origin/main: HEAD == origin == 5513d67e. Estado de testing: INTEGRATION_VERIFIED.
+- Pendiente: T5/certificación C7 de release (requiere decisión de versionado y tag del operador), ciclo propio para strategy.rs:521.
