@@ -1,0 +1,25 @@
+# State — e86-3-cogh-uninstall-coverage
+
+| Field | Value |
+|-------|-------|
+| Cycle | `p-c1fac1fea05615c6/e86-3-cogh-uninstall-coverage` |
+| Path | a-min |
+| Date | 2026-09-21 |
+| Status | **DONE — archived as `archive-closed-with-receipt`** |
+
+## Phases
+
+- propose: done (proposal.md, 2026-09-18)
+- apply: done (apply-receipt.md, 2026-09-21)
+- verify: done (verification-report.md, 2026-09-21)
+- archive: done (this file + archive move to `archive/2026-09-21-.../`)
+
+## Acceptance
+
+5/5 REQs met (REQ-LJ-11..15). No code changes (tests already existed at
+HEAD `1fefc3d5`). Spec delta filed at
+`openspec/changes/e86-3-cogh-uninstall-coverage/specs/lifecycle-journal-uninstall-coverage/spec.md`.
+
+## Sequencer
+
+E86.2 (closed 2026-09-21) → **E86.3 (closed 2026-09-21 here)** → E86.4 (next, real code work).
