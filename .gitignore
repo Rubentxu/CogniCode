@@ -37,7 +37,10 @@ coverage/
 *.wasm
 pkg/
 CLAUDE.md
+# Agent policy is tracked; private local override remains ignored.
 AGENTS.md
+!/AGENTS.md
+AGENTS.local.md
 .agent
 .agents/
 .qwen/
@@ -163,8 +166,10 @@ apps/explorer-ui/playwright-report/
 **/test-results/*.png
 **/playwright-report/**/*.png
 
-# Ephemeral working docs — never pushed (AGENTS.md)
+# Root AGENTS.md and docs/ROADMAP.md are tracked PRF entrypoints.
+# Per-developer notes remain untracked in AGENTS.local.md / CONTEXT.md.
 docs/ROADMAP.md
+!/docs/ROADMAP.md
 docs/adr/
 CONTEXT.md
 
