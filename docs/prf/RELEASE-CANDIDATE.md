@@ -6,7 +6,7 @@
 
 | Campo | Valor |
 |---|---|
-| SHA candidato | `f49aff2d258b3647fc0225c42050fb7cff91c9ef` (el doc vive en este mismo commit; SHA leido al cerrar sesion: ver `git rev-parse HEAD`) (incluye `0764fb81` H-F6-1 y fix docs_extractor `67375e6c`) |
+| SHA candidato | El candidato es el HEAD de `main` local en el momento de la decisión (incluye `0764fb81` H-F6-1 y fix docs_extractor `67375e6c`; docs PRF posteriores no cambian código). Verificar con `git rev-parse HEAD` al firmar. |
 | Versión | 0.97.3 (el fix de HEAD aún no está publicado; el release tag v0.97.3 NO contiene estos fixes) |
 | Plataformas probadas | Linux x86_64 (única plataforma con UAT ejecutada) |
 
