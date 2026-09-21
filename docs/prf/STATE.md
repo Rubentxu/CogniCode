@@ -14,7 +14,7 @@
 | HEAD | `2a121aec` (F2.W9) |
 | Working tree | limpio tras commit W9 + docs |
 | Bloqueos conocidos | **Ninguno activo** (H-F6-1 resuelto en `0764fb81` y verificado con ciclo `--home` sin env; 6 fallos preexistentes catalogados, no regresiones) |. Los 6 fallos preexistentes del workspace (`cogh_uninstall`, `docs_extractor_corpus_regression`, 4× `manifest_upsert`) están catalogados en JOURNAL §15 con responsable y trigger; no bloquean gates de F2/C2. H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa, no bloqueante). |
-| Siguiente unidad ejecutable | **F7 cierre** — RELEASE-CANDIDATE.md en DRAFT; falta solo la decisión formal READY/HOLD del operador (autoridad de publicación). |
+| Siguiente unidad ejecutable | **Programa PRF: decisiones técnicas completas (READY FOR RELEASE).** Único pendiente: orden explícita de publicación (push + tag). C7 se firma tras publicar. |
 | Política git | `docs/prf/` se versiona para **documentos del programa** (.md, fixtures) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
 | Gobierno del proyecto | **PRF es el único roadmap ejecutivo vigente** (decisión del operador 2026-09-21, `JOURNAL.md` entrada 13, `TRACEABILITY.md` §Correspondencia E31→PRF). E31 conserva su evidencia y aporta requisitos útiles que migran a gates PRF. |
 

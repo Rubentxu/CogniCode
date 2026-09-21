@@ -1789,3 +1789,16 @@ eliminados de `~/.cognicode`; no existían antes de la UAT).
 
 **Estado**: F6 = ACCEPTED (UAT-F6-001 + H-F6-1 RESUELTO). Siguiente:
 F7 (definir alcance de aceptación de release).
+
+
+## Entrada 25 — 2026-09-21 — F7: decisión técnica READY FOR RELEASE
+
+El operador delegó en el orquestador la decisión técnica ("a tu
+criterio"). Registrada en RELEASE-CANDIDATE.md: **READY FOR
+RELEASE** sobre HEAD local, con C0-C6 en PASS, UATs F3-F6 sobre
+binarios reales y baterías GREEN salvo fallos pre-existentes
+catalogados (moldql panic test verificado no-regresión).
+
+La publicación efectiva (push de 56 commits + tag) NO se ejecuta
+con autorización genérica: queda como orden explícita pendiente
+del operador. C7 se firmará tras publicar.
