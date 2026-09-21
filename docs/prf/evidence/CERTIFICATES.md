@@ -895,3 +895,37 @@ puerto de análisis sin lógica de cálculo propia.
 - [x] **ACCEPTED**: UAT-F5-001 PASS.
 - [ ] Matiz para C5 pleno: ejercicio real de extensibilidad mínima (plugin) — pendiente de definición "al cierre de F5" (ROADMAP).
 - [ ] **RELEASED**: pendiente (gate del operador).
+
+---
+
+## PRF-F6 — Distribución (instalación, actualización, rollback)
+
+**Estado**: ACCEPTED
+**Fecha**: 2026-09-21
+**Evidencia**: UAT-F6-001 (docs/prf/UAT.md) + fix H-F6-1 (commit `0764fb81`)
+
+### Alcance certificado
+
+| Capacidad | Evidencia | Clase |
+|---|---|---|
+| Descarga de artefacto real del tag v0.97.3 | 14.179.486 bytes, SHA256 `477a2b24...2888` verificado | OBSERVED |
+| Gate anti-manifest-falso | fixture DEV-ONLY rechazado en SHA256 by construction | OBSERVED |
+| Instalación limpia | binario instalado ejecuta flujo canónico (`graph full`) | OBSERVED |
+| Update no-op coherente | `already current: 0.97.3 ... coherent` | OBSERVED |
+| Rollback completo | árbol + journal + pin eliminados, EXIT=0 | OBSERVED |
+| Aislamiento de `--home` (H-F6-1) | ciclo install→uninstall `--home` sin env: home real sin tracker/ ni journal/ en ningún momento | OBSERVED |
+| Regresión H-F6-1 | 2 tests (variantes `_at` ignoran env); batería cogh 293 passed / 0 failed | STRUCTURAL |
+
+### Matrices honestas
+
+- La transición entre dos versiones distintas se ejercitó como
+  install → update (no-op coherente) → rollback: el canal solo tiene
+  publicado el artefacto de la última versión. Downgrade a artefactos
+  antiguos requiere manifests generados por release (condición del
+  canal, no del cliente).
+- El fix de H-F6-1 está en HEAD `0764fb81`; el release tag v0.97.3
+  publicado NO lo contiene. La certificación cubre el código en HEAD;
+  la próxima publicación de release incorporará el fix.
+
+**Límite**: certificado F6 en HEAD de desarrollo; no implica
+publicación (push/tag requieren autorización del operador).
