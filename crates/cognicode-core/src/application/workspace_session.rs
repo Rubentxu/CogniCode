@@ -2155,7 +2155,14 @@ mod tests {
         let session = WorkspaceSession::new(temp_dir.path()).await;
         assert!(session.is_ok());
         let session = session.unwrap();
-        assert_eq!(session.workspace_root(), temp_dir.path());
+        // DEBT-SDDK-007 / e93: `WorkspaceSession::new` canonicalizes the
+        // root (so on a host where `/home -> /var/home`, the stored path
+        // may be the canonical form while `temp_dir.path()` is the
+        // symlinked form). Compare canonical paths on both sides.
+        assert_eq!(
+            session.workspace_root().canonicalize().unwrap(),
+            temp_dir.path().canonicalize().unwrap()
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]

@@ -264,22 +264,15 @@ impl InputValidator {
             });
         }
 
-        // Also check if any parent component is a symlink
-        let mut current = PathBuf::from(&resolved);
-        while let Some(parent) = current.parent() {
-            if parent.as_os_str().is_empty() {
-                break;
-            }
-            if let Ok(metadata) = std::fs::symlink_metadata(parent)
-                && metadata.file_type().is_symlink()
-            {
-                warn!("Symlink detected in parent path: {}", parent.display());
-                return Err(SecurityError::SymlinkDetected {
-                    path: parent.display().to_string(),
-                });
-            }
-            current = parent.to_path_buf();
-        }
+        // NOTE: We deliberately do NOT walk every parent component of `resolved`
+        // looking for symlinks. That walk is redundant with the canonical-form
+        // workspace boundary check below: any attacker-controlled parent symlink
+        // that escapes the workspace would cause the canonicalized target to
+        // fall outside `allowed_paths`, which the workspace boundary check
+        // already rejects. The parent-walk only added false positives for
+        // system-managed symlinks like `/home -> /var/home` (Fedora Silverblue),
+        // `/var -> /private/var` (macOS), `/tmp -> /private/tmp` (macOS) — none
+        // of which are attacker-controlled. See e93 / DEBT-SDDK-007.
 
         // Try to canonicalize to resolve any symlinks and get absolute path
         let canonical = match std::fs::canonicalize(&resolved) {
@@ -389,39 +382,21 @@ impl InputValidator {
             });
         }
 
-        // Check if any parent component is a symlink
-        let mut current = PathBuf::from(&resolved);
-        while let Some(parent) = current.parent() {
-            if parent.as_os_str().is_empty() {
-                break;
-            }
-            if let Ok(metadata) = std::fs::symlink_metadata(parent)
-                && metadata.file_type().is_symlink()
-            {
-                warn!("Symlink detected in parent path: {}", parent.display());
-                return Err(SecurityError::SymlinkDetected {
-                    path: parent.display().to_string(),
-                });
-            }
-            current = parent.to_path_buf();
-        }
+        // NOTE: We deliberately do NOT walk every parent component of `resolved`
+        // looking for symlinks. See the matching comment in `validate_file_path`
+        // for the rationale (DEBT-SDDK-007 / e93). The canonical-form workspace
+        // boundary check below is the single authority on whether a path is safe.
 
         // Canonicalize and verify workspace boundary
         let canonical = match std::fs::canonicalize(&resolved) {
             Ok(c) => c,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // File doesn't exist - check parent directory
+                // File doesn't exist - canonicalize the parent directory so the
+                // workspace boundary check below still applies. No need for a
+                // separate symlink check here: the canonicalize(parent) call
+                // already resolves any symlinks, and the workspace boundary
+                // check rejects any canonical target that escapes `allowed_paths`.
                 if let Some(parent) = resolved.parent() {
-                    if parent.exists()
-                        && let Ok(metadata) = std::fs::symlink_metadata(parent)
-                        && metadata.file_type().is_symlink()
-                    {
-                        warn!("Symlink detected in parent path: {}", parent.display());
-                        return Err(SecurityError::SymlinkDetected {
-                            path: parent.display().to_string(),
-                        });
-                    }
-
                     match std::fs::canonicalize(parent) {
                         Ok(c) => c,
                         Err(_) => {
@@ -1245,7 +1220,22 @@ mod tests {
     }
 
     #[test]
-    fn test_symlink_parent_directory_rejected() {
+    fn test_symlink_parent_directory_inside_workspace_accepted() {
+        // DEBT-SDDK-007 / e93: the parent-symlink walk was removed because it
+        // produced false positives on system-managed symlinks (`/home ->
+        // /var/home`). This test now pins the *new* contract:
+        //
+        //   A path whose parent is a symlink IS accepted when the canonical
+        //   target of the path lies inside the workspace. This is the case
+        //   for benign symlinks (e.g. a symlinked subdirectory the user
+        //   created inside their own workspace, or a system-level symlink
+        //   like `/home`).
+        //
+        // The defence against the actual symlink-attack threat (a symlink
+        // inside the workspace that escapes it) is covered by
+        // `test_symlink_inside_workspace_pointing_outside_is_rejected`
+        // below.
+
         let validator = create_test_validator_with_workspace();
         let temp_dir = TempDir::new().unwrap();
 
@@ -1264,20 +1254,68 @@ mod tests {
         #[cfg(windows)]
         std::os::windows::fs::symlink_dir(&real_dir, &symlink_dir).unwrap();
 
-        // Attempting to validate a path inside the symlinked directory should fail
+        // Validating a path inside the symlinked directory must succeed
+        // because the canonical target lies inside the workspace.
         let result = validator.validate_file_path(file_in_dir.to_str().unwrap());
         assert!(
-            result.is_err(),
-            "Path with symlink parent should be rejected, got: {:?}",
+            result.is_ok(),
+            "Path with symlink parent inside workspace should be accepted, got: {:?}",
             result
-        );
-        assert!(
-            matches!(result, Err(SecurityError::SymlinkDetected { .. })),
-            "Should return SymlinkDetected error"
         );
 
         drop(real_dir);
         let _ = symlink_dir;
+    }
+
+    #[test]
+    fn test_symlink_inside_workspace_pointing_outside_is_rejected() {
+        // Regression test for DEBT-SDDK-007 / e93. After removing the
+        // parent-symlink walk from `validate_file_path`, the canonical-form
+        // workspace boundary check is the single authority on whether a path
+        // is safe. This test pins the invariant: a symlink INSIDE the
+        // workspace that points OUTSIDE the workspace must still be rejected.
+        //
+        // Two defence layers remain and both fire here:
+        //
+        //   1. Direct-symlink check: `symlink_metadata(&resolved).is_symlink()`
+        //      catches the symlink before we ever canonicalize it. This is
+        //      the fast-path defence and it MUST fire on this fixture.
+        //
+        //   2. Canonical-form workspace boundary check: even if the direct
+        //      check were bypassed (e.g. via `O_NOFOLLOW` semantics), the
+        //      canonical target of `<workspace>/escape` is `/etc/passwd`,
+        //      which does not start with any `allowed_paths` entry, so the
+        //      workspace boundary check would still reject it with
+        //      `PathOutsideWorkspace`.
+        //
+        // We assert layer 1 fires (the fast path) because that's the order
+        // the validator takes — testing layer 2 in isolation would require
+        // bypassing the direct-symlink check, which is out of scope for this
+        // regression test.
+
+        let workspace = TempDir::new().unwrap();
+        let validator = InputValidator::with_limits(1024 * 1024, 1000, 500)
+            .with_workspace(vec![workspace.path().to_path_buf()]);
+
+        // Place a symlink inside the workspace that points to /etc/passwd
+        // (a path the workspace does not contain).
+        let escape = workspace.path().join("escape");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/etc/passwd", &escape).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(
+            r"C:\Windows\System32\drivers\etc\hosts",
+            &escape,
+        )
+        .unwrap();
+
+        let result = validator.validate_file_path(escape.to_str().unwrap());
+        assert!(
+            matches!(result, Err(SecurityError::SymlinkDetected { .. })),
+            "Symlink inside workspace pointing outside should be rejected with \
+             SymlinkDetected (the direct-symlink check), got: {:?}",
+            result
+        );
     }
 
     // =============================================================================
