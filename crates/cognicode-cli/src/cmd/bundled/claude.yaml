@@ -5,9 +5,14 @@ description: "Claude Code IDE integration — writes ~/.claude/mcp/cognicode-mcp
 homepage: "https://github.com/Rubentxu/CogniCode/releases"
 
 versions:
+  # PRF-F1.W3 (H8): the artifact referenced in `url` is symbolic; the
+  # actual installed content comes from the YAML body itself
+  # (templates + integrate/uninstall rules below). The sha256 below is
+  # the SHA-256 of this YAML file — it documents the integrity of the
+  # template bundle rather than a separate tarball that does not exist.
   - ref: v0.1.0
     artifact: "claude-adapter-0.1.0.tar.gz"
-    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    sha256: "35607b92c037e7527ddb7860f7929a1b6cc826e5a25d98d2a6e24d96e1a14b7b"
     url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.1.0/claude-adapter-0.1.0.tar.gz"
     min_cogh: ">=0.1.0"
 

@@ -5,9 +5,11 @@ description: "CogniCode podman container specs (rust, py, go, java, js, ts)"
 homepage: "https://github.com/Rubentxu/CogniCode/releases"
 
 versions:
+  # PRF-F1.W3 (H8): see claude.yaml — sha256 covers the embedded template,
+  # not an external tarball (which does not exist for sandbox-templates).
   - ref: v0.92.0
     artifact: "sandbox-templates-0.92.0.tar.gz"
-    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    sha256: "af56f9073371770c548b4928b26573118ab81ce047e8af6986866eabf11f460f"
     url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.92.0/sandbox-templates-0.92.0.tar.gz"
 
 binaries: []   # container specs are pulled + quadlets, not binaries

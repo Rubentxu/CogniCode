@@ -5,9 +5,11 @@ description: "CogniCode portable skill bundles — IDE-agnostic"
 homepage: "https://github.com/Rubentxu/CogniCode/releases"
 
 versions:
+  # PRF-F1.W3 (H8): see claude.yaml — sha256 covers the embedded template,
+  # not an external tarball (which does not exist for skill bundles).
   - ref: v0.92.0
     artifact: "skills-cognicode-core-0.92.0.tar.gz"
-    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    sha256: "0d2bb466d6955955289d97f7debec6ec8df8eec075687b10d8a9ff68815b4fdd"
     url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.92.0/skills-cognicode-core-0.92.0.tar.gz"
 
 binaries: []   # skill bundles are not binaries; they are ported via IDE adapters

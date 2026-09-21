@@ -5,9 +5,11 @@ description: "Codex IDE integration — patches ~/.codex/config.toml with [mcp_s
 homepage: "https://github.com/Rubentxu/CogniCode/releases"
 
 versions:
+  # PRF-F1.W3 (H8): see claude.yaml — sha256 covers the embedded template,
+  # not an external tarball (which does not exist).
   - ref: v0.1.0
     artifact: "codex-adapter-0.1.0.tar.gz"
-    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    sha256: "a205c0560d662e13f5aba72c115979cb2c719d9c70971bb9249a97717a9d6320"
     url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.1.0/codex-adapter-0.1.0.tar.gz"
     min_cogh: ">=0.1.0"
 

@@ -5,9 +5,11 @@ description: "ZCode IDE integration — patches ~/.zcode/v2/config.json"
 homepage: "https://github.com/Rubentxu/CogniCode/releases"
 
 versions:
+  # PRF-F1.W3 (H8): see claude.yaml — sha256 covers the embedded template,
+  # not an external tarball (which does not exist).
   - ref: v0.1.0
     artifact: "zcode-adapter-0.1.0.tar.gz"
-    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    sha256: "e4af09bd30547956fa3353285f6614ea617accafc410f7c4f56d80e77b7ccf10"
     url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.1.0/zcode-adapter-0.1.0.tar.gz"
     min_cogh: ">=0.1.0"
 
