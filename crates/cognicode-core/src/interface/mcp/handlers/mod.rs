@@ -54,7 +54,7 @@ use crate::application::dto::{
     SystemPromptContext,
 };
 use crate::application::error::AppError;
-use crate::application::services::analysis_service::AnalysisService;
+use crate::application::services::analysis_service::{AnalysisService, UsageSearchParams};
 use crate::application::services::context_compressor::ContextCompressorService;
 use crate::application::services::refactor_service::RefactorService;
 use crate::domain::aggregates::call_graph::SymbolId;
@@ -1388,125 +1388,6 @@ fn estimate_symbol_length(_name: &str, _kind: &str) -> u32 {
     10
 }
 
-struct Usage {
-    file: String,
-    line: u32,
-    column: u32,
-    context: String,
-    is_definition: bool,
-    context_lines: Option<ContextLines>,
-}
-
-struct UsageSearchParams {
-    project_dir: PathBuf,
-    symbol_name: String,
-    include_declaration: bool,
-    context_lines: Option<usize>,
-    first_only_definition: bool,
-}
-
-fn find_symbol_usages(params: UsageSearchParams) -> Result<Vec<Usage>, String> {
-    let mut usages = Vec::new();
-    let mut seen_first_definition = false;
-
-    // Directories to skip during traversal (common dependency/build/cache dirs)
-    const SKIP_DIRS: &[&str] = &[
-        "node_modules",
-        ".git",
-        "target",
-        "vendor",
-        "dist",
-        "build",
-        "__pycache__",
-        ".cache",
-        ".next",
-        ".nuxt",
-        "coverage",
-        ".tox",
-        "venv",
-        ".venv",
-        "env",
-    ];
-
-    for entry in walkdir::WalkDir::new(&params.project_dir)
-        .follow_links(true)
-        .into_iter()
-        .filter_entry(|e| {
-            // Skip known dependency/build/cache directories
-            if let Some(name) = e.file_name().to_str() {
-                !SKIP_DIRS.contains(&name)
-            } else {
-                true
-            }
-        })
-        .filter_map(|e| e.ok())
-    {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        let language =
-            match crate::infrastructure::parser::Language::from_extension(path.extension()) {
-                Some(lang) => lang,
-                None => continue,
-            };
-
-        let source = match std::fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-
-        let parser = match crate::infrastructure::parser::TreeSitterParser::new(language) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-
-        if let Ok(occurrences) =
-            parser.find_all_occurrences_of_identifier(&source, &params.symbol_name)
-        {
-            for occ in occurrences {
-                let has_def_keyword = occ.context.contains("def ")
-                    || occ.context.contains("class ")
-                    || occ.context.contains("struct ")
-                    || occ.context.contains("fn ")
-                    || occ.context.contains("function ")
-                    || occ.context.contains("const ")
-                    || occ.context.contains("let ");
-
-                let is_definition = if params.first_only_definition {
-                    has_def_keyword && !seen_first_definition
-                } else {
-                    has_def_keyword
-                };
-
-                if has_def_keyword && !seen_first_definition {
-                    seen_first_definition = true;
-                }
-
-                if !params.include_declaration && is_definition {
-                    continue;
-                }
-
-                let context_lines = params
-                    .context_lines
-                    .map(|ctx| get_context_lines(&source, occ.line as usize, ctx));
-
-                usages.push(Usage {
-                    file: path.to_string_lossy().into_owned(),
-                    line: occ.line + 1,
-                    column: occ.column,
-                    context: occ.context.clone(),
-                    is_definition,
-                    context_lines,
-                });
-            }
-        }
-    }
-
-    Ok(usages)
-}
-
 /// Handler for find_usages tool
 #[cognicode_macros::aix_tool(
     name = "find_usages",
@@ -1519,14 +1400,16 @@ pub async fn handle_find_usages(
 ) -> HandlerResult<FindUsagesOutput> {
     ctx.validator.validate_query(&input.symbol_name)?;
 
-    let usages = find_symbol_usages(UsageSearchParams {
-        project_dir: ctx.working_dir.clone(),
-        symbol_name: input.symbol_name.clone(),
-        include_declaration: input.include_declaration,
-        context_lines: input.context_lines,
-        first_only_definition: true,
-    })
-    .map_err(|e| HandlerError::App(AppError::AnalysisError(e)))?;
+    let usages = ctx
+        .analysis_service
+        .find_symbol_usages(UsageSearchParams {
+            project_dir: ctx.working_dir.clone(),
+            symbol_name: input.symbol_name.clone(),
+            include_declaration: input.include_declaration,
+            context_lines: input.context_lines,
+            first_only_definition: true,
+        })
+        .map_err(|e| HandlerError::App(AppError::AnalysisError(e.to_string())))?;
 
     let total = usages.len();
 
@@ -1538,7 +1421,11 @@ pub async fn handle_find_usages(
             column: u.column,
             context: u.context,
             is_definition: u.is_definition,
-            surrounding_lines: u.context_lines,
+            surrounding_lines: u.context_lines.map(|c| ContextLines {
+                before: c.before,
+                current: c.current,
+                after: c.after,
+            }),
         })
         .collect();
 
@@ -3568,14 +3455,15 @@ pub async fn handle_find_usages_with_context(
 ) -> HandlerResult<FindUsagesWithContextOutput> {
     validator.validate_query(&input.symbol)?;
 
-    let usages = find_symbol_usages(UsageSearchParams {
-        project_dir: working_dir,
-        symbol_name: input.symbol.clone(),
-        include_declaration: input.include_declaration,
-        context_lines: Some(input.context_lines as usize),
-        first_only_definition: false,
-    })
-    .map_err(|e| HandlerError::App(AppError::AnalysisError(e)))?;
+    let usages = AnalysisService::new()
+        .find_symbol_usages(UsageSearchParams {
+            project_dir: working_dir,
+            symbol_name: input.symbol.clone(),
+            include_declaration: input.include_declaration,
+            context_lines: Some(input.context_lines as usize),
+            first_only_definition: false,
+        })
+        .map_err(|e| HandlerError::App(AppError::AnalysisError(e.to_string())))?;
 
     let total = usages.len();
 
@@ -3586,11 +3474,18 @@ pub async fn handle_find_usages_with_context(
             line: u.line,
             column: u.column,
             context: u.context,
-            context_lines: u.context_lines.unwrap_or(ContextLines {
-                before: vec![],
-                current: String::new(),
-                after: vec![],
-            }),
+            context_lines: u.context_lines.map_or(
+                ContextLines {
+                    before: vec![],
+                    current: String::new(),
+                    after: vec![],
+                },
+                |c| ContextLines {
+                    before: c.before,
+                    current: c.current,
+                    after: c.after,
+                },
+            ),
             is_definition: u.is_definition,
         })
         .collect();
@@ -3600,30 +3495,6 @@ pub async fn handle_find_usages_with_context(
         usages: usage_entries,
         total,
     })
-}
-
-/// Gets surrounding context lines for a given line
-fn get_context_lines(source: &str, line: usize, context_size: usize) -> ContextLines {
-    let lines: Vec<&str> = source.lines().collect();
-
-    let before_start = line.saturating_sub(context_size);
-    let after_end = (line + 1 + context_size).min(lines.len());
-
-    let before: Vec<String> = (before_start..line)
-        .map(|i| lines.get(i).unwrap_or(&"").to_string())
-        .collect();
-
-    let current = lines.get(line).unwrap_or(&"").to_string();
-
-    let after: Vec<String> = ((line + 1)..after_end)
-        .map(|i| lines.get(i).unwrap_or(&"").to_string())
-        .collect();
-
-    ContextLines {
-        before,
-        current,
-        after,
-    }
 }
 
 // Sanitize a name for use as a Mermaid node ID
