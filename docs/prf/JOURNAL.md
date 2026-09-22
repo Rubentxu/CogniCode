@@ -2501,3 +2501,27 @@ del programa PRF activo).
   `update` sin staging).
 - **NO ejecuta:** push, tag, C7 firma, ejecución del smoke pre-publicación.
   Operator-gated.
+
+## 2026-09-22 — U05 / PRF-MCP-01: cliente MCP externo real (entrada 45)
+
+- **UAT ejecutada** (`docs/prf/evidence/u05-mcp-external-client/run1/`):
+  cliente externo real (script bash + JSON-RPC por stdio contra el shim
+  instalado 0.97.3, `--cwd` apuntando al repo).
+- **Contrato verificado (todo OBSERVED):**
+  1. `initialize` → result con protocolVersion 2024-11-05, capabilities
+     (resources, tools), serverInfo cognicode 0.97.3.
+  2. `notifications/initialized` aceptada.
+  3. `tools/list` → catálogo completo (20 herramientas).
+  4. `tools/call` válido (`get_complexity`) → resultado con métricas.
+  5. Tool inexistente → `isError:true` con mensaje honesto (no crash).
+  6. Argumentos inválidos → `invalid input` con `isError:true`.
+  7. Línea corrupta no-JSON → error JSON-RPC `-32700 Parse error`,
+     servidor vivo (respondió después).
+  8. Terminación limpia: exit=0 tras cierre de stdin (timeout de guardia
+     no hizo falta).
+  9. Separación de flujos: stdout 100% JSON válido (verificado
+     línea a línea); logs de telemetría solo en stderr.
+- **Estado:** U05 y PRF-MCP-01 pasan de NOT_RUN a PASS (cliente externo
+  real, evidencia cruda conservada). Cobertura temporal: HEAD 69481cf2,
+  binario shim 0.97.3 (RC local verificada).
+- **NO ejecuta:** push, tag, C7 firma. Operator-gated.

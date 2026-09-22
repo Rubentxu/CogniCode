@@ -84,7 +84,7 @@
 
 | Requisito | Disposición | Evidencia / Notas |
 |---|---|---|
-| PRF-MCP-01 (initialize, tools/list, tools/call, errores, terminación con cliente externo real) | NOT_RUN | No hay UAT con cliente externo real. |
+| PRF-MCP-01 (initialize, tools/list, tools/call, errores, terminación con cliente externo real) | PASS | UAT ejecutada 2026-09-22 con cliente externo real sobre shim 0.97.3 instalado; evidencia en `evidence/u05-mcp-external-client/run1/` (JOURNAL §45): initialize/tools-list/tools-call/errores honestos/-32700 sin crash/exit 0/stdout JSON puro. |
 | PRF-MCP-02 (stdout JSON-RPC exclusivo; logs a stderr; sin huérfanos) | PARTIAL | Diseñado; no UAT con captura exhaustiva. |
 | PRF-MCP-03 (core read-only sin red/OTLP/Explorer/backend/Podman) | PARTIAL | Operativo; UAT específica con apagado total de red no ejecutada. |
 | PRF-MCP-04 (herramientas con esquema, permisos, versiones, límites; error tipado) | PARTIAL | Schmemas existen; permisos/budgets no uniformes. |
@@ -128,7 +128,7 @@
 | U02 | CLI,MCP | `cognicode --help`, `cogh doctor`, MCP `tools/list` vs matriz | PARTIAL | `cogh doctor` y `tools/list` no auditados como UAT |
 | U03 | CI,ANA | Baseline/goldens 2 veces; cobertura, tiempos, RSS | NOT_RUN | No ejecutado sobre `178f8a5b` |
 | U04 | CLI,MCP,SEC | Apagar red y OTLP; CLI y MCP arrancan; stdout solo JSON-RPC | PARTIAL | Operativo; UAT específica no |
-| U05 | MCP | Cliente MCP externo: initialize/tools/call/error/shutdown | NOT_RUN | Sin cliente externo capturando |
+| U05 | MCP | Cliente MCP externo: initialize/tools/call/error/shutdown | PASS | 2026-09-22: sesión completa capturada en `evidence/u05-mcp-external-client/run1/` (JOURNAL §45) |
 | U06 | CLI,SEC,ANA | Workspace inexistente / sin permisos / vacío / lenguaje no soportado | PARTIAL | Cobertura parcial en código; UAT formal con corpus adversariales no |
 | U07 | CLI,ANA | Unicode, espacios, cwd, config inválida | PARTIAL | Idem |
 | U08 | CLI,MCP,ANA | Misma consulta CLI/MCP sobre snapshot fijo → misma semántica | PARTIAL | U-F3-001 equivalente a U08 con corpus pequeño |

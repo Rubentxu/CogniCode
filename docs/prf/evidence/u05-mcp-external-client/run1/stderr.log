@@ -1,0 +1,13 @@
+[2m2026-09-22T10:45:24.684104Z[0m [32m INFO[0m  [3mname[0m[2m=[0m"MeterProvider.Built"
+[2m2026-09-22T10:45:24.684133Z[0m [32m INFO[0m  [3mname[0m[2m=[0m"MeterProvider.GlobalSet" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().
+[2m2026-09-22T10:45:24.687876Z[0m [32m INFO[0m Rayon global thread pool initialized with 8 MB stack size
+[2m2026-09-22T10:45:24.687884Z[0m [32m INFO[0m Starting CogniCode MCP Server v0.97.3
+[2m2026-09-22T10:45:24.687886Z[0m [32m INFO[0m Starting standalone in-memory handler
+[2m2026-09-22T10:45:24.688474Z[0m [32m INFO[0m [1mserve_inner[0m: Service initialized as server [3mpeer_info[0m[2m=[0mSome(InitializeRequestParams { meta: None, protocol_version: ProtocolVersion("2024-11-05"), capabilities: ClientCapabilities { experimental: None, extensions: None, roots: None, sampling: None, elicitation: None, tasks: None }, client_info: Implementation { name: "prf-u05-external", title: None, version: "0.97.3", description: None, icons: None, website_url: None } })
+[2m2026-09-22T10:45:24.978032Z[0m [32m INFO[0m [1mserve_inner[0m: received notification [3mnotification[0m[2m=[0mInitializedNotification(NotificationNoParam { method: InitializedNotificationMethod, extensions: Extensions })
+[2m2026-09-22T10:45:24.978087Z[0m [32m INFO[0m [1mserve_inner[0m: client initialized
+[2m2026-09-22T10:45:25.292350Z[0m [32m INFO[0m [1mserve_inner[0m: tool_call [3mtool[0m[2m=[0mget_complexity [3mduration_ms[0m[2m=[0m12 [3mstatus[0m[2m=[0mok
+[2m2026-09-22T10:45:30.281742Z[0m [32m INFO[0m [1mserve_inner[0m: tool_call [3mtool[0m[2m=[0mnonexistent_tool [3mduration_ms[0m[2m=[0m0 [3mstatus[0m[2m=[0mmissing
+[2m2026-09-22T10:45:30.783468Z[0m [32m INFO[0m [1mserve_inner[0m: tool_call [3mtool[0m[2m=[0mget_file_symbols [3mduration_ms[0m[2m=[0m0 [3mstatus[0m[2m=[0merror
+[2m2026-09-22T10:45:31.787370Z[0m [32m INFO[0m [1mserve_inner[0m: input stream terminated
+[2m2026-09-22T10:45:31.787418Z[0m [32m INFO[0m [1mserve_inner[0m: serve finished [3mquit_reason[0m[2m=[0mClosed
