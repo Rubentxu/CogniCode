@@ -40,3 +40,12 @@ Job `feature-matrix` añadido a ci.yml (8 combos, fail-fast: false).
 PARTIAL: matriz de features DONE. Pendientes en CI-02: adversariales y
 benchmarks en la campaña nightly (comparación con baseline, desbloqueada
 por §52).
+
+## Parte 2 (§57): adversariales + benchmarks
+
+- `adversarial` job: parser adversarial suite (84/0 serial), drift e2e
+  (10/0), canonical grounding e2e con evidence-kernel (10/0), workspace
+  isolation (2/0), contract e2e MCP stdio.
+- `benchmarks` job: criterion sobre cognicode-core; reporte subido como
+  artefacto para comparar baseline exacto por entorno (report-only).
+  Smoke local: `graph_benchmarks::search` 79.9ns.

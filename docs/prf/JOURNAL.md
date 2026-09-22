@@ -2693,3 +2693,13 @@ bootstrap_ladybug en runtime, patrones e imports en explorer.
 fmt y clippy limpios.
 **Matriz**: PRF-CI-02 → PARTIAL (matriz DONE; quedan adversariales + benchmarks
 nightly). Siguiente: benchmarks de campaña o UAT binario real pendientes.
+
+## §57 — PRF-CI-02 (parte 2): adversariales + benchmarks — PASS de implementación (2026-09-22)
+
+Jobs `adversarial` y `benchmarks` añadidos a la campaña local (ci.yml vía act).
+Adversariales verificados localmente: parser 84/0, drift 10/0, grounding
+(evidence-kernel) 10/0, isolation 2/0; contract MCP por stdio ya en suite.
+Benchmarks: criterion con artefacto por entorno (report-only; smoke 79.9ns).
+**Nota**: ejecución efectiva de la campaña requiere `act`/push (operator-gated);
+la definición y sus lanes están verificadas localmente. CI-02 queda PARTIAL →
+cobertura declarativa completa, ejecución remota pendiente de gate.
