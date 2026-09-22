@@ -894,6 +894,39 @@ mod tests {
     use super::*;
     use crate::layout::test_support::TempCognicodeHome;
 
+    /// Regression: --home must not write a shim in COGNICODE_HOME.
+    /// It must materialise both binaries and their distinct portable skills.
+    #[test]
+    #[serial_test::serial]
+    fn custom_home_reviewer_does_not_write_into_ambient_home() {
+        let ambient = TempCognicodeHome::new();
+        let tmp = tempfile::tempdir().expect("explicit home");
+        let home = crate::layout::CognicodeHome {
+            root: tmp.path().join("runtime"),
+        };
+        home.init().expect("init runtime");
+        let release = crate::release_test_support::local_release(env!("CARGO_PKG_VERSION"))
+            .expect("prepare real payload archives");
+        crate::release_test_support::point_at(&release);
+
+        let result = InstallerTransaction::run(&home, "reviewer");
+        crate::release_test_support::unpoint();
+        result.expect("reviewer profile must install CLI, MCP and skills");
+
+        assert!(home.shim_path("cognicode").is_file());
+        assert!(home.shim_path("cognicode-mcp").is_file());
+        assert!(home
+            .skill_bundle(env!("CARGO_PKG_VERSION"), "cognicode")
+            .join("SKILL.md")
+            .is_file());
+        assert!(home
+            .skill_bundle(env!("CARGO_PKG_VERSION"), "cognicode-mcp")
+            .join("SKILL.md")
+            .is_file());
+        assert!(!ambient.path().join("shims/cognicode-mcp").exists());
+        assert!(!ambient.path().join("cache/cognicode-mcp.tar.gz").exists());
+    }
+
     /// Custom --home must own all installation paths. A stale manifest in the
     /// default COGNICODE_HOME must never override a release staged in --home.
     #[test]
@@ -2016,7 +2049,8 @@ components:
         std::fs::create_dir_all(&cache_dir).unwrap();
         let payload_dir = tempfile::tempdir().unwrap();
         std::fs::write(payload_dir.path().join("SKILL.md"), "---\nname: x\n---\n").unwrap();
-        let tarball = cache_dir.join("skills-for-claude.tar.gz");
+        let tarball = skill_cache_path(&home, "0.95.0", "skills-for-claude");
+        std::fs::create_dir_all(tarball.parent().unwrap()).unwrap();
         {
             let f = std::fs::File::create(&tarball).unwrap();
             let enc = flate2::write::GzEncoder::new(f, flate2::Compression::fast());
@@ -2126,7 +2160,13 @@ components:
         .unwrap();
 
         let make_tarball = |name: &str, src: &Path| {
-            let f = std::fs::File::create(cache_dir.join(format!("{name}.tar.gz"))).unwrap();
+            let dest = if name == "skills-for-claude" {
+                skill_cache_path(&home, "0.95.0", name)
+            } else {
+                cache_dir.join(format!("{name}.tar.gz"))
+            };
+            std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+            let f = std::fs::File::create(dest).unwrap();
             let enc = flate2::write::GzEncoder::new(f, flate2::Compression::fast());
             let mut tar = tar::Builder::new(enc);
             for entry in std::fs::read_dir(src).unwrap() {
