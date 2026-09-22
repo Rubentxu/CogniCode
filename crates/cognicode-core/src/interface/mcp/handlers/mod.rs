@@ -1167,9 +1167,7 @@ pub async fn handle_build_graph(
             None => true, // No/corrupt snapshot → stale (rebuild)
         };
 
-        if !is_stale
-            && let Some((graph, manifest)) = snapshot
-        {
+        if !is_stale && let Some((graph, manifest)) = snapshot {
             ctx.analysis_service.graph_cache().set(graph);
             let store = ctx.get_graph_store();
             let _ = store.save_manifest(&manifest);
@@ -5676,7 +5674,11 @@ mod tests {
             let mk_input = || BuildGraphInput { directory: None };
 
             let first = handle_build_graph(&ctx, mk_input()).await.unwrap();
-            assert!(first.message.contains("built"), "first call builds: {}", first.message);
+            assert!(
+                first.message.contains("built"),
+                "first call builds: {}",
+                first.message
+            );
 
             let second = handle_build_graph(&ctx, mk_input()).await.unwrap();
             assert!(
@@ -5691,7 +5693,11 @@ mod tests {
 
             // A source change must still invalidate the in-session cache.
             std::thread::sleep(std::time::Duration::from_millis(1100));
-            std::fs::write(tempdir.path().join("stable.rs"), "fn stable() {}\nfn evolved() {}\n").unwrap();
+            std::fs::write(
+                tempdir.path().join("stable.rs"),
+                "fn stable() {}\nfn evolved() {}\n",
+            )
+            .unwrap();
             let third = handle_build_graph(&ctx, mk_input()).await.unwrap();
             assert!(
                 third.message.contains("built"),

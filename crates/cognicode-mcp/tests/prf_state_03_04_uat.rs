@@ -11,7 +11,10 @@ use std::path::{Path, PathBuf};
 
 async fn build(ws: &Path) -> Value {
     let mut s = McpSession::spawn(ws).await.expect("spawn");
-    let p = s.call_tool("build_graph", serde_json::json!({})).await.expect("build_graph");
+    let p = s
+        .call_tool("build_graph", serde_json::json!({}))
+        .await
+        .expect("build_graph");
     s.shutdown().await;
     p
 }
@@ -29,7 +32,10 @@ async fn durable_snapshot_loads_on_restart_and_corruption_rebuilds() {
     // 1. Primer build: crea el snapshot durable.
     let p1 = build(&ws).await;
     assert!(
-        p1.get("message").and_then(|v| v.as_str()).unwrap().contains("loaded from built"),
+        p1.get("message")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .contains("loaded from built"),
         "primer build debe construir desde fuente: {p1}"
     );
     assert!(snapshot_path(&ws).exists(), "debe persistir graph.cache");
@@ -37,7 +43,10 @@ async fn durable_snapshot_loads_on_restart_and_corruption_rebuilds() {
     // 2. Sesión fresca: carga el snapshot (persistencia real).
     let p2 = build(&ws).await;
     assert!(
-        p2.get("message").and_then(|v| v.as_str()).unwrap().contains("durable snapshot"),
+        p2.get("message")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .contains("durable snapshot"),
         "reinicio debe cargar el snapshot durable: {p2}"
     );
 
@@ -47,10 +56,16 @@ async fn durable_snapshot_loads_on_restart_and_corruption_rebuilds() {
     std::fs::write(&sp, &orig[..orig.len() / 2]).unwrap();
     let p3 = build(&ws).await;
     assert!(
-        p3.get("message").and_then(|v| v.as_str()).unwrap().contains("loaded from built"),
+        p3.get("message")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .contains("loaded from built"),
         "snapshot corrupto debe tratarse como ausente: {p3}"
     );
-    assert!(snapshot_path(&ws).exists(), "rebuild debe dejar snapshot válido");
+    assert!(
+        snapshot_path(&ws).exists(),
+        "rebuild debe dejar snapshot válido"
+    );
 
     let _ = std::fs::remove_dir_all(&ws);
 }

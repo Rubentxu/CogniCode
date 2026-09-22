@@ -44,8 +44,13 @@ fn copy_dir(src: &Path, dst: &Path) {
 fn fresh_ws(tag: &str) -> PathBuf {
     let dst = std::env::temp_dir()
         .join(format!("prf-state01-{}-{}", tag, std::process::id()))
-        .join(format!("t{}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos()));
+        .join(format!(
+            "t{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
     copy_dir(&fixture_source(), &dst);
     dst
 }
@@ -59,20 +64,39 @@ async fn derived_data_is_rebuildable_and_follows_canonical() {
     let baseline;
     {
         let mut s = McpSession::spawn(&ws).await.unwrap();
-        let g = s.call_tool("build_graph", serde_json::json!({"directory": ws.to_str().unwrap()})).await.unwrap();
+        let g = s
+            .call_tool(
+                "build_graph",
+                serde_json::json!({"directory": ws.to_str().unwrap()}),
+            )
+            .await
+            .unwrap();
         assert_eq!(g["status"], "complete");
         baseline = g["symbols_found"].as_u64().unwrap();
         assert!(baseline >= 2);
     }
-    assert!(cache_dir.join("graph.cache").exists(), "derived cache must exist");
+    assert!(
+        cache_dir.join("graph.cache").exists(),
+        "derived cache must exist"
+    );
 
     // Claim 1: derived data is disposable — rebuild from canonical.
     std::fs::remove_dir_all(&cache_dir).unwrap();
     {
         let mut s = McpSession::spawn(&ws).await.unwrap();
-        let g = s.call_tool("build_graph", serde_json::json!({"directory": ws.to_str().unwrap()})).await.unwrap();
+        let g = s
+            .call_tool(
+                "build_graph",
+                serde_json::json!({"directory": ws.to_str().unwrap()}),
+            )
+            .await
+            .unwrap();
         assert_eq!(g["status"], "complete");
-        assert_eq!(g["symbols_found"].as_u64().unwrap(), baseline, "rebuild must restore identical inventory");
+        assert_eq!(
+            g["symbols_found"].as_u64().unwrap(),
+            baseline,
+            "rebuild must restore identical inventory"
+        );
     }
 
     // Claim 2: canonical edit invalidates derived — derived follows
@@ -81,10 +105,21 @@ async fn derived_data_is_rebuildable_and_follows_canonical() {
     std::fs::write(&lib, "pub fn add(a: u32, b: u32) -> u32 { a + b }\npub fn mul(a: u32, b: u32) -> u32 { a * b }\npub fn sub(a: u32, b: u32) -> u32 { a - b }\n").unwrap();
     {
         let mut s = McpSession::spawn(&ws).await.unwrap();
-        let g = s.call_tool("build_graph", serde_json::json!({"directory": ws.to_str().unwrap()})).await.unwrap();
+        let g = s
+            .call_tool(
+                "build_graph",
+                serde_json::json!({"directory": ws.to_str().unwrap()}),
+            )
+            .await
+            .unwrap();
         assert_eq!(g["status"], "complete");
         let now = g["symbols_found"].as_u64().unwrap();
-        assert!(now > baseline, "canonical edit must be reflected ({} -> {})", baseline, now);
+        assert!(
+            now > baseline,
+            "canonical edit must be reflected ({} -> {})",
+            baseline,
+            now
+        );
     }
 
     let _ = std::fs::remove_dir_all(&ws.parent().unwrap());
@@ -96,7 +131,13 @@ async fn transient_state_does_not_leak_across_processes() {
 
     // Session 1 builds in-memory state that is never persisted.
     let mut s1 = McpSession::spawn(&ws).await.unwrap();
-    let g1 = s1.call_tool("build_graph", serde_json::json!({"directory": ws.to_str().unwrap()})).await.unwrap();
+    let g1 = s1
+        .call_tool(
+            "build_graph",
+            serde_json::json!({"directory": ws.to_str().unwrap()}),
+        )
+        .await
+        .unwrap();
     assert_eq!(g1["status"], "complete");
     drop(s1); // process ends
 
@@ -104,7 +145,13 @@ async fn transient_state_does_not_leak_across_processes() {
     // unreachable; the served inventory comes from canonical/derived and
     // is consistent with what the sources say (2 functions).
     let mut s2 = McpSession::spawn(&ws).await.unwrap();
-    let g2 = s2.call_tool("build_graph", serde_json::json!({"directory": ws.to_str().unwrap()})).await.unwrap();
+    let g2 = s2
+        .call_tool(
+            "build_graph",
+            serde_json::json!({"directory": ws.to_str().unwrap()}),
+        )
+        .await
+        .unwrap();
     assert_eq!(g2["status"], "complete");
     assert_eq!(
         g2["symbols_found"].as_u64().unwrap(),

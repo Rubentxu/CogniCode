@@ -6,7 +6,7 @@
 //! and requires Complete/honest results. Any network dependency in the
 //! core path would surface as spawn/timeout/failed tool errors.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
@@ -23,8 +23,7 @@ fn binary_path() -> PathBuf {
 }
 
 fn fixture_ws() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/mcp_03_ws")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp_03_ws")
 }
 
 struct NetnsSession {
@@ -37,7 +36,12 @@ struct NetnsSession {
 impl NetnsSession {
     async fn spawn(ws: &PathBuf) -> Self {
         let mut cmd = Command::new("unshare");
-        cmd.args(["-rn", binary_path().to_str().unwrap(), "--cwd", ws.to_str().unwrap()]);
+        cmd.args([
+            "-rn",
+            binary_path().to_str().unwrap(),
+            "--cwd",
+            ws.to_str().unwrap(),
+        ]);
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -45,7 +49,12 @@ impl NetnsSession {
         let mut child = cmd.spawn().expect("spawn unshare -rn cognicode-mcp");
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
-        let mut s = Self { child, stdin, stdout: BufReader::new(stdout), next_id: 1 };
+        let mut s = Self {
+            child,
+            stdin,
+            stdout: BufReader::new(stdout),
+            next_id: 1,
+        };
         let init = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"uat-mcp03","version":"0"}}});
         s.send(&init).await;
         let mut line = String::new();
@@ -53,9 +62,11 @@ impl NetnsSession {
             .await
             .expect("initialize timed out")
             .expect("read initialize response");
-        let m: Value = serde_json::from_str(line.trim()).expect("valid JSON-RPC initialize response");
+        let m: Value =
+            serde_json::from_str(line.trim()).expect("valid JSON-RPC initialize response");
         assert!(m.get("result").is_some(), "initialize failed: {m}");
-        s.send(&json!({"jsonrpc":"2.0","method":"notifications/initialized"})).await;
+        s.send(&json!({"jsonrpc":"2.0","method":"notifications/initialized"}))
+            .await;
         s.next_id = 2;
         s
     }
@@ -106,7 +117,12 @@ async fn mcp_core_is_fully_functional_with_no_network() {
 
     // 1. Confirm the namespace really cuts the network (control).
     let probe = std::process::Command::new("unshare")
-        .args(["-rn", "sh", "-c", "command -v curl >/dev/null && curl -m 3 -s https://example.com; echo exit=$?"])
+        .args([
+            "-rn",
+            "sh",
+            "-c",
+            "command -v curl >/dev/null && curl -m 3 -s https://example.com; echo exit=$?",
+        ])
         .output()
         .expect("unshare probe");
     let out = String::from_utf8_lossy(&probe.stdout);
@@ -120,11 +136,16 @@ async fn mcp_core_is_fully_functional_with_no_network() {
     // 2. tools/list works.
     let id = s.next_id;
     s.next_id += 1;
-    s.send(&json!({"jsonrpc":"2.0","id":id,"method":"tools/list","params":{}})).await;
+    s.send(&json!({"jsonrpc":"2.0","id":id,"method":"tools/list","params":{}}))
+        .await;
     let mut line = String::new();
     loop {
         line.clear();
-        let n = s.stdout.read_line(&mut line).await.expect("read tools/list");
+        let n = s
+            .stdout
+            .read_line(&mut line)
+            .await
+            .expect("read tools/list");
         assert!(n > 0, "stdout closed during tools/list");
         let m: Value = serde_json::from_str(line.trim()).unwrap();
         if m.get("id").and_then(|v| v.as_u64()) == Some(id) {
@@ -134,25 +155,47 @@ async fn mcp_core_is_fully_functional_with_no_network() {
                 .iter()
                 .filter_map(|t| t["name"].as_str())
                 .collect();
-            assert!(names.contains(&"build_graph"), "tools/list must expose build_graph: {names:?}");
+            assert!(
+                names.contains(&"build_graph"),
+                "tools/list must expose build_graph: {names:?}"
+            );
             break;
         }
     }
 
     // 3. build_graph completes offline.
-    let resp = s.call_tool("build_graph", json!({"directory": ws.to_str().unwrap()})).await;
+    let resp = s
+        .call_tool("build_graph", json!({"directory": ws.to_str().unwrap()}))
+        .await;
     let result: Value = serde_json::from_str(
-        resp["result"]["content"][0]["text"].as_str().expect("text content"),
-    ).expect("build_graph JSON result");
-    assert_eq!(result["status"], "complete", "build_graph must be complete offline: {result}");
+        resp["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text content"),
+    )
+    .expect("build_graph JSON result");
+    assert_eq!(
+        result["status"], "complete",
+        "build_graph must be complete offline: {result}"
+    );
     let symbols = result["symbols_found"]
         .as_u64()
         .unwrap_or_else(|| panic!("no symbols_found in result: {result}"));
-    assert!(symbols >= 2, "expected at least the two fixture functions, got {symbols}");
+    assert!(
+        symbols >= 2,
+        "expected at least the two fixture functions, got {symbols}"
+    );
 
     // 4. analyze completes offline (pure-core query path).
-    let resp = s.call_tool("analyze_code", json!({"directory": ws.to_str().unwrap(), "path": "src/lib.rs"})).await;
-    let text = resp["result"]["content"][0]["text"].as_str().expect("analyze text").to_string();
+    let resp = s
+        .call_tool(
+            "analyze_code",
+            json!({"directory": ws.to_str().unwrap(), "path": "src/lib.rs"}),
+        )
+        .await;
+    let text = resp["result"]["content"][0]["text"]
+        .as_str()
+        .expect("analyze text")
+        .to_string();
     let _analyzed: Option<Value> = serde_json::from_str(&text).ok();
     assert!(
         !text.contains("\"error\"") || text.contains("status"),
@@ -168,5 +211,8 @@ fn unshare_is_available_for_this_uat() {
         .args(["-rn", "true"])
         .status()
         .expect("spawn unshare");
-    assert!(ok.success(), "unshare -rn unavailable; MCP-03 UAT cannot run honestly");
+    assert!(
+        ok.success(),
+        "unshare -rn unavailable; MCP-03 UAT cannot run honestly"
+    );
 }

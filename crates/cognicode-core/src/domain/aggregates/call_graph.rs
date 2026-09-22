@@ -1216,13 +1216,25 @@ mod tests {
         let mut graph = CallGraph::new();
         let names = ["zeta", "alpha", "mid", "beta", "omega"];
         for (i, n) in names.iter().enumerate() {
-            let sym = Symbol::new(*n, SymbolKind::Function, Location::new("t.rs", (i + 1) as u32, 1));
+            let sym = Symbol::new(
+                *n,
+                SymbolKind::Function,
+                Location::new("t.rs", (i + 1) as u32, 1),
+            );
             graph.add_symbol(sym);
         }
         let mut rounds = Vec::new();
         for _ in 0..16 {
-            let r: Vec<_> = graph.roots().iter().map(|id| graph.get_symbol(id).unwrap().name().to_string()).collect();
-            let l: Vec<_> = graph.leaves().iter().map(|id| graph.get_symbol(id).unwrap().name().to_string()).collect();
+            let r: Vec<_> = graph
+                .roots()
+                .iter()
+                .map(|id| graph.get_symbol(id).unwrap().name().to_string())
+                .collect();
+            let l: Vec<_> = graph
+                .leaves()
+                .iter()
+                .map(|id| graph.get_symbol(id).unwrap().name().to_string())
+                .collect();
             rounds.push((r, l));
         }
         let (first_r, first_l) = &rounds[0];

@@ -12,7 +12,7 @@
 //! RED→GREEN: before this change there was no way to run the MCP server
 //! read-only; write_file was always callable.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -53,19 +53,30 @@ impl Session {
         let mut child = cmd.spawn().expect("spawn cognicode-mcp");
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
-        let mut s = Self { child, stdin, stdout: BufReader::new(stdout), next_id: 1 };
+        let mut s = Self {
+            child,
+            stdin,
+            stdout: BufReader::new(stdout),
+            next_id: 1,
+        };
         s.send(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"uat-sec02","version":"0"}}})).await;
         let mut line = String::new();
         tokio::time::timeout(Duration::from_secs(60), s.stdout.read_line(&mut line))
-            .await.expect("init timeout").expect("read init");
+            .await
+            .expect("init timeout")
+            .expect("read init");
         assert!(line.contains("\"result\""), "initialize failed: {line}");
-        s.send(&json!({"jsonrpc":"2.0","method":"notifications/initialized"})).await;
+        s.send(&json!({"jsonrpc":"2.0","method":"notifications/initialized"}))
+            .await;
         s.next_id = 2;
         s
     }
 
     async fn send(&mut self, v: &Value) {
-        self.stdin.write_all(format!("{v}\n").as_bytes()).await.expect("write");
+        self.stdin
+            .write_all(format!("{v}\n").as_bytes())
+            .await
+            .expect("write");
         self.stdin.flush().await.expect("flush");
     }
 
@@ -98,7 +109,9 @@ impl Session {
             if let Some(c) = &cursor {
                 params["cursor"] = json!(c);
             }
-            let resp = self.request(json!({"jsonrpc":"2.0","id":id,"method":"tools/list","params":params})).await;
+            let resp = self
+                .request(json!({"jsonrpc":"2.0","id":id,"method":"tools/list","params":params}))
+                .await;
             for t in resp["result"]["tools"].as_array().expect("tools") {
                 names.push(t["name"].as_str().unwrap().to_string());
             }
@@ -106,7 +119,9 @@ impl Session {
                 .as_str()
                 .or_else(|| resp["result"]["next_cursor"].as_str())
                 .map(|s| s.to_string());
-            if cursor.is_none() { break; }
+            if cursor.is_none() {
+                break;
+            }
         }
         names
     }
@@ -119,7 +134,9 @@ impl Session {
 }
 
 impl Drop for Session {
-    fn drop(&mut self) { let _ = self.child.start_kill(); }
+    fn drop(&mut self) {
+        let _ = self.child.start_kill();
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -132,17 +149,36 @@ async fn read_only_mode_hides_and_rejects_mutating_tools_but_keeps_reads() {
 
     // 1. tools/list (paginated) must NOT advertise write_file/edit_file.
     let names = s.all_tool_names().await;
-    assert!(!names.contains(&"write_file".to_string()), "write_file must not be advertised read-only: {names:?}");
-    assert!(!names.contains(&"edit_file".to_string()), "edit_file must not be advertised read-only");
-    assert!(names.contains(&"build_graph".to_string()), "read tools must remain advertised");
+    assert!(
+        !names.contains(&"write_file".to_string()),
+        "write_file must not be advertised read-only: {names:?}"
+    );
+    assert!(
+        !names.contains(&"edit_file".to_string()),
+        "edit_file must not be advertised read-only"
+    );
+    assert!(
+        names.contains(&"build_graph".to_string()),
+        "read tools must remain advertised"
+    );
 
     // 2. Direct tools/call to write_file is rejected; nothing written.
-    let resp = s.call_tool("write_file", json!({"path": "sec02_canary.txt", "content": "pwned"})).await;
-    let text = resp["result"]["content"][0]["text"].as_str().unwrap_or_default();
-    let is_error = resp["result"]["isError"].as_bool().unwrap_or(false)
-        || text.contains("read_only_mode");
+    let resp = s
+        .call_tool(
+            "write_file",
+            json!({"path": "sec02_canary.txt", "content": "pwned"}),
+        )
+        .await;
+    let text = resp["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap_or_default();
+    let is_error =
+        resp["result"]["isError"].as_bool().unwrap_or(false) || text.contains("read_only_mode");
     assert!(is_error, "write_file must fail in read-only mode: {resp}");
-    assert!(!canary.exists(), "read-only mode must not write the canary file");
+    assert!(
+        !canary.exists(),
+        "read-only mode must not write the canary file"
+    );
 
     // 2b. PRF-EXT-01: metadata must expose the permission flag for every
     // advertised tool, with mutators exactly matching the declared set.
@@ -156,7 +192,9 @@ async fn read_only_mode_hides_and_rejects_mutating_tools_but_keeps_reads() {
         if let Some(c) = &cursor {
             params["cursor"] = json!(c);
         }
-        let resp = s.request(json!({"jsonrpc":"2.0","id":id,"method":"tools/list","params":params})).await;
+        let resp = s
+            .request(json!({"jsonrpc":"2.0","id":id,"method":"tools/list","params":params}))
+            .await;
         for t in resp["result"]["tools"].as_array().unwrap() {
             let name = t["name"].as_str().unwrap();
             let m = &t["_meta"]["cognicode"];
@@ -177,18 +215,29 @@ async fn read_only_mode_hides_and_rejects_mutating_tools_but_keeps_reads() {
             .as_str()
             .or_else(|| resp["result"]["next_cursor"].as_str())
             .map(|s| s.to_string());
-        if cursor.is_none() { break; }
+        if cursor.is_none() {
+            break;
+        }
     }
     assert!(
         flagged.is_empty(),
         "read-only mode advertises no mutating tools, so none may be flagged: {flagged:?}"
     );
-    assert!(total_flagged >= 70, "expected the full read tool surface, got {total_flagged}");
+    assert!(
+        total_flagged >= 70,
+        "expected the full read tool surface, got {total_flagged}"
+    );
 
     // 3. Read tools still work: build_graph completes.
-    let resp = s.call_tool("build_graph", json!({"directory": ws.to_str().unwrap()})).await;
-    let result: Value = serde_json::from_str(resp["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
-    assert_eq!(result["status"], "complete", "build_graph must work read-only: {result}");
+    let resp = s
+        .call_tool("build_graph", json!({"directory": ws.to_str().unwrap()}))
+        .await;
+    let result: Value =
+        serde_json::from_str(resp["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        result["status"], "complete",
+        "build_graph must work read-only: {result}"
+    );
 
     let _ = std::fs::remove_file(&canary);
 }
@@ -201,7 +250,10 @@ async fn default_mode_keeps_write_file_available() {
 
     let mut s = Session::spawn(&ws, false).await;
     let names = s.all_tool_names().await;
-    assert!(names.contains(&"write_file".to_string()), "default mode must keep write_file advertised");
+    assert!(
+        names.contains(&"write_file".to_string()),
+        "default mode must keep write_file advertised"
+    );
 
     // PRF-EXT-01: default mode flags exactly the three mutating tools.
     let mut flagged = Vec::new();
@@ -213,9 +265,14 @@ async fn default_mode_keeps_write_file_available() {
         if let Some(c) = &cursor {
             params["cursor"] = json!(c);
         }
-        let resp = s.request(json!({"jsonrpc":"2.0","id":id,"method":"tools/list","params":params})).await;
+        let resp = s
+            .request(json!({"jsonrpc":"2.0","id":id,"method":"tools/list","params":params}))
+            .await;
         for t in resp["result"]["tools"].as_array().unwrap() {
-            if t["_meta"]["cognicode"]["mutates_workspace"].as_bool().unwrap_or(false) {
+            if t["_meta"]["cognicode"]["mutates_workspace"]
+                .as_bool()
+                .unwrap_or(false)
+            {
                 flagged.push(t["name"].as_str().unwrap().to_string());
             }
         }
@@ -223,17 +280,31 @@ async fn default_mode_keeps_write_file_available() {
             .as_str()
             .or_else(|| resp["result"]["next_cursor"].as_str())
             .map(|s| s.to_string());
-        if cursor.is_none() { break; }
+        if cursor.is_none() {
+            break;
+        }
     }
     flagged.sort();
     assert_eq!(
         flagged,
-        vec!["edit_file".to_string(), "reparse_on_edit".to_string(), "write_file".to_string()],
+        vec![
+            "edit_file".to_string(),
+            "reparse_on_edit".to_string(),
+            "write_file".to_string()
+        ],
         "exactly the declared mutating tools must be flagged"
     );
 
-    let resp = s.call_tool("write_file", json!({"path": "sec02_default_canary.txt", "content": "ok"})).await;
-    assert!(!resp["result"]["isError"].as_bool().unwrap_or(false), "write_file must work in default mode: {resp}");
+    let resp = s
+        .call_tool(
+            "write_file",
+            json!({"path": "sec02_default_canary.txt", "content": "ok"}),
+        )
+        .await;
+    assert!(
+        !resp["result"]["isError"].as_bool().unwrap_or(false),
+        "write_file must work in default mode: {resp}"
+    );
     assert!(target.exists(), "default-mode write must create the file");
 
     let _ = std::fs::remove_file(&target);

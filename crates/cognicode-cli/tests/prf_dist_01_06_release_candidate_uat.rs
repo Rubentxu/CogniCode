@@ -45,14 +45,8 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
         .parent()
         .unwrap()
         .to_path_buf();
-    let stage = std::env::temp_dir().join(format!(
-        "prf-dist-uat-stage-{}",
-        std::process::id()
-    ));
-    let generated = std::env::temp_dir().join(format!(
-        "prf-dist-uat-gen-{}",
-        std::process::id()
-    ));
+    let stage = std::env::temp_dir().join(format!("prf-dist-uat-stage-{}", std::process::id()));
+    let generated = std::env::temp_dir().join(format!("prf-dist-uat-gen-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&stage);
     let _ = std::fs::remove_dir_all(&generated);
     std::fs::create_dir_all(&stage).unwrap();

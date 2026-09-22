@@ -60,7 +60,8 @@ impl CogniCodeHandler {
 
     /// Set of tools that mutate workspace state. Single source of truth
     /// shared by `list_tools` filtering and `call_tool` rejection.
-    pub const MUTATING_TOOLS: &'static [&'static str] = &["write_file", "edit_file", "reparse_on_edit"];
+    pub const MUTATING_TOOLS: &'static [&'static str] =
+        &["write_file", "edit_file", "reparse_on_edit"];
 
     /// M3.1: Creates a CogniCodeHandler wrapping a pre-built, shared
     /// `Arc<HandlerContext>`. Used by the HTTP server (cognicode-mcp)
@@ -1336,14 +1337,12 @@ async fn call_tool_handler(
 
     // PRF-SEC-02: read-only mode rejects mutating tools before any handler
     // runs. Error is typed/honest (isError text), not a silent success.
-    if CogniCodeHandler::MUTATING_TOOLS.contains(&tool_name)
-        && ctx.read_only.load(Ordering::SeqCst)
+    if CogniCodeHandler::MUTATING_TOOLS.contains(&tool_name) && ctx.read_only.load(Ordering::SeqCst)
     {
         return Err(InterfaceError::Internal(format!(
             "read_only_mode: tool `{tool_name}` mutates workspace state and is disabled; restart the server without --read-only to enable it"
         )));
     }
-
 
     // UAT 2026-08-10 DEFECT-1: BC layer for parameter naming.
     // Renames legacy parameter names to their canonical equivalents so

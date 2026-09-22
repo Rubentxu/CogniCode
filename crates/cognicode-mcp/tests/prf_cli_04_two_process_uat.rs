@@ -8,7 +8,7 @@
 //! ningún proceso ni memoria; cada ruta es un binario distinto
 //! comunicando por su transporte real (argv/stdout y JSON-RPC/stdio).
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -70,11 +70,15 @@ fn mcp_build_graph(ws: &Path) -> Value {
         stdin.flush().expect("flush stdin");
     };
 
-    send(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"cli04","version":"0"}}}));
+    send(
+        &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"cli04","version":"0"}}}),
+    );
     let mut line = String::new();
     reader.read_line(&mut line).expect("read initialize");
     send(&json!({"jsonrpc":"2.0","method":"notifications/initialized"}));
-    send(&json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"build_graph","arguments":{}}}));
+    send(
+        &json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"build_graph","arguments":{}}}),
+    );
 
     let payload = loop {
         line.clear();
@@ -82,7 +86,9 @@ fn mcp_build_graph(ws: &Path) -> Value {
         assert!(n > 0, "server cerró stdout");
         let m: Value = serde_json::from_str(line.trim()).expect("no JSON-RPC");
         if m.get("id").and_then(|v| v.as_u64()) == Some(2) {
-            let text = m["result"]["content"][0]["text"].as_str().expect("no content");
+            let text = m["result"]["content"][0]["text"]
+                .as_str()
+                .expect("no content");
             break serde_json::from_str(text).expect("payload no JSON");
         }
     };
@@ -95,8 +101,16 @@ fn mcp_build_graph(ws: &Path) -> Value {
 fn cli_and_mcp_processes_agree_on_symbols_and_edges() {
     let ws = corpus();
     assert!(ws.exists(), "corpus canónico ausente: {}", ws.display());
-    assert!(cli_bin().exists(), "falta binario CLI: {}", cli_bin().display());
-    assert!(mcp_bin().exists(), "falta binario MCP: {}", mcp_bin().display());
+    assert!(
+        cli_bin().exists(),
+        "falta binario CLI: {}",
+        cli_bin().display()
+    );
+    assert!(
+        mcp_bin().exists(),
+        "falta binario MCP: {}",
+        mcp_bin().display()
+    );
 
     let cli = cli_full_json(&ws);
     let mcp = mcp_build_graph(&ws);
@@ -104,16 +118,38 @@ fn cli_and_mcp_processes_agree_on_symbols_and_edges() {
     // Anti-vacuidad: ambos inventarios deben tener contenido.
     let cli_syms = cli["symbols"].as_u64().expect("cli.symbols");
     let cli_edges = cli["dependencies"].as_u64().expect("cli.dependencies");
-    let mcp_syms = mcp.pointer("/symbols_found").and_then(|v| v.as_u64()).expect("mcp.symbols_found");
-    let mcp_edges = mcp.pointer("/relationships_found").and_then(|v| v.as_u64()).expect("mcp.relationships_found");
-    assert!(cli_syms > 0 && cli_edges > 0, "CLI vacío: comparación vacua ({{cli_syms}}/{{cli_edges}})");
-    assert!(mcp_syms > 0 && mcp_edges > 0, "MCP vacío: comparación vacua ({{mcp_syms}}/{{mcp_edges}})");
+    let mcp_syms = mcp
+        .pointer("/symbols_found")
+        .and_then(|v| v.as_u64())
+        .expect("mcp.symbols_found");
+    let mcp_edges = mcp
+        .pointer("/relationships_found")
+        .and_then(|v| v.as_u64())
+        .expect("mcp.relationships_found");
+    assert!(
+        cli_syms > 0 && cli_edges > 0,
+        "CLI vacío: comparación vacua ({{cli_syms}}/{{cli_edges}})"
+    );
+    assert!(
+        mcp_syms > 0 && mcp_edges > 0,
+        "MCP vacío: comparación vacua ({{mcp_syms}}/{{mcp_edges}})"
+    );
 
     // Equivalencia: el mismo grafo subyacente produce los mismos conteos.
-    assert_eq!(cli_syms, mcp_syms, "conteo de símbolos difiere entre procesos CLI y MCP reales");
-    assert_eq!(cli_edges, mcp_edges, "conteo de aristas difiere entre procesos CLI y MCP reales");
+    assert_eq!(
+        cli_syms, mcp_syms,
+        "conteo de símbolos difiere entre procesos CLI y MCP reales"
+    );
+    assert_eq!(
+        cli_edges, mcp_edges,
+        "conteo de aristas difiere entre procesos CLI y MCP reales"
+    );
 
     // Mismo estado de cobertura.
     assert_eq!(cli["status"].as_str(), Some("complete"), "CLI: cobertura");
-    assert_eq!(mcp.pointer("/status").and_then(|v| v.as_str()), Some("complete"), "MCP: cobertura");
+    assert_eq!(
+        mcp.pointer("/status").and_then(|v| v.as_str()),
+        Some("complete"),
+        "MCP: cobertura"
+    );
 }

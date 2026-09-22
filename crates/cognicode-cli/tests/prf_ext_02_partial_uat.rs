@@ -34,7 +34,11 @@ fn stderr_text(out: &std::process::Output) -> String {
 fn make_corpus(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("ext02_uat_{tag}_{}", std::process::id()));
     fs::create_dir_all(&dir).expect("mkdir");
-    fs::write(dir.join("good.rs"), "fn alpha() {}\nfn beta() { alpha(); alpha(); }\n").expect("good");
+    fs::write(
+        dir.join("good.rs"),
+        "fn alpha() {}\nfn beta() { alpha(); alpha(); }\n",
+    )
+    .expect("good");
     let locked = dir.join("locked.rs");
     fs::write(&locked, "fn locked_fn() {}\n").expect("locked write");
     // Permission-denied file: must surface as a skipped file, not silently vanish.
@@ -80,7 +84,13 @@ fn graph_subcommands_report_partial_when_files_are_skipped() {
         let dir = make_corpus(&args.join("_"));
         let args: Vec<String> = args
             .into_iter()
-            .map(|a| if a == "WS" { dir.to_string_lossy().to_string() } else { a })
+            .map(|a| {
+                if a == "WS" {
+                    dir.to_string_lossy().to_string()
+                } else {
+                    a
+                }
+            })
             .collect();
         let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
 

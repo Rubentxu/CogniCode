@@ -4,13 +4,16 @@
 
 mod common;
 use common::McpSession;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
 /// Un proceso MCP completo: spawn + build_graph + cierre total.
 async fn one_session(ws: &Path) -> Value {
     let mut s = McpSession::spawn(ws).await.expect("spawn");
-    let p = s.call_tool("build_graph", json!({})).await.expect("build_graph");
+    let p = s
+        .call_tool("build_graph", json!({}))
+        .await
+        .expect("build_graph");
     s.shutdown().await;
     p
 }
@@ -41,17 +44,27 @@ async fn isolated_two_process_snapshot_lifecycle() {
     // (3) Proceso 2: mismo workspace sin cambios → recupera snapshot.
     let p2 = one_session(&ws).await;
     assert!(
-        p2.pointer("/message").and_then(|m| m.as_str()).unwrap().contains("durable snapshot"),
+        p2.pointer("/message")
+            .and_then(|m| m.as_str())
+            .unwrap()
+            .contains("durable snapshot"),
         "p2 debe comunicar snapshot durable: {p2}"
     );
-    assert_eq!(view(&p1), view(&p2), "contenido recuperado idéntico al construido");
+    assert_eq!(
+        view(&p1),
+        view(&p2),
+        "contenido recuperado idéntico al construido"
+    );
 
     // (4) Cambio de contenido → invalidación → reconstrucción.
     std::fs::write(ws.join("lib.rs"), "fn alpha() -> i32 { 2 }\nfn beta() {}\n").unwrap();
     let p3 = one_session(&ws).await;
     assert_eq!(p3.pointer("/status"), Some(&json!("complete")), "p3: {p3}");
     assert!(
-        p3.pointer("/message").and_then(|m| m.as_str()).unwrap().contains("built"),
+        p3.pointer("/message")
+            .and_then(|m| m.as_str())
+            .unwrap()
+            .contains("built"),
         "cambio de contenido fuerza reconstrucción: {p3}"
     );
     assert_eq!(p3.pointer("/symbols_found"), Some(&json!(2)));

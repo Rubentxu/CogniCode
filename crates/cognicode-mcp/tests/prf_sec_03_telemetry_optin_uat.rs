@@ -29,12 +29,20 @@ fn run_and_capture(env_optin: bool) -> String {
     if env_optin {
         cmd.env("COGNICODE_TELEMETRY", "1");
     }
-    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = cmd.spawn().expect("spawn");
     {
         let stdin = child.stdin.as_mut().unwrap();
-        let _ = writeln!(stdin, r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"2024-11-05","capabilities":{{}},"clientInfo":{{"name":"t","version":"0"}}}}}}"#);
-        let _ = writeln!(stdin, r#"{{"jsonrpc":"2.0","method":"notifications/initialized"}}"#);
+        let _ = writeln!(
+            stdin,
+            r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"2024-11-05","capabilities":{{}},"clientInfo":{{"name":"t","version":"0"}}}}}}"#
+        );
+        let _ = writeln!(
+            stdin,
+            r#"{{"jsonrpc":"2.0","method":"notifications/initialized"}}"#
+        );
     }
     // Give it a moment, then close stdin for clean shutdown.
     std::thread::sleep(Duration::from_millis(300));

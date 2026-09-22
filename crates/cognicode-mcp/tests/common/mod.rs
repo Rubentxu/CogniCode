@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -45,11 +45,15 @@ impl McpSession {
         };
         s.send(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"uat","version":"0"}}})).await?;
         let mut line = String::new();
-        s.stdout.read_line(&mut line).await.map_err(|e| e.to_string())?;
+        s.stdout
+            .read_line(&mut line)
+            .await
+            .map_err(|e| e.to_string())?;
         if line.is_empty() {
             return Err("sin respuesta a initialize".into());
         }
-        s.send(&json!({"jsonrpc":"2.0","method":"notifications/initialized"})).await?;
+        s.send(&json!({"jsonrpc":"2.0","method":"notifications/initialized"}))
+            .await?;
         s.next_id = 2;
         Ok(s)
     }
@@ -70,13 +74,19 @@ impl McpSession {
         let mut resp = String::new();
         loop {
             resp.clear();
-            let n = self.stdout.read_line(&mut resp).await.map_err(|e| e.to_string())?;
+            let n = self
+                .stdout
+                .read_line(&mut resp)
+                .await
+                .map_err(|e| e.to_string())?;
             if n == 0 {
                 return Err("server cerró stdout".into());
             }
             let m: Value = serde_json::from_str(resp.trim()).map_err(|e| e.to_string())?;
             if m.get("id").and_then(|v| v.as_u64()) == Some(id) {
-                let text = m["result"]["content"][0]["text"].as_str().ok_or("no content")?;
+                let text = m["result"]["content"][0]["text"]
+                    .as_str()
+                    .ok_or("no content")?;
                 return serde_json::from_str(text).map_err(|e| e.to_string());
             }
         }

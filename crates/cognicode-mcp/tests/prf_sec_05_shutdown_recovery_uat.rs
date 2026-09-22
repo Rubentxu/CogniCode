@@ -10,7 +10,7 @@
 //!    the next build rebuilds from sources (correctness floor from
 //!    §72/§73, re-verified at the process boundary).
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -33,9 +33,15 @@ fn fixture_source() -> PathBuf {
 /// Each test gets a private copy of the fixture so parallel tests never
 /// share (and destroy) each other's durable cache.
 fn fresh_ws() -> PathBuf {
-    let dst = std::env::temp_dir().join(format!("prf-sec05-ws-{}", std::process::id()))
-        .join(format!("run-{}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos()));
+    let dst = std::env::temp_dir()
+        .join(format!("prf-sec05-ws-{}", std::process::id()))
+        .join(format!(
+            "run-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
     copy_dir(&fixture_source(), &dst);
     dst
 }
@@ -73,20 +79,31 @@ impl Session {
         let mut child = cmd.spawn().expect("spawn cognicode-mcp");
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
-        let mut s = Self { child, stdin: Some(stdin), stdout: BufReader::new(stdout), next_id: 1 };
+        let mut s = Self {
+            child,
+            stdin: Some(stdin),
+            stdout: BufReader::new(stdout),
+            next_id: 1,
+        };
         s.send(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"uat-sec05","version":"0"}}})).await;
         let mut line = String::new();
         tokio::time::timeout(Duration::from_secs(60), s.stdout.read_line(&mut line))
-            .await.expect("init timeout").expect("read init");
+            .await
+            .expect("init timeout")
+            .expect("read init");
         assert!(line.contains("\"result\""), "initialize failed: {line}");
-        s.send(&json!({"jsonrpc":"2.0","method":"notifications/initialized"})).await;
+        s.send(&json!({"jsonrpc":"2.0","method":"notifications/initialized"}))
+            .await;
         s.next_id = 2;
         s
     }
 
     async fn send(&mut self, v: &Value) {
         let stdin = self.stdin.as_mut().expect("stdin open");
-        stdin.write_all(format!("{v}\n").as_bytes()).await.expect("write");
+        stdin
+            .write_all(format!("{v}\n").as_bytes())
+            .await
+            .expect("write");
         stdin.flush().await.expect("flush");
     }
 
@@ -110,14 +127,18 @@ impl Session {
     }
 
     async fn build_graph(&mut self, ws: &Path) -> Value {
-        let resp = self.call_tool("build_graph", json!({"directory": ws.to_str().unwrap()})).await;
+        let resp = self
+            .call_tool("build_graph", json!({"directory": ws.to_str().unwrap()}))
+            .await;
         serde_json::from_str(resp["result"]["content"][0]["text"].as_str().expect("text"))
             .expect("build_graph JSON")
     }
 }
 
 impl Drop for Session {
-    fn drop(&mut self) { let _ = self.child.start_kill(); }
+    fn drop(&mut self) {
+        let _ = self.child.start_kill();
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -142,7 +163,10 @@ async fn stale_temp_file_from_crashed_writer_is_not_trusted() {
     // Session 2: must recover — rebuild correctly, never load garbage.
     let mut s2 = Session::spawn(&ws).await;
     let g2 = s2.build_graph(&ws).await;
-    assert_eq!(g2["status"], "complete", "recovery build must complete: {g2}");
+    assert_eq!(
+        g2["status"], "complete",
+        "recovery build must complete: {g2}"
+    );
     assert_eq!(
         g2["symbols_found"].as_u64().unwrap(),
         expected,

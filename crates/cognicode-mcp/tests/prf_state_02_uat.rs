@@ -12,7 +12,10 @@ use std::path::Path;
 
 async fn build(ws: &Path) -> Value {
     let mut s = McpSession::spawn(ws).await.expect("spawn");
-    let p = s.call_tool("build_graph", serde_json::json!({})).await.expect("build_graph");
+    let p = s
+        .call_tool("build_graph", serde_json::json!({}))
+        .await
+        .expect("build_graph");
     s.shutdown().await;
     p
 }
@@ -25,28 +28,55 @@ async fn homonym_workspaces_do_not_contaminate_and_snapshot_survives_restart() {
     std::fs::create_dir_all(&ws1).unwrap();
     std::fs::create_dir_all(&ws2).unwrap();
     std::fs::write(ws1.join("lib.rs"), "fn alpha() -> i32 { 1 }\n").unwrap();
-    std::fs::write(ws2.join("lib.rs"), "fn alpha() -> i32 { 2 }\nfn beta() {}\n").unwrap();
+    std::fs::write(
+        ws2.join("lib.rs"),
+        "fn alpha() -> i32 { 2 }\nfn beta() {}\n",
+    )
+    .unwrap();
 
     let p1 = build(&ws1).await;
     let p2 = build(&ws2).await;
 
     let b1 = p1.get("basis").cloned().unwrap_or(Value::Null);
     let b2 = p2.get("basis").cloned().unwrap_or(Value::Null);
-    let d1 = b1.get("source_manifest_digest").and_then(|v| v.as_str()).unwrap_or("");
-    let d2 = b2.get("source_manifest_digest").and_then(|v| v.as_str()).unwrap_or("");
+    let d1 = b1
+        .get("source_manifest_digest")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let d2 = b2
+        .get("source_manifest_digest")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     assert!(!d1.is_empty() && !d2.is_empty(), "deben existir digests");
-    assert_ne!(d1, d2, "workspaces homónimos deben tener manifests distintos — PRF-STATE-02");
+    assert_ne!(
+        d1, d2,
+        "workspaces homónimos deben tener manifests distintos — PRF-STATE-02"
+    );
 
-    let s1 = p1.get("symbols_found").and_then(|v| v.as_u64()).unwrap_or(0);
-    let s2 = p2.get("symbols_found").and_then(|v| v.as_u64()).unwrap_or(0);
+    let s1 = p1
+        .get("symbols_found")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let s2 = p2
+        .get("symbols_found")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     assert_eq!(s1, 1, "ws1 solo ve su alpha");
     assert_eq!(s2, 2, "ws2 ve alpha+beta, no datos de ws1");
 
     // Snapshot durable: digest y conteo estables tras reinicio.
     let p1b = build(&ws1).await;
-    let d1b = p1b.pointer("/basis/source_manifest_digest").and_then(|v| v.as_str()).unwrap_or("");
+    let d1b = p1b
+        .pointer("/basis/source_manifest_digest")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     assert_eq!(d1, d1b, "digest estable tras reinicio");
-    assert_eq!(s1, p1b.get("symbols_found").and_then(|v| v.as_u64()).unwrap_or(0));
+    assert_eq!(
+        s1,
+        p1b.get("symbols_found")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
+    );
 
     let _ = std::fs::remove_dir_all(&base);
 }

@@ -69,12 +69,27 @@ components:
 fn plant_user_data(home: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     let seeds = [
-        ("personal-notes.md", "my own notes, nothing to do with cogh\n"),
-        (".config/other-tool/settings.json", r#"{"theme":"dark","mcpServers":{"other":{"url":"http://x"}}}"#),
-        (".opencode/config.json", r#"{"theme":"solarized","mcpServers":{"mine":{"command":"my-server"}},"prefs":{"key":"user-value"}}"#),
-        (".claude/settings.json", r#"{"user":"data","model":"claude"}"#),
+        (
+            "personal-notes.md",
+            "my own notes, nothing to do with cogh\n",
+        ),
+        (
+            ".config/other-tool/settings.json",
+            r#"{"theme":"dark","mcpServers":{"other":{"url":"http://x"}}}"#,
+        ),
+        (
+            ".opencode/config.json",
+            r#"{"theme":"solarized","mcpServers":{"mine":{"command":"my-server"}},"prefs":{"key":"user-value"}}"#,
+        ),
+        (
+            ".claude/settings.json",
+            r#"{"user":"data","model":"claude"}"#,
+        ),
         (".codex/config.toml", "user_setting = true\n"),
-        (".local/share/my-skills/personal/SKILL.md", "# my own skill\ncontent\n"),
+        (
+            ".local/share/my-skills/personal/SKILL.md",
+            "# my own skill\ncontent\n",
+        ),
     ];
     for (rel, content) in seeds {
         let p = home.join(rel);
@@ -98,17 +113,35 @@ fn uninstall_on_existing_home_preserves_all_user_data() {
     assert!(out.status.success(), "cogh init must succeed");
     plant_manifest(&cogh_home, "latest");
     let version_tree = cogh_home.join("versions").join("latest");
-    assert!(version_tree.exists(), "fixture must plant the tool-owned version tree");
-    let out = run_with_home(home.path(), &cogh_home, &["ide", "install", "--plugin", "mcp-server"]);
+    assert!(
+        version_tree.exists(),
+        "fixture must plant the tool-owned version tree"
+    );
+    let out = run_with_home(
+        home.path(),
+        &cogh_home,
+        &["ide", "install", "--plugin", "mcp-server"],
+    );
     let _installed = out.status.success();
 
     // ANTI-VACUITY: uninstall must actually remove the tool-owned tree.
     let out = run_with_home(
         home.path(),
         &cogh_home,
-        &["uninstall", "mcp-server", "--version", "latest", "--ide", "opencode"],
+        &[
+            "uninstall",
+            "mcp-server",
+            "--version",
+            "latest",
+            "--ide",
+            "opencode",
+        ],
     );
-    let msg = format!("out={} err={}", stdout(&out), String::from_utf8_lossy(&out.stderr));
+    let msg = format!(
+        "out={} err={}",
+        stdout(&out),
+        String::from_utf8_lossy(&out.stderr)
+    );
     eprintln!("UNINSTALL DIAG: {msg}");
     assert!(
         !version_tree.exists(),
@@ -117,7 +150,11 @@ fn uninstall_on_existing_home_preserves_all_user_data() {
 
     // Every user file survives byte-for-byte.
     for f in &user_files {
-        assert!(f.exists(), "user file must survive uninstall: {}", f.display());
+        assert!(
+            f.exists(),
+            "user file must survive uninstall: {}",
+            f.display()
+        );
     }
     assert_eq!(
         fs::read_to_string(&user_files[0]).unwrap(),
@@ -146,12 +183,23 @@ fn uninstall_never_touches_paths_outside_tool_ownership() {
     let out = run_with_home(
         home.path(),
         &cogh_home,
-        &["uninstall", "mcp-server", "--version", "latest", "--ide", "opencode"],
+        &[
+            "uninstall",
+            "mcp-server",
+            "--version",
+            "latest",
+            "--ide",
+            "opencode",
+        ],
     );
     let _ = stdout(&out);
 
     for f in &user_files {
-        assert!(f.exists(), "user file must survive ide uninstall: {}", f.display());
+        assert!(
+            f.exists(),
+            "user file must survive ide uninstall: {}",
+            f.display()
+        );
     }
     let cfg = fs::read_to_string(home.path().join(".opencode/config.json")).unwrap();
     assert!(cfg.contains("solarized"), "user theme must survive: {cfg}");

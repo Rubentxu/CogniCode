@@ -13,7 +13,6 @@
 
 use cognicode_core::domain::findings::admission::{AdmissionSource, DetectorAdmission};
 
-
 #[test]
 fn restored_permits_are_fail_closed_to_candidate() {
     // Admission is the only authority mint. Whatever a persisted record
@@ -21,12 +20,9 @@ fn restored_permits_are_fail_closed_to_candidate() {
     // backend cannot gain `Gated`/CI-blocking authority by registering
     // or by forging a stored record.
     let record = {
-        let permit = DetectorAdmission::admit(
-            minimal_detector_ir(),
-            "1.0.0",
-            AdmissionSource::Builtin,
-        )
-        .expect("admission of a valid detector");
+        let permit =
+            DetectorAdmission::admit(minimal_detector_ir(), "1.0.0", AdmissionSource::Builtin)
+                .expect("admission of a valid detector");
         permit.record()
     };
     let restored = DetectorAdmission::restore(&record).expect("restore succeeds (fail-closed)");
@@ -67,12 +63,9 @@ fn candidate_permits_cannot_skip_contracts_on_execution() {
     // Even with an admitted permit, execution is bounded by backend
     // contract checks: an execution against an empty registry cannot be
     // planned (fail closed), and nothing reaches evidence persistence.
-    let permit = DetectorAdmission::admit(
-        minimal_detector_ir(),
-        "1.0.0",
-        AdmissionSource::AiGenerated,
-    )
-    .expect("admission");
+    let permit =
+        DetectorAdmission::admit(minimal_detector_ir(), "1.0.0", AdmissionSource::AiGenerated)
+            .expect("admission");
     assert_eq!(
         permit.admitted().authority,
         cognicode_core::domain::findings::detector_ir::DetectorAuthority::Candidate,
@@ -90,7 +83,7 @@ fn minimal_detector_ir() -> cognicode_core::domain::findings::detector_ir::Detec
         AnalysisCapability, DetectorFindingPolicy, DetectorIr, DetectorStep, FindingKind,
         SubjectPattern,
     };
-        let mut requires = std::collections::BTreeSet::new();
+    let mut requires = std::collections::BTreeSet::new();
     requires.insert(AnalysisCapability::AstPattern);
     DetectorIr {
         id: cognicode_core::domain::findings::detector_ir::DetectorId::new("ext04.minimal")
