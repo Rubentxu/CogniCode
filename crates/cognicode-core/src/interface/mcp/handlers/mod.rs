@@ -1045,6 +1045,14 @@ pub async fn handle_build_graph(
 
     let directory = resolve_directory(input.directory, &ctx.working_dir);
 
+    // PRF-SEC-01: the build directory is a path surface. Enforce the
+    // workspace allowlist (traversal, absolute escapes, symlinked
+    // components, canonical boundary) through the same InputValidator
+    // every other path-bearing handler uses.
+    ctx.validator
+        .validate_path(&directory)
+        .map_err(|e| HandlerError::InvalidInput(format!("Path rejected: {}", e)))?;
+
     // Validate directory
     if !directory.exists() {
         return Err(HandlerError::InvalidInput(format!(
