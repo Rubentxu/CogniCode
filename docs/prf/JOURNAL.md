@@ -2170,3 +2170,72 @@ del programa PRF activo).
   es un gap mayor y requiere más tiempo; queda en el backlog
   PRF-ANA-05.
 - **NO ejecuta:** push, tag, C7 firma. Operator-gated.
+
+## 2026-09-22 — PRF-ANA-07 (massive homonym collision) (entrada 35)
+
+- **Origen:** gap matriz PRF-ANA-07 (PARTIAL porque el corpus
+  sólo cubría 1-3 homónimos). F2.W7 `cross_file_scope_aware/`
+  ejercita visibilidad con 3-way max; PRF-ANA-07 ataca el
+  siguiente escalón (51-way).
+- **Cambio principal:** nuevo corpus
+  `docs/prf/fixtures/massive_collision_corpus/` con 51 archivos
+  `src/d{1..50}.rs` + `src/lib.rs`, cada uno declarando
+  `pub fn init()` (excepto lib.rs que también es el caller con
+  local `init()` como ancla de visibilidad). Más
+  `src/sibling_unique_compute.rs` para single-candidate cross-
+  file. Total: 53 archivos.
+- **Tests añadidos (RED→GREEN, GREEN en primer run):**
+  - `prf_ana_07_massive_collision_tests::mass_collision_same_name_picks_local`
+    — pinea la visibility rule bajo stress: 51 candidatos
+    globales, call `init()` desde `caller_in_lib` debe
+    resolver a `lib.rs:init:`. Si una regresión reintroduce
+    "first inserted" o "lex-FQN-min", este test falla porque
+    el destino NO contendría `lib.rs`.
+  - `prf_ana_07_massive_collision_tests::single_candidate_cross_file_resolves_to_unique_sibling`
+    — pinea single-candidate cross-file incluso con 51 otros
+    símbolos en el mismo crate. Sanity para index construction.
+  - `prf_ana_07_massive_collision_tests::index_size_matches_corpus`
+    — pinea ≥51 entradas `init` (local + spot-check d1/d25/d50).
+    Guarda contra de-dup agresivo.
+
+  **Por qué todos pasaron en primer run:**
+  F2.W7 ya tenía la visibility rule correcta. Los 3 tests son
+  pines de cobertura, no fixes. La pregunta que atacan es
+  "¿se mantiene correcto bajo mayor fan-out?" — la respuesta
+  observada es sí.
+
+- **Por qué la visibility rule gana con 51 candidatos:**
+  `GlobalSymbolIndex::resolve` aplica visibility ANTES de
+  cualquier otra regla. Para `name_lower="init"` ve 51
+  candidatos en `by_name`. Si `caller_file` está provisto
+  (siempre, en `build_project_graph`), busca candidatos con
+  `by_id[sid].0 == caller_file`. Exacto 1 candidato en lib.rs
+  → visibility filter resuelve sin tocar las otras 50 entradas.
+
+- **No-local-anchor 2-way ambiguity** (intencionalmente fuera
+  del corpus): el caso "ambos homónimos en siblings, no hay
+  local" ya está pineado por `cross_file_scope_aware/`
+  (`w7_two_way_homonym_no_caller_file_honest_drop`). Reproducir
+  ese caso aquí requeriría que Rust aceptara una llamada
+  no-calificada a una función declarada en dos módulos — Rust
+  rechaza el programa en compile-time, lo que hace ese test
+  imposible de escribir como corpus Rust válido.
+
+- **Commits:**
+  - `3118c580`: PRF-ANA-07 tests (análisis + `analysis_service.rs`).
+  - `73236510`: force-add corpus (`docs/` está gitignored;
+    se versiona con `-f` siguiendo el patrón de `cross_file_scope_
+    aware/`).
+- **Generador:** `scripts/generate_massive_collision_corpus.py`
+  determinista (loop simple, sin timestamps ni RNG). El corpus
+  también está versionado; re-ejecutar el script es idempotente.
+- **Verificación:**
+  - `cargo test -p cognicode-core --lib prf_ana_07`: 3/3 pass.
+  - `cargo test -p cognicode-core --lib`: 2136 passed / 0 failed
+    / 27 ignored (was 2133; +3).
+  - `cargo clippy -p cognicode-core --lib --tests -- -D warnings`:
+    clean.
+- **Cambio en matriz:** PRF-ANA-07 movido PARTIAL → PARTIAL
+  (mejorado). Bucket no transita porque sigue faltando UAT
+  stdio JSON-RPC sobre el binario real.
+- **NO ejecuta:** push, tag, C7 firma. Operator-gated.
