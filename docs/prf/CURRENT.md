@@ -1,12 +1,12 @@
 # CURRENT — Puntero operativo PRF
 
-## Estado (2026-09-22 checkpoint final de sesión)
-- **HEAD**: `c1b14017` (release-candidate refresh) sobre `86df20de` (docs checkpoint) sobre `47dd39ac` (clippy-fix) sobre `5b96db43` (T4 base). origin/main = `5b96db43`. Estado testing: **INTEGRATION_VERIFIED** (core lib 2126/0/27; clippy `-D warnings` clean; fmt-clean).
-- **Fases**: F0-F6 ACCEPTED (C0-C6 PASS). F7 decisión técnica READY FOR RELEASE; falta T5 + certificación C7 + tag + push (orden explícita del operador).
+## Estado (2026-09-22 checkpoint final de sesión + reconciliación C2)
+- **HEAD**: `f0e25652` (release-candidate refresh + pointer refresh post-clippy-fix) sobre `86df20de` (docs checkpoint) sobre `47dd39ac` (clippy-fix H-D34-1) sobre `5b96db43` (T4 base). origin/main = `5b96db43`. Estado testing: **INTEGRATION_VERIFIED** (core lib 2126/0/27; clippy `-D warnings` clean; fmt-clean).
+- **Fases**: **F0-F6 ACCEPTED (C0-C6 PASS)**; **F2 firmada en PRF-C2 (`44fad7a5`)** con UAT binarios reales (W7/W8/W9). F7 decisión técnica READY FOR RELEASE; falta T5 + certificación C7 + tag + push (orden explícita del operador).
 - **Deuda**: H-clippy-FullGraphStrategy-type_complexity **CERRADO** (`47dd39ac`). Residual: `cognicode-cli` warnings preexistentes (D34-2) fuera de scope → sesión propia.
 
 ## Próxima acción concreta
-1. Push a origin/main cuando el operador dé orden explícita (alineado con la política actual; SHA pendiente de push: HEAD actual `c1b14017`).
+1. Push a origin/main cuando el operador dé orden explícita (alineado con la política actual; SHA pendiente de push: HEAD actual `f0e25652`).
 2. Tag de release C7 cuando el operador indique versión + perfil (orden explícita; **4 candidatos razonables** ya preparados en `RELEASE-CANDIDATE.md`: v0.97.4 / v0.98.0 / v0.98.0-prf / v1.0.0-prf).
 3. Sesión dedicada a `H-clippy-cli-residual` (D34-2) cuando se demande.
 

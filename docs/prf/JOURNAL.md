@@ -1910,3 +1910,27 @@ del programa PRF activo).
 - Working tree: clean (a falta del commit de STATE/CURRENT/JOURNAL).
 - Estado: governance gateado (operator authorization para push + tag), pero
   la superficie de decisión está ahora explícitamente preparada.
+
+## 2026-09-22 — Reconciliación C2: completar antes de pasar a otra cosa (entrada 28)
+
+- Diagnóstico: el cert `PRF-C2` (Campaña de certificación del hito F2)
+  está firmado y vigente (commit `44fad7a5`, JOURNAL §19, 2026-09-21).
+  Cubre F2.W1-W10 con UAT binarios reales (`UAT-F2-W7`, `UAT-F2-W8-001`,
+  `UAT-F2-W9-001` en `docs/prf/UAT.md`) y suite `2122/0/27`. La firma
+  cumple los 3 criterios de salida del ROADMAP §F2.
+- Inconsistencias detectadas (documentación stale vs cert firmado):
+  1. `STATE.md` tabla F2 (línea 657): "F2 (hito) EN CURSO. W1-W10
+     IMPLEMENTED. Pendiente: gate C2. **C2 = NO CERTIFICADO**" — falso.
+     El cert PRF-C2 ya está firmado; solo el push+tag (RELEASED) está
+     pendiente.
+  2. `ROADMAP.md` filas F2.W5/W7/W8: declaraban "cert PRF-F2-WX
+     pendiente". Esos certs individuales nunca fueron planificados;
+     las W5/W7/W8 son **inputs** del consolidado PRF-C2, no certs
+     separados.
+- Acción ejecutada (H-C2-DOCS-RECONCILE): alinear STATE.md y ROADMAP.md
+  con el cert PRF-C2 firmado. Cada unidad F2.W5-W10 marcada como
+  "input de PRF-C2"; F2 (hito) marcado ACCEPTED vía PRF-C2. RELEASED
+  sigue pendiente del push+tag (gate del operador per directive §3).
+- Acción complementaria: `CURRENT.md` corregido (SHA `f0e25652` y
+  mención de C2 firmada); STATE.md header row ya estaba correcto.
+- Working tree: cambios staged, listos para commit.

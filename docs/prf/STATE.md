@@ -648,13 +648,13 @@ archivos omitidos, y documentar el comportamiento en UAT.
 | F2.W2 — Errores de lectura silenciosos (R3, capa `per_file_graph`) | **IMPLEMENTED** (commits `be729275`, `55eddd4e`); library test + 3 UAT CLI a nivel wrapper |
 | F2.W3 — Caracterización equivalencia full vs per_file (R4) | **ACCEPTED** (commit `d9aa09c0`); sin fix (caracterización, no feature) |
 | F2.W4 — Cerrar H-R4-1 capa 1 (parser) | **ACCEPTED-parcial** (commit `084b5c00`); capa 2 (H-R4-2) registrada como OPEN, **scope de F2.W5** |
-| F2.W5 — Resolver H-R4-2 (lookup global) | **IMPLEMENTED** (commit `3f27a31d`); library test GREEN (4 w5 + 4 global_index_tests) |
-| F2.W6 — Desbloqueo binario | **CERRADO-SIN-ACCION** (verificación: `cargo install --path crates/cognicode-cli --bin cognicode` + `cargo run --bin cognicode` + `cognicode-mcp --cwd <dir>` funcionan; el conflicto de `crates/cognicode/` no bloquea operativamente) |
-| F2.W7 — Integrar F2.W5 en el camino real del binario | **IMPLEMENTED** (commit `5ce8eb1e`); `analysis_service::build_project_graph` ahora usa `GlobalSymbolIndex` con caller_file context; UAT real con `cognicode-mcp` muestra `relationships_found: 4` correcto |
-| **F2.W8 — Errores silenciosos en `build_project_graph` (R3, capa `analysis_service`)** | **IMPLEMENTED** (commit próximo); 4 fuentes de error silencioso corregidas; `AnalysisService::get_last_build_report()` enumera archivos omitidos con razón clasificada; handler MCP `build_graph` los surface como `skipped_files[]`; UAT real con `chmod 000` + UTF-8 inválido confirma enumeración |
-| F2.W9 — mtime preservado (cambio de bytes con mtime conservado invalida cache) | IMPLEMENTED (commit `2a121aec`, UAT real GREEN) |
-| F2.W10 — Equivalencia y reproducibilidad (full ↔ per_file con misma entrada determinista) | IMPLEMENTED (commit `dc189d54`; 3 tests de pineo, sin cambio de producción) |
-| **F2 (hito)** | EN CURSO. W1-W10 IMPLEMENTED. Pendiente: gate C2. **C2 = NO CERTIFICADO**. |
+| F2.W5 — Resolver H-R4-2 (lookup global) | **IMPLEMENTED** (commit `3f27a31d`); library test GREEN (4 w5 + 4 global_index_tests); input de PRF-C2 (consolidado firmado en `44fad7a5`, `evidence/CERTIFICATES.md` §PRF-C2). H-R4-2 cerrado. |
+| F2.W6 — Desbloqueo binario | **CERRADO-SIN-ACCION** (verificación: `cargo install --path crates/cognicode-cli --bin cognicode` + `cargo run --bin cognicode` + `cognicode-mcp --cwd <dir>` funcionan; el conflicto de `crates/cognicode/` no bloquea operativamente). Input de PRF-C2. |
+| F2.W7 — Integrar F2.W5 en el camino real del binario | **IMPLEMENTED** (commit `5ce8eb1e`); `analysis_service::build_project_graph` ahora usa `GlobalSymbolIndex` con caller_file context; UAT real con `cognicode-mcp` muestra `relationships_found: 4` correcto. Input de PRF-C2 + UAT-F2-W7 firmada. |
+| **F2.W8 — Errores silenciosos en `build_project_graph` (R3, capa `analysis_service`)** | **IMPLEMENTED** (commit próximo, ver JOURNAL §17); 4 fuentes de error silencioso corregidas; `AnalysisService::get_last_build_report()` enumera archivos omitidos con razón clasificada; handler MCP `build_graph` los surface como `skipped_files[]`; UAT real con `chmod 000` + UTF-8 inválido (UAT-F2-W8-001). Input de PRF-C2. |
+| F2.W9 — mtime preservado (cambio de bytes con mtime conservado invalida cache) | IMPLEMENTED (commit `2a121aec`, UAT-F2-W9-001 real GREEN). Input de PRF-C2. |
+| F2.W10 — Equivalencia y reproducibilidad (full ↔ per_file con misma entrada determinista) | IMPLEMENTED (commit `dc189d54`; 3 tests de pineo, sin cambio de producción). Input de PRF-C2. |
+| **F2 (hito)** | **ACCEPTED**. C2 firmado (commit `44fad7a5`, JOURNAL §19); PRF-C2 cubre W1-W10 con UAT binarios reales (W7/W8/W9 en `docs/prf/UAT.md`) y suite 2122/0/27. **RELEASED pendiente** del push+tag (gate del operador per directive §3 + JOURNAL §25). |
 
 ## Hito F1 (Estabilización) → CERRADO (referencia histórica)
 
