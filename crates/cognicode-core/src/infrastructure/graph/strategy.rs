@@ -432,6 +432,177 @@ impl FullGraphStrategy {
     pub fn new() -> Self {
         Self { symbol_index: None }
     }
+
+    /// Builds the full project call graph **with an honest coverage report**.
+    ///
+    /// PRF audit H-02 (operator 2026-09-22): the legacy
+    /// [`Self::build_full_graph`] silently dropped walk errors via
+    /// `filter_map(|e| e.ok())` and read/parse failures via
+    /// `match Err(_) => continue`. This counterpart exposes every skip
+    /// as a [`SkippedFile`] with a classified [`SkipReason`].
+    ///
+    /// Use this when the caller needs to know whether the resulting graph
+    /// represents complete coverage of the project directory.
+    pub fn build_full_graph_report(
+        &self,
+        project_dir: &Path,
+    ) -> crate::infrastructure::graph::per_file_graph::BuildReport {
+        use crate::infrastructure::graph::per_file_graph::{BuildStatus, SkipReason, SkippedFile};
+        use walkdir::WalkDir;
+
+        let mut store = crate::infrastructure::graph::PetGraphStore::new();
+        let mut global_index = GlobalSymbolIndex::new();
+        let mut per_file_data: Vec<FileData> = Vec::new();
+        let mut walk_skipped: Vec<SkippedFile> = Vec::new();
+        let mut parse_skipped: Vec<SkippedFile> = Vec::new();
+
+        let iter = WalkDir::new(project_dir).follow_links(true).into_iter();
+
+        for entry in iter {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(err) => {
+                    // PRF H-02: capture walk error instead of `filter_map(|e| e.ok())`.
+                    let path = err
+                        .path()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|| project_dir.to_string_lossy().to_string());
+                    walk_skipped.push(SkippedFile {
+                        path,
+                        reason: SkipReason::Read(err.to_string()),
+                    });
+                    continue;
+                }
+            };
+
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            // Unsupported language: report as UnsupportedExtension (H-02).
+            let language = match crate::infrastructure::parser::Language::from_extension(
+                path.extension(),
+            ) {
+                Some(lang) => lang,
+                None => {
+                    parse_skipped.push(SkippedFile {
+                        path: path.to_string_lossy().to_string(),
+                        reason: SkipReason::UnsupportedExtension(
+                            path.extension()
+                                .map(|e| e.to_string_lossy().to_string())
+                                .unwrap_or_default(),
+                        ),
+                    });
+                    continue;
+                }
+            };
+
+            // Read error: report as Read (H-02).
+            let source = match std::fs::read_to_string(path) {
+                Ok(s) => s,
+                Err(e) => {
+                    parse_skipped.push(SkippedFile {
+                        path: path.to_string_lossy().to_string(),
+                        reason: SkipReason::Read(e.to_string()),
+                    });
+                    continue;
+                }
+            };
+
+            let file_path = path.to_string_lossy().to_string();
+            let parser = match TreeSitterParser::new(language) {
+                Ok(p) => p,
+                Err(e) => {
+                    parse_skipped.push(SkippedFile {
+                        path: file_path.clone(),
+                        reason: SkipReason::Other(format!("parser init: {e}")),
+                    });
+                    continue;
+                }
+            };
+
+            let symbols = match parser.find_all_symbols_with_path(&source, &file_path) {
+                Ok(syms) => syms,
+                Err(e) => {
+                    // PRF H-02: was `Err(_) => continue`; now reported.
+                    parse_skipped.push(SkippedFile {
+                        path: file_path.clone(),
+                        reason: SkipReason::Parse(e.to_string()),
+                    });
+                    continue;
+                }
+            };
+            for symbol in &symbols {
+                let sid = crate::domain::aggregates::call_graph::SymbolId::new(
+                    symbol.fully_qualified_name(),
+                );
+                global_index.insert(sid, path.to_path_buf(), symbol.name());
+            }
+            let rels = match parser.find_call_relationships(&source, &file_path) {
+                Ok(r) => r,
+                Err(e) => {
+                    // PRF H-02: was `Err(_) => continue`; now reported.
+                    parse_skipped.push(SkippedFile {
+                        path: file_path.clone(),
+                        reason: SkipReason::Parse(e.to_string()),
+                    });
+                    continue;
+                }
+            };
+            per_file_data.push(FileData {
+                path: path.to_path_buf(),
+                symbols,
+                rels,
+            });
+        }
+
+        // Add every symbol to the petgraph store and remember the mapping.
+        let mut id_to_node: std::collections::HashMap<
+            crate::domain::aggregates::call_graph::SymbolId,
+            petgraph::graph::NodeIndex,
+        > = std::collections::HashMap::new();
+        for entry in &per_file_data {
+            for symbol in &entry.symbols {
+                let symbol_id = crate::domain::aggregates::call_graph::SymbolId::new(
+                    symbol.fully_qualified_name(),
+                );
+                let n = store.add_symbol_with_location(&symbol_id, symbol.clone());
+                id_to_node.insert(symbol_id, n);
+            }
+        }
+
+        // Resolve edges through `GlobalSymbolIndex`.
+        for entry in &per_file_data {
+            for (caller, callee_name) in &entry.rels {
+                let caller_id = crate::domain::aggregates::call_graph::SymbolId::new(
+                    caller.fully_qualified_name(),
+                );
+                let callee_id =
+                    global_index.resolve(&callee_name.to_lowercase(), Some(entry.path.as_path()));
+                if let Some(callee_id) = callee_id {
+                    store
+                        .add_dependency(
+                            &caller_id,
+                            &callee_id,
+                            crate::domain::value_objects::DependencyType::Calls,
+                        )
+                        .ok();
+                }
+            }
+        }
+
+        let graph = store.to_call_graph();
+        let status = if walk_skipped.is_empty() && parse_skipped.is_empty() {
+            BuildStatus::Complete
+        } else {
+            let mut skipped = walk_skipped;
+            skipped.extend(parse_skipped);
+            BuildStatus::Partial { skipped }
+        };
+
+        crate::infrastructure::graph::per_file_graph::BuildReport { graph, status }
+    }
 }
 
 impl Default for FullGraphStrategy {
@@ -1190,5 +1361,82 @@ mod w10_equivalence_tests {
             edge_set(&d),
             "per_file: edge sets differ across runs"
         );
+    }
+}
+
+/// PRF audit H-02 (operator 2026-09-22) — `FullGraphStrategy::build_full_graph`
+/// silently drops walk errors via `filter_map(|e| e.ok())` and other parse
+/// errors via `match ... Err(_) => continue`. There is no way for a caller
+/// to know that the resulting graph represents only a subset of the project.
+///
+/// This test pins the requirement that the strategy **exposes** skipped
+/// files (via `build_full_graph_report`) so callers like `AnalysisService`
+/// can surface them as `BuildStatus::Partial` with classified `SkipReason`.
+///
+/// RED today: the report method does not exist on `FullGraphStrategy`. The
+/// test won't compile until we add it.
+mod h02_silent_errors_full_strategy_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::infrastructure::graph::per_file_graph::{BuildStatus, SkipReason};
+    use std::os::unix::fs::PermissionsExt;
+
+    /// Build a temp corpus with one valid .rs file + one directory that
+    /// walkdir cannot enter (mode 0o000). The unreadable directory must
+    /// appear in the report as a `SkipReason::Read` entry; the valid
+    /// file must be parsed.
+    #[allow(dead_code)]
+    fn build_with_unreadable_dir() -> crate::infrastructure::graph::per_file_graph::BuildReport {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).expect("mkdir src");
+
+        let good = src.join("ok.rs");
+        std::fs::write(
+            &good,
+            "pub fn hello() -> i32 { 42 }\npub fn main() { hello(); }\n",
+        )
+        .expect("write ok.rs");
+
+        let bad = src.join("sealed");
+        std::fs::create_dir(&bad).expect("mkdir sealed");
+        std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o000))
+            .expect("chmod 000");
+
+        let strat = FullGraphStrategy::new();
+        strat.build_full_graph_report(tmp.path())
+    }
+
+    #[test]
+    fn h02_full_strategy_exposes_report_method() {
+        // Before the fix this fails to compile (RED).
+        let strat = FullGraphStrategy::new();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let report = strat.build_full_graph_report(tmp.path());
+        let _ = report.status;
+    }
+
+    #[test]
+    fn h02_unreadable_dir_surfaces_as_partial_with_skip_reason_read() {
+        let report = build_with_unreadable_dir();
+        match report.status {
+            BuildStatus::Complete => panic!(
+                "expected Partial because one directory is unreadable, got Complete"
+            ),
+            BuildStatus::Partial { skipped } => {
+                assert!(
+                    !skipped.is_empty(),
+                    "expected at least one skipped entry, got 0"
+                );
+                let has_read = skipped
+                    .iter()
+                    .any(|s| matches!(s.reason, SkipReason::Read(_)));
+                assert!(
+                    has_read,
+                    "expected at least one SkipReason::Read, got {:?}",
+                    skipped.iter().map(|s| &s.reason).collect::<Vec<_>>()
+                );
+            }
+        }
     }
 }
