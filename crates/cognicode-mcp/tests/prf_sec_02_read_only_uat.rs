@@ -159,9 +159,16 @@ async fn read_only_mode_hides_and_rejects_mutating_tools_but_keeps_reads() {
         let resp = s.request(json!({"jsonrpc":"2.0","id":id,"method":"tools/list","params":params})).await;
         for t in resp["result"]["tools"].as_array().unwrap() {
             let name = t["name"].as_str().unwrap();
-            let m = &t["_meta"]["cognicode"]["mutates_workspace"];
-            assert!(!m.is_null(), "tool {name} must expose mutates_workspace metadata");
-            if m.as_bool().unwrap() {
+            let m = &t["_meta"]["cognicode"];
+            assert!(
+                !m["mutates_workspace"].is_null(),
+                "tool {name} must expose mutates_workspace metadata"
+            );
+            assert!(
+                m["tool_version"].is_string(),
+                "tool {name} must expose tool_version metadata"
+            );
+            if m["mutates_workspace"].as_bool().unwrap_or(false) {
                 flagged.push(name.to_string());
             }
             total_flagged += 1;

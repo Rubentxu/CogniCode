@@ -1216,6 +1216,10 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
         if let Some(existing) = tool.meta.as_mut() {
             if let Some(c) = existing.get_mut("cognicode").and_then(|v| v.as_object_mut()) {
                 c.insert("mutates_workspace".to_string(), serde_json::json!(mutates));
+                c.insert(
+                    "tool_version".to_string(),
+                    serde_json::json!(env!("CARGO_PKG_VERSION")),
+                );
             }
         }
         tool
