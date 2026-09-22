@@ -2664,3 +2664,19 @@ exigir un número concreto es decisión de política que modifica el gate
 **Matriz**: PRF-CI-03 pasa de PARTIAL (sin medición) a **PARTIAL (mejorado)**:
 medición operativa + visibilidad en CI; falta el threshold obligatorio como gate.
 Siguientes: PRF-CI-02 (matriz nightly), PRF-CI-05 (SBOM).
+
+## §55 — PRF-CI-05: advisories gate + SBOM — PARTIAL mejorado (2026-09-22)
+
+**Fixes reales**: cargo update arregla h2/rustls/rustls-webpki/crossbeam-epoch/
+chacha20; inventory 0.1→0.3 (compila sin cambios). **Política** (`deny.toml`):
+vulnerabilidades/unsound nuevas = gate bloqueante de release; 5 deudas
+transitivas ignoradas individualmente con motivo y camino de fix
+(RUSTSEC-2024-0437 protobuf exige migración OTel 0.28, unidad propia).
+`cargo deny check advisories` → ok. **SBOM**: CycloneDX por crate, subido con
+payloads de release. **CI**: gates en release.yml antes del build.
+
+**Verificación**: core lib 2145/0/27 x2; cogh 304/304; lifecycle 7/7; cli01 6/6;
+mcp e2e 5/5; clippy workspace 0. Evidencia: `evidence/u55-ci05-advisories-sbom/`.
+
+**Matriz**: PRF-CI-05 → PARTIAL (mejorado). Deuda: scan de licencias como gate
+(política pendiente), OTel 0.28. Siguiente: PRF-CI-02 (matriz nightly).
