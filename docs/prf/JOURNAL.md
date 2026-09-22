@@ -2703,3 +2703,14 @@ Benchmarks: criterion con artefacto por entorno (report-only; smoke 79.9ns).
 **Nota**: ejecución efectiva de la campaña requiere `act`/push (operator-gated);
 la definición y sus lanes están verificadas localmente. CI-02 queda PARTIAL →
 cobertura declarativa completa, ejecución remota pendiente de gate.
+
+## §58 — PRF-ANA-05: UAT binario real — PASS (2026-09-22)
+
+**RED real**: UAT stdio JSON-RPC x3 sobre binario fresco detectó
+no-determinismo publicado: `edges` en orden distinto entre ejecuciones
+idénticas (los basis digests sí estables). **Fix**: orden canónico
+(from,to) en `handle_build_graph`. **GREEN**: `prf_ana_05_uat` 1/1 sobre
+binario real (corpus 51 homónimos). Regresión: handlers 153/0,
+workspace_isolation 2/0, continuation_e2e 5/0; fmt/clippy limpios.
+Evidencia: `evidence/u58-ana05-uat-binary/`.
+**Matriz**: PRF-ANA-05 → PASS (library + handler + binario real).
