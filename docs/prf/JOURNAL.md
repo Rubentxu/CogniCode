@@ -2398,3 +2398,35 @@ del programa PRF activo).
   completa antes de commit. Sin pérdida de trabajo (los commits
   previos estaban a salvo).
 - **NO ejecuta:** push, tag, C7 firma. Operator-gated.
+
+## 2026-09-22 — PRF-DIST-04 (supervivencia de config IDE preexistente) (entrada 41)
+
+- **Origen:** gap matriz PRF-DIST-04 (NOT_RUN): "U23 cubre
+  uninstall con HOME personalizado pero no garantiza
+  supervivencia de IDE previa."
+- **UAT:** nuevo módulo `prf_dist_04_survival_tests` (unit tests
+  del bin cogh, sobre el pipeline real `uninstall_opencode`):
+  1. Config opencode preexistente (otros servidores MCP, theme,
+     prefs de usuario) sobrevive uninstall; solo se elimina la
+     entrada cognicode.
+  2. Skills del usuario en el dir IDE sobreviven byte-a-byte;
+     solo se elimina la entrada versionada de cognicode.
+  3. Uninstall sin entrada cognicode previa es no-op (sin
+     rewrite, sin tocar mtime).
+- **Resultado: 3/3 GREEN.** El contrato de isolation de scope ya
+  se cumplía; los tests son pins de regresión.
+- **Ventana de mutación de HOME minimizada:** los steps se
+  resuelven bajo el HOME temporal y se restaura antes de
+  ejecutar, para no filtrar el env a tests lifecycle paralelos
+  que hacen spawn de subprocessos.
+- **FLAKINESS PREEXISTENTE DOCUMENTADA:** la suite del bin cogh
+  falla intermitentemente en baseline SIN este cambio (3 de 4
+  runs de baseline en aislado fallaron, siempre en tests
+  layout/lifecycle con HTTP fixture servers: puertos/timing).
+  No causada por este commit. Deuda registrada — se vincula con
+  U03 (baseline/goldens dobles) y el gate G6 de estabilidad del
+  scorecard. Requiere investigación dedicada.
+- **Matriz:** PRF-DIST-04 NOT_RUN → PARTIAL (mejorado). No PASS:
+  cubre uninstall de opencode; faltan zcode/claude/codex y el
+  escenario rollback post-update (H-06, operator-gated).
+- **NO ejecuta:** push, tag, C7 firma. Operator-gated.
