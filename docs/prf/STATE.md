@@ -7,14 +7,14 @@
 
 ## Snapshot
 
-| Hito activo | **F2 — Correctitud reproducible (EN CURSO; H-02 + H-01 cerrados; H-03/H-04/H-07 operator-gated)** |
-| Última unidad cerrada | **H-01 GREEN** (commit `39928202` + JOURNAL §32). H-01 RED pin `5ed7f865` ahora pasa. Decisión SHA-256 ejercida por "a tu criterio" previo. |
-| Unidad activa siguiente | **Trabajo ejecutable en AUTO sin decisión nueva** (PRF-ANA-04, -05, -07, PRF-CI-06 doc); **acciones 4-5 del plan operador** (firma C7 + push/tag) siguen BLOQUEADAS por directiva §3 + auditoría. |
+| Hito activo | **F2 — Correctitud reproducible (EN CURSO; H-02 + H-01 + PRF-ANA-04 + PRF-ANA-05 cerrados; H-03/H-04/H-07 operator-gated)** |
+| Última unidad cerrada | **PRF-ANA-05 (handler reproducibilidad)** (commit `dc1190f7` + JOURNAL §34). Test `repeated_build_graph_calls_are_reproducible_at_handler` añadido en `prf_ana_04_status_field_tests`. Movido matrix PARTIAL → PARTIAL (mejorado). Resta como PARTIAL sólo UAT sobre binario real (stdio JSON-RPC). |
+| Unidad activa siguiente | **Trabajo ejecutable en AUTO sin decisión nueva**: PRF-ANA-07 (corpus colisiones masivas) o PRF-CI-06 (doc local-first). **Operator-gated**: acciones 4-5 del plan (firma C7 + push/tag). |
 | Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. F2 = ACCEPTED (W1-W10 IMPLEMENTED vía cert C2). F3-F6 = ACCEPTED vía C3-C6. **C7 = BLOQUEADO** (auditoría 2026-09-22 revocó `READY FOR RELEASE ≡ C7 PASS`). |
-| HEAD | `5365dc9f` (JOURNAL §32 commit) sobre `39928202` (H-01 GREEN) sobre `2e5f67fa` (HEAD refs bulk) sobre `0a7eb8d2` (docs refresh H-01 RED) sobre `6ed1930b` (docs refresh) sobre `5ed7f865` (H-01 RED pin) sobre `8074a426` (matrix recount) sobre `f8cd3375` (docs refresh) sobre `80e7c403` (H-02 GREEN) sobre `82f1ba54` (SHA congelado + matriz) sobre `178f8a5b` (reconciliación C2). origin/main = `5b96db43`. 15 commits ahead. |
-| Working tree | clean (post docs refresh; todo el JOURNAL §32 + STATE refresh committed). |
-| Bloqueos conocidos | **Operator-gated**: push + tag + firma C7 (directive §3 + auditoría). **Decisión operador pendiente**: H-03 (vertical), H-04 (persistencia), H-07 (gates formales). **SHA congelado stale** (`178f8a5b` vs HEAD `5365dc9f`); re-firma pendiente. |
-| Siguiente unidad ejecutable | En AUTO: PRF-ANA-04 (handler MCP reporta Partial), PRF-ANA-05 (UAT reproducibilidad binario), PRF-ANA-07 (corpus colisiones), PRF-CI-06 (doc local-first). Operator-gated: acciones 4-5 + H-03/04/07. |
+| HEAD | `6293a7be` (JOURNAL §34 docs) sobre `dc1190f7` (PRF-ANA-05 test) sobre `8b49163b` (RELEASE-CANDIDATE refresh) sobre `af41138a` (JOURNAL §33) sobre `41e4230f` (PRF-ANA-04 GREEN) sobre `6ead65e8` (matrix refresh H-01) sobre `5365dc9f` (JOURNAL §32) sobre `39928202` (H-01 GREEN). origin/main = `5b96db43`. 21 commits ahead. |
+| Working tree | clean (post PRF-ANA-05 docs refresh). |
+| Bloqueos conocidos | **Operator-gated**: push + tag + firma C7 (directive §3 + auditoría). **Decisión operador pendiente**: H-03 (vertical), H-04 (persistencia), H-07 (gates formales). **SHA congelado stale** (`178f8a5b` vs HEAD `6293a7be`); re-firma pendiente. |
+| Siguiente unidad ejecutable | En AUTO: PRF-ANA-07 (corpus con colisiones masivas) o PRF-CI-06 (doc local-first). Operator-gated: acciones 4-5 + H-03/04/07. |
 | Política git | `docs/prf/` se versiona localmente solo en working tree. Evidencia cruda local-only (manifestada en `evidence/MANIFEST.md`). Push pendiente de orden explícita. |
 | Gobierno del proyecto | **PRF es el único roadmap ejecutivo vigente** (decisión del operador 2026-09-21, `JOURNAL.md` entrada 13, `TRACEABILITY.md` §Correspondencia E31→PRF). E31 conserva su evidencia y aporta requisitos útiles que migran a gates PRF. |
 
