@@ -37,7 +37,7 @@ Construido con **Domain-Driven Design** y **Clean Architecture**, soporta seis l
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los checksums de la release oficial de GitHub). Fija una versión con `COGNICODE_VERSION=v0.96.0`. Después ejecuta `cogh install` para configurar el runtime (Capa 1).
+Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los checksums de la release oficial de GitHub). Fija una versión con `COGNICODE_VERSION=v0.96.0`. Después ejecuta `cogh init && cogh install mcp-server --profile reviewer --ide opencode` para instalar CLI, MCP y las skills portables. Consulta [Distribución e instalación](docs/distribution/INSTALL.md) para actualización, rollback, desinstalación, plataformas y recuperación.
 
 ### mise
 
@@ -47,15 +47,15 @@ mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 
 Fija una versión con `@0.96.0`. Ambos canales instalan el mismo asset de la release publicada — ver `docs/e87-mise-identity-receipt.md` para la prueba de identidad por digest. Contrato de propiedad: instalado vía mise, mise es dueño del binario `cogh` de Capa 0 (actualiza con `mise upgrade`); `cogh` solo es dueño del runtime de Capa 1 (`~/.cognicode`).
 
-### Binario precompilado
+### Binario precompilado publicado (recuperación independiente)
 
-Descarga la última release desde [GitHub Releases](https://github.com/Rubentxu/CogniCode/releases):
-
-```bash
-# Linux (x86_64)
-chmod +x cognicode-mcp
-./cognicode-mcp --cwd /ruta/a/tu/proyecto
-```
+Para una instalación no gestionada, extrae el tarball de tu plataforma desde
+[GitHub Releases](https://github.com/Rubentxu/CogniCode/releases) **después**
+de verificarlo con el `SHA256SUMS` de la release. El ejecutable está dentro
+del archivo, en `bin/cognicode-mcp`; no es un fichero suelto en el directorio
+de descargas. No utilices `target/release/cognicode-mcp` en una configuración
+MCP persistente: es un build local de desarrollo. Utiliza preferentemente
+`~/.cognicode/shims/cognicode-mcp`, instalado y gestionado por `cogh`.
 
 ### Desde fuente
 
