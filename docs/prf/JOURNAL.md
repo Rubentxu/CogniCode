@@ -2734,3 +2734,12 @@ informe honesto, comando desconocido rechazado. Sin defectos de
 producto; 3 hallazgos de contrato documentados en evidencia.
 Evidencia: `evidence/u60-cli01-exhaustive/`.
 **Matriz**: PRF-CLI-01 → PASS (escenario crítico §38 + barrido completo).
+
+## §61 — PRF-CLI-03: UAT binario real — PASS (2026-09-22)
+
+`prf_cli_03_workspace_uat` (3/3): análisis y selección de workspace por
+ruta canónica con OTLP endpoint cerrado (collector ausente), sin
+Explorer/RPC/cloud. Fallo parcial (extensión no soportada) = skip
+honesto, no fatal ni oculto. Sin defectos de producto. Evidencia:
+`evidence/u61-cli03-workspace/`.
+**Matriz**: PRF-CLI-03 → PASS.
