@@ -301,7 +301,7 @@ pub fn integrate_opencode(
 }
 
 /// Build the opencode adapter's `uninstall` recipe as steps.
-pub fn uninstall_opencode(version: &str, binary_name: &str) -> Result<Vec<Step>> {
+pub fn uninstall_opencode(version: &str, binary_name: Option<&str>) -> Result<Vec<Step>> {
     let mut steps = Vec::new();
 
     // 1. Remove skills symlink
@@ -319,11 +319,13 @@ pub fn uninstall_opencode(version: &str, binary_name: &str) -> Result<Vec<Step>>
     //    hardcoded `"cognicode-mcp"` literal. The literal silently
     //    coupled BinaryName to a specific component name; the
     //    manifest-derived name is the source of truth.
-    let config_path = opencode_config_path();
-    steps.push(Step::RemoveFromJson {
-        target: config_path,
-        path: vec!["mcp".to_string(), binary_name.to_string()],
-    });
+    if let Some(binary_name) = binary_name {
+        let config_path = opencode_config_path();
+        steps.push(Step::RemoveFromJson {
+            target: config_path,
+            path: vec!["mcp".to_string(), binary_name.to_string()],
+        });
+    }
 
     Ok(steps)
 }
@@ -480,7 +482,7 @@ pub fn integrate_zcode(
     Ok(())
 }
 
-pub fn uninstall_zcode(version: &str, binary_name: &str) -> Result<()> {
+pub fn uninstall_zcode(version: &str, binary_name: Option<&str>) -> Result<()> {
     // 1. Remove skills dir
     let skills_dst = zcode_skills_dir().join(format!("cognicode-{version}"));
     if skills_dst.exists() {
@@ -492,6 +494,9 @@ pub fn uninstall_zcode(version: &str, binary_name: &str) -> Result<()> {
     // 2. Remove MCP entry. DEBT-3.f: take the BinaryName from
     //    the bundle manifest's DaemonCli component, not from a
     //    hardcoded `"cognicode-mcp"` literal.
+    let Some(binary_name) = binary_name else {
+        return Ok(());
+    };
     let config_path = zcode_config_path();
     if config_path.exists() {
         let mut config = read_zcode_config()?;
@@ -577,7 +582,7 @@ pub fn integrate_claude(
     Ok(())
 }
 
-pub fn uninstall_claude(version: &str, binary_name: &str) -> Result<()> {
+pub fn uninstall_claude(version: &str, binary_name: Option<&str>) -> Result<()> {
     // 1. Remove skills dir
     let skills_dst = claude_skills_dir().join(format!("cognicode-{version}"));
     if skills_dst.exists() {
@@ -589,6 +594,9 @@ pub fn uninstall_claude(version: &str, binary_name: &str) -> Result<()> {
     // 2. Remove MCP file. DEBT-3.f: take the file stem from the
     //    bundle manifest's DaemonCli component, not from a
     //    hardcoded `"cognicode-mcp"` literal.
+    let Some(binary_name) = binary_name else {
+        return Ok(());
+    };
     let target = claude_mcp_dir().join(format!("{binary_name}.json"));
     if target.exists() {
         std::fs::remove_file(&target).with_context(|| format!("rm {}", target.display()))?;
@@ -734,7 +742,7 @@ pub fn integrate_codex(
     Ok(())
 }
 
-pub fn uninstall_codex(version: &str, binary_name: &str) -> Result<()> {
+pub fn uninstall_codex(version: &str, binary_name: Option<&str>) -> Result<()> {
     // 1. Remove skills dir
     let skills_dst = codex_skills_dir().join(format!("cognicode-{version}"));
     if skills_dst.exists() {
@@ -746,6 +754,9 @@ pub fn uninstall_codex(version: &str, binary_name: &str) -> Result<()> {
     // 2. Remove MCP entry from TOML config. DEBT-3.f: take the
     //    subtable key from the bundle manifest's DaemonCli
     //    component, not from a hardcoded `"cognicode-mcp"` literal.
+    let Some(binary_name) = binary_name else {
+        return Ok(());
+    };
     let config_path = codex_config_path();
     if config_path.exists() {
         let mut config = read_codex_config()?;
@@ -896,20 +907,27 @@ pub fn cmd_ide_uninstall(home: &CognicodeHomeSup, ide: &str, version: &str) -> R
     // DaemonCli component, then pass it down to each uninstall
     // path so they remove the right JSON/TOML/file entry rather
     // than blindly targeting a hardcoded `"cognicode-mcp"` key.
-    let binary_name =
-        crate::bundle_manifest::daemon_cli_binary_name(&home.version_manifest(version))?;
+    let manifest_path = home.version_manifest(version);
+    let installed = crate::bundle_manifest::BundleManifest::from_path(&manifest_path)?;
+    let binary_name = if installed.components.iter().any(|component| {
+        component.kind == crate::release_contract::ArtifactKind::DaemonCli
+    }) {
+        Some(crate::bundle_manifest::daemon_cli_binary_name(&manifest_path)?)
+    } else {
+        None
+    };
     match ide {
         "opencode" => {
-            let steps = uninstall_opencode(version, &binary_name)?;
+            let steps = uninstall_opencode(version, binary_name.as_deref())?;
             for step in steps {
                 step.execute()?;
             }
             println!("✓ OpenCode uninstall complete");
             Ok(())
         }
-        "zcode" => uninstall_zcode(version, &binary_name),
-        "claude" => uninstall_claude(version, &binary_name),
-        "codex" => uninstall_codex(version, &binary_name),
+        "zcode" => uninstall_zcode(version, binary_name.as_deref()),
+        "claude" => uninstall_claude(version, binary_name.as_deref()),
+        "codex" => uninstall_codex(version, binary_name.as_deref()),
         other => Err(anyhow!(
             "IDE '{}' is not supported by cogh yet (opencode/zcode/claude/codex in E32-D/E/F/G)",
             other
