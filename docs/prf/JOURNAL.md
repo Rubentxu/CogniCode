@@ -2566,3 +2566,20 @@ del programa PRF activo).
 **Evidencia**: `evidence/u21-sigkill-recovery/OBSERVATIONS.md`. **Deuda menor**: cache conserva tars parciales sin GC (solo espacio en disco).
 
 **Matriz**: U21 / PRF-DIST-04 → PASS. Siguiente: PRF-ANA-06, PRF-ANA-09, PRF-CI-02.
+
+## §49 — PRF-ANA-06: Basis identity en build_graph — PASS (2026-09-22)
+
+**Implementación**: `BasisDto` en el output de `build_graph` MCP: workspace canónico,
+config digest (SHA-256 sobre config efectiva), source manifest digest (SHA-256 sobre
+pares rel_path+content_hash ordenados) y flag `complete` explícito. Backward-compatible
+(skip_serializing_if). 4 tests RED→GREEN (`prf_ana_06_basis_identity_tests`).
+
+**Verificación**: core lib 2145/0/27; cognicode-mcp continuation_e2e 5/5; lifecycle 7/7;
+clippy 0 errores. **UAT binario real** (stdio JSON-RPC, corpus temporal): basis presente,
+complete=true, workspace==realpath — PASS (`evidence/u50-ana06-basis/`).
+
+**Lección**: primera pasada UAT falló por binario release stale; rebuild forzado la
+resolvió. Validar frescura de binario antes de UAT.
+
+**Matriz**: PRF-ANA-06 → PASS. Siguientes NOT_RUN/PARTIAL accionables: PRF-CLI-02
+(stdout/stderr captura completa), PRF-CLI-05, PRF-CI-02.
