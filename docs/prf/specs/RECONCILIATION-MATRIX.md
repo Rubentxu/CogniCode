@@ -175,6 +175,7 @@
 - H-02 del operador **resuelto** en `80e7c403` (JOURNAL §30). `PRF-ANA-02` movido de `PARTIAL → PEND` a `PARTIAL (mejorado)`.
 - H-01 del operador **resuelto** en `39928202` (JOURNAL §32). `PRF-ANA-03` movido de `FAIL (RED pin)` a `PASS (RED→GREEN)`. Decisión SHA-256 ejercida por "a tu criterio" previo del operador.
 - H-02 adicional del operador **resuelto** en `41e4230f` (JOURNAL §33). `PRF-ANA-04` movido de `PARTIAL` a `PASS (RED→GREEN)` con `status` field en `BuildGraphOutput`.
+- PRF-ANA-05 (handler reproducibilidad) **mejorado** en `dc1190f7` (JOURNAL §34). Test `repeated_build_graph_calls_are_reproducible_at_handler` añadido como pineo del MCP handler boundary. Disposición bucket sigue siendo PARTIAL (el requisito SPEC exige UAT sobre binario real, no sobre handler en proceso); el cambio mejora la cobertura dentro del bucket pero no lo convierte en PASS hasta que se ejecute la UAT stdio JSON-RPC. Contador SPEC-ANALYSIS **no cambia** por este movimiento.
 
 **Conclusión:** **0 ítems en PASS contractual pleno sobre los requisitos MUST**; **~3 PASS pleno** (U-F4-001 = U18 + PRF-ANA-03 con H-01 GREEN + PRF-ANA-04); **1 PASS parcial** (U01); ~40 PARTIAL; ~7 FAIL; ~23 NOT_RUN; ~4-8 PEND; 0 EXCL. **No es posible firmar C7** mientras esta matriz muestre esta distribución. Las acciones 3 y 4 del cierre PRF deben convertir los FAIL y PEND en PASS, documentar las EXCL y dejar los NOT_RUN solo si son genuinamente 'fuera de alcance' (lo que requiere EXCL aprobada por el operador).
 
