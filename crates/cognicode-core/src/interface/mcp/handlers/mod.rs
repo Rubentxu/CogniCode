@@ -4064,8 +4064,15 @@ mod tests {
         let rust_file2 = tempdir2_path.join("file2.rs");
         std::fs::write(&rust_file2, "fn function_two() {}\n").unwrap();
 
+        // PRF-SEC-01: both workspaces are explicitly allowlisted.
         let ctx = HandlerContext::builder()
             .with_working_dir(tempdir1_path.to_path_buf())
+            .with_validator(
+                crate::interface::mcp::security::InputValidator::new().with_workspace(vec![
+                    tempdir1_path.to_path_buf(),
+                    tempdir2_path.to_path_buf(),
+                ]),
+            )
             .build();
 
         // First call with tempdir1
@@ -4182,8 +4189,16 @@ mod tests {
         std::fs::write(tempdir_b.path().join("lib.rs"), "pub fn from_b() {}\n").unwrap();
 
         // Working dir points to A, but the explicit absolute path targets B.
+        // PRF-SEC-01: the second workspace must be explicitly allowlisted
+        // (raw absolute escapes are rejected by the InputValidator).
         let ctx = HandlerContext::builder()
             .with_working_dir(tempdir_a.path().to_path_buf())
+            .with_validator(
+                crate::interface::mcp::security::InputValidator::new().with_workspace(vec![
+                    tempdir_a.path().to_path_buf(),
+                    tempdir_b.path().to_path_buf(),
+                ]),
+            )
             .build();
 
         let explicit_b = handle_build_graph(
