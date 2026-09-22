@@ -31,6 +31,23 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  coverage-report:
+    # PRF-CI-03: line/branch coverage measurement. Report-only for now:
+    # the baseline (cognicode-core lib 74.15% lines / 70.35% regions,
+    # 2026-09-22) is recorded in evidence/u54-ci03-coverage/ and a
+    # mandatory threshold is a policy decision pending operator sign-off.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+      - name: Coverage (cognicode-core lib)
+        run: cargo llvm-cov --lib -p cognicode-core --summary-only
+
   build-check:
     runs-on: ubuntu-latest
     steps:

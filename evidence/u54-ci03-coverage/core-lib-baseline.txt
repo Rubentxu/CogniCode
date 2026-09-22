@@ -1,0 +1,9 @@
+info: cargo-llvm-cov currently setting cfg(coverage); you can opt-out it by passing --no-cfg-coverage
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /var/mnt/DiscoChino2-fast/Proyectos/rust/CogniCode/crates/cognicode-graph-wasm/Cargo.toml
+
+Command: cargo llvm-cov --lib -p cognicode-core --summary-only
+Date: 2026-09-22 · CARGO_TARGET_DIR=/home/rubentxu/cargo-targets
+TOTAL line: lines 74.15% (88464/119304), regions 70.35%, functions 72.16%
+CI: report-only job `coverage-report` added to ci.yml (continue-on-error);
+mandatory threshold = policy decision pending operator.
