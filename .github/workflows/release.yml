@@ -69,6 +69,20 @@ jobs:
         with:
           shared-key: ${{ matrix.rust_target }}
 
+      # PRF-CI-05: advisory scan is a BLOCKING release gate. Policy lives in
+      # deny.toml; documented transitive debts are ignored there with reasons.
+      - name: Advisories gate (cargo-deny)
+        run: |
+          cargo install cargo-deny --locked || true
+          cargo deny check advisories
+
+      # PRF-CI-05: SBOM (CycloneDX) per workspace crate, uploaded with the
+      # lane payloads for provenance.
+      - name: SBOM (cargo-cyclonedx)
+        run: |
+          cargo install cargo-cyclonedx --locked || true
+          cargo cyclonedx --format json
+
       - name: Build the publishable binaries natively
         run: |
           set -euo pipefail
@@ -144,7 +158,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: payloads-${{ matrix.platform }}
-          path: dist/*.tar.gz
+          path: |
+            dist/*.tar.gz
+            crates/*.cdx.json
           if-no-files-found: error
 
   # -------------------------------------------------------------------

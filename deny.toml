@@ -1,0 +1,21 @@
+# cargo-deny configuration (PRF-CI-05).
+# Policy: NEW vulnerabilities/unsound in advisories are ERRORS (deny).
+# The entries below are documented, tracked debt — each has a reason and
+# a recorded fix path in docs/prf/specs/RECONCILIATION-MATRIX.md and
+# JOURNAL §55. Adding a new ignore without a matrix entry is a review
+# failure.
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+    # unmaintained, transitive, no compatible replacement yet:
+    "RUSTSEC-2024-0384", # instant < 0.1.13 unmaintained; via notify 7; fix: notify 8
+    "RUSTSEC-2026-0192", # ttf-parser unmaintained; via mermaid-rs-renderer/fontdb; fix: upstream
+    "RUSTSEC-2025-0141", # bincode 1.x unmaintained; transitive; workspace uses bincode 2 directly
+    # unsound, transitive:
+    "RUSTSEC-2023-0057", # libc pre-main std access (via crossbeam-deque build path); fix: libc bump
+    # vulnerability, transitive — fix requires opentelemetry-prometheus 0.28
+    # (prometheus 0.14, protobuf 3) = OTel 0.27->0.28 major migration,
+    # tracked as its own unit; exposure limited to the /metrics export path.
+    "RUSTSEC-2024-0437", # protobuf 2.28.0 uncontrolled recursion
+]

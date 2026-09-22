@@ -188,3 +188,4 @@ uat-guided-v1.0.0-current.html
 # over core.excludesFile, so declare the layout here.
 !crates/cognicode-cli/src/bin/
 sandbox/scripts/tests/__pycache__/
+*.cdx.json
