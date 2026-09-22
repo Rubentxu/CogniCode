@@ -37,7 +37,7 @@ Built with **Domain-Driven Design** and **Clean Architecture**, it supports six 
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.96.0`. Then run `cogh install` to configure the runtime (Layer 1).
+Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.96.0`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
 
 ### mise
 
@@ -47,15 +47,15 @@ mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 
 Pin a version with `@0.96.0`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
 
-### Pre-built binary
+### Published, pre-built binary (standalone fallback)
 
-Download the latest release from [GitHub Releases](https://github.com/Rubentxu/CogniCode/releases):
-
-```bash
-# Linux (x86_64)
-chmod +x cognicode-mcp
-./cognicode-mcp --cwd /path/to/your/project
-```
+For an unmanaged installation, extract the platform-specific tarball from
+[GitHub Releases](https://github.com/Rubentxu/CogniCode/releases) **after**
+checking it against the release's `SHA256SUMS`. Its executable is under
+`bin/cognicode-mcp` inside the archive, not a bare file in the download
+directory. Do not point a persistent IDE configuration to
+`target/release/cognicode-mcp`: that is a local development build. Prefer
+the managed `~/.cognicode/shims/cognicode-mcp` path installed by `cogh`.
 
 ### From source
 
