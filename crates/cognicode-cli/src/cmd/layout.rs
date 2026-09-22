@@ -487,6 +487,60 @@ pub fn cmd_install(
     Ok(resolved)
 }
 
+/// Preserve the installed capability profile during ordinary updates.
+/// The CLI only downgrades from reviewer to core when the user explicitly
+/// passes `--profile core`; installed manifest is authoritative.
+pub fn active_install_profile(home: &CognicodeHome) -> &'static str {
+    let Some(version) = crate::tracker::read_version_optional_at(&home.tracker_version()) else {
+        return "core";
+    };
+    let Ok(manifest) = crate::bundle_manifest::BundleManifest::from_path(
+        &home.version_manifest(&version),
+    ) else {
+        return "core";
+    };
+    if manifest
+        .components
+        .iter()
+        .any(|component| component.kind == crate::release_contract::ArtifactKind::DaemonCli)
+    {
+        "reviewer"
+    } else {
+        "core"
+    }
+}
+
+/// A coherent version can still contain a different profile. In particular,
+/// a core-only vX install must NOT make `update --profile reviewer` a no-op.
+fn active_install_matches_profile(home: &CognicodeHome, version: &str, profile: &str) -> bool {
+    let Ok(published) =
+        crate::bundle_manifest::BundleManifest::from_path(&home.bundle_yaml_path())
+    else {
+        return false;
+    };
+    if published.version != version {
+        return false;
+    }
+    let Ok(installed) =
+        crate::bundle_manifest::BundleManifest::from_path(&home.version_manifest(version))
+    else {
+        return false;
+    };
+    let mut expected: Vec<_> = published
+        .components_for_profile(profile)
+        .iter()
+        .map(|component| component.name.as_str())
+        .collect();
+    let mut actual: Vec<_> = installed
+        .components
+        .iter()
+        .map(|component| component.name.as_str())
+        .collect();
+    expected.sort_unstable();
+    actual.sort_unstable();
+    !expected.is_empty() && expected == actual
+}
+
 pub fn cmd_update(
     home: &CognicodeHome,
     plugin: Option<String>,
@@ -527,6 +581,7 @@ pub fn cmd_update(
     if crate::tracker::read_version_optional_at(&home.tracker_version()).as_deref()
         == Some(resolved.version.as_str())
         && active_install_is_coherent(home, &resolved.version)
+        && active_install_matches_profile(home, &resolved.version, &profile)
     {
         println!(
             "already current: {} is installed and coherent (no transition performed)",
@@ -2022,6 +2077,57 @@ components:
             state.insert("tree".into(), sha256_hex(names.join("\n").as_bytes()));
         }
         state
+    }
+
+    /// A core-only installation of the SAME release must not silently
+    /// satisfy an explicit request for the MCP-bearing reviewer profile.
+    #[test]
+    #[serial]
+    fn dist_same_version_core_to_reviewer_installs_mcp() {
+        use crate::release_test_support::ResolverFixture;
+
+        let temp = test_support::TempCognicodeHome::new();
+        let fx = ResolverFixture::build("0.95.0").expect("fixture");
+        let _base = test_support::TempBaseUrl::set(&fx.release.base_url);
+        let _opencode = test_support::TempOpenCodeConfig::disable();
+        let home = CognicodeHome::resolve(Some(temp.path())).expect("home");
+        home.init().expect("init");
+
+        cmd_update(
+            &home,
+            None,
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "core".to_string(),
+            false,
+        )
+        .expect("install core");
+
+        assert_eq!(active_install_profile(&home), "core");
+        assert!(!active_install_matches_profile(&home, "0.95.0", "reviewer"));
+
+        cmd_update(
+            &home,
+            None,
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "reviewer".to_string(),
+            false,
+        )
+        .expect("upgrade capabilities without changing release version");
+
+        let installed = crate::bundle_manifest::BundleManifest::from_path(
+            &home.version_manifest("0.95.0"),
+        )
+        .expect("installed manifest");
+        assert!(installed
+            .components
+            .iter()
+            .any(|c| c.kind == crate::release_contract::ArtifactKind::DaemonCli));
+        assert!(home.shim_path("cognicode-mcp").is_file());
+        assert_eq!(active_install_profile(&home), "reviewer");
     }
 
     /// T1 (lifecycle-F3 WU0/WU2): install A, then a same-version update
