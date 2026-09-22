@@ -24,7 +24,7 @@ use super::tracker;
 /// Returns the path to the written install manifest on success.
 pub fn run_install(home: &CognicodeHome, profile: &str) -> Result<PathBuf> {
     // 1. Acquire install lock
-    let lock = install_lock::acquire_lock()
+    let lock = install_lock::acquire_lock_at(home)
         .map_err(|e| anyhow!("failed to acquire install lock: {}", e))?;
 
     // 2. Run installer transaction
