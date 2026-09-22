@@ -41,14 +41,26 @@ pub struct CogniCodeHandler {
 impl CogniCodeHandler {
     /// Creates a new CogniCodeHandler with InMemoryGraphStore (no persistence)
     pub fn new(project_root: PathBuf) -> Self {
+        Self::with_options(project_root, false)
+    }
+
+    /// PRF-SEC-02: create a handler in read-only mode. Mutating tools
+    /// (write_file, edit_file, reparse_on_edit) are hidden from `tools/list`
+    /// and rejected at dispatch with a typed error.
+    pub fn with_options(project_root: PathBuf, read_only: bool) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
         let mut ctx = Self::build_ctx(project_root);
         ctx.cancellation_token = cancellation_token.clone();
+        ctx.read_only = Arc::new(AtomicBool::new(read_only));
         Self {
             ctx: Arc::new(ctx),
             cancellation_token,
         }
     }
+
+    /// Set of tools that mutate workspace state. Single source of truth
+    /// shared by `list_tools` filtering and `call_tool` rejection.
+    pub const MUTATING_TOOLS: &'static [&'static str] = &["write_file", "edit_file", "reparse_on_edit"];
 
     /// M3.1: Creates a CogniCodeHandler wrapping a pre-built, shared
     /// `Arc<HandlerContext>`. Used by the HTTP server (cognicode-mcp)
@@ -1232,8 +1244,14 @@ impl ServerHandler for CogniCodeHandler {
 
             const PAGE_SIZE: usize = 20;
 
-            // All tools with annotations - same as server.rs handle_tools_list
-            let all_tools = build_all_tools();
+            // PRF-SEC-02: in read-only mode mutating tools are not advertised.
+            let all_tools: Vec<_> = build_all_tools()
+                .into_iter()
+                .filter(|t| {
+                    !self.ctx.read_only.load(Ordering::SeqCst)
+                        || !Self::MUTATING_TOOLS.contains(&t.name.as_ref())
+                })
+                .collect();
 
             // Paginate
             let total = all_tools.len();
@@ -1298,6 +1316,17 @@ async fn call_tool_handler(
 ) -> InterfaceResult<String> {
     let tool_name = request.name.as_ref();
     let mut arguments = request.arguments.unwrap_or_default();
+
+    // PRF-SEC-02: read-only mode rejects mutating tools before any handler
+    // runs. Error is typed/honest (isError text), not a silent success.
+    if CogniCodeHandler::MUTATING_TOOLS.contains(&tool_name)
+        && ctx.read_only.load(Ordering::SeqCst)
+    {
+        return Err(InterfaceError::Internal(format!(
+            "read_only_mode: tool `{tool_name}` mutates workspace state and is disabled; restart the server without --read-only to enable it"
+        )));
+    }
+
 
     // UAT 2026-08-10 DEFECT-1: BC layer for parameter naming.
     // Renames legacy parameter names to their canonical equivalents so

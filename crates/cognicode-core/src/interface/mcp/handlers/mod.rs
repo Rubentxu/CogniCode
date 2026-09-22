@@ -375,6 +375,12 @@ pub struct HandlerContext {
     /// by the HTTP readiness handler without going through the dispatch
     /// boundary.
     pub graph_loaded: Arc<AtomicBool>,
+    /// PRF-SEC-02: read-only mode. When `true`, mutating tools
+    /// (write_file, edit_file, reparse_on_edit) are rejected at dispatch
+    /// and filtered out of `tools/list`. Default `false` preserves the
+    /// existing behavior for the HTTP server; the stdio binary exposes
+    /// `--read-only`.
+    pub read_only: Arc<AtomicBool>,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -507,12 +513,19 @@ pub struct HandlerContextBuilder {
     file_ops_service:
         Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
     iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
+    read_only: Option<Arc<AtomicBool>>,
 }
 
 impl HandlerContextBuilder {
     /// Creates a new HandlerContextBuilder with all fields unset (will use defaults on build).
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// PRF-SEC-02: enables read-only mode (mutating tools rejected/hidden).
+    pub fn with_read_only(mut self, read_only: bool) -> Self {
+        self.read_only = Some(Arc::new(AtomicBool::new(read_only)));
+        self
     }
 
     /// Sets the working directory.
@@ -708,6 +721,9 @@ impl HandlerContextBuilder {
             iac_repo: self.iac_repo,
             fallback_store: Arc::new(OnceLock::new()),
             graph_loaded: Arc::new(AtomicBool::new(false)),
+            read_only: self
+                .read_only
+                .unwrap_or_else(|| Arc::new(AtomicBool::new(false))),
         }
     }
 }

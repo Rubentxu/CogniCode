@@ -15,6 +15,10 @@ use tracing::info;
 struct Args {
     #[arg(short, long, default_value = ".")]
     cwd: PathBuf,
+    /// PRF-SEC-02: run in read-only mode. Mutating tools (write_file,
+    /// edit_file, reparse_on_edit) are hidden from tools/list and rejected.
+    #[arg(long, default_value_t = false)]
+    read_only: bool,
 }
 
 #[tokio::main]
@@ -83,7 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Standalone in-memory handler — the PG-connected Mode B was
     // removed with the full postgres removal (e29-7).
     info!("Starting standalone in-memory handler");
-    let handler = CogniCodeHandler::new(args.cwd);
+    let handler = CogniCodeHandler::with_options(args.cwd, args.read_only);
     let transport = stdio();
     let server = rmcp::serve_server(handler, transport).await?;
 
