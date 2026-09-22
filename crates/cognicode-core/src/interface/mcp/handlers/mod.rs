@@ -903,6 +903,7 @@ fn build_manifest(
     project_dir: &Path,
 ) -> std::io::Result<crate::domain::value_objects::file_manifest::FileManifest> {
     use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
+    use sha2::{Digest, Sha256};
     use walkdir::WalkDir;
     const SKIP_DIRS: &[&str] = &[
         "target",
@@ -950,11 +951,16 @@ fn build_manifest(
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
-        // Use mtime as content_hash proxy (cheap — no file read needed)
+        // PRF-STATE-02: content_hash must hash CONTENT, not metadata.
+        // The previous mtime proxy produced identical digests for
+        // different files written in the same millisecond.
+        let content_hash = std::fs::read(path)
+            .map(|bytes| hex_digest(&Sha256::digest(&bytes)))
+            .unwrap_or_else(|_| mtime.to_string());
         let _ = manifest.entries.insert(
             rel,
             FileEntry {
-                content_hash: mtime.to_string(),
+                content_hash,
                 mtime,
                 symbol_count: 0,
             },
