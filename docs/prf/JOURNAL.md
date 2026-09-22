@@ -2932,3 +2932,20 @@ full` no exporta aristas individuales); la igualdad de sets la sigue
 cubriendo el test in-process. Ambos juntos: sets + transporte.
 Commit `45c390fd`.
 **Matriz**: PRF-CLI-04 → PASS.
+
+## §76 — PRF-DIST-01/06: release candidata local verificada — PASS (2026-09-22)
+
+UAT binario real `prf_dist_01_06_release_candidate_uat.rs` (commit
+`056023fc`): `cognicode-release generate` sobre payloads reales
+(cogh/cognicode/cognicode-mcp + skill bundles 0.97.3) produce
+inventario con `source_commit == HEAD`; `verify` pasa desde el
+directorio de la candidata (hashes+manifest+composición); payload
+manipulado → rechazado (exit != 0). Separación Layer 0/1 ejercitada
+como componentes publicados distintos. Nota honesta: esto acredita
+la fábrica de release LOCAL (R1-R9); no sustituye la publicación
+GitHub ni la instalación end-to-end desde la release publicada
+(operator-gated). Fix del justfile detectado en ruta: `just
+bundle-skills` usa versión legacy 0.94.11 por defecto; se invocó con
+`COGNICODE_VERSION=0.97.3` (deuda menor anotada, no corregida aqui).
+**Matriz**: PRF-DIST-01 → PASS (candidata local), PRF-DIST-06 →
+PASS (candidata local).
