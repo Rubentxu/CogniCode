@@ -2583,3 +2583,20 @@ resolvió. Validar frescura de binario antes de UAT.
 
 **Matriz**: PRF-ANA-06 → PASS. Siguientes NOT_RUN/PARTIAL accionables: PRF-CLI-02
 (stdout/stderr captura completa), PRF-CLI-05, PRF-CI-02.
+
+## §50 — PRF-CLI-02: stdout datos estructurados / stderr logs — PASS (2026-09-22)
+
+**Auditoría honesta inicial**: la primera pasada UAT marcó analyze/doctor texto como
+violación; corrección: son salida humana histórica, no estructurada; cambiarla exigiría
+migración + test de cliente (prohibido sin contrato). Única operación estructurada
+declarada era `doctor --format json` (cumple).
+
+**Cambio**: `graph full --format json` additive con `schema_version:
+cognicode.graph.full/v1`; stdout solo el documento JSON, progreso/logs a stderr; modo
+texto default intacto.
+
+**UAT binario real (captura completa)**: 5/5 PASS (`evidence/u51-cli02-stdio-split/`).
+Core lib 2145/0/27; clippy 0.
+
+**Matriz**: PRF-CLI-02 → PASS. Deuda declarada: --format json pendiente en el resto de
+subcomandos de graph. Siguientes: PRF-CLI-05 (NOT_RUN), PRF-CI-02, PRF-ANA-09.
