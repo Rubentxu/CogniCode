@@ -11,7 +11,7 @@
 | Última unidad cerrada | **H-clippy-FullGraphStrategy-type_complexity** (commit `47dd39ac` clippy-fix + docs checkpoint, ACCEPTED local; pendiente push) |
 | Unidad activa siguiente | **F7 — aceptación de release** (decisión técnica READY FOR RELEASE; pendiente T5 + C7 + tag + push) |
 | Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. F2 = ACCEPTED (W1-W10 IMPLEMENTED vía cert C2). F3-F6 = ACCEPTED vía C3-C6. **C7 = READY FOR RELEASE** (orden del operador pendiente). |
-| HEAD | HEAD actual (docs checkpoint de cierre, ver `git log -2`); ancestor estable: clippy-fix `47dd39ac` sobre `5b96db43` (T4 base) |
+| HEAD | `c1b14017` (release-candidate refresh) sobre `86df20de` (docs checkpoint) sobre `47dd39ac` (clippy-fix H-D34-1) sobre `5b96db43` (T4 base) |
 | Working tree | `strategy.rs` refactorizado pendiente commit + docs/prf actualizados; openspec huérfano eliminado |
 | Bloqueos conocidos | **Ninguno funcional**. Residual técnico: `cognicode-cli` warnings preexistentes (D34-2) fuera de scope. Residual administrativo: push + tag del operador. |
 | Siguiente unidad ejecutable | **F7: decisión técnica READY FOR RELEASE consolidada** sobre HEAD actual (docs checkpoint tras `47dd39ac` clippy-fix). Único pendiente: orden explícita de push y tag del operador. C7 se firma tras publicar. |

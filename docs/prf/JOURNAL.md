@@ -1890,3 +1890,23 @@ bundle_manifest,ide,layout,tracker,...}.rs`. Cierre previsto en
 sesión dedicada por scope (`cognicode-cli` no es unit of work
 del programa PRF activo).
 - Pendiente: T5/certificación C7 de release (requiere decisión de versionado y tag del operador), ciclo propio para strategy.rs:521.
+
+## 2026-09-22 — Refresh de RELEASE-CANDIDATE (entrada 27)
+
+- Diagnóstico: `RELEASE-CANDIDATE.md` quedó desactualizado frente al progreso
+  real (HEAD apuntaba a `0764fb81`; tests decían 2122 vs 2126 actuales; D34-1
+  no marcado como RESUELTO pese al fix en `47dd39ac`; D34-2 no documentado
+  explícitamente aunque está reservado fuera de PRF). Pendiente administrativo:
+  push + tag siguen operator-gated (JOURNAL §25 / directive §3).
+- Acción ejecutada (H-RELEASE-DOCS-REFRESH): actualizar `RELEASE-CANDIDATE.md`
+  a HEAD actual `c1b14017`, lista de 4 candidatos de versión (v0.97.4 /
+  v0.98.0 / v0.98.0-prf / v1.0.0-prf), entry D34-1 RESUELTO (`47dd39ac`),
+  entry D34-2 OPEN fuera de programa PRF (JOURNAL §15 / CURRENT.md).
+  Reconfirmación de READY FOR RELEASE sobre `c1b14017`.
+- Acción complementaria: `STATE.md` snapshot row actualizado a nueva cadena
+  de SHAs; `CURRENT.md` ahora referencia `c1b14017` y los 4 candidatos.
+- Commit: `c1b14017` (release-candidate refresh) sobre `86df20de` (docs
+  checkpoint) sobre `47dd39ac` (clippy-fix) sobre `5b96db43` (T4 base).
+- Working tree: clean (a falta del commit de STATE/CURRENT/JOURNAL).
+- Estado: governance gateado (operator authorization para push + tag), pero
+  la superficie de decisión está ahora explícitamente preparada.
