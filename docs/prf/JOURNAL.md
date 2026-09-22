@@ -2848,3 +2848,14 @@ estable tras reinicio del servidor. Core lib 2145/0 (x2, un fallo
 puntual de timing no reproducible), suites MCP verdes.
 Commits `c70b7f76`.
 **Matriz**: PRF-STATE-02 → PASS.
+
+## §71 — PRF-EXT-02: resto de subcomandos CLI con semántica Partial — PASS (2026-09-22)
+
+Los 7 call-sites restantes que usaban `FullGraphStrategy::build_full_graph`
+(hot-paths, entry-points, leaf-functions, trace-path, mermaid,
+complexity, impact) pasan a `build_full_graph_report`: PARTIAL y lista
+de ficheros saltados en stderr, sin pérdida silenciosa de cobertura.
+UAT `prf_ext_02_partial_uat.rs` (binario real, corpus con fichero
+chmod-000): los 7 subcomandos avisan PARTIAL nombrando el fichero.
+cli unit 17/17, prf_cli_03 3/3, clippy lib limpio. Commit `1245b225`.
+**Matriz**: PRF-EXT-02 → PASS.
