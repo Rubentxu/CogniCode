@@ -694,8 +694,11 @@ Acciones del plan registrado en `RELEASE-CANDIDATE §Cierre de PRF`:
   `docs/prf/specs/RECONCILIATION-MATRIX.md`.
 - ✅ Acción 3 H-02 (errores silenciosos en `FullGraphStrategy`) —
   `80e7c403` (JOURNAL §30).
-- ⏳ Acción 3 H-01 (invalidación de cache por hash de contenido) —
-  requiere decisión de diseño del operador (mtime vs hash vs ambos).
+- ✅ Acción 3 H-01 RED pin (cache invalidation por contenido) —
+  `5ed7f865` (JOURNAL §31). Test pineado: cambia bytes preservando
+  TANTO mtime COMO size; falla con "stale cache entry was served".
+  Implementación (elección de hash) **pendiente** de decisión del
+  operador.
 - ⏳ Acción 3 H-03 (vertical a convergir) — requiere decisión del
   operador (qué vertical: LSP, MCP, CLI, persistencia, etc.).
 - ⏳ Acción 3 H-04 (persistencia vs reconstrucción) — requiere

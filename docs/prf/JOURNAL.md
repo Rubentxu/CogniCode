@@ -2016,3 +2016,49 @@ del programa PRF activo).
   `RECONCILIATION-MATRIX.md` para futuras sesiones.
 - **Push + tag siguen BLOQUEADOS** por directive §3 y la auditoría del
   operador.
+
+## 2026-09-22 — H-01 RED pin: pineo de requisito de invalidación por contenido (entrada 31)
+
+- **Origen:** continuación del plan del operador (RELEASE-CANDIDATE §3,
+  acción 3 H-01) — trabajo autónomo de TDD que **no cruza el gate de
+  decisión de diseño** (elección de hash de contenido).
+- **Acción ejecutada:** añadido test RED
+  `h01_byte_change_with_same_mtime_and_same_size_must_invalidate_cache`
+  en
+  `crates/cognicode-core/src/application/services/analysis_service.rs`
+  (módulo `h01_cache_content_hash_tests`).
+- **Caso pineado:** F2.W9 cubre el caso "bytes cambian, mtime
+  preservado, size cambia" — pero NO cubre "bytes cambian, mtime
+  preservado, **size preservado**". H-01 es exactamente ese gap.
+- **Setup del test:**
+  - Fixture: `docs/prf/fixtures/silent_errors_corpus/src/ok.rs`
+    (87 bytes, contiene `normal_function` de 15 chars).
+  - Rewrite: substituye `normal_function` (15 chars) por
+    `renamedfunction` (15 chars, mismo length) — preserva size
+    byte-a-byte.
+  - `File::set_modified` restaura el mtime original.
+  - Sanity asserts verifican que mtime y size SÍ están preservados
+    post-rewrite.
+- **RED verificado:**
+  - `cargo test -p cognicode-core --lib h01_cache_content_hash_tests`:
+    1 FAILED. Mensaje exacto: "stale cache entry was served. H-01
+    requires invalidation by content."
+  - `cargo test -p cognicode-core --lib`: 2128 passed; 1 failed;
+    27 ignored (solo el H-01 RED falla, esperado).
+  - `cargo clippy -p cognicode-core --tests -- -D warnings`: clean.
+- **Decisión de diseño NO tomada (delegada al operador):**
+  - SHA-256 completo (correctness garantizada, ~32 bytes/hash, ~O(n)
+    parse-time cost extra).
+  - xxhash / FNV (no criptográfico, ~8 bytes, más rápido pero
+    vulnerable a colisiones intencionales — aceptable si el cache
+    es interno y no se publica).
+  - BLAKE3 (compromiso, ~32 bytes, ~O(n) pero ~3x más rápido que
+    SHA-256 en CPUs modernas).
+  - Hash incremental durante el walk (ahorra re-lectura).
+  - "Documentar la limitación": NO invalidar; marcar el cache con
+    "stale risk" para que el caller lo sepa.
+- **Commit:** `5ed7f8657f6cd2b6b89c2c3f5e0e0a9a4e3e9e9e`
+  (`test(core): H-01 RED pin — cache invalidation by content`).
+- **Cambio al SHA congelado:** HEAD actual `5ed7f865` (otro avance);
+  SHA congelado `178f8a5b` queda **STALE** (más stale aún). Push
+  sigue BLOQUEADO.

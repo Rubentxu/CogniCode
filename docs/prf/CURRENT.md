@@ -1,11 +1,13 @@
 # CURRENT — Puntero operativo PRF
 
-## Estado (2026-09-22 checkpoint post-auditoría operador + H-02 GREEN)
-- **HEAD**: `80e7c403` (H-02 GREEN) sobre `82f1ba54` (SHA congelado +
-  matriz reconciliación) sobre `178f8a5b` (reconciliación C2) sobre
-  `f0e25652` (release-candidate refresh). origin/main = `5b96db43`.
-  Estado testing: **LOCAL_VERIFIED** (core lib 2128/0/27; clippy
-  `-D warnings` clean; fmt-clean).
+## Estado (2026-09-22 checkpoint post-auditoría operador + H-02 GREEN + H-01 RED pin)
+- **HEAD**: `5ed7f865` (H-01 RED pin) sobre `8074a426` (matrix recount)
+  sobre `f8cd3375` (docs refresh) sobre `80e7c403` (H-02 GREEN)
+  sobre `82f1ba54` (SHA congelado + matriz reconciliación) sobre
+  `178f8a5b` (reconciliación C2). origin/main = `5b96db43`.
+  Estado testing: **LOCAL_VERIFIED** (core lib 2128/0/27 + 1 H-01
+  RED test failing as expected; clippy `-D warnings` clean;
+  fmt-clean).
 - **Auditoría operador (2026-09-22, JOURNAL §29)**: 7 hallazgos ALTA
   (H-01..H-07) + 1 transversal. **REVOCÓ** la equivalencia
   `READY FOR RELEASE ≡ C7 PASS`. Push + tag + firma de C7 siguen
@@ -17,6 +19,9 @@
     `docs/prf/specs/RECONCILIATION-MATRIX.md`.
   - ✅ Acción 3 H-02 (errores silenciosos en
     `FullGraphStrategy::build_full_graph`) en `80e7c403` + JOURNAL §30.
+  - ✅ Acción 3 H-01 RED pin (cache invalidation por contenido) en
+    `5ed7f865` + JOURNAL §31. Implementación pendiente de decisión
+    del operador sobre algoritmo de hash.
 - **Deuda residual del programa**: H-01 (cache invalidation por hash),
   H-03 (vertical), H-04 (persistencia), H-07 (gate mechanism), 11 FAIL
   + 24 NOT_RUN + 9 PEND de la matriz de reconciliación.

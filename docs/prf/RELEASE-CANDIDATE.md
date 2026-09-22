@@ -33,12 +33,12 @@
 
 ## Batería de pruebas en HEAD
 
-- `cognicode-core --lib` (con `multimodal`): **2128 passed, 0 failed, 27 ignored** (verificado en HEAD `80e7c403` post-H-02; era 2126 antes de H-02, +2 tests nuevos).
+- `cognicode-core --lib` (con `multimodal`): **2128 passed, 0 failed, 27 ignored + 1 H-01 RED test failing as expected** (verificado en HEAD `5ed7f865` post-H-02 + H-01 RED pin; era 2126 antes de H-02, +3 tests nuevos: 2 H-02 + 1 H-01 RED).
 - Workspace `--lib`: GREEN salvo `moldql::cursor::consume_keyword_panics_on_mismatch`
   (cognicode-explorer), PRE-EXISTENTE en HEAD limpio (verificado con
   stash), NO regresión del programa PRF.
 - `cognicode-cli` bin cogh: 293 passed, 0 failed.
-- `clippy -D warnings`: clean para `cognicode-core` (post `80e7c403`); warning inventory de `cognicode-cli`/`cognicode-ladybug` verificado sin drift vs `5b96db43` (medido con `git stash` + diff antes/después).
+- `clippy -D warnings`: clean para `cognicode-core` (post `5ed7f865`); warning inventory de `cognicode-cli`/`cognicode-ladybug` verificado sin drift vs `5b96db43` (medido con `git stash` + diff antes/después).
 
 ## Frentes abiertos (deuda)
 
@@ -72,7 +72,7 @@ Origen: auditoría operador 2026-09-22 (sección ‘Cómo cerraría PRF sin crea
 - Por qué primero: sin esta base no se firma C7 ni se acepta nada como ‘cumple el contrato PRF’.
 
 ### 3. Cerrar fallos de correctitud que afectan al producto estable
-- H-01 (ALTA): invalidación de caché por contenido (no solo `mtime`+tamaño). Test: misma instancia de análisis, caché poblada, modificar bytes preservando tamaño y `mtime`, comprobar que detecta el cambio. **⏳ Pendiente** — requiere decisión del operador (¿hash SHA-256 de contenido o mtime+size con la limitación documentada?).
+- **H-01 (ALTA): RED pin ✅ en `5ed7f865` (JOURNAL §31); GREEN pendiente.** Test `h01_byte_change_with_same_mtime_and_same_size_must_invalidate_cache` pinea el caso exacto (cambio de bytes preservando TANTO mtime COMO size; falla hoy con "stale cache entry was served"). El F2.W9 test existente cubre solo "size cambia", no "size preservado". La elección de la señal derivada del contenido (SHA-256, xxhash, BLAKE3, hash incremental durante walk, o "documentar la limitación") es **decisión del operador**. Implementación pendiente de autorización.
 - **H-02 (ALTA): ✅ CERRADO en `80e7c403` (JOURNAL §30)** — `FullGraphStrategy::build_full_graph_report` añadido como inherent method (paralelo al `PerFileStrategy` existente). Captura walk errors, read errors, parser-init, find_* errors y UnsupportedExtension como `SkippedFile` con `SkipReason` clasificado. Status `Complete`/`Partial` explícito. Contrato del trait original `build_full_graph` preservado (no se cambió la firma). 2 nuevos tests RED→GREEN; suite 2128/0/27; clippy `-D warnings` clean.
 - Por qué después de la reconciliación: la reconciliación puede descubrir que algunos de estos 'fallos' son en realidad 'capacidades declaradas fuera de alcance'; el fix se ajusta entonces.
 
