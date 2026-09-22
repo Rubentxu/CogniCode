@@ -2649,3 +2649,18 @@ del roadmap actual: construir LSI sería un nuevo dominio que exige decisión
 arquitectónica propia, no un cierre de PRF.
 
 NO ejecuta: push, tag, C7 firma. Operator-gated.
+
+## §54 — PRF-CI-03: medición de cobertura operativa — PARTIAL (mejorado) (2026-09-22)
+
+**Medición**: `cargo llvm-cov --lib -p cognicode-core --summary-only` → **74.15%
+líneas / 70.35% regiones / 72.16% funciones** (baseline en
+`evidence/u54-ci03-coverage/`).
+
+**CI**: job `coverage-report` añadido a ci.yml (report-only, continue-on-error):
+la cobertura se mide y reporta en cada run. Umbral obligatorio NO fijado:
+exigir un número concreto es decisión de política que modifica el gate
+(local-first policy §4.bis); se deja explícitamente pendiente del operador.
+
+**Matriz**: PRF-CI-03 pasa de PARTIAL (sin medición) a **PARTIAL (mejorado)**:
+medición operativa + visibilidad en CI; falta el threshold obligatorio como gate.
+Siguientes: PRF-CI-02 (matriz nightly), PRF-CI-05 (SBOM).
