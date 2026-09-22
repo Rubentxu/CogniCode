@@ -42,7 +42,7 @@
 | PRF-CI-03 (modificación de comportamiento → test caracterizador + regresión) | PARTIAL | Se cumple en el trabajo ejecutado (RED→GREEN pineado), pero no hay medición de cobertura de líneas/ramas como gate obligatorio. |
 | PRF-CI-04 (presupuesto de rendimiento por perfil/corpus fijado **antes** de comparación) | NOT_RUN | No hay baseline de rendimiento publicado en PRF. |
 | PRF-CI-05 (advisories/licencias/SBOM/sha256/provenance + smoke nativo verificable) | PARTIAL | Existe `release.yml` con empaquetado y comprobación de artefactos; SBOM y scan de licencias no exigidos como gate. |
-| PRF-CI-06 (decisión sobre política local-first documentada y equivalente a gate remoto) | FAIL | No documentado el equivalente. El workflow permanece manual. |
+| PRF-CI-06 (decisión sobre política local-first documentada y equivalente a gate remoto) | **PARTIAL (mejorado)** | Política documentada en `docs/prf/specs/LOCAL-FIRST-CI-POLICY.md`: origen (AGENTS.md "Local CI Is the Source of Truth", ADR-031, B3 2026-08-16), justificación, equivalencia **procedimental** (§3.3 tabla de gates por momento). El documento declara honestamente que la equivalencia **automática** (pre-push hook / branch protection) NO existe y su introducción es decisión del operador (§4.bis). |
 | **PRF-CI-07** (pipeline detecta artificialmente test rojo, manifiesto incorrecto, fallo de publicación → niega PASS) | **FAIL** | H-07 explícito: prueba negativa nunca ejecutada. Sin esto no se acredita el gate. |
 
 ## Sección C — `SPEC-CLI.md` (`PRF-CLI-*`)
@@ -159,7 +159,7 @@
 | Categoría | PASS | PARTIAL | FAIL | NOT_RUN | PEND | EXCL |
 |---|---|---|---|---|---|---|
 | SPEC-ANALYSIS (9) | 2 (+1 tras PRF-ANA-04) | 4 (+1 tras H-02) | 0 (-1 tras H-01) | 2 | 1 (-1 tras PRF-ANA-04) | 0 |
-| SPEC-CI (7) | 0 | 2 | 3 | 2 | 0 | 0 |
+| SPEC-CI (7) | 0 | 3 (+1: CI-06 de FAIL a PARTIAL mejorado) | 2 (-1) | 2 | 0 | 0 |
 | SPEC-CLI (7) | 0 | 3 | 1 | 3 | 0 | 0 |
 | SPEC-DISTRIBUTION (7) | 0 | 3 | 1 | 3 | 0 | 0 |
 | SPEC-EXTENSIBILITY (6) | 0 | 4 | 0 | 1 | 1 | 0 |
@@ -177,6 +177,7 @@
 - H-02 adicional del operador **resuelto** en `41e4230f` (JOURNAL §33). `PRF-ANA-04` movido de `PARTIAL` a `PASS (RED→GREEN)` con `status` field en `BuildGraphOutput`.
 - PRF-ANA-05 (handler reproducibilidad) **mejorado** en `dc1190f7` (JOURNAL §34). Test `repeated_build_graph_calls_are_reproducible_at_handler` añadido como pineo del MCP handler boundary. Disposición bucket sigue siendo PARTIAL (el requisito SPEC exige UAT sobre binario real, no sobre handler en proceso); el cambio mejora la cobertura dentro del bucket pero no lo convierte en PASS hasta que se ejecute la UAT stdio JSON-RPC. Contador SPEC-ANALYSIS **no cambia** por este movimiento.
 - PRF-ANA-07 (renames/moves/colisiones masivas) **mejorado** en `3118c580` + `73236510` (JOURNAL §35). Nuevo corpus `massive_collision_corpus/` (51 archivos: 50 sibling + 1 local, todos con `pub fn init()`) y 3 tests RED→GREEN que pinean la visibility rule con 51 candidatos, single-candidate cross-file, y tamaño de índice. Disposición bucket sigue siendo PARTIAL (sigue faltando UAT stdio JSON-RPC sobre el binario real). Contador SPEC-ANALYSIS **no cambia** por este movimiento.
+- PRF-CI-06 (política local-first) **mejorado** en `LOCAL-FIRST-CI-POLICY.md` (JOURNAL §36). Movido `FAIL → PARTIAL (mejorado)`: la política existe, su origen es verificable (AGENTS.md, ADR-031, B3) y su equivalencia procedimental está documentada (§3.3). El documento declara honestamente que la enforcement automática no existe y es decisión del operador (§4.bis). Contador SPEC-CI: FAIL 3→2, PARTIAL 2→3.
 
 **Conclusión:** **0 ítems en PASS contractual pleno sobre los requisitos MUST**; **~3 PASS pleno** (U-F4-001 = U18 + PRF-ANA-03 con H-01 GREEN + PRF-ANA-04); **1 PASS parcial** (U01); ~40 PARTIAL; ~7 FAIL; ~23 NOT_RUN; ~4-8 PEND; 0 EXCL. **No es posible firmar C7** mientras esta matriz muestre esta distribución. Las acciones 3 y 4 del cierre PRF deben convertir los FAIL y PEND en PASS, documentar las EXCL y dejar los NOT_RUN solo si son genuinamente 'fuera de alcance' (lo que requiere EXCL aprobada por el operador).
 

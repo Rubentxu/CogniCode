@@ -2239,3 +2239,33 @@ del programa PRF activo).
   (mejorado). Bucket no transita porque sigue faltando UAT
   stdio JSON-RPC sobre el binario real.
 - **NO ejecuta:** push, tag, C7 firma. Operator-gated.
+
+## 2026-09-22 — PRF-CI-06 (política local-first documentada) (entrada 36)
+
+- **Origen:** gap matriz PRF-CI-06 (FAIL: "no documentado el
+  equivalente"). El requisito MUST exige documentar la decisión
+  sobre política local-first y su equivalencia a un gate
+  obligatorio antes de activación remota.
+- **Cambio:** nuevo documento
+  `docs/prf/specs/LOCAL-FIRST-CI-POLICY.md` que documenta:
+  - La decisión (local-first vía `act` + `podman`, workflows
+    versionados como única definición de gate, GitHub Actions
+    reservado a release gate).
+  - Su origen verificable (AGENTS.md "Local CI Is the Source
+    of Truth", ADR-031, B3 del pre-cut checklist 2026-08-16).
+  - La equivalencia PROCEDIMENTAL (§3.3: tabla de gates por
+    momento — commit, candidato, tag cut, merge).
+  - Lo que NO declara (§4): ni protección remota de PR, ni
+    CI-01/07 satisfechos, ni hook automático, ni SLOs.
+  - El gap persistente con honestidad (§4.bis): la equivalencia
+    AUTOMÁTICA (pre-push hook, branch protection) NO existe;
+    introducirla es decisión nueva del operador.
+- **Matriz:** PRF-CI-06 movido `FAIL → PARTIAL (mejorado)`.
+  Contador SPEC-CI: FAIL 3→2, PARTIAL 2→3.
+- **Por qué PARTIAL y no PASS:** el requisito pide "equivalente
+  a un gate obligatorio". La equivalencia procedimental existe
+  y está documentada; la automática no. Convertir a PASS
+  requeriría una decisión del operador sobre enforcement
+  (pre-push hook y/o activación de `on: pull_request` con
+  branch protection), que es operator-gated.
+- **NO ejecuta:** push, tag, C7 firma. Operator-gated.
