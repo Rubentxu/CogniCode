@@ -3081,3 +3081,17 @@ H-06/H-07/push/tag/C7/publicación siguen operator-gated.
 - **Matriz:** U10 FAIL (no UAT) → PASS (alcance ejecutable sin publicar release). EXT-06 PARTIAL → mejorado (compatibilidad cubierta; contract tests ya pinados por CLI-04/SEC-02).
 - **Evidencia:** core lib 2147/0; mcp 35/0; clippy -D warnings limpio. SHAs `4368367c`, `88f50b39`.
 - **NO ejecuta:** push, tag, C7. Operator-gated.
+
+## §89 — Checkpoint de sesión (cierre 2026-09-22, sesión 3 AUTO)
+
+- **Estado verificado final:** HEAD `c5e678b7`, tree limpio, ~152 commits ahead de origin/main (push operator-gated). Binarios release frescos en `target/release/` (cognicode/cognicode-mcp/cogh) con el fix de determinismo incluido.
+- **Cerrado esta sesión:** STATE-06 PASS (§86), STATE-07 PASS con deuda cache-miss resuelta de raíz (§87), UAT-U10 PASS + defecto #5 determinismo roots/leaves corregido + reparación fixture ide_adapter roto desde PR #289 (§87-§88).
+- **Verificaciones vigentes (reutilizables):** core lib 2147/0; cli 411/0; mcp 35/0; clippy -D warnings limpio; todos los UATs nuevos ×2 estables. Evidencia U10: `evidence/UAT-U10-old-client-compat.md`, corpus `fixtures/u10_compat_corpus/` versionado.
+- **PENDIENTE PARA MAÑANA (en orden propuesto):**
+  1. **T4 de consolidación pre-release** (NO ejecutada aún): batería completa local — workspace completo (incluye cognicode-explorer, sandbox, graph-algos) + fmt check + UATs binario ×2 — sobre la revisión candidata final.
+  2. **Release candidate v0.97.4**: bump version, `cognicode-release generate`, verify, inventario con source_commit == HEAD, tamper check (receta DIST-01/06 §76). Actualizar justfile si hace falta (ya corregido en §76).
+  3. **OPERATOR-GATED (orden explícita del operador):** push a origin/main, tag v0.97.4, re-firma C7 (SHA congelado stale `178f8a5b` sigue pendiente), publicación.
+  4. **Restos de matriz honestos:** DIST-04 residuales, U22 (upgrade/downgrade datos), U03 baseline sobre revisión actual, CI-02..06/DIST-05 si hay infra.
+  5. **Deuda técnica abierta:** H-01 (hash algoritmo, GREEN pendiente decisión), H-04 (persistencia historia), H-06/H-07 (ciclo A→B real, gates formales) — requieren decisión de diseño, no solo ejecución.
+- **Bloqueos abiertos:** ninguno técnico. Todos los gates pendientes son de autorización del operador.
+- **Regla de reanudación:** contrastar este checkpoint con `git log` y receipts; NO re-ejecutar baterías ya verdes sobre la misma revisión salvo que HEAD haya cambiado.
