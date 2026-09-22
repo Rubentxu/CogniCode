@@ -25,6 +25,7 @@ use crate::infrastructure::graph::{
     SymbolLocation, TraversalDirection,
 };
 use crate::infrastructure::parser::{Language, TreeSitterParser};
+use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info, warn};
@@ -37,7 +38,11 @@ pub struct AnalysisService {
     graph_cache: Arc<GraphCache>,
     symbol_index: Mutex<Option<LightweightIndex>>,
     on_demand_builder: Mutex<Option<OnDemandGraphBuilder>>,
-    /// File cache: maps file path to (mtime, size, symbols, relationships) — F2.W9
+    /// File cache: maps file path to (mtime, size, content_hash,
+    /// symbols, relationships) — F2.W9 + PRF audit H-01. The
+    /// content_hash field is SHA-256 of the file bytes at parse time,
+    /// added in `5ed7f865` (H-01 RED pin) GREEN. This invalidates the
+    /// cache when bytes change while mtime AND size stay the same.
     /// Uses Arc<Mutex<...>> to support Send across thread boundaries for async operations
     file_cache: Arc<
         Mutex<
@@ -46,6 +51,7 @@ pub struct AnalysisService {
                 (
                     u64,
                     u64,
+                    [u8; 32],
                     Vec<crate::domain::aggregates::Symbol>,
                     Vec<(crate::domain::aggregates::Symbol, String)>,
                 ),
@@ -316,74 +322,93 @@ impl AnalysisService {
                 let skipped = skipped_files.clone();
 
                 {
-                    // F2.W9: invalidate on mtime OR size mismatch.
+                    // PRF audit H-01: invalidate on mtime OR size OR
+                    // content_hash mismatch. The hash covers the case
+                    // where bytes change while mtime AND size are
+                    // preserved (e.g., editor rewrite without re-save
+                    // metadata change). To compare the hash, we must
+                    // read the file once; the cache saves only the
+                    // parse cost (TreeSitter), not the I/O cost.
+                    let source = match std::fs::read_to_string(&path) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            skipped.lock().unwrap().push(
+                                crate::infrastructure::graph::per_file_graph::SkippedFile {
+                                    path: path_for_skip.clone(),
+                                    reason: classify_io(&e),
+                                },
+                            );
+                            return None;
+                        }
+                    };
+                    let content_hash = compute_content_hash(&source);
+
                     let cache = self.file_cache.lock().unwrap();
-                    if let Some((cached_mtime, cached_size, cached_symbols, cached_relationships)) =
-                        cache.get(&file_path)
-                        && *cached_mtime == mtime
-                        && *cached_size == size
+                    if let Some((cached_mtime, cached_size, cached_hash, cached_symbols, cached_relationships)) =
+                        cache.get(&file_path).cloned()
+                        && cached_mtime == mtime
+                        && cached_size == size
+                        && cached_hash == content_hash
                     {
+                        drop(cache);
                         return Some((
                             file_path,
                             mtime,
                             size,
-                            cached_symbols.clone(),
-                            cached_relationships.clone(),
+                            content_hash,
+                            cached_symbols,
+                            cached_relationships,
                             false, // from_cache = true
                         ));
                     }
+                    drop(cache);
+
+                    // Cache miss path: parse the source we already
+                    // read.
+                    let parser = match TreeSitterParser::with_cache(language) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            skipped.lock().unwrap().push(
+                                crate::infrastructure::graph::per_file_graph::SkippedFile {
+                                    path: path_for_skip.clone(),
+                                    reason: classify_parse(&e),
+                                },
+                            );
+                            return None;
+                        }
+                    };
+                    let symbols = parser
+                        .find_all_symbols_with_path(&source, &file_path)
+                        .unwrap_or_default();
+                    let relationships = parser
+                        .find_call_relationships(&source, &file_path)
+                        .unwrap_or_default();
+
+                    Some((
+                        file_path,
+                        mtime,
+                        size,
+                        content_hash,
+                        symbols,
+                        relationships,
+                        true, // from_cache = false (parsed)
+                    ))
                 }
-
-                // F2.W8: every error path now records a SkippedFile
-                // with a SkipReason that classifies the failure.
-                let source = match std::fs::read_to_string(&path) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        skipped.lock().unwrap().push(
-                            crate::infrastructure::graph::per_file_graph::SkippedFile {
-                                path: path_for_skip.clone(),
-                                reason: classify_io(&e),
-                            },
-                        );
-                        return None;
-                    }
-                };
-                let parser = match TreeSitterParser::with_cache(language) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        skipped.lock().unwrap().push(
-                            crate::infrastructure::graph::per_file_graph::SkippedFile {
-                                path: path_for_skip.clone(),
-                                reason: classify_parse(&e),
-                            },
-                        );
-                        return None;
-                    }
-                };
-
-                let symbols = parser
-                    .find_all_symbols_with_path(&source, &file_path)
-                    .unwrap_or_default();
-                let relationships = parser
-                    .find_call_relationships(&source, &file_path)
-                    .unwrap_or_default();
-
-                Some((file_path, mtime, size, symbols, relationships, true)) // from_cache = false (parsed)
             })
             .collect();
 
         // Stage: parse — count what we got from the parallel extraction
         let files_cached = results
             .iter()
-            .filter(|(_, _, _, _, _, was_parsed)| !was_parsed)
+            .filter(|(_, _, _, _, _, _, was_parsed)| !was_parsed)
             .count();
         let files_parsed = results.len() - files_cached;
         let total_symbols_extracted: usize = results
             .iter()
-            .map(|(_, _, _, symbols, _, _)| symbols.len())
+            .map(|(_, _, _, _, symbols, _, _)| symbols.len())
             .sum();
         let total_relationships_found: usize =
-            results.iter().map(|(_, _, _, _, rels, _)| rels.len()).sum();
+            results.iter().map(|(_, _, _, _, _, rels, _)| rels.len()).sum();
 
         info!(
             "build_project_graph: stage=parse — {} files ({} parsed, {} cached), {} symbols, {} relationships",
@@ -416,17 +441,17 @@ impl AnalysisService {
         let mut results = results;
         results.sort_by(|a, b| a.0.cmp(&b.0));
 
-        for (file_path, mtime, size, symbols, relationships, was_parsed) in results {
+        for (file_path, mtime, size, content_hash, symbols, relationships, was_parsed) in results {
             if was_parsed {
                 parsed_files += 1;
             }
-            // F2.W9: cache entries keyed by (mtime, size). Cached
-            // hits keep their original size (computed at walk time of
-            // the build that produced them); re-parsed entries carry
-            // the fresh size.
+            // PRF audit H-01: cache entries keyed by (mtime, size,
+            // content_hash). The hash covers the case where bytes
+            // change while mtime AND size stay the same (e.g.,
+            // editor rewrite without re-save metadata change).
             cache.insert(
                 file_path.clone(),
-                (mtime, size, symbols.clone(), relationships.clone()),
+                (mtime, size, content_hash, symbols.clone(), relationships.clone()),
             );
 
             for symbol in symbols {
@@ -698,48 +723,67 @@ impl AnalysisService {
                 let language = language.unwrap();
 
                 {
-                    // F2.W9: invalidate on mtime OR size mismatch.
+                    // PRF audit H-01: invalidate on mtime OR size OR
+                    // content_hash mismatch. The hash covers the case
+                    // where bytes change while mtime AND size are
+                    // preserved.
+                    let source = std::fs::read_to_string(&path).ok()?;
+                    let content_hash = compute_content_hash(&source);
+
                     let cache = self.file_cache.lock().unwrap();
-                    if let Some((cached_mtime, cached_size, cached_symbols, cached_relationships)) =
-                        cache.get(&file_path)
-                        && *cached_mtime == mtime
-                        && *cached_size == size
+                    if let Some((cached_mtime, cached_size, cached_hash, cached_symbols, cached_relationships)) =
+                        cache.get(&file_path).cloned()
+                        && cached_mtime == mtime
+                        && cached_size == size
+                        && cached_hash == content_hash
                     {
+                        drop(cache);
                         return Some((
                             file_path,
                             mtime,
                             size,
-                            cached_symbols.clone(),
-                            cached_relationships.clone(),
+                            content_hash,
+                            cached_symbols,
+                            cached_relationships,
                             false, // from_cache = true
                         ));
                     }
+                    drop(cache);
+
+                    let parser = TreeSitterParser::with_cache(language).ok()?;
+
+                    let symbols = parser
+                        .find_all_symbols_with_path(&source, &file_path)
+                        .unwrap_or_default();
+                    let relationships = parser
+                        .find_call_relationships(&source, &file_path)
+                        .unwrap_or_default();
+
+                    Some((
+                        file_path,
+                        mtime,
+                        size,
+                        content_hash,
+                        symbols,
+                        relationships,
+                        true, // from_cache = false (parsed)
+                    ))
                 }
-
-                let source = std::fs::read_to_string(&path).ok()?;
-                let parser = TreeSitterParser::with_cache(language).ok()?;
-
-                let symbols = parser
-                    .find_all_symbols_with_path(&source, &file_path)
-                    .unwrap_or_default();
-                let relationships = parser
-                    .find_call_relationships(&source, &file_path)
-                    .unwrap_or_default();
-
-                Some((file_path, mtime, size, symbols, relationships, true)) // from_cache = false (parsed)
             })
             .collect();
 
         let mut cache = self.file_cache.lock().unwrap();
         let mut all_relationships = Vec::new();
 
-        for (file_path, mtime, size, symbols, relationships, was_parsed) in results {
+        for (file_path, mtime, size, content_hash, symbols, relationships, was_parsed) in results {
             if was_parsed {
                 parsed_files += 1;
             }
+            // PRF audit H-01: cache entries keyed by (mtime, size,
+            // content_hash).
             cache.insert(
                 file_path.clone(),
-                (mtime, size, symbols.clone(), relationships.clone()),
+                (mtime, size, content_hash, symbols.clone(), relationships.clone()),
             );
 
             for symbol in symbols {
@@ -853,52 +897,70 @@ impl AnalysisService {
                         let language = language.unwrap();
 
                         {
-                            // F2.W9: invalidate on mtime OR size mismatch.
+                            // PRF audit H-01: invalidate on mtime
+                            // OR size OR content_hash mismatch.
+                            let source = std::fs::read_to_string(&path).ok()?;
+                            let content_hash = compute_content_hash(&source);
+
                             let cache = file_cache.lock().unwrap();
                             if let Some((
                                 cached_mtime,
                                 cached_size,
+                                cached_hash,
                                 cached_symbols,
                                 cached_relationships,
-                            )) = cache.get(&file_path)
-                                && *cached_mtime == mtime
-                                && *cached_size == size
+                            )) = cache.get(&file_path).cloned()
+                                && cached_mtime == mtime
+                                && cached_size == size
+                                && cached_hash == content_hash
                             {
+                                drop(cache);
                                 return Some((
                                     file_path,
                                     mtime,
                                     size,
-                                    cached_symbols.clone(),
-                                    cached_relationships.clone(),
+                                    content_hash,
+                                    cached_symbols,
+                                    cached_relationships,
                                     false, // from_cache = true
                                 ));
                             }
+                            drop(cache);
+
+                            let parser = TreeSitterParser::with_cache(language).ok()?;
+
+                            let symbols = parser
+                                .find_all_symbols_with_path(&source, &file_path)
+                                .unwrap_or_default();
+                            let relationships = parser
+                                .find_call_relationships(&source, &file_path)
+                                .unwrap_or_default();
+
+                            Some((
+                                file_path,
+                                mtime,
+                                size,
+                                content_hash,
+                                symbols,
+                                relationships,
+                                true, // from_cache = false (parsed)
+                            ))
                         }
-
-                        let source = std::fs::read_to_string(&path).ok()?;
-                        let parser = TreeSitterParser::with_cache(language).ok()?;
-
-                        let symbols = parser
-                            .find_all_symbols_with_path(&source, &file_path)
-                            .unwrap_or_default();
-                        let relationships = parser
-                            .find_call_relationships(&source, &file_path)
-                            .unwrap_or_default();
-
-                        Some((file_path, mtime, size, symbols, relationships, true)) // from_cache = false (parsed)
                     })
                     .collect();
 
                 let mut cache = file_cache.lock().unwrap();
                 let mut all_relationships = Vec::new();
 
-                for (file_path, mtime, size, symbols, relationships, was_parsed) in results {
+                for (file_path, mtime, size, content_hash, symbols, relationships, was_parsed) in results {
                     if was_parsed {
                         parsed_files += 1;
                     }
+                    // PRF audit H-01: cache entries keyed by
+                    // (mtime, size, content_hash).
                     cache.insert(
                         file_path.clone(),
-                        (mtime, size, symbols.clone(), relationships.clone()),
+                        (mtime, size, content_hash, symbols.clone(), relationships.clone()),
                     );
 
                     for symbol in symbols {
@@ -1451,6 +1513,22 @@ fn context_data(source: &str, line: usize, context_size: usize) -> ContextData {
         current,
         after,
     }
+}
+
+/// PRF audit H-01 (F2.W9): SHA-256 of the file bytes, used as a
+/// cache-invalidation key when (mtime, size) match but bytes may have
+/// changed (e.g. editor rewrites without re-save metadata updates).
+///
+/// Returns a 32-byte digest; collision-resistance is the only property we
+/// need (cache lookup, not security). Switching to BLAKE3 or xxhash is a
+/// one-line change here and at the type signature in `AnalysisService`.
+fn compute_content_hash(source: &str) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(source.as_bytes());
+    let out = hasher.finalize();
+    let mut hash = [0u8; 32];
+    hash.copy_from_slice(&out);
+    hash
 }
 
 impl AnalysisService {
