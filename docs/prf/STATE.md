@@ -7,15 +7,15 @@
 
 ## Snapshot
 
-| Hito activo | **F2 — Correctitud reproducible (EN CURSO; H-02 + H-01 + PRF-ANA-04 + PRF-ANA-05 cerrados; H-03/H-04/H-07 operator-gated)** |
-| Última unidad cerrada | **PRF-ANA-05 (handler reproducibilidad)** (commit `dc1190f7` + JOURNAL §34). Test `repeated_build_graph_calls_are_reproducible_at_handler` añadido en `prf_ana_04_status_field_tests`. Movido matrix PARTIAL → PARTIAL (mejorado). Resta como PARTIAL sólo UAT sobre binario real (stdio JSON-RPC). |
-| Unidad activa siguiente | **Trabajo ejecutable en AUTO sin decisión nueva**: PRF-ANA-07 (corpus colisiones masivas) o PRF-CI-06 (doc local-first). **Operator-gated**: acciones 4-5 del plan (firma C7 + push/tag). |
+| Hito activo | **F2 — Correctitud reproducible (EN CURSO; H-02 + H-01 + PRF-ANA-04 + PRF-ANA-05 + PRF-ANA-07 cerrados; H-03/H-04/H-07 operator-gated)** |
+| Última unidad cerrada | **PRF-ANA-07 (massive homonym collision)** (commits `3118c580` + `73236510`, JOURNAL §35). Corpus `massive_collision_corpus/` con 51 archivos `d{1..50}.rs` + lib.rs + sibling_unique_compute (cada dN.rs declara `pub fn init()`). 3 tests RED→GREEN en `prf_ana_07_massive_collision_tests` pinean la visibility rule bajo stress (51 candidatos → local), single-candidate cross-file, y ≥51 entradas `init` en el índice. Bucket matriz movido PARTIAL → PARTIAL (mejorado). |
+| Unidad activa siguiente | **PRF-CI-06 (doc local-first + equivalente gate)** — el siguiente FAIL más barato de los 7 abiertos en SPEC-CI. Alternativamente, esperar decisión operador para H-03/H-04/H-07. **Operator-gated**: acciones 4-5 del plan (firma C7 + push/tag). |
 | Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. F2 = ACCEPTED (W1-W10 IMPLEMENTED vía cert C2). F3-F6 = ACCEPTED vía C3-C6. **C7 = BLOQUEADO** (auditoría 2026-09-22 revocó `READY FOR RELEASE ≡ C7 PASS`). |
-| HEAD | `6293a7be` (JOURNAL §34 docs) sobre `dc1190f7` (PRF-ANA-05 test) sobre `8b49163b` (RELEASE-CANDIDATE refresh) sobre `af41138a` (JOURNAL §33) sobre `41e4230f` (PRF-ANA-04 GREEN) sobre `6ead65e8` (matrix refresh H-01) sobre `5365dc9f` (JOURNAL §32) sobre `39928202` (H-01 GREEN). origin/main = `5b96db43`. 21 commits ahead. |
-| Working tree | clean (post PRF-ANA-05 docs refresh). |
-| Bloqueos conocidos | **Operator-gated**: push + tag + firma C7 (directive §3 + auditoría). **Decisión operador pendiente**: H-03 (vertical), H-04 (persistencia), H-07 (gates formales). **SHA congelado stale** (`178f8a5b` vs HEAD `6293a7be`); re-firma pendiente. |
-| Siguiente unidad ejecutable | En AUTO: PRF-ANA-07 (corpus con colisiones masivas) o PRF-CI-06 (doc local-first). Operator-gated: acciones 4-5 + H-03/04/07. |
-| Política git | `docs/prf/` se versiona localmente solo en working tree. Evidencia cruda local-only (manifestada en `evidence/MANIFEST.md`). Push pendiente de orden explícita. |
+| HEAD | `8169e672` (JOURNAL §35 + matrix refresh) sobre `73236510` (force-add corpus) sobre `3118c580` (PRF-ANA-07 tests) sobre `449ccc21` (matrix narrative post ANA-05) sobre `f2abf936` (STATE refresh post ANA-05) sobre `6293a7be` (JOURNAL §34) sobre `dc1190f7` (PRF-ANA-05 test). origin/main = `5b96db43`. 26 commits ahead. |
+| Working tree | clean (post PRF-ANA-07 docs refresh). |
+| Bloqueos conocidos | **Operator-gated**: push + tag + firma C7 (directive §3 + auditoría). **Decisión operador pendiente**: H-03 (vertical), H-04 (persistencia), H-07 (gates formales). **SHA congelado stale** (`178f8a5b` vs HEAD `8169e672`); re-firma pendiente. |
+| Siguiente unidad ejecutable | En AUTO: PRF-CI-06 (doc local-first + equivalente gate). Operator-gated: acciones 4-5 + H-03/04/07. |
+| Política git | `docs/prf/` se versiona localmente solo en working tree. Para que los fixtures sean accesibles al CI, se hace force-add (`git add -f`) siguiendo el patrón de F2.W7 (`5ce8eb1e`, `3118c580`, `73236510`). Evidencia cruda local-only (manifestada en `evidence/MANIFEST.md`). Push pendiente de orden explícita. |
 | Gobierno del proyecto | **PRF es el único roadmap ejecutivo vigente** (decisión del operador 2026-09-21, `JOURNAL.md` entrada 13, `TRACEABILITY.md` §Correspondencia E31→PRF). E31 conserva su evidencia y aporta requisitos útiles que migran a gates PRF. |
 
 ## Última unidad cerrada: F2.W8 (Errores silenciosos en `build_project_graph`)
