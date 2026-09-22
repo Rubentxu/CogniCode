@@ -1,19 +1,59 @@
 # CURRENT — Puntero operativo PRF
 
-## Estado (2026-09-22 checkpoint final de sesión + reconciliación C2)
-- **HEAD**: `f0e25652` (release-candidate refresh + pointer refresh post-clippy-fix) sobre `86df20de` (docs checkpoint) sobre `47dd39ac` (clippy-fix H-D34-1) sobre `5b96db43` (T4 base). origin/main = `5b96db43`. Estado testing: **INTEGRATION_VERIFIED** (core lib 2126/0/27; clippy `-D warnings` clean; fmt-clean).
-- **Fases**: **F0-F6 ACCEPTED (C0-C6 PASS)**; **F2 firmada en PRF-C2 (`44fad7a5`)** con UAT binarios reales (W7/W8/W9). F7 decisión técnica READY FOR RELEASE; falta T5 + certificación C7 + tag + push (orden explícita del operador).
-- **Deuda**: H-clippy-FullGraphStrategy-type_complexity **CERRADO** (`47dd39ac`). Residual: `cognicode-cli` warnings preexistentes (D34-2) fuera de scope → sesión propia.
+## Estado (2026-09-22 checkpoint post-auditoría operador + H-02 GREEN)
+- **HEAD**: `80e7c403` (H-02 GREEN) sobre `82f1ba54` (SHA congelado +
+  matriz reconciliación) sobre `178f8a5b` (reconciliación C2) sobre
+  `f0e25652` (release-candidate refresh). origin/main = `5b96db43`.
+  Estado testing: **LOCAL_VERIFIED** (core lib 2128/0/27; clippy
+  `-D warnings` clean; fmt-clean).
+- **Auditoría operador (2026-09-22, JOURNAL §29)**: 7 hallazgos ALTA
+  (H-01..H-07) + 1 transversal. **REVOCÓ** la equivalencia
+  `READY FOR RELEASE ≡ C7 PASS`. Push + tag + firma de C7 siguen
+  **BLOQUEADOS**. Plan del operador en
+  `RELEASE-CANDIDATE §Cierre de PRF`: 5 acciones contra SHA congelado.
+- **Acciones del plan ejecutadas en esta sesión**:
+  - ✅ Acción 1 (SHA congelado) en `82f1ba54`.
+  - ✅ Acción 2 (matriz reconciliación) en `82f1ba54` +
+    `docs/prf/specs/RECONCILIATION-MATRIX.md`.
+  - ✅ Acción 3 H-02 (errores silenciosos en
+    `FullGraphStrategy::build_full_graph`) en `80e7c403` + JOURNAL §30.
+- **Deuda residual del programa**: H-01 (cache invalidation por hash),
+  H-03 (vertical), H-04 (persistencia), H-07 (gate mechanism), 11 FAIL
+  + 24 NOT_RUN + 9 PEND de la matriz de reconciliación.
+- **Cerrado en sesiones previas**: F0-F6 (C0-C6 PASS); F2 firmada en
+  PRF-C2 (`44fad7a5`); H-clippy-FullGraphStrategy-type_complexity
+  (`47dd39ac`). Residual fuera de programa: `cognicode-cli` warnings
+  preexistentes (D34-2) → sesión propia cuando se demande.
 
 ## Próxima acción concreta
-1. Push a origin/main cuando el operador dé orden explícita (alineado con la política actual; SHA pendiente de push: HEAD actual `f0e25652`).
-2. Tag de release C7 cuando el operador indique versión + perfil (orden explícita; **4 candidatos razonables** ya preparados en `RELEASE-CANDIDATE.md`: v0.97.4 / v0.98.0 / v0.98.0-prf / v1.0.0-prf).
-3. Sesión dedicada a `H-clippy-cli-residual` (D34-2) cuando se demande.
+1. **Esperar decisiones del operador** sobre:
+   - H-01: ¿invalidación de cache por hash de contenido (más estricto)
+     o conservar mtime+size y documentar la limitación residual?
+   - H-03: ¿qué vertical converge primero (LSP, MCP, CLI,
+     persistencia)?
+   - H-04: ¿persistencia en disco vs reconstrucción en cada build?
+   - H-07: ¿mecanismo de gates formal o aceptar el modelo declarativo?
+2. Push + tag + firma C7 contractual siguen **bloqueados** por la
+   auditoría y directive §3.
+3. Sesión dedicada a D34-2 (`cognicode-cli` 73+5 warnings) → fuera
+   del programa PRF.
 
 ## Bloqueos abiertos
-- Ninguno funcional. Pendientes administrativos: tag release C7 (orden del operador); resolución warnings cli (sesión propia, fuera de programa PRF).
+- **BLOQUEO OPERATIVO**: auditoría del operador (H-01..H-07 + acción 4-5
+  pendientes). No se puede declarar `READY FOR RELEASE` ni firmar C7
+  contractual.
+- Resoluciones de diseño pendientes para H-01, H-03, H-04, H-07
+  (autoridad del operador).
+- **SHA congelado stale**: `RELEASE-CANDIDATE.md` congela `178f8a5b`
+  pero HEAD avanzó a `80e7c403`. Re-firma pendiente del operador.
 
 ## Referencias
-- RELEASE-CANDIDATE.md: SHA `c1b14017`, READY FOR RELEASE confirmada, candidatos de versión enumerados.
-- JOURNAL.md: entrada 26 — 2026-09-22 (H-clippy-FullGraphStrategy-type_complexity cerrado en `47dd39ac`; housekeeping del directorio huérfano `openspec/changes/e65-lsi-m7-4-budgets/`; docs checkpoint en `86df20de`; release-candidate refresh en `c1b14017`).
-- Certificados: docs/prf/evidence/CERTIFICATES.md (C0-C6 PASS, C7 = READY FOR RELEASE pendiente).
+- `docs/prf/RELEASE-CANDIDATE.md`: SHA candidato congelado
+  `178f8a5b` (STALE — HEAD actual `80e7c403`); §Cierre de PRF contiene
+  el plan de 5 acciones del operador.
+- `docs/prf/specs/RECONCILIATION-MATRIX.md`: 1 PASS / 35 PARTIAL /
+  11 FAIL / 24 NOT_RUN / 9 PEND / 0 EXCL.
+- `docs/prf/JOURNAL.md`: §29 (auditoría + matriz), §30 (H-02 GREEN).
+- `docs/prf/STATE.md`: snapshot actualizado, próxima-unidad pointer
+  reorientado a acciones 4-5 del operador.
+- `docs/prf/evidence/CERTIFICATES.md`: C0-C6 PASS; C7 = bloqueado.

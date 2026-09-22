@@ -1,14 +1,17 @@
 # RELEASE-CANDIDATE — Programa PRF
 
 > Estado: DRAFT — auditoría 2026-09-22 (operador) reveló gaps contractuales que invalidan la equivalencia "READY FOR RELEASE" ↔ "C7 PASS". El SHA candidato está **congelado** abajo; las acciones 1-5 del plan operador (sección 5 de la auditoría) se ejecutarán **en orden estricto** contra este SHA, sin reescribirlo.
+>
+> **NOTA 2026-09-22 (sesión actual):** la acción 3 H-02 avanzó el HEAD a `80e7c403`. El SHA congelado `178f8a5b` queda **stale**; el operador deberá re-firmar el freeze antes de proseguir. NO se actualiza automáticamente: el push sigue BLOQUEADO.
 
-## Candidato (CONGELADO)
+## Candidato (CONGELADO — STALE)
 
 | Campo | Valor |
 |---|---|
-| SHA candidato (full) | **`178f8a5bf83b52433c46887456823c606ac786b7`** (corto: `178f8a5b`) |
+| SHA candidato (full) | **`178f8a5bf83b52433c46887456823c606ac786b7`** (corto: `178f8a5b`) — **STALE** (HEAD actual `80e7c403`) |
+| HEAD actual | `80e7c4037f324d9196d630b0ea1169138d4978e1` (H-02 GREEN, JOURNAL §30) |
 | Identidad del artefacto | **fija** — cualquier modificación posterior del HEAD exige nuevo proceso de release. No se firma C7 sobre "el HEAD en el momento de la firma". |
-| Cadena de procedencia | `178f8a5b` (reconciliación C2) → `f0e25652` (pointer refresh) → `c1b14017` (RELEASE-CANDIDATE refresh) → `86df20de` (docs checkpoint) → `47dd39ac` (clippy-fix) → `5b96db43` (T4 base, último de origin/main). |
+| Cadena de procedencia | `80e7c403` (H-02 GREEN) → `82f1ba54` (SHA congelado + matriz reconciliación) → `178f8a5b` (reconciliación C2) → `f0e25652` (pointer refresh) → `c1b14017` (RELEASE-CANDIDATE refresh) → `86df20de` (docs checkpoint) → `47dd39ac` (clippy-fix) → `5b96db43` (T4 base, último de origin/main). |
 | Versión | Pendiente de decisión del operador (candidatos razonables: `v0.97.4` patch de clippy; `v0.98.0` minor; `v0.98.0-prf` cierre del programa; `v1.0.0-prf` release production-ready milestone). El tag v0.97.3 NO contiene estos fixes. |
 | Plataformas probadas | Linux x86_64 (única plataforma con UAT ejecutada). Cobertura ampliada pendiente si el operador exige otras plataformas. |
 
@@ -30,12 +33,12 @@
 
 ## Batería de pruebas en HEAD
 
-- `cognicode-core --lib` (con `multimodal`): **2126 passed, 0 failed, 27 ignored** (verificado en `47dd39ac` y en HEAD `86df20de` revalidado en sesión 2026-09-22).
+- `cognicode-core --lib` (con `multimodal`): **2128 passed, 0 failed, 27 ignored** (verificado en HEAD `80e7c403` post-H-02; era 2126 antes de H-02, +2 tests nuevos).
 - Workspace `--lib`: GREEN salvo `moldql::cursor::consume_keyword_panics_on_mismatch`
   (cognicode-explorer), PRE-EXISTENTE en HEAD limpio (verificado con
   stash), NO regresión del programa PRF.
 - `cognicode-cli` bin cogh: 293 passed, 0 failed.
-- `clippy -D warnings`: clean para `cognicode-core` (post `47dd39ac`); warning inventory de `cognicode-cli`/`cognicode-ladybug` verificado sin drift vs `5b96db43` (medido con `git stash` + diff antes/después).
+- `clippy -D warnings`: clean para `cognicode-core` (post `80e7c403`); warning inventory de `cognicode-cli`/`cognicode-ladybug` verificado sin drift vs `5b96db43` (medido con `git stash` + diff antes/después).
 
 ## Frentes abiertos (deuda)
 
@@ -69,9 +72,9 @@ Origen: auditoría operador 2026-09-22 (sección ‘Cómo cerraría PRF sin crea
 - Por qué primero: sin esta base no se firma C7 ni se acepta nada como ‘cumple el contrato PRF’.
 
 ### 3. Cerrar fallos de correctitud que afectan al producto estable
-- H-01 (ALTA): invalidación de caché por contenido (no solo `mtime`+tamaño). Test: misma instancia de análisis, caché poblada, modificar bytes preservando tamaño y `mtime`, comprobar que detecta el cambio.
-- H-02 (ALTA): eliminar `filter_map(|e| e.ok())` y `unwrap_or_default()` de las rutas realmente utilizadas por capacidades estables. Propagar errores y cobertura mediante un resultado tipado común. Añadir estado `Partial` explícito al handler MCP cuando proceda.
-- Por qué después de la reconciliación: la reconciliación puede descubrir que algunos de estos ‘fallos’ son en realidad ‘capacidades declaradas fuera de alcance’; el fix se ajusta entonces.
+- H-01 (ALTA): invalidación de caché por contenido (no solo `mtime`+tamaño). Test: misma instancia de análisis, caché poblada, modificar bytes preservando tamaño y `mtime`, comprobar que detecta el cambio. **⏳ Pendiente** — requiere decisión del operador (¿hash SHA-256 de contenido o mtime+size con la limitación documentada?).
+- **H-02 (ALTA): ✅ CERRADO en `80e7c403` (JOURNAL §30)** — `FullGraphStrategy::build_full_graph_report` añadido como inherent method (paralelo al `PerFileStrategy` existente). Captura walk errors, read errors, parser-init, find_* errors y UnsupportedExtension como `SkippedFile` con `SkipReason` clasificado. Status `Complete`/`Partial` explícito. Contrato del trait original `build_full_graph` preservado (no se cambió la firma). 2 nuevos tests RED→GREEN; suite 2128/0/27; clippy `-D warnings` clean.
+- Por qué después de la reconciliación: la reconciliación puede descubrir que algunos de estos 'fallos' son en realidad 'capacidades declaradas fuera de alcance'; el fix se ajusta entonces.
 
 ### 4. Completar pruebas ausentes de C3–C6
 - H-03: hacer converger **una vertical CLI↔MCP hacia un único caso de uso** (reutilizar piezas no es converger).

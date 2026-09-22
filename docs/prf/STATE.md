@@ -683,26 +683,38 @@ archivos omitidos, y documentar el comportamiento en UAT.
 
 Ver `evidence/CERTIFICATES.md`.
 
-## Próxima unidad a abrir (F2.W9 — mtime preservado)
+## Próxima unidad a abrir (acciones 4-5 del plan del operador — post H-02)
 
-**F2.W9 — mtime preservado.** Caracterización y corrección del
-defecto: cuando un archivo del corpus conserva su `mtime` pero sus
-bytes cambian, la invalidación del cache actual (que mira sólo
-`mtime`) no dispara re-parseo. Esto es relevante porque editores y
-herramientas de refactor suelen preservar `mtime` al escribir.
+El roadmap PRF original está **bloqueado** por la auditoría del operador
+(2026-09-22, JOURNAL §29) que revocó `READY FOR RELEASE ≡ C7 PASS`.
+Acciones del plan registrado en `RELEASE-CANDIDATE §Cierre de PRF`:
 
-**Plan**:
-1. Crear un corpus UAT con un archivo cuyo contenido cambie pero
-   cuyo `mtime` se conserve (vía `utimes`/`filetime`).
-2. Caracterizar RED con test de integración: build → mutate
-   content → set mtime al valor original → build → esperar
-   símbolos NUEVOS reflejados.
-3. Diagnosticar si el camino real del binario
-   (`AnalysisService::build_project_graph` → `WalkBuilder`) usa
-   `mtime` o `hash` para invalidación.
-4. Decidir entre (a) hashing de contenido + comparación con cache
-   o (b) documentar el comportamiento y exigir mtime actualizado.
-5. Implementar, RED → GREEN, UAT real con binario.
+- ✅ Acción 1 (SHA congelado) — `82f1ba54`.
+- ✅ Acción 2 (matriz de reconciliación) — `82f1ba54` +
+  `docs/prf/specs/RECONCILIATION-MATRIX.md`.
+- ✅ Acción 3 H-02 (errores silenciosos en `FullGraphStrategy`) —
+  `80e7c403` (JOURNAL §30).
+- ⏳ Acción 3 H-01 (invalidación de cache por hash de contenido) —
+  requiere decisión de diseño del operador (mtime vs hash vs ambos).
+- ⏳ Acción 3 H-03 (vertical a convergir) — requiere decisión del
+  operador (qué vertical: LSP, MCP, CLI, persistencia, etc.).
+- ⏳ Acción 3 H-04 (persistencia vs reconstrucción) — requiere
+  decisión arquitectural del operador.
+- ⏳ Acción 3 H-07 (mecanismo de gates) — pendiente de diseño.
+- ⏳ Acción 4 (firmar C7 contractual sobre requisitos reconciliados) —
+  solo después de cerrar H-01..H-07.
+- ⏳ Acción 5 (push + tag) — bloqueada por directive §3 + auditoría.
+
+**SHA candidato congelado (`RELEASE-CANDIDATE.md`): `178f8a5b`**.
+**HEAD actual: `80e7c403`**. El SHA congelado está **stale** porque el
+fix H-02 avanzó HEAD; se re-firmará cuando el operador lo autorice.
+NO se actualiza automáticamente: el push sigue bloqueado.
+
+**Política de tests**: durante este trabajo multi-sesión, mantener
+disciplina TDD (RED → GREEN) y verificación incremental. Suite
+`cargo test -p cognicode-core --lib` debe permanecer ≥2128 passed,
+0 failed, 27 ignored entre acciones.
+
 
 ## Cierre de F2.W8 (Errores silenciosos en `build_project_graph`)
 

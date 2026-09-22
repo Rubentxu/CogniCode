@@ -1960,3 +1960,59 @@ del programa PRF activo).
      'Cierre de PRF': 5 acciones en orden estricto contra el SHA congelado.
 - **Acción NO ejecutada en esta sesión:** firmas de C7, push, tag, código de H-01/H-02/H-03/etc. Estas acciones 3-4-5 son trabajo de **varias sesiones** y deben coordinarse con el operador.
 - **Working tree:** cambios staged para commit.
+
+## 2026-09-22 — H-02 GREEN: exponer errores silenciosos en FullGraphStrategy (entrada 30)
+
+- **Origen:** acción 3 del plan del operador (RELEASE-CANDIDATE §Cierre de PRF),
+  autorizada "a tu criterio" en este mismo turno.
+- **Hallazgo auditado (H-02):** `FullGraphStrategy::build_full_graph`
+  descartaba errores de walk (`filter_map(|e| e.ok())`), errores de lectura
+  y errores de parser (`match Err(_) => continue`). El grafo resultante
+  era **incompleto silenciosamente** y el caller no podía saberlo.
+- **TDD ejecutado:**
+  1. RED: nuevo módulo `h02_silent_errors_full_strategy_tests` en
+     `crates/cognicode-core/src/infrastructure/graph/strategy.rs`. Test
+     `h02_full_strategy_exposes_report_method` (compilation pin sobre
+     método inexistente) + test
+     `h02_unreadable_dir_surfaces_as_partial_with_skip_reason_read`
+     (tempdir con chmod-0o000). Verificación RED: `cargo check` falla
+     con `E0599: no method named build_full_graph_report found`.
+  2. GREEN: `pub fn build_full_graph_report(&self, project_dir: &Path)
+     -> BuildReport` añadido al inherent impl de `FullGraphStrategy`
+     (paralelo a `PerFileStrategy::build_full_graph_report`). Captura
+     walk errors → `walk_skipped: SkipReason::Read`; read errors →
+     `parse_skipped: SkipReason::Read`; parser-init →
+     `SkipReason::Other("parser init: ...")`;
+     `find_all_symbols_with_path` / `find_call_relationships` →
+     `SkipReason::Parse`; extensiones no soportadas →
+     `SkipReason::UnsupportedExtension`. Status: `Complete` si ambos
+     vectores vacíos, `Partial { skipped: walk_skipped + parse_skipped }`
+     en otro caso.
+  3. **Preservación de contrato:** método trait original `build_full_graph`
+     NO modificado. El nuevo `build_full_graph_report` es método inherent
+     paralelo; consumidores existentes siguen funcionando.
+  4. **Bug intermedio:** primer intento colocó el `pub fn` dentro de
+     `impl GraphStrategy for FullGraphStrategy` (error E0449: visibility
+     qualifiers forbidden en trait impl). Movido al inherent impl.
+  5. **Warnings clippy corregidos:** `BuildStatus`/`SkipReason` "unused
+     imports" (visible solo en lib mode cuando se strippean test fns) →
+     `#![allow(unused_imports)]`; helper `build_with_unreadable_dir`
+     "never used" → `#[allow(dead_code)]`; `&tmp.path()` → `tmp.path()`.
+- **Verificación:**
+  - `cargo test -p cognicode-core --lib h02_silent_errors_full_strategy_tests`:
+    2 passed; 0 failed.
+  - `cargo test -p cognicode-core --lib`: 2128 passed; 0 failed; 27 ignored.
+  - `cargo clippy -p cognicode-core --tests -- -D warnings`: clean.
+- **Commit:** `80e7c4037f324d9196d630b0ea1169138d4978e1`
+  (`fix(core): H-02 expose silent errors in FullGraphStrategy (RED+GREEN)`).
+- **Cambio al SHA congelado:** el SHA congelado en `RELEASE-CANDIDATE.md`
+  (`178f8a5b`) queda **stale**: el HEAD actual es `80e7c403`. El freeze
+  queda pendiente de re-firmar por el operador — NO se actualiza
+  automáticamente porque el push sigue bloqueado por la auditoría.
+- **Trabajo multi-sesión NO ejecutado en esta sesión:** H-01
+  (invalidación de caché por contenido), H-03 (vertical a convergir),
+  H-04 (persistencia vs reconstrucción), H-07 (mecanismo de gates).
+  Quedan registrados en `RELEASE-CANDIDATE §Cierre de PRF` y
+  `RECONCILIATION-MATRIX.md` para futuras sesiones.
+- **Push + tag siguen BLOQUEADOS** por directive §3 y la auditoría del
+  operador.
