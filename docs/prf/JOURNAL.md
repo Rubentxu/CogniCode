@@ -2831,3 +2831,20 @@ error tipado en build_graph; permisos/budgets uniformes pendientes).
 categoría respetados, salida acotada (< 5 MiB), no-encontrado tipado.
 `evidence/u69-ana08/`.
 **Matriz**: PRF-ANA-08 → PASS.
+
+## §70 — PRF-STATE-02: namespacing + snapshot durable — PASS (2026-09-22)
+
+Auditoría de legalidad sobre el SPEC original. UAT
+`prf_state_02_uat.rs` (binario real): RED — dos workspaces homónimos
+escritos en el mismo milisegundo producían `source_manifest_digest`
+IDÉNTICO: `build_manifest` usaba el mtime como proxy de
+`content_hash` (defecto real, no cumplía el contrato del campo).
+
+GREEN: el manifiesto ahora hashea SHA-256 del contenido real del
+fichero (mtime se conserva como campo de staleness, fallback para
+ficheros ilegibles). UAT verde: digests distintos por workspace sin
+contaminación de símbolos, y snapshot durable en `.cognicode/`
+estable tras reinicio del servidor. Core lib 2145/0 (x2, un fallo
+puntual de timing no reproducible), suites MCP verdes.
+Commits `c70b7f76`.
+**Matriz**: PRF-STATE-02 → PASS.

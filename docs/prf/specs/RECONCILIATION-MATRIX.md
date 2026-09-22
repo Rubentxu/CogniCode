@@ -109,7 +109,7 @@
 | Requisito | Disposición | Evidencia / Notas |
 |---|---|---|
 | PRF-STATE-01 (catalogar canónico / derivado / transitorio; ownership/ubicación/ciclo) | PARTIAL | Diseñado en README; ‘CallGraph histórico vs FactStore canónico’ no ejercitado como UAT. |
-| PRF-STATE-02 (namespace por canonical_root+config_digest; workspaces homónimos no contaminan) | PARTIAL | C4 (U18) demuestra aislamiento a nivel de grafos; no UAT de snapshot durable con workspaces homónimos reiniciando. |
+| PRF-STATE-02 (namespace por canonical_root+config_digest; workspaces homónimos no contaminan) | **PASS** | §70: UAT binario real — defecto real corregido (content_hash era proxy mtime, digests idénticos en mismo ms); homónimos sin contaminación, digests estables tras reinicio (snapshot durable). `prf_state_02_uat.rs`. |
 | **PRF-STATE-03** (dos procesos, mismo HOME, dos proyectos, no contaminan; locking; stale identificado) | **PARTIAL → PEND** | H-04 del operador: persistencia material no observada en evidencia; lo declarado como ‘PASS’ es reconstrucción determinista, no persistencia. |
 | **PRF-STATE-04** (interrupción durante análisis/store/migración no produce evidencia parcial como válida; recovery automático o error+rollback) | **PEND** | U21 (`Cortar proceso durante escritura/migración; reiniciar.`) no ejecutada. |
 | PRF-STATE-05 (versión esquema; update conserva datos; rollback/downgrade verificado o rechazo) | PEND | U22 no ejecutada en binario real. |
