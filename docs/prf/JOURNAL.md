@@ -2619,3 +2619,20 @@ clippy 0.
 
 **Matriz**: PRF-CLI-05 → PASS. Deuda: apply con rollback (futuro). Siguientes:
 PRF-ANA-09 (LSI, probable EXCL), PRF-CI-02, PRF-CI-03, U03/G6.
+
+## §52 — U03/G6: fuga de red en tests layout/lifecycle cerrada (2026-09-22)
+
+**Fix**: `test_cogh_update_respects_lockfile` pinado offline
+(`COGNICODE_API_BASE_URL=http://127.0.0.1:1`), aserción acepta solo resultados
+honestos (éxito / not-implemented / fallo limpio offline). 3.6s → 0.01s.
+
+**Verificación fuga 2**: t_debt4 ya es loopback-only (staging resolver sin red +
+TempBaseUrl); la fuga de §42 quedó cerrada por el wiring de PR #289. Nota
+metodológica: sonda HTTPS_PROXY no concluyente (reqwest sin feature proxy
+intercepta loopback); evidencia = auditoría de código + logs de peticiones.
+
+**Estabilidad**: cogh serial 5/5 GREEN (304), lifecycle 5/5 GREEN (7). Desbloquea
+el componente local de flakiness para la comparación perf automática (PRF-CI-04).
+
+**Matriz**: U03/G6 → resuelto. Siguientes: PRF-CI-02 (matriz nightly),
+PRF-CI-03 (coverage), PRF-CI-05 (SBOM), PRF-ANA-09 (LSI, candidato EXCL).
