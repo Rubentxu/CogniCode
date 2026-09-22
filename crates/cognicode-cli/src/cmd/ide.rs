@@ -270,7 +270,12 @@ pub fn integrate_opencode(
     let bundle_id = skill_path
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| anyhow!("skill bundle has no valid identity: {}", skill_path.display()))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "skill bundle has no valid identity: {}",
+                skill_path.display()
+            )
+        })?;
     let skills_target = opencode_skills_dir().join(format!("{bundle_id}-{version}"));
     steps.push(Step::Symlink {
         source: skill_path.to_path_buf(),
@@ -843,12 +848,13 @@ pub fn cmd_ide_install(
             "MCP identity mismatch: plugin declares {mcp_binary_name}, installed bundle declares {declared_name}"
         );
     }
-    let actual_binary = crate::installer_transaction::locate_component_binary(
-        home, version, &declared_name,
-    )
-    .ok_or_else(|| anyhow!(
-        "installed MCP binary missing for version {version}; repair reviewer profile"
-    ))?;
+    let actual_binary =
+        crate::installer_transaction::locate_component_binary(home, version, &declared_name)
+            .ok_or_else(|| {
+                anyhow!(
+                    "installed MCP binary missing for version {version}; repair reviewer profile"
+                )
+            })?;
     let shim = home.shim_path(&declared_name);
     if !shim.is_file() {
         anyhow::bail!(
@@ -909,10 +915,14 @@ pub fn cmd_ide_uninstall(home: &CognicodeHomeSup, ide: &str, version: &str) -> R
     // than blindly targeting a hardcoded `"cognicode-mcp"` key.
     let manifest_path = home.version_manifest(version);
     let installed = crate::bundle_manifest::BundleManifest::from_path(&manifest_path)?;
-    let binary_name = if installed.components.iter().any(|component| {
-        component.kind == crate::release_contract::ArtifactKind::DaemonCli
-    }) {
-        Some(crate::bundle_manifest::daemon_cli_binary_name(&manifest_path)?)
+    let binary_name = if installed
+        .components
+        .iter()
+        .any(|component| component.kind == crate::release_contract::ArtifactKind::DaemonCli)
+    {
+        Some(crate::bundle_manifest::daemon_cli_binary_name(
+            &manifest_path,
+        )?)
     } else {
         None
     };
@@ -1432,7 +1442,10 @@ components:
                 })
                 .expect("one skill link")
         });
-        assert_ne!(paths[0], paths[1], "skill bundles must never overwrite each other");
+        assert_ne!(
+            paths[0], paths[1],
+            "skill bundles must never overwrite each other"
+        );
         assert!(paths[0].ends_with("cognicode-0.97.3"));
         assert!(paths[1].ends_with("cognicode-mcp-0.97.3"));
     }
@@ -1894,20 +1907,27 @@ mcp_servers.existing.args = ['y']
             }
         }
 
-        // The RmRf target must point at the disposable skills, NOT real HOME.
+        // The RmRf targets must point at the disposable skills, NOT real HOME.
+        // Since the dual skill-bundle fix, uninstall removes BOTH bundles
+        // (cognicode + cognicode-mcp) for the version.
         let rmtargets: Vec<_> = targets.iter().collect();
-        assert_eq!(rmtargets.len(), 1, "expected one RmRf step");
-        let t = rmtargets[0];
-        assert!(
-            t.starts_with(&disposable),
-            "uninstall target must live under OPENCODE_CONFIG's parent, got {}",
-            t.display()
+        assert_eq!(
+            rmtargets.len(),
+            2,
+            "expected two RmRf steps (both skill bundles)"
         );
-        assert!(
-            !t.starts_with(&real_home),
-            "uninstall target must NOT live under real HOME, got {}",
-            t.display()
-        );
+        for t in rmtargets {
+            assert!(
+                t.starts_with(&disposable),
+                "uninstall target must live under OPENCODE_CONFIG's parent, got {}",
+                t.display()
+            );
+            assert!(
+                !t.starts_with(&real_home),
+                "uninstall target must NOT live under real HOME, got {}",
+                t.display()
+            );
+        }
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

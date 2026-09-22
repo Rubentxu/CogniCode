@@ -280,9 +280,8 @@ fn main() -> anyhow::Result<()> {
             let channel = channel
                 .parse::<lifecycle_resolver::Channel>()
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
-            let profile = profile.unwrap_or_else(|| {
-                (if ide.is_empty() { "core" } else { "reviewer" }).to_string()
-            });
+            let profile = profile
+                .unwrap_or_else(|| (if ide.is_empty() { "core" } else { "reviewer" }).to_string());
             let resolved =
                 layout::cmd_install(&home, &version, channel, base_url, staging, &profile)?;
             let installed_version = resolved.version;

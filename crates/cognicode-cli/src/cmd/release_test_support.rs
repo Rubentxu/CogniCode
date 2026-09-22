@@ -123,7 +123,10 @@ fn write_skill_payload(path: &Path, id: &str) -> Result<()> {
     let mut builder = tar::Builder::new(encoder);
     for (name, body) in [
         ("manifest.yaml", format!("name: {id}\nversion: test\n")),
-        ("SKILL.md", format!("---\nname: {id}\ndescription: Test bundle\n---\n")),
+        (
+            "SKILL.md",
+            format!("---\nname: {id}\ndescription: Test bundle\n---\n"),
+        ),
     ] {
         let mut header = tar::Header::new_gnu();
         header.set_size(body.len() as u64);

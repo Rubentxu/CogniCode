@@ -254,12 +254,11 @@ fn download_with_bearer(
 /// Fetch and verify the portable skill payload declared by the release.
 /// SkillBundleIds deliberately share names with some binary ComponentIds:
 /// their caches MUST be disjoint or a skill archive overwrites an executable.
-fn skill_cache_path(
-    home: &crate::layout::CognicodeHome,
-    version: &str,
-    id: &str,
-) -> PathBuf {
-    home.cache().join("skill-bundles").join(version).join(format!("{id}.tar.gz"))
+fn skill_cache_path(home: &crate::layout::CognicodeHome, version: &str, id: &str) -> PathBuf {
+    home.cache()
+        .join("skill-bundles")
+        .join(version)
+        .join(format!("{id}.tar.gz"))
 }
 
 fn download_skill_bundles(
@@ -280,14 +279,18 @@ fn download_skill_bundles(
     let token = bearer_from_env();
     let checksums_url = crate::release_contract::artifact_url(&manifest.version, "SHA256SUMS");
     let checksums_response = download_with_bearer(
-        &client, &resolve_download_url(&checksums_url), token.as_deref(),
+        &client,
+        &resolve_download_url(&checksums_url),
+        token.as_deref(),
     )?;
     if !checksums_response.status().is_success() {
         return Err(InstallerError::Network(
-            checksums_url, format!("HTTP {}", checksums_response.status()),
+            checksums_url,
+            format!("HTTP {}", checksums_response.status()),
         ));
     }
-    let checksums = checksums_response.text()
+    let checksums = checksums_response
+        .text()
         .map_err(|e| InstallerError::Network(checksums_url.clone(), e.to_string()))?;
 
     for bundle in bundles {
@@ -295,13 +298,11 @@ fn download_skill_bundles(
         // path or URL fragment controlled by arbitrary external input.
         let _published = crate::release_contract::skill_bundle_by_id(&bundle.id)
             .filter(|spec| spec.published)
-            .ok_or_else(|| InstallerError::Unknown(
-                format!("unknown published skill bundle id: {}", bundle.id)
-            ))?;
-        
-        let filename = crate::release_contract::skill_bundle_filename(
-            &bundle.id, &bundle.version,
-        );
+            .ok_or_else(|| {
+                InstallerError::Unknown(format!("unknown published skill bundle id: {}", bundle.id))
+            })?;
+
+        let filename = crate::release_contract::skill_bundle_filename(&bundle.id, &bundle.version);
         let mut matches = checksums.lines().filter_map(|line| {
             let mut fields = line.split_whitespace();
             let digest = fields.next()?;
@@ -311,38 +312,37 @@ fn download_skill_bundles(
             }
             Some(digest)
         });
-        let expected = matches.next().ok_or_else(|| InstallerError::Unknown(
-            format!("release SHA256SUMS has no digest for declared skill {filename}")
-        ))?;
+        let expected = matches.next().ok_or_else(|| {
+            InstallerError::Unknown(format!(
+                "release SHA256SUMS has no digest for declared skill {filename}"
+            ))
+        })?;
         if matches.next().is_some() {
             return Err(InstallerError::Unknown(format!(
                 "release SHA256SUMS declares duplicate digest for {filename}"
             )));
         }
-        let digest = crate::release_contract::ArtifactDigest::parse(expected)
-            .map_err(|e| InstallerError::Unknown(
-                format!("invalid SHA256SUMS entry for {filename}: {e}")
-            ))?;
+        let digest = crate::release_contract::ArtifactDigest::parse(expected).map_err(|e| {
+            InstallerError::Unknown(format!("invalid SHA256SUMS entry for {filename}: {e}"))
+        })?;
         let url = crate::release_contract::artifact_url(&manifest.version, &filename);
-        let response = download_with_bearer(
-            &client, &resolve_download_url(&url), token.as_deref(),
-        )?;
+        let response =
+            download_with_bearer(&client, &resolve_download_url(&url), token.as_deref())?;
         if !response.status().is_success() {
             return Err(InstallerError::Network(
-                url, format!("HTTP {}", response.status()),
+                url,
+                format!("HTTP {}", response.status()),
             ));
         }
-        let bytes = response.bytes().map_err(|e| {
-            InstallerError::Network(url.clone(), e.to_string())
-        })?;
+        let bytes = response
+            .bytes()
+            .map_err(|e| InstallerError::Network(url.clone(), e.to_string()))?;
         let path = skill_cache_path(home, &manifest.version, &bundle.id);
-        let parent = path.parent().ok_or_else(|| InstallerError::Unknown(
-            format!("no cache directory for skill {filename}")
-        ))?;
-        std::fs::create_dir_all(parent)
-            .map_err(|e| InstallerError::Io(parent.to_path_buf(), e))?;
-        std::fs::write(&path, &bytes)
-            .map_err(|e| InstallerError::Io(path.clone(), e))?;
+        let parent = path.parent().ok_or_else(|| {
+            InstallerError::Unknown(format!("no cache directory for skill {filename}"))
+        })?;
+        std::fs::create_dir_all(parent).map_err(|e| InstallerError::Io(parent.to_path_buf(), e))?;
+        std::fs::write(&path, &bytes).map_err(|e| InstallerError::Io(path.clone(), e))?;
         journal.record(SideEffect::Downloaded(path.clone()));
         verify_sha256(&path, digest.as_str())?;
         journal.record(SideEffect::VerifiedSha256(path));
@@ -915,14 +915,16 @@ mod tests {
 
         assert!(home.shim_path("cognicode").is_file());
         assert!(home.shim_path("cognicode-mcp").is_file());
-        assert!(home
-            .skill_bundle(env!("CARGO_PKG_VERSION"), "cognicode")
-            .join("SKILL.md")
-            .is_file());
-        assert!(home
-            .skill_bundle(env!("CARGO_PKG_VERSION"), "cognicode-mcp")
-            .join("SKILL.md")
-            .is_file());
+        assert!(
+            home.skill_bundle(env!("CARGO_PKG_VERSION"), "cognicode")
+                .join("SKILL.md")
+                .is_file()
+        );
+        assert!(
+            home.skill_bundle(env!("CARGO_PKG_VERSION"), "cognicode-mcp")
+                .join("SKILL.md")
+                .is_file()
+        );
         assert!(!ambient.path().join("shims/cognicode-mcp").exists());
         assert!(!ambient.path().join("cache/cognicode-mcp.tar.gz").exists());
     }

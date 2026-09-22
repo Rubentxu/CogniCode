@@ -306,9 +306,8 @@ pub fn cmd_uninstall(
     // Retire only shims pointing into the version being removed. A different
     // active version, a user-installed binary or an unrelated plugin is never
     // eligible for deletion here.
-    let installed = crate::bundle_manifest::BundleManifest::from_path(
-        &home.version_manifest(version),
-    )?;
+    let installed =
+        crate::bundle_manifest::BundleManifest::from_path(&home.version_manifest(version))?;
     for component in &installed.components {
         let shim = home.shim_path(&component.name);
         if let Ok(target) = std::fs::read_link(&shim)
@@ -515,9 +514,9 @@ pub fn active_install_profile(home: &CognicodeHome) -> &'static str {
     let Some(version) = crate::tracker::read_version_optional_at(&home.tracker_version()) else {
         return "core";
     };
-    let Ok(manifest) = crate::bundle_manifest::BundleManifest::from_path(
-        &home.version_manifest(&version),
-    ) else {
+    let Ok(manifest) =
+        crate::bundle_manifest::BundleManifest::from_path(&home.version_manifest(&version))
+    else {
         return "core";
     };
     if manifest
@@ -534,8 +533,7 @@ pub fn active_install_profile(home: &CognicodeHome) -> &'static str {
 /// A coherent version can still contain a different profile. In particular,
 /// a core-only vX install must NOT make `update --profile reviewer` a no-op.
 fn active_install_matches_profile(home: &CognicodeHome, version: &str, profile: &str) -> bool {
-    let Ok(published) =
-        crate::bundle_manifest::BundleManifest::from_path(&home.bundle_yaml_path())
+    let Ok(published) = crate::bundle_manifest::BundleManifest::from_path(&home.bundle_yaml_path())
     else {
         return false;
     };
@@ -661,9 +659,14 @@ fn active_install_is_coherent(home: &CognicodeHome, version: &str) -> bool {
     } else {
         "core"
     };
-    manifest.skill_bundles_for_profile(profile).iter().all(|bundle| {
-        home.skill_bundle(version, &bundle.id).join("SKILL.md").is_file()
-    })
+    manifest
+        .skill_bundles_for_profile(profile)
+        .iter()
+        .all(|bundle| {
+            home.skill_bundle(version, &bundle.id)
+                .join("SKILL.md")
+                .is_file()
+        })
 }
 
 pub fn cmd_rollback(
@@ -815,20 +818,25 @@ pub fn cmd_reshim(home: &CognicodeHome) -> Result<()> {
         crate::bundle_manifest::BundleManifest::from_path(&home.version_manifest(&version))?;
     let adapter = crate::platform_adapter::current_adapter();
     for component in &manifest.components {
-        let binary = crate::installer_transaction::locate_component_binary(
-            home, &version, &component.name,
-        )
-        .ok_or_else(|| anyhow!(
-            "cannot reshim: missing executable for component {} in {}",
-            component.name, version,
-        ))?;
+        let binary =
+            crate::installer_transaction::locate_component_binary(home, &version, &component.name)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "cannot reshim: missing executable for component {} in {}",
+                        component.name,
+                        version,
+                    )
+                })?;
         if !binary.is_file() {
-            return Err(anyhow!("cannot reshim: component binary missing: {}", binary.display()));
+            return Err(anyhow!(
+                "cannot reshim: component binary missing: {}",
+                binary.display()
+            ));
         }
         let shim = home.shim_path(&component.name);
-        adapter.install_shim(&binary, &shim).with_context(|| {
-            format!("restore shim {} to {}", shim.display(), binary.display())
-        })?;
+        adapter
+            .install_shim(&binary, &shim)
+            .with_context(|| format!("restore shim {} to {}", shim.display(), binary.display()))?;
         println!("restored {} -> {}", shim.display(), binary.display());
     }
     // Only known, version-managed names are eligible for stale-link cleanup.
@@ -846,7 +854,8 @@ pub fn cmd_reshim(home: &CognicodeHome) -> Result<()> {
             }
             Ok(_) => {
                 return Err(anyhow!(
-                    "refusing to remove unmanaged non-symlink at {}", shim.display()
+                    "refusing to remove unmanaged non-symlink at {}",
+                    shim.display()
                 ));
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -871,7 +880,11 @@ pub fn cmd_where(home: &CognicodeHome, binary: &str) -> Result<()> {
     if shim.is_file() {
         println!("{}", shim.display());
     } else if let Ok(target) = std::fs::read_link(&shim) {
-        println!("(dangling shim: {} -> {})", shim.display(), target.display());
+        println!(
+            "(dangling shim: {} -> {})",
+            shim.display(),
+            target.display()
+        );
     } else {
         println!("(not found: {})", shim.display());
     }
@@ -2208,14 +2221,15 @@ components:
         )
         .expect("upgrade capabilities without changing release version");
 
-        let installed = crate::bundle_manifest::BundleManifest::from_path(
-            &home.version_manifest("0.95.0"),
-        )
-        .expect("installed manifest");
-        assert!(installed
-            .components
-            .iter()
-            .any(|c| c.kind == crate::release_contract::ArtifactKind::DaemonCli));
+        let installed =
+            crate::bundle_manifest::BundleManifest::from_path(&home.version_manifest("0.95.0"))
+                .expect("installed manifest");
+        assert!(
+            installed
+                .components
+                .iter()
+                .any(|c| c.kind == crate::release_contract::ArtifactKind::DaemonCli)
+        );
         assert!(home.shim_path("cognicode-mcp").is_file());
         assert_eq!(active_install_profile(&home), "reviewer");
     }
