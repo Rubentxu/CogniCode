@@ -964,7 +964,7 @@ fn build_manifest(
 }
 
 /// Input for build_graph
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct BuildGraphInput {
     pub directory: Option<String>,
 }
@@ -1000,6 +1000,28 @@ pub struct BuildGraphOutput {
     /// because of I/O / parsing failures.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped_files: Option<Vec<SkippedFileDto>>,
+    /// PRF-ANA-06: identity of what the graph was built from.
+    /// `None` only when identity cannot be established at all;
+    /// otherwise present with `complete: false` when any component
+    /// (workspace canonicalization, manifest digest) is unavailable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub basis: Option<BasisDto>,
+}
+
+/// PRF-ANA-06: provenance basis for a build_graph result.
+#[derive(Debug, serde::Serialize)]
+pub struct BasisDto {
+    /// Canonicalized workspace path the graph was built from.
+    pub workspace: String,
+    /// Digest over the effective configuration relevant to the build.
+    /// Stable across identical configurations; changes when config changes.
+    pub config_digest: String,
+    /// Digest over the source manifest (sorted relative paths + content
+    /// hashes). Same sources ⇒ same digest; any source change ⇒ different
+    /// digest. Empty when the manifest could not be computed.
+    pub source_manifest_digest: String,
+    /// `true` only when every identity component was established.
+    pub complete: bool,
 }
 
 /// F2.W8: per-file skipped-file record surfaced through `build_graph`.
@@ -1103,7 +1125,9 @@ pub async fn handle_build_graph(
             Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Complete) => {
                 (Some(Vec::new()), "complete".to_string())
             }
-            Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped }) => {
+            Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                skipped,
+            }) => {
                 let mapped: Vec<SkippedFileDto> = skipped
                     .iter()
                     .map(|sf| SkippedFileDto {
@@ -1163,6 +1187,8 @@ pub async fn handle_build_graph(
     } else {
         "built"
     };
+    // PRF-ANA-06: identity basis for this result.
+    let basis = compute_basis(ctx, &directory);
     Ok(BuildGraphOutput {
         success: true,
         status,
@@ -1174,7 +1200,67 @@ pub async fn handle_build_graph(
             source, symbols, edges_count, elapsed
         ),
         skipped_files,
+        basis: Some(basis),
     })
+}
+
+/// PRF-ANA-06: compute the identity basis for a build_graph result.
+/// - `workspace`: canonicalized project directory.
+/// - `config_digest`: SHA-256 over the effective build-relevant config
+///   (currently the log level; the config surface grows as handlers do).
+/// - `source_manifest_digest`: SHA-256 over sorted (rel_path, content_hash)
+///   pairs of the source manifest.
+/// Any component that cannot be established leaves `complete: false`
+/// and uses an empty string for that component — never a fabricated value.
+fn compute_basis(ctx: &HandlerContext, project_dir: &Path) -> BasisDto {
+    use sha2::{Digest, Sha256};
+
+    let (workspace, workspace_ok) = match project_dir.canonicalize() {
+        Ok(p) => (p.to_string_lossy().to_string(), true),
+        Err(_) => (project_dir.to_string_lossy().to_string(), false),
+    };
+
+    // Config digest: stable serialization of effective config knobs.
+    let config_key = format!(
+        "log_level={}",
+        ctx.log_level
+            .try_read()
+            .map(|l| l.to_string())
+            .unwrap_or_else(|_| "unreadable".into())
+    );
+    let config_digest = hex_digest(&Sha256::digest(config_key.as_bytes()));
+
+    // Source manifest digest: sorted (rel_path, content_hash) pairs.
+    let (source_manifest_digest, manifest_ok) = match build_manifest(project_dir) {
+        Ok(manifest) => {
+            let mut pairs: Vec<(String, &String)> = manifest
+                .entries
+                .iter()
+                .map(|(p, e)| (p.to_string_lossy().to_string(), &e.content_hash))
+                .collect();
+            pairs.sort();
+            let mut hasher = Sha256::new();
+            for (p, h) in &pairs {
+                hasher.update(p.as_bytes());
+                hasher.update(b"\0");
+                hasher.update(h.as_bytes());
+                hasher.update(b"\n");
+            }
+            (hex_digest(&hasher.finalize()), true)
+        }
+        Err(_) => (String::new(), false),
+    };
+
+    BasisDto {
+        workspace,
+        config_digest,
+        source_manifest_digest,
+        complete: workspace_ok && manifest_ok,
+    }
+}
+
+fn hex_digest(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Handler for get_call_hierarchy tool
@@ -4952,11 +5038,7 @@ mod tests {
         #[tokio::test]
         async fn status_is_complete_when_all_files_parse() {
             let tempdir = tempfile::tempdir().unwrap();
-            std::fs::write(
-                tempdir.path().join("hello.rs"),
-                "fn hello() {}\n",
-            )
-            .unwrap();
+            std::fs::write(tempdir.path().join("hello.rs"), "fn hello() {}\n").unwrap();
 
             let ctx = HandlerContext::builder()
                 .with_working_dir(tempdir.path())
@@ -4965,7 +5047,12 @@ mod tests {
             let out = handle_build_graph(&ctx, input).await.unwrap();
             assert_eq!(out.status, "complete");
             assert!(out.success);
-            assert!(out.skipped_files.as_ref().map(|v| v.is_empty()).unwrap_or(true));
+            assert!(
+                out.skipped_files
+                    .as_ref()
+                    .map(|v| v.is_empty())
+                    .unwrap_or(true)
+            );
         }
 
         #[tokio::test]
@@ -4980,11 +5067,7 @@ mod tests {
                 return;
             }
             let tempdir = tempfile::tempdir().unwrap();
-            std::fs::write(
-                tempdir.path().join("good.rs"),
-                "fn good() {}\n",
-            )
-            .unwrap();
+            std::fs::write(tempdir.path().join("good.rs"), "fn good() {}\n").unwrap();
             let bad = tempdir.path().join("bad.rs");
             std::fs::write(&bad, "fn bad() {}\n").unwrap();
             std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o000)).unwrap();
@@ -5020,27 +5103,17 @@ mod tests {
             // always rebuild). This test defends the contract
             // without depending on cache internals.
             let tempdir = tempfile::tempdir().unwrap();
-            std::fs::write(
-                tempdir.path().join("hello.rs"),
-                "fn hello() {}\n",
-            )
-            .unwrap();
+            std::fs::write(tempdir.path().join("hello.rs"), "fn hello() {}\n").unwrap();
 
             let ctx = HandlerContext::builder()
                 .with_working_dir(tempdir.path())
                 .build();
-            let out1 = handle_build_graph(
-                &ctx,
-                BuildGraphInput { directory: None },
-            )
-            .await
-            .unwrap();
-            let out2 = handle_build_graph(
-                &ctx,
-                BuildGraphInput { directory: None },
-            )
-            .await
-            .unwrap();
+            let out1 = handle_build_graph(&ctx, BuildGraphInput { directory: None })
+                .await
+                .unwrap();
+            let out2 = handle_build_graph(&ctx, BuildGraphInput { directory: None })
+                .await
+                .unwrap();
             assert!(
                 out1.status == "complete" || out1.status == "unknown",
                 "first call status must be a valid value, got: {}",
@@ -5064,32 +5137,18 @@ mod tests {
         #[tokio::test]
         async fn repeated_build_graph_calls_are_reproducible_at_handler() {
             let tempdir = tempfile::tempdir().unwrap();
-            std::fs::write(
-                tempdir.path().join("a.rs"),
-                "fn a() { b(); }\nfn b() {}\n",
-            )
-            .unwrap();
-            std::fs::write(
-                tempdir.path().join("caller.rs"),
-                "fn caller() { a(); }\n",
-            )
-            .unwrap();
+            std::fs::write(tempdir.path().join("a.rs"), "fn a() { b(); }\nfn b() {}\n").unwrap();
+            std::fs::write(tempdir.path().join("caller.rs"), "fn caller() { a(); }\n").unwrap();
 
             let ctx = HandlerContext::builder()
                 .with_working_dir(tempdir.path())
                 .build();
-            let out1 = handle_build_graph(
-                &ctx,
-                BuildGraphInput { directory: None },
-            )
-            .await
-            .unwrap();
-            let out2 = handle_build_graph(
-                &ctx,
-                BuildGraphInput { directory: None },
-            )
-            .await
-            .unwrap();
+            let out1 = handle_build_graph(&ctx, BuildGraphInput { directory: None })
+                .await
+                .unwrap();
+            let out2 = handle_build_graph(&ctx, BuildGraphInput { directory: None })
+                .await
+                .unwrap();
 
             // Counts must match.
             assert_eq!(
@@ -5121,6 +5180,119 @@ mod tests {
                 "edge set differs across runs\nrun1: {:?}\nrun2: {:?}",
                 e1, e2
             );
+        }
+
+        /// PRF-ANA-06: basis identity on build_graph output. The output MUST
+        /// identify what the graph was built from: canonical workspace path,
+        /// digest of effective configuration, and digest of the source
+        /// manifest. When identity cannot be established the basis is declared
+        /// incomplete rather than silently absent.
+        mod prf_ana_06_basis_identity_tests {
+            use super::*;
+
+            #[tokio::test]
+            async fn basis_present_with_canonical_workspace_and_manifest_digest() {
+                let tempdir = tempfile::tempdir().unwrap();
+                std::fs::write(tempdir.path().join("a.rs"), "fn a() {}\n").unwrap();
+                let ctx = HandlerContext::builder()
+                    .with_working_dir(tempdir.path())
+                    .build();
+                let input = BuildGraphInput { directory: None };
+                let out = handle_build_graph(&ctx, input).await.unwrap();
+                let basis = out
+                    .basis
+                    .as_ref()
+                    .expect("basis must be present on a fresh build");
+                let canonical = tempdir.path().canonicalize().unwrap();
+                assert_eq!(
+                    std::path::Path::new(&basis.workspace)
+                        .canonicalize()
+                        .unwrap(),
+                    canonical,
+                    "workspace must canonicalize to the tempdir root"
+                );
+                assert!(
+                    !basis.source_manifest_digest.is_empty(),
+                    "source manifest digest must be non-empty"
+                );
+                assert!(basis.complete, "identity must be complete when established");
+            }
+
+            #[tokio::test]
+            async fn same_inputs_produce_same_manifest_digest() {
+                let tempdir = tempfile::tempdir().unwrap();
+                std::fs::write(tempdir.path().join("a.rs"), "fn a() {}\n").unwrap();
+                let ctx = HandlerContext::builder()
+                    .with_working_dir(tempdir.path())
+                    .build();
+                let input = BuildGraphInput { directory: None };
+                let d1 = handle_build_graph(&ctx, input.clone())
+                    .await
+                    .unwrap()
+                    .basis
+                    .unwrap()
+                    .source_manifest_digest;
+                // Touch the same content again (no semantic change) -> same digest.
+                let d2 = handle_build_graph(&ctx, input)
+                    .await
+                    .unwrap()
+                    .basis
+                    .unwrap()
+                    .source_manifest_digest;
+                assert_eq!(d1, d2, "same sources must yield the same manifest digest");
+            }
+
+            #[tokio::test]
+            async fn changed_source_changes_manifest_digest() {
+                let tempdir = tempfile::tempdir().unwrap();
+                let f = tempdir.path().join("a.rs");
+                std::fs::write(&f, "fn a() {}\n").unwrap();
+                let ctx = HandlerContext::builder()
+                    .with_working_dir(tempdir.path())
+                    .build();
+                let input = BuildGraphInput { directory: None };
+                let d1 = handle_build_graph(&ctx, input.clone())
+                    .await
+                    .unwrap()
+                    .basis
+                    .unwrap()
+                    .source_manifest_digest;
+                std::fs::write(&f, "fn a() { /* changed */ }\n").unwrap();
+                let d2 = handle_build_graph(&ctx, input)
+                    .await
+                    .unwrap()
+                    .basis
+                    .unwrap()
+                    .source_manifest_digest;
+                assert_ne!(d1, d2, "changed sources must change the manifest digest");
+            }
+
+            #[tokio::test]
+            async fn basis_workspace_survives_symlinked_path() {
+                // On macOS/Fedora, tempdir may hand out a symlinked path
+                // (/var/foo vs /private/foo, /home vs /var/home). The basis
+                // workspace must be the canonical form either way.
+                let tempdir = tempfile::tempdir().unwrap();
+                std::fs::write(tempdir.path().join("a.rs"), "fn a() {}\n").unwrap();
+                let ctx = HandlerContext::builder()
+                    .with_working_dir(tempdir.path())
+                    .build();
+                let input = BuildGraphInput { directory: None };
+                let out = handle_build_graph(&ctx, input).await.unwrap();
+                let basis = out.basis.unwrap();
+                let canonical = tempdir.path().canonicalize().unwrap();
+                let given = std::path::Path::new(&basis.workspace);
+                assert!(
+                    given.is_absolute(),
+                    "workspace in basis must be absolute, got: {}",
+                    basis.workspace
+                );
+                assert_eq!(
+                    given,
+                    canonical.as_path(),
+                    "workspace must equal the canonical path when working_dir is already canonical"
+                );
+            }
         }
     }
 
@@ -5159,9 +5331,7 @@ mod tests {
         }
 
         async fn mcp_build_graph(p: &PathBuf) -> BuildGraphOutput {
-            let ctx = HandlerContext::builder()
-                .with_working_dir(p)
-                .build();
+            let ctx = HandlerContext::builder().with_working_dir(p).build();
             handle_build_graph(&ctx, BuildGraphInput { directory: None })
                 .await
                 .unwrap()

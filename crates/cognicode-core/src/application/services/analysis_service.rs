@@ -344,8 +344,13 @@ impl AnalysisService {
                     let content_hash = compute_content_hash(&source);
 
                     let cache = self.file_cache.lock().unwrap();
-                    if let Some((cached_mtime, cached_size, cached_hash, cached_symbols, cached_relationships)) =
-                        cache.get(&file_path).cloned()
+                    if let Some((
+                        cached_mtime,
+                        cached_size,
+                        cached_hash,
+                        cached_symbols,
+                        cached_relationships,
+                    )) = cache.get(&file_path).cloned()
                         && cached_mtime == mtime
                         && cached_size == size
                         && cached_hash == content_hash
@@ -407,8 +412,10 @@ impl AnalysisService {
             .iter()
             .map(|(_, _, _, _, symbols, _, _)| symbols.len())
             .sum();
-        let total_relationships_found: usize =
-            results.iter().map(|(_, _, _, _, _, rels, _)| rels.len()).sum();
+        let total_relationships_found: usize = results
+            .iter()
+            .map(|(_, _, _, _, _, rels, _)| rels.len())
+            .sum();
 
         info!(
             "build_project_graph: stage=parse — {} files ({} parsed, {} cached), {} symbols, {} relationships",
@@ -451,7 +458,13 @@ impl AnalysisService {
             // editor rewrite without re-save metadata change).
             cache.insert(
                 file_path.clone(),
-                (mtime, size, content_hash, symbols.clone(), relationships.clone()),
+                (
+                    mtime,
+                    size,
+                    content_hash,
+                    symbols.clone(),
+                    relationships.clone(),
+                ),
             );
 
             for symbol in symbols {
@@ -731,8 +744,13 @@ impl AnalysisService {
                     let content_hash = compute_content_hash(&source);
 
                     let cache = self.file_cache.lock().unwrap();
-                    if let Some((cached_mtime, cached_size, cached_hash, cached_symbols, cached_relationships)) =
-                        cache.get(&file_path).cloned()
+                    if let Some((
+                        cached_mtime,
+                        cached_size,
+                        cached_hash,
+                        cached_symbols,
+                        cached_relationships,
+                    )) = cache.get(&file_path).cloned()
                         && cached_mtime == mtime
                         && cached_size == size
                         && cached_hash == content_hash
@@ -783,7 +801,13 @@ impl AnalysisService {
             // content_hash).
             cache.insert(
                 file_path.clone(),
-                (mtime, size, content_hash, symbols.clone(), relationships.clone()),
+                (
+                    mtime,
+                    size,
+                    content_hash,
+                    symbols.clone(),
+                    relationships.clone(),
+                ),
             );
 
             for symbol in symbols {
@@ -952,7 +976,9 @@ impl AnalysisService {
                 let mut cache = file_cache.lock().unwrap();
                 let mut all_relationships = Vec::new();
 
-                for (file_path, mtime, size, content_hash, symbols, relationships, was_parsed) in results {
+                for (file_path, mtime, size, content_hash, symbols, relationships, was_parsed) in
+                    results
+                {
                     if was_parsed {
                         parsed_files += 1;
                     }
@@ -960,7 +986,13 @@ impl AnalysisService {
                     // (mtime, size, content_hash).
                     cache.insert(
                         file_path.clone(),
-                        (mtime, size, content_hash, symbols.clone(), relationships.clone()),
+                        (
+                            mtime,
+                            size,
+                            content_hash,
+                            symbols.clone(),
+                            relationships.clone(),
+                        ),
                     );
 
                     for symbol in symbols {
@@ -3388,9 +3420,7 @@ def b():
                 .expect("stat ok.rs")
                 .modified()
                 .expect("mtime");
-            let original_size = std::fs::metadata(&target)
-                .expect("stat ok.rs")
-                .len();
+            let original_size = std::fs::metadata(&target).expect("stat ok.rs").len();
 
             let service = AnalysisService::new();
 
@@ -3433,10 +3463,7 @@ def b():
             let restored_size = std::fs::metadata(&target)
                 .expect("stat ok.rs after rewrite")
                 .len();
-            assert_eq!(
-                original_mtime, restored,
-                "test setup must preserve mtime"
-            );
+            assert_eq!(original_mtime, restored, "test setup must preserve mtime");
             assert_eq!(
                 original_size, restored_size,
                 "test setup must preserve size (got {} vs original {})",

@@ -481,22 +481,21 @@ impl FullGraphStrategy {
             }
 
             // Unsupported language: report as UnsupportedExtension (H-02).
-            let language = match crate::infrastructure::parser::Language::from_extension(
-                path.extension(),
-            ) {
-                Some(lang) => lang,
-                None => {
-                    parse_skipped.push(SkippedFile {
-                        path: path.to_string_lossy().to_string(),
-                        reason: SkipReason::UnsupportedExtension(
-                            path.extension()
-                                .map(|e| e.to_string_lossy().to_string())
-                                .unwrap_or_default(),
-                        ),
-                    });
-                    continue;
-                }
-            };
+            let language =
+                match crate::infrastructure::parser::Language::from_extension(path.extension()) {
+                    Some(lang) => lang,
+                    None => {
+                        parse_skipped.push(SkippedFile {
+                            path: path.to_string_lossy().to_string(),
+                            reason: SkipReason::UnsupportedExtension(
+                                path.extension()
+                                    .map(|e| e.to_string_lossy().to_string())
+                                    .unwrap_or_default(),
+                            ),
+                        });
+                        continue;
+                    }
+                };
 
             // Read error: report as Read (H-02).
             let source = match std::fs::read_to_string(path) {
@@ -1400,8 +1399,7 @@ mod h02_silent_errors_full_strategy_tests {
 
         let bad = src.join("sealed");
         std::fs::create_dir(&bad).expect("mkdir sealed");
-        std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o000))
-            .expect("chmod 000");
+        std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o000)).expect("chmod 000");
 
         let strat = FullGraphStrategy::new();
         strat.build_full_graph_report(tmp.path())
@@ -1420,9 +1418,9 @@ mod h02_silent_errors_full_strategy_tests {
     fn h02_unreadable_dir_surfaces_as_partial_with_skip_reason_read() {
         let report = build_with_unreadable_dir();
         match report.status {
-            BuildStatus::Complete => panic!(
-                "expected Partial because one directory is unreadable, got Complete"
-            ),
+            BuildStatus::Complete => {
+                panic!("expected Partial because one directory is unreadable, got Complete")
+            }
             BuildStatus::Partial { skipped } => {
                 assert!(
                     !skipped.is_empty(),
