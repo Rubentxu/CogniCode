@@ -189,3 +189,4 @@ uat-guided-v1.0.0-current.html
 !crates/cognicode-cli/src/bin/
 sandbox/scripts/tests/__pycache__/
 *.cdx.json
+*.cdx.xml
