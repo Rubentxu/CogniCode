@@ -2269,3 +2269,42 @@ del programa PRF activo).
   (pre-push hook y/o activación de `on: pull_request` con
   branch protection), que es operator-gated.
 - **NO ejecuta:** push, tag, C7 firma. Operator-gated.
+
+## 2026-09-22 — PRF-CLI-04 / H-03 (equivalencia CLI-MCP) (entrada 37)
+
+- **Origen:** gap H-03 del operador + PRF-CLI-04 (FAIL):
+  "CLI → `FullGraphStrategy`; MCP →
+  `AnalysisService::build_project_graph`. Reutilizan piezas pero
+  no ejecutan el mismo caso de uso en `full`."
+- **Cambio:** nuevo módulo de tests
+  `prf_cli_04_cli_mcp_equivalence_tests` (en
+  `crates/cognicode-core/src/interface/mcp/handlers/mod.rs`):
+  - `cli_full_and_mcp_build_graph_agree_on_symbols`: ejecuta el
+    MISMO caso de uso (build de grafo full) por la ruta CLI
+    (`FullGraphStrategy::build_full_graph`) y la ruta MCP
+    (`handle_build_graph` → `AnalysisService::build_project_graph`)
+    sobre `docs/prf/fixtures/equivalence_full_vs_perfile/`.
+    Compara el conjunto de FQNs del CLI con `symbols_found` del
+    MCP.
+  - `cli_full_and_mcp_build_graph_agree_on_edges`: compara
+    `edge_count` CLI con `relationships_found` MCP.
+  - Guards anti-vacuidad: si el corpus no produce símbolos ni
+    aristas, el test falla (una comparación vacua no prueba
+    nada).
+- **Resultado: GREEN en primera ejecución** (sin RED previo).
+  Justificación honesta: los desvíos que motivaron H-03 se
+  cerraron en F2.W7 (GlobalSymbolIndex + resolución scope-aware
+  cableada en `build_project_graph`, la ruta real del binario) y
+  F2.W8 (semántica de skips compartida). Ambas rutas comparten
+  ahora la misma semántica de resolución; estos tests son pins
+  de regresión del contrato H-03, no correcciones. Mismo patrón
+  que JOURNAL §35 (PRF-ANA-07).
+- **Verificación:** 2138 tests pass (incluidos los 2 nuevos);
+  clippy `-D warnings` limpio.
+- **Matriz:** PRF-CLI-04 FAIL → PARTIAL (mejorado). La
+  disposición bucket no sube a PASS porque el requisito SPEC pide
+  "mismo caso de uso entre CLI y MCP, transporte aislado" y el
+  test ejercita ambos caminos in-process compartiendo el proceso
+  de test, no dos procesos reales CLI/MCP aislados por transporte.
+  Contador SPEC-CLI: FAIL 1→0, PARTIAL 3→4.
+- **NO ejecuta:** push, tag, C7 firma. Operator-gated.
