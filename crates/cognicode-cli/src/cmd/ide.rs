@@ -1419,6 +1419,25 @@ components:
     }
 
     #[test]
+    fn opencode_installs_portable_skill_bundles_under_distinct_identities() {
+        let core = std::path::Path::new("/test/versions/0.97.3/skills/cognicode");
+        let mcp = std::path::Path::new("/test/versions/0.97.3/skills/cognicode-mcp");
+        let paths = [core, mcp].map(|skill| {
+            integrate_opencode(skill, "0.97.3", &[])
+                .expect("pure integration recipe")
+                .into_iter()
+                .find_map(|step| match step {
+                    Step::Symlink { target, .. } => Some(target),
+                    _ => None,
+                })
+                .expect("one skill link")
+        });
+        assert_ne!(paths[0], paths[1], "skill bundles must never overwrite each other");
+        assert!(paths[0].ends_with("cognicode-0.97.3"));
+        assert!(paths[1].ends_with("cognicode-mcp-0.97.3"));
+    }
+
+    #[test]
     #[serial]
     fn integrate_opencode_writes_mcp_entry() {
         let tmp = std::env::temp_dir().join(format!("cogh-oc-{}", std::process::id()));
