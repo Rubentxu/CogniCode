@@ -2919,3 +2919,16 @@ idéntico (4 verdes + carreras 5/5 + suite MCP 16/16). El harness propio
 de ana_05 (McpChild) es anterior a §63 y no es deuda nueva; su
 consolidación con common/ queda como candidato si se toca de nuevo.
 Commit `97ac5ebd`.
+
+## §75 — PRF-CLI-04: equivalencia dos procesos reales — PASS (2026-09-22)
+
+Cierra el gap del test in-process (§37): UAT binario real
+`prf_cli_04_two_process_uat.rs` — `cognicode graph full`
+(argv/stdout) vs `cognicode-mcp` build_graph (stdio JSON-RPC) sobre
+el corpus canónico: mismos conteos de símbolos/aristas y mismo
+status de cobertura, con guards anti-vacuidad. Nota honesta: la
+comparación dos-procesos es por conteos+status (el JSON de `graph
+full` no exporta aristas individuales); la igualdad de sets la sigue
+cubriendo el test in-process. Ambos juntos: sets + transporte.
+Commit `45c390fd`.
+**Matriz**: PRF-CLI-04 → PASS.
