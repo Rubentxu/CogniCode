@@ -2908,3 +2908,14 @@ se cargan como evidencia válida), v1 hace round-trip. Test unitario
 
 Core lib 2146/0; las 5 UATs de persistencia verdes. Commit `70bacad4`.
 **Matriz**: PRF-STATE-03 → PASS, PRF-STATE-05 → PASS.
+
+## §74 — Auditoría de deuda §63-§73: duplicación de harness UAT eliminada (2026-09-22)
+
+Los 4 UATs de persistencia duplicaban el harness MCP (~80 líneas c/u).
+Extraído `tests/common/mod.rs::McpSession` (spawn + call_tool + cierre
+completo, kill_on_drop) y reescritos state_02, state_03_concurrent,
+state_03_04 y state_04_isolation: 509 → 316 líneas (-38%), comportamiento
+idéntico (4 verdes + carreras 5/5 + suite MCP 16/16). El harness propio
+de ana_05 (McpChild) es anterior a §63 y no es deuda nueva; su
+consolidación con common/ queda como candidato si se toca de nuevo.
+Commit `97ac5ebd`.
