@@ -154,9 +154,9 @@ pub enum Command {
         /// Read releases.json from this directory instead of hitting the API
         #[arg(long)]
         staging: Option<PathBuf>,
-        /// Profile to install (default: core)
-        #[arg(long, default_value = "core")]
-        profile: String,
+        /// Profile to install (default: preserve the active installed profile)
+        #[arg(long)]
+        profile: Option<String>,
         /// Resolve the latest release but do not download or install
         #[arg(long)]
         dry_run: bool,
@@ -338,6 +338,7 @@ fn main() -> anyhow::Result<()> {
             let channel = channel
                 .parse::<lifecycle_resolver::Channel>()
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let profile = profile.unwrap_or_else(|| layout::active_install_profile(&home).into());
             layout::cmd_update(&home, plugin, channel, base_url, staging, profile, dry_run)
         }
         Command::Reshim => layout::cmd_reshim(&home),
