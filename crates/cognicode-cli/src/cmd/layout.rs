@@ -303,6 +303,21 @@ pub fn cmd_uninstall(
     // Pinned by `t_l3_cmd_uninstall_removes_versions_tree` and
     // `t_l3_cmd_uninstall_idempotent_when_versions_tree_missing`.
     let install_tree = home.version_root(version);
+    // Retire only shims pointing into the version being removed. A different
+    // active version, a user-installed binary or an unrelated plugin is never
+    // eligible for deletion here.
+    let installed = crate::bundle_manifest::BundleManifest::from_path(
+        &home.version_manifest(version),
+    )?;
+    for component in &installed.components {
+        let shim = home.shim_path(&component.name);
+        if let Ok(target) = std::fs::read_link(&shim)
+            && target.starts_with(&install_tree)
+        {
+            std::fs::remove_file(&shim)
+                .with_context(|| format!("remove version-owned shim {}", shim.display()))?;
+        }
+    }
     let removed_tree = install_tree.exists();
     if removed_tree {
         std::fs::remove_dir_all(&install_tree)
