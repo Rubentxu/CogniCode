@@ -382,12 +382,32 @@ impl AnalysisService {
                             return None;
                         }
                     };
-                    let symbols = parser
-                        .find_all_symbols_with_path(&source, &file_path)
-                        .unwrap_or_default();
-                    let relationships = parser
-                        .find_call_relationships(&source, &file_path)
-                        .unwrap_or_default();
+                    // PRF-ANA-02: extraction errors are classified as
+                    // skipped, never silently defaulted to empty results.
+                    let symbols = match parser.find_all_symbols_with_path(&source, &file_path) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            skipped.lock().unwrap().push(
+                                crate::infrastructure::graph::per_file_graph::SkippedFile {
+                                    path: file_path.clone(),
+                                    reason: classify_parse(&e),
+                                },
+                            );
+                            return None;
+                        }
+                    };
+                    let relationships = match parser.find_call_relationships(&source, &file_path) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            skipped.lock().unwrap().push(
+                                crate::infrastructure::graph::per_file_graph::SkippedFile {
+                                    path: file_path.clone(),
+                                    reason: classify_parse(&e),
+                                },
+                            );
+                            return None;
+                        }
+                    };
 
                     Some((
                         file_path,
@@ -768,14 +788,35 @@ impl AnalysisService {
                     }
                     drop(cache);
 
-                    let parser = TreeSitterParser::with_cache(language).ok()?;
-
-                    let symbols = parser
-                        .find_all_symbols_with_path(&source, &file_path)
-                        .unwrap_or_default();
-                    let relationships = parser
-                        .find_call_relationships(&source, &file_path)
-                        .unwrap_or_default();
+                    // PRF-ANA-02: a file whose parser cannot be built or
+                    // whose extraction fails is excluded from parsed
+                    // coverage and reported via warn!, never silently
+                    // counted as parsed with empty results.
+                    let parser = match TreeSitterParser::with_cache(language) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            tracing::warn!("parse setup failed for {}: {}", file_path, e);
+                            return None;
+                        }
+                    };
+                    let symbols = match parser.find_all_symbols_with_path(&source, &file_path) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::warn!("symbol extraction failed for {}: {}", file_path, e);
+                            return None;
+                        }
+                    };
+                    let relationships = match parser.find_call_relationships(&source, &file_path) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            tracing::warn!(
+                                "relationship extraction failed for {}: {}",
+                                file_path,
+                                e
+                            );
+                            return None;
+                        }
+                    };
 
                     Some((
                         file_path,
@@ -951,14 +992,41 @@ impl AnalysisService {
                             }
                             drop(cache);
 
-                            let parser = TreeSitterParser::with_cache(language).ok()?;
-
-                            let symbols = parser
-                                .find_all_symbols_with_path(&source, &file_path)
-                                .unwrap_or_default();
-                            let relationships = parser
-                                .find_call_relationships(&source, &file_path)
-                                .unwrap_or_default();
+                            // PRF-ANA-02: same contract as the sync
+                            // builder — extraction failures are excluded
+                            // from parsed coverage and reported, never
+                            // silently defaulted to empty results.
+                            let parser = match TreeSitterParser::with_cache(language) {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    tracing::warn!("parse setup failed for {}: {}", file_path, e);
+                                    return None;
+                                }
+                            };
+                            let symbols =
+                                match parser.find_all_symbols_with_path(&source, &file_path) {
+                                    Ok(s) => s,
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "symbol extraction failed for {}: {}",
+                                            file_path,
+                                            e
+                                        );
+                                        return None;
+                                    }
+                                };
+                            let relationships =
+                                match parser.find_call_relationships(&source, &file_path) {
+                                    Ok(r) => r,
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "relationship extraction failed for {}: {}",
+                                            file_path,
+                                            e
+                                        );
+                                        return None;
+                                    }
+                                };
 
                             Some((
                                 file_path,
