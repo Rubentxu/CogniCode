@@ -624,13 +624,46 @@ impl CommandExecutor {
                     );
                 }
 
-                let strategy = FullGraphStrategy::new();
+                // PRF-EXT-02 / H-03: `graph full` must go through the
+                // same application service (`AnalysisService`) as the
+                // MCP `build_graph` tool, so both interfaces share the
+                // canonical pipeline (caches, coverage, skipped-file
+                // reporting) instead of duplicating semantics in the
+                // adapter layer.
+                let service =
+                    crate::application::services::analysis_service::AnalysisService::new();
                 let dir = PathBuf::from(&path);
 
-                match strategy.build_full_graph(&dir) {
-                    Ok(graph) => {
+                match service.build_full_graph(&dir) {
+                    Ok(()) => {
                         let elapsed = start.elapsed().as_millis();
+                        let report = service.get_last_build_report();
+                        let (symbols, edges) = report
+                            .as_ref()
+                            .map(|r| (r.graph.symbol_count(), r.graph.edge_count()))
+                            .unwrap_or((0, 0));
+                        let skipped: Vec<String> = report
+                            .as_ref()
+                            .and_then(|r| {
+                                match &r.status {
+                                crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                                    skipped,
+                                } => Some(
+                                    skipped
+                                        .iter()
+                                        .map(|s| format!("{}: {:?}", s.path, s.reason))
+                                        .collect(),
+                                ),
+                                _ => None,
+                            }
+                            })
+                            .unwrap_or_default();
                         if json_mode {
+                            #[derive(serde::Serialize)]
+                            struct SkippedJson {
+                                path: String,
+                                reason: String,
+                            }
                             #[derive(serde::Serialize)]
                             struct FullGraphJson<'a> {
                                 schema_version: &'a str,
@@ -638,19 +671,40 @@ impl CommandExecutor {
                                 elapsed_ms: u128,
                                 symbols: usize,
                                 dependencies: usize,
+                                status: &'a str,
+                                #[serde(skip_serializing_if = "Vec::is_empty")]
+                                skipped_files: Vec<SkippedJson>,
                             }
                             let doc = FullGraphJson {
                                 schema_version: "cognicode.graph.full/v1",
-                                path: &path,
+                                path: path,
                                 elapsed_ms: elapsed,
-                                symbols: graph.symbol_count(),
-                                dependencies: graph.edge_count(),
+                                symbols,
+                                dependencies: edges,
+                                status: if skipped.is_empty() {
+                                    "complete"
+                                } else {
+                                    "partial"
+                                },
+                                skipped_files: skipped
+                                    .iter()
+                                    .filter_map(|s| {
+                                        let (p, r) = s.split_once(": ")?;
+                                        Some(SkippedJson {
+                                            path: p.to_string(),
+                                            reason: r.to_string(),
+                                        })
+                                    })
+                                    .collect(),
                             };
                             println!("{}", serde_json::to_string(&doc)?);
                         } else {
                             println!("Full graph built in {}ms", elapsed);
-                            println!("  Total symbols: {}", graph.symbol_count());
-                            println!("  Total dependencies: {}", graph.edge_count());
+                            println!("  Total symbols: {}", symbols);
+                            println!("  Total dependencies: {}", edges);
+                            for s in &skipped {
+                                eprintln!("  Skipped: {}", s);
+                            }
                         }
                     }
                     Err(e) => {
