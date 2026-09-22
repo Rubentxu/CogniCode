@@ -2813,3 +2813,13 @@ también en el commit pre-sesión `e3b59262` (verificado con worktree):
 profile". Dependencia de estado de entorno del test, no causados por
 §63-§66. Registrados como deuda de aislamiento de tests cogh (línea
 con ae74558e).
+
+
+## §68 — PRF-MCP-04: silent-ignore de argumentos → error tipado (2026-09-22)
+
+`BuildGraphInput` aceptaba cualquier clave (enviar `path` reconstruía
+el default sin avisar). `deny_unknown_fields` + UAT binario real.
+Hallazgo colateral: dos UATs usaban la clave incorrecta y su verde era
+falso positivo — corregidos. Regresión MCP completa verde.
+**Matriz**: PRF-MCP-04 → PARTIAL (mejorado: argumentos inválidos con
+error tipado en build_graph; permisos/budgets uniformes pendientes).
