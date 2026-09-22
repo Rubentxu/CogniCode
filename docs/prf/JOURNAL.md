@@ -2891,3 +2891,20 @@ limpiados (los snapshots compartidos entre tests eran fuente de
 contaminación, ahora las fixtures no dejan estado entre ejecuciones).
 Commits `67c62d2b`.
 **Matriz**: PRF-STATE-03 (parcial, HOME compartido pendiente) / PRF-STATE-04 → PASS (interrupción: escritura atómica + corrupto→reconstruir; recovery verificado).
+
+## §73 — PRF-STATE-03 (concurrencia) + PRF-STATE-05 (esquema) — PASS (2026-09-22)
+
+STATE-03: UAT binario real con DOS procesos MCP concurrentes sobre el
+mismo workspace: ambos completan, la escritura atómica (temp+rename)
+aguanta 20/20 repeticiones de carrera, sin .tmp residuales, y el stale
+se detecta por contenido (rebuild tras edición). El aislamiento
+mismo-HOME/dos-proyectos es estructural: snapshot por-workspace en
+`.cognicode/` de cada proyecto.
+
+STATE-05: esquema del snapshot taggeado `cognicode.graph.cache/v1`;
+versión desconocida (v999) y basura se rechazan como ausentes (nunca
+se cargan como evidencia válida), v1 hace round-trip. Test unitario
+`state05_unknown_schema_version_is_rejected`.
+
+Core lib 2146/0; las 5 UATs de persistencia verdes. Commit `70bacad4`.
+**Matriz**: PRF-STATE-03 → PASS, PRF-STATE-05 → PASS.
