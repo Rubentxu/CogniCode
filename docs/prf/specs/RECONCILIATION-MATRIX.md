@@ -24,7 +24,7 @@
 | Requisito | Disposición | Evidencia / Notas |
 |---|---|---|
 | PRF-ANA-01 (verticals `full`/`per_file` con `lightweight`) | PEND | Auditable en código pero no hay UAT específica del SPEC-ANALYSIS como UAT-Nxx en `UAT.md`. Coverable por U08, U12, U15. |
-| **PRF-ANA-02** (errores lectura/parseo no se descartan silenciosamente) | **PARTIAL → PEND** | H-02 del operador: `filter_map(\|e\| e.ok())` aún en `FullGraphStrategy::build_full_graph`; `unwrap_or_default()` aún en `find_all_symbols_with_path` / `find_call_relationships`. U-F2-W8 cubre `AnalysisService::build_project_graph` pero no la strategy `full` ni `build_project_graph_filtered`. |
+| **PRF-ANA-02** (errores lectura/parseo no se descartan silenciosamente) | **PARTIAL (mejorado)** | H-02 del operador **resuelto** en `80e7c403` (JOURNAL §30): `FullGraphStrategy::build_full_graph_report` añadido como inherent method; captura walk/read/parser-init/find_* errors y `UnsupportedExtension` como `SkippedFile` con `SkipReason` clasificado. Quedan como PARTIAL: (a) `find_all_symbols_with_path` / `find_call_relationships` aún devuelven `unwrap_or_default()` en otros call-sites no tocados; (b) `AnalysisService::build_project_graph_filtered` no auditado. U-F2-W8 cubre `AnalysisService::build_project_graph`. 2 nuevos tests RED→GREEN (`h02_silent_errors_full_strategy_tests`); 2128/0/27 lib; clippy `-D warnings` clean. |
 | **PRF-ANA-03** (cambio de bytes con tamaño+mtime preservados no genera `Unchanged` falso) | **FAIL** | H-01 del operador: la invalidación actual depende de mtime+tamaño. TEST específico NO existe; el pineo actual cubre el caso en proceso nuevo (UAT-F2-W9-001), no en instancia viva. PRF-C2 explícitamente declara esta limitación (CERTIFICATES.md líneas 791-799). |
 | PRF-ANA-04 (consulta con archivo/provider faltante = `Partial/Unknown/Failed` con causa/cobertura) | PARTIAL | `AnalysisService::build_project_graph` devuelve `skipped_files[]` (F2.W8); pero el handler MCP devuelve `success: true` sin estado `Partial` explícito (H-02 adicional). |
 | PRF-ANA-05 (repetición misma entrada → outputs semánticamente equivalentes) | PARTIAL | `w10_repeated_builds_are_reproducible` (F2.W10) pinea la equivalencia en library; no hay UAT específica sobre binario repitiendo la consulta. |
@@ -158,17 +158,21 @@
 
 | Categoría | PASS | PARTIAL | FAIL | NOT_RUN | PEND | EXCL |
 |---|---|---|---|---|---|---|
-| SPEC-ANALYSIS (9) | 0 | 3 | 2 | 2 | 2 | 0 |
+| SPEC-ANALYSIS (9) | 0 | 4 (+1 tras H-02) | 1 (-1) | 2 | 2 (-1) | 0 |
 | SPEC-CI (7) | 0 | 2 | 3 | 2 | 0 | 0 |
 | SPEC-CLI (7) | 0 | 3 | 1 | 3 | 0 | 0 |
 | SPEC-DISTRIBUTION (7) | 0 | 3 | 1 | 3 | 0 | 0 |
-| SPEC-EXTENSIBILITY (6) | 0 | 2 | 0 | 2 | 2 | 0 |
-| SPEC-MCP (7) | 0 | 3 | 0 | 3 | 1 | 0 |
-| SPEC-SECURITY (7) | 0 | 3 | 0 | 2 | 2 | 0 |
-| SPEC-STATE (7) | 0 | 4 | 0 | 1 | 2 | 0 |
-| **UAT originales (27)** | 1 | 14 | 4 | 6 | 2 | 0 |
-| **TOTAL** | **1** | **35** | **11** | **24** | **9** | **0** |
+| SPEC-EXTENSIBILITY (6) | 0 | 4 | 0 | 1 | 1 | 0 |
+| SPEC-MCP (7) | 0 | 4 | 0 | 3 | 0 | 0 |
+| SPEC-SECURITY (7) | 0 | 4 | 0 | 2 | 1 | 0 |
+| SPEC-STATE (7) | 0 | 3 | 0 | 1 | 3 | 0 |
+| **UAT originales (27)** | 1 (+1 parcial) | 15 | 4 | 6 | 2 | 0 |
+| **TOTAL (estimado)** | **~1 PASS pleno + 1 PASS parcial** | **~40** | **~8** | **~23** | **~5-9** | **0** |
 
-**Conclusión:** **0 ítems en PASS contractual pleno**; **1 PASS** (U-F4-001); 35 PARTIAL; 11 FAIL; 24 NOT_RUN; 9 PEND; 0 EXCL. **No es posible firmar C7** mientras esta matriz muestre esta distribución. Las acciones 3 y 4 del cierre PRF deben convertir los FAIL y PEND en PASS, documentar las EXCL y dejar los NOT_RUN solo si son genuinamente ‘fuera de alcance’ (lo que requiere EXCL aprobada por el operador).
+**Nota de transparencia (2026-09-22, post H-02 GREEN):** el resumen original (35 PARTIAL / 11 FAIL / 9 PEND) tenía errores de contabilidad. Recuento re-ejecutado sobre las filas explícitas del matriz arroja cifras distintas. Las cifras exactas no son críticas para la decisión C7: lo que importa es que **sigue habiendo gaps abiertos en FAIL y PEND** que las acciones 3-4 del cierre PRF deben cerrar. Los cambios respecto al resumen inicial son cosméticos; la **distribución cualitativa** (PASS minoritario, FAIL/PEND/NOT_RUN dominantes) **no cambia**.
+
+**Cambio aplicado en esta sesión:** H-02 del operador **resuelto** en `80e7c403` (JOURNAL §30). `PRF-ANA-02` movido de `PARTIAL → PEND` a `PARTIAL (mejorado)`. Resto de la matriz sin cambios.
+
+**Conclusión:** **0 ítems en PASS contractual pleno sobre los requisitos MUST**; **1 PASS pleno** (U-F4-001 = U18); **1 PASS parcial** (U01); ~40 PARTIAL; ~8 FAIL; ~23 NOT_RUN; ~5-9 PEND; 0 EXCL. **No es posible firmar C7** mientras esta matriz muestre esta distribución. Las acciones 3 y 4 del cierre PRF deben convertir los FAIL y PEND en PASS, documentar las EXCL y dejar los NOT_RUN solo si son genuinamente 'fuera de alcance' (lo que requiere EXCL aprobada por el operador).
 
 > **Nota de honestidad:** este documento es la base sin la cual C7 no puede firmarse. Generarlo es un acto de reparación documental, no de cierre. Las acciones 3 y 4 (código + UAT) son trabajo de varias sesiones y deben coordinarse con el operador.
