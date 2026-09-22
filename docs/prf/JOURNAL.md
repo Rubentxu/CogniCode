@@ -2525,3 +2525,20 @@ del programa PRF activo).
   real, evidencia cruda conservada). Cobertura temporal: HEAD 69481cf2,
   binario shim 0.97.3 (RC local verificada).
 - **NO ejecuta:** push, tag, C7 firma. Operator-gated.
+
+## 2026-09-22 — U24 / PRF-DIST-03: instalación corrupta, rollback y reinstall (entrada 46)
+
+- **UAT ejecutada** con HOME sandbox desechable y servidor local de assets:
+  1. asset truncado → `SHA256 mismatch`, fallo limpio, rollback verificado
+     (`versions/`, `journal/`, `shims/` vacíos tras el fallo; sin `|| true`).
+  2. `cogh doctor` tras fallo: MCP UNAVAILABLE honesto + guía.
+  3. reinstall con asset correcto → éxito completo, doctor healthy,
+     shim `cognicode-mcp --version` → 0.97.3.
+- **Estado:** U24 y PRF-DIST-03 pasan de NOT_RUN a PASS. Evidencia en
+  `evidence/u24-dist-rollback/OBSERVATIONS.md`.
+- **Nota de hallazgo:** durante el setup se detectó que el pipeline
+  reescribe correctamente `COGNICODE_ASSET_BASE_URL` pero el mensaje de
+  error muestra la URL canónica original (cosmético; el request real va al
+  mirror, confirmado por logs del servidor local). Registrado como deuda
+  menor de diagnóstico.
+- **NO ejecuta:** push, tag, C7 firma. Operator-gated.

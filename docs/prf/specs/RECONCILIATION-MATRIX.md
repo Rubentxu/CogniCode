@@ -147,7 +147,7 @@
 | U21 | STATE,SEC | Cortar proceso durante escritura/migración; reiniciar | NOT_RUN | U-F4-001 reinicio pero no corte durante escritura |
 | U22 | STATE | Versión antigua crea datos; upgrade y downgrade | NOT_RUN | H-06 relacionado |
 | U23 | DIST,STATE | Uninstall con HOME/XDG personalizado e IDE de prueba | PARTIAL | U-F6-001 cubre HOME limpio; HOME existente no |
-| U24 | DIST,SEC | Instalación interrumpida/asset corrupto → rollback + reinstall | NOT_RUN | U-F6-001 cubre happy path |
+| U24 | DIST,SEC | Instalación interrumpida/asset corrupto → rollback + reinstall | PASS | 2026-09-22 (JOURNAL §46): corrupto→SHA mismatch+rollback; reinstall→healthy |
 | **U25** | MCP,SEC | Tool costosa cancelada, desconexión cliente, sin OTLP | **PARTIAL** | H-05: cancelación no acredita operación en curso |
 | U26 | MCP,EXT | Capacidad sintética read-only + cliente previo | PEND | Matiz C5 reconocido |
 | **U27** | CI,DIST | Inyectar fallo crítico; cada uno bloquea CI/release | **FAIL** | H-07 explícito |
