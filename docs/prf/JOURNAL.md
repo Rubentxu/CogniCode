@@ -3042,3 +3042,15 @@ stderr y cero conexión. UAT binario real (stderr pin, verde ×2,
 regresión MCP verde). Nota honesta: la superficie "credenciales de
 configuración" no existe hoy en core (sin tokens/API keys); no se
 inventa test para superficie inexistente. Matriz: PRF-SEC-03 → PASS.
+
+## §85 — Cierre de sesión (2026-09-22)
+
+Batería final consolidada: suite MCP completa verde (0 fallos, todos
+los UATs incluidos), core lib 2146/0. HEAD `454bea2e`. Tree limpio.
+Cierres verificados esta sesión: CLI-04, DIST-01/06 (candidata
+local), MCP-03, SEC-02 (núcleo R/W + --read-only), EXT-01, EXT-04,
+MCP-04, SEC-05, MCP-06, STATE-01, SEC-03 (con defecto real corregido:
+telemetría ahora opt-in), deuda justfile. Próximas acciones (orden
+por valor): STATE-06/STATE-07 refinamientos, EXT-06 (UAT-U10),
+DIST-04 restos; CI-*/DIST-05 requieren infraestructura de CI/runners;
+H-06/H-07/push/tag/C7/publicación siguen operator-gated.
