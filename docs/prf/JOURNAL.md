@@ -2964,3 +2964,17 @@ build_graph sigue funcionando; default mantiene write_file. Verde ×2,
 regresión MCP verde, rmcp_adapter lib 17/0.
 Nota honesta: E/Net (execute/net) no existen como tools MCP hoy; el
 eje verificado es R/W. SEC-02 matrix → PASS (núcleo R/W).
+
+## §78 — MCP-03 + EXT-04: UATs de red ausente y autoridad de adapters — PASS (2026-09-22)
+
+- MCP-03 (`7ba1b272`): UAT binario real dentro de `unshare -rn`
+  (namespace sin red, probado con control curl exit 7): initialize,
+  tools/list, build_graph (rebuild real tras borrar caché,
+  status=complete) y analyze funcionan sin ninguna conectividad.
+  Cualquier dependencia de red oculta rompería el test por timeout.
+- EXT-04 (`e930153e`): UAT cross-crate sobre la superficie pública de
+  admisión — ExecutionPermit sellado, restore() fail-closed a
+  Candidate, Candidate no puede bloquear CI, y el planner falla
+  cerrado cuando ningún backend registrado declara la capability.
+  Complementa el test in-crate de techo de evidencia.
+Matriz: PRF-MCP-03 → PASS; PRF-EXT-04 → PASS (UAT autoridad).

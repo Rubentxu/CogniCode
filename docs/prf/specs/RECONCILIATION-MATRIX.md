@@ -76,7 +76,7 @@
 | PRF-EXT-01 (capacidad estable: id, versión, estabilidad, permiso r/w/x/net, budgets) | PARTIAL | Definido en docs; `tools/list` no lo expone explícitamente como metadato. |
 | PRF-EXT-02 (CLI y MCP usan mismo servicio de aplicación + puertos neutrales) | **PASS** | §64 (full vía AnalysisService) + §71: los 7 subcomandos restantes usan build_full_graph_report con PARTIAL+skipped en stderr; UAT binario real `prf_ext_02_partial_uat.rs`. |
 | **PRF-EXT-03** (incorporación de capacidad sintética read-only sin modificar varios lugares del dispatcher core) | **PEND (matiz C5)** | C5 reconoce: ‘ejercicio real de extensibilidad mínima (plugin) — pendiente’. |
-| PRF-EXT-04 (adapters no son fuente de verdad alternativa) | PARTIAL | Diseño hexagonal respetado en código; UAT no ejercida. |
+| PRF-EXT-04 (adapters no son fuente de verdad alternativa) | **PASS (UAT autoridad)** | Diseño hexagonal respetado en código; UAT no ejercida. |
 | PRF-EXT-05 (nuevo puerto requiere test de acoplamiento/duplicidad y mejora medible) | NOT_RUN | No exigido retroactivamente. |
 | PRF-EXT-06 (compatibilidad old-client / new-binary + contract tests) | PARTIAL | `release.yml` mantiene compat; UAT-U10 específica no ejecutada. |
 
@@ -86,7 +86,7 @@
 |---|---|---|
 | PRF-MCP-01 (initialize, tools/list, tools/call, errores, terminación con cliente externo real) | PASS | UAT ejecutada 2026-09-22 con cliente externo real sobre shim 0.97.3 instalado; evidencia en `docs/prf/evidence/u05-mcp-external-client/run1/` (JOURNAL §45): initialize/tools-list/tools-call/errores honestos/-32700 sin crash/exit 0/stdout JSON puro. |
 | PRF-MCP-02 (stdout JSON-RPC exclusivo; logs a stderr; sin huérfanos) | **PASS** | `prf_mcp_02_uat` 1/1 sobre binario real (§65): framing válido con logging denso, salida limpia al cerrar stdin. `evidence/u65-mcp02/`. |
-| PRF-MCP-03 (core read-only sin red/OTLP/Explorer/backend/Podman) | PARTIAL | Operativo; UAT específica con apagado total de red no ejecutada. |
+| PRF-MCP-03 (core read-only sin red/OTLP/Explorer/backend/Podman) | **PASS (UAT red off)** | Operativo; UAT específica con apagado total de red no ejecutada. |
 | PRF-MCP-04 (herramientas con esquema, permisos, versiones, límites; error tipado) | **PARTIAL (mejorado)** | §68: argumentos inválidos/extraños producen error tipado (`deny_unknown_fields` en build_graph, verificado en binario real, `evidence/u68-mcp04/`). Permisos y budgets uniformes siguen pendientes. |
 | PRF-MCP-05 (herramienta que escribe/ejecuta/red requiere autoridad diferenciada; prompts ≠ autoridad) | NOT_RUN | No UAT con prompt malicioso. |
 | **PRF-MCP-06** (cancelación/desconexión libera recursos según contrato) | **PARTIAL** | H-05 del operador: cancelación no acredita **operación costosa en ejecución**; solo ‘cancelación llega después’. |
