@@ -2062,3 +2062,44 @@ del programa PRF activo).
 - **Cambio al SHA congelado:** HEAD actual `5ed7f865` (otro avance);
   SHA congelado `178f8a5b` queda **STALE** (más stale aún). Push
   sigue BLOQUEADO.
+
+## 2026-09-22 — H-01 GREEN: SHA-256 como third cache-invalidation key (entrada 32)
+
+- **Origen:** cierre del gap pineado en entrada 31 (H-01 RED).
+  Acción autorizada por directiva §3 + auditoría operador (plan 5
+  acciones, acción 3 "cerrar H-01..H-07 gaps").
+- **Decisión de diseño ejecutada (a tu criterio, entrada 30 ya
+  autorizó):** SHA-256 (`sha2::Sha256`). 32 bytes, criptográfico,
+  determinista, ya disponible como workspace dep. Trade-off:
+  ~100-300 MB/s vs ~1-3 GB/s de BLAKE3, pero la lectura del archivo
+  ya está pagada por el path de miss. Operador puede swappear a
+  BLAKE3 o xxhash con cambio de una línea en `compute_content_hash`
+  + cambio de tipo de campo en struct `file_cache` (documentado en
+  el doc-comment del helper).
+- **Cambios:**
+  - `use sha2::{Digest, Sha256};` en `analysis_service.rs`.
+  - `compute_content_hash(source: &str) -> [u8; 32]` (helper privado).
+  - Tipo `file_cache` value extendido: `(u64, u64, [u8; 32], Vec<Symbol>, Vec<(Symbol, String)>)`.
+  - 3 sites de cache lookup (build_project_graph, build_graph_per_file,
+    build_project_graph_async) ahora comparan hash después de mtime+size.
+  - 3 sites de cache insert extendedidos con content_hash.
+  - Cache lookup order: mtime fast-equal, then size, then hash
+    (orden de menor a mayor costo).
+  - `.map(|v| v.clone())` → `.cloned()` (3 sites, clippy map_clone).
+- **Coste:** ahora SIEMPRE leemos el archivo (cache hit o miss). El
+  cache sigue ahorrando el coste del parser TreeSitter (~10-100x
+  más lento que SHA-256 en archivos típicos).
+- **GREEN verificado:**
+  - `cargo test -p cognicode-core --lib h01_byte_change`: 1 passed.
+  - `cargo test -p cognicode-core --lib`: 2129 passed / 0 failed /
+    27 ignored. (+1 test vs baseline: H-01 ahora pasa).
+  - `cargo clippy -p cognicode-core --lib -- -D warnings`: clean.
+- **Commit:** `39928202b05f5774d18285ceb987d135567eb17d`
+  (`H-01 GREEN: SHA-256 content_hash in cache invalidation key`).
+- **Cambio al SHA congelado:** HEAD actual `39928202` (otro avance);
+  SHA congelado `178f8a5b` queda **STALE** (sigue pendiente re-firma).
+- **H-01 cerrado:** el caso "bytes cambian, mtime preservado, size
+  preservado" ahora invalida correctamente. Pin RED se convierte
+  en cobertura permanente.
+- **NO ejecuta:** push, C7 firma, tag. Operator-gated por
+  directiva §3 + auditoría.
