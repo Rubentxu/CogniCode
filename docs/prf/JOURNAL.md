@@ -2803,3 +2803,13 @@ La batería completa de core detectó 2 tests que codificaban el bypass
 inseguro de rutas absolutas (pre-SEC-01). Actualizados para usar
 allowlist explícita de ambos workspaces (contrato SEC-01 manda sobre el
 uso legacy). Core lib 2145/0.
+
+
+### §67.a — Fallos PRE-EXISTENTES detectados en batería cogh (no regresiones)
+
+`cogh_ide_install_zcode_writes_zcode_specific_path` y afines fallan
+también en el commit pre-sesión `e3b59262` (verificado con worktree):
+"installed MCP binary missing for version latest; repair reviewer
+profile". Dependencia de estado de entorno del test, no causados por
+§63-§66. Registrados como deuda de aislamiento de tests cogh (línea
+con ae74558e).
