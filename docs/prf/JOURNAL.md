@@ -2600,3 +2600,22 @@ Core lib 2145/0/27; clippy 0.
 
 **Matriz**: PRF-CLI-02 → PASS. Deuda declarada: --format json pendiente en el resto de
 subcomandos de graph. Siguientes: PRF-CLI-05 (NOT_RUN), PRF-CI-02, PRF-ANA-09.
+
+## §51 — PRF-CLI-05: mutación con autorización separada — PASS (2026-09-22)
+
+**RED real doble**: (1) `cognicode refactor` crasheaba en TODA invocación — clap
+debug-assert (SIGABRT/heap corruption en release) por declarar posicional opcional
+antes de requerido; (2) sin gate apply/preview ni declaración honesta de que la
+mutación no está implementada.
+
+**Fix**: argv corregido (symbol requerido primero, `--operation` flag); `--apply`
+como autorización separada explícita que se rechaza con exit 1 hasta existir
+rollback; default preview-only sin escritura (SHA verificado en UAT); `--format
+json` con schema `cognicode.refactor.preview/v1`.
+
+**Verificación**: test de regresión nuevo (prf_cli_01_uat.rs 6/6); UAT binario real
+4/4 PASS (`evidence/u52-cli05-mutation-auth/`); core lib 2145/0/27; cogh 304/304;
+clippy 0.
+
+**Matriz**: PRF-CLI-05 → PASS. Deuda: apply con rollback (futuro). Siguientes:
+PRF-ANA-09 (LSI, probable EXCL), PRF-CI-02, PRF-CI-03, U03/G6.
