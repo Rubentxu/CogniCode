@@ -42,19 +42,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
 
-    // Initialize OpenTelemetry meter provider with OTLP exporter
-    // Default endpoint: http://localhost:4317 (configurable via OTEL_EXPORTER_OTLP_ENDPOINT env var)
-    let exporter = MetricExporter::builder().with_tonic().build()?;
+    // PRF-SEC-03: telemetry is OPT-IN. Metrics are only exported when
+    // COGNICODE_TELEMETRY=1 is set; by default no OTLP connection is
+    // attempted (and no code source is ever sent).
+    if std::env::var("COGNICODE_TELEMETRY").as_deref() == Ok("1") {
+        // Default endpoint: http://localhost:4317 (configurable via OTEL_EXPORTER_OTLP_ENDPOINT env var)
+        let exporter = MetricExporter::builder().with_tonic().build()?;
 
-    let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(
-        exporter,
-        opentelemetry_sdk::runtime::Tokio,
-    )
-    .build();
-    let meter_provider = SdkMeterProvider::builder().with_reader(reader).build();
+        let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(
+            exporter,
+            opentelemetry_sdk::runtime::Tokio,
+        )
+        .build();
+        let meter_provider = SdkMeterProvider::builder().with_reader(reader).build();
 
-    // Set the global meter provider
-    global::set_meter_provider(meter_provider);
+        // Set the global meter provider
+        global::set_meter_provider(meter_provider);
+        info!("telemetry enabled via COGNICODE_TELEMETRY=1");
+    } else {
+        info!("telemetry disabled (opt-in via COGNICODE_TELEMETRY=1)");
+    }
 
     // Initialize global tool metrics
     if let Err(e) = cognicode_core::infrastructure::telemetry::init_global_metrics() {
