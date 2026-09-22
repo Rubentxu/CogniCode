@@ -3054,3 +3054,12 @@ telemetría ahora opt-in), deuda justfile. Próximas acciones (orden
 por valor): STATE-06/STATE-07 refinamientos, EXT-06 (UAT-U10),
 DIST-04 restos; CI-*/DIST-05 requieren infraestructura de CI/runners;
 H-06/H-07/push/tag/C7/publicación siguen operator-gated.
+
+## §86 — STATE-06 PASS (2026-09-22)
+
+- **WU:** STATE-06 uninstall on existing HOME (matriz: cobertura de datos de usuario + config IDE).
+- **Defecto investigado:** ninguno nuevo en producto; dos trampas de fixture corregidas durante TDD: (1) `cognicode.bundle/v2` exige `components[].kind ∈ {cogh, cognicode, daemon-cli, ...}` (no `CognicodeMcp`) y versiones entrecomilladas; (2) `cmd_uninstall` exige `cogh init` previo (`is_initialized` gate, pin `t_e86_3`) — sin init el UAT era un no-op vacuo.
+- **UAT:** `crates/cognicode-cli/tests/prf_state_06_existing_home_uat.rs` — binario real `cogh`, HOME ficticio pre-poblado con notas personales, configs `.opencode/.claude/.codex`, skills personales. Anti-vacuidad: `uninstall --ide opencode` DEBE eliminar `versions/latest` (árbol verificado ausente). Todos los ficheros de usuario sobreviven byte a byte, incluidas claves user-owned dentro de configs IDE (`solarized`, `my-server`).
+- **Evidencia:** `cargo test -p cognicode-cli --release --test prf_state_06_existing_home_uat` → `2 passed; 0 failed` ×2.
+- **Estado STATE-06:** PARTIAL → PASS. Restan PARTIALs honestos: STATE-07 (deuda eficiencia, caracterizada), EXT-06, DIST-04 restos, CI-02..06/DIST-05 (infra), operator-gated push/tag/C7.
+- **SHA:** `9ffec1ea`. Siguiente: STATE-07 refinamiento (deuda eficiencia cache-miss) o EXT-06 (UAT-U10).
