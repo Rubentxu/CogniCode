@@ -99,3 +99,50 @@ fn analyze_valid_empty_dir_exits_zero() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+/// PRF-CLI-05: the refactor command must parse cleanly (a former clap
+/// debug-assert bug aborted the process), default to preview-only, refuse
+/// `--apply` (no rollback path yet), and never mutate source files.
+#[test]
+fn cli05_refactor_is_preview_only_and_refuses_apply() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("lib.rs");
+    std::fs::write(&src, "pub fn original_name() -> u32 { 42 }\n").unwrap();
+    let before = std::fs::read(&src).unwrap();
+
+    let bin = env!("CARGO_BIN_EXE_cognicode");
+
+    // 1. Default preview must run without crashing and must not write.
+    let out = std::process::Command::new(bin)
+        .args(["refactor", "original_name", "renamed_thing"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("refactor preview must execute");
+    let _ = out;
+    assert_eq!(
+        std::fs::read(&src).unwrap(),
+        before,
+        "preview must never mutate source files"
+    );
+
+    // 2. --apply must be refused with a non-zero exit and a clear reason.
+    let out = std::process::Command::new(bin)
+        .args(["refactor", "original_name", "renamed_thing", "--apply"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("refactor --apply must execute");
+    assert!(
+        !out.status.success(),
+        "--apply must be refused (no rollback path yet)"
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("--apply") && err.contains("not implemented"),
+        "refusal must explain the missing apply path; got: {err}"
+    );
+    assert_eq!(
+        std::fs::read(&src).unwrap(),
+        before,
+        "refused --apply must not mutate source files"
+    );
+}

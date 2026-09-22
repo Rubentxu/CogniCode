@@ -46,13 +46,21 @@ pub enum CliCommand {
     },
     /// Refactor a symbol
     Refactor {
-        /// The refactoring operation to perform
-        #[arg(value_enum, default_value = "rename")]
-        operation: RefactorOperation,
         /// Symbol to refactor
         symbol: String,
-        /// New name (for rename operation)
+        /// New name (for rename/move operations)
         new_name: Option<String>,
+        /// The refactoring operation to perform
+        #[arg(value_enum, long, default_value = "rename")]
+        operation: RefactorOperation,
+        /// PRF-CLI-05: mutation authorization. Preview (default) never
+        /// writes; `--apply` is the explicit separate authorization that
+        /// permits file mutation.
+        #[arg(long)]
+        apply: bool,
+        /// Preview output format: text or json
+        #[arg(long, default_value = "text")]
+        format: String,
     },
     /// Index commands for symbol indexing
     Index {
@@ -348,8 +356,23 @@ impl CommandExecutor {
                 operation,
                 symbol,
                 new_name,
+                apply,
+                format,
             }) => {
-                if let Err(e) = Self::execute_refactor(operation, symbol, new_name.as_deref()).await
+                // PRF-CLI-05: without --apply this is preview-only and must
+                // never mutate files. execute_refactor is preview-only by
+                // contract; --apply is refused until an apply path with
+                // rollback exists (honest Unsupported).
+                if *apply {
+                    eprintln!(
+                        "refactor --apply: file mutation is not implemented yet; \
+                         only preview is available (PRF-CLI-05: apply requires \
+                         preview + rollback, which is pending)"
+                    );
+                    return Err("refactor --apply unsupported: no rollback path yet".into());
+                }
+                if let Err(e) =
+                    Self::execute_refactor(operation, symbol, new_name.as_deref(), format).await
                 {
                     eprintln!("Refactor command failed: {}", e);
                 }
@@ -1396,6 +1419,7 @@ impl CommandExecutor {
         operation: &RefactorOperation,
         symbol: &str,
         new_name: Option<&str>,
+        format: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use crate::WorkspaceSession;
 
@@ -1405,14 +1429,47 @@ impl CommandExecutor {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to create session: {}", e))?;
 
+        // PRF-CLI-02/05: json mode emits a schema-versioned preview
+        // document on stdout (preview-only: refactor never mutates files).
+        let json_mode = format == "json";
+        if !json_mode {
+            eprintln!(
+                "Preview only (read-only). File mutation requires --apply, \
+                 which is not implemented until rollback exists (PRF-CLI-05)."
+            );
+        }
+
         match operation {
             RefactorOperation::Rename => {
                 let new_name =
                     new_name.ok_or_else(|| anyhow::anyhow!("Rename requires a new name"))?;
-                println!("Renaming '{}' to '{}'...", symbol, new_name);
+                if json_mode {
+                    eprintln!("Renaming '{}' to '{}'...", symbol, new_name);
+                } else {
+                    println!("Renaming '{}' to '{}'...", symbol, new_name);
+                }
                 match session.rename_symbol(symbol, new_name, "<unknown>").await {
                     Ok(result) => {
-                        if result.success {
+                        if json_mode {
+                            #[derive(serde::Serialize)]
+                            struct RefactorPreviewJson<'a> {
+                                schema_version: &'a str,
+                                action: &'a str,
+                                applied: bool,
+                                success: bool,
+                                changes: Vec<crate::application::dto::ChangeEntry>,
+                                error: Option<&'a str>,
+                            }
+                            let doc = RefactorPreviewJson {
+                                schema_version: "cognicode.refactor.preview/v1",
+                                action: "rename",
+                                applied: false,
+                                success: result.success,
+                                changes: result.changes,
+                                error: result.error_message.as_deref(),
+                            };
+                            println!("{}", serde_json::to_string(&doc)?);
+                        } else if result.success {
                             println!("  Success: {} change(s) made", result.changes.len());
                         } else {
                             println!(
