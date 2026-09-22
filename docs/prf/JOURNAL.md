@@ -2823,3 +2823,11 @@ Hallazgo colateral: dos UATs usaban la clave incorrecta y su verde era
 falso positivo — corregidos. Regresión MCP completa verde.
 **Matriz**: PRF-MCP-04 → PARTIAL (mejorado: argumentos inválidos con
 error tipado en build_graph; permisos/budgets uniformes pendientes).
+
+
+## §69 — PRF-ANA-08: budgets cuantificados + salida acotada — PASS (2026-09-22)
+
+`prf_ana_08_uat` (1/1, binario real, corpus 51 homónimos): budgets de
+categoría respetados, salida acotada (< 5 MiB), no-encontrado tipado.
+`evidence/u69-ana08/`.
+**Matriz**: PRF-ANA-08 → PASS.
