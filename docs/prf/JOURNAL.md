@@ -2139,3 +2139,34 @@ del programa PRF activo).
   `relationships_found`, `edges`, `message`, `skipped_files` no
   cambian. Solo se añade `status`.
 - **NO ejecuta:** push, tag, C7 firma. Operator-gated.
+
+## 2026-09-22 — PRF-ANA-05 (handler-level reproducibilidad) (entrada 34)
+
+- **Origen:** gap matriz PRF-ANA-05 (PARTIAL porque sólo había
+  pineo a nivel library, no en handler boundary). F2.W10
+  `w10_repeated_builds_are_reproducible` cubre library; este test
+  cubre lo que un caller MCP observaría.
+- **Cambio:** añadido test
+  `repeated_build_graph_calls_are_reproducible_at_handler` en
+  `prf_ana_04_status_field_tests`. El test invoca
+  `handle_build_graph` dos veces sobre el mismo working dir y
+  compara `symbols_found`, `relationships_found`, y el SET
+  ordenado de `edges`.
+- **Edge ordering:** el handler puede emitir edges en orden
+  no determinista (rayon paraleliza). El test ordena el set
+  antes de comparar para que la comparación sea por contenido,
+  no por orden de emisión.
+- **GREEN verificado:**
+  - `cargo test -p cognicode-core --lib repeated_build_graph`:
+    1 passed.
+  - `cargo test -p cognicode-core --lib`: 2133 passed / 0 failed
+    / 27 ignored (was 2132; +1).
+  - `cargo clippy -p cognicode-core --lib --tests -- -D warnings`:
+    clean.
+- **Commit:** `dc1190f7`
+  (`PRF-ANA-05: handler-level reproducibilidad test`).
+- **Resta como PARTIAL:** UAT sobre el binario real (vía stdio
+  JSON-RPC siguiendo el patrón de `continuation_e2e.rs`). Esto
+  es un gap mayor y requiere más tiempo; queda en el backlog
+  PRF-ANA-05.
+- **NO ejecuta:** push, tag, C7 firma. Operator-gated.
