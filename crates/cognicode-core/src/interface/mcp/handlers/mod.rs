@@ -980,6 +980,15 @@ pub struct EdgeInfo {
 #[derive(Debug, serde::Serialize)]
 pub struct BuildGraphOutput {
     pub success: bool,
+    /// PRF-ANA-04: explicit build outcome surfaced to the caller so
+    /// consumers (LLM, CI, alert) can branch on it without parsing
+    /// `skipped_files`. Values:
+    ///   - `"complete"`: walk happened, no skipped files.
+    ///   - `"partial"`: walk happened, at least one file was
+    ///     dropped (I/O or parsing failure).
+    ///   - `"unknown"`: served from the in-memory graph cache, no
+    ///     walk happened on this call.
+    pub status: String,
     pub symbols_found: usize,
     pub relationships_found: usize,
     pub edges: Vec<EdgeInfo>,
@@ -1078,38 +1087,51 @@ pub async fn handle_build_graph(
     // silent file drops are visible to clients. Cache hits report
     // `None` (no walk happened in this call) — re-running build_graph
     // after a source change will reflect the new walk's outcome.
-    let skipped_files = if loaded_from_cache {
-        None
+    //
+    // PRF-ANA-04: the `status` field on BuildGraphOutput is derived
+    // here so callers do not have to inspect `skipped_files` to know
+    // whether the build is complete.
+    let (skipped_files, status) = if loaded_from_cache {
+        // No walk happened — we cannot vouch for what was skipped
+        // during the (possibly stale) prior walk. Surface this as
+        // `unknown` so the caller treats the result as
+        // "current-as-of-last-walk" rather than "verified now".
+        (None, "unknown".to_string())
     } else {
-        Some(
-            ctx.analysis_service
-                .get_last_build_report()
-                .as_ref()
-                .map(|r| match &r.status {
-                    crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => Vec::new(),
-                    crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped } => {
-                        skipped
-                            .iter()
-                            .map(|sf| SkippedFileDto {
-                                path: sf.path.clone(),
-                                reason_kind: match &sf.reason {
-                                    crate::infrastructure::graph::per_file_graph::SkipReason::Read(_) => "read",
-                                    crate::infrastructure::graph::per_file_graph::SkipReason::Parse(_) => "parse",
-                                    crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(_) => "unsupported_extension",
-                                    crate::infrastructure::graph::per_file_graph::SkipReason::Other(_) => "other",
-                                },
-                                reason: match &sf.reason {
-                                    crate::infrastructure::graph::per_file_graph::SkipReason::Read(s)
-                                    | crate::infrastructure::graph::per_file_graph::SkipReason::Parse(s)
-                                    | crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(s)
-                                    | crate::infrastructure::graph::per_file_graph::SkipReason::Other(s) => s.clone(),
-                                },
-                            })
-                            .collect()
-                    }
-                })
-                .unwrap_or_default(),
-        )
+        let report = ctx.analysis_service.get_last_build_report();
+        match report.as_ref().map(|r| &r.status) {
+            Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Complete) => {
+                (Some(Vec::new()), "complete".to_string())
+            }
+            Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped }) => {
+                let mapped: Vec<SkippedFileDto> = skipped
+                    .iter()
+                    .map(|sf| SkippedFileDto {
+                        path: sf.path.clone(),
+                        reason_kind: match &sf.reason {
+                            crate::infrastructure::graph::per_file_graph::SkipReason::Read(_) => "read",
+                            crate::infrastructure::graph::per_file_graph::SkipReason::Parse(_) => "parse",
+                            crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(_) => "unsupported_extension",
+                            crate::infrastructure::graph::per_file_graph::SkipReason::Other(_) => "other",
+                        },
+                        reason: match &sf.reason {
+                            crate::infrastructure::graph::per_file_graph::SkipReason::Read(s)
+                            | crate::infrastructure::graph::per_file_graph::SkipReason::Parse(s)
+                            | crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(s)
+                            | crate::infrastructure::graph::per_file_graph::SkipReason::Other(s) => s.clone(),
+                        },
+                    })
+                    .collect();
+                (Some(mapped), "partial".to_string())
+            }
+            None => {
+                // No report available — defensive: treat as complete
+                // (the build did not produce a BuildReport, which
+                // means the legacy path was used and no skip
+                // occurred in any case).
+                (Some(Vec::new()), "complete".to_string())
+            }
+        }
     };
 
     info!(
@@ -1143,6 +1165,7 @@ pub async fn handle_build_graph(
     };
     Ok(BuildGraphOutput {
         success: true,
+        status,
         symbols_found: symbols,
         relationships_found: edges_count,
         edges,
@@ -4892,5 +4915,142 @@ mod tests {
         // Other services should be initialized (Arc pointers are non-null)
         assert!(Arc::strong_count(&ctx.analysis_service) >= 1);
         assert!(Arc::strong_count(&ctx.refactor_service) >= 1);
+    }
+
+    // --- PRF-ANA-04 RED/GREEN pin ---
+    //
+    // The matrix says PRF-ANA-04 is PARTIAL because
+    // `handle_build_graph` returns `success: true` even when files
+    // were silently dropped during the walk. We expose a single
+    // `status` field with values:
+    //   - "complete" : walk happened, no skipped files
+    //   - "partial"  : walk happened, ≥1 skipped file
+    //   - "unknown"  : served from cache, no walk this call (cannot
+    //                  vouch for what was skipped)
+    // so the consumer (LLM, CI, alert) can decide without parsing
+    // the optional `skipped_files` array.
+    mod prf_ana_04_status_field_tests {
+        use super::*;
+        use std::os::unix::fs::PermissionsExt;
+
+        /// Detect if the current process runs as root (uid 0).
+        /// On Linux, /proc/self/status has a `Uid:` line; we read it
+        /// without depending on the `libc` crate. Returns `false` if
+        /// detection fails — conservative (assume non-root).
+        fn is_root() -> bool {
+            let Ok(s) = std::fs::read_to_string("/proc/self/status") else {
+                return false;
+            };
+            s.lines()
+                .find(|l| l.starts_with("Uid:"))
+                .and_then(|l| l.split_whitespace().nth(1))
+                .and_then(|t| t.parse::<u32>().ok())
+                .map(|uid| uid == 0)
+                .unwrap_or(false)
+        }
+
+        #[tokio::test]
+        async fn status_is_complete_when_all_files_parse() {
+            let tempdir = tempfile::tempdir().unwrap();
+            std::fs::write(
+                tempdir.path().join("hello.rs"),
+                "fn hello() {}\n",
+            )
+            .unwrap();
+
+            let ctx = HandlerContext::builder()
+                .with_working_dir(tempdir.path())
+                .build();
+            let input = BuildGraphInput { directory: None };
+            let out = handle_build_graph(&ctx, input).await.unwrap();
+            assert_eq!(out.status, "complete");
+            assert!(out.success);
+            assert!(out.skipped_files.as_ref().map(|v| v.is_empty()).unwrap_or(true));
+        }
+
+        #[tokio::test]
+        async fn status_is_partial_when_files_are_unreadable() {
+            // Create a tempdir with one valid Rust file plus one
+            // file that we then chmod 000 to force a Read error
+            // during the walk. The skip MUST surface as `partial`.
+            // Skip the test when running as root: chmod 000 is
+            // bypassed for uid 0 on Linux.
+            if is_root() {
+                eprintln!("skipping: running as root, chmod 000 is bypassed");
+                return;
+            }
+            let tempdir = tempfile::tempdir().unwrap();
+            std::fs::write(
+                tempdir.path().join("good.rs"),
+                "fn good() {}\n",
+            )
+            .unwrap();
+            let bad = tempdir.path().join("bad.rs");
+            std::fs::write(&bad, "fn bad() {}\n").unwrap();
+            std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+            let ctx = HandlerContext::builder()
+                .with_working_dir(tempdir.path())
+                .build();
+            let input = BuildGraphInput { directory: None };
+            let out = handle_build_graph(&ctx, input).await.unwrap();
+
+            // Restore perms so tempdir cleanup works.
+            let _ = std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o644));
+
+            assert_eq!(out.status, "partial");
+            assert!(out.success);
+            let skipped = out
+                .skipped_files
+                .as_ref()
+                .expect("skipped_files must be Some when status=partial");
+            assert!(
+                skipped.iter().any(|sf| sf.path.contains("bad.rs")),
+                "skipped_files must contain the bad.rs entry, got: {:?}",
+                skipped
+            );
+        }
+
+        #[tokio::test]
+        async fn status_remains_complete_across_repeated_calls() {
+            // Two consecutive calls with the SAME working dir
+            // must both report a valid status (today: "complete"
+            // for both, since the on-disk manifest cache only
+            // kicks in once a manifest is saved; in unit tests we
+            // always rebuild). This test defends the contract
+            // without depending on cache internals.
+            let tempdir = tempfile::tempdir().unwrap();
+            std::fs::write(
+                tempdir.path().join("hello.rs"),
+                "fn hello() {}\n",
+            )
+            .unwrap();
+
+            let ctx = HandlerContext::builder()
+                .with_working_dir(tempdir.path())
+                .build();
+            let out1 = handle_build_graph(
+                &ctx,
+                BuildGraphInput { directory: None },
+            )
+            .await
+            .unwrap();
+            let out2 = handle_build_graph(
+                &ctx,
+                BuildGraphInput { directory: None },
+            )
+            .await
+            .unwrap();
+            assert!(
+                out1.status == "complete" || out1.status == "unknown",
+                "first call status must be a valid value, got: {}",
+                out1.status
+            );
+            assert!(
+                out2.status == "complete" || out2.status == "unknown",
+                "second call status must be a valid value, got: {}",
+                out2.status
+            );
+        }
     }
 }
