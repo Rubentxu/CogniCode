@@ -3094,6 +3094,138 @@ def b():
             );
         }
     }
+
+    /// PRF audit H-01 (operator 2026-09-22) — cache invalidation by content,
+    /// not only mtime + size. This test pins the requirement that
+    /// file_cache must invalidate when **bytes change but BOTH mtime and
+    /// size are preserved**. The existing F2.W9 test only covers the
+    /// case where mtime is preserved; if the editor also rewrites the
+    /// file at the same size (a common refactor pattern: rename a symbol
+    /// in place), the cache will return stale symbols.
+    ///
+    /// RED today: cache key is `(mtime, size)` (line 705-706), so any
+    /// edit at same mtime + same size returns the cached entry. The
+    /// test below asserts that the cache does NOT serve stale symbols
+    /// in that scenario; it will fail until the cache key incorporates
+    /// a content-derived signal (e.g. SHA-256 of bytes) — but the choice
+    /// of signal is the operator's decision (see RELEASE-CANDIDATE §3
+    /// H-01 and PRF-ANA-03 in RECONCILIATION-MATRIX).
+    mod h01_cache_content_hash_tests {
+        use super::*;
+
+        fn corpus_path() -> std::path::PathBuf {
+            let manifest = std::env::var("CARGO_MANIFEST_DIR")
+                .expect("CARGO_MANIFEST_DIR must be set during cargo test");
+            let crate_root = std::path::PathBuf::from(manifest);
+            let workspace_root = crate_root
+                .ancestors()
+                .nth(2)
+                .expect("workspace root has at least 2 ancestors")
+                .to_path_buf();
+            workspace_root.join("docs/prf/fixtures/silent_errors_corpus")
+        }
+
+        fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+            std::fs::create_dir_all(dst)?;
+            for entry in std::fs::read_dir(src)? {
+                let entry = entry?;
+                let from = entry.path();
+                let to = dst.join(entry.file_name());
+                let file_type = entry.file_type()?;
+                if file_type.is_dir() {
+                    copy_dir_recursive(&from, &to)?;
+                } else if file_type.is_file() {
+                    std::fs::copy(&from, &to)?;
+                }
+            }
+            Ok(())
+        }
+
+        #[test]
+        fn h01_byte_change_with_same_mtime_and_same_size_must_invalidate_cache() {
+            let src_corpus = corpus_path();
+            let tmp = tempfile::tempdir().expect("tempdir");
+            let dst = tmp.path().join("corpus");
+            copy_dir_recursive(&src_corpus, &dst).expect("copy fixture");
+
+            let target = dst.join("src").join("ok.rs");
+            let original_mtime = std::fs::metadata(&target)
+                .expect("stat ok.rs")
+                .modified()
+                .expect("mtime");
+            let original_size = std::fs::metadata(&target)
+                .expect("stat ok.rs")
+                .len();
+
+            let service = AnalysisService::new();
+
+            // Build #1: pristine corpus. normal_function is the only
+            // function in ok.rs.
+            service.build_project_graph(&dst).expect("first build");
+            let graph1 = service.get_project_graph();
+            assert!(
+                graph1.symbols().any(|s| s.name() == "normal_function"),
+                "build #1 must contain normal_function"
+            );
+            assert!(
+                !graph1.symbols().any(|s| s.name() == "renamedfunction"),
+                "build #1 must NOT contain renamedfunction yet"
+            );
+
+            // Mutate bytes AND preserve BOTH mtime AND size. The new
+            // function name `renamedfunction` has the same length (15
+            // chars) as `normal_function`, and the indentation/spacing
+            // is preserved byte-for-byte so the file size is identical.
+            std::fs::write(
+                &target,
+                "// ok.rs — file that parses successfully.\npub fn renamedfunction() -> i32 {\n    42\n}\n",
+            )
+            .expect("rewrite ok.rs at same size");
+            // Restore mtime so cache invalidation cannot rely on mtime
+            // changing.
+            let f = std::fs::File::options()
+                .write(true)
+                .open(&target)
+                .expect("open for mtime restore");
+            f.set_modified(original_mtime).expect("set_modified");
+            drop(f);
+
+            // Sanity: BOTH mtime AND size really are preserved.
+            let restored = std::fs::metadata(&target)
+                .expect("stat ok.rs after rewrite")
+                .modified()
+                .expect("mtime");
+            let restored_size = std::fs::metadata(&target)
+                .expect("stat ok.rs after rewrite")
+                .len();
+            assert_eq!(
+                original_mtime, restored,
+                "test setup must preserve mtime"
+            );
+            assert_eq!(
+                original_size, restored_size,
+                "test setup must preserve size (got {} vs original {})",
+                restored_size, original_size
+            );
+
+            // Build #2: the cache must NOT serve the stale entry.
+            // Content changed (renamed_function vs normal_function)
+            // even though mtime AND size are both preserved.
+            service.build_project_graph(&dst).expect("second build");
+            let graph2 = service.get_project_graph();
+            assert!(
+                graph2.symbols().any(|s| s.name() == "renamedfunction"),
+                "build #2 must see renamedfunction: content changed even \
+                 though mtime AND size were preserved; stale cache entry \
+                 was served. H-01 requires invalidation by content."
+            );
+            assert!(
+                !graph2.symbols().any(|s| s.name() == "normal_function"),
+                "build #2 must NOT contain normal_function (it was renamed \
+                 at the same size and same mtime)"
+            );
+        }
+    }
 }
 // ============================================================================
 // find_symbol_usages tests (R1.1-R1.4)
