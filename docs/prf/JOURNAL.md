@@ -3072,3 +3072,12 @@ H-06/H-07/push/tag/C7/publicación siguen operator-gated.
 - **Evidencia:** core lib `2146 passed; 0 failed`; cli `411 passed; 0 failed`; clippy `-D warnings` limpio.
 - **Matriz:** STATE-07 PARTIAL → PASS.
 - **SHA:** `af423c2f`. Siguiente: EXT-06 (UAT-U10 rolling upgrade) o DIST-04 restos. NO ejecuta: push, tag, C7. Operator-gated.
+
+## §88 — UAT-U10 ejecutada (EXT-06) + defecto determinismo corregido (2026-09-22)
+
+- **UAT-U10 (old client vs candidato):** binario del tag v0.97.3 (`daabf848`, build en worktree aislado) vs HEAD sobre corpus versionado `docs/prf/fixtures/u10_compat_corpus/`. Cinco subcomandos `graph` comparados. Veredicto: PASS — evidencia en `docs/prf/evidence/UAT-U10-old-client-compat.md`.
+- **Defecto real #5 (producto, corregido):** `CallGraph::roots()/leaves()` iteraban el HashMap de símbolos → `graph entry-points` y `graph leaf-functions` imprimían el mismo conjunto en orden distinto en cada ejecución (md5 inestable en v0.97.3 Y en HEAD; preexistente). Fix: orden canónico por `SymbolId` (se añade `PartialOrd/Ord`). Test RED→GREEN `roots_and_leaves_are_canonically_ordered`; binario reconstruido con salida md5-identical x5.
+- **Hallazgo de compatibilidad:** el binario v0.97.3 escribe logs INFO en stdout (viola PRF-CLI-02); HEAD ya lo enruta a stderr. Sin breaking change de esquema; el candidato es compatible con el cliente viejo en conjunto semántico.
+- **Matriz:** U10 FAIL (no UAT) → PASS (alcance ejecutable sin publicar release). EXT-06 PARTIAL → mejorado (compatibilidad cubierta; contract tests ya pinados por CLI-04/SEC-02).
+- **Evidencia:** core lib 2147/0; mcp 35/0; clippy -D warnings limpio. SHAs `4368367c`, `88f50b39`.
+- **NO ejecuta:** push, tag, C7. Operator-gated.
