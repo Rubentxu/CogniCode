@@ -2464,3 +2464,40 @@ del programa PRF activo).
   regla sin-red del core. Toca contrato de tests del instalador;
   se tramita como unidad propia (U03 / G6 del scorecard).
 - **NO ejecuta:** push, tag, C7 firma. Operator-gated.
+
+## 2026-09-22 — Integración PR #289 (entrada 43)
+
+- **Petición del operador:** revisar, validar e integrar
+  https://github.com/Rubentxu/CogniCode/pull/289 en main.
+- **Alcance del PR (10 commits de `fix/distribution-home-profile-mcp-20260922`
+  + 1 commit de adecuación):** lock de instalación atómico y aislado por
+  `CognicodeHome` explícito; instalación de ambos skill bundles portables con
+  SHA256; conservación de perfil en update; elevación core→reviewer misma
+  versión; `install --ide` con perfil reviewer por defecto y validación de
+  enlaces MCP obsoletos (shim debe canonicalizar al binario instalado);
+  `uninstall_opencode` emite 2 RmRf (ambos bundles) y enlaces rotos
+  retirados; `reshim` real; smoke de release pre-publicación
+  (`scripts/ci/release-install-smoke.sh`) integrado en el workflow
+  `release.yml`; `docs/distribution/INSTALL.md`.
+- **Validación (worktree aislado sobre origin/main):**
+  - `cargo build -p cognicode-cli --bin cogh` OK.
+  - `cargo fmt`: el PR traía 23 violaciones (7 ficheros) → aplicado
+    `cargo fmt --all`; ahora limpio.
+  - `cargo test -p cognicode-cli --bin cogh -- --test-threads=1`:
+    RED inicial 6 fallos — tests PRE-EXISTENTES no alineados con el nuevo
+    contrato (contaban 1 RmRf; fixtures sin binario/shim reales; mensaje
+    uninstall cambió). Adecuados en commit `3e176e88`.
+  - Tras adecuación: 298/298 bin (2 ejecuciones, determinista),
+    7/7 `cognicode_lifecycle`, clippy 0 errores.
+- **Merge a main local** (`43d27f2c`, historia 45+11 commits sobre
+  origin/main): conflicto de firma en 3 tests PRF DIST-04 locales
+  (`uninstall_opencode` ahora toma `Option<&str>`) → corregidos.
+  Post-merge: **301/301 bin serial GREEN**, 7/7 lifecycle GREEN.
+- **Límites honestos:** el smoke script NO se ha ejecutado contra tarballs
+  reales (requiere release candidata publicada; operator-gated push/tag).
+  El PR mismo lo declara como gate de publicación. Los tests
+  `layout/lifecycle` con dependencia de red real (JOURNAL §42) siguen
+  abiertos como deuda U03/G6; este PR no los agrava (no toca el camino
+  `update` sin staging).
+- **NO ejecuta:** push, tag, C7 firma, ejecución del smoke pre-publicación.
+  Operator-gated.
