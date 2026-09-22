@@ -40,7 +40,7 @@
 | **PRF-CI-01** (cada SHA tiene recibo independiente; FAIL aborta merge/publicación; sin `\|\| true` sobre gates obligatorios) | **FAIL** | H-07 del operador: `ci.yml` configurado sólo con `workflow_dispatch` (sin disparador por push/PR); un E2E con `\|\| true` y un escenario deshabilitado. **PRUEBA NEGATIVA nunca ejecutada**. |
 | PRF-CI-02 (campañas full/nightly con matriz + adversariales + benchmarks) | **PARTIAL (mejorado x2)** | Matriz (§56) + lanes `adversarial` (parser 84/0, drift 10/0, grounding 10/0, isolation 2/0, contract MCP) y `benchmarks` (criterion, baseline por entorno, report-only) verificadas localmente (§57). Ejecución programática de la campaña requiere act/push (operator-gated). |
 | PRF-CI-03 (modificación de comportamiento → test caracterizador + regresión) | **PARTIAL (mejorado)** | RED→GREEN pineado se cumple en todo el trabajo PRF. Medición de cobertura ahora operativa: cargo-llvm-cov, baseline core lib 74.15% líneas/70.35% regiones (`evidence/u54-ci03-coverage/`), job report-only en ci.yml (§54). Falta: umbral obligatorio como gate (decisión de política, operator). |
-| PRF-CI-04 (presupuesto de rendimiento por perfil/corpus fijado **antes** de comparación) | PARTIAL | Baseline publicado 2026-09-22 en `evidence/perf-baseline/BASELINE.md` (JOURNAL §47): build full ~10 s, RSS ~654 MB, presupuestos de regresión congelados. Falta comparación automática en CI (depende de runner estable, U03/G6). |
+| PRF-CI-04 (presupuesto de rendimiento por perfil/corpus fijado **antes** de comparación) | PARTIAL | Baseline publicado 2026-09-22 en `docs/prf/evidence/perf-baseline/BASELINE.md` (JOURNAL §47): build full ~10 s, RSS ~654 MB, presupuestos de regresión congelados. Falta comparación automática en CI (depende de runner estable, U03/G6). |
 | PRF-CI-05 (advisories/licencias/SBOM/sha256/provenance + smoke nativo verificable) | **PARTIAL (mejorado)** | Advisories gate BLOQUEANTE en release.yml (deny.toml: vulns/unsound deny, 5 deudas documentadas); 6 RUSTSEC findings fijados por cargo update + inventory 0.3; SBOM CycloneDX por crate subido con payloads; sha256 + smoke nativo ya existentes (`evidence/u55-ci05-advisories-sbom/`, §55). Falta: licencias como gate (decisión de política). |
 | PRF-CI-06 (decisión sobre política local-first documentada y equivalente a gate remoto) | **PARTIAL (mejorado)** | Política documentada en `docs/prf/specs/LOCAL-FIRST-CI-POLICY.md`: origen (AGENTS.md "Local CI Is the Source of Truth", ADR-031, B3 2026-08-16), justificación, equivalencia **procedimental** (§3.3 tabla de gates por momento). El documento declara honestamente que la equivalencia **automática** (pre-push hook / branch protection) NO existe y su introducción es decisión del operador (§4.bis). |
 | **PRF-CI-07** (pipeline detecta artificialmente test rojo, manifiesto incorrecto, fallo de publicación → niega PASS) | **FAIL** | H-07 explícito: prueba negativa nunca ejecutada. Sin esto no se acredita el gate. |
@@ -84,7 +84,7 @@
 
 | Requisito | Disposición | Evidencia / Notas |
 |---|---|---|
-| PRF-MCP-01 (initialize, tools/list, tools/call, errores, terminación con cliente externo real) | PASS | UAT ejecutada 2026-09-22 con cliente externo real sobre shim 0.97.3 instalado; evidencia en `evidence/u05-mcp-external-client/run1/` (JOURNAL §45): initialize/tools-list/tools-call/errores honestos/-32700 sin crash/exit 0/stdout JSON puro. |
+| PRF-MCP-01 (initialize, tools/list, tools/call, errores, terminación con cliente externo real) | PASS | UAT ejecutada 2026-09-22 con cliente externo real sobre shim 0.97.3 instalado; evidencia en `docs/prf/evidence/u05-mcp-external-client/run1/` (JOURNAL §45): initialize/tools-list/tools-call/errores honestos/-32700 sin crash/exit 0/stdout JSON puro. |
 | PRF-MCP-02 (stdout JSON-RPC exclusivo; logs a stderr; sin huérfanos) | PARTIAL | Diseñado; no UAT con captura exhaustiva. |
 | PRF-MCP-03 (core read-only sin red/OTLP/Explorer/backend/Podman) | PARTIAL | Operativo; UAT específica con apagado total de red no ejecutada. |
 | PRF-MCP-04 (herramientas con esquema, permisos, versiones, límites; error tipado) | PARTIAL | Schmemas existen; permisos/budgets no uniformes. |
@@ -128,7 +128,7 @@
 | U02 | CLI,MCP | `cognicode --help`, `cogh doctor`, MCP `tools/list` vs matriz | PARTIAL | `cogh doctor` y `tools/list` no auditados como UAT |
 | U03 | CI,ANA | Baseline/goldens 2 veces; cobertura, tiempos, RSS | NOT_RUN | No ejecutado sobre `178f8a5b` |
 | U04 | CLI,MCP,SEC | Apagar red y OTLP; CLI y MCP arrancan; stdout solo JSON-RPC | PARTIAL | Operativo; UAT específica no |
-| U05 | MCP | Cliente MCP externo: initialize/tools/call/error/shutdown | PASS | 2026-09-22: sesión completa capturada en `evidence/u05-mcp-external-client/run1/` (JOURNAL §45) |
+| U05 | MCP | Cliente MCP externo: initialize/tools/call/error/shutdown | PASS | 2026-09-22: sesión completa capturada en `docs/prf/evidence/u05-mcp-external-client/run1/` (JOURNAL §45) |
 | U06 | CLI,SEC,ANA | Workspace inexistente / sin permisos / vacío / lenguaje no soportado | PARTIAL | Cobertura parcial en código; UAT formal con corpus adversariales no |
 | U07 | CLI,ANA | Unicode, espacios, cwd, config inválida | PARTIAL | Idem |
 | U08 | CLI,MCP,ANA | Misma consulta CLI/MCP sobre snapshot fijo → misma semántica | PARTIAL | U-F3-001 equivalente a U08 con corpus pequeño |
