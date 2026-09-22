@@ -875,7 +875,7 @@ pub fn cmd_ide_install(
             let skill_sources = crate::bundle_manifest::declared_skill_bundle_dirs(
                 &home.skills_root(version),
                 &home.version_manifest(version),
-                "core",
+                "reviewer",
             )?;
             if skill_sources.is_empty() {
                 return Err(anyhow!(
