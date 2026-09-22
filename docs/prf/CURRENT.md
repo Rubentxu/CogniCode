@@ -1,17 +1,18 @@
 # CURRENT — Puntero operativo PRF
 
-## Estado (2026-09-22 checkpoint post H-01 GREEN + H-02 GREEN + docs refresh)
-- **HEAD**: `5365dc9f` (JOURNAL §32 commit) sobre `39928202` (H-01
-  GREEN) sobre `2e5f67fa` (HEAD refs bulk update) sobre `0a7eb8d2`
-  (docs refresh H-01 RED) sobre `6ed1930b` (docs refresh H-01 RED
-  pin) sobre `5ed7f865` (H-01 RED pin) sobre `8074a426` (matrix
-  recount) sobre `f8cd3375` (docs refresh H-02) sobre `80e7c403`
-  (H-02 GREEN) sobre `82f1ba54` (SHA congelado + matriz
-  reconciliación) sobre `178f8a5b` (reconciliación C2). 15 commits
+## Estado (2026-09-22 checkpoint post H-01 GREEN + H-02 GREEN + PRF-ANA-04 GREEN + docs refresh)
+- **HEAD**: `41e4230f` (PRF-ANA-04 GREEN) sobre `6ead65e8` (docs refresh
+  post H-01 GREEN) sobre `5365dc9f` (JOURNAL §32 docs) sobre
+  `39928202` (H-01 GREEN) sobre `2e5f67fa` (HEAD refs bulk) sobre
+  `0a7eb8d2` (docs refresh H-01 RED) sobre `6ed1930b` (docs refresh
+  H-01 RED pin) sobre `5ed7f865` (H-01 RED pin) sobre `8074a426`
+  (matrix recount) sobre `f8cd3375` (docs refresh H-02) sobre
+  `80e7c403` (H-02 GREEN) sobre `82f1ba54` (SHA congelado + matriz
+  reconciliación) sobre `178f8a5b` (reconciliación C2). 17 commits
   ahead of origin/main (`5b96db43`). Estado testing:
-  **LOCAL_VERIFIED** (core lib 2129/0/27; clippy `-D warnings` clean;
-  fmt-clean). H-01 RED pin ahora pasa — cobertura permanente del
-  invariante.
+  **LOCAL_VERIFIED** (core lib 2132/0/27; clippy `-D warnings`
+  clean; fmt-clean). H-01 + PRF-ANA-04 RED pins ahora pasan —
+  cobertura permanente de los invariantes.
 - **Auditoría operador (2026-09-22, JOURNAL §29)**: 7 hallazgos ALTA
   (H-01..H-07) + 1 transversal. **REVOCÓ** la equivalencia
   `READY FOR RELEASE ≡ C7 PASS`. Push + tag + firma de C7 siguen
@@ -30,14 +31,18 @@
     previo del operador. Operador puede swappear a BLAKE3/xxhash
     editando `compute_content_hash` + tipo de campo en struct
     `file_cache` (documentado en doc-comment).
+  - ✅ H-02 adicional: PRF-ANA-04 (status field en BuildGraphOutput)
+    en `41e4230f` + JOURNAL §33. Matriz movida `PARTIAL → PASS`.
 - **Deuda residual del programa**: H-03 (vertical), H-04 (persistencia),
   H-07 (gate mechanism), 11 FAIL + 24 NOT_RUN + 9 PEND de la matriz de
-  reconciliación.
+  reconciliación. (recontada: 7 FAIL / 23 NOT_RUN / 4-8 PEND tras
+  PRF-ANA-04).
 - **Cerrado en sesiones previas**: F0-F6 (C0-C6 PASS); F2 firmada en
   PRF-C2 (`44fad7a5`); H-clippy-FullGraphStrategy-type_complexity
-  (`47dd39ac`); H-02 GREEN (`80e7c403`); H-01 GREEN (`39928202`).
-  Residual fuera de programa: `cognicode-cli` warnings preexistentes
-  (D34-2) → sesión propia cuando se demande.
+  (`47dd39ac`); H-02 GREEN (`80e7c403`); H-01 GREEN (`39928202`);
+  PRF-ANA-04 GREEN (`41e4230f`). Residual fuera de programa:
+  `cognicode-cli` warnings preexistentes (D34-2) → sesión propia
+  cuando se demande.
 
 ## Próxima acción concreta
 1. **Trabajo ejecutable en AUTO sin decisión de diseño nueva**
@@ -66,16 +71,16 @@
 - Resoluciones de diseño pendientes para H-03, H-04, H-07
   (autoridad del operador).
 - **SHA congelado stale**: `RELEASE-CANDIDATE.md` congela `178f8a5b`
-  pero HEAD avanzó a `5365dc9f`. Re-firma pendiente del operador.
+  pero HEAD avanzó a `41e4230f`. Re-firma pendiente del operador.
 
 ## Referencias
 - `docs/prf/RELEASE-CANDIDATE.md`: SHA candidato congelado
-  `178f8a5b` (STALE — HEAD actual `5365dc9f`); §Cierre de PRF
+  `178f8a5b` (STALE — HEAD actual `41e4230f`); §Cierre de PRF
   contiene el plan de 5 acciones del operador.
-- `docs/prf/specs/RECONCILIATION-MATRIX.md`: 1 PASS / 35 PARTIAL /
-  11 FAIL / 24 NOT_RUN / 9 PEND / 0 EXCL.
+- `docs/prf/specs/RECONCILIATION-MATRIX.md`: 3 PASS pleno / 35 PARTIAL /
+  7 FAIL / 23 NOT_RUN / 4-8 PEND / 0 EXCL. H-01 + PRF-ANA-04 cerrados.
 - `docs/prf/JOURNAL.md`: §29 (auditoría + matriz), §30 (H-02 GREEN),
-  §31 (H-01 RED pin), §32 (H-01 GREEN).
+  §31 (H-01 RED pin), §32 (H-01 GREEN), §33 (PRF-ANA-04).
 - `docs/prf/STATE.md`: snapshot actualizado, próxima-unidad pointer
   reorientado a acciones 4-5 del operador.
 - `docs/prf/evidence/CERTIFICATES.md`: C0-C6 PASS; C7 = bloqueado.

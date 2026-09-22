@@ -2103,3 +2103,39 @@ del programa PRF activo).
   en cobertura permanente.
 - **NO ejecuta:** push, C7 firma, tag. Operator-gated por
   directiva §3 + auditoría.
+
+## 2026-09-22 — PRF-ANA-04: status field en BuildGraphOutput (entrada 33)
+
+- **Origen:** gap identificado en matriz de reconciliación (JOURNAL §29).
+  PRF-ANA-04 era PARTIAL porque `handle_build_graph` devolvía
+  `success: true` sin estado `Partial` explícito cuando files eran
+  silenciosamente dropped durante el walk. El campo `skipped_files`
+  existía (F2.W8) pero requería parsing por el consumer.
+- **Decisión de diseño ejercida:** añadir campo `status: String`
+  a `BuildGraphOutput` con valores `"complete" | "partial" |
+  "unknown"`. Strings en vez de enum para no introducir nuevo
+  type en el contrato serializado (consumers existentes no
+  breaking change).
+- **Cambios:**
+  - `BuildGraphOutput::status: String` añadido (preserva todos
+    los demás campos).
+  - Handler deriva status de `BuildStatus::Complete`,
+    `BuildStatus::Partial { skipped }`, o `loaded_from_cache`
+    (= "unknown").
+  - Tests RED→GREEN en `prf_ana_04_status_field_tests`:
+    * `status_is_complete_when_all_files_parse` (all-pass)
+    * `status_is_partial_when_files_are_unreadable` (chmod 000
+      para forzar Read error; skip-if-root via /proc/self/status)
+    * `status_remains_complete_across_repeated_calls`
+- **GREEN verificado:**
+  - `cargo test -p cognicode-core --lib prf_ana_04`: 3 passed.
+  - `cargo test -p cognicode-core --lib`: 2132 passed / 0 failed
+    / 27 ignored (was 2129; +3 new).
+  - `cargo clippy -p cognicode-core --lib --tests -- -D warnings`:
+    clean (tras fix de doc_overindented_list_items).
+- **Commit:** `41e4230f`
+  (`PRF-ANA-04: surface explicit status field on BuildGraphOutput`).
+- **Backward-compat:** preservada. `success`, `symbols_found`,
+  `relationships_found`, `edges`, `message`, `skipped_files` no
+  cambian. Solo se añade `status`.
+- **NO ejecuta:** push, tag, C7 firma. Operator-gated.
