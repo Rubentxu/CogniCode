@@ -2795,3 +2795,11 @@ real con 4 vectores: traversal/absoluto/symlink RECHAZADOS, root
 ALLOWED. Deuda anotada: argumentos desconocidos ignorados por serde
 (MCP-04). Evidencia: `evidence/u66-sec01/`.
 **Matriz**: PRF-SEC-01 → PARTIAL (mejorado: vector build_graph cubierto; TOCTOU exhaustivo pendiente).
+
+
+## §67 — Regresión consolidada tras §63-§66 — verde (2026-09-22)
+
+La batería completa de core detectó 2 tests que codificaban el bypass
+inseguro de rutas absolutas (pre-SEC-01). Actualizados para usar
+allowlist explícita de ambos workspaces (contrato SEC-01 manda sobre el
+uso legacy). Core lib 2145/0.
