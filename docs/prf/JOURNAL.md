@@ -2430,3 +2430,37 @@ del programa PRF activo).
   cubre uninstall de opencode; faltan zcode/claude/codex y el
   escenario rollback post-update (H-06, operator-gated).
 - **NO ejecuta:** push, tag, C7 firma. Operator-gated.
+
+## 2026-09-22 — Diagnóstico de flakiness layout/lifecycle (entrada 42)
+
+- **Origen:** deuda registrada en §41. Investigación de causa raíz
+  (sin fix todavía, ver §4.bis).
+- **Síntoma:** tests de layout/lifecycle con HTTP fixtures fallan
+  intermitentemente en suite completa (ok en aislado). Baseline
+  sin cambios recientes también falla 3/4 runs.
+- **Causa raíz identificada (RED real, no flakiness de timing):**
+  1. `test_cogh_update_respects_lockfile`
+     (lifecycle.rs:861) ejecuta el binario real `cogh update`
+     SIN staging → el resolver consulta la API REAL de GitHub
+     (`api.github.com`). Acepta éxito o "not yet implemented";
+     cuando la red falla / rate-limit, el subprocess falla sin
+     ese mensaje → test FAIL. Dependencia de red externa que
+     viola "el core se ejecuta sin red" (AGENTS.md).
+  2. `t_debt4_uat_install_rollback_roundtrip` y vecinos
+     (layout.rs) con fixture staging 0.95.0 observaron descargas
+     contra `github.com/.../v0.97.3/...` (versión del workspace,
+     no publicada → 404): parte del pipeline consulta releases
+     reales del repo además del staging. Esa dependencia hace el
+     resultado dependiente del estado de red/publicación real.
+- **Por qué falla en suite y no aislado:** aislado el resolver
+  llega a GitHub con éxito (red disponible); en suite completa,
+  el orden/paralelismo y los timeouts amplifican la ventana en
+  que la dependencia de red decide el resultado. No es
+  determinismo roto del fixture: es una fuga de red.
+- **Fix requerido (sesión dedicada, trabajo mayor):** inyectar
+  staging/base-url por defecto en el camino de `update` de test,
+  o marcar/gatear los tests que requieren red como
+  network-gated (`#[ignore]` + runner dedicado), cumpliendo la
+  regla sin-red del core. Toca contrato de tests del instalador;
+  se tramita como unidad propia (U03 / G6 del scorecard).
+- **NO ejecuta:** push, tag, C7 firma. Operator-gated.
