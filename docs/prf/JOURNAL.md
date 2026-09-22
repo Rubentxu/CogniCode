@@ -2763,3 +2763,17 @@ de cobertura parsed + warn!. UAT binario real: chmod-000 → status=partial
 + skipped_files. Regresión verde (core 2145/0, MCP e2e). Evidencia:
 `evidence/u63-ana02/`.
 **Matriz**: PRF-ANA-02 → PASS.
+
+
+## §64 — H-03 / PRF-EXT-02: CLI y MCP comparten servicio para `full` — PASS parcial (2026-09-22)
+
+`graph full` del CLI usaba `FullGraphStrategy` directamente (sin caches,
+coverage ni skipped reporting): duplicación de semántica detectada como
+H-03 del operador. Ahora enruta por `AnalysisService::build_full_graph`
+(mismo servicio que MCP `build_graph`); JSON añade `status` y
+`skipped_files`. UAT: corpus chmod-000 → `status=partial` + `skipped_files`
+idéntico en CLI y MCP. Regresión CLI (7/3/4) verde, clippy clean.
+**Nota honesta**: otros subcomandos CLI (hot-paths, entry-points, etc.)
+aún usan `FullGraphStrategy` directo — quedan como trabajo EXT-02
+pendiente de misma reforma.
+**Matriz**: PRF-EXT-02 → PARTIAL (mejorado x2, `full` resuelto).
