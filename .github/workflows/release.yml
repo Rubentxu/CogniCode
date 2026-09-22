@@ -229,6 +229,11 @@ jobs:
             --version "${{ steps.v.outputs.version }}" \
             --tag "${{ steps.v.outputs.tag }}"
 
+      - name: Verify the actual packaged CLI, MCP and portable skills before publication
+        run: |
+          set -euo pipefail
+          bash scripts/ci/release-install-smoke.sh "${{ steps.v.outputs.version }}" release
+
       - name: Create the GitHub Release as a DRAFT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
