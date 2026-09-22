@@ -2932,6 +2932,163 @@ def b():
         }
     }
 
+    /// PRF-ANA-07 — corpus with massive homonym collisions.
+    ///
+    /// `cross_file_scope_aware/` (F2.W7) covered the 1-3 homonym case.
+    /// PRF-ANA-07 attacks the next tier: a project with **51 symbols
+    /// sharing the short name `init`** (50 sibling files + 1 local).
+    /// The visibility rule must still pick the local even when the
+    /// global candidate count is large.
+    mod prf_ana_07_massive_collision_tests {
+        use super::*;
+        use crate::domain::aggregates::call_graph::SymbolId;
+
+        fn corpus_path() -> std::path::PathBuf {
+            let manifest = std::env::var("CARGO_MANIFEST_DIR")
+                .expect("CARGO_MANIFEST_DIR must be set during cargo test");
+            let crate_root = std::path::PathBuf::from(manifest);
+            let workspace_root = crate_root
+                .ancestors()
+                .nth(2)
+                .expect("workspace root has at least 2 ancestors")
+                .to_path_buf();
+            workspace_root.join("docs/prf/fixtures/massive_collision_corpus")
+        }
+
+        /// Build the project graph and return the FQN of every outgoing
+        /// target whose name == `callee_leaf` from `caller_in_lib`. The
+        /// set is sorted and deduped to make assertions order-stable.
+        fn outgoing_targets_for_caller(callee_leaf: &str) -> Vec<String> {
+            let service = AnalysisService::new();
+            let path = corpus_path();
+            service
+                .build_project_graph(&path)
+                .expect("build_project_graph should succeed on the fixture");
+            let graph = service.get_project_graph();
+            let caller_id = graph
+                .symbols()
+                .find(|s| s.name() == "caller_in_lib")
+                .map(|s| SymbolId::new(s.fully_qualified_name()))
+                .expect("caller_in_lib must exist in the fixture graph");
+            let mut targets: Vec<String> = graph
+                .dependencies(&caller_id)
+                .filter_map(|(tid, _)| {
+                    let sym = graph.get_symbol(tid)?;
+                    if sym.name() == callee_leaf {
+                        Some(sym.fully_qualified_name().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            targets.sort();
+            targets.dedup();
+            targets
+        }
+
+        #[test]
+        fn mass_collision_same_name_picks_local() {
+            // Visibility rule under stress: 51 candidates globally,
+            // exactly one local. The resolver must NOT pick any of the
+            // 50 sibling modules; it must pick the local.
+            //
+            // If a future regression reintroduces "first inserted" or
+            // "lex-FQN-min" as the tie-break, this test fails because
+            // the chosen target's FQN will not contain "lib.rs".
+            let targets = outgoing_targets_for_caller("init");
+            assert_eq!(
+                targets.len(),
+                1,
+                "expected exactly 1 outgoing 'init' target from caller_in_lib, got {:?}",
+                targets
+            );
+            let fqn = &targets[0];
+            assert!(
+                fqn.contains("lib.rs:init:"),
+                "expected the chosen init to live in lib.rs (visibility anchor), got {:?}",
+                fqn
+            );
+            // Sanity: NONE of the targets is one of the sibling modules.
+            for sib in &["d1::", "d7::", "d25::", "d50::"] {
+                assert!(
+                    !fqn.contains(sib),
+                    "resolved to a sibling homonym ({}) instead of local: {:?}",
+                    sib,
+                    fqn
+                );
+            }
+        }
+
+        #[test]
+        fn single_candidate_cross_file_resolves_to_unique_sibling() {
+            // Control: when exactly one file declares `compute`, the
+            // single-candidate rule picks it, even in a corpus with
+            // 51 other symbols in the same crate. This exercises
+            // index construction at scale — a regression in
+            // `GlobalSymbolIndex::resolve` that mishandled the
+            // 1-candidate path would surface here.
+            let targets = outgoing_targets_for_caller("compute");
+            assert_eq!(
+                targets.len(),
+                1,
+                "expected exactly 1 outgoing 'compute' target from caller_in_lib, got {:?}",
+                targets
+            );
+            let fqn = &targets[0];
+            assert!(
+                fqn.contains("sibling_unique_compute.rs:compute:"),
+                "expected compute to live in sibling_unique_compute.rs, got {:?}",
+                fqn
+            );
+        }
+
+        #[test]
+        fn index_size_matches_corpus() {
+            // Sanity: with 50 sibling `init` + 1 local + the caller +
+            // `sibling_unique_compute::compute`, the global symbol index
+            // must hold at least 51 entries (51 `init`s) and total
+            // count > 50. This pinea that index construction is not
+            // de-duplicating aggressively (which would be wrong:
+            // each `init` is a distinct SymbolId in a distinct file).
+            //
+            // FQN format is `"{file}:{name}:{line}"` (per
+            // `SymbolFqn::from_legacy_side`), so the d1 sibling's
+            // `init` is `d1.rs:init:0`, not `d1::init`.
+            let service = AnalysisService::new();
+            let path = corpus_path();
+            service
+                .build_project_graph(&path)
+                .expect("build_project_graph should succeed on the fixture");
+            let graph = service.get_project_graph();
+            let init_targets: Vec<String> = graph
+                .symbols()
+                .filter(|s| s.name() == "init")
+                .map(|s| s.fully_qualified_name().to_string())
+                .collect();
+            assert!(
+                init_targets.len() >= 51,
+                "expected >= 51 'init' symbols (1 local + 50 sibling), got {}: {:?}",
+                init_targets.len(),
+                init_targets
+            );
+            // The local `init` is present. Its FQN is `src/lib.rs:init:0`.
+            assert!(
+                init_targets.iter().any(|f| f.contains("lib.rs:init:")),
+                "expected a local 'init' (lib.rs) in the symbol list, got {:?}",
+                init_targets
+            );
+            // The sibling `init`s are present (spot check d1, d25, d50).
+            for sib in &["d1.rs:init:", "d25.rs:init:", "d50.rs:init:"] {
+                assert!(
+                    init_targets.iter().any(|f| f.contains(sib)),
+                    "expected sibling homonym {} to be present in symbol list, got {:?}",
+                    sib,
+                    init_targets
+                );
+            }
+        }
+    }
+
     /// F2.W8 — RED tests for silent errors in `build_project_graph`.
     ///
     /// The bug F2.W8 addresses: `AnalysisService::build_project_graph`
