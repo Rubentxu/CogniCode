@@ -6,8 +6,8 @@
 
 | Campo | Valor |
 |---|---|
-| SHA candidato | El candidato es el HEAD de `main` local en el momento de la decisión (incluye `0764fb81` H-F6-1 y fix docs_extractor `67375e6c`; docs PRF posteriores no cambian código). Verificar con `git rev-parse HEAD` al firmar. |
-| Versión | 0.97.3 (el fix de HEAD aún no está publicado; el release tag v0.97.3 NO contiene estos fixes) |
+| SHA candidato | `86df20de` (HEAD de `main` local en 2026-09-22 checkpoint final de sesión). Encima de `47dd39ac` (H-clippy-FullGraphStrategy-type_complexity FIX) y de `5b96db43` (T4 base verificado, origin/main). Verificar con `git rev-parse HEAD` al firmar. |
+| Versión | Pendiente de decisión del operador (candidatos razonables: `v0.97.4` patch de clippy; `v0.98.0` minor; `v0.98.0-prf` cierre del programa; `v1.0.0-prf` release production-ready milestone). El tag v0.97.3 NO contiene estos fixes. |
 | Plataformas probadas | Linux x86_64 (única plataforma con UAT ejecutada) |
 
 ## UATs ejecutados (binarios reales)
@@ -28,11 +28,12 @@
 
 ## Batería de pruebas en HEAD
 
-- `cognicode-core --lib` (con `multimodal`): 2122 passed, 0 failed, 27 ignored.
+- `cognicode-core --lib` (con `multimodal`): **2126 passed, 0 failed, 27 ignored** (verificado en `47dd39ac` y en HEAD `86df20de` revalidado en sesión 2026-09-22).
 - Workspace `--lib`: GREEN salvo `moldql::cursor::consume_keyword_panics_on_mismatch`
   (cognicode-explorer), PRE-EXISTENTE en HEAD limpio (verificado con
   stash), NO regresión del programa PRF.
 - `cognicode-cli` bin cogh: 293 passed, 0 failed.
+- `clippy -D warnings`: clean para `cognicode-core` (post `47dd39ac`); warning inventory de `cognicode-cli`/`cognicode-ladybug` verificado sin drift vs `5b96db43` (medido con `git stash` + diff antes/después).
 
 ## Frentes abiertos (deuda)
 
@@ -40,18 +41,24 @@
 |---|---|---|
 | H-F3-1 | find_usages MCP con walk+parser inline | OPEN (LOW, no bloqueante) |
 | H-F6-1 | doble resolución de home | RESUELTO (`0764fb81`) |
+| H-clippy-FullGraphStrategy-type_complexity (D34-1) | clippy::type_complexity en `crates/cognicode-core/src/infrastructure/graph/strategy.rs:521` (4-tuple a `struct FileData`) | **RESUELTO** (`47dd39ac`) en sesión 2026-09-22 |
+| H-clippy-cli-residual (D34-2) | Catálogo de warnings preexistentes en `cognicode-cli` (unused_imports, dead_code) en `cmd/{lifecycle,release_contract,bundle_manifest,ide,layout,tracker,...}.rs` | **OPEN — fuera de programa PRF** (decisión de scoping del operador 2026-09-21; reservada a sesión propia). NO bloquea release. |
 | moldql panic test | test de pánico inestable en explorer | PRE-EXISTENTE, fuera de alcance PRF |
 | 6 fallos preexistentes | cogh_uninstall, manifest_upsert ladybug, rate-limit H10 | catalogados, no regresiones |
 
 ## Decisión formal
 
-- [x] Evidencias reunidas y verificadas en HEAD.
+- [x] Evidencias reunidas y verificadas en HEAD `86df20de` (sesión 2026-09-22).
 - [x] **READY FOR RELEASE** — decisión técnica registrada por el orquestador
       (19:44 UTC, 2026-09-21) con la conformidad del operador ("a tu criterio").
-      Base técnica: C0-C6 en PASS, UATs F3-F6 en binarios reales, baterías GREEN
-      salvo fallos pre-existentes catalogados, sin regresiones.
+      Reconfirmada en sesión 2026-09-22 sobre `86df20de`: C0-C6 en PASS,
+      UATs F3-F6 en binarios reales, baterías GREEN (2126/0/27),
+      clippy `-D warnings` clean para `cognicode-core`, fmt-clean,
+      sin regresiones, sin deuda técnica abierta dentro de PRF.
 - [ ] **Publicación (push + tag)** — PENDIENTE de orden explícita del operador.
       No se ejecuta con autorización genérica: el push es irreversible y público.
+      Candidatos de versión pendientes de decisión: ver tabla arriba.
 - La publicación efectiva (push, tag, distribución) requiere
   autorización explícita del operador y NO está cubierta por la
-  preautorización de continuidad del programa.
+  preautorización de continuidad del programa (directive § 3:
+  "gates de publicación respetan el procedimiento de autorización").
