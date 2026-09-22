@@ -2714,3 +2714,13 @@ binario real (corpus 51 homónimos). Regresión: handlers 153/0,
 workspace_isolation 2/0, continuation_e2e 5/0; fmt/clippy limpios.
 Evidencia: `evidence/u58-ana05-uat-binary/`.
 **Matriz**: PRF-ANA-05 → PASS (library + handler + binario real).
+
+## §59 — PRF-ANA-07: UAT binario real — PASS (2026-09-22)
+
+UAT stdio JSON-RPC sobre el corpus de 51 homónimos contra el binario
+real: `init` resuelve al `src/lib.rs` local (regla de visibilidad sobre
+50 siblings), `compute` al candidato único cross-file, exactamente 2
+relationships publicados, confidence 1.0. GREEN sin fix (el
+comportamiento ya era correcto tras F2.W5/§35). Evidencia:
+`evidence/u59-ana07-uat-binary/`.
+**Matriz**: PRF-ANA-07 → PASS.
