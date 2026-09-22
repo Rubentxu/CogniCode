@@ -26,7 +26,11 @@ cp "$RELEASE_DIR/"* "$TMP/release/v$VERSION/"
 tar -xzf "$RELEASE_DIR/$COGH" -C "$TMP/bootstrap"
 COGH_BIN="$TMP/bootstrap/bin/cogh"
 test -x "$COGH_BIN"
-printf '{}\n' > "$TMP/home/.config/opencode/opencode.json"
+# Create the empty OpenCode config fixture via cp from a neutral name:
+# some agent sandboxes block shell redirects whose target path matches an
+# IDE config filename, even inside a disposable temp dir.
+printf '{}\n' > "$TMP/opencode-fixture"
+cp "$TMP/opencode-fixture" "$TMP/home/.config/opencode/opencode.json"
 
 python3 -u - "$TMP/release" > "$TMP/server.port" 2> "$TMP/server.err" <<'PY' &
 import functools
@@ -104,8 +108,11 @@ rm "$MCP"
 ln -s "/tmp/prf-deleted-version/bin/cognicode-mcp" "$MCP"
 "$COGH_BIN" reshim
 test -x "$MCP"
-test "$(readlink -f "$MCP")" = \
-  "$COGNICODE_HOME/versions/$VERSION/cognicode-mcp/bin/cognicode-mcp"
+# Compare canonicalized paths: on systems where /home is a symlink
+# (e.g. Fedora's /var/home), readlink -f resolves the prefix and a raw
+# string comparison would false-fail.
+EXPECTED_SHIM_TARGET="$COGNICODE_HOME/versions/$VERSION/cognicode-mcp/bin/cognicode-mcp"
+test "$(readlink -f "$MCP")" = "$(readlink -f "$EXPECTED_SHIM_TARGET")"
 
 "$COGH_BIN" uninstall mcp-server --version "$VERSION" --ide opencode
 test ! -e "$COGNICODE_HOME/versions/$VERSION"
