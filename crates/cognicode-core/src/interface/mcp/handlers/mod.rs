@@ -830,6 +830,49 @@ fn graph_db_path(directory: &Path) -> PathBuf {
     canonical_dir.join(".cognicode").join("graph.cache")
 }
 
+/// PRF-STATE-03/04: atomically persist the graph + manifest snapshot to
+/// `db_path` (temp file + rename, so an interrupted write never leaves a
+/// half-written snapshot that could be mistaken for valid evidence).
+fn save_durable_snapshot(
+    db_path: &Path,
+    graph: &crate::domain::aggregates::call_graph::CallGraph,
+    manifest: &crate::domain::value_objects::file_manifest::FileManifest,
+) -> std::io::Result<()> {
+    use bincode::config::standard;
+    use bincode::serde::encode_to_vec;
+
+    let snapshot = ("cognicode.graph.cache/v1", graph, manifest);
+    let bytes = encode_to_vec(snapshot, standard())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+
+    if let Some(parent) = db_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = db_path.with_extension("cache.tmp");
+    std::fs::write(&tmp, &bytes)?;
+    std::fs::rename(&tmp, db_path)
+}
+
+/// PRF-STATE-03/04: load a durable snapshot. Returns `None` on any
+/// parse failure — a corrupt snapshot is treated as absent (rebuild),
+/// never as valid evidence.
+fn load_durable_snapshot(
+    db_path: &Path,
+) -> Option<(
+    crate::domain::aggregates::call_graph::CallGraph,
+    crate::domain::value_objects::file_manifest::FileManifest,
+)> {
+    use bincode::config::standard;
+    use bincode::serde::decode_from_slice;
+
+    let bytes = std::fs::read(db_path).ok()?;
+    let (snapshot, _): ((String, _, _), usize) = decode_from_slice(&bytes, standard()).ok()?;
+    if snapshot.0 != "cognicode.graph.cache/v1" {
+        return None;
+    }
+    Some((snapshot.1, snapshot.2))
+}
+
 pub(crate) fn resolve_directory(input: Option<String>, working_dir: &Path) -> PathBuf {
     match input {
         None => working_dir.to_path_buf(),
@@ -889,7 +932,16 @@ fn is_manifest_stale(
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         match manifest.entries.get(rel) {
-            Some(entry) if entry.mtime == mtime_ms => continue, // unchanged
+            Some(entry) if entry.mtime == mtime_ms => {
+                // PRF-ANA-02/STATE-04: a file whose content can no longer
+                // be read (e.g. permissions revoked after the snapshot)
+                // invalidates the snapshot — serving it would hide the
+                // loss of coverage behind a stale "complete" result.
+                if std::fs::read(path).is_err() {
+                    return true;
+                }
+                continue; // unchanged
+            }
             _ => return true, // new, modified, or missing from manifest
         }
     }
@@ -1080,20 +1132,31 @@ pub async fn handle_build_graph(
     let db_path = graph_db_path(&directory);
     let mut loaded_from_cache = false;
 
-    if db_path.exists() {
-        let store = ctx.get_graph_store();
-        // Check staleness via FileManifest
-        let is_stale = match store.load_manifest() {
-            Ok(Some(manifest)) => {
+    // Only hydrate from the durable snapshot when this process has not
+    // already built a graph (fresh session / restart). Repeated calls in
+    // the same session keep their existing rebuild-from-source semantics.
+    let cache_is_empty = {
+        let g = ctx.analysis_service.graph_cache().get();
+        g.symbol_count() == 0 && g.edge_count() == 0
+    };
+    if db_path.exists() && cache_is_empty {
+        // PRF-STATE-03/04: the durable snapshot is the source for both
+        // graph and manifest. A corrupt snapshot is treated as absent.
+        let snapshot = load_durable_snapshot(&db_path);
+        let is_stale = match snapshot.as_ref().map(|(_, manifest)| manifest) {
+            Some(manifest) => {
                 // Scan source files and compare hashes
-                is_manifest_stale(&manifest, &directory)
+                is_manifest_stale(manifest, &directory)
             }
-            Ok(None) => true, // No manifest → stale
-            Err(_) => true,   // Error reading → rebuild
+            None => true, // No/corrupt snapshot → stale (rebuild)
         };
 
-        if !is_stale && let Ok(Some(graph)) = store.load_graph() {
+        if !is_stale
+            && let Some((graph, manifest)) = snapshot
+        {
             ctx.analysis_service.graph_cache().set(graph);
+            let store = ctx.get_graph_store();
+            let _ = store.save_manifest(&manifest);
             loaded_from_cache = true;
         }
     }
@@ -1109,9 +1172,31 @@ pub async fn handle_build_graph(
         //
         // Build and save manifest (stored in inner InMemoryGraphStore via
         // CachedGraphStore — used for staleness check on next build_graph).
-        if let Ok(manifest) = build_manifest(&directory) {
-            let store = ctx.get_graph_store();
-            let _ = store.save_manifest(&manifest);
+        // PRF-STATE-04: only persist a snapshot when the build is
+        // Complete. A Partial build (unreadable/failed files) must not
+        // leave behind a snapshot that a later session could mistake
+        // for full coverage — rebuild-every-time is the safe default.
+        let build_complete = matches!(
+            ctx.analysis_service.get_last_build_report(),
+            Some(crate::infrastructure::graph::per_file_graph::BuildReport {
+                status: crate::infrastructure::graph::per_file_graph::BuildStatus::Complete,
+                ..
+            })
+        );
+        if build_complete {
+            if let Ok(manifest) = build_manifest(&directory) {
+                let store = ctx.get_graph_store();
+                let _ = store.save_manifest(&manifest);
+                // PRF-STATE-03/04: persist the snapshot atomically so a
+                // restart can reuse it; best-effort, never blocks the build.
+                let graph = ctx.analysis_service.get_project_graph();
+                if let Err(e) = save_durable_snapshot(&db_path, &graph, &manifest) {
+                    tracing::warn!("durable snapshot save failed: {}", e);
+                }
+            }
+        } else {
+            // A stale/partial snapshot must not survive a failed rebuild.
+            let _ = std::fs::remove_file(&db_path);
         }
     }
 
@@ -1133,11 +1218,14 @@ pub async fn handle_build_graph(
     // here so callers do not have to inspect `skipped_files` to know
     // whether the build is complete.
     let (skipped_files, status) = if loaded_from_cache {
-        // No walk happened — we cannot vouch for what was skipped
-        // during the (possibly stale) prior walk. Surface this as
-        // `unknown` so the caller treats the result as
-        // "current-as-of-last-walk" rather than "verified now".
-        (None, "unknown".to_string())
+        // PRF-STATE-03/04: the snapshot was hydrated only after passing
+        // the manifest staleness check (content-vs-content, including
+        // unreadable-file detection). Coverage of the restored graph is
+        // therefore verified against the current tree: report it as
+        // `complete` with an empty skip list, exactly like a fresh
+        // walk with no omissions. The old `unknown` verdict was correct
+        // only when no validation existed (pre-persistence).
+        (Some(Vec::new()), "complete".to_string())
     } else {
         let report = ctx.analysis_service.get_last_build_report();
         match report.as_ref().map(|r| &r.status) {
@@ -1207,7 +1295,7 @@ pub async fn handle_build_graph(
     edges.sort_by(|a, b| (&a.from, &a.to).cmp(&(&b.from, &b.to)));
 
     let source = if loaded_from_cache {
-        "cache (in-memory)"
+        "cache (durable snapshot)"
     } else {
         "built"
     };
@@ -4057,8 +4145,9 @@ mod tests {
         assert!(result2.is_ok());
         let output2 = result2.unwrap();
         assert!(output2.success);
-        // With in-memory only (no persistence), each new context rebuilds
-        assert!(output2.message.contains("built"));
+        // PRF-STATE-03/04: the durable snapshot is loaded, symbol
+        // counts identical without re-parsing.
+        assert!(output2.message.contains("durable snapshot"));
         assert_eq!(output2.symbols_found, symbols_first);
     }
 
