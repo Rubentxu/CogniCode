@@ -106,10 +106,12 @@ released_at: "2026-01-01T00:00:00Z"
 profiles:
   - name: core
     description: Test fixture
+  - name: reviewer
+    description: Reviewer profile fixture
 skill_bundles:
   - id: {bundle_id}
     version: "{bundle_version}"
-    profiles: [core]
+    profiles: [core, reviewer]
 components:
   - name: cognicode-mcp
     kind: daemon-cli
@@ -117,7 +119,7 @@ components:
     artifact: cognicode-mcp-{bundle_version}-x86_64-unknown-linux-gnu.tar.gz
     sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
     url: "https://github.com/Rubentxu/CogniCode/releases/download/v{bundle_version}/cognicode-mcp-{bundle_version}-x86_64-unknown-linux-gnu.tar.gz"
-    profiles: [core]
+    profiles: [core, reviewer]
 "#
     );
     let version_root = cogh_home.join("versions").join(version_dir);
@@ -138,6 +140,34 @@ components:
     let bundle_dir = version_root.join("skills").join(bundle_id);
     fs::create_dir_all(&bundle_dir).expect("mkdir skills/<bundle_id>");
     fs::write(bundle_dir.join("SKILL.md"), "# test fixture skill\n").expect("write SKILL.md");
+
+    // PR #289 (43d27f2c) merged contract: `ide install` resolves the
+    // installed MCP binary via locate_component_binary() over
+    // `<versions/<v>/<component>/bin/` before writing the IDE shim.
+    // Plant a placeholder binary for the daemon-cli component (name =
+    // `cognicode-mcp`, the manifest's declared daemon-cli name) so the
+    // shim stage succeeds; the shim content is what these tests assert.
+    let bin_dir = version_root.join("cognicode-mcp").join("bin");
+    fs::create_dir_all(&bin_dir).expect("mkdir cognicode-mcp/bin");
+    fs::write(bin_dir.join("cognicode-mcp"), "#!/bin/sh\nexit 0\n").expect("write stub binary");
+
+    // The install path refuses to wire an IDE when
+    // `<cogh_home>/shims/cognicode-mcp` is missing or does not
+    // canonicalize to the installed binary (stale-link rejection). In a
+    // real `cogh install` the transaction stage creates that shim; this
+    // fixture stands it in directly.
+    #[cfg(unix)]
+    {
+        let shims = cogh_home.join("shims");
+        fs::create_dir_all(&shims).expect("mkdir shims");
+        // `cogh init` already leaves a shim entry that dangles until a
+        // real install; replace it so it targets this fixture's binary.
+        let link = shims.join("cognicode-mcp");
+        if link.symlink_metadata().is_ok() {
+            fs::remove_file(&link).expect("remove init-created shim");
+        }
+        std::os::unix::fs::symlink(bin_dir.join("cognicode-mcp"), link).expect("symlink shim");
+    }
 }
 
 /// Helper that performs `init_home` AND plants a manifest for the `latest`

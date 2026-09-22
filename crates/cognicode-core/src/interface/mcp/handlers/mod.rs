@@ -1177,6 +1177,24 @@ pub async fn handle_build_graph(
         }
     }
 
+    // STATE-07 debt resolution (JOURNAL §40): a same-session repeat call
+    // with a fresh manifest (unchanged sources, content-vs-content) serves
+    // the in-memory cached graph without a rebuild. Same staleness gate as
+    // the durable snapshot path: a stale manifest falls through to the
+    // full rebuild below. The stored manifest is updated on every build.
+    if !loaded_from_cache {
+        let store = ctx.get_graph_store();
+        if let Some(manifest) = store
+            .load_manifest()
+            .ok()
+            .flatten()
+            .filter(|m| !is_manifest_stale(m, &directory))
+        {
+            loaded_from_cache = true;
+            let _ = manifest; // freshness only; the cached graph is already live
+        }
+    }
+
     // Build from source if cache miss
     if !loaded_from_cache {
         if let Err(e) = ctx.analysis_service.build_project_graph(&directory) {
@@ -5642,18 +5660,13 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn unchanged_source_reports_honestly() {
-            // CHARACTERIZATION (not ideal behavior): with unchanged
-            // sources, the manifest is fresh and load_graph() should
-            // serve the cache — but the second call currently
-            // reports "built" instead of "cache". The handler runs
-            // a full rebuild even though the manifest check passes
-            // (see graph_cache/load_graph interaction under
-            // ADR-032). PRF-STATE-07's core duty — never present a
-            // stale graph as current — still holds: the served
-            // graph is freshly rebuilt, so it IS current. Pin the
-            // honest labeling and the correctness invariant; flag
-            // the cache-miss inefficiency as debt.
+        async fn unchanged_sources_same_session_serve_cached_graph() {
+            // STATE-07 debt resolution (JOURNAL §40): a same-session
+            // repeated build_graph with UNCHANGED sources must serve the
+            // in-memory cached graph (manifest freshness gate, not the
+            // empty-cache gate). The message must say so honestly, and
+            // the inventory must be identical. Any source change still
+            // rebuilds (pinned by the two tests above).
             let tempdir = tempfile::tempdir().unwrap();
             std::fs::write(tempdir.path().join("stable.rs"), "fn stable() {}\n").unwrap();
 
@@ -5663,20 +5676,31 @@ mod tests {
             let mk_input = || BuildGraphInput { directory: None };
 
             let first = handle_build_graph(&ctx, mk_input()).await.unwrap();
-            let second = handle_build_graph(&ctx, mk_input()).await.unwrap();
+            assert!(first.message.contains("built"), "first call builds: {}", first.message);
 
-            // Whatever path served the second call, the message
-            // must be honest about it (either "cache" or "built").
+            let second = handle_build_graph(&ctx, mk_input()).await.unwrap();
             assert!(
-                second.message.contains("cache") || second.message.contains("built"),
-                "message must state the graph source honestly, got: {}",
+                second.message.contains("cache"),
+                "unchanged sources must serve the cached graph, got: {}",
                 second.message
             );
-            // Correctness: symbol inventory must not change across
-            // identical calls (no stale data presented as current).
             assert_eq!(
                 first.symbols_found, second.symbols_found,
                 "identical sources must yield identical symbol counts"
+            );
+
+            // A source change must still invalidate the in-session cache.
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+            std::fs::write(tempdir.path().join("stable.rs"), "fn stable() {}\nfn evolved() {}\n").unwrap();
+            let third = handle_build_graph(&ctx, mk_input()).await.unwrap();
+            assert!(
+                third.message.contains("built"),
+                "changed sources must rebuild, got: {}",
+                third.message
+            );
+            assert!(
+                third.symbols_found > first.symbols_found,
+                "rebuilt graph must reflect the new symbol"
             );
         }
     }
