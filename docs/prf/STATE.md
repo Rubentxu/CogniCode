@@ -8,14 +8,14 @@
 ## Snapshot
 
 | Hito activo | **F2 — Correctitud reproducible (EN CURSO)** |
-| Última unidad cerrada | **F6 — distribución** (UAT-F6-001 + fix H-F6-1 `0764fb81`, ACCEPTED) |
-| Unidad activa siguiente | **F7 — definición de alcance** (aceptación de release; ROADMAP §F7 se define al cierre de F6) |
-| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. **F2 (W1-W10) = ACCEPTED via cert C2** (certificado consolidado `PRF-C2`, HEAD `dc189d54`+docs). **RELEASED = pendiente** para todos los hitos (requiere push/tag del operador). |
-| HEAD | `2a121aec` (F2.W9) |
-| Working tree | limpio tras commit W9 + docs |
-| Bloqueos conocidos | **Ninguno activo** (H-F6-1 resuelto en `0764fb81` y verificado con ciclo `--home` sin env; 6 fallos preexistentes catalogados, no regresiones) |. Los 6 fallos preexistentes del workspace (`cogh_uninstall`, `docs_extractor_corpus_regression`, 4× `manifest_upsert`) están catalogados en JOURNAL §15 con responsable y trigger; no bloquean gates de F2/C2. H10 OPEN — test `cogh update` falla por GitHub API rate limit (deuda externa, no bloqueante). |
-| Siguiente unidad ejecutable | **Programa PRF: decisiones técnicas completas (READY FOR RELEASE).** Único pendiente: orden explícita de publicación (push + tag). C7 se firma tras publicar. |
-| Política git | `docs/prf/` se versiona para **documentos del programa** (.md, fixtures) con `git add -f`. Evidencia cruda (strace, JSON-RPC binarios, logs de cargo test) sigue siendo local-only y está manifestada en `evidence/MANIFEST.md` |
+| Última unidad cerrada | **H-clippy-FullGraphStrategy-type_complexity** (commit `47dd39ac` clippy-fix + docs checkpoint, ACCEPTED local; pendiente push) |
+| Unidad activa siguiente | **F7 — aceptación de release** (decisión técnica READY FOR RELEASE; pendiente T5 + C7 + tag + push) |
+| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. F2 = ACCEPTED (W1-W10 IMPLEMENTED vía cert C2). F3-F6 = ACCEPTED vía C3-C6. **C7 = READY FOR RELEASE** (orden del operador pendiente). |
+| HEAD | HEAD actual (docs checkpoint de cierre, ver `git log -2`); ancestor estable: clippy-fix `47dd39ac` sobre `5b96db43` (T4 base) |
+| Working tree | `strategy.rs` refactorizado pendiente commit + docs/prf actualizados; openspec huérfano eliminado |
+| Bloqueos conocidos | **Ninguno funcional**. Residual técnico: `cognicode-cli` warnings preexistentes (D34-2) fuera de scope. Residual administrativo: push + tag del operador. |
+| Siguiente unidad ejecutable | **F7: decisión técnica READY FOR RELEASE consolidada** sobre HEAD actual (docs checkpoint tras `47dd39ac` clippy-fix). Único pendiente: orden explícita de push y tag del operador. C7 se firma tras publicar. |
+| Política git | `docs/prf/` se versiona localmente solo en working tree. Evidencia cruda local-only (manifestada en `evidence/MANIFEST.md`). Push pendiente de orden explícita. |
 | Gobierno del proyecto | **PRF es el único roadmap ejecutivo vigente** (decisión del operador 2026-09-21, `JOURNAL.md` entrada 13, `TRACEABILITY.md` §Correspondencia E31→PRF). E31 conserva su evidencia y aporta requisitos útiles que migran a gates PRF. |
 
 ## Última unidad cerrada: F2.W8 (Errores silenciosos en `build_project_graph`)

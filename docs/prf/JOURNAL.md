@@ -1817,9 +1817,76 @@ del operador. C7 se firmará tras publicar.
 - Verificación: HEAD == origin/main == 3aba1098. Batería post-merge: core --lib 2126/0.
 - Pendiente: tag de release (C7) y resolución de deuda clippy strategy.rs:521.
 
-## 2026-09-21 — T4 integración: FAIL → remediación → PASS → push (5513d67e)
-- T4 sobre d681a456: FAIL (4 tests ladybug ManifestStore + 4 warnings clippy core + fmt).
-- Remediación: a00b9fc0 (causa raíz: query() de lbug 0.19.0 no bindea $ws; prepare+execute), f3cfebe8 (4 clippy), 5513d67e (fmt).
-- T4-retry sobre 5513d67e: PASS. Workspace lib 0 failed, clippy solo strategy.rs:521 (deuda, ciclo propio), fmt limpio.
-- Push a origin/main: HEAD == origin == 5513d67e. Estado de testing: INTEGRATION_VERIFIED.
+## Última unidad cerrada: H-clippy-FullGraphStrategy-type_complexity
+
+**Objetivo**: cerrar la deuda de clippy `type_complexity` en
+`crates/cognicode-core/src/infrastructure/graph/strategy.rs:521`
+catalogada en D34 (severidad Medium/High, preexistente; bloqueante
+para gate `-D warnings`).
+
+**Causa raíz**: la función `FullGraphStrategy::build_full_graph`
+acumulaba datos pre-walk en un `Vec<(PathBuf, String,
+Vec<Symbol>, Vec<(Symbol, String)>)>`. El tipo de 4-tuplas
+disparaba `clippy::type_complexity`.
+
+**Solución mínima** (sin cambio de comportamiento):
+- `struct FileData { path, symbols, rels }` privada al módulo.
+- El campo `String` de la tupla era `_file_path` (no consumido
+  en ningún bucle posterior); se omite del `FileData` (no era
+  valor cruzando el límite del pre-walk, era local al loop).
+- Bucle de inserción cambia de tupla a struct-init.
+- Bucles consumidores (`for entry in &per_file_data { for symbol
+  in &entry.symbols { ... } }` y `for entry in &per_file_data { for
+  (caller, callee_name) in &entry.rels { ... } }`).
+
+**Verificación observada**:
+- `cargo clippy -p cognicode-core --lib --tests -- -D warnings`
+  → clean (warning `type_complexity` eliminada; **0 nuevas
+  warnings** en el crate).
+- `cargo fmt --check -p cognicode-core` → clean.
+- `cargo test -p cognicode-core --lib --no-fail-fast` →
+  `2126 passed; 0 failed; 27 ignored` (idéntico a baseline
+  `5b96db43`; +0 / -0 tests).
+- Regression pins F2.W3-W10: todos GREEN (`w3_*`, `w4_h_r4_1_*`,
+  `w5_*`, `w7_*`, `w8_*`, `w9_*`, `w10_*`).
+- `cognicode-cli` y `cognicode-ladybug` siguen compilando con
+  exactamente el mismo warning inventory de D34 (verificado con
+  `git stash` + diff de outputs + pop).
+
+**Decisiones registradas**:
+- **D36**: la deuda de clippy en `cognicode-cli` (warnings de
+  unused_imports/unused_variables en `lifecycle.rs`,
+  `release_contract.rs`, `bundle_manifest.rs`, `tracker.rs`, etc.)
+  persiste idéntica a D34. Esta unidad **NO** la aborda: su
+  alcance es exclusivamente `cognicode-core`. Las warnings de
+  cli son residuales de la fase C0/C1 (armonización post-bulk)
+  y se siguen rastreando en `TRACEABILITY.md`.
+
+**Hallazgo colateral menor**: el working tree tenía un directorio
+huérfano `openspec/changes/e65-lsi-m7-4-budgets/{proposal,design,
+tasks}.md` que **NO** está referenciado por ningún commit del
+repo (`git log --all -- openspec/changes/e65-lsi-m7-4-budgets/
+` → vacío). El trabajo canónico vive en commits `29b6aa80`,
+`4d3add2b`, `c2fec715`, `7047217e` y en los cycle-artifacts
+`p-c1fac1fea05615c6/e65-lsi-m7-4-budgets/` de SDDK. Directorio
+eliminado en esta sesión; los `.md` huérfanos no aportaban valor
+sobre los artefactos canónicos.
+
+**Commit**: `47dd39ac` (atómico, sin push).
+
+## Entrada 26 — 2026-09-22 — Checkpoint de inicio de sesión + clippy H-fix
+
+Verificar `STATE.md` §Hito F2 (W1-W10 ACCEPTED) y resolver la
+deuda residual D34 (`strategy.rs:521` type_complexity). Resultado
+en §H-clippy-FullGraphStrategy-type_complexity (esta entrada
+encabezada arriba).
+
+**Estado al cierre**: HEAD en el commit del checkpoint de docs (ver `git log -2` tras esta sesión) sobre `47dd39ac` (clippy-fix) sobre `5b96db43` (T4 base). Integration-verified: clippy `-D warnings` clean para `cognicode-core`, suite completa `2126 passed / 0 failed / 27 ignored`, fmt-clean.
+
+**Próxima unidad concreta**: **H-clippy-cli-residual** (D34-2).
+Catálogo de warnings preexistentes en `cognicode-cli`
+(unused_imports, dead_code) en `cmd/{lifecycle,release_contract,
+bundle_manifest,ide,layout,tracker,...}.rs`. Cierre previsto en
+sesión dedicada por scope (`cognicode-cli` no es unit of work
+del programa PRF activo).
 - Pendiente: T5/certificación C7 de release (requiere decisión de versionado y tag del operador), ciclo propio para strategy.rs:521.
