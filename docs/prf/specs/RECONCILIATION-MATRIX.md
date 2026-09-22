@@ -49,7 +49,7 @@
 
 | Requisito | Disposición | Evidencia / Notas |
 |---|---|---|
-| PRF-CLI-01 (argv, exit code, diagnóstico por comando stable) | NOT_RUN | No hay UAT que recorra todos los comandos stable enumerando `--help`/argv/exit. |
+| PRF-CLI-01 (argv, exit code, diagnóstico por comando stable) | **PARTIAL (mejorado)** | UAT sobre el binario real (`prf_cli_01_uat.rs`, JOURNAL §38). RED detectó violación real: `analyze <inexistente>` salía exit 0 tras imprimir el fallo. Corregido propagando el error (patrón F2.W2). Cubre help/version + escenario crítico del SPEC (ruta inexistente) en analyze/graph/doctor; falta recorrido exhaustivo por cada comando stable. |
 | PRF-CLI-02 (stdout solo datos estructurados; stderr logs) | PARTIAL | Reclamado por diseño; no UAT que lo verifique con captura completa. |
 | PRF-CLI-03 (workspace seleccionable sin Explorer/RPC/cloud/OTLP) | PARTIAL | Verificación operativa existe; UAT específica no. |
 | PRF-CLI-04 (mismo caso de uso entre CLI y MCP, transporte aislado) | **PARTIAL (mejorado)** | Tests de equivalencia en `prf_cli_04_cli_mcp_equivalence_tests` (commit `c3ce111d`, JOURNAL §37): el MISMO caso de uso (build full) ejecutado por la ruta CLI (`FullGraphStrategy::build_full_graph`) y la ruta MCP (`handle_build_graph`) sobre el corpus canónico, comparando símbolos y aristas con guards anti-vacuidad. GREEN (los desvíos H-03 se cerraron en F2.W7/W8). Bucket PARTIAL y no PASS porque el test corre in-process, no con dos procesos CLI/MCP reales aislados por transporte. |
@@ -160,7 +160,7 @@
 |---|---|---|---|---|---|---|
 | SPEC-ANALYSIS (9) | 2 (+1 tras PRF-ANA-04) | 4 (+1 tras H-02) | 0 (-1 tras H-01) | 2 | 1 (-1 tras PRF-ANA-04) | 0 |
 | SPEC-CI (7) | 0 | 3 (+1: CI-06 de FAIL a PARTIAL mejorado) | 2 (-1) | 2 | 0 | 0 |
-| SPEC-CLI (7) | 0 | 4 (+1: CLI-04 de FAIL a PARTIAL mejorado) | 0 (-1) | 3 | 0 | 0 |
+| SPEC-CLI (7) | 0 | 5 (+2: CLI-04 de FAIL, CLI-01 de NOT_RUN) | 0 | 2 (-1) | 0 | 0 |
 | SPEC-DISTRIBUTION (7) | 0 | 3 | 1 | 3 | 0 | 0 |
 | SPEC-EXTENSIBILITY (6) | 0 | 4 | 0 | 1 | 1 | 0 |
 | SPEC-MCP (7) | 0 | 4 | 0 | 3 | 0 | 0 |

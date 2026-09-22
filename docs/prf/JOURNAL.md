@@ -2308,3 +2308,39 @@ del programa PRF activo).
   de test, no dos procesos reales CLI/MCP aislados por transporte.
   Contador SPEC-CLI: FAIL 1→0, PARTIAL 3→4.
 - **NO ejecuta:** push, tag, C7 firma. Operator-gated.
+
+## 2026-09-22 — PRF-CLI-01 (exit codes UAT sobre binario real) (entrada 38)
+
+- **Origen:** gap matriz PRF-CLI-01 (NOT_RUN): "No hay UAT que
+  recorra todos los comandos stable enumerando `--help`/argv/exit".
+  El SPEC exige el escenario: ruta inexistente → no éxito.
+- **RED primero (UAT de verdad):** nuevo test de integración
+  `crates/cognicode-cli/tests/prf_cli_01_uat.rs` que ejecuta el
+  binario real `cognicode` (vía `CARGO_BIN_EXE_cognicode`) y pinea
+  los contratos de exit code:
+  - `--help`/`--version` → exit 0.
+  - `analyze <ruta_inexistente>` → NO exit 0. **FALLÓ en el
+    primer run**: el binario imprimía "Analyze command failed"
+    pero salía con exit 0, mintiéndole a scripts y CI. Violación
+    real de PRF-CLI-01 detectada por la UAT.
+  - `graph full --path <inexistente>` → NO exit 0 (ya cumplía;
+    pin).
+  - `doctor --cwd <inexistente>` → NO exit 0 (ya cumplía; pin).
+  - `analyze <dir válido vacío>` → exit 0 (guarda contra
+    sobre-corrección).
+- **GREEN:** corrección mínima en
+  `CommandExecutor::execute` (`crates/cognicode-core/src/interface/
+  cli/commands.rs`): el error de Analyze ya no se traga; se
+  propaga como el resto (`return Err(e)`), mismo patrón que F2.W2
+  aplicó a Graph. Exit code no-cero garantizado por `main() ->
+  Result`.
+- **Verificación:** 5/5 UAT verdes; 2138 tests de cognicode-core
+  lib verdes; clippy limpio en código cambiado (los warnings de
+  los bins `cogh` son preexistentes, scope D34-2 reservado).
+- **Matriz:** PRF-CLI-01 NOT_RUN → PARTIAL (mejorado). No PASS
+  porque el requisito pide cobertura de TODOS los comandos stable
+  con argv/diagnóstico documentados; la UAT cubre el escenario
+  crítico del SPEC (ruta inexistente) más help/version, pero el
+  recorrido exhaustivo por comando (Index, Navigate, Refactor,
+  subcomandos) sigue pendiente.
+- **NO ejecuta:** push, tag, C7 firma. Operator-gated.
