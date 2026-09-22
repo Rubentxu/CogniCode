@@ -1,14 +1,16 @@
 # RELEASE-CANDIDATE — Programa PRF
 
-> Estado: DRAFT — decisión formal pendiente del operador (push/tag).
+> Estado: DRAFT — auditoría 2026-09-22 (operador) reveló gaps contractuales que invalidan la equivalencia "READY FOR RELEASE" ↔ "C7 PASS". El SHA candidato está **congelado** abajo; las acciones 1-5 del plan operador (sección 5 de la auditoría) se ejecutarán **en orden estricto** contra este SHA, sin reescribirlo.
 
-## Candidato
+## Candidato (CONGELADO)
 
 | Campo | Valor |
 |---|---|
-| SHA candidato | `86df20de` (HEAD de `main` local en 2026-09-22 checkpoint final de sesión). Encima de `47dd39ac` (H-clippy-FullGraphStrategy-type_complexity FIX) y de `5b96db43` (T4 base verificado, origin/main). Verificar con `git rev-parse HEAD` al firmar. |
+| SHA candidato (full) | **`178f8a5bf83b52433c46887456823c606ac786b7`** (corto: `178f8a5b`) |
+| Identidad del artefacto | **fija** — cualquier modificación posterior del HEAD exige nuevo proceso de release. No se firma C7 sobre "el HEAD en el momento de la firma". |
+| Cadena de procedencia | `178f8a5b` (reconciliación C2) → `f0e25652` (pointer refresh) → `c1b14017` (RELEASE-CANDIDATE refresh) → `86df20de` (docs checkpoint) → `47dd39ac` (clippy-fix) → `5b96db43` (T4 base, último de origin/main). |
 | Versión | Pendiente de decisión del operador (candidatos razonables: `v0.97.4` patch de clippy; `v0.98.0` minor; `v0.98.0-prf` cierre del programa; `v1.0.0-prf` release production-ready milestone). El tag v0.97.3 NO contiene estos fixes. |
-| Plataformas probadas | Linux x86_64 (única plataforma con UAT ejecutada) |
+| Plataformas probadas | Linux x86_64 (única plataforma con UAT ejecutada). Cobertura ampliada pendiente si el operador exige otras plataformas. |
 
 ## UATs ejecutados (binarios reales)
 
@@ -48,17 +50,43 @@
 
 ## Decisión formal
 
-- [x] Evidencias reunidas y verificadas en HEAD `86df20de` (sesión 2026-09-22).
-- [x] **READY FOR RELEASE** — decisión técnica registrada por el orquestador
-      (19:44 UTC, 2026-09-21) con la conformidad del operador ("a tu criterio").
-      Reconfirmada en sesión 2026-09-22 sobre `86df20de`: C0-C6 en PASS,
-      UATs F3-F6 en binarios reales, baterías GREEN (2126/0/27),
-      clippy `-D warnings` clean para `cognicode-core`, fmt-clean,
-      sin regresiones, sin deuda técnica abierta dentro de PRF.
-- [ ] **Publicación (push + tag)** — PENDIENTE de orden explícita del operador.
-      No se ejecuta con autorización genérica: el push es irreversible y público.
-      Candidatos de versión pendientes de decisión: ver tabla arriba.
-- La publicación efectiva (push, tag, distribución) requiere
-  autorización explícita del operador y NO está cubierta por la
-  preautorización de continuidad del programa (directive § 3:
-  "gates de publicación respetan el procedimiento de autorización").
+- [x] Evidencias reunidas y verificadas en HEAD `178f8a5b` (reconciliación C2).
+- [x] **Desarrollo de capacidades F0–F6** — ejecutado y documentado.
+- [ ] **C7 = NO CERTIFICADO** — la auditoría 2026-09-22 del operador (sección ‘Hallazgos que impiden dar por completo el contrato original’) demostró que los certificados C0–C6 actuales son **declarativos respecto a los criterios del programa PRF original, pero no contractualmente equivalentes** a sus requisitos. La diferencia técnica entre ‘READY FOR RELEASE’ (preparación completada) y ‘C7 PASS’ (garantías cumplidas) es ahora explícita en este documento y se cierra con el plan de la sección ‘Cierre de PRF’ más abajo.
+- [ ] **Publicación (push + tag)** — **BLOQUEADA** por directive § 3 y por la auditoría del operador: “mantendría C7 pendiente y la publicación bloqueada, sin deshacer los avances de F0–F6”.
+
+## Cierre de PRF (plan derivado de la auditoría)
+
+Origen: auditoría operador 2026-09-22 (sección ‘Cómo cerraría PRF sin crear otro roadmap’). Las 5 acciones se ejecutan **en orden estricto** contra el SHA congelado arriba. Cualquier nueva corrección del HEAD invalida este plan.
+
+### 1. SHA candidato (CONGELADO) — cerrado
+- Acción: registrar el SHA completo como identidad fija del artefacto (no ‘HEAD al firmar’).
+- Estado: cerrado en este commit. SHA full registrado arriba.
+
+### 2. Reconciliación requisitos ↔ certificados
+- Acción: contrastar los 8 documentos `SPEC-*` y las 27 UAT originales con C0–C6. Para cada ítem original, registrar disposición explícita: probado / sustituido / excluido del alcance / pendiente.
+- Artefacto: matriz `docs/prf/specs/RECONCILIATION-MATRIX.md` (a crear).
+- Por qué primero: sin esta base no se firma C7 ni se acepta nada como ‘cumple el contrato PRF’.
+
+### 3. Cerrar fallos de correctitud que afectan al producto estable
+- H-01 (ALTA): invalidación de caché por contenido (no solo `mtime`+tamaño). Test: misma instancia de análisis, caché poblada, modificar bytes preservando tamaño y `mtime`, comprobar que detecta el cambio.
+- H-02 (ALTA): eliminar `filter_map(|e| e.ok())` y `unwrap_or_default()` de las rutas realmente utilizadas por capacidades estables. Propagar errores y cobertura mediante un resultado tipado común. Añadir estado `Partial` explícito al handler MCP cuando proceda.
+- Por qué después de la reconciliación: la reconciliación puede descubrir que algunos de estos ‘fallos’ son en realidad ‘capacidades declaradas fuera de alcance’; el fix se ajusta entonces.
+
+### 4. Completar pruebas ausentes de C3–C6
+- H-03: hacer converger **una vertical CLI↔MCP hacia un único caso de uso** (reutilizar piezas no es converger).
+- H-04: probar persistencia material **o** documentar que la capacidad es ‘reconstrucción determinista sin persistencia’. Si se documenta como reconstrucción, no presentarla como certificación de almacenamiento persistente.
+- H-05: UAT de extensión read-only con el contrato previsto; cancelación durante ejecución de operación costosa (no solo ‘cancelación que llega después’); seguridad adversarial en el alcance anunciado (permisos R vs W/E, symlinks, traversal, fuga de secretos).
+- H-06: ciclo `instalar A → actualizar a B → rollback o rechazo de downgrade` con dos paquetes diferenciados en un canal de pruebas verificable; repetir `--home` sobre el artefacto que contiene la corrección.
+- H-07: gate independiente por SHA — definir el mecanismo (remoto o local con protección equivalente y verificable), ejecutar la prueba negativa (test rojo deliberado debe impedir integración/publicación).
+
+### 5. T5 + decisión C7 sobre el candidato congelado
+- Solo después de 1–4 cerrados. T5 ejecuta la batería completa del perfil C7 sobre `178f8a5b` con plataforma, hashes, pruebas, excepciones aprobadas y condiciones de soporte **fijadas antes de la ejecución** (no después). Decisión C7 firmada o rechazada con la matriz de la acción 2 como evidencia contractual.
+
+## Notas de honestidad
+
+- **No** se afirma ‘READY FOR RELEASE ≡ C7 PASS’. La auditoría 2026-09-22 lo descarta.
+- **No** se introduce un nuevo roadmap. Se cierra el PRF existente.
+- **No** se reabre trabajo finalizado de F0–F2–F3; se conservan sus commits y se actúa sobre los gaps contractuales declarados en la auditoría.
+- **No** se ejecuta push ni tag — la publicación sigue bloqueada por la propia auditoría.
+- El gate del operador (push, tag, decisión de versión, abrir sesión D34-2) sigue siendo válido y adicional a este plan.

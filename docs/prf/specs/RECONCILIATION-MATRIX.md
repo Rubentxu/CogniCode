@@ -1,0 +1,174 @@
+# RECONCILIATION-MATRIX — PRF original vs estado actual en `178f8a5b`
+
+> **Origen:** auditoría operador 2026-09-22, sección ‘Cómo cerraría PRF sin crear otro roadmap’, acción 2.
+> **Propósito:** contrastar los 8 documentos `SPEC-*` y las **27 UAT originales** (catalogue original en `731f54e5:docs/prf/UAT.md`) contra C0–C6 y la evidencia actual (`evidence/CERTIFICATES.md`, `UAT.md`). Cada ítem tiene disposición explícita: probado / sustituido / excluido / pendiente.
+> **Importante:** este documento **no cierra C7**. Es la base sin la que C7 no puede firmarse contractualmente. Disposiciones distintas de ‘PASS con evidencia reproducible’ siguen siendo **gaps abiertos** que bloquean la decisión C7.
+
+## Definiciones
+
+| Estado | Significado |
+|---|---|
+| **PASS** | Disposición aceptada: UAT ejecutada con binario real sobre `178f8a5b` o ancestro, stdout/stderr/exit capturados, hash de artefacto, recibo firmado. |
+| **PARTIAL** | Disposición parcial: ejecutada pero no cubre el criterio entero del SPEC o de la UAT original. Ver notas. |
+| **FAIL** | Disposición reproductor: la prueba que existe falla, o nunca pasó, o detectó defecto ya documentado. |
+| **NOT_RUN** | La UAT original nunca se ejecutó sobre el HEAD congelado. |
+| **EXCL** | Exclusión de alcance aprobada por el operador (con fecha y entrada de JOURNAL). |
+| **PEND** | Pendiente de acción 3-4-5 del cierre PRF. |
+
+> Diferencia crítica respecto al estado anterior: **ACCEPTED ≠ PASS contractual**. ‘ACCEPTED’ significa ‘el trabajo llegó al estado del programa’; ‘PASS’ significa ‘el criterio del SPEC-* o de la UAT original se cumplió demostrablemente sobre el HEAD congelado, con UAT ejecutada y recibo firmado’. Esta matriz convierte los ‘ACCEPTED’ en ‘PASS/PARTIAL/FAIL’ por criterio.
+
+---
+
+## Sección A — `SPEC-ANALYSIS.md` (`PRF-ANA-*`)
+
+| Requisito | Disposición | Evidencia / Notas |
+|---|---|---|
+| PRF-ANA-01 (verticals `full`/`per_file` con `lightweight`) | PEND | Auditable en código pero no hay UAT específica del SPEC-ANALYSIS como UAT-Nxx en `UAT.md`. Coverable por U08, U12, U15. |
+| **PRF-ANA-02** (errores lectura/parseo no se descartan silenciosamente) | **PARTIAL → PEND** | H-02 del operador: `filter_map(\|e\| e.ok())` aún en `FullGraphStrategy::build_full_graph`; `unwrap_or_default()` aún en `find_all_symbols_with_path` / `find_call_relationships`. U-F2-W8 cubre `AnalysisService::build_project_graph` pero no la strategy `full` ni `build_project_graph_filtered`. |
+| **PRF-ANA-03** (cambio de bytes con tamaño+mtime preservados no genera `Unchanged` falso) | **FAIL** | H-01 del operador: la invalidación actual depende de mtime+tamaño. TEST específico NO existe; el pineo actual cubre el caso en proceso nuevo (UAT-F2-W9-001), no en instancia viva. PRF-C2 explícitamente declara esta limitación (CERTIFICATES.md líneas 791-799). |
+| PRF-ANA-04 (consulta con archivo/provider faltante = `Partial/Unknown/Failed` con causa/cobertura) | PARTIAL | `AnalysisService::build_project_graph` devuelve `skipped_files[]` (F2.W8); pero el handler MCP devuelve `success: true` sin estado `Partial` explícito (H-02 adicional). |
+| PRF-ANA-05 (repetición misma entrada → outputs semánticamente equivalentes) | PARTIAL | `w10_repeated_builds_are_reproducible` (F2.W10) pinea la equivalencia en library; no hay UAT específica sobre binario repitiendo la consulta. |
+| PRF-ANA-06 (basis con workspace canónico+config digest+source manifest) | NOT_RUN | No hay UAT que evalúe identidad de basis. |
+| PRF-ANA-07 (renames/moves/colisiones preservan identidad o devuelven ambigüedad visible) | PARTIAL | H-R4-2 cerrado en library (F2.W5); UAT en binario (`UAT-F2-W7`) muestra equivalencia en corpus concreto. Cobertura de corpus con colisiones masivas no ejecutada. |
+| PRF-ANA-08 (budgets en lectura/parser/consultas costosas) | PARTIAL | Timeouts por categoría existen (`rmcp_adapter.rs::timeout_for_category` + 17/17 adapter tests); pero no hay UAT que ejercite presupuestos cuantitativos sobre operaciones costosas reales del SPEC. |
+| PRF-ANA-09 (LSI integra con golden corpus, registra drift) | NOT_RUN | No ejecutado en el periodo PRF (capacidad LSI queda fuera del scope actual). |
+
+## Sección B — `SPEC-CI.md` (`PRF-CI-*`)
+
+| Requisito | Disposición | Evidencia / Notas |
+|---|---|---|
+| **PRF-CI-01** (cada SHA tiene recibo independiente; FAIL aborta merge/publicación; sin `\|\| true` sobre gates obligatorios) | **FAIL** | H-07 del operador: `ci.yml` configurado sólo con `workflow_dispatch` (sin disparador por push/PR); un E2E con `\|\| true` y un escenario deshabilitado. **PRUEBA NEGATIVA nunca ejecutada**. |
+| PRF-CI-02 (campañas full/nightly con matriz + adversariales + benchmarks) | NOT_RUN | El workflow `sandbox-nightly.yml` mantiene pasos no bloqueantes; no hay matriz de features ni adversariales. |
+| PRF-CI-03 (modificación de comportamiento → test caracterizador + regresión) | PARTIAL | Se cumple en el trabajo ejecutado (RED→GREEN pineado), pero no hay medición de cobertura de líneas/ramas como gate obligatorio. |
+| PRF-CI-04 (presupuesto de rendimiento por perfil/corpus fijado **antes** de comparación) | NOT_RUN | No hay baseline de rendimiento publicado en PRF. |
+| PRF-CI-05 (advisories/licencias/SBOM/sha256/provenance + smoke nativo verificable) | PARTIAL | Existe `release.yml` con empaquetado y comprobación de artefactos; SBOM y scan de licencias no exigidos como gate. |
+| PRF-CI-06 (decisión sobre política local-first documentada y equivalente a gate remoto) | FAIL | No documentado el equivalente. El workflow permanece manual. |
+| **PRF-CI-07** (pipeline detecta artificialmente test rojo, manifiesto incorrecto, fallo de publicación → niega PASS) | **FAIL** | H-07 explícito: prueba negativa nunca ejecutada. Sin esto no se acredita el gate. |
+
+## Sección C — `SPEC-CLI.md` (`PRF-CLI-*`)
+
+| Requisito | Disposición | Evidencia / Notas |
+|---|---|---|
+| PRF-CLI-01 (argv, exit code, diagnóstico por comando stable) | NOT_RUN | No hay UAT que recorra todos los comandos stable enumerando `--help`/argv/exit. |
+| PRF-CLI-02 (stdout solo datos estructurados; stderr logs) | PARTIAL | Reclamado por diseño; no UAT que lo verifique con captura completa. |
+| PRF-CLI-03 (workspace seleccionable sin Explorer/RPC/cloud/OTLP) | PARTIAL | Verificación operativa existe; UAT específica no. |
+| PRF-CLI-04 (mismo caso de uso entre CLI y MCP, transporte aislado) | FAIL | **H-03 del operador**: CLI → `FullGraphStrategy`; MCP → `AnalysisService::build_project_graph`. Reutilizan piezas pero no ejecutan **el mismo caso de uso** en `full`. |
+| PRF-CLI-05 (mutación con autorización separada; read-only por defecto) | NOT_RUN | No evaluado como UAT específico. |
+| PRF-CLI-06 (Unicode, espacios, cwd, permisos determinista; sin secretos por verbose) | PARTIAL | Tratadas en código (`InputValidator`), pero no UAT específica con captura de salida. |
+| PRF-CLI-07 (JSON legible por máquina, semver esquema) | NOT_RUN | No exigido retroactivamente. |
+
+## Sección D — `SPEC-DISTRIBUTION.md` (`PRF-DIST-*`)
+
+| Requisito | Disposición | Evidencia / Notas |
+|---|---|---|
+| PRF-DIST-01 (manifiesto canónico, sha256, cogh Layer 0/1 separación) | PARTIAL | Manifiesto y sha256 existen; separación de ownership no acreditada con UAT. |
+| **PRF-DIST-02** (`install → doctor → CLI → MCP → update → rollback → uninstall` con HOME limpio y personalizado, idempotente) | **PARTIAL → FAIL** | U-F6-001 cubre install+update(no-op)+uninstall. **No cubre** update A→B real (H-06) ni rollback post-update (H-06). |
+| PRF-DIST-03 (binario ausente / descarga rota / sha inválido / migración interrumpida → error + reversión, sin `\|\| true`) | NOT_RUN | U24 (`Instalación interrumpida / asset corrupto, luego rollback y reinstall`) no ejecutada. |
+| PRF-DIST-04 (archivos de usuario/IDE sobreviven uninstall/rollback) | NOT_RUN | U23 cubre uninstall con HOME personalizado pero no garantiza supervivencia de IDE previa. |
+| PRF-DIST-05 (soporte plataforma solo con build/ejecución en runner nativo) | PARTIAL | Linux x86_64 certificada; MUSL/macOS/Windows pendientes (RELEASE-CANDIDATE lo declara). |
+| PRF-DIST-06 (hashes, inventario, procedencia desde release candidata, no checkout) | PARTIAL | `release.yml` lo hace; verificación desde la release real no documentada en UAT. |
+| PRF-DIST-07 (`explorer-mcp`, `explorer-api` y clientes anteriores clasificados) | NOT_RUN | No hay UAT para explorer-mcp ni explorer-api en el cierre actual. |
+
+## Sección E — `SPEC-EXTENSIBILITY.md` (`PRF-EXT-*`)
+
+| Requisito | Disposición | Evidencia / Notas |
+|---|---|---|
+| PRF-EXT-01 (capacidad estable: id, versión, estabilidad, permiso r/w/x/net, budgets) | PARTIAL | Definido en docs; `tools/list` no lo expone explícitamente como metadato. |
+| PRF-EXT-02 (CLI y MCP usan mismo servicio de aplicación + puertos neutrales) | PARTIAL | Reclamado por PRF-C2; **H-03 del operador** muestra que no se cumple para `full`. |
+| **PRF-EXT-03** (incorporación de capacidad sintética read-only sin modificar varios lugares del dispatcher core) | **PEND (matiz C5)** | C5 reconoce: ‘ejercicio real de extensibilidad mínima (plugin) — pendiente’. |
+| PRF-EXT-04 (adapters no son fuente de verdad alternativa) | PARTIAL | Diseño hexagonal respetado en código; UAT no ejercida. |
+| PRF-EXT-05 (nuevo puerto requiere test de acoplamiento/duplicidad y mejora medible) | NOT_RUN | No exigido retroactivamente. |
+| PRF-EXT-06 (compatibilidad old-client / new-binary + contract tests) | PARTIAL | `release.yml` mantiene compat; UAT-U10 específica no ejecutada. |
+
+## Sección F — `SPEC-MCP.md` (`PRF-MCP-*`)
+
+| Requisito | Disposición | Evidencia / Notas |
+|---|---|---|
+| PRF-MCP-01 (initialize, tools/list, tools/call, errores, terminación con cliente externo real) | NOT_RUN | No hay UAT con cliente externo real. |
+| PRF-MCP-02 (stdout JSON-RPC exclusivo; logs a stderr; sin huérfanos) | PARTIAL | Diseñado; no UAT con captura exhaustiva. |
+| PRF-MCP-03 (core read-only sin red/OTLP/Explorer/backend/Podman) | PARTIAL | Operativo; UAT específica con apagado total de red no ejecutada. |
+| PRF-MCP-04 (herramientas con esquema, permisos, versiones, límites; error tipado) | PARTIAL | Schmemas existen; permisos/budgets no uniformes. |
+| PRF-MCP-05 (herramienta que escribe/ejecuta/red requiere autoridad diferenciada; prompts ≠ autoridad) | NOT_RUN | No UAT con prompt malicioso. |
+| **PRF-MCP-06** (cancelación/desconexión libera recursos según contrato) | **PARTIAL** | H-05 del operador: cancelación no acredita **operación costosa en ejecución**; solo ‘cancelación llega después’. |
+| PRF-MCP-07 (cambio a herramienta existente → prueba con cliente anterior vs servidor nuevo o deprecación) | NOT_RUN | No hay UAT formal de regresión de cliente. |
+
+## Sección G — `SPEC-SECURITY.md` (`PRF-SEC-*`)
+
+| Requisito | Disposición | Evidencia / Notas |
+|---|---|---|
+| PRF-SEC-01 (raíz + cada ruta canónica y autorizada; rechazo `..`, absolutos, symlinks, TOCTOU; una validación en un handler no basta) | PARTIAL | `InputValidator` rechaza los vectores básicos; no UAT exhaustiva con symlinks externos y TOCTOU. |
+| PRF-SEC-02 (R/W/E/Net diferenciados; read-only default; prompts ≠ autoridad) | PARTIAL | Diseño respeta; **U19 completa con todas las vectores** no ejecutada. |
+| PRF-SEC-03 (logs sin tokens/credenciales/contenido sensible salvo autorización) | NOT_RUN | UAT no ejecutada con verbose alta. |
+| **PRF-SEC-04** (presupuestos CPU/mem/tiempo/fanout/profundidad/tamaños/procesos) | **PARTIAL** | Timeouts por categoría existen; presupuesto cuantitativo por perfil no publicado. |
+| PRF-SEC-05 (cancelación/shutdown libera recursos; fallos no corrompen) | PARTIAL | Ver §PRF-MCP-06. |
+| PRF-SEC-06 (CRITICAL/HIGH conocidas antes de release) | NOT_RUN | Sin gate de advisories sobre el candidato congelado. |
+| **PRF-SEC-07** (adversariales: repo malicioso, symlinks/traversal, parser fallido, secreto señuelo, mutante no autorizado, cliente desconectado, datos corruptos) | **PEND (matiz C5)** | Reconocido por F5/C5 como pendiente. |
+
+## Sección H — `SPEC-STATE.md` (`PRF-STATE-*`)
+
+| Requisito | Disposición | Evidencia / Notas |
+|---|---|---|
+| PRF-STATE-01 (catalogar canónico / derivado / transitorio; ownership/ubicación/ciclo) | PARTIAL | Diseñado en README; ‘CallGraph histórico vs FactStore canónico’ no ejercitado como UAT. |
+| PRF-STATE-02 (namespace por canonical_root+config_digest; workspaces homónimos no contaminan) | PARTIAL | C4 (U18) demuestra aislamiento a nivel de grafos; no UAT de snapshot durable con workspaces homónimos reiniciando. |
+| **PRF-STATE-03** (dos procesos, mismo HOME, dos proyectos, no contaminan; locking; stale identificado) | **PARTIAL → PEND** | H-04 del operador: persistencia material no observada en evidencia; lo declarado como ‘PASS’ es reconstrucción determinista, no persistencia. |
+| **PRF-STATE-04** (interrupción durante análisis/store/migración no produce evidencia parcial como válida; recovery automático o error+rollback) | **PEND** | U21 (`Cortar proceso durante escritura/migración; reiniciar.`) no ejecutada. |
+| PRF-STATE-05 (versión esquema; update conserva datos; rollback/downgrade verificado o rechazo) | PEND | U22 no ejecutada en binario real. |
+| PRF-STATE-06 (cogh uninstall no elimina datos usuario; ownership + HOME limpio + HOME existente) | PARTIAL | UAT-F6-001 cubre HOME limpio; HOME existente y config IDE no cert. |
+| PRF-STATE-07 (datos derivados se reconstruyen; reconstrucción avisada) | NOT_RUN | No hay UAT que evalúe aviso de reconstrucción. |
+
+---
+
+## Sección I — Las 27 UAT originales (catalogo en `731f54e5:docs/prf/UAT.md`)
+
+> Mapeo 1:1 con las UAT-Fx-001 ejecutadas + las que faltan. ‘Pass’ significa ‘disposición concreta demostrada’; ‘Pendiente’ significa ‘no ejecutada como UAT específica, aunque pueda tener cobertura parcial indirecta’.
+
+| UAT | Spec | Cubre | Disposición | Evidencia |
+|---|---|---|---|---|
+| U01 | DIST,CI | Instalación con digest/provenance; HOME limpio | PASS parcial | U-F6-001 (instalación) |
+| U02 | CLI,MCP | `cognicode --help`, `cogh doctor`, MCP `tools/list` vs matriz | PARTIAL | `cogh doctor` y `tools/list` no auditados como UAT |
+| U03 | CI,ANA | Baseline/goldens 2 veces; cobertura, tiempos, RSS | NOT_RUN | No ejecutado sobre `178f8a5b` |
+| U04 | CLI,MCP,SEC | Apagar red y OTLP; CLI y MCP arrancan; stdout solo JSON-RPC | PARTIAL | Operativo; UAT específica no |
+| U05 | MCP | Cliente MCP externo: initialize/tools/call/error/shutdown | NOT_RUN | Sin cliente externo capturando |
+| U06 | CLI,SEC,ANA | Workspace inexistente / sin permisos / vacío / lenguaje no soportado | PARTIAL | Cobertura parcial en código; UAT formal con corpus adversariales no |
+| U07 | CLI,ANA | Unicode, espacios, cwd, config inválida | PARTIAL | Idem |
+| U08 | CLI,MCP,ANA | Misma consulta CLI/MCP sobre snapshot fijo → misma semántica | PARTIAL | U-F3-001 equivalente a U08 con corpus pequeño |
+| U09 | ANA,STATE | Frío/caliente y editar un fichero → delta coherente | PARTIAL | U-F2-W9-001 (proceso nuevo) |
+| **U10** | CLI,MCP,EXT | Cliente anterior soportado contra candidato | **FAIL (no UAT)** | H-07 + matriz muestran que este gate no existe |
+| U11 | ANA,MCP | Fallo parser/provider en CLI y MCP → mismo estado + error tipado | PARTIAL | U-F2-W8-001 (MCP); CLI equivalente parcial |
+| U12 | CI,ANA | Proyecto anidado, full/per_file; cobertura y equivalencia | PARTIAL | W3 caracterización; UAT específica de anidado no |
+| **U13** | ANA | Cambiar bytes preservando tamaño+mtime; reescanear | **FAIL (no UAT)** | H-01 explícito |
+| U14 | SEC,ANA | Denegar lectura, eliminar archivo, superar presupuesto → Partial/Unknown/Failed | PARTIAL | U-F2-W8-001 cubre lectura; presupuesto específico no |
+| U15 | ANA | Corpus mixto, LSP ausente, lenguaje no soportado → fallback explícito | NOT_RUN | No ejecutado con corpus mixto adverso |
+| U16 | ANA | Rename/move/colisiones/homónimos → identidad estable o ambigüedad visible | PARTIAL | H-R4-2 cerrado; UAT específica adversa no |
+| **U17** | STATE | Indexar, reiniciar, consultar historia y revisión actual | **PARTIAL (no persistencia material)** | H-04 explícito |
+| U18 | SEC,STATE | Dos proyectos, dos procesos, HOME común, cambios aislados | PASS | U-F4-001 |
+| U19 | CLI,SEC,ANA | `../`, absoluto, symlink externo, write/exec sin permiso, secreto señuelo | PARTIAL | U-F5-001 cubre algunos vectores; falta adversariales amplios |
+| **U20** | DIST,STATE | Install, doctor, CLI, MCP, update idempotente | **PARTIAL → FAIL** | H-06: ciclo A→B real no hecho |
+| U21 | STATE,SEC | Cortar proceso durante escritura/migración; reiniciar | NOT_RUN | U-F4-001 reinicio pero no corte durante escritura |
+| U22 | STATE | Versión antigua crea datos; upgrade y downgrade | NOT_RUN | H-06 relacionado |
+| U23 | DIST,STATE | Uninstall con HOME/XDG personalizado e IDE de prueba | PARTIAL | U-F6-001 cubre HOME limpio; HOME existente no |
+| U24 | DIST,SEC | Instalación interrumpida/asset corrupto → rollback + reinstall | NOT_RUN | U-F6-001 cubre happy path |
+| **U25** | MCP,SEC | Tool costosa cancelada, desconexión cliente, sin OTLP | **PARTIAL** | H-05: cancelación no acredita operación en curso |
+| U26 | MCP,EXT | Capacidad sintética read-only + cliente previo | PEND | Matiz C5 reconocido |
+| **U27** | CI,DIST | Inyectar fallo crítico; cada uno bloquea CI/release | **FAIL** | H-07 explícito |
+
+---
+
+## Resumen ejecutivo
+
+| Categoría | PASS | PARTIAL | FAIL | NOT_RUN | PEND | EXCL |
+|---|---|---|---|---|---|---|
+| SPEC-ANALYSIS (9) | 0 | 3 | 2 | 2 | 2 | 0 |
+| SPEC-CI (7) | 0 | 2 | 3 | 2 | 0 | 0 |
+| SPEC-CLI (7) | 0 | 3 | 1 | 3 | 0 | 0 |
+| SPEC-DISTRIBUTION (7) | 0 | 3 | 1 | 3 | 0 | 0 |
+| SPEC-EXTENSIBILITY (6) | 0 | 2 | 0 | 2 | 2 | 0 |
+| SPEC-MCP (7) | 0 | 3 | 0 | 3 | 1 | 0 |
+| SPEC-SECURITY (7) | 0 | 3 | 0 | 2 | 2 | 0 |
+| SPEC-STATE (7) | 0 | 4 | 0 | 1 | 2 | 0 |
+| **UAT originales (27)** | 1 | 14 | 4 | 6 | 2 | 0 |
+| **TOTAL** | **1** | **35** | **11** | **24** | **9** | **0** |
+
+**Conclusión:** **0 ítems en PASS contractual pleno**; **1 PASS** (U-F4-001); 35 PARTIAL; 11 FAIL; 24 NOT_RUN; 9 PEND; 0 EXCL. **No es posible firmar C7** mientras esta matriz muestre esta distribución. Las acciones 3 y 4 del cierre PRF deben convertir los FAIL y PEND en PASS, documentar las EXCL y dejar los NOT_RUN solo si son genuinamente ‘fuera de alcance’ (lo que requiere EXCL aprobada por el operador).
+
+> **Nota de honestidad:** este documento es la base sin la cual C7 no puede firmarse. Generarlo es un acto de reparación documental, no de cierre. Las acciones 3 y 4 (código + UAT) son trabajo de varias sesiones y deben coordinarse con el operador.

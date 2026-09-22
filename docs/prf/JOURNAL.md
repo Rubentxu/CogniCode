@@ -1934,3 +1934,29 @@ del programa PRF activo).
 - Acción complementaria: `CURRENT.md` corregido (SHA `f0e25652` y
   mención de C2 firmada); STATE.md header row ya estaba correcto.
 - Working tree: cambios staged, listos para commit.
+
+## 2026-09-22 — Auditoría operador: SHA congelado + matriz de reconciliación (entrada 29)
+
+- **Origen:** auditoría del operador publicada en este mismo turno, sección
+  'Auditoría del roadmap PRF de CogniCode' con 7 hallazgos ALTA + 1 transversal.
+- **Decisión:** el operador REVOCÓ la equivalencia `READY FOR RELEASE` ≡ `C7 PASS`
+  y BLOQUEÓ la publicación. La afirmación anterior era insuficiente porque los
+  certificados C0–C6 son **declarativos respecto a los criterios del programa PRF
+  original, pero no contractualmente equivalentes** a sus requisitos.
+- **Acción ejecutada:**
+  1. **SHA candidato CONGELADO** en `RELEASE-CANDIDATE.md`: full SHA
+     `178f8a5bf83b52433c46887456823c606ac786b7`. Identidad fija para acciones
+     2-5; no se firma C7 sobre 'HEAD al firmar'.
+  2. **Matriz de reconciliación** `docs/prf/specs/RECONCILIATION-MATRIX.md`
+     (8 SPEC-* × criterios MUST + 27 UAT originales contrastadas con
+     `evidence/CERTIFICATES.md` y `UAT.md`). Resultado:
+     - 1 PASS pleno (U-F4-001)
+     - 35 PARTIAL
+     - 11 FAIL (incluye H-01, H-07, U13, U17, U27)
+     - 24 NOT_RUN
+     - 9 PEND (incluye H-03, H-05, U26)
+     - 0 EXCL
+  3. **Plan del operador (sección 5)** registrado en RELEASE-CANDIDATE
+     'Cierre de PRF': 5 acciones en orden estricto contra el SHA congelado.
+- **Acción NO ejecutada en esta sesión:** firmas de C7, push, tag, código de H-01/H-02/H-03/etc. Estas acciones 3-4-5 son trabajo de **varias sesiones** y deben coordinarse con el operador.
+- **Working tree:** cambios staged para commit.
