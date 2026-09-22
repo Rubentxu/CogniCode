@@ -2680,3 +2680,16 @@ mcp e2e 5/5; clippy workspace 0. Evidencia: `evidence/u55-ci05-advisories-sbom/`
 
 **Matriz**: PRF-CI-05 → PARTIAL (mejorado). Deuda: scan de licencias como gate
 (política pendiente), OTel 0.28. Siguiente: PRF-CI-02 (matriz nightly).
+
+## §56 — PRF-CI-02 (parte 1): matriz de features — PASS parcial (2026-09-22)
+
+**Hallazgo**: las combinaciones no-default/all-features de 3 crates NO
+compilaban (gates ausentes, wildcards que descartaban ids usados, imports
+faltantes). La "matriz de features" del requisito era inverificable de hecho.
+**Correcciones**: gates persistence/program-analysis-server en core,
+bootstrap_ladybug en runtime, patrones e imports en explorer.
+**Verificación**: 10 combos verificados localmente, todos GREEN (tabla en
+`evidence/u56-ci02-feature-matrix/`); job `feature-matrix` (8 combos) en ci.yml;
+fmt y clippy limpios.
+**Matriz**: PRF-CI-02 → PARTIAL (matriz DONE; quedan adversariales + benchmarks
+nightly). Siguiente: benchmarks de campaña o UAT binario real pendientes.
