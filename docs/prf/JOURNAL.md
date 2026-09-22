@@ -2859,3 +2859,35 @@ UAT `prf_ext_02_partial_uat.rs` (binario real, corpus con fichero
 chmod-000): los 7 subcomandos avisan PARTIAL nombrando el fichero.
 cli unit 17/17, prf_cli_03 3/3, clippy lib limpio. Commit `1245b225`.
 **Matriz**: PRF-EXT-02 → PASS.
+
+## §72 — PRF-STATE-03/04: snapshot durable + causa raíz ANA-05 (2026-09-22)
+
+Implementada persistencia real (H-04, aprobado por operador):
+`.cognicode/graph.cache` se escribe atómicamente (temp+rename) solo
+tras builds Complete; se recupera en sesiones frescas tras validar
+staleness contenido-a-contenido (incluye ficheros ilegibles); snapshots
+corruptos/obsoletos se reconstruyen; builds parciales nunca persisten.
+
+**Investigación dirigida (protocolo del operador)**: reprodución mínima
+de dos procesos aislada (`prf_state_04_isolation_uat.rs`) demostró la
+causa raíz del fallo de ANA-05: el grafo recuperado del snapshot (con
+contenido IDÉNTICO al construido: mismos símbolos, edges y digest)
+informaba status=unknown/skipped=null, herencia del veredicto
+pre-persistencia cuando no había validación. Corregido: snapshot
+validado → complete con lista de omisiones vacía, igual que un walk
+completo. Contrato: memoria válida→reusar; vacía+snapshot
+válido→recuperar; ausente/corrupto/obsoleto→reconstruir; parcial→no
+persistir. Traza de decisiones verificada con instrumentación temporal
+(eliminada tras capturar evidencia, copia en scratch).
+
+Legacy test `rebuilds_on_second_call_different_context` actualizado con
+justificación: conservaba la garantía de conteo idéntico tras reinicio;
+cambia la fuente comunicada (persistencia real vs reconstrucción).
+
+Evidencia: UAT aislada verde (2 procesos reales, identidad+contenido,
+invalidación por edición); ana02/ana05/state02/state03_04 verdes; core
+lib 2145/0; suite MCP completa verde ×2 (independiente de orden); fixtures
+limpiados (los snapshots compartidos entre tests eran fuente de
+contaminación, ahora las fixtures no dejan estado entre ejecuciones).
+Commits `67c62d2b`.
+**Matriz**: PRF-STATE-03 (parcial, HOME compartido pendiente) / PRF-STATE-04 → PASS (interrupción: escritura atómica + corrupto→reconstruir; recovery verificado).
