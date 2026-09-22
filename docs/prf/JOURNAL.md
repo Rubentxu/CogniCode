@@ -2636,3 +2636,16 @@ el componente local de flakiness para la comparación perf automática (PRF-CI-0
 
 **Matriz**: U03/G6 → resuelto. Siguientes: PRF-CI-02 (matriz nightly),
 PRF-CI-03 (coverage), PRF-CI-05 (SBOM), PRF-ANA-09 (LSI, candidato EXCL).
+
+## §53 — PRF-ANA-09: EXCL documentada (2026-09-22)
+
+La capacidad LSI de ANA-09 ("al integrar LSI se compara el camino nuevo con el
+histórico mediante golden corpus...") es condicional: no existe integración LSI en
+el codebase (verificado por búsqueda; las refs "lsi" en graph-algos/explorer/wasm
+pertenecen al change archivado `e60-lsi-dataflow-backend`, un dominio distinto).
+La obligación se activará si/when la integración LSI se construya. Disposición:
+EXCL registrada en la matriz con esta justificación. No es un trabajo pendiente
+del roadmap actual: construir LSI sería un nuevo dominio que exige decisión
+arquitectónica propia, no un cierre de PRF.
+
+NO ejecuta: push, tag, C7 firma. Operator-gated.
