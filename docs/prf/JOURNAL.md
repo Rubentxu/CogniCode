@@ -2542,3 +2542,15 @@ del programa PRF activo).
   mirror, confirmado por logs del servidor local). Registrado como deuda
   menor de diagnóstico.
 - **NO ejecuta:** push, tag, C7 firma. Operator-gated.
+
+## 2026-09-22 — PRF-CI-04: baseline de rendimiento publicado (entrada 47)
+
+- Baseline y presupuesto de regresión congelados en
+  `evidence/perf-baseline/BASELINE.md`: build_graph full 53066 símbolos
+  ≈ 10 s; RSS ~654 MB; startup MCP ~10 s. Presupuestos: ≤15 s / ≤1 GB /
+  ≤15 s / ≤2 s.
+- **Honestidad:** una corrida por métrica, sin réplicas; se marcará para
+  re-medición cuando exista runner estable (U03/G6). Estado PRF-CI-04:
+  NOT_RUN → PARTIAL (baseline publicado; falta la comparación automática
+  en CI, que depende del runner y del gate de red).
+- **NO ejecuta:** push, tag, C7 firma. Operator-gated.
