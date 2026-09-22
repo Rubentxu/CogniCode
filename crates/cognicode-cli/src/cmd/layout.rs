@@ -263,16 +263,22 @@ pub fn cmd_uninstall(
             home.root.display()
         ));
     }
-    if ides.is_empty() {
-        return Err(anyhow!(
-            "uninstall requires at least one --ide flag (e.g. --ide opencode); \
-             supported: opencode, zcode, claude, codex"
-        ));
-    }
     println!(
         "uninstall: plugin={} version={} ides={:?}",
         plugin, version, ides
     );
+    // Missing versions have no owned IDE integration to remove. Treat an
+    // uninstall request for an absent version as a genuine idempotent no-op.
+    if !home.version_root(version).exists() {
+        println!("uninstall: version {version} is not installed; nothing to do");
+        return Ok(());
+    }
+    if ides.is_empty() {
+        return Err(anyhow!(
+            "uninstall of an installed version requires --ide (e.g. --ide opencode); \
+             supported: opencode, zcode, claude, codex"
+        ));
+    }
     // DEBT-4 WU3 idempotence: if the version tree is already gone, the
     // installation does not exist — report honestly and stop. Requiring
     // the manifest (via cmd_ide_uninstall) to decide IDE post-state would
@@ -2197,6 +2203,44 @@ components:
             .any(|c| c.kind == crate::release_contract::ArtifactKind::DaemonCli));
         assert!(home.shim_path("cognicode-mcp").is_file());
         assert_eq!(active_install_profile(&home), "reviewer");
+    }
+
+    #[test]
+    #[serial]
+    fn dist_reshim_repairs_dangling_mcp_link_without_temp_home_contamination() {
+        use crate::release_test_support::ResolverFixture;
+        let temp = test_support::TempCognicodeHome::new();
+        let fx = ResolverFixture::build("0.95.0").expect("fixture");
+        let _base = test_support::TempBaseUrl::set(&fx.release.base_url);
+        let _opencode = test_support::TempOpenCodeConfig::disable();
+        let home = CognicodeHome::resolve(Some(temp.path())).expect("home");
+        home.init().expect("init");
+        cmd_install(
+            &home,
+            "0.95.0",
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "reviewer",
+        )
+        .expect("install reviewer");
+        let shim = home.shim_path("cognicode-mcp");
+        std::fs::remove_file(&shim).expect("remove installed shim");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/tmp/prf-removed-runtime/cognicode-mcp", &shim)
+            .expect("plant dangling shim");
+
+        cmd_reshim(&home).expect("repair active version shims");
+        assert!(shim.is_file());
+        #[cfg(unix)]
+        assert_eq!(
+            std::fs::canonicalize(&shim).unwrap(),
+            std::fs::canonicalize(
+                home.component_root("0.95.0", "cognicode-mcp")
+                    .join("bin/cognicode-mcp")
+            )
+            .unwrap()
+        );
     }
 
     /// T1 (lifecycle-F3 WU0/WU2): install A, then a same-version update
