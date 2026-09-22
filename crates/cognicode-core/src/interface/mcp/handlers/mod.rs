@@ -4018,6 +4018,41 @@ pub mod program_analysis_handlers;
 mod tests {
     use super::*;
 
+    /// PRF-STATE-05: un snapshot con versión de esquema desconocida
+    /// (escrito por una versión futura) se trata como ausente — nunca
+    /// se carga como evidencia válida; el build reconstruye.
+    #[test]
+    fn state05_unknown_schema_version_is_rejected() {
+        use bincode::config::standard;
+        use bincode::serde::encode_to_vec;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.cache");
+
+        // Snapshot "futuro": tag v999.
+        let future: (String, u8) = ("cognicode.graph.cache/v999".into(), 7);
+        let bytes = encode_to_vec(&future, standard()).unwrap();
+        std::fs::write(&db, &bytes).unwrap();
+
+        assert!(
+            load_durable_snapshot(&db).is_none(),
+            "un snapshot v999 (downgrade/upgrade desconocido) no debe cargarse"
+        );
+
+        // Basura pura (sin tag bincode válido) → también rechazada.
+        std::fs::write(&db, b"not-a-snapshot-at-all").unwrap();
+        assert!(load_durable_snapshot(&db).is_none());
+
+        // Y un snapshot v1 legítimo sí se carga.
+        let graph = crate::domain::aggregates::call_graph::CallGraph::new();
+        let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
+            dir.path().to_path_buf(),
+        );
+        save_durable_snapshot(&db, &graph, &manifest).unwrap();
+        let loaded = load_durable_snapshot(&db);
+        assert!(loaded.is_some(), "snapshot v1 legítimo debe cargarse");
+    }
+
     #[tokio::test]
     async fn test_handle_build_lightweight_index_invalid_directory() {
         let ctx = HandlerContext::builder()
