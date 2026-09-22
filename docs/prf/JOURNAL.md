@@ -2724,3 +2724,13 @@ relationships publicados, confidence 1.0. GREEN sin fix (el
 comportamiento ya era correcto tras F2.W5/§35). Evidencia:
 `evidence/u59-ana07-uat-binary/`.
 **Matriz**: PRF-ANA-07 → PASS.
+
+## §60 — PRF-CLI-01: barrido exhaustivo de comandos stable — PASS (2026-09-22)
+
+`prf_cli_01_exhaustive_uat` (7/7 sobre binario real): help por
+subcomando, analyze/index build en dir válido (exit 0), graph con path
+inexistente honesto (exit != 0), navigate sin crash, doctor 0/1 como
+informe honesto, comando desconocido rechazado. Sin defectos de
+producto; 3 hallazgos de contrato documentados en evidencia.
+Evidencia: `evidence/u60-cli01-exhaustive/`.
+**Matriz**: PRF-CLI-01 → PASS (escenario crítico §38 + barrido completo).
