@@ -5052,5 +5052,75 @@ mod tests {
                 out2.status
             );
         }
+
+        // PRF-ANA-05 (RED→GREEN): two consecutive `build_graph`
+        // calls on the SAME working directory must produce the same
+        // `symbols_found`, `relationships_found`, and the same
+        // `edges` (as a set). Mirrors the F2.W10 library-level
+        // assertion (`w10_repeated_builds_are_reproducible`) but at
+        // the MCP handler boundary — covers the contract that a UAT
+        // caller would observe. Order of edges may differ between
+        // runs (we hash); the set must match.
+        #[tokio::test]
+        async fn repeated_build_graph_calls_are_reproducible_at_handler() {
+            let tempdir = tempfile::tempdir().unwrap();
+            std::fs::write(
+                tempdir.path().join("a.rs"),
+                "fn a() { b(); }\nfn b() {}\n",
+            )
+            .unwrap();
+            std::fs::write(
+                tempdir.path().join("caller.rs"),
+                "fn caller() { a(); }\n",
+            )
+            .unwrap();
+
+            let ctx = HandlerContext::builder()
+                .with_working_dir(tempdir.path())
+                .build();
+            let out1 = handle_build_graph(
+                &ctx,
+                BuildGraphInput { directory: None },
+            )
+            .await
+            .unwrap();
+            let out2 = handle_build_graph(
+                &ctx,
+                BuildGraphInput { directory: None },
+            )
+            .await
+            .unwrap();
+
+            // Counts must match.
+            assert_eq!(
+                out1.symbols_found, out2.symbols_found,
+                "symbols_found differs across runs: {} vs {}",
+                out1.symbols_found, out2.symbols_found
+            );
+            assert_eq!(
+                out1.relationships_found, out2.relationships_found,
+                "relationships_found differs across runs: {} vs {}",
+                out1.relationships_found, out2.relationships_found
+            );
+
+            // Edge sets must match (as sorted multisets).
+            let mut e1: Vec<_> = out1
+                .edges
+                .iter()
+                .map(|e| (e.from.clone(), e.to.clone()))
+                .collect();
+            let mut e2: Vec<_> = out2
+                .edges
+                .iter()
+                .map(|e| (e.from.clone(), e.to.clone()))
+                .collect();
+            e1.sort();
+            e2.sort();
+            assert_eq!(
+                e1, e2,
+                "edge set differs across runs\nrun1: {:?}\nrun2: {:?}",
+                e1, e2
+            );
+        }
     }
 }
