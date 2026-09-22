@@ -31,6 +31,38 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  feature-matrix:
+    # PRF-CI-02: nightly full campaign — feature matrix. Verifies the
+    # workspace builds and tests under each declared feature combination,
+    # not just the default set (ghost tools, gated arms, drift).
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: core-no-default
+            args: -p cognicode-core --no-default-features --lib
+          - name: core-default
+            args: -p cognicode-core --lib
+          - name: core-all-features
+            args: -p cognicode-core --all-features --lib
+          - name: runtime-no-default
+            args: -p cognicode-runtime --no-default-features --lib
+          - name: runtime-all-features
+            args: -p cognicode-runtime --all-features --lib
+          - name: mcp-all-features
+            args: -p cognicode-mcp --all-features --lib
+          - name: explorer-all-features
+            args: -p cognicode-explorer --all-features --lib
+          - name: graph-algos-no-default
+            args: -p cognicode-graph-algos --no-default-features
+    name: matrix-${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Feature-matrix tests (${{ matrix.name }})
+        run: cargo test ${{ matrix.args }}
+
   coverage-report:
     # PRF-CI-03: line/branch coverage measurement. Report-only for now:
     # the baseline (cognicode-core lib 74.15% lines / 70.35% regions,

@@ -1061,6 +1061,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                         }).as_object().cloned().unwrap()),
                     )
                     .with_meta(cognicode_meta("stable", "graph", true, false, 300)),
+                    #[cfg(feature = "persistence")]
                     Tool::new(
                         "reparse_on_edit",
                         "Incrementally reindex changed files without rebuilding the full graph. Much faster than full rebuild for small edits. Requires persistence feature.",
@@ -2015,6 +2016,7 @@ async fn call_tool_handler(
                 Ok(serde_json::to_string_pretty(&output)?)
             }
             // Incremental reindex after edits (requires persistence feature)
+            #[cfg(feature = "persistence")]
             "reparse_on_edit" => {
                 let input: crate::interface::mcp::schemas::ReparseOnEditInput =
                     serde_json::from_value(arguments.into())?;
@@ -2023,6 +2025,13 @@ async fn call_tool_handler(
                 )
                 .await?;
                 Ok(serde_json::to_string_pretty(&output)?)
+            }
+            #[cfg(not(feature = "persistence"))]
+            "reparse_on_edit" => {
+                let _ = ctx;
+                Err(InterfaceError::Internal(
+                    "reparse_on_edit requires the `persistence` feature".to_string(),
+                ))
             }
             // Sprint 5.3: graph_diff and graph_timeline tools
             // ViewSpec tools (ADR-008)

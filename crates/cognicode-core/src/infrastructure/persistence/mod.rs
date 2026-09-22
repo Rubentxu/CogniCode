@@ -3,16 +3,12 @@
 //! This module provides concrete implementations of the GraphStore trait
 //! for different storage backends.
 
-#[cfg(feature = "persistence")]
 pub mod memory_graph_store;
 
-#[cfg(feature = "persistence")]
 pub mod cached_graph_store;
 
-#[cfg(feature = "persistence")]
 pub use memory_graph_store::InMemoryGraphStore;
 
-#[cfg(feature = "persistence")]
 pub use cached_graph_store::CachedGraphStore;
 
 #[cfg(test)]

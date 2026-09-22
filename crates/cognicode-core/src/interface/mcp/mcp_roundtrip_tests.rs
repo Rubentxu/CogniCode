@@ -872,6 +872,7 @@ fn simple_function() {
                 "cfg_per_function",
                 "check_architecture",
                 "codebase_map",
+                #[cfg(feature = "persistence")]
                 "detect_drift",
                 "detect_god_functions",
                 "detect_long_parameter_lists",
@@ -929,7 +930,10 @@ fn simple_function() {
                 "query_symbol_index",
                 "read_file",
                 "read_view_spec",
+                #[cfg(feature = "persistence")]
                 "reparse_on_edit",
+                #[cfg(feature = "persistence")]
+                "detect_drift",
                 "retrieve_and_verify",
                 "review_pr",
                 "safe_refactor",

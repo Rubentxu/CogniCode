@@ -260,6 +260,7 @@ pub async fn bootstrap(cwd: std::path::PathBuf) -> Result<Runtime, anyhow::Error
 /// Calls `LadybugStore::open(db_path)`, extracts all 10 ports as
 /// `Arc<dyn Trait>`, builds a full `RuntimePorts`, and delegates to
 /// `bootstrap_with_backend`.
+#[cfg(feature = "ladybug")]
 pub fn bootstrap_ladybug(
     cwd: std::path::PathBuf,
     db_path: std::path::PathBuf,
@@ -328,6 +329,7 @@ pub fn bootstrap_ladybug(
 ///
 /// ## T-004
 /// Convenience wrapper around `bootstrap_ladybug` that uses the default db path.
+#[cfg(feature = "ladybug")]
 pub fn bootstrap_ladybug_default(cwd: std::path::PathBuf) -> Result<Runtime, anyhow::Error> {
     let db_path = cwd.join("cognicode.lbug");
     bootstrap_ladybug(cwd, db_path)
@@ -488,7 +490,9 @@ impl Runtime {
 mod tests {
     use std::sync::Arc;
 
-    use super::{RuntimePorts, bootstrap_ladybug, bootstrap_with_backend};
+    #[cfg(feature = "ladybug")]
+    use super::bootstrap_ladybug;
+    use super::{RuntimePorts, bootstrap_with_backend};
     use cognicode_core::domain::aggregates::CallGraph;
     use cognicode_core::domain::ports::{CallGraphStore, QualityStore, ViewSpecStore};
     use cognicode_core::domain::value_objects::{RevisionId, WorkspaceId};
@@ -768,6 +772,7 @@ mod tests {
 
     /// T-008: Integration test verifying all 10 ports are `Some` after
     /// `bootstrap_ladybug()`.
+    #[cfg(feature = "ladybug")]
     #[tokio::test]
     async fn bootstrap_ladybug_wires_all_ten_ports() {
         use std::fs;
@@ -822,6 +827,7 @@ mod tests {
     }
 
     /// T-008: Verify all 11 ports are present (same LadybugStore allocation).
+    #[cfg(feature = "ladybug")]
     #[tokio::test]
     async fn bootstrap_ladybug_uses_same_store_for_all_ports() {
         use std::fs;

@@ -4500,7 +4500,7 @@ impl ViewDescriptor for DecisionGraphExecutor {
 impl ViewExecutor for DecisionGraphExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Decision { id: _ } => {
+            InspectionTarget::Decision { id } => {
                 #[cfg(feature = "multimodal")]
                 {
                     use crate::domain::decision_graph_topology::DecisionGraphTopology;
@@ -4831,7 +4831,7 @@ impl ViewDescriptor for DecisionTraceExecutor {
 impl ViewExecutor for DecisionTraceExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Decision { id: _ } => {
+            InspectionTarget::Decision { id } => {
                 #[cfg(feature = "multimodal")]
                 {
                     use cognicode_core::domain::aggregates::generic_graph::NodeId;
@@ -5009,7 +5009,7 @@ impl ViewDescriptor for DecisionSupportPackExecutor {
 impl ViewExecutor for DecisionSupportPackExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Decision { id: _ } => {
+            InspectionTarget::Decision { id } => {
                 #[cfg(feature = "multimodal")]
                 {
                     use crate::domain::decision_support_pack::{
@@ -5162,6 +5162,8 @@ mod tests {
         CalleeWithMetadata, CallerWithMetadata, GraphQueryPort, RelationTargetWithMetadata,
     };
     use cognicode_core::domain::value_objects::SymbolKind;
+    use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
+    use cognicode_core::domain::value_objects::node_kind::NodeKind;
     use std::collections::HashMap;
 
     #[test]

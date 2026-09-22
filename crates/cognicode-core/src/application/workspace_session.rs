@@ -2941,6 +2941,7 @@ pub struct PublicStruct {}
 
     #[cfg(feature = "persistence")]
     #[tokio::test(flavor = "current_thread")]
+    #[cfg(feature = "persistence")]
     async fn test_load_from_store_with_valid_data_returns_true() {
         use crate::infrastructure::persistence::InMemoryGraphStore;
         use std::sync::Arc;
@@ -2971,6 +2972,7 @@ pub struct PublicStruct {}
 
     #[cfg(feature = "persistence")]
     #[tokio::test(flavor = "current_thread")]
+    #[cfg(feature = "persistence")]
     async fn test_load_from_empty_store_returns_false() {
         use crate::infrastructure::persistence::InMemoryGraphStore;
         use std::sync::Arc;
@@ -3270,6 +3272,7 @@ pub struct PublicStruct {}
 
     #[cfg(feature = "persistence")]
     #[tokio::test(flavor = "current_thread")]
+    #[cfg(feature = "persistence")]
     async fn test_incremental_reindex_no_changes_skips_all_files() {
         use crate::infrastructure::persistence::InMemoryGraphStore;
         use std::sync::Arc;
@@ -3303,6 +3306,7 @@ pub struct PublicStruct {}
 
     #[cfg(feature = "persistence")]
     #[tokio::test(flavor = "current_thread")]
+    #[cfg(feature = "persistence")]
     async fn test_incremental_reindex_new_file_parses_only_new() {
         use crate::infrastructure::persistence::InMemoryGraphStore;
         use std::sync::Arc;
@@ -3339,6 +3343,7 @@ pub struct PublicStruct {}
 
     #[cfg(feature = "persistence")]
     #[tokio::test(flavor = "current_thread")]
+    #[cfg(feature = "persistence")]
     async fn test_incremental_reindex_deleted_file_removes_symbols() {
         use crate::infrastructure::persistence::InMemoryGraphStore;
         use std::sync::Arc;
@@ -3374,6 +3379,7 @@ pub struct PublicStruct {}
 
     #[cfg(feature = "persistence")]
     #[tokio::test(flavor = "current_thread")]
+    #[cfg(feature = "persistence")]
     async fn test_incremental_reindex_modified_file_re_parses() {
         use crate::infrastructure::persistence::InMemoryGraphStore;
         use std::sync::Arc;
@@ -3598,6 +3604,7 @@ pub const MY_CONST: i32 = 42;
     // =========================================================================
 
     #[tokio::test(flavor = "current_thread")]
+    #[cfg(feature = "persistence")]
     async fn test_incremental_reindex_graph_updates_when_file_modified() {
         use crate::infrastructure::persistence::InMemoryGraphStore;
         use std::sync::Arc;
@@ -3661,6 +3668,7 @@ pub const MY_CONST: i32 = 42;
     }
 
     #[tokio::test(flavor = "current_thread")]
+    #[cfg(feature = "persistence")]
     async fn test_incremental_reindex_no_changes_does_not_rebuild_graph() {
         use crate::infrastructure::persistence::InMemoryGraphStore;
         use std::sync::Arc;
@@ -3699,6 +3707,7 @@ pub const MY_CONST: i32 = 42;
     }
 
     #[tokio::test(flavor = "current_thread")]
+    #[cfg(feature = "persistence")]
     async fn test_incremental_reindex_modifed_file_syncs_semantic_index() {
         // Test that incremental_reindex syncs the semantic search index (DashMap + FTS5)
         use crate::infrastructure::persistence::InMemoryGraphStore;

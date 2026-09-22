@@ -29,6 +29,8 @@ use crate::application::program_analysis::ProgramAnalysisService;
 use crate::domain::analytics::descriptor::RunOutput;
 #[cfg(feature = "program-analysis-server")]
 use crate::domain::analytics::program_analysis::DFG;
+#[cfg(feature = "program-analysis-server")]
+use crate::domain::analytics::program_analysis::INTERPROC_SUMMARY;
 use crate::domain::analytics::program_analysis::{
     CFG_PER_FUNCTION, DOMINATORS_CFG, SLICE_BACKWARD, SLICE_FORWARD, TAINT_FLOW,
 };

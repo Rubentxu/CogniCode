@@ -142,7 +142,8 @@ impl ToolHandler for BrainOpenHandler {
     }
 
     fn arg_schema(&self) -> Value {
-        let schema = serde_json::json!({
+        #[allow(unused_mut)]
+        let mut schema = serde_json::json!({
             "type": "object",
             "properties": {
                 "workspace_id": {
