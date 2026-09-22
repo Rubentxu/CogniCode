@@ -157,10 +157,7 @@ async fn unreadable_file_is_reported_not_silently_dropped() {
     let outcome = async {
         let mut mcp = result?;
         let resp = mcp
-            .call_tool(
-                "build_graph",
-                json!({ "path": ws.to_string_lossy(), "force_rebuild": true }),
-            )
+            .call_tool("build_graph", json!({ "directory": ws.to_string_lossy() }))
             .await?;
         let text = resp["result"]["content"][0]["text"]
             .as_str()

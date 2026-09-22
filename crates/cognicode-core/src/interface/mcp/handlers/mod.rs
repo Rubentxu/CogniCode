@@ -964,7 +964,12 @@ fn build_manifest(
 }
 
 /// Input for build_graph
+///
+/// PRF-MCP-04: unknown arguments are a typed error, never silently
+/// ignored (a misspelled `directory` must not silently rebuild the
+/// default workspace).
 #[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BuildGraphInput {
     pub directory: Option<String>,
 }

@@ -146,10 +146,7 @@ async fn stdout_is_pure_jsonrpc_during_logged_operations() {
 
     // build_graph: heavy logging to stderr during build
     let resp = mcp
-        .call_tool(
-            "build_graph",
-            json!({ "path": ws.to_string_lossy(), "force_rebuild": true }),
-        )
+        .call_tool("build_graph", json!({ "directory": ws.to_string_lossy() }))
         .await
         .expect("build_graph response");
     assert!(
