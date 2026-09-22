@@ -2751,3 +2751,15 @@ reportes idénticos desde cwd distintos, permiso denegado sin crash,
 verbose sin fuga de secretos de entorno. Evidencia:
 `evidence/u62-cli06-determinism/`.
 **Matriz**: PRF-CLI-06 → PASS.
+
+
+## §63 — PRF-ANA-02: sin descarte silencioso — PASS (2026-09-22)
+
+Auditoría del operador: los estados documentales no equivalen a criterios
+de aceptación verificados. Revisión real de ANA-02: 6 call-sites de
+extracción usaban `unwrap_or_default()` (errores de parseo → vacío
+silencioso). Corregidos: full → SkippedFile; filtered/async → exclusión
+de cobertura parsed + warn!. UAT binario real: chmod-000 → status=partial
++ skipped_files. Regresión verde (core 2145/0, MCP e2e). Evidencia:
+`evidence/u63-ana02/`.
+**Matriz**: PRF-ANA-02 → PASS.
