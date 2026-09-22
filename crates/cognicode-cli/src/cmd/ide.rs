@@ -1483,7 +1483,7 @@ components:
             std::env::set_var("HOME", &tmp);
         }
 
-        let steps = uninstall_opencode("0.92.0", "cognicode-mcp").unwrap();
+        let steps = uninstall_opencode("0.92.0", Some("cognicode-mcp")).unwrap();
         for step in steps {
             step.execute().unwrap();
         }
@@ -1578,7 +1578,7 @@ components:
         unsafe {
             std::env::set_var("HOME", &tmp);
         }
-        let result = uninstall_zcode("0.92.0", "cognicode-mcp");
+        let result = uninstall_zcode("0.92.0", Some("cognicode-mcp"));
         unsafe {
             std::env::set_var("HOME", &prev_home);
         }
@@ -1633,7 +1633,7 @@ components:
         unsafe {
             std::env::set_var("HOME", &tmp);
         }
-        let result = uninstall_claude("0.92.0", "cognicode-mcp");
+        let result = uninstall_claude("0.92.0", Some("cognicode-mcp"));
         unsafe {
             std::env::set_var("HOME", &prev_home);
         }
@@ -1700,7 +1700,7 @@ mcp_servers.existing.args = ['y']
         unsafe {
             std::env::set_var("HOME", &tmp);
         }
-        let result = uninstall_codex("0.92.0", "cognicode-mcp");
+        let result = uninstall_codex("0.92.0", Some("cognicode-mcp"));
         unsafe {
             std::env::set_var("HOME", &prev_home);
         }
@@ -1746,7 +1746,7 @@ mcp_servers.existing.args = ['y']
 
     #[test]
     fn test_uninstall_opencode_steps() {
-        let steps = uninstall_opencode("0.94.9", "cognicode-mcp").unwrap();
+        let steps = uninstall_opencode("0.94.9", Some("cognicode-mcp")).unwrap();
         assert!(!steps.is_empty());
     }
 
@@ -1858,7 +1858,7 @@ mcp_servers.existing.args = ['y']
             std::env::set_var("OPENCODE_CONFIG", disposable.join("opencode.json"));
         }
 
-        let steps = uninstall_opencode("0.95.0", "cognicode-mcp").unwrap();
+        let steps = uninstall_opencode("0.95.0", Some("cognicode-mcp")).unwrap();
         let mut targets = Vec::new();
         for step in steps {
             if let Step::RmRf { target } = &step {
