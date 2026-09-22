@@ -2344,3 +2344,26 @@ del programa PRF activo).
   recorrido exhaustivo por comando (Index, Navigate, Refactor,
   subcomandos) sigue pendiente.
 - **NO ejecuta:** push, tag, C7 firma. Operator-gated.
+
+## 2026-09-22 — PRF-SEC-03 (logs sin secretos con verbose) (entrada 39)
+
+- **Origen:** gap matriz PRF-SEC-03 (NOT_RUN): "UAT no ejecutada
+  con verbose alta".
+- **UAT:** nuevo test de integración
+  `crates/cognicode-cli/tests/prf_sec_03_uat.rs`: corpus temporal
+  con un secreto centinela (`SK-SECRET-PRFSEC03-SENTINEL-7f3a`)
+  embebido en el source; ejecuta el binario real con `-v` (DEBUG)
+  sobre analyze, graph full, index y doctor; afirma que el
+  centinela NO aparece en stdout ni stderr.
+- **Resultado: 4/4 GREEN en primera ejecución.** No hubo que
+  corregir nada: el logging existente (RUST_LOG=debug, tracing a
+  stderr desde PRF-F1.W1) no vuelca contenido de código fuente.
+  Estos tests son pins de regresión del contrato SEC-03: una
+  futura modificación que loguee snippets de fuente volteará el
+  test.
+- **Verificación:** 4/4 UAT verdes sobre el binario real.
+- **Matriz:** PRF-SEC-03 NOT_RUN → PARTIAL (mejorado). No PASS
+  porque el requisito completo incluye "telemetría opt-in" y
+  errores sin credenciales de configuración (variables de entorno
+  del propio proceso), que esta UAT no cubre.
+- **NO ejecuta:** push, tag, C7 firma. Operator-gated.

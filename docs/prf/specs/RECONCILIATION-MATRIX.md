@@ -98,7 +98,7 @@
 |---|---|---|
 | PRF-SEC-01 (raíz + cada ruta canónica y autorizada; rechazo `..`, absolutos, symlinks, TOCTOU; una validación en un handler no basta) | PARTIAL | `InputValidator` rechaza los vectores básicos; no UAT exhaustiva con symlinks externos y TOCTOU. |
 | PRF-SEC-02 (R/W/E/Net diferenciados; read-only default; prompts ≠ autoridad) | PARTIAL | Diseño respeta; **U19 completa con todas las vectores** no ejecutada. |
-| PRF-SEC-03 (logs sin tokens/credenciales/contenido sensible salvo autorización) | NOT_RUN | UAT no ejecutada con verbose alta. |
+| PRF-SEC-03 (logs sin tokens/credenciales/contenido sensible salvo autorización) | **PARTIAL (mejorado)** | UAT sobre binario real con `-v` (JOURNAL §39, `prf_sec_03_uat.rs`): centinela secreto en el source no aparece en stdout/stderr de analyze, graph full, index ni doctor. Pins de regresión. Falta cubrir telemetría opt-in y credenciales de configuración del proceso. |
 | **PRF-SEC-04** (presupuestos CPU/mem/tiempo/fanout/profundidad/tamaños/procesos) | **PARTIAL** | Timeouts por categoría existen; presupuesto cuantitativo por perfil no publicado. |
 | PRF-SEC-05 (cancelación/shutdown libera recursos; fallos no corrompen) | PARTIAL | Ver §PRF-MCP-06. |
 | PRF-SEC-06 (CRITICAL/HIGH conocidas antes de release) | NOT_RUN | Sin gate de advisories sobre el candidato congelado. |
