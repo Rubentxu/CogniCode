@@ -166,29 +166,24 @@ fn cogh_doctor_warns_when_tracker_version_missing() {
 // ============================================================================
 
 #[test]
-fn cogh_reshim_emits_recognisable_message_on_current_implementation() {
+fn cogh_reshim_rejects_unpinned_home_instead_of_fake_success() {
     let home = tempfile::tempdir().expect("temp home");
     let init = init_home(home.path());
     assert!(
         init.status.success(),
-        "cogh init must succeed; got {:?}",
-        init.status
+        "init must succeed: {}",
+        stdout(&init)
     );
 
     let out = run_cogh(home.path(), ["reshim"]);
     assert!(
-        out.status.success(),
-        "cogh reshim must exit 0 (it's a stub that prints); got {:?}",
-        out.status
-    );
-    let body = stdout(&out);
-    assert!(
-        body.contains("reshim"),
-        "expected `reshim` prefix in message; got: {body}"
+        !out.status.success(),
+        "reshim without an active version must fail"
     );
     assert!(
-        body.contains(&format!("{}/shims", home.path().display())),
-        "expected the home's shims path in the message; got: {body}"
+        String::from_utf8_lossy(&out.stderr).contains("no active version"),
+        "diagnostic must explain why no shims can be regenerated: {}",
+        String::from_utf8_lossy(&out.stderr)
     );
 }
 

@@ -17,6 +17,10 @@ fn lock_path() -> PathBuf {
         .join("install.lock")
 }
 
+fn lock_path_for(home: &super::layout::CognicodeHome) -> PathBuf {
+    home.locks().join("install.lock")
+}
+
 /// Lock guard that releases the lock on drop.
 pub struct LockGuard {
     path: PathBuf,
@@ -25,18 +29,32 @@ pub struct LockGuard {
 impl LockGuard {
     /// Acquire the advisory lock by creating the lock file.
     pub fn new() -> Result<Self> {
-        let path = lock_path();
+        let home = super::layout::CognicodeHome::resolve(None)?;
+        Self::new_at(&home)
+    }
+
+    pub fn new_at(home: &super::layout::CognicodeHome) -> Result<Self> {
+        use std::io::Write;
+        let path = lock_path_for(home);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        // PID + timestamp for uniqueness and debugging
+        // create_new is atomic; fs::write silently overwrote a concurrent
+        // install's advisory lock, allowing both processes to mutate shims.
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|e| anyhow::anyhow!(
+                "cannot acquire CogniCode install lock at {}: {e}; another installation may be in progress",
+                path.display()
+            ))?;
         let pid = std::process::id();
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let content = format!("{}:{}\n", pid, ts);
-        fs::write(&path, content)?;
+        writeln!(file, "{pid}:{ts}")?;
         Ok(Self { path })
     }
 }
@@ -51,6 +69,12 @@ impl Drop for LockGuard {
 /// Returns a LockGuard that will release the lock on drop.
 pub fn acquire_lock() -> Result<LockGuard> {
     LockGuard::new()
+}
+
+/// Product installation must lock its explicitly selected --home, not the
+/// ambient COGNICODE_HOME of an unrelated development or test process.
+pub fn acquire_lock_at(home: &super::layout::CognicodeHome) -> Result<LockGuard> {
+    LockGuard::new_at(home)
 }
 
 /// Explicitly release the lock before the guard is dropped.

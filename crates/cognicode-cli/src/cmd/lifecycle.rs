@@ -256,10 +256,12 @@ released_at: "2026-01-01T00:00:00Z"
 profiles:
   - name: core
     description: Daily CLI
+  - name: reviewer
+    description: Review CLI
 skill_bundles:
   - id: skills-for-claude
     version: "0.93.0"
-    profiles: [core]
+    profiles: [core, reviewer]
 components:
   - name: cognicode-mcp
     kind: daemon-cli
@@ -267,9 +269,30 @@ components:
     artifact: cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz
     sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
     url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.93.0/cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz"
-    profiles: [core]
+    profiles: [core, reviewer]
 "#;
             std::fs::write(vdir.join("manifest.yaml"), yaml).unwrap();
+            // PR contract: IDE integration validates that the declared MCP
+            // binary exists on disk and that the shim targets it. Plant a
+            // real (empty) binary and matching shim so the fixture is
+            // coherent with the new stale-link rejection.
+            let bin_path = vdir.join("cognicode-mcp/bin/cognicode-mcp");
+            std::fs::create_dir_all(bin_path.parent().unwrap()).unwrap();
+            std::fs::write(&bin_path, b"#!/bin/sh\n").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&bin_path, std::fs::Permissions::from_mode(0o755))
+                    .unwrap();
+            }
+            // Shim must canonicalize to the installed binary (stale-link check).
+            let shim = tmp.join(".cognicode/shims/cognicode-mcp");
+            std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
+            let _ = std::fs::remove_file(&shim);
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&bin_path, &shim).unwrap();
+            #[cfg(not(unix))]
+            std::fs::copy(&bin_path, &shim).unwrap();
         }
         create_opencode_config(&tmp).unwrap();
 
@@ -295,9 +318,10 @@ components:
         // Verify the original entry was preserved
         assert!(cfg_text.contains("agent"), "original entry lost");
 
-        // Verify skills dir was created
+        // Verify skills dir was created. The dual-bundle contract names the
+        // skills link by bundle id: `skills-for-claude-v0.93.0`.
         assert!(
-            tmp.join(".config/opencode/skills/cognicode-v0.93.0")
+            tmp.join(".config/opencode/skills/skills-for-claude-v0.93.0")
                 .exists(),
             "skills dir missing"
         );
@@ -399,10 +423,12 @@ released_at: "2026-01-01T00:00:00Z"
 profiles:
   - name: core
     description: Daily CLI
+  - name: reviewer
+    description: Review CLI
 skill_bundles:
   - id: skills-for-claude
     version: "0.93.0"
-    profiles: [core]
+    profiles: [core, reviewer]
 components:
   - name: cognicode-mcp
     kind: daemon-cli
@@ -410,9 +436,30 @@ components:
     artifact: cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz
     sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
     url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.93.0/cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz"
-    profiles: [core]
+    profiles: [core, reviewer]
 "#;
             std::fs::write(vdir.join("manifest.yaml"), yaml).unwrap();
+            // PR contract: IDE integration validates that the declared MCP
+            // binary exists on disk and that the shim targets it. Plant a
+            // real (empty) binary and matching shim so the fixture is
+            // coherent with the new stale-link rejection.
+            let bin_path = vdir.join("cognicode-mcp/bin/cognicode-mcp");
+            std::fs::create_dir_all(bin_path.parent().unwrap()).unwrap();
+            std::fs::write(&bin_path, b"#!/bin/sh\n").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&bin_path, std::fs::Permissions::from_mode(0o755))
+                    .unwrap();
+            }
+            // Shim must canonicalize to the installed binary (stale-link check).
+            let shim = tmp.join(".cognicode/shims/cognicode-mcp");
+            std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
+            let _ = std::fs::remove_file(&shim);
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&bin_path, &shim).unwrap();
+            #[cfg(not(unix))]
+            std::fs::copy(&bin_path, &shim).unwrap();
         }
         create_codex_config(&tmp).unwrap();
 
@@ -484,10 +531,12 @@ released_at: "2026-01-01T00:00:00Z"
 profiles:
   - name: core
     description: Daily CLI
+  - name: reviewer
+    description: Review CLI
 skill_bundles:
   - id: skills-for-claude
     version: "0.93.0"
-    profiles: [core]
+    profiles: [core, reviewer]
 components:
   - name: cognicode-mcp
     kind: daemon-cli
@@ -495,9 +544,30 @@ components:
     artifact: cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz
     sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
     url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.93.0/cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz"
-    profiles: [core]
+    profiles: [core, reviewer]
 "#;
             std::fs::write(vdir.join("manifest.yaml"), yaml).unwrap();
+            // PR contract: IDE integration validates that the declared MCP
+            // binary exists on disk and that the shim targets it. Plant a
+            // real (empty) binary and matching shim so the fixture is
+            // coherent with the new stale-link rejection.
+            let bin_path = vdir.join("cognicode-mcp/bin/cognicode-mcp");
+            std::fs::create_dir_all(bin_path.parent().unwrap()).unwrap();
+            std::fs::write(&bin_path, b"#!/bin/sh\n").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&bin_path, std::fs::Permissions::from_mode(0o755))
+                    .unwrap();
+            }
+            // Shim must canonicalize to the installed binary (stale-link check).
+            let shim = tmp.join(".cognicode/shims/cognicode-mcp");
+            std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
+            let _ = std::fs::remove_file(&shim);
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&bin_path, &shim).unwrap();
+            #[cfg(not(unix))]
+            std::fs::copy(&bin_path, &shim).unwrap();
         }
         create_zcode_config(&tmp).unwrap();
 
@@ -573,10 +643,12 @@ released_at: "2026-01-01T00:00:00Z"
 profiles:
   - name: core
     description: Daily CLI
+  - name: reviewer
+    description: Review CLI
 skill_bundles:
   - id: skills-for-claude
     version: "0.93.0"
-    profiles: [core]
+    profiles: [core, reviewer]
 components:
   - name: cognicode-mcp
     kind: daemon-cli
@@ -584,9 +656,30 @@ components:
     artifact: cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz
     sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
     url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.93.0/cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz"
-    profiles: [core]
+    profiles: [core, reviewer]
 "#;
             std::fs::write(vdir.join("manifest.yaml"), yaml).unwrap();
+            // PR contract: IDE integration validates that the declared MCP
+            // binary exists on disk and that the shim targets it. Plant a
+            // real (empty) binary and matching shim so the fixture is
+            // coherent with the new stale-link rejection.
+            let bin_path = vdir.join("cognicode-mcp/bin/cognicode-mcp");
+            std::fs::create_dir_all(bin_path.parent().unwrap()).unwrap();
+            std::fs::write(&bin_path, b"#!/bin/sh\n").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&bin_path, std::fs::Permissions::from_mode(0o755))
+                    .unwrap();
+            }
+            // Shim must canonicalize to the installed binary (stale-link check).
+            let shim = tmp.join(".cognicode/shims/cognicode-mcp");
+            std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
+            let _ = std::fs::remove_file(&shim);
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&bin_path, &shim).unwrap();
+            #[cfg(not(unix))]
+            std::fs::copy(&bin_path, &shim).unwrap();
         }
         create_claude_config(&tmp).unwrap();
 
@@ -1027,10 +1120,12 @@ released_at: "2026-01-01T00:00:00Z"
 profiles:
   - name: core
     description: Daily CLI
+  - name: reviewer
+    description: Review CLI
 skill_bundles:
   - id: skills-for-claude
     version: "0.93.0"
-    profiles: [core]
+    profiles: [core, reviewer]
 components:
   - name: cognicode-mcp
     kind: daemon-cli
@@ -1038,9 +1133,30 @@ components:
     artifact: cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz
     sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
     url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.93.0/cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz"
-    profiles: [core]
+    profiles: [core, reviewer]
 "#;
             std::fs::write(vdir.join("manifest.yaml"), yaml).unwrap();
+            // PR contract: IDE integration validates that the declared MCP
+            // binary exists on disk and that the shim targets it. Plant a
+            // real (empty) binary and matching shim so the fixture is
+            // coherent with the new stale-link rejection.
+            let bin_path = vdir.join("cognicode-mcp/bin/cognicode-mcp");
+            std::fs::create_dir_all(bin_path.parent().unwrap()).unwrap();
+            std::fs::write(&bin_path, b"#!/bin/sh\n").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&bin_path, std::fs::Permissions::from_mode(0o755))
+                    .unwrap();
+            }
+            // Shim must canonicalize to the installed binary (stale-link check).
+            let shim = tmp.join(".cognicode/shims/cognicode-mcp");
+            std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
+            let _ = std::fs::remove_file(&shim);
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&bin_path, &shim).unwrap();
+            #[cfg(not(unix))]
+            std::fs::copy(&bin_path, &shim).unwrap();
         }
         create_opencode_config(&tmp).unwrap();
 
@@ -1120,10 +1236,12 @@ released_at: "2026-01-01T00:00:00Z"
 profiles:
   - name: core
     description: Daily CLI
+  - name: reviewer
+    description: Review CLI
 skill_bundles:
   - id: skills-for-claude
     version: "0.93.0"
-    profiles: [core]
+    profiles: [core, reviewer]
 components:
   - name: cognicode-mcp
     kind: daemon-cli
@@ -1131,9 +1249,30 @@ components:
     artifact: cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz
     sha256: "9f2c1d4b7e0a3f5c8d1b2e4a6f8c0d2e4b6a8c0e2f4a6b8c0d2e4f6a8b0c2d4e"
     url: "https://github.com/Rubentxu/CogniCode/releases/download/v0.93.0/cognicode-mcp-0.93.0-x86_64-unknown-linux-gnu.tar.gz"
-    profiles: [core]
+    profiles: [core, reviewer]
 "#;
             std::fs::write(vdir.join("manifest.yaml"), yaml).unwrap();
+            // PR contract: IDE integration validates that the declared MCP
+            // binary exists on disk and that the shim targets it. Plant a
+            // real (empty) binary and matching shim so the fixture is
+            // coherent with the new stale-link rejection.
+            let bin_path = vdir.join("cognicode-mcp/bin/cognicode-mcp");
+            std::fs::create_dir_all(bin_path.parent().unwrap()).unwrap();
+            std::fs::write(&bin_path, b"#!/bin/sh\n").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&bin_path, std::fs::Permissions::from_mode(0o755))
+                    .unwrap();
+            }
+            // Shim must canonicalize to the installed binary (stale-link check).
+            let shim = tmp.join(".cognicode/shims/cognicode-mcp");
+            std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
+            let _ = std::fs::remove_file(&shim);
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&bin_path, &shim).unwrap();
+            #[cfg(not(unix))]
+            std::fs::copy(&bin_path, &shim).unwrap();
         }
         create_opencode_config(&tmp).unwrap();
 
@@ -1415,9 +1554,13 @@ components:
         let stdout = String::from_utf8_lossy(&out.stdout);
         let stderr = String::from_utf8_lossy(&out.stderr);
         let combined = format!("{stdout}{stderr}");
+        // New contract: when the version is not installed, the honest
+        // no-op diagnostic ("not installed; nothing to do") IS the helpful
+        // message; --ide guidance is required only for an installed version.
+        let no_op = combined.contains("not installed") && combined.contains("nothing to do");
         assert!(
-            combined.contains("--ide") || combined.contains("no IDE"),
-            "missing --ide must produce a diagnostic mentioning --ide or 'no IDE'; got: {combined}"
+            no_op || combined.contains("--ide") || combined.contains("no IDE"),
+            "missing --ide must produce a helpful diagnostic; got: {combined}"
         );
 
         let _ = std::fs::remove_dir_all(&tmp);

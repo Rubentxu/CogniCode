@@ -251,6 +251,105 @@ fn download_with_bearer(
     }
 }
 
+/// Fetch and verify the portable skill payload declared by the release.
+/// SkillBundleIds deliberately share names with some binary ComponentIds:
+/// their caches MUST be disjoint or a skill archive overwrites an executable.
+fn skill_cache_path(home: &crate::layout::CognicodeHome, version: &str, id: &str) -> PathBuf {
+    home.cache()
+        .join("skill-bundles")
+        .join(version)
+        .join(format!("{id}.tar.gz"))
+}
+
+fn download_skill_bundles(
+    home: &crate::layout::CognicodeHome,
+    manifest: &BundleManifest,
+    profile: &str,
+    journal: &mut RollbackJournal,
+) -> Result<(), InstallerError> {
+    let bundles = manifest.skill_bundles_for_profile(profile);
+    if bundles.is_empty() {
+        return Ok(());
+    }
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| InstallerError::Network("reqwest".into(), e.to_string()))?;
+    let token = bearer_from_env();
+    let checksums_url = crate::release_contract::artifact_url(&manifest.version, "SHA256SUMS");
+    let checksums_response = download_with_bearer(
+        &client,
+        &resolve_download_url(&checksums_url),
+        token.as_deref(),
+    )?;
+    if !checksums_response.status().is_success() {
+        return Err(InstallerError::Network(
+            checksums_url,
+            format!("HTTP {}", checksums_response.status()),
+        ));
+    }
+    let checksums = checksums_response
+        .text()
+        .map_err(|e| InstallerError::Network(checksums_url.clone(), e.to_string()))?;
+
+    for bundle in bundles {
+        // Reject unrecognised IDs instead of treating a manifest field as a
+        // path or URL fragment controlled by arbitrary external input.
+        let _published = crate::release_contract::skill_bundle_by_id(&bundle.id)
+            .filter(|spec| spec.published)
+            .ok_or_else(|| {
+                InstallerError::Unknown(format!("unknown published skill bundle id: {}", bundle.id))
+            })?;
+
+        let filename = crate::release_contract::skill_bundle_filename(&bundle.id, &bundle.version);
+        let mut matches = checksums.lines().filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let digest = fields.next()?;
+            let name = fields.next()?;
+            if fields.next().is_some() || name != filename {
+                return None;
+            }
+            Some(digest)
+        });
+        let expected = matches.next().ok_or_else(|| {
+            InstallerError::Unknown(format!(
+                "release SHA256SUMS has no digest for declared skill {filename}"
+            ))
+        })?;
+        if matches.next().is_some() {
+            return Err(InstallerError::Unknown(format!(
+                "release SHA256SUMS declares duplicate digest for {filename}"
+            )));
+        }
+        let digest = crate::release_contract::ArtifactDigest::parse(expected).map_err(|e| {
+            InstallerError::Unknown(format!("invalid SHA256SUMS entry for {filename}: {e}"))
+        })?;
+        let url = crate::release_contract::artifact_url(&manifest.version, &filename);
+        let response =
+            download_with_bearer(&client, &resolve_download_url(&url), token.as_deref())?;
+        if !response.status().is_success() {
+            return Err(InstallerError::Network(
+                url,
+                format!("HTTP {}", response.status()),
+            ));
+        }
+        let bytes = response
+            .bytes()
+            .map_err(|e| InstallerError::Network(url.clone(), e.to_string()))?;
+        let path = skill_cache_path(home, &manifest.version, &bundle.id);
+        let parent = path.parent().ok_or_else(|| {
+            InstallerError::Unknown(format!("no cache directory for skill {filename}"))
+        })?;
+        std::fs::create_dir_all(parent).map_err(|e| InstallerError::Io(parent.to_path_buf(), e))?;
+        std::fs::write(&path, &bytes).map_err(|e| InstallerError::Io(path.clone(), e))?;
+        journal.record(SideEffect::Downloaded(path.clone()));
+        verify_sha256(&path, digest.as_str())?;
+        journal.record(SideEffect::VerifiedSha256(path));
+    }
+    Ok(())
+}
+
 /// Verifies a file against an expected sha256 hash.
 pub fn verify_sha256(path: &std::path::Path, expected: &str) -> Result<(), InstallerError> {
     let actual = compute_sha256(path)?;
@@ -327,10 +426,13 @@ fn advance_stage(
             Ok(())
         }
         InstallStage::Downloading => {
-            let cache_dir = layout::cache_dir();
+            let cache_dir = home.cache();
+            let cache_was_present = cache_dir.is_dir();
             std::fs::create_dir_all(&cache_dir)
                 .map_err(|e| InstallerError::Io(cache_dir.clone(), e))?;
-            journal.record(SideEffect::CreatedDir(cache_dir.clone()));
+            if !cache_was_present {
+                journal.record(SideEffect::CreatedDir(cache_dir.clone()));
+            }
             // Download each component
             for comp in &manifest.components {
                 let dest = cache_dir.join(format!("{}.tar.gz", comp.name));
@@ -366,11 +468,12 @@ fn advance_stage(
                     .map_err(|e| InstallerError::Io(dest.clone(), e))?;
                 journal.record(SideEffect::Downloaded(dest));
             }
+            download_skill_bundles(home, manifest, profile, journal)?;
             Ok(())
         }
         InstallStage::VerifyingSha256 => {
             // Verify SHA256 for each downloaded file
-            let cache_dir = layout::cache_dir();
+            let cache_dir = home.cache();
             for comp in &manifest.components {
                 let path = cache_dir.join(format!("{}.tar.gz", comp.name));
                 verify_sha256(&path, comp.sha256.as_str())?;
@@ -386,7 +489,7 @@ fn advance_stage(
             std::fs::create_dir_all(&install_dir)
                 .map_err(|e| InstallerError::Io(install_dir.clone(), e))?;
             journal.record(SideEffect::CreatedDir(install_dir.clone()));
-            let cache_dir = layout::cache_dir();
+            let cache_dir = home.cache();
             for comp in &manifest.components {
                 let src = cache_dir.join(format!("{}.tar.gz", comp.name));
                 let dest = install_dir.join(&comp.name);
@@ -405,8 +508,8 @@ fn advance_stage(
             // a ComponentId or a directory scan.
             let skills_root = home.skills_root(&manifest.version);
             for bundle in manifest.skill_bundles_for_profile(profile) {
-                let src = cache_dir.join(format!("{}.tar.gz", bundle.id));
-                if !src.exists() {
+                let src = skill_cache_path(home, &manifest.version, &bundle.id);
+                if !src.is_file() {
                     return Err(InstallerError::Unknown(format!(
                         "bundle manifest declares skill bundle `{}` for profile \
                          `{profile}`, but {} is missing from the download cache; \
@@ -428,7 +531,7 @@ fn advance_stage(
             // has no matching components. The layout must materialize so
             // subsequent `cogh doctor` / `cogh where` calls find a well-formed
             // `~/.cognicode/shims/` path.
-            let shims_dir = layout::shims_dir();
+            let shims_dir = home.shims();
             std::fs::create_dir_all(&shims_dir)
                 .map_err(|e| InstallerError::Io(shims_dir.clone(), e))?;
             journal.record(SideEffect::CreatedDir(shims_dir.clone()));
@@ -449,7 +552,7 @@ fn advance_stage(
                 // that the legacy `bin/<comp>/<comp>` shape assumed.
                 let bin_path = locate_component_binary(home, &manifest.version, &comp.name);
                 if let Some(bin_path) = bin_path {
-                    let shim_path = layout::shims_dir().join(&comp.name);
+                    let shim_path = home.shim_path(&comp.name);
                     let effect = adapter
                         .install_shim(&bin_path, &shim_path)
                         .map_err(|e| InstallerError::ShimInstall(e.to_string()))?;
@@ -551,7 +654,7 @@ impl InstallerTransaction {
         home: &crate::layout::CognicodeHome,
         profile: &str,
     ) -> Result<PathBuf, InstallerError> {
-        let yaml = Self::load_bundle_manifest()?;
+        let yaml = Self::load_bundle_manifest(home)?;
 
         // Parse and validate the v2 contract.
         //
@@ -644,13 +747,13 @@ impl InstallerTransaction {
     /// crate's own tests have a well-formed v2 manifest to parse; its digests are
     /// not the digests of any real artifact, so an install driven by it fails at
     /// the SHA256 stage by construction rather than silently succeeding.
-    fn load_bundle_manifest() -> Result<String, InstallerError> {
+    fn load_bundle_manifest(home: &crate::layout::CognicodeHome) -> Result<String, InstallerError> {
         if let Some(explicit) = std::env::var_os(ENV_BUNDLE_MANIFEST) {
             let path = PathBuf::from(explicit);
             return std::fs::read_to_string(&path).map_err(|e| InstallerError::Io(path, e));
         }
 
-        let home_manifest = layout::bundle_yaml_path();
+        let home_manifest = home.bundle_yaml_path();
         if home_manifest.exists() {
             return std::fs::read_to_string(&home_manifest)
                 .map_err(|e| InstallerError::Io(home_manifest, e));
@@ -790,6 +893,64 @@ impl InstallerTransaction {
 mod tests {
     use super::*;
     use crate::layout::test_support::TempCognicodeHome;
+
+    /// Regression: --home must not write a shim in COGNICODE_HOME.
+    /// It must materialise both binaries and their distinct portable skills.
+    #[test]
+    #[serial_test::serial]
+    fn custom_home_reviewer_does_not_write_into_ambient_home() {
+        let ambient = TempCognicodeHome::new();
+        let tmp = tempfile::tempdir().expect("explicit home");
+        let home = crate::layout::CognicodeHome {
+            root: tmp.path().join("runtime"),
+        };
+        home.init().expect("init runtime");
+        let release = crate::release_test_support::local_release(env!("CARGO_PKG_VERSION"))
+            .expect("prepare real payload archives");
+        crate::release_test_support::point_at(&release);
+
+        let result = InstallerTransaction::run(&home, "reviewer");
+        crate::release_test_support::unpoint();
+        result.expect("reviewer profile must install CLI, MCP and skills");
+
+        assert!(home.shim_path("cognicode").is_file());
+        assert!(home.shim_path("cognicode-mcp").is_file());
+        assert!(
+            home.skill_bundle(env!("CARGO_PKG_VERSION"), "cognicode")
+                .join("SKILL.md")
+                .is_file()
+        );
+        assert!(
+            home.skill_bundle(env!("CARGO_PKG_VERSION"), "cognicode-mcp")
+                .join("SKILL.md")
+                .is_file()
+        );
+        assert!(!ambient.path().join("shims/cognicode-mcp").exists());
+        assert!(!ambient.path().join("cache/cognicode-mcp.tar.gz").exists());
+    }
+
+    /// Custom --home must own all installation paths. A stale manifest in the
+    /// default COGNICODE_HOME must never override a release staged in --home.
+    #[test]
+    #[serial_test::serial]
+    fn custom_home_manifest_is_not_resolved_from_process_home() {
+        let default_home = TempCognicodeHome::new();
+        crate::release_test_support::unpoint();
+        let isolated = tempfile::tempdir().expect("explicit home");
+        let custom = crate::layout::CognicodeHome {
+            root: isolated.path().join("cognicode-home"),
+        };
+        custom.init().expect("init custom home");
+        let expected = include_str!("dev-bundle.yaml");
+        std::fs::write(custom.bundle_yaml_path(), expected).expect("stage manifest");
+        std::fs::write(default_home.path().join("bundle.yaml"), "wrong-manifest")
+            .expect("plant stale default manifest");
+
+        let loaded = InstallerTransaction::load_bundle_manifest(&custom)
+            .expect("explicit home manifest must win");
+        assert_eq!(loaded, expected);
+        assert!(!custom.shims().join("cognicode-mcp").exists());
+    }
 
     /// The dev-only fixture must be a well-formed v2 manifest.
     ///
@@ -1102,7 +1263,8 @@ components:
         // pointing at a dropped tempdir). Clear the overrides so the
         // embedded dev fixture is the deterministic input.
         crate::release_test_support::unpoint();
-        let yaml = InstallerTransaction::load_bundle_manifest()
+        let home = crate::layout::CognicodeHome::resolve(None).expect("resolve test home");
+        let yaml = InstallerTransaction::load_bundle_manifest(&home)
             .expect("embedded bundle manifest must be readable");
         let manifest =
             BundleManifest::from_str(&yaml).expect("embedded bundle manifest must parse");
@@ -1889,7 +2051,8 @@ components:
         std::fs::create_dir_all(&cache_dir).unwrap();
         let payload_dir = tempfile::tempdir().unwrap();
         std::fs::write(payload_dir.path().join("SKILL.md"), "---\nname: x\n---\n").unwrap();
-        let tarball = cache_dir.join("skills-for-claude.tar.gz");
+        let tarball = skill_cache_path(&home, "0.95.0", "skills-for-claude");
+        std::fs::create_dir_all(tarball.parent().unwrap()).unwrap();
         {
             let f = std::fs::File::create(&tarball).unwrap();
             let enc = flate2::write::GzEncoder::new(f, flate2::Compression::fast());
@@ -1999,7 +2162,13 @@ components:
         .unwrap();
 
         let make_tarball = |name: &str, src: &Path| {
-            let f = std::fs::File::create(cache_dir.join(format!("{name}.tar.gz"))).unwrap();
+            let dest = if name == "skills-for-claude" {
+                skill_cache_path(&home, "0.95.0", name)
+            } else {
+                cache_dir.join(format!("{name}.tar.gz"))
+            };
+            std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+            let f = std::fs::File::create(dest).unwrap();
             let enc = flate2::write::GzEncoder::new(f, flate2::Compression::fast());
             let mut tar = tar::Builder::new(enc);
             for entry in std::fs::read_dir(src).unwrap() {

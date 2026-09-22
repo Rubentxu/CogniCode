@@ -263,16 +263,22 @@ pub fn cmd_uninstall(
             home.root.display()
         ));
     }
-    if ides.is_empty() {
-        return Err(anyhow!(
-            "uninstall requires at least one --ide flag (e.g. --ide opencode); \
-             supported: opencode, zcode, claude, codex"
-        ));
-    }
     println!(
         "uninstall: plugin={} version={} ides={:?}",
         plugin, version, ides
     );
+    // Missing versions have no owned IDE integration to remove. Treat an
+    // uninstall request for an absent version as a genuine idempotent no-op.
+    if !home.version_root(version).exists() {
+        println!("uninstall: version {version} is not installed; nothing to do");
+        return Ok(());
+    }
+    if ides.is_empty() {
+        return Err(anyhow!(
+            "uninstall of an installed version requires --ide (e.g. --ide opencode); \
+             supported: opencode, zcode, claude, codex"
+        ));
+    }
     // DEBT-4 WU3 idempotence: if the version tree is already gone, the
     // installation does not exist — report honestly and stop. Requiring
     // the manifest (via cmd_ide_uninstall) to decide IDE post-state would
@@ -297,6 +303,20 @@ pub fn cmd_uninstall(
     // Pinned by `t_l3_cmd_uninstall_removes_versions_tree` and
     // `t_l3_cmd_uninstall_idempotent_when_versions_tree_missing`.
     let install_tree = home.version_root(version);
+    // Retire only shims pointing into the version being removed. A different
+    // active version, a user-installed binary or an unrelated plugin is never
+    // eligible for deletion here.
+    let installed =
+        crate::bundle_manifest::BundleManifest::from_path(&home.version_manifest(version))?;
+    for component in &installed.components {
+        let shim = home.shim_path(&component.name);
+        if let Ok(target) = std::fs::read_link(&shim)
+            && target.starts_with(&install_tree)
+        {
+            std::fs::remove_file(&shim)
+                .with_context(|| format!("remove version-owned shim {}", shim.display()))?;
+        }
+    }
     let removed_tree = install_tree.exists();
     if removed_tree {
         std::fs::remove_dir_all(&install_tree)
@@ -487,6 +507,59 @@ pub fn cmd_install(
     Ok(resolved)
 }
 
+/// Preserve the installed capability profile during ordinary updates.
+/// The CLI only downgrades from reviewer to core when the user explicitly
+/// passes `--profile core`; installed manifest is authoritative.
+pub fn active_install_profile(home: &CognicodeHome) -> &'static str {
+    let Some(version) = crate::tracker::read_version_optional_at(&home.tracker_version()) else {
+        return "core";
+    };
+    let Ok(manifest) =
+        crate::bundle_manifest::BundleManifest::from_path(&home.version_manifest(&version))
+    else {
+        return "core";
+    };
+    if manifest
+        .components
+        .iter()
+        .any(|component| component.kind == crate::release_contract::ArtifactKind::DaemonCli)
+    {
+        "reviewer"
+    } else {
+        "core"
+    }
+}
+
+/// A coherent version can still contain a different profile. In particular,
+/// a core-only vX install must NOT make `update --profile reviewer` a no-op.
+fn active_install_matches_profile(home: &CognicodeHome, version: &str, profile: &str) -> bool {
+    let Ok(published) = crate::bundle_manifest::BundleManifest::from_path(&home.bundle_yaml_path())
+    else {
+        return false;
+    };
+    if published.version != version {
+        return false;
+    }
+    let Ok(installed) =
+        crate::bundle_manifest::BundleManifest::from_path(&home.version_manifest(version))
+    else {
+        return false;
+    };
+    let mut expected: Vec<_> = published
+        .components_for_profile(profile)
+        .iter()
+        .map(|component| component.name.as_str())
+        .collect();
+    let mut actual: Vec<_> = installed
+        .components
+        .iter()
+        .map(|component| component.name.as_str())
+        .collect();
+    expected.sort_unstable();
+    actual.sort_unstable();
+    !expected.is_empty() && expected == actual
+}
+
 pub fn cmd_update(
     home: &CognicodeHome,
     plugin: Option<String>,
@@ -527,6 +600,7 @@ pub fn cmd_update(
     if crate::tracker::read_version_optional_at(&home.tracker_version()).as_deref()
         == Some(resolved.version.as_str())
         && active_install_is_coherent(home, &resolved.version)
+        && active_install_matches_profile(home, &resolved.version, &profile)
     {
         println!(
             "already current: {} is installed and coherent (no transition performed)",
@@ -557,10 +631,42 @@ fn active_install_is_coherent(home: &CognicodeHome, version: &str) -> bool {
     let Ok(manifest) = crate::bundle_manifest::BundleManifest::from_path(&manifest_path) else {
         return false;
     };
-    manifest
+    let components_healthy = manifest.components.iter().all(|component| {
+        let Some(binary) =
+            crate::installer_transaction::locate_component_binary(home, version, &component.name)
+        else {
+            return false;
+        };
+        let shim = home.shim_path(&component.name);
+        if !shim.is_file() {
+            return false;
+        }
+        #[cfg(unix)]
+        if std::fs::canonicalize(&shim).ok() != std::fs::canonicalize(&binary).ok() {
+            return false;
+        }
+        true
+    });
+    if !components_healthy {
+        return false;
+    }
+    let profile = if manifest
         .components
         .iter()
-        .all(|c| vroot.join(&c.name).is_dir())
+        .any(|component| component.kind == crate::release_contract::ArtifactKind::DaemonCli)
+    {
+        "reviewer"
+    } else {
+        "core"
+    };
+    manifest
+        .skill_bundles_for_profile(profile)
+        .iter()
+        .all(|bundle| {
+            home.skill_bundle(version, &bundle.id)
+                .join("SKILL.md")
+                .is_file()
+        })
 }
 
 pub fn cmd_rollback(
@@ -706,10 +812,56 @@ pub fn cmd_rollback(
 }
 
 pub fn cmd_reshim(home: &CognicodeHome) -> Result<()> {
-    println!(
-        "reshim: would regenerate {} (not yet implemented)",
-        home.shims().display()
-    );
+    let version = crate::tracker::read_version_optional_at(&home.tracker_version())
+        .ok_or_else(|| anyhow!("cannot reshim: no active version"))?;
+    let manifest =
+        crate::bundle_manifest::BundleManifest::from_path(&home.version_manifest(&version))?;
+    let adapter = crate::platform_adapter::current_adapter();
+    for component in &manifest.components {
+        let binary =
+            crate::installer_transaction::locate_component_binary(home, &version, &component.name)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "cannot reshim: missing executable for component {} in {}",
+                        component.name,
+                        version,
+                    )
+                })?;
+        if !binary.is_file() {
+            return Err(anyhow!(
+                "cannot reshim: component binary missing: {}",
+                binary.display()
+            ));
+        }
+        let shim = home.shim_path(&component.name);
+        adapter
+            .install_shim(&binary, &shim)
+            .with_context(|| format!("restore shim {} to {}", shim.display(), binary.display()))?;
+        println!("restored {} -> {}", shim.display(), binary.display());
+    }
+    // Only known, version-managed names are eligible for stale-link cleanup.
+    // Never traverse or delete an unrelated user-defined shim.
+    for binary_name in ["cognicode", "cognicode-mcp"] {
+        if manifest.components.iter().any(|c| c.name == binary_name) {
+            continue;
+        }
+        let shim = home.shim_path(binary_name);
+        match std::fs::symlink_metadata(&shim) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                std::fs::remove_file(&shim)
+                    .with_context(|| format!("remove stale managed shim {}", shim.display()))?;
+                println!("removed stale managed shim {}", shim.display());
+            }
+            Ok(_) => {
+                return Err(anyhow!(
+                    "refusing to remove unmanaged non-symlink at {}",
+                    shim.display()
+                ));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
     Ok(())
 }
 
@@ -725,8 +877,14 @@ pub fn cmd_doctor(home: &CognicodeHome) -> Result<()> {
 
 pub fn cmd_where(home: &CognicodeHome, binary: &str) -> Result<()> {
     let shim = home.shims().join(binary);
-    if shim.exists() {
+    if shim.is_file() {
         println!("{}", shim.display());
+    } else if let Ok(target) = std::fs::read_link(&shim) {
+        println!(
+            "(dangling shim: {} -> {})",
+            shim.display(),
+            target.display()
+        );
     } else {
         println!("(not found: {})", shim.display());
     }
@@ -2022,6 +2180,96 @@ components:
             state.insert("tree".into(), sha256_hex(names.join("\n").as_bytes()));
         }
         state
+    }
+
+    /// A core-only installation of the SAME release must not silently
+    /// satisfy an explicit request for the MCP-bearing reviewer profile.
+    #[test]
+    #[serial]
+    fn dist_same_version_core_to_reviewer_installs_mcp() {
+        use crate::release_test_support::ResolverFixture;
+
+        let temp = test_support::TempCognicodeHome::new();
+        let fx = ResolverFixture::build("0.95.0").expect("fixture");
+        let _base = test_support::TempBaseUrl::set(&fx.release.base_url);
+        let _opencode = test_support::TempOpenCodeConfig::disable();
+        let home = CognicodeHome::resolve(Some(temp.path())).expect("home");
+        home.init().expect("init");
+
+        cmd_update(
+            &home,
+            None,
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "core".to_string(),
+            false,
+        )
+        .expect("install core");
+
+        assert_eq!(active_install_profile(&home), "core");
+        assert!(!active_install_matches_profile(&home, "0.95.0", "reviewer"));
+
+        cmd_update(
+            &home,
+            None,
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "reviewer".to_string(),
+            false,
+        )
+        .expect("upgrade capabilities without changing release version");
+
+        let installed =
+            crate::bundle_manifest::BundleManifest::from_path(&home.version_manifest("0.95.0"))
+                .expect("installed manifest");
+        assert!(
+            installed
+                .components
+                .iter()
+                .any(|c| c.kind == crate::release_contract::ArtifactKind::DaemonCli)
+        );
+        assert!(home.shim_path("cognicode-mcp").is_file());
+        assert_eq!(active_install_profile(&home), "reviewer");
+    }
+
+    #[test]
+    #[serial]
+    fn dist_reshim_repairs_dangling_mcp_link_without_temp_home_contamination() {
+        use crate::release_test_support::ResolverFixture;
+        let temp = test_support::TempCognicodeHome::new();
+        let fx = ResolverFixture::build("0.95.0").expect("fixture");
+        let _base = test_support::TempBaseUrl::set(&fx.release.base_url);
+        let _opencode = test_support::TempOpenCodeConfig::disable();
+        let home = CognicodeHome::resolve(Some(temp.path())).expect("home");
+        home.init().expect("init");
+        cmd_install(
+            &home,
+            "0.95.0",
+            Channel::Stable,
+            None,
+            Some(fx.staging_dir.clone()),
+            "reviewer",
+        )
+        .expect("install reviewer");
+        let shim = home.shim_path("cognicode-mcp");
+        std::fs::remove_file(&shim).expect("remove installed shim");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/tmp/prf-removed-runtime/cognicode-mcp", &shim)
+            .expect("plant dangling shim");
+
+        cmd_reshim(&home).expect("repair active version shims");
+        assert!(shim.is_file());
+        #[cfg(unix)]
+        assert_eq!(
+            std::fs::canonicalize(&shim).unwrap(),
+            std::fs::canonicalize(
+                home.component_root("0.95.0", "cognicode-mcp")
+                    .join("bin/cognicode-mcp")
+            )
+            .unwrap()
+        );
     }
 
     /// T1 (lifecycle-F3 WU0/WU2): install A, then a same-version update

@@ -41,8 +41,18 @@ impl Step {
     pub fn execute(&self) -> Result<()> {
         match self {
             Step::RmRf { target } => {
-                if target.exists() {
-                    std::fs::remove_dir_all(target)?;
+                // Skill paths may be symlinks, including dangling symlinks.
+                // Path::exists() follows links, and remove_dir_all rejects links.
+                match std::fs::symlink_metadata(target) {
+                    Ok(meta) if meta.file_type().is_symlink() || meta.is_file() => {
+                        std::fs::remove_file(target)?;
+                    }
+                    Ok(meta) if meta.is_dir() => {
+                        std::fs::remove_dir_all(target)?;
+                    }
+                    Ok(_) => anyhow::bail!("unsupported skill path: {}", target.display()),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(e.into()),
                 }
                 Ok(())
             }
@@ -257,7 +267,16 @@ pub fn integrate_opencode(
     let mut steps = Vec::new();
 
     // 1. Symlink skill bundle to OpenCode skills directory
-    let skills_target = opencode_skills_dir().join(format!("cognicode-{version}"));
+    let bundle_id = skill_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            anyhow!(
+                "skill bundle has no valid identity: {}",
+                skill_path.display()
+            )
+        })?;
+    let skills_target = opencode_skills_dir().join(format!("{bundle_id}-{version}"));
     steps.push(Step::Symlink {
         source: skill_path.to_path_buf(),
         target: skills_target,
@@ -287,7 +306,7 @@ pub fn integrate_opencode(
 }
 
 /// Build the opencode adapter's `uninstall` recipe as steps.
-pub fn uninstall_opencode(version: &str, binary_name: &str) -> Result<Vec<Step>> {
+pub fn uninstall_opencode(version: &str, binary_name: Option<&str>) -> Result<Vec<Step>> {
     let mut steps = Vec::new();
 
     // 1. Remove skills symlink
@@ -295,17 +314,23 @@ pub fn uninstall_opencode(version: &str, binary_name: &str) -> Result<Vec<Step>>
     steps.push(Step::RmRf {
         target: skills_target,
     });
+    // A reviewer install includes a distinct MCP skill bundle.
+    steps.push(Step::RmRf {
+        target: opencode_skills_dir().join(format!("cognicode-mcp-{version}")),
+    });
 
     // 2. Remove MCP entry. DEBT-3.f: take the BinaryName from the
     //    bundle manifest's DaemonCli component, not from a
     //    hardcoded `"cognicode-mcp"` literal. The literal silently
     //    coupled BinaryName to a specific component name; the
     //    manifest-derived name is the source of truth.
-    let config_path = opencode_config_path();
-    steps.push(Step::RemoveFromJson {
-        target: config_path,
-        path: vec!["mcp".to_string(), binary_name.to_string()],
-    });
+    if let Some(binary_name) = binary_name {
+        let config_path = opencode_config_path();
+        steps.push(Step::RemoveFromJson {
+            target: config_path,
+            path: vec!["mcp".to_string(), binary_name.to_string()],
+        });
+    }
 
     Ok(steps)
 }
@@ -462,7 +487,7 @@ pub fn integrate_zcode(
     Ok(())
 }
 
-pub fn uninstall_zcode(version: &str, binary_name: &str) -> Result<()> {
+pub fn uninstall_zcode(version: &str, binary_name: Option<&str>) -> Result<()> {
     // 1. Remove skills dir
     let skills_dst = zcode_skills_dir().join(format!("cognicode-{version}"));
     if skills_dst.exists() {
@@ -474,6 +499,9 @@ pub fn uninstall_zcode(version: &str, binary_name: &str) -> Result<()> {
     // 2. Remove MCP entry. DEBT-3.f: take the BinaryName from
     //    the bundle manifest's DaemonCli component, not from a
     //    hardcoded `"cognicode-mcp"` literal.
+    let Some(binary_name) = binary_name else {
+        return Ok(());
+    };
     let config_path = zcode_config_path();
     if config_path.exists() {
         let mut config = read_zcode_config()?;
@@ -559,7 +587,7 @@ pub fn integrate_claude(
     Ok(())
 }
 
-pub fn uninstall_claude(version: &str, binary_name: &str) -> Result<()> {
+pub fn uninstall_claude(version: &str, binary_name: Option<&str>) -> Result<()> {
     // 1. Remove skills dir
     let skills_dst = claude_skills_dir().join(format!("cognicode-{version}"));
     if skills_dst.exists() {
@@ -571,6 +599,9 @@ pub fn uninstall_claude(version: &str, binary_name: &str) -> Result<()> {
     // 2. Remove MCP file. DEBT-3.f: take the file stem from the
     //    bundle manifest's DaemonCli component, not from a
     //    hardcoded `"cognicode-mcp"` literal.
+    let Some(binary_name) = binary_name else {
+        return Ok(());
+    };
     let target = claude_mcp_dir().join(format!("{binary_name}.json"));
     if target.exists() {
         std::fs::remove_file(&target).with_context(|| format!("rm {}", target.display()))?;
@@ -716,7 +747,7 @@ pub fn integrate_codex(
     Ok(())
 }
 
-pub fn uninstall_codex(version: &str, binary_name: &str) -> Result<()> {
+pub fn uninstall_codex(version: &str, binary_name: Option<&str>) -> Result<()> {
     // 1. Remove skills dir
     let skills_dst = codex_skills_dir().join(format!("cognicode-{version}"));
     if skills_dst.exists() {
@@ -728,6 +759,9 @@ pub fn uninstall_codex(version: &str, binary_name: &str) -> Result<()> {
     // 2. Remove MCP entry from TOML config. DEBT-3.f: take the
     //    subtable key from the bundle manifest's DaemonCli
     //    component, not from a hardcoded `"cognicode-mcp"` literal.
+    let Some(binary_name) = binary_name else {
+        return Ok(());
+    };
     let config_path = codex_config_path();
     if config_path.exists() {
         let mut config = read_codex_config()?;
@@ -804,11 +838,38 @@ pub fn cmd_ide_install(
     // declares no binaries, fail loudly.
     let mcp_binary_name =
         crate::manifest::plugin_mcp_binary_name(&home.plugin(plugin).join("plugin.yaml"))?;
-    let mcp_command = vec![
-        home.shim_path(&mcp_binary_name)
-            .to_string_lossy()
-            .to_string(),
-    ];
+    let installed_manifest = home.version_manifest(version);
+    let declared_name = crate::bundle_manifest::daemon_cli_binary_name(&installed_manifest)
+        .with_context(|| format!(
+            "MCP unavailable in version {version}: install --profile reviewer before IDE integration"
+        ))?;
+    if declared_name != mcp_binary_name {
+        anyhow::bail!(
+            "MCP identity mismatch: plugin declares {mcp_binary_name}, installed bundle declares {declared_name}"
+        );
+    }
+    let actual_binary =
+        crate::installer_transaction::locate_component_binary(home, version, &declared_name)
+            .ok_or_else(|| {
+                anyhow!(
+                    "installed MCP binary missing for version {version}; repair reviewer profile"
+                )
+            })?;
+    let shim = home.shim_path(&declared_name);
+    if !shim.is_file() {
+        anyhow::bail!(
+            "MCP shim {} is missing or dangling; refusing to configure an unusable IDE server",
+            shim.display()
+        );
+    }
+    #[cfg(unix)]
+    if std::fs::canonicalize(&shim)? != std::fs::canonicalize(&actual_binary)? {
+        anyhow::bail!(
+            "MCP shim {} does not target installed version {version}; refusing stale link",
+            shim.display()
+        );
+    }
+    let mcp_command = vec![shim.to_string_lossy().to_string()];
     match ide {
         "opencode" => {
             // DEBT-2: `skill_path` is resolved from the bundle
@@ -820,7 +881,7 @@ pub fn cmd_ide_install(
             let skill_sources = crate::bundle_manifest::declared_skill_bundle_dirs(
                 &home.skills_root(version),
                 &home.version_manifest(version),
-                "core",
+                "reviewer",
             )?;
             if skill_sources.is_empty() {
                 return Err(anyhow!(
@@ -852,20 +913,31 @@ pub fn cmd_ide_uninstall(home: &CognicodeHomeSup, ide: &str, version: &str) -> R
     // DaemonCli component, then pass it down to each uninstall
     // path so they remove the right JSON/TOML/file entry rather
     // than blindly targeting a hardcoded `"cognicode-mcp"` key.
-    let binary_name =
-        crate::bundle_manifest::daemon_cli_binary_name(&home.version_manifest(version))?;
+    let manifest_path = home.version_manifest(version);
+    let installed = crate::bundle_manifest::BundleManifest::from_path(&manifest_path)?;
+    let binary_name = if installed
+        .components
+        .iter()
+        .any(|component| component.kind == crate::release_contract::ArtifactKind::DaemonCli)
+    {
+        Some(crate::bundle_manifest::daemon_cli_binary_name(
+            &manifest_path,
+        )?)
+    } else {
+        None
+    };
     match ide {
         "opencode" => {
-            let steps = uninstall_opencode(version, &binary_name)?;
+            let steps = uninstall_opencode(version, binary_name.as_deref())?;
             for step in steps {
                 step.execute()?;
             }
             println!("✓ OpenCode uninstall complete");
             Ok(())
         }
-        "zcode" => uninstall_zcode(version, &binary_name),
-        "claude" => uninstall_claude(version, &binary_name),
-        "codex" => uninstall_codex(version, &binary_name),
+        "zcode" => uninstall_zcode(version, binary_name.as_deref()),
+        "claude" => uninstall_claude(version, binary_name.as_deref()),
+        "codex" => uninstall_codex(version, binary_name.as_deref()),
         other => Err(anyhow!(
             "IDE '{}' is not supported by cogh yet (opencode/zcode/claude/codex in E32-D/E/F/G)",
             other
@@ -1357,6 +1429,28 @@ components:
     }
 
     #[test]
+    fn opencode_installs_portable_skill_bundles_under_distinct_identities() {
+        let core = std::path::Path::new("/test/versions/0.97.3/skills/cognicode");
+        let mcp = std::path::Path::new("/test/versions/0.97.3/skills/cognicode-mcp");
+        let paths = [core, mcp].map(|skill| {
+            integrate_opencode(skill, "0.97.3", &[])
+                .expect("pure integration recipe")
+                .into_iter()
+                .find_map(|step| match step {
+                    Step::Symlink { target, .. } => Some(target),
+                    _ => None,
+                })
+                .expect("one skill link")
+        });
+        assert_ne!(
+            paths[0], paths[1],
+            "skill bundles must never overwrite each other"
+        );
+        assert!(paths[0].ends_with("cognicode-0.97.3"));
+        assert!(paths[1].ends_with("cognicode-mcp-0.97.3"));
+    }
+
+    #[test]
     #[serial]
     fn integrate_opencode_writes_mcp_entry() {
         let tmp = std::env::temp_dir().join(format!("cogh-oc-{}", std::process::id()));
@@ -1421,7 +1515,7 @@ components:
             std::env::set_var("HOME", &tmp);
         }
 
-        let steps = uninstall_opencode("0.92.0", "cognicode-mcp").unwrap();
+        let steps = uninstall_opencode("0.92.0", Some("cognicode-mcp")).unwrap();
         for step in steps {
             step.execute().unwrap();
         }
@@ -1516,7 +1610,7 @@ components:
         unsafe {
             std::env::set_var("HOME", &tmp);
         }
-        let result = uninstall_zcode("0.92.0", "cognicode-mcp");
+        let result = uninstall_zcode("0.92.0", Some("cognicode-mcp"));
         unsafe {
             std::env::set_var("HOME", &prev_home);
         }
@@ -1571,7 +1665,7 @@ components:
         unsafe {
             std::env::set_var("HOME", &tmp);
         }
-        let result = uninstall_claude("0.92.0", "cognicode-mcp");
+        let result = uninstall_claude("0.92.0", Some("cognicode-mcp"));
         unsafe {
             std::env::set_var("HOME", &prev_home);
         }
@@ -1638,7 +1732,7 @@ mcp_servers.existing.args = ['y']
         unsafe {
             std::env::set_var("HOME", &tmp);
         }
-        let result = uninstall_codex("0.92.0", "cognicode-mcp");
+        let result = uninstall_codex("0.92.0", Some("cognicode-mcp"));
         unsafe {
             std::env::set_var("HOME", &prev_home);
         }
@@ -1684,7 +1778,7 @@ mcp_servers.existing.args = ['y']
 
     #[test]
     fn test_uninstall_opencode_steps() {
-        let steps = uninstall_opencode("0.94.9", "cognicode-mcp").unwrap();
+        let steps = uninstall_opencode("0.94.9", Some("cognicode-mcp")).unwrap();
         assert!(!steps.is_empty());
     }
 
@@ -1796,7 +1890,7 @@ mcp_servers.existing.args = ['y']
             std::env::set_var("OPENCODE_CONFIG", disposable.join("opencode.json"));
         }
 
-        let steps = uninstall_opencode("0.95.0", "cognicode-mcp").unwrap();
+        let steps = uninstall_opencode("0.95.0", Some("cognicode-mcp")).unwrap();
         let mut targets = Vec::new();
         for step in steps {
             if let Step::RmRf { target } = &step {
@@ -1813,20 +1907,27 @@ mcp_servers.existing.args = ['y']
             }
         }
 
-        // The RmRf target must point at the disposable skills, NOT real HOME.
+        // The RmRf targets must point at the disposable skills, NOT real HOME.
+        // Since the dual skill-bundle fix, uninstall removes BOTH bundles
+        // (cognicode + cognicode-mcp) for the version.
         let rmtargets: Vec<_> = targets.iter().collect();
-        assert_eq!(rmtargets.len(), 1, "expected one RmRf step");
-        let t = rmtargets[0];
-        assert!(
-            t.starts_with(&disposable),
-            "uninstall target must live under OPENCODE_CONFIG's parent, got {}",
-            t.display()
+        assert_eq!(
+            rmtargets.len(),
+            2,
+            "expected two RmRf steps (both skill bundles)"
         );
-        assert!(
-            !t.starts_with(&real_home),
-            "uninstall target must NOT live under real HOME, got {}",
-            t.display()
-        );
+        for t in rmtargets {
+            assert!(
+                t.starts_with(&disposable),
+                "uninstall target must live under OPENCODE_CONFIG's parent, got {}",
+                t.display()
+            );
+            assert!(
+                !t.starts_with(&real_home),
+                "uninstall target must NOT live under real HOME, got {}",
+                t.display()
+            );
+        }
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
