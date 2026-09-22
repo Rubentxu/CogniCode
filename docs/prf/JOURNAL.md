@@ -2997,3 +2997,15 @@ idéntico; (2) shutdown graceful por EOF de stdin: salida sin proceso
 huérfano y sin residuos .tmp/.lock; (3) caché corrupta nunca cambia el
 inventario servido (re-verificación en frontera de proceso de §72/73).
 Verde ×2. Matriz: PRF-SEC-05 → PASS, PRF-MCP-06 → PASS.
+
+## §81 — MCP-04: descriptor estable de capacidad completo — PASS (2026-09-22)
+
+`cognicode.mutates_workspace` (§79) + `tool_version` (este ciclo)
+completan el descriptor de capacidad en tools/list: id, versión,
+estabilidad, permiso R/W, budget de latencia y categoría — coherentes
+con el binario. Errores tipados verificados en §68. Pinnado en
+prf_sec_02_read_only_uat.rs (verde ×2). Matriz: PRF-MCP-04 → PASS
+(mejorado x2). Resto honesto: los presupuestos de rate-limit por
+categoría existen en dispatch (M3.2/M3.3) y no se exponen por
+herramienta individual — anotado como mejora futura, no como
+criterio del requisito.
