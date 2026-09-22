@@ -260,6 +260,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
+    // The invariant under test is enforced by `debug_assert!` in
+    // `consume_keyword`, which is compiled out in release builds. Running
+    // this test in release would fail spuriously (JOURNAL §90, T4 battery).
     fn consume_keyword_panics_on_mismatch() {
         let mut cur = c("EXPLORE");
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
