@@ -100,7 +100,7 @@
 | PRF-SEC-02 (R/W/E/Net diferenciados; read-only default; prompts ≠ autoridad) | **PASS (núcleo R/W verificado)** | Diseño respeta; **U19 completa con todas las vectores** no ejecutada. |
 | PRF-SEC-03 (logs sin tokens/credenciales/contenido sensible salvo autorización) | **PARTIAL (mejorado)** | UAT sobre binario real con `-v` (JOURNAL §39, `prf_sec_03_uat.rs`): centinela secreto en el source no aparece en stdout/stderr de analyze, graph full, index ni doctor. Pins de regresión. Falta cubrir telemetría opt-in y credenciales de configuración del proceso. |
 | **PRF-SEC-04** (presupuestos CPU/mem/tiempo/fanout/profundidad/tamaños/procesos) | **PARTIAL** | Timeouts por categoría existen; presupuesto cuantitativo por perfil no publicado. |
-| PRF-SEC-05 (cancelación/shutdown libera recursos; fallos no corrompen) | PARTIAL | Ver §PRF-MCP-06. |
+| PRF-SEC-05 (cancelación/shutdown libera recursos; fallos no corrompen) | **PASS (shutdown/crash UAT)** | Ver §PRF-MCP-06. |
 | PRF-SEC-06 (CRITICAL/HIGH conocidas antes de release) | NOT_RUN | Sin gate de advisories sobre el candidato congelado. |
 | **PRF-SEC-07** (adversariales: repo malicioso, symlinks/traversal, parser fallido, secreto señuelo, mutante no autorizado, cliente desconectado, datos corruptos) | **PEND (matiz C5)** | Reconocido por F5/C5 como pendiente. |
 

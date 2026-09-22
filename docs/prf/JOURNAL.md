@@ -2987,3 +2987,13 @@ permiso R/W. Fix: `cognicode.mutates_workspace` por herramienta
 (exactamente write_file/edit_file/reparse_on_edit en default),
 pinnado en `prf_sec_02_read_only_uat.rs` (verde ×2, regresión MCP y
 rmcp_adapter verde). Matriz: PRF-EXT-01 → PASS (metadata UAT).
+
+## §80 — SEC-05/MCP-06: shutdown y crash recovery — PASS (2026-09-22)
+
+UAT binario real `prf_sec_05_shutdown_recovery_uat.rs` (fixtures
+aislados por test): (1) `graph.cache.tmp` residual de un writer
+muerto nunca se confía — la sesión siguiente reconstruye al inventario
+idéntico; (2) shutdown graceful por EOF de stdin: salida sin proceso
+huérfano y sin residuos .tmp/.lock; (3) caché corrupta nunca cambia el
+inventario servido (re-verificación en frontera de proceso de §72/73).
+Verde ×2. Matriz: PRF-SEC-05 → PASS, PRF-MCP-06 → PASS.
