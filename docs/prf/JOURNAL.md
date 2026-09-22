@@ -2978,3 +2978,12 @@ eje verificado es R/W. SEC-02 matrix → PASS (núcleo R/W).
   cerrado cuando ningún backend registrado declara la capability.
   Complementa el test in-crate de techo de evidencia.
 Matriz: PRF-MCP-03 → PASS; PRF-EXT-04 → PASS (UAT autoridad).
+
+## §79 — EXT-01: metadatos de permiso en tools/list — PASS (2026-09-22)
+
+Auditoría en vivo mostró que stability/category/budgets YA se exponen
+en tools/list (el gap de matriz estaba desactualizado); faltaba el
+permiso R/W. Fix: `cognicode.mutates_workspace` por herramienta
+(exactamente write_file/edit_file/reparse_on_edit en default),
+pinnado en `prf_sec_02_read_only_uat.rs` (verde ×2, regresión MCP y
+rmcp_adapter verde). Matriz: PRF-EXT-01 → PASS (metadata UAT).

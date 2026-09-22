@@ -144,6 +144,40 @@ async fn read_only_mode_hides_and_rejects_mutating_tools_but_keeps_reads() {
     assert!(is_error, "write_file must fail in read-only mode: {resp}");
     assert!(!canary.exists(), "read-only mode must not write the canary file");
 
+    // 2b. PRF-EXT-01: metadata must expose the permission flag for every
+    // advertised tool, with mutators exactly matching the declared set.
+    let id = s.next_id;
+    s.next_id += 1;
+    let mut cursor: Option<String> = None;
+    let mut flagged = Vec::new();
+    let mut total_flagged = 0;
+    loop {
+        let mut params = json!({});
+        if let Some(c) = &cursor {
+            params["cursor"] = json!(c);
+        }
+        let resp = s.request(json!({"jsonrpc":"2.0","id":id,"method":"tools/list","params":params})).await;
+        for t in resp["result"]["tools"].as_array().unwrap() {
+            let name = t["name"].as_str().unwrap();
+            let m = &t["_meta"]["cognicode"]["mutates_workspace"];
+            assert!(!m.is_null(), "tool {name} must expose mutates_workspace metadata");
+            if m.as_bool().unwrap() {
+                flagged.push(name.to_string());
+            }
+            total_flagged += 1;
+        }
+        cursor = resp["result"]["nextCursor"]
+            .as_str()
+            .or_else(|| resp["result"]["next_cursor"].as_str())
+            .map(|s| s.to_string());
+        if cursor.is_none() { break; }
+    }
+    assert!(
+        flagged.is_empty(),
+        "read-only mode advertises no mutating tools, so none may be flagged: {flagged:?}"
+    );
+    assert!(total_flagged >= 70, "expected the full read tool surface, got {total_flagged}");
+
     // 3. Read tools still work: build_graph completes.
     let resp = s.call_tool("build_graph", json!({"directory": ws.to_str().unwrap()})).await;
     let result: Value = serde_json::from_str(resp["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
@@ -161,6 +195,35 @@ async fn default_mode_keeps_write_file_available() {
     let mut s = Session::spawn(&ws, false).await;
     let names = s.all_tool_names().await;
     assert!(names.contains(&"write_file".to_string()), "default mode must keep write_file advertised");
+
+    // PRF-EXT-01: default mode flags exactly the three mutating tools.
+    let mut flagged = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let id = s.next_id;
+        s.next_id += 1;
+        let mut params = json!({});
+        if let Some(c) = &cursor {
+            params["cursor"] = json!(c);
+        }
+        let resp = s.request(json!({"jsonrpc":"2.0","id":id,"method":"tools/list","params":params})).await;
+        for t in resp["result"]["tools"].as_array().unwrap() {
+            if t["_meta"]["cognicode"]["mutates_workspace"].as_bool().unwrap_or(false) {
+                flagged.push(t["name"].as_str().unwrap().to_string());
+            }
+        }
+        cursor = resp["result"]["nextCursor"]
+            .as_str()
+            .or_else(|| resp["result"]["next_cursor"].as_str())
+            .map(|s| s.to_string());
+        if cursor.is_none() { break; }
+    }
+    flagged.sort();
+    assert_eq!(
+        flagged,
+        vec!["edit_file".to_string(), "reparse_on_edit".to_string(), "write_file".to_string()],
+        "exactly the declared mutating tools must be flagged"
+    );
 
     let resp = s.call_tool("write_file", json!({"path": "sec02_default_canary.txt", "content": "ok"})).await;
     assert!(!resp["result"]["isError"].as_bool().unwrap_or(false), "write_file must work in default mode: {resp}");

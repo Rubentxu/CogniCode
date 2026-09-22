@@ -1208,6 +1208,19 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     )
                     .with_meta(cognicode_meta("experimental", "graph", false, false, 5000)),
     ]
+    .into_iter()
+    .map(|mut tool| {
+        // PRF-EXT-01: expose the read/write permission explicitly so
+        // clients can distinguish mutating tools without hardcoding names.
+        let mutates = CogniCodeHandler::MUTATING_TOOLS.contains(&tool.name.as_ref());
+        if let Some(existing) = tool.meta.as_mut() {
+            if let Some(c) = existing.get_mut("cognicode").and_then(|v| v.as_object_mut()) {
+                c.insert("mutates_workspace".to_string(), serde_json::json!(mutates));
+            }
+        }
+        tool
+    })
+    .collect()
 }
 impl ServerHandler for CogniCodeHandler {
     fn get_info(&self) -> ServerInfo {

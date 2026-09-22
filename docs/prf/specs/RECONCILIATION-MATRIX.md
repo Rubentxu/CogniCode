@@ -73,7 +73,7 @@
 
 | Requisito | Disposición | Evidencia / Notas |
 |---|---|---|
-| PRF-EXT-01 (capacidad estable: id, versión, estabilidad, permiso r/w/x/net, budgets) | PARTIAL | Definido en docs; `tools/list` no lo expone explícitamente como metadato. |
+| PRF-EXT-01 (capacidad estable: id, versión, estabilidad, permiso r/w/x/net, budgets) | **PASS (metadata UAT)** | Definido en docs; `tools/list` no lo expone explícitamente como metadato. |
 | PRF-EXT-02 (CLI y MCP usan mismo servicio de aplicación + puertos neutrales) | **PASS** | §64 (full vía AnalysisService) + §71: los 7 subcomandos restantes usan build_full_graph_report con PARTIAL+skipped en stderr; UAT binario real `prf_ext_02_partial_uat.rs`. |
 | **PRF-EXT-03** (incorporación de capacidad sintética read-only sin modificar varios lugares del dispatcher core) | **PEND (matiz C5)** | C5 reconoce: ‘ejercicio real de extensibilidad mínima (plugin) — pendiente’. |
 | PRF-EXT-04 (adapters no son fuente de verdad alternativa) | **PASS (UAT autoridad)** | Diseño hexagonal respetado en código; UAT no ejercida. |
