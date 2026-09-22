@@ -677,7 +677,7 @@ impl CommandExecutor {
                             }
                             let doc = FullGraphJson {
                                 schema_version: "cognicode.graph.full/v1",
-                                path: path,
+                                path,
                                 elapsed_ms: elapsed,
                                 symbols,
                                 dependencies: edges,
@@ -727,13 +727,25 @@ impl CommandExecutor {
                 let dir = PathBuf::from(path);
                 let strategy = FullGraphStrategy::new();
 
-                let graph = match strategy.build_full_graph(&dir) {
-                    Ok(g) => g,
-                    Err(e) => {
-                        eprintln!("Error building graph: {}", e);
-                        return Err(Box::new(e));
-                    }
-                };
+                // EXT-02: honor the same Partial/Failed semantics as the
+                // MCP path — surface skipped files, never present a
+                // partial graph as clean.
+                let report = strategy.build_full_graph_report(&dir);
+                if let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                    skipped,
+                } = &report.status
+                {
+                    eprintln!(
+                        "Warning: graph is PARTIAL: {} file(s) skipped ({})",
+                        skipped.len(),
+                        skipped
+                            .iter()
+                            .map(|f| f.path.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                }
+                let graph = report.graph;
 
                 let analyzer = CallGraphAnalyzer::new();
                 let hot_paths = analyzer.find_hot_paths(&graph, *limit);
@@ -767,13 +779,25 @@ impl CommandExecutor {
                 let dir = PathBuf::from(path);
                 let strategy = FullGraphStrategy::new();
 
-                let graph = match strategy.build_full_graph(&dir) {
-                    Ok(g) => g,
-                    Err(e) => {
-                        eprintln!("Error building graph: {}", e);
-                        return Err(Box::new(e));
-                    }
-                };
+                // EXT-02: honor the same Partial/Failed semantics as the
+                // MCP path — surface skipped files, never present a
+                // partial graph as clean.
+                let report = strategy.build_full_graph_report(&dir);
+                if let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                    skipped,
+                } = &report.status
+                {
+                    eprintln!(
+                        "Warning: graph is PARTIAL: {} file(s) skipped ({})",
+                        skipped.len(),
+                        skipped
+                            .iter()
+                            .map(|f| f.path.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                }
+                let graph = report.graph;
 
                 let entry_ids = graph.roots();
                 println!("\nEntry points (no incoming edges):");
@@ -798,13 +822,25 @@ impl CommandExecutor {
                 let dir = PathBuf::from(path);
                 let strategy = FullGraphStrategy::new();
 
-                let graph = match strategy.build_full_graph(&dir) {
-                    Ok(g) => g,
-                    Err(e) => {
-                        eprintln!("Error building graph: {}", e);
-                        return Err(Box::new(e));
-                    }
-                };
+                // EXT-02: honor the same Partial/Failed semantics as the
+                // MCP path — surface skipped files, never present a
+                // partial graph as clean.
+                let report = strategy.build_full_graph_report(&dir);
+                if let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                    skipped,
+                } = &report.status
+                {
+                    eprintln!(
+                        "Warning: graph is PARTIAL: {} file(s) skipped ({})",
+                        skipped.len(),
+                        skipped
+                            .iter()
+                            .map(|f| f.path.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                }
+                let graph = report.graph;
 
                 let leaf_ids = graph.leaves();
                 println!("\nLeaf functions (no outgoing edges):");
@@ -829,13 +865,25 @@ impl CommandExecutor {
                 let dir = PathBuf::from(path);
                 let strategy = FullGraphStrategy::new();
 
-                let graph = match strategy.build_full_graph(&dir) {
-                    Ok(g) => g,
-                    Err(e) => {
-                        eprintln!("Error building graph: {}", e);
-                        return Err(Box::new(e));
-                    }
-                };
+                // EXT-02: honor the same Partial/Failed semantics as the
+                // MCP path — surface skipped files, never present a
+                // partial graph as clean.
+                let report = strategy.build_full_graph_report(&dir);
+                if let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                    skipped,
+                } = &report.status
+                {
+                    eprintln!(
+                        "Warning: graph is PARTIAL: {} file(s) skipped ({})",
+                        skipped.len(),
+                        skipped
+                            .iter()
+                            .map(|f| f.path.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                }
+                let graph = report.graph;
 
                 let source_id = crate::domain::aggregates::call_graph::SymbolId::new(from.clone());
                 let target_id = crate::domain::aggregates::call_graph::SymbolId::new(to.clone());
@@ -869,13 +917,25 @@ impl CommandExecutor {
                 let dir = PathBuf::from(path);
                 let strategy = FullGraphStrategy::new();
 
-                let graph = match strategy.build_full_graph(&dir) {
-                    Ok(g) => g,
-                    Err(e) => {
-                        eprintln!("Error building graph: {}", e);
-                        return Err(Box::new(e));
-                    }
-                };
+                // EXT-02: honor the same Partial/Failed semantics as the
+                // MCP path — surface skipped files, never present a
+                // partial graph as clean.
+                let report = strategy.build_full_graph_report(&dir);
+                if let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                    skipped,
+                } = &report.status
+                {
+                    eprintln!(
+                        "Warning: graph is PARTIAL: {} file(s) skipped ({})",
+                        skipped.len(),
+                        skipped
+                            .iter()
+                            .map(|f| f.path.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                }
+                let graph = report.graph;
 
                 let mermaid = graph.to_mermaid("Call Graph");
                 println!("\nMermaid diagram ({} chars):", mermaid.len());
@@ -962,13 +1022,25 @@ impl CommandExecutor {
                 let dir = PathBuf::from(path);
                 let strategy = FullGraphStrategy::new();
 
-                let graph = match strategy.build_full_graph(&dir) {
-                    Ok(g) => g,
-                    Err(e) => {
-                        eprintln!("Error building graph: {}", e);
-                        return Err(Box::new(e));
-                    }
-                };
+                // EXT-02: honor the same Partial/Failed semantics as the
+                // MCP path — surface skipped files, never present a
+                // partial graph as clean.
+                let report = strategy.build_full_graph_report(&dir);
+                if let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                    skipped,
+                } = &report.status
+                {
+                    eprintln!(
+                        "Warning: graph is PARTIAL: {} file(s) skipped ({})",
+                        skipped.len(),
+                        skipped
+                            .iter()
+                            .map(|f| f.path.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                }
+                let graph = report.graph;
 
                 let analyzer = CallGraphAnalyzer::new();
                 let complexity = analyzer.calculate_complexity(&graph);
@@ -1000,13 +1072,25 @@ impl CommandExecutor {
                 let dir = PathBuf::from(path);
                 let strategy = FullGraphStrategy::new();
 
-                let graph = match strategy.build_full_graph(&dir) {
-                    Ok(g) => g,
-                    Err(e) => {
-                        eprintln!("Error building graph: {}", e);
-                        return Err(Box::new(e));
-                    }
-                };
+                // EXT-02: honor the same Partial/Failed semantics as the
+                // MCP path — surface skipped files, never present a
+                // partial graph as clean.
+                let report = strategy.build_full_graph_report(&dir);
+                if let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                    skipped,
+                } = &report.status
+                {
+                    eprintln!(
+                        "Warning: graph is PARTIAL: {} file(s) skipped ({})",
+                        skipped.len(),
+                        skipped
+                            .iter()
+                            .map(|f| f.path.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                }
+                let graph = report.graph;
 
                 // Find all symbols that match the name
                 let search_name = symbol.to_lowercase();
