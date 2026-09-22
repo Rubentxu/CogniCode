@@ -2337,7 +2337,7 @@ mod prf_dist_04_survival_tests {
         // HOME before executing: steps carry absolute paths, so the
         // mutated-HOME window stays minimal and does not leak into
         // parallel lifecycle tests that spawn subprocesses.
-        let steps = uninstall_opencode("0.97.3", "cognicode-mcp").unwrap();
+        let steps = uninstall_opencode("0.97.3", Some("cognicode-mcp")).unwrap();
         unsafe {
             std::env::set_var("HOME", prev_home);
         }
@@ -2378,7 +2378,7 @@ mod prf_dist_04_survival_tests {
         unsafe {
             std::env::set_var("HOME", tmp.path());
         }
-        let steps = uninstall_opencode("0.97.3", "cognicode-mcp").unwrap();
+        let steps = uninstall_opencode("0.97.3", Some("cognicode-mcp")).unwrap();
         unsafe {
             std::env::set_var("HOME", prev_home);
         }
@@ -2413,7 +2413,7 @@ mod prf_dist_04_survival_tests {
         unsafe {
             std::env::set_var("HOME", tmp.path());
         }
-        let steps = uninstall_opencode("0.97.3", "cognicode-mcp").unwrap();
+        let steps = uninstall_opencode("0.97.3", Some("cognicode-mcp")).unwrap();
         unsafe {
             std::env::set_var("HOME", prev_home);
         }
