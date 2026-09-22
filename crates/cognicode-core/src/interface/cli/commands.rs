@@ -188,6 +188,10 @@ pub enum GraphCommand {
         /// Rebuild the full graph
         #[arg(long)]
         rebuild: bool,
+        /// Output format: text or json (PRF-CLI-02: json mode writes
+        /// schema-versioned structured data to stdout; logs stay on stderr)
+        #[arg(long, default_value = "text")]
+        format: String,
         /// Directory to analyze
         #[arg(default_value = ".")]
         path: String,
@@ -573,23 +577,58 @@ impl CommandExecutor {
                     }
                 }
             }
-            GraphCommand::Full { rebuild, path } => {
+            GraphCommand::Full {
+                rebuild,
+                format,
+                path,
+            } => {
                 let start = Instant::now();
-                println!(
-                    "Building full project graph at: {}{}",
-                    path,
-                    if *rebuild { " (rebuild)" } else { "" }
-                );
+                // PRF-CLI-02: in json mode stdout carries ONLY the
+                // schema-versioned JSON document; progress text stays on
+                // stderr. Text mode preserves the historical human output.
+                let json_mode = format == "json";
+                if !json_mode {
+                    println!(
+                        "Building full project graph at: {}{}",
+                        path,
+                        if *rebuild { " (rebuild)" } else { "" }
+                    );
+                } else {
+                    eprintln!(
+                        "Building full project graph at: {}{}",
+                        path,
+                        if *rebuild { " (rebuild)" } else { "" }
+                    );
+                }
 
                 let strategy = FullGraphStrategy::new();
-                let dir = PathBuf::from(path);
+                let dir = PathBuf::from(&path);
 
                 match strategy.build_full_graph(&dir) {
                     Ok(graph) => {
                         let elapsed = start.elapsed().as_millis();
-                        println!("Full graph built in {}ms", elapsed);
-                        println!("  Total symbols: {}", graph.symbol_count());
-                        println!("  Total dependencies: {}", graph.edge_count());
+                        if json_mode {
+                            #[derive(serde::Serialize)]
+                            struct FullGraphJson<'a> {
+                                schema_version: &'a str,
+                                path: &'a str,
+                                elapsed_ms: u128,
+                                symbols: usize,
+                                dependencies: usize,
+                            }
+                            let doc = FullGraphJson {
+                                schema_version: "cognicode.graph.full/v1",
+                                path: &path,
+                                elapsed_ms: elapsed,
+                                symbols: graph.symbol_count(),
+                                dependencies: graph.edge_count(),
+                            };
+                            println!("{}", serde_json::to_string(&doc)?);
+                        } else {
+                            println!("Full graph built in {}ms", elapsed);
+                            println!("  Total symbols: {}", graph.symbol_count());
+                            println!("  Total dependencies: {}", graph.edge_count());
+                        }
                     }
                     Err(e) => {
                         eprintln!("Error building full graph: {}", e);
