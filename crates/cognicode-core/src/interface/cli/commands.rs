@@ -324,8 +324,14 @@ impl CommandExecutor {
 
         match &cli.command {
             Some(CliCommand::Analyze { path }) => {
+                // PRF-CLI-01: do NOT swallow the Analyze error.
+                // "No `exit 0` if the operation was not performed":
+                // a failed analyze must surface a non-zero exit code
+                // so scripts and CI can detect it (UAT:
+                // `crates/cognicode-cli/tests/prf_cli_01_uat.rs`).
                 if let Err(e) = Self::execute_analyze(path).await {
                     eprintln!("Analyze command failed: {}", e);
+                    return Err(e);
                 }
             }
             Some(CliCommand::Serve { port }) => {
