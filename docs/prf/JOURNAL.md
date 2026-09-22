@@ -3063,3 +3063,12 @@ H-06/H-07/push/tag/C7/publicación siguen operator-gated.
 - **Evidencia:** `cargo test -p cognicode-cli --release --test prf_state_06_existing_home_uat` → `2 passed; 0 failed` ×2.
 - **Estado STATE-06:** PARTIAL → PASS. Restan PARTIALs honestos: STATE-07 (deuda eficiencia, caracterizada), EXT-06, DIST-04 restos, CI-02..06/DIST-05 (infra), operator-gated push/tag/C7.
 - **SHA:** `9ffec1ea`. Siguiente: STATE-07 refinamiento (deuda eficiencia cache-miss) o EXT-06 (UAT-U10).
+
+## §87 — STATE-07 PASS: deuda cache-miss resuelta + fixture ide_adapter reparado (2026-09-22)
+
+- **STATE-07 (deuda §40):** causa raíz — `handle_build_graph` solo hidrataba el snapshot durable si la caché en memoria estaba vacía (sesión nueva), por lo que una segunda llamada en la misma sesión con fuentes SIN cambios pagaba siempre un rebuild completo. Fix: antes de reconstruir, se comprueba el manifest en memoria con el MISMO gate de frescura content-vs-content (`is_manifest_stale`) del path de snapshot; manifest fresco sirve la caché viva y lo reporta honestamente ("loaded from cache"). Cambio de fuentes sigue reconstruyendo (pins existentes + nueva aserción de evolución).
+- **TDD:** test `unchanged_sources_same_session_serve_cached_graph` RED primero (segunda llamada "built") → GREEN. Sustituye el test de caracterización que pinaba la ineficiencia.
+- **Defecto real #3 (fixture, no producto):** `cognicode_ide_adapter` llevaba roto desde PR #289 (`43d27f2c`): `ide install` ahora resuelve el binario vía `locate_component_binary`, exige shim válido que canonicalice al binario instalado (stale-link rejection) y skill bundles del perfil reviewer. Fixture: planta stub `cognicode-mcp/bin`, sustituye el shim colgante de `init`, y declara perfil `reviewer` (componente `[core, reviewer]`, bundle `[core, reviewer]`). 7/7 GREEN.
+- **Evidencia:** core lib `2146 passed; 0 failed`; cli `411 passed; 0 failed`; clippy `-D warnings` limpio.
+- **Matriz:** STATE-07 PARTIAL → PASS.
+- **SHA:** `af423c2f`. Siguiente: EXT-06 (UAT-U10 rolling upgrade) o DIST-04 restos. NO ejecuta: push, tag, C7. Operator-gated.
