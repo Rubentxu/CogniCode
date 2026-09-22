@@ -327,7 +327,7 @@ fn advance_stage(
             Ok(())
         }
         InstallStage::Downloading => {
-            let cache_dir = layout::cache_dir();
+            let cache_dir = home.cache();
             std::fs::create_dir_all(&cache_dir)
                 .map_err(|e| InstallerError::Io(cache_dir.clone(), e))?;
             journal.record(SideEffect::CreatedDir(cache_dir.clone()));
@@ -370,7 +370,7 @@ fn advance_stage(
         }
         InstallStage::VerifyingSha256 => {
             // Verify SHA256 for each downloaded file
-            let cache_dir = layout::cache_dir();
+            let cache_dir = home.cache();
             for comp in &manifest.components {
                 let path = cache_dir.join(format!("{}.tar.gz", comp.name));
                 verify_sha256(&path, comp.sha256.as_str())?;
@@ -386,7 +386,7 @@ fn advance_stage(
             std::fs::create_dir_all(&install_dir)
                 .map_err(|e| InstallerError::Io(install_dir.clone(), e))?;
             journal.record(SideEffect::CreatedDir(install_dir.clone()));
-            let cache_dir = layout::cache_dir();
+            let cache_dir = home.cache();
             for comp in &manifest.components {
                 let src = cache_dir.join(format!("{}.tar.gz", comp.name));
                 let dest = install_dir.join(&comp.name);
@@ -428,7 +428,7 @@ fn advance_stage(
             // has no matching components. The layout must materialize so
             // subsequent `cogh doctor` / `cogh where` calls find a well-formed
             // `~/.cognicode/shims/` path.
-            let shims_dir = layout::shims_dir();
+            let shims_dir = home.shims();
             std::fs::create_dir_all(&shims_dir)
                 .map_err(|e| InstallerError::Io(shims_dir.clone(), e))?;
             journal.record(SideEffect::CreatedDir(shims_dir.clone()));
@@ -449,7 +449,7 @@ fn advance_stage(
                 // that the legacy `bin/<comp>/<comp>` shape assumed.
                 let bin_path = locate_component_binary(home, &manifest.version, &comp.name);
                 if let Some(bin_path) = bin_path {
-                    let shim_path = layout::shims_dir().join(&comp.name);
+                    let shim_path = home.shim_path(&comp.name);
                     let effect = adapter
                         .install_shim(&bin_path, &shim_path)
                         .map_err(|e| InstallerError::ShimInstall(e.to_string()))?;
@@ -551,7 +551,7 @@ impl InstallerTransaction {
         home: &crate::layout::CognicodeHome,
         profile: &str,
     ) -> Result<PathBuf, InstallerError> {
-        let yaml = Self::load_bundle_manifest()?;
+        let yaml = Self::load_bundle_manifest(home)?;
 
         // Parse and validate the v2 contract.
         //
@@ -644,13 +644,13 @@ impl InstallerTransaction {
     /// crate's own tests have a well-formed v2 manifest to parse; its digests are
     /// not the digests of any real artifact, so an install driven by it fails at
     /// the SHA256 stage by construction rather than silently succeeding.
-    fn load_bundle_manifest() -> Result<String, InstallerError> {
+    fn load_bundle_manifest(home: &crate::layout::CognicodeHome) -> Result<String, InstallerError> {
         if let Some(explicit) = std::env::var_os(ENV_BUNDLE_MANIFEST) {
             let path = PathBuf::from(explicit);
             return std::fs::read_to_string(&path).map_err(|e| InstallerError::Io(path, e));
         }
 
-        let home_manifest = layout::bundle_yaml_path();
+        let home_manifest = home.bundle_yaml_path();
         if home_manifest.exists() {
             return std::fs::read_to_string(&home_manifest)
                 .map_err(|e| InstallerError::Io(home_manifest, e));
@@ -790,6 +790,29 @@ impl InstallerTransaction {
 mod tests {
     use super::*;
     use crate::layout::test_support::TempCognicodeHome;
+
+    /// Custom --home must own all installation paths. A stale manifest in the
+    /// default COGNICODE_HOME must never override a release staged in --home.
+    #[test]
+    #[serial_test::serial]
+    fn custom_home_manifest_is_not_resolved_from_process_home() {
+        let default_home = TempCognicodeHome::new();
+        crate::release_test_support::unpoint();
+        let isolated = tempfile::tempdir().expect("explicit home");
+        let custom = crate::layout::CognicodeHome {
+            root: isolated.path().join("cognicode-home"),
+        };
+        custom.init().expect("init custom home");
+        let expected = include_str!("dev-bundle.yaml");
+        std::fs::write(custom.bundle_yaml_path(), expected).expect("stage manifest");
+        std::fs::write(default_home.path().join("bundle.yaml"), "wrong-manifest")
+            .expect("plant stale default manifest");
+
+        let loaded = InstallerTransaction::load_bundle_manifest(&custom)
+            .expect("explicit home manifest must win");
+        assert_eq!(loaded, expected);
+        assert!(!custom.shims().join("cognicode-mcp").exists());
+    }
 
     /// The dev-only fixture must be a well-formed v2 manifest.
     ///
@@ -1102,7 +1125,8 @@ components:
         // pointing at a dropped tempdir). Clear the overrides so the
         // embedded dev fixture is the deterministic input.
         crate::release_test_support::unpoint();
-        let yaml = InstallerTransaction::load_bundle_manifest()
+        let home = crate::layout::CognicodeHome::resolve(None).expect("resolve test home");
+        let yaml = InstallerTransaction::load_bundle_manifest(&home)
             .expect("embedded bundle manifest must be readable");
         let manifest =
             BundleManifest::from_str(&yaml).expect("embedded bundle manifest must parse");
