@@ -1,7 +1,7 @@
 # CURRENT — Puntero operativo PRF
 
 ## Estado (2026-09-22 checkpoint post-auditoría operador + H-02 GREEN + H-01 RED pin)
-- **HEAD**: `6ed1930b` (docs refresh post H-01 RED pin) sobre
+- **HEAD**: `0a7eb8d2` (docs refresh post H-01 RED pin) sobre
   `5ed7f865` (H-01 RED pin) sobre `8074a426` (matrix recount)
   sobre `f8cd3375` (docs refresh) sobre `80e7c403` (H-02 GREEN)
   sobre `82f1ba54` (SHA congelado + matriz reconciliación) sobre
@@ -51,11 +51,11 @@
 - Resoluciones de diseño pendientes para H-01, H-03, H-04, H-07
   (autoridad del operador).
 - **SHA congelado stale**: `RELEASE-CANDIDATE.md` congela `178f8a5b`
-  pero HEAD avanzó a `6ed1930b`. Re-firma pendiente del operador.
+  pero HEAD avanzó a `0a7eb8d2`. Re-firma pendiente del operador.
 
 ## Referencias
 - `docs/prf/RELEASE-CANDIDATE.md`: SHA candidato congelado
-  `178f8a5b` (STALE — HEAD actual `6ed1930b`); §Cierre de PRF contiene
+  `178f8a5b` (STALE — HEAD actual `0a7eb8d2`); §Cierre de PRF contiene
   el plan de 5 acciones del operador.
 - `docs/prf/specs/RECONCILIATION-MATRIX.md`: 1 PASS / 35 PARTIAL /
   11 FAIL / 24 NOT_RUN / 9 PEND / 0 EXCL.

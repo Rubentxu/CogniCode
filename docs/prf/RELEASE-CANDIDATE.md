@@ -2,16 +2,18 @@
 
 > Estado: DRAFT — auditoría 2026-09-22 (operador) reveló gaps contractuales que invalidan la equivalencia "READY FOR RELEASE" ↔ "C7 PASS". El SHA candidato está **congelado** abajo; las acciones 1-5 del plan operador (sección 5 de la auditoría) se ejecutarán **en orden estricto** contra este SHA, sin reescribirlo.
 >
-> **NOTA 2026-09-22 (sesión actual):** la acción 3 H-02 (`80e7c403`) y el H-01 RED pin (`5ed7f865`) avanzaron HEAD. HEAD actual: `6ed1930b`. El SHA congelado `178f8a5b` queda **stale**; el operador deberá re-firmar el freeze antes de proseguir. NO se actualiza automáticamente: el push sigue BLOQUEADO.
+> **NOTA 2026-09-22 (sesión actual):** la acción 3 H-02 (`80e7c403`) y el H-01 RED pin (`5ed7f865`) avanzaron HEAD. HEAD actual: `0a7eb8d2`. El SHA congelado `178f8a5b` queda **stale**; el operador deberá re-firmar el freeze antes de proseguir. NO se actualiza automáticamente: el push sigue BLOQUEADO.
+>
+> **Meta-nota sobre staleness iterativa:** cualquier commit que toque estos docs refresh mueve el HEAD, lo que inmediatamente stale-a este puntero. La solución canónica es **dejar de tocar los punteros** (mantener el freeze `178f8a5b` honestamente stale) hasta que el operador re-firme; o que el operador re-firme el SHA congelado a `0a7eb8d2` (o posterior) cuando lo autorice. Los refrescos intermedios solo sirven mientras se trabaja en la misma sesión y son aceptables porque el push sigue BLOQUEADO.
 
 ## Candidato (CONGELADO — STALE)
 
 | Campo | Valor |
 |---|---|
-| SHA candidato (full) | **`178f8a5bf83b52433c46887456823c606ac786b7`** (corto: `178f8a5b`) — **STALE** (HEAD actual `6ed1930b`) |
-| HEAD actual | `6ed1930b1a7541c7b2ae401ef39575db2d43eafa` (docs refresh post H-01 RED pin, JOURNAL §31) |
+| SHA candidato (full) | **`178f8a5bf83b52433c46887456823c606ac786b7`** (corto: `178f8a5b`) — **STALE** (HEAD actual `0a7eb8d2`) |
+| HEAD actual | `0a7eb8d20e2ccc79f8c355f8c94344cd89921f1d` (docs refresh post H-01 RED pin, JOURNAL §31) |
 | Identidad del artefacto | **fija** — cualquier modificación posterior del HEAD exige nuevo proceso de release. No se firma C7 sobre "el HEAD en el momento de la firma". |
-| Cadena de procedencia | `6ed1930b` (docs refresh post H-01 RED) → `5ed7f865` (H-01 RED pin) → `8074a426` (matrix recount) → `f8cd3375` (docs refresh) → `80e7c403` (H-02 GREEN) → `82f1ba54` (SHA congelado + matriz reconciliación) → `178f8a5b` (reconciliación C2) → `f0e25652` (pointer refresh) → `c1b14017` (RELEASE-CANDIDATE refresh) → `86df20de` (docs checkpoint) → `47dd39ac` (clippy-fix) → `5b96db43` (T4 base, último de origin/main). |
+| Cadena de procedencia | `0a7eb8d2` (docs refresh post H-01 RED) → `5ed7f865` (H-01 RED pin) → `8074a426` (matrix recount) → `f8cd3375` (docs refresh) → `80e7c403` (H-02 GREEN) → `82f1ba54` (SHA congelado + matriz reconciliación) → `178f8a5b` (reconciliación C2) → `f0e25652` (pointer refresh) → `c1b14017` (RELEASE-CANDIDATE refresh) → `86df20de` (docs checkpoint) → `47dd39ac` (clippy-fix) → `5b96db43` (T4 base, último de origin/main). |
 | Versión | Pendiente de decisión del operador (candidatos razonables: `v0.97.4` patch de clippy; `v0.98.0` minor; `v0.98.0-prf` cierre del programa; `v1.0.0-prf` release production-ready milestone). El tag v0.97.3 NO contiene estos fixes. |
 | Plataformas probadas | Linux x86_64 (única plataforma con UAT ejecutada). Cobertura ampliada pendiente si el operador exige otras plataformas. |
 
@@ -33,12 +35,12 @@
 
 ## Batería de pruebas en HEAD
 
-- `cognicode-core --lib` (con `multimodal`): **2128 passed, 0 failed, 27 ignored + 1 H-01 RED test failing as expected** (verificado en HEAD `6ed1930b` post-H-02 + H-01 RED pin + docs refresh; era 2126 antes de H-02, +3 tests nuevos: 2 H-02 + 1 H-01 RED).
+- `cognicode-core --lib` (con `multimodal`): **2128 passed, 0 failed, 27 ignored + 1 H-01 RED test failing as expected** (verificado en HEAD `0a7eb8d2` post-H-02 + H-01 RED pin + docs refresh; era 2126 antes de H-02, +3 tests nuevos: 2 H-02 + 1 H-01 RED).
 - Workspace `--lib`: GREEN salvo `moldql::cursor::consume_keyword_panics_on_mismatch`
   (cognicode-explorer), PRE-EXISTENTE en HEAD limpio (verificado con
   stash), NO regresión del programa PRF.
 - `cognicode-cli` bin cogh: 293 passed, 0 failed.
-- `clippy -D warnings`: clean para `cognicode-core` (post `6ed1930b`); warning inventory de `cognicode-cli`/`cognicode-ladybug` verificado sin drift vs `5b96db43` (medido con `git stash` + diff antes/después).
+- `clippy -D warnings`: clean para `cognicode-core` (post `0a7eb8d2`); warning inventory de `cognicode-cli`/`cognicode-ladybug` verificado sin drift vs `5b96db43` (medido con `git stash` + diff antes/después).
 
 ## Frentes abiertos (deuda)
 

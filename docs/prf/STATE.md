@@ -709,7 +709,7 @@ Acciones del plan registrado en `RELEASE-CANDIDATE §Cierre de PRF`:
 - ⏳ Acción 5 (push + tag) — bloqueada por directive §3 + auditoría.
 
 **SHA candidato congelado (`RELEASE-CANDIDATE.md`): `178f8a5b`**.
-**HEAD actual: `6ed1930b`**. El SHA congelado está **stale** porque el
+**HEAD actual: `0a7eb8d2`**. El SHA congelado está **stale** porque el
 fix H-02 y el H-01 RED pin avanzaron HEAD; se re-firmará cuando el
 operador lo autorice. NO se actualiza automáticamente: el push sigue
 bloqueado.
