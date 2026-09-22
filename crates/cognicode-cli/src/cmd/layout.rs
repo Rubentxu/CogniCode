@@ -612,10 +612,37 @@ fn active_install_is_coherent(home: &CognicodeHome, version: &str) -> bool {
     let Ok(manifest) = crate::bundle_manifest::BundleManifest::from_path(&manifest_path) else {
         return false;
     };
-    manifest
+    let components_healthy = manifest.components.iter().all(|component| {
+        let Some(binary) =
+            crate::installer_transaction::locate_component_binary(home, version, &component.name)
+        else {
+            return false;
+        };
+        let shim = home.shim_path(&component.name);
+        if !shim.is_file() {
+            return false;
+        }
+        #[cfg(unix)]
+        if std::fs::canonicalize(&shim).ok() != std::fs::canonicalize(&binary).ok() {
+            return false;
+        }
+        true
+    });
+    if !components_healthy {
+        return false;
+    }
+    let profile = if manifest
         .components
         .iter()
-        .all(|c| vroot.join(&c.name).is_dir())
+        .any(|component| component.kind == crate::release_contract::ArtifactKind::DaemonCli)
+    {
+        "reviewer"
+    } else {
+        "core"
+    };
+    manifest.skill_bundles_for_profile(profile).iter().all(|bundle| {
+        home.skill_bundle(version, &bundle.id).join("SKILL.md").is_file()
+    })
 }
 
 pub fn cmd_rollback(
@@ -761,10 +788,50 @@ pub fn cmd_rollback(
 }
 
 pub fn cmd_reshim(home: &CognicodeHome) -> Result<()> {
-    println!(
-        "reshim: would regenerate {} (not yet implemented)",
-        home.shims().display()
-    );
+    let version = crate::tracker::read_version_optional_at(&home.tracker_version())
+        .ok_or_else(|| anyhow!("cannot reshim: no active version"))?;
+    let manifest =
+        crate::bundle_manifest::BundleManifest::from_path(&home.version_manifest(&version))?;
+    let adapter = crate::platform_adapter::current_adapter();
+    for component in &manifest.components {
+        let binary = crate::installer_transaction::locate_component_binary(
+            home, &version, &component.name,
+        )
+        .ok_or_else(|| anyhow!(
+            "cannot reshim: missing executable for component {} in {}",
+            component.name, version,
+        ))?;
+        if !binary.is_file() {
+            return Err(anyhow!("cannot reshim: component binary missing: {}", binary.display()));
+        }
+        let shim = home.shim_path(&component.name);
+        adapter.install_shim(&binary, &shim).with_context(|| {
+            format!("restore shim {} to {}", shim.display(), binary.display())
+        })?;
+        println!("restored {} -> {}", shim.display(), binary.display());
+    }
+    // Only known, version-managed names are eligible for stale-link cleanup.
+    // Never traverse or delete an unrelated user-defined shim.
+    for binary_name in ["cognicode", "cognicode-mcp"] {
+        if manifest.components.iter().any(|c| c.name == binary_name) {
+            continue;
+        }
+        let shim = home.shim_path(binary_name);
+        match std::fs::symlink_metadata(&shim) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                std::fs::remove_file(&shim)
+                    .with_context(|| format!("remove stale managed shim {}", shim.display()))?;
+                println!("removed stale managed shim {}", shim.display());
+            }
+            Ok(_) => {
+                return Err(anyhow!(
+                    "refusing to remove unmanaged non-symlink at {}", shim.display()
+                ));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
     Ok(())
 }
 
@@ -780,8 +847,10 @@ pub fn cmd_doctor(home: &CognicodeHome) -> Result<()> {
 
 pub fn cmd_where(home: &CognicodeHome, binary: &str) -> Result<()> {
     let shim = home.shims().join(binary);
-    if shim.exists() {
+    if shim.is_file() {
         println!("{}", shim.display());
+    } else if let Ok(target) = std::fs::read_link(&shim) {
+        println!("(dangling shim: {} -> {})", shim.display(), target.display());
     } else {
         println!("(not found: {})", shim.display());
     }
