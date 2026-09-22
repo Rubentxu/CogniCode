@@ -114,6 +114,27 @@ fn write_payload(path: &Path, component: &str) -> Result<()> {
     Ok(())
 }
 
+/// Produce an actual portable skill archive, not a fake string with a .tar.gz
+/// extension. The installer exercises extraction and the IDE adapter expects
+/// a real manifest and SKILL.md after materialisation.
+fn write_skill_payload(path: &Path, id: &str) -> Result<()> {
+    let file = std::fs::File::create(path)?;
+    let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::fast());
+    let mut builder = tar::Builder::new(encoder);
+    for (name, body) in [
+        ("manifest.yaml", format!("name: {id}\nversion: test\n")),
+        ("SKILL.md", format!("---\nname: {id}\ndescription: Test bundle\n---\n")),
+    ] {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(body.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder.append_data(&mut header, name, body.as_bytes())?;
+    }
+    builder.into_inner()?.finish()?;
+    Ok(())
+}
+
 /// Stage a complete Tier-1 Linux release and serve it locally.
 ///
 /// Every published component is produced (so the orphan check passes), the real
@@ -135,7 +156,7 @@ pub fn local_release(version: &str) -> Result<LocalRelease> {
     // 1b. DEBT-2c: the release contract also publishes skill bundles.
     for spec in published_skill_bundles() {
         let name = skill_bundle_filename(spec.id, version);
-        std::fs::write(staging.join(&name), format!("skills for {name}"))?;
+        write_skill_payload(&staging.join(&name), spec.id)?;
     }
 
     // 2. The real generator produces the manifest from those bytes, and
@@ -159,6 +180,9 @@ pub fn local_release(version: &str) -> Result<LocalRelease> {
         let src = entry?.path();
         std::fs::copy(&src, versioned.join(src.file_name().unwrap()))?;
     }
+    // The installer verifies portable skill payloads against the published
+    // release checksum file, not against an unverified cache entry.
+    std::fs::copy(dir.join("SHA256SUMS"), versioned.join("SHA256SUMS"))?;
     let (base_url, server, _port) = serve(&serve_root, version)?;
 
     // Wait for the server to accept connections.
