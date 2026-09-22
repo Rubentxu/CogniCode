@@ -2367,3 +2367,34 @@ del programa PRF activo).
   errores sin credenciales de configuración (variables de entorno
   del propio proceso), que esta UAT no cubre.
 - **NO ejecuta:** push, tag, C7 firma. Operator-gated.
+
+## 2026-09-22 — PRF-STATE-07 (rebuild avisado de datos derivados) (entrada 40)
+
+- **Origen:** gap matriz PRF-STATE-07 (NOT_RUN): "No hay UAT que
+  evalúe aviso de reconstrucción". SHOULD: datos derivados se
+  reconstruyen al no ser compatibles; el usuario recibe aviso y
+  nunca una revisión antigua presentada como actual.
+- **UAT:** nuevo módulo
+  `prf_state_07_rebuild_notification_tests` (handlers/mod.rs):
+  - Cambio de contenido (mtime nuevo) → rebuild + mensaje
+    "Graph loaded from built" (aviso honesto).
+  - Borrado de fichero → rebuild + aviso.
+  - Fuentes idénticas → mensaje honesto (cache o built) e
+    inventario de símbolos idéntico.
+- **Hallazgo de caracterización:** con fuentes sin cambios el
+  handler reconstruye en vez de servir cache (el manifest está
+  fresco pero el load path no lo aprovecha). El deber central de
+  STATE-07 se cumple (nunca sirve datos viejos como actuales: el
+  grafo servido es recién construido), pero la eficiencia del
+  cache-miss queda registrada como deuda.
+- **Gap H-01 referenciado:** cambio de bytes que preserva mtime y
+  tamaño burla el check mtime-based; pendiente de decisión del
+  operador sobre algoritmo de hash (JOURNAL §31, U13 RED pin).
+- **Verificación:** 2141 tests pass; clippy `-D warnings` limpio.
+- **Matriz:** PRF-STATE-07 NOT_RUN → PARTIAL (mejorado).
+- **Incidente de sesión:** un `git checkout` accidental revirtió
+  temporalmente el fichero de handlers durante la depuración;
+  se re-aplicó el módulo desde cero y se verificó con suite
+  completa antes de commit. Sin pérdida de trabajo (los commits
+  previos estaban a salvo).
+- **NO ejecuta:** push, tag, C7 firma. Operator-gated.

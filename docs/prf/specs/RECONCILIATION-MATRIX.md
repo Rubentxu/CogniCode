@@ -114,7 +114,7 @@
 | **PRF-STATE-04** (interrupción durante análisis/store/migración no produce evidencia parcial como válida; recovery automático o error+rollback) | **PEND** | U21 (`Cortar proceso durante escritura/migración; reiniciar.`) no ejecutada. |
 | PRF-STATE-05 (versión esquema; update conserva datos; rollback/downgrade verificado o rechazo) | PEND | U22 no ejecutada en binario real. |
 | PRF-STATE-06 (cogh uninstall no elimina datos usuario; ownership + HOME limpio + HOME existente) | PARTIAL | UAT-F6-001 cubre HOME limpio; HOME existente y config IDE no cert. |
-| PRF-STATE-07 (datos derivados se reconstruyen; reconstrucción avisada) | NOT_RUN | No hay UAT que evalúe aviso de reconstrucción. |
+| PRF-STATE-07 (datos derivados se reconstruyen; reconstrucción aviso) | **PARTIAL (mejorado)** | UAT in-process (`prf_state_07_rebuild_notification_tests`, JOURNAL §40): cambio/borrado de fuente → rebuild con mensaje honesto "built"; fuentes idénticas → inventario idéntico. Deuda registrada: cache-miss con fuentes sin cambios (reconstruye en vez de servir cache); gap H-01 (mtime+size) pendiente del operador. |
 
 ---
 
