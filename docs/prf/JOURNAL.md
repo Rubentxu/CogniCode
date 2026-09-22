@@ -2949,3 +2949,18 @@ bundle-skills` usa versión legacy 0.94.11 por defecto; se invocó con
 `COGNICODE_VERSION=0.97.3` (deuda menor anotada, no corregida aqui).
 **Matriz**: PRF-DIST-01 → PASS (candidata local), PRF-DIST-06 →
 PASS (candidata local).
+
+## §77 — SEC-02: modo read-only MCP (diferenciación R/W real) — PASS núcleo (2026-09-22)
+
+Hallazgo de auditoría de legalidad: el servidor MCP exponía
+write_file/edit_file sin ninguna forma de ejecutarse read-only
+(contrato "read-only default" sin mecanismo en MCP; CLI-05 sí lo
+tenía). Fix `483ac316`: `cognicode-mcp --read-only` — herramientas
+mutadoras (write_file, edit_file, reparse_on_edit) filtradas de
+tools/list y rechazadas en dispatch con error tipado; default sin
+cambios. UAT binario real `prf_sec_02_read_only_uat.rs`: read-only
+oculta mutadoras, write_file directo rechazado sin escribir (canary),
+build_graph sigue funcionando; default mantiene write_file. Verde ×2,
+regresión MCP verde, rmcp_adapter lib 17/0.
+Nota honesta: E/Net (execute/net) no existen como tools MCP hoy; el
+eje verificado es R/W. SEC-02 matrix → PASS (núcleo R/W).
