@@ -63,6 +63,48 @@ jobs:
       - name: Feature-matrix tests (${{ matrix.name }})
         run: cargo test ${{ matrix.args }}
 
+  benchmarks:
+    # PRF-CI-02: nightly benchmarks. Criterion keeps a per-environment
+    # baseline under target/criterion; the uploaded artifact allows
+    # comparing a run against the previous baseline on the same runner
+    # class (baseline exacto por entorno). Report-only: a regression
+    # does not fail the campaign, it is recorded for review.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run criterion benches
+        run: cargo bench -p cognicode-core
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion-report
+          path: target/criterion
+          retention-days: 30
+
+  adversarial:
+    # PRF-CI-02: nightly adversarial lane. Drives the known adversarial
+    # corpora: malformed/concurrent parser inputs (tree_sitter_parser
+    # adversarial suite), architecture drift e2e and findings canonical
+    # grounding e2e. Serial where state is shared.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Parser adversarial suite
+        run: cargo test -p cognicode-core --lib infrastructure::parser -- --test-threads=1
+      - name: Architecture drift e2e
+        run: cargo test -p cognicode-core --test architecture_drift_e2e
+      - name: Findings canonical grounding e2e (evidence-kernel)
+        run: cargo test -p cognicode-core --features evidence-kernel --test findings_canonical_grounding_e2e
+      - name: Workspace isolation (evidence-kernel)
+        run: cargo test -p cognicode-core --features evidence-kernel --test workspace_isolation
+      - name: MCP contract e2e (real stdio client)
+        run: cargo test -p cognicode-mcp --test continuation_e2e
+
   coverage-report:
     # PRF-CI-03: line/branch coverage measurement. Report-only for now:
     # the baseline (cognicode-core lib 74.15% lines / 70.35% regions,
