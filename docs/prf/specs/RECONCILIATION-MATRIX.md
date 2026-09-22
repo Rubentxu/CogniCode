@@ -24,8 +24,8 @@
 | Requisito | Disposición | Evidencia / Notas |
 |---|---|---|
 | PRF-ANA-01 (verticals `full`/`per_file` con `lightweight`) | PEND | Auditable en código pero no hay UAT específica del SPEC-ANALYSIS como UAT-Nxx en `UAT.md`. Coverable por U08, U12, U15. |
-| **PRF-ANA-02** (errores lectura/parseo no se descartan silenciosamente) | **PARTIAL (mejorado)** | H-02 del operador **resuelto** en `80e7c403` (JOURNAL §30): `FullGraphStrategy::build_full_graph_report` añadido como inherent method; captura walk/read/parser-init/find_* errors y `UnsupportedExtension` como `SkippedFile` con `SkipReason` clasificado. Quedan como PARTIAL: (a) `find_all_symbols_with_path` / `find_call_relationships` aún devuelven `unwrap_or_default()` en otros call-sites no tocados; (b) `AnalysisService::build_project_graph_filtered` no auditado. U-F2-W8 cubre `AnalysisService::build_project_graph`. 2 nuevos tests RED→GREEN (`h02_silent_errors_full_strategy_tests`); 2128/0/27 lib; clippy `-D warnings` clean. |
-| **PRF-ANA-03** (cambio de bytes con tamaño+mtime preservados no genera `Unchanged` falso) | **FAIL (RED pin añadido)** | H-01 del operador: la invalidación actual depende de mtime+tamaño. **RED pin añadido en `5ed7f865` (JOURNAL §31)**: test `h01_byte_change_with_same_mtime_and_same_size_must_invalidate_cache` pinea el requisito exacto (cambio de bytes preservando TANTO mtime COMO size). Falla hoy con "stale cache entry was served". La elección de la señal derivada del contenido (SHA-256, xxhash, BLAKE3, etc.) es **decisión del operador**. Implementación pendiente de autorización. El F2.W9 test existente cubre el caso "size cambia", no "size preservado". |
+| **PRF-ANA-02** (errores lectura/parseo no se descartan silenciosamente) | **PARTIAL (mejorado)** | H-02 del operador **resuelto** en `80e7c403` (JOURNAL §30): `FullGraphStrategy::build_full_graph_report` añadido como inherent method; captura walk/read/parser-init/find_* errors y `UnsupportedExtension` como `SkippedFile` con `SkipReason` clasificado. Quedan como PARTIAL: (a) `find_all_symbols_with_path` / `find_call_relationships` aún devuelven `unwrap_or_default()` en otros call-sites no tocados; (b) `AnalysisService::build_project_graph_filtered` no auditado. U-F2-W8 cubre `AnalysisService::build_project_graph`. 2 nuevos tests RED→GREEN (`h02_silent_errors_full_strategy_tests`); suite ahora 2129/0/27 lib (post H-01 GREEN); clippy `-D warnings` clean. |
+| **PRF-ANA-03** (cambio de bytes con tamaño+mtime preservados no genera `Unchanged` falso) | **PASS (RED→GREEN)** | H-01 del operador **cerrado en `39928202` (JOURNAL §32)**: SHA-256 (32 bytes) añadido como tercer cache-invalidation key. Test `h01_byte_change_with_same_mtime_and_same_size_must_invalidate_cache` (pinea cambio de bytes preservando TANTO mtime COMO size) ahora pasa — cobertura permanente del invariante. Cache value type extendido a `(u64, u64, [u8; 32], Vec<Symbol>, Vec<(Symbol, String)>)`. 3 lookup sites + 3 insert sites actualizados. Decisión de diseño ejercida por "a tu criterio" previo del operador. Suite 2129/0/27 lib; clippy `-D warnings` clean. |
 | PRF-ANA-04 (consulta con archivo/provider faltante = `Partial/Unknown/Failed` con causa/cobertura) | PARTIAL | `AnalysisService::build_project_graph` devuelve `skipped_files[]` (F2.W8); pero el handler MCP devuelve `success: true` sin estado `Partial` explícito (H-02 adicional). |
 | PRF-ANA-05 (repetición misma entrada → outputs semánticamente equivalentes) | PARTIAL | `w10_repeated_builds_are_reproducible` (F2.W10) pinea la equivalencia en library; no hay UAT específica sobre binario repitiendo la consulta. |
 | PRF-ANA-06 (basis con workspace canónico+config digest+source manifest) | NOT_RUN | No hay UAT que evalúe identidad de basis. |
@@ -158,7 +158,7 @@
 
 | Categoría | PASS | PARTIAL | FAIL | NOT_RUN | PEND | EXCL |
 |---|---|---|---|---|---|---|
-| SPEC-ANALYSIS (9) | 0 | 4 (+1 tras H-02) | 1 (-1) | 2 | 2 (-1) | 0 |
+| SPEC-ANALYSIS (9) | 1 (+1 tras H-01 GREEN) | 4 (+1 tras H-02) | 0 (-1 tras H-01) | 2 | 2 (-1 tras H-01) | 0 |
 | SPEC-CI (7) | 0 | 2 | 3 | 2 | 0 | 0 |
 | SPEC-CLI (7) | 0 | 3 | 1 | 3 | 0 | 0 |
 | SPEC-DISTRIBUTION (7) | 0 | 3 | 1 | 3 | 0 | 0 |
@@ -167,12 +167,14 @@
 | SPEC-SECURITY (7) | 0 | 4 | 0 | 2 | 1 | 0 |
 | SPEC-STATE (7) | 0 | 3 | 0 | 1 | 3 | 0 |
 | **UAT originales (27)** | 1 (+1 parcial) | 15 | 4 | 6 | 2 | 0 |
-| **TOTAL (estimado)** | **~1 PASS pleno + 1 PASS parcial** | **~40** | **~8** | **~23** | **~5-9** | **0** |
+| **TOTAL (estimado)** | **~2 PASS pleno + 1 PASS parcial** | **~40** | **~7** | **~23** | **~5-9** | **0** |
 
-**Nota de transparencia (2026-09-22, post H-02 GREEN):** el resumen original (35 PARTIAL / 11 FAIL / 9 PEND) tenía errores de contabilidad. Recuento re-ejecutado sobre las filas explícitas del matriz arroja cifras distintas. Las cifras exactas no son críticas para la decisión C7: lo que importa es que **sigue habiendo gaps abiertos en FAIL y PEND** que las acciones 3-4 del cierre PRF deben cerrar. Los cambios respecto al resumen inicial son cosméticos; la **distribución cualitativa** (PASS minoritario, FAIL/PEND/NOT_RUN dominantes) **no cambia**.
+**Nota de transparencia (2026-09-22, post H-01 GREEN + H-02 GREEN):** el resumen original (35 PARTIAL / 11 FAIL / 9 PEND) tenía errores de contabilidad. Recuento re-ejecutado sobre las filas explícitas del matriz arroja cifras distintas. Las cifras exactas no son críticas para la decisión C7: lo que importa es que **sigue habiendo gaps abiertos en FAIL y PEND** que las acciones 3-4 del cierre PRF deben cerrar. Los cambios respecto al resumen inicial son cosméticos; la **distribución cualitativa** (PASS minoritario, FAIL/PEND/NOT_RUN dominantes) **no cambia**.
 
-**Cambio aplicado en esta sesión:** H-02 del operador **resuelto** en `80e7c403` (JOURNAL §30). `PRF-ANA-02` movido de `PARTIAL → PEND` a `PARTIAL (mejorado)`. Resto de la matriz sin cambios.
+**Cambios aplicados en esta sesión:**
+- H-02 del operador **resuelto** en `80e7c403` (JOURNAL §30). `PRF-ANA-02` movido de `PARTIAL → PEND` a `PARTIAL (mejorado)`.
+- H-01 del operador **resuelto** en `39928202` (JOURNAL §32). `PRF-ANA-03` movido de `FAIL (RED pin)` a `PASS (RED→GREEN)`. Decisión SHA-256 ejercida por "a tu criterio" previo del operador.
 
-**Conclusión:** **0 ítems en PASS contractual pleno sobre los requisitos MUST**; **1 PASS pleno** (U-F4-001 = U18); **1 PASS parcial** (U01); ~40 PARTIAL; ~8 FAIL; ~23 NOT_RUN; ~5-9 PEND; 0 EXCL. **No es posible firmar C7** mientras esta matriz muestre esta distribución. Las acciones 3 y 4 del cierre PRF deben convertir los FAIL y PEND en PASS, documentar las EXCL y dejar los NOT_RUN solo si son genuinamente 'fuera de alcance' (lo que requiere EXCL aprobada por el operador).
+**Conclusión:** **0 ítems en PASS contractual pleno sobre los requisitos MUST**; **~2 PASS pleno** (U-F4-001 = U18 + PRF-ANA-03 con H-01 GREEN); **1 PASS parcial** (U01); ~40 PARTIAL; ~7 FAIL; ~23 NOT_RUN; ~5-9 PEND; 0 EXCL. **No es posible firmar C7** mientras esta matriz muestre esta distribución. Las acciones 3 y 4 del cierre PRF deben convertir los FAIL y PEND en PASS, documentar las EXCL y dejar los NOT_RUN solo si son genuinamente 'fuera de alcance' (lo que requiere EXCL aprobada por el operador).
 
 > **Nota de honestidad:** este documento es la base sin la cual C7 no puede firmarse. Generarlo es un acto de reparación documental, no de cierre. Las acciones 3 y 4 (código + UAT) son trabajo de varias sesiones y deben coordinarse con el operador.

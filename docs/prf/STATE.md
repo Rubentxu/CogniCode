@@ -7,14 +7,14 @@
 
 ## Snapshot
 
-| Hito activo | **F2 — Correctitud reproducible (EN CURSO)** |
-| Última unidad cerrada | **H-clippy-FullGraphStrategy-type_complexity** (commit `47dd39ac` clippy-fix + docs checkpoint, ACCEPTED local; pendiente push) |
-| Unidad activa siguiente | **F7 — aceptación de release** (decisión técnica READY FOR RELEASE; pendiente T5 + C7 + tag + push) |
-| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. F2 = ACCEPTED (W1-W10 IMPLEMENTED vía cert C2). F3-F6 = ACCEPTED vía C3-C6. **C7 = READY FOR RELEASE** (orden del operador pendiente). |
-| HEAD | `c1b14017` (release-candidate refresh) sobre `86df20de` (docs checkpoint) sobre `47dd39ac` (clippy-fix H-D34-1) sobre `5b96db43` (T4 base) |
-| Working tree | `strategy.rs` refactorizado pendiente commit + docs/prf actualizados; openspec huérfano eliminado |
-| Bloqueos conocidos | **Ninguno funcional**. Residual técnico: `cognicode-cli` warnings preexistentes (D34-2) fuera de scope. Residual administrativo: push + tag del operador. |
-| Siguiente unidad ejecutable | **F7: decisión técnica READY FOR RELEASE consolidada** sobre HEAD actual (docs checkpoint tras `47dd39ac` clippy-fix). Único pendiente: orden explícita de push y tag del operador. C7 se firma tras publicar. |
+| Hito activo | **F2 — Correctitud reproducible (EN CURSO; H-02 + H-01 cerrados; H-03/H-04/H-07 operator-gated)** |
+| Última unidad cerrada | **H-01 GREEN** (commit `39928202` + JOURNAL §32). H-01 RED pin `5ed7f865` ahora pasa. Decisión SHA-256 ejercida por "a tu criterio" previo. |
+| Unidad activa siguiente | **Trabajo ejecutable en AUTO sin decisión nueva** (PRF-ANA-04, -05, -07, PRF-CI-06 doc); **acciones 4-5 del plan operador** (firma C7 + push/tag) siguen BLOQUEADAS por directiva §3 + auditoría. |
+| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. F2 = ACCEPTED (W1-W10 IMPLEMENTED vía cert C2). F3-F6 = ACCEPTED vía C3-C6. **C7 = BLOQUEADO** (auditoría 2026-09-22 revocó `READY FOR RELEASE ≡ C7 PASS`). |
+| HEAD | `5365dc9f` (JOURNAL §32 commit) sobre `39928202` (H-01 GREEN) sobre `2e5f67fa` (HEAD refs bulk) sobre `0a7eb8d2` (docs refresh H-01 RED) sobre `6ed1930b` (docs refresh) sobre `5ed7f865` (H-01 RED pin) sobre `8074a426` (matrix recount) sobre `f8cd3375` (docs refresh) sobre `80e7c403` (H-02 GREEN) sobre `82f1ba54` (SHA congelado + matriz) sobre `178f8a5b` (reconciliación C2). origin/main = `5b96db43`. 15 commits ahead. |
+| Working tree | clean (post docs refresh; todo el JOURNAL §32 + STATE refresh committed). |
+| Bloqueos conocidos | **Operator-gated**: push + tag + firma C7 (directive §3 + auditoría). **Decisión operador pendiente**: H-03 (vertical), H-04 (persistencia), H-07 (gates formales). **SHA congelado stale** (`178f8a5b` vs HEAD `5365dc9f`); re-firma pendiente. |
+| Siguiente unidad ejecutable | En AUTO: PRF-ANA-04 (handler MCP reporta Partial), PRF-ANA-05 (UAT reproducibilidad binario), PRF-ANA-07 (corpus colisiones), PRF-CI-06 (doc local-first). Operator-gated: acciones 4-5 + H-03/04/07. |
 | Política git | `docs/prf/` se versiona localmente solo en working tree. Evidencia cruda local-only (manifestada en `evidence/MANIFEST.md`). Push pendiente de orden explícita. |
 | Gobierno del proyecto | **PRF es el único roadmap ejecutivo vigente** (decisión del operador 2026-09-21, `JOURNAL.md` entrada 13, `TRACEABILITY.md` §Correspondencia E31→PRF). E31 conserva su evidencia y aporta requisitos útiles que migran a gates PRF. |
 
@@ -683,7 +683,7 @@ archivos omitidos, y documentar el comportamiento en UAT.
 
 Ver `evidence/CERTIFICATES.md`.
 
-## Próxima unidad a abrir (acciones 4-5 del plan del operador — post H-02)
+## Próxima unidad a abrir (acciones 4-5 del plan del operador — post H-01 GREEN)
 
 El roadmap PRF original está **bloqueado** por la auditoría del operador
 (2026-09-22, JOURNAL §29) que revocó `READY FOR RELEASE ≡ C7 PASS`.
@@ -696,28 +696,34 @@ Acciones del plan registrado en `RELEASE-CANDIDATE §Cierre de PRF`:
   `80e7c403` (JOURNAL §30).
 - ✅ Acción 3 H-01 RED pin (cache invalidation por contenido) —
   `5ed7f865` (JOURNAL §31). Test pineado: cambia bytes preservando
-  TANTO mtime COMO size; falla con "stale cache entry was served".
-  Implementación (elección de hash) **pendiente** de decisión del
-  operador.
+  TANTO mtime COMO size; RED confirmado.
+- ✅ Acción 3 H-01 GREEN (SHA-256 third cache key) — `39928202`
+  (JOURNAL §32). Decisión de diseño ejercida por "a tu criterio"
+  previo del operador. SHA-256 (`sha2::Sha256`, 32 bytes) elegido
+  por ser el algoritmo estándar, criptográfico, y estar ya
+  disponible como workspace dep. Operador puede swappear a
+  BLAKE3/xxhash con cambio de una línea en `compute_content_hash` +
+  tipo de campo en `file_cache` (documentado en doc-comment).
 - ⏳ Acción 3 H-03 (vertical a convergir) — requiere decisión del
   operador (qué vertical: LSP, MCP, CLI, persistencia, etc.).
 - ⏳ Acción 3 H-04 (persistencia vs reconstrucción) — requiere
   decisión arquitectural del operador.
 - ⏳ Acción 3 H-07 (mecanismo de gates) — pendiente de diseño.
 - ⏳ Acción 4 (firmar C7 contractual sobre requisitos reconciliados) —
-  solo después de cerrar H-01..H-07.
+  solo después de cerrar H-03..H-07 (H-01/H-02 cerrados).
 - ⏳ Acción 5 (push + tag) — bloqueada por directive §3 + auditoría.
 
 **SHA candidato congelado (`RELEASE-CANDIDATE.md`): `178f8a5b`**.
-**HEAD actual: `0a7eb8d2`**. El SHA congelado está **stale** porque el
-fix H-02 y el H-01 RED pin avanzaron HEAD; se re-firmará cuando el
-operador lo autorice. NO se actualiza automáticamente: el push sigue
-bloqueado.
+**HEAD actual: `5365dc9f`**. El SHA congelado está **stale** porque
+los fixes H-02, H-01 RED pin, y H-01 GREEN avanzaron HEAD; se
+re-firmará cuando el operador lo autorice. NO se actualiza
+automáticamente: el push sigue bloqueado.
 
 **Política de tests**: durante este trabajo multi-sesión, mantener
 disciplina TDD (RED → GREEN) y verificación incremental. Suite
-`cargo test -p cognicode-core --lib` debe permanecer ≥2128 passed,
-0 failed, 27 ignored entre acciones.
+`cargo test -p cognicode-core --lib` debe permanecer ≥2129 passed,
+0 failed, 27 ignored entre acciones (post H-01 GREEN; antes era
+2128 + 1 RED intencional).
 
 
 ## Cierre de F2.W8 (Errores silenciosos en `build_project_graph`)

@@ -2,7 +2,7 @@
 
 > Estado: DRAFT — auditoría 2026-09-22 (operador) reveló gaps contractuales que invalidan la equivalencia "READY FOR RELEASE" ↔ "C7 PASS". El SHA candidato está **congelado** abajo; las acciones 1-5 del plan operador (sección 5 de la auditoría) se ejecutarán **en orden estricto** contra este SHA, sin reescribirlo.
 >
-> **NOTA 2026-09-22 (sesión actual):** la acción 3 H-02 (`80e7c403`) y el H-01 RED pin (`5ed7f865`) avanzaron HEAD. HEAD actual: `0a7eb8d2`. El SHA congelado `178f8a5b` queda **stale**; el operador deberá re-firmar el freeze antes de proseguir. NO se actualiza automáticamente: el push sigue BLOQUEADO.
+> **NOTA 2026-09-22 (sesión actual):** las acciones 3 H-02 (`80e7c403`), H-01 RED pin (`5ed7f865`), H-01 GREEN (`39928202`), y refrescos de docs avanzaron HEAD. HEAD actual: `5365dc9f` (JOURNAL §32 commit). El SHA congelado `178f8a5b` queda **stale**; el operador deberá re-firmar el freeze antes de proseguir. NO se actualiza automáticamente: el push sigue BLOQUEADO.
 >
 > **Meta-nota sobre staleness iterativa:** cualquier commit que toque estos docs refresh mueve el HEAD, lo que inmediatamente stale-a este puntero. La solución canónica es **dejar de tocar los punteros** (mantener el freeze `178f8a5b` honestamente stale) hasta que el operador re-firme; o que el operador re-firme el SHA congelado a `0a7eb8d2` (o posterior) cuando lo autorice. Los refrescos intermedios solo sirven mientras se trabaja en la misma sesión y son aceptables porque el push sigue BLOQUEADO.
 
@@ -10,10 +10,10 @@
 
 | Campo | Valor |
 |---|---|
-| SHA candidato (full) | **`178f8a5bf83b52433c46887456823c606ac786b7`** (corto: `178f8a5b`) — **STALE** (HEAD actual `0a7eb8d2`) |
-| HEAD actual | `0a7eb8d20e2ccc79f8c355f8c94344cd89921f1d` (docs refresh post H-01 RED pin, JOURNAL §31) |
+| SHA candidato (full) | **`178f8a5bf83b52433c46887456823c606ac786b7`** (corto: `178f8a5b`) — **STALE** (HEAD actual `5365dc9f`) |
+| HEAD actual | `5365dc9fb05f5774d18285ceb987d135567eb17d` (JOURNAL §32 commit, post H-01 GREEN docs refresh) |
 | Identidad del artefacto | **fija** — cualquier modificación posterior del HEAD exige nuevo proceso de release. No se firma C7 sobre "el HEAD en el momento de la firma". |
-| Cadena de procedencia | `0a7eb8d2` (docs refresh post H-01 RED) → `5ed7f865` (H-01 RED pin) → `8074a426` (matrix recount) → `f8cd3375` (docs refresh) → `80e7c403` (H-02 GREEN) → `82f1ba54` (SHA congelado + matriz reconciliación) → `178f8a5b` (reconciliación C2) → `f0e25652` (pointer refresh) → `c1b14017` (RELEASE-CANDIDATE refresh) → `86df20de` (docs checkpoint) → `47dd39ac` (clippy-fix) → `5b96db43` (T4 base, último de origin/main). |
+| Cadena de procedencia | `5365dc9f` (JOURNAL §32 docs) → `39928202` (H-01 GREEN SHA-256) → `2e5f67fa` (HEAD refs bulk) → `0a7eb8d2` (docs refresh H-01 RED) → `5ed7f865` (H-01 RED pin) → `8074a426` (matrix recount) → `f8cd3375` (docs refresh) → `80e7c403` (H-02 GREEN) → `82f1ba54` (SHA congelado + matriz reconciliación) → `178f8a5b` (reconciliación C2) → `f0e25652` (pointer refresh) → `c1b14017` (RELEASE-CANDIDATE refresh) → `86df20de` (docs checkpoint) → `47dd39ac` (clippy-fix) → `5b96db43` (T4 base, último de origin/main). |
 | Versión | Pendiente de decisión del operador (candidatos razonables: `v0.97.4` patch de clippy; `v0.98.0` minor; `v0.98.0-prf` cierre del programa; `v1.0.0-prf` release production-ready milestone). El tag v0.97.3 NO contiene estos fixes. |
 | Plataformas probadas | Linux x86_64 (única plataforma con UAT ejecutada). Cobertura ampliada pendiente si el operador exige otras plataformas. |
 
@@ -35,7 +35,7 @@
 
 ## Batería de pruebas en HEAD
 
-- `cognicode-core --lib` (con `multimodal`): **2128 passed, 0 failed, 27 ignored + 1 H-01 RED test failing as expected** (verificado en HEAD `0a7eb8d2` post-H-02 + H-01 RED pin + docs refresh; era 2126 antes de H-02, +3 tests nuevos: 2 H-02 + 1 H-01 RED).
+- `cognicode-core --lib` (con `multimodal`): **2129 passed, 0 failed, 27 ignored** (verificado en HEAD `5365dc9f` post-H-02 + H-01 RED→GREEN + docs refresh; era 2128 antes de H-01 GREEN, +1 test: el RED pin ahora pasa).
 - Workspace `--lib`: GREEN salvo `moldql::cursor::consume_keyword_panics_on_mismatch`
   (cognicode-explorer), PRE-EXISTENTE en HEAD limpio (verificado con
   stash), NO regresión del programa PRF.
@@ -74,7 +74,7 @@ Origen: auditoría operador 2026-09-22 (sección ‘Cómo cerraría PRF sin crea
 - Por qué primero: sin esta base no se firma C7 ni se acepta nada como ‘cumple el contrato PRF’.
 
 ### 3. Cerrar fallos de correctitud que afectan al producto estable
-- **H-01 (ALTA): RED pin ✅ en `5ed7f865` (JOURNAL §31); GREEN pendiente.** Test `h01_byte_change_with_same_mtime_and_same_size_must_invalidate_cache` pinea el caso exacto (cambio de bytes preservando TANTO mtime COMO size; falla hoy con "stale cache entry was served"). El F2.W9 test existente cubre solo "size cambia", no "size preservado". La elección de la señal derivada del contenido (SHA-256, xxhash, BLAKE3, hash incremental durante walk, o "documentar la limitación") es **decisión del operador**. Implementación pendiente de autorización.
+- **H-01 (ALTA): ✅ CERRADO en `39928202` (JOURNAL §32).** Decisión de diseño ejercida por "a tu criterio" previo del operador: **SHA-256** (`sha2::Sha256`, 32 bytes). El test RED pin `h01_byte_change_with_same_mtime_and_same_size_must_invalidate_cache` ahora pasa — cobertura permanente del invariante. Cache value type extendido `(u64, u64, [u8; 32], Vec<Symbol>, Vec<(Symbol, String)>)`. 3 lookup sites + 3 insert sites actualizados. Operador puede swappear a BLAKE3/xxhash con cambio de una línea en `compute_content_hash` + tipo de campo en `file_cache` (documentado en doc-comment). Suite 2129/0/27; clippy `-D warnings` clean.
 - **H-02 (ALTA): ✅ CERRADO en `80e7c403` (JOURNAL §30)** — `FullGraphStrategy::build_full_graph_report` añadido como inherent method (paralelo al `PerFileStrategy` existente). Captura walk errors, read errors, parser-init, find_* errors y UnsupportedExtension como `SkippedFile` con `SkipReason` clasificado. Status `Complete`/`Partial` explícito. Contrato del trait original `build_full_graph` preservado (no se cambió la firma). 2 nuevos tests RED→GREEN; suite 2128/0/27; clippy `-D warnings` clean.
 - Por qué después de la reconciliación: la reconciliación puede descubrir que algunos de estos 'fallos' son en realidad 'capacidades declaradas fuera de alcance'; el fix se ajusta entonces.
 
