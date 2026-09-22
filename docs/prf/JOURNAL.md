@@ -2785,3 +2785,13 @@ pendiente de misma reforma.
 durante operaciones con logging denso; shutdown limpio sin huérfanos.
 Evidencia: `evidence/u65-mcp02/`.
 **Matriz**: PRF-MCP-02 → PASS.
+
+
+## §66 — PRF-SEC-01: build_graph sin validación de directorio — PASS tras fix (2026-09-22)
+
+Defecto real: `handle_build_graph` no validaba `directory` (único
+handler con superficie de ruta sin InputValidator). Fix + UAT binario
+real con 4 vectores: traversal/absoluto/symlink RECHAZADOS, root
+ALLOWED. Deuda anotada: argumentos desconocidos ignorados por serde
+(MCP-04). Evidencia: `evidence/u66-sec01/`.
+**Matriz**: PRF-SEC-01 → PARTIAL (mejorado: vector build_graph cubierto; TOCTOU exhaustivo pendiente).
