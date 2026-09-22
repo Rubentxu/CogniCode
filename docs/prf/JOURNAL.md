@@ -2743,3 +2743,11 @@ Explorer/RPC/cloud. Fallo parcial (extensión no soportada) = skip
 honesto, no fatal ni oculto. Sin defectos de producto. Evidencia:
 `evidence/u61-cli03-workspace/`.
 **Matriz**: PRF-CLI-03 → PASS.
+
+## §62 — PRF-CLI-06: UAT binario real — PASS (2026-09-22)
+
+`prf_cli_06_determinism_uat` (4/4): unicode+espacios determinista,
+reportes idénticos desde cwd distintos, permiso denegado sin crash,
+verbose sin fuga de secretos de entorno. Evidencia:
+`evidence/u62-cli06-determinism/`.
+**Matriz**: PRF-CLI-06 → PASS.
