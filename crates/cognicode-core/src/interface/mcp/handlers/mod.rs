@@ -1181,6 +1181,11 @@ pub async fn handle_build_graph(
             EdgeInfo { from, to }
         })
         .collect();
+    // PRF-ANA-05: canonical edge ordering. The underlying graph iteration
+    // order is not stable across builds, but the published payload must be
+    // reproducible run-over-run for identical inputs.
+    let mut edges = edges;
+    edges.sort_by(|a, b| (&a.from, &a.to).cmp(&(&b.from, &b.to)));
 
     let source = if loaded_from_cache {
         "cache (in-memory)"
