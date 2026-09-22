@@ -91,9 +91,9 @@ pub enum Command {
         /// Configure one or more IDEs (opencode, zcode, claude, codex, all)
         #[arg(long, value_delimiter = ',')]
         ide: Vec<String>,
-        /// Installation profile (core, reviewer, full)
-        #[arg(long, default_value = "core")]
-        profile: String,
+        /// Installation profile (core or reviewer; default reviewer when --ide is supplied)
+        #[arg(long)]
+        profile: Option<String>,
         /// Channel selector (stable by default; preview not yet published)
         #[arg(long, default_value = "stable")]
         channel: String,
@@ -280,7 +280,12 @@ fn main() -> anyhow::Result<()> {
             let channel = channel
                 .parse::<lifecycle_resolver::Channel>()
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
-            layout::cmd_install(&home, &version, channel, base_url, staging, &profile)?;
+            let profile = profile.unwrap_or_else(|| {
+                if ide.is_empty() { "core" } else { "reviewer" }.to_string()
+            });
+            let resolved =
+                layout::cmd_install(&home, &version, channel, base_url, staging, &profile)?;
+            let installed_version = resolved.version;
 
             // Then dispatch to IDE adapters if --ide was provided
             if !ide.is_empty() {
@@ -290,7 +295,7 @@ fn main() -> anyhow::Result<()> {
                 // Handle --ide all: install to all 4 IDEs
                 if ide.contains(&"all".to_string()) {
                     for ide_name in valid_ides {
-                        ide::cmd_ide_install(&home, ide_name, &plugin, &version)?;
+                        ide::cmd_ide_install(&home, ide_name, &plugin, &installed_version)?;
                     }
                 } else {
                     // Check each IDE argument
@@ -301,7 +306,7 @@ fn main() -> anyhow::Result<()> {
                                 ide_name
                             ));
                         }
-                        ide::cmd_ide_install(&home, ide_name, &plugin, &version)?;
+                        ide::cmd_ide_install(&home, ide_name, &plugin, &installed_version)?;
                     }
                 }
             }
