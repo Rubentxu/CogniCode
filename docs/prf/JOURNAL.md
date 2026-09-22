@@ -2554,3 +2554,15 @@ del programa PRF activo).
   NOT_RUN → PARTIAL (baseline publicado; falta la comparación automática
   en CI, que depende del runner y del gate de red).
 - **NO ejecuta:** push, tag, C7 firma. Operator-gated.
+
+## §48 — U21 / PRF-DIST-04: SIGKILL mid-install recovery — PASS (2026-09-22, SHA 1989d9ff)
+
+**RED real**: RC 0.97.3, kill -9 a 30ms en `cogh install mcp-server`: rollback de versions/journal/shims correcto y doctor honesto, PERO la reinstalación fallaba para siempre: lock huérfano (`File exists (os error 17)`) no detectado como stale.
+
+**Fix** (`efe50f78`): `install_lock.rs` registra `pid:timestamp`; lock con PID muerto (o corrupto/pid=0) → takeover atómico (remove + create_new retry, se pierde la carrera honestamente); PID vivo → error explícito "live installation"; no-Linux sin sonda → holder asumido vivo. 3 tests serial nuevos.
+
+**GREEN**: reinstalación tras kill -9 tiene éxito (lock huérfano tomado, 0.97.3 instalado, shim PASS, doctor healthy, `cognicode-mcp 0.97.3`). Verificación: cogh bin serial 304/304, cognicode_lifecycle 7/7, clippy 0 errores.
+
+**Evidencia**: `evidence/u21-sigkill-recovery/OBSERVATIONS.md`. **Deuda menor**: cache conserva tars parciales sin GC (solo espacio en disco).
+
+**Matriz**: U21 / PRF-DIST-04 → PASS. Siguiente: PRF-ANA-06, PRF-ANA-09, PRF-CI-02.
