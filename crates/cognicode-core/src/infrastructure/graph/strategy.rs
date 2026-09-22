@@ -16,6 +16,19 @@ use crate::infrastructure::parser::TreeSitterParser;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
+/// Per-file data captured during the pre-walk in `FullGraphStrategy::build_full_graph`.
+///
+/// `path` is the entry's file path (used for `GlobalSymbolIndex` lookups so
+/// cross-file edges resolve to the candidate at the caller's scope). `symbols`
+/// are the parsed top-level symbols; `rels` are the parsed call relationships.
+/// Owning the data behind a named struct keeps the call-site tuple types
+/// readable and silences the `clippy::type_complexity` lint.
+struct FileData {
+    path: std::path::PathBuf,
+    symbols: Vec<crate::domain::aggregates::symbol::Symbol>,
+    rels: Vec<(crate::domain::aggregates::symbol::Symbol, String)>,
+}
+
 /// Trait for graph construction strategies
 ///
 /// This trait defines the interface for building graphs using different
@@ -518,12 +531,7 @@ impl GraphStrategy for FullGraphStrategy {
         // dropped every cross-file edge.
         let mut files: Vec<std::path::PathBuf> = Vec::new();
         let mut global_index = GlobalSymbolIndex::new();
-        let mut per_file_data: Vec<(
-            std::path::PathBuf,
-            String,
-            Vec<crate::domain::aggregates::symbol::Symbol>,
-            Vec<(crate::domain::aggregates::symbol::Symbol, String)>,
-        )> = Vec::new();
+        let mut per_file_data: Vec<FileData> = Vec::new();
 
         for entry in WalkDir::new(project_dir)
             .follow_links(true)
@@ -563,7 +571,11 @@ impl GraphStrategy for FullGraphStrategy {
                 Ok(r) => r,
                 Err(_) => continue,
             };
-            per_file_data.push((path.to_path_buf(), file_path, symbols, rels));
+            per_file_data.push(FileData {
+                path: path.to_path_buf(),
+                symbols,
+                rels,
+            });
         }
 
         // Add every symbol to the petgraph store and remember the
@@ -572,8 +584,8 @@ impl GraphStrategy for FullGraphStrategy {
             crate::domain::aggregates::call_graph::SymbolId,
             petgraph::graph::NodeIndex,
         > = std::collections::HashMap::new();
-        for (_, _, symbols, _) in &per_file_data {
-            for symbol in symbols {
+        for entry in &per_file_data {
+            for symbol in &entry.symbols {
                 let symbol_id = crate::domain::aggregates::call_graph::SymbolId::new(
                     symbol.fully_qualified_name(),
                 );
@@ -585,13 +597,13 @@ impl GraphStrategy for FullGraphStrategy {
         // Resolve edges through `GlobalSymbolIndex`. When the global
         // lookup returns `None` (no candidate, or ambiguous), we DO
         // NOT invent an edge against a random homonym; we drop it.
-        for (path_buf, _file_path, _symbols, relationships) in &per_file_data {
-            for (caller, callee_name) in relationships {
+        for entry in &per_file_data {
+            for (caller, callee_name) in &entry.rels {
                 let caller_id = crate::domain::aggregates::call_graph::SymbolId::new(
                     caller.fully_qualified_name(),
                 );
                 let callee_id =
-                    global_index.resolve(&callee_name.to_lowercase(), Some(path_buf.as_path()));
+                    global_index.resolve(&callee_name.to_lowercase(), Some(entry.path.as_path()));
                 if let Some(callee_id) = callee_id {
                     store
                         .add_dependency(
