@@ -3031,3 +3031,14 @@ reconstruible con inventario idéntico; las ediciones canónicas
 invalidan lo derivado (el derivado sigue al canónico, nunca al
 revés); el estado transitorio no cruza procesos. Verde ×2.
 Matriz: PRF-STATE-01 → PASS.
+
+## §84 — SEC-03: defecto real — telemetría NO era opt-in — PASS (2026-09-22)
+
+Auditoría de legalidad detectó defecto real: el servidor MCP
+inicializaba el provider OTLP incondicionalmente (contacto por
+defecto a localhost:4317), violando "telemetría opt-in". Fix: solo se
+construye con COGNICODE_TELEMETRY=1; por defecto, notice honesto en
+stderr y cero conexión. UAT binario real (stderr pin, verde ×2,
+regresión MCP verde). Nota honesta: la superficie "credenciales de
+configuración" no existe hoy en core (sin tokens/API keys); no se
+inventa test para superficie inexistente. Matriz: PRF-SEC-03 → PASS.

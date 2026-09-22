@@ -98,7 +98,7 @@
 |---|---|---|
 | PRF-SEC-01 (raíz + cada ruta canónica y autorizada; rechazo `..`, absolutos, symlinks, TOCTOU) | **PARTIAL (mejorado)** | §66: defecto real corregido — build_graph ahora valida `directory` (traversal/absoluto/symlink RECHAZADOS en UAT binario real, 4 vectores, `evidence/u66-sec01/`). TOCTOU exhaustivo sigue pendiente. Deuda: argumentos desconocidos ignorados por serde (MCP-04). |
 | PRF-SEC-02 (R/W/E/Net diferenciados; read-only default; prompts ≠ autoridad) | **PASS (núcleo R/W verificado)** | Diseño respeta; **U19 completa con todas las vectores** no ejecutada. |
-| PRF-SEC-03 (logs sin tokens/credenciales/contenido sensible salvo autorización) | **PARTIAL (mejorado)** | UAT sobre binario real con `-v` (JOURNAL §39, `prf_sec_03_uat.rs`): centinela secreto en el source no aparece en stdout/stderr de analyze, graph full, index ni doctor. Pins de regresión. Falta cubrir telemetría opt-in y credenciales de configuración del proceso. |
+| PRF-SEC-03 (logs sin tokens/credenciales/contenido sensible salvo autorización) | **PASS (telemetría opt-in)** | UAT sobre binario real con `-v` (JOURNAL §39, `prf_sec_03_uat.rs`): centinela secreto en el source no aparece en stdout/stderr de analyze, graph full, index ni doctor. Pins de regresión. Falta cubrir telemetría opt-in y credenciales de configuración del proceso. |
 | **PRF-SEC-04** (presupuestos CPU/mem/tiempo/fanout/profundidad/tamaños/procesos) | **PARTIAL** | Timeouts por categoría existen; presupuesto cuantitativo por perfil no publicado. |
 | PRF-SEC-05 (cancelación/shutdown libera recursos; fallos no corrompen) | **PASS (shutdown/crash UAT)** | Ver §PRF-MCP-06. |
 | PRF-SEC-06 (CRITICAL/HIGH conocidas antes de release) | NOT_RUN | Sin gate de advisories sobre el candidato congelado. |
