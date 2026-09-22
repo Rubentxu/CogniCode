@@ -41,8 +41,18 @@ impl Step {
     pub fn execute(&self) -> Result<()> {
         match self {
             Step::RmRf { target } => {
-                if target.exists() {
-                    std::fs::remove_dir_all(target)?;
+                // Skill paths may be symlinks, including dangling symlinks.
+                // Path::exists() follows links, and remove_dir_all rejects links.
+                match std::fs::symlink_metadata(target) {
+                    Ok(meta) if meta.file_type().is_symlink() || meta.is_file() => {
+                        std::fs::remove_file(target)?;
+                    }
+                    Ok(meta) if meta.is_dir() => {
+                        std::fs::remove_dir_all(target)?;
+                    }
+                    Ok(_) => anyhow::bail!("unsupported skill path: {}", target.display()),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(e.into()),
                 }
                 Ok(())
             }
@@ -257,7 +267,11 @@ pub fn integrate_opencode(
     let mut steps = Vec::new();
 
     // 1. Symlink skill bundle to OpenCode skills directory
-    let skills_target = opencode_skills_dir().join(format!("cognicode-{version}"));
+    let bundle_id = skill_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow!("skill bundle has no valid identity: {}", skill_path.display()))?;
+    let skills_target = opencode_skills_dir().join(format!("{bundle_id}-{version}"));
     steps.push(Step::Symlink {
         source: skill_path.to_path_buf(),
         target: skills_target,
@@ -294,6 +308,10 @@ pub fn uninstall_opencode(version: &str, binary_name: &str) -> Result<Vec<Step>>
     let skills_target = opencode_skills_dir().join(format!("cognicode-{version}"));
     steps.push(Step::RmRf {
         target: skills_target,
+    });
+    // A reviewer install includes a distinct MCP skill bundle.
+    steps.push(Step::RmRf {
+        target: opencode_skills_dir().join(format!("cognicode-mcp-{version}")),
     });
 
     // 2. Remove MCP entry. DEBT-3.f: take the BinaryName from the
@@ -804,11 +822,37 @@ pub fn cmd_ide_install(
     // declares no binaries, fail loudly.
     let mcp_binary_name =
         crate::manifest::plugin_mcp_binary_name(&home.plugin(plugin).join("plugin.yaml"))?;
-    let mcp_command = vec![
-        home.shim_path(&mcp_binary_name)
-            .to_string_lossy()
-            .to_string(),
-    ];
+    let installed_manifest = home.version_manifest(version);
+    let declared_name = crate::bundle_manifest::daemon_cli_binary_name(&installed_manifest)
+        .with_context(|| format!(
+            "MCP unavailable in version {version}: install --profile reviewer before IDE integration"
+        ))?;
+    if declared_name != mcp_binary_name {
+        anyhow::bail!(
+            "MCP identity mismatch: plugin declares {mcp_binary_name}, installed bundle declares {declared_name}"
+        );
+    }
+    let actual_binary = crate::installer_transaction::locate_component_binary(
+        home, version, &declared_name,
+    )
+    .ok_or_else(|| anyhow!(
+        "installed MCP binary missing for version {version}; repair reviewer profile"
+    ))?;
+    let shim = home.shim_path(&declared_name);
+    if !shim.is_file() {
+        anyhow::bail!(
+            "MCP shim {} is missing or dangling; refusing to configure an unusable IDE server",
+            shim.display()
+        );
+    }
+    #[cfg(unix)]
+    if std::fs::canonicalize(&shim)? != std::fs::canonicalize(&actual_binary)? {
+        anyhow::bail!(
+            "MCP shim {} does not target installed version {version}; refusing stale link",
+            shim.display()
+        );
+    }
+    let mcp_command = vec![shim.to_string_lossy().to_string()];
     match ide {
         "opencode" => {
             // DEBT-2: `skill_path` is resolved from the bundle
