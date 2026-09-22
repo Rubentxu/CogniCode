@@ -2195,3 +2195,137 @@ mcp_servers.existing.args = ['y']
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }
+
+/// PRF-DIST-04 UAT: archivos de usuario y config IDE preexistente
+/// sobreviven desinstalación; la instalación modifica solo ámbitos
+/// aceptados. These unit tests exercise the real uninstall step
+/// pipeline (`uninstall_opencode`) against preexisting user content
+/// and pin the "only the cognicode scope is touched" contract.
+#[cfg(test)]
+mod prf_dist_04_survival_tests {
+    use super::*;
+    use serde_json::json;
+    use serial_test::serial;
+
+    /// Preexisting user config (other MCP servers, unrelated keys)
+    /// survives uninstall; only the cognicode entry is removed.
+    #[test]
+    #[serial]
+    fn prf_dist_04_preexisting_config_survives_uninstall() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg_dir = tmp.path().join(".config/opencode");
+        std::fs::create_dir_all(&cfg_dir).unwrap();
+        let config = cfg_dir.join("opencode.json");
+
+        let preexisting = json!({
+            "mcp": {
+                "cognicode-mcp": {"type": "stdio", "enabled": true},
+                "chronos": {"type": "local"},
+                "my-own-server": {"type": "stdio", "command": "/usr/bin/mine", "args": ["--x"]}
+            },
+            "theme": "solarized",
+            "user": {"editor": "vim", "tabs": 2}
+        });
+        std::fs::write(&config, serde_json::to_string_pretty(&preexisting).unwrap()).unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        unsafe {
+            std::env::set_var("HOME", tmp.path());
+        }
+        // Resolve steps under the temp HOME, then restore the real
+        // HOME before executing: steps carry absolute paths, so the
+        // mutated-HOME window stays minimal and does not leak into
+        // parallel lifecycle tests that spawn subprocesses.
+        let steps = uninstall_opencode("0.97.3", "cognicode-mcp").unwrap();
+        unsafe {
+            std::env::set_var("HOME", prev_home);
+        }
+        for step in &steps {
+            step.execute().unwrap();
+        }
+
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert!(v["mcp"].get("cognicode-mcp").is_none(), "cognicode entry removed");
+        assert_eq!(v["mcp"]["chronos"]["type"], "local", "chronos survives");
+        assert_eq!(
+            v["mcp"]["my-own-server"]["command"], "/usr/bin/mine",
+            "user's own MCP server survives"
+        );
+        assert_eq!(v["theme"], "solarized", "theme survives");
+        assert_eq!(v["user"]["tabs"], 2, "user prefs survive");
+    }
+
+    /// User files in the IDE skills dir that are NOT the cognicode
+    /// versioned entry survive uninstall byte-for-byte.
+    #[test]
+    #[serial]
+    fn prf_dist_04_user_skill_files_survive_uninstall() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skills = tmp.path().join(".config/opencode/skills");
+        std::fs::create_dir_all(&skills).unwrap();
+
+        let user_skill = skills.join("my-own-skill");
+        std::fs::create_dir_all(&user_skill).unwrap();
+        std::fs::write(user_skill.join("SKILL.md"), "# mine\n").unwrap();
+
+        let cg = skills.join("cognicode-0.97.3");
+        std::fs::create_dir_all(&cg).unwrap();
+        std::fs::write(cg.join("SKILL.md"), "# cognicode\n").unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        unsafe {
+            std::env::set_var("HOME", tmp.path());
+        }
+        let steps = uninstall_opencode("0.97.3", "cognicode-mcp").unwrap();
+        unsafe {
+            std::env::set_var("HOME", prev_home);
+        }
+        for step in &steps {
+            step.execute().unwrap();
+        }
+
+        assert!(!cg.exists(), "cognicode versioned entry removed");
+        assert!(user_skill.exists(), "user skill survives");
+        assert_eq!(
+            std::fs::read_to_string(user_skill.join("SKILL.md")).unwrap(),
+            "# mine\n",
+            "user skill content survives byte-for-byte"
+        );
+    }
+
+    /// Uninstall on a config that never contained cognicode must not
+    /// rewrite or damage anything (idempotent no-op scope).
+    #[test]
+    #[serial]
+    fn prf_dist_04_uninstall_without_entry_is_harmless() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg_dir = tmp.path().join(".config/opencode");
+        std::fs::create_dir_all(&cfg_dir).unwrap();
+        let config = cfg_dir.join("opencode.json");
+        let original = json!({"theme": "dark", "mcp": {"other": {"type": "local"}}});
+        let original_text = serde_json::to_string_pretty(&original).unwrap();
+        std::fs::write(&config, &original_text).unwrap();
+        let before = std::fs::metadata(&config).unwrap().modified().unwrap();
+
+        let prev_home = std::env::var("HOME").unwrap();
+        unsafe {
+            std::env::set_var("HOME", tmp.path());
+        }
+        let steps = uninstall_opencode("0.97.3", "cognicode-mcp").unwrap();
+        unsafe {
+            std::env::set_var("HOME", prev_home);
+        }
+        for step in &steps {
+            step.execute().unwrap();
+        }
+
+        let after = std::fs::metadata(&config).unwrap().modified().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&config).unwrap(),
+            original_text,
+            "config without cognicode entry must not be rewritten"
+        );
+        assert_eq!(before, after, "no-op uninstall must not touch mtime");
+    }
+}
