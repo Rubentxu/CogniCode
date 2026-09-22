@@ -2777,3 +2777,11 @@ idéntico en CLI y MCP. Regresión CLI (7/3/4) verde, clippy clean.
 aún usan `FullGraphStrategy` directo — quedan como trabajo EXT-02
 pendiente de misma reforma.
 **Matriz**: PRF-EXT-02 → PARTIAL (mejorado x2, `full` resuelto).
+
+
+## §65 — PRF-MCP-02: stdout puro JSON-RPC — PASS (2026-09-22)
+
+`prf_mcp_02_uat` (1/1, binario real): framing válido en todo stdout
+durante operaciones con logging denso; shutdown limpio sin huérfanos.
+Evidencia: `evidence/u65-mcp02/`.
+**Matriz**: PRF-MCP-02 → PASS.

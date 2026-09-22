@@ -85,7 +85,7 @@
 | Requisito | Disposición | Evidencia / Notas |
 |---|---|---|
 | PRF-MCP-01 (initialize, tools/list, tools/call, errores, terminación con cliente externo real) | PASS | UAT ejecutada 2026-09-22 con cliente externo real sobre shim 0.97.3 instalado; evidencia en `docs/prf/evidence/u05-mcp-external-client/run1/` (JOURNAL §45): initialize/tools-list/tools-call/errores honestos/-32700 sin crash/exit 0/stdout JSON puro. |
-| PRF-MCP-02 (stdout JSON-RPC exclusivo; logs a stderr; sin huérfanos) | PARTIAL | Diseñado; no UAT con captura exhaustiva. |
+| PRF-MCP-02 (stdout JSON-RPC exclusivo; logs a stderr; sin huérfanos) | **PASS** | `prf_mcp_02_uat` 1/1 sobre binario real (§65): framing válido con logging denso, salida limpia al cerrar stdin. `evidence/u65-mcp02/`. |
 | PRF-MCP-03 (core read-only sin red/OTLP/Explorer/backend/Podman) | PARTIAL | Operativo; UAT específica con apagado total de red no ejecutada. |
 | PRF-MCP-04 (herramientas con esquema, permisos, versiones, límites; error tipado) | PARTIAL | Schmemas existen; permisos/budgets no uniformes. |
 | PRF-MCP-05 (herramienta que escribe/ejecuta/red requiere autoridad diferenciada; prompts ≠ autoridad) | NOT_RUN | No UAT con prompt malicioso. |
