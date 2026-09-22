@@ -31,11 +31,7 @@ fn make_corpus() -> tempfile::TempDir {
         ),
     )
     .expect("write api.rs");
-    std::fs::write(
-        src.join("caller.rs"),
-        "fn caller() { call(); }\n",
-    )
-    .expect("write caller.rs");
+    std::fs::write(src.join("caller.rs"), "fn caller() { call(); }\n").expect("write caller.rs");
     tmp
 }
 

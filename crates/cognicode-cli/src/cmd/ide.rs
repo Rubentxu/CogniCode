@@ -2347,7 +2347,10 @@ mod prf_dist_04_survival_tests {
 
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
-        assert!(v["mcp"].get("cognicode-mcp").is_none(), "cognicode entry removed");
+        assert!(
+            v["mcp"].get("cognicode-mcp").is_none(),
+            "cognicode entry removed"
+        );
         assert_eq!(v["mcp"]["chronos"]["type"], "local", "chronos survives");
         assert_eq!(
             v["mcp"]["my-own-server"]["command"], "/usr/bin/mine",
