@@ -733,22 +733,34 @@ impl CallGraph {
         }
     }
 
-    /// Returns all root symbols (symbols with no incoming edges)
+    /// Returns all root symbols (symbols with no incoming edges).
+    ///
+    /// UAT-U10 (JOURNAL §88): the result is canonically ordered so that
+    /// consumers printing this list (CLI `graph entry-points`, MCP
+    /// handlers) are deterministic run-over-run and across versions;
+    /// the underlying HashMap iteration order must not leak.
     pub fn roots(&self) -> Vec<SymbolId> {
-        self.symbols
+        let mut roots: Vec<SymbolId> = self
+            .symbols
             .keys()
             .filter(|id| !self.reverse_edges.contains_key(id) || self.reverse_edges[id].is_empty())
             .cloned()
-            .collect()
+            .collect();
+        roots.sort();
+        roots
     }
 
-    /// Returns all leaf symbols (symbols with no outgoing edges)
+    /// Returns all leaf symbols (symbols with no outgoing edges),
+    /// canonically ordered (see [`CallGraph::roots`]).
     pub fn leaves(&self) -> Vec<SymbolId> {
-        self.symbols
+        let mut leaves: Vec<SymbolId> = self
+            .symbols
             .keys()
             .filter(|id| !self.edges.contains_key(id) || self.edges[id].is_empty())
             .cloned()
-            .collect()
+            .collect();
+        leaves.sort();
+        leaves
     }
 
     /// Returns all dead code symbols (not reachable from any entry point).
@@ -1047,7 +1059,7 @@ impl Default for CallGraph {
 }
 
 /// Unique identifier for a symbol in the call graph
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct SymbolId(String);
 
 impl SymbolId {
@@ -1192,6 +1204,39 @@ use std::fmt;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// UAT-U10 finding (JOURNAL §88): roots()/leaves() iterated a HashMap,
+    /// so CLI `graph entry-points` / `graph leaf-functions` printed the
+    /// same set in a different order on every run. Both consumers print
+    /// these lists; the published order must be canonical (sorted by
+    /// SymbolId) so the same graph yields the same output run-over-run
+    /// and across binary versions.
+    #[test]
+    fn roots_and_leaves_are_canonically_ordered() {
+        let mut graph = CallGraph::new();
+        let names = ["zeta", "alpha", "mid", "beta", "omega"];
+        for (i, n) in names.iter().enumerate() {
+            let sym = Symbol::new(*n, SymbolKind::Function, Location::new("t.rs", (i + 1) as u32, 1));
+            graph.add_symbol(sym);
+        }
+        let mut rounds = Vec::new();
+        for _ in 0..16 {
+            let r: Vec<_> = graph.roots().iter().map(|id| graph.get_symbol(id).unwrap().name().to_string()).collect();
+            let l: Vec<_> = graph.leaves().iter().map(|id| graph.get_symbol(id).unwrap().name().to_string()).collect();
+            rounds.push((r, l));
+        }
+        let (first_r, first_l) = &rounds[0];
+        assert_eq!(
+            *first_r,
+            vec!["alpha", "beta", "mid", "omega", "zeta"],
+            "roots must be canonically ordered"
+        );
+        assert_eq!(*first_l, *first_r, "all symbols are roots and leaves here");
+        for (r, l) in &rounds {
+            assert_eq!(r, first_r, "roots order must be stable across iterations");
+            assert_eq!(l, first_l, "leaves order must be stable across iterations");
+        }
+    }
 
     #[test]
     fn test_call_graph_add_symbol() {
