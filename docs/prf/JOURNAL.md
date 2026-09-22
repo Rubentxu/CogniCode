@@ -3023,3 +3023,11 @@ DIST-05 (plataformas nativas), EXT-06 (UAT-U10 rolling upgrade),
 STATE-01/06, SEC-03 (telemetría opt-in), deuda STATE-07
 (eficiencia cache-miss, caracterizada y correcta). Siguiente acción
 de mayor valor: STATE-01/06 o refinamiento de restos SEC-03.
+
+## §83 — STATE-01: catálogo de datos canónico/derivado/transitorio — PASS (2026-09-22)
+
+UAT `prf_state_01_data_catalog_uat.rs`: lo derivado es desechable y
+reconstruible con inventario idéntico; las ediciones canónicas
+invalidan lo derivado (el derivado sigue al canónico, nunca al
+revés); el estado transitorio no cruza procesos. Verde ×2.
+Matriz: PRF-STATE-01 → PASS.
