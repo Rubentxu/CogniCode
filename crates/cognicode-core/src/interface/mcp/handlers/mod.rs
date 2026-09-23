@@ -849,6 +849,11 @@ fn graph_db_path(directory: &Path) -> PathBuf {
 /// PRF-STATE-03/04: atomically persist the graph + manifest snapshot to
 /// `db_path` (temp file + rename, so an interrupted write never leaves a
 /// half-written snapshot that could be mistaken for valid evidence).
+///
+/// PRF-STATE-11/13: the temp file uses a per-process unique name
+/// (`cache.tmp.<pid>.<seq>`), not a fixed slot. Two writers on the same
+/// workspace never share a temp path; an interrupted writer leaves a
+/// file whose name identifies the dying process for post-mortem.
 fn save_durable_snapshot(
     db_path: &Path,
     graph: &crate::domain::aggregates::call_graph::CallGraph,
@@ -864,9 +869,33 @@ fn save_durable_snapshot(
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let tmp = db_path.with_extension("cache.tmp");
+    let tmp = tmp_path_for(db_path);
     std::fs::write(&tmp, &bytes)?;
     std::fs::rename(&tmp, db_path)
+}
+
+/// PRF-STATE-11/13: returns a unique tmp path for `db_path`.
+///
+/// Each call appends `<pid>.<seq>` so concurrent writers on the same
+/// workspace never collide on the temp slot. The sequence counter is
+/// an atomic monotonic per-process counter (no two consecutive calls
+/// from the same process produce the same path even after many
+/// snapshots).
+fn tmp_path_for(db_path: &Path) -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let file_name = format!(
+        "{}.tmp.{}.{}",
+        db_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("graph.cache"),
+        pid,
+        seq
+    );
+    db_path.with_file_name(file_name)
 }
 
 /// PRF-STATE-03/04: load a durable snapshot. Returns `None` on any
@@ -4114,6 +4143,157 @@ mod tests {
         save_durable_snapshot(&db, &graph, &manifest).unwrap();
         let loaded = load_durable_snapshot(&db);
         assert!(loaded.is_some(), "snapshot v1 legítimo debe cargarse");
+    }
+
+    /// PRF-STATE-11: `tmp_path_for` returns a unique tmp path for each
+    /// call so concurrent writers on the same workspace never share a
+    /// temp slot. The previous implementation used a fixed name
+    /// (`cache.tmp`); this test pins the uniqueness invariant at the
+    /// helper level — RED on the old code, GREEN after the fix.
+    #[test]
+    fn state11_tmp_path_for_returns_unique_names_per_call() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.cache");
+
+        let a = tmp_path_for(&db);
+        let b = tmp_path_for(&db);
+        let c = tmp_path_for(&db);
+
+        assert_ne!(a, b, "tmp paths must differ between calls: {a:?} vs {b:?}");
+        assert_ne!(b, c, "tmp paths must differ between calls: {b:?} vs {c:?}");
+        assert_ne!(a, c, "tmp paths must differ between calls: {a:?} vs {c:?}");
+
+        // All three must live in the same directory as `db` (not somewhere else).
+        assert_eq!(
+            a.parent(),
+            db.parent(),
+            "tmp path must keep the same parent dir"
+        );
+        assert_eq!(
+            b.parent(),
+            db.parent(),
+            "tmp path must keep the same parent dir"
+        );
+        assert_eq!(
+            c.parent(),
+            db.parent(),
+            "tmp path must keep the same parent dir"
+        );
+
+        // Filename must embed the pid so post-mortem inspection can
+        // attribute the dying writer.
+        let pid = std::process::id().to_string();
+        assert!(
+            a.to_string_lossy().contains(&pid),
+            "tmp filename must include pid {pid}: {}",
+            a.display()
+        );
+        assert!(
+            b.to_string_lossy().contains(&pid),
+            "tmp filename must include pid {pid}: {}",
+            b.display()
+        );
+    }
+
+    /// PRF-STATE-12: two concurrent writers on the same workspace must
+    /// not lose or interleave their tmp files. We don't try to read the
+    /// filesystem during the race (timing-sensitive) — instead we
+    /// assert the post-condition: a single coherent snapshot exists,
+    /// and **no leftover tmp files** remain in the directory. The
+    /// uniqueness guarantee from `state11_*` ensures the two writers
+    /// never shared a tmp slot to begin with.
+    #[test]
+    fn state12_concurrent_writers_leave_no_tmp_leftovers() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = Arc::new(dir.path().join("graph.cache"));
+        let n = 8usize;
+
+        let handles: Vec<_> = (0..n)
+            .map(|i| {
+                let db = Arc::clone(&db);
+                thread::spawn(move || {
+                    let graph = crate::domain::aggregates::call_graph::CallGraph::new();
+                    let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
+                        db.parent().unwrap().to_path_buf(),
+                    );
+                    save_durable_snapshot(&db, &graph, &manifest)
+                        .unwrap_or_else(|e| panic!("writer {i} failed: {e}"));
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        // Single coherent cache exists, structurally sound.
+        assert!(db.exists(), "snapshot must exist after concurrent writes");
+        let loaded = load_durable_snapshot(&db);
+        assert!(
+            loaded.is_some(),
+            "final snapshot must be a valid v1 cache (not a partial interleave)"
+        );
+
+        // No tmp leftovers: with the old fixed-name `cache.tmp` slot
+        // the rename would have removed it, but if any writer crashed
+        // mid-flight its tmp would have stayed under a name we cannot
+        // attribute. With the new unique naming scheme (and assuming
+        // all writers reach the rename successfully), no tmp file
+        // remains.
+        let leftovers: Vec<_> = std::fs::read_dir(db.parent().unwrap())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                name.starts_with("graph.cache.tmp") || name.contains(".tmp.")
+            })
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "no tmp leftovers after all writers rename; found: {:?}",
+            leftovers.iter().map(|e| e.file_name()).collect::<Vec<_>>()
+        );
+    }
+
+    /// PRF-STATE-13: a corrupt/truncated snapshot is replaced by a
+    /// complete one on the next save. This pins the recovery
+    /// invariant from the PRF-STATE spec — an interrupted writer must
+    /// not leave a half-written snapshot that a later session could
+    /// mistake for valid evidence.
+    #[test]
+    fn state13_corrupt_snapshot_is_replaced_by_complete_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.cache");
+
+        // Plant a truncated snapshot mimicking what a SIGKILL mid-write
+        // would leave behind if the temp+rename step is broken.
+        std::fs::write(&db, b"TRUNCATED-HEADER-AND-PAYLOAD").unwrap();
+        assert!(
+            load_durable_snapshot(&db).is_none(),
+            "corrupt snapshot must be treated as absent"
+        );
+
+        // A subsequent save must overwrite the corrupt cache with a
+        // valid v1 snapshot.
+        let graph = crate::domain::aggregates::call_graph::CallGraph::new();
+        let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
+            dir.path().to_path_buf(),
+        );
+        save_durable_snapshot(&db, &graph, &manifest).unwrap();
+
+        let bytes = std::fs::read(&db).expect("read snapshot");
+        assert!(
+            bytes.len() > 50,
+            "rebuilt snapshot must have substantive bytes, got {} bytes",
+            bytes.len()
+        );
+        assert!(
+            load_durable_snapshot(&db).is_some(),
+            "rebuilt snapshot must decode as a valid v1 snapshot"
+        );
     }
 
     #[tokio::test]
