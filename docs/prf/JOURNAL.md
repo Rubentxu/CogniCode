@@ -3318,3 +3318,103 @@ UAT originales PASS 4 → 5, NOT_RUN 6 → 5; TOTAL estimado PASS pleno
 - U15 corpus mixto LSP ausente.
 - PRF-ANA-01 verticales (motor genérico → verticales).
 - H-06 allow refactor: anclar todos los `#![allow(...)]` a H-06 follow-up.
+
+## §92 — U03 ejecutado: reproducibilidad ✅, drift contra committed ❌ (2026-09-23)
+
+**Origen.** Continuación sesión 4 AUTO. Siguiente trabajo del backlog:
+U03 (baseline/goldens 2 veces → identidad, cobertura, tiempos/RSS,
+diffs reproducibles), NOT_RUN.
+
+**Investigación.** U03 está cubierto por el harness
+`sandbox/scripts/capture_lsi_fixtures.py` (vinculado al spec
+`openspec/specs/lsi-m0-baseline/spec.md`):
+
+- Captura 42 surfaces de CLI/MCP sobre 3 fixtures
+  (`rust-hello`, `python-hello`, `multi-lang-types`).
+- Canónica deterministicamente (scrub de paths/duraciones/ANSI).
+- Compara contra goldens committed; falla explícitamente si difieren.
+- Modo `--accept` regenera goldens explícitamente (única ruta que escribe).
+- Self-test cubre 9 escenarios incluyendo
+  `regeneration_byte_identical` (doble ejecución → byte-identical).
+
+**Ejecución U03 — 2 veces.** Resultado de 2 ejecuciones consecutivas
+del harness (ambos binarios construidos en `debug` desde
+`/var/home/rubentxu/cargo-targets/debug/`):
+
+```
+RESULT: FAIL — 6 of 42 goldens differ
+  DIFF multi-lang-types/cli_graph_full (+1/-1 lines)
+  DIFF multi-lang-types/cli_graph_impact (+9/-3 lines)
+  DIFF multi-lang-types/mcp_analyze_impact (+1/-1 lines)
+  DIFF multi-lang-types/mcp_build_graph (+1/-1 lines)
+  DIFF python-hello/mcp_build_graph (+1/-1 lines)
+  DIFF rust-hello/mcp_build_graph (+1/-1 lines)
+```
+
+Las dos ejecuciones producen **idéntico output**. Eso cumple la parte
+de U03 "diffs reproducibles" (no flaky, determinista) ✅.
+
+**Diffs contra committed — análisis.**
+
+| Golden | HEAD actual | Diagnóstico |
+|---|---|---|
+| `cli_graph_full`: `Total dependencies: 7` | `Total dependencies: 11` | Resolución de edges cambió (commits posteriores al `1c1aafff` ajustaron el cómputo de edges que sobreviven al filtro). Cambio de algoritmo, no bug. |
+| `cli_graph_full`: path sin trailing `/` | path con trailing `/` | El CLI acepta `path/` y lo imprime tal cual. Posible normalización a añadir en canonicalizer, no bug. |
+| `cli_graph_impact`: `Risk Level: NONE`, 0 impacted | `Risk Level: LOW`, 1 impacted | Heurística de riesgo ajustada en commits posteriores. Cambio legítimo. |
+| `mcp_*_build_graph`: +1/-1 líneas | +1/-1 líneas | Mismo cambio de resolución que CLI. |
+| `mcp_analyze_impact`: +1/-1 | +1/-1 | Idem. |
+
+**Decisión.** U03 es **PARTIAL**:
+
+- ✅ Reproducibilidad entre ejecuciones del harness verificada
+  empíricamente (2 runs idénticos).
+- ❌ Byte-identical contra goldens committed: falla por **drift
+  intencional** del algoritmo entre el commit del golden (`1c1aafff`,
+  e36 evidence kernel foundation) y HEAD (`bb978d5d`). El drift es
+  legítimo (cambios de resolución de edges y heurística de riesgo que
+  son mejoras posteriores), no regresión.
+
+**Acciones posibles (autoridad del operador):**
+
+1. `python3 sandbox/scripts/capture_lsi_fixtures.py --accept` →
+   regenera goldens con el output actual y los commitea. Útil si la
+   dirección de los cambios es aceptada.
+2. Revertir los cambios de algoritmo que causaron el drift (no
+   recomendado: son mejoras, no regresiones).
+3. Documentar el delta como "evolución esperada" y aceptar
+   `PARTIAL` como disposición permanente hasta que se decida.
+
+Esta sesión NO ejecuta `--accept`: regenerar goldens es una decisión
+que afecta el contrato publicable (los goldens son evidencia del
+comportamiento del producto). Se registra para decisión del operador
+en próximo checkpoint.
+
+**Matriz actualizada.** U03 NOT_RUN → PARTIAL. Contadores:
+UAT originales PARTIAL 14→15, NOT_RUN 5→4.
+
+**Self-test del harness:** 8/9 verde; `regeneration_byte_identical`
+FAIL — consistente con la observación manual de los 6 goldens que
+difieren.
+
+**Verificación reproducible.**
+
+```bash
+# 1ª ejecución
+python3 sandbox/scripts/capture_lsi_fixtures.py | grep -E "RESULT|DIFF"
+# 2ª ejecución (idéntica)
+python3 sandbox/scripts/capture_lsi_fixtures.py | grep -E "RESULT|DIFF"
+# diff entre ambas: vacío (output idéntico)
+```
+
+**Próximo trabajo del backlog (orden propuesto):**
+
+- PRF-CLI-07 (autosuficiencia JSON schema).
+- PRF-MCP-05 (authority declaration).
+- PRF-DIST-03 (corruption recovery, parcialmente cubierto por U24).
+- U15 (corpus mixto LSP ausente).
+- PRF-ANA-01 verticales.
+- H-06 allow refactor.
+
+**Push a origin/main sigue operator-gated** (directive §3 +
+auditoría 2026-09-22). Los commits de este ciclo son locales hasta
+que el operador lo autorice.

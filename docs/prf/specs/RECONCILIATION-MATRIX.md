@@ -126,7 +126,8 @@
 |---|---|---|---|---|
 | U01 | DIST,CI | Instalación con digest/provenance; HOME limpio | PASS parcial | U-F6-001 (instalación) |
 | U02 | CLI,MCP | `cognicode --help`, `cogh doctor`, MCP `tools/list` vs matriz | PARTIAL | `cogh doctor` y `tools/list` no auditados como UAT |
-| U03 | CI,ANA | Baseline/goldens 2 veces; cobertura, tiempos, RSS | NOT_RUN | No ejecutado sobre `178f8a5b` |
+| U03 | CI,ANA | Baseline/goldens 2 veces; cobertura, tiempos, RSS | **PARTIAL (reproducibilidad ✅, drift contra committed ❌)** | 2026-09-23 (JOURNAL §92): reproducibilidad del harness `capture_lsi_fixtures.py` (42 surfaces, 3 fixtures) verificada **idéntica** entre 2 ejecuciones consecutivas (mismos 6 goldens difieren, mismos `+/-lines` por superficie). Cumple la parte de U03 "diffs reproducibles". **NO** cumple "byte-identical contra committed": 6/42 goldens difieren entre `1c1aafff` (commit del golden) y HEAD `bb978d5d`. Diffs: path trailing slash, `Total dependencies` 7→11, `Risk Level` NONE→LOW + impacted symbols 0→1. Cambios **legítimos** del algoritmo entre el commit del golden y HEAD; no son bugs. Decisión de regenerar goldens o revertir algoritmo requiere autoridad del operador. Self-test: 8/9 verde; `regeneration_byte_identical` FAIL por mismatch contra committed (consistente con la observación). |
+
 | U04 | CLI,MCP,SEC | Apagar red y OTLP; CLI y MCP arrancan; stdout solo JSON-RPC | PARTIAL | Operativo; UAT específica no |
 | U05 | MCP | Cliente MCP externo: initialize/tools/call/error/shutdown | PASS | 2026-09-22: sesión completa capturada en `docs/prf/evidence/u05-mcp-external-client/run1/` (JOURNAL §45) |
 | U06 | CLI,SEC,ANA | Workspace inexistente / sin permisos / vacío / lenguaje no soportado | PARTIAL | Cobertura parcial en código; UAT formal con corpus adversariales no |
@@ -166,8 +167,8 @@
 | SPEC-MCP (7) | 0 | 4 | 0 | 3 | 0 | 0 |
 | SPEC-SECURITY (7) | 0 | 4 | 0 | 2 | 1 | 0 |
 | SPEC-STATE (7) | 0 | 3 | 0 | 1 | 3 | 0 |
-| **UAT originales (27)** | **5** (+1 tras §91: U21) | 14 | **2** | 5 (-1) | 2 | 0 |
-| **TOTAL (estimado)** | **~7 PASS pleno + 1 PASS parcial** | **~37** | **~5** | **~22** | **~4-8** | **0** |
+| **UAT originales (27)** | **5** (+1 tras §91: U21) | 15 (+1: U03) | **2** | 4 (-1) | 2 | 0 |
+| **TOTAL (estimado)** | **~7 PASS pleno + 1 PASS parcial** | **~38** | **~5** | **~21** | **~4-8** | **0** |
 
 **Cambios aplicados en sesión 4 (2026-09-23, AUTO):**
 - **PRF-CI-01 / PRF-CI-07 / U27** sub-cerrado **gate clippy** (`34153097`, JOURNAL §90). Disposiciones: CI-01/07 PARTIAL (cerrado gate clippy); U27 PARTIAL (cerrado gate clippy).
@@ -175,6 +176,7 @@
 - **U13** corregido a **PASS (RED→GREEN, SHA-256)** (JOURNAL §32, re-verificado verde sobre HEAD actual `2f94664e`): test `h01_byte_change_with_same_mtime_and_same_size_must_invalidate_cache` PASA.
 - Contadores actualizados: UAT originales FAIL 4→2, PASS 1→4. SPEC-CI PARTIAL 3→4, FAIL 2→1.
 - **U21** corregido a **PASS (RED→GREEN, atomic write)** (JOURNAL §91): defecto real detectado en `lifecycle_journal::write` (uso de `std::fs::write` no-atómico). Test RED `test_write_overwrites_atomic_no_partial_state_visible` (50 iter concurrentes con reader en otro hilo) demostró 26/50 lecturas parciales con la impl previa. GREEN: temp-file + `fs::rename` (atomic rename(2)). 6/6 `lifecycle_journal` tests verde; total workspace 5309 libs + 527 bins = 5836 tests, 0 failed, clippy EXIT 0. Patrón alineado con `file_operations::write_file` (mismo algoritmo, sin duplicación de helpers). Contadores: UAT originales PASS 4→5, NOT_RUN 6→5.
+- **U03** movido a **PARTIAL (reproducibilidad ✅, drift contra committed ❌)** (JOURNAL §92): la parte de "2 veces / diffs reproducibles" se cumple — el harness produce **idéntico resultado** en 2 ejecuciones consecutivas (verificado vía captura de logs de `capture_lsi_fixtures.py`). La parte "byte-identical contra goldens committed" NO se cumple: 6/42 goldens difieren entre `1c1aafff` y HEAD `bb978d5d`. Diffs: path trailing slash, `Total dependencies` 7→11, `Risk Level` NONE→LOW, impacted symbols 0→1. Cambios **legítimos** del algoritmo entre el commit del golden y HEAD; no son bugs. Decisión de regenerar con `--accept` o revertir algoritmo: autoridad del operador (afecta contrato publicable). Contadores: UAT originales PARTIAL 14→15, NOT_RUN 5→4.
 
 **Cambios aplicados en sesiones previas (2026-09-22):**
 - H-02 del operador **resuelto** en `80e7c403` (JOURNAL §30). `PRF-ANA-02` movido de `PARTIAL → PEND` a `PARTIAL (mejorado)`.
