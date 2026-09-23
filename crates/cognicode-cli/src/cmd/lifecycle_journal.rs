@@ -57,6 +57,13 @@ pub fn journal_path(version: &str) -> PathBuf {
 /// `journal` carries the side-effects in commit order. The on-disk form
 /// embeds them inside the envelope so a future `cogh rollback` can replay
 /// the reversal with no other context.
+///
+/// **Atomicity (U21 / DEFECT-2026-09-23-A):** the write uses
+/// temp-file + `fs::rename` so a SIGKILL between `create_dir_all` and
+/// the syscall cannot leave a truncated payload at the canonical path.
+/// Readers either see the prior envelope or the new envelope, never a
+/// partial file.  This matches the pattern in
+/// `application::services::file_operations::write_file`.
 pub fn write(
     journal: &RollbackJournal,
     manifest: &BundleManifest,
@@ -87,7 +94,29 @@ pub fn write(
     };
     let text = serde_json::to_string_pretty(&envelope)
         .map_err(|e| InstallerError::Serialize(e.to_string()))?;
-    std::fs::write(path, text).map_err(|e| InstallerError::Io(path.into(), e))?;
+
+    // Atomic write: temp file + rename.  The rename is atomic on POSIX
+    // (rename(2)) and on NTFS within the same volume, so a concurrent
+    // reader — or a SIGKILL mid-write — sees either the prior payload
+    // or the new one, never a truncated file.  On failure, the temp
+    // file is best-effort removed so it does not pollute the journal
+    // directory.
+    let temp_path = format!("{}.tmp.{}", path.display(), std::process::id());
+    {
+        let mut file = std::fs::File::create(&temp_path).map_err(|e| {
+            InstallerError::Io(std::path::PathBuf::from(&temp_path), e)
+        })?;
+        std::io::Write::write_all(&mut file, text.as_bytes()).map_err(|e| {
+            InstallerError::Io(std::path::PathBuf::from(&temp_path), e)
+        })?;
+        let _ = file.sync_all();
+    }
+    if let Err(e) = std::fs::rename(&temp_path, path) {
+        // Best-effort cleanup of the temp file; the rename failure is
+        // the primary error returned to the caller.
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(InstallerError::Io(path.into(), e));
+    }
     Ok(())
 }
 
@@ -268,5 +297,114 @@ components:
         write(&journal, &manifest, None, &path).unwrap();
         let envelope = load_envelope(&path).unwrap();
         assert_eq!(envelope.previous_tracker, None);
+    }
+
+    /// U21 / DEFECT-2026-09-23-A: `write` MUST be atomic so a SIGKILL
+    /// mid-write cannot leave a truncated journal at the canonical path.
+    /// Concretely: after a successful `write`, no `.tmp*` artifact may
+    /// remain in the parent directory; the canonical path either exists
+    /// (with a complete payload) or does not exist (no partial state).
+    ///
+    /// The production write currently uses a non-atomic
+    /// `std::fs::write(path, text)` (see `write` impl above), which
+    /// violates U21 under crash between create_dir_all and the write
+    /// syscall.  The GREEN fix is to use the same temp+rename pattern
+    /// already adopted by `file_operations::write_file`:
+    ///   1. Write text to `<path>.tmp.<pid>`
+    ///   2. `fs::rename` to canonical path (atomic on POSIX/NTFS)
+    ///
+    /// This test pins the contract that the fix MUST satisfy.
+    #[test]
+    fn test_write_is_atomic_no_tmp_artifact_left_on_success() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("0.95.0.json");
+        let mut journal = RollbackJournal::new();
+        journal.record(SideEffect::CreatedDir(tmp.path().join("d")));
+        let manifest = manifest_for("0.95.0");
+        write(&journal, &manifest, None, &path).unwrap();
+
+        // After successful write, the canonical path MUST be the only
+        // artifact — no leftover temp file under the same parent dir.
+        let siblings: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            !siblings.iter().any(|n| n.contains(".tmp")),
+            "atomic write must leave no .tmp artifact in the parent dir; \
+             siblings were: {siblings:?}"
+        );
+        // Sanity: the canonical payload exists.
+        assert!(path.exists(), "canonical journal path must exist after write");
+        assert!(
+            load_envelope(&path).is_ok(),
+            "canonical payload must be a parseable envelope (no truncation)"
+        );
+    }
+
+    /// U21 / DEFECT-2026-09-23-A: when the canonical path is left in
+    /// a half-written state (simulating a prior SIGKILL mid-write), a
+    /// subsequent successful `write` MUST leave only one valid envelope.
+    /// A non-atomic write that truncates-then-rewrites leaves a window
+    /// where the canonical path is empty or partial.  This test exercises
+    /// the property via concurrent reads during the write: across many
+    /// writes, the reader either sees the previous full envelope or the
+    /// new full envelope — never a partial payload.
+    #[test]
+    fn test_write_overwrites_atomic_no_partial_state_visible() {
+        use std::sync::Arc;
+        let tmp = TempDir::new().unwrap();
+        let path = Arc::new(tmp.path().join("0.95.0.json"));
+        let manifest = manifest_for("0.95.0");
+
+        // Initial write.
+        let mut j = RollbackJournal::new();
+        j.record(SideEffect::CreatedDir(tmp.path().join("d1")));
+        write(&j, &manifest, None, &path).unwrap();
+
+        // Spawn a reader that spins on the path and reports what it sees.
+        // Across 50 successful writes, the reader must never report a
+        // partial state: either "missing" or a fully parseable envelope.
+        let reader_path = Arc::clone(&path);
+        let reader = std::thread::spawn(move || {
+            let mut partial_seen = 0usize;
+            for _ in 0..50 {
+                match std::fs::read_to_string(reader_path.as_ref()) {
+                    Ok(text) => {
+                        // The reader must either see a valid envelope or
+                        // not see the file at all — not a truncated JSON.
+                        if text.is_empty() {
+                            partial_seen += 1;
+                        } else if serde_json::from_str::<PersistedJournal>(&text).is_err() {
+                            // Any JSON-parse failure on an existing file is
+                            // a partial state under our definition.
+                            partial_seen += 1;
+                        }
+                    }
+                    Err(_) => {
+                        // File doesn't exist (mid-write window). Acceptable.
+                    }
+                }
+                std::thread::yield_now();
+            }
+            partial_seen
+        });
+
+        // Drive 50 successful writes, each replacing the prior contents.
+        for i in 0..50 {
+            let mut j = RollbackJournal::new();
+            j.record(SideEffect::CreatedDir(tmp.path().join(format!("d{i}"))));
+            write(&j, &manifest, None, &path).unwrap();
+        }
+
+        let partial = reader.join().unwrap();
+        assert_eq!(
+            partial, 0,
+            "atomic write must never expose a partial/truncated envelope to a \
+             concurrent reader; saw {partial} partial reads in 50 iterations"
+        );
+        // Final state is a parseable envelope.
+        assert!(load_envelope(&path).is_ok(), "final payload must parse");
     }
 }
