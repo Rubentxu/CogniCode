@@ -709,8 +709,12 @@ Acciones del plan registrado en `RELEASE-CANDIDATE §Cierre de PRF`:
 - ⏳ Acción 3 H-04 (persistencia vs reconstrucción) — requiere
   decisión arquitectural del operador.
 - ⏳ Acción 3 H-07 (mecanismo de gates) — pendiente de diseño.
+- ✅ Acción 3 H-06 (instalador ciclo A→B con rollback) —
+  `728f05a0` (JOURNAL §99). E2E real con `local_release` + `run_install`
+  + SHA sabotado; tracker/version preservado en caso de fallo SHA,
+  `versions/A/` intacto.
 - ⏳ Acción 4 (firmar C7 contractual sobre requisitos reconciliados) —
-  solo después de cerrar H-03..H-07 (H-01/H-02 cerrados).
+  solo después de cerrar H-03..H-07 (H-01/H-02/H-06 cerrados).
 - ⏳ Acción 5 (push + tag) — bloqueada por directive §3 + auditoría.
 
 **SHA candidato congelado (`RELEASE-CANDIDATE.md`): `178f8a5b`**.
@@ -823,6 +827,36 @@ F2.W3 (`docs/prf/fixtures/equivalence_full_vs_perfile/`):
 
 **Evidencia**: `cargo test -p cognicode-core --lib` →
 `2122 passed; 0 failed; 27 ignored`. Clippy sin errores nuevos.
+
+## Última unidad cerrada: H-06 (Instalador: ciclo upgrade A→B + rollback real)
+
+**Defecto**: `InstallerTransaction::run` rechazaba el escenario
+operator-readable "instalar A, upgradear a B, fallar durante B
+dejando A intacto" sin test E2E contra binario real.
+
+**Cambio**: dos nuevos tests `#[serial]` en
+`crates/cognicode-cli/src/cmd/installer_transaction.rs::tests`:
+- `h06_upgrade_a_then_b_leaves_tracker_at_b`: pista que el ciclo
+  0.95.0 → 0.96.0 deja `tracker/version=0.96.0` y `versions/0.96.0/`
+  poblado, sin dejar A huérfano.
+- `h06_sha_failure_during_upgrade_preserves_a`: pinta B con SHA
+  intencionalmente inválido (saboteur via `regex_replace_sha256_to_bogus`,
+  `'d' * 64` que reemplaza cualquier run de 64 hex chars en YAML),
+  invoca `run_install(B)`, exige `Err`, y verifica que
+  `tracker/version` queda en A y `versions/A/` intacto.
+
+**Decisión técnica**: se usa `run_install(&home, profile)` (la capa
+real que envuelve `InstallerTransaction::run` + `tracker.write_version_at`)
+en lugar de `InstallerTransaction::run` directo. Esta sutileza es
+la razón de ser del H-06: la transaccionalidad del Drop es válida
+pero la operativa del binario (`cogh install`) requiere la capa
+superior para persistir el tracker.
+
+**Tests**: `cognicode-cli` 310 passed / 0 failed / 1 ignored.
+Workspace completo: verde en todos los bins.
+Clippy `--tests -- -D warnings`: EXIT 0.
+
+**Evidencia**: commit `728f05a0` (test) + `e97d0181` (docs §99).
 
 ## Cierre previo: F2.W9 (mtime preservado — invalidación de cache)
 
