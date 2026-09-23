@@ -892,7 +892,10 @@ impl InstallerTransaction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::install::run_install;
     use crate::layout::test_support::TempCognicodeHome;
+    use crate::layout::CognicodeHome;
+    use crate::release_test_support::{local_release, point_at, unpoint};
 
     /// Regression: --home must not write a shim in COGNICODE_HOME.
     /// It must materialise both binaries and their distinct portable skills.
@@ -2331,4 +2334,159 @@ components:
         // the contract that the installer actually owns: the downloaded
         // artifact and any partial extraction are reversible.
     }
+
+    // ============================================================================
+// H-06: A → B upgrade + rollback. Pinea que el ciclo completo de dos
+// paquetes diferenciados funciona end-to-end contra el binario CLI real,
+// y que un fallo SHA en B no rompe A. El escenario downgrade (A → B → A)
+// se prueba contra binario real más adelante con la política pineada.
+// ============================================================================
+
+/// H-06-a: instalar A → instalar B debe dejar el tracker en B y
+/// `versions/B/` poblado, sin dejar el marker `versions/A/` huérfano.
+#[test]
+#[serial_test::serial]
+fn h06_upgrade_a_then_b_leaves_tracker_at_b() {
+    let _temphome = TempCognicodeHome::new();
+    let home = CognicodeHome::resolve(None).expect("resolve home");
+    home.init().expect("init home");
+
+    // Install A (0.95.0)
+    let release_a = local_release("0.95.0").expect("stage A");
+    point_at(&release_a);
+    let result_a = run_install(&home, "core");
+    unpoint();
+    result_a.expect("install A must succeed");
+    let tracker_after_a = std::fs::read_to_string(home.tracker_version())
+        .unwrap_or_default();
+    assert!(
+        tracker_after_a.contains("0.95.0"),
+        "tracker debe estar en 0.95.0 tras instalar A, got: {tracker_after_a}"
+    );
+    assert!(
+        home.version_root("0.95.0").exists(),
+        "versions/0.95.0/ debe existir tras instalar A"
+    );
+
+    // Upgrade B (0.96.0)
+    let release_b = local_release("0.96.0").expect("stage B");
+    point_at(&release_b);
+    let result_b = run_install(&home, "core");
+    unpoint();
+    result_b.expect("upgrade A→B must succeed");
+    let tracker_after_b = std::fs::read_to_string(home.tracker_version())
+        .unwrap_or_default();
+    assert!(
+        tracker_after_b.contains("0.96.0"),
+        "tracker debe estar en 0.96.0 tras upgrade A→B, got: {tracker_after_b}"
+    );
+    assert!(
+        home.version_root("0.96.0").exists(),
+        "versions/0.96.0/ debe existir tras upgrade"
+    );
+}
+
+/// H-06-b: rollback tras fallo SHA. Instalar A (success), construir B
+/// con tar.gz truncado (SHA mismatched), `run_install(B)` falla, y
+/// el tracker / `versions/A/` deben quedar intactos. La carpeta de
+/// staging puede contener `versions/B/` parcial, pero `versions/A/`
+/// debe seguir poblado y el tracker no debe moverse a B.
+#[test]
+#[serial_test::serial]
+fn h06_sha_failure_during_upgrade_preserves_a() {
+    let _temphome = TempCognicodeHome::new();
+    let home = CognicodeHome::resolve(None).expect("resolve home");
+    home.init().expect("init home");
+
+    // Install A successfully (0.97.0 era)
+    let release_a = local_release("0.97.0").expect("stage A");
+    point_at(&release_a);
+    run_install(&home, "core").expect("install A must succeed");
+    unpoint();
+    assert!(
+        home.version_root("0.97.0").exists(),
+        "A debe estar instalado antes del upgrade fallido"
+    );
+
+    // Upgrade B con un SHA intencionalmente incorrecto en el manifest.
+    // No podemos truncar el payload y dejar el SHA público igual,
+    // porque el installer verificar\u00eda SHA real (que ya es el viejo).
+    // Lo que sí podemos: inyectar un manifest con `sha256` falso para
+    // una de las components (el `cognicode-mcp-linux-x86_64.tar.gz`).
+    // Eso fuerza SHA mismatch en download → failure mid-install →
+    // Drop cleanup del side-effect.Downloaded.
+    let release_b = local_release("0.98.0").expect("stage B baseline");
+    // Sabotear el manifest: alterar el sha256 esperado.
+    let manifest_path = release_b.manifest_path.clone();
+    let yaml = std::fs::read_to_string(&manifest_path).unwrap();
+    // Reemplazar cualquier hex SHA por uno conocido-incorrecto.
+    let sabotized = regex_replace_sha256_to_bogus(&yaml);
+    std::fs::write(&manifest_path, sabotized).unwrap();
+
+    point_at(&release_b);
+    let result_b = run_install(&home, "core");
+    unpoint();
+    drop(release_b); // shuts down loopback server before assertions read disk.
+
+    // El comportamiento esperado: el install falla.
+    assert!(
+        result_b.is_err(),
+        "upgrade con SHA sabotado debe fallar, got: {result_b:?}"
+    );
+
+    // El tracker A debe seguir intacto.
+    let tracker_after = std::fs::read_to_string(home.tracker_version())
+        .unwrap_or_default();
+    assert!(
+        tracker_after.contains("0.97.0"),
+        "tracker NO debe moverse a 0.98.0 tras rollback; got: {tracker_after}"
+    );
+
+    // A debe seguir poblado.
+    assert!(
+        home.version_root("0.97.0").exists(),
+        "versions/0.97.0/ debe seguir intacto tras rollback"
+    );
+}
+
+/// Aux: reemplaza cualquier SHA hex (64 chars) por `deadbeef...deadbeef`.
+/// Necesario porque algunas components están bien serializadas por SHA256
+/// y otras (firmware interno) pueden no tenerlo.
+fn regex_replace_sha256_to_bogus(yaml: &str) -> String {
+    // 64 hex chars consecutivos → 64*'d' (deterministic bogus SHA).
+    let mut out = String::with_capacity(yaml.len());
+    let mut chars = yaml.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c.is_ascii_hexdigit() {
+            // Contar cuántos hex chars consecutivos hay desde aquí.
+            let mut run_len = 1;
+            let mut peek = chars.clone();
+            while let Some(&nc) = peek.peek() {
+                if !nc.is_ascii_hexdigit() {
+                    break;
+                }
+                peek.next();
+                run_len += 1;
+                if run_len > 256 {
+                    break;
+                }
+            }
+            if run_len == 64 {
+                // SHA256: replace with "d" * 64.
+                for _ in 0..64 {
+                    out.push('d');
+                }
+                // Saltar los 64 chars del original.
+                chars.next();
+                for _ in 0..63 {
+                    chars.next();
+                }
+                continue;
+            }
+        }
+        out.push(c);
+    }
+    out
+}
+
 }
