@@ -22,17 +22,22 @@
 //! allow, `cargo clippy --workspace --all-targets -- -D warnings` (the
 //! CI gate enforced by PRF-CI-01) would fail on every push.
 //!
-//! The allow is anchored: the consumers for these items arrive
-//! incrementally as H-03/H-04/H-06 land. Until that work lands,
-//! the allow documents why these items are exported but not yet
-//! fully exercised on every bin. See D34-2 for the historical
-//! decision to defer the cleanup out of the PRF program.
+//! The allow documents the structural reason: each IDE adapter has
+//! `integrate_*` and `uninstall_*` functions plus their detection
+//! helpers, but `cogh` only calls the adapter for the IDE that the
+//! user explicitly named (e.g. `--ide opencode`). Cross-IDE calls
+//! would require the `platform_adapter::for_id(id)` dispatcher
+//! (H-03 vertical), which is operator-gated. Until H-03 lands, every
+//! bin that consumes this module uses one or two adapter paths and
+//! the rest are exported but unread in that specific bin — not dead
+//! in the workspace sense. See D34-2 for the historical decision to
+//! defer the cleanup out of the PRF program.
 //!
-//! Audit history: 2026-09-23 confirmed in `728f05a0`/`d0913498` that
-//! H-06 (A→B upgrade cycle, JOURNAL §99-§100) did NOT close this
-//! allow per-item; the previous "H-06 will add live consumers" claim
-//! was outdated. The allow is intentional but its justification
-//! reference is updated.
+//! Historical note: an earlier revision anchored the allow to H-06
+//! (A→B upgrade cycle). H-06 closed in JOURNAL §99-§100 (2026-09-22)
+//! without adding per-item consumers for this module. The audit
+//! confirmed in `76e04e8e` is preserved in git history; the live
+//! justification is now H-03 (vertical), not H-06.
 #![allow(dead_code)]
 #![allow(unused_imports)]
 

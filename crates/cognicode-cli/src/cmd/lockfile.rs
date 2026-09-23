@@ -15,19 +15,22 @@
 //! allow, `cargo clippy --workspace --all-targets -- -D warnings` (the
 //! CI gate enforced by PRF-CI-01) would fail on every push.
 //!
-//! The allow is anchored: the integration reading `.cognicode.lock` is
-//! pending the Lockfile-as-source-of-truth work tracked separately from
-//! this module's data shape (H-04 persistence decision is operator-gated;
-//! see RELEASE-CANDIDATE §Cierre de PRF). Until that work lands, the
-//! allow documents why these items are exported but not yet exercised.
-//! See D34-2 for the historical decision to defer the cleanup out of
-//! the PRF program.
+//! The allow documents the structural reason: `Lockfile` data shape
+//! lives here (parser + types) but its *reader* is gated on H-04
+//! ("Lockfile as source of truth"), which is operator-gated per
+//! STATE.md. Until H-04 lands, the data shape has no caller inside
+//! the production bins — `cogh` and `cognicode-release` only need
+//! *parts* of the surface (see each method's doc for caller context).
+//! Removing the allow now would force either ripping the unused data
+//! shape out, or landing H-04 — neither is in scope of the current
+//! release candidate (v0.97.4). See D34-2 for the historical decision
+//! to defer the cleanup out of the PRF program.
 //!
-//! Audit history: 2026-09-23 confirmed in `728f05a0`/`d0913498` that
-//! H-06 (A→B upgrade cycle, JOURNAL §99-§100) did NOT add per-item
-//! consumers for this module's surface; the "H-06 will add live
-//! consumers" claim in earlier revisions was outdated. The allow is
-//! intentional but its justification reference is updated.
+//! Historical note: an earlier revision anchored the allow to H-06
+//! (A→B upgrade cycle). H-06 closed in JOURNAL §99-§100 (2026-09-22)
+//! without adding per-item consumers for this module. The audit
+//! confirmed in `76e04e8e` is preserved in git history; the live
+//! justification is now H-04, not H-06.
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
