@@ -154,6 +154,16 @@ impl WorkspaceInfo {
 /// Full doctor report
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DoctorReport {
+    /// Schema version of this JSON document shape. Format
+    /// `cognicode.doctor/vMAJOR`. Independent from the runtime
+    /// `version` field (which carries the bin semver) so that schema
+    /// and runtime can evolve separately. Bumping this major signals
+    /// a breaking change for downstream consumers — add fields with
+    /// `#[serde(default)]` instead.
+    ///
+    /// PRF-CLI-07: contract for machine-readable, schema-versioned
+    /// output.
+    pub schema_version: String,
     pub version: String,
     pub sections: DoctorSections,
     pub summary: DoctorSummary,
@@ -380,6 +390,7 @@ pub fn run_doctor_checks(workspace_path: Option<&Path>) -> DoctorReport {
     };
 
     DoctorReport {
+        schema_version: "cognicode.doctor/v1".to_string(),
         version,
         sections: DoctorSections { core, lsp, parsers },
         summary,
@@ -540,5 +551,57 @@ mod tests {
         assert!(langs.contains(&Language::TypeScript));
         assert!(langs.contains(&Language::Go));
         assert!(langs.contains(&Language::Java));
+    }
+
+    // PRF-CLI-07: `cognicode doctor --format json` MUST emit a
+    // machine-readable, schema-versioned document on stdout so downstream
+    // consumers can pin a contract. Today the JSON contains the runtime
+    // version (the bin's semver) but NOT a schema version (the shape of
+    // the document). Without `schema_version`, breaking changes to the
+    // JSON shape are silently shipped to consumers.
+    //
+    // Contract pinned by this test (will turn green once the schema
+    // version field is added):
+    //   1. The serialized document contains a top-level `schema_version`
+    //      field of the form `cognicode.doctor/vMAJOR` (semver in the
+    //      major position is enough for now; minor/patch are reserved).
+    //   2. The existing `version` field (runtime semver) is preserved.
+    //   3. `schema_version` and `version` are independent: changing the
+    //      bin's semver does NOT bump the schema's major.
+    #[test]
+    fn test_doctor_json_includes_schema_version_prf_cli_07() {
+        let report = run_doctor_checks(None);
+        let json = format_doctor_json(&report);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("doctor --format json must be valid JSON");
+
+        // 1. Top-level `schema_version` present and well-formed.
+        let schema_version = parsed
+            .get("schema_version")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("doctor JSON missing schema_version: {json}"));
+        assert!(
+            schema_version.starts_with("cognicode.doctor/v"),
+            "doctor JSON schema_version must start with 'cognicode.doctor/v', got: {schema_version}"
+        );
+        let major = schema_version
+            .strip_prefix("cognicode.doctor/v")
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or_else(|| panic!("schema_version major must parse as u32: {schema_version}"));
+        assert_eq!(major, 1, "PRF-CLI-07 pins schema_version to v1 for the doctor shape");
+
+        // 2. The runtime version is preserved (separate concern).
+        assert!(
+            parsed.get("version").is_some(),
+            "doctor JSON must keep the runtime 'version' field alongside schema_version"
+        );
+
+        // 3. Schema and runtime are independent: the runtime semver
+        //    MUST NOT be reused as the schema version.
+        let runtime_version = parsed.get("version").and_then(|v| v.as_str()).unwrap();
+        assert_ne!(
+            schema_version, runtime_version,
+            "schema_version and version must be independent (got both = {runtime_version:?})"
+        );
     }
 }
