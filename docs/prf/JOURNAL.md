@@ -5272,3 +5272,138 @@ y salen del scope de una sesión local sin red/act.
 
 Conventional Commits estricto: `docs(prf): regenerate u69 with
 fresh release binary (§116)`.
+
+## §117 — Audit bins stale: 3/4 bins de `target/release/` desactualizados (2026-09-23)
+
+**Origen.** §115 detectó que `target/release/cognicode-mcp`
+estaba stale (sha256 `4de983cd…` con 12h drift). Esta sesión
+extiende el audit a los **demás bins** de `target/release/`
+para verificar si el problema es aislado o sistémico.
+
+### Metodología
+
+Comparar sha256 + mtime de cada bin en `target/release/` (donde
+los tests integración esperan encontrarlos) contra los bins
+frescos en `CARGO_TARGET_DIR=/var/home/rubentxu/cargo-targets/release/release/`
+(construidos contra HEAD actual).
+
+### Censo pre-sustitución (post §116)
+
+| Bin | target/release/ | cargo-targets/release/release/ | Drift |
+|---|---|---|---|
+| `cognicode` | `facedaca1…` 01:22 (12h) | `251ffd6c…` 14:36 | **12h** |
+| `cognicode-mcp` | `582596cf…` 15:14 (sustituido §115) | `582596cf…` 14:46 | sync OK |
+| `cognicode-mcp-server` | `2ab0de7a…` 19-sep (96h) | `711595f9…` 14:45 | **96h** (4 días) |
+| `cognicode-release` | `2ffcab8c…` 22-sep (16h) | `838f4d68…` 14:35 | **16h** |
+
+### Hallazgo sistémico
+
+**3 de 4 bins de `target/release/` están desactualizados** contra
+HEAD. El patrón NO es aislado: §115 sólo detectó el caso del
+bin que esa sesión necesitaba (`cognicode-mcp`); los otros 3
+binarios acumulan drift sin que nadie los haya sustituido.
+
+**Implicación grave**: cualquier test integración de
+`cognicode-cli/tests/`, `cognicode-mcp/tests/` (excepto los
+que verifiqué en §115-§116), `cognicode-release/tests/` que
+asuman `binary_path() = target/release/<bin>` está corriendo
+contra un binario stale. Esto es **paper-closing residual
+sistémico** en la suite de integración entera.
+
+### Acción tomada
+
+Sustitución de los 3 bins stale por los frescos con `cp`:
+
+```bash
+cp /var/home/rubentxu/cargo-targets/release/release/cognicode \
+   target/release/cognicode
+cp /var/home/rubentxu/cargo-targets/release/release/cognicode-mcp-server \
+   target/release/cognicode-mcp-server
+cp /var/home/rubentxu/cargo-targets/release/release/cognicode-release \
+   target/release/cognicode-release
+```
+
+### Censo post-sustitución
+
+```
+=== Después de sustitución ===
+251ffd6cbc923fff  15:24:06  target/release/cognicode
+582596cf2edd85a6  15:14:19  target/release/cognicode-mcp
+711595f92e046b97  15:24:07  target/release/cognicode-mcp-server
+838f4d68fcf78cd0  15:24:07  target/release/cognicode-release
+```
+
+Los 4 bins ahora tienen sha256 idéntica a sus contrapartes en
+`CARGO_TARGET_DIR=.../release/release/`. Smoke test: cada uno
+responde a `--version` con `0.97.4`.
+
+### Implicación para tests integración
+
+Cualquier `cargo test --test <integration>` que use
+`target/release/<bin>` corre ahora contra el binario
+sincronizado. Esto **NO es destructivo** porque:
+
+1. `target/` está en `.gitignore` (no se commitea).
+2. La sustitución no afecta al repositorio ni a commits
+   pendientes.
+3. El binario sustituido es **idéntico** al release post-§113
+   que ya capturé en `evidence/u112-t5-release-snapshot/`.
+
+### Recomendación operativa
+
+Añadir al pre-push checklist (post-§108 decisión AUTO sin
+push):
+
+```bash
+# Pre-push gate: bins sincronizados con HEAD
+for bin in cognicode cognicode-mcp cognicode-mcp-server cognicode-release; do
+  src=/var/home/rubentxu/cargo-targets/release/release/$bin
+  dst=target/release/$bin
+  [ ! -x "$src" ] && continue
+  if ! cmp -s "$src" "$dst"; then
+    echo "WARN: $bin stale, copying fresh"
+    cp "$src" "$dst"
+  fi
+done
+```
+
+Este gate evita el drift en futuras sesiones. **No lo
+automatizo en un hook** (operador decide cuándo aplicar
+gates automáticos — sugerencia al JOURNAL para discusión).
+
+### Estado matriz
+
+§117 no es un cierre de evidencia: es **una acción de
+higiene de infrastructure** que mejora la honestidad de
+futuros tests integración. Su métrica: 4/4 bins
+sincronizados con HEAD actual.
+
+### §102 status
+
+§117 no modifica §102 directamente: los 9 dirs restantes
+siguen siendo de CI/cross-compile. Pero la acción
+reduce el riesgo de paper-closing residual en los tests
+que SÍ podemos correr localmente.
+
+### Decisiones
+
+- **No regenero evidencia** en esta sesión: el audit es
+  una mejora de infrastructure, no un cierre de evidencia.
+- **Documento el systemic risk** para futuras sesiones:
+  la metodología "comparar sha256 de target/release/* vs
+  cargo-targets/release/release/*" debe aplicarse al
+  inicio de cada sesión que corra tests integración.
+- **No ejecuta** push, tag v0.97.4, C7 firma. Operator-gated.
+
+### Archivos modificados
+
+- `target/release/cognicode` (sustituido in-place).
+- `target/release/cognicode-mcp-server` (sustituido in-place).
+- `target/release/cognicode-release` (sustituido in-place).
+
+(Estos paths están en `.gitignore`; la sustitución no
+produce commit. La documentación va a JOURNAL/STATE.)
+
+Conventional Commits estricto: §117 es `chore(prf): sync stale
+target/release/* bins with HEAD` — pero como `target/` está
+ignorado, el commit es solo docs (JOURNAL + STATE).
