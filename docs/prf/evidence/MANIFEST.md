@@ -7,8 +7,8 @@
 > inflar el árbol con datos brutos; este manifiesto permite auditar la
 > integridad de las copias locales y comprobar reproducibilidad.
 
-**Fecha del manifiesto**: 2026-09-21
-**HEAD al cierre del manifiesto**: `9628b1d3`
+**Fecha del manifiesto**: 2026-09-23 (actualizado post H-06 / pre-release T4)
+**HEAD al cierre del manifiesto**: `ed1ed09c`
 **Operador**: jcode-orchestrator
 
 ## Política
@@ -222,3 +222,28 @@ grep '^{' /tmp/mcp_build_graph.raw > /tmp/mcp_build_graph.json
 > el SHA `$COMMIT_PLACEHOLDER` (HEAD al regenerar). Para
 > certificaciones futuras, regenerar primero y luego computar
 > hash contra la versión binaria actual.
+
+## Evidencias post-ciclo H-06 — `docs/prf/evidence/u102-t4-pre-release/`
+
+**Total**: 1 archivo markdown.
+**Origen**: T4 pre-release ejecutado en HEAD `ed1ed09c` (post-H-06).
+**Descripción**: ver `docs/prf/evidence/u102-t4-pre-release/OBSERVATIONS.md`.
+
+| Archivo | SHA-256 | Tamaño (bytes) | Categoría |
+|---|---|---|---|
+| `OBSERVATIONS.md` | (regenerado contra HEAD actual; auditable leyendo el archivo) | ~2 KB | T4 evidence |
+
+Esta evidencia documenta:
+* Resultado T0 (build + clippy), T1 (lib tests), T2 (bin tests), T3
+  (workspace --tests con `--test-threads=2`) observado contra HEAD
+  `ed1ed09c`.
+* Fix aplicado al flaky `t_l2_commit_records_versions_layout_in_journal`
+  (cambio de path: de `crate::lifecycle_journal::journal_path(VERSION)`
+  a `home.journal_version(VERSION)` para evitar releer `COGNICODE_HOME`
+  env var global).
+* Restricción de entorno documentada (helper `setup_temp_home`/`run_cogh`
+  en `cognicode-cli/src/cmd/lifecycle.rs` comparte env vars globals
+  entre bins; mitigación `--test-threads=2` para T4). No es regresión
+  del ciclo H-06.
+* Evidencia `u58-f3-equivalence-regen/` regenerada en §99 contra HEAD
+  `ed1ed09c` con SHA-256 reproducible.

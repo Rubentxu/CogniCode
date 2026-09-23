@@ -1589,7 +1589,7 @@ components:
         let result =
             InstallerTransaction::run(&home, "core").expect("install transaction must succeed");
 
-        let journal_path = crate::lifecycle_journal::journal_path(env!("CARGO_PKG_VERSION"));
+        let journal_path = home.journal_version(env!("CARGO_PKG_VERSION"));
         let envelope =
             crate::lifecycle_journal::load_envelope(&journal_path).expect("load journal envelope");
         assert_eq!(envelope.version, env!("CARGO_PKG_VERSION"));

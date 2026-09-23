@@ -4565,3 +4565,57 @@ mantiene, los hashes varían.)
 **Push sigue operator-gated** (directive §3 + auditoría §29 sin
 variación).
 
+
+## §103 — T4 pre-release verde + fix de un flaky genuino (2026-09-23)
+
+### Resumen
+
+T4 pre-release ejecutado contra HEAD `ed1ed09c` (post-H-06) sobre
+la revisión 214 commits ahead of `origin/main`. Todos los niveles
+T0/T1/T2/T3 verde con evidencia observada.
+
+### Resultados
+
+| Nivel | Comando | Resultado |
+|-------|---------|-----------|
+| T0 build | `cargo check --workspace` | ok (51.87s inicial, 3.05s incremental) |
+| T0 clippy | `cargo clippy --workspace --all-targets -- -D warnings` | EXIT 0 |
+| T1 lib | `cargo test --workspace --lib` | 4156 / 0 / 27 |
+| T2 bin (cogh) | `cargo test -p cognicode-cli --bin cogh` ×5 | 312 / 0 / 1 (5/5 estable) |
+| T3 integration | `cargo test --workspace --tests -- --test-threads=2` | **5315 / 0 / 33** |
+
+### Deuda técnica atacada
+
+* **Flaky genuino eliminado**: `t_l2_commit_records_layout_in_journal`
+  en `crates/cognicode-cli/src/cmd/installer_transaction.rs`. Causa
+  raíz: el test usaba `crate::lifecycle_journal::journal_path(VERSION)`
+  que internamente releía `COGNICODE_HOME` desde env global, lo que
+  lo hacía sensible a interferencia con otros tests paralelos.
+  Fix: `home.journal_version(VERSION)` (path determinista del
+  `CognicodeHome` instanciado, sin tocar env). 5/5 runs verde.
+  Cero regresiones en `cognicode-cli` T1/T2.
+
+### Restricción operativa documentada (no resuelta)
+
+* `t_e86_3_uninstall_without_ide_prints_helpful_message` (lifecycle.rs)
+  pasa 10/10 aislado, flake ocasional en suite workspace-wide.
+  Causa: helper `setup_temp_home` y `run_cogh` (lifecycle.rs:55-118)
+  comparten env vars (`HOME`, `COGNICODE_HOME`) entre bins sin
+  lock global. No es regresión nueva — el helper precede al
+  ciclo H-06. Mitigación para T4: `--test-threads=2` da 0
+  failures. Pendiente refactor: substituir por `Mutex<()>` + 
+  `std::env::temp_dir().with_suffix` (próximo WU técnico fuera
+  de scope T4).
+
+### Evidencia generada
+
+* `docs/prf/evidence/u102-t4-pre-release/OBSERVATIONS.md`
+  (markdown con todos los resultados arriba).
+* `docs/prf/evidence/MANIFEST.md` extendido con nueva sección.
+
+### Commits pendientes
+
+* `[u102-t4]` — fix flaky `t_l2_commit_records` + evidencia T4 +
+  MANIFEST.md actualizado.
+* `[u102-h10]` — si requiere nota en STATE.md.
+
