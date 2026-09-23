@@ -24,8 +24,8 @@ fn release_bin() -> PathBuf {
     p
 }
 
-const VERSION: &str = "0.97.3";
-const TAG: &str = "v0.97.3";
+const VERSION: &str = "0.97.4";
+const TAG: &str = "v0.97.4";
 const PLATFORM: &str = "x86_64-unknown-linux-gnu";
 
 fn head_commit() -> String {
@@ -71,7 +71,7 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
         let src = root.join(format!("dist/{bundle}-{VERSION}.tar.gz"));
         assert!(
             src.exists(),
-            "missing skill bundle {}; run `COGNICODE_VERSION=0.97.3 just bundle-skills`",
+            "missing skill bundle {}; run `COGNICODE_VERSION=0.97.4 just bundle-skills`",
             src.display()
         );
         std::fs::copy(&src, stage.join(src.file_name().unwrap())).unwrap();
