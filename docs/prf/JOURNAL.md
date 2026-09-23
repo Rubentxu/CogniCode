@@ -4619,3 +4619,59 @@ T0/T1/T2/T3 verde con evidencia observada.
   MANIFEST.md actualizado.
 * `[u102-h10]` — si requiere nota en STATE.md.
 
+
+## §104 — S5 release pipeline: binarios construidos, generate local con staging limitado (2026-09-23)
+
+### T5.0 — Build optimizado de los binarios release
+
+| Binario | SHA-256 | Tamaño |
+|---------|---------|--------|
+| `cogh` (CLI usuario) | `b34021651356da1ecebce05027771004ff3e46711c6ddba4af8aa95d0bdb86dd` | 6,726,584 bytes (~6.4 MiB) |
+| `cognicode-release` (release factory) | `6bd3343efff6b6260c12074175fc3873c6866f86a42e60b1944d58f4110d9785` | 1,489,760 bytes (~1.4 MiB) |
+
+Ambos compilados con `cargo build --release -p cognicode-cli --bin cogh` /
+`--bin cognicode-release`. Resultado consistente con la release factory R1-R9
+esperada. Comando reproducible: ver §102-§103.
+
+### T5.1 — Tier-1 platforms declaradas
+
+```
+$ cognicode-release platforms
+x86_64-unknown-linux-gnu
+aarch64-unknown-linux-gnu
+```
+
+Consistente con `release.yml` matrix y contrato e84 R9 (Platform ↔
+target token is total). Linux x86_64 y aarch64 GNU son Tier-1 según
+release.yml líneas 41-50.
+
+### T5.2 — Version
+
+```
+$ cogh version
+cogh 0.97.4 (managing CogniCode 0.97.3)
+```
+
+Consistente con `[workspace.package] version = "0.97.4"` (Cargo.toml).
+
+### Restricción S5 (límite honesto del entorno local)
+
+`cognicode-release generate` y `verify` requieren un staging con payloads
+tar.gz reales por componente × plataforma. Estos payloads los produce
+CI en runners nativos (`release.yml` job `build`, matrix
+`ubuntu-latest` + `ubuntu-24.04-arm`) — no son reproducibles localmente
+porque cross-compile a `aarch64-unknown-linux-gnu` no está garantizada
+en este entorno sin toolchain `aarch64-unknown-linux-gnu-gcc`. **Por
+tanto la verificación S5 completa (R1-R9) requiere que el tag
+dispare la release oficial en GitHub Actions.**
+
+Decisión recomendada para T4:
+
+1. Push el branch `main` a `origin/main` (operator pre-confirmado,
+   pendiente ejecutar tras gates finales).
+2. Tag `v0.97.4` push (la release.yml disparará build → upload →
+   cognicode-release generate + verify en CI).
+3. La verificación R1-R9 corre en CI (artefacto único verificable
+   desde el release publicado).
+4. S5 local queda registrado con binarios reproducibles + SHA-256.
+
