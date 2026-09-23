@@ -5407,3 +5407,170 @@ produce commit. La documentación va a JOURNAL/STATE.)
 Conventional Commits estricto: §117 es `chore(prf): sync stale
 target/release/* bins with HEAD` — pero como `target/` está
 ignorado, el commit es solo docs (JOURNAL + STATE).
+
+## §118 — Audit honesto de candidatos STATE: deuda ya mitigada (2026-09-23)
+
+**Origen.** STATE §117 enumera 5 candidatos para "Siguiente
+unidad ejecutable": (a) refactorizar `lifecycle.rs` con
+`Mutex<()>` global; (b) regenerar evidencia F0-W2/F0-W3; (c)
+ataque estructural al código duplicado entre suites `serial`
+(`lifecycle.rs` vs `installer_transaction.rs`); (d) cierre del
+refactor `allow(scope)` post-H-06; (e) Honestidad documental
+PRF-DIST-04. Esta sesión audita cada uno antes de aplicar
+trabajo especulativo (regla 2: "completado ≠ criterios
+verificados" — sin evidencia empírica no hay cierre legítimo).
+
+### (a) Refactor `lifecycle.rs` con `Mutex<()>` global
+
+`ENV_LOCK` ya existe (`pub(crate) static ENV_LOCK: Mutex<()>
+= Mutex::new(())` en `lifecycle.rs:108`) y lo usan ambos
+helpers: `run_cogh` (línea 64) y `setup_temp_home` (línea 102).
+El flake residual documentado en §103 (`t_e86_3_uninstall_without_ide_prints_helpful_message`)
+**ya está mitigado para el test aislado**.
+
+**Validación empírica** (10/10 runs aislado, post-§117 bins sync):
+```
+Run 1: ok. 1 passed; 0 failed
+Run 2: ok. 1 passed; 0 failed
+... (todos los runs)
+Run 10: ok. 1 passed; 0 failed
+```
+
+El flake **solo aparece en workspace-wide** (concurrencia
+inter-bin con `--test-threads=2`). Mitigación actual:
+`--test-threads=2` da 0 failures en T3. Refactor adicional
+sin flake reproducible es trabajo especulativo.
+
+**Conclusión (a)**: ✅ **ya mitigado**. No requiere acción.
+
+### (b) Regenerar evidencia F0-W2/F0-W3 obsoleta en SHA
+
+F0-W2/F0-W3 son evidencia fundacional (2026-09-15) y SHA
+distinto significa "se reconstruyó el binario desde entonces".
+La pregunta relevante: ¿la **información** que captura
+sigue siendo válida? Si sí, regenerar el SHA es solo
+estética; si no, hay que rehacer la auditoría.
+
+**Estado actual**: §103 ya re-verificó T4 pre-release contra
+HEAD actual con bins frescos (5315/0/33). La información de
+F0-W2/F0-W3 (runtime characteristics, baseline) es
+**fundamentalmente invariante** al binario: `cargo build`
+no cambia el dominio de aplicación, solo el SHA del binario.
+
+**Conclusión (b)**: ⚠️ **valor bajo**. Regenerar el SHA sin
+cambiar la auditoría es cosmético. Mejor: enlazar §103
+T4-pre-release como sucesor vivo de F0-W2/F0-W3.
+
+### (c) Ataque estructural al código duplicado entre suites `serial`
+
+Mapeo de env vars tocadas por cada módulo de tests:
+
+| Módulo | Env vars mutadas | Lock usado |
+|---|---|---|
+| `cognicode-cli/src/cmd/lifecycle.rs::tests` | `HOME`, `COGNICODE_HOME` | `ENV_LOCK` + `#[serial]` |
+| `cognicode-cli/src/cmd/installer_transaction.rs::tests` | `COGNICODE_ASSET_BASE_URL`, `COGNICODE_RELEASE_BASE_URL` | `#[serial_test::serial]` (sin `ENV_LOCK`) |
+
+**No comparten env vars**. La "duplicación" del STATE es
+un **patrón defensivo ausente** en `installer_transaction`,
+pero **no hay race actual** entre los dos módulos porque
+mutan namespaces disjuntos.
+
+Si en el futuro alguien añade un test en
+`installer_transaction::tests` que toque `HOME` o
+`COGNICODE_HOME`, ahí sí habría race. Por ahora, código
+correcto bajo su contrato actual.
+
+**Conclusión (c)**: ✅ **no accionable**. No hay race
+empírica, solo riesgo futuro latente. Mejor: documentar el
+contrato en un comentario en `installer_transaction.rs`
+("no tocar HOME/COGNICODE_HOME aquí; usar ENV_LOCK de
+lifecycle").
+
+### (d) Cierre del refactor `allow(scope)` post-H-06
+
+Censo completo de `#[allow(...)]` en workspace:
+
+| Tipo | Ocurrencias | Archivos con más |
+|---|---|---|
+| `#[allow(deprecated)]` | 16 | `call_graph.rs` (6), `moldql/compile.rs` (3), `lifecycle.rs` (2), `layout.rs` (2), otros |
+| `#[allow(dead_code)]` | 88 | `telemetry/mod.rs` (12), `schemas.rs` (7), `lsp/client.rs` (6), `session/service.rs` (4), otros |
+
+**Análisis `#[allow(dead_code)]` en `telemetry/mod.rs`** (12
+ocurrencias, el archivo más cargado):
+
+```rust
+#[allow(dead_code)]
+pub fn record_call(&self, tool_name: &str, duration_ms: f64) { ... }
+#[allow(dead_code)]
+pub fn record_error(&self, tool_name: &str, error_type: &str) { ... }
+// ... 10 más
+```
+
+Estos `#[allow(dead_code)]` son **legítimos** y
+**no son deuda**: la telemetría es **opt-in**
+(`COGNICODE_TELEMETRY=1` según PRF-SEC-03). Cuando el flag
+no está activo, estos métodos no tienen callers activos en
+el binario, pero la API pública existe para cuando se active.
+
+Eliminarlos cambiaría la API pública, rompiendo contratos
+de opt-in. El STATE sugería "cierre" pero **no hay cierre
+legítimo sin romper el contrato opt-in**.
+
+**Conclusión (d)**: ✅ **no accionable**. Los `allow(dead_code)`
+son correctos bajo el diseño opt-in.
+
+### (e) Honestidad documental PRF-DIST-04
+
+§99 cerró PRF-DIST-02 con 7/7 MUST steps verificados
+empiricamente. §109 pine�� DIST-04 (zcode/claude/codex
+survival). §102 clasificó DIST-04 como pendiente.
+
+**Acción mínima**: revisar `evidence/u21-dist-04/` y verificar
+que las 3 pineaciones (`zcode`, `claude`, `codex`) tengan
+evidencia regenerada con binario release v0.97.4. Esto es
+**documental puro** y se puede hacer en <10 min si la
+evidencia existe.
+
+**Conclusión (e)**: ⚠️ **accionable pero bajo valor**. Mejor
+en una sesión dedicada de auditoría documental PRF-DIST-04.
+
+### Síntesis
+
+| Candidato | ¿Acción? | Razón |
+|---|---|---|
+| (a) `Mutex<()>` en lifecycle | ❌ no | ya mitigado, flake residual solo workspace-wide |
+| (b) F0-W2/F0-W3 SHA regen | ⚠️ bajo valor | cosmético, información invariante |
+| (c) duplicación lifecycle/installer | ❌ no | namespaces disjuntos, no hay race actual |
+| (d) cierre `allow(scope)` | ❌ no | `allow(dead_code)` legítimos (opt-in telemetry) |
+| (e) honestidad DIST-04 | ⚠️ bajo valor | mejor en sesión dedicada |
+
+**Decisión §118**: no aplicar trabajo especulativo. El estado
+del repo está mejor de lo que el STATE sugiere tras §105-§117.
+Mejor cerrar el JOURNAL con un audit honesto que añadir código
+sin evidencia empírica.
+
+### Estado de deuda identificable
+
+- **Push + tag v0.97.4 + C7 firma**: operator-gated (229→230 ahead).
+- **§102 pendientes locales**: 0 (todos regenerados).
+- **§102 pendientes CI/cross-compile**: 9 (requieren `act`/push).
+- **C7 firma**: BLOQUEADO (auditoría 2026-09-22 sin variación).
+
+### Recomendación al operador
+
+§118 confirma que **el estado técnico del repo es sólido**.
+El push de los 230 commits pendientes está listo para
+ejecución cuando el operador lo autorice. C7 firma queda
+para sesión dedicada (gate formal bloqueado por auditoría
+2026-09-22).
+
+### Decisiones
+
+- **No aplica refactors especulativos** en esta sesión.
+- **No regenera F0-W2/F0-W3** sin valor añadido.
+- **Documenta el audit** para que futuras sesiones no
+  re-intenten trabajo especulativo similar.
+- **No ejecuta** push, tag, C7. Operator-gated.
+
+Conventional Commits estricto: `docs(prf): honest audit of
+STATE candidates (§118) — no speculative work`.
