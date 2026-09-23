@@ -4769,3 +4769,71 @@ ejecuta:
   `git push origin main && git push origin v0.97.4`
 y CI disparará `release.yml` que es el único sitio donde generate
 + verify R1-R9 puede ejecutarse fielmente.
+
+## §109 — Pine DIST-04 para zcode/claude/codex (commit 65196a30) (2026-09-23)
+
+**Origen.** Continuación de sesión 4 AUTO. Tras §105-§108 el operador
+pide priorizar ciclos pendientes y deuda técnica. SPEC-DISTRIBUTION
+PRF-DIST-04 MUST: "archivos de usuario/config IDE preexistente sobreviven
+desinstalación/rollback". La cobertura in-process era solo para
+**opencode** (3 tests `prf_dist_04_*` en `ide.rs`). Faltaban
+equivalentes para zcode, claude, codex.
+
+**Investigación.** Las funciones `uninstall_zcode`, `uninstall_claude`,
+`uninstall_codex` (ide.rs:514/614/774) **ya hacen lo correcto por
+construcción**:
+- Borran solo `cognicode-{version}/` del skills dir (nada más).
+- Borran solo el `binary_name` del `mcp`/`mcp_servers` (otros servers
+  sobreviven byte-a-byte).
+- Idempotentes cuando no existe la entrada.
+
+Pero NO estaban pineadas por tests específicos. Si una refactorización
+futura cambiara la semántica (e.g. un `remove_dir_all` indiscriminado
+del mcp dir para claude), el contrato DIST-04 se rompería sin que
+ningún test fallara.
+
+### Cambios
+
+1. Tres pines nuevos en `ide.rs::prf_dist_04_survival_tests`:
+   - `prf_dist_04_zcode_preexisting_config_survives_uninstall`
+   - `prf_dist_04_claude_preexisting_mcp_servers_survive_uninstall`
+   - `prf_dist_04_codex_preexisting_mcp_servers_survive_uninstall`
+2. `lifecycle::ENV_LOCK` cambia a `pub(crate)` para que los pines
+   de ide puedan usar el mismo lock global sin duplicar el state.
+
+### Honestidad sobre el cierre
+
+**GREEN-on-arrival**, no RED→GREEN. El código ya era correcto por
+inspección. Esto es un **regression pin**, no un fix de bug. Su valor
+es cerrar un **gap de cobertura** documentado: si alguien introduce
+una regresión más adelante, los pines rompen inmediatamente.
+
+Esto NO incrementa la cuenta "PRF-DIST-04 PASS" en la matriz. La
+matriz ya marcaba DIST-04 como PARTIAL (mejorado, §41). Lo que hace
+§109 es **profundizar** la cobertura de DIST-04 hacia todos los IDEs,
+no cerrar legalmente el MUST completo. La nota de la matriz se
+actualiza en una entrada posterior (§110) reconociendo que la
+supervivencia para 4 IDEs ahora está pineada por tests.
+
+### Verificación
+
+- `prf_dist_04*`: 6/6 verde (3 originales + 3 nuevos).
+- `ide::`: 48/0/0 (era 45, +3).
+- `layout::`: 56/0/0 estable.
+- `lifecycle::`: 25/0/1 estable.
+- cogh full: **315/0/1** (era 312, +3).
+- clippy --workspace --all-targets -- -D warnings: EXIT 0.
+
+### Decisiones
+
+- **NO** crear un guard helper compartido entre los 4 IDEs: la
+  repetición de `set_var`/`remove_var` es de 4 líneas (justificable
+  inline). Introducir un helper sería una abstracción con valor
+  cero (los 4 tests pines son lo único que lo usaría) y riesgo
+  de regresión por cambio de patrón. Respeto del principio:
+  "no introduzcas nuevas abstracciones si los mecanismos existentes
+  pueden satisfacer el requisito".
+- **NO** extender el ciclo al rollback-side: `cmd_rollback`
+  actualmente llama a `uninstall_opencode`/`_zcode`/etc., así que la
+  supervivencia está cubierta transitivamente. Pendiente verificación
+  explícita con un UAT post-update podría ser otro WU.
